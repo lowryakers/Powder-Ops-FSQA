@@ -5,7 +5,8 @@ import { requireDepartment } from '../middleware/auth.js';
 import { generateDocumentReviewTasks, recomputeDocumentReview } from './documents.js';
 import { duplicateReadings } from '../duplicate-readings.js';
 import { generateQualityScheduleTasks } from './quality-schedules.js';
-import { generateRecleanTasks } from './sanitation.js';
+import { generateRecleanTasks, raiseAtpRecleanTask } from './sanitation.js';
+import { gradeAtp, applyGrade, atpEscalation } from '../atp-limits.js';
 import { generateSupplierReviewTasks } from '../supplier-review.js';
 import { generateSwabReorders } from '../swab-stock.js';
 import { getChannelByName, postMessageAs, botDm } from './comms.js';
@@ -113,6 +114,17 @@ export function resolveBackdate(performedOn, reason) {
   return { when: raw, late: daysBack > 1 ? 1 : 0, reason: daysBack > 1 ? String(reason).trim() : null };
 }
 
+// THE TASK DOOR GRADES THE ATP READING NOW. It never did. The Operator View
+// captured `readings.atp_reading` on Production Line Pre-Op and changeover
+// cleans with the live limit hint beside it, and this function filed the
+// record with no atp_reading, no atp_limit and no grade — so a 200 RLU swab
+// entered on the floor filed as whatever the visual answer was, invisible to
+// the log, the exports, the swab-stock count and the consecutive-failure
+// chain. POST /sanitation was the only graded door. OBL-01 read "landed"; it
+// was landed for one door of two. This is the other one, and it grades the
+// way the form door does, deliberately line for line: the grade can FAIL a
+// record and never PASS one, a blank reading is a gap and changes nothing,
+// and the limit travels with the record.
 function fileQaInspectionRecord(db, { area: rawArea, wo, readings, stepResults, result, notes, by, workOrderId, backdate }) {
   // ONE DEFINITION OF WHAT AN AREA IS, and this path used to skip it. Filing a
   // record by hand goes through canonicalArea(); completing a TASK wrote
@@ -132,6 +144,7 @@ function fileQaInspectionRecord(db, { area: rawArea, wo, readings, stepResults, 
     // Temp/humidity readings first — they are the substance of that form.
     r.temperature != null && r.temperature !== '' ? `Temperature ${r.temperature}.` : null,
     r.humidity != null && r.humidity !== '' ? `Humidity ${r.humidity}.` : null,
+    r.atp_reading != null && String(r.atp_reading).trim() !== '' ? `ATP ${r.atp_reading} RLU.` : null,
     Array.isArray(stepResults) && stepResults.length ? `${ticks} of ${stepResults.length} items checked.` : null,
     String(notes || '').trim() || null,
     `Filed from task ${workOrderId}.`,
@@ -139,10 +152,25 @@ function fileQaInspectionRecord(db, { area: rawArea, wo, readings, stepResults, 
 
   const bd = backdate || {};
   const id = uuid();
+
+  // Same three lines as POST /sanitation, in the same order. A reading is
+  // graded against PC #1's limit; the chosen result is overridden to fail on
+  // an over-limit swab and never upgraded; and whether the previous GRADED
+  // reading for this area also failed decides the escalation (two consecutive
+  // failures raise the re-clean; one asks for a re-swab).
+  const atpReading = r.atp_reading != null && String(r.atp_reading).trim() !== '' ? r.atp_reading : null;
+  const chosen = result === 'fail' || result === 'reclean' ? result : 'pass';
+  const grade = gradeAtp(atpReading);
+  const decided = applyGrade(chosen, grade);
+  const priorGradedFail = !!(grade && !grade.pass && db.prepare(
+    `SELECT result FROM sanitation_records WHERE area = ? AND atp_limit IS NOT NULL
+     ORDER BY COALESCE(performed_at, entered_at) DESC, rowid DESC LIMIT 1`).get(area)?.result === 'fail');
+  const escalation = atpEscalation(grade, priorGradedFail);
+
   db.prepare(`
     INSERT INTO sanitation_records (id, area, type, equipment_id, performed_by, performed_at, entered_at,
-      entered_late, late_entry_reason, result, record_group, notes)
-    VALUES (?, ?, 'pre_op', ?, ?, COALESCE(?, datetime('now')), datetime('now'), ?, ?, ?, ?, ?)
+      entered_late, late_entry_reason, result, record_group, notes, atp_reading, atp_limit)
+    VALUES (?, ?, 'pre_op', ?, ?, COALESCE(?, datetime('now')), datetime('now'), ?, ?, ?, ?, ?, ?, ?)
   `).run(id, area, wo?.equipment_id || null, by,
     // The day the CHECK happened, which is only "now" when it wasn't back-dated.
     bd.when || null, bd.late ? 1 : 0, bd.reason || null,
@@ -156,9 +184,15 @@ function fileQaInspectionRecord(db, { area: rawArea, wo, readings, stepResults, 
     //           anyone marking it failed passed — that is what completing it
     //           means — and anything unrecognised is read as a pass rather
     //           than blocking the operator over a value the client sent.
-    result === 'fail' || result === 'reclean' ? result : 'pass',
-    recordGroupFor(area), detail);
-  return id;
+    //   The result stored is the DECIDED one — `decided.result`, not the
+    //   operator's — or the limit is sidestepped by the task door.
+    decided.result,
+    recordGroupFor(area), detail, atpReading, grade?.limit ?? null);
+  // Callers used to get a bare id. They now get the decision as well, because
+  // the re-clean task is raised OUTSIDE the completion transaction (a failure
+  // to raise it must not roll back a completion that physically happened —
+  // the form door's rule), so the caller has to know whether to raise it.
+  return { id, grade, decided, escalation };
 }
 
 // Side-effects to run when any work order transitions to completed, regardless
@@ -1022,6 +1056,7 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
   // that exists without its completion (or the other way round) is two
   // mechanisms disagreeing about one check.
   let filedRecordId = null;
+  let atpOutcome = null;
   db.transaction(() => {
     db.prepare(`
       UPDATE work_orders SET status='completed', completed_at=?, completed_by=?,
@@ -1050,14 +1085,31 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
       // looking at since June.
       const qaArea = recordAreaForTask(existing.title);
       if (qaArea) {
-        filedRecordId = fileQaInspectionRecord(db, {
+        const filed = fileQaInspectionRecord(db, {
           area: qaArea, wo: existing, readings, stepResults: step_results,
           result: finalResult, notes, by: completedBy, workOrderId: req.params.id,
           backdate,
         });
+        filedRecordId = filed.id;
+        atpOutcome = filed;
       }
     }
   })();
+
+  // Two consecutive failed swabs raise the re-clean; one does not. Raised
+  // AFTER the transaction and best-effort, exactly as POST /sanitation does:
+  // the completion and its record are already written and honest, and losing
+  // the task is a smaller failure than losing the record — the 72-hour rule
+  // still catches the room.
+  let recleanWorkOrderId = null;
+  if (atpOutcome?.escalation?.stage === 'escalate') {
+    try {
+      const rec = db.prepare('SELECT * FROM sanitation_records WHERE id = ?').get(atpOutcome.id);
+      recleanWorkOrderId = raiseAtpRecleanTask(db, {
+        area: rec.area, record: rec, grade: atpOutcome.grade, who: completedBy,
+      });
+    } catch (e) { console.error('[pm] ATP re-clean task not raised:', e.message); }
+  }
 
   logAudit(completedBy, 'complete', 'work_order', req.params.id,
     // `graded` is null for the QA inspections — only a dilution is graded
@@ -1066,6 +1118,8 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
     // temp & humidity completion.
     { notes, readings, reading_result: finalResult,
       ...(filedRecordId ? { sanitation_record_id: filedRecordId } : {}),
+      ...(atpOutcome?.grade ? { atp_result: atpOutcome.decided.result, atp_overridden: atpOutcome.decided.overridden,
+        atp_stage: atpOutcome.escalation?.stage || null, reclean_work_order_id: recleanWorkOrderId } : {}),
       ...(graded ? { graded: graded.reason } : {}) },
     null, null);
   if (isEnvironmentalCheck(existing.title)) {
@@ -1088,7 +1142,12 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
     }
   }
 
-  res.json({ completed: req.params.id, next_work_order: nextWO });
+  // The form door returns the escalation so the screen can say "re-swab" or
+  // "re-clean raised"; the task door does the same, or the operator is told
+  // nothing about a reading the server has just failed.
+  res.json({ completed: req.params.id, next_work_order: nextWO,
+    ...(atpOutcome?.escalation ? { atp_stage: atpOutcome.escalation.stage, atp_message: atpOutcome.escalation.message,
+      atp_result: atpOutcome.decided.result, reclean_work_order_id: recleanWorkOrderId } : {}) });
 });
 
 // --- Batch Complete ---
@@ -1156,7 +1215,7 @@ router.post('/work-orders/batch-complete', (req, res) => {
       const area = recordAreaForTask(wo.title);
       if (area) {
         try {
-          const recordId = fileQaInspectionRecord(db, {
+          const { id: recordId } = fileQaInspectionRecord(db, {
             area, wo, readings: {}, stepResults: [], result: 'pass',
             notes: 'Batch completed', by: completedBy, workOrderId: id,
           });

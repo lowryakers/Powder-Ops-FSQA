@@ -649,7 +649,7 @@ router.post('/', (req, res) => {
 // The flag_key is the RECORD ID of the second failure, so one failure raises
 // one task; correcting that record cannot raise a second, and the next pair of
 // failures gets its own key.
-function raiseAtpRecleanTask(db, { area, record, grade, who }) {
+export function raiseAtpRecleanTask(db, { area, record, grade, who }) {
   const already = db.prepare('SELECT 1 FROM reclean_actions WHERE room = ? AND flag_key = ? LIMIT 1');
   const flagKey = `atp_fail:${record.id}`;
   if (already.get(area, flagKey)) return null;
