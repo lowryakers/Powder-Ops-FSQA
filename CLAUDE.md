@@ -1002,8 +1002,14 @@ tab is now labelled **Receiving**). Deep link `?tab=receiving-log&view=shipping&
 - **THE PHOTO CLAIM IS CHECKED AGAINST THE PHOTOS.** "Photos taken — Yes" with none attached is refused at
   sign-off (`photoClaimUnsupported`, reported on the record as `photo_claim_unsupported` so the drawer can
   warn before the button is pressed). Photos cannot be added to or removed from a signed-off inspection —
-  revoke, attach, sign again. The photo strip sits directly under the LOAD section that asks for it, and
-  the input carries `capture="environment"` so a phone opens the camera.
+  revoke, attach, sign again. The photo strip sits directly under the LOAD section that asks for it.
+- **TWO PHOTO INPUTS, NOT ONE (`common/PhotoPicker.jsx`).** `capture="environment"` on a file input opens the
+  camera directly — and on iOS it opens ONLY the camera, so a photo already taken ten minutes ago could not be
+  attached at all. One input cannot serve "photograph the load now" and "attach the picture I took"; the
+  picker renders two (`data-photo-take` with capture, `data-photo-choose` without) sharing one `onChange`.
+  Same rule the chat composer's paperclip/camera split already follows. Used by the shipping checklist, the
+  onboarding wizard (ID documents, voided check) and reimbursement receipts; `verify:warehouseui` and
+  `verify:onboardingui` assert both inputs exist.
 - **Closing the drawer bumps `refreshKey`** so the card behind it stops reading "0 of 18 answered" after a
   truck was released — the list must not disagree with the record. The receiving Inspections tab has the
   same shape and the same gap; fix it there the same way when it is next touched.
@@ -3674,8 +3680,8 @@ a tab in the **Accounting** hub. Today it is Marnee and Adam and a personal card
 receipt, say what it was, tick it off when it goes out in payroll — and it should stay that small, because
 every extra field is a reason not to file and the claim nobody files is the one that becomes an argument
 three months later.
-- **The receipt is the record.** The form's file input is `capture="environment"`, so on a phone it opens the
-  camera — this is filled in standing at the till. But a **missing receipt never blocks the claim**: it files
+- **The receipt is the record.** The form uses `PhotoPicker` — take a photo (opens the camera) or choose one
+  already taken — because this is filled in standing at the till. But a **missing receipt never blocks the claim**: it files
   and the row says "no receipt" in amber until one is added (`POST /:id/receipts`). Refusing at the till,
   where someone is holding a phone in a queue, is how the claim doesn't get filed at all.
 - **Paid is stamped, never guessed.** `paid_at` / `paid_by` / `pay_period` / `payment_reference`, because
