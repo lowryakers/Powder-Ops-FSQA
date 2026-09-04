@@ -87,7 +87,11 @@ for (let i = 0; i < items.length; i++) {
 await page.waitForTimeout(1200);
 t('all questions answered', /All questions answered/.test(await drawer.innerText()));
 t('the photo claim is flagged while no photo is attached', await drawer.locator('[data-photo-claim]').count() === 1);
-await drawer.locator('[data-photos] input[type=file]').setInputFiles(photo);
+// Two doors: the camera (capture) and the camera roll (no capture) — one input
+// with capture hides the roll on iOS.
+t('the load photo control offers the camera AND the camera roll', await drawer.locator('[data-photos] input[data-photo-take][capture]').count() === 1
+  && await drawer.locator('[data-photos] input[data-photo-choose]:not([capture])').count() === 1);
+await drawer.locator('[data-photos] input[data-photo-choose]').setInputFiles(photo);
 await page.waitForTimeout(2000);
 t('the photo lands under the load section', /ui-load\.png/.test(await drawer.locator('[data-photos]').innerText()) && await drawer.locator('[data-photo-claim]').count() === 0);
 await drawer.getByRole('button', { name: /release shipment/ }).click();

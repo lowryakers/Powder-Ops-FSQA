@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import PhotoPicker from './common/PhotoPicker.jsx';
 
 /**
  * The new hire's first screen — /welcome/<token>, public, phone-first.
@@ -83,10 +84,8 @@ function Photos({ token, rec, kind, title, hint, onChanged }) {
         </ul>
       )}
       {rec.storage_enabled ? (
-        <label className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold cursor-pointer ${busy ? 'bg-gray-200 text-gray-500' : 'bg-powder-600 text-white'}`}>
-          {busy ? 'Uploading…' : files.length ? '＋ Add another photo' : '📷 Take a photo'}
-          <input type="file" accept="image/*,application/pdf" capture="environment" multiple onChange={add} disabled={busy} className="hidden" />
-        </label>
+        <PhotoPicker name={kind} onChange={add} busy={busy} accept="image/*,application/pdf"
+          takeLabel={files.length ? 'Take another photo' : 'Take a photo'} chooseLabel="Choose from photos" />
       ) : (
         <p className="text-xs text-amber-800">Photo upload is not available right now — bring the documents on your first day.</p>
       )}

@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useApiGet, apiPost, apiFetch, apiUpload } from '../../hooks/useApi';
 import {
-  Truck, X, CheckCircle2, RotateCcw, Camera, Trash2, AlertTriangle, ImageIcon, ExternalLink,
+  Truck, X, CheckCircle2, RotateCcw, Trash2, AlertTriangle, ImageIcon, ExternalLink,
 } from 'lucide-react';
 import { formatDateTime } from '../../lib/datetime.js';
 import { Item, ItemNotes } from './ReceivingChecklist.jsx';
+import PhotoPicker from '../common/PhotoPicker.jsx';
 
 /**
  * The Shipping Truck Inspection — FORM 204-01's outbound twin, on the dock
@@ -53,13 +54,10 @@ function Photos({ inspection, shipmentNo, locked, storageEnabled, onChanged }) {
         <p className="text-[11px] font-bold uppercase tracking-wider text-gray-600 flex items-center gap-1.5">
           <ImageIcon size={13} /> Photos of the load ({photos.length})
         </p>
-        {!locked && storageEnabled && (
-          <label className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold cursor-pointer ${busy ? 'bg-gray-200 text-gray-500' : 'bg-powder-600 text-white hover:bg-powder-700'}`}>
-            <Camera size={13} /> {busy ? 'Uploading…' : 'Take / add photos'}
-            {/* capture opens the camera on a phone; multiple lets a desktop pick several. */}
-            <input type="file" multiple accept="image/*" capture="environment" onChange={add} disabled={busy} className="hidden" />
-          </label>
-        )}
+        {/* Two doors: the camera for the load in front of you, the camera
+            roll for the picture already taken. One input with `capture`
+            cannot offer both — on iOS it opens only the camera. */}
+        {!locked && storageEnabled && <PhotoPicker name="load" onChange={add} busy={busy} />}
       </div>
       {!storageEnabled && (
         <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2">

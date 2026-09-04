@@ -62,7 +62,8 @@ await fill('Bank name', 'Zions');
 await m.locator('input[placeholder="9 digits"]').fill('124000054');
 await m.locator('span:text-is("Account number *") + input').fill('44556677');
 await m.locator('span:text-is("Account type *") + select').selectOption('checking');
-t('the voided-check photo control opens the camera', await m.locator('[data-photos="voided_check"] input[type=file]').getAttribute('capture') === 'environment');
+t('the voided-check control offers the camera and the camera roll', await m.locator('[data-photos="voided_check"] input[data-photo-take][capture]').count() === 1
+  && await m.locator('[data-photos="voided_check"] input[data-photo-choose]:not([capture])').count() === 1);
 await m.getByRole('button', { name: /Save & continue/ }).click();
 await m.waitForTimeout(1200);
 t('on to the W-4', /Form W-4/.test(await m.locator('body').innerText()));
@@ -77,7 +78,7 @@ await m.waitForTimeout(1200);
 t('the W-4 is signed and the I-9 opens', /Form I-9/.test(await m.locator('body').innerText()));
 t('there is no Finish button before the I-9 is signed', await m.locator('[data-finish]').count() === 0 && await m.locator('[data-sign-i9]').count() === 1);
 await m.getByRole('radio').first().check();
-await m.locator('[data-photos="id_document"] input[type=file]').setInputFiles(photo);
+await m.locator('[data-photos="id_document"] input[data-photo-choose]').setInputFiles(photo);
 await m.waitForTimeout(1800);
 t('the ID photo appears', /ui-id\.png/.test(await m.locator('[data-photos="id_document"]').innerText()));
 await m.locator('[data-signature="i9"] input:not([type=checkbox])').first().fill('Maria Ortega');

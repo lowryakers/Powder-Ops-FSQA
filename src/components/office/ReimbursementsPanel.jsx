@@ -1,12 +1,13 @@
 import { useState, useMemo, Fragment } from 'react';
 import { useApiGet, apiFetch, apiPost, apiPut, apiUpload, apiDelete } from '../../hooks/useApi';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
+import PhotoPicker from '../common/PhotoPicker.jsx';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import { CustomFields, CustomFieldValues } from '../common/CustomFields';
 import { useCappedList } from '../../lib/useCappedList';
 import ShowMore from '../common/ShowMore';
 import {
-  Wallet, Camera, Plus, X, Check, Ban, Trash2, Receipt as ReceiptIcon,
+  Wallet, Plus, X, Check, Ban, Trash2, Receipt as ReceiptIcon,
   AlertTriangle, Search, ExternalLink,
 } from 'lucide-react';
 
@@ -134,14 +135,11 @@ function ClaimForm({ initial, people, categories, canFileForOthers, onClose, onS
           {!initial?.id && (
             <div>
               <span className="block text-xs font-medium text-gray-700 mb-1">The receipt</span>
-              {/* `capture` opens the camera straight away on a phone, which is
-                  where this is actually filled in — standing at the till. */}
-              <label className="flex items-center justify-center gap-2 w-full px-3 py-3 border-2 border-dashed border-gray-300 rounded-lg text-sm text-gray-600 cursor-pointer hover:border-powder-400 hover:bg-powder-50/40">
-                <Camera size={18} className="text-powder-600" />
-                {files.length ? `${files.length} photo${files.length === 1 ? '' : 's'} attached` : 'Take a photo or choose a file'}
-                <input type="file" multiple accept="image/*,application/pdf" capture="environment"
-                  onChange={e => setFiles(Array.from(e.target.files || []))} className="hidden" />
-              </label>
+              {/* The camera for the receipt in your hand at the till, the
+                  camera roll for the one photographed earlier. */}
+              <PhotoPicker name="receipt" accept="image/*,application/pdf"
+                onChange={e => { const picked = Array.from(e.target.files || []); e.target.value = ''; setFiles(f => [...f, ...picked]); }} />
+              {files.length > 0 && <p className="text-xs text-gray-600 mt-1">{files.length} photo{files.length === 1 ? '' : 's'} attached: {files.map(f => f.name).join(', ')}</p>}
               <p className="text-[11px] text-gray-500 mt-1">
                 You can add it later if you haven&apos;t got it to hand — the claim will just show as
                 missing its receipt until you do.
@@ -196,10 +194,7 @@ function Receipts({ row, onChanged }) {
         </span>
       )}
       {row.can_edit && (
-        <label className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-dashed border-gray-300 text-xs text-gray-600 cursor-pointer hover:border-powder-400">
-          <Camera size={12} /> Add
-          <input type="file" multiple accept="image/*,application/pdf" capture="environment" onChange={add} className="hidden" />
-        </label>
+        <PhotoPicker name="receipt-add" accept="image/*,application/pdf" onChange={add} takeLabel="Take a photo" chooseLabel="Choose a file" />
       )}
     </div>
   );
