@@ -54,6 +54,20 @@ const seeded = {};
     db.prepare(`INSERT INTO first_aid_injuries (id, form_revision, employee_name, injury_date, injury_description, explanation, supervisor_name)
       VALUES ('mc-inj', 'V1', 'Sam Operator', ?, 'Left hand, minor cut on film edge', 'Changing a roll without the guard down', 'A Supervisor')`).run(today);
   });
+  seed('supplier', () => {
+    db.prepare(`INSERT INTO suppliers (id, name, vendor_type, actively_using, status) VALUES ('mc-sup', 'Example Ingredients LLC', 'ingredient', 1, 'unqualified')`).run();
+  });
+  seed('coa-spec', () => {
+    db.prepare(`INSERT INTO coa_specifications (id, item_number, item_description, test_type, specification, unit, min_value, max_value, method)
+      VALUES ('mc-spec', 'RM-360', 'Whey protein isolate', 'Moisture', '≤ 5.0', '%', NULL, 5.0, 'AOAC 925.09')`).run();
+  });
+  seed('production', () => {
+    // Monday of the current week, so the KPI week grid has a run to show.
+    const d = new Date(); const dow = (d.getDay() + 6) % 7; d.setDate(d.getDate() - dow);
+    const monday = d.toISOString().slice(0, 10);
+    db.prepare(`INSERT INTO production_entries (id, date, team, room, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, submitted_by)
+      VALUES ('mc-pe', ?, 'Batching', 'Batching 1', 'Whey Blueberry Muffin', 'MO-360', 'LOT-360', '06:00', '14:00', 480, 3, 'Mobile Cards')`).run(monday);
+  });
   seed('time', () => {
     db.prepare(`INSERT INTO time_adjustments (id, employee_name, adjustment_type, adjustment_date, message, submitted_by)
       VALUES ('mc-ta', 'Sam Operator', 'absent', ?, 'sick', 'Mobile Cards')`).run(day(-3));
@@ -140,6 +154,16 @@ await screen('Retention › lot trace', '?tab=retention-samples', {
     await box.press('Enter');
     await page.waitForTimeout(1200);
   },
+});
+// The laptop-facing logs yesterday's sweep listed as lower priority — one
+// standard means they render as cards too.
+await screen('Products › Catalogue', '?tab=products');
+await screen('Products › GTIN barcodes', '?tab=products&view=barcodes');
+await screen('Suppliers › Register', '?tab=suppliers');
+await screen('Team Activity', '?tab=team-activity');
+await screen('Production KPIs (week grid)', '?tab=production-dashboard');
+await screen('COA › Specifications', '?tab=coa', {
+  before: async () => { await page.getByText('Specifications', { exact: true }).first().click(); await page.waitForTimeout(1200); },
 });
 // Screens whose rows need a live run to exist: the overflow rule still holds.
 await screen('COA / Lab Testing (no rows — overflow only)', '?tab=coa', { cards: false });

@@ -2355,8 +2355,24 @@ export default function COAPanel() {
             <SpecForm initial={editItem} onSave={handleCreateSpec} onCancel={() => { setShowForm(false); setEditItem(null); }} />
           )}
 
-          {specs?.length > 0 ? (
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          {specs?.length > 0 ? (<>
+            <RecordCards count={specs.length}>
+              {specs.map(s => (
+                <RecordCard key={s.id} title={`${s.item_number} · ${s.test_type}`} subtitle={s.item_description}
+                  fields={[
+                    { label: 'Specification', value: s.specification, wide: true },
+                    { label: 'Range', value: (s.min_value != null || s.max_value != null) ? `${s.min_value ?? '–'} to ${s.max_value ?? '–'}` : null },
+                    { label: 'Unit', value: s.unit },
+                    { label: 'Method', value: s.method },
+                  ]}
+                  actions={<>
+                    <button onClick={() => setMatReqItem({ item_number: s.item_number, item_description: s.item_description })} className="text-xs text-powder-700 flex items-center gap-1"><ClipboardList size={13} /> Material requirements</button>
+                    <button onClick={() => { setEditItem(s); setShowForm(true); }} className="text-xs text-gray-600 flex items-center gap-1"><Edit2 size={13} /> Edit</button>
+                    <button onClick={() => handleDeleteSpec(s.id)} className="text-xs text-red-600 flex items-center gap-1"><Trash2 size={13} /> Delete</button>
+                  </>} />
+              ))}
+            </RecordCards>
+            <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 border-b border-gray-200">
@@ -2398,7 +2414,7 @@ export default function COAPanel() {
                 </table>
               </div>
             </div>
-          ) : !showForm && (
+          </>) : !showForm && (
             <div className="text-center py-8 text-gray-400">No specifications yet. Add specs per item/test to enable auto pass/fail.</div>
           )}
         </>

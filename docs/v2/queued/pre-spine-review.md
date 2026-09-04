@@ -251,6 +251,13 @@ Laptop-facing, same shape, lower priority: `SuppliersPanel.jsx:198`, `ProductsPa
 `ProductBarcodes.jsx:125`, `TeamActivityPanel.jsx:81`, `ProductionDashboard.jsx:176`, `COAPanel.jsx:2346`,
 and the thirteen `AuditorView` sections.
 
+**FIXED 2026-09-04 (the six laptop-facing logs)** — noticed on a phone the day after: the Products catalogue
+was still a scroller, and "one standard" does not have a lower-priority tier. All six now render `<RecordCards>`
+below `md` from the same rows and handlers as their table; the production week grid becomes one card per team
+with the days stacked, and the Team Activity figures stay drillable on the card. `verify:mobile` covers them
+(58 assertions). **The Auditor View keeps its scrollers on purpose**: it is the binder opened on a laptop in
+a conference room, and its thirteen read-only sections are not logs anybody works from a phone.
+
 ---
 
 ## Proposed order

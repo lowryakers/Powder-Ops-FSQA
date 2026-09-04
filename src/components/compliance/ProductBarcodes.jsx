@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 import { useApiGet } from '../../hooks/useApi';
 import { AlertTriangle, Search } from 'lucide-react';
 
@@ -120,7 +121,19 @@ export default function ProductBarcodes({ onOpenSku }) {
           className="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-lg text-sm" />
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <RecordCards count={rows.length} empty="Nothing matches.">
+        {rows.map((p) => (
+          <RecordCard key={p.sku} onClick={() => onOpenSku?.(p.sku)}
+            title={<code className="font-mono">{p.sku}</code>} subtitle={p.flavor}
+            badge={<span className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${STATE[p.state].tone}`}>{STATE[p.state].label}</span>}
+            fields={[
+              { label: 'GTIN', value: p.gtin ? <span className="font-mono">{p.gtin}</span> : null },
+              { label: 'Image', value: p.has_barcode_image ? (p.barcode_filename || 'on file') : null },
+              { label: 'Encodes', value: p.barcode_stale ? <span className="text-red-700 font-medium">{p.barcode_gtin} · product is {p.gtin}</span> : null, wide: true },
+            ]} />
+        ))}
+      </RecordCards>
+      <div className="hidden md:block bg-white border border-gray-200 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 import { useApiGet, apiFetch, apiUpload, apiDelete } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { useTableSort } from '../../lib/useTableSort';
@@ -592,7 +593,25 @@ export default function ProductsPanel() {
         {sorted.length} of {products.length}
       </p>
 
-      <div className="overflow-x-auto border border-gray-200 rounded-lg">
+      {/* Below md the catalogue is cards, from the same sorted rows and the
+          same row click as the table — one standard for every log. */}
+      <RecordCards count={sorted.length} empty="Nothing matches. Loosen a filter.">
+        {sorted.map((p) => (
+          <RecordCard key={p.sku} onClick={() => setOpen(p.sku)}
+            title={<code>{p.sku}</code>} subtitle={p.flavor}
+            badge={<span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_STYLE[p.status] || 'bg-gray-100 text-gray-700'}`}>{pretty(p.status)}</span>}
+            fields={[
+              { label: 'New standard', value: p.preferred_sku
+                ? <code className="text-gray-500">{p.preferred_sku}</code>
+                : <span className="text-[11px] text-amber-700">{(p.preferred_sku_blocked_by || [])[0] || ''}</span> },
+              { label: 'GTIN', value: p.gtin ? <span className={!p.gtin_valid ? 'text-red-600 font-medium' : ''}>{p.gtin}</span> : null },
+              { label: 'Category', value: p.category },
+              { label: 'Pack', value: PACK_LABEL[p.pack] || p.pack },
+              { label: 'Ready', value: <ReadyBar readiness={p.readiness} />, wide: true },
+            ]} />
+        ))}
+      </RecordCards>
+      <div className="hidden md:block overflow-x-auto border border-gray-200 rounded-lg">
         <table className="min-w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>

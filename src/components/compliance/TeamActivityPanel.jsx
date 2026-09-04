@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 import { useApiGet } from '../../hooks/useApi';
 import { Users, CheckCircle2, Clock, AlertTriangle, Gauge, TrendingUp } from 'lucide-react';
 import {
@@ -77,7 +78,24 @@ function StatTable({ title, rows, nameKey, nameLabel, scopeKey, onDrill }) {
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <h3 className="text-sm font-semibold text-gray-900 px-4 pt-4 pb-2">{title}</h3>
       <p className="text-xs text-gray-500 px-4 pb-2">Any figure opens the tasks behind it.</p>
-      <div className="overflow-x-auto">
+      {/* The same rows, the same Drillable figures, as cards below md. */}
+      <RecordCards count={rows.length} className="px-3 pb-3">
+        {rows.map(r => {
+          const scope = { [scopeKey]: scopeKey === 'department' ? r.key : r.name };
+          const drill = (metric) => onDrill({ metric, scope, label: r[nameKey] });
+          return (
+            <RecordCard key={r[nameKey]} title={r[nameKey]}
+              fields={[
+                { label: 'Due', value: <Drillable metric="due" onDrill={drill} disabled={!r.total}>{r.total}</Drillable> },
+                { label: 'Completed', value: <Drillable metric="completed" onDrill={drill} disabled={!r.completed}>{r.completed}</Drillable> },
+                { label: 'On-time', value: <span className={onTimeColor(r.on_time_pct)}><Drillable metric="late" onDrill={drill} disabled={r.on_time_pct == null || r.completed === r.on_time} title="Show the ones completed late">{pct(r.on_time_pct)}</Drillable></span> },
+                { label: 'Overdue', value: <span className={r.overdue > 0 ? 'text-red-600 font-medium' : ''}><Drillable metric="overdue" onDrill={drill} disabled={!r.overdue}>{r.overdue}</Drillable></span> },
+                { label: 'Avg time', value: <Drillable metric="completed" onDrill={drill} disabled={r.avg_days == null} title="Show the completed tasks this average is over">{days(r.avg_days)}</Drillable> },
+              ]} />
+          );
+        })}
+      </RecordCards>
+      <div className="hidden md:block overflow-x-auto">
         <table className="min-w-full text-sm">
           <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
             <tr>

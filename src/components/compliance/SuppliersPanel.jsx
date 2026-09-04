@@ -1,4 +1,5 @@
 import { useState, useMemo, Fragment, useRef} from 'react';
+import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 import { useApiGet, apiPost, apiDelete, apiUpload } from '../../hooks/useApi';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow } from '../common/RowDetail';
@@ -194,7 +195,29 @@ export default function SuppliersPanel({ user }) {
             )}
           </div>
 
-          <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
+          <RecordCards count={capped.items.length}
+            empty={suppliers.length ? 'No suppliers match.' : 'No suppliers yet — import the tracker and the archive.'}>
+            {capped.items.map(s => (
+              <RecordCard key={s.id} onClick={() => expand.toggle(s.id)}
+                title={s.name}
+                subtitle={[s.vendor_type, (s.legacy_names || []).length ? `also ${s.legacy_names.join(', ')}` : null].filter(Boolean).join(' · ')}
+                badge={<StatusChip status={s.status} />}
+                fields={[
+                  { label: 'In use', value: s.actively_using ? 'Yes' : null },
+                  { label: 'Materials', value: s.material_count },
+                  { label: 'Files', value: s.file_count },
+                  { label: 'Expired', value: s.expired_files ? <span className="font-medium text-rose-600">{s.expired_files}</span> : null },
+                  { label: 'Next expiry', value: s.next_expiry ? formatDate(s.next_expiry) : null },
+                ]}>
+                {expand.isExpanded(s.id) && (
+                  <div className="mt-3 border-t border-slate-100 pt-3" onClick={e => e.stopPropagation()}>
+                    <SupplierDetail id={s.id} user={user} onDecide={() => setDecide(s)} onRemoved={refresh} />
+                  </div>
+                )}
+              </RecordCard>
+            ))}
+          </RecordCards>
+          <div className="hidden md:block overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
             <table className="w-full min-w-[720px] text-sm">
               <thead className="bg-slate-50 dark:bg-slate-800">
                 <tr>{COLUMNS.map((c, i) => (

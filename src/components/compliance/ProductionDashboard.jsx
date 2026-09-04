@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 import { useApiGet } from '../../hooks/useApi';
 import { BarChart3, TrendingUp, Users, Package, ClipboardCheck, Calendar, ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react';
 import { localDateStr } from '../../utils/dates';
@@ -172,7 +173,32 @@ function WeeklyProductionView() {
       ) : teamsWithData.length === 0 ? (
         <div className="text-center py-8 text-gray-400 text-sm">No production logged for this week.</div>
       ) : (
-        <div className="overflow-x-auto">
+        <>
+        {/* One card per team below md, the week's runs stacked by day — a
+            five-day grid needs a desk. */}
+        <RecordCards count={teamsWithData.length}>
+          {teamsWithData.map(team => (
+            <RecordCard key={team} title={<span className={TEAM_TEXT[team] || 'text-gray-700'}>{team}</span>}
+              fields={[0, 1, 2, 3, 4].filter(di => teamGrid[team][di].length).map(di => ({
+                label: `${WEEK_DAYS_SHORT[di]} ${new Date(weekDates[di]).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })}`,
+                wide: true,
+                value: teamGrid[team][di].map(e => (
+                  <div key={e.id} className="rounded-lg border border-gray-200 bg-gray-50/50 px-2 py-1.5 mb-1 last:mb-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className={`text-xs font-semibold ${TEAM_TEXT[team] || 'text-gray-700'}`}>{e.mo_number}</span>
+                      <span className="text-xs font-semibold text-gray-800">{num(e.quantity_completed)}</span>
+                    </div>
+                    {e.product_name && <div className="text-[11px] text-gray-600 leading-tight">{e.product_name}</div>}
+                    <div className="text-[10px] text-gray-400 mt-0.5">
+                      {e.people_count}p · {Number(e.duration_hours || 0).toFixed(1)}h · {Number(e.units_per_minute || 0).toFixed(1)} u/min
+                      {e.start_time ? ` · ${fmtTime(e.start_time)}` : ''}
+                    </div>
+                  </div>
+                )),
+              }))} />
+          ))}
+        </RecordCards>
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full border-collapse min-w-[720px]">
             <thead>
               <tr className="border-b border-gray-200">
@@ -216,6 +242,7 @@ function WeeklyProductionView() {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       {/* MOs this week */}
