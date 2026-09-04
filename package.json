@@ -62,6 +62,7 @@
     "verify:sensoryui": "node scripts/verify-sensory-ui.mjs",
     "verify:artwork": "node scripts/verify-artwork-sync.mjs",
     "verify:people": "node scripts/verify-people-files.mjs",
+    "verify:reimbursements": "node scripts/verify-reimbursements.mjs",
     "verify:shipping": "node scripts/verify-shipping.mjs",
     "verify:warehouseui": "node scripts/verify-warehouse-ui.mjs",
     "verify:prodcopy": "node scripts/verify-prod-copy.mjs",

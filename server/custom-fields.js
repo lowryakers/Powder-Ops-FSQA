@@ -123,7 +123,15 @@ const isBlank = (v) => v === '' || v === null || v === undefined;
 // for how their existing values survive an edit).
 export function coerceCustomData(db, scope, raw) {
   const errors = [];
-  if (raw === undefined || raw === null) return { data: null, errors };
+  if (raw === undefined || raw === null || raw === '') return { data: null, errors };
+  // A multipart body (a claim with a photo attached) can only carry strings, so
+  // the answers arrive as JSON text. Read it here, once, rather than in every
+  // caller that takes a file — the reimbursement form refused every claim with
+  // "custom_data must be an object" because nobody did.
+  if (typeof raw === 'string') {
+    try { raw = JSON.parse(raw); } catch { return { data: null, errors: ['custom_data must be an object'] }; }
+    if (raw === null) return { data: null, errors };
+  }
   if (typeof raw !== 'object' || Array.isArray(raw)) return { data: null, errors: ['custom_data must be an object'] };
 
   const defs = fieldDefs(db, scope);

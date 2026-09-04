@@ -3698,6 +3698,14 @@ three months later.
 - `can_edit` is stamped server-side and the client renders what it's told (same rule as qms.js). A **paid**
   claim is closed to everyone but an admin.
 - `reimbursement` is a custom-field scope, so extra questions are a Settings task.
+- **A MULTIPART BODY CARRIES ONLY STRINGS, so `custom_data` arrives as JSON TEXT.** The claim posts as
+  multipart because the photo rides along, the form sends the extra answers as `"{}"`, and
+  `coerceCustomData` refused the string as "custom_data must be an object" — every claim filed from the phone
+  was refused, photo or not, and the message read as though the picture was wrong. `coerceCustomData` now
+  parses a string once, in the engine, so any other file-carrying form gets the same reading rather than
+  each caller remembering to `JSON.parse`. Unreadable text and an array are still refused in words.
+  `verify:reimbursements` (8, in `verify:all`) files a claim exactly the way the phone does; the control
+  without the fix fails 5 of them.
 
 ## Threads clear themselves when you actually read them (`src/lib/useSeenAfterDwell.js`)
 "Mark read" used to be the only way to clear a thread, so the honest case — you scrolled to it, read the
