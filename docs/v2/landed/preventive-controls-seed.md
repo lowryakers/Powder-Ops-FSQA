@@ -1,6 +1,14 @@
-# Queued for `main` — seed the four preventive controls, and guard their limits
+# Landed on `main` — seed the four preventive controls, and guard their limits
 
-**Status: transcribed, built and tested · pending wording verification · not deployed · 24 August 2026**
+**Status: LANDED. On `main`, 5 September 2026.** The seeder call, the `api/haccp.js` edit guard and the
+readiness drift line all shipped in one pass; `haccp_ccps` holds the four controls from first boot.
+**Written 24 August · landed 5 September**
+
+> **This file was written in `docs/v2/queued/` and moved here when it shipped.** `queued/` means work
+> designed and deliberately NOT landed (D-018); leaving a landed item in it would make the directory
+> mean two things, which is the defect this whole project is about. The design below is unchanged.
+> **What is still open is the wording check against the PDF** — that is OBL-33 now, split out so the
+> landed half is not marked done on the strength of the half that is not. See D-054.
 
 Punch-list item 3 of `preventive-control-walk.md`. `haccp_ccps` holds zero rows, so the plan's four
 preventive controls exist in the app in no form at all, and neither X-ray machine is linked to

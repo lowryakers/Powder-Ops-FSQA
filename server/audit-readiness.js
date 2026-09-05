@@ -17,6 +17,7 @@
 // the review, but a failed section says so rather than silently reading green.
 
 import { EMP_COVERAGE } from './emp-site-list.js';
+import { ccpDrift, PREVENTIVE_CONTROLS, PC_DOCUMENT, PC_REVISION } from './preventive-controls.js';
 
 const item = (label, status, detail, tab) => ({ label, status, detail, tab });
 
@@ -140,8 +141,23 @@ export function readinessReview(db) {
   // ── HACCP ─────────────────────────────────────────────────────────────────
   add('HACCP', () => {
     const ccps = n('SELECT COUNT(*) c FROM haccp_ccps');
-    return [item(`${ccps} CCPs defined`, ccps ? 'good' : 'warning',
+    const items = [item(`${ccps} CCPs defined`, ccps ? 'good' : 'warning',
       ccps ? null : 'A HACCP plan with no CCPs in the system has its monitoring evidence nowhere.', 'equipment')];
+    // The four preventive controls are transcribed from Protocol 003 V4; a
+    // stored row that has wandered from the document is the finding, and a
+    // control the plan names that the database lacks is the same finding the
+    // other way round. Reported so the section keeps answering once rows exist.
+    const drift = ccpDrift(db);
+    const missing = drift.filter(d => d.missing).length;
+    const fields = drift.length - missing;
+    items.push(item(
+      drift.length
+        ? `${missing ? `${missing} preventive control(s) not in the database` : ''}${missing && fields ? '; ' : ''}${fields ? `${fields} field(s) differ from ${PC_DOCUMENT} ${PC_REVISION}` : ''}`
+        : `All ${PREVENTIVE_CONTROLS.length} preventive controls match ${PC_DOCUMENT} ${PC_REVISION}`,
+      drift.length ? 'warning' : 'good',
+      drift.length ? 'A critical limit that differs from the food safety plan is an audit finding either way — the document or the database is wrong.' : null,
+      'equipment'));
+    return items;
   });
 
   // ── NSF GMP for Sport (from the Audit Guide on file, REF-NSF-GMP-AUDIT) ───

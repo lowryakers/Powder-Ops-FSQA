@@ -444,10 +444,20 @@ function markMissedWorkOrders(db) {
 
 // --- PM Schedules ---
 
+const OPEN_WORK_SQL = `SELECT COUNT(*) FROM work_orders wo WHERE wo.pm_schedule_id = ps.id
+  AND wo.status IN ('open','in_progress','overdue','missed')`;
+const openWorkFor = (db, scheduleId) => db.prepare(
+  `SELECT COUNT(*) c FROM work_orders wo WHERE wo.pm_schedule_id = ? AND wo.status IN ('open','in_progress','overdue','missed')`
+).get(scheduleId).c;
+
 router.get('/schedules', (req, res) => {
   const db = getDb();
   const { equipment_id, active } = req.query;
-  let sql = `SELECT ps.*, e.name as equipment_name, e.room, c.name as ccp_name
+  // open_work: what this schedule has raised and nobody has closed, missed
+  // included. Pausing cascades nothing (D-012), so a paused schedule can go on
+  // carrying work forever; counting it here is what lets the screen say so.
+  let sql = `SELECT ps.*, e.name as equipment_name, e.room, c.name as ccp_name,
+    (${OPEN_WORK_SQL}) AS open_work
     FROM pm_schedules ps
     JOIN equipment e ON ps.equipment_id = e.id
     LEFT JOIN haccp_ccps c ON ps.haccp_ccp_id = c.id WHERE 1=1`;
@@ -720,8 +730,15 @@ router.put('/schedules/:id', (req, res) => {
   }
 
   const updated = db.prepare('SELECT * FROM pm_schedules WHERE id = ?').get(req.params.id);
-  logAudit(req.user, 'update', 'pm_schedule', req.params.id, null, existing, updated);
-  res.json(updated);
+  // Stopping a schedule raising work and closing what it already raised are
+  // two acts, and only the first has a button (D-012). The response and the
+  // audit entry both carry the count left behind, so the pause cannot look
+  // like it did more than it did.
+  const open_work = openWorkFor(db, req.params.id);
+  const paused = !!existing.is_active && !updated.is_active;
+  logAudit(req.user, 'update', 'pm_schedule', req.params.id,
+    paused ? { paused: true, open_work_left: open_work } : null, existing, updated);
+  res.json({ ...updated, open_work });
 });
 
 // --- Work Orders ---

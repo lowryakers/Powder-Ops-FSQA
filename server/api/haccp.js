@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
+import { documentOwned, guardCcpEdit, PC_LOCK_MESSAGE, PC_OWNED_FIELDS, PC_DOCUMENT, PC_REVISION } from '../preventive-controls.js';
 
 const router = Router();
 
@@ -11,10 +12,21 @@ function canManageCcps(u) {
   return !!u && (['admin', 'supervisor'].includes(u.role) || u.department === 'qa');
 }
 
+// The four preventive controls are TRANSCRIBED from Protocol 003 (D-022), so
+// the client is told which rows the document owns and which fields are
+// therefore closed — the same way products.js reports nfp_version as a mirror.
+// The server still decides; this only lets the form say why before the save.
+const annotate = (row) => ({
+  ...row,
+  document_owned: documentOwned(row),
+  document: documentOwned(row) ? `${PC_DOCUMENT} ${PC_REVISION}` : null,
+  owned_fields: documentOwned(row) ? ['name', ...PC_OWNED_FIELDS] : [],
+});
+
 router.get('/', (_req, res) => {
   const db = getDb();
   const ccps = db.prepare('SELECT * FROM haccp_ccps ORDER BY name').all();
-  res.json(ccps);
+  res.json(ccps.map(annotate));
 });
 
 router.get('/:id', (req, res) => {
@@ -26,7 +38,7 @@ router.get('/:id', (req, res) => {
   const pmSchedules = db.prepare('SELECT id, title, frequency_type FROM pm_schedules WHERE haccp_ccp_id = ?').all(req.params.id);
   const instruments = db.prepare('SELECT id, name, type FROM calibration_instruments WHERE haccp_ccp_id = ?').all(req.params.id);
 
-  res.json({ ...ccp, equipment, pm_schedules: pmSchedules, instruments });
+  res.json({ ...annotate(ccp), equipment, pm_schedules: pmSchedules, instruments });
 });
 
 router.post('/', (req, res) => {
@@ -46,7 +58,7 @@ router.post('/', (req, res) => {
 
   const created = db.prepare('SELECT * FROM haccp_ccps WHERE id = ?').get(id);
   logAudit(req.user, 'create', 'haccp_ccp', id, { name }, null, created);
-  res.status(201).json(created);
+  res.status(201).json(annotate(created));
 });
 
 router.put('/:id', (req, res) => {
@@ -54,6 +66,14 @@ router.put('/:id', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM haccp_ccps WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'CCP not found' });
+
+  // A critical limit transcribed from the food safety plan is not edited here.
+  // 400 with the fields named, never a silent drop: a client that thinks it
+  // saved a new limit is worse than one told no.
+  const locked = guardCcpEdit(existing, req.body);
+  if (locked.length) {
+    return res.status(400).json({ error: PC_LOCK_MESSAGE, code: 'PC_OWNED', fields: locked });
+  }
 
   const fields = ['name', 'description', 'hazard_type', 'critical_limits', 'monitoring_procedure', 'monitoring_frequency', 'corrective_action', 'verification_procedure', 'record_keeping_requirements'];
   const updated = {};
@@ -67,7 +87,7 @@ router.put('/:id', (req, res) => {
 
   const result = db.prepare('SELECT * FROM haccp_ccps WHERE id = ?').get(req.params.id);
   logAudit(req.user, 'update', 'haccp_ccp', req.params.id, null, existing, result);
-  res.json(result);
+  res.json(annotate(result));
 });
 
 export default router;

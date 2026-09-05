@@ -1358,8 +1358,15 @@ function App() {
     return () => window.removeEventListener('app-change-password', handler);
   }, []);
 
+  const [deepSection, setDeepSection] = useState(null);
   useEffect(() => {
-    const handler = (e) => setActiveTab(e.detail?.tab || 'dashboard');
+    // `section` lets a module open a specific Settings pane (PM Schedules →
+    // Cleanup Review). Set before the tab so SettingsPanel mounts already
+    // knowing it — SettingsShell reads initialSection once, at mount.
+    const handler = (e) => {
+      if (e.detail?.section) setDeepSection(e.detail.section);
+      setActiveTab(e.detail?.tab || 'dashboard');
+    };
     window.addEventListener('app-navigate', handler);
     return () => window.removeEventListener('app-navigate', handler);
   }, []);
@@ -1389,7 +1396,6 @@ function App() {
   // effect wipes the query string, and a lazily-loaded module mounts after it
   // has run, so a module reading window.location.search would always find it
   // already gone.
-  const [deepSection, setDeepSection] = useState(null);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const tab = params.get('tab');

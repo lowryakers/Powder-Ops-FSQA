@@ -46,16 +46,17 @@ workstreams collide over.
 > exists on the Track B branch" — read that as "code exists, wired to nothing", which is the state it
 > actually describes.
 >
-> **The one thing still true from the old warning: `preventive-controls.js` is WIRED TO NOTHING.** Every
-> one of its eight exports has zero callers — `seedPreventiveControls` is never invoked, `ccpDrift` is
-> never run, and `haccp_ccps` is still empty. The transcription of the four controls has landed; the
-> seeder call and the `api/haccp.js` edit guard have not. That is exactly what OBL-02's `built` status
-> means, and `check:obligations` will not catch it — that check reconciles findings to obligations, not
-> claims to code. **Do not read "the four controls are transcribed" below as "the four controls are in
-> the database".**
+> **`preventive-controls.js` IS WIRED NOW (D-054, 2026-09-05).** `seedPreventiveControls` runs at boot after
+> the equipment seed, `haccp_ccps` holds the four controls from first boot, `PUT /haccp/:id` refuses a change
+> to any document-owned field with `400 PC_OWNED`, and `ccpDrift()` is read by the readiness review. The old
+> warning here was right for twelve days and is kept as history: `check:obligations` reconciles findings to
+> obligations, not claims to code, which is how `built` sat over a module with no callers. **What is still
+> open is the wording check against the PDF — OBL-33**, split out rather than marking OBL-02 done on the
+> strength of it. A correction goes in the source file, never the database (the seeder is insert-only).
 >
-> Obligations today: **22 open · 5 drafted · 3 landed · 1 built** of 31. Landed are OBL-01 (ATP grading),
-> OBL-08 (supplier register) and OBL-31 (annual vendor review raises work).
+> Obligations today: **23 open · 5 drafted · 5 landed** of 33. Landed are OBL-01 (ATP grading), OBL-02 (the
+> four controls seeded and guarded), OBL-08 (supplier register), OBL-31 (annual vendor review raises work)
+> and OBL-32 (the ATP task door).
 
 **Walked, and now in the repo** (`docs/v2/preventive-control-walk.md`). The first V2 project
 was a *document* project: Protocol 003 (Food Safety Plan V4) and Protocol 001 (Food Defense Plan V2)
@@ -71,9 +72,11 @@ and three of the four controls fire per production run), D-015 the open question
 verification is a fourth leg. The plan format question in D-014 is answered: it is a **21 CFR 117
 preventive-controls plan**, though the plant's own documents also say HACCP/CCP.
 
-**The four controls are TRANSCRIBED, never typed** (`server/preventive-controls.js`, D-022 — the file is
-on `main` but **NOTHING CALLS IT**; `haccp_ccps` is still empty) — a critical limit editable in a text box
-is what `scale-forms.js` has always refused. Verbatim from Protocol 003 V4, insert-only on the CCP name, `ccpDrift()` reports a stored row that
+**The four controls are TRANSCRIBED, never typed** (`server/preventive-controls.js`, D-022; seeded at boot
+and guarded since D-054) — a critical limit editable in a text box is what `scale-forms.js` has always
+refused. `guardCcpEdit()` closes the name and the seven owned fields on the four document-owned rows and
+nothing else; an app-created CCP is exactly as editable as before. The compliance bell's HACCP line reads
+amber for PC #1–#3 ("no equipment/instruments linked") on purpose — their records are on paper (D-021). Verbatim from Protocol 003 V4, insert-only on the CCP name, `ccpDrift()` reports a stored row that
 has wandered from the document.
 Wording is a faithful draft pending Document Control's check; corrections go in that file, never in the DB.
 **`server/atp-limits.js` grades the ATP reading against PC #1's 35 RLU — SHIPPED** (D-020, D-036; the
@@ -104,9 +107,9 @@ it leaves the record exactly as filed.
 New construction sits on the Track B branch; anything touching live shared code is written out exactly,
 with its verification results, to land on `main` in one pass. A file moves from `docs/v2/queued/` to
 `docs/v2/landed/` when it ships — leaving a landed item in `queued/` would make that directory mean two
-things, which is the defect the whole project is about. **Landed:** the ATP wiring (this one is genuinely
-on `main`). **Still designed-only:** the preventive-control seeder + its `api/haccp.js` edit guard, and the
-DCR for Document Control.
+things, which is the defect the whole project is about. **Landed:** the ATP wiring and the
+preventive-control seeder + its `api/haccp.js` edit guard. **Still designed-only:** the DCRs for Document
+Control.
 **`docs/v2/obligations.json` and `npm run check:obligations` are BUILT and in `npm run check`** — 31
 obligations, one list of what must be true before V2 ships, and the check fails if a finding is unclaimed,
 claimed twice, or cited but non-existent. **What it does NOT check is whether a claim matches the code** —
@@ -682,6 +685,16 @@ disagreeing about whether a task exists.
   losing the task.
 - The card shows `5× missed since <date>` in EN and ES. Completing a missed task works, so seeing it is
   actionable rather than just informational.
+
+## A paused schedule says what it left behind (D-012 → D-055)
+Pausing a PM schedule cascades nothing: the tasks it already raised stay open or missed, nobody completes
+them because the work is recorded elsewhere, and the floor sees the retirement as never having happened —
+the three Daily Scale PM cards overdue since the day the schedules were paused. `GET /pm/schedules` carries
+`open_work` (open, in progress, overdue AND missed), the pause response and audit entry carry the count left
+behind, and Recurring Schedules names paused schedules still carrying work with a one-click route to Cleanup
+Review for admins. **The client no longer counts for itself** — the old `status=open` fetch left every missed
+task out and could disagree with the server's figure. `app-navigate` now accepts `section` so a module can
+open one Settings pane. Verified: `verify:pmpause` (17, live + browser).
 
 ## Not every task has equipment (the "shows in Operator View but not Task Center" bug)
 `/pm/by-frequency`, `/pm/search`, `/pm/completed-history` and `/pm/clearance-pending` all did

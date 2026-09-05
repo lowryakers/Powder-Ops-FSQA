@@ -123,16 +123,12 @@ export default function PMSchedulesPanel() {
 
   // include_inactive_equipment so a schedule on a retired machine is still
   // findable — otherwise "my schedule vanished" has no explanation on screen.
+  // `open_work` comes with each schedule from the server — open, in progress,
+  // overdue AND missed. It used to be counted here from a separate, capped
+  // fetch of status=open, which left every missed task out of the number and
+  // could disagree with the figure the pause response gives back.
   const { data: schedules, refresh } = useApiGet('/pm/schedules?include_inactive_equipment=true');
-  const { data: openWork } = useApiGet('/pm/work-orders?status=open&limit=2000');
-
-  // How many live work orders each schedule is carrying, so pausing one says
-  // what it will and will not touch.
-  const openBySchedule = useMemo(() => {
-    const m = {};
-    for (const w of openWork || []) if (w.pm_schedule_id) m[w.pm_schedule_id] = (m[w.pm_schedule_id] || 0) + 1;
-    return m;
-  }, [openWork]);
+  const openWorkOf = (s) => Number(s.open_work) || 0;
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -148,10 +144,26 @@ export default function PMSchedulesPanel() {
 
   const paused = (schedules || []).filter(s => !s.is_active).length;
   const orphaned = (schedules || []).filter(s => s.is_active && !s.task_group).length;
+  // Pausing stops a schedule raising work and closes nothing (D-012). The work
+  // it already raised sits open or missed until somebody closes it, dragging
+  // completion down and filling the floor's Overdue bucket — which is the exact
+  // symptom the pause was meant to remove. Named here, where the pause was
+  // pressed, with the way out.
+  const leftovers = (schedules || []).filter(s => !s.is_active && openWorkOf(s) > 0);
+  const leftoverTasks = leftovers.reduce((n, s) => n + openWorkOf(s), 0);
+  const isAdmin = user?.role === 'admin';
+  const openCleanup = () => window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab: 'settings', section: 'cleanup' } }));
 
   const togglePause = async (s) => {
     setBusyId(s.id);
-    try { await apiPut(`/pm/schedules/${s.id}`, { is_active: !s.is_active }); refresh(); }
+    try {
+      const r = await apiPut(`/pm/schedules/${s.id}`, { is_active: !s.is_active });
+      const left = Number(r?.open_work) || 0;
+      if (s.is_active && left > 0) {
+        setRaised(`${s.title}: paused. ${left} task${left === 1 ? '' : 's'} it already raised ${left === 1 ? 'is' : 'are'} still open — pausing does not close them.`);
+      }
+      refresh();
+    }
     finally { setBusyId(null); }
   };
 
@@ -192,6 +204,25 @@ export default function PMSchedulesPanel() {
         <div className="bg-powder-50 border border-powder-200 rounded-xl p-3 flex items-start justify-between gap-3">
           <p className="text-sm text-powder-900">{raised}</p>
           <button type="button" onClick={() => setRaised('')} className="text-powder-700 shrink-0"><X size={14} /></button>
+        </div>
+      )}
+
+      {leftovers.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2" data-paused-leftovers>
+          <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+          <div className="text-sm text-amber-900 min-w-0">
+            <span className="font-semibold">
+              {leftovers.length} paused schedule{leftovers.length === 1 ? '' : 's'} still carr{leftovers.length === 1 ? 'ies' : 'y'} {leftoverTasks} open task{leftoverTasks === 1 ? '' : 's'}
+            </span>{' '}
+            raised before the pause. Pausing stops new work; it does not close what was already raised, and
+            nobody will complete it because the work is recorded elsewhere now.{' '}
+            {isAdmin
+              ? <button type="button" onClick={openCleanup} className="underline font-medium hover:text-amber-950" data-open-cleanup>Close them in Cleanup Review</button>
+              : <span>An admin closes them in Settings → Cleanup Review.</span>}
+            <span className="block text-[11px] text-amber-800 mt-1 truncate" title={leftovers.map(s => `${s.title} (${openWorkOf(s)})`).join(' · ')}>
+              {leftovers.slice(0, 4).map(s => `${s.title} (${openWorkOf(s)})`).join(' · ')}{leftovers.length > 4 ? ` · +${leftovers.length - 4} more` : ''}
+            </span>
+          </div>
         </div>
       )}
 
@@ -238,7 +269,9 @@ export default function PMSchedulesPanel() {
             fields={[
               { label: 'How often', value: freqLabel(s.frequency_type) },
               { label: 'Team', value: s.task_group || <span className="text-amber-700 font-medium">nobody</span> },
-              { label: 'Open now', value: String(openBySchedule[s.id] || 0) },
+              { label: 'Open now', value: !s.is_active && openWorkOf(s) > 0
+                ? <span className="text-amber-700 font-medium" title="Raised before the pause; still open">{openWorkOf(s)}</span>
+                : String(openWorkOf(s)) },
             ]}
             actions={canEdit ? <>
               <button type="button" onClick={() => setEditing(s.id)} className="text-xs font-medium text-powder-700 hover:underline">Edit</button>
@@ -292,7 +325,10 @@ export default function PMSchedulesPanel() {
                       ? <span className="text-gray-700">{s.task_group}</span>
                       : <span className="text-amber-700 font-medium">nobody</span>}
                   </td>
-                  <td className="py-2 px-3 tabular-nums text-gray-600">{openBySchedule[s.id] || 0}</td>
+                  <td className={`py-2 px-3 tabular-nums ${!s.is_active && openWorkOf(s) > 0 ? 'text-amber-700 font-medium' : 'text-gray-600'}`}
+                    title={!s.is_active && openWorkOf(s) > 0 ? 'Raised before the pause; still open' : undefined} data-open-work={s.id}>
+                    {openWorkOf(s)}
+                  </td>
                   <td className="py-2 px-3 text-right whitespace-nowrap">
                     {canEdit && (
                       <>

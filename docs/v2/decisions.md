@@ -1675,3 +1675,39 @@ until HR decides otherwise. The employer must still examine the originals in per
 the server refused the whole page in no-key mode. A blank is "nothing to store". Both runs of
 `verify:onboarding` stay for this reason.
 
+## D-054 · 2026-09-05 · decided — The four preventive controls are in the database, and the limit is closed to the text box
+
+OBL-02 lands: `seedPreventiveControls` runs at boot after the equipment seed, `PUT /haccp/:id` refuses a
+change to any field `preventive-controls.js` owns (and to the name, which is the seeder's identity key)
+with `400 PC_OWNED`, and the CCP editor locks those fields and says why. `ccpDrift()` is read by the
+readiness review, so a row that wanders from the document is a visible amber line rather than a silent
+one. The description stays open — it is where "the record for this control is on paper today" is written
+(D-021), which is a fact about the plant, not about the plan.
+
+**Landed ahead of the wording check, deliberately, and the check is its own obligation now (OBL-33).**
+The Pulse comparison on 5 September put Manage CCPs = "No CCPs defined yet" on the P0 list, and the
+honest empty state had been standing for twelve days waiting on a reading nobody had scheduled. The
+seeder is insert-only, so a wording correction costs one line in source plus one deleted row — cheaper
+than the empty state was costing. Splitting rather than marking OBL-02 done on the strength of the half
+that has not happened is the rule the register already has (the OBL-01 / OBL-27 split).
+
+**Expected side effect, stated so nobody rediscovers it:** the compliance bell's HACCP line checks every
+CCP for linked equipment and in-date instruments. PC #1–#3 link nothing, so the line reads amber with
+"no equipment/instruments linked" from the first boot after this. That is the truth — those controls'
+records are on paper — and it should stay amber until D-021's `where` question is answered, not be
+silenced by linking a machine for the sake of the colour.
+
+## D-055 · 2026-09-05 · decided — A paused schedule reports the work it left behind
+
+The small Track A change D-012 asked for. Pausing cascades nothing; the tasks a schedule raised before
+the pause stay open or missed, nobody completes them because the work is recorded elsewhere, and from
+the floor the retirement looks like it never happened. The 5 September comparison found exactly that:
+three Daily Scale PM cards overdue since 24 August, the day the schedules were paused.
+
+`GET /pm/schedules` now carries `open_work` per schedule (open, in progress, overdue AND missed — the
+old client-side count fetched `status=open` and left every missed task out), the pause response and its
+audit entry carry the count left behind, and Recurring Schedules names the paused schedules still
+carrying work with the way out (Cleanup Review, one click for an admin). **One owner for the number:**
+the client no longer counts for itself, so the strip, the row and the pause message cannot disagree.
+Pausing still closes nothing — closing is a decision with a reason (D-012), and the strip exists to make
+sure it gets taken rather than to take it.

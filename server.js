@@ -105,6 +105,7 @@ import { seedProducts } from './server/products-seed.js';
 import { seedFlavorCodes, seedBottleSpec, repairBaseFlavors } from './server/flavor-code-seed.js';
 import { seedProductShelf } from './server/product-shelf.js';
 import { seedSwabCounts } from './server/swab-stock.js';
+import { seedPreventiveControls } from './server/preventive-controls.js';
 import officeRoutes, { backfillInvoiceText } from './server/api/office.js';
 import { seedDilutionSchedules } from './server/dilution-seed.js';
 import { seedDilutionLog } from './server/dilution-log-seed.js';
@@ -1111,6 +1112,13 @@ try {
   seedEodTemplates(db);
   seedStructureLists(db);
   seedQualitySchedules(db);
+  // The four preventive controls, transcribed from Protocol 003 V4 (D-022,
+  // OBL-02). Insert-only on the CCP name. AFTER the equipment seed, which ran
+  // near the top of boot, so PC #4 has X-ray machines to link to.
+  try {
+    const pc = seedPreventiveControls(db, { uuid });
+    if (pc.missingEquipment.length) console.warn(`[seed] Preventive controls: no equipment matched ${pc.missingEquipment.join(', ')}`);
+  } catch (e) { console.warn('[seed] Could not seed preventive controls:', e.message); }
   seedPartnerAccounts(db);
   // The finished-goods catalogue. Insert-only and skipped entirely once the
   // table has rows, so a redeploy can never overwrite a corrected GTIN.

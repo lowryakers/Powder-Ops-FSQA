@@ -49,16 +49,20 @@
       "id": "OBL-02",
       "title": "Enter the four preventive controls into haccp_ccps and guard their limits",
       "bucket": "A",
-      "status": "built",
+      "status": "landed",
       "owner": "platform + Document Control (wording check)",
       "sources": [
         "WALK-03"
       ],
       "artifacts": [
         "server/preventive-controls.js",
-        "docs/v2/queued/preventive-controls-seed.md"
+        "server/api/haccp.js",
+        "server.js",
+        "scripts/check-preventive-controls.mjs",
+        "scripts/verify-preventive-controls.mjs",
+        "docs/v2/landed/preventive-controls-seed.md"
       ],
-      "note": "Transcription pending verification against the PDF by Lowry, Daniela and Carol. Seeder call and the api/haccp.js edit guard are queued for main."
+      "note": "Transcription pending verification against the PDF by Lowry, Daniela and Carol. LANDED 2026-09-05: seedPreventiveControls runs at boot after the equipment seed (insert-only on the CCP name; PC #4 linked to both X-ray machines); PUT /haccp/:id refuses a change to name or any document-owned field with 400 PC_OWNED; GET /haccp reports document_owned + owned_fields and the CCP editor locks them; readiness-review reports ccpDrift. 20 pure + 20 live/browser assertions. The wording check against the PDF is OBL-33 — split rather than marked done here (D-054)."
     },
     {
       "id": "OBL-03",
@@ -569,6 +573,19 @@
         "scripts/verify-atp-task-door.mjs"
       ],
       "note": "Split out of OBL-01 on 2026-09-02. server/api/pm.js has zero references to atp; OperatorView.jsx:774 captures readings.atp_reading with AtpLimitHint beside it, and the record filed from the completed task carries no atp_reading and no atp_limit. A 200 RLU swab on a Production Line Pre-Op files as whatever the visual answer was. An obligation half-discharged and marked done is worse than one still open. LANDED 2026-09-02: fileQaInspectionRecord grades with the same three lines as POST /sanitation, stores atp_reading + atp_limit, and the completion raises the re-clean after the transaction on the second consecutive failure. 20 assertions against a live server; removing the grade fails 6."
+    },
+    {
+      "id": "OBL-33",
+      "title": "Verify the transcribed wording of the four preventive controls against the Protocol 003 V4 PDF",
+      "bucket": "A",
+      "status": "open",
+      "owner": "Document Control (Daniela, Carol) + Lowry",
+      "sources": [],
+      "artifacts": [
+        "server/preventive-controls.js",
+        "docs/v2/landed/preventive-controls-seed.md"
+      ],
+      "note": "Split out of OBL-02 on 2026-09-05 when the seeder landed. The four rows in haccp_ccps are a faithful draft from the PDF text layer; three lines carry a sourceNote (PC #4 monitoring \"r- ray\" cell split, PC #3 frequency vs the Process Description, PC #2 capitalisation). Read them against the PDF. A correction goes in server/preventive-controls.js, never the database: the seeder is insert-only, so after a wording fix ccpDrift() names the stored row that differs and the readiness review turns amber until the row is re-seeded (delete the row; the next boot re-inserts it from the corrected source)."
     }
   ]
 }

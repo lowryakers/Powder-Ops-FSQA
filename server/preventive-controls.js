@@ -179,6 +179,36 @@ const OWNED = [
   'hazard_type', 'critical_limits', 'monitoring_procedure', 'monitoring_frequency',
   'corrective_action', 'verification_procedure', 'record_keeping_requirements',
 ];
+export const PC_OWNED_FIELDS = OWNED;
+
+const PC_NAMES = new Set(PREVENTIVE_CONTROLS.map(ccpName));
+
+/** Is this `haccp_ccps` row one of the four the document owns? Decided by the name, the seeder's key. */
+export const documentOwned = (row) => !!row && PC_NAMES.has(row.name);
+
+export const PC_LOCK_MESSAGE =
+  `This limit comes from ${PC_DOCUMENT} ${PC_REVISION}. Changing it is a Document Change Request; `
+  + `correct the transcription in server/preventive-controls.js, never the database.`;
+
+/**
+ * Which guarded fields an edit would change on a document-owned row.
+ *
+ * The same refusal `scale-forms.js` makes: a critical limit editable in a text
+ * box is the compliance decision editable in a text box. `name` is guarded too,
+ * for a different reason — it is the seeder's identity key, and a renamed row
+ * would be re-seeded beside itself on the next boot. `description` stays free.
+ * Returns [] for a row the document does not own, so an app-created CCP is
+ * exactly as editable as before.
+ */
+export function guardCcpEdit(existing, body = {}) {
+  if (!documentOwned(existing)) return [];
+  const changed = [];
+  for (const f of ['name', ...OWNED]) {
+    if (body[f] === undefined) continue;
+    if (String(body[f] ?? '') !== String(existing[f] ?? '')) changed.push(f);
+  }
+  return changed;
+}
 
 /**
  * Seed the four controls, and link PC #4 to the X-ray machines.

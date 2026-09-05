@@ -594,9 +594,16 @@ function CcpManager({ ccps, equipment, onClose, onChanged }) {
                 <p className="text-sm text-gray-500">No CCPs defined yet. Add each Critical Control Point from your HACCP plan, then link its monitoring equipment (Equipment form → HACCP CCP Link) and instruments (Calibration → instrument form).</p>
               )}
               {(ccps || []).map(c => (
-                <div key={c.id} className="border border-gray-200 rounded-lg px-4 py-3 flex items-start justify-between gap-3">
+                <div key={c.id} className="border border-gray-200 rounded-lg px-4 py-3 flex items-start justify-between gap-3" data-ccp={c.id}>
                   <div>
-                    <p className="text-sm font-semibold text-gray-900">{c.name}</p>
+                    <p className="text-sm font-semibold text-gray-900">
+                      {c.name}
+                      {c.document_owned && (
+                        <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold bg-powder-50 text-powder-700 border border-powder-200 align-middle" data-ccp-document>
+                          {c.document}
+                        </span>
+                      )}
+                    </p>
                     <p className="text-xs text-gray-500">{c.hazard_type || 'hazard not set'} · limits: {c.critical_limits || '—'}</p>
                     <p className="text-[11px] text-gray-400 mt-0.5">{linkedCount(c.id)} equipment linked</p>
                   </div>
@@ -611,18 +618,38 @@ function CcpManager({ ccps, equipment, onClose, onChanged }) {
           )}
           {editing && (
             <div className="space-y-3">
-              {CCP_FIELDS.map(([key, label, ph]) => (
-                <div key={key}>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">{label}</label>
-                  {['critical_limits', 'monitoring_procedure', 'corrective_action'].includes(key) || key.startsWith('verification') || key.startsWith('record') ? (
-                    <textarea value={form[key] || ''} onChange={e => setForm({ ...form, [key]: e.target.value })} rows={2}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder={ph} />
-                  ) : (
-                    <input value={form[key] || ''} onChange={e => setForm({ ...form, [key]: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder={ph} />
-                  )}
+              {editing.document_owned && (
+                <div className="bg-powder-50 border border-powder-200 rounded-lg px-3 py-2 text-xs text-powder-900" data-ccp-lock>
+                  <span className="font-semibold">Transcribed from {editing.document}.</span> The limit, monitoring,
+                  corrective action, verification and records are the plan&apos;s words and are not edited here — a
+                  change to any of them is a Document Change Request. Only the description is open.
                 </div>
-              ))}
+              )}
+              {CCP_FIELDS.map(([key, label, ph]) => {
+                // The server refuses these anyway (PC_OWNED); disabling them
+                // here is so the form says why before the save, not after.
+                const locked = !!editing.document_owned && (editing.owned_fields || []).includes(key);
+                const cls = `w-full px-3 py-2 border rounded-lg text-sm ${locked ? 'border-gray-200 bg-gray-50 text-gray-600' : 'border-gray-300'}`;
+                return (
+                  <div key={key}>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">{label}{locked && <span className="ml-1 text-[10px] font-normal text-gray-400">· from the plan</span>}</label>
+                    {['critical_limits', 'monitoring_procedure', 'corrective_action'].includes(key) || key.startsWith('verification') || key.startsWith('record') ? (
+                      <textarea value={form[key] || ''} onChange={e => setForm({ ...form, [key]: e.target.value })} rows={2}
+                        disabled={locked} className={cls} placeholder={ph} />
+                    ) : (
+                      <input value={form[key] || ''} onChange={e => setForm({ ...form, [key]: e.target.value })}
+                        disabled={locked} className={cls} placeholder={ph} />
+                    )}
+                  </div>
+                );
+              })}
+              {editing.document_owned && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
+                  <textarea value={form.description || ''} onChange={e => setForm({ ...form, description: e.target.value })} rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" data-ccp-description />
+                </div>
+              )}
               {error && <p className="text-sm text-red-600">{error}</p>}
               <div className="flex gap-2 justify-end">
                 <button onClick={() => setEditing(null)} className="px-4 py-2 text-gray-600 text-sm font-medium hover:bg-gray-100 rounded-lg">Cancel</button>
