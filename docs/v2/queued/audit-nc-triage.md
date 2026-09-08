@@ -352,3 +352,10 @@ attached today, per CAR:
 The PDFs are not committed here — the audit report pages are marked NSF Confidential and the instructions
 may be reproduced only with NSF's permission. They belong in ReadyDoc's Reference Library beside the
 audit guide already on file (`REF-NSF-GMP-AUDIT`).
+
+### The twelve responses, drafted
+
+`docs/v2/queued/car-responses-2026-09.md` (and the page beside it) holds a draft of every response in NSF's
+six parts, generated from `docs/v2/car-responses/responses.mjs` by `scripts/build-car-responses.mjs`. Each
+`[CAROL: …]` is a decision, date or fact only the plant can supply — 99 of them across the twelve — and the
+page keeps them in the copied text on purpose. Edit the data file; never the outputs.
