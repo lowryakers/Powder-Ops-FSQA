@@ -124,6 +124,21 @@ the seven `where: keychain` forms is producing anything yet. `where` in `form-re
 *produced today* with *intended destination*; for those seven the answers differ, and the first is what an
 auditor asks for. Small Track A fix, not yet made.
 
+## The NSF audit: official reports, and the two CAR deadlines (D-056)
+Audit 24–26 Aug 2026, auditor Sonya Hess, one visit, two audits: **GMP for Sport (4990682) 3 minor · NSF/ANSI
+455-2 (4990683) 9 minor · 0 major · 0 critical · 0 Not Acceptable.** The official reports arrived 4 September
+and **every finding's wording is identical to the drafts** — `docs/v2/queued/audit-nc-triage.md` is the
+triage and the per-CAR evidence table, `docs/audit-2026-08-findings.md` the short version, and
+`npm run check:ncstatus` fails if the status page claims work the code does not contain.
+- **The nine 455-2 CARs are due 18 September 2026; the three GMP for Sport CARs 4 October 2026.** Responses
+  go in through NSF Connect per CAR as root cause · corrective action · preventive action · responsible person
+  · completion date · evidence. A response claims only what exists and can be produced; **nothing is closed**.
+- **4.4.39 is the finding that names ReadyDoc**, and the auditor had read the executed Authentication and Access
+  Control Verification (V1, 8/24/26) when she wrote it. The controls are credited; the *validation package*
+  (scope, Part 11 gap assessment, protocols approved by Quality as validation, software change control) is
+  what does not exist. Do not answer it with more test scripts.
+- The PDFs are NOT in the repo (NSF Confidential); they belong in the Reference Library beside `REF-NSF-GMP-AUDIT`.
+
 ## Flavor approvals via SMS (Danny)
 `flavor_approval` QMS type + FlavorPanel ("Text for approval" row action) → magic link `/approve/<token>`
 (public, single-use, ApprovePage.jsx) → decision updates the record + announces in #batching.

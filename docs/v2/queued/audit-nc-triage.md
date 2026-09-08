@@ -1,6 +1,6 @@
 # NSF audit nonconformances — what technology solves, and what it cannot
 
-**Preliminary reports, audit 24–26 Aug 2026 · auditor Sonya Hess · triage drafted 27 Aug 2026**
+**Audit 24–26 Aug 2026 · auditor Sonya Hess · triage drafted 27 Aug 2026 from the preliminary reports · official reports received 4 Sep 2026 (wording unchanged — see the last section)**
 
 Two audits, one visit. **Zero critical, zero major, twelve minor.**
 
@@ -294,3 +294,61 @@ purchasing chase. No software can ask a supplier for a questionnaire.
 
 Not started. Tracked in `docs/v2/obligations.json`; a finding is marked closed here only when the
 corrective action is complete and its evidence can be produced on request.
+
+## Official reports — received 4 September, read 8 September 2026
+
+Three documents came through NSF Connect, plus NSF's *Instructions for Submitting Audit Corrective
+Actions* (two copies: Issue 1, March 2020 and Issue 2, July 2020 — use Issue 2, the content is the same):
+
+| Document | Audit | What it says |
+|---|---|---|
+| GMP Audit Report cover + report, dated 27 Aug, issued 4 Sep | 4990682 · GMP for Sport | Not Acceptable 0 · Critical 0 · Major 0 · **Minor 3**. PP-5, GP-15, GP-26 Acceptable; 6.2.1 Acceptable (no banned substances observed on the tour); 6.2.2, 6.2.3.1, 6.2.3.2 Minor NC. |
+| Corrective Action Report, 5 Sep | 4990682 | CARs **4990682-1, -2, -3** · all PENDING · **due 4 October 2026** |
+| Corrective Action Report, 5 Sep | 4990683 · NSF/ANSI 455-2 | CARs **4990683-1 … -9** · all PENDING · **submit due 18 September 2026** |
+
+**The 455-2 audit report itself was not among the files** — only its CAR report. The CAR report carries
+every finding in full, so nothing is missing for the response, but the report is the document an auditor
+asks to see next year; download it from NSF Connect and file it with the others.
+
+**Every finding's wording is identical to the draft.** Read side by side, clause by clause, nothing moved —
+so the twelve entries above, their buckets and their order stand. Two details the drafts did not carry:
+
+- **4.4.39 names the evidence the plant did produce.** *"Reviewed ReadyDoc Authentication and Access
+  Control Verification, V1, 8/24/26."* That is the executed verification report this repository renders
+  (`scripts/build-auth-verification-doc.mjs`), and the auditor read it and still wrote the finding — which
+  confirms the triage's reading exactly: the *controls* are credited, the *validation package* (scope,
+  Part 11 gap assessment, protocols named as such, approved by Quality) is what is missing.
+- **4.3.6 records the specification documents by number** — Doc #607-32/-01/-02/-41/-24 V1 of 7/9/26,
+  artwork #202825/#202829, finished-product specs #202530, #IM0036, #FG0906 of 8/21/26 — and the five raw
+  material lots and three finished lots reviewed. Those are the exact records to cite in the response.
+
+### The response, and what it may and may not claim
+
+NSF's instructions define a complete response: **root cause · corrective action · preventive action ·
+responsible person · completion date · evidence** — and they name the answers that get a response sent
+back: restating the finding as its own cause, *"unaware of the standard requirement"*, *"employee not
+following procedure"* without asking why, *"SOP will be updated"* with no specifics, *"Not applicable"*.
+A returned response is answered by **adding** a dated reply, never by overwriting the first.
+
+The rule this repository already lives by applies to the response word for word: **a response claims only
+what exists and can be produced on request.** Nothing on this list is closed. What can be truthfully
+attached today, per CAR:
+
+| CAR | Evidence that exists today | What the response is a plan for |
+|---|---|---|
+| 4990682-1 · §6.2.2 | The draft SOP in the registry, `SOP-DRAFT-BSC`, citing the four lists | Document Control issuing and approving it; training against it |
+| 4990682-2 · §6.2.3.1 | Quality Schedules as the mechanism (Tap Water, Air Testing run this way) | One annual schedule + its record |
+| 4990682-3 · §6.2.3.2 | FORM 204-01 refusing sign-off on a blank line | One added line on the checklist, via DCR |
+| 4990683-1 · 4.2.9 | SOP 401 V4 | Footwear control at the GMP boundary; a GMP observation record |
+| 4990683-2 · 4.3.1 | The supplier register: 75 suppliers, 938 documents, expiries read, annual review raising work | The three named questionnaires collected; 21 more chased |
+| 4990683-3 · 4.3.6 | The specifications the auditor listed by number; results auto-graded; a test with no spec records no pass | A release gate refusing a lot with no complete spec; the identity-method decision |
+| 4990683-4 · 4.3.9 | Controlled Changes parking a definition change until approved; the DCR register | Scope widened to process, software, utility, plant; QC approval on every change |
+| 4990683-5 · 4.4.39 | The Authentication and Access Control Verification V1 the auditor read; the signature service (21 CFR 11.200); the append-only audit trail | The Part 11 validation package: scope, gap assessment, executed protocols, approved by Quality |
+| 4990683-6 · 4.5.8 | SOP 421 V2; the equipment readiness checklist | IQ/OQ/PQ per machine, surfaced as readiness steps |
+| 4990683-7 · 4.5.43 | 413-1 template; SOP 413 V2; SOP 300 V2 | An approved MMR per formulation and batch size |
+| 4990683-8 · 4.5.84 | FORM 604-01 transcribed; six schedules seeded | Surface testing executed; a result record per swab |
+| 4990683-9 · 4.6.21 | Retention Samples holding the retains | A stability study, and each expiry linked to it |
+
+The PDFs are not committed here — the audit report pages are marked NSF Confidential and the instructions
+may be reproduced only with NSF's permission. They belong in ReadyDoc's Reference Library beside the
+audit guide already on file (`REF-NSF-GMP-AUDIT`).

@@ -1711,3 +1711,34 @@ carrying work with the way out (Cleanup Review, one click for an admin). **One o
 the client no longer counts for itself, so the strip, the row and the pause message cannot disagree.
 Pausing still closes nothing — closing is a decision with a reason (D-012), and the strip exists to make
 sure it gets taken rather than to take it.
+
+## D-056 · 2026-09-08 · decided — The official audit reports change nothing in the triage and everything in the calendar
+
+The official documents arrived through NSF Connect on 4 September: the GMP for Sport audit report
+(4990682: Not Acceptable 0, Critical 0, Major 0, Minor 3) and the Corrective Action Reports for both
+audits. **Every finding's wording is identical to the preliminary reports**, so the twelve-entry triage,
+its three buckets and its order stand as written. The 455-2 audit report itself has not been supplied;
+its CAR report carries the findings in full.
+
+**What is new is two dates.** The nine NSF/ANSI 455-2 CARs (4990683-1 … -9) are due **18 September
+2026**; the three GMP for Sport CARs (4990682-1 … -3) are due **4 October 2026**. The nearer date carries
+the larger set, and it is ten days from this entry.
+
+**The doctrine for the responses is the repository's own doctrine, restated for NSF Connect.** A
+response claims only what exists and can be produced on request; nothing is closed and no response says
+otherwise. Each answer is a plan with a named person and a date, in NSF's six parts (root cause,
+corrective action, preventive action, responsible person, completion date, evidence). NSF's instructions
+name the root causes that get a response returned — restating the finding, "unaware of the requirement",
+"employee did not follow procedure" — and the actions that do — "SOP will be updated", "Not applicable".
+A returned response is answered by adding a dated reply, never by overwriting the first; the same rule as
+a QMS record. Evidence is attached wherever it already exists (the supplier register for 4.3.1; the
+Authentication and Access Control Verification V1 the auditor read for 4.4.39; the specification documents
+the auditor listed by number for 4.3.6).
+
+**The auditor read the executed verification report and wrote 4.4.39 anyway.** That settles what the
+Part 11 package has to be: not more test scripts, but scope, a gap assessment against Part 11's
+controls, protocols named and approved by Quality as validation, and change control over the software
+(which is also 4.3.9). The evidence machinery exists; the document that calls it validation does not.
+
+The PDFs are not committed: the report pages are marked NSF Confidential and the instructions are
+reproducible only with NSF's permission. They go in the Reference Library beside `REF-NSF-GMP-AUDIT`.

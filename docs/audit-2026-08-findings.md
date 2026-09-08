@@ -1,8 +1,10 @@
 # NSF audits, 24–26 August 2026 — findings and where each one gets fixed
 
-Two audits, one visit (4163051), auditor Sonya Hess. Both preliminary reports are marked DRAFT and
-pending technical review; the final reports land in NSF Connect within ten business days and the
-wording may change.
+Two audits, one visit (4163051), auditor Sonya Hess. **Official reports received 4 September 2026
+(GMP for Sport audit report + both Corrective Action Reports); the wording of every finding is
+unchanged from the drafts.** CAR deadlines: **the nine 455-2 CARs (4990683-1 … -9) are due 18 September
+2026; the three GMP for Sport CARs (4990682-1 … -3) are due 4 October 2026.** Responses go in through
+NSF Connect per CAR. Detail and the per-CAR evidence table: `docs/v2/queued/audit-nc-triage.md`.
 
 - **306GMP** (audit 4990682, GMP for Sport) — 3 Minor
 - **455-2GMP** (audit 4990683, NSF/ANSI 455-2 Dietary Supplements) — 9 Minor
@@ -75,5 +77,9 @@ results not yet back. Worth carrying into the corrective action response.
 
 ## Source files
 
-Preliminary Nonconformance Summary Reports issued 27 August 2026. Not committed to this repository —
-they are NSF DRAFT documents pending technical review. Re-attach them if the detail is needed.
+Preliminary Nonconformance Summary Reports issued 27 August 2026; official GMP Audit Report (4990682,
+dated 27 Aug, issued 4 Sep) and Corrective Action Reports for 4990682 and 4990683 (5 Sep); NSF
+*Instructions for Submitting Audit Corrective Actions*, Issue 2 (July 2020). Not committed to this
+repository — the reports are marked NSF Confidential and the instructions may be reproduced only with
+NSF's permission. File them in ReadyDoc's Reference Library. The 455-2 audit report itself has not been
+supplied yet; only its CAR report has.
