@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { payActions } from './pay.js';
 import AdmZip from 'adm-zip';
 import { equipmentSetupGaps, EQUIPMENT_OWNERS, attentionRows, isDrillable } from '../attention-sources.js';
 import { getDb, logAudit } from '../db.js';
@@ -692,6 +693,16 @@ router.get('/notifications', (req, res) => {
         "SELECT COUNT(*) c FROM pay_review_assignments WHERE reviewer_id = ? AND status = 'open' AND (due_date IS NULL OR due_date >= ?)").get(req.user.id, today).c;
       if (overdue > 0) items.push({ id: 'pay-review-overdue', tab: 'pay-tracking', severity: 'warning', count: overdue, label: `${overdue} employee evaluation${overdue > 1 ? 's' : ''} past due` });
       if (upcoming > 0) items.push({ id: 'pay-review-open', tab: 'pay-tracking', severity: 'warning', count: upcoming, label: `${upcoming} employee evaluation${upcoming > 1 ? 's' : ''} assigned to you` });
+      // The office's own list — a decision to make, a reviewer to chase, a
+      // review to assign. Same function the screen and the reminder read, so
+      // the badge cannot clear while the list still has something on it.
+      if (req.user.role === 'admin') {
+        const { counts } = payActions(db);
+        if (counts.total > 0) {
+          items.push({ id: 'pay-actions', tab: 'pay-tracking', severity: counts.decide ? 'warning' : 'info', count: counts.total,
+            label: `${counts.total} pay review item${counts.total > 1 ? 's' : ''} waiting on you (${counts.decide} to decide · ${counts.chase} to chase · ${counts.assign} to assign)` });
+        }
+      }
     }
   } catch { /* table optional */ }
 

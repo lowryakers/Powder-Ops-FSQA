@@ -1742,3 +1742,27 @@ controls, protocols named and approved by Quality as validation, and change cont
 
 The PDFs are not committed: the report pages are marked NSF Confidential and the instructions are
 reproducible only with NSF's permission. They go in the Reference Library beside `REF-NSF-GMP-AUDIT`.
+
+## D-057 · 2026-09-09 · decided — A pay-review item leaves the office's list only when the act that clears it has happened
+
+Lowry's ask: the ReadyBot notes on Pay Tracking must not go away until he or Marnee has actually done
+something. The failure they were describing is real and specific: the office reminder listed overdue
+assignments and unassigned people, but **a submitted evaluation waiting on a rate decision was not in it at
+all** — the one item that is entirely the office's to act on could be read once in a DM and lost.
+
+`payActions(db)` in `api/pay.js` is the one list, derived on every read and stored nowhere: **decide** (an
+open review — cleared by applying a rate, which resolves the reviews, or by closing them as held flat with a
+reason), **chase** (an assignment past its date — cleared by the reviewer delivering or the assignment being
+cancelled) and **assign** (clock run out, nobody asked, nothing submitted — cleared by assigning, a review
+arriving, a rate, or marking reviewed). The screen strip, the every-third-day ReadyBot reminder and the
+admin's bell badge all read this function, so none can clear while another still shows something.
+
+**There is deliberately no dismiss.** "I saw it" is not an action, and a dismiss button is how a list
+like this stops meaning anything. If a genuine "not now" case appears (someone on leave), it becomes a
+recorded reason with a date, not a hide.
+
+Recipients are `pay_action_recipients` in `app_settings` when the plant has chosen, and otherwise every
+active admin plus the office, HR and admin departments — never nobody. Editable on the strip itself.
+
+Verified: `verify:payactions`, 31 assertions live and in the browser, relative to the seeded baseline (a
+fresh database already has people past the clock, which the first cut of the test wrongly called empty).

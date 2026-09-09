@@ -606,12 +606,14 @@ function PersonDrawer({ id, onClose, onChanged, tr }) {
 
 // Who owes a review, and by when. Assigning DMs the reviewer through ReadyBot
 // and pushes to their phone, so the ask exists somewhere other than a memory.
-function AssignmentsTab({ people, tr, onChanged }) {
+function AssignmentsTab({ people, tr, onChanged, preset = '' }) {
   const { data: rows, refresh } = useApiGet('/pay/assignments?status=all');
   // Supervisors and admins only — an operator never evaluates a colleague, and
   // the whole-roster list also offered ReadyBot.
   const { data: users } = useApiGet('/pay/reviewers');
-  const [form, setForm] = useState({ employee_id: '', reviewer_id: '', due_date: '', note: '' });
+  // `preset` is the person the action strip was clicked for; remounting on it
+  // (the key below) is what puts them in the box.
+  const [form, setForm] = useState({ employee_id: preset || '', reviewer_id: '', due_date: '', note: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -629,7 +631,7 @@ function AssignmentsTab({ people, tr, onChanged }) {
 
   const cancel = async (a) => {
     if (!window.confirm(tr('Cancel this assignment?'))) return;
-    try { await apiFetch(`/pay/assignments/${a.id}`, { method: 'DELETE' }); refresh(); }
+    try { await apiFetch(`/pay/assignments/${a.id}`, { method: 'DELETE' }); refresh(); onChanged?.(); }
     catch (e) { setError(e.message); }
   };
 
@@ -637,7 +639,7 @@ function AssignmentsTab({ people, tr, onChanged }) {
   const done = (rows || []).filter(r => r.status !== 'open');
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" data-assign-preset={preset || ''}>
       <div className="bg-white rounded-xl border border-gray-200 p-3 space-y-2">
         <p className="text-sm font-semibold text-gray-900">{tr('Assign an evaluation')}</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -908,12 +910,100 @@ const PAGE_STRINGS = [
   'Score', 'Performance', 'Increase', 'Cultural Score',
 ];
 
+/* ── What is waiting on the office ───────────────────────── */
+// Read from the server, never counted here: the same list the ReadyBot
+// reminder sends and the bell counts, so the three cannot disagree. An item
+// leaves this strip only when the act that clears it has happened — a rate
+// applied or reviews held flat, an evaluation assigned, an overdue review
+// delivered or its assignment cancelled. There is deliberately no dismiss.
+const KIND = {
+  decide: { label: 'Decide', tone: 'border-red-400 bg-red-50', chip: 'bg-red-100 text-red-800', what: 'Evaluation submitted — apply an increase or hold flat' },
+  chase: { label: 'Chase', tone: 'border-amber-400 bg-amber-50', chip: 'bg-amber-100 text-amber-800', what: 'Reviewer is past the date' },
+  assign: { label: 'Assign', tone: 'border-powder-300 bg-powder-50', chip: 'bg-powder-100 text-powder-800', what: 'Review clock has run out — nobody asked yet' },
+};
+function ActionQueue({ tick, tr, onDecide, onAssign, onChase }) {
+  const { data, refresh } = useApiGet('/pay/actions', [tick]);
+  const { data: reviewers } = useApiGet('/pay/reviewers');
+  const [editing, setEditing] = useState(false);
+  const [picked, setPicked] = useState(null);
+  const [err, setErr] = useState('');
+  if (!data) return null;
+  const items = data.items || [];
+  const saveRecipients = async () => {
+    setErr('');
+    try { await apiPut('/pay/action-recipients', { user_ids: picked || [] }); setEditing(false); refresh(); }
+    catch (e) { setErr(e.message); }
+  };
+  const names = (data.recipients || []).map(r => r.name).join(', ');
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-3 space-y-2" data-pay-actions={items.length}>
+      <div className="flex items-start justify-between gap-2 flex-wrap">
+        <div>
+          <p className="text-sm font-semibold text-gray-900">
+            {items.length ? tr(`${items.length} thing${items.length === 1 ? '' : 's'} waiting on you`) : tr('Nothing waiting on you')}
+          </p>
+          <p className="text-[11px] text-gray-500">
+            {tr('Each stays here until you act on it. ReadyBot repeats the same list every three days while anything is on it.')}
+          </p>
+        </div>
+        <div className="text-[11px] text-gray-500 text-right">
+          {tr('Reminders go to')}: <span className="text-gray-800">{names || '—'}</span>{' '}
+          <button type="button" onClick={() => { setPicked((data.recipients || []).map(r => r.id)); setEditing(e => !e); }}
+            className="underline hover:text-gray-900" data-edit-recipients>{editing ? tr('close') : tr('change')}</button>
+        </div>
+      </div>
+      {editing && (
+        <div className="border border-gray-200 rounded-lg p-2 space-y-1.5 bg-gray-50" data-recipients-editor>
+          <p className="text-[11px] text-gray-600">{tr('Who gets the reminder and the reminder push. Leave everyone unticked to use the default (admins plus the office, HR and admin departments).')}</p>
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            {(reviewers || []).map(u => (
+              <label key={u.id} className="inline-flex items-center gap-1.5 text-xs text-gray-800">
+                <input type="checkbox" checked={(picked || []).includes(u.id)}
+                  onChange={e => setPicked(p => e.target.checked ? [...(p || []), u.id] : (p || []).filter(x => x !== u.id))} />
+                {u.name}
+              </label>
+            ))}
+          </div>
+          {err && <p className="text-xs text-red-600">{err}</p>}
+          <button type="button" onClick={saveRecipients} className="px-3 py-1 bg-powder-600 text-white rounded-md text-xs font-semibold hover:bg-powder-700">{tr('Save')}</button>
+        </div>
+      )}
+      {items.length > 0 && (
+        <ul className="space-y-1.5">
+          {items.map(i => {
+            const k = KIND[i.kind];
+            const detail = i.kind === 'decide'
+              ? `${i.reviews} review${i.reviews === 1 ? '' : 's'} in (${i.reviewers}) · waiting ${i.waiting_days} day${i.waiting_days === 1 ? '' : 's'}`
+              : i.kind === 'chase'
+                ? `${i.reviewer_name || tr('reviewer')} was due ${fmtDate(i.due_date)} · ${i.overdue_days} day${i.overdue_days === 1 ? '' : 's'} over`
+                : `${i.days} ${tr('days since the last raise or review')}`;
+            const act = i.kind === 'decide' ? onDecide : i.kind === 'chase' ? onChase : onAssign;
+            const actLabel = i.kind === 'decide' ? tr('Open and decide') : i.kind === 'chase' ? tr('See assignment') : tr('Assign a reviewer');
+            return (
+              <li key={`${i.kind}-${i.employee_id}-${i.assignment_id || ''}`} className={`flex items-center gap-2 flex-wrap text-sm border-l-4 rounded-r-lg pl-2 pr-2 py-1.5 ${k.tone}`} data-action={i.kind}>
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${k.chip}`}>{tr(k.label)}</span>
+                <span className="font-medium text-gray-900">{i.employee_name}</span>
+                <span className="text-xs text-gray-600">{detail}</span>
+                <button type="button" onClick={() => act(i)} className="ml-auto text-xs font-semibold text-powder-700 hover:underline whitespace-nowrap">{actLabel}</button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export default function PayTrackingPanel() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
   const [tab, setTab] = useState(isAdmin ? 'roster' : 'evaluate');
   const [openId, setOpenId] = useState(null);
   const [adding, setAdding] = useState(false);
+  // The action strip refetches whenever anything here changes hands.
+  const [tick, setTick] = useState(0);
+  const bump = () => setTick(t => t + 1);
+  const [presetEmployee, setPresetEmployee] = useState('');
 
   const { data: roster, refresh: refreshRoster } = useApiGet(isAdmin ? '/pay/employees' : null);
   const { data: evaluatees, refresh: refreshEval } = useApiGet('/pay/evaluatees');
@@ -1000,6 +1090,13 @@ export default function PayTrackingPanel() {
         </div>
       </div>
 
+      {isAdmin && (
+        <ActionQueue tick={tick} tr={tr}
+          onDecide={i => setOpenId(i.employee_id)}
+          onAssign={i => { setPresetEmployee(i.employee_id); setTab('assign'); }}
+          onChase={() => setTab('assign')} />
+      )}
+
       {tab === 'roster' && isAdmin && (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
@@ -1041,11 +1138,12 @@ export default function PayTrackingPanel() {
       {tab === 'evaluate' && (
         <Evaluation people={evaluatees || []} canApply={isAdmin} isAdmin={isAdmin} tr={tr} lang={lang}
           assignments={openAssigned}
-          onRecorded={() => { refreshEval(); refreshRoster?.(); refreshAssign(); }} />
+          onRecorded={() => { refreshEval(); refreshRoster?.(); refreshAssign(); bump(); }} />
       )}
 
       {tab === 'assign' && isAdmin && (
-        <AssignmentsTab people={evaluatees || []} tr={tr} onChanged={refreshAssign} />
+        <AssignmentsTab key={presetEmployee || 'none'} people={evaluatees || []} tr={tr} preset={presetEmployee}
+          onChanged={() => { refreshAssign(); bump(); setPresetEmployee(''); }} />
       )}
 
       {tab === 'sync' && isAdmin && (
@@ -1101,7 +1199,7 @@ export default function PayTrackingPanel() {
       )}
 
       {openId && (
-        <PersonDrawer id={openId} tr={tr} onClose={() => setOpenId(null)} onChanged={refreshRoster} />
+        <PersonDrawer id={openId} tr={tr} onClose={() => { setOpenId(null); bump(); }} onChanged={() => { refreshRoster(); bump(); }} />
       )}
       {adding && (
         <AddPersonModal tr={tr} onClose={() => setAdding(false)} onAdded={() => { refreshRoster(); refreshEval(); }} />

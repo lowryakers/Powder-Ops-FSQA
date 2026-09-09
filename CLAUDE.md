@@ -4239,6 +4239,17 @@ it by role).
 - Verified: 20 assertions covering both visibility gates, the 404-not-403 rule, search scoping, the
   empty-publish and delete-published refusals, and extracted text never leaving the server.
 
+## Pay reviews: the office's list clears only when something was DONE (D-057)
+`payActions(db)` in `api/pay.js` is the one list of what waits on the office — **decide** (a submitted
+evaluation, cleared by applying a rate or holding flat with a reason), **chase** (an assignment past its date),
+**assign** (clock run out, nobody asked). Derived on every read; the Pay Tracking strip (`ActionQueue`), the
+every-third-day ReadyBot reminder and the admin bell badge (`pay-actions`) all read it, so none can disagree
+or go quiet early. **No dismiss, on purpose.** The old reminder omitted the `decide` kind entirely — the one item
+that is only the office's — which is the crack this closes. Recipients: `pay_action_recipients` in
+`app_settings`, default admins + office/HR/admin departments, editable on the strip (`PUT /pay/action-recipients`).
+`verify:payactions` (31, live + browser) is written **relative to the seeded baseline** — a fresh DB already
+seeds people past the clock, and asserting "empty" was the test's mistake, not the code's.
+
 ## Pay: who can review, and the roster's supervisor flag
 - **`GET /pay/reviewers`** is the picker: active `supervisor`/`admin` only, ReadyBot excluded. It used to
   be `/users/technicians` — the whole roster — which offered operators (who never evaluate anyone) and

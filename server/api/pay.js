@@ -704,6 +704,114 @@ async function dm(db, userId, body, push) {
   if (push) pushToUser(userId, push).catch(() => {});
 }
 
+/**
+ * Everything waiting on the OFFICE — derived on every read, never stored.
+ *
+ * Three kinds, and each stays on the list until the act that clears it has
+ * actually happened; there is no dismiss, because "I saw it" is not an action
+ * and a review that was seen and forgotten is exactly what this exists to stop:
+ *
+ *   decide — an evaluation has been submitted and nobody has decided. Clears
+ *            when a rate is applied (which resolves the open reviews) or the
+ *            reviews are closed as held flat with a reason.
+ *   assign — the review clock has run out and nobody has been asked to review
+ *            them. Clears when an assignment is made, a review is submitted, a
+ *            rate is applied, or the person is marked reviewed.
+ *   chase  — an assignment is past its date and the reviewer has not delivered.
+ *            Clears when the review is submitted or the assignment is cancelled.
+ *
+ * ONE OWNER: the endpoint, the ReadyBot reminder and the bell badge all read
+ * this, so they cannot disagree about what is outstanding.
+ */
+export function payActions(db) {
+  const now = today();
+  const items = [];
+  const roster = (() => { try { return withLinkedNames(db, db.prepare('SELECT * FROM pay_employees WHERE active = 1').all()); } catch { return []; } })();
+  const byId = new Map(roster.map(r => [r.id, r]));
+
+  // decide — open reviews, grouped per employee
+  const openReviews = (() => {
+    try {
+      return db.prepare(`SELECT employee_id, COUNT(*) AS n, MIN(review_date) AS oldest, MAX(review_date) AS newest,
+          ROUND(AVG(total), 1) AS avg_total, GROUP_CONCAT(reviewer_name, ' · ') AS reviewers
+        FROM pay_reviews WHERE status = 'open' GROUP BY employee_id`).all();
+    } catch { return []; }
+  })();
+  const decided = new Set();
+  for (const r of openReviews) {
+    const e = byId.get(r.employee_id); if (!e) continue;
+    decided.add(e.id);
+    items.push({ kind: 'decide', employee_id: e.id, employee_name: e.name, team: e.team,
+      reviews: r.n, oldest: r.oldest, newest: r.newest, avg_total: r.avg_total, reviewers: r.reviewers,
+      waiting_days: daysSince(r.oldest) });
+  }
+
+  // chase — open assignments past their date
+  const open = (() => {
+    try {
+      return withEmployeeFacts(db, db.prepare(`SELECT a.id, a.due_date, a.reviewer_id, a.employee_id, e.name AS employee_name, e.user_id, e.is_supervisor, e.team,
+          u.name AS reviewer_name
+        FROM pay_review_assignments a JOIN pay_employees e ON e.id = a.employee_id LEFT JOIN users u ON u.id = a.reviewer_id
+        WHERE a.status = 'open' ORDER BY a.due_date`).all());
+    } catch { return []; }
+  })();
+  const assigned = new Set(open.map(a => a.employee_id));
+  for (const a of open) {
+    if (!a.due_date || a.due_date >= now) continue;
+    items.push({ kind: 'chase', employee_id: a.employee_id, employee_name: a.employee_name, team: a.team,
+      assignment_id: a.id, reviewer_id: a.reviewer_id, reviewer_name: a.reviewer_name, due_date: a.due_date,
+      overdue_days: daysSince(a.due_date) });
+  }
+
+  // assign — clock run out, nobody asked, nothing submitted
+  for (const e of roster) {
+    const st = reviewState(e);
+    if (st.status !== 'due' || assigned.has(e.id) || decided.has(e.id)) continue;
+    items.push({ kind: 'assign', employee_id: e.id, employee_name: e.name, team: e.team, since: st.since, days: st.days,
+      is_supervisor: isSupervisorRow(db, e) ? 1 : 0 });
+  }
+
+  const order = { decide: 0, chase: 1, assign: 2 };
+  items.sort((a, b) => order[a.kind] - order[b.kind] || (b.waiting_days ?? b.overdue_days ?? b.days ?? 0) - (a.waiting_days ?? a.overdue_days ?? a.days ?? 0));
+  const counts = { decide: 0, chase: 0, assign: 0 };
+  for (const i of items) counts[i.kind]++;
+  return { items, counts: { ...counts, total: items.length }, as_of: now };
+}
+
+/**
+ * Who is reminded about the office list. `pay_action_recipients` in
+ * app_settings (a JSON array of user ids) when the plant has chosen; otherwise
+ * active admins plus the office / HR / admin departments — never nobody, since
+ * a reminder configured to reach no one is indistinguishable from a broken job.
+ */
+export function payActionRecipients(db) {
+  let ids = null;
+  try { ids = JSON.parse(db.prepare("SELECT value FROM app_settings WHERE key = 'pay_action_recipients'").get()?.value || 'null'); } catch { ids = null; }
+  const all = db.prepare("SELECT id, name, role, department FROM users WHERE is_active = 1 AND name != 'ReadyBot'").all();
+  if (Array.isArray(ids) && ids.length) {
+    const chosen = all.filter(u => ids.includes(u.id));
+    if (chosen.length) return { users: chosen, source: 'setting' };
+  }
+  return { users: all.filter(u => u.role === 'admin' || ['office', 'hr', 'admin'].includes(String(u.department || '').toLowerCase())), source: 'default' };
+}
+
+router.get('/actions', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const db = getDb();
+  const { users, source } = payActionRecipients(db);
+  res.json({ ...payActions(db), recipients: users.map(u => ({ id: u.id, name: u.name })), recipients_source: source });
+});
+
+router.put('/action-recipients', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const db = getDb();
+  const ids = Array.isArray(req.body?.user_ids) ? req.body.user_ids.map(String) : [];
+  db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('pay_action_recipients', ?, datetime('now'))").run(JSON.stringify(ids));
+  logAudit(req.user, 'update', 'pay_action_recipients', 'pay_action_recipients', { user_ids: ids }, null, null, 'Pay reminders');
+  const { users, source } = payActionRecipients(db);
+  res.json({ recipients: users.map(u => ({ id: u.id, name: u.name })), recipients_source: source });
+});
+
 export async function payReviewNudges(db) {
   const sent = { reviewers: 0, office: 0 };
   const now = today();
@@ -731,45 +839,40 @@ export async function payReviewNudges(db) {
     sent.reviewers++;
   }
 
-  // 2) The office picture.
-  const overdueAsks = open.filter(a => a.due_date < now);
-  let roster = [];
-  try { roster = db.prepare('SELECT * FROM pay_employees WHERE active = 1').all(); } catch { roster = []; }
-  let assigned = new Set();
-  try {
-    assigned = new Set(db.prepare("SELECT employee_id FROM pay_review_assignments WHERE status = 'open'").all().map(r => r.employee_id));
-  } catch { /* table optional */ }
-  // Due for a review and nobody has been asked — the gap that stalls a cycle.
-  const unassigned = roster
-    .map(r => ({ name: r.name, ...reviewState(r) }))
-    .filter(r => r.status === 'due' && !assigned.has(roster.find(x => x.name === r.name)?.id))
-    .sort((a, b) => (b.days || 0) - (a.days || 0));
+  // 2) The office picture — the SAME list the screen and the bell show, and it
+  //    keeps coming every third day until each item has been acted on. A
+  //    submitted evaluation waiting on a decision used to be missing from this
+  //    message entirely, which is how one could be seen once and forgotten.
+  const { items, counts } = payActions(db);
+  if (!items.length) return sent;
 
-  if (!overdueAsks.length && !unassigned.length) return sent;
-
-  const parts = ['💵 *Pay reviews — where things stand*'];
-  if (overdueAsks.length) {
-    parts.push(`*${overdueAsks.length} evaluation${overdueAsks.length === 1 ? '' : 's'} past the date:*`);
-    parts.push(...overdueAsks.slice(0, 8).map(a => `• ${a.employee_name} — due ${a.due_date}`));
-    if (overdueAsks.length > 8) parts.push(`  …and ${overdueAsks.length - 8} more`);
+  const parts = [`💵 *Pay reviews — ${counts.total} thing${counts.total === 1 ? '' : 's'} waiting on you*`];
+  const decide = items.filter(i => i.kind === 'decide');
+  const chase = items.filter(i => i.kind === 'chase');
+  const assign = items.filter(i => i.kind === 'assign');
+  if (decide.length) {
+    parts.push(`*${decide.length} evaluation${decide.length === 1 ? '' : 's'} submitted, awaiting your decision (apply an increase or hold flat):*`);
+    parts.push(...decide.slice(0, 8).map(i => `• ${i.employee_name} — ${i.reviews} review${i.reviews === 1 ? '' : 's'} in, waiting ${i.waiting_days} day${i.waiting_days === 1 ? '' : 's'}`));
+    if (decide.length > 8) parts.push(`  …and ${decide.length - 8} more`);
   }
-  if (unassigned.length) {
-    parts.push(`*${unassigned.length} due for review with nobody assigned:*`);
-    parts.push(...unassigned.slice(0, 8).map(r => `• ${r.name} — ${r.days} days since the last raise or review`));
-    if (unassigned.length > 8) parts.push(`  …and ${unassigned.length - 8} more`);
+  if (chase.length) {
+    parts.push(`*${chase.length} evaluation${chase.length === 1 ? '' : 's'} past the date the reviewer was given:*`);
+    parts.push(...chase.slice(0, 8).map(i => `• ${i.employee_name} — ${i.reviewer_name || 'reviewer'} was due ${i.due_date}`));
+    if (chase.length > 8) parts.push(`  …and ${chase.length - 8} more`);
   }
-  parts.push(`Assign them: ${readyDocOrigin()}/?tab=pay-tracking`);
+  if (assign.length) {
+    parts.push(`*${assign.length} due for review with nobody assigned:*`);
+    parts.push(...assign.slice(0, 8).map(i => `• ${i.employee_name} — ${i.days} days since the last raise or review`));
+    if (assign.length > 8) parts.push(`  …and ${assign.length - 8} more`);
+  }
+  parts.push(`These stay on the list until you act on them: ${readyDocOrigin()}/?tab=pay-tracking`);
   const body = parts.join('\n');
 
-  let office;
-  try {
-    office = db.prepare(`SELECT id, name FROM users WHERE is_active = 1 AND name != 'ReadyBot'
-      AND (role = 'admin' OR LOWER(department) IN ('office', 'hr'))`).all();
-  } catch { office = []; }
+  const { users: office } = payActionRecipients(db);
   for (const u of office) {
     await dm(db, u.id, body, {
-      title: 'Pay reviews need attention',
-      body: `${overdueAsks.length} overdue · ${unassigned.length} unassigned`,
+      title: `Pay reviews: ${counts.total} waiting on you`,
+      body: `${counts.decide} to decide · ${counts.chase} overdue · ${counts.assign} unassigned`,
       tag: 'pay-reviews-office', renotify: true, url: '/?tab=pay-tracking',
     });
     sent.office++;
