@@ -139,7 +139,9 @@ export const FORM_REGISTRY = [
   // ReadyDoc — the register should say what is true, not what is intended.
   { code: 'FORM 402', revision: 'V2', title: 'Quality Assurance Incoming Raw Materials, Labels and Component Sampling', where: 'paper', note: 'Master Index queries whether this is still in use.' },
   { code: 'FORM 403-01', revision: 'V1', title: 'Internal Audit Checklist', where: 'readydoc', match: { module: 'internal-audits' }, revisionFrom: 'checklist_revision' },
-  { code: 'FORM 404-1', revision: 'V2', title: 'Supplier Qualification Questionnaire', where: 'keychain' },
+  // Completed by the supplier on a signed link since 2026-09-09
+  // (server/supplier-questionnaire.js); the filed PDF carries its own stamp.
+  { code: 'FORM 404-1', revision: 'V2', title: 'Supplier Qualification Questionnaire', where: 'readydoc', match: { module: 'suppliers' }, note: 'Questionnaires before September 2026 are files in the supplier archive.' },
   { code: 'FORM 404-2', revision: 'V1', title: 'Raw Material Questionnaire Form', where: 'keychain' },
   { code: 'FORM 405-1', revision: 'V1', title: 'Product Release Form', where: 'keychain' },
   { code: 'FORM 405-02', revision: 'V1', title: 'Product Release Waiver (Pending Final QA Testing)', where: 'keychain' },

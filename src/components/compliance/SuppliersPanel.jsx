@@ -344,6 +344,72 @@ function AttachSupplierFiles({ supplierId, onDone }) {
   );
 }
 
+// FORM 404-1 on a signed link. The clear link exists in one response and is
+// shown once; sending again withdraws the previous link.
+function QuestionnaireLinks({ supplierId, list, form, canEdit, onChanged }) {
+  const [issued, setIssued] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [copied, setCopied] = useState(false);
+  const send = async (e) => {
+    stopRowClick(e);
+    const to = window.prompt('Who is this questionnaire going to? (email or name, kept on the record)');
+    if (to === null) return;
+    setBusy(true); setErr(''); setIssued(null);
+    try { const r = await apiPost(`/suppliers/${supplierId}/questionnaire/send`, { sent_to: to }); setIssued(r); onChanged?.(); }
+    catch (x) { setErr(x.message); } finally { setBusy(false); }
+  };
+  const revoke = async (e, q) => {
+    stopRowClick(e);
+    if (!window.confirm('Withdraw this link? The supplier will no longer be able to open it.')) return;
+    try { await apiPost(`/suppliers/questionnaires/${q.id}/revoke`, {}); onChanged?.(); } catch (x) { setErr(x.message); }
+  };
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(issued.link); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* the field is selectable */ }
+  };
+  const tone = { sent: 'text-slate-500', in_progress: 'text-amber-700', submitted: 'text-emerald-700', revoked: 'text-slate-400' };
+  const word = { sent: 'sent, not opened', in_progress: 'in progress', submitted: 'submitted', revoked: 'withdrawn' };
+  return (
+    <section className="md:col-span-2" data-questionnaires={list.length}>
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Questionnaire · {form.code} {form.revision}</h4>
+        {canEdit && (
+          <button type="button" onClick={send} disabled={busy}
+            className="inline-flex items-center gap-1.5 rounded bg-slate-800 px-3 py-1.5 text-sm text-white hover:bg-slate-700 disabled:opacity-50 dark:bg-slate-200 dark:text-slate-900" data-send-questionnaire>
+            {busy ? 'Creating link…' : 'Send questionnaire link'}
+          </button>
+        )}
+      </div>
+      {issued && (
+        <div className="mb-2 rounded border border-emerald-300 bg-emerald-50 p-2 text-sm dark:border-emerald-800 dark:bg-emerald-950/30" data-issued-link>
+          <p className="font-medium text-emerald-900 dark:text-emerald-200">Link created. Copy it now — it is shown once.</p>
+          <div className="mt-1 flex items-center gap-2">
+            <input readOnly value={issued.link} onFocus={e => e.target.select()} className="min-w-0 flex-1 rounded border border-emerald-300 bg-white px-2 py-1 text-xs font-mono dark:bg-slate-900" data-issued-url />
+            <button type="button" onClick={copy} className="rounded bg-emerald-700 px-2.5 py-1 text-xs font-semibold text-white">{copied ? 'Copied' : 'Copy'}</button>
+          </div>
+          <p className="mt-1 text-xs text-emerald-800 dark:text-emerald-300">Email it to the supplier. They complete and sign it on a phone or computer; the signed copy files here automatically.</p>
+        </div>
+      )}
+      {err && <p className="mb-1 text-xs text-rose-600">{err}</p>}
+      {list.length ? (
+        <ul className="space-y-1 text-sm">
+          {list.map(q => (
+            <li key={q.id} className="flex flex-wrap items-baseline gap-x-3" data-questionnaire={q.status}>
+              <span className={`font-medium ${tone[q.status] || ''}`}>{word[q.status] || q.status}</span>
+              <span className="text-xs text-slate-500">{q.sent_to ? `to ${q.sent_to} · ` : ''}sent {formatDate(q.sent_at)} by {q.sent_by}</span>
+              {q.status === 'in_progress' && <span className="text-xs text-slate-500">{q.answered} of {q.questions} answered</span>}
+              {q.status === 'submitted' && q.signature && <span className="text-xs text-slate-500">signed {q.signature.name}{q.signature.title ? `, ${q.signature.title}` : ''} · {formatDate(q.submitted_at)}</span>}
+              {canEdit && q.link_live && (
+                <button type="button" onClick={e => revoke(e, q)} className="text-xs text-slate-400 hover:text-rose-600">withdraw</button>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : <p className="text-sm text-slate-400">No link sent yet.</p>}
+    </section>
+  );
+}
+
 function SupplierDetail({ id, user, onDecide, onRemoved }) {
   const { data, loading, refresh } = useApiGet(`/suppliers/${id}`);
   if (loading || !data) return <div className="py-4 text-sm text-slate-500">Loading…</div>;
@@ -447,6 +513,9 @@ function SupplierDetail({ id, user, onDecide, onRemoved }) {
           </button>
         )}
       </section>
+
+      <QuestionnaireLinks supplierId={id} list={data.questionnaires || []} form={data.questionnaire_form || { code: 'FORM 404-1', revision: 'V2' }}
+        canEdit={data.can_edit} onChanged={refresh} />
 
       <section className="md:col-span-2">
         <div className="mb-1 flex flex-wrap items-center justify-between gap-2">

@@ -3201,6 +3201,27 @@ Who we buy from and whether they are qualified to sell it to us — SOP 404 V4, 
   real 836-path listing, paths only), plus `scripts/verify-suppliers.mjs` — **30 assertions executed
   against a live server on a fresh database**, importing the real files over HTTP.
 
+### FORM 404-1 on a signed link (`server/supplier-questionnaire.js`, D-058)
+A supplier opens `/supplier-form/<token>`, answers the plant's own questionnaire on a phone or a laptop,
+types their name under the form's statement and presses Submit; the signed PDF files itself against the
+supplier and the register stops saying "no questionnaire on file". Same token machinery as the NFP link
+(hash stored, clear text once, one live link per supplier, revocable, read-only once submitted).
+- **The 41 questions are TRANSCRIBED from FORM 404-1 V2, never edited here.** A wording change is a DCR.
+  The form's "For internal use only" block (risk evaluation, disposition) is deliberately NOT on the link
+  — the decision lives in the register under SOP 404 § V. **The form asks four risk questions, the SOP
+  lists seven**; that disagreement is Document Control's, and the code follows the SOP for the decision.
+- **The signature name must equal `completed_by`**, title and the attestation tick are required, and
+  `{name,title,at,ip,ua}` is stored. Submit is refused while anything is blank (`missingToSubmit`, the
+  same derived list the page shows).
+- **Answers are the file's `extracted_text`**, so a questionnaire is searchable like the archive; the
+  attachments the form asks for (`ATTACHMENT_KINDS`) file beside it against the same period.
+- Public router mounted at `/api/supplier-questionnaire` **ahead of** the guarded `/api/suppliers`
+  (`isPublicPath` prefix); sending is `canEdit` on the guarded router. The ReadyBot notice goes to
+  admins, QA supervisors and purchasing.
+- **Test users need a `module_access` map** (`{"suppliers":"edit"}`) or `requireModuleWrite` refuses every
+  GET — a NULL map is an empty account, and the first run of the verify fell over exactly there.
+- Verified: `verify:supplierq` (40, live + browser at 390px; in `verify:all`).
+
 ## Retention Samples (`server/api/retention.js` + `RetentionSamplesPanel.jsx`)
 The plant's physical library of what it made — a retain of every blend, intermediate and finished good, plus
 90 g of every raw material received. Transcribed from their own Retention Sample log. Nav entry in Quality;

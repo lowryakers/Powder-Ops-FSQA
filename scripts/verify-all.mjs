@@ -32,6 +32,7 @@ const RUNS = [
   ['verify-preventive-controls.mjs', 4976],
   ['verify-pm-pause.mjs', 4977],
   ['verify-pay-actions.mjs', 4978],
+  ['verify-supplier-questionnaire.mjs', 4979, {}, true],
   ['verify-shipping.mjs', 4969, {}, true],
   ['verify-warehouse-ui.mjs', 4970, {}, true],
   // With the key, so the encrypted path is the one exercised in the full run.

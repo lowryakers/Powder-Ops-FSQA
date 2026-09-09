@@ -1766,3 +1766,49 @@ active admin plus the office, HR and admin departments — never nobody. Editabl
 
 Verified: `verify:payactions`, 31 assertions live and in the browser, relative to the seeded baseline (a
 fresh database already has people past the clock, which the first cut of the test wrongly called empty).
+
+## D-058 · 2026-09-09 · decided — FORM 404-1 is completed and signed on a link, and the signed form files itself
+
+Lowry's ask: a URL any supplier can open to fill in, sign and submit the Supplier Qualification
+Questionnaire instead of receiving a Word file, printing it, signing it, scanning it and emailing it back
+— secure, simple, phone or desktop. The finding behind it is 4.3.1 (CAR 4990683-2): the questionnaire
+"was not available" for three suppliers, and the reason it was not available is the loop it had to go
+round. 22 actively used vendors never returned one.
+
+**The link is the plant's own form, word for word** (`server/supplier-questionnaire.js`, transcribed from
+FORM 404-1 V2 — 41 questions, the five header lines, the instruction naming Purchasing's address, the
+footer). Nothing was reworded and nothing was added; a question the plant did not put on the controlled
+form is a Document Change Request, the `receiving-checklist.js` rule. The form's "For internal use only"
+block — risk evaluation and quality disposition — is deliberately **not** on the link: that decision is
+taken in the register under SOP 404 § V, where the seven criteria and three dispositions already live,
+and a second copy of it on the questionnaire page is the two-owners defect. **Noted for Document Control:
+the form's internal block asks four risk questions where SOP 404 § V lists seven.** The module follows
+the SOP for the decision and the form for the questions; which document is right is theirs to say.
+
+**The mechanism is the NFP approval link, reused rather than reinvented.** A token issued once, stored as
+SHA-256, returned in clear once, one live link per supplier (sending again withdraws the previous one),
+revocable, single-use once submitted. The supplier needs no account. Answers save as they are tapped —
+this is filled in by someone who may be interrupted, on a phone — and validation belongs at submit, which
+is where it is: the still-needed list is derived on every read and the same list refuses the submission.
+
+**A signature is a typed name under the form's own statement, with title, time and address**, and the
+name must be the person the header says completed the form. An approval-style record with nobody's name
+on it is not a record; the same rule the onboarding W-4 and the NFP link follow.
+
+**Submitting files the record.** The signed answers render to a PDF stored against the supplier as a
+`questionnaire` document, the answers are its searchable text, the attachments the form asks for (audit
+report, organization chart, MMR and BPR examples, SOP table of contents) file beside it, this year's
+qualification period records the request and receipt dates, and Quality and Purchasing are told through
+ReadyBot. So the register's "no questionnaire on file" clears the moment the supplier presses Submit, and
+the supplier moves to "awaiting a disposition" — Quality's queue, which is where the finding always said
+the decision had to be made.
+
+**What this does not do:** it does not qualify anyone. The disposition is still a person's decision under
+§ V, and a returned questionnaire is evidence for it, never it (the D-nnn rule the register was built on).
+It also does not chase: the link is sent by a person, to a named recipient, and the every-third-day
+nudge already covers the follow-up.
+
+Verified: `verify:supplierq`, 40 assertions live and in a real browser at 390px — the register before
+and after, one live link, the 403 for a purchasing operator without the grant, every refusal on the public
+side, the stored PDF downloading through our own origin, the ReadyBot DM, the audit under the supplier's
+own name, and the office seeing the submission on the record.

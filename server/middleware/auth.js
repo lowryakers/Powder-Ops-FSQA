@@ -109,6 +109,11 @@ const PUBLIC_ROUTES = [
   // token is compared as a SHA-256 hash in the handler and cleared by the
   // decision, so the link is single-use. Read the panel, decide, done.
   { prefix: '/nfp-link/' },
+  // FORM 404-1 completed by a supplier on a signed link. The supplier has no
+  // account by definition; the token is compared as a SHA-256 hash in the
+  // handler and scoped to that one questionnaire — read it, save answers,
+  // attach documents, sign once. Nothing else in the register is reachable.
+  { prefix: '/supplier-questionnaire/' },
   // The auditor pass. Redeeming has to be public because the holder has no
   // session yet — that is the point of it. The token is compared as a SHA-256
   // hash in the handler and redeems into an ordinary read-only auditor session;

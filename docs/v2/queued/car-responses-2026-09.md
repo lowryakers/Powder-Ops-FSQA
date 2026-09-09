@@ -96,7 +96,7 @@ SOP 404 V4 requires a completed questionnaire (FORM 404-1) for each supplier. Ou
 ### Corrective action plan
 
 We requested questionnaires (FORM 404-1) from Mill Haven Foods, M4 Dynamic and Bay State Milling on [CAROL: date sent]. When each one comes back, Quality will complete the risk evaluation and approval decision required by SOP 404 section V and file the questionnaire with it. Target: all three received and approved by [CAROL: 31 October 2026].
-We have also replaced the spreadsheet with a supplier register in our ReadyDoc system (completed 1 September 2026). All 75 suppliers and the 938 documents from the folder are loaded. A supplier only shows as qualified when the actual documents are on file; nothing was carried over from the spreadsheet. The register currently shows 21 active suppliers with documents on file that still need a written approval decision, and 22 (including the three named) with no questionnaire on file. Both groups are being worked: approval decisions by [CAROL: 31 October 2026]; remaining questionnaires requested by [CAROL: date] and received by [CAROL: 30 November 2026].
+We have also replaced the spreadsheet with a supplier register in our ReadyDoc system (completed 1 September 2026). All 75 suppliers and the 938 documents from the folder are loaded. Since 9 September 2026 the questionnaire (FORM 404-1 V2) is sent to each supplier as a secure web link: the supplier completes it and signs it by typing their name, and the signed form files itself in the register the moment it is submitted, so the supplier no longer has to print, sign, scan and email a document back. A supplier only shows as qualified when the actual documents are on file; nothing was carried over from the spreadsheet. The register currently shows 21 active suppliers with documents on file that still need a written approval decision, and 22 (including the three named) with no questionnaire on file. Both groups are being worked: approval decisions by [CAROL: 31 October 2026]; remaining questionnaires requested by [CAROL: date] and received by [CAROL: 30 November 2026].
 
 ### Preventive action plan
 
@@ -115,7 +115,7 @@ Three named suppliers received and approved: [CAROL: 31 October 2026]. Approval 
 On file now:
 - SOP 404 V4
 - Supplier register report showing the three named suppliers flagged as missing a questionnaire, and the counts above
-- Copies of the questionnaire requests sent
+- Copies of the questionnaire requests sent (the signed-link record for each supplier shows who it was sent to and when)
 To be produced:
 - The three completed questionnaires
 - The three risk evaluations and approval decisions

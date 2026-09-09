@@ -290,6 +290,13 @@ today** (evidence already on file, now queued in-app with each supplier's docume
 and **21 with no questionnaire to decide against**. The second pile, and the three NSF named, are a
 purchasing chase. No software can ask a supplier for a questionnaire.
 
+**9 September:** the questionnaire itself is now a signed link (D-058). Purchasing sends
+`/supplier-form/<token>` from the supplier's record; the supplier answers FORM 404-1 V2 word for word on a
+phone or laptop with no account, signs by typing their name, and the signed PDF files itself against the
+supplier — the register moves them from "no questionnaire" to "awaiting a disposition" on submit. The
+print/sign/scan loop that kept 22 questionnaires from ever coming back is gone; the three named links still
+have to be sent by a person.
+
 ### The other eleven
 
 Not started. Tracked in `docs/v2/obligations.json`; a finding is marked closed here only when the

@@ -47,6 +47,14 @@ import { storageEnabled, putStream, presignGet, deleteObject, getObjectBuffer } 
 import { extractInvoiceText } from '../invoice-text.js';
 import { planArchiveUpload, storageKeyFor, normalizePath, archiveRoot, stripPrefix } from '../supplier-storage.js';
 import { classifyDocument, expiryFromFilename, readSupplierArchive } from '../supplier-archive.js';
+import { randomBytes, createHash } from 'crypto';
+import PDFDocument from 'pdfkit';
+import { putObject } from '../storage.js';
+import { readyDocOrigin } from '../links.js';
+import { postMessageAs, botDm } from './comms.js';
+import { pushToUser } from '../push.js';
+import { FORM as Q_FORM, HEADER as Q_HEADER, QUESTIONS as Q_QUESTIONS, ANSWERS as Q_ANSWERS, ANSWER_LABELS as Q_LABELS,
+  SIGNATURE as Q_SIGNATURE, ATTACHMENT_KINDS as Q_ATTACH, normalizeAnswers, missingToSubmit, answersAsText } from '../supplier-questionnaire.js';
 
 const router = Router();
 
@@ -157,7 +165,275 @@ router.get('/:id', (req, res) => {
       CASE WHEN expires_on IS NOT NULL AND expires_on < date('now') THEN 1 ELSE 0 END AS expired,
       CASE WHEN storage_key IS NOT NULL THEN 1 ELSE 0 END AS stored, text_status
       FROM supplier_files WHERE supplier_id = ? ORDER BY period_label DESC, kind, filename`).all(s.id),
+    questionnaires: questionnairesFor(db, s.id),
+    questionnaire_form: { code: Q_FORM.code, revision: Q_FORM.revision },
   });
+});
+
+// ── FORM 404-1 on a signed link ─────────────────────────────────────────────
+//
+// The questionnaire the finding named as "not available" was a Word document
+// emailed out, printed, signed, scanned and emailed back — or, for 22 active
+// vendors, never returned at all. The link is the same form, the supplier's
+// own words, completed on a phone or a laptop with no account, saved as they
+// go, signed once by typing their name, and filed against the supplier the
+// moment they press Submit. Same machinery as the nutrition-panel approval
+// and the onboarding wizard: a long random token stored only as a hash,
+// handed over exactly once, scoped to one record.
+
+const qHash = (t) => createHash('sha256').update(String(t)).digest('hex');
+const qShape = (q) => {
+  const { token_hash, answers, signature, ...rest } = q;
+  return { ...rest, link_live: !!token_hash && q.status !== 'submitted' && q.status !== 'revoked',
+    signature: signature ? JSON.parse(signature) : null, answered: Object.keys(JSON.parse(answers || '{}')).filter(k => /^q\d+$/.test(k)).length,
+    questions: Q_QUESTIONS.length };
+};
+function questionnairesFor(db, supplierId) {
+  try {
+    return db.prepare('SELECT * FROM supplier_questionnaires WHERE supplier_id = ? ORDER BY sent_at DESC, rowid DESC').all(supplierId).map(qShape);
+  } catch { return []; }
+}
+
+// Send: one live link per supplier. Sending again withdraws the previous one
+// rather than leaving two working copies of the same form in two inboxes.
+router.post('/:id/questionnaire/send', (req, res) => {
+  if (!canEdit(req.user)) return res.status(403).json({ error: 'Not permitted' });
+  const db = getDb();
+  const s = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(req.params.id);
+  if (!s) return res.status(404).json({ error: 'Not found' });
+  const sentTo = clean(req.body?.sent_to, 200);
+  const token = randomBytes(24).toString('base64url');
+  const id = uuid();
+  const year = String(new Date().getFullYear());
+  db.transaction(() => {
+    db.prepare(`UPDATE supplier_questionnaires SET status = 'revoked', token_hash = NULL, revoked_at = datetime('now'), revoked_by = ?, updated_at = datetime('now')
+      WHERE supplier_id = ? AND status IN ('sent','in_progress')`).run(req.user.name, s.id);
+    // The request is a fact on this year's qualification period, which is
+    // where "questionnaire requested / received" has always been recorded.
+    let q = db.prepare('SELECT id FROM supplier_qualifications WHERE supplier_id = ? AND period_label = ?').get(s.id, year);
+    if (!q) {
+      q = { id: uuid() };
+      db.prepare(`INSERT INTO supplier_qualifications (id, supplier_id, period_label, source) VALUES (?,?,?,'in_app')`).run(q.id, s.id, year);
+    }
+    db.prepare(`UPDATE supplier_qualifications SET questionnaire_requested_at = COALESCE(questionnaire_requested_at, date('now')), updated_at = datetime('now') WHERE id = ?`).run(q.id);
+    db.prepare(`INSERT INTO supplier_questionnaires (id, supplier_id, qualification_id, form_code, form_revision, token_hash, sent_to, sent_by)
+      VALUES (?,?,?,?,?,?,?,?)`).run(id, s.id, q.id, Q_FORM.code, Q_FORM.revision, qHash(token), sentTo, req.user.name);
+  })();
+  logAudit(req.user, 'supplier_questionnaire_sent', 'supplier', s.id, { questionnaire_id: id, sent_to: sentTo, form: `${Q_FORM.code} ${Q_FORM.revision}` }, null, null, s.name);
+  // The clear token exists in this response and nowhere else.
+  res.status(201).json({ ...qShape(db.prepare('SELECT * FROM supplier_questionnaires WHERE id = ?').get(id)),
+    link: `${readyDocOrigin()}/supplier-form/${token}` });
+});
+
+router.post('/questionnaires/:qid/revoke', (req, res) => {
+  if (!canEdit(req.user)) return res.status(403).json({ error: 'Not permitted' });
+  const db = getDb();
+  const q = db.prepare('SELECT * FROM supplier_questionnaires WHERE id = ?').get(req.params.qid);
+  if (!q) return res.status(404).json({ error: 'Not found' });
+  if (q.status === 'submitted') return res.status(409).json({ error: 'That questionnaire was submitted — it is a record now, not a link.' });
+  db.prepare(`UPDATE supplier_questionnaires SET status = 'revoked', token_hash = NULL, revoked_at = datetime('now'), revoked_by = ?, updated_at = datetime('now') WHERE id = ?`).run(req.user.name, q.id);
+  logAudit(req.user, 'supplier_questionnaire_revoked', 'supplier', q.supplier_id, { questionnaire_id: q.id }, null, null, null);
+  res.json({ ok: true });
+});
+
+/* ── The supplier's side: public, token-gated ──────────────────────────────── */
+
+export const questionnaireLinkRouter = Router();
+
+function qByToken(db, token) {
+  if (!token || token.length < 20) return null;
+  return db.prepare('SELECT * FROM supplier_questionnaires WHERE token_hash = ?').get(qHash(token));
+}
+const Q_GONE = (res) => res.status(404).json({ error: 'This questionnaire link is not valid or has been withdrawn. Please ask Powder Ops for a new one.' });
+
+function qFiles(db, q) {
+  return db.prepare(`SELECT id, kind, filename, size, created_at FROM supplier_files WHERE questionnaire_id = ? AND uploaded_by = 'supplier link' ORDER BY created_at`).all(q.id);
+}
+function qPublicView(db, q, supplier) {
+  const answers = JSON.parse(q.answers || '{}');
+  return {
+    form: { ...Q_FORM, header: Q_HEADER, questions: Q_QUESTIONS, answers: Q_ANSWERS, answer_labels: Q_LABELS, signature: Q_SIGNATURE, attachment_kinds: Q_ATTACH },
+    supplier_name: supplier?.name || null,
+    status: q.status,
+    answers,
+    files: qFiles(db, q),
+    missing: missingToSubmit(answers),
+    signature: q.signature ? JSON.parse(q.signature) : null,
+    submitted_at: q.submitted_at,
+    storage_enabled: storageEnabled(),
+  };
+}
+
+questionnaireLinkRouter.get('/:token', (req, res) => {
+  const db = getDb();
+  const q = qByToken(db, req.params.token);
+  if (!q || q.status === 'revoked') return Q_GONE(res);
+  if (!q.opened_at) db.prepare("UPDATE supplier_questionnaires SET opened_at = datetime('now') WHERE id = ?").run(q.id);
+  const supplier = db.prepare('SELECT id, name FROM suppliers WHERE id = ?').get(q.supplier_id);
+  res.json(qPublicView(db, q, supplier));
+});
+
+// Answers save as they are given — this is filled in between other things,
+// and a form that only saves at the end loses an afternoon to a closed tab.
+questionnaireLinkRouter.put('/:token', (req, res) => {
+  const db = getDb();
+  const q = qByToken(db, req.params.token);
+  if (!q || q.status === 'revoked') return Q_GONE(res);
+  if (q.status === 'submitted') return res.status(409).json({ error: 'This questionnaire was already submitted. Contact Powder Ops to correct anything.' });
+  const answers = normalizeAnswers(req.body?.answers || {}, JSON.parse(q.answers || '{}'));
+  db.prepare(`UPDATE supplier_questionnaires SET answers = ?, status = 'in_progress', updated_at = datetime('now') WHERE id = ?`).run(JSON.stringify(answers), q.id);
+  const supplier = db.prepare('SELECT id, name FROM suppliers WHERE id = ?').get(q.supplier_id);
+  res.json(qPublicView(db, db.prepare('SELECT * FROM supplier_questionnaires WHERE id = ?').get(q.id), supplier));
+});
+
+const qUpload = mediaUpload({ files: 10 }).array('files', 10);
+questionnaireLinkRouter.post('/:token/files', (req, res, next) => qUpload(req, res, (err) => err ? res.status(413).json({ error: uploadErrorMessage(err) }) : next()), async (req, res) => {
+  const files = req.files || [];
+  try {
+    const db = getDb();
+    const q = qByToken(db, req.params.token);
+    if (!q || q.status === 'revoked') return Q_GONE(res);
+    if (q.status === 'submitted') return res.status(409).json({ error: 'This questionnaire was already submitted.' });
+    if (!storageEnabled()) return res.status(503).json({ error: 'Attachments are not available right now — please email them to jake@powder-ops.com.' });
+    if (!files.length) return res.status(400).json({ error: 'No file received.' });
+    const kind = Q_ATTACH.some(k => k.key === req.body?.kind) ? req.body.kind : 'other';
+    const ins = db.prepare(`INSERT INTO supplier_files (id, supplier_id, qualification_id, questionnaire_id, kind, filename, storage_key, content_type, size,
+      extracted_text, text_status, source_path, uploaded_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+    for (const f of files) {
+      const id = uuid();
+      const type = f.mimetype || 'application/octet-stream';
+      const key = storageKeyFor(q.supplier_id, id, f.originalname);
+      await putStream(key, createReadStream(f.path), type);
+      const text = await extractInvoiceText(readFileSync(f.path), type, f.originalname).catch(() => null);
+      ins.run(id, q.supplier_id, q.qualification_id, q.id, kind, f.originalname, key, type, f.size,
+        text || null, text ? 'ok' : (text === null ? 'failed' : 'empty'), `questionnaire-link/${q.id}/${f.originalname}`, 'supplier link');
+    }
+    db.prepare("UPDATE supplier_questionnaires SET status = 'in_progress', updated_at = datetime('now') WHERE id = ? AND status = 'sent'").run(q.id);
+    const supplier = db.prepare('SELECT id, name FROM suppliers WHERE id = ?').get(q.supplier_id);
+    res.json(qPublicView(db, db.prepare('SELECT * FROM supplier_questionnaires WHERE id = ?').get(q.id), supplier));
+  } catch (e) {
+    res.status(400).json({ error: uploadErrorMessage(e) || e.message });
+  } finally { cleanupTemp(files); }
+});
+
+// Only what came in on this link, and only before it is submitted.
+questionnaireLinkRouter.delete('/:token/files/:fileId', (req, res) => {
+  const db = getDb();
+  const q = qByToken(db, req.params.token);
+  if (!q || q.status === 'revoked') return Q_GONE(res);
+  if (q.status === 'submitted') return res.status(409).json({ error: 'This questionnaire was already submitted.' });
+  const f = db.prepare("SELECT * FROM supplier_files WHERE id = ? AND questionnaire_id = ? AND uploaded_by = 'supplier link'").get(req.params.fileId, q.id);
+  if (!f) return res.status(404).json({ error: 'Not found' });
+  db.prepare('DELETE FROM supplier_files WHERE id = ?').run(f.id);
+  if (f.storage_key) deleteObject(f.storage_key).catch(() => {});
+  const supplier = db.prepare('SELECT id, name FROM suppliers WHERE id = ?').get(q.supplier_id);
+  res.json(qPublicView(db, q, supplier));
+});
+
+/** The signed questionnaire as a PDF — the document Quality files and an auditor opens. */
+function renderQuestionnairePdf({ supplier, answers, signature, files, submittedAt }) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'LETTER', margin: 54 });
+    const chunks = [];
+    doc.on('data', c => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+    try {
+      doc.font('Helvetica-Bold').fontSize(15).text(Q_FORM.title);
+      doc.font('Helvetica').fontSize(9).fillColor('#555').text(`${Q_FORM.code} Rev ${Q_FORM.revision} · Powder Ops LLC · completed electronically in ReadyDoc`).fillColor('#000');
+      doc.moveDown(0.4).fontSize(9).text(Q_FORM.instruction);
+      doc.moveDown(0.6).fontSize(10);
+      for (const h of Q_HEADER) doc.text(`${h.label} ${h.auto ? (submittedAt || '').slice(0, 10) : (answers[h.key] || '—')}`);
+      doc.moveDown(0.6);
+      Q_QUESTIONS.forEach((q, i) => {
+        const a = Q_LABELS[answers[q.key]] || '—';
+        doc.font('Helvetica').fontSize(9.5).text(`${i + 1}. ${q.text}`, { continued: true }).font('Helvetica-Bold').text(`  ${a}`);
+        const d = answers[`${q.key}_detail`];
+        if (d) doc.font('Helvetica-Oblique').fontSize(9).fillColor('#333').text(`   ${q.detail ? q.detail + ' ' : ''}${d}`).fillColor('#000');
+        doc.moveDown(0.15);
+      });
+      doc.moveDown(0.6).font('Helvetica-Bold').fontSize(10).text('Attachments');
+      doc.font('Helvetica').fontSize(9);
+      if (!files.length) doc.text('None attached.');
+      for (const f of files) doc.text(`• ${(Q_ATTACH.find(k => k.key === f.kind) || {}).label || f.kind}: ${f.filename}`);
+      doc.moveDown(0.8).font('Helvetica-Bold').fontSize(10).text('Signature');
+      doc.font('Helvetica').fontSize(10);
+      doc.text(`Questionnaire completed by: ${signature.name}`);
+      doc.text(`Title: ${signature.title || '—'}`);
+      doc.text(`Date: ${signature.at}`);
+      doc.fontSize(8).fillColor('#555').text(`Signed electronically by typing the name above. ${Q_SIGNATURE.meaning} Network address ${signature.ip || 'not recorded'}.`).fillColor('#000');
+      doc.moveDown(0.8).fontSize(8).fillColor('#777').text(`${Q_FORM.footer} · ${supplier.name}`);
+      doc.end();
+    } catch (e) { reject(e); }
+  });
+}
+
+async function tellQualityQuestionnaireArrived(db, supplier, q, signature) {
+  try {
+    const users = db.prepare(`SELECT id, name FROM users WHERE is_active = 1 AND name != 'ReadyBot'
+      AND (role = 'admin' OR (role = 'supervisor' AND LOWER(department) IN ('qa','quality')) OR LOWER(department) = 'purchasing')`).all();
+    const body = `📄 *Supplier questionnaire received* — *${supplier.name}* completed ${Q_FORM.code} ${Q_FORM.revision} on the link, signed by ${signature.name}${signature.title ? ` (${signature.title})` : ''}.\nIt is filed under the supplier's documents and the risk evaluation can be recorded: ${readyDocOrigin()}/?tab=suppliers`;
+    for (const u of users) {
+      try { const { bot, dm } = botDm(db, u.id); if (dm) await postMessageAs(db, dm, bot, body); } catch { /* best effort */ }
+      pushToUser(u.id, { title: 'Supplier questionnaire received', body: supplier.name, tag: `supplier-q-${q.id}`, url: '/?tab=suppliers' }).catch(() => {});
+    }
+  } catch (e) { console.warn('[suppliers] questionnaire notify failed:', e.message); }
+}
+
+// Submit: the name typed is the signature; the answers freeze; the PDF files.
+questionnaireLinkRouter.post('/:token/submit', async (req, res) => {
+  const db = getDb();
+  const q = qByToken(db, req.params.token);
+  if (!q || q.status === 'revoked') return Q_GONE(res);
+  if (q.status === 'submitted') return res.status(409).json({ error: 'This questionnaire was already submitted.' });
+  const answers = normalizeAnswers(req.body?.answers || {}, JSON.parse(q.answers || '{}'));
+  const missing = missingToSubmit(answers);
+  if (missing.length) return res.status(400).json({ error: 'Still needed before submitting: ' + missing.map(m => m.label).join(', '), missing });
+  const name = clean(req.body?.signed_name, 120);
+  const title = clean(req.body?.signed_title, 120);
+  if (!name || name.length < 2) return res.status(400).json({ error: 'Type your full name to sign.' });
+  if (name.toLowerCase() !== String(answers.completed_by || '').trim().toLowerCase()) {
+    return res.status(400).json({ error: `The signature must be the name of the person completing the questionnaire (${answers.completed_by}).` });
+  }
+  if (!title) return res.status(400).json({ error: 'Your title is part of the signature line.' });
+  if (!req.body?.attest) return res.status(400).json({ error: 'Tick the box to sign.' });
+
+  const at = new Date().toISOString();
+  const signature = { name, title, at, ip: req.ip || null, ua: String(req.get('user-agent') || '').slice(0, 200), meaning: Q_SIGNATURE.meaning };
+  const supplier = db.prepare('SELECT id, name FROM suppliers WHERE id = ?').get(q.supplier_id);
+  const attached = qFiles(db, q);
+
+  // The PDF is the questionnaire on record. Rendered before anything is
+  // written so a render failure leaves the link live rather than half-filed.
+  let pdf = null;
+  try { pdf = await renderQuestionnairePdf({ supplier, answers, signature, files: attached, submittedAt: at }); }
+  catch (e) { console.error('[suppliers] questionnaire pdf failed:', e.message); }
+  const fileId = uuid();
+  const filename = `${Q_FORM.code.replace(/\s+/g, '-')}-${Q_FORM.revision}-${supplier.name.replace(/[^\w.-]+/g, '_')}-${at.slice(0, 10)}.pdf`;
+  let key = null;
+  if (pdf && storageEnabled()) {
+    key = storageKeyFor(supplier.id, fileId, filename);
+    try { await putObject(key, pdf, 'application/pdf'); } catch (e) { console.warn('[suppliers] questionnaire pdf store failed:', e.message); key = null; }
+  }
+
+  db.transaction(() => {
+    db.prepare(`UPDATE supplier_questionnaires SET answers = ?, signature = ?, status = 'submitted', submitted_at = ?, file_id = ?, updated_at = datetime('now') WHERE id = ?`)
+      .run(JSON.stringify(answers), JSON.stringify(signature), at, fileId, q.id);
+    // Filed as the questionnaire itself, so the register's "questionnaire on
+    // file" reads it exactly as it reads one that arrived in the archive — and
+    // the answers are the searchable text, stored or not.
+    db.prepare(`INSERT INTO supplier_files (id, supplier_id, qualification_id, questionnaire_id, kind, period_label, filename, storage_key, content_type, size,
+      extracted_text, text_status, source_path, uploaded_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(fileId, supplier.id, q.qualification_id, q.id, 'questionnaire', at.slice(0, 4), filename, key, 'application/pdf', pdf ? pdf.length : null,
+        answersAsText(answers, signature), 'ok', `questionnaire-link/${q.id}/${filename}`, 'supplier link');
+    if (q.qualification_id) {
+      db.prepare(`UPDATE supplier_qualifications SET questionnaire_received_at = ?, updated_at = datetime('now') WHERE id = ?`).run(at.slice(0, 10), q.qualification_id);
+    }
+  })();
+  logAudit(`supplier-link:${name}`, 'supplier_questionnaire_submitted', 'supplier', supplier.id,
+    { questionnaire_id: q.id, form: `${Q_FORM.code} ${Q_FORM.revision}`, signed_by: name, title, pdf_stored: !!key, attachments: attached.length }, null, null, supplier.name);
+  tellQualityQuestionnaireArrived(db, supplier, q, signature).catch(() => {});
+  res.json({ ...qPublicView(db, db.prepare('SELECT * FROM supplier_questionnaires WHERE id = ?').get(q.id), supplier), pdf_stored: !!key });
 });
 
 // ── The import: analyze → commit, and analyze WRITES NOTHING ────────────────

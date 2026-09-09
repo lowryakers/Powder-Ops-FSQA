@@ -98,6 +98,7 @@ const ReimbursementsPanel = lazy(() => import('./components/office/Reimbursement
 const BankingPanel = lazy(() => import('./components/office/BankingPanel.jsx'));
 const QuickBooksPanel = lazy(() => import('./components/office/QuickBooksPanel.jsx'));
 const PartnerPortalPage = lazy(() => import('./components/office/PartnerPortalPage.jsx'));
+const SupplierQuestionnairePage = lazy(() => import('./components/SupplierQuestionnairePage.jsx'));
 
 const NAV_GROUPS = [
   {
@@ -1548,6 +1549,19 @@ function App() {
       <ModuleBoundary>
         <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center text-sm text-gray-400">Loading…</div>}>
           <OnboardingWelcomePage token={decodeURIComponent(path.split('/')[2] || '')} />
+        </Suspense>
+      </ModuleBoundary>
+    );
+  }
+
+  // A supplier completing FORM 404-1 — public and token-gated; the supplier has
+  // no account by definition. Same doctrine and the same place in the order as
+  // the partner portal.
+  if (path.startsWith('/supplier-form/')) {
+    return (
+      <ModuleBoundary>
+        <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center text-sm text-gray-400">Loading…</div>}>
+          <SupplierQuestionnairePage token={decodeURIComponent(path.split('/')[2] || '')} />
         </Suspense>
       </ModuleBoundary>
     );

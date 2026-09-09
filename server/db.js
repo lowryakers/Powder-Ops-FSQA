@@ -2123,6 +2123,35 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_supplier_files_expiry ON supplier_files(expires_on);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_supplier_files_path ON supplier_files(supplier_id, source_path);
 
+    -- FORM 404-1 completed on a signed link (supplier-questionnaire.js). One
+    -- row per link sent; the answers live here as they are saved, and on
+    -- submission the rendered PDF is filed into supplier_files as the
+    -- questionnaire on record. token_hash is a credential and never leaves.
+    CREATE TABLE IF NOT EXISTS supplier_questionnaires (
+      id TEXT PRIMARY KEY,
+      supplier_id TEXT NOT NULL,
+      qualification_id TEXT,
+      form_code TEXT NOT NULL,
+      form_revision TEXT NOT NULL,
+      token_hash TEXT,
+      status TEXT NOT NULL DEFAULT 'sent'
+        CHECK (status IN ('sent','in_progress','submitted','revoked')),
+      sent_to TEXT,
+      sent_by TEXT,
+      sent_at TEXT NOT NULL DEFAULT (datetime('now')),
+      opened_at TEXT,
+      answers TEXT NOT NULL DEFAULT '{}',
+      signature TEXT,
+      submitted_at TEXT,
+      file_id TEXT,
+      revoked_at TEXT,
+      revoked_by TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (supplier_id) REFERENCES suppliers(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_supplier_questionnaires ON supplier_questionnaires(supplier_id, status);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_supplier_questionnaires_token ON supplier_questionnaires(token_hash);
+
     -- Banking and reconciliation — the part of QuickBooks that actually costs
     -- accountant hours: matching what the bank says happened against what the
     -- ledgers say we did, and closing a month when the two agree.
@@ -2402,6 +2431,11 @@ function dropColumnIfPresent(table, column) {
 }
 
 function runMigrations() {
+  // A supplier's attachment filed from the questionnaire link points back at
+  // the link it came in on. supplier_files is created in the schema block that
+  // runs just before this, so the ALTER has a table to act on (the
+  // migration-ordering rule).
+  addColumnIfMissing('supplier_files', 'questionnaire_id', 'TEXT');
   // A receipt records that QA was told a lab sample was due, and who was told.
   // Stamped on the LINE rather than kept only in the audit log: "was anybody
   // asked to pull a sample off that pallet" is a question about the receipt,
