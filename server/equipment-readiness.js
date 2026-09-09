@@ -81,6 +81,11 @@ const FACT_LABEL = {
 const DEPENDS = {
   hygienic_design: ['machine', 'food_contact'],
   loto: ['machine'],
+  // A qualification protocol describes THIS installation of THIS model. A
+  // different machine standing in the same place is not qualified by it.
+  iq: ['machine'],
+  oq: ['machine'],
+  pq: ['machine'],
 };
 
 function parseBasis(raw) {
@@ -125,7 +130,45 @@ function movedSince(stepId, eq, recorded) {
 const OWNS = {
   hygienic_design: ['hygienic_design'],
   loto: ['loto'],
+  iq: ['iq'],
+  oq: ['oq'],
+  pq: ['pq'],
 };
+
+/* ── IQ / OQ / PQ (SOP 421 V2; CAR 4990683-6) ────────────────────────────────
+ *
+ * The finding was that no IQ/OQ/PQ document existed for any equipment. The
+ * qualification itself is engineering work; what the app can do is HOLD it
+ * and make "which machines are unqualified" a screen instead of an audit
+ * question. Each step is satisfied by an executed protocol ATTACHED to the
+ * machine (`equipment_files.kind` = iq / oq / pq) — a record, not a tick.
+ *
+ * Which machines need qualifying is SOP 421's criteria, and the SOP's list is
+ * Quality's to apply. The app asks for it on food-contact machines and on the
+ * instruments that measure (the finding named mixers and stick pack machines);
+ * a machine the SOP exempts is waived here with a reason and a name, and a
+ * machine outside the rule can still carry its protocols — they just are not
+ * owed. Nothing is auto-created: the protocol is written by a person.
+ */
+const QUALIFICATIONS = [
+  ['iq', 'Installation qualification (IQ) protocol',
+    'SOP 421: installed as specified — location, utilities, documents — recorded in an executed protocol approved by Quality.'],
+  ['oq', 'Operational qualification (OQ) protocol',
+    'SOP 421: operates across its ranges — controls, alarms, interlocks — recorded in an executed protocol approved by Quality.'],
+  ['pq', 'Performance qualification (PQ) protocol',
+    'SOP 421: performs with product under normal operating conditions, recorded in an executed protocol approved by Quality.'],
+];
+const needsQualification = (eq) => !isZone(eq) && (!!eq.is_food_contact || needsCalibration(eq));
+const qualificationSteps = QUALIFICATIONS.map(([id, label, why]) => ({
+  id, label, why, weight: 'required', link: { tab: 'equipment' },
+  applies: needsQualification,
+  check: (db, eq) => {
+    const f = db.prepare('SELECT filename FROM equipment_files WHERE equipment_id = ? AND kind = ? ORDER BY created_at DESC LIMIT 1').get(eq.id, id);
+    return f
+      ? { done: true, detail: `Protocol on file: ${f.filename}` }
+      : { done: false, detail: `No ${id.toUpperCase()} protocol attached — upload it under Manuals & documents as "${id.toUpperCase()} protocol"` };
+  },
+}));
 
 export function stampEquipmentReadiness(db, equipmentId, changedColumns = [], who = null) {
   let eq;
@@ -245,6 +288,7 @@ const STEPS = [
       };
     },
   },
+  ...qualificationSteps,
   {
     id: 'training_course',
     label: 'Training course',

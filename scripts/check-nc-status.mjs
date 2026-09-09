@@ -26,13 +26,14 @@ const EVIDENCE = {
   '4.2.9':   [['server/check-records.js', 'gmp_walkthroughs'], ['shared/check-forms.js', 'GMP_WALK_ITEMS']],
   '§6.2.3.1': [['server/check-records.js', 'banned_list_reviews']],
   '4.6.21':  [['server/stability.js', 'generateStabilityPullTasks'], ['server/api/stability.js', 'stability_justifications']],
+  '4.5.8':   [['server/equipment-readiness.js', 'Installation qualification'], ['server/api/equipment.js', 'QUALIFICATION_KINDS']],
+  '§6.2.3.2': [['server/receiving-checklist.js', 'banned_substance_check'], ['server/controlled.js', 'checklistBaseline'], ['docs/v2/queued/dcr-form-204-01-v2.md', '']],
 };
 
 // findings the document says are NOT started — assert the thing really is absent,
 // so work landing on main without the document being updated is caught.
 const ABSENT = {
   '4.5.43': [['server/db.js', /CREATE TABLE IF NOT EXISTS (master_manufacturing|mmr)/]],
-  '4.5.8':  [['server/equipment-readiness.js', /iq_oq_pq|Installation qualification/i]],
 };
 
 let pass = 0, fail = 0;

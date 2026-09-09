@@ -1958,3 +1958,37 @@ has a punch list.
 
 Verified: `verify:specgate`, 30 assertions live and in the browser, including all four doors refusing in
 enforcing mode and the same lot releasing with no gaps once an identity result is filed.
+
+## D-064 · 2026-09-09 · decided — Qualification is held as an attached protocol, and a form revision deploys parked
+
+Two findings closed at the "hold it" level, on two existing mechanisms rather than two new ones.
+
+**IQ/OQ/PQ (CAR 4990683-6, SOP 421 V2).** The qualification is engineering work the app cannot do. What it
+can do is make "which machines are unqualified" a screen: three more steps on the equipment setup checklist,
+each satisfied by an **executed protocol attached to the machine** under its own kind
+(`equipment_files.kind` = iq / oq / pq). A file is a record; a tick is not. The steps are owed by
+food-contact machines and by the instruments that measure — the SOP's criteria are Quality's to apply, so a
+machine the SOP exempts is **waived with a reason and a name** (the existing waiver), and a machine outside
+the rule can still carry its protocols. A protocol describes THIS installation of THIS model, so a changed
+model number makes the step **stale**, not done — the same dependency edge as LOTO. One protocol attached to
+a twin machine satisfies the twin, because attaching is the author saying it names both. Maintenance and
+Quality both get the gap on the bell; the readiness review rolls it up per machine.
+
+**FORM 204-01 V2 (CAR 4990682-3, NSF 306 §6.2.3.2).** One line on the receiving checklist gives the
+"document execution" the requirement asks for, and the checklist is deliberately not user-editable — so the
+line is a **code change that must not take effect by being deployed.** `controlled.js` already gates a
+changed definition behind Document Control, but only for a definition it had seen before: a NEW definition
+was recorded as its own baseline, silently, which would have issued V2 by deploying it. An entry may now
+declare a **`baseline()`** — what the plant's approved document actually says — and on first sight the
+engine records that as approved and parks the code as pending, raising the DCR. The receiving checklist is
+the first such entry: V2 ships, **V1 is served**, and every checklist stamps the revision in force
+(`CHECKLIST.revision`, never the constant). Document Control's approval in Controlled Changes puts the line
+in force with no restart; a NO on it escalates to Quality on the spot and the sign-off waits for that.
+The DCR draft for Daniela is `docs/v2/queued/dcr-form-204-01-v2.md`.
+
+Rejected: making the receiving checklist user-editable so Document Control could "just add the line". An
+editable checklist is a checklist whose questions nobody can prove; the whole value of the record is that
+the app asked exactly what the approved form asks.
+
+Verified: `verify:equipqual`, 28 assertions live and in the browser, including the fresh-database boot
+parking V2 with V1 in force and a checklist started before approval keeping its V1 stamp.

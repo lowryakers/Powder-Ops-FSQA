@@ -1594,6 +1594,28 @@ global drawing is how four forms silently started showing a placement nobody agr
 - `ScaleProcedureCard` reads `form.procedure` and falls back to the shared object; every read goes through
   `proc`, or the fallback is a decoration that never applies.
 
+## IQ/OQ/PQ on the setup checklist, and a form revision that deploys PARKED (D-064)
+- **Three more readiness steps** (`iq` / `oq` / `pq` in `equipment-readiness.js`), owed by food-contact
+  machines and measuring instruments, each done when an `equipment_files` row of that `kind` exists.
+  `FILE_KINDS` in `api/equipment.js` and `KINDS` in `EquipmentFiles.jsx` carry the three kinds; the upload
+  and the attach route call `stampEquipmentReadiness(db, id, [kind])` so the step records what it was true
+  against. `DEPENDS` gives them the `machine` edge: change the model and the step goes stale. Waivable (the
+  SOP's exemptions are Quality's call); LOTO stays the only unwaivable step. `EQUIPMENT_OWNERS` routes the
+  gap to maintenance and QA; the Equipment section of the readiness review rolls it up.
+- **`controlled.js` entries may declare `baseline()`.** On FIRST SIGHT of a definition whose baseline hash
+  differs from the code, the engine records the baseline as approved and parks the code as pending (DCR +
+  ReadyBot as usual). Without it a new definition is its own baseline — right for a form that has never
+  been under control, wrong for code deliberately ahead of the approved document. **The receiving
+  checklist is the worked example**: `CHECKLIST_REVISION = 'V2'`, `checklistBaseline()` returns V1 (the code
+  items minus `NEW_IN_V2`), `applyChecklistSnapshot()` splices the approved items into `CHECKLIST_SECTIONS`
+  in place and sets `CHECKLIST.revision`. **Stamp `CHECKLIST.revision`, never the constant** — the record
+  must say which questions it was asked. `diffSnapshots` diffs `items` per key like `fields`, so the panel
+  reads "added: item banned_substance_check". Scope label `checklist` in `ControlledChangesPanel`.
+- **Once Document Control approves V2 and the next revision is written, move `PREVIOUS_REVISION` and
+  `NEW_IN_V2` along** — `baseline()` only matters for databases that have never seen the definition; an
+  existing database goes through the ordinary changed-definition path.
+- Verified: `verify:equipqual` (28, port 4986, needs the S3 stand-in; in `verify:all`).
+
 ## The specification release gate (`shared/spec-coverage.js`, D-063)
 CAR 4990683-3. A COA request whose tests all pass is not yet a released lot: the item's ACTIVE specs must
 cover **identity, purity, strength, composition and contaminants**, and the lot must carry an identity result

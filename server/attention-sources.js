@@ -25,6 +25,11 @@ export const EQUIPMENT_OWNERS = {
   calibration: { depts: ['qa'], label: (n) => `${n} measuring device${n > 1 ? 's' : ''} not set up for calibration` },
   training_course: { depts: ['document_control', 'qa'], label: (n) => `${n} machine${n > 1 ? 's' : ''} with no training course` },
   work_instruction: { depts: ['document_control'], label: (n) => `${n} machine${n > 1 ? 's' : ''} with no work instruction linked` },
+  // SOP 421 qualification (CAR 4990683-6): Maintenance executes the protocol,
+  // Quality approves it — both are told.
+  iq: { depts: ['maintenance', 'qa'], label: (n) => `${n} machine${n > 1 ? 's' : ''} with no installation qualification (IQ) protocol on file` },
+  oq: { depts: ['maintenance', 'qa'], label: (n) => `${n} machine${n > 1 ? 's' : ''} with no operational qualification (OQ) protocol on file` },
+  pq: { depts: ['maintenance', 'qa'], label: (n) => `${n} machine${n > 1 ? 's' : ''} with no performance qualification (PQ) protocol on file` },
 };
 
 /**

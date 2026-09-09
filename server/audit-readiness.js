@@ -19,6 +19,7 @@
 import { EMP_COVERAGE } from './emp-site-list.js';
 import { ccpDrift, PREVENTIVE_CONTROLS, PC_DOCUMENT, PC_REVISION } from './preventive-controls.js';
 import { specCoverage, GATE_MODES } from '../shared/spec-coverage.js';
+import { equipmentReadiness } from './equipment-readiness.js';
 
 const item = (label, status, detail, tab) => ({ label, status, detail, tab });
 
@@ -360,8 +361,23 @@ export function readinessReview(db) {
     const noSchedule = n(`SELECT COUNT(*) c FROM equipment e
       WHERE e.status = 'active' AND COALESCE(e.asset_kind, 'machine') = 'machine'
         AND NOT EXISTS (SELECT 1 FROM pm_schedules ps WHERE ps.equipment_id = e.id AND ps.is_active = 1)`);
-    return [item(`${noSchedule} active machines generate no PM work`, noSchedule ? 'warning' : 'good',
+    const items = [item(`${noSchedule} active machines generate no PM work`, noSchedule ? 'warning' : 'good',
       noSchedule ? 'Written tasks with nothing generating them — use "Create schedules from these tasks".' : null, 'equipment')];
+    // IQ/OQ/PQ (SOP 421, CAR 4990683-6): the same per-machine steps the setup
+    // checklist derives, rolled up. A machine is qualified when all three
+    // protocols are on file; a waived step is not owed and not counted.
+    let owed = 0, qualified = 0, partial = 0;
+    for (const eq of db.prepare("SELECT * FROM equipment WHERE status = 'active' LIMIT 500").all()) {
+      const steps = equipmentReadiness(db, eq).steps.filter(s => ['iq', 'oq', 'pq'].includes(s.id) && !s.waived);
+      if (!steps.length) continue;
+      owed++;
+      const done = steps.filter(s => s.done).length;
+      if (done === steps.length) qualified++; else if (done) partial++;
+    }
+    items.push(item(owed ? `${qualified} of ${owed} machines needing qualification have IQ, OQ and PQ protocols on file${partial ? ` (${partial} partly)` : ''}` : 'No machine owes an IQ/OQ/PQ under the current rule',
+      !owed || qualified === owed ? 'good' : qualified || partial ? 'warning' : 'critical',
+      qualified === owed ? null : 'SOP 421 V2: attach each executed protocol to its machine under Manuals & documents; a machine the SOP exempts is waived on its checklist with a reason.', 'equipment'));
+    return items;
   });
 
   // ── QA backlog ────────────────────────────────────────────────────────────

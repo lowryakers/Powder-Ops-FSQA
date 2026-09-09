@@ -12,6 +12,7 @@ import { ShieldCheck, Clock, Check, X, AlertTriangle, FileText } from 'lucide-re
 const SCOPE_LABEL = {
   qms_form: 'Form definition',
   acceptance: 'Acceptance criteria',
+  checklist: 'Checklist questions',
 };
 
 const KIND_TONE = {

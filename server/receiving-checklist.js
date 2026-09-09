@@ -24,7 +24,14 @@
 // approval covering all of them.
 
 export const CHECKLIST_FORM_CODE = 'FORM 204-01';
-export const CHECKLIST_REVISION = 'V1';
+// V2 adds ONE line — the banned/prohibited substance check (NSF 306 §6.2.3.2,
+// CAR 4990682-3). The code carries V2; `controlled.js` serves V1 until
+// Document Control approves the revision (see checklistBaseline below), and
+// every filed checklist is stamped with the revision that was in force
+// (`CHECKLIST.revision`, never this constant) when it was started.
+export const CHECKLIST_REVISION = 'V2';
+export const PREVIOUS_REVISION = 'V1';
+const NEW_IN_V2 = ['banned_substance_check'];
 export const CHECKLIST_TITLE = 'Receiving Inspection Checklist';
 
 // Who an escalation reaches. Resolved to real accounts at send time by
@@ -56,6 +63,14 @@ export const NOTIFY_TARGETS = {
     names: ['Adam', 'Maria'],
     fallbackDepartments: ['qa'],
     subject: 'Lab sample due on a receipt',
+  },
+  // §6.2.3.2: a material that may be on a banned/prohibited list is a hold, not
+  // an inspection — a different subject on the phone from "damaged pallet".
+  qa_banned: {
+    label: 'Adam and Maria',
+    names: ['Adam', 'Maria'],
+    fallbackDepartments: ['qa'],
+    subject: 'Receipt on hold: banned/prohibited substance check',
   },
   purchasing: {
     label: 'Jake (Purchasing)',
@@ -129,6 +144,14 @@ export const CHECKLIST_SECTIONS = [
         key: 'contains_allergen',
         text: 'Does product contain an allergen? (wheat, soy, dairy, nuts, or peanuts)',
         note: 'If YES, print placards and/or Warehouse ID tags, label item with name and allergen',
+      },
+      // NEW IN V2 (NSF 306 §6.2.3.2, CAR 4990682-3). Wording as proposed in the
+      // DCR draft (docs/v2/queued/dcr-form-204-01-v2.md); Document Control's
+      // correction, if any, goes here before approval.
+      {
+        key: 'banned_substance_check',
+        text: 'Material checked against the Banned/Prohibited Substance lists (NSF 306 Annex C, NFL/NFLPA, MLB, WADA)',
+        notify: N('qa_banned', 'no', 'If NO, place on hold and notify Quality'),
       },
     ],
   },
@@ -213,6 +236,29 @@ export function normalizeAnswers(input = {}) {
 /** Unanswered items, in print order. Sign-off is refused while any remain. */
 export function unanswered(answers = {}) {
   return allItems().filter(i => !answers[i.key]).map(i => ({ key: i.key, text: i.text, section: i.section_title }));
+}
+
+// ── Under change control ─────────────────────────────────────────────────────
+// The questions are a controlled definition (scope 'checklist' in controlled.js).
+// `checklistSnapshot()` is what the CODE says; `checklistBaseline()` is the
+// revision the plant's approved document actually carries today (V1), which a
+// database that has never seen this definition records as its baseline — so the
+// V2 line parks for Document Control instead of taking effect on deploy.
+// `applyChecklistSnapshot()` puts an approved snapshot back over the live
+// sections in place, so allItems(), unanswered(), triggeredEscalations() and the
+// served form all follow it with no further wiring.
+const itemsOf = (sections) => sections.flatMap(s => s.items.map(i => ({ section: s.key, ...i })));
+// Frozen at module load — before controlled.js can have applied anything.
+const CODE_ITEMS = Object.freeze(JSON.parse(JSON.stringify(itemsOf(CHECKLIST_SECTIONS))));
+export function checklistSnapshot() { return { revision: CHECKLIST_REVISION, items: CODE_ITEMS }; }
+export function checklistBaseline() { return { revision: PREVIOUS_REVISION, items: CODE_ITEMS.filter(i => !NEW_IN_V2.includes(i.key)) }; }
+export function applyChecklistSnapshot(snap) {
+  if (!snap || !Array.isArray(snap.items)) return;
+  for (const section of CHECKLIST_SECTIONS) {
+    const items = snap.items.filter(i => i.section === section.key).map(i => { const c = { ...i }; delete c.section; return c; });
+    section.items.splice(0, section.items.length, ...items);
+  }
+  if (typeof snap.revision === 'string') CHECKLIST.revision = snap.revision;
 }
 
 export const CHECKLIST = {

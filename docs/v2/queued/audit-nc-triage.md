@@ -78,6 +78,12 @@ this with a dated, signed record per arrival, and the escalation machinery alrea
 That is a small, contained change to `server/receiving-checklist.js`, and it is a **Document Change
 Request first**: the checklist is not user-editable by design.
 
+**Update 9 September (D-064): built and deployed PARKED.** The line exists in the code as FORM 204-01 V2;
+`controlled.js` recorded V1 as the approved revision on first sight and is serving V1 until Document Control
+approves V2 in Controlled Changes (the DCR was raised automatically; the draft for Daniela is
+`docs/v2/queued/dcr-form-204-01-v2.md`). On approval a NO escalates to Quality on the spot and sign-off
+waits for it.
+
 ---
 
 ## NSF/ANSI 455-2 — 9 minor
@@ -166,6 +172,10 @@ Performing the qualification is engineering work (**C**). Holding it is **B** an
 LOTO, hygienic design verification, course, work instruction. **Adding IQ/OQ/PQ as three more derived
 steps, each satisfied by an attached protocol, makes "which machines are unqualified" answerable on a
 screen instead of at an audit.** The pattern, the roll-up and the badges already exist.
+
+**Update 9 September (D-064): the three steps exist.** Owed by food-contact machines and measuring
+instruments, each satisfied by an executed protocol attached to the machine under its kind, stale when the
+model changes, waivable with a reason where SOP 421 exempts a machine. The protocols are still to be written.
 
 ### 4.5.43 — No MMR per formulation and batch size · **A · the big one**
 *A blank MMR template is established, 413-1 Packaging Batch Production Record; however, there is not an
@@ -276,7 +286,7 @@ Items 2 and 3 are quarter-sized projects and should be planned rather than start
 
 ## Progress against this list — 1 September 2026
 
-**0 of 12 closed. 7 with work landed** (4.3.1; and since 9 September 4.5.84, 4.2.9 and 6.2.3.1 on one interface, 4.6.21, 4.3.9 with the software half of 4.4.39, and 4.3.6).
+**0 of 12 closed. 9 with work landed** (4.3.1; and since 9 September 4.5.84, 4.2.9 and 6.2.3.1 on one interface, 4.6.21, 4.3.9 with the software half of 4.4.39, 4.3.6, 4.5.8, and §6.2.3.2 built and parked for Document Control).
 
 ### 4.3.1 · Supplier qualification questionnaires — REGISTER BUILT, FINDING STILL OPEN
 
@@ -361,7 +371,20 @@ audited. Identity is a *result* — a spec on file with no identity result on th
 organoleptic pass reads "identity confirmed by organoleptic test only". The specifications themselves are
 QA's; the strip lists the items still short of one as the punch list.
 
-### The other five
+### 4.5.8 · §6.2.3.2 — held as an attached protocol; issued only by Document Control (D-064, 9 September)
+
+**IQ/OQ/PQ:** three readiness steps in `server/equipment-readiness.js`, each done when an executed protocol
+is attached to the machine under its kind (`equipment_files.kind` iq / oq / pq). Owed by food-contact
+machines and measuring instruments; waivable with a reason; stale when the model changes; on the bell for
+maintenance and QA; rolled up in the readiness review. Nothing is qualified by this — it says which machines
+are not.
+
+**FORM 204-01 V2:** the banned-substance line is in `server/receiving-checklist.js` and the code carries V2,
+but the deploy did not issue it: `controlled.js` entries can now declare a `baseline()`, and on first sight
+the engine recorded V1 as approved and parked V2 with a DCR. ReadyDoc serves V1 until Daniela approves V2 in
+Controlled Changes; every checklist is stamped with the revision in force.
+
+### The other three
 
 Not started. Tracked in `docs/v2/obligations.json`; a finding is marked closed here only when the
 corrective action is complete and its evidence can be produced on request.

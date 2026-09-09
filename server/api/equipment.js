@@ -638,7 +638,11 @@ const uploadManuals = (req, res, next) => manualUpload(req, res, (err) => {
   if (err) return res.status(413).json({ error: uploadErrorMessage(err) });
   next();
 });
-const FILE_KINDS = ['manual', 'spec_sheet', 'parts_list', 'other'];
+// iq / oq / pq are the executed qualification protocols (SOP 421); attaching
+// one is what satisfies the matching setup step, so the readiness basis is
+// stamped when one lands — the same way a LOTO procedure stamps its step.
+const FILE_KINDS = ['manual', 'spec_sheet', 'parts_list', 'iq', 'oq', 'pq', 'other'];
+const QUALIFICATION_KINDS = ['iq', 'oq', 'pq'];
 
 router.get('/:id/files', async (req, res) => {
   const db = getDb();
@@ -694,6 +698,7 @@ router.post('/:id/files', uploadManuals, async (req, res) => {
         key, text || null, status, req.user?.name || null);
       out.push({ id, filename: f.originalname, kind, searchable: status === 'ok' });
     }
+    if (QUALIFICATION_KINDS.includes(kind)) stampEquipmentReadiness(db, eq.id, [kind], req.user?.name);
     logAudit(req.user, 'create', 'equipment_file', eq.id, { files: out.map(o => o.filename), kind }, null, null, eq.name);
     res.status(201).json(out);
   } catch (err) {
@@ -720,6 +725,7 @@ router.post('/files/:fileId/attach', (req, res) => {
   const ins = db.prepare(`INSERT INTO equipment_files (id, equipment_id, kind, title, filename, content_type, size, storage_key, extracted_text, text_status, uploaded_by)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   const attached = [];
+  const attachedIds = [];
   const skipped = [];
   db.transaction(() => {
     for (const eid of ids) {
@@ -729,8 +735,12 @@ router.post('/files/:fileId/attach', (req, res) => {
       ins.run(uuid(), eq.id, f.kind, f.title, f.filename, f.content_type, f.size,
         f.storage_key, f.extracted_text, f.text_status, req.user?.name || null);
       attached.push(eq.name);
+      attachedIds.push(eq.id);
     }
   })();
+  // One protocol can qualify several identical machines only if it names them;
+  // that is the author's call when attaching. The step reads the attachment.
+  if (QUALIFICATION_KINDS.includes(f.kind)) for (const eid of attachedIds) stampEquipmentReadiness(db, eid, [f.kind], req.user?.name);
   logAudit(req.user, 'create', 'equipment_file', f.id,
     { filename: f.filename, attached_to: attached, skipped_already_attached: skipped }, null, null, f.filename);
   res.json({ attached: attached.length, skipped: skipped.length, machines: attached });

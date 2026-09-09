@@ -12,7 +12,7 @@ import { getDb, logAudit } from '../db.js';
 import { hasExplicitEdit, hasExplicitGrant } from '../module-access.js';
 import { coerceCustomData, mergeCustomData, parseJson } from '../custom-fields.js';
 import {
-  CHECKLIST, CHECKLIST_REVISION, getItem, normalizeAnswers, triggeredEscalations, unanswered,
+  CHECKLIST, getItem, normalizeAnswers, triggeredEscalations, unanswered,
 } from '../receiving-checklist.js';
 import { sendEscalation } from '../receiving-notify.js';
 import { FILM_REVISION } from '../film-pouch-checklist.js';
@@ -301,7 +301,9 @@ router.post('/checklist', async (req, res) => {
     db.prepare(`INSERT INTO receiving_checklists
       (id, inspection_no, checklist_revision, inspection_date, inspector, created_by)
       VALUES (?, ?, ?, COALESCE(?, date('now')), ?, ?)`).run(
-      uuid(), no, CHECKLIST_REVISION, req.body?.inspection_date || null,
+      // The revision IN FORCE (controlled.js may be serving V1 over V2 code),
+      // never the constant — a record must say which questions it was asked.
+      uuid(), no, CHECKLIST.revision, req.body?.inspection_date || null,
       req.body?.inspector || req.user.name, req.user.name);
     row = db.prepare('SELECT * FROM receiving_checklists WHERE inspection_no = ?').get(no);
   }

@@ -247,7 +247,7 @@ To be produced:
 
 **Finding (verbatim):** *IQ/OQ/PQ documents as required per SOP 421 – Design/Qualification of Facility/Equipment (IQ,OQ,PQ) – V2 – 8/11/26 were not provided at the time of the audit for any of the facility equipment; for example, mixers and stick pack machines.*  
 **Reference:** SOP 421 V2 · 21 CFR 111.30  
-**Decisions for Carol in this response:** 6
+**Decisions for Carol in this response:** 5
 
 ### Root cause analysis
 
@@ -262,7 +262,7 @@ SOP 421 V2 was issued on 11 August 2026. Our equipment was installed and put int
 
 ### Preventive action plan
 
-The equipment setup checklist in ReadyDoc will gain IQ, OQ and PQ steps that are only satisfied when an approved protocol is attached. That makes the qualification status of every machine visible on its own page and in the plant-wide summary, and a new machine cannot show as ready for use without it. An equipment change routed through change control (CAR 4990683-4) triggers a review of whether re-qualification is needed.
+Since 9 September 2026 the equipment setup checklist in ReadyDoc has IQ, OQ and PQ steps for every food-contact machine and measuring instrument. A step is only satisfied when the executed protocol is attached to that machine's record, and a change to the machine's model marks the step as needing re-qualification. The qualification status of every machine is visible on its own page, in the plant-wide summary and on the audit readiness review, and a new machine cannot show as ready for use without it. An equipment change routed through change control (CAR 4990683-4) triggers a review of whether re-qualification is needed.
 
 ### Responsible person
 
@@ -270,13 +270,14 @@ Qualification protocols and execution: Ricardo Avalos, Maintenance, with Adam Bl
 
 ### Date of corrective action completion
 
-Equipment list classified: [CAROL: 15 October 2026]. Mixers and stick pack machines qualified: [CAROL: 31 December 2026]. Checklist steps in place: [CAROL: 31 October 2026]. Remaining equipment per the schedule, finishing [CAROL: 31 March 2027].
+Checklist steps in place: 9 September 2026 (done). Equipment list classified: [CAROL: 15 October 2026]. Mixers and stick pack machines qualified: [CAROL: 31 December 2026]. Remaining equipment per the schedule, finishing [CAROL: 31 March 2027].
 
 ### Evidence of implementation
 
 On file now:
 - SOP 421 V2
 - Equipment register report
+- The equipment setup checklist showing the IQ, OQ and PQ steps outstanding per machine
 To be produced:
 - The classified equipment list
 - Executed IQ/OQ/PQ protocols for the mixers and stick pack machines
@@ -488,7 +489,7 @@ Our purchasing and receiving controls (SOP 404 for supplier and material approva
 
 A two-point check, written into the new procedure (CAR 4990682-1):
 (a) When a new material or supplier is approved, Quality checks the material specification and ingredient statement against the NSF 306 Annex C, NFL/NFLPA, MLB and WADA lists, and records the result and the list editions used on the supplier's record in ReadyDoc.
-(b) At receipt, FORM 204-01 gains the line "Material checked against the Banned/Prohibited Substance lists — YES / NO. If NO, place on hold and notify Quality", issued through a Document Change Request as FORM 204-01 V2. ReadyDoc does not allow a receiving inspection to be signed off while any line is blank, so a receipt cannot be closed without this check recorded.
+(b) At receipt, FORM 204-01 gains the line "Material checked against the Banned/Prohibited Substance lists — YES / NO. If NO, place on hold and notify Quality", issued through a Document Change Request as FORM 204-01 V2. The line was built into ReadyDoc on 9 September 2026 and is held back by the system's change control until Document Control approves the revision; until then the current V1 form is used. ReadyDoc does not allow a receiving inspection to be signed off while any line is blank, so once V2 is approved a receipt cannot be closed without this check recorded, and a NO notifies Quality immediately.
 (c) Our current approved materials list will be checked once against the current list editions and the check recorded, by [CAROL: 31 October 2026].
 
 ### Preventive action plan
@@ -501,7 +502,7 @@ FORM 204-01 V2 and the Document Change Request: Daniela Servin, Document Control
 
 ### Date of corrective action completion
 
-FORM 204-01 V2 issued and in use in ReadyDoc: [CAROL: 15 October 2026]. One-time check of current materials: [CAROL: 31 October 2026].
+FORM 204-01 V2 built in ReadyDoc, awaiting Document Control approval: 9 September 2026 (done). V2 approved and in use: [CAROL: 15 October 2026]. One-time check of current materials: [CAROL: 31 October 2026].
 
 ### Evidence of implementation
 

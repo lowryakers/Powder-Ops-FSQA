@@ -24,6 +24,7 @@ import { v4 as uuid } from 'uuid';
 import { QMS_TYPES } from './qms-config.js';
 import { SCALE_FORMS } from './scale-forms.js';
 import { atpControlledEntry } from './atp-limits.js';
+import { checklistSnapshot, checklistBaseline, applyChecklistSnapshot, CHECKLIST_FORM_CODE, CHECKLIST_TITLE } from './receiving-checklist.js';
 
 // Stable hash of a definition: keys sorted, so a reordered object literal in
 // the source doesn't read as a change someone has to approve.
@@ -101,8 +102,24 @@ function scaleEntries() {
   }));
 }
 
+// The questions on a checklist worked at the truck. FORM 204-01 V2 adds the
+// banned-substance line (CAR 4990682-3); the code carries V2 and `baseline`
+// says the approved document is still V1, so a database seeing this definition
+// for the first time records V1 and parks V2 — the deploy does not issue the
+// revision, Document Control does.
+function checklistEntries() {
+  return [{
+    scope: 'checklist',
+    key: 'receiving:FORM 204-01',
+    label: `${CHECKLIST_FORM_CODE} ${CHECKLIST_TITLE} — questions`,
+    current: checklistSnapshot,
+    apply: applyChecklistSnapshot,
+    baseline: checklistBaseline,
+  }];
+}
+
 export function registry() {
-  return [...qmsEntries(), ...scaleEntries(), atpControlledEntry()];
+  return [...qmsEntries(), ...scaleEntries(), atpControlledEntry(), ...checklistEntries()];
 }
 
 // ── Boot: baseline, detect, gate ────────────────────────────────────────────
@@ -133,14 +150,28 @@ export function syncDefinitions(db) {
     let snapshot;
     try { snapshot = entry.current(); } catch { continue; }
     const hash = hashOf(snapshot);
-    const row = db.prepare(SELECT).get(entry.scope, entry.key);
+    let row = db.prepare(SELECT).get(entry.scope, entry.key);
 
     if (!row) {
       // First sight of this definition — it IS the baseline. Silent on purpose:
       // a fresh database (or the release that introduces this) must not come up
       // with every form waiting on an approval nobody knew to give.
-      ins.run(uuid(), entry.scope, entry.key, entry.label, hash, JSON.stringify(snapshot));
-      continue;
+      //
+      // UNLESS the entry says the approved document is something else. An entry
+      // with `baseline()` ships code that is AHEAD of the plant's approved
+      // revision (FORM 204-01 V2 with V1 still in force). Recording the code as
+      // the baseline would issue the revision by deploying it, which is the one
+      // thing this module exists to prevent — so the baseline is recorded as
+      // approved and the code falls through to be parked as pending.
+      let base = null;
+      if (typeof entry.baseline === 'function') { try { base = entry.baseline(); } catch { base = null; } }
+      if (base && hashOf(base) !== hash) {
+        ins.run(uuid(), entry.scope, entry.key, entry.label, hashOf(base), JSON.stringify(base));
+        row = db.prepare(SELECT).get(entry.scope, entry.key);
+      } else {
+        ins.run(uuid(), entry.scope, entry.key, entry.label, hash, JSON.stringify(snapshot));
+        continue;
+      }
     }
 
     // Let the entry reconcile a snapshot stored before a field came under
@@ -221,23 +252,24 @@ export function diffSnapshots(approved, pending) {
   const a = approved || {}, b = pending || {};
   const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])];
   for (const k of keys) {
-    if (k === 'fields') { out.push(...diffFields(a.fields || [], b.fields || [])); continue; }
+    // Lists keyed by `key` diff per entry — a form's fields, a checklist's items.
+    if (k === 'fields' || k === 'items') { out.push(...diffFields(a[k] || [], b[k] || [], k === 'items' ? 'item' : 'field')); continue; }
     const av = JSON.stringify(a[k]), bv = JSON.stringify(b[k]);
     if (av !== bv) out.push({ kind: 'changed', what: k, from: a[k], to: b[k] });
   }
   return out;
 }
 
-function diffFields(a, b) {
+function diffFields(a, b, noun = 'field') {
   const byKey = (list) => new Map(list.map(f => [f.key, f]));
   const A = byKey(a), B = byKey(b), out = [];
   for (const [k, f] of B) {
-    if (!A.has(k)) out.push({ kind: 'added', what: `field ${k}`, to: f.label || k });
+    if (!A.has(k)) out.push({ kind: 'added', what: `${noun} ${k}`, to: f.label || f.text || k });
     else if (JSON.stringify(stable(A.get(k))) !== JSON.stringify(stable(f))) {
-      out.push({ kind: 'changed', what: `field ${k}`, from: A.get(k), to: f });
+      out.push({ kind: 'changed', what: `${noun} ${k}`, from: A.get(k), to: f });
     }
   }
-  for (const [k, f] of A) if (!B.has(k)) out.push({ kind: 'removed', what: `field ${k}`, from: f.label || k });
+  for (const [k, f] of A) if (!B.has(k)) out.push({ kind: 'removed', what: `${noun} ${k}`, from: f.label || f.text || k });
   return out;
 }
 

@@ -21,6 +21,11 @@ const KINDS = [
   { value: 'manual', label: 'Manual' },
   { value: 'spec_sheet', label: 'Spec sheet' },
   { value: 'parts_list', label: 'Parts list' },
+  // Executed qualification protocols (SOP 421). Uploading one under its kind is
+  // what ticks the IQ / OQ / PQ setup step — the file is the record.
+  { value: 'iq', label: 'IQ protocol' },
+  { value: 'oq', label: 'OQ protocol' },
+  { value: 'pq', label: 'PQ protocol' },
   { value: 'other', label: 'Other' },
 ];
 
