@@ -138,6 +138,13 @@ triage and the per-CAR evidence table, `docs/audit-2026-08-findings.md` the shor
   (scope, Part 11 gap assessment, protocols approved by Quality as validation, software change control) is
   what does not exist. Do not answer it with more test scripts.
 - The PDFs are NOT in the repo (NSF Confidential); they belong in the Reference Library beside `REF-NSF-GMP-AUDIT`.
+- **The twelve responses are drafted** in `docs/v2/car-responses/responses.mjs` (one source; `scripts/build-car-responses.mjs`
+  renders the Markdown copy and the page Carol pastes from). **NAMES AND TITLES COME FROM THE ORG CHART** (the `ORG` seed
+  in `server.js`, Version 6, effective 2026-02-20) — never from these notes, which name people by what they do in the
+  app. The first draft wrote "Adam (QA)"; Adam Bliss is Production Manager / Food Safety PCQI and Quality is Maria
+  Servin, Quality Manager / SQF Practitioner. Carol Pierce is Quality Technical Support Manager, Daniela Servin
+  Document Control Manager, Jake Waits Purchasing Manager, Ricardo Avalos Maintenance, Matt Schramm Formulations.
+  Anything going outside the plant is written in plain English — short sentences, no app vocabulary.
 
 ## Flavor approvals via SMS (Danny)
 `flavor_approval` QMS type + FlavorPanel ("Text for approval" row action) → magic link `/approve/<token>`

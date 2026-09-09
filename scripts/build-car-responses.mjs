@@ -2,7 +2,7 @@
 // HTML page Carol pastes from. One source, two outputs — edit the data file.
 //   node scripts/build-car-responses.mjs
 import { writeFileSync } from 'fs';
-import { META, AUDITS, PARTS, RESPONSES } from '../docs/v2/car-responses/responses.mjs';
+import { META, AUDITS, PARTS, RESPONSES, PEOPLE } from '../docs/v2/car-responses/responses.mjs';
 
 const MD_OUT = 'docs/v2/queued/car-responses-2026-09.md';
 const HTML_OUT = 'docs/v2/queued/car-responses-2026-09.artifact.html';
@@ -36,6 +36,14 @@ is submitted — a bracket that reaches NSF Connect is a response that gets retu
 | Audit | Scheme | CARs | Response due |
 |---|---|---|---|
 ${AUDITS.map(a => `| ${a.id} | ${a.scheme} | ${a.count} | **${a.dueLabel}** |`).join('\n')}
+
+## People named in the responses
+
+Names and titles are taken from **${META.orgChart}**. Confirm each is still current before submitting.
+
+| Name | Title | Named for |
+|---|---|---|
+${PEOPLE.map(p => `| ${p.name} | ${p.title} | ${p.role} |`).join('\n')}
 
 ## Before submitting — from NSF's own instructions
 
@@ -174,6 +182,12 @@ const html = `<title>NSF CAR Responses</title>
   .rules ul{margin:0;padding-left:18px;font-size:15px;color:var(--ink-2)}
   .rules li{margin:4px 0}
   .rules li b{color:var(--ink)}
+  .rules .note{margin:0 0 10px;font-size:14.5px;color:var(--ink-2);max-width:72ch}
+  .tw{overflow-x:auto}
+  .rules table{border-collapse:collapse;width:100%;font-size:14px}
+  .rules th{text-align:left;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);font-weight:600;padding:6px 10px;border-bottom:1px solid var(--rule-2)}
+  .rules td{padding:7px 10px;border-bottom:1px solid var(--rule);vertical-align:top;color:var(--ink-2)}
+  .rules td b{color:var(--ink)}
   .legend{display:flex;flex-wrap:wrap;gap:10px 18px;font-size:13.5px;color:var(--ink-2);margin:14px 0 0;align-items:center}
   mark.dec{background:var(--dec-bg);color:var(--dec);border-bottom:1px solid var(--dec-rule);padding:0 4px;border-radius:2px;font-weight:500}
   .legend .now,.legend .later{display:inline-block;padding:1px 8px;border-radius:2px;font-size:12px;letter-spacing:.04em;text-transform:uppercase;font-weight:600}
@@ -236,6 +250,15 @@ const html = `<title>NSF CAR Responses</title>
 
     <div class="deadlines">
       ${AUDITS.map(a => `<div class="dl"><span class="when">${esc(a.dueLabel)}</span><span class="what">${esc(a.scheme)}</span><span class="n">${a.count} CARs · audit ${a.id}</span></div>`).join('')}
+    </div>
+
+    <div class="rules people">
+      <h2>People named in the responses</h2>
+      <p class="note">Names and titles are from <b>${esc(META.orgChart)}</b>. Confirm each is still current before submitting; a title that has changed since February is a fix in the data file, not in NSF Connect.</p>
+      <div class="tw"><table>
+        <thead><tr><th>Name</th><th>Title</th><th>Named for</th></tr></thead>
+        <tbody>${PEOPLE.map(p => `<tr><td><b>${esc(p.name)}</b></td><td>${esc(p.title)}</td><td>${esc(p.role)}</td></tr>`).join('')}</tbody>
+      </table></div>
     </div>
 
     <div class="rules">

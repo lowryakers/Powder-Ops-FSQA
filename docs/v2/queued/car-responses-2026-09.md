@@ -1,6 +1,6 @@
 # NSF corrective action responses — drafts for Carol
 
-**Powder Ops LLC · Facility C0908997 · 281 E 1600 N, Vineyard, Utah 84059** · visit 4163051 · auditor Sonya Hess · audit 24–26 August 2026 · drafts prepared 8 September 2026
+**Powder Ops LLC · Facility C0908997 · 281 E 1600 N, Vineyard, Utah 84059** · visit 4163051 · auditor Sonya Hess · audit 24–26 August 2026 · drafts prepared 9 September 2026
 
 > Generated from `docs/v2/car-responses/responses.mjs` by `scripts/build-car-responses.mjs`. Edit the
 > data file, not this one. The HTML page beside it is the copy Carol pastes from.
@@ -14,6 +14,23 @@ is submitted — a bracket that reaches NSF Connect is a response that gets retu
 |---|---|---|---|
 | 4990683 | NSF/ANSI 455-2 GMP for Dietary Supplements | 9 | **18 September 2026** |
 | 4990682 | NSF 306 GMP for Sport | 3 | **4 October 2026** |
+
+## People named in the responses
+
+Names and titles are taken from **Org Chart Version 6, approved by Lowry Akers, effective 20 February 2026**. Confirm each is still current before submitting.
+
+| Name | Title | Named for |
+|---|---|---|
+| Maria Servin | Quality Manager / SQF Practitioner | Owns the quality procedures, approves specifications and changes, runs the environmental monitoring program |
+| Carol Pierce | Quality Technical Support Manager | Audit contact; laboratory and testing arrangements |
+| Daniela Servin | Document Control Manager | Issues and revises controlled documents and forms |
+| Adam Bliss | Production Manager / Food Safety PCQI | Production floor controls, GMP boundary, equipment in use |
+| Jake Waits | Purchasing Manager | Supplier questionnaires and purchasing rules |
+| Ricardo Avalos | Maintenance | Equipment qualification work |
+| Matt Schramm | Formulations | Formula content for master manufacturing records; shelf-life data |
+| Juan Gonzalez | Warehouse Supervisor | Receiving inspections |
+| Diana Quishpe | QA Technician | Suggested for environmental sampling — to confirm |
+| Lowry Akers | VP Operations | Owner of the ReadyDoc system; builds the records and checks the plans rely on |
 
 ## Before submitting — from NSF's own instructions
 
@@ -31,109 +48,109 @@ is submitted — a bracket that reaches NSF Connect is a response that gets retu
 
 **Finding (verbatim):** *Gaps in hygienic practices/procedures were observed that could potentially increase the risk of contamination such as; Street shoes were worn in GMP areas without covers or cleaning.*  
 **Reference:** SOP 401 – Personnel (cGMP) – V4 – 8/11/26 · 21 CFR 111.10(b)  
-**Decisions for Carol in this response:** 11
+**Decisions for Carol in this response:** 9
 
 ### Root cause analysis
 
-SOP 401 V4 requires hygienic practices before entering GMP areas but does not define a specific footwear control at the boundary between non-GMP and GMP space [CAROL: confirm exactly what SOP 401 V4 says about footwear], and the boundary itself had no physical provision — no captive footwear, shoe-cover station or boot cleaning point at the entry. Compliance therefore depended on individual habit, and there was no routine GMP observation walk that would have detected the drift before an auditor did. The gap is a missing control point and a missing verification, not a missing rule.
+SOP 401 V4 requires good hygiene practices before entering GMP areas, but it does not say what must happen to footwear at the door [CAROL: confirm what SOP 401 V4 says about footwear]. There was also nothing at the entrance itself: no shoe covers, no dedicated footwear and no boot cleaning station. Whether people changed or covered their shoes depended on habit. No regular walk-through checked GMP practices, so nobody caught the problem before the auditor did. The root cause is a missing control at the entrance and no routine check of it, not a missing rule.
 
 ### Corrective action plan
 
-Containment, completed [CAROL: date]: a [CAROL: shoe-cover dispenser / captive footwear / boot-wash — choose the control installed] placed at the entrance to GMP areas, signage posted, and all production, warehouse and QA staff briefed on the requirement on [CAROL: date] (sign-in sheet retained).
-Procedure: SOP 401 revised to V5 through the Document Change Request process to specify the footwear control at the GMP boundary, who it applies to (staff, contractors, visitors) and how it is verified. All affected staff retrained on V5 and the training recorded in ReadyDoc against the document. The visitor sign-in hygiene agreement updated to state the footwear rule.
+Immediate action, completed [CAROL: date]: we installed [CAROL: a shoe-cover station / dedicated footwear / a boot-wash — state which] at the entrance to the GMP areas, posted signs, and briefed all production, warehouse and quality staff on [CAROL: date]. The sign-in sheet is kept.
+Procedure: SOP 401 is being revised to V5 through our Document Change Request process. V5 states the footwear rule at the GMP entrance, who it applies to (employees, contractors and visitors), and how it is checked. All affected staff will be retrained on V5 and the training recorded. The visitor sign-in agreement will be updated to include the footwear rule.
 
 ### Preventive action plan
 
-A recurring GMP observation record is established: a weekly walk-through by [CAROL: QA / shift supervisor] covering gowning, hairnets, jewellery, handwashing and footwear, recorded in ReadyDoc as a dated, signed record with a running trend. A repeated observation raises a corrective action request. Footwear is added to the personnel section of the monthly internal audit (Form 403-01) [CAROL: confirm whether 403-01 already asks about footwear; if so, cite the question]. Retraining is triggered automatically by ReadyDoc when SOP 401 is next revised.
+We are starting a weekly GMP walk-through. [CAROL: Maria Servin or a shift supervisor] will check gowning, hairnets, jewelry, handwashing and footwear, and sign a dated record. Results are tracked over time. A repeated problem raises a corrective action request. Footwear is also added to the personnel section of our monthly internal audit (Form 403-01) [CAROL: confirm whether Form 403-01 already has a footwear question; if it does, cite it]. When SOP 401 is revised again, the system automatically requires retraining.
 
 ### Responsible person
 
-Physical control and staff briefing: [CAROL: operations lead]. SOP 401 V5: Daniela (Document Control). GMP observation record: Adam (QA) [CAROL: confirm].
+Entrance control and staff briefing: Adam Bliss, Production Manager. SOP 401 V5: Daniela Servin, Document Control Manager. Weekly GMP walk-through: Maria Servin, Quality Manager.
 
 ### Date of corrective action completion
 
-Containment: [CAROL: date completed]. SOP 401 V5 approved and trained: [CAROL: 30 September 2026]. First GMP observation record: [CAROL: 30 September 2026], weekly thereafter.
+Entrance control in place: [CAROL: date completed]. SOP 401 V5 approved and staff retrained: [CAROL: 30 September 2026]. First weekly walk-through record: [CAROL: 30 September 2026].
 
 ### Evidence of implementation
 
 On file now:
-- Photographs of the GMP boundary after the containment control was installed
+- Photographs of the GMP entrance with the new footwear control
 - SOP 401 V4 (the procedure in force at the audit)
 - Staff briefing sign-in sheet
 To be produced:
-- SOP 401 V5 with DCR and approval
-- Training records against SOP 401 V5
-- The first GMP observation records
+- SOP 401 V5 with its Document Change Request and approval
+- Training records for SOP 401 V5
+- The first weekly GMP walk-through records
 
 
 ## CAR 4990683-2 · 4.3.1 · Supplier qualification questionnaires missing for three suppliers
 
 **Finding (verbatim):** *The Supplier Qualification Questionnaire required per SOP 404 – Supplier and Laboratory Qualification – V4 – 8/4/26 was not available for the following suppliers: Mill Haven Foods (Whey Protein), M4 Dynamic (Potassium Citrate, B12), Bay State Milling (Cinnamon).*  
 **Reference:** SOP 404 V4 · 21 CFR 117.405 & 117.410  
-**Decisions for Carol in this response:** 11
+**Decisions for Carol in this response:** 9
 
 ### Root cause analysis
 
-SOP 404 V4 defines the questionnaire (FORM 404-1) and the risk-based disposition, but the qualification records were kept as files in a shared folder with a separate tracking spreadsheet, and the two disagreed. When the folder and the tracker were reconciled after the audit, they disagreed about 48 of 75 suppliers: the tracker showed suppliers as complete where no questionnaire was on file, including the three named. There was no register in which "questionnaire on file" was derived from the document itself rather than from a tick, and nothing raised work when an active supplier lacked one. Purchasing therefore continued to buy from Mill Haven Foods, M4 Dynamic and Bay State Milling on the strength of a tracker entry that had no document behind it.
+SOP 404 V4 requires a completed questionnaire (FORM 404-1) for each supplier. Our supplier records were kept as files in a shared folder, with a separate tracking spreadsheet showing which suppliers were complete. The two did not agree. When we compared them after the audit, they disagreed on 48 of 75 suppliers. The spreadsheet showed some suppliers as complete when no questionnaire was on file, including the three the auditor named. Nothing checked the spreadsheet against the actual documents, and nothing flagged a supplier we were buying from that had no questionnaire. So purchasing continued with Mill Haven Foods, M4 Dynamic and Bay State Milling on the strength of a tick in a spreadsheet.
 
 ### Corrective action plan
 
-Questionnaires (FORM 404-1) requested from Mill Haven Foods, M4 Dynamic and Bay State Milling on [CAROL: date sent]; on receipt, each supplier's risk evaluation and disposition is completed under SOP 404 §V and recorded, with the questionnaire attached. Target: all three received and dispositioned by [CAROL: 31 October 2026].
-A Supplier Qualification register has been built in ReadyDoc and loaded with all 75 suppliers and the 938 documents from the archive (completed 1 September 2026). A supplier's status in the register is derived from the evidence on file — no supplier was imported as qualified on the strength of the tracker. The register currently shows 21 active suppliers with evidence on file awaiting a documented disposition, and 22 (including the three named) with no questionnaire on file. Both piles are being worked: dispositions by [CAROL: date]; outstanding questionnaires requested by [CAROL: date] and received by [CAROL: date].
+We requested questionnaires (FORM 404-1) from Mill Haven Foods, M4 Dynamic and Bay State Milling on [CAROL: date sent]. When each one comes back, Quality will complete the risk evaluation and approval decision required by SOP 404 section V and file the questionnaire with it. Target: all three received and approved by [CAROL: 31 October 2026].
+We have also replaced the spreadsheet with a supplier register in our ReadyDoc system (completed 1 September 2026). All 75 suppliers and the 938 documents from the folder are loaded. A supplier only shows as qualified when the actual documents are on file; nothing was carried over from the spreadsheet. The register currently shows 21 active suppliers with documents on file that still need a written approval decision, and 22 (including the three named) with no questionnaire on file. Both groups are being worked: approval decisions by [CAROL: 31 October 2026]; remaining questionnaires requested by [CAROL: date] and received by [CAROL: 30 November 2026].
 
 ### Preventive action plan
 
-Qualification status is now a derived state in one register rather than a spreadsheet tick, so a supplier with no questionnaire cannot read as qualified. ReadyDoc raises the annual supplier review as a work order 30 days before it is due (SOP 404 §IV.B) and sends QA and Purchasing a reminder every third day while any active supplier lacks a questionnaire; certificate expiry dates are read from the documents themselves and reported before they lapse. [CAROL: decide and state if adopted — purchase orders are not placed with a supplier whose register status is unqualified without a recorded conditional approval by QA.] The register is reviewed at management review.
+A supplier's status now comes from the documents on file, not from a spreadsheet tick, so a supplier with no questionnaire cannot show as qualified. The system creates a task for each supplier's annual review 30 days before it is due (SOP 404 section IV.B), and reminds Quality and Purchasing every three days while any active supplier has no questionnaire. Certificate expiry dates are read from the certificates themselves and flagged before they lapse. [CAROL: state if adopted — no purchase order is placed with an unqualified supplier unless Quality has recorded a conditional approval.] Supplier status is reviewed at management review.
 
 ### Responsible person
 
-Requesting and chasing questionnaires: [CAROL: purchasing lead]. Risk evaluation and disposition: Adam (QA) [CAROL: confirm].
+Requesting and following up questionnaires: Jake Waits, Purchasing Manager. Risk evaluation and approval decision: Maria Servin, Quality Manager.
 
 ### Date of corrective action completion
 
-Three named suppliers received and dispositioned: [CAROL: 31 October 2026]. Register-wide: dispositions of the 21 with evidence by [CAROL: 31 October 2026]; remaining questionnaires by [CAROL: 30 November 2026].
+Three named suppliers received and approved: [CAROL: 31 October 2026]. Approval decisions for the 21 with documents on file: [CAROL: 31 October 2026]. Remaining questionnaires: [CAROL: 30 November 2026].
 
 ### Evidence of implementation
 
 On file now:
 - SOP 404 V4
-- Supplier Qualification register export showing the three named suppliers flagged as lacking a questionnaire, and the counts above
+- Supplier register report showing the three named suppliers flagged as missing a questionnaire, and the counts above
 - Copies of the questionnaire requests sent
 To be produced:
 - The three completed questionnaires
-- The three disposition records with risk evaluation
-- Register export after the register-wide work
+- The three risk evaluations and approval decisions
+- Supplier register report after the follow-up work
 
 
 ## CAR 4990683-3 · 4.3.6 · Specifications and identity/purity/strength testing not established before July–August 2026
 
 **Finding (verbatim):** *While formal specifications are currently being created for all components and finished products… specifications were not established prior to July 2026… Organoleptic evaluations were conducted to verify the identity for dietary ingredients which is not appropriate by itself… Identity, purity, strength, and composition specifications and testing were not conducted prior to August 2026.*  
 **Reference:** SOP 606 V2 · 21 CFR 111.70 · specs Doc #607-32/-01/-02/-41/-24 V1 (7/9/26); #202530, #IM0036, #FG0906 (8/21/26)  
-**Decisions for Carol in this response:** 13
+**Decisions for Carol in this response:** 12
 
 ### Root cause analysis
 
-Until July 2026 the plant released components and finished products on heavy-metal and microbiological testing against limits stated in procedures, plus an organoleptic check, without a written specification per item covering identity, purity, strength and composition. The specification program (SOP 606 V2, the raw-material specifications approved 9 July 2026 and finished-product specifications approved 21 August 2026) had been identified as a gap and built by the plant before the audit, but it post-dates the lots reviewed, and there was no release gate that refused a lot whose item had no specification — so a test with no specification to compare against was recorded as a result rather than as a gap. Organoleptic evaluation was being relied on for identity because no instrumental or scientifically valid identity method had been specified for dietary ingredients.
+Before July 2026 we released raw materials and finished products based on heavy-metal and microbiological testing against limits written in our procedures, plus a look, smell and taste check. We did not have a written specification for each item covering identity, purity, strength and composition. We had already identified this gap and built a specification program before the audit (SOP 606 V2; raw-material specifications approved 9 July 2026; finished-product specifications approved 21 August 2026). But the lots the auditor reviewed were released before those specifications existed, and nothing stopped a lot from being released when its item had no specification. A test result with nothing to compare it to was recorded as a result rather than flagged as a gap. We relied on the look, smell and taste check for identity because we had not chosen a laboratory method for identity testing.
 
 ### Corrective action plan
 
-1. Complete written specifications in the new format for every active component and finished product: [CAROL: number remaining] outstanding as of [CAROL: date], to be approved by [CAROL: 31 October 2026].
-2. Identity testing for dietary ingredients: adopt [CAROL: the method — e.g. FTIR against reference standard / HPLC / supplier CoA plus a scientifically valid confirmatory test per 21 CFR 111.75(a)(1)]; organoleptic evaluation is retained only as a supplementary check and is no longer the identity method.
-3. Purity, strength and composition testing of incoming raw materials against specification: [CAROL: every lot, or a reduced testing plan with a documented rationale per 111.75(a)(2)].
-4. The raw-material and finished-product samples submitted in August 2026 are reviewed against the new specifications when results arrive ([CAROL: expected date]) and the results filed against the lots.
-5. Retrospective assessment of lots released before July 2026 that remain within shelf life: [CAROL: scope and decision — a documented risk assessment, and any retest or disposition].
+1. Finish written specifications in the new format for every active raw material and finished product. [CAROL: number] remain as of [CAROL: date]. Target: all approved by [CAROL: 31 October 2026].
+2. Identity testing for dietary ingredients: we will use [CAROL: the method, for example FTIR against a reference standard, or HPLC, or the supplier's certificate plus a confirmatory test — a scientifically valid method per 21 CFR 111.75(a)(1)]. The look, smell and taste check stays as a supporting check only. It is no longer our identity test.
+3. Purity, strength and composition testing of incoming raw materials against the specification: [CAROL: every lot, or a reduced testing plan with a written justification per 21 CFR 111.75(a)(2)].
+4. The samples we sent to the laboratory in August 2026 will be reviewed against the new specifications when the results arrive ([CAROL: expected date]) and the results filed against those lots.
+5. Lots released before July 2026 that are still within shelf life: [CAROL: state the decision — a written risk assessment, and any retesting or disposition].
 
 ### Preventive action plan
 
-Specifications and results are held in ReadyDoc's COA module, which grades each result against the active specification for that item and test. A completeness gate is being added so that a lot cannot be released unless its item has an active, approved specification covering identity, purity, strength, composition and contaminants, and identity is not satisfied by organoleptic evaluation alone; a result with no active specification records no pass/fail rather than passing by default. Specification changes go through the change control procedure (CAR 4990683-4).
+Specifications and test results are held in our ReadyDoc system, which compares each result to the current specification for that item and test. We are adding a check so that a lot cannot be released unless its item has an approved specification covering identity, purity, strength, composition and contaminants, and unless identity was confirmed by more than a look, smell and taste check. A result with no specification to compare to is recorded as incomplete, not as a pass. Changes to specifications go through change control (see CAR 4990683-4).
 
 ### Responsible person
 
-Specifications and retrospective assessment: Adam (QA) [CAROL: confirm]. Identity method and testing plan: [CAROL: QA / laboratory contact]. Release gate in ReadyDoc: Lowry Akers.
+Specifications and the review of earlier lots: Maria Servin, Quality Manager. Identity method and laboratory testing plan: Carol Pierce, Quality Technical Support Manager [CAROL: confirm]. Release check in ReadyDoc: Lowry Akers, VP Operations.
 
 ### Date of corrective action completion
 
-All active specifications approved: [CAROL: 31 October 2026]. Identity method in use: [CAROL: 30 November 2026]. Release gate live: [CAROL: 30 November 2026]. Retrospective assessment documented: [CAROL: 30 November 2026].
+All active specifications approved: [CAROL: 31 October 2026]. Identity method in use: [CAROL: 30 November 2026]. Release check in place: [CAROL: 30 November 2026]. Review of earlier lots documented: [CAROL: 30 November 2026].
 
 ### Evidence of implementation
 
@@ -142,155 +159,155 @@ On file now:
 - The specifications the auditor reviewed: Doc #607-32, #607-01, #607-02, #607-41, #607-24 (V1, 7/9/26); #202530, #IM0036, #FG0906 (8/21/26)
 - Laboratory submission confirmations for the August 2026 samples
 To be produced:
-- Laboratory results against the new specifications
+- Laboratory results compared to the new specifications
 - The remaining approved specifications
-- The identity-method decision and first results
-- Verification of the release gate refusing a lot with no specification
-- The retrospective assessment
+- The identity method decision and first results
+- Confirmation that the release check refuses a lot with no specification
+- The written review of earlier lots
 
 
 ## CAR 4990683-4 · 4.3.9 · Change control covers equipment only
 
 **Finding (verbatim):** *While requirements for equipment changes were defined per SOP 434 – Chemical, Equipment and Services Approval – V2 – 6/25/26, change control procedures that include processes, software, utility, and physical plant changes were not established.*  
 **Reference:** SOP 434 V2 · 21 CFR 111.130(e)  
-**Decisions for Carol in this response:** 4
+**Decisions for Carol in this response:** 3
 
 ### Root cause analysis
 
-SOP 434 V2 was written as an approval procedure for new chemicals, equipment and services, and the Document Change Request process covers controlled documents. Changes to processes, software, utilities and the physical plant were handled case by case (verbally or by email) with no single procedure requiring an impact assessment and QC approval before implementation. The scope of change control was never mapped against the full list in 21 CFR 111.130(e), so the gap was not visible to the plant.
+SOP 434 V2 was written to approve new chemicals, equipment and services. Our Document Change Request process covers changes to controlled documents. Changes to processes, software, utilities and the building were handled case by case, by conversation or email, with no procedure requiring an impact assessment and Quality approval before the change was made. We never compared our change control against the full list in 21 CFR 111.130(e), so we did not see the gap.
 
 ### Corrective action plan
 
-A change control procedure is issued — [CAROL: a new SOP number, or SOP 434 revised to V3] — covering equipment, processes, software (including ReadyDoc releases and the ERP), utilities and physical plant. Each change: a change request, an impact assessment (product safety, quality, validation status, documents and training affected), QC approval before implementation, and verification after. The change register is built in ReadyDoc as an extension of the existing Controlled Changes and Document Change Request register, with QC approval required on every entry before a change can be recorded as implemented.
+We are issuing a change control procedure — [CAROL: a new SOP number, or SOP 434 revised to V3] — covering equipment, processes, software (including our ReadyDoc system and the ERP system), utilities and the building. For each change: a change request, an impact assessment (product safety, quality, validation, and the documents and training affected), Quality approval before the change is made, and a check afterwards that it worked. Changes will be recorded in a change register in ReadyDoc, built onto the existing Controlled Changes and Document Change Request register. Quality approval will be required on every entry before a change can be marked as complete.
 
 ### Preventive action plan
 
-All changes are recorded in one register, and a change cannot be marked implemented without a recorded QC approval. ReadyDoc software releases are logged as changes with their verification results attached, which is also the software change control required for the electronic records validation (CAR 4990683-5). Open and recently closed changes are reviewed at management review.
+All changes are recorded in one register, and a change cannot be marked complete without a recorded Quality approval. ReadyDoc software releases are logged as changes with their test results attached; this is also the software change control needed for our electronic records validation (see CAR 4990683-5). Open and recently closed changes are reviewed at management review.
 
 ### Responsible person
 
-Procedure: Daniela (Document Control). Register in ReadyDoc: Lowry Akers. QC approval of changes: Adam (QA) [CAROL: confirm].
+Procedure: Daniela Servin, Document Control Manager. Change register in ReadyDoc: Lowry Akers, VP Operations. Quality approval of changes: Maria Servin, Quality Manager.
 
 ### Date of corrective action completion
 
-Procedure approved: [CAROL: 31 October 2026]. Change register live with QC approval enforced: [CAROL: 30 November 2026].
+Procedure approved: [CAROL: 31 October 2026]. Change register in use with Quality approval required: [CAROL: 30 November 2026].
 
 ### Evidence of implementation
 
 On file now:
 - SOP 434 V2
-- ReadyDoc Controlled Changes screen showing a parked definition change awaiting Document Control approval and the Document Change Request it raised
+- Screenshot of the ReadyDoc Controlled Changes screen showing a change held for Document Control approval and the Document Change Request it raised
 To be produced:
 - The approved change control procedure
-- The first change records with impact assessment and QC approval
+- The first change records with impact assessment and Quality approval
 
 
 ## CAR 4990683-5 · 4.4.39 · Electronic records not validated (ReadyDoc, MRP Easy)
 
 **Finding (verbatim):** *While software applications ReadyDoc and MRP Easy utilize functional compliance features such as unique user logins and audit trails, formal documentation demonstrating validation of the systems was not available at the time of the audit.*  
 **Reference:** 21 CFR Part 11 · Reviewed: ReadyDoc Authentication and Access Control Verification, V1, 8/24/26  
-**Decisions for Carol in this response:** 8
+**Decisions for Carol in this response:** 7
 
 ### Root cause analysis
 
-ReadyDoc was developed in-house and brought into GMP use with the Part 11 controls built in — unique logins and passwords, an append-only audit trail with actor, role and timestamp, electronic signatures that require the signer's password at the moment of signing, and records that are retired rather than deleted — and with executed verification scripts producing dated pass/fail results (the Authentication and Access Control Verification V1 the auditor reviewed). What did not exist was validation as a documented activity: no validation plan defining intended use and the GMP records in scope, no requirements assessment tying each 21 CFR Part 11 control to a test, and no validation summary approved by Quality. The testing was engineering practice rather than documented validation. For MRP Easy, the vendor's validation documentation was never requested.
+ReadyDoc was developed in-house and put into use with the 21 CFR Part 11 controls built in: individual logins and passwords, an audit trail that records who did what and when and cannot be edited, electronic signatures that require the signer's password at the moment of signing, and records that are retired rather than deleted. We also had test scripts that run against the system and produce dated pass/fail results; the auditor reviewed one of these (Authentication and Access Control Verification V1). What we did not have was validation as a documented activity: no validation plan stating what the system is used for and which GMP records it holds, no assessment matching each Part 11 requirement to a test, and no validation summary approved by Quality. Testing was done as engineering practice, not documented as validation. For MRP Easy, we never asked the vendor for validation documentation.
 
 ### Corrective action plan
 
-A computer system validation package is produced for ReadyDoc: (1) a validation plan stating intended use and the GMP records ReadyDoc holds; (2) a 21 CFR Part 11 requirements and gap assessment (§11.10, 11.50, 11.70, 11.100, 11.200, 11.300); (3) installation qualification (hosting, configuration, backup and restore test), operational qualification (executed protocols for each control: attributable unique identity, audit-trail completeness and immutability, electronic-signature manifestation and re-authentication, record retention and retrieval, authority checks, copies for inspection) and performance qualification in use; (4) a traceability matrix; (5) a validation summary report approved by QC. Software change control is covered by CAR 4990683-4.
-For MRP Easy: the vendor's validation or Part 11 statement is requested by [CAROL: date]; if it is not available, a documented risk assessment records the interim controls (unique logins, audit trail, restricted access) until the planned migration to [CAROL: Keychain, target date].
+We are producing a computer system validation package for ReadyDoc: (1) a validation plan stating the intended use and the GMP records the system holds; (2) an assessment of each 21 CFR Part 11 requirement (sections 11.10, 11.50, 11.70, 11.100, 11.200 and 11.300) against the system; (3) installation qualification (hosting, configuration, backup and a restore test), operational qualification (executed tests for each control: individual logins, audit trail completeness and protection from editing, electronic signature display and re-entry of the password, record retention and retrieval, access rights, and copies for inspection), and performance qualification in normal use; (4) a table linking each requirement to its test; (5) a validation summary report approved by Quality. Software change control is covered in CAR 4990683-4.
+For MRP Easy: we will request the vendor's validation or Part 11 statement by [CAROL: date]. If it is not available, we will document a risk assessment and the controls we rely on in the meantime (individual logins, audit trail, restricted access) until our planned move to [CAROL: Keychain, target date].
 
 ### Preventive action plan
 
-The validated state is maintained rather than re-established: every ReadyDoc release re-executes the operational qualification protocols automatically and a failing check blocks the release; every change goes through the change register with a revalidation assessment; the validation is reviewed [CAROL: annually] and after any change affecting a Part 11 control.
+Validation will be maintained, not repeated from scratch. Every ReadyDoc software release automatically re-runs the operational qualification tests, and a failed test blocks the release. Every change goes through the change register with an assessment of whether re-validation is needed. The validation is reviewed [CAROL: once a year] and after any change that affects a Part 11 control.
 
 ### Responsible person
 
-System owner and validation package: Lowry Akers. QC approval of the validation: Adam (QA) [CAROL: confirm]. MRP Easy vendor request: [CAROL: name].
+System owner and validation package: Lowry Akers, VP Operations. Quality approval of the validation: Maria Servin, Quality Manager. MRP Easy vendor request: Carol Pierce, Quality Technical Support Manager [CAROL: confirm].
 
 ### Date of corrective action completion
 
-Validation plan and Part 11 gap assessment: [CAROL: 15 October 2026]. Executed IQ/OQ/PQ and approved validation summary: [CAROL: 30 November 2026]. MRP Easy vendor request sent: [CAROL: 30 September 2026].
+Validation plan and Part 11 assessment: [CAROL: 15 October 2026]. Executed qualification tests and approved validation summary: [CAROL: 30 November 2026]. MRP Easy vendor request sent: [CAROL: 30 September 2026].
 
 ### Evidence of implementation
 
 On file now:
 - ReadyDoc Authentication and Access Control Verification, V1, 24 August 2026 (reviewed by the auditor)
-- ReadyDoc Kiosk Isolation Verification (executed protocol, same format)
+- ReadyDoc Kiosk Isolation Verification (a second executed test report in the same format)
 To be produced:
 - Validation plan
-- Part 11 requirements and gap assessment
-- Executed IQ/OQ/PQ protocols with results
-- Traceability matrix
-- Validation summary report with QC approval
-- MRP Easy vendor response or the interim risk assessment
+- Part 11 requirements assessment
+- Executed installation, operational and performance qualification tests with results
+- Requirement-to-test table
+- Validation summary report with Quality approval
+- MRP Easy vendor response, or the interim risk assessment
 
 
 ## CAR 4990683-6 · 4.5.8 · No IQ/OQ/PQ documents for facility equipment
 
 **Finding (verbatim):** *IQ/OQ/PQ documents as required per SOP 421 – Design/Qualification of Facility/Equipment (IQ,OQ,PQ) – V2 – 8/11/26 were not provided at the time of the audit for any of the facility equipment; for example, mixers and stick pack machines.*  
 **Reference:** SOP 421 V2 · 21 CFR 111.30  
-**Decisions for Carol in this response:** 8
+**Decisions for Carol in this response:** 6
 
 ### Root cause analysis
 
-SOP 421 V2 was issued on 11 August 2026, and the plant's equipment was installed and commissioned before a qualification procedure existed. No retrospective qualification was performed when the procedure was issued, and there was no inventory identifying which equipment requires IQ/OQ/PQ or which vendor documentation was on hand, so the size of the gap was not visible until the audit.
+SOP 421 V2 was issued on 11 August 2026. Our equipment was installed and put into use before a qualification procedure existed, and we did not go back and qualify it when the procedure was issued. We also had no list of which equipment needs qualification or which vendor documents we hold, so we could not see how large the gap was until the audit.
 
 ### Corrective action plan
 
-1. From the equipment register in ReadyDoc (183 rows, of which 39 are inspection zones rather than machines), classify the equipment that requires IQ/OQ/PQ on the criteria in SOP 421 [CAROL: confirm the criteria — product contact, process critical, measurement], and record the classification per machine.
-2. Prioritise the mixers (Hexagon tumbler blenders 1 and 2) and the stick pack machines (auger and volumetric), followed by [CAROL: next group].
-3. Execute retrospective qualification protocols per SOP 421 using the vendor manuals attached to each machine in ReadyDoc and the operating history: IQ (installation as specified, utilities, documentation), OQ (operating ranges, controls, alarms), PQ (performance on product).
-4. A qualification schedule for the remaining equipment.
+1. Using our equipment register (183 entries, 39 of which are inspection areas rather than machines), identify the equipment that needs IQ/OQ/PQ using the criteria in SOP 421 [CAROL: confirm the criteria — product contact, critical to the process, used for measurement] and record the decision for each machine.
+2. Qualify the mixers first (Hexagon tumbler blenders 1 and 2), then the stick pack machines (auger and volumetric), then [CAROL: next group].
+3. Carry out qualification protocols for existing equipment per SOP 421, using the vendor manuals filed against each machine and its operating history: installation qualification (installed as specified, utilities, documents), operational qualification (operating ranges, controls, alarms) and performance qualification (running product).
+4. Schedule the remaining equipment.
 
 ### Preventive action plan
 
-The equipment readiness checklist in ReadyDoc gains IQ, OQ and PQ as steps that are satisfied only by an attached, approved protocol, so the qualification status of every machine is visible per machine and in the plant-wide roll-up, and a new machine cannot read as ready for use without it. An equipment change routed through change control (CAR 4990683-4) triggers a requalification assessment.
+The equipment setup checklist in ReadyDoc will gain IQ, OQ and PQ steps that are only satisfied when an approved protocol is attached. That makes the qualification status of every machine visible on its own page and in the plant-wide summary, and a new machine cannot show as ready for use without it. An equipment change routed through change control (CAR 4990683-4) triggers a review of whether re-qualification is needed.
 
 ### Responsible person
 
-Qualification protocols and execution: [CAROL: maintenance lead], with QA approval by Adam [CAROL: confirm]. Readiness steps in ReadyDoc: Lowry Akers.
+Qualification protocols and execution: Ricardo Avalos, Maintenance, with Adam Bliss, Production Manager. Quality approval: Maria Servin, Quality Manager. Checklist steps in ReadyDoc: Lowry Akers, VP Operations.
 
 ### Date of corrective action completion
 
-Classification complete: [CAROL: 15 October 2026]. Mixers and stick pack machines qualified: [CAROL: 31 December 2026]. Readiness steps live: [CAROL: 31 October 2026]. Remaining equipment per the schedule, completing [CAROL: 31 March 2027].
+Equipment list classified: [CAROL: 15 October 2026]. Mixers and stick pack machines qualified: [CAROL: 31 December 2026]. Checklist steps in place: [CAROL: 31 October 2026]. Remaining equipment per the schedule, finishing [CAROL: 31 March 2027].
 
 ### Evidence of implementation
 
 On file now:
 - SOP 421 V2
-- Equipment register export
+- Equipment register report
 To be produced:
-- Equipment classification
+- The classified equipment list
 - Executed IQ/OQ/PQ protocols for the mixers and stick pack machines
-- The qualification schedule and its progress
+- The qualification schedule and progress against it
 
 
 ## CAR 4990683-7 · 4.5.43 · No Master Manufacturing Record per formulation and batch size
 
 **Finding (verbatim):** *MMRs are not prepared for each unique formulation and batch size of products. A blank MMR template is established, 413-1 Packaging Batch Production Record; however, there is not an MMR established and approved by Quality for each formula and batch size.*  
 **Reference:** SOP 413 V2 · SOP 300 V2 · 21 CFR 111.205(a)  
-**Decisions for Carol in this response:** 7
+**Decisions for Carol in this response:** 6
 
 ### Root cause analysis
 
-Formulas have been held as unit-based bills of materials in MRP Easy, scaled to the order at the time of manufacture, and the batch record has been a blank template (413-1) completed per run. SOP 413 V2 and SOP 300 V2 describe the master manufacturing record and BOM generation, but in practice the BOM plus the template was treated as the master, so no per-formulation, per-batch-size master record with the content required by 21 CFR 111.210 was ever written and approved by Quality.
+Our formulas are held in MRP Easy as bills of materials for one unit, scaled to the order size at the time of manufacture, and our batch record is a blank template (413-1) filled in for each run. SOP 413 V2 and SOP 300 V2 describe the master manufacturing record and the bill of materials, but in practice we treated the bill of materials plus the blank template as the master record. As a result we never wrote a master manufacturing record for each formula at each batch size with the content required by 21 CFR 111.210, approved by Quality.
 
 ### Corrective action plan
 
-An MMR is written and QC-approved for each unique formulation and batch size, with the content of 21 CFR 111.210: components with identity and weight or measure, a statement of theoretical yield with acceptable limits, in-process specifications and control points, written instructions for each manufacturing step including packaging and labelling, and corrective action instructions. Sequence: [CAROL: number of active formulations × batch sizes]; the [CAROL: top 10] highest-volume active products first, then the remainder. MMRs are held as controlled documents in ReadyDoc (one formula at one batch size per record, revision and QC approval), and the batch production record is derived from the approved MMR rather than typed beside it.
+We will write a master manufacturing record for each formula and batch size, approved by Quality, containing what 21 CFR 111.210 requires: each ingredient with its identity and weight or measure, the expected yield with acceptable limits, in-process specifications and control points, written instructions for each manufacturing step including packaging and labeling, and instructions for corrective action. Order of work: [CAROL: number of active formulas × batch sizes]; the [CAROL: 10] highest-volume active products first, then the rest. Each record is held as a controlled document in ReadyDoc (one formula at one batch size, with a revision and Quality approval). The batch production record for each run will be generated from the approved master record, not typed separately.
 
 ### Preventive action plan
 
-A batch cannot be started against a formula and batch size without an approved MMR: enforced in ReadyDoc once the batch production record is generated from the MMR, and in the interim by [CAROL: the manufacturing order requiring an approved MMR reference before release to the floor]. MMR changes go through change control (CAR 4990683-4). MMR coverage is reported at management review.
+A batch cannot be started against a formula and batch size without an approved master manufacturing record. This will be enforced in ReadyDoc once batch records are generated from the master; until then, [CAROL: the manufacturing order must reference an approved master record before it is released to the floor]. Changes to a master record go through change control (CAR 4990683-4). Coverage is reported at management review.
 
 ### Responsible person
 
-MMR content and QC approval: Adam (QA) with [CAROL: production / formulation lead]. MMR records and batch record derivation in ReadyDoc: Lowry Akers.
+Formula content: Matt Schramm, Formulations. Manufacturing steps and instructions: Adam Bliss, Production Manager. Quality approval: Maria Servin, Quality Manager. Records and batch record generation in ReadyDoc: Lowry Akers, VP Operations.
 
 ### Date of corrective action completion
 
-MMR format approved and the first [CAROL: 10] MMRs approved: [CAROL: 31 October 2026]. All active formulations and batch sizes: [CAROL: 31 January 2027].
+Master record format approved and the first [CAROL: 10] records approved: [CAROL: 31 October 2026]. All active formulas and batch sizes: [CAROL: 31 January 2027].
 
 ### Evidence of implementation
 
@@ -299,47 +316,47 @@ On file now:
 - SOP 413 V2
 - SOP 300 V2
 To be produced:
-- The approved MMR format
-- The first approved MMRs
-- MMR coverage report
+- The approved master record format
+- The first approved master manufacturing records
+- Coverage report
 
 
 ## CAR 4990683-8 · 4.5.84 · Environmental monitoring program not adhered to (surface testing)
 
 **Finding (verbatim):** *The environmental monitoring program is not adhered to. Surface testing results were not available at the time of the audit as testing had not been conducted as established per SOP 604 – Environmental Monitoring Program – V2 – 6/29/26.*  
 **Reference:** SOP 604 V2 · SOP 600 V1 · SOP 601 V1 · Form 604-01 Master Site List  
-**Decisions for Carol in this response:** 10
+**Decisions for Carol in this response:** 9
 
 ### Root cause analysis
 
-SOP 604 V2 and Form 604-01 define the sites, frequencies and alert/action levels, and the sampling schedules were entered in ReadyDoc. Two things were missing. Executing the surface sampling was not assigned to a named person with a due date that anyone was chased on [CAROL: confirm], and completing a scheduled sampling task did not file a result anywhere — results were expected from the outside laboratory but there was no result record or trend, so a swab that was never taken and a result that was never filed looked identical. The program therefore had no way of showing that surface testing was not happening. Water and air testing, which have a laboratory report per test, were conducted.
+SOP 604 V2 and Form 604-01 define the sampling sites, how often each is sampled, and the alert and action levels, and the sampling schedule was entered in our ReadyDoc system. Two things were missing. First, taking the surface samples was not assigned to a named person who was followed up when it did not happen [CAROL: confirm]. Second, completing a scheduled sampling task did not file a result anywhere. Results were expected from the outside laboratory, but there was no record of results or trend, so a swab that was never taken and a result that was never filed looked the same. The program had no way to show that surface testing was not happening. Water and air testing, which each produce a laboratory report, were done.
 
 ### Corrective action plan
 
-Surface sampling is executed per Form 604-01 immediately: the first full round of all sites on [CAROL: date, no later than 30 September 2026], samples submitted to [CAROL: laboratory], and results filed as they return. An environmental monitoring result record is built in ReadyDoc: per site, date, sample, result against the alert and action levels on Form 604-01, corrective action taken, and a trend. The 2026 water and air results already held are filed in it.
+We are carrying out surface sampling per Form 604-01 immediately: a full round of all sites on [CAROL: date, no later than 30 September 2026], samples sent to [CAROL: laboratory], and results filed as they come back. We are building an environmental monitoring results record in ReadyDoc: for each site, the date, the sample, the result against the alert and action levels on Form 604-01, any corrective action, and the trend over time. The 2026 water and air results we already hold will be filed in it.
 
 ### Preventive action plan
 
-A scheduled EMP sampling task cannot be closed without a result record. Overdue sampling appears in QA's Task Center and in the audit readiness review; a result above alert or action level raises a corrective action request. The trend is reviewed monthly by QA and at management review. Sampling is assigned to [CAROL: named sampler] with [CAROL: back-up].
+A scheduled sampling task cannot be closed without a result on record. Overdue sampling shows up on the Quality task list and in our audit readiness review. A result above the alert or action level raises a corrective action request. Quality reviews the trend monthly and at management review. Sampling is assigned to [CAROL: named person] with [CAROL: back-up person].
 
 ### Responsible person
 
-Sampling: [CAROL: named person]. Program owner and trend review: Adam (QA) [CAROL: confirm]. Result record in ReadyDoc: Lowry Akers.
+Sampling: [CAROL: suggested Diana Quishpe, QA Technician — confirm]. Program owner and trend review: Maria Servin, Quality Manager. Results record in ReadyDoc: Lowry Akers, VP Operations.
 
 ### Date of corrective action completion
 
-First full surface sampling round: [CAROL: 30 September 2026]. Result record live and back-filed: [CAROL: 31 October 2026]. Monthly trend review from [CAROL: November 2026].
+First full round of surface sampling: [CAROL: 30 September 2026]. Results record in use and earlier results filed: [CAROL: 31 October 2026]. Monthly trend review from [CAROL: November 2026].
 
 ### Evidence of implementation
 
 On file now:
 - SOP 604 V2, SOP 600 V1, SOP 601 V1
 - Form 604-01 Master Site List
-- ReadyDoc schedule showing the EMP sampling tasks
+- ReadyDoc schedule showing the sampling tasks
 - 2026 water and air testing results
 To be produced:
 - Surface testing results for the first round
-- The environmental monitoring result record and trend
+- The environmental monitoring results record and trend
 - First monthly trend review
 
 
@@ -347,38 +364,38 @@ To be produced:
 
 **Finding (verbatim):** *Product bears an expiration date however, evidence that shelf life is supported by data was not available.*  
 **Reference:** Preamble to 21 CFR 111 final rule  
-**Decisions for Carol in this response:** 12
+**Decisions for Carol in this response:** 11
 
 ### Root cause analysis
 
-Expiration dates were assigned from [CAROL: ingredient supplier stability data / industry convention / customer requirement — state which] without a documented stability study or a written scientific rationale on file. No procedure required shelf-life data or a documented justification before an expiration date was printed, and although retention samples of every lot are held, they were not pulled and tested on a schedule that would generate the data.
+Our expiration dates were set based on [CAROL: ingredient suppliers' stability data / industry practice / customer requirements — state which] without a documented stability study or a written scientific justification on file. No procedure required shelf-life data or a written justification before an expiration date was printed. We keep retention samples of every lot, but we were not pulling and testing them on a schedule that would produce the data.
 
 ### Corrective action plan
 
-1. Document the current basis for each product family's expiration date as an interim justification — ingredient stability data, water activity, packaging barrier, published data — by [CAROL: 31 October 2026], and decide per family whether the current dating is retained or shortened pending data [CAROL: decision].
-2. Write and approve a stability protocol [CAROL: SOP number]: product families, storage conditions (real-time ambient; accelerated if used, with its basis), pull points, tests (microbiological, moisture or water activity, organoleptic against specification, and potency where a claim is made), acceptance criteria and reporting.
-3. Start real-time studies using the retention samples held: first pulls on [CAROL: date], results filed per pull.
+1. Document the current basis for each product family's expiration date as an interim justification — ingredient stability data, water activity, packaging protection, published data — by [CAROL: 31 October 2026], and decide for each family whether to keep or shorten the current date until we have our own data [CAROL: decision].
+2. Write and approve a stability testing procedure [CAROL: SOP number]: product families, storage conditions (real-time at room temperature; accelerated if used, with the reason), when samples are pulled, which tests are run (microbiological, moisture or water activity, look, smell and taste against the specification, and potency where a claim is made), pass/fail criteria, and reporting.
+3. Start real-time studies using the retention samples we hold: first pulls on [CAROL: date], results filed after each pull.
 
 ### Preventive action plan
 
-Pull points are scheduled in ReadyDoc against the retention samples so a missed pull is visible; each product's expiration date is linked to its justification or study; a new product or a formula, packaging or process change routed through change control (CAR 4990683-4) requires a shelf-life justification before a date is assigned.
+Sample pulls are scheduled in ReadyDoc against the retention samples, so a missed pull is visible. Each product's expiration date is linked to its justification or study. A new product, or a change to formula, packaging or process that goes through change control (CAR 4990683-4), requires a shelf-life justification before a date is assigned.
 
 ### Responsible person
 
-Interim justification and protocol: Adam (QA) [CAROL: confirm]. Testing: [CAROL: laboratory contact]. Scheduling in ReadyDoc: Lowry Akers.
+Interim justification and stability procedure: Maria Servin, Quality Manager, with Matt Schramm, Formulations. Laboratory testing: Carol Pierce, Quality Technical Support Manager [CAROL: confirm]. Scheduling in ReadyDoc: Lowry Akers, VP Operations.
 
 ### Date of corrective action completion
 
-Interim justification and dating decision: [CAROL: 31 October 2026]. Protocol approved: [CAROL: 31 October 2026]. First pull: [CAROL: date]. Real-time data accrues over the study period ([CAROL: 12–24 months]); the plan and pull dates are filed with this response.
+Interim justification and dating decision: [CAROL: 31 October 2026]. Procedure approved: [CAROL: 31 October 2026]. First sample pull: [CAROL: date]. Real-time data will build over the study period ([CAROL: 12 to 24 months]); the plan and pull dates are filed with this response.
 
 ### Evidence of implementation
 
 On file now:
 - Retention sample log (boxes, lots, destruction dates)
-- [CAROL: any ingredient stability data or supplier statements currently held]
+- [CAROL: any ingredient stability data or supplier statements we hold]
 To be produced:
-- Interim shelf-life justification per product family
-- Approved stability protocol
+- Interim shelf-life justification for each product family
+- Approved stability testing procedure
 - Pull schedule and first results
 
 
@@ -390,23 +407,23 @@ To be produced:
 
 **Finding (verbatim):** *Operating procedures prohibiting Banned/Prohibited Substances from being manufactured, received, or warehoused at the location are not established.*  
 **Reference:** NSF 306 §6.2.2 · Annex C, NFL/NFLPA, MLB, WADA lists  
-**Decisions for Carol in this response:** 6
+**Decisions for Carol in this response:** 5
 
 ### Root cause analysis
 
-2026 is Powder Ops' initial registration to GMP for Sport. The documented food safety system was built to NSF/ANSI 455-2 and SQF, and the document control process had no step that maps the clauses of a newly adopted scheme to the procedure set and assigns owners to the gaps. The sport-specific requirement for a procedure prohibiting Banned/Prohibited Substances, referencing NSF 306 Annex C, NFL/NFLPA, MLB and WADA, was therefore never assigned to a document. A draft of the procedure ("Banned and Prohibited Substance Control Program") existed in the ReadyDoc document registry at the time of the audit but had not been numbered, approved or trained.
+2026 is our first registration to GMP for Sport. Our documented food safety system was built for NSF/ANSI 455-2 and SQF. Our document control process had no step that takes a newly adopted standard, matches each of its requirements to our procedures, and assigns an owner to each gap. So the sport-specific requirement for a procedure prohibiting banned and prohibited substances — referencing NSF 306 Annex C and the NFL/NFLPA, MLB and WADA lists — was never assigned to anyone. A draft procedure ("Banned and Prohibited Substance Control Program") existed in our document system at the time of the audit but had not been numbered, approved or trained.
 
 ### Corrective action plan
 
-Document Control issues the draft as a controlled procedure: number [CAROL: SOP number], the open items in the draft completed (the referenced purchasing and supplier qualification document numbers; where the list editions in use are recorded), routed through the Document Change Request process and approved. The procedure prohibits manufacturing, receiving or warehousing any substance on the NSF 306 Annex C, NFL/NFLPA, MLB or WADA lists, names QA as owner, defines the checks at purchasing, receiving and formulation, and states what happens when a listed substance is found. Receiving, purchasing, batching and QA staff are trained on it and the training is recorded in ReadyDoc against the procedure.
+Document Control will issue the draft as a controlled procedure: assign number [CAROL: SOP number], complete the open items in the draft (the purchasing and supplier qualification document numbers it refers to, and where the list editions in use are recorded), route it through the Document Change Request process, and approve it. The procedure prohibits manufacturing, receiving or storing any substance on the NSF 306 Annex C, NFL/NFLPA, MLB or WADA lists, names Quality as the owner, sets out the checks at purchasing, receiving and formulation, and says what happens if a listed substance is found. Receiving, purchasing, batching and quality staff will be trained on it and the training recorded.
 
 ### Preventive action plan
 
-The document control procedure [CAROL: SOP number for document control] gains a step: when a new certification scheme or a revision of a standard is adopted, its clauses are mapped to the document register and every gap is assigned an owner and a date before the audit is scheduled. Training in ReadyDoc is linked to the procedure with retraining on revision. ReadyDoc's audit readiness review already reports "no live procedure references the banned/prohibited-substance lists" as a critical item and will stay red until an approved document references them.
+Our document control procedure [CAROL: SOP number for document control] will gain a step: when we adopt a new certification scheme or a standard is revised, each requirement is matched to our procedures, and every gap is assigned an owner and a date before the audit is scheduled. Training is linked to the procedure so a revision triggers retraining automatically. Our audit readiness review already flags "no approved procedure references the banned/prohibited-substance lists" as a critical item, and it will stay flagged until an approved document does.
 
 ### Responsible person
 
-Issue and approval: Daniela (Document Control). Procedure owner: Adam (QA) [CAROL: confirm]. Training: [CAROL: name].
+Issue and approval: Daniela Servin, Document Control Manager. Procedure owner: Maria Servin, Quality Manager. Training: [CAROL: Daniela Servin or Maria Servin].
 
 ### Date of corrective action completion
 
@@ -415,9 +432,9 @@ Procedure approved: [CAROL: 30 September 2026]. Training complete: [CAROL: 15 Oc
 ### Evidence of implementation
 
 On file now:
-- The draft procedure as it stood at the audit (export from the registry, marked DRAFT)
+- The draft procedure as it stood at the audit (exported from the document system, marked DRAFT)
 To be produced:
-- The approved procedure with number, revision and approval
+- The approved procedure with its number, revision and approval
 - The Document Change Request
 - Training records
 
@@ -426,34 +443,34 @@ To be produced:
 
 **Finding (verbatim):** *Procedures to review annually at minimum the Banned/Prohibited Substance lists for changes are not established.*  
 **Reference:** NSF 306 §6.2.3.1  
-**Decisions for Carol in this response:** 4
+**Decisions for Carol in this response:** 3
 
 ### Root cause analysis
 
-The same origin as CAR 4990682-1: the sport-specific clauses were never mapped to the procedure set. In addition, the plant's recurring quality activities are generated as scheduled work in ReadyDoc's Quality Schedules, and no schedule existed for a review of the four lists — so [CAROL: either "any informal checking of the WADA list left no dated record" or "no review was being done"; state which is true].
+Same origin as CAR 4990682-1: the sport-specific requirements were never matched to our procedures. In addition, our recurring quality checks are run as scheduled tasks in our ReadyDoc system, and no task existed for reviewing the four lists. So [CAROL: either "any informal checking of the WADA list left no dated record" or "no review was being done" — state which is true].
 
 ### Corrective action plan
 
-The new procedure (CAR 4990682-1) includes a section requiring, at minimum annually and on notice of a list revision, a review by QA of the current editions of NSF 306 Annex C, the NFL/NFLPA list, the MLB list and the WADA Prohibited List; the edition or date of each list reviewed is recorded, and the approved materials list and active formulations are checked against any change. A Quality Schedule "Banned/Prohibited Substance list review" (annual, owner QA) is created in ReadyDoc; its completion record holds the list editions reviewed, the changes found and the actions taken. The first review is executed on [CAROL: date] as the baseline.
+The new procedure (CAR 4990682-1) includes a section requiring Quality to review the current editions of NSF 306 Annex C, the NFL/NFLPA list, the MLB list and the WADA Prohibited List at least once a year and whenever a list is revised. Each review records the edition or date of each list, and checks our approved materials list and active formulas against any changes. We are creating a scheduled task in ReadyDoc, "Banned/Prohibited Substance list review" (annual, owner Quality). The completion record holds the list editions reviewed, the changes found and the actions taken. The first review will be done on [CAROL: date] as the baseline.
 
 ### Preventive action plan
 
-The schedule raises the review as a task 30 days before it is due; an overdue review appears in QA's Task Center and in the audit readiness review. The list editions in use are recorded in a controlled log referenced by the procedure so any review can be traced to the editions it used. A list change found at review re-runs the purchased-materials screen (CAR 4990682-3).
+The task is created automatically 30 days before the review is due. An overdue review shows on the Quality task list and in our audit readiness review. The list editions in use are recorded in a controlled log referenced by the procedure, so any review can be traced to the editions it used. A change found at review re-runs the purchased-materials check (CAR 4990682-3).
 
 ### Responsible person
 
-Review and record: Adam (QA) [CAROL: confirm]. Schedule in ReadyDoc: Lowry Akers.
+Review and record: Maria Servin, Quality Manager. Scheduled task in ReadyDoc: Lowry Akers, VP Operations.
 
 ### Date of corrective action completion
 
-Schedule created and first review completed: [CAROL: 15 October 2026]. Annually thereafter.
+Task created and first review completed: [CAROL: 15 October 2026]. Every year after that.
 
 ### Evidence of implementation
 
 On file now:
-- ReadyDoc Quality Schedules showing the mechanism in use for existing recurring checks (e.g. Tap Water Testing, Air Testing)
+- ReadyDoc scheduled tasks showing the same mechanism already in use for other recurring checks (for example Tap Water Testing and Air Testing)
 To be produced:
-- The schedule entry
+- The scheduled task
 - The first completed review record naming the list editions reviewed
 
 
@@ -461,40 +478,40 @@ To be produced:
 
 **Finding (verbatim):** *Procedures ensuring all materials purchased are not on the Banned/Prohibited Substances lists are not established.*  
 **Reference:** NSF 306 §6.2.3.2 · FORM 204-01 Receiving Inspection Checklist V1 · SOP 404 V4  
-**Decisions for Carol in this response:** 5
+**Decisions for Carol in this response:** 3
 
 ### Root cause analysis
 
-The purchasing and receiving controls (SOP 404 supplier and material qualification; FORM 204-01 Receiving Inspection Checklist) predate the sport program and were never extended with a banned-substance screen. There was no step at material approval or at receipt that checked a material against the four lists, and consequently no record of such a check for any purchase — the clause's own requirement to "document execution".
+Our purchasing and receiving controls (SOP 404 for supplier and material approval; FORM 204-01, the Receiving Inspection Checklist) were written before we joined the sport program, and a banned-substance check was never added to them. There was no step at material approval or at receipt that checked a material against the four lists, and so no record of such a check for any purchase — which is what the requirement asks for when it says "document execution".
 
 ### Corrective action plan
 
-A two-point control, written into the new procedure (CAR 4990682-1):
-(a) At approval of a new material or supplier, QA screens the material specification and ingredient statement against the NSF 306 Annex C, NFL/NFLPA, MLB and WADA lists and records the result and the list editions used on the supplier qualification record in ReadyDoc.
-(b) At receipt, FORM 204-01 gains the line "Material checked against the Banned/Prohibited Substance lists — YES / NO. If NO, place on hold and notify QA", issued through a Document Change Request as FORM 204-01 V2. ReadyDoc refuses sign-off of a receiving inspection while any line is blank, so a receipt cannot close without the check recorded.
-(c) The current approved materials list is screened once, retrospectively, against the current list editions, and the screen recorded, by [CAROL: 31 October 2026].
+A two-point check, written into the new procedure (CAR 4990682-1):
+(a) When a new material or supplier is approved, Quality checks the material specification and ingredient statement against the NSF 306 Annex C, NFL/NFLPA, MLB and WADA lists, and records the result and the list editions used on the supplier's record in ReadyDoc.
+(b) At receipt, FORM 204-01 gains the line "Material checked against the Banned/Prohibited Substance lists — YES / NO. If NO, place on hold and notify Quality", issued through a Document Change Request as FORM 204-01 V2. ReadyDoc does not allow a receiving inspection to be signed off while any line is blank, so a receipt cannot be closed without this check recorded.
+(c) Our current approved materials list will be checked once against the current list editions and the check recorded, by [CAROL: 31 October 2026].
 
 ### Preventive action plan
 
-Every receipt produces a dated, signed record of the check as part of the receiving inspection already performed at the truck; a NO answer automatically notifies QA through the checklist's existing escalation. The annual list review (CAR 4990682-2) re-screens the approved materials list whenever a list changes, and a new material cannot be approved without the screen recorded.
+Every receipt produces a dated, signed record of the check as part of the receiving inspection already done at the truck. A NO answer automatically notifies Quality through the checklist's existing escalation. The annual list review (CAR 4990682-2) re-checks the approved materials list whenever a list changes, and a new material cannot be approved without the check recorded.
 
 ### Responsible person
 
-FORM 204-01 V2 and the DCR: Daniela (Document Control). Screening at approval and the retrospective screen: Adam (QA) [CAROL: confirm]. Receiving: [CAROL: warehouse lead].
+FORM 204-01 V2 and the Document Change Request: Daniela Servin, Document Control Manager. Checks at material approval, and the one-time check of current materials: Maria Servin, Quality Manager. Purchasing: Jake Waits, Purchasing Manager. Receiving inspections: Juan Gonzalez, Warehouse Supervisor.
 
 ### Date of corrective action completion
 
-FORM 204-01 V2 issued and live in ReadyDoc: [CAROL: 15 October 2026]. Retrospective screen of current materials: [CAROL: 31 October 2026].
+FORM 204-01 V2 issued and in use in ReadyDoc: [CAROL: 15 October 2026]. One-time check of current materials: [CAROL: 31 October 2026].
 
 ### Evidence of implementation
 
 On file now:
 - FORM 204-01 V1
-- A completed receiving inspection from ReadyDoc showing sign-off refused while a line is blank
+- A completed receiving inspection from ReadyDoc showing that sign-off is refused while a line is blank
 To be produced:
-- FORM 204-01 V2 with its DCR
+- FORM 204-01 V2 with its Document Change Request
 - The first receiving inspections with the new line answered
-- The retrospective screen record
+- The one-time check record
 
 
 ---
