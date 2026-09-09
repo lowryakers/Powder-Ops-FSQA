@@ -12,8 +12,10 @@ t('G3 closing a re-clean task from a cleaning record clears rework_required',
 t('G4 reassigning a machine leaves QA\'s inspections on QA\'s list',
   (src('server/api/equipment.js').match(/COALESCE\(task_group, ''\) != 'qa'/g) || []).length === 2);
 { const pay = src('server/api/pay.js');
-  t('G5 assignments, reviews and the nudge read the LINKED name and role',
-    (pay.match(/withEmployeeFacts\(db, db\.prepare/g) || []).length === 3 && /e\.user_id/.test(pay));
+  // Four callers since D-057: the assignment list, the review list, the nudge,
+  // and payActions (the office's queue). A fifth list route must join them.
+  t('G5 assignments, reviews, the nudge and the action queue read the LINKED name and role',
+    (pay.match(/withEmployeeFacts\(db, db\.prepare/g) || []).length === 4 && /e\.user_id/.test(pay));
   t('G5 no list route hands back e.name straight from the join',
     !/JOIN pay_employees e ON e\.id = a\.employee_id\n\s+WHERE[^`]*`\)\.all\(soon\);\n/.test(pay)); }
 { const office = src('server/api/office.js');
