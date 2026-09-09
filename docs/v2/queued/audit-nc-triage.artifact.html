@@ -127,7 +127,7 @@
 
 <div class="wrap">
 <header>
-  <div class="kicker">Powder Ops · NSF audits 24–26 Aug 2026 · auditor Sonya Hess · official reports · status as of 8 Sep 2026</div>
+  <div class="kicker">Powder Ops · NSF audits 24–26 Aug 2026 · auditor Sonya Hess · official reports · status as of 9 Sep 2026</div>
   <h1>Audit Nonconformance Triage</h1>
   <p class="sub">All twelve findings, sorted by what technology closes and what it cannot — and what has
     actually been done against each since. <b>The official reports arrived 4 September</b>: the GMP for
@@ -139,7 +139,7 @@
     <div class="sc zero"><div class="v">0</div><div class="k">major</div></div>
     <div class="sc minor"><div class="v">12</div><div class="k">minor · 3 + 9</div></div>
     <div class="sc"><div class="v">2</div><div class="k">audits, one visit</div></div>
-    <div class="sc"><div class="v">0</div><div class="k">closed · 9 under way</div></div>
+    <div class="sc"><div class="v">0</div><div class="k">closed · 10 under way</div></div>
   </div>
 
   <div class="box hot">
@@ -369,7 +369,7 @@
 
 <div class="n c">
   <div class="nh"><span class="id">4.6.21</span><span class="nt">Shelf life not supported by data</span><span class="chip k-c">C</span></div>
-  <div class="st open"><span class="dot"></span><span class="what">Not started — a shelf-life field is not a stability study</span></div>
+  <div class="st part"><span class="dot"></span><span class="what">Studies, scheduled pulls and per-product shelf-life basis in the system since 9 September — <b>the data takes real time</b></span></div>
   <p>A stability study is laboratory work over real time; nothing about it is a software problem.
     ReadyDoc's part is afterwards — hold the study, and link each product's expiry to the study that
     justifies it, so the answer to <b>"why 24 months?"</b> is a document rather than a convention.</p>
@@ -382,15 +382,30 @@ is why it is now checked against the thing it describes.</p>
 
 <div class="tally">
   <div class="t"><span class="v">12</span> findings on the auditor's list</div>
-  <div class="t warn"><span class="v">9</span> with work under way</div>
+  <div class="t warn"><span class="v">10</span> with work under way</div>
   <div class="t ok"><span class="v">0</span> closed</div>
-  <div class="t"><span class="v">3</span> not started</div>
+  <div class="t"><span class="v">2</span> not started</div>
 </div>
 
 <div class="box">
   <p><b>Nothing is closed, and that is the honest number.</b> A finding closes when the corrective
   action is complete and its evidence can be produced on request — not when the software that will hold
-  the evidence exists. Nine have real foundations under them; none has finished.</p>
+  the evidence exists. Ten have real foundations under them; none has finished.</p>
+</div>
+
+<div class="prog">
+  <div class="hd">
+    <h3>4.6.21 — stability studies and the shelf-life basis (D-061)</h3>
+    <span class="st part" style="margin:0"><span class="dot"></span><span class="what">Landed 9 September 2026</span></span>
+  </div>
+  <p>A study is filed with its pull dates and <b>every pull is a row from day one</b>, so a missed pull is a
+  row past its date with nothing pulled — derived, never a flag. A pull raises its own task two weeks ahead
+  (the annual-vendor-review shape), the task completes through the same check-record interface, and the
+  laboratory's result is entered on the study; a <b>fail raises a CAR</b>. Beside the studies, a
+  <b>shelf-life justification</b> per product family records what an expiration date rests on now, and
+  coverage is derived from the catalogue: the products with neither a study nor a written basis are
+  counted on the tab and in the readiness review. The study itself is laboratory work over real time and
+  nothing here shortens it.</p>
 </div>
 
 <div class="prog">
@@ -448,7 +463,7 @@ is why it is now checked against the thing it describes.</p>
 
 <div class="prog">
   <div class="hd">
-    <h3>The other five with work under way</h3>
+    <h3>The others with work under way</h3>
     <span class="st part" style="margin:0"><span class="dot"></span>
       <span class="what">Foundations in place · none finished</span></span>
   </div>
@@ -460,10 +475,10 @@ is why it is now checked against the thing it describes.</p>
       three GMP for Sport findings hang on that document existing.</p>
 
     <p><b>4.5.84 · Environmental monitoring.</b> FORM 604-01 is transcribed with its alert and action
-      limits, and six quality schedules are seeded from it — so the work is scheduled and visible.
-      <b>What is missing is the result record:</b> a completed schedule files no environmental result,
-      so a swab that never happened and a swab whose result went nowhere still look identical. That is
-      the half that closes the finding.</p>
+      limits, six quality schedules are seeded from it, and since 9 September <b>the result record
+      exists</b> (see the block above): a sampling task files its sites, the laboratory result grades
+      itself against the form. <b>What is missing is the swabbing itself</b>, and filing this year's water
+      and air results into it.</p>
 
     <p><b>4.4.39 · Electronic records validation.</b> More exists than the finding implies. A signature
       service covers <b>21 CFR 11.200</b> — the signer's password at the moment of signing, one
@@ -485,7 +500,7 @@ is why it is now checked against the thing it describes.</p>
 </div>
 
 <div class="box">
-  <p><b>What we would tell the auditor today.</b> Six of twelve findings have real foundations and none
+  <p><b>What we would tell the auditor today.</b> Ten of twelve findings have real foundations and none
   is closed. Two of the six turn on a single act by Document Control: approving the banned-substance
   draft would move three findings from "no procedure exists" to "procedure written, execution
   accruing".</p>
@@ -528,9 +543,9 @@ is why it is now checked against the thing it describes.</p>
 <footer>
   <span>12 minor · 0 major · 0 critical</span>
   <span>A:5 · B:4 · C:3</span>
-  <span>0 closed · 6 under way</span>
+  <span>0 closed · 10 under way</span>
   <span>Official reports 4 Sep 2026 · CARs due 18 Sep &amp; 4 Oct</span>
-  <span>Verified against the code 8 Sep 2026</span>
+  <span>Verified against the code 9 Sep 2026</span>
   <span>docs/v2/queued/audit-nc-triage.md</span>
 </footer>
 </div>

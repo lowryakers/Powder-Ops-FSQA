@@ -3253,6 +3253,21 @@ supplier and the register stops saying "no questionnaire on file". Same token ma
   GET — a NULL map is an empty account, and the first run of the verify fell over exactly there.
 - Verified: `verify:supplierq` (40, live + browser at 390px; in `verify:all`).
 
+## Stability studies and the shelf-life basis (`server/stability.js`, `api/stability.js`, D-061)
+The Stability tab of Retention Samples. A study is filed with its pull months and **every pull is a row from
+day one** (`planPulls`, pure), so a missed pull is a row past its date with nothing pulled — `pullState()`
+on read, never stored. Housekeeping raises each pull's work order 14 days ahead (`generateStabilityPullTasks`,
+idempotent on `stability_pulls.work_order_id`); the task completes through the check-record interface
+(`kind: 'stability_pull'`, quantity required) and the result is entered on the study; **a fail raises a CAR**.
+- **The basis in force for a SKU is the most recent `stability_justifications` row naming it**
+  (`currentJustifications`, derived; `current_for` per row). Never supersede a whole row — the first cut did,
+  and unsaid the basis for the rest of a family when one SKU got a newer one.
+- **Coverage is derived from `products`** (active, SKU named by a study or a justification); the uncovered
+  count is on the tab and in the readiness review. Tests must use real catalogue SKUs — the seeded `sku`
+  values are 14-digit codes, not the `PP-` style, and an invented code never counts as covered.
+- A pull that cannot be taken is **skipped with a reason** (task cancelled), never left to read as missed.
+- Verified: `verify:stability` (33, live + browser; in `verify:all`).
+
 ## Retention Samples (`server/api/retention.js` + `RetentionSamplesPanel.jsx`)
 The plant's physical library of what it made — a retain of every blend, intermediate and finished good, plus
 90 g of every raw material received. Transcribed from their own Retention Sample log. Nav entry in Quality;

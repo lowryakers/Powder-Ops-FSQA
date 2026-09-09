@@ -8,6 +8,7 @@ import { generateQualityScheduleTasks } from './quality-schedules.js';
 import { generateRecleanTasks, raiseAtpRecleanTask } from './sanitation.js';
 import { gradeAtp, applyGrade, atpEscalation } from '../atp-limits.js';
 import { generateSupplierReviewTasks } from '../supplier-review.js';
+import { generateStabilityPullTasks } from '../stability.js';
 import { generateSwabReorders } from '../swab-stock.js';
 import { getChannelByName, postMessageAs, botDm } from './comms.js';
 import { periodically, resetHousekeeping } from '../housekeeping.js';
@@ -312,6 +313,9 @@ export function runPmHousekeeping(db, { force = false } = {}) {
   // An annual vendor review arrives with no other prompt — nobody is looking
   // for it — so it has to land in somebody's list. SOP 404 § IV.B.
   periodically('supplier-reviews', generateSupplierReviewTasks, db);
+  // A stability pull that falls due raises its own task LEAD_DAYS ahead; a
+  // pull nobody took is a row past its date, which the study screen shows.
+  periodically('stability-pulls', generateStabilityPullTasks, db);
   // Running out of swabs does not slow a clean down, it means the clean cannot
   // be VERIFIED. Nothing was counting them, so the reorder raises itself.
   periodically('swab-reorders', generateSwabReorders, db);
@@ -1827,7 +1831,7 @@ router.get('/operator-tasks', (req, res) => {
   // message. Without it the operator sees only the summarised title — half a
   // sentence, with the instruction it summarises nowhere on the screen.
   let sql = `SELECT wo.id, wo.title, wo.description, wo.status, wo.priority, wo.due_date, wo.assigned_to,
-    wo.procedure_steps, wo.pm_schedule_id, wo.quality_schedule_id, wo.task_group,
+    wo.procedure_steps, wo.pm_schedule_id, wo.quality_schedule_id, wo.stability_pull_id, wo.task_group,
     wo.issue_flagged, wo.issue_notes, wo.issue_attachments, wo.issue_flagged_by, wo.issue_flagged_at,
     e.name as equipment_name, e.type as equipment_type, e.location, e.asset_id, e.is_food_contact,
     ps.frequency_type, ps.title as schedule_title

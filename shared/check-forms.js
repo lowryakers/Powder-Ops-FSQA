@@ -28,6 +28,9 @@
  *   banned_list_review  — the annual Banned/Prohibited Substance list review
  *                         (CAR 4990682-2): the edition of each list reviewed,
  *                         the changes found, the actions taken.
+ *   stability_pull      — a dated pull on a stability study (CAR 4990683-9):
+ *                         what was pulled and where it went; the result is
+ *                         entered on the study when the laboratory reports.
  */
 
 export const GMP_WALK_REVISION = 'DRAFT-1';
@@ -107,7 +110,9 @@ export function missingForCheck(form, check) {
   const c = check || {};
   const out = [];
   if (!form) return out;
-  if (form.kind === 'emp') {
+  if (form.kind === 'stability_pull') {
+    if (!String(c.quantity || '').trim()) out.push({ key: 'quantity', label: 'What was pulled (quantity / container)' });
+  } else if (form.kind === 'emp') {
     const sites = Array.isArray(c.sites) ? c.sites.map(s => String(s || '').trim()).filter(Boolean) : [];
     if (!sites.length) out.push({ key: 'sites', label: 'At least one site sampled' });
   } else if (form.kind === 'gmp_walk') {
@@ -133,6 +138,9 @@ export function missingForCheck(form, check) {
 export function normalizeCheck(form, check) {
   const c = check || {};
   if (!form) return null;
+  if (form.kind === 'stability_pull') {
+    return { quantity: String(c.quantity || '').trim().slice(0, 120), lab: String(c.lab || '').trim().slice(0, 120) || null, sent_on: /^\d{4}-\d{2}-\d{2}$/.test(String(c.sent_on || '')) ? c.sent_on : null };
+  }
   if (form.kind === 'emp') {
     const seen = new Set();
     const sites = (Array.isArray(c.sites) ? c.sites : []).map(s => String(s || '').trim().slice(0, 160)).filter(s => {

@@ -25,6 +25,10 @@ const S = {
   actions: { en: 'Actions taken (write "none" if none)', es: 'Acciones tomadas (escriba "ninguna" si no hay)' },
   rechecked: { en: 'Approved materials list and active formulas re-checked against the changes', es: 'Lista de materiales aprobados y fórmulas activas verificadas contra los cambios' },
   still: { en: 'Still needed', es: 'Falta' },
+  pull_h: { en: 'Stability pull', es: 'Muestra de estabilidad' },
+  quantity: { en: 'What was pulled (quantity / container)', es: 'Qué se tomó (cantidad / envase)' },
+  sent_on: { en: 'Sent to the laboratory on (optional)', es: 'Enviado al laboratorio el (opcional)' },
+  from_retain: { en: 'From retention sample / box', es: 'De la muestra de retención / caja' },
 };
 const tr = (lang, k) => (S[k] || {})[lang] || (S[k] || {}).en || k;
 
@@ -39,6 +43,7 @@ export default function CheckFields({ form, value, onChange, lang = 'en' }) {
       {form.kind === 'emp' && <EmpFields form={form} v={v} set={set} lang={lang} />}
       {form.kind === 'gmp_walk' && <WalkFields form={form} v={v} set={set} lang={lang} />}
       {form.kind === 'banned_list_review' && <ReviewFields form={form} v={v} set={set} lang={lang} />}
+      {form.kind === 'stability_pull' && <PullFields form={form} v={v} set={set} lang={lang} />}
       {missing.length > 0 && (
         <p className="text-[11px] text-amber-800" data-check-missing={missing.length}>
           {tr(lang, 'still')}: {missing.map(m => m.label).join(' · ')}
@@ -144,6 +149,22 @@ function ReviewFields({ form, v, set, lang }) {
         <input type="checkbox" checked={!!v.materials_rechecked} onChange={e => set({ materials_rechecked: e.target.checked })} className="mt-0.5" data-list-rechecked />
         {tr(lang, 'rechecked')}
       </label>
+    </div>
+  );
+}
+
+function PullFields({ form, v, set, lang }) {
+  return (
+    <div className="bg-white rounded-lg border border-green-200 p-2 space-y-2">
+      <p className="text-xs font-semibold text-gray-700">{tr(lang, 'pull_h')} <span className="font-normal text-gray-400">— {form.study} · {form.pull_month} mo · due {form.due_date}</span></p>
+      {form.retention_sample_id && <p className="text-[11px] text-gray-500">{tr(lang, 'from_retain')}: {form.retention_sample_id}</p>}
+      {form.tests && <p className="text-[11px] text-gray-500">{form.tests}</p>}
+      <input value={v.quantity || ''} onChange={e => set({ quantity: e.target.value })} placeholder={tr(lang, 'quantity')} data-pull-quantity
+        className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
+      <div className="grid grid-cols-2 gap-2">
+        <input value={v.lab || ''} onChange={e => set({ lab: e.target.value })} placeholder={tr(lang, 'lab')} className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
+        <input type="date" value={v.sent_on || ''} onChange={e => set({ sent_on: e.target.value })} title={tr(lang, 'sent_on')} className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
+      </div>
     </div>
   );
 }

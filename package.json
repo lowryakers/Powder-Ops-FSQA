@@ -48,6 +48,7 @@
     "verify:payactions": "node scripts/verify-pay-actions.mjs",
     "verify:supplierq": "node scripts/verify-supplier-questionnaire.mjs",
     "verify:checkrecords": "node scripts/verify-check-records.mjs",
+    "verify:stability": "node scripts/verify-stability.mjs",
     "verify:backdate": "node scripts/verify-backdated-recurrence.mjs",
     "verify:onboarding": "node scripts/verify-onboarding.mjs",
     "verify:onboardingui": "node scripts/verify-onboarding-ui.mjs",

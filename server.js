@@ -50,6 +50,7 @@ import formRoutes from './server/api/forms.js';
 import facilityRoutes from './server/api/facility.js';
 import supplierRoutes, { questionnaireLinkRouter } from './server/api/suppliers.js';
 import retentionRoutes from './server/api/retention.js';
+import stabilityRoutes from './server/api/stability.js';
 import partnerRoutes, { partnerReminderNudges } from './server/api/partners.js';
 import partnerPortalRoutes from './server/api/partner-portal.js';
 import onboardingRoutes, { portalRouter as onboardingPortalRoutes } from './server/api/onboarding.js';
@@ -1831,6 +1832,8 @@ app.use('/api/forms', formRoutes);
 // Read-only: the map shows facts from records the caller can already see.
 app.use('/api/facility', facilityRoutes);
 app.use('/api/retention', requireModuleWrite('retention-samples'), retentionRoutes);
+// Stability studies live beside the retention library their pulls come from.
+app.use('/api/stability', requireModuleWrite('retention-samples'), stabilityRoutes);
 // The supplier's side of FORM 404-1 — public, token-gated, mounted AHEAD of
 // the guarded router (the partner-portal arrangement).
 app.use('/api/supplier-questionnaire', questionnaireLinkRouter);

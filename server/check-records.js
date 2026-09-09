@@ -43,6 +43,11 @@ function empSitesFor(db, zone) {
  * lookup, and only for tasks that came from a quality schedule.
  */
 export function checkFormFor(db, wo) {
+  if (wo?.stability_pull_id) {
+    const p = (() => { try { return db.prepare('SELECT p.pull_month, p.due_date, s.title, s.condition, s.tests, s.retention_sample_id, s.lot_number FROM stability_pulls p JOIN stability_studies s ON s.id = p.study_id WHERE p.id = ?').get(wo.stability_pull_id); } catch { return null; } })();
+    if (!p) return null;
+    return { kind: 'stability_pull', study: p.title, pull_month: p.pull_month, due_date: p.due_date, condition: p.condition, tests: p.tests, lot_number: p.lot_number, retention_sample_id: p.retention_sample_id };
+  }
   const sched = scheduleFor(db, wo);
   if (!sched) return null;
   const kind = checkKindFor(sched);
@@ -63,6 +68,7 @@ export function checkFormFor(db, wo) {
 export function attachCheckForms(db, rows) {
   const cache = new Map();
   return rows.map(r => {
+    if (r.stability_pull_id) { const f = checkFormFor(db, r); return f ? { ...r, check_form: f } : r; }
     if (!r.quality_schedule_id) return r;
     if (!cache.has(r.quality_schedule_id)) cache.set(r.quality_schedule_id, checkFormFor(db, r));
     const f = cache.get(r.quality_schedule_id);
@@ -77,6 +83,11 @@ export function attachCheckForms(db, rows) {
 export function fileCheckRecord(db, { form, check, wo, by, when, notes }) {
   const c = normalizeCheck(form, check);
   const day = (when || new Date().toISOString()).slice(0, 10);
+  if (form.kind === 'stability_pull') {
+    db.prepare(`UPDATE stability_pulls SET status = 'pulled', pulled_on = ?, pulled_by = ?, quantity = ?, lab = ?, sent_on = ?, notes = COALESCE(?, notes), updated_at = datetime('now') WHERE id = ? AND status = 'planned'`)
+      .run(day, by, c.quantity, c.lab, c.sent_on, notes || null, wo.stability_pull_id);
+    return { kind: 'stability_pull', ids: [wo.stability_pull_id] };
+  }
   if (form.kind === 'emp') {
     const ins = db.prepare(`INSERT INTO emp_samples (id, work_order_id, quality_schedule_id, zone, site, test, sampled_on, sampled_by, lab, outcome, form_revision, notes, source)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, 'task')`);

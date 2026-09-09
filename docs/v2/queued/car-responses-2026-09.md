@@ -378,7 +378,7 @@ Our expiration dates were set based on [CAROL: ingredient suppliers' stability d
 
 ### Preventive action plan
 
-Sample pulls are scheduled in ReadyDoc against the retention samples, so a missed pull is visible. Each product's expiration date is linked to its justification or study. A new product, or a change to formula, packaging or process that goes through change control (CAR 4990683-4), requires a shelf-life justification before a date is assigned.
+Sample pulls are scheduled in our ReadyDoc system against the retention samples (in place from 9 September 2026): each study lists its pull dates, a task is raised two weeks before each pull, and a pull nobody took shows as missed. A failed result raises a corrective action request by itself. Each product's expiration date is linked in the system to its written interim justification or to the study, and the products with neither are counted. A new product, or a change to formula, packaging or process that goes through change control (CAR 4990683-4), requires a shelf-life justification before a date is assigned.
 
 ### Responsible person
 

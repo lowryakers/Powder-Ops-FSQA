@@ -1865,3 +1865,28 @@ Verified: `verify:checkrecords`, 49 assertions live and in the browser (the refu
 two sites, ok/alert/action grading with one CAR, the corrective-action gate, the repeated-walk CAR, the
 list review as editions in use, the readiness sections and the bell reading the rows, the Task Center form
 holding Complete until a site is ticked).
+
+## D-061 · 2026-09-09 · decided — A stability pull is a row from the day the study is filed
+
+CAR 4990683-9 asks for pulls scheduled against the retention samples so a missed pull is visible, and for
+each product's expiration date to be linked to its justification or study. Both are held here; neither is
+the study, which is laboratory work over real time and is not shortened by software.
+
+- **Every pull is pre-created when the study is filed** (`planPulls`, pure). A missed pull is therefore a
+  row past its due date with nothing pulled — `pullState()` on read, never a stored flag — and nothing has
+  to remember to raise it. The task for a pull is raised 14 days ahead by housekeeping, idempotent on the
+  pull's own `work_order_id` (the annual-vendor-review shape), and completes through the check-record
+  interface (D-060) with what was pulled and where it went. The result is entered on the study when the
+  laboratory reports; a **fail raises one CAR** (a product on the shelf whose date may not hold).
+- **A pull that cannot be taken is skipped with a reason**, cancelling its task, rather than left to read as
+  missed forever — the difference between a record of a decision and a hole.
+- **The basis in force for a SKU is the most recent justification naming it, derived on read.** The first
+  cut superseded the whole earlier row when one SKU got a newer basis, which silently unsaid the basis for
+  the rest of the family — caught by the verify. Nothing is edited or flagged; the rows are the history and
+  `current_for` says which SKUs each still speaks for. (`superseded_at` exists on the table and is unused;
+  left rather than migrated away.)
+- **Coverage is derived from the catalogue** — active products with a study or a justification naming
+  their SKU — so the count of "products whose expiration date rests on nothing recorded" is true the day a
+  SKU is added. It sits on the Stability tab and in the readiness review.
+
+Verified: `verify:stability`, 33 assertions live and in the browser.

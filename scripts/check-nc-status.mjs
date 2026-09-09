@@ -25,13 +25,13 @@ const EVIDENCE = {
   '4.5.84':  [['server/emp-site-list.js', 'EMP_SCHEDULES'], ['server/check-records.js', 'emp_samples'], ['server/emp-results.js', 'gradeEmpResult']],
   '4.2.9':   [['server/check-records.js', 'gmp_walkthroughs'], ['shared/check-forms.js', 'GMP_WALK_ITEMS']],
   '§6.2.3.1': [['server/check-records.js', 'banned_list_reviews']],
+  '4.6.21':  [['server/stability.js', 'generateStabilityPullTasks'], ['server/api/stability.js', 'stability_justifications']],
 };
 
 // findings the document says are NOT started — assert the thing really is absent,
 // so work landing on main without the document being updated is caught.
 const ABSENT = {
   '4.5.43': [['server/db.js', /CREATE TABLE IF NOT EXISTS (master_manufacturing|mmr)/]],
-  '4.6.21': [['server/db.js', /CREATE TABLE IF NOT EXISTS \w*stability/]],
   '4.5.8':  [['server/equipment-readiness.js', /iq_oq_pq|Installation qualification/i]],
 };
 

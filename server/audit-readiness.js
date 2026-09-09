@@ -256,8 +256,30 @@ export function readinessReview(db) {
   add('Retention Samples', () => {
     const rows = n('SELECT COUNT(*) c FROM retention_samples');
     const boxes = n('SELECT COUNT(*) c FROM retention_boxes');
-    return [item(`${rows} samples across ${boxes} boxes`, rows ? 'good' : 'warning',
+    const items = [item(`${rows} samples across ${boxes} boxes`, rows ? 'good' : 'warning',
       rows ? null : 'The log is empty — the physical library exists, so import the boxes from the paper log ("Import a box").', 'retention-samples')];
+    // Shelf life (CAR 4990683-9): a study with dated pulls, and every product's
+    // date resting on a study or a written justification.
+    const studies = n("SELECT COUNT(*) c FROM stability_studies WHERE status IN ('active','planned')");
+    const missed = n("SELECT COUNT(*) c FROM stability_pulls p JOIN stability_studies s ON s.id = p.study_id WHERE s.status = 'active' AND p.status = 'planned' AND p.due_date < date('now')");
+    const failedOpen = n("SELECT COUNT(*) c FROM stability_pulls p LEFT JOIN capas c ON c.id = p.capa_id WHERE p.result = 'fail' AND (c.id IS NULL OR c.status NOT IN ('closed','verified'))");
+    items.push(item(studies ? `${studies} stability study(ies) with scheduled pulls` : 'No stability study on record', studies ? 'good' : 'warning',
+      studies ? null : 'NSF 4.6.21: expiration dates need data behind them. Start the real-time study on the Stability tab; until then record each family\'s interim justification.', 'retention-samples'));
+    if (missed) items.push(item(`${missed} stability pull(s) missed`, 'critical', 'A pull past its date with nothing pulled — the study loses that point.', 'retention-samples'));
+    if (failedOpen) items.push(item(`${failedOpen} failed stability result(s) with the CAR still open`, 'critical', null, 'capa'));
+    try {
+      const active = n("SELECT COUNT(*) c FROM products WHERE status = 'active'");
+      if (active) {
+        const skusCovered = new Set();
+        for (const r of db.prepare("SELECT product_skus FROM stability_studies WHERE status != 'stopped' UNION ALL SELECT product_skus FROM stability_justifications").all()) {
+          for (const k of JSON.parse(r.product_skus || '[]')) skusCovered.add(k);
+        }
+        const uncovered = db.prepare("SELECT sku FROM products WHERE status = 'active'").all().filter(p => !skusCovered.has(p.sku)).length;
+        items.push(item(uncovered ? `${uncovered} of ${active} active products have no recorded basis for their expiration date` : `All ${active} active products have a recorded shelf-life basis`,
+          uncovered ? 'warning' : 'good', uncovered ? 'Record the interim justification per product family on the Stability tab.' : null, 'retention-samples'));
+      }
+    } catch { /* products optional */ }
+    return items;
   });
 
   // ── Meetings ──────────────────────────────────────────────────────────────

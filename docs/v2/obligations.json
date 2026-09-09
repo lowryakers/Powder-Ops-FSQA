@@ -265,7 +265,11 @@
         "SQF-12",
         "SQF-24"
       ],
-      "note": "Laboratory work over real time. SQF-24 sharpens it: the supplements code drops the Food Manufacturing code's 'or established by the site' fallback, so retention is anchored to shelf life with NO alternative basis — and that shelf life is itself under nonconformance 4.6.21. OFFICIAL 2026-09-08: CAR 4990683-9 response due 18 Sep 2026 (NSF Connect; wording unchanged from the draft report; D-056)."
+      "note": "Laboratory work over real time. SQF-24 sharpens it: the supplements code drops the Food Manufacturing code's 'or established by the site' fallback, so retention is anchored to shelf life with NO alternative basis — and that shelf life is itself under nonconformance 4.6.21. OFFICIAL 2026-09-08: CAR 4990683-9 response due 18 Sep 2026 (NSF Connect; wording unchanged from the draft report; D-056). UPDATE 9 Sep (D-061): the study HOLDER is built — stability_studies with pull months, every pull pre-created so a missed one is a row past its date; tasks raised 14 days ahead via housekeeping; completion through the check-record interface; result entry with a CAR on fail; stability_justifications = the interim basis per SKU, latest-per-SKU derived on read; coverage of the active catalogue derived and counted in readiness (verify:stability 33). Still open and not software: the interim justification per family (Carol/Matt, 31 Oct), the procedure, and the real-time data itself.",
+      "artifacts": [
+        "server/stability.js",
+        "server/api/stability.js"
+      ]
     },
     {
       "id": "OBL-15",

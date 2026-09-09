@@ -269,7 +269,7 @@ Items 2 and 3 are quarter-sized projects and should be planned rather than start
 
 ## Progress against this list — 1 September 2026
 
-**0 of 12 closed. 4 with work landed** (4.3.1; and since 9 September 4.5.84, 4.2.9 and 6.2.3.1 on one interface).
+**0 of 12 closed. 5 with work landed** (4.3.1; and since 9 September 4.5.84, 4.2.9 and 6.2.3.1 on one interface, and 4.6.21).
 
 ### 4.3.1 · Supplier qualification questionnaires — REGISTER BUILT, FINDING STILL OPEN
 
@@ -321,7 +321,18 @@ tap water, the monthly internal audit — had been raised for three weeks, and t
 nobody reads. Fixed; on the next deploy each schedule raises one task, not a backlog, because the
 generator's own idempotence and calendar advance are unchanged.
 
-### The other eight
+### 4.6.21 — stability studies, scheduled pulls, and what each date rests on (D-061, 9 September)
+
+`stability_studies` / `stability_pulls` / `stability_justifications` (`server/stability.js`, `server/api/stability.js`,
+the Stability tab of Retention Samples). A study is filed with its pull months and **every pull is a row
+from day one**, so a missed pull is a row past its date with nothing pulled — derived on read. A pull
+raises its own work order 14 days ahead (idempotent on the pull), completes through the check-record
+interface (what was pulled, which laboratory), and the result is entered on the study; a **fail raises a
+CAR**. A justification per product family records the interim basis for a date; coverage is derived from
+the catalogue and the products with neither are counted. The study itself takes real time; nothing here
+shortens it.
+
+### The other seven
 
 Not started. Tracked in `docs/v2/obligations.json`; a finding is marked closed here only when the
 corrective action is complete and its evidence can be produced on request.

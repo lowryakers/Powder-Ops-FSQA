@@ -2343,6 +2343,78 @@ function initSchema() {
     );
   `);
 
+  // ── Stability (CAR 4990683-9) ─────────────────────────────────────────────
+  // A study is the plan: which product family, which storage condition, when
+  // the pulls fall. A pull is one dated sample against a retention jar; it is
+  // pre-created for every pull month so a MISSED pull is a row past its date
+  // with nothing pulled — derived on read, never a stored flag. A
+  // justification is what an expiration date rests on until (or instead of)
+  // a study: the plant's interim basis, with a name and a date.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS stability_studies (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      product_family TEXT,
+      product_skus TEXT NOT NULL DEFAULT '[]',
+      item_number TEXT,
+      lot_number TEXT,
+      condition TEXT NOT NULL DEFAULT 'real_time' CHECK (condition IN ('real_time','accelerated')),
+      condition_detail TEXT,
+      start_date TEXT NOT NULL,
+      pull_months TEXT NOT NULL DEFAULT '[]',
+      tests TEXT,
+      acceptance TEXT,
+      retention_sample_id TEXT,
+      protocol_ref TEXT,
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('planned','active','complete','stopped')),
+      notes TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS stability_pulls (
+      id TEXT PRIMARY KEY,
+      study_id TEXT NOT NULL REFERENCES stability_studies(id),
+      pull_month INTEGER NOT NULL,
+      due_date TEXT NOT NULL,
+      work_order_id TEXT,
+      status TEXT NOT NULL DEFAULT 'planned' CHECK (status IN ('planned','pulled','resulted','skipped')),
+      pulled_on TEXT,
+      pulled_by TEXT,
+      quantity TEXT,
+      lab TEXT,
+      sent_on TEXT,
+      coa_request_id TEXT,
+      result TEXT CHECK (result IN ('pass','fail')),
+      result_summary TEXT,
+      resulted_on TEXT,
+      resulted_by TEXT,
+      capa_id TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_stability_pulls_study ON stability_pulls(study_id, pull_month);
+    CREATE INDEX IF NOT EXISTS idx_stability_pulls_due ON stability_pulls(status, due_date);
+    CREATE TABLE IF NOT EXISTS stability_justifications (
+      id TEXT PRIMARY KEY,
+      product_family TEXT,
+      product_skus TEXT NOT NULL DEFAULT '[]',
+      shelf_life_months INTEGER,
+      basis_type TEXT NOT NULL DEFAULT 'interim' CHECK (basis_type IN ('interim','study')),
+      study_id TEXT,
+      basis TEXT NOT NULL,
+      document_ref TEXT,
+      decided_by TEXT NOT NULL,
+      decided_on TEXT NOT NULL,
+      superseded_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  addColumnIfMissing('work_orders', 'stability_pull_id', 'TEXT');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_work_orders_stability_pull ON work_orders(stability_pull_id)');
+
+
   runMigrations();
 }
 

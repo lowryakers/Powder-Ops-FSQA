@@ -8,6 +8,8 @@ import SortHeader from '../common/SortHeader.jsx';
 import ShowMore from '../common/ShowMore.jsx';
 import { CustomFields, CustomFieldValues } from '../common/CustomFields';
 import ModuleTabs from '../common/ModuleTabs.jsx';
+import { useModuleTabs } from '../../lib/useModuleTabs.js';
+import StabilityTab from './StabilityTab.jsx';
 import {
   Archive, Plus, Search, FlaskConical, Trash2, Pencil, X, AlertTriangle,
   Boxes, CalendarClock, Upload, Check,
@@ -30,6 +32,8 @@ import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 // `useTableSort` reads the `type` off them, so a column can't be sortable in
 // one place and not the other. Entries with no `key` are the chevron and the
 // action cell: not sortable, and they shouldn't pretend to be.
+const RETENTION_TABS = [{ id: 'samples' }, { id: 'boxes' }, { id: 'stability' }];
+
 const SAMPLE_COLUMNS = [
   { width: '2rem' },
   { key: 'item_name', label: 'Item' },
@@ -619,7 +623,8 @@ function LotTrace() {
 }
 
 export default function RetentionSamplesPanel({ user }) {
-  const [tab, setTab] = useState('samples');
+  const { data: stab } = useApiGet('/stability');
+  const { tab, setTab } = useModuleTabs({ id: 'retention-samples', tabs: RETENTION_TABS, user, initial: 'samples' });
   const [stage, setStage] = useState('');
   const [boxFilter, setBoxFilter] = useState('');
   const [q, setQ] = useState('');
@@ -712,9 +717,12 @@ export default function RetentionSamplesPanel({ user }) {
       <ModuleTabs value={tab} onChange={setTab} tabs={[
         { id: 'samples', label: 'Samples' },
         { id: 'boxes', label: 'Boxes', badge: boxes?.length },
+        { id: 'stability', label: 'Stability', badge: stab?.missed || undefined, badgeTone: stab?.missed ? 'alert' : undefined },
       ]} />
 
-      {tab === 'boxes' ? (
+      {tab === 'stability' ? (
+        <StabilityTab canEdit={canEdit} />
+      ) : tab === 'boxes' ? (
         <BoxesTab boxes={boxes} refresh={() => { refreshBoxes(); refreshStats(); }}
           canEdit={canEdit} canDestroy={canDestroy}
           onOpenBox={(b) => { setBoxFilter(b.id); setTab('samples'); }} />
