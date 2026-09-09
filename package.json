@@ -49,6 +49,7 @@
     "verify:supplierq": "node scripts/verify-supplier-questionnaire.mjs",
     "verify:checkrecords": "node scripts/verify-check-records.mjs",
     "verify:stability": "node scripts/verify-stability.mjs",
+    "verify:changes": "node scripts/verify-change-register.mjs",
     "verify:backdate": "node scripts/verify-backdated-recurrence.mjs",
     "verify:onboarding": "node scripts/verify-onboarding.mjs",
     "verify:onboardingui": "node scripts/verify-onboarding-ui.mjs",

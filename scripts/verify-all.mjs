@@ -35,6 +35,7 @@ const RUNS = [
   ['verify-supplier-questionnaire.mjs', 4979, {}, true],
   ['verify-check-records.mjs', 4982, {}, false],
   ['verify-stability.mjs', 4983, {}, false],
+  ['verify-change-register.mjs', 4984, { GIT_SHA: 'abc123def456' }, false],
   ['verify-shipping.mjs', 4969, {}, true],
   ['verify-warehouse-ui.mjs', 4970, {}, true],
   // With the key, so the encrypted path is the one exercised in the full run.

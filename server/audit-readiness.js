@@ -152,6 +152,26 @@ export function readinessReview(db) {
     return items;
   });
 
+  // ── Change control (CAR 4990683-4; software half of 4990683-5) ──────────
+  add('Change control', () => {
+    const parked = n("SELECT COUNT(*) c FROM controlled_definitions WHERE status = 'pending'");
+    const awaiting = n("SELECT COUNT(*) c FROM change_requests WHERE status = 'submitted'");
+    const implNoApproval = n("SELECT COUNT(*) c FROM change_requests WHERE status IN ('implemented','closed') AND approved_at IS NULL");
+    const releases = n('SELECT COUNT(*) c FROM software_releases');
+    const uncontrolled = n('SELECT COUNT(*) c FROM software_releases r WHERE NOT EXISTS (SELECT 1 FROM change_requests q WHERE q.release_id = r.id)');
+    const total = n('SELECT COUNT(*) c FROM change_requests');
+    const items = [
+      item(total ? `${total} change request(s) in the register` : 'No change request raised yet', total ? 'good' : 'warning',
+        total ? null : '21 CFR 111.130(e): equipment, process, software, utility and plant changes go through the Change Register with Quality approval.', 'change-register'),
+    ];
+    if (parked) items.push(item(`${parked} form/limit change(s) parked for Document Control`, 'warning', 'Deployed and not in use until approved in Controlled Changes.', 'controlled-changes'));
+    if (awaiting) items.push(item(`${awaiting} change(s) awaiting Quality approval`, 'warning', null, 'change-register'));
+    if (implNoApproval) items.push(item(`${implNoApproval} change(s) implemented with no Quality approval on record`, 'critical', 'The register refuses this order; a row like this was written outside it.', 'change-register'));
+    if (releases) items.push(item(uncontrolled ? `${uncontrolled} of ${releases} software release(s) have no change request` : `All ${releases} software release(s) are linked to a change request`,
+      uncontrolled ? 'warning' : 'good', uncontrolled ? 'Software change control (4.3.9 / 4.4.39): raise a software change for each release and link it.' : null, 'change-register'));
+    return items;
+  });
+
   // ── GMP walk-through (CAR 4990683-1) ──────────────────────────────────────
   add('GMP walk-through', () => {
     const last = one('SELECT walked_on FROM gmp_walkthroughs ORDER BY walked_on DESC LIMIT 1');

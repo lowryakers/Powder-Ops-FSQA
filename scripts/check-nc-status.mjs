@@ -21,7 +21,7 @@ const EVIDENCE = {
   '4.3.1':   [['server/api/suppliers.js', 'disposition'], ['server/supplier-sop.js', 'RISK_CRITERIA']],
   '4.4.39':  [['server/signature.js', '11.200'], ['scripts/lib/verification-doc.mjs', '']],
   '4.3.6':   [['server/spec-seed.js', ''], ['server/api/coa.js', 'no_spec_reason']],
-  '4.3.9':   [['server/controlled.js', 'Document Control approves']],
+  '4.3.9':   [['server/controlled.js', 'Document Control approves'], ['server/api/change-register.js', 'gateSignature'], ['server/change-register.js', 'recordRelease']],
   '4.5.84':  [['server/emp-site-list.js', 'EMP_SCHEDULES'], ['server/check-records.js', 'emp_samples'], ['server/emp-results.js', 'gradeEmpResult']],
   '4.2.9':   [['server/check-records.js', 'gmp_walkthroughs'], ['shared/check-forms.js', 'GMP_WALK_ITEMS']],
   '§6.2.3.1': [['server/check-records.js', 'banned_list_reviews']],

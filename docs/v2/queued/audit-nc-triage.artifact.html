@@ -297,7 +297,7 @@
 
 <div class="n a">
   <div class="nh"><span class="id">4.3.9</span><span class="nt">Change control covers equipment only</span><span class="chip k-a">A + C</span></div>
-  <div class="st part"><span class="dot"></span><span class="what">Change control exists for form definitions and limits; <b>not for process, software, utility or plant</b></span></div>
+  <div class="st part"><span class="dot"></span><span class="what">Since 9 September a change register covers equipment, process, software, utility and plant with <b>Quality's signature before implementation and before close</b>; the procedure is Document Control's</span></div>
   <div class="find">"While requirements for equipment changes were defined per SOP 434 … change control
     procedures that include processes, software, utility, and physical plant changes were not
     established." [111.130(e)]</div>
@@ -391,6 +391,21 @@ is why it is now checked against the thing it describes.</p>
   <p><b>Nothing is closed, and that is the honest number.</b> A finding closes when the corrective
   action is complete and its evidence can be produced on request — not when the software that will hold
   the evidence exists. Ten have real foundations under them; none has finished.</p>
+</div>
+
+<div class="prog">
+  <div class="hd">
+    <h3>4.3.9 (and the software half of 4.4.39) — the change register (D-062)</h3>
+    <span class="st part" style="margin:0"><span class="dot"></span><span class="what">Landed 9 September 2026</span></span>
+  </div>
+  <p>One register for every kind of change 21 CFR 111.130(e) names. A change is raised by anyone, cannot go
+  to Quality until its <b>impact assessment</b> (product safety, quality, validation, documents, training,
+  risk) is complete, is <b>approved by Quality with a password signature</b>, cannot be marked implemented
+  before that approval, and <b>cannot close</b> without an effectiveness check and a second signature. The
+  form and limit changes <code>controlled.js</code> parks for Document Control sit on the same screen. Every
+  ReadyDoc release is <b>recorded automatically when the deployed commit first boots</b>, and a release with
+  no change request against it is counted, not hidden — the software change control 4.4.39 also asks for.
+  The procedure (SOP 434 V3 or a new number) is Document Control's.</p>
 </div>
 
 <div class="prog">
@@ -492,10 +507,10 @@ is why it is now checked against the thing it describes.</p>
       <b>The release gate is missing:</b> nothing refuses a lot whose item has no active specification
       covering identity, purity, strength and composition.</p>
 
-    <p><b>4.3.9 · Change control.</b> A real change-control gate exists — a changed form definition or
-      acceptance criterion is parked until Document Control approves it, and raises a change request
-      automatically. <b>Its scope is narrower than the finding:</b> it does not yet cover process,
-      software, utility or physical-plant changes, and it does not require QC approval on every change.</p>
+    <p><b>4.3.9 · Change control.</b> The controlled-definition gate still parks a deployed form or
+      limit change until Document Control approves it; since 9 September the <b>change register</b> above
+      covers the other kinds with Quality's signature on approval and on close. What is left is the
+      procedure itself and Quality using the register for every change.</p>
   </div>
 </div>
 

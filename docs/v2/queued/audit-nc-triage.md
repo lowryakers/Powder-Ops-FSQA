@@ -269,7 +269,7 @@ Items 2 and 3 are quarter-sized projects and should be planned rather than start
 
 ## Progress against this list — 1 September 2026
 
-**0 of 12 closed. 5 with work landed** (4.3.1; and since 9 September 4.5.84, 4.2.9 and 6.2.3.1 on one interface, and 4.6.21).
+**0 of 12 closed. 6 with work landed** (4.3.1; and since 9 September 4.5.84, 4.2.9 and 6.2.3.1 on one interface, 4.6.21, and 4.3.9 with the software half of 4.4.39).
 
 ### 4.3.1 · Supplier qualification questionnaires — REGISTER BUILT, FINDING STILL OPEN
 
@@ -332,7 +332,18 @@ CAR**. A justification per product family records the interim basis for a date; 
 the catalogue and the products with neither are counted. The study itself takes real time; nothing here
 shortens it.
 
-### The other seven
+### 4.3.9 — the change register, and the software half of 4.4.39 (D-062, 9 September)
+
+`change_requests` + `software_releases` (`server/change-register.js`, `server/api/change-register.js`,
+`ChangeRegisterPanel.jsx`, nav entry **Change Register** in Document Control, visible to QA too). Anyone
+raises a change of any kind 111.130(e) names; it cannot go to Quality until the six-line impact assessment
+is complete; **Quality approves with a password signature**; it cannot be marked implemented before that;
+it cannot close without an effectiveness check and a second signature. Parked `controlled_definitions` are
+listed on the same screen. **Every release is recorded when the deployed commit first boots**
+(`RAILWAY_GIT_COMMIT_SHA`), and a release with no change request is counted in the register, the
+readiness review and the response — not hidden. The procedure is Document Control's.
+
+### The other six
 
 Not started. Tracked in `docs/v2/obligations.json`; a finding is marked closed here only when the
 corrective action is complete and its evidence can be produced on request.

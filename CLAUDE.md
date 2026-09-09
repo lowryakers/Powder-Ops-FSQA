@@ -1594,6 +1594,24 @@ global drawing is how four forms silently started showing a placement nobody agr
 - `ScaleProcedureCard` reads `form.procedure` and falls back to the shared object; every read goes through
   `proc`, or the fallback is a decoration that never applies.
 
+## The change register (`server/change-register.js`, `api/change-register.js`, D-062)
+One register for every kind of change 21 CFR 111.130(e) names (equipment / process / software / utility /
+facility / document / other). Nav entry **Change Register** in Document Control, visible to admins, DC, QA
+and supervisors by predicate, not by grant. `controlled.js` still gates deployed form/limit changes; the
+register LISTS those parked rows rather than copying them.
+- **Submit is refused until the impact assessment is complete** (`assessmentMissing`: safety, quality,
+  validation, documents, training, risk). **Approve and close are Quality (QA supervisor or admin) and go
+  through `gateSignature`** — 403 `signature_required`, never 401; the client uses `withSignature`.
+  Implement is refused before approval; close is refused without approval + an effectiveness check.
+- **`recordRelease(db)` at boot** writes `software_releases` once per `RAILWAY_GIT_COMMIT_SHA` / `GIT_SHA`;
+  nothing is recorded with no commit. A release with no change request is counted (`releases_uncontrolled`)
+  on the screen, in the readiness "Change control" section and in the CAR text. Link a software change to
+  its release (`release_id`) when raising or implementing it.
+- **Nav items with a `visible(user)` predicate are now added to `effectiveModules` by that predicate** (one
+  loop in App.jsx). Before this a DC user without a grant saw Controlled Changes in the sidebar and
+  clicking it fell back to the first module — a dead link. Any new predicate-gated item gets this for free.
+- Verified: `verify:changes` (live + browser; in `verify:all`, with `GIT_SHA` set so a release is recorded).
+
 ## Controlled changes: a deployed definition is not the same as one in use
 `server/controlled.js` + `server/api/controlled.js` + `ControlledChangesPanel.jsx`. Document Control decides
 whether a change to a **form definition** (`qms-config` fields / logColumns / formCode) or an **acceptance

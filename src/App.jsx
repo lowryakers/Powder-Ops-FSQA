@@ -91,6 +91,7 @@ const CandidatesPanel = lazy(() => import('./components/office/CandidatesPanel.j
 const DannysListPanel = lazy(() => import('./components/office/DannysListPanel.jsx'));
 const NewsletterReader = lazy(() => import('./components/office/NewsletterReader.jsx'));
 const ControlledChangesPanel = lazy(() => import('./components/compliance/ControlledChangesPanel.jsx'));
+const ChangeRegisterPanel = lazy(() => import('./components/compliance/ChangeRegisterPanel.jsx'));
 const LogBuilderStudio = lazy(() => import('./components/compliance/LogBuilderStudio.jsx'));
 const PayTrackingPanel = lazy(() => import('./components/office/PayTrackingPanel.jsx'));
 const PartnerReconPanel = lazy(() => import('./components/office/PartnerReconPanel.jsx'));
@@ -220,6 +221,10 @@ const NAV_GROUPS = [
       // not in Settings — Settings is admin-only, and this is Document
       // Control's own queue, not an admin toggle.
       { id: 'controlled-changes', label: 'Controlled Changes', icon: ShieldCheck, visible: (u) => u?.role === 'admin' || (u?.department || '').toLowerCase() === 'document_control' },
+      // One register for every kind of change 21 CFR 111.130(e) names; Quality
+      // signs the approval, so QA sees it as well as Document Control.
+      { id: 'change-register', label: 'Change Register', icon: ShieldCheck, keywords: 'change control request impact assessment quality approval software release equipment process utility facility',
+        visible: (u) => u?.role === 'admin' || ['document_control', 'qa', 'quality'].includes((u?.department || '').toLowerCase()) || u?.role === 'supervisor' },
       // Access by department or explicit grant, not admin-only — the whole
       // point of moving this out of Settings is that Document Control can
       // reach it. Approval stays admin-only inside the module.
@@ -1843,6 +1848,18 @@ function App() {
   effectiveModules = canSeeQaReview(user)
     ? (effectiveModules.includes('qa-review') ? effectiveModules : [...effectiveModules, 'qa-review'])
     : effectiveModules.filter(id => id !== 'qa-review');
+  // A nav item that decides for itself (`visible(user)` — Doc Control Review,
+  // Controlled Changes, Log Builder, the Change Register) has to be reachable
+  // by the SAME rule that shows it. The sidebar and the palette already asked
+  // the predicate; this resolver did not, so for a person without a module
+  // grant the item appeared in the sidebar and clicking it fell back to the
+  // first module they could see — a dead link that reads as the app ignoring
+  // you. One loop, one rule, for every such item.
+  for (const i of NAV_GROUPS.flatMap(g => g.items).filter(i => typeof i.visible === 'function')) {
+    const ok = i.visible(user);
+    if (ok && !effectiveModules.includes(i.id)) effectiveModules = [...effectiveModules, i.id];
+    if (!ok && effectiveModules.includes(i.id)) effectiveModules = effectiveModules.filter(id => id !== i.id);
+  }
   const operatorOnly = effectiveModules.length === 1 && effectiveModules[0] === 'operator';
 
   // If user only has operator view access, render the standalone operator layout
@@ -2066,6 +2083,7 @@ function App() {
           {resolvedTab === 'pay-tracking' && <PayTrackingPanel />}
           {resolvedTab === 'supply-orders' && <SupplyOrdersPanel />}
           {resolvedTab === 'controlled-changes' && <ControlledChangesPanel />}
+          {resolvedTab === 'change-register' && <ChangeRegisterPanel user={user} />}
           {resolvedTab === 'log-builder' && <LogBuilderStudio />}
           {resolvedTab === 'time-tracking' && <TimeTrackingPanel />}
           {resolvedTab === 'production-log' && <ProductionLog user={user} />}

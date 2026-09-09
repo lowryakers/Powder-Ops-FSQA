@@ -4845,6 +4845,56 @@ function runMigrations() {
     console.warn('[db] controlled_definitions unavailable:', e.message);
   }
 
+  // ── The change register (CAR 4990683-4; the software half of 4990683-5) ──
+  // One register for every kind of change 21 CFR 111.130(e) names — equipment,
+  // process, software, utility, physical plant — and the documents that
+  // controlled_definitions already gates. A change is REQUESTED, ASSESSED for
+  // impact, APPROVED by Quality (a signature), IMPLEMENTED, and CLOSED by
+  // Quality once its effectiveness has been checked. Nothing closes without the
+  // approval on record. A software release is recorded at boot from the
+  // deploy's own commit, so a release nobody raised a change for is a countable
+  // gap rather than an invisible one.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS change_requests (
+      id TEXT PRIMARY KEY,
+      number TEXT NOT NULL UNIQUE,
+      kind TEXT NOT NULL CHECK (kind IN ('equipment','process','software','utility','facility','document','other')),
+      title TEXT NOT NULL,
+      description TEXT,
+      reason TEXT,
+      requested_by TEXT NOT NULL,
+      requested_on TEXT NOT NULL,
+      owner TEXT,
+      impact_product_safety TEXT,
+      impact_quality TEXT,
+      impact_validation TEXT,
+      documents_affected TEXT,
+      training_affected TEXT,
+      risk TEXT CHECK (risk IN ('low','medium','high')),
+      status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','submitted','approved','rejected','implemented','closed','withdrawn')),
+      submitted_at TEXT,
+      approved_by TEXT, approved_at TEXT, approval_note TEXT,
+      rejected_by TEXT, rejected_at TEXT, rejected_reason TEXT,
+      implemented_by TEXT, implemented_on TEXT, implementation_notes TEXT,
+      effectiveness_check TEXT, closed_by TEXT, closed_at TEXT,
+      controlled_definition_id TEXT,
+      dcr_record_id TEXT,
+      release_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_change_requests_status ON change_requests(status);
+    CREATE TABLE IF NOT EXISTS software_releases (
+      id TEXT PRIMARY KEY,
+      sha TEXT NOT NULL UNIQUE,
+      version TEXT,
+      first_booted_at TEXT NOT NULL DEFAULT (datetime('now')),
+      node_version TEXT,
+      environment TEXT,
+      verify_note TEXT
+    );
+  `);
+
   // Newsletter banner: either a built-in cover (server/newsletter-covers.js) or
   // an uploaded image. Added here, immediately after the CREATE above — a
   // column migration before its table is what kills a fresh database at boot.

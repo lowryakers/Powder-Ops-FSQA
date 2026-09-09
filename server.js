@@ -43,6 +43,8 @@ import complaintRoutes from './server/api/complaints.js';
 import documentRoutes, { generateDocumentReviewTasks } from './server/api/documents.js';
 import qualityScheduleRoutes, { generateQualityScheduleTasks } from './server/api/quality-schedules.js';
 import checkRecordRoutes from './server/api/check-records.js';
+import changeRegisterRoutes from './server/api/change-register.js';
+import { recordRelease } from './server/change-register.js';
 import meetingRoutes from './server/api/meetings.js';
 import internalAuditRoutes from './server/api/internal-audits.js';
 import docReviewRoutes from './server/api/doc-review.js';
@@ -1825,6 +1827,9 @@ app.use('/api/check-records', requireModuleWrite('pm', 'coa', 'sanitation', 'cal
 app.use('/api/meetings', requireModuleWrite('meetings'), meetingRoutes);
 app.use('/api/internal-audits', requireModuleWrite('internal-audits'), internalAuditRoutes);
 app.use('/api/doc-review', docReviewRoutes);
+// The change register: anyone raises, Quality signs. Department-gated like
+// doc-review, not by a module grant — a change request comes from anywhere.
+app.use('/api/change-register', changeRegisterRoutes);
 // Read-only and unguarded by a module grant on purpose: a form number is the
 // answer to "which controlled form does this task satisfy", and anyone holding
 // a task should be able to see it. There is no write path to guard.
@@ -2021,6 +2026,12 @@ server.listen(PORT, '0.0.0.0', () => {
     const n = generateDocumentReviewTasks(db);
     if (n > 0) console.log(`[review] Generated ${n} document-review task(s)`);
   } catch (e) { console.warn('[review] document-review task generation skipped:', e.message); }
+  // Record the running build in the change register once per commit. Nothing
+  // is recorded where the deploy carries no commit (a developer box).
+  try {
+    const rel = recordRelease(db, { version: process.env.npm_package_version || null });
+    if (rel?.first_seen) console.log(`[change-register] release ${rel.sha.slice(0, 8)} recorded`);
+  } catch (e) { console.warn('[change-register] release not recorded:', e.message); }
   // Generate any due recurring quality-control tasks on startup (idempotent).
   try {
     const q = generateQualityScheduleTasks(db);

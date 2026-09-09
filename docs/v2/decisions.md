@@ -1890,3 +1890,37 @@ the study, which is laboratory work over real time and is not shortened by softw
   SKU is added. It sits on the Stability tab and in the readiness review.
 
 Verified: `verify:stability`, 33 assertions live and in the browser.
+
+## D-062 · 2026-09-09 · decided — One change register, and Quality signs twice
+
+CAR 4990683-4 (21 CFR 111.130(e)) found change control covering equipment only. What existed was better
+than that and narrower than the rule: `controlled.js` parks a deployed form or limit change until Document
+Control approves it, and the DCR covers documents. The gap was everything else the rule names — process,
+software, utility, physical plant — and the one thing neither flow enforced: Quality's approval on every
+change, before it is made.
+
+`change_requests` is that register. A change is raised by anyone (a change request comes from anywhere;
+gating who may raise one only pushes changes back into email). It **cannot go to Quality until the impact
+assessment is complete** — product safety, quality, validation/qualification, documents affected, training
+affected, risk — because an approval against an empty assessment is a rubber stamp. **Quality approves with
+a password signature** (the same `gateSignature` every QA signature uses), a change **cannot be marked
+implemented before that approval**, and it **cannot close** without an effectiveness check and a second
+signature. Those refusals are the control; the register would otherwise be a list.
+
+**Parked controlled definitions stay in their own table and are listed on the register**, not copied into
+it: `controlled_definitions` is what gates them, and a second row would be the two-owners defect on the
+mechanism built to prevent it.
+
+**A software release is recorded when the deployed commit first boots** (`recordRelease`, from
+`RAILWAY_GIT_COMMIT_SHA`; nothing is recorded where there is no commit, because a made-up release id is a
+fact nobody can check). A release with no change request against it is counted in the register, the
+readiness review and the audit response. That is the honest half of software change control — the app can
+prove what ran and when; whether a change was raised for it is the register's question. It is also the leg
+of 4.4.39 that the validation package will cite.
+
+**Found on the way:** a nav item carrying its own `visible(user)` predicate (Doc Control Review, Controlled
+Changes, Log Builder) was shown in the sidebar by that predicate and resolved by the module map — so a
+person without the grant saw the item and clicking it fell back to the first module they could see. One
+loop now adds and removes such items from `effectiveModules` by the same predicate that shows them.
+
+Verified: `verify:changes`, live and in the browser.

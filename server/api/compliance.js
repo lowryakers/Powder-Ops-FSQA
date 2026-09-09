@@ -598,6 +598,15 @@ router.get('/notifications', (req, res) => {
 
   const items = [];
   if (overdueWOs > 0) items.push({ id: 'pm-overdue', tab: 'pm', severity: 'critical', count: overdueWOs, label: `${overdueWOs} overdue PM work order${overdueWOs > 1 ? 's' : ''}` });
+  // Changes waiting on Quality's signature — the register's own count.
+  if (isApprover) {
+    try {
+      const n = db.prepare("SELECT COUNT(*) c FROM change_requests WHERE status = 'submitted'").get().c;
+      if (n > 0) items.push({ id: 'change-approvals', tab: 'change-register', severity: 'warning', count: n, label: `${n} change request${n > 1 ? 's' : ''} awaiting Quality approval` });
+      const m = db.prepare("SELECT COUNT(*) c FROM change_requests WHERE status = 'implemented'").get().c;
+      if (m > 0) items.push({ id: 'change-closes', tab: 'change-register', severity: 'info', count: m, label: `${m} implemented change${m > 1 ? 's' : ''} awaiting Quality's effectiveness check` });
+    } catch { /* table optional */ }
+  }
   // Environmental monitoring: a result the laboratory owes, and an action
   // level nobody has written against. Both are derived from emp_samples
   // exactly as the EMP results tab derives them.
