@@ -18,6 +18,7 @@
 
 import { EMP_COVERAGE } from './emp-site-list.js';
 import { ccpDrift, PREVENTIVE_CONTROLS, PC_DOCUMENT, PC_REVISION } from './preventive-controls.js';
+import { specCoverage, GATE_MODES } from '../shared/spec-coverage.js';
 
 const item = (label, status, detail, tab) => ({ label, status, detail, tab });
 
@@ -169,6 +170,32 @@ export function readinessReview(db) {
     if (implNoApproval) items.push(item(`${implNoApproval} change(s) implemented with no Quality approval on record`, 'critical', 'The register refuses this order; a row like this was written outside it.', 'change-register'));
     if (releases) items.push(item(uncontrolled ? `${uncontrolled} of ${releases} software release(s) have no change request` : `All ${releases} software release(s) are linked to a change request`,
       uncontrolled ? 'warning' : 'good', uncontrolled ? 'Software change control (4.3.9 / 4.4.39): raise a software change for each release and link it.' : null, 'change-register'));
+    return items;
+  });
+
+  // ── Specifications and release (CAR 4990683-3, 21 CFR 111.70) ──────────
+  // Coverage is computed by the same shared/spec-coverage.js the gate refuses
+  // on, per item ever tested; the "released carrying gaps" figure is the count
+  // the gate's warn mode exists to work down.
+  add('Specifications & release', () => {
+    const modeRow = one("SELECT value FROM app_settings WHERE key = 'coa_release_gate'");
+    const mode = GATE_MODES.includes(modeRow?.value) ? modeRow.value : 'warn';
+    const itemRows = db.prepare('SELECT DISTINCT item_number FROM coa_requests').all();
+    const specs = {};
+    for (const s of db.prepare('SELECT item_number, test_type FROM coa_specifications WHERE is_active = 1').all()) (specs[s.item_number] ||= []).push(s);
+    const full = itemRows.filter(i => specCoverage(specs[i.item_number] || []).missing.length === 0).length;
+    const withGaps = n("SELECT COUNT(*) c FROM coa_requests WHERE status = 'pass' AND release_gaps IS NOT NULL");
+    const held = n("SELECT COUNT(*) c FROM coa_requests WHERE status = 'hold' AND release_gaps IS NOT NULL");
+    const items = [
+      item(`Release gate is ${mode === 'on' ? 'ENFORCING' : mode === 'warn' ? 'in warn mode (releases go through carrying their gaps)' : 'OFF'}`,
+        mode === 'on' ? 'good' : mode === 'warn' ? 'warning' : 'critical',
+        mode === 'on' ? null : 'Switch to enforcing on the Lab Requests tab once the specification program covers the active items (CAR 4990683-3 dates it 30 November).', 'coa'),
+      item(itemRows.length ? `${full} of ${itemRows.length} tested items have an approved specification covering identity, purity, strength, composition and contaminants` : 'No item has been sent to a laboratory yet',
+        !itemRows.length || full === itemRows.length ? 'good' : 'warning',
+        full === itemRows.length ? null : 'The per-item gaps are on the Lab Requests tab under the gate.', 'coa'),
+    ];
+    if (withGaps) items.push(item(`${withGaps} lot(s) released carrying specification gaps`, 'warning', 'Each names the gaps it went out under. This is the number QA works down.', 'coa'));
+    if (held) items.push(item(`${held} lot(s) held by the gate`, 'warning', 'Approve the missing specification, or file an identity result, and the lot releases.', 'coa'));
     return items;
   });
 

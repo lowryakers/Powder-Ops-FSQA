@@ -194,7 +194,12 @@
       "sources": [
         "NC-455-4.3.6"
       ],
-      "note": "Forward half only — the historical gap cannot be fixed by software. Same defect class as the ungraded ATP reading: a test with no active specification quietly passes. Identity by organoleptic alone is not acceptable. VERIFIED 2 Sep against main: spec-seed.js seeds specifications for the most-tested items, and coa.js records a test with no active specification WITHOUT a pass/fail (no_spec_reason) rather than letting it quietly pass. The RELEASE GATE is absent: nothing refuses a lot whose item has no active spec covering identity, purity, strength and composition. OFFICIAL 2026-09-08: CAR 4990683-3 response due 18 Sep 2026 (NSF Connect; wording unchanged from the draft report; D-056)."
+      "note": "Forward half only — the historical gap cannot be fixed by software. Same defect class as the ungraded ATP reading: a test with no active specification quietly passes. Identity by organoleptic alone is not acceptable. VERIFIED 2 Sep against main: spec-seed.js seeds specifications for the most-tested items, and coa.js records a test with no active specification WITHOUT a pass/fail (no_spec_reason) rather than letting it quietly pass. The RELEASE GATE is absent: nothing refuses a lot whose item has no active spec covering identity, purity, strength and composition. OFFICIAL 2026-09-08: CAR 4990683-3 response due 18 Sep 2026 (NSF Connect; wording unchanged from the draft report; D-056). UPDATE 9 Sep (D-063): the release gate EXISTS — shared/spec-coverage.js places each spec in one of the five 111.70 categories, and coa.js refuses (mode on) or stamps the gaps (mode warn, the default) at every release door: roll-up, Mark Pass, bulk pass, certificate signing. Identity must be a RESULT, and an organoleptic pass is named as not enough. Ships in warn mode; the admin enforces from the strip once the specification program covers the active items. What remains is QA's: the specifications themselves as approved documents, and the identity method.",
+      "artifacts": [
+        "shared/spec-coverage.js",
+        "server/api/coa.js",
+        "scripts/verify-spec-gate.mjs"
+      ]
     },
     {
       "id": "OBL-10",

@@ -607,6 +607,17 @@ router.get('/notifications', (req, res) => {
       if (m > 0) items.push({ id: 'change-closes', tab: 'change-register', severity: 'info', count: m, label: `${m} implemented change${m > 1 ? 's' : ''} awaiting Quality's effectiveness check` });
     } catch { /* table optional */ }
   }
+  // The specification release gate (CAR 4990683-3): lots the gate is holding,
+  // and lots it let through carrying named gaps. Both read the columns the
+  // gate stamps, so the bell and the Lab Requests strip cannot disagree.
+  if (isApprover) {
+    try {
+      const held = db.prepare("SELECT COUNT(*) c FROM coa_requests WHERE status = 'hold' AND release_gaps IS NOT NULL").get().c;
+      const gaps = db.prepare("SELECT COUNT(*) c FROM coa_requests WHERE status = 'pass' AND release_gaps IS NOT NULL").get().c;
+      if (held > 0) items.push({ id: 'coa-held', tab: 'coa', severity: 'warning', count: held, label: `${held} lot${held > 1 ? 's' : ''} held by the specification gate` });
+      if (gaps > 0) items.push({ id: 'coa-gaps', tab: 'coa', severity: 'info', count: gaps, label: `${gaps} lot${gaps > 1 ? 's' : ''} released carrying specification gaps` });
+    } catch { /* columns optional */ }
+  }
   // Environmental monitoring: a result the laboratory owes, and an action
   // level nobody has written against. Both are derived from emp_samples
   // exactly as the EMP results tab derives them.

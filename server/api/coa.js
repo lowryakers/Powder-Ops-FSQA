@@ -9,6 +9,7 @@ import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { getDb, logAudit, dataDir } from '../db.js';
 import { requireRole } from '../middleware/auth.js';
 import { gradeResult, specIndex } from '../coa-grade.js';
+import { releaseGate, GATE_MODES, specCoverage } from '../../shared/spec-coverage.js';
 import { parseColumnarCoa, foundSomething } from '../coa-parse.js';
 import { aiEnabled, readLabReport } from '../ai.js';
 import { composeSubmission, PROCESSING, processingLabel, PLANT_CONTACT } from '../coa-submission.js';
@@ -58,6 +59,24 @@ const coaUpload = multer({
 const router = Router();
 
 const REQUEST_FIELDS = ['item_number', 'item_description', 'lot_number', 'product_expiration', 'tests_requested', 'status', 'lab_id', 'lab_name', 'date_sent', 'tat_days', 'expected_results_date', 'date_of_results', 'date_sent_to_customer', 'requested_by', 'invoice_amount', 'retest_required', 'retest_of', 'notes', 'origin', 'supplier', 'product_code', 'manufacturer_lot', 'vendor_lot', 'received_date', 'certificate_number', 'date_of_issuance'];
+
+// The specification gate's mode (shared/spec-coverage.js). Default WARN: the
+// specification program is catching up (CAR 4990683-3 dates the full set for
+// 31 October), and refusing every release today would stop the plant to prove
+// a point. In warn mode a release CARRIES its gaps, which is what QA works down.
+export function gateMode(db) {
+  try {
+    const v = db.prepare("SELECT value FROM app_settings WHERE key = 'coa_release_gate'").get()?.value;
+    return GATE_MODES.includes(v) ? v : 'warn';
+  } catch { return 'warn'; }
+}
+
+/** The gate for one request, from its item's active specs and its results. */
+export function gateFor(db, request) {
+  const specs = db.prepare('SELECT * FROM coa_specifications WHERE item_number = ? AND is_active = 1').all(request.item_number);
+  const results = db.prepare('SELECT test_type, pass_fail FROM coa_test_results WHERE request_id = ?').all(request.id);
+  return releaseGate({ specs, results, mode: gateMode(db) });
+}
 
 function nextCertNumber(db) {
   const last = db.prepare("SELECT certificate_number FROM coa_requests WHERE certificate_number IS NOT NULL ORDER BY CAST(certificate_number AS INTEGER) DESC LIMIT 1").get();
@@ -846,6 +865,16 @@ router.put('/requests/:id', (req, res) => {
 
   if (updates.length === 0) return res.status(400).json({ error: 'No fields to update' });
 
+  // Setting the status to pass BY HAND is a release too, and goes through the
+  // same gate the roll-up applies — otherwise the gate is a formality anyone
+  // sidesteps with the status dropdown.
+  if (req.body.status === 'pass' && existing.status !== 'pass') {
+    const gate = gateFor(db, existing);
+    if (gate.blocks) return res.status(400).json({ error: `This lot cannot be released: ${gate.gaps.join('; ')}.`, release_blocked: true, gaps: gate.gaps });
+    updates.push('release_gaps = ?', 'release_gate_mode = ?');
+    values.push(gate.mode === 'off' || gate.ok ? null : JSON.stringify(gate.gaps), gate.mode);
+  }
+
   updates.push("updated_at = datetime('now')");
   values.push(req.params.id);
   db.prepare(`UPDATE coa_requests SET ${updates.join(', ')} WHERE id = ?`).run(...values);
@@ -853,6 +882,33 @@ router.put('/requests/:id', (req, res) => {
   const updated = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id);
   logAudit(req.user, 'update', 'coa_request', req.params.id, req.body, existing, updated);
   res.json(updated);
+});
+
+// The gate itself: its mode, and what it has let through carrying gaps.
+router.get('/release-gate', (req, res) => {
+  const db = getDb();
+  const mode = gateMode(db);
+  const withGaps = db.prepare("SELECT id, item_number, item_description, lot_number, release_gaps, date_of_results FROM coa_requests WHERE release_gaps IS NOT NULL AND status = 'pass' ORDER BY date_of_results DESC LIMIT 200").all()
+    .map(r => ({ ...r, release_gaps: JSON.parse(r.release_gaps || '[]') }));
+  const held = db.prepare("SELECT id, item_number, item_description, lot_number, release_gaps FROM coa_requests WHERE status = 'hold' AND release_gaps IS NOT NULL ORDER BY updated_at DESC LIMIT 200").all()
+    .map(r => ({ ...r, release_gaps: JSON.parse(r.release_gaps || '[]') }));
+  // Coverage per item that has ever been tested — the punch list for the spec program.
+  const items = db.prepare('SELECT DISTINCT item_number, item_description FROM coa_requests ORDER BY item_number').all();
+  const specsByItem = {};
+  for (const s of db.prepare('SELECT item_number, test_type FROM coa_specifications WHERE is_active = 1').all()) (specsByItem[s.item_number] ||= []).push(s);
+  const coverage = items.map(i => { const c = specCoverage(specsByItem[i.item_number] || []); return { ...i, missing: c.missing }; });
+  res.json({ mode, modes: GATE_MODES, released_with_gaps: withGaps, released_with_gaps_count: withGaps.length, held, held_count: held.length,
+    items_total: coverage.length, items_fully_covered: coverage.filter(c => c.missing.length === 0).length, coverage });
+});
+
+router.put('/release-gate', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const mode = req.body?.mode;
+  if (!GATE_MODES.includes(mode)) return res.status(400).json({ error: `Mode must be one of ${GATE_MODES.join(', ')}.` });
+  const before = gateMode(db);
+  db.prepare("INSERT INTO app_settings (key, value) VALUES ('coa_release_gate', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(mode);
+  logAudit(req.user, 'coa_release_gate_changed', 'app_setting', 'coa_release_gate', { from: before, to: mode });
+  res.json({ mode });
 });
 
 // Bulk permanent delete of lab requests (with their test results + files).
@@ -879,10 +935,26 @@ router.post('/requests/bulk-update', (req, res) => {
   const { ids, patch } = req.body;
   if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array is required' });
   if (!patch || !patch.status) return res.status(400).json({ error: 'patch.status is required' });
-  const ph = ids.map(() => '?').join(',');
-  const info = db.prepare(`UPDATE coa_requests SET status=?, updated_at=datetime('now') WHERE id IN (${ph})`).run(patch.status, ...ids);
-  logAudit(req.user, 'coa_requests_bulk_updated', 'coa_request', null, { count: info.changes, status: patch.status });
-  res.json({ updated: info.changes });
+  // A bulk pass is a bulk RELEASE and meets the same gate as a single one —
+  // a lot the gate holds is skipped and named, never quietly passed in a batch.
+  const blocked = [];
+  let okIds = ids;
+  if (patch.status === 'pass') {
+    okIds = [];
+    const stamp = db.prepare("UPDATE coa_requests SET release_gaps = ?, release_gate_mode = ? WHERE id = ?");
+    for (const id of ids) {
+      const r = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(id);
+      if (!r) continue;
+      const gate = gateFor(db, r);
+      if (gate.blocks) { blocked.push({ id, lot_number: r.lot_number, item_number: r.item_number, gaps: gate.gaps }); continue; }
+      stamp.run(gate.mode === 'off' || gate.ok ? null : JSON.stringify(gate.gaps), gate.mode, id);
+      okIds.push(id);
+    }
+  }
+  const ph = okIds.map(() => '?').join(',');
+  const info = okIds.length ? db.prepare(`UPDATE coa_requests SET status=?, updated_at=datetime('now') WHERE id IN (${ph})`).run(patch.status, ...okIds) : { changes: 0 };
+  logAudit(req.user, 'coa_requests_bulk_updated', 'coa_request', null, { count: info.changes, status: patch.status, blocked: blocked.length });
+  res.json({ updated: info.changes, blocked });
 });
 
 // ──────────────── Test Results ────────────────
@@ -949,7 +1021,20 @@ function rollUpRequestStatus(db, requestId) {
   if (hasFail) {
     db.prepare("UPDATE coa_requests SET status = 'fail', date_of_results = COALESCE(date_of_results, date('now')), updated_at = datetime('now') WHERE id = ?").run(requestId);
   } else if (allDecided) {
-    db.prepare("UPDATE coa_requests SET status = 'pass', date_of_results = COALESCE(date_of_results, date('now')), updated_at = datetime('now') WHERE id = ?").run(requestId);
+    // Every test passed. Whether the LOT may be released is a second question
+    // (CAR 4990683-3): does the item's specification cover identity, purity,
+    // strength, composition and contaminants, and was identity confirmed by
+    // more than a look, smell and taste? In `on` mode a gap holds the lot; in
+    // `warn` mode the release goes through carrying its gaps, named.
+    const request = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(requestId);
+    const gate = gateFor(db, request);
+    if (gate.blocks) {
+      db.prepare("UPDATE coa_requests SET status = 'hold', release_gaps = ?, release_gate_mode = ?, date_of_results = COALESCE(date_of_results, date('now')), updated_at = datetime('now') WHERE id = ?")
+        .run(JSON.stringify(gate.gaps), gate.mode, requestId);
+    } else {
+      db.prepare("UPDATE coa_requests SET status = 'pass', release_gaps = ?, release_gate_mode = ?, date_of_results = COALESCE(date_of_results, date('now')), updated_at = datetime('now') WHERE id = ?")
+        .run(gate.mode === 'off' || gate.ok ? null : JSON.stringify(gate.gaps), gate.mode, requestId);
+    }
   } else {
     // Back to pending: something is still undecided. Only ever moves a verdict
     // BACK, never invents one.
@@ -1407,13 +1492,18 @@ router.post('/requests/:id/sign', (req, res) => {
     db.prepare("UPDATE users SET signature_image = ?, updated_at = datetime('now') WHERE id = ?").run(sig, req.user.id);
   }
 
+  // Signing the certificate IS the release. Same gate as the roll-up.
+  const gate = gateFor(db, r);
+  if (gate.blocks) return res.status(400).json({ error: `This certificate cannot be issued: ${gate.gaps.join('; ')}.`, release_blocked: true, gaps: gate.gaps });
+
   // Issuing details lock in at signing: certificate number and issuance date.
   const certNum = r.certificate_number || nextCertNumber(db);
   const today = new Date().toISOString().slice(0, 10);
   db.prepare(`UPDATE coa_requests SET qa_signed_by = ?, qa_signed_by_id = ?, qa_signed_at = datetime('now'),
               qa_signature = ?, certificate_number = ?, date_of_issuance = COALESCE(date_of_issuance, ?),
+              release_gaps = ?, release_gate_mode = ?,
               updated_at = datetime('now') WHERE id = ?`)
-    .run(req.user.name, req.user.id, sig, certNum, today, req.params.id);
+    .run(req.user.name, req.user.id, sig, certNum, today, gate.mode === 'off' || gate.ok ? null : JSON.stringify(gate.gaps), gate.mode, req.params.id);
   logAudit(req.user, 'sign', 'coa_request', req.params.id,
     { certificate_number: certNum, attestation: 'I certify that the results on this Certificate of Analysis are true and accurate as obtained for the lot identified.' },
     null, null, `${r.item_description} · Lot ${r.lot_number}`);

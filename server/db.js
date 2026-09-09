@@ -3424,6 +3424,10 @@ function runMigrations() {
   addColumnIfMissing('coa_requests', 'received_date', 'TEXT');
   addColumnIfMissing('coa_requests', 'certificate_number', 'TEXT');
   addColumnIfMissing('coa_requests', 'date_of_issuance', 'TEXT');
+  // What a release carried past the specification gate (CAR 4990683-3):
+  // the gaps named at the moment the lot passed, and the gate's mode then.
+  addColumnIfMissing('coa_requests', 'release_gaps', 'TEXT');
+  addColumnIfMissing('coa_requests', 'release_gate_mode', 'TEXT');
 
   // Calibration certificate PDFs/scans attached to individual calibration
   // records (stored on disk under data/calibration-certs).

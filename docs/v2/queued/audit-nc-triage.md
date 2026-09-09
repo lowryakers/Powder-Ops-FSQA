@@ -137,6 +137,13 @@ and `spec-seed.js` already drafts the standard panel for the most-tested items. 
 composition and contaminants, and (2) **a release gate that refuses a lot with no active spec** — today
 a test with no spec quietly passes, which is the same defect class as the ungraded ATP reading.
 
+**Update 9 September (D-063): the release gate exists.** `shared/spec-coverage.js` places each active spec in
+one of the rule's five categories; a release meets the gate at every door (roll-up, Mark Pass, bulk pass,
+signing the certificate). It ships in **warn** mode — the lot releases and carries its gaps on the record —
+and an admin enforces it from the Lab Requests strip once the count reaches zero for the active items.
+Identity must be a result, and an organoleptic pass is named as not enough. The specifications themselves
+and the identity method are still QA's (item 1 and 2 of the CAR response).
+
 ### 4.3.9 — Change control does not cover processes, software, utility, physical plant · **A + C**
 *While requirements for equipment changes were defined per SOP 434, change control procedures that
 include processes, software, utility, and physical plant changes were not established.* [111.130(e)]
@@ -269,7 +276,7 @@ Items 2 and 3 are quarter-sized projects and should be planned rather than start
 
 ## Progress against this list — 1 September 2026
 
-**0 of 12 closed. 6 with work landed** (4.3.1; and since 9 September 4.5.84, 4.2.9 and 6.2.3.1 on one interface, 4.6.21, and 4.3.9 with the software half of 4.4.39).
+**0 of 12 closed. 7 with work landed** (4.3.1; and since 9 September 4.5.84, 4.2.9 and 6.2.3.1 on one interface, 4.6.21, 4.3.9 with the software half of 4.4.39, and 4.3.6).
 
 ### 4.3.1 · Supplier qualification questionnaires — REGISTER BUILT, FINDING STILL OPEN
 
@@ -343,7 +350,18 @@ listed on the same screen. **Every release is recorded when the deployed commit 
 (`RAILWAY_GIT_COMMIT_SHA`), and a release with no change request is counted in the register, the
 readiness review and the response — not hidden. The procedure is Document Control's.
 
-### The other six
+### 4.3.6 — the specification release gate (D-063, 9 September)
+
+`shared/spec-coverage.js` + `gateFor()` in `server/api/coa.js`, the strip on Lab Requests, `coa_requests.release_gaps`.
+A lot leaves through four doors and every one meets the gate: the roll-up when the last result lands, Mark
+Pass, a bulk pass (a held lot is skipped and named, never passed in the batch), and signing the certificate.
+**Warn mode by default** — the release goes through carrying the gaps it went out under, stamped on the row,
+and the count is what Quality works down; an admin switches to enforcing from the strip and the switch is
+audited. Identity is a *result* — a spec on file with no identity result on the lot still holds it, and an
+organoleptic pass reads "identity confirmed by organoleptic test only". The specifications themselves are
+QA's; the strip lists the items still short of one as the punch list.
+
+### The other five
 
 Not started. Tracked in `docs/v2/obligations.json`; a finding is marked closed here only when the
 corrective action is complete and its evidence can be produced on request.

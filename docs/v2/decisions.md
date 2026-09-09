@@ -1924,3 +1924,37 @@ person without the grant saw the item and clicking it fell back to the first mod
 loop now adds and removes such items from `effectiveModules` by the same predicate that shows them.
 
 Verified: `verify:changes`, live and in the browser.
+
+## D-063 · 2026-09-09 · decided — A lot is released against a complete specification, and the gate opens in warn mode
+
+CAR 4990683-3 (21 CFR 111.70): specifications were not established before July 2026, and identity was
+confirmed by a look, smell and taste. The history is C — no software fixes it. The forward half was the
+same defect as the ungraded ATP reading: `coa.js` graded a result against a spec when one existed, and a lot
+whose item had no specification at all went out as `pass` with nothing on the record saying so.
+
+`shared/spec-coverage.js` is the one definition: five categories from the rule (identity, purity, strength,
+composition, limits on contaminants), a test placed in a category by name from the plant's own test
+vocabulary — a name nothing matches is recorded as unplaced, never guessed — and `releaseGate()` returning
+the gaps a release would carry. `coa.js` applies it at **every door a lot leaves by**: the roll-up when the
+last result lands, Mark Pass, a bulk pass, and signing the certificate. One door left ungated is the whole
+gate sidestepped, which is the lesson of the ATP edit path.
+
+**Three modes, and it ships in WARN, not ON.** In warn mode the release goes through and the record carries
+the gaps it went out under (`release_gaps`, stamped at the moment of release, the `atp_limit` rule). The
+specification program is catching up — the response dates the full set for 31 October and the release check
+for 30 November — and enforcing on deploy would hold every lot in the plant to prove a point, which is how a
+control gets switched off in its first week. The count of releases carrying gaps is the number Quality works
+down; **the admin switches to enforcing from the strip once it reaches zero for the active items**, and the
+switch is audited. `off` records nothing about coverage and reads red in the readiness review.
+
+**Identity is confirmed by a result, not a specification.** An item can carry an FTIR specification and the
+lot still has no identity result; the gate holds on the result, and an organoleptic pass is named as exactly
+that ("identity confirmed by organoleptic test only"). The identity METHOD is Quality's decision (CAR item 2),
+not the software's — the gate accepts any identity-category result.
+
+What this does not do: write a specification. Coverage is computed from `coa_specifications`; approving the
+missing ones is QA's work in the Specifications tab, and the strip lists the items still short so that work
+has a punch list.
+
+Verified: `verify:specgate`, 30 assertions live and in the browser, including all four doors refusing in
+enforcing mode and the same lot releasing with no gaps once an identity result is filed.

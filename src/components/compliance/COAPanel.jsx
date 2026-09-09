@@ -90,6 +90,93 @@ function StatusBadge({ status }) {
   );
 }
 
+// What a lot went out under (warn mode) or is held on (on mode). `release_gaps`
+// is stamped by the server at the moment of release and rendered as given —
+// the chip re-deciding coverage would be a second copy of the gate.
+function gapsOf(r) {
+  try { const g = typeof r?.release_gaps === 'string' ? JSON.parse(r.release_gaps) : r?.release_gaps; return Array.isArray(g) ? g : []; } catch { return []; }
+}
+function GapsChip({ request }) {
+  const gaps = gapsOf(request);
+  if (!gaps.length) return null;
+  const held = request.status === 'hold';
+  return (
+    <span data-release-gaps={gaps.length} title={gaps.join('\n')}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${held ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800'}`}>
+      <AlertTriangle size={11} /> {held ? 'Held' : 'Released'} · {gaps.length} spec gap{gaps.length > 1 ? 's' : ''}
+    </span>
+  );
+}
+
+// The specification release gate (CAR 4990683-3). The strip reads
+// /coa/release-gate — mode, what the gate has let through carrying gaps, what
+// it is holding, and which items still lack a full specification. Only an
+// admin moves the mode; the switch is audited.
+function ReleaseGateStrip({ isAdmin, refreshKey }) {
+  const { data, refresh } = useApiGet('/coa/release-gate', [refreshKey]);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  if (!data) return null;
+  const setMode = async (mode) => {
+    if (!isAdmin || busy) return;
+    if (mode === 'on' && !confirm('Enforce the gate? A lot whose item lacks a specification covering identity, purity, strength, composition and contaminants, or with no identity result, can no longer be released.')) return;
+    setBusy(true);
+    try { await apiPut('/coa/release-gate', { mode }); refresh(); } catch (e) { alert(e.message); } finally { setBusy(false); }
+  };
+  const tone = data.mode === 'on' ? 'border-green-200 bg-green-50 text-green-900' : data.mode === 'warn' ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-red-200 bg-red-50 text-red-900';
+  const gapsItems = (data.coverage || []).filter(c => c.missing.length);
+  return (
+    <div data-release-gate={data.mode} className={`rounded-xl border px-4 py-3 text-sm ${tone}`}>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="font-semibold">Specification release gate: {data.mode === 'on' ? 'enforcing' : data.mode === 'warn' ? 'warn only' : 'off'}</div>
+        <div className="text-xs">
+          <span data-gate-covered={data.items_fully_covered}>{data.items_fully_covered} of {data.items_total} tested items fully specified</span>
+          {' · '}<span data-gate-with-gaps={data.released_with_gaps_count}>{data.released_with_gaps_count} released carrying gaps</span>
+          {' · '}<span data-gate-held={data.held_count}>{data.held_count} held</span>
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          {isAdmin && (
+            <select value={data.mode} onChange={e => setMode(e.target.value)} disabled={busy} data-gate-mode
+              className="px-2 py-1 border border-gray-300 rounded-lg text-xs bg-white text-gray-800">
+              <option value="off">Off</option>
+              <option value="warn">Warn — release, carry the gaps</option>
+              <option value="on">Enforce — hold the lot</option>
+            </select>
+          )}
+          <button type="button" onClick={() => setOpen(o => !o)} className="text-xs underline">{open ? 'Hide' : 'Details'}</button>
+        </div>
+      </div>
+      <p className="mt-1 text-xs opacity-80">
+        21 CFR 111.70: a lot is released against a specification covering identity, purity, strength, composition and limits on
+        contaminants, and identity is confirmed by more than a look, smell and taste.
+        {data.mode === 'warn' && ' In warn mode a release goes through and carries its gaps — the count above is what Quality works down before the gate is enforced.'}
+        {data.mode === 'off' && ' The gate is OFF: nothing about coverage is recorded on a release.'}
+      </p>
+      {open && (
+        <div className="mt-3 grid gap-3 md:grid-cols-2 text-xs">
+          <div>
+            <div className="font-semibold mb-1">Items without a full specification ({gapsItems.length})</div>
+            {gapsItems.length === 0 ? <div className="opacity-70">Every tested item is covered.</div> : (
+              <ul className="space-y-1 max-h-56 overflow-y-auto">
+                {gapsItems.map(c => <li key={c.item_number} data-gate-item={c.item_number}><span className="font-medium">{c.item_number}</span> {c.item_description} — missing {c.missing.join(', ')}</li>)}
+              </ul>
+            )}
+          </div>
+          <div>
+            <div className="font-semibold mb-1">Released carrying gaps ({data.released_with_gaps_count}) · held ({data.held_count})</div>
+            {data.released_with_gaps.length + data.held.length === 0 ? <div className="opacity-70">None.</div> : (
+              <ul className="space-y-1 max-h-56 overflow-y-auto">
+                {data.held.map(r => <li key={r.id}><span className="font-medium text-red-700">HELD</span> {r.item_number} · lot {r.lot_number} — {r.release_gaps.join('; ')}</li>)}
+                {data.released_with_gaps.map(r => <li key={r.id}>{r.item_number} · lot {r.lot_number} ({r.date_of_results || '—'}) — {r.release_gaps.join('; ')}</li>)}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SortHeader({ label, field, sortField, sortDir, onSort }) {
   const active = sortField === field;
   return (
@@ -839,6 +926,9 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
   const [resultForm, setResultForm] = useState([{ test_type: '', result_value: '', pass_fail: '', notes: '' }]);
   // A File (just uploaded) or a coa_files id (already attached) to read.
   const [scanFile, setScanFile] = useState(null);
+  // The gate's refusal, verbatim — a Mark Pass that silently does nothing
+  // reads as the app being broken (the qms.js lesson).
+  const [gateMsg, setGateMsg] = useState(null);
 
   const downloadPdf = async () => {
     const token = localStorage.getItem('auth_token');
@@ -865,7 +955,9 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
   };
 
   const handleStatusChange = async (status) => {
-    await apiPut(`/coa/requests/${requestId}`, { status });
+    try { await apiPut(`/coa/requests/${requestId}`, { status }); }
+    catch (e) { setGateMsg(e.message); return; }
+    setGateMsg(null);
     refreshDetail();
     onRefresh();
   };
@@ -919,6 +1011,7 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <GapsChip request={detail} />
           <StatusBadge status={detail.status} />
           <button onClick={downloadPdf}
             className="p-1.5 text-gray-400 hover:text-powder-600 rounded-lg hover:bg-gray-100" title="Export Powder Ops COA PDF">
@@ -960,6 +1053,14 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
         {detail.notes && (
           <div className="text-sm"><span className="text-xs text-gray-500 block mb-1">Notes</span><p className="text-gray-700">{detail.notes}</p></div>
         )}
+
+        {gapsOf(detail).length > 0 && (
+          <div data-detail-gaps className={`text-xs rounded-lg px-3 py-2 border ${detail.status === 'hold' ? 'bg-red-50 border-red-200 text-red-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
+            <span className="font-semibold">{detail.status === 'hold' ? 'Held by the specification gate: ' : 'Released carrying specification gaps: '}</span>
+            {gapsOf(detail).join('; ')}
+          </div>
+        )}
+        {gateMsg && <div data-gate-refusal className="text-xs rounded-lg px-3 py-2 bg-red-50 border border-red-200 text-red-800">{gateMsg}</div>}
 
         {/* Status actions + PDF export */}
         <div className="flex flex-wrap gap-2">
@@ -2085,7 +2186,8 @@ export default function COAPanel() {
   const handleBulkStatus = async (status) => {
     if (!status) return;
     const res = await apiPost('/coa/requests/bulk-update', { ids: [...selected], patch: { status } });
-    setBulkStatus(''); clearSelection(); flash(`Updated ${res.updated} request${res.updated === 1 ? '' : 's'}.`); refreshReqs(); refreshSummary();
+    const blocked = res.blocked?.length ? ` ${res.blocked.length} held by the specification gate: ${res.blocked.map(b => `lot ${b.lot_number}`).join(', ')}.` : '';
+    setBulkStatus(''); clearSelection(); flash(`Updated ${res.updated} request${res.updated === 1 ? '' : 's'}.${blocked}`); refreshReqs(); refreshSummary();
   };
   const handleBulkDelete = async () => {
     const res = await apiPost('/coa/requests/bulk-delete', { ids: [...selected] });
@@ -2166,6 +2268,7 @@ export default function COAPanel() {
       {/* ───── Requests Tab ───── */}
       {subTab === 'requests' && (
         <>
+          <ReleaseGateStrip isAdmin={isAdmin} refreshKey={reqPayload} />
           <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
             <div className="relative flex-1">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -2253,6 +2356,7 @@ export default function COAPanel() {
                       <div className="text-gray-800 text-sm leading-snug">{r.item_description}</div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
+                      <GapsChip request={r} />
                       <StatusBadge status={r.status} />
                       {canEdit && (
                         <button onClick={e => { e.stopPropagation(); toggleOne(r.id); }} className="text-gray-300 hover:text-powder-600" title={selected.has(r.id) ? 'Deselect' : 'Select'}>
@@ -2311,7 +2415,7 @@ export default function COAPanel() {
                         <td className="px-3 py-2.5 text-gray-700 w-full">{r.item_description}</td>
                         <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">{r.lot_number}</td>
                         <td className="px-3 py-2.5 text-gray-600">{r.tests_requested}</td>
-                        <td className="px-3 py-2.5 whitespace-nowrap"><StatusBadge status={r.status} /></td>
+                        <td className="px-3 py-2.5 whitespace-nowrap"><span className="inline-flex items-center gap-1.5"><StatusBadge status={r.status} /><GapsChip request={r} /></span></td>
                         <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">{r.lab_name || '-'}</td>
                         <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">{r.date_sent || '-'}</td>
                         <td className="px-3 py-2.5">

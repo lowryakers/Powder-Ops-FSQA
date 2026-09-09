@@ -1594,6 +1594,29 @@ global drawing is how four forms silently started showing a placement nobody agr
 - `ScaleProcedureCard` reads `form.procedure` and falls back to the shared object; every read goes through
   `proc`, or the fallback is a decoration that never applies.
 
+## The specification release gate (`shared/spec-coverage.js`, D-063)
+CAR 4990683-3. A COA request whose tests all pass is not yet a released lot: the item's ACTIVE specs must
+cover **identity, purity, strength, composition and contaminants**, and the lot must carry an identity result
+that is more than a look, smell and taste. `releaseGate()` is the one rule; `gateFor(db, request)` in
+`api/coa.js` applies it.
+- **FOUR DOORS, ONE GATE**: the roll-up in `rollUpRequestStatus`, `PUT /requests/:id` with `status: 'pass'`,
+  `POST /requests/bulk-update` (a held lot is skipped and returned in `blocked[]`, never passed in a batch)
+  and `POST /requests/:id/sign`. A door added later must call `gateFor` or the gate is decorative.
+- **Mode lives in `app_settings.coa_release_gate`** — `off` / `warn` (default) / `on`. Admin only via
+  `PUT /coa/release-gate`, audited. **Warn releases and STAMPS the gaps** (`coa_requests.release_gaps`,
+  `release_gate_mode`); `on` sets the request to `hold` with the gaps; `off` stamps `null` and the mode.
+  A release with no gaps stamps `null` in every mode, so "released carrying gaps" is exactly the rows
+  with a non-null value.
+- **Categories are matched by test NAME** (`categoryOf`). A test type nothing places is reported as unplaced
+  on the item, not silently dropped into a category. Organoleptic tests never satisfy identity.
+- `GET /coa/release-gate` is the strip on Lab Requests (`ReleaseGateStrip`): mode, items fully specified,
+  released-with-gaps, held, and the per-item missing categories — every figure `.length` of the rows
+  returned. `GapsChip` renders `release_gaps` as given; the bell (`coa-held`, `coa-gaps`) and the readiness
+  section *Specifications & release* read the same two columns.
+- **The list rows carry `release_gaps` because `/requests` is `SELECT *`** — a projection added later must
+  keep the column or the chips vanish while the strip still counts them.
+- Verified: `verify:specgate` (30, port 4985, in `verify:all`).
+
 ## The change register (`server/change-register.js`, `api/change-register.js`, D-062)
 One register for every kind of change 21 CFR 111.130(e) names (equipment / process / software / utility /
 facility / document / other). Nav entry **Change Register** in Document Control, visible to admins, DC, QA

@@ -126,7 +126,7 @@ To be produced:
 
 **Finding (verbatim):** *While formal specifications are currently being created for all components and finished products… specifications were not established prior to July 2026… Organoleptic evaluations were conducted to verify the identity for dietary ingredients which is not appropriate by itself… Identity, purity, strength, and composition specifications and testing were not conducted prior to August 2026.*  
 **Reference:** SOP 606 V2 · 21 CFR 111.70 · specs Doc #607-32/-01/-02/-41/-24 V1 (7/9/26); #202530, #IM0036, #FG0906 (8/21/26)  
-**Decisions for Carol in this response:** 12
+**Decisions for Carol in this response:** 13
 
 ### Root cause analysis
 
@@ -142,7 +142,7 @@ Before July 2026 we released raw materials and finished products based on heavy-
 
 ### Preventive action plan
 
-Specifications and test results are held in our ReadyDoc system, which compares each result to the current specification for that item and test. We are adding a check so that a lot cannot be released unless its item has an approved specification covering identity, purity, strength, composition and contaminants, and unless identity was confirmed by more than a look, smell and taste check. A result with no specification to compare to is recorded as incomplete, not as a pass. Changes to specifications go through change control (see CAR 4990683-4).
+Specifications and test results are held in our ReadyDoc system, which compares each result to the current specification for that item and test. Since 9 September 2026 the system also checks, at the point of release, that the item has an approved specification covering identity, purity, strength, composition and contaminants, and that identity was confirmed by a test result rather than a look, smell and taste check. While the remaining specifications are being approved the check runs in warning mode: a lot can still be released, but the gaps are recorded on the lot's record and counted, and Quality works that count down. From [CAROL: 30 November 2026] the check will be enforced: a lot with a gap cannot be released. A result with no specification to compare to is recorded as incomplete, not as a pass. Changes to specifications go through change control (see CAR 4990683-4).
 
 ### Responsible person
 
@@ -150,7 +150,7 @@ Specifications and the review of earlier lots: Maria Servin, Quality Manager. Id
 
 ### Date of corrective action completion
 
-All active specifications approved: [CAROL: 31 October 2026]. Identity method in use: [CAROL: 30 November 2026]. Release check in place: [CAROL: 30 November 2026]. Review of earlier lots documented: [CAROL: 30 November 2026].
+All active specifications approved: [CAROL: 31 October 2026]. Identity method in use: [CAROL: 30 November 2026]. Release check in place in warning mode: 9 September 2026 (done). Release check enforced: [CAROL: 30 November 2026]. Review of earlier lots documented: [CAROL: 30 November 2026].
 
 ### Evidence of implementation
 
@@ -162,7 +162,7 @@ To be produced:
 - Laboratory results compared to the new specifications
 - The remaining approved specifications
 - The identity method decision and first results
-- Confirmation that the release check refuses a lot with no specification
+- The release check record: lots released with recorded gaps since 9 September, and the date the check was switched to enforced
 - The written review of earlier lots
 
 
