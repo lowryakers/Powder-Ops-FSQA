@@ -3480,6 +3480,76 @@ function runMigrations() {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_work_orders_supplier_qual
     ON work_orders(supplier_qualification_id)`);
 
+  // ── Checks that file a record (D-060) ─────────────────────────────────────
+  // Three programs whose scheduled check used to complete with nothing filed.
+  // One row per site × test for EMP, because that is how the lab reports it;
+  // the result arrives later and the row stays `pending` until it does.
+  // Alert/action limits are frozen onto the row when it is graded
+  // (the atp_limit rule). These tables follow quality_schedules because the
+  // work orders that file into them come from it.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS emp_samples (
+      id TEXT PRIMARY KEY,
+      work_order_id TEXT,
+      quality_schedule_id TEXT,
+      zone TEXT NOT NULL,
+      site TEXT NOT NULL,
+      test TEXT NOT NULL,
+      sampled_on TEXT NOT NULL,
+      sampled_by TEXT,
+      lab TEXT,
+      result_value TEXT,
+      result_numeric REAL,
+      outcome TEXT NOT NULL DEFAULT 'pending' CHECK (outcome IN ('pending','ok','alert','action','info')),
+      alert_limit TEXT,
+      action_limit TEXT,
+      form_revision TEXT,
+      resulted_on TEXT,
+      resulted_by TEXT,
+      corrective_action TEXT,
+      corrective_by TEXT,
+      corrective_at TEXT,
+      capa_id TEXT,
+      notes TEXT,
+      source TEXT NOT NULL DEFAULT 'task',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_emp_samples_zone_site ON emp_samples(zone, site, sampled_on);
+    CREATE INDEX IF NOT EXISTS idx_emp_samples_outcome ON emp_samples(outcome);
+    CREATE INDEX IF NOT EXISTS idx_emp_samples_wo ON emp_samples(work_order_id);
+
+    CREATE TABLE IF NOT EXISTS gmp_walkthroughs (
+      id TEXT PRIMARY KEY,
+      work_order_id TEXT,
+      quality_schedule_id TEXT,
+      walked_on TEXT NOT NULL,
+      walked_by TEXT NOT NULL,
+      area TEXT,
+      checklist_revision TEXT NOT NULL,
+      items TEXT NOT NULL,
+      nc_count INTEGER NOT NULL DEFAULT 0,
+      capa_ids TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_gmp_walkthroughs_date ON gmp_walkthroughs(walked_on);
+
+    CREATE TABLE IF NOT EXISTS banned_list_reviews (
+      id TEXT PRIMARY KEY,
+      work_order_id TEXT,
+      quality_schedule_id TEXT,
+      reviewed_on TEXT NOT NULL,
+      reviewed_by TEXT NOT NULL,
+      editions TEXT NOT NULL,
+      changes_found TEXT,
+      actions_taken TEXT,
+      materials_rechecked INTEGER NOT NULL DEFAULT 0,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
 
   // Material-level requirements narrative (Form 607-01 sections 2-5): packaging,
   // labeling, storage, acceptance criteria, etc. One row per item number,

@@ -12,6 +12,8 @@ import { formatDateTime } from '../../lib/datetime.js';
 import { formFromTitle, gradeDilution, isMeasured } from '../../../shared/dilution-forms.js';
 import FormChip from '../common/FormChip';
 import RuleTip from '../common/RuleTip.jsx';
+import CheckFields from '../common/CheckFields.jsx';
+import { missingForCheck } from '../../../shared/check-forms.js';
 
 function detectTaskType(task) {
   const t = (task.title || '').toLowerCase();
@@ -57,6 +59,9 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
   // compiler is right to refuse it.
   const [earliestDoneOn] = useState(() => daysAgoStr(30));
   const [readings, setReadings] = useState({});
+  // What a record-filing check needs (EMP sites, walk-through answers, list
+  // editions) — validated with the server's own rule before Submit lights up.
+  const [check, setCheck] = useState({});
   const [stepChecks, setStepChecks] = useState([]);
   const [issueNotes, setIssueNotes] = useState('');
   const [issueAttachments, setIssueAttachments] = useState([]);
@@ -163,6 +168,7 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
         step_results: (stepsRequired || stepChecks.length > 0)
           ? steps.map((_, i) => !!stepChecks[i]) : undefined,
         reading_result: getReadingResult(),
+        ...(task.check_form ? { check } : {}),
         // Only sent when the work was done on an earlier day. Left off, the
         // record is dated now, exactly as before.
         ...(doneOn && doneOn !== today ? { performed_on: doneOn, late_entry_reason: lateReason || null } : {}),
@@ -170,6 +176,7 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
       setCompleting(false);
       setNotes('');
       setReadings({});
+      setCheck({});
       setStepChecks([]);
       setDoneOn(localDateStr());
       setLateReason('');
@@ -439,6 +446,10 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
         {/* Inline completion */}
         {completing && (
           <div className="mt-3 ml-14 bg-green-50 rounded-xl p-3 space-y-3 border border-green-200">
+            {/* A check that files a record asks for what the record needs. */}
+            {task.check_form && (
+              <CheckFields form={task.check_form} value={check} onChange={setCheck} lang={lang} />
+            )}
             {/* Type-specific fields */}
             {taskType === 'temp_humidity' && (
               <>
@@ -880,7 +891,7 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
                 the one button that finishes the job off screen. Static on
                 desktop, where the whole form fits. */}
             <div className="flex gap-2 sticky bottom-14 md:static z-10 bg-green-50 py-2 -my-2 rounded-lg">
-              <button onClick={handleSubmit} disabled={saving || !canSubmit() || stepsOutstanding > 0}
+              <button onClick={handleSubmit} disabled={saving || !canSubmit() || stepsOutstanding > 0 || (task.check_form && missingForCheck(task.check_form, check).length > 0)}
                 className="flex-1 py-3 md:py-2.5 bg-green-600 text-white rounded-lg text-sm font-bold hover:bg-green-700 disabled:opacity-50 active:scale-[0.98] transition-transform">
                 {saving ? t('saving') : t('mark_complete')}
               </button>

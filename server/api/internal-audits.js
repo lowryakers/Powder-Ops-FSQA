@@ -20,6 +20,7 @@ import { Router } from 'express';
 import { randomUUID as uuid } from 'crypto';
 import PDFDocument from 'pdfkit';
 import { getDb, logAudit } from '../db.js';
+import { raiseCapa } from '../capa-raise.js';
 import { hasExplicitEdit, hasExplicitGrant } from '../module-access.js';
 import { coerceCustomData, mergeCustomData, parseJson } from '../custom-fields.js';
 import {
@@ -247,27 +248,22 @@ router.post('/:id/items/:itemId/car', (req, res) => {
   if (item.capa_id) return res.json({ items: itemsFor(db, a.id), already: true });
   if (item.result !== 'nc') return res.status(400).json({ error: 'A CAR follows a not-compliant finding.' });
 
-  const existing = db.prepare("SELECT capa_number FROM capas WHERE capa_number LIKE 'CAPA-%' ORDER BY capa_number DESC LIMIT 1").get();
-  let num = 'CAPA-001';
-  if (existing) {
-    const m = String(existing.capa_number).match(/(\d+)/);
-    if (m) num = `CAPA-${String(parseInt(m[1], 10) + 1).padStart(3, '0')}`;
-  }
-  const capaId = uuid();
   const section = sectionById(item.section);
   // The finding IS the title; the auditor's comment is the description. An
-  // assignee reading only the CAPA register still knows what was seen.
-  db.prepare(`INSERT INTO capas (id, capa_number, title, description, assigned_to, priority, due_date, status, date_issued, source_type)
-              VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, 'Internal Audit')`)
-    .run(capaId, num, item.prompt.slice(0, 160),
-      `Raised from internal audit ${a.audit_no} (${a.audit_date}), section "${section?.title || item.section}".\n\n${item.comments || 'No comment recorded.'}`,
-      String(req.body?.assigned_to || '').trim() || null,
-      String(req.body?.priority || 'normal'),
-      String(req.body?.due_date || '').trim() || null, a.audit_date);
-
-  db.prepare('UPDATE internal_audit_items SET capa_id = ? WHERE id = ?').run(capaId, item.id);
-  logAudit(req.user, 'create', 'capa', capaId, { capa_number: num, from_internal_audit: a.audit_no, section: item.section }, null,
-    db.prepare('SELECT * FROM capas WHERE id = ?').get(capaId), num);
+  // assignee reading only the CAPA register still knows what was seen. The
+  // insert and the numbering are the shared helper's (capa-raise.js), so a
+  // CAR from an audit is the same record as one from an EMP positive.
+  const capa = raiseCapa(db, req.user, {
+    title: item.prompt.slice(0, 160),
+    description: `Raised from internal audit ${a.audit_no} (${a.audit_date}), section "${section?.title || item.section}".\n\n${item.comments || 'No comment recorded.'}`,
+    source_type: 'Internal Audit',
+    assigned_to: String(req.body?.assigned_to || '').trim() || null,
+    priority: String(req.body?.priority || 'normal'),
+    due_date: String(req.body?.due_date || '').trim() || null,
+    date_issued: a.audit_date,
+    extra: { from_internal_audit: a.audit_no, section: item.section },
+  });
+  db.prepare('UPDATE internal_audit_items SET capa_id = ? WHERE id = ?').run(capa.id, item.id);
   res.status(201).json({ items: itemsFor(db, a.id) });
 });
 

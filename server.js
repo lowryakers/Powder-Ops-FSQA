@@ -42,6 +42,7 @@ import hygienicDesignRoutes from './server/api/hygienic-design.js';
 import complaintRoutes from './server/api/complaints.js';
 import documentRoutes, { generateDocumentReviewTasks } from './server/api/documents.js';
 import qualityScheduleRoutes, { generateQualityScheduleTasks } from './server/api/quality-schedules.js';
+import checkRecordRoutes from './server/api/check-records.js';
 import meetingRoutes from './server/api/meetings.js';
 import internalAuditRoutes from './server/api/internal-audits.js';
 import docReviewRoutes from './server/api/doc-review.js';
@@ -1817,6 +1818,9 @@ app.use('/api/hygienic-design', requireModuleWrite('hygienic'), hygienicDesignRo
 app.use('/api/complaints', requireModuleWrite('capa'), complaintRoutes);
 app.use('/api/documents', requireModuleWrite('sops', 'work-instructions', 'job-descriptions'), documentRoutes);
 app.use('/api/quality-schedules', requireModuleWrite('pm', 'coa', 'sanitation', 'calibration'), qualityScheduleRoutes);
+// The records those schedules file (EMP samples and results, GMP walks, list
+// reviews) — read by whoever holds the schedules, acted on by Quality.
+app.use('/api/check-records', requireModuleWrite('pm', 'coa', 'sanitation', 'calibration', 'quality-schedules'), checkRecordRoutes);
 app.use('/api/meetings', requireModuleWrite('meetings'), meetingRoutes);
 app.use('/api/internal-audits', requireModuleWrite('internal-audits'), internalAuditRoutes);
 app.use('/api/doc-review', docReviewRoutes);

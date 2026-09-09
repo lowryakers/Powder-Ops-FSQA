@@ -598,6 +598,17 @@ router.get('/notifications', (req, res) => {
 
   const items = [];
   if (overdueWOs > 0) items.push({ id: 'pm-overdue', tab: 'pm', severity: 'critical', count: overdueWOs, label: `${overdueWOs} overdue PM work order${overdueWOs > 1 ? 's' : ''}` });
+  // Environmental monitoring: a result the laboratory owes, and an action
+  // level nobody has written against. Both are derived from emp_samples
+  // exactly as the EMP results tab derives them.
+  if (isApprover) {
+    try {
+      const stale = db.prepare("SELECT COUNT(*) c FROM emp_samples WHERE outcome = 'pending' AND sampled_on < date('now','-14 days')").get().c;
+      const act = db.prepare("SELECT COUNT(*) c FROM emp_samples WHERE outcome = 'action' AND (corrective_action IS NULL OR corrective_action = '')").get().c;
+      if (act > 0) items.push({ id: 'emp-action', tab: 'quality-schedules', severity: 'critical', count: act, label: `${act} environmental monitoring action-level result${act > 1 ? 's' : ''} with no corrective action recorded` });
+      if (stale > 0) items.push({ id: 'emp-pending', tab: 'quality-schedules', severity: 'warning', count: stale, label: `${stale} environmental sample${stale > 1 ? 's' : ''} awaiting a laboratory result for over 14 days` });
+    } catch { /* table optional */ }
+  }
   if (dueSoonWOs > 0) items.push({ id: 'pm-due-soon', tab: 'pm', severity: 'info', count: dueSoonWOs, label: `${dueSoonWOs} PM work order${dueSoonWOs > 1 ? 's' : ''} due within 7 days` });
   if (clearancePending > 0) items.push({ id: 'clearance', tab: 'pm', severity: 'warning', count: clearancePending, label: `${clearancePending} hygiene clearance${clearancePending > 1 ? 's' : ''} awaiting QA sign-off` });
   if (calOverdue > 0) items.push({ id: 'cal-overdue', tab: 'calibration', severity: 'critical', count: calOverdue, label: `${calOverdue} calibration${calOverdue > 1 ? 's' : ''} overdue` });

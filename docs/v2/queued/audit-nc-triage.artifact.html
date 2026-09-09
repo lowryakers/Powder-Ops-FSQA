@@ -139,7 +139,7 @@
     <div class="sc zero"><div class="v">0</div><div class="k">major</div></div>
     <div class="sc minor"><div class="v">12</div><div class="k">minor · 3 + 9</div></div>
     <div class="sc"><div class="v">2</div><div class="k">audits, one visit</div></div>
-    <div class="sc"><div class="v">0</div><div class="k">closed · 6 under way</div></div>
+    <div class="sc"><div class="v">0</div><div class="k">closed · 9 under way</div></div>
   </div>
 
   <div class="box hot">
@@ -216,7 +216,7 @@
 
 <div class="n b">
   <div class="nh"><span class="id">§6.2.3.1</span><span class="nt">No documented annual review of the lists</span><span class="chip k-b">B</span></div>
-  <div class="st open"><span class="dot"></span><span class="what">The SOP draft covers the procedure; <b>nothing yet generates the annual review</b></span></div>
+  <div class="st part"><span class="dot"></span><span class="what">Annual review task and record in the system since 9 September — <b>the first review has not been done</b></span></div>
   <p>Two halves, and the second is ours. The procedure is a document. <b>The review actually happening
     every year is a program that generates dated work and a record</b> — the exact shape
     Quality Schedules already provides for tap water and the EMP swabs.</p>
@@ -341,7 +341,7 @@
 
 <div class="n b">
   <div class="nh"><span class="id">4.5.84</span><span class="nt">The environmental monitoring program is not adhered to</span><span class="chip k-b">B</span></div>
-  <div class="st part"><span class="dot"></span><span class="what">FORM 604-01 transcribed and six schedules seeded — <b>results have nowhere to file</b></span></div>
+  <div class="st part"><span class="dot"></span><span class="what">FORM 604-01 transcribed, schedules seeded, and since 9 September <b>every sampling task files a result record graded against the form</b></span></div>
   <div class="find">"Surface testing results were not available … as testing had not been conducted as
     established per SOP 604 - Environmental Monitoring Program - V2 - 6/29/26."</div>
   <p><b>The walk found this from the software side and reached the same place.</b> FORM 604-01 is
@@ -356,7 +356,7 @@
 
 <div class="n c">
   <div class="nh"><span class="id">4.2.9</span><span class="nt">Street shoes worn in GMP areas</span><span class="chip k-c">C → B</span></div>
-  <div class="st open"><span class="dot"></span><span class="what">Not started — no GMP observation record</span></div>
+  <div class="st part"><span class="dot"></span><span class="what">Weekly GMP walk-through task and record in the system since 9 September (checklist DRAFT-1) — <b>the behaviour is still the finding</b></span></div>
   <div class="find">"Gaps in hygienic practices/procedures were observed … street shoes were worn in GMP
     areas without covers or appropriate cleaning." [21 CFR 111.10(b)]</div>
   <p><b>The only finding about behaviour rather than paperwork, and the only one that is about product
@@ -376,21 +376,41 @@
 </div>
 
 <h2>Progress against this list</h2>
-<p class="lede">Verified against the codebase on 8 September 2026 — not against a project register.
+<p class="lede">Verified against the codebase on 9 September 2026 — not against a project register.
 The first version of this section was built from the register and was wrong about four findings, which
 is why it is now checked against the thing it describes.</p>
 
 <div class="tally">
   <div class="t"><span class="v">12</span> findings on the auditor's list</div>
-  <div class="t warn"><span class="v">6</span> with work under way</div>
+  <div class="t warn"><span class="v">9</span> with work under way</div>
   <div class="t ok"><span class="v">0</span> closed</div>
-  <div class="t"><span class="v">6</span> not started</div>
+  <div class="t"><span class="v">3</span> not started</div>
 </div>
 
 <div class="box">
   <p><b>Nothing is closed, and that is the honest number.</b> A finding closes when the corrective
   action is complete and its evidence can be produced on request — not when the software that will hold
-  the evidence exists. Six have real foundations under them; none has finished.</p>
+  the evidence exists. Nine have real foundations under them; none has finished.</p>
+</div>
+
+<div class="prog">
+  <div class="hd">
+    <h3>4.5.84 · 4.2.9 · §6.2.3.1 — one interface, three records (D-060)</h3>
+    <span class="st part" style="margin:0"><span class="dot"></span><span class="what">Landed 9 September 2026</span></span>
+  </div>
+  <p>A scheduled check now <b>declares what its completion must carry and files the record that implies</b>
+  (<code>shared/check-forms.js</code>, <code>server/check-records.js</code>). Three programs are on it:
+  an EMP sampling task cannot complete without the sites swabbed, and files one <b>awaiting-result</b> row per
+  site and test; the laboratory result is entered on the row and grades itself against FORM 604-01, an
+  action level raising one CAR; the <b>weekly GMP walk-through</b> (checklist DRAFT-1 until Document
+  Control numbers it) records five items with what was seen, the same item failing twice running raising a
+  CAR; the <b>annual banned-list review</b> records the edition of each list, and the latest review is the
+  record of the editions in use. The bell and the readiness review read the same rows.</p>
+  <p><b>Found on the way, and it explains the finding:</b> the generator that turns a quality schedule into
+  a task had been throwing <i>8 values for 9 columns</i> on every run since 17 August — no EMP swab task,
+  no internal-audit task, no tap-water task had been raised for three weeks, and the error went to a log
+  nobody reads. Fixed in the same pass. The corrected generator raises one task per schedule on the next
+  deploy, not a backlog.</p>
 </div>
 
 <div class="prog">

@@ -61,7 +61,7 @@ Procedure: SOP 401 is being revised to V5 through our Document Change Request pr
 
 ### Preventive action plan
 
-We are starting a weekly GMP walk-through. [CAROL: Maria Servin or a shift supervisor] will check gowning, hairnets, jewelry, handwashing and footwear, and sign a dated record. Results are tracked over time. A repeated problem raises a corrective action request. Footwear is also added to the personnel section of our monthly internal audit (Form 403-01) [CAROL: confirm whether Form 403-01 already has a footwear question; if it does, cite it]. When SOP 401 is revised again, the system automatically requires retraining.
+We are starting a weekly GMP walk-through. [CAROL: Maria Servin or a shift supervisor] will check gowning, hairnets, jewelry, handwashing and footwear, and sign a dated record in our ReadyDoc system (the weekly walk-through task and its record have been in the system since 9 September 2026). Results are tracked over time. The same item found not compliant on two consecutive walks automatically raises a corrective action request. Footwear is also added to the personnel section of our monthly internal audit (Form 403-01) [CAROL: confirm whether Form 403-01 already has a footwear question; if it does, cite it]. When SOP 401 is revised again, the system automatically requires retraining.
 
 ### Responsible person
 
@@ -287,7 +287,7 @@ To be produced:
 
 **Finding (verbatim):** *MMRs are not prepared for each unique formulation and batch size of products. A blank MMR template is established, 413-1 Packaging Batch Production Record; however, there is not an MMR established and approved by Quality for each formula and batch size.*  
 **Reference:** SOP 413 V2 · SOP 300 V2 · 21 CFR 111.205(a)  
-**Decisions for Carol in this response:** 6
+**Decisions for Carol in this response:** 7
 
 ### Root cause analysis
 
@@ -295,15 +295,15 @@ Our formulas are held in MRP Easy as bills of materials for one unit, scaled to 
 
 ### Corrective action plan
 
-We will write a master manufacturing record for each formula and batch size, approved by Quality, containing what 21 CFR 111.210 requires: each ingredient with its identity and weight or measure, the expected yield with acceptable limits, in-process specifications and control points, written instructions for each manufacturing step including packaging and labeling, and instructions for corrective action. Order of work: [CAROL: number of active formulas × batch sizes]; the [CAROL: 10] highest-volume active products first, then the rest. Each record is held as a controlled document in ReadyDoc (one formula at one batch size, with a revision and Quality approval). The batch production record for each run will be generated from the approved master record, not typed separately.
+We will write a master manufacturing record for each formula and batch size, approved by Quality, containing what 21 CFR 111.210 requires: each ingredient with its identity and weight or measure, the expected yield with acceptable limits, in-process specifications and control points, written instructions for each manufacturing step including packaging and labeling, and instructions for corrective action. Order of work: [CAROL: number of active formulas × batch sizes]; the [CAROL: 10] highest-volume active products first, then the rest. Each record is held in our new manufacturing system, Keychain, which is replacing MRP Easy: one record per formula at one batch size, with a revision number and Quality approval. The batch production record for each run will be generated from the approved master record in that system, not typed separately. [CAROL: confirm the Keychain go-live date for master records.]
 
 ### Preventive action plan
 
-A batch cannot be started against a formula and batch size without an approved master manufacturing record. This will be enforced in ReadyDoc once batch records are generated from the master; until then, [CAROL: the manufacturing order must reference an approved master record before it is released to the floor]. Changes to a master record go through change control (CAR 4990683-4). Coverage is reported at management review.
+A batch cannot be started against a formula and batch size without an approved master manufacturing record. This will be enforced in Keychain once batch records are generated from the master; until then, [CAROL: the manufacturing order must reference an approved master record before it is released to the floor]. Changes to a master record go through change control (CAR 4990683-4). Coverage is reported at management review.
 
 ### Responsible person
 
-Formula content: Matt Schramm, Formulations. Manufacturing steps and instructions: Adam Bliss, Production Manager. Quality approval: Maria Servin, Quality Manager. Records and batch record generation in ReadyDoc: Lowry Akers, VP Operations.
+Formula content: Matt Schramm, Formulations. Manufacturing steps and instructions: Adam Bliss, Production Manager. Quality approval: Maria Servin, Quality Manager. Keychain set-up for master records and batch records: Lowry Akers, VP Operations.
 
 ### Date of corrective action completion
 
@@ -337,7 +337,7 @@ We are carrying out surface sampling per Form 604-01 immediately: a full round o
 
 ### Preventive action plan
 
-A scheduled sampling task cannot be closed without a result on record. Overdue sampling shows up on the Quality task list and in our audit readiness review. A result above the alert or action level raises a corrective action request. Quality reviews the trend monthly and at management review. Sampling is assigned to [CAROL: named person] with [CAROL: back-up person].
+In our ReadyDoc system (in place from 9 September 2026) a sampling task cannot be completed without naming the sites sampled; that files one record per site and test, which stays open as "awaiting result" until the laboratory result is entered against it. Overdue sampling and results awaited for more than 14 days show on the Quality task list, in the notification bell and in our audit readiness review. Each result is graded automatically against the alert and action levels on Form 604-01; an action-level result raises a corrective action request by itself. Quality reviews the trend monthly and at management review. Sampling is assigned to [CAROL: named person] with [CAROL: back-up person].
 
 ### Responsible person
 
@@ -451,7 +451,7 @@ Same origin as CAR 4990682-1: the sport-specific requirements were never matched
 
 ### Corrective action plan
 
-The new procedure (CAR 4990682-1) includes a section requiring Quality to review the current editions of NSF 306 Annex C, the NFL/NFLPA list, the MLB list and the WADA Prohibited List at least once a year and whenever a list is revised. Each review records the edition or date of each list, and checks our approved materials list and active formulas against any changes. We are creating a scheduled task in ReadyDoc, "Banned/Prohibited Substance list review" (annual, owner Quality). The completion record holds the list editions reviewed, the changes found and the actions taken. The first review will be done on [CAROL: date] as the baseline.
+The new procedure (CAR 4990682-1) includes a section requiring Quality to review the current editions of NSF 306 Annex C, the NFL/NFLPA list, the MLB list and the WADA Prohibited List at least once a year and whenever a list is revised. Each review records the edition or date of each list, and checks our approved materials list and active formulas against any changes. A scheduled task in ReadyDoc, "Banned/Prohibited Substance List Review" (annual, owner Quality), has been in place since 9 September 2026. It cannot be completed until the edition of each of the four lists, the changes found and the actions taken are recorded, and that record is what the system reports as the editions in use. The first review will be done on [CAROL: date] as the baseline.
 
 ### Preventive action plan
 

@@ -1812,3 +1812,56 @@ Verified: `verify:supplierq`, 40 assertions live and in a real browser at 390px 
 and after, one live link, the 403 for a purchasing operator without the grant, every refusal on the public
 side, the stored PDF downloading through our own origin, the ReadyBot DM, the audit under the supplier's
 own name, and the office seeing the submission on the record.
+
+## D-059 · 2026-09-09 · decided — The master manufacturing record lives in Keychain, not ReadyDoc
+
+Lowry: "I think the MMR issue is going to be solved in Keychain, not within ReadyDoc." CAR 4990683-7
+(4.5.43) is therefore answered with the ERP that is replacing MRP Easy: one approved master record per
+formula and batch size, batch production records generated from it, enforced there once it is live. The
+CAR response text now says so; ReadyDoc's part is nothing beyond what the preventive-control walk already
+recorded (D-021: the four controls resolve to the batch record, which is a Keychain document). This
+supersedes the roadmap line that had the MMR as a ReadyDoc controlled-document type. `check:ncstatus`
+still asserts no MMR table exists here, which is now the intended state rather than a gap.
+
+## D-060 · 2026-09-09 · decided — A scheduled check declares what it files, and one interface files it
+
+Three CARs asked for the same thing in three vocabularies: an environmental result record (4.5.84), a GMP
+observation record (4.2.9), a documented list review (6.2.3.1). Each is a scheduled check whose completion
+used to write readings onto a work order and file nothing — the defect `fileQaInspectionRecord` closed for
+the QA inspections, recurring. Rather than a fourth private hook in `pm.js`, **a check declares what its
+completion must carry** (`shared/check-forms.js`: the kind, the fields, and `missingForCheck`, which both the
+form and the server call) **and the server files the record that spec implies** (`server/check-records.js`,
+inside the completion's own transaction). Adding a program is one kind in the spec and one branch in the
+filer; the completion handler, the Operator View and the Task Center do not change again. This is move (2)
+of the order that matters — a record interface before a record table — applied where the audit pointed.
+
+Decisions inside it:
+- **The EMP record is one row per site × test, filed at sampling with the result pending.** The laboratory
+  answers days later; a task held open for a week reads as overdue work, while a record reading "awaiting
+  result" is the true state and is what the bell and the readiness review count. Limits are frozen onto
+  the row when it is graded (the `atp_limit` rule). An action level raises one CAR, idempotent on the
+  sample; an unreadable result is refused rather than filed pending.
+- **The GMP walk-through checklist is DRAFTED, not transcribed, and every record says DRAFT-1** — there is
+  no controlled form, and the five items are the plant's own words in the CAR response, nothing added.
+  The same item not compliant on two consecutive walks raises the CAR; a single miss is a correction on
+  the spot. The plant's wording in the response ("a repeated problem"), and the two-swab shape of D-036.
+- **The list review's record IS the log of editions in use** — the latest review, derived on read. A
+  second "editions" table would be the two-owners defect on day one.
+- **Batch-complete skips these**, as it skips food-contact work: the record needs what only the person who
+  did the check can say.
+- **CARs go through one helper** (`server/capa-raise.js`); internal audits now use it too, so a CAR from a
+  Zone 2 positive is byte-for-byte the record a CAR from an audit is.
+
+**Found on the way: no quality-schedule task had been generated since 17 August.** a6882a8 added
+`procedure_steps` to the generator's INSERT column list and not to its VALUES, so every run threw *8 values
+for 9 columns* inside its transaction, rolled back, and logged one warning line. Tap water, the EMP swabs
+seeded on 27 August and the monthly internal audit produced no task for three weeks — which is the
+mechanism behind "testing had not been conducted as established" in the finding, wearing software
+clothes. Fixed in this pass; the verify would have caught it on day one, which is the argument for a live
+verify on every generator. On the next deploy each schedule raises one task (the generator's idempotence
+and calendar advance are unchanged), not a backlog.
+
+Verified: `verify:checkrecords`, 49 assertions live and in the browser (the refusals, the four rows from
+two sites, ok/alert/action grading with one CAR, the corrective-action gate, the repeated-walk CAR, the
+list review as editions in use, the readiness sections and the bell reading the rows, the Task Center form
+holding Complete until a site is ticked).

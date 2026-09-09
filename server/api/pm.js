@@ -16,6 +16,7 @@ import { environmentalBreaches, isEnvironmentalCheck } from '../env-limits.js';
 import { formFromTitle, gradeDilution, isMeasured, FORM_REVISION as DILUTION_REVISION } from '../../shared/dilution-forms.js';
 import { pmCompletion } from '../pm-completion.js';
 import { recordGroupFor, recordAreaForTask } from '../qa-records.js';
+import { checkFormFor, attachCheckForms, fileCheckRecord, missingForCheck } from '../check-records.js';
 import { canonicalArea } from '../sanitation-areas.js';
 import { planStepSplit } from '../../shared/pm-step-split.js';
 
@@ -1074,6 +1075,21 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
 
   const finalResult = graded ? graded.result : (reading_result || null);
 
+  // A check that files a record (D-060) must arrive carrying what the record
+  // needs — the sites swabbed, every walk-through item answered, the edition
+  // of each list. Refused up front, the way the step ticks and the dilution
+  // reading are, and the same list the form showed (shared/check-forms.js).
+  const checkForm = checkFormFor(db, existing);
+  if (checkForm) {
+    const missing = missingForCheck(checkForm, req.body.check);
+    if (missing.length) {
+      return res.status(400).json({
+        error: `Still needed before this check can be completed: ${missing.map(m => m.label).join('; ')}.`,
+        requires_check: true, missing, check_form: checkForm,
+      });
+    }
+  }
+
   // Validated BEFORE the transaction: a bad date must refuse the completion
   // outright rather than close the task and then fail to file its record.
   const backdate = resolveBackdate(performed_on, late_entry_reason);
@@ -1085,6 +1101,7 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
   // mechanisms disagreeing about one check.
   let filedRecordId = null;
   let atpOutcome = null;
+  let checkFiled = null;
   db.transaction(() => {
     db.prepare(`
       UPDATE work_orders SET status='completed', completed_at=?, completed_by=?,
@@ -1120,6 +1137,13 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
         });
         filedRecordId = filed.id;
         atpOutcome = filed;
+      } else if (checkForm) {
+        // EMP sampling, the GMP walk-through, the banned-list review — the
+        // record the completion is evidence for, in the same transaction.
+        checkFiled = fileCheckRecord(db, {
+          form: checkForm, check: req.body.check, wo: existing, by: completedBy,
+          when: backdate.when || completedAt, notes,
+        });
       }
     }
   })();
@@ -1146,6 +1170,7 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
     // temp & humidity completion.
     { notes, readings, reading_result: finalResult,
       ...(filedRecordId ? { sanitation_record_id: filedRecordId } : {}),
+      ...(checkFiled ? { check_record: checkFiled } : {}),
       ...(atpOutcome?.grade ? { atp_result: atpOutcome.decided.result, atp_overridden: atpOutcome.decided.overridden,
         atp_stage: atpOutcome.escalation?.stage || null, reclean_work_order_id: recleanWorkOrderId } : {}),
       ...(graded ? { graded: graded.reason } : {}) },
@@ -1174,6 +1199,7 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
   // "re-clean raised"; the task door does the same, or the operator is told
   // nothing about a reading the server has just failed.
   res.json({ completed: req.params.id, next_work_order: nextWO,
+    ...(checkFiled ? { check_record: checkFiled } : {}),
     ...(atpOutcome?.escalation ? { atp_stage: atpOutcome.escalation.stage, atp_message: atpOutcome.escalation.message,
       atp_result: atpOutcome.decided.result, reclean_work_order_id: recleanWorkOrderId } : {}) });
 });
@@ -1227,6 +1253,13 @@ router.post('/work-orders/batch-complete', (req, res) => {
       const needsClearance = eq && eq.is_food_contact === 1 ? 1 : 0;
       if (needsClearance && missingStepTicks(wo.procedure_steps, []).total > 0) {
         skipped.push({ id, title: wo.title, reason: 'Food-contact equipment — open it and tick the steps.' });
+        continue;
+      }
+      // A check that files a record cannot be completed in bulk: the record
+      // needs what only the person who did it can say (which sites, which
+      // items). Same reason food-contact work is skipped here.
+      if (checkFormFor(db, wo)) {
+        skipped.push({ id, title: wo.title, reason: 'This check files a record — open it and complete it with its details.' });
         continue;
       }
 
@@ -1579,7 +1612,7 @@ router.get('/search', (req, res) => {
     LIMIT 100
   `).all(like, like, like, like, like, like);
 
-  res.json(rows.map(r => ({ ...r, procedure_steps: safeParse(r.pm_steps || r.procedure_steps) })));
+  res.json(attachCheckForms(db, rows).map(r => ({ ...r, procedure_steps: safeParse(r.pm_steps || r.procedure_steps) })));
 });
 
 router.get('/by-frequency', (req, res) => {
@@ -1626,7 +1659,7 @@ router.get('/by-frequency', (req, res) => {
   // a fortnight puts fourteen identical rows behind the live card. One card
   // carrying `missed_count` / `missed_since` says "you are behind" without
   // handing somebody the same job fourteen times.
-  const rows = collapseMissed(db.prepare(sql).all(...params));
+  const rows = attachCheckForms(db, collapseMissed(db.prepare(sql).all(...params)));
 
   const grouped = {};
   for (const r of rows) {
@@ -1794,7 +1827,7 @@ router.get('/operator-tasks', (req, res) => {
   // message. Without it the operator sees only the summarised title — half a
   // sentence, with the instruction it summarises nowhere on the screen.
   let sql = `SELECT wo.id, wo.title, wo.description, wo.status, wo.priority, wo.due_date, wo.assigned_to,
-    wo.procedure_steps, wo.pm_schedule_id, wo.task_group,
+    wo.procedure_steps, wo.pm_schedule_id, wo.quality_schedule_id, wo.task_group,
     wo.issue_flagged, wo.issue_notes, wo.issue_attachments, wo.issue_flagged_by, wo.issue_flagged_at,
     e.name as equipment_name, e.type as equipment_type, e.location, e.asset_id, e.is_food_contact,
     ps.frequency_type, ps.title as schedule_title
@@ -1852,7 +1885,7 @@ router.get('/operator-tasks', (req, res) => {
   //
   // This screen is now only work orders: something to go and do, one at a
   // time. Signing is a review, and reviews happen in QA Review.
-  res.json(collapseMissed(rows).map(r => ({ ...r, procedure_steps: safeParse(r.procedure_steps) })));
+  res.json(attachCheckForms(db, collapseMissed(rows)).map(r => ({ ...r, procedure_steps: safeParse(r.procedure_steps) })));
 });
 
 router.put('/schedules/:id/items', (req, res) => {

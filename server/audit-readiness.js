@@ -129,13 +129,39 @@ export function readinessReview(db) {
   add('Environmental Monitoring (EMP)', () => {
     const scheds = new Map(db.prepare('SELECT title, is_active FROM quality_schedules').all()
       .map(s => [s.title.toLowerCase(), s]));
-    return EMP_COVERAGE.map(c => {
+    const items = EMP_COVERAGE.map(c => {
       const s = scheds.get(c.schedule.toLowerCase());
       return item(c.row,
         !s ? 'critical' : s.is_active ? 'good' : 'warning',
         !s ? `No schedule named "${c.schedule}" — this row of the Master Site List is not being sampled.`
           : s.is_active ? null : `"${c.schedule}" is paused.`, 'quality-schedules');
     });
+    // The RESULTS — the record 4.5.84 found missing. A schedule is a promise;
+    // a sample with a graded result is the evidence. Pending results older
+    // than the laboratory's turnaround, and action-level results nobody has
+    // written a corrective action against, are the two gaps an auditor reads.
+    const total = n('SELECT COUNT(*) c FROM emp_samples');
+    const resulted = n("SELECT COUNT(*) c FROM emp_samples WHERE outcome != 'pending'");
+    const stale = n("SELECT COUNT(*) c FROM emp_samples WHERE outcome = 'pending' AND sampled_on < date('now','-14 days')");
+    const openAction = n("SELECT COUNT(*) c FROM emp_samples WHERE outcome = 'action' AND (corrective_action IS NULL OR corrective_action = '')");
+    items.push(item(total ? `${resulted} of ${total} samples have a graded result on record` : 'No environmental monitoring result on record',
+      total && resulted ? 'good' : 'warning',
+      total && resulted ? null : 'Surface, water and air results were kept outside the system — file this year\'s results on the EMP results tab.', 'quality-schedules'));
+    if (stale) items.push(item(`${stale} sample(s) awaiting a result for more than 14 days`, 'warning', 'Enter the laboratory result on the EMP results tab, or record why it is not coming.', 'quality-schedules'));
+    if (openAction) items.push(item(`${openAction} action-level result(s) with no corrective action recorded`, 'critical', 'An action level with nothing written against it is the finding.', 'quality-schedules'));
+    return items;
+  });
+
+  // ── GMP walk-through (CAR 4990683-1) ──────────────────────────────────────
+  add('GMP walk-through', () => {
+    const last = one('SELECT walked_on FROM gmp_walkthroughs ORDER BY walked_on DESC LIMIT 1');
+    const days = last ? one("SELECT CAST(julianday('now') - julianday(?) AS INTEGER) d", last.walked_on)?.d : null;
+    const ncOpen = n(`SELECT COUNT(*) c FROM gmp_walkthroughs g JOIN capas c ON instr(g.capa_ids, c.id) > 0 WHERE c.status NOT IN ('closed','verified')`);
+    const items = [last
+      ? item(`Last GMP walk-through ${days} day(s) ago`, days > 10 ? 'warning' : 'good', days > 10 ? 'The response to NSF commits to a weekly walk with a dated record.' : null, 'quality-schedules')
+      : item('No GMP walk-through on record', 'warning', 'The weekly walk is in the Task Center under Quality; completing it files the record.', 'quality-schedules')];
+    if (ncOpen) items.push(item(`${ncOpen} CAR(s) open from repeated walk-through findings`, 'warning', null, 'capa'));
+    return items;
   });
 
   // ── HACCP ─────────────────────────────────────────────────────────────────
@@ -197,6 +223,17 @@ export function readinessReview(db) {
         : 'No banned-list procedure updated or made effective within the last year', fresh ? 'good' : 'warning',
         fresh ? null : '§6.2.3.1 asks for a documented annual review of the lists (and notifying NSF of changes) — '
           + 'record this year\'s review against the procedure.', 'sops'));
+    }
+    // The documented review itself (CAR 4990682-2): a record naming the
+    // edition of each list, not a procedure's modified date.
+    {
+      const rev = one('SELECT reviewed_on FROM banned_list_reviews ORDER BY reviewed_on DESC LIMIT 1');
+      const age = rev ? one("SELECT CAST(julianday('now') - julianday(?) AS INTEGER) d", rev.reviewed_on)?.d : null;
+      items.push(rev
+        ? item(`Banned/prohibited substance lists reviewed ${age} day(s) ago (editions recorded)`, age > 366 ? 'warning' : 'good',
+          age > 366 ? 'The annual review is overdue — the task is in the Task Center under Quality.' : null, 'quality-schedules')
+        : item('No documented review of the banned/prohibited substance lists on record', 'warning',
+          'Complete the "Banned/Prohibited Substance List Review" task; its record names the edition of each list.', 'quality-schedules'));
     }
     // PP-5: the audit opens with the facility's current GMP/food-safety
     // certification. A person's PCQI is not the facility's certificate.

@@ -2956,6 +2956,37 @@ actually enters the numbers.
 - Only the work-order path is covered. A temp/humidity record filed straight into Sanitation stores its
   numbers in free-text notes and is not parsed.
 
+## A scheduled check files a record (`shared/check-forms.js` + `server/check-records.js`, D-060)
+A quality-schedule task DECLARES what its completion must carry, and the completion path files the record
+that spec implies — inside the same transaction, the `fileQaInspectionRecord` rule. Three programs ride it
+today: **EMP sampling** (FORM 604-01), the **weekly GMP walk-through** and the **annual banned-list review**.
+Adding one is a kind in the shared spec (`checkKindFor`, fields, `missingForCheck`) plus a branch in
+`fileCheckRecord`; `pm.js`, the Operator View and the Task Center do not change again.
+- **`missingForCheck` is called by BOTH sides** — `CheckFields.jsx` holds Complete until it is empty, the
+  server 400s `requires_check` with the same list. Two copies is how a screen offers a completion the server
+  refuses. `check_form` is attached to every task list payload by `attachCheckForms`.
+- **EMP: one `emp_samples` row per site × test, `pending` until the laboratory answers.** A task closed
+  without sites is refused; the result is entered on the row (`POST /check-records/emp/samples/:id/result`)
+  and graded by `emp-results.js` with the alert/action text FROZEN onto the row (the `atp_limit` rule).
+  Action ⇒ one CAR, idempotent on `capa_id`; alert ⇒ ReadyBot to Quality; unreadable ⇒ refused, never filed
+  pending. Historical results are filed by hand (`POST /check-records/emp/samples`) and graded the same way.
+  Air is `info` — the form sets no limit.
+- **GMP walk: DRAFT-1 on every record.** No controlled form exists; the five items are the CAR response's own
+  words and nothing is added here. Not compliant needs a note. **The same item NC on two consecutive walks
+  raises the CAR**; one miss is a correction on the spot (D-036's two-swab shape).
+- **List review: the latest `banned_list_reviews` row IS the editions in use** (`currentListEditions`) —
+  derived, never a second table.
+- **CARs go through `server/capa-raise.js`** (`raiseCapa`, `nextCapaNumber`); internal audits use it too.
+- **Batch-complete skips these tasks** with a reason, as it skips food-contact work.
+- **THE GENERATOR HAD BEEN DEAD SINCE 17 AUGUST.** `generateQualityScheduleTasks` threw *8 values for 9
+  columns* on every run (a column added to the INSERT list, not the VALUES) and logged one warning line —
+  no EMP, tap-water or internal-audit task was raised for three weeks. Fixed here; `verify:checkrecords`
+  now completes real generated tasks, so a dead generator fails a verify instead of a log line.
+- UI: Quality Schedules has tabs — Schedules / EMP results (pending, open actions, 12-month site trend,
+  the log, file-by-hand) / GMP walks / List reviews. Readiness review and the bell (`emp-action`,
+  `emp-pending`) read the same rows.
+- Verified: `verify:checkrecords` (49, live + browser; in `verify:all`).
+
 ## Recurring QA checks that ship pre-scheduled
 `SEED_SCHEDULES` in `server/api/quality-schedules.js` + `seedQualitySchedules(db)` (called from server.js).
 Seeded **once, keyed on title** — an edited frequency, a paused schedule or a deleted one is a decision, and

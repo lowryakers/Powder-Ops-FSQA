@@ -269,7 +269,7 @@ Items 2 and 3 are quarter-sized projects and should be planned rather than start
 
 ## Progress against this list — 1 September 2026
 
-**0 of 12 closed. 1 with work landed.**
+**0 of 12 closed. 4 with work landed** (4.3.1; and since 9 September 4.5.84, 4.2.9 and 6.2.3.1 on one interface).
 
 ### 4.3.1 · Supplier qualification questionnaires — REGISTER BUILT, FINDING STILL OPEN
 
@@ -297,7 +297,31 @@ supplier — the register moves them from "no questionnaire" to "awaiting a disp
 print/sign/scan loop that kept 22 questionnaires from ever coming back is gone; the three named links still
 have to be sent by a person.
 
-### The other eleven
+### 4.5.84 · 4.2.9 · 6.2.3.1 — one interface, three records (D-060, 9 September)
+
+A scheduled check now declares what its completion must carry and files the record that implies
+(`shared/check-forms.js` + `server/check-records.js`, hooked into the one completion path in `pm.js`).
+- **EMP (4.5.84):** a sampling task cannot complete without the sites swabbed; it files one
+  *awaiting-result* row per site × test (`emp_samples`); the laboratory result is entered on the row and
+  grades itself against FORM 604-01's alert/action levels, frozen onto the row; an action level raises one
+  CAR and only one; results the plant already holds are filed by hand and graded the same way. The bell
+  and the readiness review read the same rows. **The record the finding named as missing now exists; the
+  surface swabs themselves still have to be taken.**
+- **GMP walk (4.2.9):** a weekly walk-through task; five items (gowning, hairnets, jewelry, handwashing,
+  footwear) each compliant / not compliant / N-A with what was seen; the same item not compliant on two
+  consecutive walks raises a CAR. Checklist stamped **DRAFT-1** on every record until Document Control
+  issues a number (the shipping-checklist rule).
+- **List review (6.2.3.1):** an annual task that cannot complete without the edition of each of the four
+  lists, the changes found and the actions taken; the latest review is the record of the editions in use.
+
+**Found on the way, and it is part of why 4.5.84 happened:** `generateQualityScheduleTasks` had been
+throwing *8 values for 9 columns* on every housekeeping run since 17 August (a6882a8 added
+`procedure_steps` to the insert and not to the values). No quality-schedule task of any kind — EMP swabs,
+tap water, the monthly internal audit — had been raised for three weeks, and the error went to a log line
+nobody reads. Fixed; on the next deploy each schedule raises one task, not a backlog, because the
+generator's own idempotence and calendar advance are unchanged.
+
+### The other eight
 
 Not started. Tracked in `docs/v2/obligations.json`; a finding is marked closed here only when the
 corrective action is complete and its evidence can be produced on request.

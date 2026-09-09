@@ -2,6 +2,9 @@ import { useState } from 'react';
 import { useApiGet, apiPost, apiPut, apiDelete } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { CalendarClock, Plus, Pencil, Trash2, X, CheckCircle2, PauseCircle } from 'lucide-react';
+import ModuleTabs from '../common/ModuleTabs.jsx';
+import { useModuleTabs } from '../../lib/useModuleTabs.js';
+import { EmpResultsTab, GmpWalksTab, ListReviewsTab } from './CheckRecordsTabs.jsx';
 
 const FREQUENCIES = [
   { value: 'daily', label: 'Daily' },
@@ -158,6 +161,14 @@ export default function QualitySchedulesPanel() {
   const [editing, setEditing] = useState(null); // 'new' | schedule object | null
 
   const canManage = user && (user.role === 'admin' || user.role === 'supervisor' || ['qa', 'quality'].includes((user.department || '').toLowerCase()));
+  const { data: empSum } = useApiGet('/check-records/emp/summary');
+  const TABS = [
+    { id: 'schedules', label: 'Schedules' },
+    { id: 'emp', label: 'EMP results', badge: empSum?.pending_count || undefined, badgeTone: empSum?.open_action_count ? 'alert' : undefined },
+    { id: 'gmp-walks', label: 'GMP walks' },
+    { id: 'list-reviews', label: 'List reviews' },
+  ];
+  const { tabs, tab, setTab } = useModuleTabs({ id: 'quality-schedules', tabs: TABS, user });
 
   const remove = async (s) => {
     if (!window.confirm(`Delete the "${s.title}" schedule? Existing tasks are kept; no new ones will be generated.`)) return;
@@ -178,14 +189,20 @@ export default function QualitySchedulesPanel() {
             Recurring quality-control verifications that auto-generate QA tasks in the Task Center on a set frequency.
           </p>
         </div>
-        {canManage && (
+        {canManage && tab === 'schedules' && (
           <button onClick={() => setEditing('new')} className="flex items-center gap-1.5 px-3 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">
             <Plus size={16} /> New Schedule
           </button>
         )}
       </div>
 
-      {loading ? (
+      <div className="mb-4"><ModuleTabs value={tab} onChange={setTab} tabs={tabs} /></div>
+
+      {tab === 'emp' && <EmpResultsTab canAct={!!canManage} />}
+      {tab === 'gmp-walks' && <GmpWalksTab />}
+      {tab === 'list-reviews' && <ListReviewsTab />}
+
+      {tab === 'schedules' && (loading ? (
         <p className="text-sm text-gray-400 py-8 text-center">Loading schedules...</p>
       ) : rows.length === 0 ? (
         <div className="text-center py-12 border border-dashed border-gray-200 rounded-xl">
@@ -272,7 +289,7 @@ export default function QualitySchedulesPanel() {
           </table>
         </div>
         </>
-      )}
+      ))}
 
       {editing && (
         <ScheduleForm
@@ -282,7 +299,7 @@ export default function QualitySchedulesPanel() {
         />
       )}
 
-      <EmpSiteList schedules={rows} />
+      {tab === 'schedules' && <EmpSiteList schedules={rows} />}
     </div>
   );
 }

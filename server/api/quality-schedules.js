@@ -58,7 +58,7 @@ export function generateQualityScheduleTasks(db) {
   const hasOpen = db.prepare("SELECT 1 FROM work_orders WHERE quality_schedule_id = ? AND status IN ('open','in_progress','overdue','missed') LIMIT 1");
   const ins = db.prepare(`INSERT INTO work_orders
     (id, title, description, priority, due_date, procedure_steps, task_group, quality_schedule_id, status)
-    VALUES (?, ?, ?, 'normal', ?, 'qa', ?, 'open')`);
+    VALUES (?, ?, ?, 'normal', ?, ?, 'qa', ?, 'open')`);
   const advance = db.prepare('UPDATE quality_schedules SET next_due = ?, updated_at = datetime(\'now\') WHERE id = ?');
   let created = 0;
   const tx = db.transaction(() => {
@@ -118,6 +118,39 @@ const SEED_SCHEDULES = [
       'Send to the contract lab (or incubate per the method) and record where they went',
       'File the result against this task and record pass/fail against the specification',
       'If any result is out of specification: open a Non-Conformance and notify the QA Manager',
+    ],
+  },
+  {
+    // CAR 4990683-1: a weekly GMP walk-through with a signed, dated record.
+    // There is no controlled form for it yet, so the record is stamped
+    // DRAFT-1 (shared/check-forms.js) until Document Control issues one.
+    title: 'Weekly GMP Walk-through',
+    module_id: 'GMP',
+    description: 'Weekly walk of the GMP areas: gowning, hairnets and beard covers, jewelry, handwashing and the footwear control at the entrance. Each item is recorded compliant / not compliant / N-A with what was seen; the same item not compliant on two consecutive walks raises a CAR.',
+    frequency_type: 'weekly',
+    frequency_value: 1,
+    procedure_steps: [
+      'Walk every GMP area during production, not before it starts',
+      'Record each item as compliant, not compliant or N/A, and write what you saw for anything not compliant',
+      'Correct anything not compliant on the spot and note the correction',
+      'Sign the record by completing this task',
+    ],
+  },
+  {
+    // CAR 4990682-2: NSF 306 asks for a documented ANNUAL review of the
+    // banned/prohibited substance lists. The record holds the edition of each
+    // list, the changes found and the actions taken.
+    title: 'Banned/Prohibited Substance List Review',
+    module_id: 'GMP for Sport',
+    description: 'Annual review of the NSF/ANSI 306 Annex C, NFL/NFLPA, MLB and WADA lists: record the edition or date of each list reviewed, any changes since the last review, and what was done about them (approved materials list and active formulas re-checked).',
+    frequency_type: 'annual',
+    frequency_value: 1,
+    procedure_steps: [
+      'Download the current edition of each of the four lists and note its date',
+      'Compare each against the edition recorded at the last review',
+      'Check every changed substance against the approved materials list and the active formulas',
+      'Record the changes found and the actions taken; write "none" when there were none',
+      'If a change affects a material or formula, open a Non-Conformance and notify the Quality Manager',
     ],
   },
   {

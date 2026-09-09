@@ -12,6 +12,8 @@ import { exportToCsv } from '../../utils/exportCsv';
 import { formatDateTime } from '../../lib/datetime.js';
 import FormChip from '../common/FormChip';
 import { TASK_GROUPS } from '../../../shared/task-groups.js';
+import CheckFields from '../common/CheckFields.jsx';
+import { missingForCheck } from '../../../shared/check-forms.js';
 
 const FREQ_TABS = [
   { value: 'all', label: 'All' },
@@ -44,6 +46,10 @@ const STATUS_COLORS = {
 function CompleteForm({ wo, chemicals, onComplete, onCancel }) {
   const [form, setForm] = useState({ notes: '', lubricant_used: '', lubricant_is_food_grade: true, chemical_id: '' });
   const [saving, setSaving] = useState(false);
+  // A check that files a record (EMP sites, walk-through answers, list
+  // editions) — the same fields and the same rule as the Operator View.
+  const [check, setCheck] = useState({});
+  const checkBlocked = !!wo.check_form && missingForCheck(wo.check_form, check).length > 0;
   // This form used to record no steps at all, so every task completed from the
   // Task Center reached QA's hygiene clearance with an empty step list — which
   // then read as "0 of 3 ticked". The Operator View has always asked; the
@@ -87,6 +93,7 @@ function CompleteForm({ wo, chemicals, onComplete, onCancel }) {
       // different (and worse) claim than not recording them.
       await onComplete(wo.id, {
         ...form,
+        ...(wo.check_form ? { check } : {}),
         ...(stepsRequired || tickedCount > 0
           ? { step_results: steps.map((_, i) => !!stepChecks[i]) }
           : {}),
@@ -96,6 +103,7 @@ function CompleteForm({ wo, chemicals, onComplete, onCancel }) {
 
   return (
     <form onSubmit={handleSubmit} className="bg-green-50 rounded-lg border border-green-200 p-3 mt-2 space-y-2">
+      {wo.check_form && <CheckFields form={wo.check_form} value={check} onChange={setCheck} />}
       {/* Ticking is what gives QA an account of the work at hygiene clearance.
           Left optional rather than required: this is completed on the floor,
           and a form that refuses to submit is one people work around. */}
@@ -155,7 +163,7 @@ function CompleteForm({ wo, chemicals, onComplete, onCancel }) {
           className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" rows={2} />
       </div>
       <div className="flex gap-2">
-        <button type="submit" disabled={saving || blockedForSteps}
+        <button type="submit" disabled={saving || blockedForSteps || checkBlocked}
           className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-50">
           {saving ? 'Saving...' : 'Complete & Generate Next'}
         </button>
