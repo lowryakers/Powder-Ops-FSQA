@@ -8,6 +8,21 @@ What it takes to have a new hire complete onboarding inside ReadyDoc (personal
 info, direct deposit, federal W-4 inputs, emergency contact, the intro to
 Messages and their modules) and have the result land in RUN Powered by ADP.
 
+## ADP's answer, 11 September 2026: the integration route is Workforce Now (D-067)
+
+ADP replied that client-built integrations go through **Workforce Now**, and that the RUN-side option is
+ADP's own onboarding on an **HR Pro** upgrade. That contradicts their own published guide, which says
+Applicant Onboard V2 "is supported for the all RUN Powered by ADP bundles" — worth one push back citing it,
+not a campaign.
+
+**The recommendation is to stop there.** The plant hires rarely, the packet is complete and signed, and the
+office keying it into RUN costs a few minutes per hire. A RUN → WFN migration or an HR Pro upgrade both cost
+more than the keying they remove. `server/adp.js` stays finished, correct and switched off; if access ever
+opens it is four variables and a test hire.
+
+Everything below describes the route that was attempted, and is kept because the endpoints, the payload and
+the credential mechanics are all still right.
+
 ## What ADP requires (the part only Lowry can do) — revised 10 September 2026
 
 The path is **ADP API Central**, ADP's own portal for clients reaching their

@@ -2066,3 +2066,37 @@ refusal proving otherwise is a one-line change.
 the same inference as the code — a test derived from the implementation only proves the implementation is
 self-consistent. `check:adp` is 28 assertions now, each citing the guide, and the control was run: putting
 `birthName` and `formattedNumber` back fails it immediately.
+
+## D-067 · 2026-09-11 · recorded — ADP's answer: the API integration route is Workforce Now, not RUN
+
+ADP replied to the access question. Verbatim: *"we have applicant tracking/integrated onboarding options with
+our HR Pro plan. You may check this option instead of the integration. If you would prefer an integration
+with outside onboarding system, we have this via WFN platform which provides true 360 degree data flow."*
+
+So the front-line answer is that a client-built integration means **moving from RUN to Workforce Now**, and
+the alternative offered is ADP's own onboarding on an **HR Pro** upgrade. Neither is the thing that was
+asked for.
+
+**THIS IS IN TENSION WITH ADP'S OWN PUBLISHED GUIDE AND THAT IS WORTH ONE PUSH BACK, NOT MORE.** The
+*Applicant Onboard V2 API Guide for RUN Powered by ADP* says in Chapter 1 that the API "is supported for the
+all RUN Powered by ADP bundles", their API Explorer lists Applicant Onboarding under RUN, and both endpoint
+paths are published for RUN. A support reply and a product guide disagree; the guide is a document and the
+reply may be a sales-shaped answer from someone who reads "integration" as "WFN". Ask once, citing the guide
+and the two canonical scopes. If the answer holds, it holds.
+
+**THE RECOMMENDATION IS TO DO NOTHING FURTHER**, and the reason is arithmetic rather than defeat. The plant
+hires rarely. The packet is already complete, signed, bilingual and printable, and keying it into RUN takes
+the office a few minutes per hire. Moving RUN → WFN is a payroll migration; HR Pro means the new hire fills
+in ADP's wizard instead of ReadyDoc's, which duplicates what was built and loses the packet. Both cost more
+than the keying they remove.
+
+**NOTHING BUILT IS WASTED, AND THIS IS THE PART THAT MATTERS.** Onboarding works end to end today without
+ADP: the wizard, the encrypted SSN and bank details, both signatures, the photographs, the packet PDF,
+Section 2, and now EN/ES and the install hand-off. Only the last keystroke is manual. `server/adp.js` is
+finished and correct against RUN's own data dictionary (D-066), gated off by four absent credentials and
+degrading exactly like `quickbooks.js` and `storage.js` — so if access ever opens, or the plant moves to
+WFN for its own reasons, it is four variables and a test hire rather than a build.
+
+**Do not re-derive this from the guide.** The guide says RUN is supported; ADP's service desk says it is
+not. That contradiction is the finding, and it is recorded here so the next reader does not spend another
+afternoon proving the first half.
