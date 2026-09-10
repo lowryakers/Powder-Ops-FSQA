@@ -117,6 +117,18 @@ function Files({ r, storageEnabled, onChanged }) {
               <FileText size={11} className="shrink-0" /><span className="truncate">{f.filename}</span>
             </button>
             <span className="text-[10px] text-gray-400">· {f.uploaded_by}</span>
+            {r.status === 'completed' && (r.user_id || r.is_contractor) && (
+              <button disabled={!!busy} data-end-access
+                onClick={() => {
+                  const why = window.prompt('Ending access switches off their ReadyDoc sign-in and takes them off the pay roster. Nothing is deleted. Why is it ending?');
+                  if (why && why.trim().length >= 3) {
+                    act('end', async () => onAction('refresh', (await apiPost(`/onboarding/${r.id}/end-access`, { reason: why.trim() })).record));
+                  }
+                }}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs font-medium text-gray-600 hover:text-red-600 hover:border-red-300">
+                <XCircle size={12} /> End access
+              </button>
+            )}
             {!['completed', 'cancelled'].includes(r.status) && (
               <button type="button" onClick={() => remove(f)} title="Remove" className="text-gray-400 hover:text-red-600 p-0.5"><X size={11} /></button>
             )}
@@ -218,7 +230,9 @@ function Row({ r, attestations, storageEnabled, onAction }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
-  const [makeAccount, setMakeAccount] = useState(true);
+  // On for an employee, OFF for a contractor. The default is the decision most
+  // of the time, and for a contractor the safe default is no account at all.
+  const [makeAccount, setMakeAccount] = useState(!r.is_contractor);
   const [s, cls] = STATUS[r.status] || [r.status, 'bg-gray-100 text-gray-600'];
   const act = async (name, fn) => {
     setBusy(name); setError('');
@@ -289,6 +303,18 @@ function Row({ r, attestations, storageEnabled, onAction }) {
             <button disabled={!!busy} onClick={() => act('pdf', () => downloadFile(`/onboarding/${r.id}/packet.pdf`, `onboarding-${r.last_name || 'packet'}.pdf`))}
               className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs font-medium hover:bg-gray-50">
               <Download size={12} /> Packet PDF</button>
+            {r.status === 'completed' && (r.user_id || r.is_contractor) && (
+              <button disabled={!!busy} data-end-access
+                onClick={() => {
+                  const why = window.prompt('Ending access switches off their ReadyDoc sign-in and takes them off the pay roster. Nothing is deleted. Why is it ending?');
+                  if (why && why.trim().length >= 3) {
+                    act('end', async () => onAction('refresh', (await apiPost(`/onboarding/${r.id}/end-access`, { reason: why.trim() })).record));
+                  }
+                }}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs font-medium text-gray-600 hover:text-red-600 hover:border-red-300">
+                <XCircle size={12} /> End access
+              </button>
+            )}
             {!['completed', 'cancelled'].includes(r.status) && (
               <>
                 <button disabled={!!busy} onClick={() => act('reissue', async () => onAction('link', (await apiPost(`/onboarding/${r.id}/reissue`)).link))}
@@ -298,11 +324,17 @@ function Row({ r, attestations, storageEnabled, onAction }) {
                   onClick={() => act('adp', async () => onAction('refresh', await apiPost(`/onboarding/${r.id}/submit-adp`)))}
                   className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold ${r.adp_ready ? 'bg-purple-600 text-white hover:bg-purple-700' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}>
                   <Send size={12} /> {busy === 'adp' ? 'Submitting…' : 'Submit to ADP'}</button>
-                <label className="flex items-center gap-1.5 text-xs text-gray-600 ml-1">
-                  <input type="checkbox" checked={makeAccount} onChange={e => setMakeAccount(e.target.checked)} />
-                  create their ReadyDoc account
+                {/* A CONTRACTOR'S ACCESS IS ITS OWN DECISION, worded as one.
+                    Default off, and the label says what it costs rather than
+                    reading like the employee tick-box left on by accident. */}
+                <label className={`flex items-center gap-1.5 text-xs ml-1 ${r.is_contractor ? 'text-amber-800' : 'text-gray-600'}`}>
+                  <input type="checkbox" checked={makeAccount} onChange={e => setMakeAccount(e.target.checked)} data-make-account />
+                  {r.is_contractor
+                    ? 'give this contractor a ReadyDoc account (most do not need one)'
+                    : 'create their ReadyDoc account'}
                 </label>
-                <button disabled={!!busy} onClick={() => act('complete', async () => onAction('refresh', await apiPost(`/onboarding/${r.id}/complete`, { create_account: makeAccount })))}
+                <button disabled={!!busy} onClick={() => act('complete', async () => onAction('refresh', await apiPost(`/onboarding/${r.id}/complete`,
+                  r.is_contractor ? { grant_readydoc_access: makeAccount } : { create_account: makeAccount })))}
                   className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-green-600 text-white rounded-lg text-xs font-semibold hover:bg-green-700">
                   <CheckCircle2 size={12} /> Complete</button>
                 <button disabled={!!busy} onClick={() => { if (confirm('Cancel this onboarding? The link stops working.')) act('cancel', async () => onAction('refresh', await apiPost(`/onboarding/${r.id}/cancel`))); }}

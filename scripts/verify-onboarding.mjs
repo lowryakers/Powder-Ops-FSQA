@@ -305,6 +305,49 @@ console.log('\nA 1099 CONTRACTOR signs a W-9 and never an I-9');
   const pdf = await req(`/onboarding/${c.id}/packet.pdf`);
   const buf = Buffer.from(await pdf.arrayBuffer());
   t('the packet renders for a contractor', pdf.ok && buf.length > 1000, `${pdf.status} ${buf.length}`);
+
+  // COMPLETING A CONTRACTOR GIVES THEM NOTHING IN READYDOC.
+  await post(`/onboarding/${c.id}/complete`, { create_account: true });
+  {
+    const d = new Database(process.env.DBPATH, { readonly: true });
+    const u = d.prepare("SELECT id FROM users WHERE name = 'Dana Reyes'").get();
+    const pe = d.prepare("SELECT worker_type, contractor_company FROM pay_employees WHERE name = 'Dana Reyes'").get();
+    d.close();
+    t('the employee tick-box does NOT create an account for a contractor', !u, `user=${u?.id}`);
+    t('but they DO land on the pay roster', !!pe);
+    t('as a contractor, not staff — the headcount and the review cycle exclude them',
+      pe?.worker_type === 'contractor', String(pe?.worker_type));
+    t('carrying the business name off the W-9', pe?.contractor_company === 'Reyes Consulting LLC', String(pe?.contractor_company));
+  }
+
+  // ...unless somebody asks for it deliberately, and then it is marked as one.
+  const c3 = await J(await post('/onboarding', {
+    first_name: 'Kit', last_name: 'Moss', worker_type: 'contractor', department: 'maintenance',
+  }));
+  await post(`/onboarding/${c3.id}/complete`, { grant_readydoc_access: true });
+  {
+    const d = new Database(process.env.DBPATH, { readonly: true });
+    const u = d.prepare("SELECT id, is_contractor, module_access, is_active FROM users WHERE name = 'Kit Moss'").get();
+    d.close();
+    t('a deliberate grant DOES create the account', !!u);
+    t('flagged as a contractor rather than passing as staff', u?.is_contractor === 1, String(u?.is_contractor));
+    t('with no module access — Messages only until somebody grants one', u?.module_access == null, String(u?.module_access));
+
+    const noReason = await post(`/onboarding/${c3.id}/end-access`, { reason: '' });
+    t('ending access without saying why is refused', noReason.status === 400, String(noReason.status));
+    const ended = await J(await post(`/onboarding/${c3.id}/end-access`, { reason: 'contract finished' }));
+    t('ending access switches the account off', ended?.account === true);
+    t('and takes them off the pay roster in the same act', ended?.roster === true);
+
+    const d2 = new Database(process.env.DBPATH, { readonly: true });
+    const after = d2.prepare("SELECT is_active FROM users WHERE name = 'Kit Moss'").get();
+    const pe2 = d2.prepare("SELECT active FROM pay_employees WHERE name = 'Kit Moss'").get();
+    const sess = d2.prepare('SELECT COUNT(*) n FROM sessions WHERE user_id = ?').get(u.id);
+    d2.close();
+    t('the account is deactivated, NOT deleted — the audit trail survives', after?.is_active === 0);
+    t('the roster row stays too, so what they were paid is still on record', pe2?.active === 0);
+    t('and any live session is dropped rather than left to expire', sess?.n === 0, String(sess?.n));
+  }
 }
 
 console.log(`\n${pass}/${pass + fail} assertions passed`);

@@ -560,7 +560,22 @@ router.post('/:id/complete', (req, res) => {
   if (!rec) return res.status(404).json({ error: 'Not found' });
   if (rec.status === 'cancelled') return res.status(409).json({ error: 'This onboarding was cancelled.' });
   let userId = rec.user_id;
-  if (req.body?.create_account && !userId) {
+  // A 1099 CONTRACTOR GETS NO READYDOC ACCOUNT BY DEFAULT.
+  //
+  // They are not staff: an account puts them in the roster, the @mention list,
+  // assignee pickers, Team Activity and the comms member list. Most contractors
+  // never need any of it, and the ones who do — a contract QA consultant, a
+  // maintenance tech working a project — are a deliberate decision somebody
+  // makes, not a checkbox left ticked from the employee flow.
+  //
+  // It is a SEPARATE, LOUDER FLAG rather than a refusal. Refusing outright is
+  // how somebody creates the account by hand in Settings instead, which loses
+  // the link back to the packet and lands them in the roster with no record of
+  // why. `grant_readydoc_access` says what it does; `create_account` is the
+  // employee path and is ignored for a contractor.
+  const isContractor = rec.worker_type === 'contractor';
+  const wantsAccount = isContractor ? !!req.body?.grant_readydoc_access : !!req.body?.create_account;
+  if (wantsAccount && !userId) {
     const name = nameOf(rec);
     const existing = db.prepare('SELECT id FROM users WHERE LOWER(name) = LOWER(?)').get(name);
     if (existing) userId = existing.id;
@@ -573,9 +588,17 @@ router.post('/:id/complete', (req, res) => {
       // link had `username NULL` and could not sign in until the next process
       // restart happened to run backfillUsernames(). Found by the mirror sweep
       // the week this module was folded onto main.
-      db.prepare(`INSERT INTO users (id, name, username, role, department, is_active) VALUES (?, ?, ?, 'operator', ?, 1)`)
-        .run(userId, name, uniqueUsername(db, name, null), rec.department || 'production');
-      logAudit(req.user, 'create', 'user', userId, { from_onboarding: rec.id }, null, null, name);
+      // `is_contractor` so Settings shows what they are rather than an operator
+      // indistinguishable from staff. `module_access` stays NULL, which under
+      // the NULL-map rule means the account can reach Messages and nothing
+      // else until somebody grants a module deliberately — so even a granted
+      // account starts with no reach into the plant's records.
+      db.prepare(`INSERT INTO users (id, name, username, role, department, is_active, is_contractor, contractor_company)
+        VALUES (?, ?, ?, 'operator', ?, 1, ?, ?)`)
+        .run(userId, name, uniqueUsername(db, name, null), rec.department || 'production',
+          isContractor ? 1 : 0, isContractor ? (rec.w9_business_name || null) : null);
+      logAudit(req.user, 'create', 'user', userId,
+        { from_onboarding: rec.id, contractor: isContractor }, null, null, name);
     }
   }
   // AND ON TO THE PAY ROSTER, in the same act.
@@ -604,10 +627,15 @@ router.post('/:id/complete', (req, res) => {
     } else {
       rosterId = uuid();
       const rate = rec.pay_rate != null && String(rec.pay_rate).trim() !== '' ? Number(rec.pay_rate) : null;
-      db.prepare(`INSERT INTO pay_employees (id, user_id, name, team, hire_date, pay_rate, worker_type)
-        VALUES (?, ?, ?, ?, ?, ?, 'employee')`).run(
+      // WORKER TYPE CARRIES ACROSS. Hard-coding 'employee' here filed a 1099
+      // contractor onto the roster as staff — into the headcount, the average
+      // rate and the review cycle, none of which apply to them.
+      db.prepare(`INSERT INTO pay_employees (id, user_id, name, team, hire_date, pay_rate, worker_type, contractor_company)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
         rosterId, userId || null, name, rec.team || rec.department || null,
-        rec.start_date || null, Number.isFinite(rate) ? rate : null);
+        rec.start_date || null, Number.isFinite(rate) ? rate : null,
+        rec.worker_type === 'contractor' ? 'contractor' : 'employee',
+        rec.worker_type === 'contractor' ? (rec.w9_business_name || null) : null);
       logAudit(req.user, 'create', 'pay_employee', rosterId,
         { from_onboarding: rec.id, hire_date: rec.start_date || null, pay_rate: Number.isFinite(rate) ? rate : null },
         null, null, name);
@@ -623,6 +651,54 @@ router.post('/:id/complete', (req, res) => {
     token_hash = NULL, user_id = ?, updated_at = datetime('now') WHERE id = ?`).run(userId || null, rec.id);
   logAudit(req.user, 'update', 'onboarding', rec.id, { completed: true, user_id: userId || null, pay_employee_id: rosterId }, null, null, nameOf(rec));
   res.json(shape(db, db.prepare('SELECT * FROM onboarding_records WHERE id = ?').get(rec.id)));
+});
+
+/**
+ * END SOMEBODY'S ACCESS, in one act.
+ *
+ * A contract finishes and three things should stop together: the ReadyDoc
+ * account, the pay roster row, and any assumption that they are still around.
+ * Doing it in three screens is how one of them gets missed — usually the
+ * account, because it is the one nobody is looking at.
+ *
+ * DEACTIVATES, NEVER DELETES. What somebody was paid is a payroll record and
+ * what they did in ReadyDoc is an audit trail; both stay and simply stop being
+ * live. Reversible by reactivating in Settings, which is the point: an
+ * assignment that resumes should not need the packet filing again.
+ */
+router.post('/:id/end-access', (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Onboarding needs the Onboarding module.' });
+  const db = getDb();
+  const rec = db.prepare('SELECT * FROM onboarding_records WHERE id = ?').get(req.params.id);
+  if (!rec) return res.status(404).json({ error: 'Not found' });
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 3) return res.status(400).json({ error: 'Say why access is ending — it goes on the record.' });
+
+  const out = { account: false, roster: false };
+  const name = nameOf(rec);
+  if (rec.user_id) {
+    const u = db.prepare('SELECT id, name, is_active FROM users WHERE id = ?').get(rec.user_id);
+    if (u?.is_active) {
+      db.prepare("UPDATE users SET is_active = 0, updated_at = datetime('now') WHERE id = ?").run(u.id);
+      // Every live session goes with it, or somebody keeps working on a phone
+      // that was already signed in — deactivating an account that stays usable
+      // until its token expires is not ending access, it is scheduling it.
+      try { db.prepare('DELETE FROM sessions WHERE user_id = ?').run(u.id); } catch { /* no sessions table yet */ }
+      logAudit(req.user, 'update', 'user', u.id, { deactivated: true, reason, from_onboarding: rec.id }, u, null, u.name);
+      out.account = true;
+    }
+  }
+  try {
+    const row = db.prepare('SELECT id, active FROM pay_employees WHERE user_id = ? OR name = ?').get(rec.user_id || '', name);
+    if (row?.active) {
+      db.prepare("UPDATE pay_employees SET active = 0, updated_at = datetime('now') WHERE id = ?").run(row.id);
+      logAudit(req.user, 'update', 'pay_employee', row.id, { deactivated: true, reason }, row, null, name);
+      out.roster = true;
+    }
+  } catch { /* Pay Tracking may not be present */ }
+
+  logAudit(req.user, 'update', 'onboarding', rec.id, { access_ended: true, reason, ...out }, null, null, name);
+  res.json({ ...out, record: shape(db, db.prepare('SELECT * FROM onboarding_records WHERE id = ?').get(rec.id)) });
 });
 
 /**
