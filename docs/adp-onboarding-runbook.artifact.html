@@ -140,7 +140,7 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
 
 <div class="orient">
   <h3>Before you start</h3>
-  <p><b>Two switches, and they are independent.</b> Part A is the encryption key: without it the welcome wizard does not ask for the SSN or bank details at all. Set it today and onboarding is fully usable, with the office keying the packet into RUN by hand. Parts B–E are the ADP connection, which turns that last step into a button.</p>
+  <p><b>Two switches, and they are independent.</b> Part A is the encryption key: without it the welcome wizard does not ask for the SSN or bank details at all. Set it today and onboarding is fully usable, with the office keying the packet into RUN by hand. Parts B–F are the ADP connection, which turns that last step into a button.</p>
   <p><b>What ReadyDoc shows you along the way.</b> Settings → Integrations lists both switches — which variables are set, and whether each is on — without ever showing a value. Use it as your "did that take?" check after every Railway change.</p>
   <p><b>About the ADP screens.</b> The portal wording below comes from ADP's own published guides; ADP rearranges its portal, so a button may be labelled slightly differently from what is written here. The meaning of each step does not change. Where a screen looks nothing like the description, stop and send me a screenshot rather than guessing.</p>
 </div>
@@ -221,6 +221,7 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
         </ol>
         You will have to sign in again afterwards — that is expected, nothing is lost.</div></div>
       <div class="expect"><span class="k no">If it says<br>not available</span><div>If API Central tells you it is not enabled for this account, stop and send me the screenshot. That is the one answer that changes the plan.</div></div>
+      <p class="why"><b>Why it opens on Members.</b> That page is how you let someone else help — Marnee, or me if you ever want it. It has three roles: <b>Project user</b> (can create projects and see credentials), <b>Certificate user</b> (can request and track certificates), <b>Member user</b> (can only see who has access). An internal member has to already be a registered user on your ADP account. You need none of this to finish the runbook yourself; ignore the page and go to Projects.</p>
     </div>
   </div>
 
@@ -323,18 +324,20 @@ its own employees only.</pre></div>
   <div class="part-head">
     <span class="part-tag">Part D</span>
     <h2>Credentials and consent</h2>
-    <span class="part-time">~10 minutes · after ADP approves the app</span>
+    <span class="part-time">~10 minutes · straight after Part B · nothing to wait for</span>
   </div>
+  <p class="part-note">Nothing is approved or reviewed here. The project exists the moment you create it, and its credentials are on the project page from that moment.</p>
 
   <div class="step" data-id="d1">
     <input type="checkbox" aria-label="Step 10 complete">
     <div class="step-body">
       <p class="step-title"><span class="num">10</span> Copy the client ID and client secret</p>
       <ol>
-        <li><b>Projects</b> → open <b>ReadyDoc onboarding</b> → the <b>Credentials</b> area.</li>
-        <li>Copy the <b>Client ID</b> (a long id with dashes) and the <b>Client Secret</b> (a long random string; it may be shown once behind a Reveal button) into the same password-manager entry.</li>
+        <li><b>Projects</b> → <b>View project</b> on the <b>ReadyDoc onboarding</b> card → the <b>Credentials</b> tab.</li>
+        <li>You will see three numbered steps. <b>Step 1</b> is the certificate you already did in Part C. Open <b>Step 2, "Obtain an access token from ADP"</b>.</li>
+        <li>Copy the <b>Client ID</b> (a long id with dashes) and the <b>Client Secret</b> (a long random string; it may sit behind a Reveal button) into the same password-manager entry.</li>
       </ol>
-      <div class="expect"><span class="k">Expect</span><div>Four secrets in the entry now: private key, certificate, client ID, client secret.</div></div>
+      <div class="expect"><span class="k">Expect</span><div>Four secrets in the entry now: private key, certificate, client ID, client secret. Step 2 also shows a <b>token endpoint and a cURL snippet</b> — you do not need to run it; ReadyDoc makes that call itself.</div></div>
     </div>
   </div>
 
@@ -350,6 +353,7 @@ its own employees only.</pre></div>
       </ol>
       <div class="expect"><span class="k">Expect</span><div>Consent Manager lists the ReadyDoc app as <b>Allowed</b> / <b>Active</b>. In RUN itself this may also appear under Settings → Apps or Data Connectors.</div></div>
       <div class="expect"><span class="k no">If not</span><div>The consent page says you are not authorised: the account you are signed in with is not a RUN administrator. Consent must come from the admin account, not an employee login.</div></div>
+      <p class="why"><b>Worth knowing about, but do not go looking for it.</b> API Central masks sensitive personal information — bank account and routing number, birth date, tax ID — by default on a project, and there is a settings screen where that masking is changed. ADP documents it for Workforce Now; whether it applies to a RUN project, and whether it affects data being <i>written in</i> as opposed to read out, is not something their guide answers. Leave it alone for now. If the first real submission lands in RUN with the name and address right but the <b>SSN or bank details missing</b>, this is the first place to look, and I will tell you exactly what to change when we see the result.</p>
     </div>
   </div>
 </section>
@@ -371,17 +375,17 @@ its own employees only.</pre></div>
         <table>
           <thead><tr><th>Name</th><th>Value</th></tr></thead>
           <tbody>
-            <tr><td class="n">ADP_CLIENT_ID</td><td>The client ID from step 08</td></tr>
-            <tr><td class="n">ADP_CLIENT_SECRET</td><td>The client secret from step 08</td></tr>
+            <tr><td class="n">ADP_CLIENT_ID</td><td>The client ID from step 10</td></tr>
+            <tr><td class="n">ADP_CLIENT_SECRET</td><td>The client secret from step 10</td></tr>
             <tr><td class="n">ADP_CERT_PEM</td><td>The certificate block, <span class="mono">-----BEGIN CERTIFICATE-----</span> through <span class="mono">-----END CERTIFICATE-----</span></td></tr>
             <tr><td class="n">ADP_KEY_PEM</td><td>The private-key block, BEGIN through END</td></tr>
           </tbody>
         </table>
       </div>
       <p>Let it redeploy.</p>
-      <div class="expect"><span class="k">Expect</span><div>Settings → Integrations: on the row <b>ADP (RUN Powered by ADP) — onboarding hand-off</b> the four credential names are ticked, one name (<span class="mono">ADP_ONBOARDING_TEMPLATE_CODE</span>) is still unticked, and a button <b>Read what RUN requires</b> has appeared. The row is not "connected" yet; step 11 finishes it.</div></div>
+      <div class="expect"><span class="k">Expect</span><div>Settings → Integrations: on the row <b>ADP (RUN Powered by ADP) — onboarding hand-off</b> the four credential names are ticked, one name (<span class="mono">ADP_ONBOARDING_TEMPLATE_CODE</span>) is still unticked, and a button <b>Read what RUN requires</b> has appeared. The row is not "connected" yet; step 13 finishes it.</div></div>
       <div class="expect"><span class="k no">If not</span><div>A credential name still shows unticked: check the variable name for a typo, letter for letter. Integrations names the missing one.</div></div>
-      <p class="why"><b>Only if ADP gave you a separate test host.</b> Some projects come with a sandbox API address for trial calls. If yours did, add <span class="mono">ADP_API_BASE</span> with that address for step 12, and remove it again before the first real hire. If it did not, leave it out; the default is ADP's production API.</p>
+      <p class="why"><b>Only if ADP gave you a separate test host.</b> Some projects come with a sandbox API address for trial calls. If yours did, add <span class="mono">ADP_API_BASE</span> with that address for step 14, and remove it again before the first real hire. If it did not, leave it out; the default is ADP's production API.</p>
     </div>
   </div>
 
@@ -396,7 +400,7 @@ its own employees only.</pre></div>
         <li>Railway → Variables → <b>New Variable</b>: <span class="mono">ADP_ONBOARDING_TEMPLATE_CODE</span> = that code, exactly. Let it redeploy.</li>
       </ol>
       <div class="expect"><span class="k">Expect</span><div>The ADP row now reads <b>connected</b> with all five names ticked, and <b>Submit to ADP</b> appears on completed onboarding packets.</div></div>
-      <div class="expect"><span class="k no">If not</span><div>The button shows an error starting <code>ADP 4xx:</code>. Copy the whole message and send it to me. A 401 means the credentials or certificate; a 403 means consent (step 09) or the project's use case; anything else I read from the text.</div></div>
+      <div class="expect"><span class="k no">If not</span><div>The button shows an error starting <code>ADP 4xx:</code>. Copy the whole message and send it to me. A 401 means the credentials or certificate; a 403 means consent (step 11) or the project's use case; anything else I read from the text.</div></div>
       <p class="why"><b>Two optional variables</b>, only if the answer from RUN says they are required: <span class="mono">ADP_PAYROLL_GROUP_CODE</span> (RUN's payroll group for new hires) and <span class="mono">ADP_ONBOARDING_STATUS</span> (defaults to <span class="mono">inprogress</span>, which lands the person in RUN's New Hire wizard for the office to finish; leave it).</p>
     </div>
   </div>
@@ -431,8 +435,8 @@ its own employees only.</pre></div>
   <p>Send me:</p>
   <ol>
     <li>After Part A: a screenshot of Settings → Integrations.</li>
-    <li>After Part B: the project's <b>Associated APIs</b> list (you have already sent this one).</li>
-    <li>After step 11: what <b>Read what RUN requires</b> returned, so I can check the field mapping against it before the first hire.</li>
+    <li>After Part B: the <b>Use case selection</b> screen before you choose, and the project's <b>APIs</b> tab after you create it — so I can confirm <span class="mono">applicant.onboard</span> is on it.</li>
+    <li>After step 13: what <b>Read what RUN requires</b> returned, so I can check the field mapping against it before the first hire.</li>
     <li>After Part F: either "it landed in RUN" or the full error text from Submit to ADP.</li>
   </ol>
   <p>Nothing in this runbook needs the four secrets to pass through me. Railway and your password manager are the only two places they live.</p>

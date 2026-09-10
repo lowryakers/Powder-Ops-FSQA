@@ -48,9 +48,19 @@ adp.com site data fixes it permanently.
    downloads as a `.pem` from the certificate card, which also carries the
    expiry (ADP signs for about two years) and warns everyone active on the
    Members page from 60 days out.
-4. **Copy the project's client ID and client secret.** Consent is usually
-   implicit for a project under the company's own account; if the project
-   shows a consent step, a RUN administrator completes it.
+4. **Copy the project's client ID and client secret** — project page →
+   **Credentials** tab → Step 2, "Obtain an access token from ADP". Consent is
+   usually implicit for a project under the company's own account; if the
+   project shows a consent step, a RUN administrator completes it.
+
+   **Open question, deliberately not guessed at.** API Central masks sensitive
+   personal information — bank account and routing number, birth date, tax ID
+   — by default on a project, with a settings screen to change it. ADP
+   documents that for Workforce Now only, and says nothing about whether it
+   applies to a RUN project or to data being *written in* rather than read
+   out. Nothing is changed on the strength of that. If the first live
+   submission lands in RUN with name and address right but **SSN or bank
+   details missing**, that screen is the first place to look.
 5. **Set the four credentials** on the ReadyDoc service in Railway:
    `ADP_CLIENT_ID`, `ADP_CLIENT_SECRET`, `ADP_CERT_PEM`, `ADP_KEY_PEM` (PEMs
    as literal text with `\n` line breaks, or a path on the volume).
