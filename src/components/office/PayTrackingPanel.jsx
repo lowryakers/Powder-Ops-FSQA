@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { deptLabel } from '../../constants/departments';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { usePageTranslation } from '../../lib/usePageTranslation.js';
@@ -1111,7 +1112,15 @@ export default function PayTrackingPanel() {
           {r.name}
         </button>
       ) },
-    { key: 'team', label: tr('Team'), filter: true },
+    { key: 'team', label: tr('Team'), filter: true,
+      // A LINKED row's team IS the account's department, so it renders through
+      // the same label map Settings uses — otherwise the roster shows the raw
+      // slug ("batching") where every other screen shows "Batching".
+      render: r => (r.team
+        ? <span title={r.team_was ? `${tr('Was')} ${r.team_was} — ${tr('now follows Settings')}` : undefined}>
+            {deptLabel(r.team)}
+          </span>
+        : <span className="text-gray-300">—</span>) },
     { key: 'pay_rate', label: tr('Rate'), type: 'money', align: 'right', edit: false,
       render: r => (r.pay_rate == null ? <span className="text-gray-400">{tr('Salaried')}</span> : money(r.pay_rate)) },
     { key: 'annual', label: tr('Annual'), type: 'money', align: 'right',

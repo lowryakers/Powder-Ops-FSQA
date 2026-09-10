@@ -797,6 +797,33 @@ function lastNameOf(fullName) {
   return parts[parts.length - 1] || '';
 }
 
+/**
+ * Everyone whose hours are recorded for a pay period.
+ *
+ * TWO SOURCES, ONE LIST, AND THAT IS THE WHOLE DESIGN DECISION. Employees are
+ * `users` — the accounts. Temporary and agency workers are the CONTRACTOR rows
+ * of the pay roster, because a temp who never signs in is not an account: give
+ * one a `users` row and they appear in the @mention list, the assignee picker,
+ * Team Activity and the comms member list, none of which anybody wanted.
+ *
+ * They are read here rather than kept in a second list of their own, so a temp
+ * is added ONCE, in Pay Tracking, and shows up in both places. A second roster
+ * is how the two modules start disagreeing about who was working.
+ *
+ * A contractor carries NO weekly target: the hours are whatever the agency
+ * invoices, so paid-but-not-worked has nothing to balance up to. `target: null`
+ * is what the hours maths reads to skip that, and it is deliberately distinct
+ * from a target of zero.
+ */
+function contractorRoster(db) {
+  try {
+    return db.prepare(`SELECT id, name, team AS department, contractor_company, ends_on
+      FROM pay_employees
+      WHERE active = 1 AND COALESCE(worker_type, 'employee') = 'contractor'`).all()
+      .map(c => ({ ...c, target: null, is_contractor: true }));
+  } catch { return []; }  // Pay Tracking may not exist on every deployment.
+}
+
 function roster(db) {
   return db.prepare(`SELECT id, name, department, weekly_hours_target FROM users
     WHERE is_active = 1 AND name != 'ReadyBot' AND role NOT IN ('auditor', 'admin')`).all()
@@ -818,25 +845,30 @@ router.get('/hours', (req, res) => {
   const byUser = {};
   for (const r of rows) (byUser[r.user_id] = byUser[r.user_id] || {})[r.week_start] = r;
 
-  const people = roster(db).map(u => {
+  const people = [...roster(db), ...contractorRoster(db)].map(u => {
     const weekRows = weeks.map(w => {
       const r = byUser[u.id]?.[w];
       const worked = r?.worked || 0, pto = r?.pto || 0, holiday = r?.holiday || 0, unpaid = r?.unpaid || 0;
       const autoFill = r ? !!r.auto_fill : true;
       // Paid-but-not-worked: the balance up to target, only once there's an
       // entry — an untouched week shouldn't invent 40 hours of anything.
-      const nonWorking = (r && autoFill) ? Math.max(0, u.target - worked - pto - holiday - unpaid) : 0;
+      // No target (a contractor) means nothing to balance up to: their paid
+      // hours are the hours worked, and there is no overtime line to compute.
+      const nonWorking = (r && autoFill && u.target != null)
+        ? Math.max(0, u.target - worked - pto - holiday - unpaid) : 0;
       return {
         week_start: w, worked, pto, holiday, unpaid, auto_fill: autoFill,
         has_entry: !!r, note: r?.note || null,
         non_working: Math.round(nonWorking * 100) / 100,
-        overtime: Math.round(Math.max(0, worked - u.target) * 100) / 100,
+        overtime: u.target == null ? 0 : Math.round(Math.max(0, worked - u.target) * 100) / 100,
         total: Math.round((worked + pto + holiday + nonWorking) * 100) / 100,
       };
     });
     const sum = (k) => Math.round(weekRows.reduce((n, w) => n + w[k], 0) * 100) / 100;
     return {
       user_id: u.id, name: u.name, department: u.department, target: u.target,
+      is_contractor: !!u.is_contractor, contractor_company: u.contractor_company || null,
+      ends_on: u.ends_on || null,
       weeks: weekRows,
       period: { worked: sum('worked'), pto: sum('pto'), holiday: sum('holiday'), unpaid: sum('unpaid'),
         non_working: sum('non_working'), overtime: sum('overtime'), total: sum('total') },
@@ -860,7 +892,12 @@ router.put('/hours', (req, res) => {
   if (!user_id || !/^\d{4}-\d{2}-\d{2}$/.test(week_start || '')) {
     return res.status(400).json({ error: 'user_id and week_start are required' });
   }
-  const person = db.prepare('SELECT id, name FROM users WHERE id = ?').get(user_id);
+  // A contractor's id is a pay_employees id, not a users id — the hours row
+  // keys on whichever it is, and nothing else in this table cares which.
+  const person = db.prepare('SELECT id, name FROM users WHERE id = ?').get(user_id)
+    || (() => { try {
+      return db.prepare("SELECT id, name FROM pay_employees WHERE id = ? AND COALESCE(worker_type,'employee') = 'contractor'").get(user_id);
+    } catch { return null; } })();
   if (!person) return res.status(404).json({ error: 'Person not found' });
 
   const existing = db.prepare('SELECT * FROM employee_hours WHERE user_id = ? AND week_start = ?').get(user_id, week_start);

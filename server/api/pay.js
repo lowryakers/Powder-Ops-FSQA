@@ -108,6 +108,15 @@ function withLinkedNames(db, rows) {
       linked: true,
       renamed_from: u.name !== r.name ? r.name : null,
       user_department: u.department,
+      // THE TEAM FOLLOWS SETTINGS TOO, for exactly the reasons the name and the
+      // supervisor flag do. Settings is where somebody moving from Kitting to
+      // Filling is recorded; a stored team on this row is a copy that goes
+      // stale the moment they move, and then the roster and the app disagree
+      // about which team a person is on. `team_was` keeps the imported value
+      // visible where it differed, the same way `renamed_from` does, so an
+      // apparent change is explained rather than just appearing.
+      team: u.department || r.team,
+      team_was: u.department && r.team && u.department !== r.team ? r.team : null,
       // Same reasoning as the name: SETTINGS is where a promotion or a step
       // down is recorded, so a linked row's supervisor flag follows the
       // account's role. The imported column was left saying "supervisor" for
@@ -167,6 +176,12 @@ router.get('/employees/:id', (req, res) => {
 // silently.
 const EDITABLE = ['name', 'team', 'is_supervisor', 'hire_date', 'pto_plan', 'active', 'notes', 'user_id',
   'last_reviewed_at', 'last_increase_at', 'worker_type', 'contractor_company', 'ends_on'];
+
+// Fields a LINKED row does not own: Settings does. Writing them here would put
+// a value on the roster that the next read overrides anyway, which reads as the
+// save having silently failed. `team` joined `name` and `is_supervisor` here
+// when the team was made to follow the account's department.
+const SETTINGS_OWNED = ['name', 'team', 'is_supervisor'];
 
 export const WORKER_TYPES = ['employee', 'contractor'];
 
@@ -234,6 +249,19 @@ router.put('/employees/:id', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM pay_employees WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not on the roster' });
+  // 400 rather than dropping it silently — the NFP_OWNED rule. A client that
+  // sends a team for a linked row would otherwise look like it saved and then
+  // show the account's department back on the next read, which reads as the
+  // save having failed for no reason anybody can see.
+  if (existing.user_id) {
+    const owned = SETTINGS_OWNED.filter(f => req.body[f] !== undefined);
+    if (owned.length) {
+      return res.status(400).json({
+        error: `${owned.join(', ')} ${owned.length === 1 ? 'is' : 'are'} set in Settings for someone with a ReadyDoc account — this roster follows it.`,
+        settings_owned: owned,
+      });
+    }
+  }
   const updates = [];
   const values = [];
   for (const f of EDITABLE) {

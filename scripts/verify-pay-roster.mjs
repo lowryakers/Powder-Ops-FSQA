@@ -76,6 +76,24 @@ const override = await call('POST', '/pay/assignments', { employee_id: nadia.id,
 t('an explicit date beats the derived one', override.status === 201
   && (await call('GET', '/pay/assignments?status=open&mine=false', null, A)).body.some(a => a.due_date === '2026-10-15'));
 
+console.log('\n── the team follows Settings ──');
+const nadiaRow = (await call('GET', '/pay/employees', null, A)).body.find(r => r.name === 'Nadia Okonjo');
+t('a linked row shows the ACCOUNT\'s department as its team',
+  nadiaRow?.team === 'production', String(nadiaRow?.team));
+t('and the imported team is kept visible as what it was',
+  nadiaRow?.team_was === 'Batching', String(nadiaRow?.team_was));
+const movedTo = await call('PUT', `/users/${nadiaRow.user_id}`, {
+  name: 'Nadia Okonjo', role: 'operator', department: 'filling', is_active: 1,
+}, A);
+t('the department can be changed in Settings', movedTo.status === 200, String(movedTo.status));
+const afterMove = (await call('GET', '/pay/employees', null, A)).body.find(r => r.id === nadiaRow.id);
+t('the pay roster follows it with no second edit', afterMove?.team === 'filling', String(afterMove?.team));
+const refused = await call('PUT', `/pay/employees/${nadiaRow.id}`, { team: 'warehouse' }, A);
+t('editing the team HERE is refused in words, not dropped silently',
+  refused.status === 400 && /Settings/i.test(refused.body?.error || ''), JSON.stringify(refused.body).slice(0, 140));
+const stillFine = await call('PUT', `/pay/employees/${nadiaRow.id}`, { notes: 'ok' }, A);
+t('everything the roster does own still saves', stillFine.status === 200, String(stillFine.status));
+
 console.log('\n── contractors ──');
 const con = await call('POST', '/pay/employees', {
   name: 'Temp Worker One', worker_type: 'contractor', pay_rate: 18, team: 'Warehouse',
@@ -86,6 +104,9 @@ const roster = (await call('GET', '/pay/employees', null, A)).body;
 const temp = roster.find(r => r.name === 'Temp Worker One');
 t('they are on the same roster, marked as a contractor', temp?.worker_type === 'contractor');
 t('the agency and end date are kept', temp?.contractor_company === 'Bridge Staffing' && temp?.ends_on === '2026-12-01');
+t('an UNLINKED row keeps its own team — nothing to follow', temp?.team === 'Warehouse', String(temp?.team));
+const conTeam = await call('PUT', `/pay/employees/${temp.id}`, { team: 'Kitting' }, A);
+t('and its team is still editable here', conTeam.status === 200 && conTeam.body?.team === 'Kitting', String(conTeam.status));
 
 const evaluatees = (await call('GET', '/pay/evaluatees', null, A)).body;
 t('a contractor is NEVER offered as somebody to evaluate', !evaluatees.some(e => e.name === 'Temp Worker One'));
@@ -107,6 +128,30 @@ t('taking them off the list keeps the row and its rate history',
   ended?.active === 0 && (ended?.history || []).length >= 1, `history: ${(ended?.history || []).length}`);
 const del = await call('DELETE', `/pay/employees/${temp.id}`, null, A);
 t('and deleting outright is refused once they have been paid', del.status >= 400, String(del.status));
+
+console.log('\n── Time Tracking sees the same contractors ──');
+// A second temp, still active — the first was deactivated above to prove the
+// pay history survives, and an inactive contractor is correctly off this list.
+const live = await call('POST', '/pay/employees', {
+  name: 'Temp Worker Two', worker_type: 'contractor', pay_rate: 20, team: 'Kitting',
+  contractor_company: 'Bridge Staffing',
+}, A);
+t('a second contractor is added', live.status === 201, String(live.status));
+const liveId = live.body?.id;
+const hours = (await call('GET', '/office/hours', null, A)).body;
+t('the one taken off the list is NOT on the Hours roster',
+  !(hours?.people || []).some(p => p.name === 'Temp Worker One'));
+const inHours = (hours?.people || []).find(p => p.name === 'Temp Worker Two');
+t('a contractor added in Pay Tracking appears on the Hours roster', !!inHours);
+t('marked as a contractor, carrying the agency', inHours?.is_contractor === true && inHours?.contractor_company === 'Bridge Staffing');
+t('with NO weekly target — their paid hours are the hours worked', inHours?.target === null, String(inHours?.target));
+const emp = (hours?.people || []).find(p => p.name === 'Nadia Okonjo');
+t('an employee still carries a target', !!emp && emp.target > 0, String(emp?.target));
+const logged = await call('PUT', '/office/hours', { user_id: liveId, week_start: hours.weeks[0], worked: 32 }, A);
+t('hours can be recorded against a contractor', logged.status === 200, JSON.stringify(logged.body).slice(0, 120));
+const after2 = (await call('GET', '/office/hours', null, A)).body.people.find(p => p.name === 'Temp Worker Two');
+t('32 hours is 32 paid — no phantom balance up to 40', after2?.period?.total === 32, String(after2?.period?.total));
+t('and no overtime is invented against a target they do not have', after2?.period?.overtime === 0, String(after2?.period?.overtime));
 
 console.log(`\n${pass}/${pass + fail} assertions passed`);
 process.exit(fail ? 1 : 0);

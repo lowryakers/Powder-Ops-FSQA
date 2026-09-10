@@ -56,6 +56,16 @@ export default function HoursTab() {
     await apiPut('/office/hours', { user_id: userId, week_start: weekStart, ...patch });
     refresh();
   };
+  // Employees first, then a labelled break, then contractors. One list rather
+  // than two tables: the columns are identical and a second table would double
+  // every future change to this grid.
+  const people = data?.people || [];
+  const employeeRows = people.filter(p => !p.is_contractor);
+  const contractorRows = people.filter(p => p.is_contractor);
+  const rows = contractorRows.length
+    ? [...employeeRows, { __divider: true }, ...contractorRows]
+    : employeeRows;
+
   const saveTarget = async (userId, target) => {
     await apiPut(`/office/hours/target/${userId}`, { target });
     refresh();
@@ -120,14 +130,29 @@ export default function HoursTab() {
             </tr>
           </thead>
           <tbody>
-            {(data?.people || []).map(p => (
+            {rows.map(p => (p.__divider ? (
+              <tr key="contractor-divider" className="border-t-2 border-gray-300 bg-gray-50">
+                <td colSpan={14} className="px-3 py-1.5">
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-600">Contractors &amp; temporary workers</span>
+                  <span className="ml-2 text-[11px] text-gray-400">
+                    No weekly target — their paid hours are the hours worked. Added in Pay Tracking.
+                  </span>
+                </td>
+              </tr>
+            ) : (
               <tr key={p.user_id} className="border-t border-gray-100 hover:bg-gray-50">
                 <td className="px-3 py-1.5">
                   <span className="font-medium text-gray-900">{p.name}</span>
-                  <span className="block text-[10px] text-gray-400 capitalize">{(p.department || '').replace('_', ' ')}</span>
+                  <span className="block text-[10px] text-gray-400 capitalize">
+                    {p.is_contractor
+                      ? (p.contractor_company || 'contractor')
+                      : (p.department || '').replace('_', ' ')}
+                  </span>
                 </td>
                 <td className="px-3 py-1.5">
-                  <HourInput value={p.target} onCommit={v => saveTarget(p.user_id, v)} tone="text-gray-500" />
+                  {p.is_contractor
+                    ? <span className="text-[11px] text-gray-300" title="A contractor has no weekly target">—</span>
+                    : <HourInput value={p.target} onCommit={v => saveTarget(p.user_id, v)} tone="text-gray-500" />}
                 </td>
                 {p.weeks.map(w => (
                   <td key={w.week_start} colSpan={5} className="px-3 py-1.5 border-l border-gray-200">
@@ -152,7 +177,7 @@ export default function HoursTab() {
                   {p.period.overtime > 0 && <span className="block text-[10px] text-amber-600">{hrs(p.period.overtime)} OT</span>}
                 </td>
               </tr>
-            ))}
+            )))}
             {(data?.people || []).length === 0 && (
               <tr><td colSpan={14} className="px-4 py-8 text-center text-gray-400">
                 <Users size={18} className="inline mr-1" /> No active people in Settings yet.
@@ -165,7 +190,7 @@ export default function HoursTab() {
       {/* Phone and tablet: one card per person, one block per week. The same
           four numbers, big enough to actually tap. */}
       <div className="lg:hidden space-y-2">
-        {(data?.people || []).map(p => (
+        {people.map(p => (
           <div key={p.user_id} className="bg-white rounded-xl border border-gray-200 p-3">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
@@ -180,7 +205,9 @@ export default function HoursTab() {
 
             <div className="mt-2 flex items-center gap-2">
               <span className="text-[11px] text-gray-500">Target / week</span>
-              <HourInput value={p.target} onCommit={v => saveTarget(p.user_id, v)} tone="text-gray-500" />
+              {p.is_contractor
+                ? <span className="text-[11px] text-gray-300">—</span>
+                : <HourInput value={p.target} onCommit={v => saveTarget(p.user_id, v)} tone="text-gray-500" />}
               {p.period.overtime > 0 && (
                 <span className="ml-auto text-[11px] font-semibold text-amber-600">{hrs(p.period.overtime)} OT</span>
               )}
