@@ -4491,6 +4491,34 @@ function runMigrations() {
   // has to enter it in ADP, per pay period. These columns track that last mile
   // so nothing silently misses payroll.
   addColumnIfMissing('time_adjustments', 'pay_period', 'TEXT');
+
+  // LINK THE HISTORY TO THE ACCOUNT, ONCE.
+  //
+  // `employee_id` has been written on every entry filed through the form, but
+  // entries predating it — and any filed by a path that only had a name —
+  // carry the name alone. Those are the ones a rename in Settings orphans, so
+  // they are matched to an account by exact name and stamped, once.
+  //
+  // EXACT MATCH ONLY, and never where the name is ambiguous. Two active
+  // accounts sharing a name is rare and real (the two Vanessas in Candidates),
+  // and attaching somebody's absences to the wrong person is far worse than
+  // leaving the row keyed on its name, where it behaves exactly as it does
+  // today. Marked done in app_settings rather than by "are any rows unlinked",
+  // or a deliberately unlinked row would be re-matched on the next deploy.
+  try {
+    const done = db.prepare("SELECT value FROM app_settings WHERE key = 'time_adjustments_linked'").get();
+    const anyRows = db.prepare('SELECT 1 FROM time_adjustments LIMIT 1').get();
+    if (!done && anyRows) {
+      const linked = db.prepare(`UPDATE time_adjustments SET employee_id = (
+          SELECT u.id FROM users u WHERE u.name = time_adjustments.employee_name
+        )
+        WHERE employee_id IS NULL
+          AND (SELECT COUNT(*) FROM users u2 WHERE u2.name = time_adjustments.employee_name) = 1`).run();
+      db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('time_adjustments_linked', ?)")
+        .run(new Date().toISOString());
+      if (linked.changes) console.log(`[migrate] linked ${linked.changes} time adjustment(s) to their account`);
+    }
+  } catch (e) { console.warn('[migrate] time adjustment link skipped:', e.message); }
   addColumnIfMissing('time_adjustments', 'adp_status', "TEXT DEFAULT 'pending'");
   addColumnIfMissing('time_adjustments', 'adp_entered_by', 'TEXT');
   addColumnIfMissing('time_adjustments', 'adp_entered_at', 'TEXT');

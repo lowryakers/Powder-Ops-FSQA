@@ -488,28 +488,66 @@ router.get('/time/adjustments', (req, res) => {
   if (pay_period) { sql += ' AND pay_period = ?'; params.push(pay_period); }
   if (adp_status) { sql += " AND COALESCE(adp_status, 'pending') = ?"; params.push(adp_status); }
   if (status) { sql += ' AND status = ?'; params.push(status); }
-  if (employee) { sql += ' AND employee_name = ?'; params.push(employee); }
+  // Matches the account OR the stored spelling, so filtering by somebody's
+  // current name still finds the entries filed under their old one.
+  if (employee) { sql += ' AND (employee_name = ? OR employee_id = ?)'; params.push(employee, employee); }
   if (from) { sql += ' AND adjustment_date >= ?'; params.push(from); }
   if (to) { sql += ' AND adjustment_date <= ?'; params.push(to); }
   sql += ' ORDER BY adjustment_date DESC, created_at DESC LIMIT 1000';
-  res.json(db.prepare(sql).all(...params));
+  res.json(withCurrentNames(db, db.prepare(sql).all(...params)));
 });
+
+/**
+ * The CURRENT name for a filed adjustment.
+ *
+ * `time_adjustments.employee_name` is the name as it stood the day the entry
+ * was filed, and `employee_id` is the account it was filed against. Only the
+ * id is the person: rename somebody in Settings and every entry filed under the
+ * old spelling silently becomes a second, separate employee — the 90-day
+ * absence rollup counted them as two people with half a history each.
+ *
+ * So the id wins on read and the stored string is a label, exactly the rule
+ * `withLinkedNames` follows on the pay roster. `renamed_from` keeps the old
+ * spelling visible, because an entry that suddenly reads under a different name
+ * needs to say why.
+ */
+function withCurrentNames(db, rows) {
+  const ids = [...new Set(rows.map(r => r.employee_id).filter(Boolean))];
+  if (!ids.length) return rows;
+  const names = new Map();
+  try {
+    for (const u of db.prepare(`SELECT id, name FROM users WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids)) {
+      names.set(u.id, u.name);
+    }
+  } catch { return rows; }
+  return rows.map(r => {
+    const current = r.employee_id && names.get(r.employee_id);
+    if (!current || current === r.employee_name) return r;
+    return { ...r, employee_name: current, renamed_from: r.employee_name };
+  });
+}
 
 // Per-employee rollup for the admin: absences / tardies in the last 30 and 90
 // days, so patterns are visible without counting by hand.
 router.get('/time/stats', (req, res) => {
   if (!requireAdmin(req, res)) return;
   const db = getDb();
+  // GROUPED ON THE ACCOUNT WHERE THERE IS ONE. Grouping on employee_name split
+  // anybody who had been renamed in Settings into two rows with half a history
+  // each — which is the opposite of what a pattern rollup is for. The stored
+  // name is the fallback for entries filed before ids were recorded.
   const rows = db.prepare(`
-    SELECT employee_name,
+    SELECT COALESCE(employee_id, employee_name) AS person_key,
+      MAX(employee_id) AS employee_id,
+      MAX(employee_name) AS employee_name,
       SUM(CASE WHEN adjustment_date >= date('now','-30 days') THEN 1 ELSE 0 END) AS last_30,
       SUM(CASE WHEN adjustment_date >= date('now','-90 days') THEN 1 ELSE 0 END) AS last_90,
       SUM(CASE WHEN adjustment_type = 'absent' AND adjustment_date >= date('now','-90 days') THEN 1 ELSE 0 END) AS absences_90,
       SUM(CASE WHEN adjustment_type = 'tardy_leave_early' AND adjustment_date >= date('now','-90 days') THEN 1 ELSE 0 END) AS tardies_90,
       MAX(adjustment_date) AS last_event
-    FROM time_adjustments GROUP BY employee_name HAVING last_90 > 0 ORDER BY last_90 DESC, last_30 DESC
+    FROM time_adjustments GROUP BY person_key HAVING last_90 > 0 ORDER BY last_90 DESC, last_30 DESC
   `).all();
-  res.json(rows);
+  res.json(withCurrentNames(db, rows));
 });
 
 // Bulk review: the same two decisions as the single-entry PUT (reviewed, and

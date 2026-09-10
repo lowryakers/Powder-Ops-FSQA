@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useApiGet, apiPut } from '../../hooks/useApi';
-import { Users, Clock } from 'lucide-react';
+import { useApiGet, apiPut, apiPost, apiFetch } from '../../hooks/useApi';
+import { Users, Clock, Plus, X } from 'lucide-react';
 import { parseHours, formatHours, hoursInputValue } from '../../lib/hoursFormat';
 
 // Hours worked vs paid non-working time, per pay period — merged in from the
@@ -20,6 +20,85 @@ const weekLabel = (w) => {
   return `${a.getUTCMonth() + 1}/${a.getUTCDate()}–${b.getUTCMonth() + 1}/${b.getUTCDate()}`;
 };
 const hrs = (n) => formatHours(n);
+
+/**
+ * Add a contractor or temporary worker.
+ *
+ * They are STORED on the pay roster (`pay_employees`, `worker_type` =
+ * contractor) because that is where a rate and its history already live — but
+ * they are added and managed HERE, next to the hours they are paid for, which
+ * is the question anybody actually has about a temp. Pay Tracking is raises and
+ * reviews, and a contractor has neither.
+ *
+ * Deliberately NOT a `users` row: a temp who never signs in is not an account,
+ * and giving them one would put them in the @mention list, the assignee picker,
+ * Team Activity and the comms member list.
+ */
+function AddContractorModal({ onClose, onAdded }) {
+  const [form, setForm] = useState({ name: '', contractor_company: '', team: '', pay_rate: '', hire_date: '', ends_on: '' });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const save = async () => {
+    if (!form.name.trim()) { setError('Name is required'); return; }
+    setBusy(true); setError('');
+    try {
+      await apiPost('/pay/employees', {
+        name: form.name.trim(), worker_type: 'contractor',
+        contractor_company: form.contractor_company.trim() || null,
+        team: form.team.trim() || null,
+        pay_rate: form.pay_rate !== '' ? Number(form.pay_rate) : null,
+        hire_date: form.hire_date || null, ends_on: form.ends_on || null,
+      });
+      onAdded?.(); onClose();
+    } catch (e) { setError(e.message); setBusy(false); }
+  };
+  const field = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm';
+  const label = 'block text-xs font-medium text-gray-700 mb-1';
+  return (
+    <div className="fixed inset-0 z-[70] bg-black/30 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-4 space-y-3 max-h-[92vh] overflow-y-auto" data-add-contractor>
+        <h3 className="font-semibold text-gray-900 text-sm">Add a contractor or temporary worker</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="sm:col-span-2">
+            <label className={label}>Name *</label>
+            <input value={form.name} onChange={e => set('name', e.target.value)} className={field} data-contractor-name />
+          </div>
+          <div>
+            <label className={label}>Agency or company</label>
+            <input value={form.contractor_company} onChange={e => set('contractor_company', e.target.value)}
+              className={field} placeholder="Leave blank if direct" />
+          </div>
+          <div>
+            <label className={label}>Team</label>
+            <input value={form.team} onChange={e => set('team', e.target.value)} className={field} />
+          </div>
+          <div>
+            <label className={label}>Pay rate</label>
+            <input type="number" step="0.01" min="0" value={form.pay_rate} onChange={e => set('pay_rate', e.target.value)} className={field} />
+          </div>
+          <div>
+            <label className={label}>Started</label>
+            <input type="date" value={form.hire_date} onChange={e => set('hire_date', e.target.value)} className={field} />
+          </div>
+          <div className="sm:col-span-2">
+            <label className={label}>Expected to end</label>
+            <input type="date" value={form.ends_on} onChange={e => set('ends_on', e.target.value)} className={field} />
+            <p className="text-[11px] text-gray-500 mt-0.5">A reminder, not a rule — nothing happens on this date by itself.</p>
+          </div>
+        </div>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <div className="flex gap-2 justify-end">
+          <button onClick={onClose} className="px-3 py-2 border border-gray-300 rounded-lg text-sm">Cancel</button>
+          <button onClick={save} disabled={busy}
+            className="px-4 py-2 bg-powder-600 text-white rounded-lg text-sm font-semibold disabled:opacity-50">
+            {busy ? 'Adding…' : 'Add'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // Hours are typed and shown as h:mm (39:56) and stored as decimal — see
 // lib/hoursFormat. It has to be a text box, not type="number": a number input
@@ -62,9 +141,19 @@ export default function HoursTab() {
   const people = data?.people || [];
   const employeeRows = people.filter(p => !p.is_contractor);
   const contractorRows = people.filter(p => p.is_contractor);
-  const rows = contractorRows.length
-    ? [...employeeRows, { __divider: true }, ...contractorRows]
-    : employeeRows;
+  const rows = [...employeeRows, { __divider: true }, ...contractorRows];
+  const [addingContractor, setAddingContractor] = useState(false);
+
+  // Taking a temp off the list DEACTIVATES rather than deletes. What we paid
+  // somebody is a payroll record: the row and its rate history stay, the list
+  // simply stops showing them, and the hours already logged for the period they
+  // worked are untouched. Deleting outright is still possible in Pay Tracking
+  // while nothing has been paid.
+  const endContractor = async (p) => {
+    if (!window.confirm(`Take ${p.name} off the list? Their hours and pay history are kept.`)) return;
+    await apiFetch(`/pay/employees/${p.user_id}`, { method: 'PUT', body: JSON.stringify({ active: 0 }) });
+    refresh();
+  };
 
   const saveTarget = async (userId, target) => {
     await apiPut(`/office/hours/target/${userId}`, { target });
@@ -133,10 +222,14 @@ export default function HoursTab() {
             {rows.map(p => (p.__divider ? (
               <tr key="contractor-divider" className="border-t-2 border-gray-300 bg-gray-50">
                 <td colSpan={14} className="px-3 py-1.5">
-                  <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-600">Contractors &amp; temporary workers</span>
-                  <span className="ml-2 text-[11px] text-gray-400">
-                    No weekly target — their paid hours are the hours worked. Added in Pay Tracking.
-                  </span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-600">Contractors &amp; temporary workers</span>
+                    <span className="text-[11px] text-gray-400">No weekly target — their paid hours are the hours worked.</span>
+                    <button onClick={() => setAddingContractor(true)} data-add-contractor-btn
+                      className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium border border-gray-200 bg-white text-gray-700 hover:bg-gray-50">
+                      <Plus size={12} /> Add a contractor
+                    </button>
+                  </div>
                 </td>
               </tr>
             ) : (
@@ -175,6 +268,12 @@ export default function HoursTab() {
                 <td className="px-3 py-1.5 text-right border-l border-gray-200">
                   <span className="font-semibold text-gray-900">{hrs(p.period.total)}</span>
                   {p.period.overtime > 0 && <span className="block text-[10px] text-amber-600">{hrs(p.period.overtime)} OT</span>}
+                  {p.is_contractor && (
+                    <button onClick={() => endContractor(p)} title="Take them off the list — hours and pay history are kept"
+                      data-end-contractor className="block ml-auto mt-0.5 text-[10px] text-gray-400 hover:text-red-600">
+                      <X size={11} className="inline" /> remove
+                    </button>
+                  )}
                 </td>
               </tr>
             )))}
@@ -242,7 +341,17 @@ export default function HoursTab() {
         {(data?.people || []).length === 0 && (
           <p className="text-center py-8 text-sm text-gray-400">No active people in Settings yet.</p>
         )}
+        {/* Phone: the section header carries its own Add button, since the
+            table's divider row is not rendered in this layout. */}
+        <button onClick={() => setAddingContractor(true)}
+          className="mt-2 w-full inline-flex items-center justify-center gap-1 px-3 py-2 rounded-lg text-xs font-medium border border-gray-200 bg-white text-gray-700">
+          <Plus size={13} /> Add a contractor
+        </button>
       </div>
+
+      {addingContractor && (
+        <AddContractorModal onClose={() => setAddingContractor(false)} onAdded={refresh} />
+      )}
     </div>
   );
 }

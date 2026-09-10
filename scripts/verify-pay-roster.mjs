@@ -153,5 +153,43 @@ const after2 = (await call('GET', '/office/hours', null, A)).body.people.find(p 
 t('32 hours is 32 paid — no phantom balance up to 40', after2?.period?.total === 32, String(after2?.period?.total));
 t('and no overtime is invented against a target they do not have', after2?.period?.overtime === 0, String(after2?.period?.overtime));
 
+console.log('\n── a rename must not split somebody\'s attendance history ──');
+// Two absences filed under the name as it stood, then the person is renamed.
+for (const d of ['2026-09-02', '2026-09-04']) {
+  await call('POST', '/office/time/adjustments', {
+    employee_name: 'Nadia Okonjo', employee_id: nadiaRow.user_id,
+    adjustment_type: 'absent', adjustment_date: d, message: 'called in',
+  }, A);
+}
+const before2 = (await call('GET', '/office/time/stats', null, A)).body;
+const preRename = before2.find(r => r.employee_name === 'Nadia Okonjo');
+t('both absences are counted against one person', preRename?.last_90 === 2, String(preRename?.last_90));
+
+await call('PUT', `/users/${nadiaRow.user_id}`, {
+  name: 'Nadia Okonjo-Bello', role: 'operator', department: 'filling', is_active: 1,
+}, A);
+// One more, filed under the NEW name.
+await call('POST', '/office/time/adjustments', {
+  employee_name: 'Nadia Okonjo-Bello', employee_id: nadiaRow.user_id,
+  adjustment_type: 'tardy_leave_early', adjustment_date: '2026-09-08', message: 'late',
+}, A);
+
+const stats = (await call('GET', '/office/time/stats', null, A)).body;
+const oldName = stats.filter(r => r.employee_name === 'Nadia Okonjo');
+const merged = stats.find(r => r.employee_id === nadiaRow.user_id);
+t('the rollup does NOT split them into two people', oldName.length === 0, `old-name rows: ${oldName.length}`);
+t('all three events stay on one row', merged?.last_90 === 3, String(merged?.last_90));
+t('under their CURRENT name', merged?.employee_name === 'Nadia Okonjo-Bello', String(merged?.employee_name));
+t('and the two kinds are still counted apart', merged?.absences_90 === 2 && merged?.tardies_90 === 1,
+  `${merged?.absences_90}/${merged?.tardies_90}`);
+
+const list = (await call('GET', '/office/time/adjustments', null, A)).body;
+const entries = list.filter(e => e.employee_id === nadiaRow.user_id);
+t('every filed entry reads under the current name', entries.length === 3 && entries.every(e => e.employee_name === 'Nadia Okonjo-Bello'));
+t('and an entry filed under the old spelling says what it was',
+  entries.some(e => e.renamed_from === 'Nadia Okonjo'));
+const byId = (await call('GET', `/office/time/adjustments?employee=${nadiaRow.user_id}`, null, A)).body;
+t('filtering by the account finds all three, whatever name they were filed under', byId.length === 3, String(byId.length));
+
 console.log(`\n${pass}/${pass + fail} assertions passed`);
 process.exit(fail ? 1 : 0);
