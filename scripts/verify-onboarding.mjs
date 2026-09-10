@@ -81,7 +81,7 @@ console.log('\nThe data that should never be in clear, and the numbers that must
 {
   // The page's own fields first, with the secret keys BLANK — exactly what the
   // wizard sends after a save has cleared them — then the secrets.
-  const plain = await portal(tok, 'PUT', { first_name: 'Test', last_name: 'Hire', dob: '1995-04-02', address1: '1 Main', city: 'Provo', state: 'UT', zip: '84601', phone: '8015551212',
+  const plain = await portal(tok, 'PUT', { first_name: 'Test', last_name: 'Hire', dob: '1995-04-02', gender: 'F', address1: '1 Main', city: 'Provo', state: 'UT', zip: '84601', phone: '8015551212',
     pay_method: 'direct_deposit', dd_bank_name: 'Zions', dd_account_type: 'checking', ssn: '', dd_routing: '', dd_account: '' });
   t('blank secret keys do not refuse the save (they are what the wizard re-sends)', plain.ok, `${plain.status}`);
   const secret = await portal(tok, 'PUT', { ssn: '123-45-6789', dd_account: '000123456789', dd_routing: '021000021' });
@@ -234,6 +234,77 @@ console.log('\nADP itself degrades gracefully, like storage and AI');
 {
   const r = await post(`/onboarding/${rec.id}/submit-adp`, {});
   t('submitting with no ADP credentials 503s rather than throwing', r.status === 503 || r.status === 400, `got ${r.status}`);
+}
+
+console.log('\nAn EMPLOYEE cannot finish without the gender RUN requires');
+{
+  const g = await J(await post('/onboarding', { first_name: 'Gap', last_name: 'Case' }));
+  const gt = String(g.link).split('/').pop();
+  await portal(gt, 'PUT', { phone: '8015550777', dob: '1990-01-01', address1: '2 Elm', city: 'Provo', state: 'UT', zip: '84601' });
+  const v = await J(await portal(gt, 'GET'));
+  t('gender is on the outstanding list for an employee', (v.missing || []).some(m => m.field === 'gender'));
+}
+
+console.log('\nA 1099 CONTRACTOR signs a W-9 and never an I-9');
+{
+  const c = await J(await post('/onboarding', {
+    first_name: 'Dana', last_name: 'Reyes', position: 'Line Consultant',
+    start_date: '2026-10-01', worker_type: 'contractor',
+  }));
+  t('an onboarding can be opened as a contractor', c?.worker_type === 'contractor', JSON.stringify(c || {}).slice(0, 120));
+  const ctok = String(c.link).split('/').pop();
+
+  let v = await J(await portal(ctok, 'GET'));
+  t('the portal says they are a contractor', v?.is_contractor === true);
+  t('and hands back the W-9 certification to sign under', /Under penalties of perjury, I certify/.test(v?.attestations?.w9 || ''));
+  t('the four W-9 items are all present while backup withholding is not claimed',
+    /4\. The FATCA/.test(v.attestations.w9) && /2\. I am not subject to backup withholding/.test(v.attestations.w9));
+
+  // THE I-9 IS NEVER ASKED FOR.
+  t('nothing on the outstanding list mentions the I-9',
+    !(v.missing || []).some(m => m.step === 'i9'), JSON.stringify((v.missing || []).map(m => m.step)));
+  t('but the W-9 is', (v.missing || []).some(m => m.step === 'w9'));
+
+  await portal(ctok, 'PUT', {
+    phone: '8015550444', dob: '1985-02-02', address1: '9 Mill Rd', city: 'Orem', state: 'UT', zip: '84057',
+    ssn: '444-55-6666', dd_routing: '124000054', dd_account: '99887766', dd_account_type: 'checking',
+    w9_business_name: 'Reyes Consulting LLC', w9_tax_classification: 'llc', w9_llc_classification: 'S',
+    w9_tin_type: 'ein', ein: '12-3456789',
+  });
+  v = await J(await portal(ctok, 'GET'));
+  t('the EIN is stored encrypted and comes back only as a flag and last four',
+    v?.has_ein === true && v?.ein_last4 === '6789' && v?.ein === undefined, `${v?.has_ein}/${v?.ein_last4}`);
+  t('gender is NOT demanded of a contractor', !(v.missing || []).some(m => m.field === 'gender'));
+
+  // Refusals that matter.
+  const wrongForm = await portal(ctok, 'PUT', { w4_sign: true, signed_name: 'Dana Reyes', attest: true });
+  t('a contractor cannot sign a W-4, and is told which form is theirs',
+    wrongForm.status === 400 && /Form W-9/.test((await J(wrongForm))?.error || ''), String(wrongForm.status));
+  const wrongI9 = await portal(ctok, 'PUT', { i9_sign: true, signed_name: 'Dana Reyes', attest: true });
+  t('nor an I-9', wrongI9.status === 400, String(wrongI9.status));
+
+  const signed = await portal(ctok, 'PUT', { w9_sign: true, signed_name: 'Dana Reyes', attest: true });
+  t('but the W-9 signs', signed.ok, `${signed.status} ${JSON.stringify(await J(signed) || {}).slice(0, 120)}`);
+  v = await J(await portal(ctok, 'GET'));
+  t('the signature records the certification it was given under',
+    /Under penalties of perjury/.test(v?.w9_signature?.attestation || ''));
+  t('nothing is outstanding now', (v.missing || []).length === 0, JSON.stringify((v.missing || []).map(m => m.label)));
+
+  const fin = await fetch(`${B}/onboarding-portal/${ctok}/finish`, { method: 'POST' });
+  t('and it finishes with no I-9 anywhere', fin.ok, String(fin.status));
+
+  // Backup withholding strikes item 2 out of what they sign.
+  const c2 = await J(await post('/onboarding', { first_name: 'Sam', last_name: 'Vale', worker_type: 'contractor' }));
+  const t2 = String(c2.link).split('/').pop();
+  await portal(t2, 'PUT', { w9_backup_withholding: true });
+  const v2 = await J(await portal(t2, 'GET'));
+  t('ticking backup withholding removes item 2 from the certification',
+    !/I am not subject to backup withholding/.test(v2.attestations.w9)
+    && /struck out/.test(v2.attestations.w9), v2.attestations.w9.slice(0, 90));
+
+  const pdf = await req(`/onboarding/${c.id}/packet.pdf`);
+  const buf = Buffer.from(await pdf.arrayBuffer());
+  t('the packet renders for a contractor', pdf.ok && buf.length > 1000, `${pdf.status} ${buf.length}`);
 }
 
 console.log(`\n${pass}/${pass + fail} assertions passed`);

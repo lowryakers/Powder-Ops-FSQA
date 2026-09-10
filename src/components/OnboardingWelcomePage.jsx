@@ -41,7 +41,19 @@ function Field({ l, children, hint }) {
   return <div><span className={label}>{l}</span>{children}{hint && <span className="block text-[11px] text-gray-400 mt-0.5">{hint}</span>}</div>;
 }
 
-const STEPS = ['welcome', 'personal', 'emergency', 'deposit', 'w4', 'i9', 'done'];
+/**
+ * The steps this person actually walks.
+ *
+ * A 1099 CONTRACTOR SIGNS A W-9 AND NO I-9 AT ALL. 8 CFR 274a.1(f) excludes an
+ * independent contractor from the definition of employee, so the I-9 does not
+ * apply — showing it would be collecting immigration documents nobody is
+ * entitled to see. The W-9 replaces the W-4 in the same slot rather than being
+ * bolted on the end, so the shape of the wizard is the same either way and the
+ * progress bar means what it looks like it means.
+ */
+const EMPLOYEE_STEPS = ['welcome', 'personal', 'emergency', 'deposit', 'w4', 'i9', 'done'];
+const CONTRACTOR_STEPS = ['welcome', 'personal', 'emergency', 'deposit', 'w9', 'done'];
+const stepsFor = (rec) => (rec?.is_contractor ? CONTRACTOR_STEPS : EMPLOYEE_STEPS);
 
 /** Photos of a kind, with the phone camera one tap away. */
 function Photos({ token, rec, kind, title, hint, onChanged, t }) {
@@ -124,7 +136,7 @@ export default function OnboardingWelcomePage({ token }) {
   const [rec, setRec] = useState(null);
   const [step, setStep] = useState(0);
   const [form, setForm] = useState({});
-  const [sig, setSig] = useState({ w4: '', i9: '', w4_attest: false, i9_attest: false });
+  const [sig, setSig] = useState({ w4: '', i9: '', w9: '', w4_attest: false, i9_attest: false, w9_attest: false });
   const [error, setError] = useState('');
   const [missing, setMissing] = useState(null);
   const [fatal, setFatal] = useState('');
@@ -135,6 +147,8 @@ export default function OnboardingWelcomePage({ token }) {
   // It is applied the moment it is tapped and saved with the next step.
   const [lang, setLang] = useState('en');
   const t = translator(lang);
+  // Resolved before anything closes over it — `saveAnd` reads STEPS[step].
+  const STEPS = stepsFor(rec);
 
   useEffect(() => {
     api('GET', `/${token}`).then(r => {
@@ -195,6 +209,11 @@ export default function OnboardingWelcomePage({ token }) {
   }
 
   const name = STEPS[step];
+  // BY NAME, NEVER BY NUMBER. Two step lists means step 4 is the W-4 for an
+  // employee and the W-9 for a contractor, so a hard-coded index sends somebody
+  // to the wrong form — the same second-copy-of-the-order defect this codebase
+  // keeps unpicking. `at()` resolves against the list this person is walking.
+  const at = (n) => STEPS.indexOf(n);
   const stepMissing = (s) => (rec.missing || []).filter(m => m.step === s);
   const goTo = (s) => { setStep(STEPS.indexOf(s)); window.scrollTo(0, 0); };
 
@@ -202,7 +221,7 @@ export default function OnboardingWelcomePage({ token }) {
     <Shell lang={lang} onLang={setLang}>
       {/* progress */}
       <div className="flex gap-1 mb-5">
-        {STEPS.slice(0, 6).map((s, i) => (
+        {STEPS.slice(0, -1).map((s, i) => (
           <div key={s} className={`h-1.5 flex-1 rounded-full ${i <= step ? 'bg-powder-600' : 'bg-gray-200'}`} />
         ))}
       </div>
@@ -218,8 +237,13 @@ export default function OnboardingWelcomePage({ token }) {
             <p>{t('welcome.appMessages')}</p>
             <p>{t('welcome.appWork')}</p>
           </div>
+          {rec.is_contractor && (
+            <p className="text-sm text-gray-800 bg-amber-50 border border-amber-200 rounded-lg p-2.5" data-contractor-note>
+              {t('welcome.contractor')}
+            </p>
+          )}
           {rec.position && <p className="text-sm text-gray-600">{t('welcome.startingAs')} <b>{rec.position}</b>{rec.start_date ? <> {t('welcome.on')} <b>{rec.start_date}</b></> : ''}{rec.team ? <> · {rec.team}</> : ''}.</p>}
-          <button onClick={() => saveAnd(1)} disabled={busy} className="w-full py-3 bg-powder-600 text-white rounded-xl text-base font-semibold disabled:opacity-50">{t('welcome.go')}</button>
+          <button onClick={() => saveAnd(at('personal'))} disabled={busy} className="w-full py-3 bg-powder-600 text-white rounded-xl text-base font-semibold disabled:opacity-50">{t('welcome.go')}</button>
         </div>
       )}
 
@@ -260,7 +284,7 @@ export default function OnboardingWelcomePage({ token }) {
               {t('personal.officeCollects')}
             </p>
           )}
-          <Nav onBack={() => setStep(0)} onNext={() => saveAnd(2)} busy={busy} />
+          <Nav onBack={() => setStep(at('welcome'))} onNext={() => saveAnd(at('emergency'))} busy={busy} />
         </div>
       )}
 
@@ -272,7 +296,7 @@ export default function OnboardingWelcomePage({ token }) {
             <Field l={t('emergency.phone')}><input type="tel" className={input} value={form.emergency_phone || ''} onChange={set('emergency_phone')} /></Field>
             <Field l={t('emergency.relationship')}><input className={input} value={form.emergency_relationship || ''} onChange={set('emergency_relationship')} /></Field>
           </div>
-          <Nav onBack={() => setStep(1)} onNext={() => saveAnd(3)} busy={busy} />
+          <Nav onBack={() => setStep(at('personal'))} onNext={() => saveAnd(at('deposit'))} busy={busy} />
         </div>
       )}
 
@@ -309,10 +333,109 @@ export default function OnboardingWelcomePage({ token }) {
           )}
           {lang !== 'en' && (
             <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg p-2.5" data-forms-english>
-              {t('formsEnglish')}
+              {t(rec.is_contractor ? 'formsEnglishW9' : 'formsEnglish')}
             </p>
           )}
-          <Nav onBack={() => setStep(2)} onNext={() => saveAnd(4)} busy={busy} />
+          <Nav onBack={() => setStep(at('emergency'))} onNext={() => saveAnd(at(rec.is_contractor ? 'w9' : 'w4'))} busy={busy} />
+        </div>
+      )}
+
+      {/* FORM W-9 — the contractor's path. English only, like the W-4 and I-9:
+          the certification is the wording being signed. */}
+      {name === 'w9' && (
+        <div className="space-y-3">
+          <h2 className="text-lg font-bold text-gray-900">Form W-9 — Request for Taxpayer Identification Number and Certification</h2>
+          <p className="text-xs text-gray-500">You are being paid as a 1099 contractor, so this replaces the W-4.
+            There is no I-9 — that form is for employees only.</p>
+
+          <Field l="Line 1 — Name (as shown on your income tax return)">
+            <input className={`${input} bg-gray-50`} value={[form.first_name, form.middle_name, form.last_name].filter(Boolean).join(' ')} readOnly />
+          </Field>
+          <Field l="Line 2 — Business name / disregarded entity name, if different from above">
+            <input className={input} value={form.w9_business_name || ''} onChange={set('w9_business_name')} data-w9-business />
+          </Field>
+
+          <Field l="Line 3a — Federal tax classification *">
+            <select className={input} value={form.w9_tax_classification || ''} onChange={set('w9_tax_classification')} data-w9-class>
+              <option value="">Choose…</option>
+              <option value="individual_sole_proprietor">Individual/sole proprietor or single-member LLC</option>
+              <option value="c_corporation">C corporation</option>
+              <option value="s_corporation">S corporation</option>
+              <option value="partnership">Partnership</option>
+              <option value="trust_estate">Trust/estate</option>
+              <option value="llc">Limited liability company</option>
+              <option value="other">Other</option>
+            </select>
+          </Field>
+          {form.w9_tax_classification === 'llc' && (
+            <Field l="LLC tax classification *" hint="C = C corporation, S = S corporation, P = partnership">
+              <select className={input} value={form.w9_llc_classification || ''} onChange={set('w9_llc_classification')} data-w9-llc>
+                <option value="">Choose…</option>
+                <option value="C">C</option><option value="S">S</option><option value="P">P</option>
+              </select>
+            </Field>
+          )}
+
+          <p className="text-xs font-semibold text-gray-700 pt-1">Part I — Taxpayer Identification Number (TIN)</p>
+          <Field l="Which number are you giving us? *" hint="A sole proprietor may use either. An entity uses its EIN.">
+            <select className={input} value={form.w9_tin_type || ''} onChange={set('w9_tin_type')} data-w9-tin-type>
+              <option value="">Choose…</option>
+              <option value="ssn">Social Security number (SSN)</option>
+              <option value="ein">Employer Identification Number (EIN)</option>
+            </select>
+          </Field>
+          {rec.sensitive_collection && form.w9_tin_type === 'ein' && (
+            <Field l={`EIN *${rec.has_ein ? ' (on file ••••)' : ''}`}>
+              <input inputMode="numeric" className={input} value={form.ein || ''} onChange={set('ein')} autoComplete="off"
+                placeholder={rec.has_ein ? 'Saved — retype to change' : '##-#######'} data-ein />
+            </Field>
+          )}
+          {rec.sensitive_collection && form.w9_tin_type === 'ssn' && (
+            <Field l={`Social Security number *${rec.has_ssn ? ' (on file ••••)' : ''}`}>
+              <input inputMode="numeric" className={input} value={form.ssn || ''} onChange={set('ssn')} autoComplete="off"
+                placeholder={rec.has_ssn ? 'Saved — retype to change' : '###-##-####'} data-w9-ssn />
+            </Field>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field l="Line 4 — Exempt payee code" hint="Most people leave this blank.">
+              <input className={input} value={form.w9_exempt_payee_code || ''} onChange={set('w9_exempt_payee_code')} /></Field>
+            <Field l="Line 4 — FATCA exemption code" hint="Most people leave this blank.">
+              <input className={input} value={form.w9_fatca_code || ''} onChange={set('w9_fatca_code')} /></Field>
+          </div>
+
+          <label className="flex items-start gap-2 text-sm text-gray-700">
+            <input type="checkbox" className="mt-1" checked={!!form.w9_backup_withholding} onChange={set('w9_backup_withholding')} data-w9-bw />
+            <span>The IRS has told me I <b>am</b> subject to backup withholding for failing to report interest and
+              dividends. <span className="text-gray-500">Ticking this strikes item 2 out of the certification below, which
+              is what the paper form asks you to do.</span></span>
+          </label>
+
+          <Signature rec={rec} which="w9" attestation={rec.attestations?.w9}
+            value={sig.w9} onChange={(v) => setSig(s2 => ({ ...s2, w9: v }))}
+            attest={sig.w9_attest} onAttest={(v) => setSig(s2 => ({ ...s2, w9_attest: v }))} />
+
+          {error && <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-2.5">{error}</p>}
+          <div className="flex gap-2">
+            <button onClick={() => setStep(at('deposit'))} className="px-4 py-3 border border-gray-300 rounded-xl text-sm font-medium">Back</button>
+            {rec.w9_signature ? (
+              <button onClick={finish} disabled={busy} className="flex-1 py-3 bg-green-600 text-white rounded-xl text-base font-semibold disabled:opacity-50" data-finish>
+                {busy ? 'Sending…' : 'Finish — send to the office'}
+              </button>
+            ) : (
+              <button onClick={() => signAnd('w9', at('w9'))} disabled={busy} className="flex-1 py-3 bg-powder-600 text-white rounded-xl text-base font-semibold disabled:opacity-50" data-sign-w9>
+                {busy ? 'Saving…' : 'Sign the W-9'}
+              </button>
+            )}
+          </div>
+          {missing && missing.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+              <p className="text-sm font-semibold text-amber-900">Still needed before this can go to the office:</p>
+              <ul className="mt-1 space-y-0.5 text-sm text-amber-900">
+                {missing.map(m => <li key={`${m.step}-${m.field}`}>• {m.label}</li>)}
+              </ul>
+            </div>
+          )}
         </div>
       )}
 
@@ -353,7 +476,7 @@ export default function OnboardingWelcomePage({ token }) {
           <p className="text-xs font-semibold text-gray-700 pt-1">Step 5 — Sign here</p>
           <Signature rec={rec} which="w4" attestation={rec.attestations?.w4} value={sig.w4} onChange={v => setSig(s => ({ ...s, w4: v }))}
             attest={sig.w4_attest} onAttest={v => setSig(s => ({ ...s, w4_attest: v }))} />
-          <Nav onBack={() => setStep(3)} onNext={() => signAnd('w4', 5)} busy={busy} label={rec.w4_signature ? 'Save & continue' : 'Sign & continue'} />
+          <Nav onBack={() => setStep(at('deposit'))} onNext={() => signAnd('w4', at('i9'))} busy={busy} label={rec.w4_signature ? 'Save & continue' : 'Sign & continue'} />
         </div>
       )}
 
@@ -416,13 +539,13 @@ export default function OnboardingWelcomePage({ token }) {
           )}
           {error && <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-2.5">{error}</p>}
           <div className="flex gap-2">
-            <button onClick={() => setStep(4)} className="px-4 py-3 border border-gray-300 rounded-xl text-sm font-medium">Back</button>
+            <button onClick={() => setStep(at('w4'))} className="px-4 py-3 border border-gray-300 rounded-xl text-sm font-medium">Back</button>
             {rec.i9_signature ? (
               <button onClick={finish} disabled={busy} className="flex-1 py-3 bg-green-600 text-white rounded-xl text-base font-semibold disabled:opacity-50" data-finish>
                 {busy ? 'Sending…' : 'Finish — send to the office'}
               </button>
             ) : (
-              <button onClick={() => signAnd('i9', 5)} disabled={busy} className="flex-1 py-3 bg-powder-600 text-white rounded-xl text-base font-semibold disabled:opacity-50" data-sign-i9>
+              <button onClick={() => signAnd('i9', at('i9'))} disabled={busy} className="flex-1 py-3 bg-powder-600 text-white rounded-xl text-base font-semibold disabled:opacity-50" data-sign-i9>
                 {busy ? 'Saving…' : 'Sign the I-9'}
               </button>
             )}

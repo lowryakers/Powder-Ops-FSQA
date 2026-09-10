@@ -189,6 +189,10 @@ function middleInitial(v) {
 // them instead. Their VALUES come from RUN's codelists, not from prose.
 const workLocationState = () => process.env.ADP_WORK_LOCATION_STATE || null;
 const workerTypeCode = () => process.env.ADP_WORKER_TYPE_CODE || null;
+// RUN distinguishes a 1099 from a W-2 by its own worker-type code, which is a
+// codelist value nobody here can invent. Its own variable, so setting the
+// employee one does not silently file contractors as employees.
+const contractorTypeCode = () => process.env.ADP_CONTRACTOR_TYPE_CODE || null;
 const payTypeCode = () => process.env.ADP_PAY_TYPE_CODE || null;
 
 /**
@@ -209,10 +213,22 @@ export function missingForAdp(rec = {}) {
   if (!rec.department) out.push('Department (must match a code in RUN\u2019s Departments codelist)');
   if (!payCycleOf(rec.pay_frequency)) out.push('Pay schedule (RUN pay-cycle code; "hourly" is a pay type, not a schedule)');
   if (rec.pay_rate == null || rec.pay_rate === '') out.push('Pay rate');
-  if (!rec.w4_filing_status) out.push('Federal withholding status (W-4)');
+  if (rec.worker_type === 'contractor') {
+    if (!rec.w9_tax_classification) out.push('Federal tax classification (W-9 line 3a)');
+    if (!rec.ssn && !rec.ein) out.push('Taxpayer ID number (SSN or EIN)');
+  } else if (!rec.w4_filing_status) {
+    out.push('Federal withholding status (W-4)');
+  }
   // Not collected anywhere in ReadyDoc, and not inventable.
-  if (!rec.gender && !process.env.ADP_GENDER_CODE_DEFAULT) out.push('Gender (RUN requires it for an employee; ReadyDoc does not ask)');
-  if (!workerTypeCode()) out.push('Worker type (set ADP_WORKER_TYPE_CODE from RUN\u2019s codelist)');
+  // "Mandatory for employee" in RUN's dictionary — a contractor is not asked.
+  if (rec.worker_type !== 'contractor' && !rec.gender && !process.env.ADP_GENDER_CODE_DEFAULT) {
+    out.push('Gender (RUN requires it for an employee)');
+  }
+  if (rec.worker_type === 'contractor') {
+    if (!contractorTypeCode()) out.push('Contractor worker type (set ADP_CONTRACTOR_TYPE_CODE from RUN\u2019s codelist)');
+  } else if (!workerTypeCode()) {
+    out.push('Worker type (set ADP_WORKER_TYPE_CODE from RUN\u2019s codelist)');
+  }
   if (!payTypeCode()) out.push('Pay type (set ADP_PAY_TYPE_CODE from RUN\u2019s codelist)');
   if (!workLocationState()) out.push('Work location state (set ADP_WORK_LOCATION_STATE)');
   return out;
@@ -233,16 +249,32 @@ export function applicantOnboardPayload(rec, opts = {}) {
   // escape hatch in case /meta says otherwise for this account; never required.
   const templateCode = opts.templateCode ?? process.env.ADP_ONBOARDING_TEMPLATE_CODE ?? null;
 
+  // ADP'S GUIDE SUPPORTS BOTH: "onboarding a new employee or contractor", and
+  // its whole data dictionary reads "Employees (W2)/Contractors (1099s)". Two
+  // things differ for a contractor and both come off that dictionary:
+  // `givenName` is labelled "First name/Company name", and `familyName` is
+  // required "for employee and contractor" but "Not required for company type".
+  const isContractor = rec.worker_type === 'contractor';
+  const companyType = isContractor && !!rec.w9_business_name
+    && rec.w9_tax_classification && rec.w9_tax_classification !== 'individual_sole_proprietor';
+
   const mi = middleInitial(rec.middle_name);
   const personal = {
-    legalName: {
-      ...(rec.first_name ? { givenName: rec.first_name } : {}),
-      ...(mi ? { middleName: mi } : {}),
-      ...(rec.last_name ? { familyName: rec.last_name } : {}),
-    },
+    legalName: companyType
+      ? { givenName: rec.w9_business_name }
+      : {
+        ...(rec.first_name ? { givenName: rec.first_name } : {}),
+        ...(mi ? { middleName: mi } : {}),
+        ...(rec.last_name ? { familyName: rec.last_name } : {}),
+      },
     ...(rec.preferred_name ? { preferredName: { formattedName: rec.preferred_name } } : {}),
     ...(rec.dob ? { birthDate: rec.dob } : {}),
-    ...(rec.ssn ? { governmentIDs: [{ id: String(rec.ssn).replace(/\D/g, ''), nameCode: codeObj('SSN') }] } : {}),
+    // The W-9's Part I number. A contractor may file under an EIN instead of an
+    // SSN, and the two are different government IDs — sending an EIN as an SSN
+    // would be a wrong taxpayer number on a 1099.
+    ...(isContractor && rec.w9_tin_type === 'ein' && rec.ein
+      ? { governmentIDs: [{ id: String(rec.ein).replace(/\D/g, ''), nameCode: codeObj('EIN') }] }
+      : rec.ssn ? { governmentIDs: [{ id: String(rec.ssn).replace(/\D/g, ''), nameCode: codeObj('SSN') }] } : {}),
     ...(rec.gender || process.env.ADP_GENDER_CODE_DEFAULT
       ? { genderCode: codeObj(rec.gender || process.env.ADP_GENDER_CODE_DEFAULT) } : {}),
     ...(rec.email || rec.phone ? {
@@ -265,7 +297,7 @@ export function applicantOnboardPayload(rec, opts = {}) {
     } : {}),
   };
 
-  const wtc = codeObj(workerTypeCode());
+  const wtc = codeObj(isContractor ? contractorTypeCode() : workerTypeCode());
   const wls = workLocationState();
   const worker = {
     ...(rec.start_date ? { hireDate: rec.start_date } : {}),
@@ -298,7 +330,11 @@ export function applicantOnboardPayload(rec, opts = {}) {
     ...(money(rec.w4_other_income) ? { additionalIncomeAmount: money(rec.w4_other_income) } : {}),
     ...(money(rec.w4_extra_withholding) ? { additionalTaxAmount: money(rec.w4_extra_withholding) } : {}),
   };
-  const tax = Object.keys(fit).length
+  // NO FEDERAL WITHHOLDING INSTRUCTION FOR A CONTRACTOR. Nothing is withheld
+  // from a 1099 payment, so a tax profile here would be an instruction ADP has
+  // no business acting on — and the W-4 fields it is built from are blank for a
+  // contractor anyway.
+  const tax = !isContractor && Object.keys(fit).length
     ? { usFederalTaxInstruction: { federalIncomeTaxInstruction: fit } } : {};
 
   return {

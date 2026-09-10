@@ -2725,6 +2725,28 @@ function runMigrations() {
     // is asked rather than defaulted. Insurance and compliance reporting is
     // what it is for, and the form says so.
     ['gender', 'TEXT'],                     // F | M
+    // W-2 EMPLOYEE OR 1099 CONTRACTOR. ADP's own Applicant Onboard guide is
+    // written as "Employees (W2)/Contractors (1099s)" throughout and says the
+    // API supports "a new employee or contractor", so this is the same packet
+    // with a different tax form, not a second module.
+    ['worker_type', "TEXT NOT NULL DEFAULT 'employee'"],   // employee | contractor
+    // Form W-9. A contractor completes this INSTEAD of the W-4, and completes
+    // no I-9 at all — 8 CFR 274a.1(f) excludes an independent contractor from
+    // the definition of employee, so asking for one would be collecting
+    // immigration documents nobody is entitled to see.
+    ['w9_business_name', 'TEXT'],           // line 2 — business / disregarded entity, if different
+    ['w9_tax_classification', 'TEXT'],      // line 3a
+    ['w9_llc_classification', 'TEXT'],      // line 3a LLC: C | S | P
+    ['w9_tin_type', 'TEXT'],                // ssn | ein — a sole proprietor may use either
+    ['ein_enc', 'TEXT'],                    // encrypted, like the SSN
+    ['ein_last4', 'TEXT'],
+    ['w9_exempt_payee_code', 'TEXT'],
+    ['w9_fatca_code', 'TEXT'],
+    // Line 2 of the certification is struck when the payee IS subject to
+    // backup withholding — the paper form says to cross it out, so the tick
+    // records the same fact and the stored attestation says which it was.
+    ['w9_backup_withholding', 'INTEGER DEFAULT 0'],
+    ['w9_signature', 'TEXT'],               // JSON — {name, at, ip, ua, attestation}
   ]) addColumnIfMissing('onboarding_records', col, def);
 
   db.exec(`

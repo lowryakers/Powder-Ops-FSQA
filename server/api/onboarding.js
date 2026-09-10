@@ -56,6 +56,8 @@ const sha = (t) => createHash('sha256').update(t).digest('hex');
 const PORTAL_FIELDS = [
   'first_name', 'middle_name', 'last_name', 'preferred_name', 'email', 'phone',
   'address1', 'address2', 'city', 'state', 'zip', 'dob', 'gender',
+  'w9_business_name', 'w9_tax_classification', 'w9_llc_classification', 'w9_tin_type',
+  'w9_exempt_payee_code', 'w9_fatca_code',
   'emergency_name', 'emergency_phone', 'emergency_relationship',
   'pay_method', 'dd_bank_name', 'dd_account_type',
   'w4_filing_status', 'w4_qualifying_children', 'w4_other_dependents', 'w4_dependents_amount',
@@ -64,8 +66,11 @@ const PORTAL_FIELDS = [
   'i9_passport_number', 'i9_passport_country', 'i9_work_until', 'i9_preparer', 'i9_preparer_name',
   'language',
 ];
-const ADMIN_FIELDS = [...PORTAL_FIELDS, 'department', 'team', 'position', 'start_date', 'pay_rate', 'pay_frequency', 'notes'];
-const BOOL_FIELDS = ['w4_multiple_jobs', 'w4_exempt'];
+// `worker_type` is the OFFICE's to set, never the new hire's: whether somebody
+// is an employee or a contractor is a decision made before the link is sent,
+// and it changes which tax form they are asked to sign.
+const ADMIN_FIELDS = [...PORTAL_FIELDS, 'department', 'team', 'position', 'start_date', 'pay_rate', 'pay_frequency', 'notes', 'worker_type'];
+const BOOL_FIELDS = ['w4_multiple_jobs', 'w4_exempt', 'w9_backup_withholding'];
 
 // DIRECT DEPOSIT IS THE ONLY WAY THE PLANT PAYS, so it is no longer a question.
 // 'check' stays readable here and in the packet PDF: a record filed before this
@@ -86,6 +91,40 @@ export const FILE_KINDS = ['id_document', 'voided_check', 'other'];
 export const W4_ATTESTATION = 'Under penalties of perjury, I declare that this certificate, to the best of my knowledge and belief, is true, correct, and complete.';
 export const I9_S1_ATTESTATION = 'I am aware that federal law provides for imprisonment and/or fines for false statements, or the use of false documents, in connection with the completion of this form. I attest, under penalty of perjury, that this information, including my selection of the box attesting to my citizenship or immigration status, is true and correct.';
 export const I9_S2_ATTESTATION = 'I attest, under penalty of perjury, that (1) I have examined the documentation presented by the above-named employee, (2) the above-listed documentation appears to be genuine and to relate to the employee named, and (3) to the best of my knowledge, the employee is authorized to work in the United States.';
+
+// FORM W-9 Part II, verbatim from the IRS form. A 1099 contractor certifies
+// this instead of signing a W-4, and signs no I-9 at all.
+//
+// ITEM 2 IS CONDITIONAL ON THE PAPER FORM — it says to cross it out if you are
+// subject to backup withholding — so the stored attestation is assembled from
+// what the person actually certified rather than always claiming all four. A
+// record that says they certified item 2 when they had ticked the box would be
+// a false statement in the one place it matters most.
+const W9_ITEMS = [
+  'The number shown on this form is my correct taxpayer identification number (or I am waiting for a number to be issued to me); and',
+  'I am not subject to backup withholding because: (a) I am exempt from backup withholding, or (b) I have not been notified by the Internal Revenue Service (IRS) that I am subject to backup withholding as a result of a failure to report all interest or dividends, or (c) the IRS has notified me that I am no longer subject to backup withholding; and',
+  'I am a U.S. citizen or other U.S. person (defined in the instructions); and',
+  'The FATCA code(s) entered on this form (if any) indicating that I am exempt from FATCA reporting is correct.',
+];
+export function w9Attestation(subjectToBackupWithholding) {
+  const items = W9_ITEMS
+    .filter((_, i) => !(i === 1 && subjectToBackupWithholding))
+    .map((t, i) => `${i + 1}. ${t}`);
+  const struck = subjectToBackupWithholding
+    ? ' (Item 2 of the certification has been struck out because the payee is subject to backup withholding.)' : '';
+  return `Under penalties of perjury, I certify that: ${items.join(' ')}${struck}`;
+}
+export const W9_ATTESTATION = w9Attestation(false);
+
+// Line 3a of the W-9. Verbatim, because the classification decides the form the
+// payment is reported on and is not ours to paraphrase.
+export const W9_CLASSIFICATIONS = [
+  'individual_sole_proprietor', 'c_corporation', 's_corporation', 'partnership',
+  'trust_estate', 'llc', 'other',
+];
+export const W9_LLC_CLASSIFICATIONS = ['C', 'S', 'P'];
+export const TIN_TYPES = ['ssn', 'ein'];
+export const ONBOARDING_WORKER_TYPES = ['employee', 'contractor'];
 
 const fileUpload = mediaUpload({ files: 10 }).array('files', 10);
 const uploadFiles = (req, res, next) => fileUpload(req, res, (err) => {
@@ -108,15 +147,18 @@ const signatureOf = (v) => {
 // One shape for every read: ciphertext never leaves, last-4 does.
 function shape(db, r) {
   if (!r) return null;
-  const { token_hash: _th, ssn_enc, dd_routing_enc: _dr, dd_account_enc, ...rest } = r;
+  const { token_hash: _th, ssn_enc, ein_enc, dd_routing_enc: _dr, dd_account_enc, ...rest } = r;
   return {
     ...rest,
     progress: parseJson(r.progress, {}) || {},
-    has_ssn: !!ssn_enc, has_bank: !!dd_account_enc,
+    has_ssn: !!ssn_enc, has_ein: !!ein_enc, has_bank: !!dd_account_enc,
+    is_contractor: r.worker_type === 'contractor',
     w4_multiple_jobs: !!r.w4_multiple_jobs,
     w4_exempt: !!r.w4_exempt,
+    w9_backup_withholding: !!r.w9_backup_withholding,
     w4_signature: signatureOf(r.w4_signature),
     i9_signature: signatureOf(r.i9_signature),
+    w9_signature: signatureOf(r.w9_signature),
     i9_section2: parseJson(r.i9_section2, null),
     files: filesFor(db, r.id),
     missing: missingToFinish(db, r),
@@ -141,11 +183,15 @@ function applyFields(db, rec, body, allowed) {
   for (const f of BOOL_FIELDS) if (body[f] !== undefined) patch[f] = body[f] ? 1 : 0;
   if (patch.pay_method && !PAY_METHODS.includes(patch.pay_method)) return { error: 'Powder Ops pays by direct deposit only.' };
   if (patch.gender && !GENDERS.includes(patch.gender)) return { error: 'Unknown gender code.' };
+  if (patch.worker_type && !ONBOARDING_WORKER_TYPES.includes(patch.worker_type)) return { error: 'Worker type must be employee or contractor.' };
+  if (patch.w9_tax_classification && !W9_CLASSIFICATIONS.includes(patch.w9_tax_classification)) return { error: 'Unknown federal tax classification.' };
+  if (patch.w9_llc_classification && !W9_LLC_CLASSIFICATIONS.includes(patch.w9_llc_classification)) return { error: 'LLC tax classification must be C, S or P.' };
+  if (patch.w9_tin_type && !TIN_TYPES.includes(patch.w9_tin_type)) return { error: 'A TIN is either an SSN or an EIN.' };
   if (patch.w4_filing_status && !FILING_STATUSES.includes(patch.w4_filing_status)) return { error: 'Unknown filing status.' };
   if (patch.i9_citizenship && !CITIZENSHIP.includes(patch.i9_citizenship)) return { error: 'Unknown citizenship status.' };
   // Sensitive fields: encrypted or refused, never stored bare. Validated on
   // the way in, because a mistyped routing number is a paycheck that bounces.
-  for (const [field, encCol, l4Col] of [['ssn', 'ssn_enc', 'ssn_last4'], ['dd_routing', 'dd_routing_enc', null], ['dd_account', 'dd_account_enc', 'dd_account_last4']]) {
+  for (const [field, encCol, l4Col] of [['ssn', 'ssn_enc', 'ssn_last4'], ['ein', 'ein_enc', 'ein_last4'], ['dd_routing', 'dd_routing_enc', null], ['dd_account', 'dd_account_enc', 'dd_account_last4']]) {
     if (body[field] === undefined) continue;
     const clear = String(body[field]).trim();
     // A blank is "nothing to store", not an attempt to store something — the
@@ -184,12 +230,27 @@ function signForm(db, rec, which, body, req) {
     return { error: `The signature must be your legal name as entered above (${legalShort}).` };
   }
   if (!body.attest) return { error: 'Read the statement and tick the box to sign.' };
+  // WRONG-FORM FIRST. "A contractor signs the W-9" is a better answer than
+  // "choose a filing status" for a form this person should never have been
+  // shown, and the filing-status check would otherwise fire first and hide it.
+  const isContractor = rec.worker_type === 'contractor';
+  if ((which === 'w4' || which === 'i9') && isContractor) {
+    return { error: 'A contractor signs Form W-9, not the W-4 or I-9.' };
+  }
+  if (which === 'w9' && !isContractor) return { error: 'The W-9 is for contractors. An employee signs the W-4.' };
   if (which === 'w4' && !rec.w4_filing_status) return { error: 'Choose a filing status before signing the W-4.' };
   if (which === 'i9' && !rec.i9_citizenship) return { error: 'Choose your citizenship or immigration status before signing.' };
+  if (which === 'w9') {
+    if (!rec.w9_tax_classification) return { error: 'Choose your federal tax classification before signing the W-9.' };
+    if (!rec.w9_tin_type) return { error: 'Say whether your taxpayer ID is an SSN or an EIN before signing.' };
+  }
   const sig = {
     name, at: new Date().toISOString(),
     ip: req.ip || null, ua: String(req.headers['user-agent'] || '').slice(0, 200),
-    attestation: which === 'w4' ? W4_ATTESTATION : I9_S1_ATTESTATION,
+    // The W-9's statement depends on whether item 2 was struck, so it is built
+    // from what this person actually certified rather than assumed.
+    attestation: which === 'w9' ? w9Attestation(!!rec.w9_backup_withholding)
+      : which === 'w4' ? W4_ATTESTATION : I9_S1_ATTESTATION,
   };
   db.prepare(`UPDATE onboarding_records SET ${which}_signature = ?, updated_at = datetime('now') WHERE id = ?`)
     .run(JSON.stringify(sig), rec.id);
@@ -208,10 +269,21 @@ export function missingToFinish(db, rec) {
     ['address1', 'home address'], ['city', 'city'], ['state', 'state'], ['zip', 'ZIP'], ['phone', 'phone']]) {
     if (blank(f)) m.push({ step: 'personal', field: f, label: l });
   }
-  if (cryptoEnabled() && !rec.ssn_enc) m.push({ step: 'personal', field: 'ssn', label: 'Social Security number' });
-  // RUN refuses an employee with no gender code, so a packet without one cannot
-  // be handed off and is not finished. Asked on the personal step.
-  if (blank('gender')) m.push({ step: 'personal', field: 'gender', label: 'gender (for insurance and compliance reporting)' });
+  const isContractor = rec.worker_type === 'contractor';
+  if (cryptoEnabled()) {
+    // A contractor's taxpayer number may be an SSN or an EIN — a sole
+    // proprietor may use either and an entity has only the EIN — so the
+    // requirement is "one of them", not the employee's flat SSN.
+    if (isContractor) {
+      if (!rec.ssn_enc && !rec.ein_enc) m.push({ step: 'w9', field: 'tin', label: 'your taxpayer ID number (SSN or EIN)' });
+    } else if (!rec.ssn_enc) {
+      m.push({ step: 'personal', field: 'ssn', label: 'Social Security number' });
+    }
+  }
+  // RUN marks the gender code mandatory FOR AN EMPLOYEE and does not require it
+  // of a contractor, so a contractor is not asked a question their engagement
+  // does not turn on.
+  if (!isContractor && blank('gender')) m.push({ step: 'personal', field: 'gender', label: 'gender (for insurance and compliance reporting)' });
   // Pay method is no longer a question — direct deposit is the only way the
   // plant pays — so the deposit step asks for the account, not the choice. A
   // legacy record that says 'check' keeps saying it and owes nothing more here.
@@ -227,6 +299,22 @@ export function missingToFinish(db, rec) {
       if (!hasCheck) m.push({ step: 'deposit', field: 'voided_check', label: 'a photo of a voided check' });
     }
   }
+  // ── A 1099 CONTRACTOR SIGNS A W-9 AND NO I-9 AT ALL ────────────────────────
+  //
+  // 8 CFR 274a.1(f) excludes an independent contractor from the definition of
+  // employee, so the I-9 does not apply to them. Asking anyway would be
+  // collecting immigration documents nobody is entitled to see, which is worse
+  // than a gap — it is a record the plant should not be holding.
+  if (isContractor) {
+    if (blank('w9_tax_classification')) m.push({ step: 'w9', field: 'w9_tax_classification', label: 'federal tax classification' });
+    if (rec.w9_tax_classification === 'llc' && blank('w9_llc_classification')) {
+      m.push({ step: 'w9', field: 'w9_llc_classification', label: 'the LLC\u2019s tax classification (C, S or P)' });
+    }
+    if (blank('w9_tin_type')) m.push({ step: 'w9', field: 'w9_tin_type', label: 'whether your taxpayer ID is an SSN or an EIN' });
+    if (!signatureOf(rec.w9_signature)) m.push({ step: 'w9', field: 'w9_signature', label: 'your signature on the W-9' });
+    return m;
+  }
+
   if (blank('w4_filing_status')) m.push({ step: 'w4', field: 'w4_filing_status', label: 'W-4 filing status' });
   if (!signatureOf(rec.w4_signature)) m.push({ step: 'w4', field: 'w4_signature', label: 'your signature on the W-4' });
   if (blank('i9_citizenship')) m.push({ step: 'i9', field: 'i9_citizenship', label: 'I-9 citizenship or immigration status' });
@@ -284,7 +372,7 @@ router.get('/', (req, res) => {
       first_name: 'x', last_name: 'x', address1: 'x', city: 'x', state: 'x', zip: 'x',
       dob: 'x', start_date: 'x', department: 'x', pay_frequency: 'weekly', pay_rate: '1', w4_filing_status: 'x',
     }),
-    attestations: { w4: W4_ATTESTATION, i9_s1: I9_S1_ATTESTATION, i9_s2: I9_S2_ATTESTATION },
+    attestations: { w4: W4_ATTESTATION, i9_s1: I9_S1_ATTESTATION, i9_s2: I9_S2_ATTESTATION, w9: W9_ATTESTATION },
   });
 });
 
@@ -563,6 +651,8 @@ router.get('/:id/packet.pdf', (req, res) => {
     L('Other last names used', rec.i9_other_last_names);
     L('Address', [rec.address1, rec.address2, [rec.city, rec.state, rec.zip].filter(Boolean).join(' ')].filter(Boolean).join(', '));
     L('Date of birth', rec.dob); L('Phone', rec.phone); L('Email', rec.email);
+    L('Engaged as', rec.worker_type === 'contractor' ? '1099 contractor' : 'W-2 employee');
+    if (rec.worker_type === 'contractor' && r.has_ein) L('EIN', `••-•••${rec.ein_last4}`);
     L('SSN', r.has_ssn ? `•••-••-${rec.ssn_last4}` : 'not collected');
     L('Position', rec.position); L('Team', rec.team); L('Start date', rec.start_date);
     L('Pay', rec.pay_rate ? `${rec.pay_rate}${rec.pay_frequency ? ` / ${rec.pay_frequency}` : ''}` : null);
@@ -572,6 +662,40 @@ router.get('/:id/packet.pdf', (req, res) => {
     if (rec.pay_method !== 'check') {
       L('Bank', rec.dd_bank_name); L('Account', r.has_bank ? `${rec.dd_account_type || ''} ••••${rec.dd_account_last4 || ''}` : 'not collected — see voided check');
     }
+    // A CONTRACTOR'S PACKET PRINTS THE W-9 AND NOTHING ELSE. Printing empty W-4
+    // and I-9 sections for somebody who correctly never filled them in reads as
+    // an incomplete packet, and the I-9 does not apply to a contractor at all.
+    if (rec.worker_type === 'contractor') {
+      H('Form W-9 (Request for Taxpayer Identification Number and Certification)');
+      L('Line 1 Name', [rec.first_name, rec.middle_name, rec.last_name].filter(Boolean).join(' '));
+      L('Line 2 Business name / disregarded entity', rec.w9_business_name);
+      L('Line 3a Federal tax classification', {
+        individual_sole_proprietor: 'Individual/sole proprietor or single-member LLC',
+        c_corporation: 'C corporation', s_corporation: 'S corporation', partnership: 'Partnership',
+        trust_estate: 'Trust/estate', llc: `Limited liability company${rec.w9_llc_classification ? ` — tax classification ${rec.w9_llc_classification}` : ''}`,
+        other: 'Other',
+      }[rec.w9_tax_classification] || rec.w9_tax_classification);
+      L('Line 4 Exempt payee code', rec.w9_exempt_payee_code);
+      L('Line 4 FATCA exemption code', rec.w9_fatca_code);
+      L('Part I Taxpayer identification number',
+        rec.w9_tin_type === 'ein'
+          ? (r.has_ein ? `EIN ••-•••${rec.ein_last4}` : 'EIN not collected')
+          : (r.has_ssn ? `SSN •••-••-${rec.ssn_last4}` : 'SSN not collected'));
+      L('Subject to backup withholding', rec.w9_backup_withholding ? 'Yes — item 2 of the certification struck out' : 'No');
+      L('Part II Signature of U.S. person', sig(r.w9_signature));
+      if (r.w9_signature) doc.fontSize(8).fillColor('#555').text(r.w9_signature.attestation || W9_ATTESTATION).fillColor('#000').fontSize(10);
+      doc.moveDown(0.5).fontSize(8).fillColor('#555')
+        .text('No Form I-9 is held for this person. 8 CFR 274a.1(f) excludes an independent contractor from the definition of employee, so the I-9 does not apply.')
+        .fillColor('#000').fontSize(10);
+      H('Attached files');
+      if (!r.files.length) doc.text('None.');
+      for (const f of r.files) L({ id_document: 'ID document', voided_check: 'Voided check', other: 'Other' }[f.kind] || f.kind, `${f.filename} · ${f.uploaded_by} · ${f.uploaded_at}`);
+      if (r.missing.length) { H('Still missing'); for (const m of r.missing) doc.text(`• ${m.label}`); }
+      doc.moveDown(1).fontSize(8).fillColor('#555').text('Signatures were captured electronically in ReadyDoc: the signer typed their legal name under the form\'s own certification, and the time, network address and device were recorded. Full taxpayer and account numbers are held encrypted and are not printed.');
+      doc.end();
+      return;
+    }
+
     H('Form W-4 (Employee\'s Withholding Certificate)');
     L('Step 1(c) Filing status', { single: 'Single or Married filing separately', married_jointly: 'Married filing jointly or Qualifying surviving spouse', head_of_household: 'Head of household' }[rec.w4_filing_status] || rec.w4_filing_status);
     L('Step 2 Multiple jobs or spouse works', rec.w4_multiple_jobs ? 'Yes (box checked)' : 'No');
@@ -628,7 +752,11 @@ const portalShape = (db, rec) => {
   // it. `readyDocOrigin()`, never `appBaseUrl()`: the launcher host answers a
   // page request with the workspace picker, and a PWA installs only from the
   // origin that serves its manifest.
-  return { ...s, app_url: readyDocOrigin(), attestations: { w4: W4_ATTESTATION, i9_s1: I9_S1_ATTESTATION } };
+  // The W-9's own statement, with item 2 already struck if this person is
+  // subject to backup withholding — the page shows what they will actually be
+  // signing, not the generic four-item version.
+  return { ...s, app_url: readyDocOrigin(),
+    attestations: { w4: W4_ATTESTATION, i9_s1: I9_S1_ATTESTATION, w9: w9Attestation(!!rec.w9_backup_withholding) } };
 };
 const linkGone = (res) => res.status(404).json({ error: 'This link is no longer valid. Ask the office for a new one.' });
 
@@ -654,7 +782,7 @@ portalRouter.put('/:token', (req, res) => {
   if (out.error) return res.status(400).json({ error: out.error });
   // Signing rides on the same save so the wizard's "sign and continue" is one
   // request; it is checked against the record AFTER the fields landed.
-  for (const which of ['w4', 'i9']) {
+  for (const which of ['w4', 'i9', 'w9']) {
     if (!b[`${which}_sign`]) continue;
     const fresh = db.prepare('SELECT * FROM onboarding_records WHERE id = ?').get(rec.id);
     const s = signForm(db, fresh, which, b, req);

@@ -82,6 +82,8 @@ const en = {
   'deposit.voidedHintReq': 'Your bank details are not typed in here. The office sets up your direct deposit from the check: write VOID across a blank check and photograph the front.',
 
   formsEnglish: 'The next two steps are the federal W-4 and I-9. They stay in English because those are the exact words you are signing — a translation would not be the form. Ask the office if anything on them is unclear; they will go through it with you.',
+  formsEnglishW9: 'The next step is the federal Form W-9. It stays in English because those are the exact words you are signing — a translation would not be the form. Ask the office if anything on it is unclear; they will go through it with you.',
+  'welcome.contractor': 'You are being set up as a 1099 contractor, so you will complete a Form W-9 rather than a W-4, and there is no I-9.',
 
   'photos.remove': 'Remove',
   'photos.take': 'Take a photo',
@@ -164,6 +166,8 @@ const es = {
   'deposit.voidedHintReq': 'Aquí no se escriben los datos de tu banco. La oficina arma tu depósito directo con el cheque: escribe VOID sobre un cheque en blanco y toma la foto del frente.',
 
   formsEnglish: 'Los siguientes dos pasos son las formas federales W-4 e I-9. Van en inglés porque ésas son exactamente las palabras que estás firmando — una traducción ya no sería la forma. Si algo no te queda claro, pregunta en la oficina y lo revisan contigo.',
+  formsEnglishW9: 'El siguiente paso es la forma federal W-9. Va en inglés porque ésas son exactamente las palabras que estás firmando — una traducción ya no sería la forma. Si algo no te queda claro, pregunta en la oficina y lo revisan contigo.',
+  'welcome.contractor': 'Te estamos dando de alta como contratista 1099, así que vas a llenar una forma W-9 en lugar de la W-4, y no hay I-9.',
 
   'photos.remove': 'Quitar',
   'photos.take': 'Tomar foto',
