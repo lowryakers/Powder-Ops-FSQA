@@ -246,6 +246,16 @@ invalid_request, error extracting values from session.</pre></div>
 
       <div class="expect"><span class="k no">If ADP says<br>RUN is not<br>supported</span><div>Then API Central is Workforce Now only and the plan changes: the route back is registering ReadyDoc as an <b>ADP Marketplace</b> app, which is a partner registration with a review that takes weeks. Confirm it with ADP before starting, because it is a much longer road and avoiding it is the reason API Central was worth trying first. Send me what they say and I will rewrite Parts B to D around it.</div></div>
 
+      <div class="dont"><b>Read this before you ring them — three things in ADP's own guide point at Workforce Now, not RUN.</b> None of them is proof, because ADP tends to write its documentation against its largest product. Together they are enough that <i>"is this available for RUN at all"</i> should be your first question rather than <i>"please fix my login"</i>.
+        <ol>
+          <li>The <b>Create new project</b> dialog in their screenshots is subtitled <b>"for ADP Workforce Now®"</b>.</li>
+          <li>The guide's last chapter is <b>"How to set ADP Workforce Now® access permissions for API Central"</b>. There is no RUN equivalent chapter.</li>
+          <li>That chapter's screens are Workforce Now's practitioner security model — <i>Menus &amp; Features</i>, <i>Sensitive Personal Information</i>, <i>View Site As User</i>. RUN does not have that model.</li>
+        </ol>
+        Add your own sign-in being refused as an administrator and the likeliest reading is that API Central is not provisioned for RUN accounts. <b>I could be wrong and ADP is the only one who can say.</b></div>
+
+      <p class="why"><b>One thing worth trying while you wait on hold, because it is a different test rather than another go.</b> Open <b>Safari</b> — not Chrome — and sign in at <span class="mono">api-central.adp.com</span>. If Chrome carries an extension or a work profile policy that is interfering, Safari will get in and the problem was never ADP. If Safari fails the same way, that is one more thing you have ruled out and can tell them.</p>
+
       <p class="why"><b>Why it opens on Members.</b> That page is how you let someone else help — Marnee, or me if you ever want it. It has three roles: <b>Project user</b> (can create projects and see credentials), <b>Certificate user</b> (can request and track certificates), <b>Member user</b> (can only see who has access). An internal member has to already be a registered user on your ADP account. You need none of this to finish the runbook yourself; ignore the page and go to Projects.</p>
     </div>
   </div>

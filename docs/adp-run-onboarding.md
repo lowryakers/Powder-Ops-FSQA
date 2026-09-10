@@ -48,9 +48,19 @@ first: *is API Central available for a RUN Powered by ADP account at all, or is
 it Workforce Now only*, and *if so, is it enabled for this account with the
 administrator as a member*.
 
-ADP's own guide gives grounds for the doubt: its Chapter 5 is "How to set
-**Workforce Now** access permissions for API Central", and there is no RUN
-equivalent chapter. **If ADP answers that RUN is not supported, the route back
+**Three things in ADP's own guide point at Workforce Now rather than RUN**, and
+after a clean administrator sign-in was still refused on 10 September they are
+the leading explanation. None is proof — ADP writes documentation against its
+largest product — but together they are enough that *"is this available for RUN
+at all"* is the first question to ask, not *"please fix my login"*:
+
+- the **Create new project** dialog in their screenshots is subtitled
+  *"for ADP Workforce Now®"*;
+- the guide's last chapter is *"How to set ADP Workforce Now® access
+  permissions for API Central"*, with no RUN equivalent;
+- that chapter's screens are Workforce Now's practitioner security model
+  (Menus & Features, Sensitive Personal Information, View Site As User), which
+  RUN does not have. **If ADP answers that RUN is not supported, the route back
 is the ADP Marketplace partner registration** — weeks of review — which is
 what this doc described before 10 September and what API Central was worth
 trying in order to avoid. Do not start that until ADP has said so plainly.
