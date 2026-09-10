@@ -32,6 +32,24 @@ function canAccess(db, channelId, userId) {
   return !!db.prepare('SELECT 1 FROM chat_channel_members WHERE channel_id = ? AND user_id = ?').get(channelId, userId);
 }
 
+// Drop the live sockets an account holds. The handshake is the only moment a
+// socket's session is checked, so without this a revoked account kept
+// receiving chat events for as long as the tab stayed open. Called from
+// `revokeSessions`; `keepToken` spares the session doing the revoking (a
+// password change from one's own phone).
+export function disconnectUser(userId, { keepToken = null } = {}) {
+  if (!io) return 0;
+  let n = 0;
+  for (const socket of io.sockets.sockets.values()) {
+    if (socket.data?.user?.id !== userId) continue;
+    if (keepToken && socket.data?.token === keepToken) continue;
+    socket.emit('session:revoked');
+    socket.disconnect(true);
+    n++;
+  }
+  return n;
+}
+
 export function initRealtime(httpServer) {
   io = new Server(httpServer, {
     path: '/socket.io',
@@ -45,6 +63,7 @@ export function initRealtime(httpServer) {
     const user = userForToken(token);
     if (!user) return next(new Error('unauthorized'));
     socket.data.user = user;
+    socket.data.token = token;
     next();
   });
 

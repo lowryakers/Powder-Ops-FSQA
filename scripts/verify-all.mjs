@@ -39,6 +39,7 @@ const RUNS = [
   ['verify-spec-gate.mjs', 4985, {}, false],
   ['verify-equipment-qual.mjs', 4986, {}, true],
   ['verify-pay-roster.mjs', 4987, { ONBOARDING_ENC_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' }, false],
+  ['verify-session-revoke.mjs', 4989, {}, false],
   ['verify-shipping.mjs', 4969, {}, true],
   ['verify-warehouse-ui.mjs', 4970, {}, true],
   // With the key, so the encrypted path is the one exercised in the full run.

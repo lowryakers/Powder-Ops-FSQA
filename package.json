@@ -57,6 +57,7 @@
     "verify:onboarding": "node scripts/verify-onboarding.mjs",
     "verify:onboardingui": "node scripts/verify-onboarding-ui.mjs",
     "verify:payroster": "node scripts/verify-pay-roster.mjs",
+    "verify:sessions": "node scripts/verify-session-revoke.mjs",
     "verify:sanareas": "node scripts/verify-sanitation-areas.mjs",
     "verify:storage": "node scripts/verify-supplier-storage.mjs",
     "verify:atp": "node scripts/verify-atp-task-door.mjs",

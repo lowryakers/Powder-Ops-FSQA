@@ -41,7 +41,10 @@ export async function pushToUser(userId, payload) {
   if (!pushEnabled()) return;
   ensureConfigured();
   const db = getDb();
-  const subs = db.prepare('SELECT * FROM chat_push_subscriptions WHERE user_id = ?').all(userId);
+  // A deactivated account gets nothing — its subscriptions are deleted on the
+  // way out, and this is the backstop for a row that predates that rule.
+  const subs = db.prepare(`SELECT s.* FROM chat_push_subscriptions s JOIN users u ON u.id = s.user_id
+    WHERE s.user_id = ? AND u.is_active = 1`).all(userId);
   const body = JSON.stringify(payload);
   await Promise.all(subs.map(async (s) => {
     try {

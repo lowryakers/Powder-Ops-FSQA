@@ -135,10 +135,17 @@ router.get('/', (req, res) => {
 
 // Mark any earlier completions of the same course by the same person superseded,
 // so the matrix reflects the most recent completion per person+course.
-function supersedeOlder(db, employeeName, courseId, keepId) {
+//
+// MATCHED ON THE ACCOUNT WHERE THERE IS ONE, the name otherwise. Name-only
+// matching left a renamed person with two "current" completions — the record
+// filed under the old spelling was never superseded — which is the same split
+// the time-adjustment and pay-roster keys had.
+function supersedeOlder(db, employeeName, courseId, keepId, employeeUserId = null) {
   if (!courseId) return;
   db.prepare(`UPDATE training_records SET superseded = 1
-    WHERE id != ? AND course_id = ? AND LOWER(employee_name) = LOWER(?)`).run(keepId, courseId, employeeName);
+    WHERE id != ? AND course_id = ?
+      AND (LOWER(employee_name) = LOWER(?) OR (? IS NOT NULL AND employee_user_id = ?))`)
+    .run(keepId, courseId, employeeName, employeeUserId, employeeUserId);
 }
 
 // The revision of a course's linked document that current training must reflect.
@@ -167,7 +174,7 @@ function insertCompletion(db, body) {
     body.status || (completion ? 'completed' : 'scheduled'),
     body.passed === undefined ? null : (body.passed ? 1 : 0), body.score ?? null, next_due,
     body.certificate_url || null, body.document_url || null, body.gdrive_url || null, body.test_attempt_id || null, body.notes || null, sopRevision);
-  if (body.status === 'completed' || completion) supersedeOlder(db, body.employee_name, body.course_id, id);
+  if (body.status === 'completed' || completion) supersedeOlder(db, body.employee_name, body.course_id, id, body.employee_user_id || null);
   return db.prepare('SELECT * FROM training_records WHERE id = ?').get(id);
 }
 
@@ -348,7 +355,7 @@ router.put('/:id', (req, res) => {
     b.passed !== undefined ? (b.passed ? 1 : 0) : existing.passed, b.score ?? existing.score, next_due,
     b.certificate_url ?? existing.certificate_url, b.document_url ?? existing.document_url,
     b.gdrive_url ?? existing.gdrive_url, b.notes ?? existing.notes, req.params.id);
-  if ((b.status || existing.status) === 'completed') supersedeOlder(db, b.employee_name || existing.employee_name, course_id, req.params.id);
+  if ((b.status || existing.status) === 'completed') supersedeOlder(db, b.employee_name || existing.employee_name, course_id, req.params.id, b.employee_user_id ?? existing.employee_user_id ?? null);
   logAudit(req.user, 'training_updated', 'training', req.params.id, { employee_name: b.employee_name || existing.employee_name }, null, null, b.employee_name || existing.employee_name);
   res.json(db.prepare('SELECT * FROM training_records WHERE id = ?').get(req.params.id));
 });

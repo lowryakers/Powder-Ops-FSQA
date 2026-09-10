@@ -23,7 +23,7 @@ import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import { requireRole } from '../middleware/auth.js';
 import { uniqueUsername } from '../usernames.js';
-import { issueSession } from './sessions.js';
+import { issueSession, revokeSessions } from './sessions.js';
 import { botDm, postMessageAs } from './comms.js';
 import { pushToUser } from '../push.js';
 import { readyDocOrigin } from '../links.js';
@@ -112,7 +112,12 @@ function auditorAccountFor(db, visitorName, actor) {
     "SELECT * FROM users WHERE role = 'auditor' AND LOWER(name) = LOWER(?) LIMIT 1").get(name);
   if (existing) {
     if (!existing.is_active) {
+      // Reactivating for a new pass must not resurrect what the old one left:
+      // any session row that survived deactivation would come back live.
+      revokeSessions(db, existing.id, { devices: true });
       db.prepare("UPDATE users SET is_active = 1, updated_at = datetime('now') WHERE id = ?").run(existing.id);
+      logAudit(actor, 'update', 'user', existing.id,
+        { reactivated: true, reason: 'auditor_pass', note: 'Auditor account reactivated for a new pass.' }, null, null, existing.name);
     }
     return existing;
   }
@@ -212,9 +217,15 @@ router.delete('/:id', (req, res) => {
   if (row.revoked_at) return res.status(400).json({ error: 'That pass is already revoked.' });
   db.prepare("UPDATE auditor_passes SET revoked_at = datetime('now'), revoked_by = ? WHERE id = ?")
     .run(req.user?.name || 'system', req.params.id);
+  // Revoking must reach the session the pass already opened. `resolvePass`
+  // only runs on redeem, so before this a revoked pass changed nothing for a
+  // visitor who was already signed in — the button did nothing at all. The
+  // account signs in by pass and nothing else, so every session it holds is
+  // this pass's or an older, also-dead one.
+  const signedOut = revokeSessions(db, row.user_id, { devices: true });
   logAudit(req.user, 'revoke', 'auditor_pass', row.id,
-    { visitor_name: row.visitor_name, used: row.use_count }, null, null, row.visitor_name);
-  res.json({ ok: true });
+    { visitor_name: row.visitor_name, used: row.use_count, sessions_signed_out: signedOut }, null, null, row.visitor_name);
+  res.json({ ok: true, sessions_signed_out: signedOut });
 });
 
 // --- Redeem (public) ---------------------------------------------------------
@@ -242,7 +253,9 @@ publicRouter.post('/redeem', (req, res) => {
   // An auditor account never carries a password expiry — it has no password to
   // expire, and PasswordExpiredGate would strand the visitor on a change-your-
   // password screen they can do nothing with.
-  res.json(issueSession(db, { ...user, password_changed_at: null }, res));
+  // The session ends when the pass does. A one-day pass used to mint the
+  // ordinary thirty-day session, which made the days on the pass decorative.
+  res.json(issueSession(db, { ...user, password_changed_at: null }, res, { notAfter: pass.expires_at }));
 });
 
 // Whether a pass is good, without spending it — so the binder can say "this

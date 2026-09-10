@@ -95,7 +95,12 @@ router.get('/', (req, res) => {
   if (!canSettle(req.user)) {
     sql += ' AND (user_id = ? OR person = ?)';
     params.push(req.user?.id || '', req.user?.name || '');
-  } else if (q.person) { sql += ' AND person = ?'; params.push(q.person); }
+  } else if (q.person) {
+    // The picker offers CURRENT names; a claim filed before a rename still
+    // carries the old one, so match the account behind the name as well.
+    sql += ' AND (person = ? OR user_id IN (SELECT id FROM users WHERE name = ?))';
+    params.push(q.person, q.person);
+  }
 
   if (q.status && q.status !== 'all') { sql += ' AND status = ?'; params.push(q.status); }
   if (isoDay(q.from)) { sql += ' AND spent_on >= ?'; params.push(isoDay(q.from)); }
@@ -136,8 +141,11 @@ router.get('/', (req, res) => {
     categories: CATEGORIES,
     // Only the office can see the roster filter; for everyone else there is
     // nothing to filter by.
+    // One entry per PERSON, under their current name — `DISTINCT person`
+    // listed anyone renamed in Settings twice, with money filed against both.
     people: canSettle(req.user)
-      ? db.prepare('SELECT DISTINCT person FROM reimbursements ORDER BY person').all().map(r => r.person)
+      ? [...new Set(db.prepare(`SELECT DISTINCT COALESCE(u.name, r.person) AS person
+            FROM reimbursements r LEFT JOIN users u ON u.id = r.user_id ORDER BY 1`).all().map(r => r.person))]
       : [],
     storage_enabled: storageEnabled(),
   });

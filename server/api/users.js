@@ -4,7 +4,7 @@ import { getDb, logAudit, newSetupCode } from '../db.js';
 import crypto from 'crypto';
 import { requireRole, clearFileCookie } from '../middleware/auth.js';
 import { passwordDaysLeft, passwordExpired } from '../password-policy.js';
-import { issueSession } from './sessions.js';
+import { issueSession, revokeSessions } from './sessions.js';
 import { ALL_MODULE_IDS } from '../module-access.js';
 import { uniqueUsername, validateUsername, deriveUsername } from '../usernames.js';
 import { smsEnabled, sendOptIn } from '../sms.js';
@@ -120,8 +120,13 @@ router.post('/me/password', (req, res) => {
   if (!me?.password_hash) return res.status(400).json({ error: 'No password set yet. Sign out and set one from the login screen.' });
   if (!verifyPassword(String(current_password || ''), me.password_hash)) return res.status(401).json({ error: 'Your current password is incorrect.' });
   db.prepare("UPDATE users SET password_hash = ?, password_changed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(hashPassword(new_password), req.user.id);
-  logAudit(req.user, 'password_change', 'user', req.user.id, { self: true }, null, null, req.user.name);
-  res.json({ ok: true });
+  // Every OTHER device is signed out. Somebody changes a password because they
+  // think it is known; a change that leaves the old sessions working has not
+  // closed anything. The session doing the changing stays — signing the person
+  // out of the screen they just used would read as the change having failed.
+  const others = revokeSessions(db, req.user.id, { keepToken: req.headers.authorization?.replace('Bearer ', '') || null });
+  logAudit(req.user, 'password_change', 'user', req.user.id, { self: true, other_sessions_signed_out: others }, null, null, req.user.name);
+  res.json({ ok: true, other_sessions_signed_out: others });
 });
 
 router.post('/logout', (req, res) => {
@@ -386,6 +391,12 @@ router.put('/:id', requireRole('admin'), async (req, res) => {
   const changes = {};
   if (updated.role !== existing.role) changes.role = { from: existing.role, to: updated.role };
   if (updated.is_active !== existing.is_active) changes.is_active = { from: existing.is_active, to: updated.is_active };
+  // Deactivating leaves no live session behind. The middleware already refuses
+  // the token, but the ROWS survived — and came back to life the day the
+  // account was reactivated, with every phone it had ever been signed in on.
+  if (existing.is_active && !updated.is_active) {
+    changes.sessions_revoked = revokeSessions(db, updated.id, { devices: true });
+  }
   if (updated.username !== existing.username) changes.username = { from: existing.username, to: updated.username };
   const permsChanged = (existing.module_access || null) !== (updated.module_access || null);
   if (permsChanged) changes.module_access = { changed: true };

@@ -41,6 +41,7 @@ import { adpEnabled, adpConnected, submitApplicantOnboard, fetchOnboardMeta, mis
 import { storageEnabled, putObject, presignGet, deleteObject } from '../storage.js';
 import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
+import { revokeSessions } from './sessions.js';
 
 export const router = Router();
 export const portalRouter = Router();
@@ -683,7 +684,7 @@ router.post('/:id/end-access', (req, res) => {
       // Every live session goes with it, or somebody keeps working on a phone
       // that was already signed in — deactivating an account that stays usable
       // until its token expires is not ending access, it is scheduling it.
-      try { db.prepare('DELETE FROM sessions WHERE user_id = ?').run(u.id); } catch { /* no sessions table yet */ }
+      revokeSessions(db, u.id, { devices: true });
       logAudit(req.user, 'update', 'user', u.id, { deactivated: true, reason, from_onboarding: rec.id }, u, null, u.name);
       out.account = true;
     }
