@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { getDb } from '../db.js';
 import { requireRole } from '../middleware/auth.js';
 import {
-  GROUP_LABELS, MEASURES, dateOnly, drill, isoWeekStart, predicates, rollup,
+  GROUP_LABELS, MEASURES, dateOnly, drill, isoWeekStart, personOf, predicates, rollup,
 } from '../activity-metrics.js';
 
 const router = Router();
@@ -60,13 +60,21 @@ router.get('/summary', requireRole('admin'), (req, res) => {
 
   // By person: attribute completed work to completed_by, and outstanding/overdue
   // work to assigned_to. A person appears if they touched either side.
+  // Keyed on the ACCOUNT (personOf), shown under its CURRENT name — the
+  // stored name is what the row was filed under and may be a spelling
+  // Settings has since corrected.
   const people = {};
   for (const r of rows) {
-    const who = r.completed_by || r.assigned_to;
-    if (who) (people[who] ||= []).push(r);
+    const who = personOf(r);
+    if (who.key) (people[who.key] ||= { key: who.key, id: who.id, name: who.name, list: [] }).list.push(r);
   }
-  const by_person = Object.entries(people)
-    .map(([name, list]) => ({ name, ...roll(list) }))
+  const current = new Map();
+  const ids = Object.values(people).map(p => p.id).filter(Boolean);
+  if (ids.length) {
+    for (const u of db.prepare(`SELECT id, name FROM users WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids)) current.set(u.id, u.name);
+  }
+  const by_person = Object.values(people)
+    .map(({ key, id, name, list }) => ({ key, name: (id && current.get(id)) || name, ...roll(list) }))
     .filter((p) => p.completed > 0 || p.overdue > 0)
     .sort((a, b) => b.completed - a.completed);
 

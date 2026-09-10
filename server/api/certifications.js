@@ -7,6 +7,7 @@ import { getDb, logAudit } from '../db.js';
 import { storageEnabled, putObject, presignGet, deleteObject } from '../storage.js';
 import { extractInvoiceText } from '../invoice-text.js';
 import { CERT_ASSETS_DIR } from '../cert-seed.js';
+import { withCurrentNames } from '../person-links.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024, files: 1 } });
@@ -19,7 +20,7 @@ const STATUS_DAYS = 90; // "expiring soon" window
 // extracted_text is SEARCHED, NEVER SHIPPED — it's the inside of the PDF, and
 // the client only ever needs to know a search hit there (snippet) or that the
 // row is text-searchable at all.
-const PUBLIC_COLS = `id, person_name, cert_type, issuer, cert_number, issued_date, expiry_date,
+const PUBLIC_COLS = `id, person_name, user_id, cert_type, issuer, cert_number, issued_date, expiry_date,
   notes, filename, storage_key, content_type, asset_file, created_by, created_at, updated_at`;
 
 function withStatus(row) {
@@ -46,9 +47,10 @@ router.get('/', (req, res) => {
   if (q && String(q).trim()) {
     const like = `%${q}%`;
     rows = db.prepare(`SELECT ${PUBLIC_COLS}, extracted_text FROM certifications
-      WHERE person_name LIKE ? OR cert_type LIKE ? OR issuer LIKE ? OR cert_number LIKE ?
+      WHERE person_name LIKE ? OR user_id IN (SELECT id FROM users WHERE name LIKE ?)
+         OR cert_type LIKE ? OR issuer LIKE ? OR cert_number LIKE ?
          OR notes LIKE ? OR filename LIKE ? OR extracted_text LIKE ?
-      ORDER BY person_name, expiry_date`).all(like, like, like, like, like, like, like)
+      ORDER BY person_name, expiry_date`).all(like, like, like, like, like, like, like, like)
       .map(r => {
         const { extracted_text, ...rest } = r;
         const inMeta = [r.person_name, r.cert_type, r.issuer, r.cert_number, r.notes, r.filename]
@@ -61,6 +63,12 @@ router.get('/', (req, res) => {
   } else {
     rows = db.prepare(`SELECT ${PUBLIC_COLS} FROM certifications ORDER BY person_name, expiry_date`).all().map(withStatus);
   }
+  // Shown under the account's CURRENT name (the stored one travels as
+  // person_name_renamed_from), and sorted AFTER that — sorting in SQL on the
+  // stored name would put one person's certificates in two places.
+  rows = withCurrentNames(db, rows, { idCol: 'user_id', nameCol: 'person_name' });
+  const coll = new Intl.Collator(undefined, { sensitivity: 'base' });
+  rows.sort((a, b) => coll.compare(a.person_name, b.person_name) || String(a.expiry_date || '').localeCompare(String(b.expiry_date || '')));
   res.json({ certifications: rows, storage: storageEnabled(), q });
 });
 

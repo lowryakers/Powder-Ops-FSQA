@@ -1,3 +1,4 @@
+import { personRef } from './person-links.js';
 /**
  * What Team Activity counts, defined once.
  *
@@ -116,6 +117,21 @@ export const MEASURES = {
   },
 };
 
+/**
+ * Who a row is attributed to: completed work belongs to whoever completed it,
+ * outstanding work to whoever it is assigned to. KEYED ON THE ACCOUNT where
+ * the row carries one (`completed_by_id` / `assigned_to_id`, resolved by the
+ * person-links triggers) and on the name only for rows that predate the id —
+ * keying on the name split a renamed operator into two people, one of them a
+ * phantom with half the stats. Both the by-person table and the drill-down
+ * behind it call this; a second copy is a list that disagrees with the number.
+ */
+export function personOf(r) {
+  if (r.completed_by) return { key: personRef(r.completed_by_id, r.completed_by), name: r.completed_by, id: r.completed_by_id || null };
+  if (r.assigned_to) return { key: personRef(r.assigned_to_id, r.assigned_to), name: r.assigned_to, id: r.assigned_to_id || null };
+  return { key: null, name: null, id: null };
+}
+
 /** Rows behind one measure, for one optional department and/or person. */
 export function drill(rows, { metric, department, person, today }) {
   const measure = MEASURES[metric];
@@ -126,7 +142,7 @@ export function drill(rows, { metric, department, person, today }) {
     if (department && (r.task_group || 'warehouse') !== department) return false;
     // Same attribution the by-person rollup uses: completed work belongs to
     // whoever completed it, outstanding work to whoever it is assigned to.
-    if (person && (r.completed_by || r.assigned_to) !== person) return false;
+    if (person && personOf(r).key !== person) return false;
     return test(r);
   });
 }

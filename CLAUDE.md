@@ -181,9 +181,16 @@ the handshake was the only moment a socket was ever checked. Self-service passwo
 token and signs out the rest. **Auditor-pass sessions are capped at the pass** (`issueSession(..., {notAfter})`);
 before this a 1-day pass minted a 30-day session and Revoke did nothing to a visitor already signed in.
 `pushToUser` joins `users.is_active = 1`. `verify:sessions` (21, in `verify:all`).
-**Still name-keyed and NOT fixed (needs a migration + backfill each):** `work_orders.assigned_to/completed_by`
-(no person id column at all — Team Activity, the Operator View filter and the `users.js` delete guard all split
-on rename), `certifications.person_name`, `first_aid_injuries.employee_name`, `production_entries.submitted_by`.
+**The four name-keyed tables now carry an account id (D-074, `server/person-links.js`):** `work_orders.assigned_to_id`
+/ `completed_by_id`, `certifications.user_id`, `first_aid_injuries.employee_user_id`, `production_entries.submitted_by_id`.
+**SQLite TRIGGERS resolve the id from the name** on insert and on a name change (unless the same statement set the
+id) — one place, no write path can forget it; a name two accounts share resolves to NULL, never a guess. One-time
+backfill guarded in `app_settings.person_ids_linked`. Reads are `personMatch()` (`id = ? OR name = ?`) and
+`withCurrentNames()` (current name, stored one as `<col>_renamed_from`); Team Activity keys on `personOf(r)` in
+`activity-metrics.js` and the client narrows on `row.key`. **INSTALL LAST IN `runMigrations`** — `work_orders` is
+DROP+RENAMEd further up to widen its CHECKs and a rebuilt table loses its triggers; installed earlier, the work-order
+triggers were silently gone while the other three tables' survived. Snapshot columns (`audit_log.actor`,
+`performed_by`, `verified_by`, signatures) deliberately do NOT follow renames. `verify:names` (29, in `verify:all`).
 
 ## Flavor approvals via SMS (Danny)
 `flavor_approval` QMS type + FlavorPanel ("Text for approval" row action) → magic link `/approve/<token>`

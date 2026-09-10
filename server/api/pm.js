@@ -20,6 +20,7 @@ import { recordGroupFor, recordAreaForTask } from '../qa-records.js';
 import { checkFormFor, attachCheckForms, fileCheckRecord, missingForCheck } from '../check-records.js';
 import { canonicalArea } from '../sanitation-areas.js';
 import { planStepSplit } from '../../shared/pm-step-split.js';
+import { personMatch, resolveUserId } from '../person-links.js';
 
 // The daily chemical dilution check is a TASK and a RECORD, and it files both.
 //
@@ -761,7 +762,12 @@ router.get('/work-orders', (req, res) => {
 
   if (status) { sql += ' AND wo.status = ?'; params.push(status); }
   if (equipment_id) { sql += ' AND wo.equipment_id = ?'; params.push(equipment_id); }
-  if (assigned_to) { sql += ' AND wo.assigned_to = ?'; params.push(assigned_to); }
+  if (assigned_to) {
+    // The filter arrives as a name; match the account behind it first, so a
+    // renamed person's earlier tasks (filed under the old spelling) still show.
+    const m = personMatch('wo.assigned_to_id', 'wo.assigned_to', { id: resolveUserId(db, assigned_to), name: assigned_to });
+    sql += ` AND ${m.sql}`; params.push(...m.params);
+  }
   if (from) { sql += ' AND wo.due_date >= ?'; params.push(from); }
   if (to) { sql += ' AND wo.due_date <= ?'; params.push(to); }
 
@@ -1849,7 +1855,10 @@ router.get('/operator-tasks', (req, res) => {
     WHERE wo.status IN ('open', 'in_progress', 'overdue', 'missed')`;
   const params = [];
 
-  if (assigned_to) { sql += ' AND wo.assigned_to = ?'; params.push(assigned_to); }
+  if (assigned_to) {
+    const m = personMatch('wo.assigned_to_id', 'wo.assigned_to', { id: resolveUserId(db, assigned_to), name: assigned_to });
+    sql += ` AND ${m.sql}`; params.push(...m.params);
+  }
   if (group) {
     // A TASK ASSIGNED TO YOU IS YOURS WHATEVER DEPARTMENT IT CAME FROM.
     //
@@ -1865,8 +1874,11 @@ router.get('/operator-tasks', (req, res) => {
     // tool, and mixing their own assignments into another team's list would
     // make the browse lie about that team.
     if (!canViewAll && req.user?.name) {
-      sql += ' AND (wo.task_group = ? OR wo.assigned_to = ?)';
-      params.push(group, req.user.name);
+      // Id-first: a renamed operator's own screen went quiet, because the
+      // tasks assigned under the old spelling no longer matched the new name.
+      const m = personMatch('wo.assigned_to_id', 'wo.assigned_to', req.user);
+      sql += ` AND (wo.task_group = ? OR ${m.sql})`;
+      params.push(group, ...m.params);
     } else {
       sql += ' AND wo.task_group = ?'; params.push(group);
     }

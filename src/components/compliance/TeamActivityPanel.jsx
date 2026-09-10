@@ -109,9 +109,11 @@ function StatTable({ title, rows, nameKey, nameLabel, scopeKey, onDrill }) {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {rows.map(r => {
-              // The scope this row narrows to: a department key, or a person's
-              // name — whichever table this is.
-              const scope = { [scopeKey]: scopeKey === 'department' ? r.key : r.name };
+              // The scope this row narrows to: the row's KEY either way — a
+              // department id, or the account behind a person (their name only
+              // for rows filed before the account was linked). Narrowing on the
+              // display name split a renamed person into two rows.
+              const scope = { [scopeKey]: r.key };
               const label = r[nameKey];
               const drill = (metric) => onDrill({ metric, scope, label });
               return (

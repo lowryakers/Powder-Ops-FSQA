@@ -2306,3 +2306,43 @@ after the upload has answered. The email door is a `source` value and nothing mo
 Verified: `check:apdrop` (20, pure), `verify:apdrop` (45, live), `verify:apdropui` (18, real browser at
 1280 and 360 — which is where the FileList-copied-too-late bug was caught: the picker looked like it worked
 and the form said nothing was attached).
+
+## D-074 · 2026-09-10 · the four name-keyed tables get an account id (closes D-072's open list)
+
+**Context.** D-072 named four tables that identified a person by the name string alone —
+`work_orders.assigned_to` / `completed_by`, `certifications.person_name`, `first_aid_injuries.employee_name`,
+`production_entries.submitted_by` — so a rename in Settings split their history: Team Activity grew a phantom
+colleague, the renamed operator's own screen stopped showing the tasks assigned under the old spelling, the
+delete guard under-counted to zero, a re-seed filed a second certificate, and QA's correction request never
+reached the renamed submitter.
+
+**Decision.** Each carries an id column beside the name (`server/person-links.js`). The name stays — it is the
+label and the historical record. Three mechanisms:
+
+1. **SQLite triggers resolve the id from the name** on every insert, and again when the name changes and the
+   caller did not set the id in the same statement. One place, so a write path added later cannot forget it (the
+   FTS sync triggers are the precedent). **A name two accounts share resolves to NULL** — nothing is guessed, and
+   the name still matches for that row.
+2. **A one-time backfill** for rows that predate the columns, guarded in `app_settings.person_ids_linked`, exact
+   case-insensitive and unambiguous only. It skips quietly while `app_settings` does not yet exist (fresh boot).
+3. **Reads go id-first, name-fallback** (`personMatch`: `id = ? OR name = ?` — the name clause is what keeps a
+   filter typed as the OLD name, a pre-column row and an ambiguous row all working), and **display the account's
+   current name** with the stored one as `<col>_renamed_from` (`withCurrentNames`). Team Activity keys people on
+   `personOf(r)` in `activity-metrics.js`, used by the table AND the drill-down, and the client narrows on the
+   row's `key`, never its display name.
+
+**The trap that cost a run:** `work_orders` is DROPPED and RENAMED further down `runMigrations` to widen its
+CHECK constraints, and a rebuilt table loses its triggers. Installed at the certifications CREATE, the
+work-order triggers were gone before the seeds wrote a row while the other three tables' triggers survived —
+which is exactly the kind of partial success that reads as "working". The install is the LAST statement of
+`runMigrations` now, and `verify:names` inserts through the API and asserts the id landed.
+
+**Deliberately not touched:** the snapshot columns — `audit_log.actor`, every `performed_by` / `verified_by`,
+signatures, LOTO. Those record who did a thing at the time and must not follow a rename; the verify asserts
+`audit_log` gained no such column.
+
+Verified: `verify:names` (29, live, in `verify:all`) — rename mid-test, then one Team Activity row under the
+new name whose drill-down reconciles, the Operator View still listing her old-name tasks, the Task Center
+filter finding them by either name, the delete guard still refusing, the certificate and the injury reading
+under the new name with `renamed_from`, search by the new name reaching old-name rows, and the QA-correction
+door opening for her and only her.

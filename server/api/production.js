@@ -756,7 +756,10 @@ export function signOffProductionEntry(db, id, { by, notes, actionRequired } = {
  * with no note is an errand, not an instruction.
  */
 export async function notifyQaAction(db, entry, flaggedBy, { reminder = false } = {}) {
-  const who = db.prepare('SELECT id, name FROM users WHERE name = ? AND is_active = 1').get(entry.submitted_by);
+  // The account behind the entry first; the name only for entries filed
+  // before the id was recorded — a renamed submitter must still be reached.
+  const who = (entry.submitted_by_id && db.prepare('SELECT id, name FROM users WHERE id = ? AND is_active = 1').get(entry.submitted_by_id))
+    || db.prepare('SELECT id, name FROM users WHERE name = ? AND is_active = 1').get(entry.submitted_by);
   if (!who) return false;
   const { bot, dm } = botDm(db, who.id);
   const what = [entry.date, entry.team, entry.mo_number && `MO ${entry.mo_number}`]
@@ -820,16 +823,20 @@ router.put('/entries/:id/qa-signoff', (req, res) => {
 // GET /entries/qa-actions — entries QA has asked the caller to correct.
 // Drives the banner on the Production Log so a flagged note doesn't depend on
 // the supervisor happening to scroll past their own entry.
+// Whose entry is it: the linked account when the row carries one, the name as
+// filed otherwise. Comparing the name alone stopped a renamed supervisor from
+// seeing QA's correction requests on their own entries.
+const isSubmitter = (row, user) => !!user && (row.submitted_by_id ? row.submitted_by_id === user.id : row.submitted_by === user.name);
+
 router.get('/entries/qa-actions', (req, res) => {
   const db = getDb();
-  const me = req.user?.name || '';
   const all = req.user?.role === 'admin' || hasExplicitEdit(req.user, 'production-log');
   const rows = db.prepare(`
     SELECT * FROM production_entries
     WHERE qa_action_required = 1 AND qa_action_resolved_at IS NULL
     ORDER BY date DESC, qa_signoff_at DESC
   `).all();
-  res.json(rows.filter(r => all || r.submitted_by === me).map(computeMetrics));
+  res.json(rows.filter(r => all || isSubmitter(r, req.user)).map(computeMetrics));
 });
 
 // POST /entries/import — bulk import from CSV data (rewrites the log → same
@@ -913,7 +920,7 @@ router.put('/entries/:id', (req, res) => {
   // narrower than a standing edit grant: asking one supervisor to fix one
   // report shouldn't open the whole log to them.
   const invited = !!existing.qa_action_required && !existing.qa_action_resolved_at
-    && existing.submitted_by === req.user?.name;
+    && isSubmitter(existing, req.user);
   if (!canEditLog(req.user) && !invited) {
     return res.status(403).json({ error: 'Editing log entries requires an explicit Production Log edit grant (Settings) or admin.' });
   }

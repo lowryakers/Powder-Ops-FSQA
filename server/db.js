@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { installPersonLinks } from './person-links.js';
 import { personKey } from './person-key.js';
 import { tagQaInspectionRecords } from './qa-records.js';
 import path from 'path';
@@ -2655,6 +2656,7 @@ function runMigrations() {
     );
     CREATE INDEX IF NOT EXISTS idx_certifications_person ON certifications(person_name);
   `);
+
   // Search covers what's INSIDE the certificate, not just its metadata:
   // extracted_text is populated on upload (and by the seed) and is searched,
   // never shipped to the client. asset_file names a bundled PDF under
@@ -5574,6 +5576,13 @@ function runMigrations() {
   migrateEquipmentNotes();
   cleanEquipmentNames();
   archivePreSystemBacklog();
+  // The person-id columns beside the name columns, their resolving triggers
+  // and the one-time backfill. LAST, deliberately: work_orders is rebuilt
+  // (DROP + RENAME) further up this function to widen its CHECK constraints,
+  // and a rebuilt table loses its triggers — installed at the certifications
+  // CREATE they were gone by the time the seeds wrote a row.
+  try { installPersonLinks(db, { addColumnIfMissing }); }
+  catch (e) { console.warn('[migrate] person links unavailable:', e.message); }
 }
 
 // Fill actor_id/role/department on historical audit rows by matching the stored

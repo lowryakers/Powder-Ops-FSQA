@@ -25,6 +25,7 @@ import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { randomUUID as uuid } from 'crypto';
+import { resolveUserId } from './person-links.js';
 
 export const CERT_ASSETS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'assets', 'certifications');
 
@@ -86,8 +87,11 @@ const WAVES = [
 
 export function seedCertifications(db) {
   try {
+    // By name OR by the account the name resolves to — a re-seed after a
+    // rename in Settings used to insert the certificate a second time.
     const exists = db.prepare(
-      'SELECT 1 FROM certifications WHERE LOWER(person_name) = LOWER(?) AND LOWER(cert_type) = LOWER(?)');
+      `SELECT 1 FROM certifications WHERE (LOWER(person_name) = LOWER(?) OR (? IS NOT NULL AND user_id = ?))
+         AND LOWER(cert_type) = LOWER(?)`);
     const ins = db.prepare(`INSERT INTO certifications
       (id, person_name, cert_type, issuer, cert_number, issued_date, expiry_date, notes,
        filename, asset_file, content_type, extracted_text, created_by)
@@ -96,7 +100,8 @@ export function seedCertifications(db) {
     for (const wave of WAVES) {
       if (db.prepare('SELECT value FROM app_settings WHERE key = ?').get(wave.flag)) continue;
       for (const c of wave.certs) {
-        if (exists.get(c.person, c.cert_type)) continue;
+        const uid = resolveUserId(db, c.person);
+        if (exists.get(c.person, uid, uid, c.cert_type)) continue;
         const pdf = `${c.file}.pdf`;
         if (!existsSync(join(CERT_ASSETS_DIR, pdf))) continue; // asset missing — don't file a row with no evidence
         let text = '';

@@ -61,6 +61,7 @@
     "verify:sessions": "node scripts/verify-session-revoke.mjs",
     "verify:apdrop": "node scripts/verify-ap-drop.mjs",
     "verify:apdropui": "node scripts/verify-ap-drop-ui.mjs",
+    "verify:names": "node scripts/verify-name-keys.mjs",
     "verify:sanareas": "node scripts/verify-sanitation-areas.mjs",
     "verify:storage": "node scripts/verify-supplier-storage.mjs",
     "verify:atp": "node scripts/verify-atp-task-door.mjs",

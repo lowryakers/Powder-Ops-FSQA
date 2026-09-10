@@ -12,6 +12,7 @@ import { Router } from 'express';
 import { randomUUID as uuid } from 'crypto';
 import { getDb, logAudit } from '../db.js';
 import { parseJson } from '../custom-fields.js';
+import { withCurrentNames } from '../person-links.js';
 import {
   SAFETY_FORMS, EVAC_REVISION, EVAC_WORK_AREAS, EVAC_REASONS, FIRST_AID_REVISION,
 } from '../safety-forms.js';
@@ -143,13 +144,15 @@ router.get('/first-aid', (req, res) => {
   let sql = 'SELECT * FROM first_aid_injuries WHERE 1=1';
   const params = [];
   if (q && String(q).trim()) {
-    sql += ' AND (employee_name LIKE ? OR injury_description LIKE ? OR explanation LIKE ?)';
+    sql += ' AND (employee_name LIKE ? OR employee_user_id IN (SELECT id FROM users WHERE name LIKE ?) OR injury_description LIKE ? OR explanation LIKE ?)';
     const like = `%${q}%`;
-    params.push(like, like, like);
+    params.push(like, like, like, like);
   }
   sql += ' ORDER BY injury_date DESC, created_at DESC LIMIT ?';
   params.push(limit);
-  res.json(db.prepare(sql).all(...params));
+  // The account's current name where one is linked; what was filed travels as
+  // employee_name_renamed_from.
+  res.json(withCurrentNames(db, db.prepare(sql).all(...params), { idCol: 'employee_user_id', nameCol: 'employee_name' }));
 });
 
 router.post('/first-aid', (req, res) => {

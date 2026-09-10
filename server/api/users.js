@@ -612,7 +612,9 @@ router.delete('/:id', requireRole('admin'), (req, res) => {
   if (u.id === req.user.id) return res.status(400).json({ error: "You can't remove your own account." });
   let messages = 0, tasks = 0;
   try { messages = db.prepare('SELECT COUNT(*) c FROM chat_messages WHERE user_id = ?').get(u.id).c; } catch { /* table may be absent */ }
-  try { tasks = db.prepare('SELECT COUNT(*) c FROM work_orders WHERE completed_by = ? OR assigned_to = ?').get(u.name, u.name).c; } catch { /* absent */ }
+  // By account AND by name: after a rename the name count reads zero and a
+  // person with real history became permanently deletable.
+  try { tasks = db.prepare('SELECT COUNT(*) c FROM work_orders WHERE completed_by_id = ? OR assigned_to_id = ? OR completed_by = ? OR assigned_to = ?').get(u.id, u.id, u.name, u.name).c; } catch { /* absent */ }
   if (messages > 0 || tasks > 0) {
     return res.status(409).json({
       error: 'This person has activity history and can\'t be permanently removed. Deactivate them instead (keeps their history but blocks login), or merge them into another account.',
