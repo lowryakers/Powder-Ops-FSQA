@@ -27,6 +27,24 @@ outage.** 431 is "request header fields too large"; ADP's SSO cookies
 accumulate past the server's limit. A private window loads it; clearing
 adp.com site data fixes it permanently.
 
+**`Unknown Authentication Error` after signing in is an ENTITLEMENT problem,
+and it is the branch that decides this whole approach.** ADP resolved the
+identity and found no API Central access behind it. Rule out the mundane
+causes first — an employee self-service login rather than the RUN
+administrator, and a broken half-session left over from the 431 attempts — and
+if it persists, only ADP can grant it. The question to put to them is
+deliberately two-part, because the second answer is worthless without the
+first: *is API Central available for a RUN Powered by ADP account at all, or
+is it Workforce Now only*, and *if so, please enable it and add the
+administrator as a member*.
+
+ADP's own guide gives grounds for the doubt: its Chapter 5 is "How to set
+**Workforce Now** access permissions for API Central", and there is no RUN
+equivalent chapter. **If ADP answers that RUN is not supported, the route back
+is the ADP Marketplace partner registration** — weeks of review — which is
+what this doc described before 10 September and what API Central was worth
+trying in order to avoid. Do not start that until ADP has said so plainly.
+
 1. **Open `api-central.adp.com`** signed in as the RUN administrator. It lands
    on **Members** by default. Left-hand menu: Projects · Certificate ·
    Members · Integration Services.

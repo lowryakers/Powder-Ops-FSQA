@@ -220,7 +220,24 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
           <li>If you want it fixed in your normal window: Chrome → <b>Settings → Privacy and security → Third-party cookies → See all site data and permissions</b>, search <b>adp.com</b>, delete the adp.com entries, then sign in again.</li>
         </ol>
         You will have to sign in again afterwards — that is expected, nothing is lost.</div></div>
-      <div class="expect"><span class="k no">If it says<br>not available</span><div>If API Central tells you it is not enabled for this account, stop and send me the screenshot. That is the one answer that changes the plan.</div></div>
+      <div class="expect"><span class="k no">If you get<br>Unknown<br>Authentication<br>Error</span><div><b>This one is about the account, not the browser.</b> ADP recognised who you are and then could not find an API Central entitlement to let you in. Work down this list and stop at the first one that gets you in.
+        <ol>
+          <li><b>Check which login you used.</b> API Central needs the RUN <b>administrator / owner</b> user ID — the one that actually runs payroll. An employee self-service login signs in perfectly well and then fails exactly like this, because the person is real and the entitlement is not.</li>
+          <li><b>Sign in to RUN first, then come across.</b> In a fresh private window go to RUN and sign in as administrator. Confirm you can see payroll. Then, <i>in that same window</i>, open <span class="mono">api-central.adp.com</span>.</li>
+          <li><b>Try once more from a completely clean window.</b> Close every ADP tab, open a new private window, go straight to <span class="mono">api-central.adp.com</span> and nowhere else first. A half-finished sign-in from the 431 attempts can leave a broken session behind.</li>
+        </ol>
+        <b>If all three fail, stop — it is an entitlement and only ADP can grant it.</b> Do not keep retrying and do not create anything. Ring your ADP service contact for RUN and ask for exactly this:
+        <div class="term"><div class="term-head">What to ask ADP <button class="copy" type="button" data-cmd="I want to use ADP API Central to build an integration against our own company's data. Two questions. First: is API Central available for a RUN Powered by ADP account, or is it Workforce Now only? Second: if it is available, please enable it for our account and add me as a member — I am the RUN administrator, and signing in at api-central.adp.com currently gives Unknown Authentication Error.">Copy</button></div><pre>I want to use ADP API Central to build an integration against
+our own company's data. Two questions.
+
+First: is API Central available for a RUN Powered by ADP account,
+or is it Workforce Now only?
+
+Second: if it is available, please enable it for our account and
+add me as a member — I am the RUN administrator, and signing in at
+api-central.adp.com currently gives Unknown Authentication Error.</pre></div>
+        Send me their answer. <b>Whichever way it goes, nothing you have already done is wasted</b> — Part A is live and onboarding is fully usable today with the office keying the packet into RUN by hand. This part only removes that keying step.</div></div>
+      <div class="expect"><span class="k no">If ADP says<br>RUN is not<br>supported</span><div>Then API Central is Workforce Now only and the plan changes: the route back is registering ReadyDoc as an <b>ADP Marketplace</b> app, which is a partner registration with a review that takes weeks. It is worth confirming with ADP before starting, because it is a much longer road and it is the reason API Central was worth trying first. Send me what they say and I will rewrite Parts B to D around it.</div></div>
       <p class="why"><b>Why it opens on Members.</b> That page is how you let someone else help — Marnee, or me if you ever want it. It has three roles: <b>Project user</b> (can create projects and see credentials), <b>Certificate user</b> (can request and track certificates), <b>Member user</b> (can only see who has access). An internal member has to already be a registered user on your ADP account. You need none of this to finish the runbook yourself; ignore the page and go to Projects.</p>
     </div>
   </div>
