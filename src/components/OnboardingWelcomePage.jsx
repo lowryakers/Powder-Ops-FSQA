@@ -228,6 +228,13 @@ export default function OnboardingWelcomePage({ token }) {
             <Field l="Phone *"><input type="tel" className={input} value={form.phone || ''} onChange={set('phone')} /></Field>
             <Field l="Email"><input type="email" className={input} value={form.email || ''} onChange={set('email')} /></Field>
             <Field l="Date of birth *"><input type="date" className={input} value={form.dob || ''} onChange={set('dob')} /></Field>
+            <Field l="Gender *" hint="For insurance and compliance reporting.">
+              <select className={input} value={form.gender || ''} onChange={set('gender')} data-gender>
+                <option value="">Choose…</option>
+                <option value="F">Female</option>
+                <option value="M">Male</option>
+              </select>
+            </Field>
             {rec.sensitive_collection && (
               <Field l={`Social Security number *${rec.has_ssn ? ' (on file ••••)' : ''}`}>
                 <input inputMode="numeric" placeholder={rec.has_ssn ? 'Saved — retype to change' : '###-##-####'}
@@ -266,16 +273,9 @@ export default function OnboardingWelcomePage({ token }) {
       {name === 'deposit' && (
         <div className="space-y-3">
           <h2 className="text-lg font-bold text-gray-900">How you'll be paid</h2>
-          <div className="grid grid-cols-2 gap-2">
-            {[['direct_deposit', 'Direct deposit', 'Straight into your bank account'], ['check', 'Paper check', 'Handed to you on payday']].map(([v, l, h]) => (
-              <button key={v} type="button" onClick={() => setForm(f => ({ ...f, pay_method: v }))} aria-pressed={form.pay_method === v}
-                className={`text-left rounded-xl border p-3 ${form.pay_method === v ? 'border-powder-600 bg-powder-50' : 'border-gray-300 bg-white'}`}>
-                <span className="block text-sm font-semibold text-gray-900">{l}</span>
-                <span className="block text-xs text-gray-500">{h}</span>
-              </button>
-            ))}
-          </div>
-          {form.pay_method === 'direct_deposit' && (
+          <p className="text-sm text-gray-700">Powder Ops pays by <b>direct deposit</b> — straight into your bank account on
+            payday. There is no paper cheque, so the details below are how you get paid.</p>
+          {(
             rec.sensitive_collection ? (
               <>
                 <Field l="Bank name"><input className={input} value={form.dd_bank_name || ''} onChange={set('dd_bank_name')} /></Field>

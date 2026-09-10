@@ -55,7 +55,7 @@ const sha = (t) => createHash('sha256').update(t).digest('hex');
 // them would let a link edit its own pay rate.
 const PORTAL_FIELDS = [
   'first_name', 'middle_name', 'last_name', 'preferred_name', 'email', 'phone',
-  'address1', 'address2', 'city', 'state', 'zip', 'dob',
+  'address1', 'address2', 'city', 'state', 'zip', 'dob', 'gender',
   'emergency_name', 'emergency_phone', 'emergency_relationship',
   'pay_method', 'dd_bank_name', 'dd_account_type',
   'w4_filing_status', 'w4_qualifying_children', 'w4_other_dependents', 'w4_dependents_amount',
@@ -67,7 +67,16 @@ const PORTAL_FIELDS = [
 const ADMIN_FIELDS = [...PORTAL_FIELDS, 'department', 'team', 'position', 'start_date', 'pay_rate', 'pay_frequency', 'notes'];
 const BOOL_FIELDS = ['w4_multiple_jobs', 'w4_exempt'];
 
-export const PAY_METHODS = ['direct_deposit', 'check'];
+// DIRECT DEPOSIT IS THE ONLY WAY THE PLANT PAYS, so it is no longer a question.
+// 'check' stays readable here and in the packet PDF: a record filed before this
+// changed still says what it said, which is the retire-never-delete rule. It is
+// simply not offered, and `applyFields` refuses it on the way in.
+export const PAY_METHODS = ['direct_deposit'];
+export const LEGACY_PAY_METHODS = ['check'];
+
+// RUN's own words for the field, and the reason it is asked at all. The codes
+// are RUN's; the wizard shows the words.
+export const GENDERS = ['F', 'M'];
 export const FILING_STATUSES = ['single', 'married_jointly', 'head_of_household'];
 export const CITIZENSHIP = ['citizen', 'noncitizen_national', 'permanent_resident', 'authorized_alien'];
 export const FILE_KINDS = ['id_document', 'voided_check', 'other'];
@@ -130,7 +139,8 @@ function applyFields(db, rec, body, allowed) {
   const patch = {};
   for (const f of allowed) if (body[f] !== undefined) patch[f] = body[f] === '' ? null : String(body[f]).slice(0, 300);
   for (const f of BOOL_FIELDS) if (body[f] !== undefined) patch[f] = body[f] ? 1 : 0;
-  if (patch.pay_method && !PAY_METHODS.includes(patch.pay_method)) return { error: 'Pay method must be direct deposit or check.' };
+  if (patch.pay_method && !PAY_METHODS.includes(patch.pay_method)) return { error: 'Powder Ops pays by direct deposit only.' };
+  if (patch.gender && !GENDERS.includes(patch.gender)) return { error: 'Unknown gender code.' };
   if (patch.w4_filing_status && !FILING_STATUSES.includes(patch.w4_filing_status)) return { error: 'Unknown filing status.' };
   if (patch.i9_citizenship && !CITIZENSHIP.includes(patch.i9_citizenship)) return { error: 'Unknown citizenship status.' };
   // Sensitive fields: encrypted or refused, never stored bare. Validated on
@@ -199,8 +209,13 @@ export function missingToFinish(db, rec) {
     if (blank(f)) m.push({ step: 'personal', field: f, label: l });
   }
   if (cryptoEnabled() && !rec.ssn_enc) m.push({ step: 'personal', field: 'ssn', label: 'Social Security number' });
-  if (blank('pay_method')) m.push({ step: 'deposit', field: 'pay_method', label: 'how you want to be paid' });
-  if (rec.pay_method === 'direct_deposit') {
+  // RUN refuses an employee with no gender code, so a packet without one cannot
+  // be handed off and is not finished. Asked on the personal step.
+  if (blank('gender')) m.push({ step: 'personal', field: 'gender', label: 'gender (for insurance and compliance reporting)' });
+  // Pay method is no longer a question — direct deposit is the only way the
+  // plant pays — so the deposit step asks for the account, not the choice. A
+  // legacy record that says 'check' keeps saying it and owes nothing more here.
+  if (rec.pay_method !== 'check') {
     if (cryptoEnabled()) {
       if (!rec.dd_routing_enc) m.push({ step: 'deposit', field: 'dd_routing', label: 'routing number' });
       if (!rec.dd_account_enc) m.push({ step: 'deposit', field: 'dd_account', label: 'account number' });
@@ -512,8 +527,8 @@ router.get('/:id/packet.pdf', (req, res) => {
     L('Pay', rec.pay_rate ? `${rec.pay_rate}${rec.pay_frequency ? ` / ${rec.pay_frequency}` : ''}` : null);
     L('Emergency contact', rec.emergency_name ? `${rec.emergency_name} (${rec.emergency_relationship || '?'}) ${rec.emergency_phone || ''}` : null);
     H('Pay method');
-    L('Method', rec.pay_method === 'direct_deposit' ? 'Direct deposit' : rec.pay_method === 'check' ? 'Paper check' : null);
-    if (rec.pay_method === 'direct_deposit') {
+    L('Method', rec.pay_method === 'check' ? 'Paper check' : 'Direct deposit');
+    if (rec.pay_method !== 'check') {
       L('Bank', rec.dd_bank_name); L('Account', r.has_bank ? `${rec.dd_account_type || ''} ••••${rec.dd_account_last4 || ''}` : 'not collected — see voided check');
     }
     H('Form W-4 (Employee\'s Withholding Certificate)');
@@ -585,7 +600,11 @@ portalRouter.put('/:token', (req, res) => {
   const rec = byToken(db, req.params.token);
   if (!rec) return linkGone(res);
   if (['submitted_to_adp'].includes(rec.status)) return res.status(409).json({ error: 'This onboarding was already submitted — contact the office to correct anything.' });
-  const b = req.body || {};
+  let b = req.body || {};
+  // Direct deposit is the only method the plant runs, so the record STATES it
+  // rather than leaving the column null and letting every reader infer it. A
+  // legacy 'check' record is left exactly as filed.
+  if (!rec.pay_method) b = { ...b, pay_method: 'direct_deposit' };
   const out = applyFields(db, rec, b, PORTAL_FIELDS);
   if (out.error) return res.status(400).json({ error: out.error });
   // Signing rides on the same save so the wizard's "sign and continue" is one

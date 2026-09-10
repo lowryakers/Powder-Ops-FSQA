@@ -2720,6 +2720,11 @@ function runMigrations() {
     ['i9_preparer_name', 'TEXT'],
     ['i9_signature', 'TEXT'],               // JSON — employee, Section 1
     ['i9_section2', 'TEXT'],                // JSON — employer: documents examined, first day, who signed (password-verified)
+    // RUN marks GenderCode.Code mandatory for an employee and refuses the
+    // catch-all value XX ("Cannot use value XX for GenderCode.Code"), so this
+    // is asked rather than defaulted. Insurance and compliance reporting is
+    // what it is for, and the form says so.
+    ['gender', 'TEXT'],                     // F | M
   ]) addColumnIfMissing('onboarding_records', col, def);
 
   db.exec(`
