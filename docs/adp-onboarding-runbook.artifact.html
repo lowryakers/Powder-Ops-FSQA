@@ -130,11 +130,11 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
 <header class="mast">
   <p class="eyebrow">Powder Ops · ReadyDoc · Onboarding → RUN Powered by ADP</p>
   <h1>ADP Onboarding Runbook</h1>
-  <p class="standfirst">Everything between "the module is built" and "a new hire lands in RUN without anyone re-typing the packet": one variable you can set today, the ADP API Central project only you can do, and the first test hire. <b>Revised 10 September:</b> ADP now offers API Central to its own clients, which replaces the Marketplace app registration and its weeks-long review. Tick as you go; the ticks save in this browser.</p>
+  <p class="standfirst">Everything between "the module is built" and "a new hire lands in RUN without anyone re-typing the packet": one variable you can set today, the ADP API Central project only you can do, and the first test hire. <b>Revised 10 September, second pass.</b> Parts B and C are rewritten against ADP's own API Central Quick Start Guide: API Central lives at its own address, and the certificate is made entirely in the browser — no Terminal, no openssl, no Marketplace review. Tick as you go; the ticks save in this browser.</p>
   <div class="meta">
     <span><b>For</b> Lowry</span>
     <span><b>Prepared</b> 3 September 2026</span>
-    <span><b>Time</b> 20 minutes today · then weeks of waiting on ADP · 30 minutes to finish</span>
+    <span><b>Time</b> about 90 minutes end to end · no waiting on ADP</span>
   </div>
 </header>
 
@@ -203,18 +203,24 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
     <h2>Create the project in ADP API Central</h2>
     <span class="part-time">~20 minutes · browser · no review wait</span>
   </div>
-  <p class="part-note">ADP's developer site offers <b>API Central</b> to ADP clients who want to reach their own company's data. It gives instant API access, generates the certificate in the browser and needs no Marketplace review. This is the part only you can do: it needs the RUN administrator login.</p>
+  <p class="part-note"><b>Corrected 10 September, from ADP's own API Central Quick Start Guide.</b> API Central has its own address — you do not reach it through developers.adp.com, which is only the documentation site. Everything below matches the screens in ADP's guide.</p>
 
   <div class="step" data-id="b1">
     <input type="checkbox" aria-label="Step 4 complete">
     <div class="step-body">
-      <p class="step-title"><span class="num">04</span> Sign in and open API Central</p>
+      <p class="step-title"><span class="num">04</span> Open API Central</p>
       <ol>
-        <li>Go to <a href="https://developers.adp.com" target="_blank" rel="noopener">developers.adp.com</a> and <b>Sign in</b> with your ADP login (the same one that administers RUN).</li>
-        <li>On the home page, in the dropdown <b>"How do you want to use ADP APIs?"</b>, choose the option for an ADP client accessing <b>your own company's data</b>, then <b>Let's go</b>.</li>
-        <li>Click <b>Learn more about API Central</b> or the API Central link it offers, and open it.</li>
+        <li>Go to <a href="https://api-central.adp.com" target="_blank" rel="noopener">api-central.adp.com</a> and sign in with the ADP login that administers RUN.</li>
+        <li>You land on the <b>Members</b> page. That is normal — it is API Central's default screen.</li>
       </ol>
-      <div class="expect"><span class="k">Expect</span><div>An API Central page greeting you by name and company, with <b>Projects</b> and <b>Certificates</b> in its navigation. If API Central says it is not available for your ADP product, stop and send me a screenshot.</div></div>
+      <div class="expect"><span class="k">Expect</span><div>A dark blue bar reading <b>API Central</b>, and a left-hand menu with four entries: <b>Projects</b>, <b>Certificate</b>, <b>Members</b>, <b>Integration Services</b>.</div></div>
+      <div class="expect"><span class="k no">If you get<br>HTTP ERROR 431</span><div><b>The site is not down.</b> 431 means your browser sent too much stored cookie data with the request. Two fixes, in order:
+        <ol>
+          <li>Open a <b>private / incognito window</b> and go to <span class="mono">api-central.adp.com</span> again. This is the quickest test and usually works straight away.</li>
+          <li>If you want it fixed in your normal window: Chrome → <b>Settings → Privacy and security → Third-party cookies → See all site data and permissions</b>, search <b>adp.com</b>, delete the adp.com entries, then sign in again.</li>
+        </ol>
+        You will have to sign in again afterwards — that is expected, nothing is lost.</div></div>
+      <div class="expect"><span class="k no">If it says<br>not available</span><div>If API Central tells you it is not enabled for this account, stop and send me the screenshot. That is the one answer that changes the plan.</div></div>
     </div>
   </div>
 
@@ -223,12 +229,15 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
     <div class="step-body">
       <p class="step-title"><span class="num">05</span> Create the project</p>
       <ol>
-        <li><b>Projects → Create new project</b>.</li>
-        <li><b>Product</b>: RUN Powered by ADP.</li>
-        <li><b>Use case template</b>: <b>New Hire Onboarding (Read/Write)</b>. Its Associated APIs list shows <span class="mono">POST /hcm/v2/applicant.onboard</span>, which is the call ReadyDoc makes, plus <span class="mono">/auth/oauth/v2/token</span> and a set of GET calls that come with the template and do no harm.</li>
-        <li>Name it <b>ReadyDoc onboarding</b> and use the description below, which says plainly what it does.</li>
+        <li>Click <b>Projects</b> in the left-hand menu.</li>
+        <li>Click the blue <b>Create a project</b> button at the top right of the Projects page.</li>
+        <li>A window titled <b>Create new project</b> opens. Fill in <b>Project name</b>: <span class="mono">ReadyDoc onboarding</span>. Paste the description below into <b>Project description</b>. Click <b>Next</b>.</li>
+        <li>The next screen is <b>Use case selection</b>. Choose the use case for <b>new hire onboarding</b> — the one whose associated APIs include <span class="mono">POST /hcm/v2/applicant.onboard</span>. Click <b>Create Project</b>.</li>
       </ol>
-      <div class="term"><div class="term-head">App description <button class="copy" type="button" data-cmd="ReadyDoc is Powder Ops' internal food-safety and operations system. This connector submits a completed new-hire onboarding packet (name, address, contact details, hire date, position, pay rate, and the tax and direct-deposit inputs the employee entered) from ReadyDoc into RUN Powered by ADP's Applicant Onboarding, so the office does not re-key it. One direction only: ReadyDoc writes an applicant into onboarding; it reads nothing back and touches no payroll data. Used by Powder Ops for its own employees only.">Copy</button></div><pre>ReadyDoc is Powder Ops' internal food-safety and operations system.
+      <div class="dont"><b>A project cannot be deleted once created.</b> ADP says so on that screen. Get the name right the first time: <span class="mono">ReadyDoc onboarding</span>.</div>
+      <div class="expect"><span class="k">Expect</span><div>A project card on the Projects page with a <b>View project</b> button. Opening it shows <b>Credentials</b> and <b>APIs</b> tabs, and under Credentials a numbered list: Step 1 generate a security certificate, Step 2 obtain an access token, Step 3 call ADP APIs.</div></div>
+      <div class="expect"><span class="k no">If onboarding<br>is not listed</span><div>The use cases on that screen are only a starting point — ADP lists the most popular ones. Create the project against the closest use case, then on the project page use the <b>Need more APIs</b> link to add the New Hire Onboarding APIs. Send me a screenshot of the list if you are unsure which to pick; picking the wrong one costs nothing, since APIs are added afterwards.</div></div>
+      <div class="term"><div class="term-head">Project description <button class="copy" type="button" data-cmd="ReadyDoc is Powder Ops' internal food-safety and operations system. This connector submits a completed new-hire onboarding packet (name, address, contact details, hire date, position, pay rate, and the tax and direct-deposit inputs the employee entered) from ReadyDoc into RUN Powered by ADP's Applicant Onboarding, so the office does not re-key it. One direction only: ReadyDoc writes an applicant into onboarding; it reads nothing back and touches no payroll data. Used by Powder Ops for its own employees only.">Copy</button></div><pre>ReadyDoc is Powder Ops' internal food-safety and operations system.
 This connector submits a completed new-hire onboarding packet (name,
 address, contact details, hire date, position, pay rate, and the tax
 and direct-deposit inputs the employee entered) from ReadyDoc into RUN
@@ -236,8 +245,7 @@ Powered by ADP's Applicant Onboarding, so the office does not re-key it.
 One direction only: ReadyDoc writes an applicant into onboarding; it
 reads nothing back and touches no payroll data. Used by Powder Ops for
 its own employees only.</pre></div>
-      <div class="expect"><span class="k">Expect</span><div>A project page, created immediately, with the Associated APIs list and a <b>Credentials</b> (client ID and secret) area. No review, no waiting.</div></div>
-      <p class="why"><b>Why the description still matters.</b> ADP shows it to whoever administers the account later, and plain wording is what stops someone switching off a connector they do not recognise.</p>
+      <p class="why"><b>Why the description matters.</b> ADP shows it to whoever administers the account later, and plain wording is what stops someone switching off a connector they do not recognise.</p>
     </div>
   </div>
 </section>
@@ -247,47 +255,65 @@ its own employees only.</pre></div>
   <div class="part-head">
     <span class="part-tag">Part C</span>
     <h2>The certificate (mutual TLS)</h2>
-    <span class="part-time">~20 minutes · portal, and Terminal on one route</span>
+    <span class="part-time">~15 minutes · browser only · no Terminal</span>
   </div>
-  <p class="part-note">Every call to ADP presents a client certificate that ADP itself signed. You end up with two files: a <b>private key</b> (yours, never shared, shown once) and a <b>public certificate</b> (.pem, signed by ADP). ReadyDoc needs both. API Central generates them in the browser (Route 1); Route 2 is only for the case where it asks you to upload a request instead.</p>
+  <p class="part-note">Every call to ADP presents a client certificate that ADP itself signed. You end up with two things: a <b>private key</b> (yours, shown exactly once, never shared) and a <b>signed certificate</b> (a .pem file you download). ReadyDoc needs both. <b>API Central does all of it in the browser</b> — the earlier version of this runbook sent you to Terminal with openssl, and that is not needed.</p>
 
   <div class="step" data-id="c1">
     <input type="checkbox" aria-label="Step 6 complete">
     <div class="step-body">
-      <p class="step-title"><span class="num">06</span> Route 1: let API Central generate it</p>
+      <p class="step-title"><span class="num">06</span> Request the certificate</p>
       <ol>
-        <li>In API Central, open <b>Certificates</b> in the navigation (or the certificate step on the project page).</li>
-        <li>Click <b>Generate</b> / <b>Request Certificate</b>. Fill in the fields: <b>Organization Name</b> is the company name exactly as it appears on the RUN account; <b>Common Name</b> is the company name followed by the word <b>MutualSSL</b>, for example <span class="mono">Powder Ops MutualSSL</span>. Leave Country, State, Locality and any password blank. Click <b>Next</b>.</li>
-        <li>The next screen shows your <b>private key</b>. Click <b>Copy</b>, paste it straight into a new entry in your password manager named <i>ADP mutual TLS private key</i>, then click <b>Ok, I copied my key</b>.</li>
-        <li>Click <b>Done</b>, then <b>Download</b> the public certificate. It arrives as a <span class="mono">.pem</span> file. Save that file's contents into the same password-manager entry.</li>
+        <li>In API Central, click <b>Certificate</b> in the left-hand menu. (The other way in: <b>Projects → View project → Credentials → Step 1</b>, "Generate a security certificate for your organization".)</li>
+        <li>Choose <b>Request Certificate</b> from the drop-down.</li>
+        <li>The <b>Request new security certificate</b> wizard opens on a <b>Getting started</b> page. Click <b>Next</b>.</li>
       </ol>
-      <div class="dont"><b>The private key is shown exactly once.</b> If you close that screen without copying it, the certificate is useless and you request a new one. Nothing is lost except a few minutes; do not try to recover it.</div>
-      <div class="expect"><span class="k">Expect</span><div>Two blocks of text in your password manager: one starting <code>-----BEGIN PRIVATE KEY-----</code> (or <code>BEGIN RSA PRIVATE KEY</code>), one starting <code>-----BEGIN CERTIFICATE-----</code>. Skip step 07.</div></div>
+      <div class="expect"><span class="k">Expect</span><div>A wizard with four stages listed down its left side: Getting started · Generate private key · Copy/paste private key · Generate certificate.</div></div>
     </div>
   </div>
 
   <div class="step" data-id="c2">
     <input type="checkbox" aria-label="Step 7 complete">
     <div class="step-body">
-      <p class="step-title"><span class="num">07</span> Route 2: generate the request yourself and upload it</p>
-      <p>Only if the portal asks you to <b>upload a CSR</b> instead of generating one. In Terminal, one command makes the key, the next makes the request:</p>
-      <div class="term"><div class="term-head">Terminal <button class="copy" type="button" data-cmd="cd ~/Desktop &amp;&amp; openssl genrsa -out powderops_auth.key 2048 &amp;&amp; openssl req -new -key powderops_auth.key -out powderops_auth.csr">Copy</button></div><pre>$ cd ~/Desktop
-$ openssl genrsa -out powderops_auth.key 2048
-$ openssl req -new -key powderops_auth.key -out powderops_auth.csr</pre></div>
-      <p>The second command asks questions one at a time. Answer exactly this way (Return leaves a field blank):</p>
+      <p class="step-title"><span class="num">07</span> Fill in the certificate form</p>
+      <p><b>Every field on this form is required.</b> Fill in all of them:</p>
       <ul>
-        <li>Country Name, State, Locality: <b>press Return, leave blank</b></li>
-        <li>Organization Name: the company name <b>exactly as registered with ADP</b></li>
-        <li>Organizational Unit: Return</li>
-        <li>Common Name: the company name followed by <b>MutualSSL</b>, e.g. <span class="mono">Powder Ops MutualSSL</span></li>
-        <li>Email, challenge password, optional company name: Return, Return, Return</li>
+        <li><b>Name your certificate</b>: <span class="mono">ReadyDoc Mutual SSL</span></li>
+        <li><b>Organization name</b>: already filled in and greyed out — ADP sets it from what it has on file. Leave it.</li>
+        <li><b>Organization unit name</b>: <span class="mono">Quality</span></li>
+        <li><b>Country</b>: United States</li>
+        <li><b>State/Province name</b>: Utah</li>
+        <li><b>Locality</b>: the city on the ADP account</li>
+        <li><b>Business email</b>: your work address</li>
       </ul>
+      <p>Click <b>Next</b>.</p>
+    </div>
+  </div>
+
+  <div class="step" data-id="c3">
+    <input type="checkbox" aria-label="Step 8 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">08</span> Save the private key — this is the one that cannot be undone</p>
       <ol>
-        <li>In the portal's Certificates section, <b>Upload CSR</b> → choose <span class="mono">powderops_auth.csr</span> from the Desktop.</li>
-        <li>ADP signs it and offers the certificate to <b>download</b> as a <span class="mono">.pem</span>. Save it beside the key.</li>
-        <li>Put the contents of both files into the password-manager entry, then <b>delete both files from the Desktop</b>.</li>
+        <li>The <b>Copy/paste private key</b> screen shows a long block starting <code>-----BEGIN PRIVATE KEY-----</code>. Click <b>Copy</b>.</li>
+        <li>Paste it straight into a new entry in your password manager named <i>ADP mutual TLS private key</i>. Do that now, before clicking anything else.</li>
+        <li>Continue through to <b>Generate certificate</b>.</li>
       </ol>
-      <div class="expect"><span class="k">Expect</span><div>The same two blocks as Route 1: a private key and a certificate.</div></div>
+      <div class="dont"><b>ADP cannot store or retrieve this key for you.</b> Their own guide says so on that screen. If you close the window without copying it, the certificate is useless and you request a new one. Nothing is lost except ten minutes — do not try to recover it.</div>
+    </div>
+  </div>
+
+  <div class="step" data-id="c4">
+    <input type="checkbox" aria-label="Step 9 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">09</span> Download the signed certificate</p>
+      <ol>
+        <li>On the <b>Certificates</b> page you now have a certificate card showing the date it was generated, the date it expires, and <b>View</b> and <b>Download</b> buttons.</li>
+        <li>Click <b>Download</b>. You get a <span class="mono">.pem</span> file.</li>
+        <li>Open it in TextEdit and paste its contents into the same password-manager entry, underneath the private key.</li>
+      </ol>
+      <div class="expect"><span class="k">Expect</span><div>Two blocks of text in your password manager: one starting <code>-----BEGIN PRIVATE KEY-----</code>, one starting <code>-----BEGIN CERTIFICATE-----</code>.</div></div>
+      <p class="why"><b>Note the expiry date.</b> ADP signs these for about two years. Everyone marked active on the Members page gets warning emails from 60 days out. When it expires, ReadyDoc's onboarding sends stop — put the date in a calendar now.</p>
     </div>
   </div>
 </section>
@@ -301,9 +327,9 @@ $ openssl req -new -key powderops_auth.key -out powderops_auth.csr</pre></div>
   </div>
 
   <div class="step" data-id="d1">
-    <input type="checkbox" aria-label="Step 8 complete">
+    <input type="checkbox" aria-label="Step 10 complete">
     <div class="step-body">
-      <p class="step-title"><span class="num">08</span> Copy the client ID and client secret</p>
+      <p class="step-title"><span class="num">10</span> Copy the client ID and client secret</p>
       <ol>
         <li><b>Projects</b> → open <b>ReadyDoc onboarding</b> → the <b>Credentials</b> area.</li>
         <li>Copy the <b>Client ID</b> (a long id with dashes) and the <b>Client Secret</b> (a long random string; it may be shown once behind a Reveal button) into the same password-manager entry.</li>
@@ -313,9 +339,9 @@ $ openssl req -new -key powderops_auth.key -out powderops_auth.csr</pre></div>
   </div>
 
   <div class="step" data-id="d2">
-    <input type="checkbox" aria-label="Step 9 complete">
+    <input type="checkbox" aria-label="Step 11 complete">
     <div class="step-body">
-      <p class="step-title"><span class="num">09</span> Consent, only if the project asks for it</p>
+      <p class="step-title"><span class="num">11</span> Consent, only if the project asks for it</p>
       <p>A project created under the company's own ADP account is usually consented already. If the project page shows a <b>Consent</b> step or a Consent URL, do it; if it shows none, tick this step and move on.</p>
       <ol>
         <li>On the project page, find the <b>Consent URL</b>. Copy it.</li>
@@ -337,9 +363,9 @@ $ openssl req -new -key powderops_auth.key -out powderops_auth.csr</pre></div>
   </div>
 
   <div class="step" data-id="e1">
-    <input type="checkbox" aria-label="Step 10 complete">
+    <input type="checkbox" aria-label="Step 12 complete">
     <div class="step-body">
-      <p class="step-title"><span class="num">10</span> Add the four credential variables</p>
+      <p class="step-title"><span class="num">12</span> Add the four credential variables</p>
       <p>Railway → the ReadyDoc service → <b>Variables</b> → <b>New Variable</b>, four times. For the two PEM values, paste the <b>whole block including the BEGIN and END lines</b>; Railway accepts multi-line values and ReadyDoc reads them either way.</p>
       <div class="scroller">
         <table>
@@ -360,9 +386,9 @@ $ openssl req -new -key powderops_auth.key -out powderops_auth.csr</pre></div>
   </div>
 
   <div class="step" data-id="e2">
-    <input type="checkbox" aria-label="Step 11 complete">
+    <input type="checkbox" aria-label="Step 13 complete">
     <div class="step-body">
-      <p class="step-title"><span class="num">11</span> Read the onboarding template code from RUN and add the fifth variable</p>
+      <p class="step-title"><span class="num">13</span> Read the onboarding template code from RUN and add the fifth variable</p>
       <p>RUN refuses a new hire that does not name one of its <b>onboarding templates</b>. The code is RUN's own, so ReadyDoc reads it from ADP rather than guessing.</p>
       <ol>
         <li>Settings → Integrations → the ADP row → <b>Read what RUN requires</b>. ReadyDoc calls ADP with the new credentials and shows what came back.</li>
@@ -386,9 +412,9 @@ $ openssl req -new -key powderops_auth.key -out powderops_auth.csr</pre></div>
   <p class="part-note">ReadyDoc's ADP client has never been exercised against ADP, because until now there were no credentials. It sends ADP's Applicant Onboard V2 body (<span class="mono">POST /hcm/v2/applicant.onboard</span>) with the person landing in RUN's New Hire wizard as <i>in progress</i>. The first submission is a test, and the office should be ready to finish or correct the applicant in RUN by hand if a field lands wrong.</p>
 
   <div class="step" data-id="f1">
-    <input type="checkbox" aria-label="Step 12 complete">
+    <input type="checkbox" aria-label="Step 14 complete">
     <div class="step-body">
-      <p class="step-title"><span class="num">12</span> Run one onboarding through to Submit to ADP</p>
+      <p class="step-title"><span class="num">14</span> Run one onboarding through to Submit to ADP</p>
       <ol>
         <li>If you set a sandbox <span class="mono">ADP_API_BASE</span>, use invented details throughout. If you did not, use a <b>real incoming hire</b> with the office watching: a production submission creates a real applicant in RUN.</li>
         <li>Onboarding → <b>Start an onboarding</b> → fill the header → copy the welcome link → the new hire (or you, on your phone) works the wizard to the end.</li>

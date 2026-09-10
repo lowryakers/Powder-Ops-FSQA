@@ -10,20 +10,44 @@ Messages and their modules) and have the result land in RUN Powered by ADP.
 
 ## What ADP requires (the part only Lowry can do) — revised 10 September 2026
 
-The path is **ADP API Central**, offered on developers.adp.com to ADP clients
-reaching their own company's data. It replaces the Marketplace app
-registration the first version of this doc described: instant API access,
-the certificate generated in the browser, no review wait.
+The path is **ADP API Central**, ADP's own portal for clients reaching their
+own company's data. It replaces the Marketplace app registration the first
+version of this doc described: instant API access, the certificate generated
+in the browser, no review wait.
 
-1. **Sign in at developers.adp.com**, answer "How do you want to use ADP APIs?"
-   with the own-company option, and open **API Central**.
-2. **Create a project** on RUN Powered by ADP with the use case template
-   **New Hire Onboarding (Read/Write)**. Its Associated APIs include
-   `POST /hcm/v2/applicant.onboard` — the call ReadyDoc makes — and
+**API Central is at `api-central.adp.com`, not developers.adp.com.** That
+second site is ADP's documentation catalogue, and its "Associated APIs" pages
+look like a project without being one — the first version of this doc sent
+Lowry there and he could not find Projects, correctly. Steps below follow
+ADP's own *API Central Quick Start Guide* (published Apr 2024, last modified
+Jun 2025).
+
+**`HTTP ERROR 431` at that address is a browser cookie problem, not an
+outage.** 431 is "request header fields too large"; ADP's SSO cookies
+accumulate past the server's limit. A private window loads it; clearing
+adp.com site data fixes it permanently.
+
+1. **Open `api-central.adp.com`** signed in as the RUN administrator. It lands
+   on **Members** by default. Left-hand menu: Projects · Certificate ·
+   Members · Integration Services.
+2. **Projects → Create a project** (blue button, top right). Name and
+   description, then **Next**; then **Use case selection**, choose the new-hire
+   onboarding use case, then **Create Project**. Projects **cannot be deleted**,
+   so the name is a one-shot decision. The listed use cases are only ADP's most
+   popular ones — if onboarding is not among them, create against the closest
+   and add the rest through the **Need more APIs** link on the project page.
+   The API ReadyDoc calls is `POST /hcm/v2/applicant.onboard`, alongside
    `/auth/oauth/v2/token`.
-3. **Generate the certificate** in API Central's Certificates area: a private
-   key (shown once) and a signed certificate. Every call presents it (mutual
-   TLS).
+3. **Generate the certificate** — **entirely in the browser, no openssl.**
+   **Certificate** in the left menu (or the project's Credentials → Step 1) →
+   **Request Certificate** → a four-stage wizard: Getting started, Generate
+   private key, Copy/paste private key, Generate certificate. *Every field on
+   the key form is required*; Organization name is preset from ADP's records
+   and cannot be edited. The private key is shown **once** and ADP can neither
+   store nor retrieve it — copy it before clicking on. The signed certificate
+   downloads as a `.pem` from the certificate card, which also carries the
+   expiry (ADP signs for about two years) and warns everyone active on the
+   Members page from 60 days out.
 4. **Copy the project's client ID and client secret.** Consent is usually
    implicit for a project under the company's own account; if the project
    shows a consent step, a RUN administrator completes it.
