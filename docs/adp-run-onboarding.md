@@ -137,7 +137,21 @@ trying in order to avoid. Do not start that until ADP has said so plainly.
 **Settings → Integrations** shows which variables are set and whether the
 hand-off is on, without ever showing a value.
 
-**The request body is ADP's v2 shape** (`server/adp.js`
+**The request body is built from ADP's RUN-SPECIFIC GUIDE** (D-066) — "Applicant
+Onboard V2 API Guide for RUN Powered by ADP", last modified 19 Apr 2026,
+Chapter 7's data dictionary. Reading it corrected six field names that had been
+inferred from ADP's general v2 documentation: `legalName` not `birthName`,
+`dialNumber` not `formattedNumber`, `amount` not `amountValue`, `payCycleCode`
+not `payFrequencyCode`, `subdivisionCode` as an object rather than a bare
+string, and no `jobTitle` at all. A full middle name is a 400 — RUN takes one
+letter — so it is cut to an initial. **`ADP_ONBOARDING_TEMPLATE_CODE` is not a
+RUN field** and no longer gates the hand-off; it is sent only if deliberately
+set. What RUN requires and ReadyDoc cannot supply is named by `missingForAdp()`
+and refused at the submit endpoint, never guessed: gender (never asked for),
+and the company-level codes `ADP_WORKER_TYPE_CODE`, `ADP_PAY_TYPE_CODE` and
+`ADP_WORK_LOCATION_STATE`.
+
+**The old request-body note, kept for its shape** (`server/adp.js`
 `applicantOnboardPayload`, pure, checked by `npm run check:adp`):
 `applicantOnboarding` → template code, status, `applicantPersonalProfile`
 (birthName, birthDate, SSN as a governmentID, communication, legalAddress),

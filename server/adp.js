@@ -17,22 +17,33 @@
 // API Central refuses the RUN administrator's sign-in. See
 // docs/adp-run-onboarding.md.
 //
-// The first cut targeted the older event-style path; v2 is a different body
-// (`applicantOnboarding` with personal / worker / payroll profiles) and it
-// REQUIRES an onboarding template code, which is a RUN-side setting read from
-// that /meta call and kept in `ADP_ONBOARDING_TEMPLATE_CODE`.
+// BOTH PATHS ARE CONFIRMED against ADP's API Explorer for RUN: `POST
+// /hcm/v2/applicant.onboard` and `GET /hcm/v2/applicant.onboard/meta`.
 //
-// `ONBOARD_PATH` is `/hcm/v2/applicant.onboard`, matching the "Initiate New
-// Applicant Onboarding" operation by ADP's own naming, but the POST path was
-// below the fold on the page that confirmed /meta — treat it as one notch less
-// certain than the meta path until seen. `ADP_ONBOARD_PATH` overrides it
-// without a deploy if ADP's guide says otherwise.
+// THE PAYLOAD IS BUILT FROM ADP'S RUN-SPECIFIC GUIDE — "Applicant Onboard V2
+// API Guide for RUN Powered by ADP", last modified 19 Apr 2026, Chapter 7's
+// data dictionary. That guide replaced a first cut written by inference from
+// ADP's general v2 documentation, which had the wrong key in six places
+// (`birthName` for `legalName`, `formattedNumber` for `dialNumber`,
+// `amountValue` for `amount`, `payFrequencyCode` for `payCycleCode`, a bare
+// string for the `subdivisionCode` OBJECT, and a `jobTitle` RUN has no field
+// for). None of it had ever been sent, so nothing was mis-filed; it would all
+// have surfaced as 400s on the first hire.
 //
-// Field names here follow ADP's v2 guide as far as it could be read. ADP
-// publishes an "Applicant Onboard V2 API Guide for RUN Powered by ADP" that
-// has not been read yet; read it before the first live send rather than
-// learning the shape from refusals. Until then the first send is checked
-// against /meta and against ADP's own refusal text, returned verbatim.
+// `ADP_ONBOARDING_TEMPLATE_CODE` and a payroll group code came from that same
+// inference and appear NOWHERE in the RUN guide. The template code is kept as
+// an opt-in override in case /meta says otherwise for this account, but it no
+// longer gates `adpEnabled()`.
+//
+// WHAT RUN REQUIRES AND READYDOC CANNOT SUPPLY IS NAMED, NEVER INVENTED —
+// `missingForAdp()`. Gender is required for an employee and the wizard does not
+// ask; worker type, pay type and the work-location state are company-level
+// codelist values that belong in env, not in a guess. A payload that fabricates
+// a pay type to satisfy a validator writes a wrong payroll record, which is
+// worse than a refusal that names the field.
+//
+// The first live send is still checked against /meta and against ADP's own
+// refusal text, which is returned verbatim.
 
 import { readFileSync } from 'fs';
 import https from 'https';
@@ -53,9 +64,18 @@ export function adpConnected() {
     && pem(process.env.ADP_CERT_PEM) && pem(process.env.ADP_KEY_PEM));
 }
 
-/** Enough to SEND a new hire: credentials plus the RUN onboarding template code. */
+/**
+ * Enough to SEND a new hire. This is the four credentials and nothing else.
+ *
+ * It used to also require `ADP_ONBOARDING_TEMPLATE_CODE`, on the belief that
+ * Applicant Onboard V2 refuses a hire without one. ADP's RUN-specific guide has
+ * no such field anywhere in its data dictionary, so that gate could only ever
+ * hold the integration shut over a variable RUN never asks for. The variable is
+ * still honoured if set — see `applicantOnboardPayload` — it just no longer
+ * decides whether the hand-off is on.
+ */
 export function adpEnabled() {
-  return adpConnected() && !!process.env.ADP_ONBOARDING_TEMPLATE_CODE;
+  return adpConnected();
 }
 
 function agent() {
@@ -128,23 +148,108 @@ function httpsJson(url, method, body, headers) {
  * and payroll (the rate as hourly or per-pay-period, plus the payroll group
  * when RUN needs one). Blank record fields are omitted, never sent as ''.
  */
-export function applicantOnboardPayload(rec, opts = {}) {
-  const templateCode = opts.templateCode ?? process.env.ADP_ONBOARDING_TEMPLATE_CODE ?? null;
-  const status = opts.status ?? process.env.ADP_ONBOARDING_STATUS ?? 'inprogress';
-  const payrollGroup = opts.payrollGroupCode ?? process.env.ADP_PAYROLL_GROUP_CODE ?? null;
+// ADP's code objects. The RUN guide is internally inconsistent about this: its
+// data dictionary writes the path as `.../nameCode/code`, while the codelist
+// sample and every 400 message the live API generates say `codeValue`
+// ("taxWithholdingStatus->statusCode->codeValue should be ..."). The error text
+// is produced by the running service, so it wins. One helper, so a first live
+// refusal that proves otherwise is a one-line change rather than twenty.
+function codeObj(codeValue, shortName) {
+  if (codeValue === null || codeValue === undefined || codeValue === '') return null;
+  return { codeValue: String(codeValue), ...(shortName ? { shortName: String(shortName) } : {}) };
+}
 
+const money = (v, currencyCode = 'USD') => {
+  // An absent value is absent, not zero. `Number('')` is 0 and finite, which is
+  // how a blank "other income" box became a filed $0.00 on the first cut.
+  if (v === null || v === undefined || String(v).trim() === '') return null;
+  const n = typeof v === 'number' ? v : Number(String(v).replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(n) ? { amount: n, currencyCode } : null;
+};
+
+// `production_entries`-style conflation in our own schema: `pay_frequency` holds
+// EITHER a pay schedule (weekly, biweekly) or the word "hourly", which is a pay
+// TYPE and not a schedule at all. RUN's payCycleCode wants the schedule, so
+// "hourly" is not an answer to it — report it missing rather than filing a pay
+// cycle RUN does not have.
+const HOURLY = /hour/i;
+const payCycleOf = (v) => (v && !HOURLY.test(String(v)) ? String(v) : null);
+
+// RUN refuses more than one character here ("The Middle Initial field can
+// include only one letter (A-Z)"), so a full middle name is a 400. Take the
+// initial rather than dropping the field.
+function middleInitial(v) {
+  const m = String(v ?? '').trim().match(/[A-Za-z]/);
+  return m ? m[0].toUpperCase() : null;
+}
+
+// Company-level facts RUN requires on every hire that are NOT per-person and
+// that ReadyDoc has never collected. They are env, not guesses: an invented
+// worker type or pay type is a wrong payroll record, and `missingForAdp` names
+// them instead. Their VALUES come from RUN's codelists, not from prose.
+const workLocationState = () => process.env.ADP_WORK_LOCATION_STATE || null;
+const workerTypeCode = () => process.env.ADP_WORKER_TYPE_CODE || null;
+const payTypeCode = () => process.env.ADP_PAY_TYPE_CODE || null;
+
+/**
+ * What RUN requires that this record cannot supply. Derived on every read, the
+ * `missingToFinish` rule — a gap is NAMED, never filled. Every entry here is
+ * marked Required (Y) in the RUN guide's data dictionary for an employee.
+ */
+export function missingForAdp(rec = {}) {
+  const out = [];
+  if (!rec.first_name) out.push('First name');
+  if (!rec.last_name) out.push('Last name');
+  if (!rec.address1) out.push('Address line 1');
+  if (!rec.city) out.push('City');
+  if (!rec.state) out.push('State');
+  if (!rec.zip) out.push('Zip');
+  if (!rec.dob) out.push('Birth date');
+  if (!rec.start_date) out.push('Hire date');
+  if (!rec.department) out.push('Department (must match a code in RUN\u2019s Departments codelist)');
+  if (!payCycleOf(rec.pay_frequency)) out.push('Pay schedule (RUN pay-cycle code; "hourly" is a pay type, not a schedule)');
+  if (rec.pay_rate == null || rec.pay_rate === '') out.push('Pay rate');
+  if (!rec.w4_filing_status) out.push('Federal withholding status (W-4)');
+  // Not collected anywhere in ReadyDoc, and not inventable.
+  if (!rec.gender && !process.env.ADP_GENDER_CODE_DEFAULT) out.push('Gender (RUN requires it for an employee; ReadyDoc does not ask)');
+  if (!workerTypeCode()) out.push('Worker type (set ADP_WORKER_TYPE_CODE from RUN\u2019s codelist)');
+  if (!payTypeCode()) out.push('Pay type (set ADP_PAY_TYPE_CODE from RUN\u2019s codelist)');
+  if (!workLocationState()) out.push('Work location state (set ADP_WORK_LOCATION_STATE)');
+  return out;
+}
+
+/**
+ * The Applicant Onboard V2 body for RUN, built against ADP's "Applicant Onboard
+ * V2 API Guide for RUN Powered by ADP" (last modified 19 Apr 2026), Chapter 7's
+ * data dictionary. Pure: record in, body out, no network and no database.
+ *
+ * A field is included only when there is a value for it. RUN marks several of
+ * these Required (Y); `missingForAdp` reports those rather than this function
+ * inventing them, because a payload that fabricates a pay type to get past a
+ * validator writes a wrong payroll record.
+ */
+export function applicantOnboardPayload(rec, opts = {}) {
+  // Not a RUN field — it appears nowhere in the RUN guide. Kept as an opt-in
+  // escape hatch in case /meta says otherwise for this account; never required.
+  const templateCode = opts.templateCode ?? process.env.ADP_ONBOARDING_TEMPLATE_CODE ?? null;
+
+  const mi = middleInitial(rec.middle_name);
   const personal = {
-    birthName: {
-      givenName: rec.first_name,
-      ...(rec.middle_name ? { middleName: rec.middle_name } : {}),
-      familyName: rec.last_name,
+    legalName: {
+      ...(rec.first_name ? { givenName: rec.first_name } : {}),
+      ...(mi ? { middleName: mi } : {}),
+      ...(rec.last_name ? { familyName: rec.last_name } : {}),
     },
+    ...(rec.preferred_name ? { preferredName: { formattedName: rec.preferred_name } } : {}),
     ...(rec.dob ? { birthDate: rec.dob } : {}),
-    ...(rec.ssn ? { governmentIDs: [{ id: String(rec.ssn).replace(/\D/g, ''), nameCode: { code: 'SSN' } }] } : {}),
+    ...(rec.ssn ? { governmentIDs: [{ id: String(rec.ssn).replace(/\D/g, ''), nameCode: codeObj('SSN') }] } : {}),
+    ...(rec.gender || process.env.ADP_GENDER_CODE_DEFAULT
+      ? { genderCode: codeObj(rec.gender || process.env.ADP_GENDER_CODE_DEFAULT) } : {}),
     ...(rec.email || rec.phone ? {
       communication: {
-        ...(rec.email ? { emails: [{ emailUri: rec.email, notificationIndicator: true }] } : {}),
-        ...(rec.phone ? { mobiles: [{ formattedNumber: rec.phone }] } : {}),
+        ...(rec.email ? { emails: [{ emailUri: rec.email }] } : {}),
+        // `dialNumber`, not `formattedNumber` — the guide's Personal Information table.
+        ...(rec.phone ? { mobiles: [{ dialNumber: String(rec.phone) }] } : {}),
       },
     } : {}),
     ...(rec.address1 || rec.city || rec.zip ? {
@@ -152,40 +257,57 @@ export function applicantOnboardPayload(rec, opts = {}) {
         ...(rec.address1 ? { lineOne: rec.address1 } : {}),
         ...(rec.address2 ? { lineTwo: rec.address2 } : {}),
         ...(rec.city ? { cityName: rec.city } : {}),
-        ...(rec.state ? { subdivisionCode: rec.state } : {}),
-        countryCode: 'US',
+        // An OBJECT, not the bare string the first cut sent.
+        ...(rec.state ? { subdivisionCode: codeObj(rec.state, rec.state) } : {}),
         ...(rec.zip ? { postalCode: rec.zip } : {}),
+        countryCode: 'US',
       },
     } : {}),
   };
 
+  const wtc = codeObj(workerTypeCode());
+  const wls = workLocationState();
   const worker = {
     ...(rec.start_date ? { hireDate: rec.start_date } : {}),
-    ...(rec.position ? { jobTitle: rec.position } : {}),
+    // Capital N on NameCode is the guide's own spelling for this one field.
+    ...(rec.department ? { homeOrganizationalUnits: [{ NameCode: codeObj(rec.department, rec.department) }] } : {}),
+    ...(wtc ? { workerTypeCode: wtc } : {}),
+    ...(wls ? { homeWorkLocation: { address: { subdivisionCode: codeObj(wls, wls) } } } : {}),
   };
 
-  const rate = rec.pay_rate != null && rec.pay_rate !== '' ? Number(rec.pay_rate) : null;
-  // A rate that ADP can only take one of two ways: per hour, or per pay period.
-  // "hourly" anywhere in the frequency means hourly; anything else is a period
-  // rate and the frequency travels with it for the office to confirm in RUN.
-  const hourly = /hour/i.test(String(rec.pay_frequency || ''));
+  // A rate RUN can take one of two ways: per hour, or per pay period. "hourly"
+  // anywhere in the frequency means hourly; anything else is a period rate.
+  const hourly = HOURLY.test(String(rec.pay_frequency || ''));
+  const amt = money(rec.pay_rate);
+  const ptc = codeObj(payTypeCode());
   const payroll = {
-    ...(payrollGroup ? { payrollGroupCode: payrollGroup } : {}),
-    ...(rate != null && Number.isFinite(rate) ? {
-      baseRemuneration: hourly
-        ? { hourlyRateAmount: { amountValue: rate, currencyCode: 'USD' } }
-        : { payPeriodRateAmount: { amountValue: rate, currencyCode: 'USD' } },
-      ...(!hourly && rec.pay_frequency ? { payFrequencyCode: { code: String(rec.pay_frequency) } } : {}),
+    ...(ptc ? { remunerationBasisCode: ptc } : {}),
+    ...(amt ? {
+      baseRemuneration: hourly ? { hourlyRateAmount: amt } : { payPeriodRateAmount: amt },
     } : {}),
+    // `payCycleCode` (Pay schedule) — there is no `payFrequencyCode` in RUN.
+    ...(payCycleOf(rec.pay_frequency)
+      ? { payCycleCode: codeObj(payCycleOf(rec.pay_frequency), payCycleOf(rec.pay_frequency)) } : {}),
   };
+
+  // The W-4 ReadyDoc already collects, which RUN marks Required (Y) as a whole
+  // profile. Values are sent as stored; RUN's federal-tax-filing-status
+  // codelist is the authority on the code and a refusal will name it.
+  const fit = {
+    ...(rec.w4_filing_status ? { taxFilingStatusCode: codeObj(rec.w4_filing_status) } : {}),
+    ...(money(rec.w4_other_income) ? { additionalIncomeAmount: money(rec.w4_other_income) } : {}),
+    ...(money(rec.w4_extra_withholding) ? { additionalTaxAmount: money(rec.w4_extra_withholding) } : {}),
+  };
+  const tax = Object.keys(fit).length
+    ? { usFederalTaxInstruction: { federalIncomeTaxInstruction: fit } } : {};
 
   return {
     applicantOnboarding: {
-      ...(templateCode ? { onboardingTemplateCode: { code: templateCode } } : {}),
-      onboardingStatus: { statusCode: { code: status, name: status } },
+      ...(templateCode ? { onboardingTemplateCode: codeObj(templateCode) } : {}),
       applicantPersonalProfile: personal,
       ...(Object.keys(worker).length ? { applicantWorkerProfile: worker } : {}),
       ...(Object.keys(payroll).length ? { applicantPayrollProfile: payroll } : {}),
+      ...(Object.keys(tax).length ? { applicantTaxProfile: tax } : {}),
     },
   };
 }

@@ -37,7 +37,7 @@ import { parseJson } from '../custom-fields.js';
 import { uniqueUsername } from '../usernames.js';
 import { readyDocOrigin } from '../links.js';
 import { cryptoEnabled, encryptField, decryptField, last4 } from '../onboarding-crypto.js';
-import { adpEnabled, adpConnected, submitApplicantOnboard, fetchOnboardMeta } from '../adp.js';
+import { adpEnabled, adpConnected, submitApplicantOnboard, fetchOnboardMeta, missingForAdp } from '../adp.js';
 import { storageEnabled, putObject, presignGet, deleteObject } from '../storage.js';
 import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
@@ -265,6 +265,10 @@ router.get('/', (req, res) => {
   res.json({
     records: rows.map(r => shape(db, r)),
     adp_ready: adpEnabled(), sensitive_collection: cryptoEnabled(), storage_enabled: storageEnabled(),
+    adp_company_gaps: missingForAdp({
+      first_name: 'x', last_name: 'x', address1: 'x', city: 'x', state: 'x', zip: 'x',
+      dob: 'x', start_date: 'x', department: 'x', pay_frequency: 'weekly', pay_rate: '1', w4_filing_status: 'x',
+    }),
     attestations: { w4: W4_ATTESTATION, i9_s1: I9_S1_ATTESTATION, i9_s2: I9_S2_ATTESTATION },
   });
 });
@@ -415,6 +419,18 @@ router.post('/:id/submit-adp', async (req, res) => {
   const rec = db.prepare('SELECT * FROM onboarding_records WHERE id = ?').get(req.params.id);
   if (!rec) return res.status(404).json({ error: 'Not found' });
   if (rec.status === 'cancelled') return res.status(409).json({ error: 'This onboarding was cancelled.' });
+  // RUN marks several fields Required (Y) that ReadyDoc either never asks for
+  // (gender) or holds as free text where RUN wants one of its own codes
+  // (department, pay schedule). Refuse HERE, naming them, rather than sending a
+  // payload ADP will 400 with a message about one field at a time. The list is
+  // derived on every read, so filling a gap clears it with no second state.
+  const gaps = missingForAdp(rec);
+  if (gaps.length) {
+    return res.status(409).json({
+      error: `RUN needs ${gaps.length} thing${gaps.length === 1 ? '' : 's'} this packet does not have yet.`,
+      missing_for_adp: gaps,
+    });
+  }
   try {
     const response = await submitApplicantOnboard({
       ...rec,

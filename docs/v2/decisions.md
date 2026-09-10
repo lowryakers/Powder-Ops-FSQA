@@ -2010,3 +2010,59 @@ be read from outside ADP's portal — the field names are the best available rea
 The first live send is the test, against `/meta` and ADP's own refusal text, and the runbook says so. The
 runbook artifact and `docs/adp-run-onboarding.md` are revised for API Central; the Marketplace steps are
 gone.
+
+## D-066 · 2026-09-11 · decided — the ADP payload is rebuilt from RUN's own guide, and six field names were wrong
+
+D-065 said the field names were "the best available reading, not a tested contract", and that the first
+live send would be the test. ADP publishes an **"Applicant Onboard V2 API Guide for RUN Powered by ADP"**
+(45 pages, last modified 19 Apr 2026) whose Chapter 7 is a complete data dictionary for this exact payload.
+Reading it turned six inferences into six defects, none of which had ever been sent, because there are
+still no credentials. Every one would have been a 400 on the first real hire, discovered one field at a
+time.
+
+| ReadyDoc sent | RUN's guide says |
+|---|---|
+| `birthName` | `legalName` |
+| `communication/mobiles/formattedNumber` | `dialNumber` |
+| `legalAddress/subdivisionCode: "UT"` | an **object** carrying the code |
+| `hourlyRateAmount/amountValue` | `amount` |
+| `payFrequencyCode` | `payCycleCode` (Pay schedule) |
+| `applicantWorkerProfile/jobTitle` | no such field in RUN |
+
+Two more came off the same inference and are gone: a payroll group code RUN has no field for, and
+`onboardingStatus`. **A full middle name is a 400** — RUN allows one letter — so it is cut to an initial.
+
+**`ADP_ONBOARDING_TEMPLATE_CODE` IS NOT A RUN FIELD, AND IT WAS HOLDING THE DOOR SHUT.** D-065 made it the
+thing that turns Submit to ADP on. It appears nowhere in the RUN guide's data dictionary, so `adpEnabled()`
+gated the integration on a variable RUN never asks for and could never have been satisfied honestly. It is
+now the four credentials and nothing else; the variable is still sent if deliberately set, in case `/meta`
+says otherwise for this account.
+
+**THE PRODUCT QUESTION IS SETTLED THE OTHER WAY.** A theory held for about an hour — that API Central's
+Workforce-Now-flavoured guide meant RUN has no such API — was wrong. ADP's API Explorer filtered to RUN
+lists Applicant Onboarding, both paths are confirmed verbatim, and the guide states the API "is supported
+for the all RUN Powered by ADP bundles". What is still open is only **how a RUN client gets credentials**:
+the guide says the two canonical scopes must be added to the **Consumer Application Registry** for the
+subscription, and API Central refuses the RUN administrator's sign-in. That is a question for ADP.
+
+**WHAT RUN REQUIRES AND READYDOC CANNOT SUPPLY IS NAMED, NEVER FILLED** — `missingForAdp()`, derived on
+every read, refused at the submit endpoint with the list rather than sent for ADP to reject one field at a
+time. Gender is required for an employee and the wizard has never asked. Worker type, pay type and the
+work-location state are company-level codelist values and are env (`ADP_WORKER_TYPE_CODE`,
+`ADP_PAY_TYPE_CODE`, `ADP_WORK_LOCATION_STATE`), because a fabricated pay type is a wrong payroll record
+and worse than a refusal. Department and pay schedule are held as free text where RUN wants one of its own
+codelist codes; the gap is reported rather than guessed at.
+
+**`pay_frequency` conflates two facts** — it holds either a schedule (weekly, biweekly) or the word
+"hourly", which is a pay TYPE. RUN's `payCycleCode` wants the schedule, so "hourly" is reported missing
+rather than filed as a pay cycle nobody runs.
+
+**The code object key is `codeValue`, on the API's own evidence.** The guide's dictionary writes the path
+as `.../nameCode/code` while its codelist sample and every 400 message the live service generates say
+`codeValue`. The error text is produced by the running service, so it wins; it is one helper, so a first
+refusal proving otherwise is a one-line change.
+
+**The old check passed 12/12 while asserting the opposite of most of this**, because it was written from
+the same inference as the code — a test derived from the implementation only proves the implementation is
+self-consistent. `check:adp` is 28 assertions now, each citing the guide, and the control was run: putting
+`birthName` and `formattedNumber` back fails it immediately.
