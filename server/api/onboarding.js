@@ -583,7 +583,11 @@ const portalShape = (db, rec) => {
   const s = shape(db, rec);
   // The employer's examination is not the employee's to read on the link.
   delete s.i9_section2; delete s.notes; delete s.adp_response;
-  return { ...s, attestations: { w4: W4_ATTESTATION, i9_s1: I9_S1_ATTESTATION } };
+  // Where ReadyDoc actually lives, so the finish screen can offer to install
+  // it. `readyDocOrigin()`, never `appBaseUrl()`: the launcher host answers a
+  // page request with the workspace picker, and a PWA installs only from the
+  // origin that serves its manifest.
+  return { ...s, app_url: readyDocOrigin(), attestations: { w4: W4_ATTESTATION, i9_s1: I9_S1_ATTESTATION } };
 };
 const linkGone = (res) => res.status(404).json({ error: 'This link is no longer valid. Ask the office for a new one.' });
 

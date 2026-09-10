@@ -1,7 +1,9 @@
-// The new-hire wizard in a real browser at phone width: the SSN field is
-// required, the pay-method choice, the W-4 signed by typing the legal name,
-// the I-9 signed with a photo attached, and Finish refused until then. Then
-// the office side: the packet shows both signatures and Section 2 opens.
+// The new-hire wizard in a real browser at phone width: the language toggle is
+// the first thing on the page, the SSN and gender fields are required, direct
+// deposit is the only way paid, the W-4 signed by typing the legal name, the
+// I-9 signed with a photo attached, Finish refused until then, and the install
+// card at the end. Then the office side: the packet shows both signatures and
+// Section 2 opens.
 // Caller sets PORT + DBPATH + ONBOARDING_ENC_KEY + the R2 stand-in; needs a
 // built client.
 import { chromium } from 'playwright-core';
@@ -38,15 +40,31 @@ console.log('\n── the new hire, on a phone ──');
 await m.goto(`${URL}/welcome/${token}`);
 await m.waitForTimeout(2500);
 t('the welcome page names them', /Welcome to Powder Ops, Maria/.test(await m.locator('body').innerText()));
-await m.getByRole('button', { name: /Let's go/ }).click();
+// The toggle is the FIRST thing, before anything has to be read to find it.
+t('both languages are offered on the very first screen, each written in its own language',
+  await m.locator('[data-lang-large="en"]').count() === 1 && await m.locator('[data-lang-large="es"]').count() === 1
+  && /Español/.test(await m.locator('[data-lang-large="es"]').innerText()));
+t('a language switch is also in the header on every screen', await m.locator('[data-lang-switch]').count() === 1);
+await m.locator('[data-lang-large="es"]').click();
+await m.waitForTimeout(400);
+const esBody = await m.locator('body').innerText();
+t('tapping Español puts the page into Spanish', /Bienvenido a Powder Ops/.test(esBody) && /Empezar/.test(esBody), esBody.slice(0, 160));
+t('the Spanish is the plant\'s own words, not a machine echo of the English', /quince minutos/.test(esBody));
+await m.locator('[data-lang-large="en"]').click();
+await m.waitForTimeout(400);
+t('and back to English', /Welcome to Powder Ops/.test(await m.locator('body').innerText()));
+await m.getByRole('button', { name: /Let[’']s go/ }).click();
 await m.waitForTimeout(800);
 t('the SSN field is on the page and marked required', await m.locator('[data-ssn]').count() === 1 && /Social Security number \*/.test(await m.locator('body').innerText()));
 t('nothing sticks out sideways at 390px', await m.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
 const fill = async (labelText, value) => {
   await m.locator(`span:text-is("${labelText}") + input, span:text-is("${labelText}") + select`).first().fill(value);
 };
+t('gender is asked, and says what it is for', await m.locator('[data-gender]').count() === 1
+  && /insurance and compliance/i.test(await m.locator('body').innerText()));
 await fill('Phone *', '8015550100');
 await fill('Date of birth *', '1998-03-09');
+await m.locator('[data-gender]').selectOption('F');
 await m.locator('[data-ssn]').fill('321-54-9876');
 await fill('Home address *', '12 Center St');
 await fill('City *', 'Provo'); await fill('State *', 'UT'); await fill('ZIP *', '84601');
@@ -55,9 +73,10 @@ await m.waitForTimeout(1200);
 t('saved and moved to the emergency contact', /Emergency contact/.test(await m.locator('body').innerText()), (await m.locator('body').innerText()).slice(0, 200));
 await m.getByRole('button', { name: /Save & continue/ }).click();
 await m.waitForTimeout(1000);
-t('the pay step offers direct deposit or a check', await m.getByRole('button', { name: /Direct deposit/ }).count() === 1 && await m.getByRole('button', { name: /Paper check/ }).count() === 1);
-await m.getByRole('button', { name: /Direct deposit/ }).click();
-await m.waitForTimeout(300);
+const payBody = await m.locator('body').innerText();
+t('the pay step is direct deposit only — no cheque anywhere on it',
+  /direct deposit/i.test(payBody) && !/paper cheque option|Paper check/i.test(payBody)
+  && await m.getByRole('button', { name: /^Paper check$/ }).count() === 0);
 await fill('Bank name', 'Zions');
 await m.locator('input[placeholder="9 digits"]').fill('124000054');
 await m.locator('span:text-is("Account number *") + input').fill('44556677');
@@ -88,7 +107,16 @@ await m.waitForTimeout(1200);
 t('the I-9 is signed and Finish appears', await m.locator('[data-signed="i9"]').count() === 1 && await m.locator('[data-finish]').count() === 1);
 await m.locator('[data-finish]').click();
 await m.waitForTimeout(1500);
-t("finished — 'You're all set'", /all set, Maria/.test(await m.locator('body').innerText()));
+const doneBody = await m.locator('body').innerText();
+t("finished — 'You’re all set'", /all set, Maria/.test(doneBody));
+t('the finish screen hands off to installing ReadyDoc', await m.locator('[data-install]').count() === 1
+  && /put ReadyDoc on your phone/i.test(doneBody));
+t('it says the sign-in comes on day one rather than implying they can log in now',
+  /sign-in comes on your first day/i.test(doneBody));
+t('notifications are deferred to the app, not requested from a page with no account',
+  /switched on inside the app/i.test(doneBody) && await m.locator('[data-install] button:has-text("otification")').count() === 0);
+t('the install card names the app address from the server, not a hard-coded host',
+  /localhost:/.test(doneBody) || /powder-ops|railway/i.test(doneBody));
 
 console.log('\n── the office ──');
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });

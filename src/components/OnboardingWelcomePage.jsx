@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import PhotoPicker from './common/PhotoPicker.jsx';
+import { LANGS, translator } from '../i18n/onboardingStrings.js';
 
 /**
  * The new hire's first screen — /welcome/<token>, public, phone-first.
@@ -43,7 +44,7 @@ function Field({ l, children, hint }) {
 const STEPS = ['welcome', 'personal', 'emergency', 'deposit', 'w4', 'i9', 'done'];
 
 /** Photos of a kind, with the phone camera one tap away. */
-function Photos({ token, rec, kind, title, hint, onChanged }) {
+function Photos({ token, rec, kind, title, hint, onChanged, t }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const files = (rec.files || []).filter(f => f.kind === kind);
@@ -77,7 +78,7 @@ function Photos({ token, rec, kind, title, hint, onChanged }) {
             <li key={f.id} className="flex items-center justify-between gap-2 text-xs bg-white border border-gray-200 rounded-lg px-2.5 py-1.5">
               <span className="truncate">📷 {f.filename}</span>
               {f.uploaded_by === 'new hire' && (
-                <button type="button" onClick={() => remove(f)} className="text-gray-400 hover:text-red-600 shrink-0">Remove</button>
+                <button type="button" onClick={() => remove(f)} className="text-gray-400 hover:text-red-600 shrink-0">{t('photos.remove')}</button>
               )}
             </li>
           ))}
@@ -85,9 +86,9 @@ function Photos({ token, rec, kind, title, hint, onChanged }) {
       )}
       {rec.storage_enabled ? (
         <PhotoPicker name={kind} onChange={add} busy={busy} accept="image/*,application/pdf"
-          takeLabel={files.length ? 'Take another photo' : 'Take a photo'} chooseLabel="Choose from photos" />
+          takeLabel={t(files.length ? 'photos.takeAnother' : 'photos.take')} chooseLabel={t('photos.choose')} />
       ) : (
-        <p className="text-xs text-amber-800">Photo upload is not available right now — bring the documents on your first day.</p>
+        <p className="text-xs text-amber-800">{t('photos.unavailable')}</p>
       )}
       {error && <p className="text-xs text-red-700">{error}</p>}
     </div>
@@ -129,10 +130,16 @@ export default function OnboardingWelcomePage({ token }) {
   const [fatal, setFatal] = useState('');
   const [busy, setBusy] = useState(false);
   const [finished, setFinished] = useState(false);
+  // The language is a FIELD ON THE RECORD, not a browser preference: the office
+  // reads the packet and the person may come back to the link on another phone.
+  // It is applied the moment it is tapped and saved with the next step.
+  const [lang, setLang] = useState('en');
+  const t = translator(lang);
 
   useEffect(() => {
     api('GET', `/${token}`).then(r => {
       setRec(r);
+      if (r.language === 'es' || r.language === 'en') setLang(r.language);
       setForm(Object.fromEntries(Object.entries(r).filter(([, v]) => typeof v === 'string' || typeof v === 'boolean')));
     }).catch(e => setFatal(e.message));
   }, [token]);
@@ -148,7 +155,7 @@ export default function OnboardingWelcomePage({ token }) {
   const saveAnd = async (nextStep, extra = {}) => {
     setBusy(true); setError('');
     try {
-      const payload = { ...form, ...extra, progress: { [STEPS[step]]: true } };
+      const payload = { ...form, ...extra, language: lang, progress: { [STEPS[step]]: true } };
       adopt(await api('PUT', `/${token}`, payload));
       setStep(nextStep);
       window.scrollTo(0, 0);
@@ -174,15 +181,16 @@ export default function OnboardingWelcomePage({ token }) {
     } finally { setBusy(false); }
   };
 
-  if (fatal) return <Shell><p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl p-4">{fatal}</p></Shell>;
-  if (!rec) return <Shell><p className="text-sm text-gray-400 text-center py-10">Loading…</p></Shell>;
+  if (fatal) return <Shell lang={lang} onLang={setLang}><p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl p-4">{fatal}</p></Shell>;
+  if (!rec) return <Shell lang={lang} onLang={setLang}><p className="text-sm text-gray-400 text-center py-10">{t('loading')}</p></Shell>;
   if (finished || rec.status === 'ready') {
-    return <Shell>
-      <div className="text-center space-y-3 py-8">
+    return <Shell lang={lang} onLang={setLang}>
+      <div className="text-center space-y-3 py-6">
         <div className="text-4xl">🎉</div>
-        <h2 className="text-xl font-bold text-gray-900">You're all set{rec.first_name ? `, ${rec.preferred_name || rec.first_name}` : ''}.</h2>
-        <p className="text-sm text-gray-600 max-w-sm mx-auto">The office has your information and your signed forms. Bring the original ID documents you photographed on your first day — the office has to see them in person. You'll get your ReadyDoc account then; Messages is where the team talks, and your tasks and training will be waiting there.</p>
+        <h2 className="text-xl font-bold text-gray-900">{t('done.title')}{rec.first_name ? `, ${rec.preferred_name || rec.first_name}` : ''}.</h2>
+        <p className="text-sm text-gray-600 max-w-sm mx-auto">{t('done.body')}</p>
       </div>
+      <InstallReadyDoc t={t} appUrl={rec.app_url} />
     </Shell>;
   }
 
@@ -191,7 +199,7 @@ export default function OnboardingWelcomePage({ token }) {
   const goTo = (s) => { setStep(STEPS.indexOf(s)); window.scrollTo(0, 0); };
 
   return (
-    <Shell>
+    <Shell lang={lang} onLang={setLang}>
       {/* progress */}
       <div className="flex gap-1 mb-5">
         {STEPS.slice(0, 6).map((s, i) => (
@@ -201,57 +209,55 @@ export default function OnboardingWelcomePage({ token }) {
 
       {name === 'welcome' && (
         <div className="space-y-4">
-          <h2 className="text-2xl font-bold text-gray-900">Welcome to Powder Ops{form.first_name ? `, ${form.first_name}` : ''} 👋</h2>
-          <p className="text-sm text-gray-700">This takes about fifteen minutes and saves as you go — you can come back to
-            this link anytime before your first day. Have your Social Security number, your bank details or a check, and
-            your ID documents (passport, or driver's license plus Social Security card) to hand.</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-powder-700">{t('langPrompt')}</p>
+          <LangSwitchLarge lang={lang} onLang={setLang} />
+          <h2 className="text-2xl font-bold text-gray-900">{t('welcome.title')}{form.first_name ? `, ${form.first_name}` : ''} 👋</h2>
+          <p className="text-sm text-gray-700">{t('welcome.intro')}</p>
           <div className="bg-powder-50 border border-powder-200 rounded-xl p-4 text-sm text-gray-800 space-y-2">
-            <p className="font-semibold">The plant runs on ReadyDoc — this app.</p>
-            <p><b>Messages</b> is how the team talks: your channels, direct messages, and announcements, in English and
-              Spanish. Your phone gets notifications the moment someone needs you.</p>
-            <p><b>Your work lives here too</b> — the tasks assigned to you, the forms you'll fill in on the floor, and
-              your training. Everything you'll need is one app, and you'll get your sign-in on day one.</p>
+            <p className="font-semibold">{t('welcome.appTitle')}</p>
+            <p>{t('welcome.appMessages')}</p>
+            <p>{t('welcome.appWork')}</p>
           </div>
-          {rec.position && <p className="text-sm text-gray-600">Starting as <b>{rec.position}</b>{rec.start_date ? <> on <b>{rec.start_date}</b></> : ''}{rec.team ? <> · {rec.team}</> : ''}.</p>}
-          <button onClick={() => saveAnd(1)} disabled={busy} className="w-full py-3 bg-powder-600 text-white rounded-xl text-base font-semibold disabled:opacity-50">Let's go</button>
+          {rec.position && <p className="text-sm text-gray-600">{t('welcome.startingAs')} <b>{rec.position}</b>{rec.start_date ? <> {t('welcome.on')} <b>{rec.start_date}</b></> : ''}{rec.team ? <> · {rec.team}</> : ''}.</p>}
+          <button onClick={() => saveAnd(1)} disabled={busy} className="w-full py-3 bg-powder-600 text-white rounded-xl text-base font-semibold disabled:opacity-50">{t('welcome.go')}</button>
         </div>
       )}
 
       {name === 'personal' && (
         <div className="space-y-3">
-          <h2 className="text-lg font-bold text-gray-900">About you</h2>
+          <h2 className="text-lg font-bold text-gray-900">{t('personal.title')}</h2>
           <div className="grid grid-cols-2 gap-3">
-            <Field l="First name *"><input className={input} value={form.first_name || ''} onChange={set('first_name')} /></Field>
-            <Field l="Last name *"><input className={input} value={form.last_name || ''} onChange={set('last_name')} /></Field>
-            <Field l="Middle name"><input className={input} value={form.middle_name || ''} onChange={set('middle_name')} /></Field>
-            <Field l="Goes by"><input className={input} value={form.preferred_name || ''} onChange={set('preferred_name')} /></Field>
-            <Field l="Phone *"><input type="tel" className={input} value={form.phone || ''} onChange={set('phone')} /></Field>
-            <Field l="Email"><input type="email" className={input} value={form.email || ''} onChange={set('email')} /></Field>
-            <Field l="Date of birth *"><input type="date" className={input} value={form.dob || ''} onChange={set('dob')} /></Field>
-            <Field l="Gender *" hint="For insurance and compliance reporting.">
+            <Field l={t('personal.first')}><input className={input} value={form.first_name || ''} onChange={set('first_name')} /></Field>
+            <Field l={t('personal.last')}><input className={input} value={form.last_name || ''} onChange={set('last_name')} /></Field>
+            <Field l={t('personal.middle')}><input className={input} value={form.middle_name || ''} onChange={set('middle_name')} /></Field>
+            <Field l={t('personal.preferred')}><input className={input} value={form.preferred_name || ''} onChange={set('preferred_name')} /></Field>
+            <Field l={t('personal.phone')}><input type="tel" className={input} value={form.phone || ''} onChange={set('phone')} /></Field>
+            <Field l={t('personal.email')}><input type="email" className={input} value={form.email || ''} onChange={set('email')} /></Field>
+            <Field l={t('personal.dob')}><input type="date" className={input} value={form.dob || ''} onChange={set('dob')} /></Field>
+            <Field l={t('personal.gender')} hint={t('personal.genderHint')}>
               <select className={input} value={form.gender || ''} onChange={set('gender')} data-gender>
-                <option value="">Choose…</option>
-                <option value="F">Female</option>
-                <option value="M">Male</option>
+                <option value="">{t('personal.choose')}</option>
+                <option value="F">{t('personal.female')}</option>
+                <option value="M">{t('personal.male')}</option>
               </select>
             </Field>
             {rec.sensitive_collection && (
-              <Field l={`Social Security number *${rec.has_ssn ? ' (on file ••••)' : ''}`}>
-                <input inputMode="numeric" placeholder={rec.has_ssn ? 'Saved — retype to change' : '###-##-####'}
+              <Field l={`${t('personal.ssn')}${rec.has_ssn ? t('personal.ssnOnFile') : ''}`}>
+                <input inputMode="numeric" placeholder={rec.has_ssn ? t('personal.ssnSaved') : '###-##-####'}
                   className={input} value={form.ssn || ''} onChange={set('ssn')} autoComplete="off" data-ssn />
               </Field>
             )}
           </div>
-          <Field l="Home address *"><input className={input} value={form.address1 || ''} onChange={set('address1')} /></Field>
-          <Field l="Apt / unit"><input className={input} value={form.address2 || ''} onChange={set('address2')} /></Field>
+          <Field l={t('personal.address1')}><input className={input} value={form.address1 || ''} onChange={set('address1')} /></Field>
+          <Field l={t('personal.address2')}><input className={input} value={form.address2 || ''} onChange={set('address2')} /></Field>
           <div className="grid grid-cols-3 gap-3">
-            <Field l="City *"><input className={input} value={form.city || ''} onChange={set('city')} /></Field>
-            <Field l="State *"><input className={input} value={form.state || ''} onChange={set('state')} maxLength={2} placeholder="UT" /></Field>
-            <Field l="ZIP *"><input inputMode="numeric" className={input} value={form.zip || ''} onChange={set('zip')} /></Field>
+            <Field l={t('personal.city')}><input className={input} value={form.city || ''} onChange={set('city')} /></Field>
+            <Field l={t('personal.state')}><input className={input} value={form.state || ''} onChange={set('state')} maxLength={2} placeholder="UT" /></Field>
+            <Field l={t('personal.zip')}><input inputMode="numeric" className={input} value={form.zip || ''} onChange={set('zip')} /></Field>
           </div>
           {!rec.sensitive_collection && (
             <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
-              The office will collect your Social Security number and banking details with you directly.
+              {t('personal.officeCollects')}
             </p>
           )}
           <Nav onBack={() => setStep(0)} onNext={() => saveAnd(2)} busy={busy} />
@@ -260,11 +266,11 @@ export default function OnboardingWelcomePage({ token }) {
 
       {name === 'emergency' && (
         <div className="space-y-3">
-          <h2 className="text-lg font-bold text-gray-900">Emergency contact</h2>
-          <Field l="Name"><input className={input} value={form.emergency_name || ''} onChange={set('emergency_name')} /></Field>
+          <h2 className="text-lg font-bold text-gray-900">{t('emergency.title')}</h2>
+          <Field l={t('emergency.name')}><input className={input} value={form.emergency_name || ''} onChange={set('emergency_name')} /></Field>
           <div className="grid grid-cols-2 gap-3">
-            <Field l="Phone"><input type="tel" className={input} value={form.emergency_phone || ''} onChange={set('emergency_phone')} /></Field>
-            <Field l="Relationship"><input className={input} value={form.emergency_relationship || ''} onChange={set('emergency_relationship')} /></Field>
+            <Field l={t('emergency.phone')}><input type="tel" className={input} value={form.emergency_phone || ''} onChange={set('emergency_phone')} /></Field>
+            <Field l={t('emergency.relationship')}><input className={input} value={form.emergency_relationship || ''} onChange={set('emergency_relationship')} /></Field>
           </div>
           <Nav onBack={() => setStep(1)} onNext={() => saveAnd(3)} busy={busy} />
         </div>
@@ -272,33 +278,39 @@ export default function OnboardingWelcomePage({ token }) {
 
       {name === 'deposit' && (
         <div className="space-y-3">
-          <h2 className="text-lg font-bold text-gray-900">How you'll be paid</h2>
-          <p className="text-sm text-gray-700">Powder Ops pays by <b>direct deposit</b> — straight into your bank account on
-            payday. There is no paper cheque, so the details below are how you get paid.</p>
+          <h2 className="text-lg font-bold text-gray-900">{t('deposit.title')}</h2>
+          <p className="text-sm text-gray-700">{t('deposit.directOnly')}</p>
           {(
             rec.sensitive_collection ? (
               <>
-                <Field l="Bank name"><input className={input} value={form.dd_bank_name || ''} onChange={set('dd_bank_name')} /></Field>
+                <Field l={t('deposit.bank')}><input className={input} value={form.dd_bank_name || ''} onChange={set('dd_bank_name')} /></Field>
                 <div className="grid grid-cols-2 gap-3">
-                  <Field l={`Routing number *${rec.has_bank ? ' (on file)' : ''}`}>
+                  <Field l={`${t('deposit.routing')}${rec.has_bank ? t('deposit.routingOnFile') : ''}`}>
                     <input inputMode="numeric" className={input} value={form.dd_routing || ''} onChange={set('dd_routing')} autoComplete="off"
-                      placeholder={rec.has_bank ? 'Saved — retype to change' : '9 digits'} /></Field>
-                  <Field l={`Account number *${rec.dd_account_last4 ? ` (••••${rec.dd_account_last4})` : ''}`}>
+                      placeholder={rec.has_bank ? t('deposit.saved') : t('deposit.routingHint')} /></Field>
+                  <Field l={`${t('deposit.account')}${rec.dd_account_last4 ? ` (••••${rec.dd_account_last4})` : ''}`}>
                     <input inputMode="numeric" className={input} value={form.dd_account || ''} onChange={set('dd_account')} autoComplete="off"
-                      placeholder={rec.dd_account_last4 ? 'Saved — retype to change' : ''} /></Field>
+                      placeholder={rec.dd_account_last4 ? t('deposit.saved') : ''} /></Field>
                 </div>
-                <Field l="Account type *">
+                <Field l={t('deposit.accountType')}>
                   <select className={input} value={form.dd_account_type || ''} onChange={set('dd_account_type')}>
-                    <option value="">Choose…</option><option value="checking">Checking</option><option value="savings">Savings</option>
+                    <option value="">{t('personal.choose')}</option>
+                    <option value="checking">{t('deposit.checking')}</option>
+                    <option value="savings">{t('deposit.savings')}</option>
                   </select>
                 </Field>
-                <Photos token={token} rec={rec} kind="voided_check" title="A photo of a voided check (recommended)"
-                  hint="The office checks the numbers above against it. Write VOID across a blank check and photograph the front." onChanged={adopt} />
+                <Photos token={token} rec={rec} kind="voided_check" t={t} title={t('deposit.voidedTitle')}
+                  hint={t('deposit.voidedHint')} onChanged={adopt} />
               </>
             ) : (
-              <Photos token={token} rec={rec} kind="voided_check" title="A photo of a voided check *"
-                hint="Your bank details are not typed in here. The office sets up your direct deposit from the check: write VOID across a blank check and photograph the front." onChanged={adopt} />
+              <Photos token={token} rec={rec} kind="voided_check" t={t} title={t('deposit.voidedTitleReq')}
+                hint={t('deposit.voidedHintReq')} onChanged={adopt} />
             )
+          )}
+          {lang !== 'en' && (
+            <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg p-2.5" data-forms-english>
+              {t('formsEnglish')}
+            </p>
           )}
           <Nav onBack={() => setStep(2)} onNext={() => saveAnd(4)} busy={busy} />
         </div>
@@ -386,7 +398,7 @@ export default function OnboardingWelcomePage({ token }) {
           {form.i9_preparer === 'used' && (
             <Field l="Preparer / translator's full name *"><input className={input} value={form.i9_preparer_name || ''} onChange={set('i9_preparer_name')} /></Field>
           )}
-          <Photos token={token} rec={rec} kind="id_document" title="Photos of your ID documents"
+          <Photos token={token} rec={rec} kind="id_document" t={t} title="Photos of your ID documents"
             hint="Either one List A document (a U.S. passport, or a permanent resident card), or one List B plus one List C (a driver's license plus your Social Security card or birth certificate). Photograph the front and back. Bring the originals on your first day — the office has to see them in person." onChanged={adopt} />
           <Signature rec={rec} which="i9" attestation={rec.attestations?.i9_s1} value={sig.i9} onChange={v => setSig(s => ({ ...s, i9: v }))}
             attest={sig.i9_attest} onAttest={v => setSig(s => ({ ...s, i9_attest: v }))} />
@@ -428,20 +440,129 @@ export default function OnboardingWelcomePage({ token }) {
   function Nav({ onBack, onNext, busy: b, label: l }) {
     return (
       <div className="flex gap-2 pt-1">
-        <button onClick={onBack} className="px-4 py-3 border border-gray-300 rounded-xl text-sm font-medium">Back</button>
+        <button onClick={onBack} className="px-4 py-3 border border-gray-300 rounded-xl text-sm font-medium">{t('nav.back')}</button>
         <button onClick={onNext} disabled={b} className="flex-1 py-3 bg-powder-600 text-white rounded-xl text-base font-semibold disabled:opacity-50">
-          {b ? 'Saving…' : (l || 'Save & continue')}
+          {b ? t('nav.saving') : (l || t('nav.next'))}
         </button>
       </div>
     );
   }
 }
 
-function Shell({ children }) {
+/**
+ * The hand-off from "the packet is filed" to "ReadyDoc is on your phone".
+ *
+ * IT INSTALLS, IT DOES NOT SIGN IN. The account does not exist until the office
+ * creates it on day one, so an install now lands on a sign-in screen — the card
+ * says that plainly rather than letting somebody tap through and conclude the
+ * app is broken. NOTIFICATIONS ARE NOT OFFERED HERE for the same reason: a push
+ * subscription is per-account and the endpoint that stores one is behind a
+ * session, so a permission prompt now would buy a browser grant attached to
+ * nobody. The app asks on day one, when it can actually deliver.
+ *
+ * `beforeinstallprompt` only fires on Chromium, and only when the page is on the
+ * app's own origin — which /welcome/<token> is. Where the event never arrives
+ * (iOS Safari, always) the per-platform instructions ARE the feature, so they
+ * render whether or not a button appeared. `appUrl` comes from the server's own
+ * `readyDocOrigin()`; a hard-coded host here is how a link starts pointing at
+ * the wrong one of the two origins.
+ */
+function InstallReadyDoc({ t, appUrl }) {
+  const [prompt, setPrompt] = useState(null);
+  const [installed, setInstalled] = useState(false);
+  useEffect(() => {
+    const onPrompt = (e) => { e.preventDefault(); setPrompt(e); };
+    const onInstalled = () => { setInstalled(true); setPrompt(null); };
+    window.addEventListener('beforeinstallprompt', onPrompt);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onPrompt);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
+  }, []);
+  const isIos = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const install = async () => {
+    if (!prompt) return;
+    prompt.prompt();
+    const { outcome } = await prompt.userChoice.catch(() => ({ outcome: 'dismissed' }));
+    if (outcome === 'accepted') setInstalled(true);
+    setPrompt(null);
+  };
+  return (
+    <div className="bg-powder-50 border border-powder-200 rounded-xl p-4 space-y-3" data-install>
+      <p className="text-base font-bold text-gray-900">{t('done.installTitle')}</p>
+      <p className="text-sm text-gray-700">{t('done.installWhy')}</p>
+      {installed ? (
+        <p className="text-sm font-semibold text-green-800 bg-green-50 border border-green-200 rounded-lg p-2.5" data-install-done>
+          ✓ {t('done.installDone')}
+        </p>
+      ) : (
+        <>
+          {prompt && (
+            <button type="button" onClick={install} data-install-button
+              className="w-full py-3 bg-powder-600 text-white rounded-xl text-base font-semibold">
+              {t('done.installButton')}
+            </button>
+          )}
+          <p className="text-sm text-gray-700">{t(isIos ? 'done.installIos' : 'done.installAndroid')}</p>
+        </>
+      )}
+      <p className="text-xs text-gray-500">{t('done.notifications')}</p>
+      {appUrl && (
+        <p className="text-xs text-gray-500 break-all">
+          {t('done.openLink')} <a className="text-powder-700 underline" href={appUrl}>{appUrl.replace(/^https?:\/\//, '')}</a>
+        </p>
+      )}
+    </div>
+  );
+}
+
+function Shell({ children, lang, onLang }) {
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-powder-700 text-white px-4 py-3 text-sm font-bold tracking-wide">POWDER OPS · ReadyDoc</div>
+      <div className="bg-powder-700 text-white px-4 py-3 flex items-center justify-between gap-3">
+        <span className="text-sm font-bold tracking-wide">POWDER OPS · ReadyDoc</span>
+        {onLang && <LangSwitch lang={lang} onLang={onLang} />}
+      </div>
       <div className="max-w-lg mx-auto p-4 pb-16">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * EN / ES, in the header bar, on every screen.
+ *
+ * It is a SEGMENTED CONTROL SHOWING BOTH WORDS, not a globe icon or a menu: the
+ * point is that somebody who reads no English sees the word "Español" the
+ * instant the page opens, without having to guess what an icon does. Each label
+ * is written in its own language for the same reason — "Spanish" is no use to
+ * the person who needs it.
+ */
+function LangSwitchLarge({ lang, onLang }) {
+  return (
+    <div className="grid grid-cols-2 gap-2" data-lang-switch-large>
+      {LANGS.map(l => (
+        <button key={l.code} type="button" onClick={() => onLang(l.code)} aria-pressed={lang === l.code}
+          data-lang-large={l.code}
+          className={`py-3 rounded-xl border text-base font-semibold ${lang === l.code
+            ? 'border-powder-600 bg-powder-50 text-powder-800' : 'border-gray-300 bg-white text-gray-700'}`}>
+          {l.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function LangSwitch({ lang, onLang }) {
+  return (
+    <div className="flex rounded-lg overflow-hidden border border-white/30 shrink-0" data-lang-switch>
+      {LANGS.map(l => (
+        <button key={l.code} type="button" onClick={() => onLang(l.code)} aria-pressed={lang === l.code}
+          data-lang={l.code}
+          className={`px-3 py-1.5 text-xs font-semibold ${lang === l.code ? 'bg-white text-powder-700' : 'text-white/90'}`}>
+          {l.label}
+        </button>
+      ))}
     </div>
   );
 }
