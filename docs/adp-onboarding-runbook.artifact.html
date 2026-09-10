@@ -226,33 +226,33 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
         Let the sign-in finish on its own. It will move through two or three addresses; that is normal, and clicking anything mid-way breaks it again.</div></div>
 
       <div class="expect"><span class="k no">If that<br>still fails</span><div>Then it is worth suspecting the account rather than the browser, and only ADP can settle it. <b>Stop there</b> — do not keep retrying, and do not create anything. Ring your ADP service contact for RUN and ask exactly this:
-        <div class="term"><div class="term-head">What to ask ADP <button class="copy" type="button" data-cmd="I am trying to use ADP API Central to build an integration against our own company's data, and I cannot get past sign-in at api-central.adp.com. I have cleared all ADP cookies and signed in as the RUN administrator in a normal browser window. Two questions. First: is API Central available for a RUN Powered by ADP account, or is it Workforce Now only? Second: if it is available, please confirm it is enabled for our account and that I am a member. The errors I get are Unknown Authentication Error, and at api.adp.com/auth/oauth/v2/authorize/consent a page reading invalid_request, error extracting values from session.">Copy</button></div><pre>I am trying to use ADP API Central to build an integration
-against our own company's data, and I cannot get past sign-in
-at api-central.adp.com. I have cleared all ADP cookies and
-signed in as the RUN administrator in a normal browser window.
+        <div class="term"><div class="term-head">What to ask ADP <button class="copy" type="button" data-cmd="I am a RUN Powered by ADP client and I want to build an integration against our own company's data, using the Applicant Onboarding API. Your API Explorer lists Applicant Onboarding under RUN Powered by ADP, so I know the API exists for our product. My question is how a RUN client gets credentials for it. I have tried ADP API Central at api-central.adp.com, signed in as the RUN administrator in a normal browser window with all ADP cookies cleared, and it will not let me in: Unknown Authentication Error, and at api.adp.com/auth/oauth/v2/authorize/consent a page reading invalid_request, error extracting values from session. So: is API Central the right route for a RUN client, and if so please enable it for our account and add me as a member. If it is not the right route, what is?">Copy</button></div><pre>I am a RUN Powered by ADP client and I want to build an
+integration against our own company's data, using the
+Applicant Onboarding API.
 
-Two questions.
+Your API Explorer lists Applicant Onboarding under RUN
+Powered by ADP, so I know the API exists for our product.
+My question is how a RUN client gets credentials for it.
 
-First: is API Central available for a RUN Powered by ADP
-account, or is it Workforce Now only?
-
-Second: if it is available, please confirm it is enabled for
-our account and that I am a member.
-
-The errors I get are Unknown Authentication Error, and at
+I have tried ADP API Central at api-central.adp.com, signed
+in as the RUN administrator in a normal browser window with
+all ADP cookies cleared, and it will not let me in:
+Unknown Authentication Error, and at
 api.adp.com/auth/oauth/v2/authorize/consent a page reading
-invalid_request, error extracting values from session.</pre></div>
+invalid_request, error extracting values from session.
+
+So: is API Central the right route for a RUN client, and if
+so please enable it for our account and add me as a member.
+If it is not the right route, what is?</pre></div>
         Send me their answer. <b>Whichever way it goes, nothing you have already done is wasted</b> — Part A is live and onboarding is fully usable today with the office keying the packet into RUN by hand. This part only removes that keying step.</div></div>
 
       <div class="expect"><span class="k no">If ADP says<br>RUN is not<br>supported</span><div>Then API Central is Workforce Now only and the plan changes: the route back is registering ReadyDoc as an <b>ADP Marketplace</b> app, which is a partner registration with a review that takes weeks. Confirm it with ADP before starting, because it is a much longer road and avoiding it is the reason API Central was worth trying first. Send me what they say and I will rewrite Parts B to D around it.</div></div>
 
-      <div class="dont"><b>Read this before you ring them — three things in ADP's own guide point at Workforce Now, not RUN.</b> None of them is proof, because ADP tends to write its documentation against its largest product. Together they are enough that <i>"is this available for RUN at all"</i> should be your first question rather than <i>"please fix my login"</i>.
-        <ol>
-          <li>The <b>Create new project</b> dialog in their screenshots is subtitled <b>"for ADP Workforce Now®"</b>.</li>
-          <li>The guide's last chapter is <b>"How to set ADP Workforce Now® access permissions for API Central"</b>. There is no RUN equivalent chapter.</li>
-          <li>That chapter's screens are Workforce Now's practitioner security model — <i>Menus &amp; Features</i>, <i>Sensitive Personal Information</i>, <i>View Site As User</i>. RUN does not have that model.</li>
-        </ol>
-        Add your own sign-in being refused as an administrator and the likeliest reading is that API Central is not provisioned for RUN accounts. <b>I could be wrong and ADP is the only one who can say.</b></div>
+      <div class="dont"><b>Read this before you ring them — and note that it is not what I told you an hour ago.</b> I said the likeliest explanation was that API Central does not support RUN, on the strength of ADP's guide being written around Workforce Now. <b>Your API Explorer screenshot narrows that considerably.</b> Filtered to <i>RUN Powered by ADP®</i>, ADP lists 25 API categories and <b>Applicant Onboarding is one of them</b>. So the API ReadyDoc calls is a documented RUN API, and that half is settled.
+        <p style="margin:.5rem 0 0">What is still open is narrower and more useful: <b>how does a RUN client get credentials for it?</b> API Central is one answer and it will not let you in. The Marketplace partner route is the other. Those are the two things to make ADP choose between, and you can now say plainly that you know the API exists for your product — which stops the call turning into a debate about whether what you want is possible.</p>
+        <p style="margin:.5rem 0 0">The Workforce Now signals are still there in the guide — the project dialog subtitled <i>"for ADP Workforce Now®"</i>, a Workforce-Now-only permissions chapter — but they now read as evidence about <b>API Central's own reach</b>, not about whether RUN has the API.</p></div>
+
+      <p class="why"><b>Worth sending me before you call, if it is two clicks.</b> On that same API Explorer page, click <b>View APIs</b> on the Applicant Onboarding card. It should name the actual endpoint. If it reads <span class="mono">POST /hcm/v2/applicant.onboard</span> then ReadyDoc is already built against exactly the right call for RUN and nothing in the code needs to change. If it names something else, I would rather know now than after you have credentials.</p>
 
       <p class="why"><b>One thing worth trying while you wait on hold, because it is a different test rather than another go.</b> Open <b>Safari</b> — not Chrome — and sign in at <span class="mono">api-central.adp.com</span>. If Chrome carries an extension or a work profile policy that is interfering, Safari will get in and the problem was never ADP. If Safari fails the same way, that is one more thing you have ruled out and can tell them.</p>
 

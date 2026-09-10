@@ -48,19 +48,25 @@ first: *is API Central available for a RUN Powered by ADP account at all, or is
 it Workforce Now only*, and *if so, is it enabled for this account with the
 administrator as a member*.
 
-**Three things in ADP's own guide point at Workforce Now rather than RUN**, and
-after a clean administrator sign-in was still refused on 10 September they are
-the leading explanation. None is proof — ADP writes documentation against its
-largest product — but together they are enough that *"is this available for RUN
-at all"* is the first question to ask, not *"please fix my login"*:
+**The API exists for RUN. What is unresolved is how a RUN client gets
+credentials for it.** ADP's API Explorer, filtered to *RUN Powered by ADP®*,
+lists 25 API categories and **Applicant Onboarding** is one of them (HCM,
+updated 4/19/2026). So `applicant.onboard` is a documented RUN API and the
+question is not whether this is possible.
 
-- the **Create new project** dialog in their screenshots is subtitled
-  *"for ADP Workforce Now®"*;
-- the guide's last chapter is *"How to set ADP Workforce Now® access
-  permissions for API Central"*, with no RUN equivalent;
-- that chapter's screens are Workforce Now's practitioner security model
-  (Menus & Features, Sensitive Personal Information, View Site As User), which
-  RUN does not have. **If ADP answers that RUN is not supported, the route back
+A briefly-held theory that API Central is Workforce Now only, and that RUN
+therefore has no such API, is **wrong on its second half** and recorded here so
+it is not re-derived. The Workforce Now signals in ADP's API Central guide are
+real — the Create new project dialog is subtitled *"for ADP Workforce Now®"*,
+the last chapter is *"How to set ADP Workforce Now® access permissions for API
+Central"* with no RUN equivalent, and that chapter's screens are Workforce
+Now's practitioner security model, which RUN does not have — but they are
+evidence about **API Central's own reach**, not about RUN's API catalogue.
+
+So the open question is narrow: **is API Central the credentialing route for a
+RUN client, or is it the ADP Marketplace partner registration?** Only ADP can
+say, and the call should assert that the API exists for RUN rather than asking
+whether it does. **If ADP answers that RUN is not supported, the route back
 is the ADP Marketplace partner registration** — weeks of review — which is
 what this doc described before 10 September and what API Central was worth
 trying in order to avoid. Do not start that until ADP has said so plainly.
