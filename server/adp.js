@@ -2,21 +2,37 @@
 // quickbooks.js and storage.js: without the env vars everything here is
 // simply off, and the onboarding module runs as the collect-and-key-in packet.
 //
-// The credentials come from ADP API Central (developers.adp.com → a project on
+// The credentials come from ADP API Central (api-central.adp.com → a project on
 // the "New Hire Onboarding" use case), which authenticates with OAuth
 // client_credentials over MUTUAL TLS — every request presents the client
 // certificate API Central generates. `ADP_CERT_PEM` / `ADP_KEY_PEM` hold the
 // PEMs (literal or a file path). docs/adp-run-onboarding.md is the setup guide.
 //
-// THE ENDPOINT IS APPLICANT ONBOARD V2 — `POST /hcm/v2/applicant.onboard`, the
-// call API Central's New Hire Onboarding template exposes (seen 10 Sep 2026).
+// THE ENDPOINT IS APPLICANT ONBOARD V2, AND IT IS A DOCUMENTED **RUN** API.
+// ADP's API Explorer filtered to RUN Powered by ADP lists HCM → Applicant
+// Onboarding with five operations, and `GET /hcm/v2/applicant.onboard/meta` —
+// what `fetchOnboardMeta()` calls — is one of them, verbatim (seen 11 Sep
+// 2026). So the product question is settled: this is not a Workforce Now-only
+// API. What is NOT settled is how a RUN client obtains credentials for it;
+// API Central refuses the RUN administrator's sign-in. See
+// docs/adp-run-onboarding.md.
+//
 // The first cut targeted the older event-style path; v2 is a different body
 // (`applicantOnboarding` with personal / worker / payroll profiles) and it
 // REQUIRES an onboarding template code, which is a RUN-side setting read from
-// `GET …/applicant.onboard/meta` — `fetchOnboardMeta()` below — and kept in
-// `ADP_ONBOARDING_TEMPLATE_CODE`. Field names here follow ADP's v2 guide as
-// far as it could be read; the first live send is checked against /meta and
-// against ADP's own refusal text, which is returned verbatim.
+// that /meta call and kept in `ADP_ONBOARDING_TEMPLATE_CODE`.
+//
+// `ONBOARD_PATH` is `/hcm/v2/applicant.onboard`, matching the "Initiate New
+// Applicant Onboarding" operation by ADP's own naming, but the POST path was
+// below the fold on the page that confirmed /meta — treat it as one notch less
+// certain than the meta path until seen. `ADP_ONBOARD_PATH` overrides it
+// without a deploy if ADP's guide says otherwise.
+//
+// Field names here follow ADP's v2 guide as far as it could be read. ADP
+// publishes an "Applicant Onboard V2 API Guide for RUN Powered by ADP" that
+// has not been read yet; read it before the first live send rather than
+// learning the shape from refusals. Until then the first send is checked
+// against /meta and against ADP's own refusal text, returned verbatim.
 
 import { readFileSync } from 'fs';
 import https from 'https';

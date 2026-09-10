@@ -48,11 +48,27 @@ first: *is API Central available for a RUN Powered by ADP account at all, or is
 it Workforce Now only*, and *if so, is it enabled for this account with the
 administrator as a member*.
 
-**The API exists for RUN. What is unresolved is how a RUN client gets
-credentials for it.** ADP's API Explorer, filtered to *RUN Powered by ADP®*,
-lists 25 API categories and **Applicant Onboarding** is one of them (HCM,
-updated 4/19/2026). So `applicant.onboard` is a documented RUN API and the
-question is not whether this is possible.
+**The API exists for RUN, and ReadyDoc's meta endpoint is confirmed against
+ADP's own catalogue. What is unresolved is how a RUN client gets credentials
+for it.** ADP's API Explorer, filtered to *RUN Powered by ADP®*, lists 25 API
+categories including **Applicant Onboarding** (HCM), whose page carries five
+operations and a product-specific *Applicant Onboard V2 API Guide for RUN
+Powered by ADP*. Two of those operations are visible verbatim and one is the
+call ReadyDoc already makes:
+
+| ADP lists | ReadyDoc |
+|---|---|
+| `GET /hcm/v2/applicant.onboard/meta` | `fetchOnboardMeta()` — **exact match** |
+| `GET /hcm/v2/applicants/{applicant-id}/onboarding/meta` | not used |
+| `POST /hcm/v2/applicants/{applicant-id}/onboarding.complete` | not used |
+| *Initiate New Applicant Onboarding* (path below the fold) | `submitApplicantOnboard()` → `POST /hcm/v2/applicant.onboard` |
+
+So `applicant.onboard` is a documented RUN API and the question is not whether
+this is possible. **Two things are still worth reading off that page before the
+first live send**: the POST path for *Initiate New Applicant Onboarding*, which
+was below the fold, and the RUN-specific V2 guide, which is the authority on
+the payload shape `applicantOnboardPayload` was written against by inference.
+`ADP_ONBOARD_PATH` exists so the first can be corrected without a deploy.
 
 A briefly-held theory that API Central is Workforce Now only, and that RUN
 therefore has no such API, is **wrong on its second half** and recorded here so
