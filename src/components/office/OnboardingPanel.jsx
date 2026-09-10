@@ -117,18 +117,6 @@ function Files({ r, storageEnabled, onChanged }) {
               <FileText size={11} className="shrink-0" /><span className="truncate">{f.filename}</span>
             </button>
             <span className="text-[10px] text-gray-400">· {f.uploaded_by}</span>
-            {r.status === 'completed' && (r.user_id || r.is_contractor) && (
-              <button disabled={!!busy} data-end-access
-                onClick={() => {
-                  const why = window.prompt('Ending access switches off their ReadyDoc sign-in and takes them off the pay roster. Nothing is deleted. Why is it ending?');
-                  if (why && why.trim().length >= 3) {
-                    act('end', async () => onAction('refresh', (await apiPost(`/onboarding/${r.id}/end-access`, { reason: why.trim() })).record));
-                  }
-                }}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs font-medium text-gray-600 hover:text-red-600 hover:border-red-300">
-                <XCircle size={12} /> End access
-              </button>
-            )}
             {!['completed', 'cancelled'].includes(r.status) && (
               <button type="button" onClick={() => remove(f)} title="Remove" className="text-gray-400 hover:text-red-600 p-0.5"><X size={11} /></button>
             )}
@@ -303,6 +291,18 @@ function Row({ r, attestations, storageEnabled, onAction }) {
             <button disabled={!!busy} onClick={() => act('pdf', () => downloadFile(`/onboarding/${r.id}/packet.pdf`, `onboarding-${r.last_name || 'packet'}.pdf`))}
               className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs font-medium hover:bg-gray-50">
               <Download size={12} /> Packet PDF</button>
+            {r.status === 'completed' && (r.user_id || r.is_contractor) && (
+              <button disabled={!!busy} data-end-access
+                onClick={() => {
+                  const why = window.prompt('Ending access switches off their ReadyDoc sign-in and takes them off the pay roster. Nothing is deleted. Why is it ending?');
+                  if (why && why.trim().length >= 3) {
+                    act('end', async () => onAction('refresh', (await apiPost(`/onboarding/${r.id}/end-access`, { reason: why.trim() })).record));
+                  }
+                }}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs font-medium text-gray-600 hover:text-red-600 hover:border-red-300">
+                <XCircle size={12} /> End access
+              </button>
+            )}
             {r.status === 'completed' && (r.user_id || r.is_contractor) && (
               <button disabled={!!busy} data-end-access
                 onClick={() => {
