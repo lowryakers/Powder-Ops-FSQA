@@ -2177,3 +2177,31 @@ not to this document.
 **Nothing about the code changes.** `server/adp.js` remains finished, correct against RUN's own data
 dictionary and switched off by four absent credentials. If API Central is purchased, it is four environment
 variables and one test hire.
+
+## D-070 · 2026-09-10 · the price, and why it does not pay for the onboarding hand-off alone
+
+ADP's cart, seen 10 September: **ADP® API Central for ADP Workforce Now® and ADP…** — *Unlimited Users
+(included) $0.00*, *Employees — Usage based — **$2.50 / employee / month***.
+
+**THE CHARGE IS PER EMPLOYEE ON PAYROLL, NOT PER PERSON USING THE API.** "Unlimited Users" is the free line
+and it is the one that looks like the meter; the meter is the headcount. Reading it the other way round —
+"only one of us will use it, so it will be nearly nothing" — inverts the two, and it is the natural reading
+of that panel. At the plant's rough headcount of 80 that is **~$200 a month, ~$2,400 a year**. `Due now
+$0.00` is not "free", it is "nothing billed until employees are counted".
+
+**Against that, what it buys for onboarding is a few minutes of keying per hire at a plant that hires
+rarely.** Ten hires a year at ten minutes each is under two hours. Two hours a year does not cost $2,400,
+so **the onboarding hand-off alone does not justify the subscription** and nobody should buy it on that
+basis. It becomes a reasonable purchase only if other integrations are worth the money on their own —
+worker sync, pay data, time — and that is a separate case somebody should make deliberately rather than
+arrive at sideways.
+
+**AND THE PRODUCT NAME STILL DOES NOT SAY RUN.** It is sold as *"for ADP Workforce Now® and ADP…"*. That is
+the same doubt that has run through D-065 to D-069, now attached to a payment. **Get it in writing that this
+subscription enables Applicant Onboard V2 for a RUN Powered by ADP account before any money moves** — the
+cart also has an "Enter additional information required" step still outstanding, which is the natural place
+to ask.
+
+The recommendation is unchanged from D-068 and stands on arithmetic rather than on any difficulty with ADP:
+onboarding is complete without this, the office keys the last step, and `server/adp.js` is finished and
+switched off until there is a reason to turn it on.
