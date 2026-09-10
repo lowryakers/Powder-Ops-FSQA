@@ -130,7 +130,7 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
 <header class="mast">
   <p class="eyebrow">Powder Ops · ReadyDoc · Onboarding → RUN Powered by ADP</p>
   <h1>ADP Onboarding Runbook</h1>
-  <p class="standfirst">Everything between "the module is built" and "a new hire lands in RUN without anyone re-typing the packet": one variable you can set today, the ADP API Central project only you can do, and the first test hire. <b>Revised 10 September, second pass.</b> Parts B and C are rewritten against ADP's own API Central Quick Start Guide: API Central lives at its own address, and the certificate is made entirely in the browser — no Terminal, no openssl, no Marketplace review. Tick as you go; the ticks save in this browser.</p>
+  <p class="standfirst">Everything between "the module is built" and "a new hire lands in RUN without anyone re-typing the packet": one variable you can set today, the ADP access only you can get, and the first test hire. <b>Revised 11 September.</b> ADP's own RUN guide has now been read, which corrected six field names in the code and removed a variable this runbook used to demand. What is left open is not whether this works — ADP documents the API for RUN — but how a RUN client gets credentials. Tick as you go; the ticks save in this browser.</p>
   <div class="meta">
     <span><b>For</b> Lowry</span>
     <span><b>Prepared</b> 3 September 2026</span>
@@ -226,13 +226,23 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
         Let the sign-in finish on its own. It will move through two or three addresses; that is normal, and clicking anything mid-way breaks it again.</div></div>
 
       <div class="expect"><span class="k no">If that<br>still fails</span><div>Then it is worth suspecting the account rather than the browser, and only ADP can settle it. <b>Stop there</b> — do not keep retrying, and do not create anything. Ring your ADP service contact for RUN and ask exactly this:
-        <div class="term"><div class="term-head">What to ask ADP <button class="copy" type="button" data-cmd="I am a RUN Powered by ADP client and I want to build an integration against our own company's data, using the Applicant Onboarding API. Your API Explorer lists Applicant Onboarding under RUN Powered by ADP, so I know the API exists for our product. My question is how a RUN client gets credentials for it. I have tried ADP API Central at api-central.adp.com, signed in as the RUN administrator in a normal browser window with all ADP cookies cleared, and it will not let me in: Unknown Authentication Error, and at api.adp.com/auth/oauth/v2/authorize/consent a page reading invalid_request, error extracting values from session. So: is API Central the right route for a RUN client, and if so please enable it for our account and add me as a member. If it is not the right route, what is?">Copy</button></div><pre>I am a RUN Powered by ADP client and I want to build an
+        <div class="term"><div class="term-head">What to ask ADP <button class="copy" type="button" data-cmd="I am a RUN Powered by ADP client and I want to build an integration against our own company's data, using the Applicant Onboard V2 API. Your own guide says it is supported for all RUN bundles, and your API Explorer lists it under RUN Powered by ADP, so I know the API exists for our product. My question is how a RUN client gets credentials for it. Your guide says these two canonical URIs need to be added to the application scope in the Consumer Application Registry: /hcm/integrationManagement/applicantOnboardingManagement/onboardingProcessManagement/applicant.onboard and the same path ending applicant.onboard.meta.read. How do I get an application registered with those scopes? I have tried ADP API Central at api-central.adp.com, signed in as the RUN administrator in a normal browser window with all ADP cookies cleared, and it will not let me in: Unknown Authentication Error, and at api.adp.com/auth/oauth/v2/authorize/consent a page reading invalid_request, error extracting values from session. Is API Central the right route for a RUN client, and if so please enable it for our account and add me as a member. If it is not the right route, what is?">Copy</button></div><pre>I am a RUN Powered by ADP client and I want to build an
 integration against our own company's data, using the
-Applicant Onboarding API.
+Applicant Onboard V2 API. Your own guide says it is
+supported for all RUN bundles, and your API Explorer lists
+it under RUN Powered by ADP, so I know the API exists for
+our product. My question is how a RUN client gets
+credentials for it.
 
-Your API Explorer lists Applicant Onboarding under RUN
-Powered by ADP, so I know the API exists for our product.
-My question is how a RUN client gets credentials for it.
+Your guide says these two canonical URIs need to be added to
+the application scope in the Consumer Application Registry:
+
+  /hcm/integrationManagement/applicantOnboardingManagement/
+  onboardingProcessManagement/applicant.onboard
+
+  ...the same path ending applicant.onboard.meta.read
+
+How do I get an application registered with those scopes?
 
 I have tried ADP API Central at api-central.adp.com, signed
 in as the RUN administrator in a normal browser window with
@@ -241,8 +251,8 @@ Unknown Authentication Error, and at
 api.adp.com/auth/oauth/v2/authorize/consent a page reading
 invalid_request, error extracting values from session.
 
-So: is API Central the right route for a RUN client, and if
-so please enable it for our account and add me as a member.
+Is API Central the right route for a RUN client, and if so
+please enable it for our account and add me as a member.
 If it is not the right route, what is?</pre></div>
         Send me their answer. <b>Whichever way it goes, nothing you have already done is wasted</b> — Part A is live and onboarding is fully usable today with the office keying the packet into RUN by hand. This part only removes that keying step.</div></div>
 
@@ -420,7 +430,7 @@ its own employees only.</pre></div>
         </table>
       </div>
       <p>Let it redeploy.</p>
-      <div class="expect"><span class="k">Expect</span><div>Settings → Integrations: on the row <b>ADP (RUN Powered by ADP) — onboarding hand-off</b> the four credential names are ticked, one name (<span class="mono">ADP_ONBOARDING_TEMPLATE_CODE</span>) is still unticked, and a button <b>Read what RUN requires</b> has appeared. The row is not "connected" yet; step 13 finishes it.</div></div>
+      <div class="expect"><span class="k">Expect</span><div>Settings → Integrations: on the row <b>ADP (RUN Powered by ADP) — onboarding hand-off</b> all four credential names are ticked, the row reads <b>connected</b>, and a button <b>Read what RUN requires</b> has appeared. <b>These four are the whole gate</b> — an earlier version of this runbook demanded a fifth variable, a RUN onboarding template code, and that turned out not to be a RUN field at all. It is gone.</div></div>
       <div class="expect"><span class="k no">If not</span><div>A credential name still shows unticked: check the variable name for a typo, letter for letter. Integrations names the missing one.</div></div>
       <p class="why"><b>Only if ADP gave you a separate test host.</b> Some projects come with a sandbox API address for trial calls. If yours did, add <span class="mono">ADP_API_BASE</span> with that address for step 14, and remove it again before the first real hire. If it did not, leave it out; the default is ADP's production API.</p>
     </div>
@@ -429,16 +439,17 @@ its own employees only.</pre></div>
   <div class="step" data-id="e2">
     <input type="checkbox" aria-label="Step 13 complete">
     <div class="step-body">
-      <p class="step-title"><span class="num">13</span> Read the onboarding template code from RUN and add the fifth variable</p>
-      <p>RUN refuses a new hire that does not name one of its <b>onboarding templates</b>. The code is RUN's own, so ReadyDoc reads it from ADP rather than guessing.</p>
+      <p class="step-title"><span class="num">13</span> Check against RUN, and set the three company codes</p>
+      <p>RUN needs three facts about <b>the company</b> that are the same on every hire and that ReadyDoc has never asked for, because they are not questions for a new employee. They are codes from RUN's own lists, so they are read, not invented.</p>
       <ol>
-        <li>Settings → Integrations → the ADP row → <b>Read what RUN requires</b>. ReadyDoc calls ADP with the new credentials and shows what came back.</li>
-        <li>Find the onboarding template codes in the answer (look for <span class="mono">onboardingTemplateCode</span>; each has a <span class="mono">code</span> and a name). Pick the one for an ordinary new hire. If there is exactly one, that is it.</li>
-        <li>Railway → Variables → <b>New Variable</b>: <span class="mono">ADP_ONBOARDING_TEMPLATE_CODE</span> = that code, exactly. Let it redeploy.</li>
+        <li>Settings → Integrations → the ADP row → <b>Read what RUN requires</b>. ReadyDoc calls ADP with the new credentials and shows what came back. <b>Send me that answer</b> before going further — it is the first time anything here has been checked against the live account.</li>
+        <li>In RUN itself, find the values the office already uses for a new hire: the <b>worker type</b> (for example full-time), the <b>pay type</b> (hourly or salary), and the <b>state</b> the work location is in.</li>
+        <li>Railway → Variables → <b>New Variable</b>, three times: <span class="mono">ADP_WORKER_TYPE_CODE</span>, <span class="mono">ADP_PAY_TYPE_CODE</span>, <span class="mono">ADP_WORK_LOCATION_STATE</span>. Let it redeploy.</li>
       </ol>
-      <div class="expect"><span class="k">Expect</span><div>The ADP row now reads <b>connected</b> with all five names ticked, and <b>Submit to ADP</b> appears on completed onboarding packets.</div></div>
-      <div class="expect"><span class="k no">If not</span><div>The button shows an error starting <code>ADP 4xx:</code>. Copy the whole message and send it to me. A 401 means the credentials or certificate; a 403 means consent (step 11) or the project's use case; anything else I read from the text.</div></div>
-      <p class="why"><b>Two optional variables</b>, only if the answer from RUN says they are required: <span class="mono">ADP_PAYROLL_GROUP_CODE</span> (RUN's payroll group for new hires) and <span class="mono">ADP_ONBOARDING_STATUS</span> (defaults to <span class="mono">inprogress</span>, which lands the person in RUN's New Hire wizard for the office to finish; leave it).</p>
+      <div class="expect"><span class="k">Expect</span><div><b>Submit to ADP</b> appears on completed onboarding packets. If a packet is still missing something RUN requires, pressing it does not send — it names what is missing instead of letting ADP refuse one field at a time.</div></div>
+      <div class="expect"><span class="k no">If not</span><div>The button shows an error starting <code>ADP 4xx:</code>. Copy the whole message and send it to me. A 401 means the credentials or certificate; a 403 means the application scopes; anything else I read from the text.</div></div>
+      <div class="dont"><b>ReadyDoc never asks a new hire their gender, and RUN requires it.</b> That is a real gap and it is deliberately not papered over: nothing here invents a value. Until it is decided, either the office fills that one field in RUN after the hand-off, or we add the question to the wizard. Tell me which you want and I will build it — it is a small change either way.</div>
+      <p class="why"><b>Why these are variables and not questions on the form.</b> Worker type, pay type and the work location do not change from one hire to the next; asking a new employee for their own RUN pay-type code would be absurd, and hard-coding them in the app would mean a deploy every time the plant changed one. A wrong value here is a wrong payroll record, which is why nothing is guessed and a missing one stops the send.</p>
     </div>
   </div>
 </section>
