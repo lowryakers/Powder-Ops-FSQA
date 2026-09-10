@@ -4715,6 +4715,65 @@ function runMigrations() {
     console.warn('[db] finance tables unavailable:', e.message);
   }
 
+  // ── AP Drop: one intake for every finance PDF, and the queue it waits in ──
+  // Deliberately its own table rather than rows in ap_invoices: a drop is a
+  // document somebody handed in, not a bill the office has accepted, and the
+  // AP ledger may be slimmed or retired while this stays. Every row keeps the
+  // file, what the parser read (parsed_json, with the line each value came
+  // from) and the status the queue is working it through; the events table is
+  // the activity log a person reads on the detail pane.
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS ap_drops (
+        id                 TEXT PRIMARY KEY,
+        created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at         TEXT NOT NULL DEFAULT (datetime('now')),
+        created_by_user_id TEXT,
+        submitter          TEXT,
+        source             TEXT NOT NULL DEFAULT 'drop' CHECK (source IN ('drop','email')),
+        filename           TEXT NOT NULL,
+        storage_key        TEXT NOT NULL,
+        size               INTEGER,
+        content_type       TEXT,
+        content_sha256     TEXT NOT NULL,
+        extracted_text     TEXT,
+        parse_status       TEXT NOT NULL DEFAULT 'pending' CHECK (parse_status IN ('pending','ok','partial','failed')),
+        parsed_json        TEXT,
+        vendor_name        TEXT,
+        invoice_number     TEXT,
+        invoice_date       TEXT,
+        due_date           TEXT,
+        amount             REAL,
+        currency           TEXT,
+        po_or_co_ref       TEXT,
+        bill_to            TEXT,
+        notes              TEXT,
+        status             TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','triaged','matched','in_qbo','in_payment_run','paid','closed','needs_info','duplicate_suspect','not_finance')),
+        status_reason      TEXT,
+        duplicate_of       TEXT,
+        qbo_bill_id        TEXT,
+        payment_run_id     TEXT,
+        external_ref       TEXT,
+        closed_at          TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_ap_drops_status ON ap_drops(status, created_at);
+      CREATE INDEX IF NOT EXISTS idx_ap_drops_sha ON ap_drops(content_sha256, created_at);
+      CREATE INDEX IF NOT EXISTS idx_ap_drops_user ON ap_drops(created_by_user_id);
+      CREATE TABLE IF NOT EXISTS ap_drop_events (
+        id         TEXT PRIMARY KEY,
+        drop_id    TEXT NOT NULL REFERENCES ap_drops(id) ON DELETE CASCADE,
+        at         TEXT NOT NULL DEFAULT (datetime('now')),
+        by_user_id TEXT,
+        by_name    TEXT,
+        kind       TEXT NOT NULL,
+        detail     TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_ap_drop_events_drop ON ap_drop_events(drop_id, at);
+    `);
+  } catch (e) {
+    console.warn('[db] ap_drops unavailable:', e.message);
+  }
+
   // ── Hours & spend (Marnee's payroll tracker, merged in) ───────────────────
   // One row per person per week (weeks run Sun–Sat). "Worked" is time on the
   // clock; PTO and holiday are paid time off; unpaid is unpaid absence. When

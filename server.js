@@ -64,6 +64,7 @@ import { KIOSKS } from './server/kiosk-tokens.js';
 import { seedCandidates } from './server/candidates-seed.js';
 import reimbursementRoutes from './server/api/reimbursements.js';
 import bankingRoutes from './server/api/banking.js';
+import apDropRoutes from './server/api/ap-drop.js';
 import activityRoutes from './server/api/activity.js';
 import qmsRoutes, { importCsv as importQmsCsv } from './server/api/qms.js';
 import { getType as getQmsType, MAINTENANCE_ITEM_GROUPS } from './server/qms-config.js';
@@ -1873,6 +1874,11 @@ app.use('/api/reimbursements', requireModuleWrite('reimbursements'), reimburseme
 // account balance" is useful well beyond the person doing the ticking.
 // Closing a period and matching a line are checked inside the router.
 app.use('/api/banking', requireModuleWrite('banking'), bankingRoutes);
+// AP Drop is NOT behind requireModuleWrite: dropping a finance PDF has to be
+// open to whoever is holding it (the QMS-filing arrangement). Working the
+// queue is checked inside the router (admin, the ap-drop edit grant, or an
+// office/admin supervisor); everyone else reads only their own drops.
+app.use('/api/ap-drop', apDropRoutes);
 app.use('/api/activity', activityRoutes);
 app.use('/api/org', requireModuleWrite('org-chart'), orgRoutes);
 app.use('/api/disposals', requireModuleWrite('disposals'), disposalRoutes);

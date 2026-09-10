@@ -2234,3 +2234,75 @@ three.
 
 **Nothing here is a reason to build anything yet.** `server/adp.js` stays finished and switched off, and no
 Pay Data Input work should start on the strength of a maybe.
+
+## D-072 · 2026-09-10 · a revocation has to reach the sessions it already opened
+
+**Context.** A sweep for the class of bug behind the pay-roster and time-adjustment fixes ("a fact that
+exists in more than one place") turned up its cousin in access control: *an account switched off in one
+table and still live in another.* The auth middleware refuses a deactivated account on the next request,
+and that correctness hid three holes. Deactivating in Settings never deleted the session rows, so a
+reactivated account came back signed in on every phone it had ever used. Revoking an auditor pass set
+`revoked_at` on the pass and nothing else — `resolvePass` runs only on redeem — so for a visitor already
+signed in the button did nothing. And a one-day pass minted the ordinary thirty-day session, which made
+the `days` on the pass decorative past the first redeem. Sockets were checked at handshake only, and push
+subscriptions survived deactivation.
+
+**Decision.** One helper, `revokeSessions()` in `api/sessions.js`, owns "cut this account off": delete the
+rows, drop the push subscriptions when the account itself is being switched off, disconnect the live
+sockets (`disconnectUser`). Every door calls it — Settings deactivation, `end-access`, the auditor-pass
+revoke, and the reactivation path a new pass takes. A self-service password change signs out every OTHER
+device and keeps the one making the change. An auditor-pass session is capped at the pass's expiry
+(`issueSession(..., { notAfter })`). `pushToUser` never pushes to a deactivated account.
+
+**Why the helper and not five fixes.** These were five doors doing the same thing four different ways, and
+the middleware's correctness meant none of the gaps produced a visible failure — exactly the shape that
+lets a sixth door get it wrong too. `verify:sessions` (21) proves each door.
+
+**Also from the sweep, fixed:** training supersede matched on the name only although `employee_user_id`
+exists (a renamed person kept two "current" completions); the reimbursement people picker listed a renamed
+person twice. **Found and NOT fixed here**, because each needs a schema migration and a backfill:
+`work_orders.assigned_to` / `completed_by` carry no person id at all (Team Activity splits a renamed
+operator into two people; a renamed operator's own screen stops showing their tasks; the delete guard in
+`users.js` under-counts to zero), `certifications.person_name` and `first_aid_injuries.employee_name`
+likewise, and `production_entries.submitted_by` drives the QA-correction banner by string equality. Those
+are one project — add the id column beside the name, backfill by `personKey`, read the id first — and are
+queued rather than half-done.
+
+## D-073 · 2026-09-10 · AP Drop: one intake for every finance PDF, and a queue that is not the ledger
+
+**Context.** The office's accounting rework (specified outside ReadyDoc) wanted one place any employee can
+hand in a finance document — a vendor invoice forwarded to the wrong person, a credit memo, a remittance,
+an M4 invoice pack — and one queue the Controller works it through, with `ap@powder-ops.com` as the
+parallel front door. The AP/AR ledger may be slimmed or retired once this exists.
+
+**Decision.** `ap_drops` + `ap_drop_events`, `server/api/ap-drop.js`, `server/ap-drop-parse.js` (pure),
+`ApDropPanel.jsx`, its own nav entry `ap-drop` (not an Accounting tab, so it survives that hub going).
+Three rules:
+
+1. **The file is the record.** Stored and hashed first; the row exists before the reader runs; a parse
+   that fails still leaves a row reading `failed`. The same bytes within 30 days files as
+   `duplicate_suspect` linked to the first row — never silently dropped, because the second submitter's
+   note is information.
+2. **The parser suggests.** `ap-drop-parse.js` builds on `invoice-figures.js` and returns every value WITH
+   the line it was read from; the reader fills BLANK fields only and never overwrites a typed one. A
+   letterhead guess is offered only beside something financial, so a thank-you note cannot become a
+   partial parse with a vendor on it.
+3. **Nothing leaves ReadyDoc.** No QuickBooks bill, no email, no payment. `logAudit` writes
+   `ap_drop` / `create` with `event: 'ap_drop.created'` in the details, which is what the Controller's
+   tooling polls (`GET /api/audit?entity_type=ap_drop&action=create`); `qbo_bill_id` / `external_ref` are
+   written back by hand or by that tooling.
+
+**Access.** Mounted without `requireModuleWrite` (the QMS-filing arrangement) so dropping is open to
+whoever is holding the invoice; the nav item is visible to anyone set up in Settings (a NULL map is still
+an empty account, and an auditor never sees it). Working the queue — reading all of it, moving a row past
+`new`, correcting fields, `not_finance` — is admin, the `ap-drop` **edit** grant (the finance flag), or an
+office/admin supervisor, the reimbursements `canSettle` shape. Everyone else sees their own drops.
+
+**Where the spec was adapted.** Money is `amount REAL`, not `amount_cents`, because every other money
+column here is (`ap_invoices`, `partner_documents`, `reimbursements`) and a second convention is a
+reconciliation bug waiting to happen. `parse_status` has a transient `pending` while a slow OCR finishes
+after the upload has answered. The email door is a `source` value and nothing more — no ingestion is built.
+
+Verified: `check:apdrop` (20, pure), `verify:apdrop` (45, live), `verify:apdropui` (18, real browser at
+1280 and 360 — which is where the FileList-copied-too-late bug was caught: the picker looked like it worked
+and the form said nothing was attached).

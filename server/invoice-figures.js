@@ -85,6 +85,18 @@ const DATE_PATTERNS = [
 ];
 const MONTHS = { jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06', jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12' };
 
+/** The first date in one line, as ISO — for a caller that already knows which line it wants. */
+export function findDateIn(line) {
+  for (const p of DATE_PATTERNS) {
+    const m = String(line || '').match(p.re);
+    if (m) {
+      const iso = p.iso(m);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(iso) && !Number.isNaN(Date.parse(iso))) return iso;
+    }
+  }
+  return null;
+}
+
 /**
  * The invoice date.
  *

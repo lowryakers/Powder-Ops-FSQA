@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, UserPlus, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Building2, Sliders, BookText, LifeBuoy, PenLine, ListTodo, UserPlus2} from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, UserPlus, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Building2, Sliders, BookText, LifeBuoy, PenLine, ListTodo, UserPlus2, Inbox} from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -97,6 +97,7 @@ const PayTrackingPanel = lazy(() => import('./components/office/PayTrackingPanel
 const PartnerReconPanel = lazy(() => import('./components/office/PartnerReconPanel.jsx'));
 const ReimbursementsPanel = lazy(() => import('./components/office/ReimbursementsPanel.jsx'));
 const BankingPanel = lazy(() => import('./components/office/BankingPanel.jsx'));
+const ApDropPanel = lazy(() => import('./components/office/ApDropPanel.jsx'));
 const QuickBooksPanel = lazy(() => import('./components/office/QuickBooksPanel.jsx'));
 const PartnerPortalPage = lazy(() => import('./components/office/PartnerPortalPage.jsx'));
 const SupplierQuestionnairePage = lazy(() => import('./components/SupplierQuestionnairePage.jsx'));
@@ -245,6 +246,13 @@ const NAV_GROUPS = [
       // AP, AR and the trading-partner reconciliation are one place to go —
       // they are the same job (money in, money out, what's owed) split only by
       // which direction it points.
+      // The finance intake. Its own entry, not an Accounting tab, so it survives
+      // the AP/AR pages being slimmed or retired. Open to everyone who has been
+      // set up in Settings — the person holding the invoice is rarely the
+      // person with a finance grant — but never to an account with no modules
+      // (a NULL map is an empty account) and never to an auditor.
+      { id: 'ap-drop', label: 'AP Drop', icon: Inbox, keywords: 'invoice bill drop upload vendor credit memo remittance ap@powder-ops.com finance queue outstanding',
+        visible: (u) => !!u && u.role !== 'auditor' && (u.role === 'admin' || u.module_access != null) },
       { id: 'accounting', label: 'Accounting', icon: Landmark, anyOf: ['accounts-payable', 'accounts-receivable', 'partner-reconciliation', 'reimbursements', 'banking'], keywords: 'AP AR bills vendors customers invoices owed reconcile settlement M4 net expense reimbursement receipt personal card bank statement balance' },
       { id: 'procurement', label: 'Procurement & Demand', icon: PackageSearch, keywords: 'purchase orders PO BOM parts demand planning samples pricing' },
       { id: 'newsletter', label: 'Newsletter', icon: Newspaper, keywords: 'announcements events shoutouts news monthly' },
@@ -2076,6 +2084,7 @@ function App() {
           {resolvedTab === 'procurement' && <ProcurementPanel />}
           {resolvedTab === 'newsletter' && <NewsletterPanel />}
           {resolvedTab === 'policies' && <PoliciesPanel />}
+          {resolvedTab === 'ap-drop' && <ApDropPanel user={user} />}
           {resolvedTab === 'onboarding' && <OnboardingPanel />}
           {resolvedTab === 'candidates' && <CandidatesPanel />}
           {resolvedTab === 'visitors' && <VisitorLogPanel />}

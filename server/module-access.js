@@ -41,6 +41,9 @@ export const ALL_MODULE_IDS = [
   'disposals', 'training', 'certifications', 'recall',
   'office-requests', 'supply-requests', 'time-requests',
   'accounts-payable', 'accounts-receivable', 'partner-reconciliation', 'reimbursements', 'banking',
+  // AP Drop: dropping a file is open to everyone set up in Settings; the EDIT
+  // grant is the finance flag that lets somebody work the queue.
+  'ap-drop',
   'procurement', 'newsletter', 'pay-tracking',
   // Company policies (the handbook), separate from the controlled-document registry.
   'policies',

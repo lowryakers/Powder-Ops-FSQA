@@ -146,6 +146,45 @@ triage and the per-CAR evidence table, `docs/audit-2026-08-findings.md` the shor
   Document Control Manager, Jake Waits Purchasing Manager, Ricardo Avalos Maintenance, Matt Schramm Formulations.
   Anything going outside the plant is written in plain English — short sentences, no app vocabulary.
 
+## AP Drop: one intake for every finance PDF, and the queue it waits in (D-073)
+`ap_drops` + `ap_drop_events` (db.js), `server/api/ap-drop.js`, `server/ap-drop-parse.js` (PURE — text in,
+suggestions out, each with the line it came from), `ApDropPanel.jsx`. Its **own nav entry `ap-drop`**, not
+an Accounting tab, so it survives the AP/AR pages being slimmed. `ap@powder-ops.com` is the parallel door;
+`source` says which (`drop` | `email`) and no email ingestion is built.
+- **THE FILE IS THE RECORD.** Stored and sha256-hashed first, row inserted, THEN the reader runs. A parse that
+  fails leaves a row reading `parse_status = failed` — an upload that bounced is the invoice that goes missing.
+  The upload waits on the reader up to 15 s; a slow OCR finishes in the background (`pending` meanwhile).
+- **THE READER FILLS BLANKS ONLY, NEVER A TYPED FIELD** (`applyParse`; the `total_source` rule). `parsed_json`
+  keeps the evidence line per value and the drawer prints it under each field. A vendor guess is offered only
+  beside a total, a number or a date — otherwise a thank-you note parses as "partial" with a vendor on it.
+- **Same bytes within 30 days ⇒ `duplicate_suspect` linked to the first row**, still filed, never dropped.
+- **Statuses**: `new → triaged → matched → in_qbo → in_payment_run → paid/closed`, plus `needs_info`,
+  `duplicate_suspect`, `not_finance`; the last three REQUIRE a reason. Terminal = paid/closed/not_finance;
+  "outstanding" is everything else and is the default list. Age and overdue are derived on read.
+- **Mounted WITHOUT `requireModuleWrite`** (the QMS-filing arrangement): dropping is open to any signed-in
+  person; nav visible to anyone set up in Settings (NULL map still = nothing; auditors never). `canWorkQueue`
+  = admin | `ap-drop: edit` grant (the finance flag) | office/admin supervisor. Everyone else reads their own.
+- **Nothing leaves ReadyDoc.** No QBO bill, no mail, no payment. Audit `ap_drop` / `create` carries
+  `event: 'ap_drop.created'` — `GET /api/audit?entity_type=ap_drop&action=create` is what automation polls.
+  `qbo_bill_id` / `payment_run_id` / `external_ref` are written back, never derived.
+- Money is `amount REAL` like every other money column here, not `amount_cents`.
+- **`Array.from(e.target.files)` BEFORE `setFiles`**: the updater runs after `e.target.value = ''` has emptied
+  the FileList, so the picker looked like it worked and the form said nothing was attached. Caught in the
+  browser check, not the API one.
+- Verified: `check:apdrop` (20), `verify:apdrop` (45), `verify:apdropui` (18 at 1280 + 360); all registered.
+
+## Revoking access reaches the sessions it already opened (D-072)
+`revokeSessions(db, userId, { keepToken, devices })` in `api/sessions.js` is the ONE helper; Settings
+deactivation, `end-access`, the auditor-pass revoke and the pass reactivation path all call it. It deletes the
+rows, drops `chat_push_subscriptions` when `devices`, and `disconnectUser()` (realtime.js) cuts live sockets —
+the handshake was the only moment a socket was ever checked. Self-service password change keeps the calling
+token and signs out the rest. **Auditor-pass sessions are capped at the pass** (`issueSession(..., {notAfter})`);
+before this a 1-day pass minted a 30-day session and Revoke did nothing to a visitor already signed in.
+`pushToUser` joins `users.is_active = 1`. `verify:sessions` (21, in `verify:all`).
+**Still name-keyed and NOT fixed (needs a migration + backfill each):** `work_orders.assigned_to/completed_by`
+(no person id column at all — Team Activity, the Operator View filter and the `users.js` delete guard all split
+on rename), `certifications.person_name`, `first_aid_injuries.employee_name`, `production_entries.submitted_by`.
+
 ## Flavor approvals via SMS (Danny)
 `flavor_approval` QMS type + FlavorPanel ("Text for approval" row action) → magic link `/approve/<token>`
 (public, single-use, ApprovePage.jsx) → decision updates the record + announces in #batching.

@@ -142,6 +142,7 @@ const MODULE_GROUPS = [
       { id: 'accounts-receivable', label: 'Accounts Receivable' },
       { id: 'partner-reconciliation', label: 'Partner Reconciliation (what we owe / are owed net)', note: 'View reads the number and the documents behind it; Edit adds and disputes documents. Approving one as final, settling a period and creating a partner link stay with admins and office supervisors whatever is granted here.' },
       { id: 'reimbursements', label: 'Reimbursements (personal card spend)', note: 'A person with this only ever sees their OWN claims. Approving and marking paid is admin / office supervisor, whatever is granted here.' },
+      { id: 'ap-drop', label: 'AP Drop (finance intake queue)', note: 'Everyone set up in Settings can drop a finance PDF and see their own drops without this. Edit is the finance flag: it opens the whole queue and lets the person move a drop past "new", correct what was read off the document, and mark one as not finance.' },
       { id: 'banking', label: 'Banking & Reconciliation', note: 'View sees the accounts and whether they balance. Matching a line, closing a period and connecting a bank stay with admins and office supervisors.' },
       { id: 'procurement', label: 'Procurement & Demand Planning' },
       { id: 'newsletter', label: 'Newsletter' },
