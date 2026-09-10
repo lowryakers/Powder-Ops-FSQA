@@ -2205,3 +2205,32 @@ to ask.
 The recommendation is unchanged from D-068 and stands on arithmetic rather than on any difficulty with ADP:
 onboarding is complete without this, the office keys the last step, and `server/adp.js` is finished and
 switched off until there is a reason to turn it on.
+
+## D-071 · 2026-09-10 · corrects D-070's headcount — and moves the case for API Central off onboarding
+
+**35 on the ADP payroll, not 80.** D-070's figure came from the training log, which resolved 94 written
+names to 80 real people across three years — that is everybody who has passed through, not who is on payroll
+now. The correct arithmetic is **35 × $2.50 = $87.50 a month, ~$1,050 a year.**
+
+That does not change D-070's conclusion about onboarding and it does change what the decision is about.
+$1,050 is an ordinary line item rather than an obvious no, so the question stops being "is it too
+expensive" and becomes **"what else does it turn off".**
+
+**AND THE ONBOARDING HAND-OFF IS THE WEAKEST CASE FOR IT, NOT THE BEST ONE.** It saves a few minutes per
+hire at a plant that hires rarely — under two hours a year. The strongest case is sitting one module away:
+**Pay Data Input.** ADP's API Explorer lists it under RUN Powered by ADP, and Time Tracking already carries
+the shape of the job it would remove — `time_adjustments.adp_status` moves *pending → In ADP* with
+`adp_entered_by` stamped, and the Hours tab produces the per-period totals somebody then keys into RUN by
+hand. That is **26 pay periods a year, forever**, not ten hires.
+
+Nobody has costed that keying and it should be costed before this is decided, because it is the number the
+subscription actually stands on. If reconciling and keying a period takes the office an hour, that is ~26
+hours a year against ~$1,050 — a real argument. If it takes ten minutes, it is not.
+
+**What does not change:** the RUN question. The product is still sold as *"for ADP Workforce Now® and
+ADP…"*, and confirmation in writing that a RUN account gets these APIs must come before any money moves.
+Buying it for Pay Data Input and discovering it only covers Workforce Now would be the worst outcome of the
+three.
+
+**Nothing here is a reason to build anything yet.** `server/adp.js` stays finished and switched off, and no
+Pay Data Input work should start on the strength of a maybe.
