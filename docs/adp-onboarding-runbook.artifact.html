@@ -214,30 +214,38 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
         <li>You land on the <b>Members</b> page. That is normal — it is API Central's default screen.</li>
       </ol>
       <div class="expect"><span class="k">Expect</span><div>A dark blue bar reading <b>API Central</b>, and a left-hand menu with four entries: <b>Projects</b>, <b>Certificate</b>, <b>Members</b>, <b>Integration Services</b>.</div></div>
-      <div class="expect"><span class="k no">If you get<br>HTTP ERROR 431</span><div><b>The site is not down.</b> 431 means your browser sent too much stored cookie data with the request. Two fixes, in order:
-        <ol>
-          <li>Open a <b>private / incognito window</b> and go to <span class="mono">api-central.adp.com</span> again. This is the quickest test and usually works straight away.</li>
-          <li>If you want it fixed in your normal window: Chrome → <b>Settings → Privacy and security → Third-party cookies → See all site data and permissions</b>, search <b>adp.com</b>, delete the adp.com entries, then sign in again.</li>
-        </ol>
-        You will have to sign in again afterwards — that is expected, nothing is lost.</div></div>
-      <div class="expect"><span class="k no">If you get<br>Unknown<br>Authentication<br>Error</span><div><b>This one is about the account, not the browser.</b> ADP recognised who you are and then could not find an API Central entitlement to let you in. Work down this list and stop at the first one that gets you in.
-        <ol>
-          <li><b>Check which login you used.</b> API Central needs the RUN <b>administrator / owner</b> user ID — the one that actually runs payroll. An employee self-service login signs in perfectly well and then fails exactly like this, because the person is real and the entitlement is not.</li>
-          <li><b>Sign in to RUN first, then come across.</b> In a fresh private window go to RUN and sign in as administrator. Confirm you can see payroll. Then, <i>in that same window</i>, open <span class="mono">api-central.adp.com</span>.</li>
-          <li><b>Try once more from a completely clean window.</b> Close every ADP tab, open a new private window, go straight to <span class="mono">api-central.adp.com</span> and nowhere else first. A half-finished sign-in from the 431 attempts can leave a broken session behind.</li>
-        </ol>
-        <b>If all three fail, stop — it is an entitlement and only ADP can grant it.</b> Do not keep retrying and do not create anything. Ring your ADP service contact for RUN and ask for exactly this:
-        <div class="term"><div class="term-head">What to ask ADP <button class="copy" type="button" data-cmd="I want to use ADP API Central to build an integration against our own company's data. Two questions. First: is API Central available for a RUN Powered by ADP account, or is it Workforce Now only? Second: if it is available, please enable it for our account and add me as a member — I am the RUN administrator, and signing in at api-central.adp.com currently gives Unknown Authentication Error.">Copy</button></div><pre>I want to use ADP API Central to build an integration against
-our own company's data. Two questions.
+      <div class="dont"><b>Do not use an incognito window for this, and if you already have, that is probably the whole problem.</b> Signing in to ADP bounces you across three addresses — <span class="mono">api-central.adp.com</span>, <span class="mono">accounts.adp.com</span> and <span class="mono">api.adp.com</span> — and each hand-off needs the cookie the previous one set. Chrome blocks third-party cookies in incognito by default, so the chain breaks halfway and ADP reports it as an authentication problem when it is really a cookie problem. I told you to use incognito to get past the 431. That was the wrong fix here, and this is the right one.</div>
 
-First: is API Central available for a RUN Powered by ADP account,
-or is it Workforce Now only?
+      <div class="expect"><span class="k no">If sign-in<br>fails at all</span><div><b>Every failure below is the same failure.</b> <span class="mono">HTTP ERROR 431</span>, <b>Unknown Authentication Error</b>, and a page of raw text reading <span class="mono">"error extracting values from session"</span> are three faces of one thing: the browser is not carrying ADP's sign-in cookies cleanly from one of its domains to the next. Do this once, in order, in a <b>normal window</b>:
+        <ol>
+          <li><b>Close every ADP tab</b>, including any incognito windows.</li>
+          <li><b>Delete ADP's cookies.</b> Chrome → <b>Settings → Privacy and security → Third-party cookies → See all site data and permissions</b>. Search <b>adp</b>. Delete every adp.com entry you find. This is what actually fixes the 431, and it fixes the other two as well.</li>
+          <li><b>Start from the top, not from a link.</b> Type <span class="mono">api-central.adp.com</span> into the address bar yourself. Do not use a bookmark, a pasted link, or the back button — an ADP sign-in link that has already been used once is exactly what produces "error extracting values from session".</li>
+          <li>Sign in with the RUN <b>administrator</b> user ID — the one that runs payroll, not an employee self-service login.</li>
+        </ol>
+        Let the sign-in finish on its own. It will move through two or three addresses; that is normal, and clicking anything mid-way breaks it again.</div></div>
 
-Second: if it is available, please enable it for our account and
-add me as a member — I am the RUN administrator, and signing in at
-api-central.adp.com currently gives Unknown Authentication Error.</pre></div>
+      <div class="expect"><span class="k no">If that<br>still fails</span><div>Then it is worth suspecting the account rather than the browser, and only ADP can settle it. <b>Stop there</b> — do not keep retrying, and do not create anything. Ring your ADP service contact for RUN and ask exactly this:
+        <div class="term"><div class="term-head">What to ask ADP <button class="copy" type="button" data-cmd="I am trying to use ADP API Central to build an integration against our own company's data, and I cannot get past sign-in at api-central.adp.com. I have cleared all ADP cookies and signed in as the RUN administrator in a normal browser window. Two questions. First: is API Central available for a RUN Powered by ADP account, or is it Workforce Now only? Second: if it is available, please confirm it is enabled for our account and that I am a member. The errors I get are Unknown Authentication Error, and at api.adp.com/auth/oauth/v2/authorize/consent a page reading invalid_request, error extracting values from session.">Copy</button></div><pre>I am trying to use ADP API Central to build an integration
+against our own company's data, and I cannot get past sign-in
+at api-central.adp.com. I have cleared all ADP cookies and
+signed in as the RUN administrator in a normal browser window.
+
+Two questions.
+
+First: is API Central available for a RUN Powered by ADP
+account, or is it Workforce Now only?
+
+Second: if it is available, please confirm it is enabled for
+our account and that I am a member.
+
+The errors I get are Unknown Authentication Error, and at
+api.adp.com/auth/oauth/v2/authorize/consent a page reading
+invalid_request, error extracting values from session.</pre></div>
         Send me their answer. <b>Whichever way it goes, nothing you have already done is wasted</b> — Part A is live and onboarding is fully usable today with the office keying the packet into RUN by hand. This part only removes that keying step.</div></div>
-      <div class="expect"><span class="k no">If ADP says<br>RUN is not<br>supported</span><div>Then API Central is Workforce Now only and the plan changes: the route back is registering ReadyDoc as an <b>ADP Marketplace</b> app, which is a partner registration with a review that takes weeks. It is worth confirming with ADP before starting, because it is a much longer road and it is the reason API Central was worth trying first. Send me what they say and I will rewrite Parts B to D around it.</div></div>
+
+      <div class="expect"><span class="k no">If ADP says<br>RUN is not<br>supported</span><div>Then API Central is Workforce Now only and the plan changes: the route back is registering ReadyDoc as an <b>ADP Marketplace</b> app, which is a partner registration with a review that takes weeks. Confirm it with ADP before starting, because it is a much longer road and avoiding it is the reason API Central was worth trying first. Send me what they say and I will rewrite Parts B to D around it.</div></div>
+
       <p class="why"><b>Why it opens on Members.</b> That page is how you let someone else help — Marnee, or me if you ever want it. It has three roles: <b>Project user</b> (can create projects and see credentials), <b>Certificate user</b> (can request and track certificates), <b>Member user</b> (can only see who has access). An internal member has to already be a registered user on your ADP account. You need none of this to finish the runbook yourself; ignore the page and go to Projects.</p>
     </div>
   </div>

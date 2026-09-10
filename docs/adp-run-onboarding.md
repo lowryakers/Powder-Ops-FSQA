@@ -22,20 +22,30 @@ Lowry there and he could not find Projects, correctly. Steps below follow
 ADP's own *API Central Quick Start Guide* (published Apr 2024, last modified
 Jun 2025).
 
-**`HTTP ERROR 431` at that address is a browser cookie problem, not an
-outage.** 431 is "request header fields too large"; ADP's SSO cookies
-accumulate past the server's limit. A private window loads it; clearing
-adp.com site data fixes it permanently.
+**Three different-looking sign-in failures are one failure.** `HTTP ERROR 431`,
+`Unknown Authentication Error`, and a raw JSON page at
+`api.adp.com/auth/oauth/v2/authorize/consent` reading
+`invalid_request` / `error extracting values from session` all say the same
+thing: the browser is not carrying ADP's sign-in cookies cleanly from one of
+its domains to the next. ADP's sign-in spans `api-central.adp.com`,
+`accounts.adp.com` and `api.adp.com`, and each hand-off depends on the cookie
+the previous one set.
 
-**`Unknown Authentication Error` after signing in is an ENTITLEMENT problem,
-and it is the branch that decides this whole approach.** ADP resolved the
-identity and found no API Central access behind it. Rule out the mundane
-causes first — an employee self-service login rather than the RUN
-administrator, and a broken half-session left over from the 431 attempts — and
-if it persists, only ADP can grant it. The question to put to them is
-deliberately two-part, because the second answer is worthless without the
-first: *is API Central available for a RUN Powered by ADP account at all, or
-is it Workforce Now only*, and *if so, please enable it and add the
+**An incognito window is the wrong fix and can cause the other two.** Chrome
+blocks third-party cookies there by default, so the chain breaks mid-flow and
+ADP reports a cookie problem as an authentication problem. The first version
+of this doc recommended incognito to get past the 431; that was wrong. The fix
+for all three is: normal window, delete every adp.com cookie
+(Chrome → Settings → Privacy and security → Third-party cookies → See all site
+data and permissions → search adp), then type `api-central.adp.com` into the
+address bar by hand. **Not a bookmark and not a pasted link** — a used ADP
+sign-in URL is precisely what produces "error extracting values from session".
+
+**Only if a clean normal-window attempt as the RUN administrator still fails**
+is it worth suspecting the account, and then only ADP can settle it. The
+question is two-part, because the second answer is worthless without the
+first: *is API Central available for a RUN Powered by ADP account at all, or is
+it Workforce Now only*, and *if so, is it enabled for this account with the
 administrator as a member*.
 
 ADP's own guide gives grounds for the doubt: its Chapter 5 is "How to set
