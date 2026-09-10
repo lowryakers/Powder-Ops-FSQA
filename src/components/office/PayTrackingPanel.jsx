@@ -613,17 +613,30 @@ function AssignmentsTab({ people, tr, onChanged, preset = '' }) {
   const { data: users } = useApiGet('/pay/reviewers');
   // `preset` is the person the action strip was clicked for; remounting on it
   // (the key below) is what puts them in the box.
-  const [form, setForm] = useState({ employee_id: preset || '', reviewer_id: '', due_date: '', note: '' });
+  const [form, setForm] = useState({ employee_id: preset || '', reviewer_id: '', due_date: '', note: '', occasion: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  // The same arithmetic the server does, shown BEFORE the assign so nobody has
+  // to count 90 days off a calendar to check it. The server still decides — this
+  // is the explanation, never a second rule (the platformRules doctrine).
+  const chosen = people.find(p => p.id === form.employee_id) || null;
+  const derivedDue = (() => {
+    const days = form.occasion === '30_day' ? 30 : form.occasion === '90_day' ? 90 : null;
+    if (!days || !chosen?.hire_date) return null;
+    const d = new Date(`${String(chosen.hire_date).slice(0, 10)}T00:00:00`);
+    if (Number.isNaN(d.getTime())) return null;
+    d.setDate(d.getDate() + days);
+    return d.toISOString().slice(0, 10);
+  })();
 
   const create = async () => {
     if (!form.employee_id || !form.reviewer_id) { setError(tr('Pick the employee and the reviewer.')); return; }
     setBusy(true); setError('');
     try {
       await apiPost('/pay/assignments', form);
-      setForm({ employee_id: '', reviewer_id: '', due_date: '', note: '' });
+      setForm({ employee_id: '', reviewer_id: '', due_date: '', note: '', occasion: '' });
       refresh(); onChanged?.();
     } catch (e) { setError(e.message); }
     finally { setBusy(false); }
@@ -660,9 +673,26 @@ function AssignmentsTab({ people, tr, onChanged, preset = '' }) {
             </select>
           </div>
           <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">{tr('What kind of review')}</label>
+            <select value={form.occasion} onChange={e => set('occasion', e.target.value)} data-occasion
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+              <option value="">{tr('Ordinary review')}</option>
+              <option value="30_day">{tr('30-day review (new starter)')}</option>
+              <option value="90_day">{tr('90-day review (new starter)')}</option>
+            </select>
+          </div>
+          <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">{tr('Due date')}</label>
             <input type="date" value={form.due_date} onChange={e => set('due_date', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              placeholder={derivedDue || ''} />
+            {form.occasion && !form.due_date && (
+              <p className="text-[11px] text-gray-500 mt-0.5">
+                {derivedDue
+                  ? `${tr('Falls due')} ${fmtDate(derivedDue)} — ${tr('worked out from their hire date. Set a date here to override it.')}`
+                  : tr('This person has no hire date on the roster, so there is nothing to count from — set a date here, or add the hire date first.')}
+              </p>
+            )}
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">{tr('Note (optional)')}</label>
@@ -687,6 +717,11 @@ function AssignmentsTab({ people, tr, onChanged, preset = '' }) {
             {open.map(a => (
               <li key={a.id} className="flex items-center gap-2 flex-wrap text-sm border-l-2 border-amber-300 pl-2">
                 <span className="font-medium text-gray-900">{a.employee_name}</span>
+                {a.occasion && (
+                  <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-powder-100 text-powder-800" data-occasion-chip>
+                    {a.occasion === '30_day' ? tr('30-day') : tr('90-day')}
+                  </span>
+                )}
                 <span className="text-xs text-gray-500">← {a.reviewer_name || tr('unknown')}</span>
                 <span className={`text-[11px] ${a.overdue ? 'text-red-600 font-semibold' : 'text-gray-400'}`}>
                   {a.due_date ? `${a.overdue ? tr('overdue') : tr('due')} ${fmtDate(a.due_date)}` : tr('no due date')}
@@ -717,8 +752,10 @@ function AssignmentsTab({ people, tr, onChanged, preset = '' }) {
 
 /* ── Add someone by hand ────────────────────────────────── */
 
-function AddPersonModal({ onClose, onAdded, tr }) {
-  const [form, setForm] = useState({ name: '', team: '', hire_date: '', pay_rate: '', pto_plan: '', is_supervisor: false });
+function AddPersonModal({ onClose, onAdded, tr, workerType = 'employee' }) {
+  const isContractor = workerType === 'contractor';
+  const [form, setForm] = useState({ name: '', team: '', hire_date: '', pay_rate: '', pto_plan: '', is_supervisor: false,
+    contractor_company: '', ends_on: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -731,7 +768,13 @@ function AddPersonModal({ onClose, onAdded, tr }) {
         name: form.name.trim(), team: form.team.trim() || null,
         hire_date: form.hire_date || null,
         pay_rate: form.pay_rate !== '' ? Number(form.pay_rate) : null,
-        pto_plan: form.pto_plan.trim() || null, is_supervisor: form.is_supervisor,
+        worker_type: workerType,
+        // A contractor has no PTO plan and is never a supervisor here; sending
+        // them anyway would put values on the record nobody chose.
+        pto_plan: isContractor ? null : (form.pto_plan.trim() || null),
+        is_supervisor: isContractor ? false : form.is_supervisor,
+        contractor_company: isContractor ? (form.contractor_company.trim() || null) : null,
+        ends_on: isContractor ? (form.ends_on || null) : null,
       });
       onAdded?.(); onClose();
     } catch (e) { setError(e.message); setBusy(false); }
@@ -740,7 +783,9 @@ function AddPersonModal({ onClose, onAdded, tr }) {
   return (
     <div className="fixed inset-0 z-[70] bg-black/30 flex items-center justify-center p-4" onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-4 space-y-3 max-h-[92vh] overflow-y-auto">
-        <h3 className="font-semibold text-gray-900 text-sm">{tr('Add someone to the roster')}</h3>
+        <h3 className="font-semibold text-gray-900 text-sm">
+          {isContractor ? tr('Add a contractor or temporary worker') : tr('Add someone to the roster')}
+        </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <div className="sm:col-span-2">
             <label className="block text-xs font-medium text-gray-700 mb-1">{tr('Name')} *</label>
@@ -762,6 +807,21 @@ function AddPersonModal({ onClose, onAdded, tr }) {
             <input type="number" step="0.01" min="0" value={form.pay_rate} onChange={e => set('pay_rate', e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder={tr('blank = salaried')} />
           </div>
+          {isContractor && (
+            <>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">{tr('Agency or company')}</label>
+                <input value={form.contractor_company} onChange={e => set('contractor_company', e.target.value)} data-contractor-company
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder={tr('Leave blank if direct')} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">{tr('Expected to end')}</label>
+                <input type="date" value={form.ends_on} onChange={e => set('ends_on', e.target.value)} data-ends-on
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                <p className="text-[11px] text-gray-500 mt-0.5">{tr('A reminder, not a rule — nothing happens on this date by itself.')}</p>
+              </div>
+            </>
+          )}
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">{tr('PTO plan')}</label>
             <input value={form.pto_plan} onChange={e => set('pto_plan', e.target.value)}
@@ -1026,12 +1086,19 @@ export default function PayTrackingPanel() {
   const rows = roster || [];
 
   const kpis = useMemo(() => {
-    const list = (roster || []).filter(r => r.active);
+    const active = (roster || []).filter(r => r.active);
+    // HEADCOUNT AND THE AVERAGE RATE ARE EMPLOYEES. Counting temps as headcount
+    // would move a number the office reads as "how many people work here", and
+    // an agency rate in the average makes the average mean nothing. The ANNUAL
+    // cost deliberately includes them, because they are money going out.
+    const list = active.filter(r => r.worker_type !== 'contractor');
     const paid = list.filter(r => r.pay_rate != null);
+    const allPaid = active.filter(r => r.pay_rate != null);
     return {
       headcount: list.length,
+      contractors: active.length - list.length,
       due: list.filter(r => r.review?.status === 'due').length,
-      annual: paid.reduce((s, r) => s + (r.annual || 0), 0),
+      annual: allPaid.reduce((s, r) => s + (r.annual || 0), 0),
       avg: paid.length ? paid.reduce((s, r) => s + r.pay_rate, 0) / paid.length : null,
     };
   }, [roster]);
@@ -1060,6 +1127,20 @@ export default function PayTrackingPanel() {
           {tr(REVIEW_LABEL[r.review?.status || 'unknown'])}
         </span>
       ) },
+  ];
+
+  // TWO SECTIONS, ONE TABLE SHAPE. A temp is paid the same way, has the same
+  // rate history and is read by the same person — so they are rows on this
+  // roster with a `worker_type`, not a second module. What they do NOT have is a
+  // review cycle or a PTO plan, so those columns come off rather than sitting
+  // there empty and inviting somebody to fill them in.
+  const employees = rows.filter(r => r.worker_type !== 'contractor');
+  const contractors = rows.filter(r => r.worker_type === 'contractor');
+  const DROP_FOR_CONTRACTORS = new Set(['pto_plan', 'review_days', 'review_status', 'last_increase_at', 'last_reviewed_at']);
+  const contractorColumns = [
+    ...columns.filter(c => !DROP_FOR_CONTRACTORS.has(c.key)),
+    { key: 'contractor_company', label: tr('Agency'), filter: true, render: r => r.contractor_company || <span className="text-gray-300">—</span> },
+    { key: 'ends_on', label: tr('Ends'), render: r => fmtDate(r.ends_on) },
   ];
 
   const openAssigned = (myAssignments || []).filter(a => a.status === 'open');
@@ -1123,7 +1204,7 @@ export default function PayTrackingPanel() {
           </div>
           <DataGrid
             columns={columns}
-            rows={rows.map(r => ({ ...r, review_days: r.review?.days ?? null, review_status: r.review?.status }))}
+            rows={employees.map(r => ({ ...r, review_days: r.review?.days ?? null, review_status: r.review?.status }))}
             searchPlaceholder={tr('Search name or team…')}
             empty={tr('Nobody on the roster yet.')}
             initialSort={{ key: 'review_days', dir: 'desc' }}
@@ -1132,6 +1213,29 @@ export default function PayTrackingPanel() {
           <p className="text-[11px] text-gray-400">
             {tr('Tap a name to read their reviews, see rate history, correct details, or apply an increase.')}
           </p>
+
+          <div className="pt-4" data-contractors>
+            <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900">{tr('Contractors & temporary workers')}</h3>
+                <p className="text-[11px] text-gray-500">
+                  {tr('Paid the same way, with no review cycle and no PTO plan. Add one when they start; take them off the list when the assignment ends.')}
+                </p>
+              </div>
+              <button onClick={() => setAdding('contractor')}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 shrink-0">
+                <Plus size={13} /> {tr('Add a contractor')}
+              </button>
+            </div>
+            <DataGrid
+              columns={contractorColumns}
+              rows={contractors}
+              searchPlaceholder={tr('Search name or agency…')}
+              empty={tr('No contractors on the roster.')}
+              initialSort={{ key: 'name', dir: 'asc' }}
+              rowClass={r => (r.active ? '' : 'opacity-50')}
+            />
+          </div>
         </>
       )}
 
@@ -1202,7 +1306,8 @@ export default function PayTrackingPanel() {
         <PersonDrawer id={openId} tr={tr} onClose={() => { setOpenId(null); bump(); }} onChanged={() => { refreshRoster(); bump(); }} />
       )}
       {adding && (
-        <AddPersonModal tr={tr} onClose={() => setAdding(false)} onAdded={() => { refreshRoster(); refreshEval(); }} />
+        <AddPersonModal tr={tr} workerType={adding === 'contractor' ? 'contractor' : 'employee'}
+          onClose={() => setAdding(false)} onAdded={() => { refreshRoster(); refreshEval(); }} />
       )}
     </div>
   );

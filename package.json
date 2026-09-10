@@ -56,6 +56,7 @@
     "verify:backdate": "node scripts/verify-backdated-recurrence.mjs",
     "verify:onboarding": "node scripts/verify-onboarding.mjs",
     "verify:onboardingui": "node scripts/verify-onboarding-ui.mjs",
+    "verify:payroster": "node scripts/verify-pay-roster.mjs",
     "verify:sanareas": "node scripts/verify-sanitation-areas.mjs",
     "verify:storage": "node scripts/verify-supplier-storage.mjs",
     "verify:atp": "node scripts/verify-atp-task-door.mjs",

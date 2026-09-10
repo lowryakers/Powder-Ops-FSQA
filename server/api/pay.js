@@ -165,7 +165,41 @@ router.get('/employees/:id', (req, res) => {
 // entry, the wrong person) can be CORRECTED by an admin — the PUT is audited
 // with before/after, so the fix leaves a trail rather than rewriting history
 // silently.
-const EDITABLE = ['name', 'team', 'is_supervisor', 'hire_date', 'pto_plan', 'active', 'notes', 'user_id', 'last_reviewed_at', 'last_increase_at'];
+const EDITABLE = ['name', 'team', 'is_supervisor', 'hire_date', 'pto_plan', 'active', 'notes', 'user_id',
+  'last_reviewed_at', 'last_increase_at', 'worker_type', 'contractor_company', 'ends_on'];
+
+export const WORKER_TYPES = ['employee', 'contractor'];
+
+/**
+ * What a review is FOR.
+ *
+ * A 30-day check on a new starter and the annual review are the same act with
+ * very different stakes, and a queue that calls them both "a review due" tells
+ * the office nothing about which one cannot wait. `days` is measured from the
+ * hire date; `null` is the annual review, which is driven by the clock in
+ * `payActions` rather than by a start date.
+ *
+ * These are RAISED ONE AT A TIME, deliberately. Nothing generates a 30-day
+ * review automatically: the plant hires rarely, some starters are seasonal, and
+ * a queue that fills itself with checks nobody asked for is one people learn to
+ * dismiss — the same reasoning that keeps a single stray ATP reading from
+ * raising a re-clean.
+ */
+export const OCCASIONS = {
+  '30_day': { label: '30-day review', days: 30 },
+  '90_day': { label: '90-day review', days: 90 },
+};
+export const occasionLabel = (o) => OCCASIONS[o]?.label || 'Review';
+
+/** The date a starter's 30- or 90-day check falls due. Null without a hire date. */
+export function occasionDue(hireDate, occasion) {
+  const spec = OCCASIONS[occasion];
+  if (!spec || !hireDate) return null;
+  const d = new Date(`${String(hireDate).slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setDate(d.getDate() + spec.days);
+  return d.toISOString().slice(0, 10);
+}
 
 router.post('/employees', (req, res) => {
   if (!requireAdmin(req, res)) return;
@@ -175,13 +209,16 @@ router.post('/employees', (req, res) => {
   if (db.prepare('SELECT 1 FROM pay_employees WHERE name = ?').get(name)) {
     return res.status(409).json({ error: `${name} is already on the roster.` });
   }
+  const workerType = WORKER_TYPES.includes(req.body?.worker_type) ? req.body.worker_type : 'employee';
   const id = uuid();
-  db.prepare(`INSERT INTO pay_employees (id, user_id, name, team, is_supervisor, pay_rate, hire_date, pto_plan)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
+  db.prepare(`INSERT INTO pay_employees (id, user_id, name, team, is_supervisor, pay_rate, hire_date, pto_plan,
+    worker_type, contractor_company, ends_on)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     id, req.body?.user_id || null, name, req.body?.team || null,
     req.body?.is_supervisor ? 1 : 0,
     req.body?.pay_rate != null && req.body.pay_rate !== '' ? Number(req.body.pay_rate) : null,
-    req.body?.hire_date || null, req.body?.pto_plan || null);
+    req.body?.hire_date || null, req.body?.pto_plan || null,
+    workerType, req.body?.contractor_company || null, req.body?.ends_on || null);
   const created = db.prepare('SELECT * FROM pay_employees WHERE id = ?').get(id);
   logAudit(req.user, 'create', 'pay_employee', id, { name }, null, created, name);
   res.status(201).json(decorate(created));
@@ -191,6 +228,9 @@ router.post('/employees', (req, res) => {
 // can never happen without leaving a history row behind.
 router.put('/employees/:id', (req, res) => {
   if (!requireAdmin(req, res)) return;
+  if (req.body?.worker_type !== undefined && !WORKER_TYPES.includes(req.body.worker_type)) {
+    return res.status(400).json({ error: 'Worker type must be employee or contractor.' });
+  }
   const db = getDb();
   const existing = db.prepare('SELECT * FROM pay_employees WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not on the roster' });
@@ -308,20 +348,39 @@ router.post('/assignments', async (req, res) => {
   if (isSupervisorRow(db, emp) && !canReviewSupervisors(reviewer)) {
     return res.status(400).json({ error: `${emp.name} is a supervisor — supervisor reviews are done by Adam or an admin.` });
   }
-  const open = db.prepare("SELECT 1 FROM pay_review_assignments WHERE employee_id = ? AND reviewer_id = ? AND status = 'open'").get(emp.id, reviewer.id);
-  if (open) return res.status(409).json({ error: `${reviewer.name} already has an open review for ${emp.name}.` });
+  // Scoped to the OCCASION. A 30-day check and a 90-day check on the same
+  // starter are two different asks and both can legitimately be open at once;
+  // only a second copy of the SAME ask is a duplicate.
+  const occ = OCCASIONS[req.body?.occasion] ? req.body.occasion : null;
+  const open = db.prepare(`SELECT 1 FROM pay_review_assignments
+    WHERE employee_id = ? AND reviewer_id = ? AND status = 'open'
+      AND COALESCE(occasion, '') = COALESCE(?, '')`).get(emp.id, reviewer.id, occ);
+  if (open) {
+    return res.status(409).json({ error: occ
+      ? `${reviewer.name} already has an open ${occasionLabel(occ).toLowerCase()} for ${emp.name}.`
+      : `${reviewer.name} already has an open review for ${emp.name}.` });
+  }
 
+  const occasion = occ;
+  // A 30/90-day check knows its own due date — it is the hire date plus the
+  // days — so the caller does not have to work it out and cannot get it wrong.
+  // An explicit date still wins, because a starter who was away for a fortnight
+  // is a real reason to move it.
+  const due = String(req.body?.due_date || '').slice(0, 10) || occasionDue(emp.hire_date, occasion) || null;
+  if (occasion && !due) {
+    return res.status(409).json({ error: `${emp.name} has no hire date on the roster, so a ${occasionLabel(occasion).toLowerCase()} has no date to fall due. Add the hire date first, or set a date by hand.` });
+  }
   const id = uuid();
-  db.prepare(`INSERT INTO pay_review_assignments (id, employee_id, reviewer_id, due_date, note, assigned_by)
-    VALUES (?, ?, ?, ?, ?, ?)`).run(id, emp.id, reviewer.id,
-    String(req.body?.due_date || '').slice(0, 10) || null,
-    String(req.body?.note || '').trim().slice(0, 500) || null, req.user.name);
-  logAudit(req.user, 'create', 'pay_review_assignment', id, { employee: emp.name, reviewer: reviewer.name }, null, null, emp.name);
+  db.prepare(`INSERT INTO pay_review_assignments (id, employee_id, reviewer_id, due_date, note, assigned_by, occasion)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`).run(id, emp.id, reviewer.id, due,
+    String(req.body?.note || '').trim().slice(0, 500) || null, req.user.name, occasion);
+  logAudit(req.user, 'create', 'pay_review_assignment', id, { employee: emp.name, reviewer: reviewer.name, occasion: occasion || 'annual' }, null, null, emp.name);
 
   // Tell them. An assignment nobody is told about is the same as not asking.
   // Best-effort — a comms failure must never fail the assignment itself.
-  const due = req.body?.due_date ? ` It's due ${String(req.body.due_date).slice(0, 10)}.` : '';
-  const body = `📋 *Pay evaluation assigned* — please complete a review for *${emp.name}*.${due}\nOpen ReadyDoc → Pay Tracking → Evaluation. Your scores and notes go to the admin, who decides any increase.`;
+  const dueTxt = due ? ` It's due ${due}.` : '';
+  const what = occasion ? `${occasionLabel(occasion)}` : 'Pay evaluation';
+  const body = `📋 *${what} assigned* — please complete a review for *${emp.name}*.${dueTxt}\nOpen ReadyDoc → Pay Tracking → Evaluation. Your scores and notes go to the admin, who decides any increase.`;
   try {
     const { bot, dm } = botDm(db, reviewer.id);
     if (dm) await postMessageAs(db, dm, bot, body);
@@ -670,7 +729,10 @@ router.get('/evaluatees', (req, res) => {
   const db = getDb();
   // Through withLinkedNames so the supervisor flag (and the name) come from the
   // linked account rather than whatever the import wrote months ago.
-  let rows = withLinkedNames(db, db.prepare('SELECT * FROM pay_employees WHERE active = 1 ORDER BY team, name').all());
+  // Contractors are paid, not reviewed — they have no review cycle, so they are
+  // not offered as somebody to evaluate.
+  let rows = withLinkedNames(db, db.prepare(
+    "SELECT * FROM pay_employees WHERE active = 1 AND COALESCE(worker_type, 'employee') <> 'contractor' ORDER BY team, name").all());
   // Supervisors are reviewed only by Adam (or an admin) — everyone else's
   // picker simply doesn't offer them, and the submit endpoint enforces the
   // same rule so the filter can't be worked around.
@@ -726,7 +788,10 @@ async function dm(db, userId, body, push) {
 export function payActions(db) {
   const now = today();
   const items = [];
-  const roster = (() => { try { return withLinkedNames(db, db.prepare('SELECT * FROM pay_employees WHERE active = 1').all()); } catch { return []; } })();
+  // Same exclusion as the evaluatee picker: a contractor never falls due for a
+  // review, so they can never become an item on the office's queue.
+  const roster = (() => { try { return withLinkedNames(db, db.prepare(
+    "SELECT * FROM pay_employees WHERE active = 1 AND COALESCE(worker_type, 'employee') <> 'contractor'").all()); } catch { return []; } })();
   const byId = new Map(roster.map(r => [r.id, r]));
 
   // decide — open reviews, grouped per employee
@@ -749,8 +814,8 @@ export function payActions(db) {
   // chase — open assignments past their date
   const open = (() => {
     try {
-      return withEmployeeFacts(db, db.prepare(`SELECT a.id, a.due_date, a.reviewer_id, a.employee_id, e.name AS employee_name, e.user_id, e.is_supervisor, e.team,
-          u.name AS reviewer_name
+      return withEmployeeFacts(db, db.prepare(`SELECT a.id, a.due_date, a.reviewer_id, a.employee_id, a.occasion,
+          e.name AS employee_name, e.user_id, e.is_supervisor, e.team, u.name AS reviewer_name
         FROM pay_review_assignments a JOIN pay_employees e ON e.id = a.employee_id LEFT JOIN users u ON u.id = a.reviewer_id
         WHERE a.status = 'open' ORDER BY a.due_date`).all());
     } catch { return []; }
@@ -759,6 +824,7 @@ export function payActions(db) {
   for (const a of open) {
     if (!a.due_date || a.due_date >= now) continue;
     items.push({ kind: 'chase', employee_id: a.employee_id, employee_name: a.employee_name, team: a.team,
+      occasion: a.occasion || null, occasion_label: a.occasion ? occasionLabel(a.occasion) : null,
       assignment_id: a.id, reviewer_id: a.reviewer_id, reviewer_name: a.reviewer_name, due_date: a.due_date,
       overdue_days: daysSince(a.due_date) });
   }

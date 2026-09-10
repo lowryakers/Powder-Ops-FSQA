@@ -5125,6 +5125,21 @@ function runMigrations() {
       CREATE INDEX IF NOT EXISTS idx_pay_assign_reviewer ON pay_review_assignments(reviewer_id, status);
       CREATE INDEX IF NOT EXISTS idx_pay_assign_emp ON pay_review_assignments(employee_id, status);
     `);
+    // WHAT THIS REVIEW IS FOR. An annual review and a new starter's 30-day
+    // check are the same act with different stakes, and a queue that calls
+    // them both "a review due" tells the office nothing about which one is
+    // urgent. NULL reads as 'annual' so every row filed before this keeps
+    // meaning what it meant.
+    addColumnIfMissing('pay_review_assignments', 'occasion', 'TEXT');
+    // Temporary and 1099 people sit on the same roster with the same columns,
+    // not in a second table: one shape, one rate history, one place the office
+    // looks. `worker_type` is what splits the screen into two sections.
+    addColumnIfMissing('pay_employees', 'worker_type', "TEXT NOT NULL DEFAULT 'employee'");
+    // The agency or company a temp comes through, and when the assignment is
+    // expected to end — the two facts about a contractor an employee row has
+    // no place for.
+    addColumnIfMissing('pay_employees', 'contractor_company', 'TEXT');
+    addColumnIfMissing('pay_employees', 'ends_on', 'TEXT');
   } catch (e) {
     console.warn('[db] pay tracking tables unavailable:', e.message);
   }

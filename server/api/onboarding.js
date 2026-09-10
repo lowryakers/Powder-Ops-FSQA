@@ -490,9 +490,50 @@ router.post('/:id/complete', (req, res) => {
       logAudit(req.user, 'create', 'user', userId, { from_onboarding: rec.id }, null, null, name);
     }
   }
+  // AND ON TO THE PAY ROSTER, in the same act.
+  //
+  // The packet already carries the hire date and the rate the person was
+  // offered; before this, completing an onboarding created the ReadyDoc account
+  // and stopped, so somebody opened Pay Tracking and typed both again from the
+  // same piece of paper. That is the duplication, and re-typing is where a rate
+  // gets a digit wrong.
+  //
+  // INSERT-ONLY, and it never touches a row that already exists: an admin who
+  // has since corrected a rate must not have it overwritten by the offer letter.
+  // The roster keys on name (a UNIQUE index), so an existing row is LINKED to
+  // the new account rather than duplicated — the same "the link is the identity"
+  // rule `withLinkedNames` follows.
+  let rosterId = null;
+  try {
+    const name = nameOf(rec);
+    const existing = db.prepare('SELECT id, user_id FROM pay_employees WHERE name = ?').get(name);
+    if (existing) {
+      rosterId = existing.id;
+      if (userId && !existing.user_id) {
+        db.prepare("UPDATE pay_employees SET user_id = ?, updated_at = datetime('now') WHERE id = ?").run(userId, existing.id);
+        logAudit(req.user, 'update', 'pay_employee', existing.id, { linked_from_onboarding: rec.id }, null, null, name);
+      }
+    } else {
+      rosterId = uuid();
+      const rate = rec.pay_rate != null && String(rec.pay_rate).trim() !== '' ? Number(rec.pay_rate) : null;
+      db.prepare(`INSERT INTO pay_employees (id, user_id, name, team, hire_date, pay_rate, worker_type)
+        VALUES (?, ?, ?, ?, ?, ?, 'employee')`).run(
+        rosterId, userId || null, name, rec.team || rec.department || null,
+        rec.start_date || null, Number.isFinite(rate) ? rate : null);
+      logAudit(req.user, 'create', 'pay_employee', rosterId,
+        { from_onboarding: rec.id, hire_date: rec.start_date || null, pay_rate: Number.isFinite(rate) ? rate : null },
+        null, null, name);
+    }
+  } catch (e) {
+    // Pay Tracking is a separate module and may not be present on every
+    // deployment. A missing roster must never fail the completion — the packet
+    // is the record, this is a convenience on top of it.
+    console.warn('[onboarding] pay roster seed skipped:', e.message);
+  }
+
   db.prepare(`UPDATE onboarding_records SET status = 'completed', completed_at = datetime('now'),
     token_hash = NULL, user_id = ?, updated_at = datetime('now') WHERE id = ?`).run(userId || null, rec.id);
-  logAudit(req.user, 'update', 'onboarding', rec.id, { completed: true, user_id: userId || null }, null, null, nameOf(rec));
+  logAudit(req.user, 'update', 'onboarding', rec.id, { completed: true, user_id: userId || null, pay_employee_id: rosterId }, null, null, nameOf(rec));
   res.json(shape(db, db.prepare('SELECT * FROM onboarding_records WHERE id = ?').get(rec.id)));
 });
 
