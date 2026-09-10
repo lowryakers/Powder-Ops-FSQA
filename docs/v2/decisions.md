@@ -2142,3 +2142,38 @@ the whole cost of ADP saying no.
 **Do not re-open this on the strength of the guide alone.** The guide says RUN is supported; that is true
 and it is not the blocker. The blocker is who is allowed to register an application. A future session that
 finds Chapter 1 and gets excited should read this entry first.
+
+## D-069 · 2026-09-10 · supersedes D-068 in part — API Central is a PRODUCT YOU BUY, and that is why sign-in failed
+
+ADP's own Help Center page settles what four support replies could not. Under **ADP Clients** it offers two
+cards, and the second reads: *"If you're an ADP client who purchased a North American product and are having
+trouble implementing ADP APIs and **have not purchased ADP API Central**, visit ADP Customer Service &
+Support."* Below both: *"Not already using ADP API Central as a North American ADP client? **Learn more**"*.
+
+**ADP API Central is a paid add-on, not an entitlement somebody forgot to tick.** Powder Ops has not bought
+it. That single fact explains every dead end in D-065 through D-068: the administrator's sign-in was refused
+because there is no subscription behind it; RUN's service desk "cannot enable or provision" it because it is
+sold, not switched on; and "a 3rd party product" meant API Central is a separate product from RUN, not that
+ReadyDoc is an ISV.
+
+**D-068'S CONCLUSION IS WRONG ON ITS MATERIAL POINT and is corrected here rather than edited.** It said the
+only remaining door was an ADP Marketplace partner registration. There is a third, ordinary door: **buy API
+Central.** The Consumer Application Registry step the guide describes is what API Central does on your
+behalf once you have it — which is why the guide states it as a precondition without saying how a client
+performs it.
+
+**What is still unknown, and must not be guessed:** the price, and whether ADP sells API Central for a **RUN**
+account at all. The doubt is not idle — the Quick Start Guide's own project dialog is subtitled *"for ADP
+Workforce Now®"* and its last chapter is Workforce Now permissions. Both questions are answered by the
+"Learn more" link and by ADP Customer Service & Support, which is the route that page names for a client in
+exactly this position.
+
+**This is now a purchase decision, not an access mystery, and that is a much better problem.** The thing
+being bought removes a few minutes of keying per hire from a plant that hires rarely. If API Central is a
+modest annual figure it may still be worth it for the other integrations it would open; if it is priced as
+an enterprise add-on it is plainly not. Get the number, then decide — and the decision belongs to the plant,
+not to this document.
+
+**Nothing about the code changes.** `server/adp.js` remains finished, correct against RUN's own data
+dictionary and switched off by four absent credentials. If API Central is purchased, it is four environment
+variables and one test hire.

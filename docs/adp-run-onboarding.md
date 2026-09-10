@@ -8,7 +8,25 @@ What it takes to have a new hire complete onboarding inside ReadyDoc (personal
 info, direct deposit, federal W-4 inputs, emergency contact, the intro to
 Messages and their modules) and have the result land in RUN Powered by ADP.
 
-## PARKED, 10 September 2026 (D-068) — ADP will not provision it for a RUN client
+## THE ANSWER: ADP API Central is a product you BUY (D-069, corrects D-068)
+
+ADP's Help Center offers clients two routes, and the second names the thing directly: *"an ADP client who
+purchased a North American product ... and **have not purchased ADP API Central**"*, with a **Learn more**
+link for *"Not already using ADP API Central as a North American ADP client?"*.
+
+**API Central is a paid add-on.** Powder Ops has not bought it, and that one fact explains every dead end:
+the administrator's sign-in was refused because there is no subscription behind it, RUN's desk cannot
+"provision" something that is sold rather than switched on, and "3rd party product" meant API Central is
+separate from RUN.
+
+So there IS an ordinary client route, and D-068 was wrong to conclude only a partner registration remained.
+**Two things are still unknown and must not be guessed: the price, and whether ADP sells API Central for a
+RUN account at all** — the Quick Start Guide's project dialog is subtitled "for ADP Workforce Now®". Both
+are answered by the Learn more link and by ADP Customer Service & Support.
+
+It is a purchase decision now, not an access problem. `server/adp.js` is finished either way.
+
+## Earlier reading, kept — PARKED, 10 September 2026 (D-068)
 
 ADP's final answer: RUN's service desk **cannot enable or provision this**, and the route is "the process
 outlined in the guide" — which is one sentence in Chapter 2, that the two canonical URIs must be added to
