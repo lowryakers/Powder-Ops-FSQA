@@ -2100,3 +2100,45 @@ WFN for its own reasons, it is four variables and a test hire rather than a buil
 **Do not re-derive this from the guide.** The guide says RUN is supported; ADP's service desk says it is
 not. That contradiction is the finding, and it is recorded here so the next reader does not spend another
 afternoon proving the first half.
+
+## D-068 · 2026-09-10 · decided — the ADP hand-off is PARKED, and the code stays switched off and finished
+
+ADP's final answer, verbatim: *"Our Sales team advised that they are unable to assist with enabling or
+provisioning this integration. At this time, if you would like to use the Applicant Onboard V2 API Guide for
+RUN Powered by ADP, you will need to follow the process outlined in the guide. Upon review that is a 3rd
+party product, you may select help center at the bottom of the page > then select get help."*
+
+**Read together with D-066 and D-067, this resolves the contradiction rather than continuing it.** The API is
+real and documented for RUN — that was never in doubt after the guide. What ADP is saying is that **RUN's
+service desk cannot provision it**, and that the route is "the process outlined in the guide". That process
+is one sentence in Chapter 2: the two canonical URIs *"need to be added in the Consumer Application Registry
+(CAR) for the subscription"*. The CAR is ADP's **partner/ISV registration**, not a client setting. Calling it
+"a 3rd party product" is the same statement from the other side: ADP expects the thing calling this API to
+be a registered third-party application, and ReadyDoc would be registering as a partner in order to
+integrate with itself.
+
+So the original Marketplace route — removed at D-065 on the belief that API Central replaced it — was the
+right shape all along for a *third party*, and API Central is for clients whose product line offers it.
+That is why the administrator's sign-in was refused: not a broken session, not an entitlement somebody
+forgot to tick.
+
+**THE DECISION IS TO STOP, AND IT IS ARITHMETIC.** One more ticket at developers.adp.com's own Help Center
+is cheap and worth sending, because it is a different desk from RUN's and it is the desk ADP named. After
+that, the only remaining door is a partner registration with weeks of review, for an application only this
+plant will ever use, to remove a few minutes of keying per hire from a plant that hires rarely. That is
+disproportionate and nobody should spend it on this.
+
+**NOTHING IS WASTED AND THE CODE IS NOT A STUB.** `server/adp.js` is finished and correct against RUN's own
+data dictionary (D-066), `check:adp` holds it at 28 assertions, and it degrades exactly like
+`quickbooks.js` and `storage.js` — four absent credentials and it is simply off. `missingForAdp()` already
+names what RUN would refuse. If access ever opens, or the plant moves to Workforce Now for its own reasons,
+this is four environment variables and one test hire, not a build.
+
+**And the onboarding module never needed ADP to be worth having.** The wizard, the encrypted SSN and bank
+details, both signatures, the photographs, the packet PDF, I-9 Section 2, EN/ES, the install hand-off and
+the pay-roster seeding all work today. The office reads a finished packet and keys the last step. That is
+the whole cost of ADP saying no.
+
+**Do not re-open this on the strength of the guide alone.** The guide says RUN is supported; that is true
+and it is not the blocker. The blocker is who is allowed to register an application. A future session that
+finds Chapter 1 and gets excited should read this entry first.

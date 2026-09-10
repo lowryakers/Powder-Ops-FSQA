@@ -8,7 +8,23 @@ What it takes to have a new hire complete onboarding inside ReadyDoc (personal
 info, direct deposit, federal W-4 inputs, emergency contact, the intro to
 Messages and their modules) and have the result land in RUN Powered by ADP.
 
-## ADP's answer, 11 September 2026: the integration route is Workforce Now (D-067)
+## PARKED, 10 September 2026 (D-068) — ADP will not provision it for a RUN client
+
+ADP's final answer: RUN's service desk **cannot enable or provision this**, and the route is "the process
+outlined in the guide" — which is one sentence in Chapter 2, that the two canonical URIs must be added to
+the **Consumer Application Registry** for the subscription. The CAR is ADP's partner/ISV registration, not a
+client setting, and ADP called ReadyDoc "a 3rd party product" in the same reply. Those are the same
+statement twice: the caller is expected to be a registered third-party application.
+
+**One more ticket is worth sending** — at developers.adp.com's own Help Center, which is a different desk
+from RUN's and the one ADP named. After that the only door is a partner registration with weeks of review,
+for an app only this plant will use, to save a few minutes of keying per hire. Disproportionate; stop there.
+
+`server/adp.js` stays finished, correct and switched off. Four environment variables and a test hire if it
+ever opens. Everything below is kept because the endpoints, the payload and the credential mechanics are all
+still right.
+
+## ADP's earlier answer, 11 September 2026: the integration route is Workforce Now (D-067)
 
 ADP replied that client-built integrations go through **Workforce Now**, and that the RUN-side option is
 ADP's own onboarding on an **HR Pro** upgrade. That contradicts their own published guide, which says

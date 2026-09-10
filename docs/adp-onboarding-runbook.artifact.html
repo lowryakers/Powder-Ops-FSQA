@@ -130,13 +130,21 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
 <header class="mast">
   <p class="eyebrow">Powder Ops · ReadyDoc · Onboarding → RUN Powered by ADP</p>
   <h1>ADP Onboarding Runbook</h1>
-  <p class="standfirst">Everything between "the module is built" and "a new hire lands in RUN without anyone re-typing the packet": one variable you can set today, the ADP access only you can get, and the first test hire. <b>Revised 11 September.</b> ADP's own RUN guide has now been read, which corrected six field names in the code and removed a variable this runbook used to demand. What is left open is not whether this works — ADP documents the API for RUN — but how a RUN client gets credentials. Tick as you go; the ticks save in this browser.</p>
+  <p class="standfirst"><b>Parked, 10 September.</b> ADP will not provision this for a RUN client: their service desk cannot enable it, and the route their guide describes is a partner registration, not a client setting. Part A is done and onboarding works end to end without ADP — the office keys the last step. Parts B to F are kept intact and correct, because the day access opens this is four variables and a test hire.</p>
   <div class="meta">
     <span><b>For</b> Lowry</span>
     <span><b>Prepared</b> 3 September 2026</span>
     <span><b>Time</b> about 90 minutes end to end · no waiting on ADP</span>
   </div>
 </header>
+
+<div class="dont" style="margin-top:1.5rem">
+  <b>Where this stands, and what you should do about it.</b>
+  <p style="margin:.5rem 0 0">Three answers from ADP, in order: a client-built integration means Workforce Now; then, shown their own guide, "yes this can be enabled on your account"; then finally that <b>Sales cannot enable or provision it</b> and ReadyDoc is "a 3rd party product".</p>
+  <p style="margin:.5rem 0 0">Those are consistent once you see what the guide actually asks for. Chapter 2 says the two canonical URIs must be added to the <b>Consumer Application Registry</b>, and that is ADP's partner registration — not something a client ticks. You would be registering as an ADP partner in order to integrate with your own payroll.</p>
+  <p style="margin:.5rem 0 0"><b>Send one more ticket</b>, at developers.adp.com → Help Center → Get help. It is a different desk from RUN's and it is the one ADP named. If that also comes back no, stop: a partner registration is weeks of review to remove a few minutes of keying per hire from a plant that hires rarely.</p>
+  <p style="margin:.5rem 0 0">Nothing here is wasted. Onboarding is complete without ADP — the wizard, the encrypted details, both signatures, the packet, EN/ES, the install hand-off, and the new starter landing on the pay roster. Only the last keystroke is manual.</p>
+</div>
 
 <div class="orient">
   <h3>Before you start</h3>
@@ -203,7 +211,7 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
     <h2>Create the project in ADP API Central</h2>
     <span class="part-time">~20 minutes · browser · no review wait</span>
   </div>
-  <p class="part-note"><b>Corrected 10 September, from ADP's own API Central Quick Start Guide.</b> API Central has its own address — you do not reach it through developers.adp.com, which is only the documentation site. Everything below matches the screens in ADP's guide.</p>
+  <p class="part-note"><b>PARKED — do not work these steps yet.</b> API Central refuses the RUN administrator's sign-in, and ADP has now said its service desk cannot enable it. The steps below are correct and match ADP's own screens; they are kept for the day access opens. Everything in Parts C to F is likewise ready and untried.</p>
 
   <div class="step" data-id="b1">
     <input type="checkbox" aria-label="Step 4 complete">
