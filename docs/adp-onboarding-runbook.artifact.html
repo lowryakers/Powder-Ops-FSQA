@@ -130,7 +130,7 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
 <header class="mast">
   <p class="eyebrow">Powder Ops · ReadyDoc · Onboarding → RUN Powered by ADP</p>
   <h1>ADP Onboarding Runbook</h1>
-  <p class="standfirst">Everything between "the module is built" and "a new hire lands in RUN without anyone re-typing the packet": one variable you can set today, the ADP Marketplace registration only you can do, and the first test hire. Tick as you go; the ticks save in this browser.</p>
+  <p class="standfirst">Everything between "the module is built" and "a new hire lands in RUN without anyone re-typing the packet": one variable you can set today, the ADP API Central project only you can do, and the first test hire. <b>Revised 10 September:</b> ADP now offers API Central to its own clients, which replaces the Marketplace app registration and its weeks-long review. Tick as you go; the ticks save in this browser.</p>
   <div class="meta">
     <span><b>For</b> Lowry</span>
     <span><b>Prepared</b> 3 September 2026</span>
@@ -200,33 +200,33 @@ footer{margin-top:3rem;padding-top:1.2rem;border-top:1px solid var(--rule);font-
 <section class="part">
   <div class="part-head">
     <span class="part-tag">Part B</span>
-    <h2>Register the app on the ADP developer portal</h2>
-    <span class="part-time">~30 minutes · browser · then ADP's clock</span>
+    <h2>Create the project in ADP API Central</h2>
+    <span class="part-time">~20 minutes · browser · no review wait</span>
   </div>
-  <p class="part-note">RUN has no self-serve API key. The credentials come from registering ReadyDoc as a <b>data connector</b> app on the ADP Marketplace developer portal, under the company's own ADP account. This is the part only you can do: it needs the RUN administrator login.</p>
+  <p class="part-note">ADP's developer site offers <b>API Central</b> to ADP clients who want to reach their own company's data. It gives instant API access, generates the certificate in the browser and needs no Marketplace review. This is the part only you can do: it needs the RUN administrator login.</p>
 
   <div class="step" data-id="b1">
     <input type="checkbox" aria-label="Step 4 complete">
     <div class="step-body">
-      <p class="step-title"><span class="num">04</span> Create a developer account</p>
+      <p class="step-title"><span class="num">04</span> Sign in and open API Central</p>
       <ol>
-        <li>Go to <a href="https://developers.adp.com" target="_blank" rel="noopener">developers.adp.com</a> and choose <b>Sign in</b> / <b>Register</b>.</li>
-        <li>Register with <span class="mono">lowry@powder-ops.com</span> and the company's legal name <b>exactly as it appears on the RUN account</b>. Write that name down; the certificate in Part C must match it character for character.</li>
-        <li>Verify the email when it arrives.</li>
+        <li>Go to <a href="https://developers.adp.com" target="_blank" rel="noopener">developers.adp.com</a> and <b>Sign in</b> with your ADP login (the same one that administers RUN).</li>
+        <li>On the home page, in the dropdown <b>"How do you want to use ADP APIs?"</b>, choose the option for an ADP client accessing <b>your own company's data</b>, then <b>Let's go</b>.</li>
+        <li>Click <b>Learn more about API Central</b> or the API Central link it offers, and open it.</li>
       </ol>
-      <div class="expect"><span class="k">Expect</span><div>A signed-in portal with a <b>My Apps</b> (or <b>Apps</b>) area. If it instead asks you to apply for a partner programme, choose the option for building an integration for your own company — ADP calls this the Developer Self-Service path for existing clients.</div></div>
+      <div class="expect"><span class="k">Expect</span><div>An API Central page greeting you by name and company, with <b>Projects</b> and <b>Certificates</b> in its navigation. If API Central says it is not available for your ADP product, stop and send me a screenshot.</div></div>
     </div>
   </div>
 
   <div class="step" data-id="b2">
     <input type="checkbox" aria-label="Step 5 complete">
     <div class="step-body">
-      <p class="step-title"><span class="num">05</span> Create the app</p>
+      <p class="step-title"><span class="num">05</span> Create the project</p>
       <ol>
-        <li><b>My Apps → Create App</b> (or <b>Register an application</b>).</li>
-        <li><b>Product</b>: RUN Powered by ADP. <b>App type</b>: Data Connector (an integration that exchanges data with ADP; not SSO, not a Marketplace listing for sale).</li>
-        <li><b>APIs / scopes</b>: tick the HR onboarding API. On the RUN catalogue it is listed under HR as <b>Applicant Onboarding</b> (the event is <span class="mono">applicant-onboard.process</span>). If a Worker or Payroll scope is also offered, leave it off; ReadyDoc does not need it.</li>
-        <li>Name and description. Use the text below; it describes what the app actually does, which is what the review reads.</li>
+        <li><b>Projects → Create new project</b>.</li>
+        <li><b>Product</b>: RUN Powered by ADP.</li>
+        <li><b>Use case template</b>: <b>New Hire Onboarding (Read/Write)</b>. Its Associated APIs list shows <span class="mono">POST /hcm/v2/applicant.onboard</span>, which is the call ReadyDoc makes, plus <span class="mono">/auth/oauth/v2/token</span> and a set of GET calls that come with the template and do no harm.</li>
+        <li>Name it <b>ReadyDoc onboarding</b> and use the description below, which says plainly what it does.</li>
       </ol>
       <div class="term"><div class="term-head">App description <button class="copy" type="button" data-cmd="ReadyDoc is Powder Ops' internal food-safety and operations system. This connector submits a completed new-hire onboarding packet (name, address, contact details, hire date, position, pay rate, and the tax and direct-deposit inputs the employee entered) from ReadyDoc into RUN Powered by ADP's Applicant Onboarding, so the office does not re-key it. One direction only: ReadyDoc writes an applicant into onboarding; it reads nothing back and touches no payroll data. Used by Powder Ops for its own employees only.">Copy</button></div><pre>ReadyDoc is Powder Ops' internal food-safety and operations system.
 This connector submits a completed new-hire onboarding packet (name,
@@ -236,8 +236,8 @@ Powered by ADP's Applicant Onboarding, so the office does not re-key it.
 One direction only: ReadyDoc writes an applicant into onboarding; it
 reads nothing back and touches no payroll data. Used by Powder Ops for
 its own employees only.</pre></div>
-      <div class="expect"><span class="k">Expect</span><div>An app page with a status (Draft / In review / Approved) and, once approved, a <b>Credentials</b> area. Approval can take weeks. Tick this step when the app is <b>submitted</b>, not approved.</div></div>
-      <p class="why"><b>Why the description matters.</b> Intuit rejected the QuickBooks app on relevance, not on the code, because the description did not say plainly what it did for whom. Say it plainly here.</p>
+      <div class="expect"><span class="k">Expect</span><div>A project page, created immediately, with the Associated APIs list and a <b>Credentials</b> (client ID and secret) area. No review, no waiting.</div></div>
+      <p class="why"><b>Why the description still matters.</b> ADP shows it to whoever administers the account later, and plain wording is what stops someone switching off a connector they do not recognise.</p>
     </div>
   </div>
 </section>
@@ -249,15 +249,15 @@ its own employees only.</pre></div>
     <h2>The certificate (mutual TLS)</h2>
     <span class="part-time">~20 minutes · portal, and Terminal on one route</span>
   </div>
-  <p class="part-note">Every call to ADP presents a client certificate that ADP itself signed. You end up with two files: a <b>private key</b> (yours, never shared, shown once) and a <b>public certificate</b> (.pem, signed by ADP). ReadyDoc needs both. Two routes; take Route 1 if the portal offers it.</p>
+  <p class="part-note">Every call to ADP presents a client certificate that ADP itself signed. You end up with two files: a <b>private key</b> (yours, never shared, shown once) and a <b>public certificate</b> (.pem, signed by ADP). ReadyDoc needs both. API Central generates them in the browser (Route 1); Route 2 is only for the case where it asks you to upload a request instead.</p>
 
   <div class="step" data-id="c1">
     <input type="checkbox" aria-label="Step 6 complete">
     <div class="step-body">
-      <p class="step-title"><span class="num">06</span> Route 1: let the portal generate it</p>
+      <p class="step-title"><span class="num">06</span> Route 1: let API Central generate it</p>
       <ol>
-        <li>In the developer portal, open the <b>Certificates</b> section (on the app page, or in the left navigation).</li>
-        <li>Click <b>Request Certificate</b>. Fill in the fields: <b>Organization Name</b> is the company name exactly as registered with ADP (step 04); <b>Common Name</b> is the company name followed by the word <b>MutualSSL</b>, for example <span class="mono">Powder Ops MutualSSL</span>. Leave Country, State, Locality and any password blank. Click <b>Next</b>.</li>
+        <li>In API Central, open <b>Certificates</b> in the navigation (or the certificate step on the project page).</li>
+        <li>Click <b>Generate</b> / <b>Request Certificate</b>. Fill in the fields: <b>Organization Name</b> is the company name exactly as it appears on the RUN account; <b>Common Name</b> is the company name followed by the word <b>MutualSSL</b>, for example <span class="mono">Powder Ops MutualSSL</span>. Leave Country, State, Locality and any password blank. Click <b>Next</b>.</li>
         <li>The next screen shows your <b>private key</b>. Click <b>Copy</b>, paste it straight into a new entry in your password manager named <i>ADP mutual TLS private key</i>, then click <b>Ok, I copied my key</b>.</li>
         <li>Click <b>Done</b>, then <b>Download</b> the public certificate. It arrives as a <span class="mono">.pem</span> file. Save that file's contents into the same password-manager entry.</li>
       </ol>
@@ -305,7 +305,7 @@ $ openssl req -new -key powderops_auth.key -out powderops_auth.csr</pre></div>
     <div class="step-body">
       <p class="step-title"><span class="num">08</span> Copy the client ID and client secret</p>
       <ol>
-        <li><b>My Apps</b> → open the ReadyDoc app → the <b>Credentials</b> (or <b>App details</b>) area.</li>
+        <li><b>Projects</b> → open <b>ReadyDoc onboarding</b> → the <b>Credentials</b> area.</li>
         <li>Copy the <b>Client ID</b> (a long id with dashes) and the <b>Client Secret</b> (a long random string; it may be shown once behind a Reveal button) into the same password-manager entry.</li>
       </ol>
       <div class="expect"><span class="k">Expect</span><div>Four secrets in the entry now: private key, certificate, client ID, client secret.</div></div>
@@ -315,10 +315,10 @@ $ openssl req -new -key powderops_auth.key -out powderops_auth.csr</pre></div>
   <div class="step" data-id="d2">
     <input type="checkbox" aria-label="Step 9 complete">
     <div class="step-body">
-      <p class="step-title"><span class="num">09</span> Give the app consent from the RUN side</p>
-      <p>ADP checks that the <i>company</i> has consented before it processes a single call from the app, however good the credentials are.</p>
+      <p class="step-title"><span class="num">09</span> Consent, only if the project asks for it</p>
+      <p>A project created under the company's own ADP account is usually consented already. If the project page shows a <b>Consent</b> step or a Consent URL, do it; if it shows none, tick this step and move on.</p>
       <ol>
-        <li>On the app page, find the <b>Consent URL</b> (the Self-Service tool lists it as the Data Connector Consent URL). Copy it.</li>
+        <li>On the project page, find the <b>Consent URL</b>. Copy it.</li>
         <li>Open it in a browser where you are signed in to RUN as the <b>company administrator</b>. It lands in ADP's <b>Consent Manager</b>.</li>
         <li>Read what the app is asking for, and click <b>Allow</b>.</li>
       </ol>
@@ -339,7 +339,7 @@ $ openssl req -new -key powderops_auth.key -out powderops_auth.csr</pre></div>
   <div class="step" data-id="e1">
     <input type="checkbox" aria-label="Step 10 complete">
     <div class="step-body">
-      <p class="step-title"><span class="num">10</span> Add the four variables</p>
+      <p class="step-title"><span class="num">10</span> Add the four credential variables</p>
       <p>Railway → the ReadyDoc service → <b>Variables</b> → <b>New Variable</b>, four times. For the two PEM values, paste the <b>whole block including the BEGIN and END lines</b>; Railway accepts multi-line values and ReadyDoc reads them either way.</p>
       <div class="scroller">
         <table>
@@ -353,9 +353,25 @@ $ openssl req -new -key powderops_auth.key -out powderops_auth.csr</pre></div>
         </table>
       </div>
       <p>Let it redeploy.</p>
-      <div class="expect"><span class="k">Expect</span><div>Settings → Integrations: the row <b>ADP (RUN Powered by ADP) — onboarding hand-off</b> reads <b>connected</b> with all four names ticked.</div></div>
-      <div class="expect"><span class="k no">If not</span><div>A name still shows unticked: check the variable name for a typo, letter for letter. Integrations names the missing one.</div></div>
-      <p class="why"><b>Only if ADP gave you a separate test host.</b> Some approvals come with a sandbox API address for trial calls. If yours did, add <span class="mono">ADP_API_BASE</span> with that address for step 11, and remove it again before the first real hire. If it did not, leave it out; the default is ADP's production API.</p>
+      <div class="expect"><span class="k">Expect</span><div>Settings → Integrations: on the row <b>ADP (RUN Powered by ADP) — onboarding hand-off</b> the four credential names are ticked, one name (<span class="mono">ADP_ONBOARDING_TEMPLATE_CODE</span>) is still unticked, and a button <b>Read what RUN requires</b> has appeared. The row is not "connected" yet; step 11 finishes it.</div></div>
+      <div class="expect"><span class="k no">If not</span><div>A credential name still shows unticked: check the variable name for a typo, letter for letter. Integrations names the missing one.</div></div>
+      <p class="why"><b>Only if ADP gave you a separate test host.</b> Some projects come with a sandbox API address for trial calls. If yours did, add <span class="mono">ADP_API_BASE</span> with that address for step 12, and remove it again before the first real hire. If it did not, leave it out; the default is ADP's production API.</p>
+    </div>
+  </div>
+
+  <div class="step" data-id="e2">
+    <input type="checkbox" aria-label="Step 11 complete">
+    <div class="step-body">
+      <p class="step-title"><span class="num">11</span> Read the onboarding template code from RUN and add the fifth variable</p>
+      <p>RUN refuses a new hire that does not name one of its <b>onboarding templates</b>. The code is RUN's own, so ReadyDoc reads it from ADP rather than guessing.</p>
+      <ol>
+        <li>Settings → Integrations → the ADP row → <b>Read what RUN requires</b>. ReadyDoc calls ADP with the new credentials and shows what came back.</li>
+        <li>Find the onboarding template codes in the answer (look for <span class="mono">onboardingTemplateCode</span>; each has a <span class="mono">code</span> and a name). Pick the one for an ordinary new hire. If there is exactly one, that is it.</li>
+        <li>Railway → Variables → <b>New Variable</b>: <span class="mono">ADP_ONBOARDING_TEMPLATE_CODE</span> = that code, exactly. Let it redeploy.</li>
+      </ol>
+      <div class="expect"><span class="k">Expect</span><div>The ADP row now reads <b>connected</b> with all five names ticked, and <b>Submit to ADP</b> appears on completed onboarding packets.</div></div>
+      <div class="expect"><span class="k no">If not</span><div>The button shows an error starting <code>ADP 4xx:</code>. Copy the whole message and send it to me. A 401 means the credentials or certificate; a 403 means consent (step 09) or the project's use case; anything else I read from the text.</div></div>
+      <p class="why"><b>Two optional variables</b>, only if the answer from RUN says they are required: <span class="mono">ADP_PAYROLL_GROUP_CODE</span> (RUN's payroll group for new hires) and <span class="mono">ADP_ONBOARDING_STATUS</span> (defaults to <span class="mono">inprogress</span>, which lands the person in RUN's New Hire wizard for the office to finish; leave it).</p>
     </div>
   </div>
 </section>
@@ -367,19 +383,19 @@ $ openssl req -new -key powderops_auth.key -out powderops_auth.csr</pre></div>
     <h2>The first submission</h2>
     <span class="part-time">~15 minutes · phone and desktop</span>
   </div>
-  <p class="part-note">ReadyDoc's ADP client has never been exercised against ADP, because until now there were no credentials. The first submission is a test, and the office should be ready to correct the applicant in RUN by hand if a field lands wrong.</p>
+  <p class="part-note">ReadyDoc's ADP client has never been exercised against ADP, because until now there were no credentials. It sends ADP's Applicant Onboard V2 body (<span class="mono">POST /hcm/v2/applicant.onboard</span>) with the person landing in RUN's New Hire wizard as <i>in progress</i>. The first submission is a test, and the office should be ready to finish or correct the applicant in RUN by hand if a field lands wrong.</p>
 
   <div class="step" data-id="f1">
-    <input type="checkbox" aria-label="Step 11 complete">
+    <input type="checkbox" aria-label="Step 12 complete">
     <div class="step-body">
-      <p class="step-title"><span class="num">11</span> Run one onboarding through to Submit to ADP</p>
+      <p class="step-title"><span class="num">12</span> Run one onboarding through to Submit to ADP</p>
       <ol>
         <li>If you set a sandbox <span class="mono">ADP_API_BASE</span>, use invented details throughout. If you did not, use a <b>real incoming hire</b> with the office watching: a production submission creates a real applicant in RUN.</li>
         <li>Onboarding → <b>Start an onboarding</b> → fill the header → copy the welcome link → the new hire (or you, on your phone) works the wizard to the end.</li>
         <li>Back in Onboarding, the row now reads <b>completed</b>, with the packet's sensitive fields masked to the last four. Click <b>Submit to ADP</b>.</li>
       </ol>
-      <div class="expect"><span class="k">Expect</span><div>The row turns <b>Submitted to ADP</b> with a timestamp, and within a few minutes the person appears in RUN's onboarding queue with name, address, contact, hire date and pay rate filled. The employee's I-9 completes inside ADP's own flow, which is where it belongs.</div></div>
-      <div class="expect"><span class="k no">If not</span><div>The button shows an error in ADP's own words (it starts <code>ADP 4xx:</code>). Copy the whole message and send it to me. Which fields the approved app may send depends on the scopes ADP granted, and the mapping is finalised against exactly that message. Nothing is lost: the packet is still on screen to key in by hand.</div></div>
+      <div class="expect"><span class="k">Expect</span><div>The row turns <b>Submitted to ADP</b> with a timestamp, and within a few minutes the person appears in RUN's New Hire wizard, in progress, with name, address, contact, hire date and pay rate filled. The office finishes the wizard there; the employee's I-9 completes inside ADP's own flow, which is where it belongs.</div></div>
+      <div class="expect"><span class="k no">If not</span><div>The button shows an error in ADP's own words (it starts <code>ADP 4xx:</code>). Copy the whole message and send it to me. ADP names the field it did not like, and the mapping is finalised against exactly that message. Nothing is lost: the packet is still on screen to key in by hand.</div></div>
     </div>
   </div>
 </section>
@@ -389,7 +405,8 @@ $ openssl req -new -key powderops_auth.key -out powderops_auth.csr</pre></div>
   <p>Send me:</p>
   <ol>
     <li>After Part A: a screenshot of Settings → Integrations.</li>
-    <li>After Part B: the app's status page once submitted, so I know which APIs were granted.</li>
+    <li>After Part B: the project's <b>Associated APIs</b> list (you have already sent this one).</li>
+    <li>After step 11: what <b>Read what RUN requires</b> returned, so I can check the field mapping against it before the first hire.</li>
     <li>After Part F: either "it landed in RUN" or the full error text from Submit to ADP.</li>
   </ol>
   <p>Nothing in this runbook needs the four secrets to pass through me. Railway and your password manager are the only two places they live.</p>
@@ -397,7 +414,7 @@ $ openssl req -new -key powderops_auth.key -out powderops_auth.csr</pre></div>
   <div class="status-out" id="statusout" hidden></div>
 </div>
 
-<footer>Powder Ops FSQA · ADP Onboarding Runbook · prepared 3 September 2026 · working document, not a controlled record</footer>
+<footer>Powder Ops FSQA · ADP Onboarding Runbook · prepared 3 September 2026 · revised 10 September 2026 for ADP API Central and Applicant Onboard V2 · working document, not a controlled record</footer>
 
 </div>
 <script>

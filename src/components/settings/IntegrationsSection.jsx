@@ -215,6 +215,8 @@ function Service({ s, onRetest }) {
 
           <VarList required={s.required} optional={s.optional} />
 
+          {s.probe && <Probe probe={s.probe} />}
+
           {s.testable && (
             <div className="mt-2 flex items-center gap-2 flex-wrap">
               <button type="button" onClick={runTest} disabled={busy}
@@ -230,6 +232,34 @@ function Service({ s, onRetest }) {
           {test && <TestResult test={test} />}
         </div>
       </div>
+    </div>
+  );
+}
+
+// A read-only call to the other system, shown verbatim. For ADP it is the
+// answer to "which onboarding template code do I set" — read off RUN rather
+// than guessed, and the 4xx text is ADP's own words when the credentials are wrong.
+function Probe({ probe }) {
+  const [busy, setBusy] = useState(false);
+  const [out, setOut] = useState(null);
+  const run = async () => {
+    setBusy(true); setOut(null);
+    try { const j = await apiFetch(probe.path); setOut({ ok: true, text: JSON.stringify(j, null, 2).slice(0, 20000) }); }
+    catch (e) { setOut({ ok: false, text: e.message }); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="mt-2">
+      <div className="flex items-center gap-2 flex-wrap">
+        <button type="button" onClick={run} disabled={busy} data-probe
+          className="px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+          {busy ? 'Reading…' : probe.label}
+        </button>
+        {probe.hint && <span className="text-[11px] text-gray-400">{probe.hint}</span>}
+      </div>
+      {out && (
+        <pre className={`mt-2 text-[11px] rounded-lg px-3 py-2 max-h-72 overflow-auto whitespace-pre-wrap ${out.ok ? 'bg-gray-50 border border-gray-200 text-gray-700' : 'bg-red-50 border border-red-200 text-red-800'}`}>{out.text}</pre>
+      )}
     </div>
   );
 }

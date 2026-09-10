@@ -31,7 +31,7 @@ import { pushEnabled } from '../push.js';
 import { quickbooksEnabled } from '../quickbooks.js';
 import { bankFeedEnabled } from '../bank-feed.js';
 import { smsEnabled } from '../sms.js';
-import { adpEnabled } from '../adp.js';
+import { adpEnabled, adpConnected } from '../adp.js';
 import { cryptoEnabled as onboardingCryptoEnabled } from '../onboarding-crypto.js';
 
 const router = Router();
@@ -155,11 +155,17 @@ const SERVICES = [
     enabled: adpEnabled,
     // Mutual TLS: ADP issues a client certificate at app registration and every
     // call presents it, so the cert and key are part of the gate, not extras.
-    required: ['ADP_CLIENT_ID', 'ADP_CLIENT_SECRET', 'ADP_CERT_PEM', 'ADP_KEY_PEM'],
-    optional: ['ADP_API_BASE', 'ADP_TOKEN_URL'],
+    required: ['ADP_CLIENT_ID', 'ADP_CLIENT_SECRET', 'ADP_CERT_PEM', 'ADP_KEY_PEM', 'ADP_ONBOARDING_TEMPLATE_CODE'],
+    // Offered once the four credentials are in: reads RUN's onboarding
+    // templates and required fields, which is where the fifth variable comes from.
+    probe: { label: 'Read what RUN requires', path: '/onboarding/adp/meta',
+      hint: 'Calls ADP with the credentials above and shows the onboarding template codes and required fields. Set ADP_ONBOARDING_TEMPLATE_CODE from the answer.' },
+    probeReady: adpConnected,
+    optional: ['ADP_ONBOARDING_STATUS', 'ADP_PAYROLL_GROUP_CODE', 'ADP_ONBOARD_PATH', 'ADP_API_BASE', 'ADP_TOKEN_URL'],
     off: 'The packet is still collected and shown; the office keys it into RUN by hand from the same screen.',
-    note: 'There is no self-serve API key on the RUN plan. The credentials come from registering an app on '
-      + 'the ADP Marketplace (developers.adp.com) — docs/adp-run-onboarding.md is the step-by-step.',
+    note: 'Credentials come from ADP API Central (developers.adp.com → a project on the "New Hire Onboarding" '
+      + 'use case, which generates the certificate). The template code is read from RUN through '
+      + 'GET /api/onboarding/adp/meta once the four credentials are set — docs/adp-run-onboarding.md is the step-by-step.',
   },
   {
     id: 'product_master',
@@ -183,6 +189,7 @@ const describe = (s) => {
     note: s.note || null,
     enabled: !!s.enabled(),
     testable: !!s.testable,
+    probe: s.probe && (!s.probeReady || s.probeReady()) ? s.probe : null,
     // Names only. Never a value, never a fragment of one.
     required: s.required.map(name => ({ name, set: isSet(name) })),
     optional: (s.optional || []).map(name => ({ name, set: isSet(name) })),

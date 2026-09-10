@@ -8,33 +8,49 @@ What it takes to have a new hire complete onboarding inside ReadyDoc (personal
 info, direct deposit, federal W-4 inputs, emergency contact, the intro to
 Messages and their modules) and have the result land in RUN Powered by ADP.
 
-## What ADP requires (the part only Lowry can do)
+## What ADP requires (the part only Lowry can do) — revised 10 September 2026
 
-RUN's APIs are reached through the **ADP Marketplace** — there is no
-self-serve API key on the RUN plan. The path:
+The path is **ADP API Central**, offered on developers.adp.com to ADP clients
+reaching their own company's data. It replaces the Marketplace app
+registration the first version of this doc described: instant API access,
+the certificate generated in the browser, no review wait.
 
-1. **Create an ADP Marketplace developer account** (developers.adp.com) and
-   register an application as a *data connector* for RUN. The API in scope is
-   **Applicant Onboarding** (`POST /events/hr/v1/applicant-onboard.process`).
-2. ADP issues the app's **client ID and client secret**, and — this is the
-   unusual part — a **mutual-TLS certificate**: every call to their API
-   presents an ADP-issued client cert. They walk you through a CSR during app
-   registration.
-3. **Consent**: the Powder Ops RUN account authorizes the app (an admin
-   clicks through ADP's consent flow), which scopes the credentials to our
-   company data.
-4. Expect a review/approval step on ADP's side, like the Intuit one — budget
-   weeks, not days, and write the app description around what it actually
-   does (a lesson from the QuickBooks review).
+1. **Sign in at developers.adp.com**, answer "How do you want to use ADP APIs?"
+   with the own-company option, and open **API Central**.
+2. **Create a project** on RUN Powered by ADP with the use case template
+   **New Hire Onboarding (Read/Write)**. Its Associated APIs include
+   `POST /hcm/v2/applicant.onboard` — the call ReadyDoc makes — and
+   `/auth/oauth/v2/token`.
+3. **Generate the certificate** in API Central's Certificates area: a private
+   key (shown once) and a signed certificate. Every call presents it (mutual
+   TLS).
+4. **Copy the project's client ID and client secret.** Consent is usually
+   implicit for a project under the company's own account; if the project
+   shows a consent step, a RUN administrator completes it.
+5. **Set the four credentials** on the ReadyDoc service in Railway:
+   `ADP_CLIENT_ID`, `ADP_CLIENT_SECRET`, `ADP_CERT_PEM`, `ADP_KEY_PEM` (PEMs
+   as literal text with `\n` line breaks, or a path on the volume).
+6. **Read the onboarding template code from RUN** — Settings → Integrations →
+   ADP → *Read what RUN requires* (`GET /api/onboarding/adp/meta`, which calls
+   `…/applicant.onboard/meta`) — and set **`ADP_ONBOARDING_TEMPLATE_CODE`**.
+   Applicant Onboard V2 refuses a hire with no template code, so the hand-off
+   is not *on* until this fifth variable is set. Optional:
+   `ADP_PAYROLL_GROUP_CODE` (if RUN's meta says one is required),
+   `ADP_ONBOARDING_STATUS` (default `inprogress`: the person lands in RUN's
+   New Hire wizard for the office to finish), `ADP_ONBOARD_PATH`,
+   `ADP_API_BASE`, `ADP_TOKEN_URL`.
 
-Once through, four env vars turn the integration on:
-`ADP_CLIENT_ID`, `ADP_CLIENT_SECRET`, `ADP_CERT_PEM`, `ADP_KEY_PEM`
-(optional `ADP_API_BASE`, default `https://api.adp.com`). Set them on the
-ReadyDoc service in Railway (service → Variables); the PEMs can be pasted as
-the literal certificate text with `\n` line breaks, or a path to a file on the
-volume. **Settings → Integrations** shows which of the four are set and whether
-the hand-off is on, without ever showing a value — the same screen shows the
-onboarding encryption key below.
+**Settings → Integrations** shows which variables are set and whether the
+hand-off is on, without ever showing a value.
+
+**The request body is ADP's v2 shape** (`server/adp.js`
+`applicantOnboardPayload`, pure, checked by `npm run check:adp`):
+`applicantOnboarding` → template code, status, `applicantPersonalProfile`
+(birthName, birthDate, SSN as a governmentID, communication, legalAddress),
+`applicantWorkerProfile` (hireDate, jobTitle), `applicantPayrollProfile`
+(hourly or per-pay-period rate, payroll group). The field names follow ADP's
+Applicant Onboard V2 guide as far as it could be read; the first live send is
+checked against `/meta` and ADP's refusal text, which is returned verbatim.
 
 ## What happens first, before ADP: the encryption key
 
@@ -45,9 +61,10 @@ it — every value already stored becomes unreadable if it moves.
 
 ## What the API actually does — and doesn't
 
-The Applicant Onboarding API **submits the applicant into ADP's onboarding**:
-name, address, DOB, SSN, contact info, hire date, rate. ADP then creates the
-employee record in RUN. Two honest caveats:
+Applicant Onboard V2 **submits the applicant into ADP's onboarding** as an
+in-progress hire: name, address, DOB, SSN, contact info, hire date, rate. RUN
+opens the person in its New Hire wizard for the office to finish. Two honest
+caveats:
 
 - **The I-9 stays ADP's** (and legally should — verification, retention,
   E-Verify). ReadyDoc collects everything *around* it; the employee's I-9

@@ -1992,3 +1992,21 @@ the app asked exactly what the approved form asks.
 
 Verified: `verify:equipqual`, 28 assertions live and in the browser, including the fresh-database boot
 parking V2 with V1 in force and a checklist started before approval keeping its V1 stamp.
+
+## D-065 · 2026-09-10 · decided — ADP goes through API Central and Applicant Onboard V2
+
+The onboarding hand-off was written against ADP's older event-style call and the Marketplace partner
+route, which carries a weeks-long review. Signed in on developers.adp.com the plant is offered **API
+Central** — the route for an ADP client reaching its own company's data — whose New Hire Onboarding
+template exposes `POST /hcm/v2/applicant.onboard`. That is a different body (`applicantOnboarding` with
+personal, worker and payroll profiles) and it **requires an onboarding template code that only RUN can
+supply**, so the integration is not "on" with credentials alone: `adpConnected()` (four credentials) lets
+the office read `…/applicant.onboard/meta` from Settings → Integrations, and `adpEnabled()` (plus
+`ADP_ONBOARDING_TEMPLATE_CODE`) is what turns Submit to ADP on. A template code guessed here would be a
+400 on the first real hire; read from RUN it is a fact.
+
+The mapping is pure (`applicantOnboardPayload`, `check:adp`) and follows ADP's v2 guide as far as it could
+be read from outside ADP's portal — the field names are the best available reading, not a tested contract.
+The first live send is the test, against `/meta` and ADP's own refusal text, and the runbook says so. The
+runbook artifact and `docs/adp-run-onboarding.md` are revised for API Central; the Marketplace steps are
+gone.

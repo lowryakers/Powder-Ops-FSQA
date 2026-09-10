@@ -37,7 +37,7 @@ import { parseJson } from '../custom-fields.js';
 import { uniqueUsername } from '../usernames.js';
 import { readyDocOrigin } from '../links.js';
 import { cryptoEnabled, encryptField, decryptField, last4 } from '../onboarding-crypto.js';
-import { adpEnabled, submitApplicantOnboard } from '../adp.js';
+import { adpEnabled, adpConnected, submitApplicantOnboard, fetchOnboardMeta } from '../adp.js';
 import { storageEnabled, putObject, presignGet, deleteObject } from '../storage.js';
 import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
@@ -246,6 +246,17 @@ async function storeFiles(db, rec, files, kind, by) {
 const nameOf = (rec) => `${rec.first_name || ''} ${rec.last_name || ''}`.trim();
 
 // ── Admin ────────────────────────────────────────────────────────────────────
+
+// What RUN requires for the hire: the onboarding template codes and the
+// required fields, read live from ADP once the credentials are in. This is
+// where ADP_ONBOARDING_TEMPLATE_CODE comes from — the office reads it, never
+// guesses it. Declared before any /:id route.
+router.get('/adp/meta', async (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Onboarding needs the Onboarding module.' });
+  if (!adpConnected()) return res.status(503).json({ error: 'ADP credentials are not set yet — see docs/adp-run-onboarding.md.' });
+  try { res.json({ template_code_set: adpEnabled(), meta: await fetchOnboardMeta() }); }
+  catch (e) { res.status(502).json({ error: e.message }); }
+});
 
 router.get('/', (req, res) => {
   if (!canManage(req.user)) return res.status(403).json({ error: 'Onboarding needs the Onboarding module.' });

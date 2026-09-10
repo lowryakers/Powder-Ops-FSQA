@@ -1,22 +1,29 @@
 // RUN Powered by ADP — Applicant Onboarding, degrading gracefully like
-// quickbooks.js and storage.js: without the four env vars everything here is
+// quickbooks.js and storage.js: without the env vars everything here is
 // simply off, and the onboarding module runs as the collect-and-key-in packet.
 //
-// ADP Marketplace apps authenticate with OAuth client_credentials over
-// MUTUAL TLS — every request presents an ADP-issued client certificate.
-// `ADP_CERT_PEM` / `ADP_KEY_PEM` hold the PEMs (literal or a file path).
-// docs/adp-run-onboarding.md is the human setup guide.
+// The credentials come from ADP API Central (developers.adp.com → a project on
+// the "New Hire Onboarding" use case), which authenticates with OAuth
+// client_credentials over MUTUAL TLS — every request presents the client
+// certificate API Central generates. `ADP_CERT_PEM` / `ADP_KEY_PEM` hold the
+// PEMs (literal or a file path). docs/adp-run-onboarding.md is the setup guide.
 //
-// NOT YET EXERCISED AGAINST ADP — the credentials wait on Marketplace
-// approval. The payload mapper is pure and tested; the field mapping gets
-// finalized against the approved app's actual grant before this is wired to
-// a button anyone presses in anger.
+// THE ENDPOINT IS APPLICANT ONBOARD V2 — `POST /hcm/v2/applicant.onboard`, the
+// call API Central's New Hire Onboarding template exposes (seen 10 Sep 2026).
+// The first cut targeted the older event-style path; v2 is a different body
+// (`applicantOnboarding` with personal / worker / payroll profiles) and it
+// REQUIRES an onboarding template code, which is a RUN-side setting read from
+// `GET …/applicant.onboard/meta` — `fetchOnboardMeta()` below — and kept in
+// `ADP_ONBOARDING_TEMPLATE_CODE`. Field names here follow ADP's v2 guide as
+// far as it could be read; the first live send is checked against /meta and
+// against ADP's own refusal text, which is returned verbatim.
 
 import { readFileSync } from 'fs';
 import https from 'https';
 
 const TOKEN_URL = process.env.ADP_TOKEN_URL || 'https://accounts.adp.com/auth/oauth/v2/token';
 const API_BASE = process.env.ADP_API_BASE || 'https://api.adp.com';
+const ONBOARD_PATH = process.env.ADP_ONBOARD_PATH || '/hcm/v2/applicant.onboard';
 
 function pem(v) {
   if (!v) return null;
@@ -24,9 +31,15 @@ function pem(v) {
   try { return readFileSync(v, 'utf8'); } catch { return null; }
 }
 
-export function adpEnabled() {
+/** Credentials present — enough to talk to ADP (read /meta). */
+export function adpConnected() {
   return !!(process.env.ADP_CLIENT_ID && process.env.ADP_CLIENT_SECRET
     && pem(process.env.ADP_CERT_PEM) && pem(process.env.ADP_KEY_PEM));
+}
+
+/** Enough to SEND a new hire: credentials plus the RUN onboarding template code. */
+export function adpEnabled() {
+  return adpConnected() && !!process.env.ADP_ONBOARDING_TEMPLATE_CODE;
 }
 
 function agent() {
@@ -88,43 +101,100 @@ function httpsJson(url, method, body, headers) {
 }
 
 /**
- * The applicant-onboard event payload, built from a decrypted onboarding
- * record. PURE — exported so the mapping is testable without credentials.
- * Field names follow ADP's applicant-onboard.process event shape; the exact
- * set the approved app may send is confirmed against its grant at
- * certification time.
+ * The Applicant Onboard V2 body, built from a decrypted onboarding record.
+ * PURE — exported so the mapping is testable without credentials.
+ *
+ * Shape (ADP's v2 guide): `applicantOnboarding` carrying the template code and
+ * the hire status (`inprogress` puts the person into RUN's New Hire wizard for
+ * the office to finish, which is the honest default — ADP's I-9 and tax steps
+ * complete there), then three profiles: personal (name, birth date, SSN as a
+ * governmentID, email, phone, legal address), worker (hire date, job title)
+ * and payroll (the rate as hourly or per-pay-period, plus the payroll group
+ * when RUN needs one). Blank record fields are omitted, never sent as ''.
  */
-export function applicantEventPayload(rec) {
-  const applicant = {
-    givenName: rec.first_name,
-    ...(rec.middle_name ? { middleName: rec.middle_name } : {}),
-    familyName1: rec.last_name,
-    ...(rec.email ? { email: rec.email } : {}),
-    ...(rec.phone ? { landline: rec.phone } : {}),
-    ...(rec.dob ? { birthDate: rec.dob } : {}),
-    ...(rec.ssn ? { taxID: rec.ssn } : {}),
-    legalAddress: {
-      lineOne: rec.address1 || '',
-      ...(rec.address2 ? { lineTwo: rec.address2 } : {}),
-      cityName: rec.city || '',
-      countrySubdivisionLevel1: rec.state || '',
-      postalCode: rec.zip || '',
+export function applicantOnboardPayload(rec, opts = {}) {
+  const templateCode = opts.templateCode ?? process.env.ADP_ONBOARDING_TEMPLATE_CODE ?? null;
+  const status = opts.status ?? process.env.ADP_ONBOARDING_STATUS ?? 'inprogress';
+  const payrollGroup = opts.payrollGroupCode ?? process.env.ADP_PAYROLL_GROUP_CODE ?? null;
+
+  const personal = {
+    birthName: {
+      givenName: rec.first_name,
+      ...(rec.middle_name ? { middleName: rec.middle_name } : {}),
+      familyName: rec.last_name,
     },
-    ...(rec.start_date ? { hireDate: rec.start_date } : {}),
-    ...(rec.position ? { jobTitle: rec.position } : {}),
-    ...(rec.pay_rate != null && rec.pay_rate !== '' ? {
-      payRate: { amountValue: Number(rec.pay_rate), currencyCode: 'USD' },
-      ...(rec.pay_frequency ? { payFrequency: rec.pay_frequency } : {}),
+    ...(rec.dob ? { birthDate: rec.dob } : {}),
+    ...(rec.ssn ? { governmentIDs: [{ id: String(rec.ssn).replace(/\D/g, ''), nameCode: { code: 'SSN' } }] } : {}),
+    ...(rec.email || rec.phone ? {
+      communication: {
+        ...(rec.email ? { emails: [{ emailUri: rec.email, notificationIndicator: true }] } : {}),
+        ...(rec.phone ? { mobiles: [{ formattedNumber: rec.phone }] } : {}),
+      },
+    } : {}),
+    ...(rec.address1 || rec.city || rec.zip ? {
+      legalAddress: {
+        ...(rec.address1 ? { lineOne: rec.address1 } : {}),
+        ...(rec.address2 ? { lineTwo: rec.address2 } : {}),
+        ...(rec.city ? { cityName: rec.city } : {}),
+        ...(rec.state ? { subdivisionCode: rec.state } : {}),
+        countryCode: 'US',
+        ...(rec.zip ? { postalCode: rec.zip } : {}),
+      },
     } : {}),
   };
-  return { events: [{ data: { transform: { applicant } } }] };
+
+  const worker = {
+    ...(rec.start_date ? { hireDate: rec.start_date } : {}),
+    ...(rec.position ? { jobTitle: rec.position } : {}),
+  };
+
+  const rate = rec.pay_rate != null && rec.pay_rate !== '' ? Number(rec.pay_rate) : null;
+  // A rate that ADP can only take one of two ways: per hour, or per pay period.
+  // "hourly" anywhere in the frequency means hourly; anything else is a period
+  // rate and the frequency travels with it for the office to confirm in RUN.
+  const hourly = /hour/i.test(String(rec.pay_frequency || ''));
+  const payroll = {
+    ...(payrollGroup ? { payrollGroupCode: payrollGroup } : {}),
+    ...(rate != null && Number.isFinite(rate) ? {
+      baseRemuneration: hourly
+        ? { hourlyRateAmount: { amountValue: rate, currencyCode: 'USD' } }
+        : { payPeriodRateAmount: { amountValue: rate, currencyCode: 'USD' } },
+      ...(!hourly && rec.pay_frequency ? { payFrequencyCode: { code: String(rec.pay_frequency) } } : {}),
+    } : {}),
+  };
+
+  return {
+    applicantOnboarding: {
+      ...(templateCode ? { onboardingTemplateCode: { code: templateCode } } : {}),
+      onboardingStatus: { statusCode: { code: status, name: status } },
+      applicantPersonalProfile: personal,
+      ...(Object.keys(worker).length ? { applicantWorkerProfile: worker } : {}),
+      ...(Object.keys(payroll).length ? { applicantPayrollProfile: payroll } : {}),
+    },
+  };
+}
+
+/**
+ * What RUN requires for a template: `GET …/applicant.onboard/meta`. This is
+ * how the template code and the required fields are read off the plant's own
+ * RUN account rather than guessed — the office reads it once from Settings →
+ * Integrations and sets ADP_ONBOARDING_TEMPLATE_CODE from it.
+ */
+export async function fetchOnboardMeta() {
+  if (!adpConnected()) throw new Error('ADP credentials are not set — see docs/adp-run-onboarding.md.');
+  const token = await getToken();
+  return httpsJson(`${API_BASE}${ONBOARD_PATH}/meta`, 'GET', null,
+    { Accept: 'application/json', Authorization: `Bearer ${token}` });
 }
 
 /** Submit one applicant into RUN's onboarding. Throws with ADP's own words on refusal. */
 export async function submitApplicantOnboard(rec) {
-  if (!adpEnabled()) throw new Error('ADP is not configured — see docs/adp-run-onboarding.md.');
+  if (!adpConnected()) throw new Error('ADP credentials are not set — see docs/adp-run-onboarding.md.');
+  if (!process.env.ADP_ONBOARDING_TEMPLATE_CODE) {
+    throw new Error('ADP_ONBOARDING_TEMPLATE_CODE is not set. Read it from Settings → Integrations → ADP → "Read what RUN requires" and set it in Railway.');
+  }
   const token = await getToken();
-  const payload = applicantEventPayload(rec);
-  return httpsJson(`${API_BASE}/events/hr/v1/applicant-onboard.process`, 'POST',
-    JSON.stringify(payload), { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` });
+  const payload = applicantOnboardPayload(rec);
+  return httpsJson(`${API_BASE}${ONBOARD_PATH}`, 'POST',
+    JSON.stringify(payload), { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${token}` });
 }

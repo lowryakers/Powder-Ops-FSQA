@@ -992,6 +992,13 @@ that has to be fed to stay useful. Office nav group, module id `candidates`.
   official I-9 in ADP or on paper from the packet until HR decides otherwise.
 - Verified: `verify:onboarding` 55 with the key and storage, 44 without either (both in `verify:all` —
   the keyed run), `verify:onboardingui` 21 in a real browser at 390px through to Section 2 opening.
+- **ADP is API Central + Applicant Onboard V2 (D-065).** `server/adp.js` posts `/hcm/v2/applicant.onboard`
+  with the `applicantOnboarding` body (`applicantOnboardPayload`, pure, `check:adp`). `adpConnected()` = the
+  four credentials, enough to read `…/applicant.onboard/meta` (`GET /api/onboarding/adp/meta`, the "Read
+  what RUN requires" button on Settings → Integrations); `adpEnabled()` also needs
+  `ADP_ONBOARDING_TEMPLATE_CODE`, which is read from that meta, never guessed. The field names follow ADP's
+  v2 guide as far as it could be read; the first live send is the test, and ADP's refusal text is returned
+  verbatim. Runbook artifact + `docs/adp-run-onboarding.md` describe the API Central route.
 
 ## People: a tag is a category you can call from; a file is a résumé that dies with the person
 `candidates.tags` (JSON array) + `candidate_files` (R2 via the shared media path), both in
