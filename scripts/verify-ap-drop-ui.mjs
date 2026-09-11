@@ -47,6 +47,7 @@ let page = await asUser(op);
 try { await page.waitForSelector('[data-ap-dropzone]', { timeout: 20000 }); }
 catch (e) { await page.screenshot({ path: '/tmp/ap-drop-ui-fail.png', fullPage: true }); console.log('  page text:', (await page.textContent('body')).slice(0, 400)); throw e; }
 t('an operator without a finance grant reaches AP Drop and lands on the drop zone', await page.isVisible('[data-ap-dropzone]'));
+t('a paper invoice can be photographed: camera input AND choose-from-roll input both exist', !!(await page.$('[data-photo-picker="ap-drop"] [data-photo-take][capture]')) && !!(await page.$('[data-photo-picker="ap-drop"] [data-photo-choose]')));
 await page.setInputFiles('[data-ap-file]', pdfPath);
 await page.fill('textarea', 'Forwarded from the vendor');
 await page.click('[data-ap-submit]');

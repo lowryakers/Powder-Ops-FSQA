@@ -9,6 +9,7 @@ import { formatDate, formatDateTime } from '../../lib/datetime';
 import { pdfViewerUrl } from '../../lib/pdfUrl';
 import FilePreview from '../FilePreview';
 import TextCell from '../common/TextCell.jsx';
+import PhotoPicker from '../common/PhotoPicker.jsx';
 import { Inbox, Upload, FileText, X, Search, RefreshCw, ExternalLink, AlertTriangle, Copy, Mail } from 'lucide-react';
 
 // AP Drop — hand in a finance PDF, and the queue the office works it through.
@@ -143,6 +144,17 @@ function DropZone({ meta, user, onDropped, onOpen, bump, compact }) {
           <div className="text-sm text-gray-500 mt-1">Vendor invoice, credit memo, remittance, a customer or M4 invoice pack, a bill somebody emailed you. Up to 10 files, 25 MB each.</div>
           <input ref={inputRef} data-ap-file type="file" multiple accept="application/pdf,image/*" className="hidden"
             onChange={e => { add(e.target.files); e.target.value = ''; }} />
+        </div>
+        {/* A paper invoice on the desk is photographed, not scanned. Two inputs,
+            because a phone has two ways to attach a picture (the PhotoPicker
+            rule): the camera opens directly, or the photo taken a minute ago is
+            chosen from the roll. The photo goes through the same reader as a
+            PDF — when the AI reader is on it is read like a scan; when it is
+            off the row still files and the office types the details. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <PhotoPicker name="ap-drop" accept="image/*,application/pdf" onChange={e => { add(e.target.files); e.target.value = ''; }}
+            takeLabel="Take a photo of the invoice" chooseLabel="Choose a photo or file" />
+          <span className="text-[11px] text-gray-500">A photo of a paper invoice works — hold the phone flat, get the whole page in.</span>
         </div>
         {files.length > 0 && (
           <ul className="space-y-1">

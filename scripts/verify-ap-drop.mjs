@@ -69,6 +69,14 @@ const dBad = r.body?.drops?.[0];
 t('an unreadable file still creates a row (201)', r.status === 201 && !!dBad?.id);
 t('…marked parse failed, status new', dBad?.parse_status === 'failed' && dBad?.status === 'new', `${dBad?.parse_status} ${dBad?.status}`);
 
+// 3b. A photograph of a paper invoice files like a PDF. With no AI reader on
+// this server nothing can be read off it, and that is a row reading "failed",
+// never a refused upload — the office types what the picture shows.
+r = await drop(op, Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex'), 'invoice-photo.png', { vendor_name: 'Photographed Vendor' }, 'image/png');
+t('a photo of a paper invoice files as a drop', r.status === 201 && r.body?.drops?.[0]?.filename === 'invoice-photo.png', JSON.stringify(r.body).slice(0, 120));
+t('…keeping the typed vendor, with the reader honest about reading nothing', r.body?.drops?.[0]?.vendor_name === 'Photographed Vendor' && ['failed', 'pending'].includes(r.body?.drops?.[0]?.parse_status), r.body?.drops?.[0]?.parse_status);
+const photoId = r.body?.drops?.[0]?.id;
+
 // 4. The same bytes again is a duplicate suspect linked to the first.
 r = await drop(office, invoice, 'forwarded-again.pdf');
 const dDup = r.body?.drops?.[0];
@@ -79,11 +87,11 @@ t('the detail names the earlier drop and its submitter', r.body?.duplicate_of?.i
 
 // 5. Scope: the operator sees only their own; the office sees everything.
 r = await call('GET', '/ap-drop?status=all', null, op);
-t('operator lists only their own drops', r.status === 200 && r.body.length === 3 && r.body.every(x => x.submitter === 'Line Operator'), String(r.body?.length));
+t('operator lists only their own drops', r.status === 200 && r.body.length === 4 && r.body.every(x => x.submitter === 'Line Operator'), String(r.body?.length));
 r = await call('GET', `/ap-drop/${dDup.id}`, null, op);
 t("somebody else's drop is 404 to the operator, not 403", r.status === 404);
 r = await call('GET', '/ap-drop?status=all', null, office);
-t('an office supervisor sees the whole queue without a grant', r.status === 200 && r.body.length === 4);
+t('an office supervisor sees the whole queue without a grant', r.status === 200 && r.body.length === 5);
 r = await call('GET', '/ap-drop/meta', null, flag);
 t('the ap-drop EDIT grant is the finance flag', r.body?.can_work === true);
 r = await call('GET', '/ap-drop/meta', null, op);
@@ -113,21 +121,23 @@ t('a QuickBooks bill id can be linked back', r.body?.qbo_bill_id === '1187');
 r = await call('POST', `/ap-drop/${d1.id}/status`, { status: 'paid' }, admin);
 t('paid stamps closed_at', r.body?.status === 'paid' && !!r.body?.closed_at);
 r = await call('GET', '/ap-drop', null, admin);
-t('outstanding excludes the paid one', !r.body.some(x => x.id === d1.id) && r.body.length === 3);
+t('outstanding excludes the paid one', !r.body.some(x => x.id === d1.id) && r.body.length === 4);
 r = await call('POST', `/ap-drop/${dBad.id}/status`, { status: 'not_finance', reason: 'It is a shipping label' }, office);
 t('not_finance with a reason archives it', r.body?.status === 'not_finance');
 r = await call('GET', '/ap-drop', null, admin);
-t('outstanding excludes not_finance too', r.body.length === 2);
+t('outstanding excludes not_finance too', r.body.length === 3);
 r = await call('GET', '/ap-drop?status=all', null, admin);
-t('"all" shows all four', r.body.length === 4);
+t('"all" shows all five', r.body.length === 5);
 r = await call('GET', '/ap-drop/meta', null, admin);
-t('meta counts reconcile with the rows', Object.values(r.body.counts).reduce((a, b) => a + b, 0) === 4 && r.body.vendors.includes('Mountain Flavor Supply LLC'));
+t('meta counts reconcile with the rows', Object.values(r.body.counts).reduce((a, b) => a + b, 0) === 5 && r.body.vendors.includes('Mountain Flavor Supply LLC'));
 
 // 7. Re-read fills blanks only.
 r = await call('POST', `/ap-drop/${d1.id}/reparse`, null, admin);
 t('re-reading leaves the corrected vendor alone', r.status === 200 && r.body.drop.vendor_name === 'Mountain Flavor Supply LLC', JSON.stringify(r.body).slice(0, 160));
 
 // 8. Activity + audit.
+r = await call('GET', `/ap-drop/${photoId}`, null, admin);
+t('the photo drop previews as an image (a file url is handed back)', r.status === 200 && typeof r.body?.file_url === 'string' && /invoice-photo\.png/.test(r.body?.filename));
 r = await call('GET', `/ap-drop/${d1.id}`, null, admin);
 const kinds = (r.body?.events || []).map(e => e.kind);
 t('activity log carries upload, parse, note, edits and status moves', ['uploaded', 'parsed', 'note', 'status_changed', 'fields_edited'].every(k => kinds.includes(k)), kinds.join(','));
@@ -137,11 +147,11 @@ const audit = db.prepare("SELECT action, details FROM audit_log WHERE entity_typ
 t('audit: ap_drop / create with event ap_drop.created', audit.some(a => a.action === 'create' && /ap_drop\.created/.test(a.details || '')), JSON.stringify(audit).slice(0, 200));
 t('audit: status moves are their own entries', audit.filter(a => a.action === 'ap_drop_status' || /"to":"paid"/.test(a.details || '')).length >= 1);
 r = await call('GET', '/audit?entity_type=ap_drop&action=create', null, admin);
-t('automation can poll the audit API for new drops', r.status === 200 && (r.body?.data || []).length >= 4, JSON.stringify(r.body).slice(0, 120));
+t('automation can poll the audit API for new drops', r.status === 200 && (r.body?.data || []).length >= 5, JSON.stringify(r.body).slice(0, 120));
 r = await call('GET', '/ap-drop?q=Industrial', null, admin);
 t('search reaches inside the PDF', r.status === 200 && r.body.some(x => x.id === dDup.id));
 r = await call('GET', '/ap-drop/recent', null, op);
-t('recent for the operator is their own drops', r.body?.length === 3);
+t('recent for the operator is their own drops', r.body?.length === 4);
 
 db.close();
 console.log(`\n${pass}/${pass + fail} assertions passed`); process.exit(fail ? 1 : 0);
