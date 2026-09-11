@@ -3754,6 +3754,14 @@ finding one thing meant reading past six, and adding an area meant appending JSX
   `user.role === 'admin'`, and `settings` is in `ADMIN_ALWAYS`). The rule is kept because it's the right rule
   for the section; making the grant usable is a decision about who gets into Settings at all.
 
+### The roster row and the editor read one map with one rule (`accessSummary`)
+Lowry's row read "1/65 modules" while opening him showed "Full access". Both were reading the same map —
+an admin whose only entry is the Danny's List grant — but the row counted KEYS and the editor applied
+`isFullAccess`, which knows an opt-in grant does not narrow an admin. `accessSummary(role, map, allIds)` in
+`shared/module-access.js` is now the one derivation for the row: opt-in modules are in neither the count
+nor the denominator, and `check:modaccess` asserts the count against the real `moduleLevel` for every map
+shape (null, legacy array, narrowed admin, opt-in-only admin).
+
 ### Module Access: 54 modules is a list, not a scroller
 `ModuleAccessEditor` (UsersSection.jsx) rendered all 54 modules one per row inside a `max-h-72` box — about
 five screens of scrolling to reach the last group, so setting one permission meant hunting for it.

@@ -25,7 +25,7 @@ const ROLES = [
 // forms are shown: each sits under the log it files into, because they are
 // separate grants and the difference is easy to miss when they are apart.
 import { OPT_IN_MODULES, OPT_IN_SET } from '../../../shared/opt-in-modules.js';
-import { isFullAccess, fullAccessMap, noAccessMap, expandedMap, optInEntries as optInOnly } from '../../../shared/module-access.js';
+import { isFullAccess, fullAccessMap, noAccessMap, expandedMap, accessSummary, optInEntries as optInOnly } from '../../../shared/module-access.js';
 
 const MODULE_GROUPS = [
   {
@@ -775,14 +775,8 @@ function moduleCountOf(u) {
     if (typeof u.module_access === 'string') { try { return JSON.parse(u.module_access); } catch { return null; } }
     return u.module_access;
   })();
-  return {
-    access,
-    // A missing map is an EMPTY account now, not "all modules" — a roster row
-    // reading 58/58 for someone who can open nothing is the wrong warning.
-    count: !access
-      ? (u.role === 'admin' ? ALL_MODULE_IDS.length : 0)
-      : (Array.isArray(access) ? access.length : Object.keys(access).length),
-  };
+  // One rule for the row and the form — see accessSummary in shared/module-access.js.
+  return { access, ...accessSummary(u.role, access, ALL_MODULE_IDS) };
 }
 
 function DeptChip({ department }) {
@@ -802,11 +796,11 @@ function DeptChip({ department }) {
 }
 
 function AccessNote({ u }) {
-  const { access, count } = moduleCountOf(u);
-  if (u.role === 'admin' && !access) return <span className="text-[10px] text-gray-400">All modules</span>;
+  const { full, count, total } = moduleCountOf(u);
+  if (full) return <span className="text-[10px] text-gray-400">All modules</span>;
   // Amber, because this account can open nothing until someone acts.
   if (count === 0) return <span className="text-[10px] font-semibold text-amber-600">No modules assigned</span>;
-  return <span className="text-[10px] text-gray-500">{count}/{ALL_MODULE_IDS.length} modules</span>;
+  return <span className="text-[10px] text-gray-500">{count}/{total} modules</span>;
 }
 
 function StatusChip({ active }) {

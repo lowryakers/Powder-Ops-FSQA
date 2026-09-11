@@ -50,3 +50,20 @@ export function expandedMap(role, map, allIds) {
   if (!isFullAccess(role, map, allIds)) return { ...(map || {}) };
   return { ...Object.fromEntries(ordinaryIds(allIds).map(id => [id, 'edit'])), ...optInEntries(map) };
 }
+
+// What the roster row says about a map — derived with the SAME rule the editor
+// uses, so the row and the form cannot disagree about one person. It used to
+// count keys: an admin whose only entry was an opt-in grant read "1/65 modules"
+// on the row and "Full access" in the form. Opt-in modules are granted by name
+// and are not part of "full access", so they are neither counted nor in the
+// denominator. `count` is the number of ordinary modules moduleLevel() would
+// answer non-null for.
+export function accessSummary(role, map, allIds) {
+  const ordinary = ordinaryIds(allIds);
+  const full = isFullAccess(role, map, allIds);
+  const count = full ? ordinary.length
+    : !map ? 0
+    : Array.isArray(map) ? ordinary.filter(id => map.includes(id)).length
+    : ordinary.filter(id => map[id] === 'edit' || map[id] === 'view').length;
+  return { full, count, total: ordinary.length };
+}

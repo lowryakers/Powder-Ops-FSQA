@@ -8,7 +8,7 @@
 // Every assertion below runs the editor's rule and the REAL moduleLevel over
 // the same map, so the two cannot drift apart again.
 import assert from 'node:assert/strict';
-import { isFullAccess, fullAccessMap, noAccessMap, expandedMap } from '../shared/module-access.js';
+import { isFullAccess, fullAccessMap, noAccessMap, expandedMap, accessSummary } from '../shared/module-access.js';
 import { moduleLevel, canViewModule } from '../src/utils/permissions.js';
 import { OPT_IN_MODULES } from '../shared/opt-in-modules.js';
 
@@ -108,6 +108,39 @@ ok('an unpassed role is treated as non-admin', () => {
   // Bulk permissions never targets admins (the endpoint excludes them), and a
   // caller that forgets the prop must get the strict answer, not the loose one.
   assert.equal(isFullAccess(undefined, null, IDS), false);
+});
+
+
+console.log('\nThe roster row says what the editor says');
+const countOf = (u) => ORDINARY.filter(id => moduleLevel(u, id) != null).length;
+ok('an admin holding only an opt-in grant reads as full access, not "1 module"', () => {
+  const map = { [OPT_IN]: 'edit' };
+  const s = accessSummary('admin', map, IDS);
+  assert.equal(s.full, true);
+  assert.equal(s.count, ORDINARY.length);
+  assert.equal(s.count, countOf(user('admin', map)));
+});
+ok('the opt-in module is in neither the count nor the denominator', () => {
+  const s = accessSummary('operator', { 'production-log': 'view', [OPT_IN]: 'edit' }, IDS);
+  assert.equal(s.total, ORDINARY.length);
+  assert.equal(s.count, 1);
+  assert.equal(s.count, countOf(user('operator', { 'production-log': 'view', [OPT_IN]: 'edit' })));
+});
+ok('an operator with no map counts zero, both sides', () => {
+  assert.deepEqual(accessSummary('operator', null, IDS), { full: false, count: 0, total: ORDINARY.length });
+  assert.equal(countOf(user('operator', null)), 0);
+});
+ok('a narrowed admin counts what is left, both sides', () => {
+  const map = { 'production-log': 'edit', sanitation: 'edit' };
+  const s = accessSummary('admin', map, IDS);
+  assert.equal(s.full, false);
+  assert.equal(s.count, countOf(user('admin', map)));
+});
+ok('a legacy array counts its ordinary entries, both sides', () => {
+  const map = ['equipment', 'sanitation', OPT_IN];
+  const s = accessSummary('supervisor', map, IDS);
+  assert.equal(s.count, 2);
+  assert.equal(s.count, countOf(user('supervisor', map)));
 });
 
 console.log(`\n${n - bad}/${n} assertions passed`);
