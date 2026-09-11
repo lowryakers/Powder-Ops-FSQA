@@ -2555,3 +2555,72 @@ badge: a fix that is not where the problem is seen is a fix nobody runs.
 
 Verified: `verify:commsedit` (11 live), `verify:onboardingui` (47, including the contractor packet),
 `check:composer` (51, with the control), `verify:edocs` / `verify:edocsui` unchanged and passing.
+
+---
+
+## D-080 — A private channel for a client, and the rules that follow from its name
+**2026-09-11.** Powder Ops and M4 Dynamic manufacture for each other constantly, and the coordination
+has been running across email threads, texts and phone calls — which is why the two companies keep
+arriving at different answers about the same order. `client--m4` is one private Messages channel where it
+happens in writing. The decisions worth recording are not the channel; they are what had to be true
+before an outside company could be given a ReadyDoc account at all.
+
+**1 · `client--*` is a reserved family, and the prefix is what makes the app able to recognise one.**
+`shared/client-channels.js` holds `isClientChannel`, imported by `src/lib/taskIntent.js` and
+`server/api/comms.js`. A second regex in a component is how the button disappears on one screen while the
+endpoint keeps answering on the other. Everything below follows from the name, so opening a channel for
+the next client needs none of it remembered.
+
+**2 · NOTHING TYPED IN A CLIENT CHANNEL STARTS PLANT WORK.** `teamForChannel()` returns `null` for the
+family — checked *first*, because a client name can legitimately contain a team word (`client--fillco`
+would otherwise match the filling line) — and `POST /channels/:id/to-task` refuses it outright, so the
+guard holds when the request comes from anywhere but the composer. A message here is a request or a
+status; the schedule is set by planning and confirmed back in the channel.
+
+**3 · The privacy is structural, not a tick somebody got right.** An admin creating a `client--` channel
+gets a private one whatever they selected; a supervisor cannot create one at all; the channel cannot
+later be made public, and cannot be renamed into or out of the family — renaming it would switch every
+rule above off silently with the outside members still in the room.
+
+**4 · `users.is_external` is the fact that an account belongs to another company**, and it is a fact
+about the person rather than a permission. `module_access` NULL already gives a client no ReadyDoc
+module, but **two mounts deliberately skip `requireModuleWrite`** so that anyone signed in can use them
+(AP Drop's intake, QMS filing) — and "anyone signed in" was written when everyone signed in worked here.
+A client dropping an invoice into our AP intake is not what either door was opened for. So the rule is
+stated **once, at the door** in `middleware/auth.js`, the same shape as the expired-password lockout:
+an external session may use Messages, its own account and its push registration, and everything else
+under `/api` is refused — as **404, not 403**, because a client has no business learning which modules
+this plant runs. A per-module guard is a guard somebody forgets on the next module.
+
+**5 · The boot-time auto-join was the real leak, and it is the one a review would have missed.**
+`joinDefaultChannels()` was patched to skip an external account — and it would have made no difference,
+because a separate loop in `server.js` adds **every active user** to #general and #announcements on
+**every** startup. A client kept out at creation would have been added back by the next deploy. The two
+paths call the same function now. Asserted both ways: a new client account joins nothing, an ordinary new
+employee still joins both.
+
+**6 · The guide is PINNED, and that is the whole point of adding pinning.** `chat_messages.pinned_at` /
+`pinned_by`, admin-only (the line `canDeleteMessage` already draws — pinning is saying "this is what the
+channel runs on", which is moderation rather than authorship). A guide posted as the first message is
+read by whoever was in the channel that day and by **nobody who joins afterwards** — and the people it is
+written for are exactly the ones who join afterwards. Same failure as the 72-hour re-clean badge the
+cleaner could not see. The strip is collapsed to one line by default; a long guide expanded over the
+conversation every time you opened the channel would be the opposite problem.
+
+**7 · WIP is defined once and quoted in full everywhere it appears** (`WIP_DEFINITION`): the *count of
+active Manufacturing Orders open at any given time (plant-wide)*. "WIP ≤ 30" is a release rule two
+companies act on, so the two companies have to be counting the same thing.
+
+**8 · The Account Manager is called Alex.** Never "bot", "agent" or a product name, in the member list,
+the byline, or anywhere a person reads it — a client talking to something labelled automated stops
+writing the detail that makes the channel worth having. Asserted, not just intended.
+
+**9 · Seeded once, guarded in `app_settings`, and never again** — the candidates-seed rule. Removing
+somebody from the channel, or archiving it, sticks. **No password is set anywhere**: the accounts are
+created signed-out and the office issues each person a setup code from Settings → Reset password, which
+is the same first-sign-in path every employee takes. A Powder Ops name that is not on the roster is
+**reported, never guessed at** (there is no branch that creates a second account for an existing person)
+— named in the boot log and stored in `app_settings.client_channels_seed_missing`. Danny is not a member,
+and that is written down rather than left to be noticed.
+
+Runbook: `docs/client-m4-channel.md`. Verified: `verify:clientchannel` (65 — live + a real browser at 390px; in `verify:all`).

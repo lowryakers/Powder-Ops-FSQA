@@ -6,7 +6,7 @@ import { getSocket } from '../../lib/socket';
 import { setAppBadge } from '../../lib/appBadge';
 import { notifyDataChanged } from '../../lib/dataChanged';
 import { canDeleteMessage, canEditMessage } from '../../../shared/comms-permissions.js';
-import { Share2, Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink, Columns2, Clock, Film, ChevronUp, Forward, Mic, Camera, CornerUpLeft } from 'lucide-react';
+import { Share2, Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink, Columns2, Clock, Film, ChevronUp, Forward, Mic, Camera, CornerUpLeft, Pin, PinOff } from 'lucide-react';
 import CommsSettings from './CommsSettings.jsx';
 import { shareFile as shareAttachment, canNativeShare } from '../../lib/shareFile.js';
 import NotificationStatus from './NotificationStatus.jsx';
@@ -21,6 +21,7 @@ import { useFormatKeys } from '../../lib/useFormatKeys.js';
 import ActivityView from './ActivityView.jsx';
 import { replaceShortcodes, PICKER_GROUPS, EMOJI_INDEX } from '../../utils/emoji.js';
 import { looksLikeTask, suggestTitle, mentionedUsers, teamForChannel } from '../../lib/taskIntent.js';
+import { isClientChannel } from '../../../shared/client-channels.js';
 
 // VAPID public key (base64url) → Uint8Array for PushManager.subscribe.
 // The reverse trip: a live subscription reports its applicationServerKey as an
@@ -1959,7 +1960,54 @@ function ForwardModal({ m, onClose }) {
 // the "Daniela edited it and Marnee still sees the old one" bug.
 const transKey = (m, lang) => `${m.id}:${m.edited_at || ''}:${lang}`;
 
-const Message = memo(function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkUnread, canTranslate, viewerLang, onTranslate, autoText, highlighted, mentionUsers }) {
+/**
+ * The channel's pinned messages, held above the conversation.
+ *
+ * A channel guide posted as the first message is read by whoever was in the
+ * channel that day and by nobody who joins afterwards — and the people it is
+ * written for are exactly the ones who join afterwards. Same shape as the
+ * 72-hour re-clean badge the cleaner could not see: putting it where the reader
+ * is, is the whole fix.
+ *
+ * Collapsed to its first line by default. A long guide expanded over the
+ * conversation every time you opened the channel would be the opposite problem.
+ */
+function PinnedStrip({ pinned, users, me, onUnpin }) {
+  const [openId, setOpenId] = useState(null);
+  if (!pinned?.length) return null;
+  return (
+    <div className="border-b border-amber-200 bg-amber-50/70 shrink-0" data-pinned-strip>
+      {pinned.map(p => {
+        const open = openId === p.id;
+        const firstLine = String(p.body || '').split('\n').find(l => l.trim()) || '';
+        return (
+          <div key={p.id} className="px-3 py-1.5" data-pinned-message={p.id}>
+            <div className="flex items-start gap-2">
+              <Pin size={13} className="text-amber-600 shrink-0 mt-1" />
+              <button type="button" onClick={() => setOpenId(open ? null : p.id)}
+                className="flex-1 min-w-0 text-left" data-pinned-toggle>
+                {open
+                  ? <span className="text-[11px] font-bold uppercase tracking-wide text-amber-800">Pinned by {p.pinned_by || '—'} · tap to collapse</span>
+                  : <span className="block truncate text-xs text-amber-900">{firstLine.replace(/\*/g, '')}</span>}
+              </button>
+              {me?.role === 'admin' && onUnpin && (
+                <button type="button" onClick={() => onUnpin(p)} title="Unpin"
+                  className="p-1 text-amber-600 hover:text-amber-800 shrink-0" data-pinned-unpin><PinOff size={13} /></button>
+              )}
+            </div>
+            {open && (
+              <div className="mt-1.5 ml-5 max-h-72 overflow-y-auto text-sm text-gray-800 break-words space-y-0.5" data-pinned-body>
+                {renderBody(p.body, users, me)}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const Message = memo(function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkUnread, onPin, canTranslate, viewerLang, onTranslate, autoText, highlighted, mentionUsers }) {
   const [showEmoji, setShowEmoji] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(m.body || '');
@@ -2072,6 +2120,7 @@ const Message = memo(function Message({ m, me, onReact, onUnreact, onEdit, onDel
     else if (act === 'record') setConvert(true);
     else if (act === 'remind') setRemind(true);
     else if (act === 'forward') setFwd(true);
+    else if (act === 'pin' && onPin) onPin(m, !m.pinned_at);
     else if (act === 'edit') { setDraft(m.body || ''); setEditing(true); }
     else if (act === 'delete') onDelete(m);
   };
@@ -2187,6 +2236,9 @@ const Message = memo(function Message({ m, me, onReact, onUnreact, onEdit, onDel
                 )}
                 {onMarkUnread && <MenuRow icon={null} label="Mark unread from here" act="unread" onAction={handleSheetAction} />}
                 {m.body && <MenuRow icon={ClipboardCheck} label="Create compliance record…" act="record" onAction={handleSheetAction} />}
+                {onPin && me?.role === 'admin' && !m.deleted && (
+                  <MenuRow icon={Pin} label={m.pinned_at ? 'Unpin from channel' : 'Pin to channel'} act="pin" onAction={handleSheetAction} />
+                )}
                 {mayEdit && <MenuRow icon={Edit2} label="Edit message" act="edit" onAction={handleSheetAction} />}
                 {mayDelete && <MenuRow icon={Trash2} label="Delete message" danger act="delete" onAction={handleSheetAction} />}
               </MenuPortal>
@@ -2825,7 +2877,11 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     // Intercept a directive aimed at named people in a team channel: it's a
     // task, and this is the last moment anyone will bother to make it one.
     // Only supervisors and admins assign work, so only they get asked.
-    if (canAssignTasks && active.kind !== 'dm' && looksLikeTask(text)) {
+    // NOT IN A CLIENT CHANNEL. `client--*` holds people from outside the plant,
+    // and a message from one of them must never become plant work — the server
+    // refuses it too, so this is only about not offering something that would
+    // then be refused.
+    if (canAssignTasks && active.kind !== 'dm' && !isClientChannel(active.name) && looksLikeTask(text)) {
       setTaskDraft(text);
       return;
     }
@@ -2881,6 +2937,32 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   const unreact = useCallback(async (m, emoji) => { const updated = await apiFetch(`/comms/messages/${m.id}/reactions/${encodeURIComponent(emoji)}`, { method: 'DELETE' }); setMessages(ms => ms.map(x => x.id === m.id ? updated : x)); }, []);
   const editMsg = useCallback(async (m, text) => { if (!text.trim()) return; const updated = await apiPut(`/comms/messages/${m.id}`, { body: text }); setMessages(ms => ms.map(x => x.id === m.id ? updated : x)); }, []);
   const delMsg = useCallback(async (m) => { await apiFetch(`/comms/messages/${m.id}`, { method: 'DELETE' }); loadMessages(activeIdRef.current); }, [loadMessages]);
+
+  // A channel's pinned messages are fetched rather than filtered out of what is
+  // on screen: the one that matters most — a channel guide — is the OLDEST
+  // message, so it is never in the last fifty.
+  const [pinnedMsgs, setPinnedMsgs] = useState([]);
+  const loadPinned = useCallback(async (cid) => {
+    let rows = [];
+    try { if (cid) rows = await apiFetch(`/comms/channels/${cid}/pinned`); } catch { rows = []; }
+    setPinnedMsgs(Array.isArray(rows) ? rows : []);
+  }, []);
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      let rows = [];
+      try { if (activeId) rows = await apiFetch(`/comms/channels/${activeId}/pinned`); } catch { rows = []; }
+      if (live) setPinnedMsgs(Array.isArray(rows) ? rows : []);
+    })();
+    return () => { live = false; };
+  }, [activeId]);
+  const pinMsg = useCallback(async (m, on) => {
+    try {
+      const out = await apiPost(`/comms/messages/${m.id}/pin`, { pinned: on });
+      setMessages(ms => ms.map(x => x.id === m.id ? out : x));
+      loadPinned(activeIdRef.current);
+    } catch { /* the server decides; a refused pin changes nothing */ }
+  }, [loadPinned]);
 
   const onBodyChange = (e) => {
     const val = e.target.value;
@@ -3689,6 +3771,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
                   </div>
                 )}
               </div>
+              <PinnedStrip pinned={pinnedMsgs} users={users} me={user} onUnpin={(p) => pinMsg(p, false)} />
               <div ref={scrollRef} onScroll={onMessagesScroll} className="relative flex-1 overflow-y-auto py-2"
                 onDragEnter={onDragEnterMsgs} onDragOver={onDragOverMsgs} onDragLeave={onDragLeaveMsgs} onDrop={onDropMsgs}>
                 {dropHover && (
@@ -3709,6 +3792,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
                       {showDay && <DateDivider iso={m.created_at} />}
                       {firstNew && <NewDivider />}
                       <Message m={m} me={user} onReact={react} onUnreact={unreact} onEdit={editMsg} onDelete={delMsg} onReply={setReplyTo} onMarkUnread={markUnread}
+                        onPin={pinMsg}
                         canTranslate={translateOn} viewerLang={viewerLang} onTranslate={translateMessage}
                         autoText={autoTranslate ? autoTrans[transKey(m, viewerLang)] : null}
                         highlighted={highlightId === m.id} mentionUsers={users} />

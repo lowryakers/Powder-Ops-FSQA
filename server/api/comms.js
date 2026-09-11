@@ -11,6 +11,7 @@ import { voyageEnabled, embed, embeddingModel, vectorToBlob, blobToVector, cosin
 import { aiEnabled, summarizeChat, translateText } from '../ai.js';
 import { pushEnabled, vapidPublicKey, pushToUser } from '../push.js';
 import { canDeleteMessage } from '../../shared/comms-permissions.js';
+import { isClientChannel, CLIENT_PREFIX } from '../../shared/client-channels.js';
 import { importSlackExport, previewSlackExport } from '../slack-import.js';
 import { requireRole } from '../middleware/auth.js';
 import { getType } from '../qms-config.js';
@@ -600,9 +601,18 @@ router.post('/channels', (req, res) => {
   const db = getDb();
   const { name, kind, topic, member_ids } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: 'Channel name is required' });
-  const k = kind === 'private' ? 'private' : 'public';
   const id = uuid();
   const clean = name.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+  // `client--*` is a reserved family: one channel per outside company, and the
+  // people in it do not work here. Opening one is an admin act, and it is
+  // PRIVATE by construction rather than by whoever ticked the box — a client
+  // channel that is public is the plant's production conversation published to
+  // everyone with an account.
+  const client = isClientChannel(clean);
+  if (client && req.user.role !== 'admin') {
+    return res.status(403).json({ error: `Only an admin can open a ${CLIENT_PREFIX}channel — it holds people from outside the plant.` });
+  }
+  const k = client ? 'private' : (kind === 'private' ? 'private' : 'public');
   db.prepare('INSERT INTO chat_channels (id, kind, name, topic, created_by) VALUES (?, ?, ?, ?, ?)')
     .run(id, k, clean || name.trim(), topic || null, req.user.id);
   const addMember = db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role) VALUES (?, ?, ?, ?)');
@@ -787,11 +797,22 @@ router.put('/channels/:id', (req, res) => {
   const isOwner = channelRole(db, channel.id, req.user.id) === 'owner';
   if (!isAdmin && !isOwner) return res.status(403).json({ error: 'Only the group owner or an admin can change this' });
   const { name, kind, topic, archived, post_policy } = req.body;
-  const newKind = isAdmin ? (kind === 'private' ? 'private' : kind === 'public' ? 'public' : channel.kind) : channel.kind;
+  let newKind = isAdmin ? (kind === 'private' ? 'private' : kind === 'public' ? 'public' : channel.kind) : channel.kind;
+  // A CLIENT CHANNEL CAN NEVER BECOME PUBLIC, and it cannot be renamed out of
+  // the family either — the prefix is what makes every other rule here apply to
+  // it, so renaming it would silently switch those rules off with the outside
+  // members still in the room. Refused in words rather than dropped silently.
+  if (isClientChannel(channel.name)) {
+    if (newKind !== 'private') return res.status(400).json({ error: 'A client channel stays private — it holds people from outside the plant.' });
+    newKind = 'private';
+  }
   const newPolicy = post_policy === 'admins' ? 'admins' : post_policy === 'all' ? 'all' : (channel.post_policy || 'all');
   let cleanName = channel.name;
   if (name !== undefined && name !== null && String(name).trim()) {
     cleanName = String(name).trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || channel.name;
+  }
+  if (isClientChannel(channel.name) !== isClientChannel(cleanName)) {
+    return res.status(400).json({ error: `A channel cannot be renamed into or out of the ${CLIENT_PREFIX} family. Open a new channel instead.` });
   }
   const newArchived = (isAdmin && archived !== undefined) ? (archived ? 1 : 0) : channel.archived;
   db.prepare(`UPDATE chat_channels SET name = ?, kind = ?, topic = ?, archived = ?, post_policy = ?, updated_at = datetime('now') WHERE id = ?`)
@@ -985,6 +1006,7 @@ function flattenMessage(db, m) {
     // and anything the client caches per message (a translation) has to be keyed
     // on it or an edit leaves the old text on screen for good.
     edited: !!m.edited_at, edited_at: m.edited_at || null, deleted: !!m.deleted_at, created_at: m.created_at,
+    pinned_at: m.pinned_at || null, pinned_by: m.pinned_by ? userName(db, m.pinned_by) : null,
     reactions: Object.entries(grouped).map(([emoji, users]) => ({ emoji, count: users.length, users })),
     reply_count: thread.c, last_reply_at: thread.last, reply_names: repliers,
     attachments: [],
@@ -1649,6 +1671,38 @@ router.post('/messages/:id/to-record', (req, res) => {
   res.status(201).json({ ok: true, record_number: number, record_id: id, type: cfg.key, label: cfg.singular, module: cfg.moduleId });
 });
 
+// ── Pinned messages ────────────────────────────────────────────────────
+// A channel's standing reference, held above the conversation. The case that
+// motivated it is a client channel's guide: it is written for the people who
+// join next week, and a first message is exactly what those people never see.
+//
+// PINNING IS ADMIN-ONLY, the same line `canDeleteMessage` draws. Pinning is
+// saying "this is what the channel runs on", which is moderation rather than
+// authorship — and a pin anyone could move is one nobody trusts.
+router.get('/channels/:id/pinned', async (req, res) => {
+  const channel = requireChannel(req, res); if (!channel) return;
+  const db = getDb();
+  const rows = db.prepare(`SELECT * FROM chat_messages WHERE channel_id = ? AND pinned_at IS NOT NULL AND deleted_at IS NULL
+                           ORDER BY pinned_at DESC LIMIT 20`).all(channel.id);
+  res.json(await Promise.all(rows.map(m => serialize(db, m))));
+});
+
+router.post('/messages/:id/pin', async (req, res) => {
+  const ctx = ownedMessage(req, res); if (!ctx) return;
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only an admin can pin a message.' });
+  if (ctx.m.deleted_at) return res.status(400).json({ error: 'A deleted message cannot be pinned.' });
+  const db = getDb();
+  const pin = req.body?.pinned === false ? null : 1;
+  db.prepare(`UPDATE chat_messages SET pinned_at = ${pin ? "datetime('now')" : 'NULL'}, pinned_by = ? WHERE id = ?`)
+    .run(pin ? req.user.id : null, ctx.m.id);
+  const row = db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(ctx.m.id);
+  logAudit(req.user, pin ? 'pinned' : 'unpinned', 'chat_message', ctx.m.id,
+    { channel: ctx.channel.name }, null, null, ctx.channel.name);
+  const out = await serialize(db, row);
+  emitToChannel(ctx.channel.id, 'message:update', out);
+  res.json(out);
+});
+
 // ── Chat message → Task Center task ──────────────────────────────────────────
 // A directive typed into a department channel is a task that nobody can follow
 // up on. This turns it into one at the moment it's sent, and leaves a note in
@@ -1663,6 +1717,14 @@ router.post('/channels/:id/to-task', (req, res) => {
     return res.status(403).json({ error: 'Only supervisors and admins can assign tasks.' });
   }
   if (channel.kind === 'dm') return res.status(400).json({ error: 'Tasks come from channel messages, not direct messages.' });
+  // NOTHING TYPED IN A CLIENT CHANNEL STARTS PLANT WORK. The people in it are
+  // not employees, and a work order raised from what one of them wrote would be
+  // the client scheduling the plant. `teamForChannel()` already returns null for
+  // these so the prompt never appears — this is the half that holds when the
+  // request comes from anywhere else.
+  if (isClientChannel(channel.name)) {
+    return res.status(400).json({ error: 'Tasks are not raised from a client channel. Ask in a plant channel or raise it in the Task Center.' });
+  }
 
   const db = getDb();
   const title = String(req.body?.title || '').trim();

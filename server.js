@@ -35,7 +35,7 @@ import integrationsRoutes from './server/api/integrations.js';
 import complianceRoutes, { buildBackupZip, computeCritical, seedAuditorBinderDefaults } from './server/api/compliance.js';
 import { startScheduledJobs } from './server/scheduled-jobs.js';
 import lotoRoutes from './server/api/loto.js';
-import userRoutes from './server/api/users.js';
+import userRoutes, { joinDefaultChannels } from './server/api/users.js';
 import submitRoutes from './server/api/submit.js';
 import chemicalRoutes from './server/api/chemicals.js';
 import hygienicDesignRoutes from './server/api/hygienic-design.js';
@@ -129,6 +129,7 @@ import { backfillPartnerDocLines } from './server/partner-doc-backfill.js';
 import { recordBackfillNudge } from './server/qa-record-backfill.js';
 import { supplierReviewNudge } from './server/supplier-review.js';
 import { seedControlledForms } from './server/form-registry-seed.js';
+import { seedClientChannels } from './server/client-channel-seed.js';
 import { cleanupDuplicateTasks } from './server/duplicate-task-cleanup.js';
 import { seedKnifeMasterlist } from './server/knife-seed.js';
 import { authenticate, isPublicPath, optionalAuth, sessionUser, readCookie, FILE_COOKIE } from './server/middleware/auth.js';
@@ -1203,6 +1204,10 @@ try {
   // The shipped Forms Master Index, planted once. Insert-only per code, so a
   // revision Document Control corrected by hand survives every redeploy.
   seedControlledForms(db);
+  // The private client coordination channel, its roster and its pinned guide.
+  // Guarded by a marker in app_settings and never re-run, so removing somebody
+  // from the channel — or archiving it — sticks.
+  seedClientChannels(db);
   // Collapse duplicate tasks the old generator guards let through (one-time).
   cleanupDuplicateTasks(db);
   // Purge cached "translations" identical to the original message (one-time).
@@ -1254,15 +1259,19 @@ try {
   };
   const generalId = ensureChannel('general', 'Company-wide general chat', 'all');
   const announceId = ensureChannel('announcements', 'Company-wide announcements — admins post, everyone reads', 'admins');
-  // Auto-join every active user to the default channels.
-  const defaultIds = [generalId, announceId];
-  const activeUsers = db.prepare('SELECT id FROM users WHERE is_active = 1').all();
-  const addMember = db.prepare("INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role) VALUES (?, ?, ?, 'member')");
-  let joined = 0;
-  const tx = db.transaction(() => {
-    for (const cid of defaultIds) for (const u of activeUsers) joined += addMember.run(uuid(), cid, u.id).changes;
-  });
+  // Auto-join every active user to the default channels — EXCEPT an external
+  // one. A client's buyer belongs in their own channel and nowhere else, and
+  // this loop is the mechanism that would put them in #general: it runs on
+  // every boot over every active account, so leaving it out of step with
+  // `joinDefaultChannels()` means a client is added back on the next deploy
+  // however carefully they were kept out at creation. Two mechanisms, one job —
+  // so they call the SAME function.
+  void generalId; void announceId; // ensured above; membership comes from the shared helper
+  const before = db.prepare('SELECT COUNT(*) c FROM chat_channel_members').get().c;
+  const activeUsers = db.prepare('SELECT id FROM users WHERE is_active = 1 AND is_external = 0').all();
+  const tx = db.transaction(() => { for (const u of activeUsers) joinDefaultChannels(db, u.id, false); });
   tx();
+  const joined = db.prepare('SELECT COUNT(*) c FROM chat_channel_members').get().c - before;
   if (joined > 0) console.log(`[seed] Auto-joined users to default channels (${joined} memberships)`);
 } catch (err) {
   console.error('[seed] Error ensuring default channels (non-fatal):', err.message);

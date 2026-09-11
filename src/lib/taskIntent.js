@@ -1,3 +1,5 @@
+import { isClientChannel } from '../../shared/client-channels.js';
+
 // Does this message read like an assignment rather than a remark?
 //
 // The point is the message that gets typed into a department channel and then
@@ -83,6 +85,14 @@ const CHANNEL_TEAM = [
 ];
 export function teamForChannel(channelName) {
   const n = String(channelName || '');
+  // A CLIENT CHANNEL MAPS TO NO TEAM, AND THAT IS THE POINT. `client--*` holds
+  // people who do not work here; a message from one of them must never become
+  // plant work, so there is no team to raise it against. Checked first, because
+  // a client name can legitimately contain a team word (`client--fillco` would
+  // otherwise match the filling line). The server refuses the same thing at
+  // `POST /channels/:id/to-task` — a rule the client alone applies is a
+  // suggestion.
+  if (isClientChannel(n)) return null;
   for (const [re, team] of CHANNEL_TEAM) if (re.test(n)) return team;
   return null;
 }

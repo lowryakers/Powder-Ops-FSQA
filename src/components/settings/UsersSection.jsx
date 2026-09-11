@@ -714,13 +714,27 @@ function UserForm({ initial, onSave, onCancel, canViewPin }) {
 
       <QuickTabsEditor value={form.quick_tabs} onChange={(val) => setForm({ ...form, quick_tabs: val })} />
 
-      <div className="flex items-center gap-4 mt-1">
+      <div className="flex items-center gap-4 mt-1 flex-wrap">
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={!!form.is_contractor} onChange={e => setForm({ ...form, is_contractor: e.target.checked })}
             className="rounded border-gray-300" />
           <span className="font-medium text-gray-700">External Contractor</span>
         </label>
+        {/* Two different kinds of "not an employee". A contractor works HERE and
+            needs their licence and insurance on file; a client account belongs
+            to another company and is here only to talk to us in one channel. */}
+        <label className="flex items-center gap-2 text-sm" data-external-account>
+          <input type="checkbox" checked={!!form.is_external} onChange={e => setForm({ ...form, is_external: e.target.checked })}
+            className="rounded border-gray-300" />
+          <span className="font-medium text-gray-700">Client (outside company)</span>
+        </label>
       </div>
+      {!!form.is_external && (
+        <p className="text-[11px] text-sky-800 bg-sky-50 border border-sky-200 rounded-lg px-2.5 py-1.5 -mt-1">
+          Messages only. This account is never added to #general or #announcements and cannot reach any
+          ReadyDoc module — add it to the client channel it belongs in, and nothing else.
+        </p>
+      )}
       {!!form.is_contractor && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-orange-50 rounded-lg border border-orange-200">
           <div>
@@ -815,6 +829,9 @@ function UserName({ u }) {
       )}
       {u.is_contractor ? (
         <span className="ml-2 px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded text-[10px] font-bold">CONTRACTOR</span>
+      ) : null}
+      {u.is_external ? (
+        <span className="ml-2 px-1.5 py-0.5 bg-sky-100 text-sky-700 rounded text-[10px] font-bold">CLIENT</span>
       ) : null}
       {u.contractor_company && <div className="text-[10px] text-gray-400">{u.contractor_company}</div>}
     </>

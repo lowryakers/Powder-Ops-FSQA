@@ -4005,6 +4005,15 @@ function runMigrations() {
   // this, which is honest: those were the author's own.
   addColumnIfMissing('chat_messages', 'deleted_by', 'TEXT');
 
+  // A pinned message — the channel's own standing reference, held above the
+  // conversation instead of scrolling away. A channel guide posted as the first
+  // message is read by whoever was there that day and by nobody who joins
+  // afterwards, which is the "a fix that is not where the problem is seen"
+  // failure one layer up: the people it is written for arrive later.
+  addColumnIfMissing('chat_messages', 'pinned_at', 'TEXT');
+  addColumnIfMissing('chat_messages', 'pinned_by', 'TEXT');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_chat_messages_pinned ON chat_messages(channel_id, pinned_at)');
+
   addColumnIfMissing('chat_push_subscriptions', 'vapid_key', 'TEXT');
   addColumnIfMissing('chat_push_subscriptions', 'user_agent', 'TEXT');
   addColumnIfMissing('chat_push_subscriptions', 'last_success_at', 'TEXT');
@@ -4865,6 +4874,14 @@ function runMigrations() {
   // columns are that record. Without them "they consented" is an assertion
   // with nothing behind it — the same reasoning as an NFP approval needing a
   // name against it.
+  // An account that belongs to an outside company (a client coordinating
+  // production with us), not to the plant. It is a fact about the PERSON, not a
+  // permission: what it changes is that the account is never auto-joined to the
+  // plant's default channels — #general and #announcements are where the plant
+  // talks to itself, and adding a client's buyer to them in Settings is a leak
+  // nobody would notice happening. Their module map does the rest (a NULL map
+  // is a Messages-only account).
+  addColumnIfMissing('users', 'is_external', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('users', 'sms_consent_at', 'TEXT');
   addColumnIfMissing('users', 'sms_consent_by', 'TEXT');
   // The iOS Shortcut's key for logging Danny replies without a browser: a

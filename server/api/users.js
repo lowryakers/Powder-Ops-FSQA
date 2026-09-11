@@ -13,7 +13,14 @@ const router = Router();
 
 // New accounts join the Slack-style default channels (#general, #announcements)
 // so everyone is reachable there from day one.
-function joinDefaultChannels(db, userId) {
+//
+// EXCEPT AN EXTERNAL ACCOUNT. A client's buyer added in Settings would
+// otherwise land in #general and read the plant talking to itself — and nobody
+// would see it happen, because the join is a side effect of creating the
+// account. An external account is added to the one channel it belongs in, by
+// hand, which is the deliberate act it should be.
+export function joinDefaultChannels(db, userId, external) {
+  if (external) return;
   try {
     const add = db.prepare("INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role) VALUES (?, ?, ?, 'member')");
     for (const c of db.prepare('SELECT id FROM chat_channels WHERE is_default = 1').all()) add.run(uuid(), c.id, userId);
@@ -41,7 +48,7 @@ function verifyPassword(password, stored) {
 router.get('/', (req, res) => {
   const db = getDb();
   const { role, active } = req.query;
-  let sql = 'SELECT id, name, username, email, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, home_workspace, quick_tabs, phone, sms_access, sms_consent_at, sms_consent_by, created_at FROM users WHERE 1=1';
+  let sql = 'SELECT id, name, username, email, role, department, is_active, is_contractor, is_external, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, home_workspace, quick_tabs, phone, sms_access, sms_consent_at, sms_consent_by, created_at FROM users WHERE 1=1';
   const params = [];
   if (role) { sql += ' AND role = ?'; params.push(role); }
   if (active !== undefined) { sql += ' AND is_active = ?'; params.push(active === 'true' ? 1 : 0); }
@@ -222,7 +229,7 @@ router.get('/:id/pin', requireRole('admin'), (req, res) => {
 router.post('/', requireRole('admin'), (req, res) => {
   const db = getDb();
   const id = uuid();
-  const { name, username, email, pin, role, department, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access } = req.body;
+  const { name, username, email, pin, role, department, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, is_external } = req.body;
   if (!name) return res.status(400).json({ error: 'name is required' });
 
   let signIn;
@@ -235,11 +242,11 @@ router.post('/', requireRole('admin'), (req, res) => {
   }
 
   const moduleAccessStr = module_access ? JSON.stringify(module_access) : null;
-  db.prepare('INSERT INTO users (id, name, username, email, pin, role, department, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(id, name, signIn, email || null, pin || null, role || 'operator', department || 'warehouse', is_contractor ? 1 : 0, contractor_company || null, contractor_license || null, contractor_insurance_expiry || null, contractor_scope || null, moduleAccessStr);
+  db.prepare('INSERT INTO users (id, name, username, email, pin, role, department, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, is_external) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(id, name, signIn, email || null, pin || null, role || 'operator', department || 'warehouse', is_contractor ? 1 : 0, contractor_company || null, contractor_license || null, contractor_insurance_expiry || null, contractor_scope || null, moduleAccessStr, is_external ? 1 : 0);
 
-  joinDefaultChannels(db, id);
-  const created = db.prepare('SELECT id, name, username, email, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, phone, sms_access, created_at FROM users WHERE id = ?').get(id);
+  joinDefaultChannels(db, id, is_external);
+  const created = db.prepare('SELECT id, name, username, email, role, department, is_active, is_contractor, is_external, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, phone, sms_access, created_at FROM users WHERE id = ?').get(id);
   logAudit(req.user, 'create', 'user', id, { name, role: role || 'operator', department: department || 'warehouse' }, null, null, name);
   res.status(201).json(created);
 });
@@ -259,7 +266,7 @@ router.post('/bulk', requireRole('admin'), (req, res) => {
       const role = ROLES.includes(u.role) ? u.role : 'operator';
       const nid = uuid();
       ins.run(nid, name, uniqueUsername(db, name, null), u.email || null, role, u.department || 'warehouse', u.module_access ? JSON.stringify(u.module_access) : null);
-      joinDefaultChannels(db, nid);
+      joinDefaultChannels(db, nid, u.is_external);
       created++; names.push(name);
     }
   });
@@ -335,7 +342,7 @@ router.put('/:id', requireRole('admin'), async (req, res) => {
   const existing = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'User not found' });
 
-  const { name, username, email, pin, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, home_workspace, quick_tabs, phone, sms_access } = req.body;
+  const { name, username, email, pin, role, department, is_active, is_contractor, is_external, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, home_workspace, quick_tabs, phone, sms_access } = req.body;
 
   // An admin-set username wins. Otherwise, if the full name changed and the
   // current username is still the one we derived from the old name — including
@@ -374,17 +381,18 @@ router.put('/:id', requireRole('admin'), async (req, res) => {
   const quickTabsStr = quick_tabs !== undefined
     ? (Array.isArray(quick_tabs) && quick_tabs.length ? JSON.stringify(quick_tabs.slice(0, 4).map(String)) : null)
     : existing.quick_tabs;
-  db.prepare(`UPDATE users SET name=?, username=?, email=?, pin=COALESCE(?, pin), role=?, department=?, is_active=?, is_contractor=?, contractor_company=?, contractor_license=?, contractor_insurance_expiry=?, contractor_scope=?, module_access=?, home_workspace=?, quick_tabs=?, phone=?, sms_access=?, sms_consent_at=?, sms_consent_by=?, updated_at=datetime('now') WHERE id=?`)
+  db.prepare(`UPDATE users SET name=?, username=?, email=?, pin=COALESCE(?, pin), role=?, department=?, is_active=?, is_contractor=?, is_external=?, contractor_company=?, contractor_license=?, contractor_insurance_expiry=?, contractor_scope=?, module_access=?, home_workspace=?, quick_tabs=?, phone=?, sms_access=?, sms_consent_at=?, sms_consent_by=?, updated_at=datetime('now') WHERE id=?`)
     .run(name || existing.name, signIn, email ?? existing.email, pin || null, role || existing.role,
       department || existing.department || 'warehouse',
       is_active !== undefined ? (is_active ? 1 : 0) : existing.is_active,
       is_contractor !== undefined ? (is_contractor ? 1 : 0) : (existing.is_contractor || 0),
+      is_external !== undefined ? (is_external ? 1 : 0) : (existing.is_external || 0),
       contractor_company ?? existing.contractor_company, contractor_license ?? existing.contractor_license,
       contractor_insurance_expiry ?? existing.contractor_insurance_expiry, contractor_scope ?? existing.contractor_scope,
       moduleAccessStr, homeWorkspace, quickTabsStr, phoneVal, smsVal, consentAt, consentBy,
       req.params.id);
 
-  const updated = db.prepare('SELECT id, name, username, email, role, department, is_active, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, phone, sms_access, created_at FROM users WHERE id = ?').get(req.params.id);
+  const updated = db.prepare('SELECT id, name, username, email, role, department, is_active, is_contractor, is_external, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, phone, sms_access, created_at FROM users WHERE id = ?').get(req.params.id);
 
   // Surface security-relevant changes (role, active status, module permissions)
   // as their own explicit audit actions so they're easy to filter for.

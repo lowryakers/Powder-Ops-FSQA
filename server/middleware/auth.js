@@ -2,7 +2,7 @@ import { getDb } from '../db.js';
 import { passwordExpired } from '../password-policy.js';
 
 const SESSION_QUERY = `
-  SELECT u.id, u.name, u.role, u.department, u.module_access, u.is_active, u.password_changed_at
+  SELECT u.id, u.name, u.role, u.department, u.module_access, u.is_active, u.is_external, u.password_changed_at
   FROM sessions s
   JOIN users u ON s.user_id = u.id
   WHERE s.token = ? AND s.expires_at > datetime('now') AND u.is_active = 1
@@ -73,6 +73,29 @@ const PASSWORD_EXPIRY_ALLOWED = [
   { method: 'POST', path: '/users/me/password' },
   { method: 'GET', path: '/users/me' },
   { method: 'POST', path: '/users/logout' },
+];
+
+// WHAT AN EXTERNAL ACCOUNT MAY REACH — the whole of it, in one list.
+//
+// A client's coordinator has a real ReadyDoc session and belongs in exactly one
+// channel. `module_access` NULL already gives them no module, but two mounts
+// deliberately skip `requireModuleWrite` so that anyone signed in can use them
+// (AP Drop's intake and QMS filing) — and "anyone signed in" was written when
+// everyone signed in worked here. A client dropping an invoice into our AP
+// intake, or filing a deviation, is not what either door was opened for.
+//
+// So the rule is stated once, at the door, the same shape as the expired-
+// password lockout above: an external session may use Messages, its own
+// account, and its notification registration. Everything else under /api is
+// refused before any handler sees it — a per-module guard is a guard somebody
+// forgets on the next module.
+const EXTERNAL_ALLOWED = [
+  /^\/comms(\/|$)/,     // the channel they were invited to (membership still gates every read)
+  /^\/users\/me(\/|$)/,  // their own account and password
+  /^\/users\/logout$/,
+  /^\/users\/lookup$/,   // the sign-in type-ahead
+  /^\/push(\/|$)/,       // so a mention can reach their phone
+  /^\/ai\/translate/,    // EN/ES on a message they were sent
 ];
 
 // Requests that must work before there is a session. Everything else under
@@ -153,6 +176,10 @@ function lookupSession(token) {
     department: row.department,
     module_access: parseModuleAccess(row.module_access),
     is_active: row.is_active,
+    // An account belonging to an outside company. Carried onto req.user because
+    // handlers past this point ask it too (who may be @mentioned, who a message
+    // reaches) — and because the guard above reads it.
+    is_external: !!row.is_external,
     password_changed_at: row.password_changed_at,
   };
 }
@@ -187,6 +214,13 @@ export function authenticate(req, res, next) {
       error: 'Your password is more than a year old and must be changed before you can continue.',
       password_expired: true,
     });
+  }
+
+  if (user.is_external && !EXTERNAL_ALLOWED.some(re => re.test(req.path))) {
+    // 404, not 403: a client has no business learning which modules this plant
+    // runs, and "forbidden" answers that question. Same reasoning as hiding a
+    // channel they cannot see.
+    return res.status(404).json({ error: 'Not found' });
   }
 
   req.user = user;

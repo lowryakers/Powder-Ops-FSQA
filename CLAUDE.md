@@ -185,6 +185,47 @@ an Accounting tab, so it survives the AP/AR pages being slimmed. `ap@powder-ops.
   columns cannot tell them apart afterwards.
 - Verified: `check:apdrop` (20), `check:aproute` (11), `verify:apdrop` (71), `verify:apdropui` (23 at 1280 + 360).
 
+## A private channel for a client, and everything that follows from its name (D-080)
+`shared/client-channels.js` (`isClientChannel`, `WIP_DEFINITION`, the guide text — imported by BOTH
+`src/lib/taskIntent.js` and `server/api/comms.js`), `server/client-channel-seed.js`, runbook in
+`docs/client-m4-channel.md`. `client--m4` is one private Messages channel for manufacturing coordination
+with M4 Dynamic. **`client--*` is a reserved family and the prefix is what lets the app recognise one**, so
+opening the next client's channel needs none of this remembered.
+- **NOTHING TYPED IN A CLIENT CHANNEL STARTS PLANT WORK.** `teamForChannel()` returns null for the family —
+  **checked FIRST**, because a client name can legitimately contain a team word (`client--fillco` would
+  otherwise match the filling line) — and `POST /channels/:id/to-task` refuses it outright. A rule the
+  client alone applies is a suggestion. `to-record` is deliberately left alone: it files a draft compliance
+  record, which is not a schedule mutation.
+- **The privacy is structural.** An admin creating a `client--` channel gets a PRIVATE one whatever they
+  ticked; a supervisor cannot create one at all; it cannot later be made public, and cannot be renamed into
+  or out of the family — renaming it would switch every rule off silently with the outside members still in.
+- **`users.is_external` is a fact about the person, not a permission**, and the ONE list of what such an
+  account may reach is `EXTERNAL_ALLOWED` in `middleware/auth.js` (Messages, its own account, push,
+  translate). NULL `module_access` already gives no module, but **two mounts skip `requireModuleWrite`** so
+  anyone signed in can use them (AP Drop's intake, QMS filing) — and "anyone signed in" was written when
+  everyone signed in worked here. Refused as **404, not 403**: a client has no business learning which
+  modules this plant runs. A per-module guard is one somebody forgets on the next module.
+- **THE BOOT AUTO-JOIN WAS THE REAL LEAK.** `joinDefaultChannels()` skipping an external account made no
+  difference, because a separate loop in `server.js` adds EVERY active user to #general and #announcements
+  on EVERY startup — a client kept out at creation was added back by the next deploy. Both paths call the
+  same function now; asserted in both directions.
+- **The guide is PINNED** (`chat_messages.pinned_at`/`pinned_by`, admin-only — the `canDeleteMessage` line;
+  `GET /channels/:id/pinned`, `POST /messages/:id/pin`, collapsible strip under the channel header). A guide
+  posted as the first message is read by whoever was there that day and by nobody who joins afterwards —
+  which is who it is written for. The re-clean badge again.
+- **WIP is defined once and quoted in full wherever it appears**: *count of active Manufacturing Orders open
+  at any given time (plant-wide)*. Two companies acting on "WIP ≤ 30" have to be counting the same thing.
+- **The Account Manager is called Alex** — never bot, agent or a product name, anywhere a person reads it.
+  Asserted, not just intended.
+- **Seeded once, guarded in `app_settings.client_channels_seeded`** (the candidates-seed rule), so removing
+  a member or archiving the channel sticks. **No password anywhere**: accounts are created signed-out and
+  the office issues a setup code from Settings → Reset password. A Powder Ops name not on the roster is
+  REPORTED, never guessed (`client_channels_seed_missing`) — nothing here creates a second account for an
+  existing person. **Danny is not a member, deliberately.** `coordinator@m4dynamic.com` was optional and is
+  not created.
+- Nothing leaves ReadyDoc: no email, no QBO write, no AP Drop or Partner Reconciliation change.
+- Verified: `verify:clientchannel` (65 — live + a real browser at 390px; in `verify:all`).
+
 ## Revoking access reaches the sessions it already opened (D-072)
 `revokeSessions(db, userId, { keepToken, devices })` in `api/sessions.js` is the ONE helper; Settings
 deactivation, `end-access`, the auditor-pass revoke and the pass reactivation path all call it. It deletes the
