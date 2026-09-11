@@ -1052,6 +1052,13 @@ that has to be fed to stay useful. Office nav group, module id `candidates`.
   `signature_required`, never 401), audited as `onboarding_revealed` with the FIELDS and the signature check,
   never the values. Nothing is written to the record; the PDF and every list stay last-4. The `Reveal` box in
   `OnboardingPanel` keeps the values in component state only and hides itself after two minutes.
+- **W-2 OR 1099 IS ASKED ON THE START FORM, before the link exists.** The server had accepted `worker_type`
+  since the contractor path shipped and the API tests exercised it, but the Start form never offered it — so
+  every onboarding opened as an employee and the office had no way to say otherwise. `WorkerTypePicker` is
+  the first thing on the form (default employee); the row is labelled W-2 employee / 1099 contractor
+  (`data-engaged-as`) and offers the same picker while nothing is signed. **`applyFields` refuses a change
+  of worker type once a W-4, I-9 or W-9 signature exists** — the forms on the record would contradict it.
+  Cancel and start again. A feature verified only through the API is a feature the office cannot reach.
 - **Not claimed: that the PDF is the retained Form I-9.** 8 CFR 274a.2's electronic-system rules have not
   been reviewed against this; the guide says so and the panel footer says so. The office completes the
   official I-9 in ADP or on paper from the packet until HR decides otherwise.

@@ -302,6 +302,12 @@ console.log('\nA 1099 CONTRACTOR signs a W-9 and never an I-9');
   }));
   t('an onboarding can be opened as a contractor', c?.worker_type === 'contractor', JSON.stringify(c || {}).slice(0, 120));
   const ctok = String(c.link).split('/').pop();
+  // The engagement is the office's to set and to correct — until a form is signed.
+  const plain = await J(await post('/onboarding', { first_name: 'Ada', last_name: 'Default' }));
+  t('with nothing said, an onboarding opens as a W-2 employee', plain?.worker_type === 'employee' && plain?.is_contractor === false, String(plain?.worker_type));
+  const flipped = await J(await req(`/onboarding/${plain.id}`, { method: 'PUT', body: JSON.stringify({ worker_type: 'contractor' }) }));
+  t('the office can correct it to contractor before anything is signed', flipped?.worker_type === 'contractor', JSON.stringify(flipped || {}).slice(0, 120));
+  await post(`/onboarding/${plain.id}/cancel`, {});
 
   let v = await J(await portal(ctok, 'GET'));
   t('the portal says they are a contractor', v?.is_contractor === true);
@@ -334,6 +340,8 @@ console.log('\nA 1099 CONTRACTOR signs a W-9 and never an I-9');
 
   const signed = await portal(ctok, 'PUT', { w9_sign: true, signed_name: 'Dana Reyes', attest: true });
   t('but the W-9 signs', signed.ok, `${signed.status} ${JSON.stringify(await J(signed) || {}).slice(0, 120)}`);
+  const locked = await req(`/onboarding/${c.id}`, { method: 'PUT', body: JSON.stringify({ worker_type: 'employee' }) });
+  t('once a form is signed the worker type is LOCKED — the record would contradict its forms', locked.status === 400 && /already been signed/.test((await J(locked))?.error || ''), String(locked.status));
   v = await J(await portal(ctok, 'GET'));
   t('the signature records the certification it was given under',
     /Under penalties of perjury/.test(v?.w9_signature?.attestation || ''));

@@ -124,7 +124,17 @@ await page.goto(`${URL}/manifest.webmanifest`);
 await page.evaluate(([tok, u]) => { localStorage.setItem('auth_token', tok); localStorage.setItem('auth_user', JSON.stringify(u)); }, [auth.token, auth.user]);
 await page.goto(`${URL}/?tab=onboarding`);
 await page.waitForTimeout(3000);
+t('the Start form asks W-2 or 1099 before the link exists', await page.locator('[data-worker-type-option="employee"]').count() === 1 && await page.locator('[data-worker-type-option="contractor"]').count() === 1);
+// Start a contractor from the form itself: the choice has to reach the record.
+await page.click('[data-worker-type-option="contractor"]');
+await page.fill('input[placeholder="First name *"]', 'Tomas');
+await page.fill('input[placeholder="Last name *"]', 'Temp');
+await page.click('text=Create & get the link');
+await page.waitForSelector('text=Send this link to the new hire', { timeout: 15000 });
+const tempRow = page.locator('[data-onboarding]', { hasText: 'Tomas Temp' });
+t('the new row is labelled 1099 contractor', /1099 contractor/.test(await tempRow.locator('[data-engaged-as]').innerText()));
 const row = page.locator(`[data-onboarding="${created.id}"]`);
+t('the employee row is labelled W-2 employee', /W-2 employee/.test(await row.locator('[data-engaged-as]').innerText()));
 t('the packet row reads Ready for review', /Ready for review/.test(await row.innerText()));
 await row.locator('button').first().click();
 await page.waitForTimeout(600);

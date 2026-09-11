@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useApiGet, apiPost, apiFetch, apiUpload } from '../../hooks/useApi';
+import { useApiGet, apiPost, apiPut, apiFetch, apiUpload } from '../../hooks/useApi';
 import {
   UserPlus, Link2, Copy, CheckCircle2, XCircle, Send, RefreshCw, FileText, Paperclip, Download, ShieldCheck, AlertTriangle, X, Eye, EyeOff,
 } from 'lucide-react';
@@ -30,20 +30,46 @@ const KIND = { id_document: 'ID document', voided_check: 'Voided check', other: 
 
 const input = 'w-full px-2.5 py-2 border border-gray-300 rounded-lg text-sm';
 
+// W-2 or 1099 is the OFFICE's decision, made before the link goes out, and it
+// decides which forms the person is asked to sign (W-4 + I-9, or a W-9 and no
+// I-9). So it is the first thing on the form and never a hidden default.
+const WORKER_TYPES = [
+  ['employee', 'W-2 employee', 'Signs a W-4 and an I-9. Gets a ReadyDoc account on completion.'],
+  ['contractor', '1099 contractor / temp', 'Signs a W-9. No I-9. No ReadyDoc account unless you tick it on completion.'],
+];
+function WorkerTypePicker({ value, onChange, disabled, compact = false }) {
+  return (
+    <div className={`flex ${compact ? 'gap-1' : 'gap-2 flex-wrap'}`} data-worker-type>
+      {WORKER_TYPES.map(([k, label, hint]) => (
+        <button key={k} type="button" disabled={disabled} onClick={() => onChange(k)} title={hint} data-worker-type-option={k}
+          className={`${compact ? 'px-2 py-0.5 text-[11px]' : 'px-3 py-2 text-sm text-left'} rounded-lg border font-medium disabled:opacity-60 ${
+            value === k ? 'border-powder-500 bg-powder-50 text-powder-800 ring-1 ring-powder-300' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'}`}>
+          {label}
+          {!compact && <span className="block text-[11px] font-normal text-gray-500">{hint}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function StartForm({ onSaved }) {
-  const [f, setF] = useState({});
+  const [f, setF] = useState({ worker_type: 'employee' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const set = (k) => (e) => setF(v => ({ ...v, [k]: e.target.value }));
   const go = async () => {
     setBusy(true); setError('');
-    try { onSaved(await apiPost('/onboarding', f)); setF({}); }
+    try { onSaved(await apiPost('/onboarding', f)); setF({ worker_type: 'employee' }); }
     catch (e) { setError(e.message); }
     finally { setBusy(false); }
   };
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
       <p className="text-sm font-semibold text-gray-900 flex items-center gap-1.5"><UserPlus size={15} /> Start an onboarding</p>
+      <div>
+        <p className="text-xs text-gray-600 mb-1">Engaged as</p>
+        <WorkerTypePicker value={f.worker_type || 'employee'} onChange={(k) => setF(v => ({ ...v, worker_type: k }))} />
+      </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <input className={input} placeholder="First name *" value={f.first_name || ''} onChange={set('first_name')} />
         <input className={input} placeholder="Last name *" value={f.last_name || ''} onChange={set('last_name')} />
@@ -303,7 +329,10 @@ function Row({ r, attestations, storageEnabled, onAction }) {
         <div className="min-w-0">
           <p className="text-sm font-semibold text-gray-900">{r.first_name} {r.last_name}
             {r.position && <span className="font-normal text-gray-500"> · {r.position}</span>}
-            {r.start_date && <span className="font-normal text-gray-500"> · starts {r.start_date}</span>}</p>
+            {r.start_date && <span className="font-normal text-gray-500"> · starts {r.start_date}</span>}
+            <span className={`ml-2 align-middle px-1.5 py-0.5 rounded text-[11px] font-semibold ${r.is_contractor ? 'bg-amber-100 text-amber-900' : 'bg-gray-100 text-gray-700'}`} data-engaged-as>
+              {r.is_contractor ? '1099 contractor' : 'W-2 employee'}
+            </span></p>
           <p className="text-xs text-gray-500">{steps}/6 steps · invited {formatDateTime(r.invited_at || r.created_at)}
             {r.missing?.length > 0 && !['completed', 'cancelled'].includes(r.status) && <span className="text-amber-700"> · {r.missing.length} still missing</span>}</p>
         </div>
@@ -311,6 +340,17 @@ function Row({ r, attestations, storageEnabled, onAction }) {
       </button>
       {open && (
         <div className="border-t border-gray-100 px-3.5 py-3 space-y-3 text-sm">
+          {/* The engagement can still be corrected while nothing has been
+              signed — after that the server refuses, because the forms on the
+              record would contradict it. */}
+          {!['completed', 'cancelled'].includes(r.status) && !r.w4_signature && !r.i9_signature && !r.w9_signature && (
+            <div className="flex items-center gap-2 flex-wrap text-xs text-gray-600">
+              <span>Engaged as</span>
+              <WorkerTypePicker compact value={r.is_contractor ? 'contractor' : 'employee'} disabled={!!busy}
+                onChange={(k) => act('type', async () => onAction('refresh', await apiPut(`/onboarding/${r.id}`, { worker_type: k })))} />
+              <span className="text-gray-400">changeable until a form is signed</span>
+            </div>
+          )}
           <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1 text-xs text-gray-700">
             <span><b>Phone:</b> {r.phone || '—'}</span><span><b>Email:</b> {r.email || '—'}</span>
             <span><b>Address:</b> {[r.address1, r.city, r.state].filter(Boolean).join(', ') || '—'}</span>
@@ -359,18 +399,6 @@ function Row({ r, attestations, storageEnabled, onAction }) {
             <button disabled={!!busy} onClick={() => act('pdf', () => downloadFile(`/onboarding/${r.id}/packet.pdf`, `onboarding-${r.last_name || 'packet'}.pdf`))}
               className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs font-medium hover:bg-gray-50">
               <Download size={12} /> Packet PDF</button>
-            {r.status === 'completed' && (r.user_id || r.is_contractor) && (
-              <button disabled={!!busy} data-end-access
-                onClick={() => {
-                  const why = window.prompt('Ending access switches off their ReadyDoc sign-in and takes them off the pay roster. Nothing is deleted. Why is it ending?');
-                  if (why && why.trim().length >= 3) {
-                    act('end', async () => onAction('refresh', (await apiPost(`/onboarding/${r.id}/end-access`, { reason: why.trim() })).record));
-                  }
-                }}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs font-medium text-gray-600 hover:text-red-600 hover:border-red-300">
-                <XCircle size={12} /> End access
-              </button>
-            )}
             {r.status === 'completed' && (r.user_id || r.is_contractor) && (
               <button disabled={!!busy} data-end-access
                 onClick={() => {

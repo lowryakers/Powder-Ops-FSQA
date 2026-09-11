@@ -189,6 +189,13 @@ function applyFields(db, rec, body, allowed) {
   if (patch.pay_method && !PAY_METHODS.includes(patch.pay_method)) return { error: 'Powder Ops pays by direct deposit only.' };
   if (patch.gender && !GENDERS.includes(patch.gender)) return { error: 'Unknown gender code.' };
   if (patch.worker_type && !ONBOARDING_WORKER_TYPES.includes(patch.worker_type)) return { error: 'Worker type must be employee or contractor.' };
+  // The worker type decides WHICH FORMS the person is asked to sign. Once one
+  // is signed, switching would leave a signed W-4 on a record that now wants a
+  // W-9 — a record the forms contradict. Cancel and start again instead.
+  if (patch.worker_type && rec.worker_type && patch.worker_type !== rec.worker_type
+      && (signatureOf(rec.w4_signature) || signatureOf(rec.i9_signature) || signatureOf(rec.w9_signature))) {
+    return { error: 'A form has already been signed on this onboarding, so the worker type cannot change. Cancel it and start a new one.' };
+  }
   if (patch.w9_tax_classification && !W9_CLASSIFICATIONS.includes(patch.w9_tax_classification)) return { error: 'Unknown federal tax classification.' };
   if (patch.w9_llc_classification && !W9_LLC_CLASSIFICATIONS.includes(patch.w9_llc_classification)) return { error: 'LLC tax classification must be C, S or P.' };
   if (patch.w9_tin_type && !TIN_TYPES.includes(patch.w9_tin_type)) return { error: 'A TIN is either an SSN or an EIN.' };
