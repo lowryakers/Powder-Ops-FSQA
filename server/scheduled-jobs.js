@@ -150,6 +150,19 @@ async function runDue(db, deps) {
     } catch (e) { console.warn('[jobs] QA correction nudges failed:', e.message); }
   }
 
+  // Documents sent to an employee to sign and still unsigned after two days.
+  // Same cadence and the same reasoning: a request that is never chased sits
+  // under "Documents to sign" for whoever happens to open ReadyDoc, and the
+  // office finds out at the payroll deadline.
+  const lastDocNudge = getFlag(db, 'last_employee_doc_nudge_at');
+  if (deps.employeeDocumentNudges && (!lastDocNudge || (now - new Date(lastDocNudge)) >= 2 * 86400000)) {
+    try {
+      const sent = await deps.employeeDocumentNudges(db);
+      setFlag(db, 'last_employee_doc_nudge_at', now.toISOString());
+      if (sent.sent) console.log(`[jobs] employee document nudges: ${sent.sent} of ${sent.pending} outstanding`);
+    } catch (e) { console.warn('[jobs] employee document nudges failed:', e.message); }
+  }
+
   // Checks that were completed but never produced their controlled record.
   // The amber strip on QA Inspections only reaches whoever opens that screen,
   // which is the same gap the re-clean badge had — so the pile is announced.

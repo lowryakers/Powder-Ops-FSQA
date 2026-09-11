@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, UserPlus, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Building2, Sliders, BookText, LifeBuoy, PenLine, ListTodo, UserPlus2, Inbox} from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, UserPlus, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Building2, Sliders, BookText, LifeBuoy, PenLine, ListTodo, UserPlus2} from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -77,6 +77,7 @@ import UpdateBanner from './components/UpdateBanner.jsx';
 import { applyKioskManifest, setKioskAppTitle } from './lib/kioskManifest.js';
 import PageInfo from './components/PageInfo.jsx';
 import SignaturePrompt from './components/common/SignaturePrompt.jsx';
+import DocumentsToSignCard, { SignDocumentHost } from './components/common/DocumentsToSign.jsx';
 const SupplyOrdersPanel = lazy(() => import('./components/office/SupplyOrdersPanel.jsx'));
 const TimeTrackingPanel = lazy(() => import('./components/office/TimeTrackingPanel.jsx'));
 const CheckedOutPanel = lazy(() => import('./components/compliance/CheckedOutPanel.jsx'));
@@ -243,19 +244,28 @@ const NAV_GROUPS = [
       // AP, AR and the trading-partner reconciliation are one place to go —
       // they are the same job (money in, money out, what's owed) split only by
       // which direction it points.
-      // The finance intake. Its own entry, not an Accounting tab, so it survives
-      // the AP/AR pages being slimmed or retired. Open to everyone who has been
-      // set up in Settings — the person holding the invoice is rarely the
-      // person with a finance grant — but never to an account with no modules
-      // (a NULL map is an empty account) and never to an auditor.
-      { id: 'ap-drop', label: 'AP Drop', icon: Inbox, keywords: 'invoice bill drop upload vendor credit memo remittance ap@powder-ops.com finance queue outstanding',
-        visible: (u) => !!u && u.role !== 'auditor' && (u.role === 'admin' || u.module_access != null) },
-      { id: 'accounting', label: 'Accounting', icon: Landmark, anyOf: ['partner-reconciliation', 'reimbursements'], keywords: 'M4 owed reconcile settlement net partner expense reimbursement receipt personal card' },
+      // ONE FINANCE ENTRY. AP Drop was its own nav item while the Accounting
+      // hub still held the AP/AR ledgers it would have been confused with;
+      // with those gone (D-075) the intake belongs beside the other money
+      // screens, and it is the hub's FIRST tab, so Accounting still opens on it
+      // in one click from the sidebar.
+      //
+      // The predicate has to cover BOTH doors, because a nav item carrying
+      // `visible` is added AND removed by its own answer: dropping a finance
+      // PDF is open to anyone set up in Settings (the person holding the
+      // invoice is rarely the person with a finance grant), while the ledgers
+      // are the ordinary module grant — and an auditor still reads the ledgers.
+      { id: 'accounting', label: 'Accounting', icon: Landmark,
+        anyOf: ['ap-drop', 'partner-reconciliation', 'reimbursements'],
+        visible: (u) => !!u && (u.role === 'admin'
+          || (u.role !== 'auditor' && u.module_access != null)
+          || canViewModule(u, 'partner-reconciliation') || canViewModule(u, 'reimbursements')),
+        keywords: 'invoice bill drop upload vendor credit memo remittance ap@powder-ops.com finance queue outstanding M4 owed reconcile settlement net partner expense reimbursement receipt personal card' },
       { id: 'procurement', label: 'Procurement & Demand', icon: PackageSearch, keywords: 'purchase orders PO BOM parts demand planning samples pricing' },
       { id: 'newsletter', label: 'Newsletter', icon: Newspaper, keywords: 'announcements events shoutouts news monthly' },
       { id: 'pay-tracking', label: 'Pay Tracking', icon: BadgeDollarSign, keywords: 'raise increase evaluation rubric wage rate salary review compensation' },
       { id: 'policies', label: 'Policies', icon: BookText, keywords: 'handbook PTO vacation grievance conduct attendance dress code company rules HR' },
-      { id: 'onboarding', label: 'Onboarding', icon: UserPlus2, keywords: 'new hire W4 I9 direct deposit ADP welcome' },
+      { id: 'onboarding', label: 'Onboarding', icon: UserPlus2, keywords: 'new hire W4 I9 W9 direct deposit ADP welcome employee documents sign e-sign signature policy acknowledgement' },
       // Good people to remember for when the timing is right. A small tracker,
       // not a CRM — "who first, then where".
       { id: 'candidates', label: 'People', icon: UserPlus, keywords: 'candidates hiring recruiting applicants contacts referral prospect interview resume bench talent' },
@@ -517,6 +527,12 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges, badgeDetail, 
         })}
       </div>
 
+      {/* Documents the office sent this person to sign — stays here until
+          signed. The modal itself is owned by <SignDocumentHost />.
+          Only on a wide screen: this same <Sidebar> is also the phone drawer,
+          and the phone gets the card on the page instead, so exactly one is
+          on screen at any width. */}
+      <div className="hidden md:block"><DocumentsToSignCard deps={[activeTab]} /></div>
       {(myOut || []).length > 0 && (
         <div className="border-t border-amber-200 bg-amber-50 px-3 py-2">
           <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700 px-1 mb-1">
@@ -1081,6 +1097,12 @@ const HUB_TABS = {
   // (its own nav entry) and stop there. The panels and routers still exist in
   // the tree so this is a hide, not a delete — put a tab back here to revive one.
   accounting: [
+    // FIRST, so clicking Accounting lands on the intake — it is the screen
+    // people open daily, and the one anybody can use. Its own rule, not the
+    // module grant: dropping is open to anyone set up in Settings, never to an
+    // auditor, never to an account with no modules at all.
+    { id: 'ap-drop', label: 'AP Drop', render: (u) => <ApDropPanel user={u} />,
+      visible: (u) => !!u && u.role !== 'auditor' && (u.role === 'admin' || u.module_access != null) },
     { id: 'partner-reconciliation', label: 'Partner Reconciliation', render: (u) => <PartnerReconPanel user={u} /> },
     { id: 'reimbursements', label: 'Reimbursements', render: (u) => <ReimbursementsPanel user={u} /> },
   ],
@@ -1719,7 +1741,9 @@ function App() {
             offline / queued-writes bar. */}
         <OfflineBar />
         <SignaturePrompt />
-        <main className="max-w-3xl mx-auto px-4 py-6">
+        <SignDocumentHost />
+        <main className="max-w-3xl mx-auto px-4 py-6 space-y-4">
+          <DocumentsToSignCard variant="page" />
           <OperatorView />
         </main>
         {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
@@ -1897,7 +1921,9 @@ function App() {
             offline / queued-writes bar. */}
         <OfflineBar />
         <SignaturePrompt />
-        <main className="max-w-3xl mx-auto px-4 py-6">
+        <SignDocumentHost />
+        <main className="max-w-3xl mx-auto px-4 py-6 space-y-4">
+          <DocumentsToSignCard variant="page" />
           <OperatorView />
         </main>
         {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
@@ -1944,8 +1970,12 @@ function App() {
               className="inline-flex items-center gap-2 px-4 py-2.5 bg-powder-600 text-white rounded-lg text-sm font-semibold hover:bg-powder-700">
               <MessageSquare size={16} /> Open Messages
             </button>
+            {/* An account with no modules can still be sent a W-4 to sign. */}
+            <div className="text-left"><DocumentsToSignCard variant="page" /></div>
           </div>
         </main>
+        <SignaturePrompt />
+        <SignDocumentHost />
         <ViewAsBar viewAs={viewAs} onExit={stopViewAs} />
         <UpdateBanner />
       </div>
@@ -2043,6 +2073,7 @@ function App() {
             Directly under the header so it's the first thing on every screen. */}
         <OfflineBar />
         <SignaturePrompt />
+        <SignDocumentHost />
 
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 pb-20 md:pb-6 max-w-7xl w-full mx-auto">
           {resolvedTab === null && (
@@ -2051,6 +2082,12 @@ function App() {
               <p className="text-sm">No modules are enabled for this account.</p>
             </div>
           )}
+          {/* A document waiting on this person's signature. On a wide screen
+              the sidebar carries it; on a phone the sidebar is behind a
+              hamburger, so a card only in there is a card nobody sees — the
+              72-hour re-clean badge again. Hence md:hidden here, so it appears
+              exactly where the sidebar does not. */}
+          <div className="md:hidden mb-4"><DocumentsToSignCard variant="page" deps={[resolvedTab]} /></div>
           {/* What the sidebar badge on this module actually refers to. */}
           <AttentionBar detail={notifications?.badgeDetail?.[resolvedTab]} />
           {/* Each module is its own bundle, fetched the first time its tab is
@@ -2074,7 +2111,6 @@ function App() {
           {resolvedTab === 'procurement' && <ProcurementPanel />}
           {resolvedTab === 'newsletter' && <NewsletterPanel />}
           {resolvedTab === 'policies' && <PoliciesPanel />}
-          {resolvedTab === 'ap-drop' && <ApDropPanel user={user} />}
           {resolvedTab === 'onboarding' && <OnboardingPanel />}
           {resolvedTab === 'candidates' && <CandidatesPanel />}
           {resolvedTab === 'visitors' && <VisitorLogPanel />}

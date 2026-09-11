@@ -2424,3 +2424,78 @@ came back in component state only, hides it on demand or after two minutes, and 
 keys the numbers into RUN, and the trail says she did. A warehouse supervisor holding the same Onboarding grant
 still reads the packet and is refused the reveal before the password is even asked. `verify:onboarding` (98, the
 keyed run) and `verify:onboardingui` (36) cover the door, the refusals, the audit shape and the masking after.
+
+## D-077 · 2026-09-11 · a document sent to somebody who already works here, signed in the app
+
+**Context.** Onboarding covers the packet a NEW hire signs on a link before they have an account. Everything
+after that — a W-4 when somebody's withholding changes, a W-9 for a contractor, a policy people have to
+acknowledge — was paper: print, hand it over, chase it, scan it back, file it in a folder. The office asked
+for two things at once, and they are separable: a way to send a document out for signature, and a place the
+signed copy lives afterwards.
+
+**Decision.** `employee_document_templates` (the PDF kept to send again) and `employee_documents` (one
+document sent to one person), `server/employee-documents.js` (PURE — bytes in, bytes out) and
+`server/api/employee-documents.js`, with the office side as a second tab of **Onboarding** and the
+employee side as a card that follows the person.
+
+- **WHERE IT LIVES IS ONBOARDING, NOT SETTINGS AND NOT PAY TRACKING.** Settings is admin-only at the door
+  and Marnee is office, so a home there is a home she cannot reach. Pay Tracking is about rates, reviews and
+  what somebody earns — a signed policy acknowledgement is not a pay fact and would sit oddly beside one.
+  Onboarding is already "the paperwork that attaches a person to this company", already carries the W-4 and
+  the I-9, and already has exactly the right door: office/HR/admin holding the Onboarding grant.
+- **THE OFFICE DOOR IS THE REVEAL'S DOOR (D-076), NOT THE MODULE GRANT.** A warehouse supervisor holding the
+  Onboarding grant to hand out links must not be able to read the plant's W-4s. The employee door is the
+  opposite: no grant at all, because the person being asked to sign is usually an operator with nothing but
+  Messages, so the router is mounted WITHOUT `requireModuleWrite` (the AP Drop arrangement) and decides per
+  route which door the caller came through.
+- **THE FORM'S OWN BOXES ARE THE FORM.** The PDF's AcroForm fields are read out (labelled from each field's
+  tooltip, so `f1_01[0]` reads as "Step 1(a) First name and middle initial"), answered on screen, written
+  back in and **flattened** — the answers become ink, not editable boxes. A read-only field is never offered
+  and cannot be overwritten by the signer. A PDF with no form is signed as read, which is right for a policy.
+- **THE SIGNATURE IS AN APPENDED PAGE, NOT A STAMP DROPPED ON THE FORM.** Where a signature line sits on an
+  arbitrary PDF is not knowable, and a stamp landing over "Employer's name" is a form nobody can read. The
+  added page carries the drawn signature, the typed name, the time, the address, the device, the statement
+  signed under, and **the SHA-256 of the document as it was sent** — which is what binds the page to the
+  pages in front of it.
+- **THE SAME PASSWORD GATE AS A QA SIGNATURE** (`gateSignature`: 403 `signature_required`, never 401), plus
+  the name on the account and the statement ticked — all checked BEFORE anything is generated or written.
+  The signed file is stored once and never rewritten: a correction is a new request.
+- **A SECRET TYPED INTO THE FORM STAYS IN THE FORM.** A W-4 carries an SSN and the signer types it into the
+  IRS form's own box, exactly as they would on paper. It is not copied into `values_json`, so it is in the
+  signed PDF and nowhere else — no second place to mask, redact or leak from.
+- **THE CARD STAYS UNTIL IT IS SIGNED, AND IT IS WHERE THE PERSON IS.** Sidebar on a wide screen, on the page
+  itself below `md` (the sidebar is behind a hamburger on a phone — a card only in there is the 72-hour
+  re-clean badge again), on the operator-only layout, and on the welcome screen an account with no modules
+  gets. Exactly one is on screen at any width. ReadyBot DMs and pushes on send, every other day while it is
+  unsigned (`employeeDocumentNudges`), and tells the office when it is signed or declined.
+- **DECLINING IS AN ANSWER.** "The name on it is wrong" reaches the office with a reason rather than the
+  document sitting unsigned forever. Withdrawing needs a reason too, and neither is possible after signing.
+- **A template is RETIRED, never deleted** — a signed request points at it, and the copy already signed must
+  go on downloading.
+
+**Consequences.** Marnee uploads the current W-4 once, sends it to four people with a date, and watches the
+four rows. Nothing is printed, nothing is scanned, and "show me what they signed" is a download rather than a
+folder. `check:edocs` (12, pure — fields read, answers flattened, a bad option refused by name) is in
+`npm run check`; `verify:edocs` (62, live) and `verify:edocsui` (25, a real browser at 390px and 1280px,
+signing with a pointer on the canvas) are in `verify:all`. **Not claimed:** that this is a qualified or
+digital-certificate signature. It is an electronic signature with an audit record — name, intent, time,
+address, password-verified identity — which is what ESIGN and UETA describe, and what the plant's own QA
+signatures already rest on.
+
+## D-078 · 2026-09-11 · AP Drop moves into Accounting, and lands there
+
+**Context.** AP Drop got its own nav entry (D-073) "so it survives the AP/AR pages being slimmed". Twelve
+days later those pages were hidden (D-075), and the reason for keeping the intake at arm's length went with
+them: there is no longer a second, confusable place bills could go.
+
+**Decision.** AP Drop is the **first tab of the Accounting hub**, so clicking Accounting opens on it — still
+one click from the sidebar, now beside Partner Reconciliation and Reimbursements instead of above them.
+The standalone nav entry is gone. The hub's own tab carries AP Drop's rule rather than the module grant
+(anyone set up in Settings, never an auditor, never a NULL map), and the Accounting nav item's `visible`
+predicate has to cover BOTH that and the ledger grants — a nav item carrying `visible` is added AND removed
+by its own answer, so a predicate naming only one door would hide Accounting from whoever holds the other.
+
+**Consequences.** One finance entry in the sidebar. `?tab=ap-drop` still resolves through `HUB_OF`, so every
+existing deep link, quick-tab pick and Settings grant keeps working. Asserted in a real browser
+(`verify:edocsui`): AP Drop is the first tab, it is the tab that is open, the other two are beside it, and
+there is no longer a second sidebar entry.

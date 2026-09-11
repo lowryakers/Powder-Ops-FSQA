@@ -65,6 +65,7 @@ import { seedCandidates } from './server/candidates-seed.js';
 import reimbursementRoutes from './server/api/reimbursements.js';
 import bankingRoutes from './server/api/banking.js';
 import apDropRoutes from './server/api/ap-drop.js';
+import employeeDocumentRoutes, { employeeDocumentNudges } from './server/api/employee-documents.js';
 import activityRoutes from './server/api/activity.js';
 import qmsRoutes, { importCsv as importQmsCsv } from './server/api/qms.js';
 import { getType as getQmsType, MAINTENANCE_ITEM_GROUPS } from './server/qms-config.js';
@@ -1879,6 +1880,11 @@ app.use('/api/banking', requireModuleWrite('banking'), bankingRoutes);
 // queue is checked inside the router (admin, the ap-drop edit grant, or an
 // office/admin supervisor); everyone else reads only their own drops.
 app.use('/api/ap-drop', apDropRoutes);
+// Documents sent to an existing employee to sign (W-4, W-9, a policy). Mounted
+// WITHOUT the module guard: the person signing is usually an operator with no
+// modules at all, and the router decides per route who is the employee and who
+// is the office (see server/api/employee-documents.js).
+app.use('/api/employee-documents', employeeDocumentRoutes);
 app.use('/api/activity', activityRoutes);
 app.use('/api/org', requireModuleWrite('org-chart'), orgRoutes);
 app.use('/api/disposals', requireModuleWrite('disposals'), disposalRoutes);
@@ -2024,7 +2030,7 @@ server.listen(PORT, '0.0.0.0', () => {
   backfillInvoiceText().catch(e => console.warn('[invoices] backfill error:', e.message));
   backfillFinanceFileText().catch(e => console.warn('[finance] backfill error:', e.message));
   // Recurring jobs: Friday auto-backup to R2, Monday expiry digest to #quality.
-  startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges, qaActionNudges, partnerReminderNudges, recordBackfillNudge, supplierReviewNudge, sendFlashReport });
+  startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges, qaActionNudges, employeeDocumentNudges, partnerReminderNudges, recordBackfillNudge, supplierReviewNudge, sendFlashReport });
   startReminderLoop(db);
   // Generate any due document-review tasks on startup (idempotent; also runs on
   // every operator-tasks fetch).

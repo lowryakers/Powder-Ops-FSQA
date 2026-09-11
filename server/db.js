@@ -2771,6 +2771,63 @@ function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_onboarding_files ON onboarding_files(onboarding_id);
   `);
 
+  // ── Employee documents: sent to a person who already has an account, signed
+  // on screen, kept against that person ─────────────────────────────────────
+  // A W-4 for a withholding change, a W-9, a policy acknowledgement: the office
+  // sends a PDF, the employee fills its fields and draws their signature in
+  // the app, and the signed copy is filed here. Onboarding covers the packet a
+  // NEW hire signs before they have an account; this is everything after.
+  //
+  // A template is the PDF the office keeps to send again (the blank W-4). A
+  // request is one document sent to one person. The signed file is stored
+  // beside the request and never rewritten; a correction is a new request.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS employee_document_templates (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'other',      -- w4 | w9 | i9 | policy | other
+      instructions TEXT,
+      storage_key TEXT NOT NULL,
+      filename TEXT,
+      content_type TEXT,
+      size INTEGER,
+      sha256 TEXT,
+      field_count INTEGER DEFAULT 0,           -- fillable fields the PDF carries
+      one_off INTEGER NOT NULL DEFAULT 0,      -- uploaded for a single send; not offered again
+      uploaded_by TEXT,
+      uploaded_at TEXT NOT NULL DEFAULT (datetime('now')),
+      retired_at TEXT, retired_by TEXT
+    );
+    CREATE TABLE IF NOT EXISTS employee_documents (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,                   -- the employee it was sent to
+      template_id TEXT,
+      title TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'other',
+      instructions TEXT,
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending','signed','declined','cancelled')),
+      due_date TEXT,
+      sent_by TEXT, sent_by_id TEXT,
+      sent_at TEXT NOT NULL DEFAULT (datetime('now')),
+      opened_at TEXT,
+      last_nudge_at TEXT,
+      values_json TEXT,                        -- the field answers as filled (no secrets are asked here)
+      signature TEXT,                          -- {name, at, ip, ua, attestation, verified}
+      signature_image TEXT,                    -- the drawn PNG, data URL
+      signed_at TEXT,
+      signed_key TEXT, signed_filename TEXT, signed_size INTEGER, signed_sha256 TEXT,
+      source_sha256 TEXT,                      -- the PDF as sent, so a swap is detectable
+      declined_reason TEXT, declined_at TEXT,
+      cancelled_reason TEXT, cancelled_at TEXT, cancelled_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (template_id) REFERENCES employee_document_templates(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_employee_documents_user ON employee_documents(user_id, status);
+    CREATE INDEX IF NOT EXISTS idx_employee_documents_status ON employee_documents(status, sent_at DESC);
+  `);
+
   // ── Product management ────────────────────────────────────────────────────
   // The finished-goods catalogue: what we sell, its codes, and the film it
   // prints on. Distinct from coa_specifications, which covers raw materials

@@ -991,6 +991,44 @@ by the kiosk isolation verification. Each poster now carries a key in its URL (`
 - **The visitor sign-out look-up is rate-limited to 30/minute per address.** The 676-request alphabet sweep
   that surfaced every on-site name is now impractical; a visitor typing their own name never notices.
 
+## Employee documents: sent to somebody who already works here, signed in the app (D-077)
+`employee_document_templates` + `employee_documents` (db.js), `server/employee-documents.js` (PURE — bytes in,
+bytes out), `server/api/employee-documents.js`, `EmployeeDocumentsTab.jsx` (the **Employee documents** tab of
+Onboarding) and `common/DocumentsToSign.jsx` (the card the employee sees and the screen they sign on).
+Onboarding is the packet a NEW hire signs on a link; this is a W-4, a W-9 or a policy sent to an account.
+- **HOME IS ONBOARDING, not Settings (admin-only at the door, so Marnee cannot reach it) and not Pay Tracking
+  (that is rates and reviews; a signed policy is not a pay fact).**
+- **TWO DOORS.** Office = `canManage` — admin, or the Onboarding grant held in office/HR/admin, **the reveal's
+  door (D-076)**, so a warehouse supervisor with the same grant is refused. Employee = no grant at all, so the
+  router is mounted WITHOUT `requireModuleWrite` (the AP Drop arrangement) and decides per route.
+- **THE PDF'S OWN BOXES ARE THE FORM.** `readFields` reads the AcroForm and labels each field from its `/TU`
+  tooltip (`f1_01[0]` → "Step 1(a) First name and middle initial"); the answers are written back and the form
+  **flattened**, so they are ink, not editable boxes. A read-only field is never offered and cannot be
+  overwritten. No AcroForm ⇒ signed as read, which is right for a policy.
+- **THE SIGNATURE IS AN APPENDED PAGE, never a stamp on the form** — the signature line's position on an
+  arbitrary PDF is unknowable and a stamp over "Employer's name" ruins the document. The page carries the drawn
+  signature, the typed name, time, address, device, the statement, and **the SHA-256 of the document as sent**.
+- **`gateSignature` — the QA-signature password gate** (403 `signature_required`, never 401), plus the name on
+  the account and the attestation ticked, ALL checked before anything is generated. Signed once, never
+  rewritten; a correction is a new request. Signed ⇒ cannot re-sign, cannot withdraw.
+- **A SECRET TYPED INTO THE FORM STAYS IN THE FORM.** An SSN typed into the W-4's own box is flattened into the
+  signed PDF and deliberately NOT copied into `values_json` (`SECRET_LABEL`) — no second place to mask.
+- **The card is where the person is**: sidebar above `md`, on the page below it (the sidebar is behind a
+  hamburger on a phone — the 72-hour re-clean badge again), the operator-only layout, and the no-modules
+  welcome screen. Exactly one visible at any width. ReadyBot DMs on send, every other day while unsigned
+  (`employeeDocumentNudges`), and tells the office on signed or declined.
+- Declining needs a reason and reaches the office; withdrawing needs one too. A template is **retired, never
+  deleted** — a signed request points at it.
+- Verified: `check:edocs` (12, pure), `verify:edocs` (62 live), `verify:edocsui` (25 in a browser at 390 and
+  1280, signing with a real pointer on the canvas).
+
+## AP Drop is the Accounting hub's first tab (D-078)
+It had its own nav entry only while the AP/AR ledgers it could be confused with were still there; those are
+hidden (D-075), so the intake sits with the other money screens and **Accounting opens on it**. The hub tab
+carries AP Drop's own rule (anyone set up in Settings, never an auditor, never a NULL map) rather than a module
+grant, and the Accounting nav item's `visible` predicate must cover BOTH that and the ledger grants — a nav
+item with `visible` is added AND removed by its own answer. `?tab=ap-drop` still resolves through `HUB_OF`.
+
 ## People (the candidate tracker) — `server/api/candidates.js` + `CandidatesPanel.jsx`
 Marnee's Monday board of people worth hiring one day. **"Who first, then where"** — a list of PEOPLE, not
 of vacancies. The plant hires rarely and has low turnover, so the asset is the memory of somebody good and

@@ -6,6 +6,9 @@ import {
 import { formatDateTime } from '../../lib/datetime.js';
 import { withSignature } from '../../lib/signature.js';
 import { downloadFile } from '../../lib/downloadFile.js';
+import ModuleTabs from '../common/ModuleTabs.jsx';
+import { useModuleTabs } from '../../lib/useModuleTabs.js';
+import EmployeeDocumentsTab from './EmployeeDocumentsTab.jsx';
 
 /**
  * Office side of new-hire onboarding: start one, hand out the magic link,
@@ -445,7 +448,35 @@ function Row({ r, attestations, storageEnabled, onAction }) {
   );
 }
 
+// Two tabs, one door. New hires sign their packet on a link before they have
+// an account; everything a person signs AFTER that — a W-4 for a withholding
+// change, a W-9, a policy — is sent to their account and filed under Employee
+// documents. Same office, same grant, one place to look for what somebody
+// signed.
+const ONBOARDING_TABS = [
+  { id: 'hires', label: 'New hires' },
+  { id: 'documents', label: 'Employee documents' },
+];
+
 export default function OnboardingPanel() {
+  const { tab, setTab } = useModuleTabs({ id: 'onboarding', tabs: ONBOARDING_TABS, user: null, initial: 'hires' });
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-xl font-bold text-gray-900">Onboarding</h2>
+        <p className="text-sm text-gray-500">
+          {tab === 'documents'
+            ? 'Send a document to somebody who already has an account — a W-4, a W-9, a policy — to fill in and sign on screen. The signed copy is kept here against their name.'
+            : 'Start a new hire, send them their link, review the signed W-4 and I-9, complete Section 2, land it in ADP.'}
+        </p>
+      </div>
+      <ModuleTabs value={tab} onChange={setTab} tabs={ONBOARDING_TABS} />
+      {tab === 'documents' ? <EmployeeDocumentsTab /> : <NewHires />}
+    </div>
+  );
+}
+
+function NewHires() {
   const { data, refresh } = useApiGet('/onboarding');
   const [link, setLink] = useState('');
   const records = data?.records || [];
@@ -455,13 +486,12 @@ export default function OnboardingPanel() {
   };
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-xl font-bold text-gray-900">Onboarding</h2>
-        <p className="text-sm text-gray-500">Start a new hire, send them their link, review the signed W-4 and I-9, complete Section 2, land it in ADP.
-          {data && !data.adp_ready && ' ADP is not connected yet — packets are keyed into RUN from here (Settings → Integrations).'}
-          {data && !data.sensitive_collection && ' The encryption key is not set, so the wizard is not asking for SSN or bank details.'}
+      {data && (!data.adp_ready || !data.sensitive_collection) && (
+        <p className="text-sm text-gray-500">
+          {!data.adp_ready && 'ADP is not connected yet — packets are keyed into RUN from here (Settings → Integrations). '}
+          {!data.sensitive_collection && 'The encryption key is not set, so the wizard is not asking for SSN or bank details.'}
         </p>
-      </div>
+      )}
       {link && <LinkStrip link={link} onDismiss={() => setLink('')} />}
       <StartForm onSaved={(r) => { setLink(r.link); refresh(); }} />
       <div className="space-y-2">
