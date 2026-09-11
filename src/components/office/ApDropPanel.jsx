@@ -10,7 +10,7 @@ import { pdfViewerUrl } from '../../lib/pdfUrl';
 import FilePreview from '../FilePreview';
 import TextCell from '../common/TextCell.jsx';
 import PhotoPicker from '../common/PhotoPicker.jsx';
-import { Inbox, Upload, FileText, X, Search, RefreshCw, ExternalLink, AlertTriangle, Copy, Mail } from 'lucide-react';
+import { Inbox, Upload, FileText, X, Search, RefreshCw, ExternalLink, AlertTriangle, Copy, Mail, Handshake } from 'lucide-react';
 
 // AP Drop — hand in a finance PDF, and the queue the office works it through.
 //
@@ -45,6 +45,19 @@ const StatusChip = ({ status }) => (
     {STATUS_LABEL[status] || status}
   </span>
 );
+
+// A drop the reader routed to the partner ledger, or asked about. The chip
+// reads off `partner_route`, the detector's own verdict, so the queue says what
+// was decided rather than re-deciding.
+const PartnerChip = ({ r }) => {
+  if (r.partner_document_id) {
+    return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200" title={`On the partner ledger as a draft (${r.partner_route?.direction || 'payable'})`} data-ap-partner-chip="routed" data-row-id={r.id}><Handshake size={11} /> {r.partner_route?.partner?.name || 'Partner'}</span>;
+  }
+  if (r.partner_route?.confidence === 'low') {
+    return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200" title={r.partner_route.reason} data-ap-partner-chip="uncertain"><Handshake size={11} /> {r.partner_route?.partner?.name || 'Partner'}?</span>;
+  }
+  return null;
+};
 
 export default function ApDropPanel({ user }) {
   const { data: meta, refresh: refreshMeta } = useApiGet('/ap-drop/meta');
@@ -269,6 +282,7 @@ function DropTable({ rows, onOpen, compact, canWork }) {
           <li key={r.id} onClick={() => onOpen(r.id)} className="p-3 cursor-pointer hover:bg-gray-50">
             <div className="flex items-center gap-2">
               <span className="font-medium text-gray-900 truncate flex-1">{r.vendor_name || <span className="text-gray-400">Vendor not read</span>}</span>
+              <PartnerChip r={r} />
               <StatusChip status={r.status} />
             </div>
             <div className="text-sm text-gray-600 flex flex-wrap gap-x-3 mt-1">
@@ -298,7 +312,7 @@ function DropTable({ rows, onOpen, compact, canWork }) {
             <tr key={r.id} onClick={() => onOpen(r.id)} className="cursor-pointer hover:bg-gray-50" data-ap-row={r.id}>
               <td className="px-3 py-2 whitespace-nowrap text-gray-600">{formatDateTime(r.created_at)}</td>
               <td className="px-3 py-2 whitespace-nowrap">{r.submitter}</td>
-              <td className="px-3 py-2">{r.vendor_name || <span className="text-gray-400 italic">not read</span>}</td>
+              <td className="px-3 py-2"><span className="inline-flex items-center gap-1.5 flex-wrap">{r.vendor_name || <span className="text-gray-400 italic">not read</span>}<PartnerChip r={r} /></span></td>
               <td className="px-3 py-2 whitespace-nowrap">{r.invoice_number || '—'}</td>
               <td className="px-3 py-2 text-right whitespace-nowrap tabular-nums">{money(r.amount, r.currency)}</td>
               <td className={`px-3 py-2 whitespace-nowrap ${r.overdue ? 'text-red-600 font-medium' : ''}`}>{formatDate(r.due_date)}{r.overdue ? ' ⚠' : ''}</td>
@@ -384,6 +398,12 @@ function DrawerBody({ d, canWork, compact, refresh, onChanged, onPreview }) {
     setBusy(true); setErr('');
     try { await apiFetch(`/ap-drop/${id}/reparse`, { method: 'POST' }); refresh(); onChanged(); } catch (ex) { setErr(ex.message); } finally { setBusy(false); }
   };
+  const routePartner = async () => {
+    setBusy(true); setErr('');
+    try { await apiPost(`/ap-drop/${id}/route-partner`, {}); refresh(); onChanged(); } catch (ex) { setErr(ex.message); } finally { setBusy(false); }
+  };
+  const openLedger = () => window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab: 'partner-reconciliation' } }));
+  const route = d.partner_route;
 
   const isPdf = PDF_RE.test(d.filename || '');
   const isImg = IMG_RE.test(d.filename || '');
@@ -396,6 +416,40 @@ function DrawerBody({ d, canWork, compact, refresh, onChanged, onPreview }) {
               <div className="p-3 rounded-lg bg-orange-50 border border-orange-200 text-sm text-orange-900 flex items-start gap-2" data-ap-dup>
                 <Copy size={16} className="shrink-0 mt-0.5" />
                 <div>Same file as a drop from {formatDateTime(d.duplicate_of.created_at)} by {d.duplicate_of.submitter} (now <StatusChip status={d.duplicate_of.status} />). If it is the same bill, close this one as a duplicate; if not, move it on.</div>
+              </div>
+            )}
+            {/* ONE DROP → SCAN → ROUTE. The reader recognised a reconciliation
+                partner and the same file is now a DRAFT on that ledger; the
+                drop stays here and says which document it became. A partner
+                mentioned only in the body is a question, answered here. */}
+            {d.partner_document && (
+              <div className="p-3 rounded-lg bg-indigo-50 border border-indigo-200 text-sm text-indigo-900 flex items-start gap-2" data-ap-partner="routed">
+                <Handshake size={16} className="shrink-0 mt-0.5" />
+                <div className="min-w-0 flex-1">
+                  <div>
+                    On the <strong>{d.partner_document.partner_name}</strong> reconciliation ledger as a{' '}
+                    <strong>{d.partner_document.status}</strong> {d.partner_document.direction === 'receivable' ? 'receivable (they owe it)' : 'payable (we owe it)'}
+                    {d.partner_document.doc_number ? <> · #{d.partner_document.doc_number}</> : null} · {money(d.partner_document.amount)}.
+                  </div>
+                  {route && <div className="text-xs text-indigo-700 mt-1">{route.forced ? 'Routed by the office.' : route.reason} {route.direction_reason || ''}</div>}
+                  <div className="text-xs text-indigo-700 mt-1">Approving it as final, disputing or settling happens on the ledger, not here.</div>
+                  <button type="button" onClick={openLedger} className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-indigo-700 hover:underline"><ExternalLink size={12} /> Open Partner Reconciliation</button>
+                </div>
+              </div>
+            )}
+            {!d.partner_document && route?.confidence === 'low' && (
+              <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-900 flex items-start gap-2" data-ap-partner="uncertain">
+                <Handshake size={16} className="shrink-0 mt-0.5" />
+                <div className="min-w-0 flex-1">
+                  <div><strong>{route.partner?.name || 'Partner'} partner?</strong> {route.reason}</div>
+                  {canWork ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <button type="button" onClick={routePartner} disabled={busy} data-ap-route-yes
+                        className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-medium hover:bg-amber-700 disabled:opacity-50">Yes — put it on the {route.partner?.name || 'partner'} ledger as a draft</button>
+                      <span className="text-xs text-amber-800">Not theirs? Move the status on below.</span>
+                    </div>
+                  ) : <div className="text-xs text-amber-800 mt-1">The office will decide.</div>}
+                </div>
               </div>
             )}
 
@@ -425,6 +479,9 @@ function DrawerBody({ d, canWork, compact, refresh, onChanged, onPreview }) {
                 <h3 className="text-sm font-semibold text-gray-800">What was read off the document</h3>
                 {d.parse_status === 'failed' && <span className="text-xs text-red-600 flex items-center gap-1"><AlertTriangle size={12} /> nothing readable — a scan with no text layer, most likely</span>}
                 {canWork && <button type="button" onClick={reparse} disabled={busy} className="ml-auto text-xs text-powder-700 flex items-center gap-1"><RefreshCw size={12} /> Re-read (fills blanks only)</button>}
+                {canWork && !d.partner_document && route?.confidence !== 'low' && (
+                  <button type="button" onClick={routePartner} disabled={busy} data-ap-route-hand className="text-xs text-indigo-700 flex items-center gap-1" title="Put this drop on the partner reconciliation ledger as a draft"><Handshake size={12} /> Route to partner ledger</button>
+                )}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {FIELD_DEFS.map(([key, label, evKey, kind]) => {
@@ -520,6 +577,8 @@ function describeEvent(e) {
     case 'status_changed': return `moved it ${STATUS_LABEL[dt.from] || dt.from} → ${STATUS_LABEL[dt.to] || dt.to}${dt.reason ? `: ${dt.reason}` : ''}`;
     case 'note': return `noted: ${dt.text}`;
     case 'duplicate_dropped': return 'dropped the same file again (linked)';
+    case 'routed_partner': return `${dt.forced ? 'routed' : '— reader routed'} it to the ${dt.partner} ledger as a ${dt.direction} draft${dt.created ? '' : ` (linked the document already there — ${dt.linked_how})`}${dt.matched_text ? `; matched "${dt.matched_text}"` : ''}`;
+    case 'partner_uncertain': return `— reader asked: ${dt.partner} partner? ${dt.reason || ''}`;
     default: return e.kind;
   }
 }

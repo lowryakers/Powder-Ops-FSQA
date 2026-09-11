@@ -81,7 +81,6 @@ const SupplyOrdersPanel = lazy(() => import('./components/office/SupplyOrdersPan
 const TimeTrackingPanel = lazy(() => import('./components/office/TimeTrackingPanel.jsx'));
 const CheckedOutPanel = lazy(() => import('./components/compliance/CheckedOutPanel.jsx'));
 const OfficeRequestsPanel = lazy(() => import('./components/office/OfficeRequestsPanel.jsx'));
-const LedgerPanel = lazy(() => import('./components/office/LedgerPanel.jsx'));
 const ProcurementPanel = lazy(() => import('./components/office/ProcurementPanel.jsx'));
 const NewsletterPanel = lazy(() => import('./components/office/NewsletterPanel.jsx'));
 const PoliciesPanel = lazy(() => import('./components/office/PoliciesPanel.jsx'));
@@ -96,9 +95,7 @@ const LogBuilderStudio = lazy(() => import('./components/compliance/LogBuilderSt
 const PayTrackingPanel = lazy(() => import('./components/office/PayTrackingPanel.jsx'));
 const PartnerReconPanel = lazy(() => import('./components/office/PartnerReconPanel.jsx'));
 const ReimbursementsPanel = lazy(() => import('./components/office/ReimbursementsPanel.jsx'));
-const BankingPanel = lazy(() => import('./components/office/BankingPanel.jsx'));
 const ApDropPanel = lazy(() => import('./components/office/ApDropPanel.jsx'));
-const QuickBooksPanel = lazy(() => import('./components/office/QuickBooksPanel.jsx'));
 const PartnerPortalPage = lazy(() => import('./components/office/PartnerPortalPage.jsx'));
 const SupplierQuestionnairePage = lazy(() => import('./components/SupplierQuestionnairePage.jsx'));
 
@@ -253,7 +250,7 @@ const NAV_GROUPS = [
       // (a NULL map is an empty account) and never to an auditor.
       { id: 'ap-drop', label: 'AP Drop', icon: Inbox, keywords: 'invoice bill drop upload vendor credit memo remittance ap@powder-ops.com finance queue outstanding',
         visible: (u) => !!u && u.role !== 'auditor' && (u.role === 'admin' || u.module_access != null) },
-      { id: 'accounting', label: 'Accounting', icon: Landmark, anyOf: ['accounts-payable', 'accounts-receivable', 'partner-reconciliation', 'reimbursements', 'banking'], keywords: 'AP AR bills vendors customers invoices owed reconcile settlement M4 net expense reimbursement receipt personal card bank statement balance' },
+      { id: 'accounting', label: 'Accounting', icon: Landmark, anyOf: ['partner-reconciliation', 'reimbursements'], keywords: 'M4 owed reconcile settlement net partner expense reimbursement receipt personal card' },
       { id: 'procurement', label: 'Procurement & Demand', icon: PackageSearch, keywords: 'purchase orders PO BOM parts demand planning samples pricing' },
       { id: 'newsletter', label: 'Newsletter', icon: Newspaper, keywords: 'announcements events shoutouts news monthly' },
       { id: 'pay-tracking', label: 'Pay Tracking', icon: BadgeDollarSign, keywords: 'raise increase evaluation rubric wage rate salary review compensation' },
@@ -1077,22 +1074,15 @@ const HUB_TABS = {
     { id: 'maintenance-signout', label: 'Equipment, Tools & Chemicals', render: () => <QMSRecordsPanel recordType="maintenance_sign_out" moduleId="maintenance-signout" /> },
     { id: 'knife-accountability', label: 'Knives & Blades', render: () => <KnifePanel /> },
   ],
-  // Money in, money out, and what's owed net between us and a trading partner.
-  // Reconciliation is a tab rather than its own module because it is read
-  // against the same ledgers — someone checking the M4 number wants the AP and
-  // AR rows a click away, not a screen away.
+  // What is owed net between us and a trading partner, and personal-card
+  // spend. THE AP / AR LEDGER, BANKING AND QUICKBOOKS TABS ARE GONE (D-075,
+  // 2026-09-11): they duplicated QuickBooks, which stays the book of record,
+  // and nothing in ReadyDoc feeds them any more. Bills come in through AP Drop
+  // (its own nav entry) and stop there. The panels and routers still exist in
+  // the tree so this is a hide, not a delete — put a tab back here to revive one.
   accounting: [
-    { id: 'accounts-payable', label: 'Accounts Payable', render: () => <LedgerPanel ledger="ap" /> },
-    { id: 'accounts-receivable', label: 'Accounts Receivable', render: () => <LedgerPanel ledger="ar" /> },
     { id: 'partner-reconciliation', label: 'Partner Reconciliation', render: (u) => <PartnerReconPanel user={u} /> },
     { id: 'reimbursements', label: 'Reimbursements', render: (u) => <ReimbursementsPanel user={u} /> },
-    { id: 'banking', label: 'Banking', render: (u) => <BankingPanel user={u} /> },
-    // Admin-only, and only worth a tab while QuickBooks is still the system of
-    // record — the whole point is to get the books out of it.
-    {
-      id: 'quickbooks', label: 'QuickBooks', visible: (u) => u?.role === 'admin',
-      render: (u) => <QuickBooksPanel user={u} />,
-    },
   ],
   'quality-events': [
     { id: 'deviations', label: 'Deviations', render: () => <QMSRecordsPanel recordType="deviation" moduleId="deviations" /> },

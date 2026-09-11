@@ -9,12 +9,12 @@ more; it is a description of what exists so the process can be decided around it
 | Screen | What it holds | Who uses it | Since |
 |---|---|---|---|
 | **AP Drop** (own nav entry) | Every finance PDF or photo anybody hands in — vendor invoice, credit memo, remittance, M4 invoice pack. The queue the office works it through. | Anyone drops. The office (admin, office supervisors, or the *AP Drop → Edit* grant) works the queue. | 10 Sep |
-| **Accounting → Accounts Payable** | One row per vendor bill: vendor, invoice #, PO, dates, amount, paid, status (draft → awaiting approval → approved → scheduled → paid / void). Files attached and searchable inside. | Jake / office. Grant `accounts-payable`. | Aug |
-| **Accounting → Accounts Receivable** | One row per customer invoice: customer, invoice #, CO #, amount, received, status (unbilled → sent → partial → paid / void). | Office. Grant `accounts-receivable`. | Aug |
+| ~~Accounting → Accounts Payable~~ | **Hidden 11 Sep (decision 1, settled).** It duplicated QuickBooks. The table and screen still exist in the code behind no tab. | — | Aug–11 Sep |
+| ~~Accounting → Accounts Receivable~~ | **Hidden 11 Sep**, same reason. | — | Aug–11 Sep |
 | **Accounting → Partner Reconciliation** | The M4 Dynamics netting: one ledger, both directions, one number both companies settle against. M4 sees it on a public link (`/partner/<token>`) and can upload their own documents as drafts and raise disputes — never approve, settle or void. | Office; M4 by link. | Aug |
 | **Accounting → Reimbursements** | Personal-card spend: photograph the receipt, say what it was, the office approves and marks it paid in a payroll run. | Everyone files their own; office decides. | Aug |
-| **Accounting → Banking** | Bank accounts, statement import (CSV / OFX), matching lines to AP/AR, closing a month only when the difference is zero and nothing is unexplained. | Office / admin. Grant `banking`. | Aug |
-| **Accounting → QuickBooks** (admin) | The read-only bridge: a live API sync *when configured*, and the report-export importers that loaded the books without it. | Admin. | Aug |
+| ~~Accounting → Banking~~ | **Hidden 11 Sep.** Bank reconciliation is QuickBooks' job, and this matched against the ledgers being retired. | — | Aug–11 Sep |
+| ~~Accounting → QuickBooks~~ | **Hidden 11 Sep.** No sync and no report import into ReadyDoc any more; QuickBooks stays the book of record. | — | Aug–11 Sep |
 | **Supply Orders** (Office) | Purchasing for the office: orders, partial receipts by quantity, invoices with the total read off the PDF and the line it came from. | Marnee / office. | Aug, extended 31 Aug |
 
 Three things that are *not* accounting but touch it: **Receiving** (goods in, inspection # and PO on every
@@ -23,6 +23,16 @@ invoices arrive as vendor bills like any other).
 
 ## 2. What shipped recently
 
+- **11 Sep — One drop, scanned, routed.** An M4 document dropped into AP Drop is recognised (vendor,
+  bill-to, what the submitter typed, or the filename) and becomes a **draft** on the Partner Reconciliation
+  ledger with its own copy of the file. The drop stays in the queue with an M4 chip and names the ledger
+  document. A document that only *mentions* M4 in its text is parked as `needs info` "M4 Dynamics partner?"
+  and the office answers with one button. The same file twice, or the same number and amount already on the
+  ledger, links the existing document rather than filing a second. Nothing is approved, settled or voided
+  by this; that stays on the ledger. Jake's re-keying step is gone.
+- **11 Sep — The ledger tabs are hidden.** Accounts Payable, Accounts Receivable, Banking and QuickBooks
+  are off the Accounting hub, their grants off Settings, and the QuickBooks / Plaid rows off Integrations.
+  Nothing pulls from QuickBooks into ReadyDoc any more. The code stays; putting a tab back is one line.
 - **10 Sep — AP Drop.** One intake for every finance document, from anyone, with a queue and statuses
   (`new → triaged → matched → in QuickBooks → in payment run → paid / closed`, plus `needs info`,
   `possible duplicate`, `not finance` — each of those three requires a reason). The file is stored and
@@ -53,13 +63,18 @@ invoices arrive as vendor bills like any other).
 5. It goes into a **payment run**, then `paid`. The drop is closed; the file, the activity log and every
    status change stay as the record.
 
-Today the AP *ledger* (Accounts Payable tab) is a separate table populated from QuickBooks exports and
-by hand. **AP Drop does not create an AP ledger row.** Whether it should — or whether the ledger goes —
-is decision 1 below.
+**AP Drop is where it stops.** There is no AP ledger row and no QuickBooks bill created from ReadyDoc;
+the bill is entered in QuickBooks outside, and its id is written back onto the drop.
 
-**A customer invoice (AR).** Raised outside ReadyDoc (QuickBooks / Shopify / M4 pack); recorded on the AR
-tab by hand or by import; marked sent → partial → paid as money lands; matched from the bank statement in
-Banking. An M4 invoice is instead a document on the Partner ledger, where it nets.
+**An M4 document (either direction).** Dropped like any other → the reader recognises M4 on the vendor or
+bill-to line, in what was typed, or in the filename → a **draft** is filed on the Partner Reconciliation
+ledger with the same file (payable when M4 billed us, receivable when we billed them) → the drop stays on
+the queue and says which ledger document it became → on the ledger the office approves it as final when the
+work behind it happened, disputes it, or lets it net. A mention of M4 in the text alone asks "M4 partner?"
+on the queue instead of filing anything.
+
+**A customer invoice (AR).** Raised and collected outside ReadyDoc (QuickBooks / Shopify). The AR tab is
+hidden; an M4 invoice is a document on the Partner ledger, where it nets.
 
 **The M4 netting (monthly).** Both companies' invoices go on one ledger (`receivable` = they owe us,
 `payable` = we owe them). A document counts only once it is approved as **final**; a **dispute** takes one
@@ -69,20 +84,16 @@ report of everything left out and why. **Settling** freezes the exact set of doc
 **A reimbursement.** Photograph the receipt → say what it was → office approves → paid in a payroll run
 with the period and reference stamped. A missing receipt never blocks the claim; it shows amber until added.
 
-**Bank reconciliation (monthly).** Import the statement → lines auto-match to AP/AR only when the amount
-*and* a second identifier agree (vendor or invoice # in the description) → everything else is matched or
-explained by hand ("bank fee") → the period closes only at a zero difference with nothing unexplained.
-Closed periods are frozen; reopening needs an admin, a reason, and newest-first.
+**Bank reconciliation.** Done in QuickBooks. ReadyDoc's Banking tab is hidden.
 
 ## 4. QuickBooks — what is and is not connected
 
 | Thing | State | Notes |
 |---|---|---|
-| **Live API sync** | **Not connected.** | Built and tested against a stand-in company; read-only by construction (there is no code that writes to QuickBooks). Needs the four `QBO_*` credentials on the server, which means an Intuit app that passed review. |
-| **Intuit app review** | **Rejected once, on relevance.** | A description problem, not an app problem — the resubmission wording is drafted in `docs/quickbooks-app-assessment.md`. |
-| **Report-export imports** | **Working; used once.** | 164 accounts, 370 vendors, 31 customers, 737 bills, 160 invoices back to 2022 loaded from QuickBooks' own reports. AP matched the aging report to the cent ($112,012.56 open across 5 bills). Re-running is idempotent. |
+| **Live API sync** | **Not connected, and no longer offered.** | Decided 11 Sep: nothing pulls from QuickBooks into ReadyDoc. The code exists with no door; the Intuit app review is moot. |
+| **Report-export imports** | **Withdrawn 11 Sep.** | Used once in August (the books to 2022 loaded to the cent). The importer code stays; the QuickBooks tab that offered it is hidden. |
 | **Writes to QuickBooks** | **None, by design.** | AP Drop stores `qbo_bill_id` / `external_ref` when the Controller links one. No bill, payment or journal is ever created from ReadyDoc. |
-| **Bank feed (Plaid)** | **Not connected.** | Statement import works without it and is the intended path until decided otherwise. |
+| **Bank feed (Plaid)** | **Not connected; Banking hidden.** | Bank reconciliation stays in QuickBooks. |
 | **MRPEasy → QuickBooks journal feed** | **Dead since 30 April 2026.** | 568 of the 592 journal entries since 2022 were MRPEasy's inventory/WIP/COGS postings. Nothing has posted them since. The plant is moving to Keychain. |
 | **`ap@powder-ops.com`** | **Not read by ReadyDoc.** | AP Drop records `source = email` for a row that came that way, but nothing ingests the mailbox yet. Somebody forwards or drops. |
 
@@ -96,27 +107,23 @@ stops exactly here until the accountant's four questions are answered.
 |---|---|
 | Drop a finance document, see their own drops | Anyone set up in Settings |
 | Work the AP Drop queue (statuses, corrections, `not finance`) | Admins, office/admin supervisors, or the `AP Drop → Edit` grant ("the finance flag") |
-| Read / edit the AP and AR ledgers | The `accounts-payable` / `accounts-receivable` grants (view or edit) |
+| Answer "M4 partner?" on a drop, or route a drop to the ledger by hand | The same people who work the queue |
 | Approve a partner document as final, settle a period, issue an M4 link | Admins and office supervisors only |
 | Approve and pay reimbursements | Admins and office supervisors only |
-| Match bank lines, close a period | Admins and office supervisors; reopening is admin-only with a reason |
-| QuickBooks tab, imports, sync | Admins only |
 
 ## 6. Decisions for the review
 
-1. **The AP / AR ledger tabs.** With AP Drop as the intake and QuickBooks still the book of record, does
-   the AP ledger earn its place? Options: (a) retire both tabs; (b) keep them as the QuickBooks mirror only
-   (fed by import/sync, never typed); (c) have a drop create the AP row when it reaches `in QuickBooks`.
-   Nothing in ReadyDoc depends on the ledgers except Banking's matching, which can match against drops
-   instead. *Jake's call on whether he uses them.*
+1. **The AP / AR ledger tabs.** ~~Does the AP ledger earn its place?~~ **Settled 11 Sep: (a), retired.**
+   Both ledger tabs, Banking and the QuickBooks tab are hidden. AP Drop is the intake and stops there;
+   QuickBooks is the book of record. M4 documents route themselves to the Partner ledger as drafts.
 2. **Who holds the finance flag.** Jake, Marnee, Carol? Everybody else can drop and see their own.
 3. **The `ap@` inbox until it is ingested.** Who reads it and drops what arrives — or does it forward to
    the Controller bot? Building mailbox ingestion is a separate piece of work.
 4. **The status vocabulary.** `triaged → matched → in QuickBooks → in payment run → paid` was written to
    match a Controller-bot process. Does it match Jake's actual week? Rename before people learn it.
-5. **QuickBooks API: resubmit or stay on exports.** Exports cost a monthly download and a click; the API
-   costs the Intuit review and a paid production key, and buys the bills arriving on their own.
-6. **Bank feed.** Same shape: Plaid (paid, automatic) vs statement CSV monthly (free, manual).
+5. **QuickBooks API: resubmit or stay on exports.** **Settled 11 Sep: neither.** Nothing is pulled from
+   QuickBooks into ReadyDoc.
+6. **Bank feed.** **Settled 11 Sep: not in ReadyDoc.** Bank reconciliation stays in QuickBooks.
 7. **What the Controller bot is expected to do.** It can poll `audit log → ap_drop / create` for new
    drops and write back the QuickBooks bill id. Anything more (auto-triage, payment runs) is undesigned.
 8. **Inventory and COGS since 30 April.** Not a ReadyDoc question, but the biggest open accounting

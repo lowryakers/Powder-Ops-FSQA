@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useApiGet, apiFetch } from '../../hooks/useApi';
-import QuickBooksSetupCard from '../compliance/QuickBooksSetupCard.jsx';
 import { CheckCircle2, Circle, Loader2, AlertTriangle, Copy, Check } from 'lucide-react';
 
 /**
@@ -49,9 +48,6 @@ export default function IntegrationsSection() {
         <SmsCard />
       </div>
 
-      <div className="pt-2 border-t border-gray-200">
-        <QuickBooksSetupCard />
-      </div>
     </div>
   );
 }

@@ -28,8 +28,6 @@ import { storageEnabled, putObject, getObjectBuffer, deleteObject } from '../sto
 import { aiEnabled } from '../ai.js';
 import { voyageEnabled } from '../embeddings.js';
 import { pushEnabled } from '../push.js';
-import { quickbooksEnabled } from '../quickbooks.js';
-import { bankFeedEnabled } from '../bank-feed.js';
 import { smsEnabled } from '../sms.js';
 import { adpEnabled, adpConnected } from '../adp.js';
 import { cryptoEnabled as onboardingCryptoEnabled } from '../onboarding-crypto.js';
@@ -113,28 +111,10 @@ const SERVICES = [
     optional: ['FLAVOR_APPROVER_PHONE', 'APP_BASE_URL'],
     off: 'Approval links are shown on screen to copy and text by hand.',
   },
-  {
-    id: 'quickbooks',
-    label: 'QuickBooks',
-    what: 'Pulling bills and invoices into AP/AR. Read-only — nothing is ever written back.',
-    enabled: quickbooksEnabled,
-    // The refresh token ROTATES and the current one is persisted in
-    // app_settings, so an installation that has connected once no longer needs
-    // the env var. Reporting it missing would send someone to re-issue a token
-    // that is working.
-    required: ['QBO_CLIENT_ID', 'QBO_CLIENT_SECRET', 'QBO_REALM_ID'],
-    optional: ['QBO_REFRESH_TOKEN', 'QBO_ENV'],
-    off: 'Import the reports QuickBooks exports natively instead — see the QuickBooks tab.',
-  },
-  {
-    id: 'bank_feed',
-    label: 'Bank feed (Plaid)',
-    what: 'Pulling transactions straight from the bank into reconciliation.',
-    enabled: bankFeedEnabled,
-    required: ['PLAID_CLIENT_ID', 'PLAID_SECRET'],
-    optional: ['PLAID_ENV'],
-    off: 'Statement import still works, and always will — it is not a fallback.',
-  },
+  // QuickBooks and the Plaid bank feed are NOT listed (D-075, 2026-09-11):
+  // QuickBooks stays the book of record and nothing in ReadyDoc pulls from it
+  // or reconciles against it any more. The modules still exist in the tree
+  // behind hidden tabs; list them again here if a tab comes back.
   {
     id: 'onboarding_crypto',
     label: 'Onboarding — sensitive fields (SSN, bank details)',

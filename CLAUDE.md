@@ -171,7 +171,19 @@ an Accounting tab, so it survives the AP/AR pages being slimmed. `ap@powder-ops.
 - **`Array.from(e.target.files)` BEFORE `setFiles`**: the updater runs after `e.target.value = ''` has emptied
   the FileList, so the picker looked like it worked and the form said nothing was attached. Caught in the
   browser check, not the API one.
-- Verified: `check:apdrop` (20), `verify:apdrop` (45), `verify:apdropui` (18 at 1280 + 360); all registered.
+- **ONE DROP → SCAN → ROUTE (D-075).** After the reader runs, `routeToPartner` asks `server/ap-drop-route.js`
+  (PURE) whether the drop names a partner from `partner_accounts`. **High confidence** (vendor, bill-to, what
+  the submitter typed, or the filename) files a DRAFT on the Partner Reconciliation ledger with its own copy
+  of the file; the drop keeps `partner_document_id` + the verdict in `partner_route` and is never deleted.
+  **Low confidence** (a mention in the body only) parks the drop as `needs_info` "M4 Dynamics partner?" and
+  the office answers with one button (`POST /:id/route-partner`). Same bytes, or the same number + amount
+  already on that ledger, LINK the existing document — never a second one. Direction: vendor = partner ⇒
+  payable, bill-to = partner ⇒ receivable, else the text, else payable and it says so. Nothing approves,
+  settles or voids. `M4` is matched as a whole word: `M4FF` is a product.
+- **The submitter's typed fields ride on the `uploaded` event** (`typed`) — the routing rule treats a person
+  typing "M4" (a party) differently from a reference the reader found on page two (body text), and the
+  columns cannot tell them apart afterwards.
+- Verified: `check:apdrop` (20), `check:aproute` (11), `verify:apdrop` (71), `verify:apdropui` (23 at 1280 + 360).
 
 ## Revoking access reaches the sessions it already opened (D-072)
 `revokeSessions(db, userId, { keepToken, devices })` in `api/sessions.js` is the ONE helper; Settings
@@ -2398,7 +2410,13 @@ an uploaded lab result is parsed (`coa.js` extraction), matched to the active sp
 auto-graded pass/fail from min/max; the request rolls up to pass/fail; the facility COA PDF exports with logo
 + QA e-signature.
 
-## Office finance: AP / AR (+ QuickBooks)
+## Office finance: AP / AR (+ QuickBooks) — TABS HIDDEN since 2026-09-11 (D-075)
+**The AP ledger, AR ledger, Banking and QuickBooks tabs are no longer in the Accounting hub, their three
+Settings grants are gone from the module list, and the QuickBooks / Plaid rows are off Settings → Integrations.**
+They duplicated QuickBooks, which stays the book of record; nothing in ReadyDoc pulls from QuickBooks any more.
+Bills come in through AP Drop and stop there. The panels, routers, tables and verifies below still exist and
+still pass — this is a hide, reversed by one `HUB_TABS` entry — so the notes are kept as they were.
+
 `ap_invoices` / `ar_invoices` / `finance_files` (`server/api/finance.js`, one router driven by a per-ledger
 config; UI is one `LedgerPanel.jsx` with `ledger="ap"|"ar"`). KPI cards are plain SQL sums. Bulk file upload
 → R2, contents OCR'd via the shared `server/invoice-text.js` (extracted from office.js; supply invoices use

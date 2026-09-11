@@ -4772,6 +4772,13 @@ function runMigrations() {
       );
       CREATE INDEX IF NOT EXISTS idx_ap_drop_events_drop ON ap_drop_events(drop_id, at);
     `);
+    // A drop the reader recognised as a reconciliation partner's document is
+    // ROUTED: the same file becomes a draft on the partner ledger and the drop
+    // remembers which one. `partner_route` is the detector's verdict (partner,
+    // confidence, what matched, direction and why) so the queue can say how it
+    // decided. Here, after the CREATE, not in runMigrations — the ordering trap.
+    addColumnIfMissing('ap_drops', 'partner_document_id', 'TEXT');
+    addColumnIfMissing('ap_drops', 'partner_route', 'TEXT');
   } catch (e) {
     console.warn('[db] ap_drops unavailable:', e.message);
   }

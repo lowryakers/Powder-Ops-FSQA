@@ -153,5 +153,61 @@ t('search reaches inside the PDF', r.status === 200 && r.body.some(x => x.id ===
 r = await call('GET', '/ap-drop/recent', null, op);
 t('recent for the operator is their own drops', r.body?.length === 4);
 
+// 9. ONE DROP → SCAN → ROUTE. A drop that names M4 becomes a DRAFT on the
+// partner ledger with the same file; the drop stays and says so. A mention in
+// the body alone is a question, not a draft. Same bytes, or the same number
+// and amount, link the document already there rather than filing a second.
+const m4 = db.prepare("SELECT id, name FROM partner_accounts WHERE code = 'M4'").get();
+t('M4 Dynamics is seeded as the reconciliation partner', !!m4);
+const m4Invoice = await pdf(['M4 Dynamic', '88 Formulation Drive', 'INVOICE', 'Invoice No: M4-2210', 'Invoice Date: 09/03/2026', 'Due Date: 10/03/2026', 'Bill To: Powder Ops LLC', 'Amount Due $4,500.00']);
+r = await drop(op, m4Invoice, 'm4-2210.pdf');
+const dM4 = r.body?.drops?.[0];
+t('an M4 invoice drops like any other (201, status new — nothing is auto-approved)', r.status === 201 && dM4?.status === 'new', JSON.stringify(dM4).slice(0, 160));
+t('…and is routed: the drop carries the partner document id and the verdict', !!dM4?.partner_document_id && dM4?.partner_route?.confidence === 'high' && dM4?.partner_route?.direction === 'payable' && dM4?.partner_route?.partner?.name === 'M4 Dynamics', JSON.stringify(dM4?.partner_route).slice(0, 200));
+let pdoc = db.prepare('SELECT * FROM partner_documents WHERE id = ?').get(dM4?.partner_document_id);
+t('the partner document is a DRAFT payable with the invoice number, amount and file', pdoc?.status === 'draft' && pdoc?.direction === 'payable' && pdoc?.doc_number === 'M4-2210' && pdoc?.amount === 4500 && pdoc?.filename === 'm4-2210.pdf' && pdoc?.source === 'ap-drop' && !pdoc?.finalized_at, JSON.stringify(pdoc).slice(0, 200));
+t('the ledger holds its own copy of the file (a second key, not the drop\'s)', typeof pdoc?.storage_key === 'string' && pdoc.storage_key.startsWith(`partners/${m4.id}/`) && pdoc.storage_key !== dM4.storage_key);
+t('the ledger copy is searchable like the drop', /M4-2210/.test(pdoc?.extracted_text || ''));
+r = await call('GET', `/ap-drop/${dM4.id}`, null, admin);
+t('the drop detail names the ledger document and the partner', r.body?.partner_document?.partner_name === 'M4 Dynamics' && r.body?.partner_document?.status === 'draft' && (r.body?.events || []).some(e => e.kind === 'routed_partner' && e.detail?.created === true));
+t('audit: ap_drop.routed, and the partner document\'s own create entry', db.prepare("SELECT COUNT(*) c FROM audit_log WHERE entity_type = 'ap_drop' AND entity_id = ? AND details LIKE '%ap_drop.routed%'").get(dM4.id).c === 1 && db.prepare("SELECT COUNT(*) c FROM audit_log WHERE entity_type = 'partner_document' AND entity_id = ? AND action = 'create'").get(pdoc.id).c === 1);
+r = await call('GET', `/partners/${m4.id}/documents`, null, admin);
+t('it shows on the Partner Reconciliation ledger as a draft', r.status === 200 && (r.body?.documents || []).some(x => x.id === pdoc.id && x.status === 'draft'), JSON.stringify(r.body).slice(0, 160));
+r = await call('GET', `/partners/${m4.id}/reconcile`, null, admin);
+t('a draft never touches the settlement number', r.status === 200 && r.body?.net_amount === 0, JSON.stringify(r.body).slice(0, 120));
+// A normal vendor: nothing.
+r = await call('GET', `/ap-drop/${d1.id}`, null, admin);
+t('an ordinary vendor\'s drop has no partner document and no verdict', !r.body?.partner_document_id && !r.body?.partner_route);
+// Same bytes again: linked, not doubled.
+r = await drop(office, m4Invoice, 'm4-forwarded-again.pdf');
+const dM4b = r.body?.drops?.[0];
+t('the same M4 file again is a duplicate suspect linked to the SAME ledger document', dM4b?.status === 'duplicate_suspect' && dM4b?.partner_document_id === pdoc.id, JSON.stringify({ s: dM4b?.status, p: dM4b?.partner_document_id }));
+t('…and the ledger still holds ONE document for it', db.prepare("SELECT COUNT(*) c FROM partner_documents WHERE partner_id = ? AND doc_number = 'M4-2210'").get(m4.id).c === 1);
+r = await call('GET', `/ap-drop/${dM4b.id}`, null, admin);
+t('the link says how it was found (same file)', (r.body?.events || []).some(e => e.kind === 'routed_partner' && e.detail?.created === false && e.detail?.linked_how === 'same file'));
+// Same number and amount already keyed on the ledger by hand, different bytes: linked too.
+const fd = new FormData(); fd.append('direction', 'payable'); fd.append('doc_number', 'M4-2299'); fd.append('amount', '750'); fd.append('issued_date', '2026-09-05');
+r = await fetch(`${URL}/api/partners/${m4.id}/documents`, { method: 'POST', headers: { Authorization: `Bearer ${admin}` }, body: fd });
+const handKeyed = (await r.json())?.[0];
+t('a document keyed by hand on the ledger exists', r.status === 201 && !!handKeyed?.id);
+r = await drop(op, await pdf(['M4 Dynamics', 'INVOICE', 'Invoice No: M4-2299', 'Bill To: Powder Ops', 'Amount Due $750.00']), 'm4-2299.pdf');
+t('a drop matching that number and amount links to the hand-keyed document rather than doubling it', r.body?.drops?.[0]?.partner_document_id === handKeyed.id && db.prepare("SELECT COUNT(*) c FROM partner_documents WHERE partner_id = ? AND doc_number = 'M4-2299'").get(m4.id).c === 1);
+// A mention in the body: a question on the queue, never a draft.
+r = await drop(op, await pdf(['Acme Packaging Co', 'INVOICE', 'Invoice No: ACME-91', 'Bill To: Powder Ops LLC', 'Ship To: M4 Dynamics warehouse, Suite 4', 'Amount Due $210.00']), 'acme-91.pdf');
+const dLow = r.body?.drops?.[0];
+t('a vendor that merely MENTIONS M4 is parked as needs_info "M4 Dynamics partner?"', dLow?.status === 'needs_info' && /^M4 Dynamics partner\?/.test(dLow?.status_reason || '') && dLow?.partner_route?.confidence === 'low', JSON.stringify({ s: dLow?.status, r: dLow?.status_reason }).slice(0, 200));
+t('…with no partner document filed', !dLow?.partner_document_id && db.prepare("SELECT COUNT(*) c FROM partner_documents WHERE doc_number = 'ACME-91'").get().c === 0);
+r = await call('POST', `/ap-drop/${dLow.id}/route-partner`, {}, op);
+t('an operator cannot answer the question (403)', r.status === 403);
+r = await call('POST', `/ap-drop/${dLow.id}/route-partner`, {}, office);
+t('the office saying yes files the draft and moves the drop to triaged', r.status === 200 && r.body?.routed === true && r.body?.created === true && r.body?.drop?.status === 'triaged' && !!r.body?.drop?.partner_document_id, JSON.stringify(r.body).slice(0, 200));
+pdoc = db.prepare('SELECT * FROM partner_documents WHERE id = ?').get(r.body?.document_id);
+t('…as a draft, marked as routed by the office', pdoc?.status === 'draft' && pdoc?.doc_number === 'ACME-91' && (await call('GET', `/ap-drop/${dLow.id}`, null, admin)).body?.partner_route?.forced === true);
+r = await call('POST', `/ap-drop/${dLow.id}/route-partner`, {}, office);
+t('routing it twice is refused (409)', r.status === 409);
+// The queue and the vendor filter still reconcile with everything above.
+r = await call('GET', '/ap-drop?status=all', null, admin);
+t('"all" now shows every drop including the routed ones', r.body.length === 9, String(r.body?.length));
+
 db.close();
 console.log(`\n${pass}/${pass + fail} assertions passed`); process.exit(fail ? 1 : 0);

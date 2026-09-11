@@ -2346,3 +2346,60 @@ new name whose drill-down reconciles, the Operator View still listing her old-na
 filter finding them by either name, the delete guard still refusing, the certificate and the injury reading
 under the new name with `renamed_from`, search by the new name reaching old-name rows, and the QA-correction
 door opening for her and only her.
+
+## D-075 · 2026-09-11 · the ledger tabs go; AP Drop routes M4 documents to the partner ledger itself
+
+**Context.** The Accounting hub carried five finance surfaces built in August — the AP and AR ledgers, Banking &
+Reconciliation, and the QuickBooks tab with its read-only sync and report importers — beside Partner
+Reconciliation and Reimbursements. The accounting review pack (`docs/accounting-review-2026-09.md`) put the
+first question plainly: with AP Drop as the intake and QuickBooks still the book of record, does the AP ledger
+earn its place? Lowry answered it on 11 September, together with two related asks: no QuickBooks export into
+ReadyDoc at all, and the step Jake was doing by hand — re-keying every M4 invoice from the drop queue onto the
+Partner Reconciliation ledger — should be automated.
+
+**Decision.**
+
+1. **The AP ledger, AR ledger, Banking and QuickBooks tabs are HIDDEN, not deleted.** They duplicated
+   QuickBooks, and Banking matched bank lines against the very ledgers being retired. The panels, routers and
+   tables stay in the tree; the tabs, the three Settings grants (`accounts-payable`, `accounts-receivable`,
+   `banking`) and the QuickBooks / Plaid rows on Settings → Integrations are removed from the screens. A hide
+   costs one line to reverse; a delete costs a rebuild. **Decision 01 of the review pack is settled: (a).**
+2. **Nothing pulls from QuickBooks any more** — no sync, no report import offered anywhere in the app. The
+   `qbo_*` tables and `quickbooks.js` remain as code with no door. `qbo_bill_id` on a drop stays: it is a number
+   the office types after entering the bill in QuickBooks, not a pull.
+3. **AP Drop stops where it is** (`new → … → paid`); it never creates an AP ledger row and never creates a
+   QuickBooks bill. The Controller polls `ap_drop.created` and writes the bill id back, as D-073 said.
+4. **One drop → scan → route.** After the reader has run, `routeToPartner` (api/ap-drop.js) asks
+   `server/ap-drop-route.js` — pure — whether the drop names a reconciliation partner. Partners are read from
+   `partner_accounts` (M4 Dynamics, code `M4`), never hard-coded; the patterns are the full name, the singular
+   QuickBooks spelling, the noise-stripped name and the code as a whole word (`M4FF` is a product, not the
+   partner).
+   - **Two confidence tiers, split by WHERE the name appeared.** High: the vendor line, the bill-to line, what
+     the submitter typed (vendor, PO/CO, note) or the filename — the partner is a party to the document. Low: a
+     mention in the body text only ("ship to M4"). **High files a DRAFT** on the partner ledger with its own
+     copy of the file, the invoice number, dates, amount and the extracted text, `source = 'ap-drop'`, and the
+     drop records `partner_document_id` and the verdict in `partner_route`. **Low parks the drop as
+     `needs_info` "M4 Dynamics partner?"** and the office answers it with one button (`POST /:id/route-partner`),
+     which files the draft and moves the drop to `triaged`. Nothing here approves, disputes, settles or voids.
+   - **Direction follows who is billed** (the partner importer's rule): vendor = partner ⇒ payable, bill-to =
+     partner ⇒ receivable, otherwise the text is asked and payable is the fallback, said so on the draft.
+   - **No second document for the same invoice.** The same bytes (any earlier drop with that hash that was
+     routed) or the same number and amount already on that partner's ledger — including one keyed by hand —
+     LINK the existing document and say how. That is the ledger's own duplicate rule (`findExistingDoc`).
+   - **The ledger's copy is its own storage object.** An admin deleting a partner document purges its file;
+     sharing the drop's key would take the drop's evidence with it. Same bytes, second key.
+   - **The drop is never deleted or closed by routing.** It stays on Outstanding with an M4 chip; the drawer
+     names the ledger document and its status and links through to Partner Reconciliation.
+   - **What the submitter TYPED is recorded on the `uploaded` event** (`typed`), separately from what the
+     reader filled in — the columns cannot tell the two apart afterwards, and a person typing "M4" is a
+     party-identifying fact while a reference read off page two is body text.
+
+**Consequences.**
+- M4 portal permissions are untouched. A draft from a drop is exactly what M4 could have uploaded themselves.
+- The office's manual step becomes a check: open the ledger, confirm the draft, approve it as final when the
+  work behind it happened. The re-keying is gone; the decision is not.
+- Reviving a hidden tab is one `HUB_TABS` entry plus its Settings grant line plus the integration row.
+- `verify:apdrop` (71) covers M4 drop → draft, an ordinary vendor → nothing, same file → linked, same
+  number + amount → linked to a hand-keyed row, a body mention → `needs_info` then routed by the office,
+  operator refused, a draft leaving the settlement number at zero; `verify:apdropui` (23) sees the chip and
+  the drawer block in a browser; `check:aproute` (11, in `npm run check`) is the pure detector.

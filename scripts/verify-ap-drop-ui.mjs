@@ -92,6 +92,27 @@ await page.keyboard.press('Escape');
 await page.waitForFunction(() => !document.querySelector('[data-ap-drawer]'));
 await page.waitForFunction(() => /Needs info/.test(document.querySelector('[data-ap-table]')?.textContent || '') && /PO 5120/.test(document.querySelector('[data-ap-table]')?.textContent || ''));
 t('the queue row shows the new status and the blocker', true);
+// An M4 invoice dropped through the API shows up ROUTED: a chip on the row,
+// the ledger block in the drawer, and a way through to the ledger.
+{
+  const buf = await new Promise(res => { const doc = new PDFDocument(); const c = []; doc.on('data', x => c.push(x)); doc.on('end', () => res(Buffer.concat(c)));
+    ['M4 Dynamic', 'INVOICE', 'Invoice No: M4-3301', 'Invoice Date: 09/04/2026', 'Bill To: Powder Ops LLC', 'Amount Due $2,000.00'].forEach(l => doc.text(l)); doc.end(); });
+  const fd = new FormData(); fd.append('files', new Blob([buf], { type: 'application/pdf' }), 'm4-3301.pdf');
+  const r = await fetch(`${URL}/api/ap-drop`, { method: 'POST', headers: { Authorization: `Bearer ${office.token}` }, body: fd });
+  t('an M4 invoice drops through the API', r.status === 201);
+  await page.reload();
+  await page.waitForSelector('[data-ap-table]', { timeout: 20000 });
+  await page.waitForSelector('[data-ap-partner-chip="routed"]', { timeout: 20000 });
+  t('the queue row carries the M4 chip', /M4 Dynamics/.test(await page.textContent('[data-ap-partner-chip="routed"]')));
+  const rowId = await page.getAttribute('[data-ap-partner-chip="routed"]', 'data-row-id');
+  await page.click(`[data-ap-row="${rowId}"]`);
+  await page.waitForSelector('[data-ap-partner="routed"]', { timeout: 20000 });
+  const block = await page.textContent('[data-ap-partner="routed"]');
+  t('the drawer says it is a draft payable on the M4 Dynamics ledger, with the number and amount', /M4 Dynamics/.test(block) && /draft/.test(block) && /payable/.test(block) && /M4-3301/.test(block) && /2,000\.00/.test(block), block.slice(0, 200));
+  t('…and offers the way through to Partner Reconciliation', /Open Partner Reconciliation/.test(block));
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => !document.querySelector('[data-ap-drawer]'));
+}
 await page.selectOption('[data-ap-status-filter]', 'paid');
 await page.waitForSelector('[data-ap-empty]');
 t('an empty filter reads the empty-state line', /Drop it here or forward it to ap@powder-ops\.com/.test(await page.textContent('[data-ap-empty]')));
