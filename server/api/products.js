@@ -561,21 +561,46 @@ router.get('/drafts/realign/preview', (req, res) => {
   res.json({ plan, blocked, can_edit: canManage(req.user) });
 });
 
+/**
+ * Every table keyed on `products.sku`, and the one place a rename moves them.
+ *
+ * THE SKU IS A JOIN KEY IN FOUR TABLES, NOT ONE. Both rename paths used to
+ * carry `product_colors` alone, which was correct for exactly as long as the
+ * catalogue had no artwork and no nutrition panels: `artwork_versions` and
+ * `nfp_versions` declare a foreign key, so renaming a product that had either
+ * threw a bare `FOREIGN KEY constraint failed` at COMMIT — and
+ * `artwork_snapshots` declares none, so its rows would have been orphaned
+ * SILENTLY, which is worse: `GET /artwork/snapshot?sku=` would simply stop
+ * finding the proof that was run against that pack.
+ *
+ * It had never fired because the seeded catalogue has neither, and the
+ * proofing loop files an artwork version the first time a pack is proofed.
+ * So the rename would have broken on precisely the products furthest along.
+ *
+ * A new table keyed on the SKU goes in this list, or a rename loses it.
+ */
+const SKU_CHILD_TABLES = ['product_colors', 'artwork_versions', 'artwork_snapshots', 'nfp_versions'];
+
+function moveSkuChildren(db, from, to) {
+  for (const t of SKU_CHILD_TABLES) {
+    db.prepare(`UPDATE ${t} SET sku = ? WHERE sku = ?`).run(to, from);
+  }
+}
+
 router.post('/drafts/realign', (req, res) => {
   if (!canManage(req.user)) return res.status(403).json({ error: 'Only QA, a supervisor or an admin can change the catalogue.' });
   const db = getDb();
   const { plan, blocked } = planDraftRealign(db);
   if (!plan.length) return res.json({ renamed: 0, blocked });
   db.transaction(() => {
-    // Same defer_foreign_keys reasoning as the rename endpoint: product_colors
-    // points at the SKU, and the check moves to COMMIT when both agree again.
+    // Same defer_foreign_keys reasoning as the rename endpoint: the child
+    // tables point at the SKU, and the check moves to COMMIT when they agree.
     db.pragma('defer_foreign_keys = ON');
     const upd = db.prepare("UPDATE products SET sku = ?, updated_at = datetime('now') WHERE sku = ?");
-    const col = db.prepare('UPDATE product_colors SET sku = ? WHERE sku = ?');
     const before = db.prepare('SELECT * FROM products WHERE sku = ?');
     for (const r of plan) {
       const was = before.get(r.from);
-      upd.run(r.to, r.from); col.run(r.to, r.from);
+      upd.run(r.to, r.from); moveSkuChildren(db, r.from, r.to);
       stampReadiness(db, r.to, was, ['sku'], req.user?.name);
     }
   })();
@@ -952,15 +977,15 @@ router.post('/:sku/rename', (req, res) => {
   }
   db.transaction(() => {
     // Foreign keys are enforced app-wide (db.js sets foreign_keys = ON), so
-    // renaming the parent leaves product_colors pointing at a SKU that no
-    // longer exists for the instant between the two statements. defer_foreign_keys
+    // renaming the parent leaves the child rows pointing at a SKU that no
+    // longer exists for the instant between the statements. defer_foreign_keys
     // moves the check to COMMIT, when both tables agree again. It is scoped to
     // this transaction and resets itself — unlike foreign_keys = OFF, which
     // would be a global switch flipped from inside a request handler.
     db.pragma('defer_foreign_keys = ON');
     db.prepare('UPDATE products SET sku = ?, legacy_sku = COALESCE(legacy_sku, ?), updated_at = datetime(\'now\') WHERE sku = ?')
       .run(next, existing.sku, existing.sku);
-    db.prepare('UPDATE product_colors SET sku = ? WHERE sku = ?').run(next, existing.sku);
+    moveSkuChildren(db, existing.sku, next);
     // The SKU is keyed into Shopify and ShipHero; those steps depend on it and
     // must read stale after a rename rather than go on describing the old code.
     stampReadiness(db, next, existing, ['sku'], req.user?.name);

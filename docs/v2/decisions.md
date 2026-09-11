@@ -2624,3 +2624,43 @@ is the same first-sign-in path every employee takes. A Powder Ops name that is n
 and that is written down rather than left to be noticed.
 
 Runbook: `docs/client-m4-channel.md`. Verified: `verify:clientchannel` (65 — live + a real browser at 390px; in `verify:all`).
+
+---
+
+## D-081 — The SKU is a join key in four tables, and the rename carried one
+**2026-09-11.** Asked for the step-by-step sequence to put all 118 products onto one SKU standard
+across ShipHero, Shopify and everything downstream. Writing the runbook meant checking that step one
+of it — ReadyDoc's own rename — actually works. It does not.
+
+**`products.sku` is referenced by four tables** — `product_colors`, `artwork_versions`,
+`artwork_snapshots` and `nfp_versions` — and both rename paths (`POST /products/:sku/rename` and
+`POST /products/drafts/realign`) moved `product_colors` alone. Two of the other three declare a
+foreign key, so renaming a product that had artwork or a nutrition panel threw a bare
+**`FOREIGN KEY constraint failed`** at COMMIT. The third declares none, so its rows would have been
+**orphaned silently** — the proof snapshot for that pack simply stops being findable, which is the
+worse failure of the two because nothing says so.
+
+**It had never fired because the seeded catalogue has neither**, and an artwork version is filed
+automatically the first time a pack goes through the proofing loop. So the defect was latent in exactly
+the way that matters: it would have surfaced on day one of the cutover, on the products furthest along,
+with an error message that explains nothing to the person reading it.
+
+`SKU_CHILD_TABLES` + `moveSkuChildren()` is now the one definition and both paths call it. A new table
+keyed on the SKU goes in that list or a rename loses it. `verify:skurename` (20 live, in `verify:all`)
+renames a product carrying colours, a proofed artwork version, that proof's snapshot and an approved
+panel; **the control is decisive — cutting the list back to `product_colors` fails 17 of the 20**, the
+first of them with the exact 500 the plant would have hit.
+
+**What the fix makes possible is the useful half.** `stampReadiness(..., ['sku'])` already made
+*Listed in Shopify* and *Synced to ShipHero* go stale on a rename, naming the SKU as what moved — so
+**the cutover writes its own re-verification punch list** instead of somebody keeping it in a
+spreadsheet. The GS1 step stays green throughout, because the GTIN never moves, and that is the whole
+reason a SKU cutover is safe to attempt at all: a scanner reads the barcode, so no physical pallet is
+ever ambiguous. Both directions asserted.
+
+Measured while writing the runbook: **all 118 active products resolve to a new-standard code and not
+one of them already matches** — the cutover is 118 real renames, with no free subset. The sequence
+itself is `docs/sku-standardisation-runbook.md`; the two facts that make it expensive (ShipHero keys
+inventory locations and open order lines to the SKU; Shopify stamps the SKU onto every order line at
+sale, irreversibly) are the 3PL's own answers from D-045-era work and are what set the order:
+ShipHero → Shopify → ReadyDoc, sync paused, on-hand snapshot first.

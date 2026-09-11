@@ -781,6 +781,29 @@ preferred SKU of `BEF-BTL-CSG`, which is exactly the disagreement the preview co
   which needs a genuinely fresh DB — it asserts the opening state then files into it) and 16 in a real
   browser.
 
+### THE SKU IS A JOIN KEY IN FOUR TABLES, and the rename carried one (D-081)
+`product_colors`, `artwork_versions`, `artwork_snapshots` and `nfp_versions` are all keyed on
+`products.sku`. Both rename paths — `POST /products/:sku/rename` and `POST /products/drafts/realign`
+— moved `product_colors` alone. `artwork_versions` and `nfp_versions` declare a foreign key, so a
+rename threw a bare **`FOREIGN KEY constraint failed`** at COMMIT; `artwork_snapshots` declares none,
+so its rows would have been **orphaned in silence** — `GET /artwork/snapshot?sku=` would simply stop
+finding the proof run against that pack.
+- **It had never fired because the seeded catalogue has neither**, and the proofing loop files an
+  artwork version the first time a pack is proofed. So the rename would have broken on precisely the
+  products furthest along, on day one of the SKU cutover, with an error message that explains nothing.
+- **`SKU_CHILD_TABLES` + `moveSkuChildren()` is the one definition** and both paths call it. A new
+  table keyed on the SKU goes in that list or a rename loses it.
+- `verify:skurename` (20 live, in `verify:all`) renames a product that has colours, a proofed artwork
+  version, that proof's snapshot and an approved panel. **The control is decisive: cutting the list
+  back to `product_colors` fails 17 of the 20**, the first with the exact 500 the plant would have hit.
+- **The renames write the cutover's own punch list.** `stampReadiness(..., ['sku'])` makes *Listed in
+  Shopify* and *Synced to ShipHero* go **stale** on every renamed product, naming the SKU as what
+  moved (both steps declare `depends: ['sku','gtin']`). The GS1 step stays green — the GTIN never
+  moves, which is the whole reason the cutover is safe. Asserted in both directions.
+- **All 118 active products resolve to a new-standard code and not one already matches**, so the
+  cutover is 118 real renames. The runbook Lowry and Chris work from is
+  `docs/sku-standardisation-runbook.md`.
+
 ### The SKU rename is a separate project, and it is not free
 The new standard is adopted for **new products only**; the existing 118 are untouched. A full cutover is
 costed in `Product-Management/docs/08`. The 3PL has confirmed the expensive half: scanning tolerates either

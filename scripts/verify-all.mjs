@@ -44,6 +44,7 @@ const RUNS = [
   ['verify-ap-drop-ui.mjs', 4991, {}, true],
   ['verify-comms-edit.mjs', 4995, {}, false],
   ['verify-client-channel.mjs', 4996, {}, true],
+  ['verify-sku-rename.mjs', 4998, {}, false],
   ['verify-employee-docs.mjs', 4993, {}, true],
   ['verify-employee-docs-ui.mjs', 4994, {}, true],
   ['verify-name-keys.mjs', 4992, {}, false],
