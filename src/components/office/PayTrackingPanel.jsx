@@ -28,6 +28,14 @@ const money = (n) => (n == null ? '—' : `$${Number(n).toLocaleString('en-US', 
 const money0 = (n) => (n == null ? '—' : `$${Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 })}`);
 const fmtDate = (d) => (d ? String(d).slice(0, 10) : '—');
 const todayStr = () => new Date().toISOString().slice(0, 10);
+// Whole days since a YYYY-MM-DD date, or null when there isn't one. Parsed as
+// UTC midnight on both sides so it cannot come out a day off west of Greenwich.
+const daysBetween = (d) => {
+  if (!d) return null;
+  const t = Date.parse(`${String(d).slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(t)) return null;
+  return Math.floor((Date.parse(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`) - t) / 86400000);
+};
 
 const REVIEW_TONE = {
   due: 'bg-red-100 text-red-700',
@@ -401,7 +409,7 @@ function DetailsEditor({ data, onSaved, tr }) {
   );
 }
 
-function PersonDrawer({ id, onClose, onChanged, tr }) {
+function PersonDrawer({ id, onClose, onChanged, onAssign, tr }) {
   const { data, refresh } = useApiGet(`/pay/employees/${id}`, [id]);
   const [newRate, setNewRate] = useState('');
   const [effective, setEffective] = useState(todayStr());
@@ -413,6 +421,10 @@ function PersonDrawer({ id, onClose, onChanged, tr }) {
 
   if (!data) return null;
   const rate = data.pay_rate;
+  // Shown for a new starter, and for anybody whose check has already been
+  // asked for — a roster of long-serving people does not need the strip.
+  const sinceHire = daysBetween(data.hire_date);
+  const starterChecks = (data.starter_checks || []).filter(c => c.assignment || (sinceHire != null && sinceHire <= 210));
   const openReviews = (data.reviews || []).filter(r => r.status === 'open');
   const earlierReviews = (data.reviews || []).filter(r => r.status !== 'open');
   const combined = openReviews.length
@@ -476,6 +488,40 @@ function PersonDrawer({ id, onClose, onChanged, tr }) {
               </div>
             ))}
           </div>
+
+          {/* THE 30- AND 90-DAY CHECKS, WHERE A NEW STARTER IS ACTUALLY LOOKED
+              AT. The Assignments tab could always raise one; this is the screen
+              somebody opens the day a new person is added, and from here there
+              was no way to ask for either — a fix that is not where the problem
+              is seen. Each check knows its own due date (hire date + the days,
+              worked out server-side) and says who it is already with. */}
+          {starterChecks.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 p-3 space-y-2" data-starter-checks>
+              <p className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+                <ClipboardCheck size={14} className="text-powder-600" /> {tr('New starter checks')}
+              </p>
+              {starterChecks.map(c => (
+                <div key={c.occasion} className="flex items-center gap-2 flex-wrap text-xs" data-starter-check={c.occasion}>
+                  <span className="font-semibold text-gray-900 w-20">{tr(c.label)}</span>
+                  <span className="text-gray-600 flex-1 min-w-[9rem]">
+                    {c.assignment
+                      ? (c.assignment.status === 'completed'
+                        ? `${tr('done')} · ${c.assignment.reviewer_name || ''}`
+                        : `${tr('with')} ${c.assignment.reviewer_name || '—'}${c.assignment.due_date ? ` · ${tr('due')} ${fmtDate(c.assignment.due_date)}` : ''}`)
+                      : c.due ? `${tr('falls due')} ${fmtDate(c.due)}` : tr('no hire date on the roster, so nothing to count from')}
+                  </span>
+                  {c.assignment
+                    ? <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${c.assignment.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-900'}`}>
+                        {c.assignment.status === 'completed' ? tr('Completed') : tr('Waiting on a reviewer')}
+                      </span>
+                    : <button onClick={() => onAssign?.(c.occasion)} data-assign-occasion={c.occasion}
+                        className="px-2.5 py-1 rounded-lg border border-powder-300 text-powder-800 bg-powder-50 text-[11px] font-semibold hover:bg-powder-100">
+                        {tr('Assign…')}
+                      </button>}
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Submitted reviews — what to read BEFORE deciding an increase. Two
               open reviews (supervisor + Adam) show their combined average. */}
@@ -607,14 +653,14 @@ function PersonDrawer({ id, onClose, onChanged, tr }) {
 
 // Who owes a review, and by when. Assigning DMs the reviewer through ReadyBot
 // and pushes to their phone, so the ask exists somewhere other than a memory.
-function AssignmentsTab({ people, tr, onChanged, preset = '' }) {
+function AssignmentsTab({ people, tr, onChanged, preset = '', presetOccasion = '' }) {
   const { data: rows, refresh } = useApiGet('/pay/assignments?status=all');
   // Supervisors and admins only — an operator never evaluates a colleague, and
   // the whole-roster list also offered ReadyBot.
   const { data: users } = useApiGet('/pay/reviewers');
   // `preset` is the person the action strip was clicked for; remounting on it
   // (the key below) is what puts them in the box.
-  const [form, setForm] = useState({ employee_id: preset || '', reviewer_id: '', due_date: '', note: '', occasion: '' });
+  const [form, setForm] = useState({ employee_id: preset || '', reviewer_id: '', due_date: '', note: '', occasion: presetOccasion || '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -918,7 +964,8 @@ const PAGE_STRINGS = [
   'Details', 'Edit', 'Save details', 'Saving…', 'PTO', 'PTO plan', 'Hire date', 'Active', 'Notes',
   'e.g. 3 hr / 4 hr', 'blank = salaried',
   'Correcting the review or raise date here fixes a mistaken entry — the change is audited with the old and new values.',
-  'Remove from roster',
+  'Remove from roster', 'New starter checks', '30-day review', '90-day review', 'Assign…',
+  'falls due', 'with', 'due', 'done', 'no hire date on the roster, so nothing to count from',
   'Remove this person from the Pay Tracking roster? Only rows added by mistake can be removed.',
   'Add someone to the roster', 'Name', 'Name is required', 'Adding…', 'Add to roster', 'Cancel',
   'Evaluations assigned to you', 'due', 'overdue', 'no due date',
@@ -1040,6 +1087,7 @@ export default function PayTrackingPanel() {
   const [tick, setTick] = useState(0);
   const bump = () => setTick(t => t + 1);
   const [presetEmployee, setPresetEmployee] = useState('');
+  const [presetOccasion, setPresetOccasion] = useState('');
 
   const { data: roster, refresh: refreshRoster } = useApiGet(isAdmin ? '/pay/employees' : null);
   const { data: evaluatees, refresh: refreshEval } = useApiGet('/pay/evaluatees');
@@ -1201,8 +1249,9 @@ export default function PayTrackingPanel() {
       )}
 
       {tab === 'assign' && isAdmin && (
-        <AssignmentsTab key={presetEmployee || 'none'} people={evaluatees || []} tr={tr} preset={presetEmployee}
-          onChanged={() => { refreshAssign(); bump(); setPresetEmployee(''); }} />
+        <AssignmentsTab key={`${presetEmployee || 'none'}:${presetOccasion || ''}`} people={evaluatees || []} tr={tr}
+          preset={presetEmployee} presetOccasion={presetOccasion}
+          onChanged={() => { refreshAssign(); bump(); setPresetEmployee(''); setPresetOccasion(''); }} />
       )}
 
       {tab === 'sync' && isAdmin && (
@@ -1258,7 +1307,8 @@ export default function PayTrackingPanel() {
       )}
 
       {openId && (
-        <PersonDrawer id={openId} tr={tr} onClose={() => { setOpenId(null); bump(); }} onChanged={() => { refreshRoster(); bump(); }} />
+        <PersonDrawer id={openId} tr={tr} onClose={() => { setOpenId(null); bump(); }} onChanged={() => { refreshRoster(); bump(); }}
+          onAssign={(occ) => { setPresetEmployee(openId); setPresetOccasion(occ); setTab('assign'); setOpenId(null); }} />
       )}
       {adding && (
         <AddPersonModal tr={tr} onClose={() => setAdding(false)} onAdded={() => { refreshRoster(); refreshEval(); }} />

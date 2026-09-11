@@ -2499,3 +2499,59 @@ by its own answer, so a predicate naming only one door would hide Accounting fro
 existing deep link, quick-tab pick and Settings grant keeps working. Asserted in a real browser
 (`verify:edocsui`): AP Drop is the first tab, it is the tab that is open, the other two are beside it, and
 there is no longer a second sidebar entry.
+
+## D-079 · 2026-09-11 · four reports from the floor, and what each one turned out to be
+
+Four things reported in one message. They are recorded together because three of them are the same
+defect wearing different clothes — **a second copy of a fact that goes stale** — and saying so is worth
+more than four separate entries.
+
+**1 · An edit did not reach the other reader.** Daniela corrected a message; Marnee went on seeing the
+original. Two mechanisms, both found:
+- **A cached translation belongs to a VERSION of the text, not to a message.** The channel's
+  auto-translate cache was keyed `messageId:lang`, so an edited message kept its pre-edit translation for
+  ever — the server correctly drops its own cached row on edit, but the client already had an answer and
+  never asked again. The key now carries the message's `edited_at`, which is serialized for exactly this;
+  a translation the reader asked for by hand is dropped the same way when the text moves.
+- **The thread drawer listened only for new replies.** An edit, a delete and a reaction all arrive as
+  `message:update`, so a correction made to a message inside an open thread reached nobody else reading it.
+- **What is NOT wrong:** ReadyDoc has no shared message list to go stale. Everybody's channel view is
+  patched from the same socket event, and a reload has always shown the edited text.
+
+**2 · ReadyBot looked like a channel everybody reads.** It is not: every ReadyBot message is a DM between
+the bot and one person. What made it look shared is that several of them go to **every active admin** by
+default — the Flash Report above all — and there was no screen anywhere that said so. Settings →
+**ReadyBot messages** now lists every automatic message, what it is, when it goes, and who it reaches
+today, and lets an admin choose the recipients of the two that are a plant decision (the Flash Report and
+the pay reminders). **Each audience is resolved by calling the function that actually sends it**
+(`server/readybot-audience.js`) — a screen describing an audience from its own second copy of the rule is
+the defect this whole project is about. An audience that follows from what somebody did (the reviewer
+asked, the employee sent a document, the filer QA flagged) is shown and named as a rule, never offered as
+a setting: narrowing those means somebody not being told about their own work.
+
+**3 · A 1099 contractor's packet reported a W-4 and an I-9 as unsigned.** A contractor signs neither
+(8 CFR 274a.1(f) excludes an independent contractor from "employee"). The packet PDF had branched on
+worker type since the contractor path shipped; **this screen had not** — the same shape as the worker-type
+picker that existed in the API and not on the form. The row now shows the W-9, says why there is no I-9,
+hides Section 2, and counts the five steps a contractor is actually asked for rather than an employee's six.
+
+**4 · The caret drifted away from the words on a long message — the fourth report of this.** The three
+earlier causes were real and are still fixed; this is a fourth, and the reason it survived them is that
+**the check could not reach the condition**. Once the composer passes its height cap the field scrolls,
+and on Windows and Linux Chrome a classic scrollbar takes ~15px out of **the field's** text column while
+the overlay, which has `overflow: hidden` and no bar, kept the full width. The two then wrap at different
+words. Headless Chromium draws overlay scrollbars, which take no width, so every previous measurement
+agreed. The layer's content box is now measured from the field's (`clientWidth` minus its paddings, with
+`box-sizing: content-box` rebuilding the outer box), so the two text columns are the same width whatever
+takes pixels out of the field; `verify-composer-caret.mjs` states that invariant directly and **simulates
+the gutter** by taking 15px out of the field. **The control is decisive: with the old sizing the paragraph
+lands 195px and one line out** — which is the report, exactly.
+
+**5 · A new starter's 30- and 90-day checks could not be asked for where a new starter is looked at.**
+The machinery shipped with the Assignments tab and nobody found it. `GET /pay/employees/:id` now derives
+`starter_checks` — each check, its due date from the hire date, and the assignment it already has — and
+the drawer shows them with one button that opens the assignment pre-filled. The same rule as the re-clean
+badge: a fix that is not where the problem is seen is a fix nobody runs.
+
+Verified: `verify:commsedit` (11 live), `verify:onboardingui` (47, including the contractor packet),
+`check:composer` (51, with the control), `verify:edocs` / `verify:edocsui` unchanged and passing.

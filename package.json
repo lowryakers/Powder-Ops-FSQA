@@ -63,6 +63,7 @@
     "verify:sessions": "node scripts/verify-session-revoke.mjs",
     "verify:apdrop": "node scripts/verify-ap-drop.mjs",
     "verify:apdropui": "node scripts/verify-ap-drop-ui.mjs",
+    "verify:commsedit": "node scripts/verify-comms-edit.mjs",
     "verify:edocs": "node scripts/verify-employee-docs.mjs",
     "verify:edocsui": "node scripts/verify-employee-docs-ui.mjs",
     "verify:names": "node scripts/verify-name-keys.mjs",

@@ -159,6 +159,26 @@ t('with the password the full SSN is shown, formatted for keying', /321-54-9876/
 t('…and says who looked and when', /Recorded: Office Lead/.test(shown));
 await row.locator('[data-reveal-shown] button', { hasText: 'Hide' }).click();
 t('Hide takes it away again and the row is back to last-four only', await row.locator('[data-reveal-shown]').count() === 0 && !/321-54-9876/.test(await row.innerText()));
+// ── a 1099 contractor's packet shows the forms a contractor actually signs ──
+// The office reported a finished contractor as "W-4 and I-9 not signed": the
+// packet PDF had branched on worker type since the contractor path shipped and
+// this screen had not, so it reported a gap that cannot exist.
+{
+  const c = await (await post('/onboarding', { first_name: 'Cesar', last_name: 'Rueda', position: 'Temp', worker_type: 'contractor' }, auth.token)).json();
+  t('a contractor onboarding is created', !!c?.id, JSON.stringify(c || {}).slice(0, 120));
+  await page.goto(`${URL}/?tab=onboarding`);
+  await page.waitForSelector(`[data-onboarding="${c.id}"]`, { timeout: 20000 });
+  const crow = page.locator(`[data-onboarding="${c.id}"]`);
+  t('the row says what they are engaged as', /1099 contractor/.test(await crow.locator('[data-engaged-as]').innerText()));
+  await crow.locator('button').first().click();
+  await page.waitForTimeout(600);
+  t('THE PACKET SHOWS A W-9', await crow.locator('[data-w9]').count() === 1);
+  t('and no W-4 or I-9 card at all', await crow.locator('[data-w4]').count() === 0 && await crow.locator('[data-i9]').count() === 0);
+  t('it says why, rather than leaving a blank', /8 CFR 274a\.1\(f\)/.test(await crow.locator('[data-no-i9]').innerText()));
+  t('and Section 2 — the employer half of an I-9 — is not offered', await crow.locator('[data-section2]').count() === 0);
+  t('the step count is out of the five steps a contractor is asked for', /\/5 steps/.test(await crow.innerText()), (await crow.innerText()).slice(0, 120));
+}
+
 await browser.close();
 console.log(`\n${pass}/${pass + fail} assertions passed`);
 process.exit(fail ? 1 : 0);

@@ -167,7 +167,22 @@ router.get('/employees/:id', (req, res) => {
   const history = db.prepare('SELECT * FROM pay_rate_history WHERE employee_id = ? ORDER BY effective_at DESC, created_at DESC').all(row.id);
   const reviews = db.prepare('SELECT * FROM pay_reviews WHERE employee_id = ? ORDER BY created_at DESC LIMIT 50').all(row.id)
     .map(r => ({ ...r, scores: JSON.parse(r.scores || '{}') }));
-  res.json({ ...decorate(row), history, reviews });
+  // The asks OUTSTANDING on this person, and — for a new starter — the two
+  // checks their hire date implies. The drawer is where somebody looks when a
+  // new person is added, so the 30- and 90-day checks have to be answerable
+  // THERE; the Assignments tab could always raise one, and nobody found it.
+  const assignments = db.prepare(`SELECT a.*, u.name AS reviewer_name FROM pay_review_assignments a
+    LEFT JOIN users u ON u.id = a.reviewer_id
+    WHERE a.employee_id = ? ORDER BY a.created_at DESC LIMIT 20`).all(row.id)
+    .map(a => ({ ...a, occasion_label: a.occasion ? occasionLabel(a.occasion) : null }));
+  const starterChecks = Object.keys(OCCASIONS).map(occ => ({
+    occasion: occ,
+    label: occasionLabel(occ),
+    due: occasionDue(row.hire_date, occ),
+    // Derived on every read: an ask that exists, in whatever state it is in.
+    assignment: assignments.find(a => a.occasion === occ && a.status !== 'cancelled') || null,
+  }));
+  res.json({ ...decorate(row), history, reviews, assignments, starter_checks: starterChecks });
 });
 
 // last_reviewed_at / last_increase_at are here so a mistaken review (a test

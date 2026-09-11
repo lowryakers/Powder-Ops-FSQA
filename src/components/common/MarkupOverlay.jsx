@@ -104,15 +104,34 @@ export default function MarkupOverlay({ textareaRef, value, className = '' }) {
     // exactly the field's size. It is not always: the composer grows to fit its
     // content and the wrapper picks up its own few pixels, so the layer ended
     // up 7px taller than the field, could not scroll as far, and drifted
-    // vertically once a message passed the height cap. Copying the field's own
-    // offset box makes the two content boxes coincide by construction, whatever
-    // the wrapper does — the padding and border classes are already identical,
-    // so matching the outer box matches the inner one.
+    // vertically once a message passed the height cap.
+    //
+    // THE LAYER'S TEXT COLUMN IS MEASURED FROM THE FIELD'S, not assumed equal.
+    //
+    // Copying `offsetWidth` assumes the two boxes have identical padding and
+    // borders AND that nothing is taking pixels out of the field's text column.
+    // Both assumptions break on a long message: once the composer hits its
+    // height cap the field scrolls, and on a platform with classic scrollbars
+    // (Windows and Linux Chrome — not the headless browser the checks run in)
+    // the bar eats ~15px of the FIELD's column while this layer, which has
+    // `overflow: hidden` and no bar, kept the full width. The two then wrap at
+    // different words, and everything after the first wrap sits somewhere
+    // else: "the cursor is nowhere near where I'm typing, but only in a long
+    // message".
+    //
+    // So the content box is set explicitly — `clientWidth` excludes the
+    // scrollbar, the paddings come off, and `box-sizing: content-box` lets the
+    // layer's own padding and border rebuild the outer box around it. Whatever
+    // the field's padding, border or scrollbar does, the two columns are the
+    // same width by construction rather than by both being styled the same.
     const sync = () => {
+      const cs = getComputedStyle(ta);
+      const n = (v) => parseFloat(v) || 0;
+      el.style.boxSizing = 'content-box';
       el.style.top = `${ta.offsetTop}px`;
       el.style.left = `${ta.offsetLeft}px`;
-      el.style.width = `${ta.offsetWidth}px`;
-      el.style.height = `${ta.offsetHeight}px`;
+      el.style.width = `${Math.max(0, ta.clientWidth - n(cs.paddingLeft) - n(cs.paddingRight))}px`;
+      el.style.height = `${Math.max(0, ta.clientHeight - n(cs.paddingTop) - n(cs.paddingBottom))}px`;
       el.scrollTop = ta.scrollTop;
       el.scrollLeft = ta.scrollLeft;
     };

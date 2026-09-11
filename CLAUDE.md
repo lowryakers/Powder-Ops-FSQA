@@ -991,6 +991,51 @@ by the kiosk isolation verification. Each poster now carries a key in its URL (`
 - **The visitor sign-out look-up is rate-limited to 30/minute per address.** The 676-request alphabet sweep
   that surfaced every on-site name is now impractical; a visitor typing their own name never notices.
 
+## ReadyBot is not a channel, and who gets what is on one screen (D-079)
+`server/readybot-audience.js` + `GET|PUT /api/flash/readybot-audience[/:key]` + Settings → **ReadyBot
+messages** (admin only). Every ReadyBot message is a DM between the bot and ONE person; what made it look
+shared is that several go to **every active admin** by default.
+- **EACH AUDIENCE IS RESOLVED BY THE FUNCTION THAT SENDS IT** (`flashRecipients`, `payActionRecipients`, or
+  the sender's own predicate re-run here). A screen describing an audience from a second copy of the rule
+  would drift from who is really being messaged.
+- **Two are the plant's decision and stored in `app_settings`** — the Flash Report and the pay reminders.
+  Unset still falls back to active admins / the office, because a report configured and never delivered is
+  indistinguishable from a broken job.
+- **An audience that follows from what somebody DID is reported, never settable** — the reviewer asked, the
+  employee sent a document, the filer QA flagged. Narrowing those means somebody not told about their own work.
+
+## An edit has to reach the other reader (D-079)
+- **A CACHED TRANSLATION BELONGS TO A VERSION OF THE TEXT.** `autoTrans` was keyed `messageId:lang`, so an
+  edited message kept its pre-edit translation for ever — the server drops its cached row on edit, the client
+  had an answer and never asked again. `transKey(m, lang)` carries `edited_at` (now serialized for exactly
+  this), and a manual per-message translation is dropped when the text moves.
+- **The thread drawer listened only for `message:new`** — an edit, a delete or a reaction inside an open
+  thread reached nobody else reading it. It listens for `message:update` too.
+- `verify:commsedit` (11 live).
+
+## The caret drift, fourth cause: THE SCROLLBAR IS PART OF THE FIELD'S WIDTH (D-079)
+Past the composer's height cap the field scrolls, and a classic scrollbar (Windows / Linux Chrome) takes
+~15px out of **the field's** text column while `MarkupOverlay`, which has `overflow: hidden` and no bar, kept
+the full width — so the two wrap at different words and everything after the first wrap is elsewhere.
+- The layer's content box is now **measured from the field's** (`clientWidth` minus paddings, `box-sizing:
+  content-box` rebuilding the outer box), so the columns match whatever takes pixels out of the field.
+- **HEADLESS CHROMIUM DRAWS OVERLAY SCROLLBARS, which take no width — which is why three rounds of fixes and
+  44 passing assertions never saw this.** `verify-composer-caret.mjs` states the invariant (the two text
+  columns are the same width) and **simulates** the gutter by taking 15px out of the field. The control is
+  decisive: with the old sizing the paragraph lands **195px and one line out**.
+
+## A contractor's packet shows the forms a contractor signs (D-079)
+A 1099 contractor signs a W-9 and no I-9 (8 CFR 274a.1(f)), and the office packet was reporting the W-4 and
+I-9 as NOT SIGNED. The PDF had branched on worker type since the contractor path shipped; the screen had
+not — the same gap as the worker-type picker that existed in the API and not on the form. The row renders
+the W-9, says why there is no I-9, hides Section 2, and counts the contractor's five steps, not six.
+
+## The 30/90-day checks are on the person, not only on the Assignments tab (D-079)
+`GET /pay/employees/:id` derives `starter_checks` — each check, its due date from the hire date, and the
+assignment it already has — and the drawer shows them with one button that opens the assignment pre-filled
+(`presetOccasion`). The machinery existed and nobody found it: a fix that is not where the problem is seen
+is a fix nobody runs.
+
 ## Employee documents: sent to somebody who already works here, signed in the app (D-077)
 `employee_document_templates` + `employee_documents` (db.js), `server/employee-documents.js` (PURE — bytes in,
 bytes out), `server/api/employee-documents.js`, `EmployeeDocumentsTab.jsx` (the **Employee documents** tab of

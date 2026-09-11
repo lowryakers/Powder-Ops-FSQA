@@ -42,6 +42,7 @@ const RUNS = [
   ['verify-session-revoke.mjs', 4989, {}, false],
   ['verify-ap-drop.mjs', 4990, {}, true],
   ['verify-ap-drop-ui.mjs', 4991, {}, true],
+  ['verify-comms-edit.mjs', 4995, {}, false],
   ['verify-employee-docs.mjs', 4993, {}, true],
   ['verify-employee-docs-ui.mjs', 4994, {}, true],
   ['verify-name-keys.mjs', 4992, {}, false],

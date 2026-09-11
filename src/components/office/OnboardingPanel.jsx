@@ -28,6 +28,10 @@ const STATUS = {
   cancelled: ['Cancelled', 'bg-gray-100 text-gray-400'],
 };
 const FILING = { single: 'Single / married filing separately', married_jointly: 'Married filing jointly', head_of_household: 'Head of household' };
+const W9_CLASS = {
+  individual: 'Individual / sole proprietor', c_corporation: 'C corporation', s_corporation: 'S corporation',
+  partnership: 'Partnership', trust_estate: 'Trust / estate', llc: 'Limited liability company', other: 'Other',
+};
 const CITIZEN = { citizen: 'U.S. citizen', noncitizen_national: 'Noncitizen national', permanent_resident: 'Lawful permanent resident', authorized_alien: 'Noncitizen authorized to work' };
 const KIND = { id_document: 'ID document', voided_check: 'Voided check', other: 'File' };
 
@@ -324,7 +328,13 @@ function Row({ r, attestations, storageEnabled, onAction }) {
     finally { setBusy(''); }
   };
   const prog = r.progress || {};
-  const steps = ['welcome', 'personal', 'emergency', 'deposit', 'w4', 'i9'].filter(k => prog[k]).length;
+  // THE STEPS ARE THE ONES THIS PERSON WAS ASKED FOR. A contractor's wizard has
+  // five (no I-9, a W-9 instead of the W-4), so counting the employee's six put
+  // a finished contractor at 4/6 with two steps they were never shown.
+  const stepKeys = r.is_contractor
+    ? ['welcome', 'personal', 'emergency', 'deposit', 'w9']
+    : ['welcome', 'personal', 'emergency', 'deposit', 'w4', 'i9'];
+  const steps = stepKeys.filter(k => prog[k]).length;
   const sigLine = (sig) => (sig ? `signed ${sig.name} · ${formatDateTime(sig.at)}` : 'NOT SIGNED');
   return (
     <div className="bg-white border border-gray-200 rounded-xl" data-onboarding={r.id}>
@@ -336,7 +346,7 @@ function Row({ r, attestations, storageEnabled, onAction }) {
             <span className={`ml-2 align-middle px-1.5 py-0.5 rounded text-[11px] font-semibold ${r.is_contractor ? 'bg-amber-100 text-amber-900' : 'bg-gray-100 text-gray-700'}`} data-engaged-as>
               {r.is_contractor ? '1099 contractor' : 'W-2 employee'}
             </span></p>
-          <p className="text-xs text-gray-500">{steps}/6 steps · invited {formatDateTime(r.invited_at || r.created_at)}
+          <p className="text-xs text-gray-500">{steps}/{stepKeys.length} steps · invited {formatDateTime(r.invited_at || r.created_at)}
             {r.missing?.length > 0 && !['completed', 'cancelled'].includes(r.status) && <span className="text-amber-700"> · {r.missing.length} still missing</span>}</p>
         </div>
         <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold shrink-0 ${cls}`}>{s}</span>
@@ -366,6 +376,33 @@ function Row({ r, attestations, storageEnabled, onAction }) {
           </div>
           {r.can_reveal && <Reveal r={r} />}
 
+          {/* THE FORMS SHOWN ARE THE FORMS THIS ENGAGEMENT HAS. A 1099
+              contractor signs a W-9 and no I-9 at all (8 CFR 274a.1(f)
+              excludes an independent contractor from "employee"), so showing
+              them a W-4 and an I-9 reading NOT SIGNED reported a gap that does
+              not exist — the packet PDF has branched on this since the
+              contractor path shipped; this screen had not. */}
+          {r.is_contractor ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-2.5 text-xs text-gray-700 space-y-0.5" data-w9>
+                <p className="font-bold uppercase tracking-wider text-[10px] text-gray-500">Form W-9</p>
+                <p><b>Name / business:</b> {r.w9_business_name || '—'}</p>
+                <p><b>Tax classification:</b> {W9_CLASS[r.w9_tax_classification] || '—'}
+                  {r.w9_tax_classification === 'llc' && r.w9_llc_classification ? ` (${r.w9_llc_classification})` : ''}</p>
+                <p><b>Taxpayer ID:</b> {r.w9_tin_type === 'ein'
+                  ? (r.has_ein ? `EIN ••${r.ein_last4 || ''}` : 'EIN not provided')
+                  : r.w9_tin_type === 'ssn' ? (r.has_ssn ? `SSN ••••${r.ssn_last4 || ''}` : 'SSN not provided') : '—'}</p>
+                <p><b>Backup withholding:</b> {r.w9_backup_withholding ? 'Yes — item 2 struck out' : 'No'}</p>
+                <p className={r.w9_signature ? 'text-green-800' : 'text-amber-800'}><b>Part II signature:</b> {sigLine(r.w9_signature)}</p>
+              </div>
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-2.5 text-xs text-gray-600 space-y-0.5" data-no-i9>
+                <p className="font-bold uppercase tracking-wider text-[10px] text-gray-500">No W-4 or I-9</p>
+                <p>A 1099 contractor does not complete a Form W-4 (no withholding) or a Form I-9 — 8 CFR 274a.1(f)
+                  excludes an independent contractor from the definition of employee.</p>
+                <p>Pay them through the 1099 path in ADP, not payroll.</p>
+              </div>
+            </div>
+          ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-2.5 text-xs text-gray-700 space-y-0.5" data-w4>
               <p className="font-bold uppercase tracking-wider text-[10px] text-gray-500">Form W-4</p>
@@ -386,6 +423,7 @@ function Row({ r, attestations, storageEnabled, onAction }) {
               <p className={r.i9_signature ? 'text-green-800' : 'text-amber-800'}><b>Signature:</b> {sigLine(r.i9_signature)}</p>
             </div>
           </div>
+          )}
 
           {r.missing?.length > 0 && !['completed', 'cancelled'].includes(r.status) && (
             <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg p-2 flex items-start gap-1.5" data-missing>
@@ -395,7 +433,7 @@ function Row({ r, attestations, storageEnabled, onAction }) {
           )}
 
           <Files r={r} storageEnabled={storageEnabled} onChanged={() => onAction('refresh')} />
-          <Section2 key={r.i9_section2 ? 'signed' : 'open'} r={r} attestation={attestations?.i9_s2} onChanged={() => onAction('refresh')} />
+          {!r.is_contractor && <Section2 key={r.i9_section2 ? 'signed' : 'open'} r={r} attestation={attestations?.i9_s2} onChanged={() => onAction('refresh')} />}
 
           {error && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-2">{error}</p>}
           <div className="flex items-center gap-2 flex-wrap">

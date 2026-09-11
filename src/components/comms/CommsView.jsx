@@ -1309,8 +1309,13 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
   useEffect(() => {
     const s = socketRef?.current; if (!s) return;
     const onNew = (m) => { if (m.parent_id === parent.id) load(); };
+    // AND an EDIT, a delete or a reaction — all of which arrive as
+    // `message:update`. Listening only for new replies meant a correction made
+    // to a message in an open thread never reached anybody else reading it.
+    const onUpdate = (m) => { if (m.id === parent.id || m.parent_id === parent.id) load(); };
     s.on('message:new', onNew);
-    return () => s.off('message:new', onNew);
+    s.on('message:update', onUpdate);
+    return () => { s.off('message:new', onNew); s.off('message:update', onUpdate); };
   }, [parent.id, load, socketRef]);
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [thread]);
 
@@ -1946,6 +1951,14 @@ function ForwardModal({ m, onClose }) {
   );
 }
 
+// A CACHED TRANSLATION BELONGS TO A VERSION OF THE TEXT, NOT TO A MESSAGE.
+// Keyed on the id alone, an edited message kept its pre-edit translation for
+// ever: the server drops its own cached row on edit, but the client had an
+// answer and never asked again — so the author saw their correction and
+// everybody reading in the other language went on seeing the original. That is
+// the "Daniela edited it and Marnee still sees the old one" bug.
+const transKey = (m, lang) => `${m.id}:${m.edited_at || ''}:${lang}`;
+
 const Message = memo(function Message({ m, me, onReact, onUnreact, onEdit, onDelete, onReply, onMarkUnread, canTranslate, viewerLang, onTranslate, autoText, highlighted, mentionUsers }) {
   const [showEmoji, setShowEmoji] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -1953,6 +1966,17 @@ const Message = memo(function Message({ m, me, onReact, onUnreact, onEdit, onDel
   const [translated, setTranslated] = useState(null);
   const [translating, setTranslating] = useState(false);
   const [transError, setTransError] = useState(null);
+  // Same rule one level down: a translation this reader asked for by hand is a
+  // translation OF THE TEXT AS IT WAS. When the author edits it, drop it and
+  // show what the message now says rather than a translation of what it used
+  // to say.
+  const textVersion = `${m.edited_at || ''}|${m.deleted ? 'x' : ''}`;
+  const lastVersion = useRef(textVersion);
+  useEffect(() => {
+    if (lastVersion.current === textVersion) return;
+    lastVersion.current = textVersion;
+    setTranslated(null); setTransError(null);
+  }, [textVersion]);
   const [sheet, setSheet] = useState(false); // mobile long-press action sheet
   const [menuOpen, setMenuOpen] = useState(false); // desktop 3-dot menu
   const [menuStyle, setMenuStyle] = useState(null); // viewport coords, measured on open
@@ -2970,18 +2994,18 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   const translatingBatch = useRef(false);
   useEffect(() => {
     if (!autoTranslate || !translateOn || !activeId || !messages.length) return;
-    const need = messages.filter(m => m.body && !m.deleted && autoTrans[`${m.id}:${viewerLang}`] === undefined).map(m => m.id);
+    const need = messages.filter(m => m.body && !m.deleted && autoTrans[transKey(m, viewerLang)] === undefined);
     if (!need.length || translatingBatch.current) return;
     translatingBatch.current = true;
     setTranslatingNow(true);
     let cancelled = false;
     (async () => {
       try {
-        const r = await apiPost(`/comms/channels/${activeId}/translate`, { ids: need, lang: viewerLang });
+        const r = await apiPost(`/comms/channels/${activeId}/translate`, { ids: need.map(m => m.id), lang: viewerLang });
         if (cancelled) return;
         setAutoTrans(prev => {
           const n = { ...prev };
-          for (const id of need) n[`${id}:${viewerLang}`] = r.translations[id] ?? null;
+          for (const m of need) n[transKey(m, viewerLang)] = r.translations[m.id] ?? null;
           return n;
         });
       } catch { /* retried on next messages/lang change */ }
@@ -3686,7 +3710,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
                       {firstNew && <NewDivider />}
                       <Message m={m} me={user} onReact={react} onUnreact={unreact} onEdit={editMsg} onDelete={delMsg} onReply={setReplyTo} onMarkUnread={markUnread}
                         canTranslate={translateOn} viewerLang={viewerLang} onTranslate={translateMessage}
-                        autoText={autoTranslate ? autoTrans[`${m.id}:${viewerLang}`] : null}
+                        autoText={autoTranslate ? autoTrans[transKey(m, viewerLang)] : null}
                         highlighted={highlightId === m.id} mentionUsers={users} />
                     </div>
                   );

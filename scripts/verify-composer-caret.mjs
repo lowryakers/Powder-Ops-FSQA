@@ -68,7 +68,14 @@ const probe = async (text) => {
       'boxSizing', 'tabSize']) mirror.style[p] = cs[p];
     mirror.style.borderStyle = 'solid';
     mirror.style.borderColor = 'transparent';
-    mirror.style.width = `${ta.offsetWidth}px`;
+    // THE MIRROR MODELS THE FIELD'S TEXT COLUMN, NOT ITS OUTER BOX. Built from
+    // offsetWidth it carried the same scrollbar-width mistake the overlay had,
+    // so the two agreed with each other and both disagreed with the field —
+    // the bug this file exists to catch was invisible to it. clientWidth is the
+    // padding box and excludes the scrollbar; the borders are added back
+    // because the mirror is border-box like the field.
+    const bx = (parseFloat(cs.borderLeftWidth) || 0) + (parseFloat(cs.borderRightWidth) || 0);
+    mirror.style.width = `${ta.clientWidth + bx}px`;
     mirror.style.whiteSpace = 'pre-wrap';
     mirror.style.overflowWrap = 'break-word';
     mirror.style.position = 'absolute';
@@ -145,6 +152,62 @@ await page.waitForTimeout(500);
 const LONG = Array.from({ length: 18 }, (_, i) => `line ${i + 1} — *bold* and _italic_ text long enough to wrap once or twice inside the composer box`).join('\n');
 const r = await probe(LONG);
 t('a message past the height cap stays in register', r.dx === 0 && r.dy === 0, JSON.stringify(r));
+
+// ONE LONG PARAGRAPH, no newlines: it wraps many times AND passes the height
+// cap, so the field grows a scrollbar and its text column narrows. That is the
+// case the mirror above could not see, and the one people actually type.
+//
+// HEADLESS CHROMIUM DRAWS OVERLAY SCROLLBARS, which take no width, so this
+// browser cannot reproduce what a Windows or Linux desktop does — a classic
+// bar eats ~15px of the FIELD's text column and nothing out of the layer's.
+// That is why four rounds of caret-drift fixes never caught it. The condition
+// is therefore SIMULATED below by taking the same pixels off the field, and
+// the rule under test is stated directly: the two text columns are the same
+// width, whatever is taking pixels out of the field.
+const PARA = (`${BASE} `).repeat(4).trim();
+for (const w of [1280, 900]) {
+  await page.setViewportSize({ width: w, height: 900 });
+  await page.waitForTimeout(500);
+  const p2 = await probe(PARA);
+  t(`${w}px · a long wrapping paragraph past the height cap stays under the caret`,
+    p2.dx === 0 && p2.dy === 0, JSON.stringify(p2));
+  const p3 = await probe(PARA.replace(RUN, `_${RUN}_`));
+  t(`${w}px · …and the same paragraph with an italic run in it`,
+    p3.dx === 0 && p3.dy === 0, JSON.stringify(p3));
+}
+// THE INVARIANT, stated directly: the layer's text column is the field's text
+// column. Everything above is a symptom of this going wrong.
+const columns = await page.evaluate(() => {
+  const ta = document.querySelector('textarea');
+  const ov = ta.parentElement.querySelector('[aria-hidden="true"]');
+  const col = (el) => { const c = getComputedStyle(el); return el.clientWidth - (parseFloat(c.paddingLeft) || 0) - (parseFloat(c.paddingRight) || 0); };
+  return { field: col(ta), layer: col(ov) };
+});
+t('the layer\'s text column is the field\'s text column', Math.abs(columns.field - columns.layer) < 0.6, JSON.stringify(columns));
+
+// Now take 15px out of the FIELD's column — the stand-in for a desktop
+// scrollbar — and it must still hold, and the words must still sit under the
+// caret. With the old code the layer kept the wider column and the paragraph
+// drifted, which is the reported bug.
+await page.evaluate(() => {
+  const ta = document.querySelector('textarea');
+  ta.style.paddingRight = `${(parseFloat(getComputedStyle(ta).paddingRight) || 0) + 15}px`;
+});
+await page.waitForTimeout(300);
+const narrowed = await probe(PARA);
+t('15px taken out of the field\'s column: the words still sit under the caret', narrowed.dx === 0 && narrowed.dy === 0, JSON.stringify(narrowed));
+const cols2 = await page.evaluate(() => {
+  const ta = document.querySelector('textarea');
+  const ov = ta.parentElement.querySelector('[aria-hidden="true"]');
+  const col = (el) => { const c = getComputedStyle(el); return el.clientWidth - (parseFloat(c.paddingLeft) || 0) - (parseFloat(c.paddingRight) || 0); };
+  return { field: col(ta), layer: col(ov) };
+});
+t('…and the two columns are still the same width', Math.abs(cols2.field - cols2.layer) < 0.6, JSON.stringify(cols2));
+// Put the field back before the box checks below, which are about the ordinary
+// composer and not the simulated one.
+await page.evaluate(() => { document.querySelector('textarea').style.paddingRight = ''; });
+await page.waitForTimeout(300);
+await probe(LONG);
 const geom = await page.evaluate(() => {
   const ta = document.querySelector('textarea');
   const ov = ta.parentElement.querySelector('[aria-hidden="true"]');
@@ -153,7 +216,8 @@ const geom = await page.evaluate(() => {
   return { taScroll: ta.scrollTop, ovScroll: ov.scrollTop, taH: ta.clientHeight, ovH: ov.clientHeight, taW: ta.clientWidth, ovW: ov.clientWidth };
 });
 t('the layer scrolls exactly with the field', geom.taScroll === geom.ovScroll, JSON.stringify(geom));
-t('and is exactly the same box', geom.taH === geom.ovH && geom.taW === geom.ovW, JSON.stringify(geom));
+t('and is the same box (its padding box is the field\'s, gutter aside)',
+  geom.taH === geom.ovH && Math.abs(geom.taW - geom.ovW) < 0.6, JSON.stringify(geom));
 
 await browser.close();
 console.log(`\n${pass} passed, ${fail} failed\n`);

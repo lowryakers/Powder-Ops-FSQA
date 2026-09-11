@@ -981,7 +981,10 @@ function flattenMessage(db, m) {
   return {
     id: m.id, channel_id: m.channel_id, user_id: m.user_id, user_name: userName(db, m.user_id),
     body: m.deleted_at ? null : m.body, parent_id: m.parent_id,
-    edited: !!m.edited_at, deleted: !!m.deleted_at, created_at: m.created_at,
+    // `edited_at` travels, not just the boolean: it is the VERSION of the text,
+    // and anything the client caches per message (a translation) has to be keyed
+    // on it or an edit leaves the old text on screen for good.
+    edited: !!m.edited_at, edited_at: m.edited_at || null, deleted: !!m.deleted_at, created_at: m.created_at,
     reactions: Object.entries(grouped).map(([emoji, users]) => ({ emoji, count: users.length, users })),
     reply_count: thread.c, last_reply_at: thread.last, reply_names: repliers,
     attachments: [],

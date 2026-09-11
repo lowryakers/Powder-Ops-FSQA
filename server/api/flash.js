@@ -6,6 +6,7 @@
 
 import { Router } from 'express';
 import { getDb, logAudit } from '../db.js';
+import { readybotAudiences, SETTABLE } from '../readybot-audience.js';
 import { buildReport, renderReport } from '../flash-report.js';
 import { botDm, postMessageAs } from './comms.js';
 import { pushToUser } from '../push.js';
@@ -105,6 +106,32 @@ router.put('/recipients', (req, res) => {
     .run(JSON.stringify(ids));
   logAudit(req.user, 'update', 'flash_report', null, { action: 'set_recipients', count: ids.length });
   res.json({ recipients: flashRecipients(getDb()) });
+});
+
+// ── Who gets each automatic ReadyBot message ────────────────────────────────
+// Mounted here because the Flash Report is the one people ask about first, and
+// because this router is already admin-only. The registry resolves every
+// audience by calling the function that actually sends it — see
+// server/readybot-audience.js on why a second copy of each rule would be worse
+// than no screen at all.
+router.get('/readybot-audience', (req, res) => {
+  if (!mayRead(req.user)) return res.status(403).json({ error: 'Insufficient permissions' });
+  const db = getDb();
+  res.json({
+    audiences: readybotAudiences(db),
+    people: db.prepare("SELECT id, name, role, department FROM users WHERE is_active = 1 AND name != 'ReadyBot' AND role != 'auditor' ORDER BY name").all(),
+  });
+});
+
+router.put('/readybot-audience/:key', (req, res) => {
+  if (!mayRead(req.user)) return res.status(403).json({ error: 'Insufficient permissions' });
+  const key = String(req.params.key);
+  if (!SETTABLE[key]) return res.status(400).json({ error: 'That message\'s audience follows a rule and is not set here.' });
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String).filter(Boolean) : [];
+  const db = getDb();
+  db.prepare('INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, datetime(\'now\'))').run(key, JSON.stringify(ids));
+  logAudit(req.user, 'update', 'readybot_audience', key, { user_ids: ids, message: SETTABLE[key] }, null, null, SETTABLE[key]);
+  res.json({ audiences: readybotAudiences(db) });
 });
 
 export default router;

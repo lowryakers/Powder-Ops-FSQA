@@ -1,5 +1,5 @@
 import { useAuth } from '../../hooks/useAuth';
-import { QrCode, Users, Sliders, Database, Sparkles, Link2, Plug } from 'lucide-react';
+import { QrCode, Users, Sliders, Database, Sparkles, Link2, Plug, Bot } from 'lucide-react';
 import SettingsShell from '../settings/SettingsShell.jsx';
 import UsersSection from '../settings/UsersSection.jsx';
 import DataBackupSection from '../settings/DataBackupSection.jsx';
@@ -8,6 +8,7 @@ import KioskKeysSection from '../settings/KioskKeysSection.jsx';
 import LogBuilderPanel from '../settings/LogBuilderPanel.jsx';
 import CleanupReviewPanel from '../settings/CleanupReviewPanel.jsx';
 import IntegrationsSection from '../settings/IntegrationsSection.jsx';
+import NotificationsSection from '../settings/NotificationsSection.jsx';
 
 // Settings is a REGISTRY, not a page.
 //
@@ -59,6 +60,15 @@ const SECTIONS = [
   {
     label: 'How the app works',
     sections: [
+      {
+        id: 'readybot',
+        label: 'ReadyBot messages',
+        description: 'Who gets the Flash Report, the pay reminders and every other automatic message',
+        keywords: 'readybot bot notifications flash report daily morning pay reminders dm who receives audience recipients admins',
+        icon: Bot,
+        visible: isAdmin,
+        Component: NotificationsSection,
+      },
       {
         id: 'log-structure',
         label: 'Log structure',
