@@ -67,6 +67,11 @@ export const FACT_LABEL = {
  * `tick`    — work done in another system, confirmed by a person here.
  * `redo`    — what a person has to do to clear it once stale, for the steps
  *             that are not a simple tick.
+ * `applies` — whether this product owes the step at all. Absent means always.
+ *             A step that does not apply is not "done" and not outstanding: it
+ *             leaves the list and the denominator, so the counts never claim
+ *             work that was never owed. Same rule as an equipment step marked
+ *             not applicable, derived from a column rather than waived by hand.
  */
 export const READINESS = [
   {
@@ -130,6 +135,21 @@ export const READINESS = [
     // Inventory locations and open order lines are keyed to the SKU.
     depends: ['sku', 'gtin'],
   },
+  {
+    key: 'amazon', label: 'Listed on Amazon', tick: true,
+    // ONLY ONCE SOMEBODY HAS SAID THIS PRODUCT IS ON AMAZON. A step that can
+    // never be satisfied for half the catalogue is wallpaper, and `applies`
+    // keeps it out of the denominator entirely rather than showing it as work
+    // nobody will ever do. NULL — nobody has said yet — is a different fact
+    // from 'not_sold', and it is reported as its own count on Data health
+    // instead of as an outstanding step on every product.
+    applies: (p) => p.amazon_channel === 'listed',
+    ok: (p) => !!p.amazon_listed_at,
+    owns: ['amazon_listed_at', 'amazon_sku'],
+    // A listing hangs off the SELLER SKU, and FBA stock already in a fulfilment
+    // centre is bound to it — the most expensive place a rename can land.
+    depends: ['sku', 'gtin'],
+  },
 ];
 
 /** The three steps a person confirms, by key. */
@@ -165,9 +185,12 @@ function movedSince(step, p, recorded) {
   return out;
 }
 
+/** Does this product owe the step at all? A step with no `applies` always does. */
+export const stepApplies = (s, p) => (typeof s.applies === 'function' ? !!s.applies(p) : true);
+
 export function readinessOf(p) {
   const basis = parseBasis(p.readiness_basis);
-  const steps = READINESS.map((s) => {
+  const steps = READINESS.filter((s) => stepApplies(s, p)).map((s) => {
     const meta = { key: s.key, label: s.label, tick: !!s.tick, redo: s.redo || null };
     if (!s.ok(p)) return { ...meta, state: 'todo', done: false, changed: [] };
     const rec = basis[s.key];
@@ -210,7 +233,10 @@ export function nextBasis(before, after, changedColumns = [], who = null) {
   const touched = new Set(changedColumns);
   const now = new Date().toISOString();
   for (const s of READINESS) {
-    if (!s.ok(after)) { delete basis[s.key]; continue; }
+    // Not owed, or not satisfied — either way there is nothing to be stale
+    // about. A product moved to 'not_sold' on Amazon drops its basis with the
+    // step, so marking it 'listed' again starts clean rather than reading stale.
+    if (!stepApplies(s, after) || !s.ok(after)) { delete basis[s.key]; continue; }
     const redone = (s.owns || []).some((c) => touched.has(c));
     // Already satisfied, not re-done, and already has a baseline: leave it.
     if (s.ok(before) && !redone && basis[s.key]) continue;

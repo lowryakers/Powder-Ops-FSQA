@@ -2664,3 +2664,42 @@ itself is `docs/sku-standardisation-runbook.md`; the two facts that make it expe
 inventory locations and open order lines to the SKU; Shopify stamps the SKU onto every order line at
 sale, irreversibly) are the 3PL's own answers from D-045-era work and are what set the order:
 ShipHero → Shopify → ReadyDoc, sync paused, on-hand snapshot first.
+
+---
+
+## D-082 — Amazon, and the column that keeps a readiness step honest
+**2026-09-11.** Two answers came back on the SKU cutover runbook's open questions, and both change what
+the app should hold.
+
+**1 · The SKU is not printed on the pack.** An earlier note in CLAUDE.md said it was — the `master.csv`
+comment reasoned that the feed's `sku` column "is what is printed on today's artwork". That was wrong, and
+it was load-bearing in the wrong direction: it implied a SKU cutover eventually needs an artwork revision
+per pack at film lead times. It does not. Nothing on the film carries the SKU, `POST /artwork/ingest`
+resolves by GTIN before SKU, and the GTIN never moves. **The artwork half of the cutover is free.** The
+note is corrected rather than deleted, because a claim that shaped a plan is worth showing as retracted.
+
+**2 · Amazon is the fourth external system**, and it is the one where a rename is most expensive: a listing
+hangs off the seller SKU and FBA stock already in a fulfilment centre is bound to it. So it gets the same
+confirm-and-go-stale step Shopify and ShipHero have — `amazon`, tickable, `depends: ['sku','gtin']`.
+
+**The design problem was that not every product is sold on Amazon**, and a step that can never be satisfied
+for half the catalogue is wallpaper — the exact failure the first-sight rule exists to prevent. Two things
+resolve it:
+
+- **`applies` on the readiness model**, new and defaulting to always. A step that does not apply is neither
+  done nor outstanding: it leaves the list and the denominator, so the counts never claim work that was
+  never owed. The equipment checklist already had this idea as a hand-written waiver; here it is derived
+  from a column.
+- **`amazon_channel` has THREE states**: NULL (nobody has said — the honest state of all 118 today),
+  `listed`, `not_sold`. Collapsing NULL into `not_sold` would be the cheap version and would quietly drop a
+  live listing off the punch list, which is the defect this codebase keeps unpicking. **Which products are
+  on Amazon at all is a decision rather than a defect, so it is counted on Data health**
+  (`{listed, not_sold, undecided, unconfirmed}`) instead of appearing as 118 outstanding steps.
+
+Two refusals follow from that and are asserted: confirming a listing is refused while the channel is NULL
+or `not_sold` (a date against a channel that may not exist), and moving a product to `not_sold` **clears**
+the confirmation rather than leaving a listing date on something we do not sell. `amazon_listed_at` stays
+out of `WRITABLE` — the confirm endpoint owns it, the `nfp_version` doctrine.
+
+Verified in `verify:skurename`, now 37 live assertions; the control — removing `applies` — fails 2, because
+the step then appears on every product in the catalogue.

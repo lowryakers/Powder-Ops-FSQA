@@ -416,8 +416,10 @@ It feeds the **Artwork-Proofing** service (`lowryakers/Artwork-Proofing`, Python
 `front panel dimension`, `wind direction`, `pms spot colors`, `hex spot colors`, `eye mark color`,
 `die line required`. **Rename a column here and proofing breaks silently over there**, because its parser
 skips headers it does not recognise — it does not error, it just checks against nothing. Extra columns are
-free; the sixteen are not. `sku` deliberately carries the CURRENT code, because that is what is printed on
-today's artwork.
+free; the sixteen are not. `sku` carries the CURRENT code, because that is what the proofer keys its row on.
+**The SKU is NOT printed on the pack** (confirmed by the plant, 2026-09-11) — an earlier note here said it
+was, and it was wrong. That is what makes a SKU rename cheap on the artwork side: no film reprint, no
+revision, and `POST /artwork/ingest` resolves by GTIN before SKU anyway.
 Public path, token compared as a hash, off entirely unless `PRODUCT_MASTER_TOKEN` is set. **Registered
 before `/:sku`** — Express matches in declaration order and `/master.csv` is a perfectly good `:sku`.
 **And mounted AHEAD of `requireModuleWrite` in server.js** (`app.get('/api/products/master.csv', masterCsv)`):
@@ -781,6 +783,24 @@ preferred SKU of `BEF-BTL-CSG`, which is exactly the disagreement the preview co
   which needs a genuinely fresh DB — it asserts the opening state then files into it) and 16 in a real
   browser.
 
+### Amazon is the fourth external system, and `amazon_channel` is what makes its step honest (D-082)
+`products.amazon_channel` (NULL | `listed` | `not_sold`) + `amazon_sku` / `amazon_asin` +
+`amazon_listed_at` / `_by`, and a tenth readiness step `amazon` (tickable, `depends: ['sku','gtin']`).
+- **`applies` is new on the readiness model** and defaults to always. A step that does not apply is
+  neither done nor outstanding: it leaves the list AND the denominator, so the counts never claim work
+  that was never owed. Amazon applies only when `amazon_channel === 'listed'`.
+- **THREE STATES, NOT TWO.** NULL is "nobody has said" — the honest state of all 118 today — and is a
+  different fact from `not_sold`. Collapsing them would quietly drop a live listing off the punch list.
+  **Which products are on Amazon at all is a DECISION, so it is counted on Data health**
+  (`amazon: {listed, not_sold, undecided, unconfirmed}`), never shown as 118 outstanding steps — that is
+  the wallpaper the first-sight rule exists to prevent.
+- `amazon_listed_at` is NOT in `WRITABLE` (the confirm endpoint owns it, the `nfp_version` doctrine), and
+  **moving a product to `not_sold` clears the confirmation** — a listing date on a product we do not sell
+  is a record of something untrue that would come straight back on relisting.
+- Confirming is refused while the channel is NULL or `not_sold`: a date against a channel that may not
+  exist is the fabricated-record refusal again.
+- Verified inside `verify:skurename` (37 total); the control — removing `applies` — fails 2.
+
 ### THE SKU IS A JOIN KEY IN FOUR TABLES, and the rename carried one (D-081)
 `product_colors`, `artwork_versions`, `artwork_snapshots` and `nfp_versions` are all keyed on
 `products.sku`. Both rename paths — `POST /products/:sku/rename` and `POST /products/drafts/realign`
@@ -793,7 +813,7 @@ finding the proof run against that pack.
   products furthest along, on day one of the SKU cutover, with an error message that explains nothing.
 - **`SKU_CHILD_TABLES` + `moveSkuChildren()` is the one definition** and both paths call it. A new
   table keyed on the SKU goes in that list or a rename loses it.
-- `verify:skurename` (20 live, in `verify:all`) renames a product that has colours, a proofed artwork
+- `verify:skurename` (37 live, in `verify:all`) renames a product that has colours, a proofed artwork
   version, that proof's snapshot and an approved panel. **The control is decisive: cutting the list
   back to `product_colors` fails 17 of the 20**, the first with the exact 500 the plant would have hit.
 - **The renames write the cutover's own punch list.** `stampReadiness(..., ['sku'])` makes *Listed in

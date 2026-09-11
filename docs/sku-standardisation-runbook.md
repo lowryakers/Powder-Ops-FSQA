@@ -79,17 +79,23 @@ If a wave goes wrong, the damage is bounded by the wave.
 These are genuinely open. Each one can change the plan, so answer them before Phase 2
 rather than discovering them mid-cutover.
 
-- [ ] **Is the SKU printed on the pack?** If it is, the printed code and the system code
-      disagree from cutover day until the next film runs — and film has a long lead
-      time. Check a current dieline, or open a recent proofing run in ReadyDoc
-      (Artwork → the pack's latest version) and look at what the run captured off the
-      label. *If yes, that is not a blocker — it is a decision to let the two disagree
-      for a while, and to say so in writing.*
-- [ ] **What does Amazon key on?** If we sell on Amazon, listings hang off the seller
-      SKU, and FBA inventory already in a fulfilment centre is bound to it. This is the
-      single most likely place to strand inventory. *Note: ReadyDoc has no Amazon field
-      at all, so it cannot produce a punch list for Amazon — say the word and one gets
-      added.*
+- [x] ~~**Is the SKU printed on the pack?**~~ **Answered: it is not.** Nothing on the film
+      carries the SKU, so no pack can ever disagree with the system and no artwork
+      revision is needed. **The artwork half of this project is free** — which was the
+      single biggest thing that could have made it expensive, and it does not apply.
+- [x] ~~**Does ReadyDoc know about Amazon?**~~ **Answered: it does now.** Every product
+      carries *Sold on Amazon?* (not decided / listed / not sold), its seller SKU and its
+      ASIN, and a **Listed on Amazon** readiness step that goes amber the moment the SKU
+      or GTIN moves — exactly like Shopify and ShipHero. The remaining work is the
+      decision, not the software.
+- [ ] **Set the Amazon channel on every active product.** Products → open each one →
+      *Sold on Amazon?*. Until that is set, the product owes no Amazon step — which is
+      correct, and is also why its punch list would otherwise look empty. Data health
+      reports the *Not decided yet* count; work it to zero before Wave 1.
+- [ ] **Confirm what Amazon keys on, for the ones marked listed.** A listing hangs off the
+      seller SKU, and FBA stock already in a fulfilment centre is bound to it — the single
+      most likely place to strand inventory. Whether that seller SKU can be changed in
+      place or needs a new listing is Amazon's answer, not ours.
 - [ ] **Any other channel keyed on the SKU?** Faire, a broker portal, a retailer's EDI
       feed, a co-man's system. List them or confirm there are none.
 - [ ] **Does anything published to GS1 carry the SKU?** The GTIN itself is unaffected.
@@ -168,9 +174,10 @@ put back, so it should be the one carrying the least risk.
       an old Shopify order line and any historical record still resolve. Nothing needs
       doing to make that true, and nothing should be done to undo it.
 - [ ] **The renames write their own punch list.** Every renamed product's *Listed in
-      Shopify* and *Synced to ShipHero* steps go **amber (stale)** the moment the code
-      moves, naming the SKU as what changed. Work that amber list down to zero — it is
-      the re-verification checklist, and it is generated rather than typed.
+      Shopify*, *Synced to ShipHero* and — where the product is marked as sold there —
+      *Listed on Amazon* steps go **amber (stale)** the moment the code moves, naming the
+      SKU as what changed. Work that amber list down to zero — it is the re-verification
+      checklist, and it is generated rather than typed.
 - [ ] Re-tick each step only once you have actually looked at that product in that
       system. Ticking to clear amber is how the list stops meaning anything.
 - [ ] Confirm the GS1 barcode step stayed green throughout. If it did not, something
@@ -180,12 +187,11 @@ put back, so it should be the one carrying the least risk.
 
 ## Phase 6 — Everything downstream
 
-- [ ] **Artwork-Proofing feed.** ReadyDoc's `master.csv` is what the proofing service
-      checks labels against, and its `sku` column carries the current code. Once renamed,
-      run one proof and confirm the service still matches the pack. *If the SKU is
-      printed on the pack (Phase 1), expect a mismatch on old film and decide whether
-      that is reported or waived.*
-- [ ] **Amazon**, per the Phase 1 answer.
+- [ ] **Artwork-Proofing feed.** ReadyDoc's `master.csv` is what the proofing service checks labels
+      against, and its `sku` column carries the current code. The SKU is not on the pack and ingest
+      resolves by GTIN before SKU, so nothing should move — run one proof and confirm.
+- [ ] **Amazon.** For every product marked *listed*, update the seller SKU, then re-tick **Listed on
+      Amazon** in ReadyDoc so the amber clears. Watch FBA inventory for a week afterwards.
 - [ ] **MRP / Keychain**, per the Phase 1 answer.
 - [ ] **Packaging POs.** Tell Mike which code goes on the next PO.
 - [ ] **Anyone who types a SKU by hand** — the office, the warehouse, whoever builds
@@ -224,13 +230,15 @@ put back, so it should be the one carrying the least risk.
 - Holds the agreed new code for all 118 products (*New standard* column).
 - Renames as a first-class, audited act — not a field edit.
 - Keeps the old code for ever (`legacy_sku`), so nothing historical stops resolving.
-- **Writes the re-verification punch list itself** — Shopify and ShipHero go stale on
-  every renamed product and come back onto the list until someone confirms them.
+- **Writes the re-verification punch list itself** — Shopify, ShipHero and Amazon go stale on every
+  renamed product and come back onto the list until someone confirms them.
+- Holds the Amazon channel, seller SKU and ASIN, and reports how many products nobody has decided on yet.
 - Files the before/after exports from both systems (Products → Registry) so the
   evidence lives with the project instead of in a downloads folder.
 
 **Does not:**
 - Touch ShipHero or Shopify. Nothing in ReadyDoc reaches either system; every rename
   in those is done by a person in that system.
-- Know anything about Amazon.
+- Reach Amazon, Shopify or ShipHero. It records the channel and the confirmation; every change in
+  those systems is made by a person in that system.
 - Decide the order. That is this document.

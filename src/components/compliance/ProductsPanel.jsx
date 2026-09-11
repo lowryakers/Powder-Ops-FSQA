@@ -270,6 +270,9 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
       // Nutrition panel section below. The server refuses them on PUT.
       artwork_status: p.artwork_status || '', drive_url: p.drive_url || '', notes: p.notes || '',
       fill_weight_g: p.fill_weight_g ?? '',
+      // Blank is a real answer here — "nobody has said yet" — so it is an
+      // option in the select rather than an absence.
+      amazon_channel: p.amazon_channel || '', amazon_sku: p.amazon_sku || '', amazon_asin: p.amazon_asin || '',
     });
     setEditing(true);
   };
@@ -349,6 +352,37 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
                       <option key={s} value={s}>{pretty(s)}</option>)}
                   </select>
                 </label>
+                <div className="border border-gray-200 rounded-lg p-3 space-y-3" data-amazon-edit>
+                  <label className="block">
+                    <span className="text-xs font-medium text-gray-600">Sold on Amazon?</span>
+                    <select value={form.amazon_channel} onChange={set('amazon_channel')}
+                      className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-amazon-channel>
+                      <option value="">Not decided yet</option>
+                      <option value="listed">Yes — listed on Amazon</option>
+                      <option value="not_sold">No — not sold on Amazon</option>
+                    </select>
+                  </label>
+                  {form.amazon_channel === 'listed' && (
+                    <>
+                      <label className="block">
+                        <span className="text-xs font-medium text-gray-600">Amazon seller SKU</span>
+                        <input value={form.amazon_sku} onChange={set('amazon_sku')} data-amazon-sku
+                          className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                          placeholder="Leave blank if it is the same as this product's SKU" />
+                      </label>
+                      <label className="block">
+                        <span className="text-xs font-medium text-gray-600">ASIN</span>
+                        <input value={form.amazon_asin} onChange={set('amazon_asin')} data-amazon-asin
+                          className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                      </label>
+                      <p className="text-[11px] text-gray-500">
+                        The listing hangs off the seller SKU, and FBA stock already in a fulfilment centre is
+                        bound to it — so <strong>Listed on Amazon</strong> goes amber whenever this product&apos;s
+                        SKU or GTIN moves.
+                      </p>
+                    </>
+                  )}
+                </div>
                 <label className="block">
                   <span className="text-xs font-medium text-gray-600">Notes</span>
                   <textarea value={form.notes} onChange={set('notes')} rows={3}
@@ -378,6 +412,12 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
                     // for most of the catalogue it is this product's own SKU,
                     // printed one line above.
                     ['Shopify SKU', p.shopify_sku && p.shopify_sku !== p.sku ? p.shopify_sku : null],
+                    // "Not decided yet" is shown rather than hidden: a blank
+                    // here is the fact that nobody has said, which is exactly
+                    // what a SKU cutover needs to know before it starts.
+                    ['Amazon', p.amazon_channel === 'listed'
+                      ? `Listed${p.amazon_sku && p.amazon_sku !== p.sku ? ` — seller SKU ${p.amazon_sku}` : ''}${p.amazon_asin ? ` · ${p.amazon_asin}` : ''}`
+                      : p.amazon_channel === 'not_sold' ? 'Not sold on Amazon' : 'Not decided yet'],
                     ['Formula ref', p.mrp_formula_id],
                     ['NFP version', p.nfp_version && `${p.nfp_version}${p.nfp_approved_at ? ` — approved ${p.nfp_approved_at}` : ' — not approved'}`],
                     ['Artwork', pretty(p.artwork_status)],

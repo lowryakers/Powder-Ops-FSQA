@@ -3105,6 +3105,28 @@ function runMigrations() {
   addColumnIfMissing('products', 'shopify_listed_by', 'TEXT');
   addColumnIfMissing('products', 'shiphero_synced_by', 'TEXT');
 
+  // AMAZON, and the column that makes the step honest.
+  //
+  // The fourth external system, and the one where a SKU rename is most
+  // expensive: a listing hangs off the SELLER SKU, and FBA stock already in a
+  // fulfilment centre is bound to it. So it needs the same confirm-and-go-stale
+  // step Shopify and ShipHero have.
+  //
+  // But not every product is sold on Amazon, and a step that can never be
+  // satisfied for half the catalogue is wallpaper. `amazon_channel` is the fact
+  // that decides whether the step applies at all, and it has THREE states on
+  // purpose: NULL means nobody has said (the honest state of all 118 today),
+  // 'listed' means the step applies, 'not_sold' means it never will.
+  // Collapsing "no" into "nobody has said" is the defect this codebase keeps
+  // unpicking — and here it would quietly drop a live listing off the punch
+  // list. Which products are on Amazon at all is reported as its own count on
+  // Data health, not as 118 outstanding steps.
+  addColumnIfMissing('products', 'amazon_channel', 'TEXT');   // NULL | 'listed' | 'not_sold'
+  addColumnIfMissing('products', 'amazon_sku', 'TEXT');       // the seller SKU the listing hangs off
+  addColumnIfMissing('products', 'amazon_asin', 'TEXT');
+  addColumnIfMissing('products', 'amazon_listed_at', 'TEXT');
+  addColumnIfMissing('products', 'amazon_listed_by', 'TEXT');
+
   // WHAT EACH READY STEP WAS TRUE AGAINST.
   //
   // A step signed off print-ready is not print-ready once the GTIN moves — the

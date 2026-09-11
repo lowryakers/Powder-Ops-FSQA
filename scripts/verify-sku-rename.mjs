@@ -90,6 +90,61 @@ t('AND KEEPS THE OLD ONE FOREVER — a two-year-old PO still resolves', body?.le
   NEXT_SKU = AGAIN;
 }
 
+// Amazon: the fourth system, and the one where a rename is most expensive.
+{
+  console.log('\n── Amazon ──');
+  const get = async (sku) => {
+    const all = await (await call('GET', `/products?sku=${sku}`, null, tok)).json();
+    return (Array.isArray(all) ? all : all.products || []).find((x) => x.sku === sku);
+  };
+  const stepOf = (row, k) => (row?.readiness?.steps || []).find((s) => s.key === k);
+
+  const before = await get(NEXT_SKU);
+  t('A PRODUCT NOBODY HAS PLACED ON AMAZON DOES NOT OWE THE STEP — it is not on the list at all',
+    !stepOf(before, 'amazon'), JSON.stringify((before?.readiness?.steps || []).map((s) => s.key)));
+  t('confirming a listing is refused until somebody says it is on Amazon',
+    (await call('POST', `/products/${NEXT_SKU}/confirm/amazon`, {}, tok)).status === 400);
+
+  t('a channel value the readiness step cannot read is refused',
+    (await call('PUT', `/products/${NEXT_SKU}`, { amazon_channel: 'maybe' }, tok)).status === 400);
+
+  t('marking it not sold is accepted', (await call('PUT', `/products/${NEXT_SKU}`, { amazon_channel: 'not_sold' }, tok)).status === 200);
+  t('and it still owes nothing — "no" and "nobody has said" both leave the step off, for different reasons',
+    !stepOf(await get(NEXT_SKU), 'amazon'));
+  t('confirming a listing on a product marked not sold is refused',
+    (await call('POST', `/products/${NEXT_SKU}/confirm/amazon`, {}, tok)).status === 400);
+
+  await call('PUT', `/products/${NEXT_SKU}`, { amazon_channel: 'listed', amazon_sku: 'B0TEST', amazon_asin: 'B00TESTASIN' }, tok);
+  const listed = await get(NEXT_SKU);
+  t('SAYING IT IS LISTED PUTS THE STEP ON THE PUNCH LIST', stepOf(listed, 'amazon')?.state === 'todo',
+    stepOf(listed, 'amazon')?.state);
+  t('the seller SKU and ASIN are stored', listed?.amazon_sku === 'B0TEST' && listed?.amazon_asin === 'B00TESTASIN');
+  t('it is a step a person ticks, like Shopify and ShipHero', stepOf(listed, 'amazon')?.tick === true);
+
+  t('confirming it is accepted now', (await call('POST', `/products/${NEXT_SKU}/confirm/amazon`, {}, tok)).status === 200);
+  t('and it reads done', stepOf(await get(NEXT_SKU), 'amazon')?.state === 'done');
+
+  const AMZ = 'WHY-PLG-RENAMED3';
+  t('renamed once more', (await call('POST', `/products/${NEXT_SKU}/rename`, { sku: AMZ }, tok)).status === 200);
+  const moved = await get(AMZ);
+  t('THE AMAZON STEP GOES STALE WITH THE SKU — FBA stock is bound to the seller SKU',
+    stepOf(moved, 'amazon')?.state === 'stale', stepOf(moved, 'amazon')?.state);
+  t('and it names the SKU as what moved', stepOf(moved, 'amazon')?.changed?.includes('sku'));
+  NEXT_SKU = AMZ;
+
+  t('marking it not sold afterwards drops the confirmation with it — a listing date on a product we do not sell is a false record',
+    (await call('PUT', `/products/${NEXT_SKU}`, { amazon_channel: 'not_sold' }, tok)).status === 200
+    && !(await get(NEXT_SKU))?.amazon_listed_at);
+
+  const health = await (await call('GET', '/products/data-health', null, tok)).json();
+  t('Data health counts the channel DECISION separately from the readiness steps',
+    health?.amazon && typeof health.amazon.undecided === 'number'
+    && health.amazon.undecided + health.amazon.listed + health.amazon.not_sold > 0,
+    JSON.stringify(health?.amazon));
+  t('and it is the honest state of the catalogue — nobody has said, for almost all of it',
+    health.amazon.undecided >= 100, String(health?.amazon?.undecided));
+}
+
 // The refusals that keep a join key safe.
 {
   const all = await (await call('GET', '/products', null, tok)).json();

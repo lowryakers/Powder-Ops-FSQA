@@ -782,10 +782,25 @@ router.get('/data-health', (_req, res) => {
   const KINDS = ['no_spec', 'bad_color', 'no_colors', 'not_a_sku', 'gtin'];
   const counts = Object.fromEntries(KINDS.map(k => [k, new Set(issues.filter(i => i.kind === k).map(i => i.sku)).size]));
 
+  // WHICH PRODUCTS ARE ON AMAZON AT ALL is a decision, not a defect, so it is
+  // counted here rather than shown as an outstanding readiness step on every
+  // product. Active rows only — a discontinued SKU owes no channel decision.
+  const live = products.filter((p) => p.status !== 'discontinued');
+  const amazon = {
+    listed: live.filter((p) => p.amazon_channel === 'listed').length,
+    not_sold: live.filter((p) => p.amazon_channel === 'not_sold').length,
+    // The honest state of the catalogue until somebody goes through it.
+    undecided: live.filter((p) => !p.amazon_channel).length,
+    // Listed, and the listing has not been confirmed since the SKU last moved.
+    unconfirmed: live.filter((p) => p.amazon_channel === 'listed'
+      && !(readinessOf(p).steps.find((x) => x.key === 'amazon') || {}).done).length,
+  };
+
   res.json({
     products: products.length,
     flavors: names.length,
     counts,
+    amazon,
     // SKUs affected, not issues raised — one SKU with three bad colour slots is
     // one product to go and fix, and reporting three overstates the work.
     affected: new Set(issues.map(i => i.sku)).size,
@@ -813,6 +828,11 @@ const WRITABLE = [
   'legacy_sku', 'gtin', 'category', 'protein_type', 'pack', 'pack_count', 'flavor',
   'base_flavor', 'flavor_code', 'status', 'spec_id', 'eyemark_color', 'dieline_required',
   'shopify_sku', 'shopify_variant_id', 'mrp_formula_id', 'formula_rev',
+  // Amazon: the channel decision and the two identifiers a listing hangs off.
+  // `amazon_listed_at` is NOT here — it is a confirmation, owned by
+  // POST /confirm/amazon, the same doctrine that keeps `nfp_version` off the
+  // ordinary edit form.
+  'amazon_channel', 'amazon_sku', 'amazon_asin',
   'artwork_version', 'artwork_status', 'drive_url', 'notes', 'fill_weight_g',
 ];
 
@@ -850,7 +870,11 @@ const CONFIRMATIONS = {
   formula: { at: 'formula_approved_at', by: 'formula_approved_by', label: 'Approved formula' },
   shopify: { at: 'shopify_listed_at', by: 'shopify_listed_by', label: 'Listed in Shopify' },
   shiphero: { at: 'shiphero_synced_at', by: 'shiphero_synced_by', label: 'Synced to ShipHero' },
+  amazon: { at: 'amazon_listed_at', by: 'amazon_listed_by', label: 'Listed on Amazon' },
 };
+
+/** NULL (nobody has said) | 'listed' | 'not_sold'. Anything else is refused. */
+const AMAZON_CHANNELS = ['listed', 'not_sold'];
 
 router.post('/:sku/confirm/:step', (req, res) => {
   if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalogue.' });
@@ -861,6 +885,16 @@ router.post('/:sku/confirm/:step', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM products WHERE sku = ?').get(req.params.sku);
   if (!existing) return res.status(404).json({ error: 'No such SKU' });
+
+  // Confirming a listing on a product nobody has said is on Amazon would put a
+  // date against a channel that may not exist. Say which it is first.
+  if (req.params.step === 'amazon' && existing.amazon_channel !== 'listed') {
+    return res.status(400).json({
+      error: existing.amazon_channel === 'not_sold'
+        ? 'This product is marked as not sold on Amazon.'
+        : 'Say whether this product is sold on Amazon before confirming its listing.',
+    });
+  }
 
   const on = req.body?.on !== false;
   db.prepare(`UPDATE products SET ${c.at} = ?, ${c.by} = ?, updated_at = datetime('now') WHERE sku = ?`)
@@ -941,6 +975,17 @@ router.put('/:sku', (req, res) => {
     patch.fill_weight_g = n;
   }
   if (patch.gtin !== undefined) patch.gtin_valid = gtinValid(patch.gtin) ? 1 : 0;
+  // Three states and no fourth. A value the readiness step cannot read would
+  // silently take the product off Amazon's punch list.
+  if (patch.amazon_channel != null && !AMAZON_CHANNELS.includes(patch.amazon_channel)) {
+    return res.status(400).json({ error: `Amazon channel is ${AMAZON_CHANNELS.join(' or ')}, or blank for "nobody has said yet".` });
+  }
+  // Moving a product OFF Amazon drops the confirmation with it — a stamped
+  // listing date on a product marked not sold is a record of something that is
+  // no longer true, and it would come straight back if it were ever relisted.
+  if (patch.amazon_channel === 'not_sold' && existing.amazon_listed_at) {
+    patch.amazon_listed_at = null; patch.amazon_listed_by = null;
+  }
   if (!Object.keys(patch).length) return res.json(existing);
 
   const sets = Object.keys(patch).map((c) => `${c} = ?`).join(', ');
