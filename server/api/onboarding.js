@@ -42,6 +42,8 @@ import { storageEnabled, putObject, presignGet, deleteObject } from '../storage.
 import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
 import { revokeSessions } from './sessions.js';
+import { botDm, postMessageAs } from './comms.js';
+import { pushToUser } from '../push.js';
 
 export const router = Router();
 export const portalRouter = Router();
@@ -963,6 +965,44 @@ portalRouter.post('/:token/finish', (req, res) => {
   db.prepare("UPDATE onboarding_records SET status = 'ready', finished_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(rec.id);
   logAudit('onboarding-portal', 'update', 'onboarding', rec.id, { finished: true }, null, null, nameOf(rec));
   res.json({ ok: true });
+  // Told, not discovered. A finished packet used to sit at "Ready for review"
+  // until somebody happened to open Onboarding. Fire-and-forget: the hire has
+  // already been told they are done, and a comms outage must not undo that.
+  announceFinished(db, db.prepare('SELECT * FROM onboarding_records WHERE id = ?').get(rec.id)).catch(() => {});
 });
+
+// Who is told when a packet is finished: whoever started it, plus the office
+// (admins and the office/HR departments — the same people the pay-action
+// reminder reaches). One DM each, no channel post; a new hire's packet is not
+// plant news.
+export function finishWatchers(db, rec) {
+  const rows = db.prepare(`SELECT id, name FROM users WHERE is_active = 1 AND name != 'ReadyBot' AND role != 'auditor'
+      AND (role = 'admin' OR LOWER(COALESCE(department,'')) IN ('office', 'hr') OR name = ?)`).all(rec.created_by || '');
+  return rows;
+}
+
+async function announceFinished(db, rec) {
+  const who = nameOf(rec);
+  const kind = rec.worker_type === 'contractor' ? '1099 contractor' : 'W-2 employee';
+  const forms = rec.worker_type === 'contractor' ? 'W-9 signed' : 'W-4 and I-9 Section 1 signed';
+  const link = `${readyDocOrigin()}/?tab=onboarding`;
+  for (const w of finishWatchers(db, rec)) {
+    try {
+      const { bot, dm } = botDm(db, w.id);
+      // Bot bold is *text*, not **text** — the chat renderer isn't markdown.
+      await postMessageAs(db, dm, bot,
+        `📋 *${who}* has finished their onboarding packet (${kind}; ${forms}).\n`
+        + (rec.worker_type === 'contractor'
+          ? `Review it and press Complete to put them on the roster.\n`
+          : `Review it, complete I-9 Section 2 with their original documents, then press Complete.\n`)
+        + `The SSN and bank numbers are behind "Show for ADP entry" on the packet.\n${link}`);
+      pushToUser(w.id, {
+        title: 'Onboarding packet finished',
+        body: `${who} — ${kind}. Ready for review.`,
+        tag: 'onboarding-finished', url: '/?tab=onboarding',
+      }).catch(() => {});
+    } catch { /* one unreachable watcher must not stop the others */ }
+  }
+}
 
 export default router;

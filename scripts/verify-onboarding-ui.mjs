@@ -60,6 +60,8 @@ t('nothing sticks out sideways at 390px', await m.evaluate(() => document.docume
 const fill = async (labelText, value) => {
   await m.locator(`span:text-is("${labelText}") + input, span:text-is("${labelText}") + select`).first().fill(value);
 };
+t('the "about you" step tells the hire the name must match their Social Security card and to correct it here',
+  /match your Social Security card/.test(await m.locator('[data-legal-name-note]').innerText()) && /correct it here/.test(await m.locator('[data-legal-name-note]').innerText()));
 t('gender is asked, and says what it is for', await m.locator('[data-gender]').count() === 1
   && /insurance and compliance/i.test(await m.locator('body').innerText()));
 await fill('Phone *', '8015550100');

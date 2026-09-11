@@ -38,6 +38,8 @@ const en = {
   'welcome.go': 'Let’s go',
 
   'personal.title': 'About you',
+  'personal.legalNote': 'Your name here must match your Social Security card — it is the name that goes on your tax forms and paycheck.',
+  'personal.legalFix': 'The office typed what it had. If it is not your full legal name, correct it here before going on.',
   'personal.first': 'First name *',
   'personal.last': 'Last name *',
   'personal.middle': 'Middle name',
@@ -122,6 +124,8 @@ const es = {
   'welcome.go': 'Empezar',
 
   'personal.title': 'Sobre ti',
+  'personal.legalNote': 'Tu nombre aquí debe coincidir con tu tarjeta del Seguro Social — es el nombre que va en tus formas de impuestos y en tu cheque.',
+  'personal.legalFix': 'La oficina escribió lo que tenía. Si no es tu nombre legal completo, corrígelo aquí antes de continuar.',
   'personal.first': 'Nombre *',
   'personal.last': 'Apellidos *',
   'personal.middle': 'Segundo nombre',

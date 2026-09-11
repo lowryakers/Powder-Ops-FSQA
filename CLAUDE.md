@@ -1059,6 +1059,16 @@ that has to be fed to stay useful. Office nav group, module id `candidates`.
   (`data-engaged-as`) and offers the same picker while nothing is signed. **`applyFields` refuses a change
   of worker type once a W-4, I-9 or W-9 signature exists** — the forms on the record would contradict it.
   Cancel and start again. A feature verified only through the API is a feature the office cannot reach.
+- **The link goes out with whatever name the office has; the hire corrects it.** First, middle, last and
+  preferred name are the hire's to edit on the "about you" step, and the signature must match the legal
+  name AS IT STANDS ON THE RECORD at signing (`signForm`). The step now says so in both languages
+  (`personal.legalNote` / `personal.legalFix`, `data-legal-name-note`): match the Social Security card,
+  correct it here. A nameless "general link" was considered and rejected — the invitation's name is the
+  office's statement of who the packet is for.
+- **The office is TOLD when a packet is finished** (`announceFinished`, on the portal's `/finish`): a
+  ReadyBot DM + push to whoever started it, admins and the office/HR departments — never a channel post, a
+  new hire's packet is not plant news. Fire-and-forget after the response; the hire has already been told
+  they are done. Asserted: the warehouse and the operator are not told.
 - **Not claimed: that the PDF is the retained Form I-9.** 8 CFR 274a.2's electronic-system rules have not
   been reviewed against this; the guide says so and the panel footer says so. The office completes the
   official I-9 in ADP or on paper from the packet until HR decides otherwise.

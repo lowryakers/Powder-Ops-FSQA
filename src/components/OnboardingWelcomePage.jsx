@@ -250,6 +250,13 @@ export default function OnboardingWelcomePage({ token }) {
       {name === 'personal' && (
         <div className="space-y-3">
           <h2 className="text-lg font-bold text-gray-900">{t('personal.title')}</h2>
+          {/* The office sends the link with whatever name it has; the hire is
+              the one who knows the legal one, and the signatures later must
+              match what is typed here. Said plainly, in both languages. */}
+          <div className="text-sm text-gray-800 bg-amber-50 border border-amber-200 rounded-lg p-2.5 space-y-0.5" data-legal-name-note>
+            <p className="font-medium">{t('personal.legalNote')}</p>
+            <p className="text-gray-700">{t('personal.legalFix')}</p>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <Field l={t('personal.first')}><input className={input} value={form.first_name || ''} onChange={set('first_name')} /></Field>
             <Field l={t('personal.last')}><input className={input} value={form.last_name || ''} onChange={set('last_name')} /></Field>

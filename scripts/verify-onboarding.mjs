@@ -223,6 +223,17 @@ console.log('\nFinishing, once everything is in');
   t('the packet finishes once the forms are complete and signed', fin2.ok, `${fin2.status} ${JSON.stringify(fb).slice(0, 160)}`);
   const after = await J(await fetch(`${B}/onboarding-portal/${tok}`));
   t('the record reads ready with nothing missing', after?.status === 'ready' && after?.missing?.length === 0, JSON.stringify(after?.missing));
+  // The office is TOLD, not left to discover it. The announcement runs after
+  // the response, so give it a moment.
+  await new Promise(r => setTimeout(r, 800));
+  const d3 = new Database(process.env.DBPATH, { readonly: true });
+  const dms = d3.prepare("SELECT body FROM chat_messages WHERE body LIKE '%finished their onboarding packet%'").all();
+  const bot = d3.prepare("SELECT id FROM users WHERE name = 'ReadyBot'").get();
+  const dmTo = bot ? d3.prepare(`SELECT DISTINCT m.user_id FROM chat_channel_members m JOIN chat_channels c ON c.id = m.channel_id
+      JOIN chat_messages msg ON msg.channel_id = c.id WHERE msg.body LIKE '%finished their onboarding packet%' AND m.user_id != ?`).all(bot.id).map(r => r.user_id) : [];
+  d3.close();
+  t('ReadyBot DMs the office the moment the packet is finished, naming the hire and the forms', dms.length >= 1 && /Test Hire/.test(dms[0]?.body || '') && /W-4 and I-9 Section 1 signed/.test(dms[0]?.body || ''), JSON.stringify(dms).slice(0, 200));
+  t('…and it reaches the admin who started it and the office supervisor, not the warehouse', dmTo.includes('ob-admin') && dmTo.includes('ob-office') && !dmTo.includes('ob-wh') && !dmTo.includes('ob-op'), JSON.stringify(dmTo));
 }
 
 console.log('\nI-9 Section 2 is the employer\'s, under the password gate');
