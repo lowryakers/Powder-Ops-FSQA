@@ -48,6 +48,10 @@ export const portalRouter = Router();
 
 // Onboarding holds pay and identity data — admins, or an explicit grant.
 const canManage = (u) => u?.role === 'admin' || hasExplicitGrant(u, 'onboarding');
+// Who may reveal the masked numbers for ADP entry: office/HR holding the grant,
+// or an admin. See the reveal route.
+const canReveal = (u) => u?.role === 'admin'
+  || (hasExplicitGrant(u, 'onboarding') && ['office', 'hr', 'admin'].includes((u?.department || '').toLowerCase()));
 
 const sha = (t) => createHash('sha256').update(t).digest('hex');
 
@@ -369,6 +373,9 @@ router.get('/', (req, res) => {
   res.json({
     records: rows.map(r => shape(db, r)),
     adp_ready: adpEnabled(), sensitive_collection: cryptoEnabled(), storage_enabled: storageEnabled(),
+    // Whether THIS caller may reveal the masked numbers — the button is offered
+    // only to people the endpoint would let through.
+    can_reveal: canReveal(req.user),
     adp_company_gaps: missingForAdp({
       first_name: 'x', last_name: 'x', address1: 'x', city: 'x', state: 'x', zip: 'x',
       dob: 'x', start_date: 'x', department: 'x', pay_frequency: 'weekly', pay_rate: '1', w4_filing_status: 'x',
@@ -512,6 +519,39 @@ router.post('/:id/i9-section2', (req, res) => {
   db.prepare("UPDATE onboarding_records SET i9_section2 = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(s2), rec.id);
   logAudit(req.user, 'sign', 'onboarding', rec.id, { i9_section2: true, documents: docs.map(d => `${d.list}: ${d.title}`), ...signatureEvidence() }, null, null, nameOf(rec));
   res.json(shape(db, db.prepare('SELECT * FROM onboarding_records WHERE id = ?').get(rec.id)));
+});
+
+// THE REVEAL: the three numbers RUN needs that every screen masks.
+//
+// The design assumed the ADP API would carry the SSN and the bank numbers, and
+// the API never arrived (D-069: API Central is a purchase). So the office keys
+// the packet into RUN by hand — and could see everything except the numbers
+// payroll cannot run without. Asking the new hire a second time is the
+// alternative, and it is worse.
+//
+// Narrow on purpose: office/HR (or an admin) holding the onboarding grant, the
+// same password gate a QA signature uses, one call returns the clear values
+// once, and the audit entry records WHO looked and WHICH fields — never the
+// values. Nothing is written to the record; the numbers stay encrypted at rest
+// and masked on every other screen and in the PDF.
+router.post('/:id/reveal', (req, res) => {
+  if (!canReveal(req.user)) return res.status(403).json({ error: 'Only the office (or an admin) can reveal these numbers.' });
+  const db = getDb();
+  const rec = db.prepare('SELECT * FROM onboarding_records WHERE id = ?').get(req.params.id);
+  if (!rec) return res.status(404).json({ error: 'Not found' });
+  if (!cryptoEnabled()) return res.status(503).json({ error: 'The encryption key is not set on this server, so nothing was collected — the office takes these details directly.' });
+  if (!gateSignature(req, res, { action: 'onboarding_reveal' })) return;
+  const out = {
+    ssn: rec.ssn_enc ? decryptField(rec.ssn_enc) : null,
+    ein: rec.ein_enc ? decryptField(rec.ein_enc) : null,
+    dd_routing: rec.dd_routing_enc ? decryptField(rec.dd_routing_enc) : null,
+    dd_account: rec.dd_account_enc ? decryptField(rec.dd_account_enc) : null,
+  };
+  const fields = Object.entries(out).filter(([, v]) => v).map(([k]) => k);
+  const revealed_at = new Date().toISOString();
+  logAudit(req.user, 'onboarding_revealed', 'onboarding', rec.id,
+    { fields, purpose: 'ADP entry', ...signatureEvidence() }, null, null, nameOf(rec));
+  res.json({ ...out, fields, revealed_at, revealed_by: req.user.name });
 });
 
 // Push the packet into RUN. 503 with the reason until the Marketplace

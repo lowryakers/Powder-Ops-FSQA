@@ -1045,6 +1045,13 @@ that has to be fed to stay useful. Office nav group, module id `candidates`.
   last-4 only. The new hire may delete only files they uploaded (`uploaded_by = 'new hire'`).
 - **`w4_signature` and `i9_signature` are NOT in `PORTAL_FIELDS`** — they are written only by `signForm`,
   so a client cannot post a signature object and skip the checks.
+- **THE REVEAL (D-076): the numbers every screen masks have exactly one door.** ADP's API never arrived, so the
+  office keys the packet into RUN by hand — and could see everything except the SSN and bank numbers. `POST
+  /onboarding/:id/reveal` decrypts them once, for office/HR holding the grant or an admin (`canReveal`, and the
+  list carries `can_reveal` so the button is offered only to them), behind `gateSignature` (403
+  `signature_required`, never 401), audited as `onboarding_revealed` with the FIELDS and the signature check,
+  never the values. Nothing is written to the record; the PDF and every list stay last-4. The `Reveal` box in
+  `OnboardingPanel` keeps the values in component state only and hides itself after two minutes.
 - **Not claimed: that the PDF is the retained Form I-9.** 8 CFR 274a.2's electronic-system rules have not
   been reviewed against this; the guide says so and the panel footer says so. The office completes the
   official I-9 in ADP or on paper from the packet until HR decides otherwise.

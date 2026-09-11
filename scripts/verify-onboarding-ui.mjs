@@ -133,6 +133,20 @@ t('the I-9 card shows the signature', /Signature: signed Maria Ortega/.test(awai
 t('the ID photo is on the packet', /ui-id\.png/.test(await row.locator('[data-onboarding-files]').innerText()));
 t('Section 2 is open for the employer', await row.locator('[data-section2]').count() === 1);
 t('the SSN shows only as last four', /••••9876/.test(await row.innerText()) && !/321-54-9876|321549876/.test(await row.innerText()));
+
+// THE REVEAL: one button, the password prompt, the numbers shown once.
+t('the office is offered "Show SSN & bank numbers for ADP entry"', await row.locator('[data-reveal-open]').count() === 1);
+await row.locator('[data-reveal-open]').click();
+await page.waitForSelector('input[type=password]', { timeout: 10000 });
+t('it asks for the password first (the signature prompt), the numbers still hidden', await row.locator('[data-reveal-shown]').count() === 0);
+await page.fill('input[type=password]', 'Lead2026!');
+await page.keyboard.press('Enter');
+await page.waitForSelector('[data-reveal-shown]', { timeout: 10000 });
+const shown = await row.locator('[data-reveal-shown]').innerText();
+t('with the password the full SSN is shown, formatted for keying', /321-54-9876/.test(shown), shown.slice(0, 160));
+t('…and says who looked and when', /Recorded: Office Lead/.test(shown));
+await row.locator('[data-reveal-shown] button', { hasText: 'Hide' }).click();
+t('Hide takes it away again and the row is back to last-four only', await row.locator('[data-reveal-shown]').count() === 0 && !/321-54-9876/.test(await row.innerText()));
 await browser.close();
 console.log(`\n${pass}/${pass + fail} assertions passed`);
 process.exit(fail ? 1 : 0);

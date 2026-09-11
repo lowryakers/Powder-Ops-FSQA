@@ -27,6 +27,10 @@ db.prepare(`INSERT OR REPLACE INTO users (id,name,username,role,department,is_ac
   VALUES ('ob-admin','Onb Admin','Onb Admin','admin','office',1,'SC-OB',datetime('now','+7 day'))`).run();
 db.prepare(`INSERT OR REPLACE INTO users (id,name,username,role,department,is_active,setup_code,setup_code_expires_at,module_access)
   VALUES ('ob-op','Onb Operator','Onb Operator','operator','warehouse',1,'SC-OP',datetime('now','+7 day'),'{"production-log":"edit"}')`).run();
+db.prepare(`INSERT OR REPLACE INTO users (id,name,username,role,department,is_active,setup_code,setup_code_expires_at,module_access)
+  VALUES ('ob-office','Onb Office','Onb Office','supervisor','office',1,'SC-OO',datetime('now','+7 day'),'{"onboarding":"edit"}')`).run();
+db.prepare(`INSERT OR REPLACE INTO users (id,name,username,role,department,is_active,setup_code,setup_code_expires_at,module_access)
+  VALUES ('ob-wh','Onb Warehouse','Onb Warehouse','supervisor','warehouse',1,'SC-OW',datetime('now','+7 day'),'{"onboarding":"edit"}')`).run();
 t('the onboarding_records table exists on a fresh database',
   !!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='onboarding_records'").get());
 t('and onboarding_files', !!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='onboarding_files'").get());
@@ -100,6 +104,51 @@ console.log('\nThe data that should never be in clear, and the numbers that must
     t('a malformed SSN is refused', badSsn.status === 400, `${badSsn.status}`);
     const badRouting = await portal(tok, 'PUT', { dd_routing: '123456789' });
     t('a routing number that fails the ABA checksum is refused', badRouting.status === 400, `${badRouting.status}`);
+
+    // THE REVEAL: the office keys the packet into RUN by hand, so the three
+    // numbers every screen masks have exactly one audited door.
+    console.log('\nThe reveal for ADP entry');
+    const as = async (name, id, code, fn) => {
+      const keep = token;
+      await post('/users/login', { name });
+      await post('/users/set-password', { user_id: id, password: 'OnbPW2026!', setup_code: code });
+      token = (await J(await post('/users/login', { name, password: 'OnbPW2026!' })))?.token;
+      try { return await fn(); } finally { token = keep; }
+    };
+    const list = await J(await req('/onboarding'));
+    t('the list tells the admin they may reveal', list?.can_reveal === true);
+    const noPw = await post(`/onboarding/${rec.id}/reveal`, {});
+    t('without the password it is refused with 403 signature_required, never 401', noPw.status === 403 && (await J(noPw))?.signature_required === true, `${noPw.status}`);
+    const wrongPw = await post(`/onboarding/${rec.id}/reveal`, { signature_password: 'nope-nope-nope' });
+    t('a wrong password is refused', wrongPw.status === 403);
+    const ok = await post(`/onboarding/${rec.id}/reveal`, { signature_password: 'OnbPW2026!' });
+    const shown = await J(ok);
+    t('with the password the clear SSN, routing and account come back once', ok.ok && shown?.ssn === '123456789' && shown?.dd_routing === '021000021' && shown?.dd_account === '000123456789', JSON.stringify(shown).slice(0, 160));
+    t('…naming who looked and when', shown?.revealed_by === 'Onb Admin' && !!shown?.revealed_at && shown?.fields?.includes('ssn'));
+    const d2 = new Database(process.env.DBPATH, { readonly: true });
+    const aud = d2.prepare("SELECT * FROM audit_log WHERE entity_type = 'onboarding' AND entity_id = ? AND action LIKE '%reveal%'").all(rec.id);
+    const auditText = JSON.stringify(aud);
+    const anyAudit = JSON.stringify(d2.prepare('SELECT details, previous_state, new_state FROM audit_log').all());
+    const rowAfter = d2.prepare('SELECT * FROM onboarding_records WHERE id = ?').get(rec.id);
+    d2.close();
+    const audDetail = (() => { try { return JSON.parse(aud[0]?.details || '{}'); } catch { return {}; } })();
+    t('the audit entry records the fields and the signature check, with the admin\'s name', aud.length === 1 && JSON.stringify(audDetail.fields) === '["ssn","dd_routing","dd_account"]' && audDetail.signature_verified === true && aud[0].actor === 'Onb Admin', auditText.slice(0, 200));
+    t('the values themselves are NOWHERE in the audit log', !anyAudit.includes('123456789') && !anyAudit.includes('021000021') && !anyAudit.includes('000123456789'));
+    t('the record is untouched: still encrypted, still last-4 only', rowAfter?.ssn_last4 === '6789' && !JSON.stringify(rowAfter).includes('123-45-6789') && !JSON.stringify(rowAfter).includes('123456789'));
+    const stillMasked = await J(await req('/onboarding'));
+    t('the list still masks it after a reveal', JSON.stringify(stillMasked).includes('6789') && !JSON.stringify(stillMasked).includes('123456789'));
+    await as('Onb Office', 'ob-office', 'SC-OO', async () => {
+      const l = await J(await req('/onboarding'));
+      t('an office supervisor holding the grant may reveal', l?.can_reveal === true);
+      const r2 = await post(`/onboarding/${rec.id}/reveal`, { signature_password: 'OnbPW2026!' });
+      t('…and gets the numbers with their own password', r2.ok && (await J(r2))?.ssn === '123456789', `${r2.status}`);
+    });
+    await as('Onb Warehouse', 'ob-wh', 'SC-OW', async () => {
+      const l = await J(await req('/onboarding'));
+      t('a warehouse supervisor holding the SAME grant reads the packet but may not reveal', l?.can_reveal === false && Array.isArray(l?.records));
+      const r3 = await post(`/onboarding/${rec.id}/reveal`, { signature_password: 'OnbPW2026!' });
+      t('…refused outright, before the password is even checked', r3.status === 403 && !(await J(r3))?.signature_required, `${r3.status}`);
+    });
   } else {
     t('with no key, nothing sensitive is stored at all', !row?.ssn_enc && !row?.ssn_last4 && !row?.dd_account_enc);
     t('and certainly not in clear', !clear.includes('123-45-6789') && !clear.includes('000123456789'));

@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useApiGet, apiPost, apiFetch, apiUpload } from '../../hooks/useApi';
 import {
-  UserPlus, Link2, Copy, CheckCircle2, XCircle, Send, RefreshCw, FileText, Paperclip, Download, ShieldCheck, AlertTriangle, X,
+  UserPlus, Link2, Copy, CheckCircle2, XCircle, Send, RefreshCw, FileText, Paperclip, Download, ShieldCheck, AlertTriangle, X, Eye, EyeOff,
 } from 'lucide-react';
 import { formatDateTime } from '../../lib/datetime.js';
 import { withSignature } from '../../lib/signature.js';
@@ -214,6 +214,73 @@ function Section2({ r, attestation, onChanged }) {
   );
 }
 
+/**
+ * The numbers every screen masks, shown once for keying into RUN.
+ *
+ * Behind the same password prompt a QA signature uses; the server audits who
+ * looked and which fields, never the values. What comes back lives only in
+ * this component's state — it is not cached, it goes away when the box is
+ * closed or after two minutes, and collapsing the row unmounts it.
+ */
+function Reveal({ r }) {
+  const [shown, setShown] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [copied, setCopied] = useState('');
+  useEffect(() => {
+    if (!shown) return undefined;
+    const t = setTimeout(() => setShown(null), 120000);
+    return () => clearTimeout(t);
+  }, [shown]);
+  const show = async () => {
+    setBusy(true); setError('');
+    try {
+      setShown(await withSignature(
+        (extra) => apiPost(`/onboarding/${r.id}/reveal`, { ...extra }),
+        { title: 'Show for ADP entry', detail: `${r.first_name} ${r.last_name} — the SSN and bank numbers will be shown once. This is recorded with your name.` },
+      ));
+    } catch (e) { if (!e.cancelled) setError(e.message); }
+    finally { setBusy(false); }
+  };
+  const copy = async (k, v) => { try { await navigator.clipboard.writeText(v); setCopied(k); setTimeout(() => setCopied(''), 1500); } catch { /* no clipboard */ } };
+  const fmtSsn = (v) => (v && /^\d{9}$/.test(v) ? `${v.slice(0, 3)}-${v.slice(3, 5)}-${v.slice(5)}` : v);
+  if (!(r.has_ssn || r.has_bank || r.has_ein)) return null;
+  if (!shown) {
+    return (
+      <div className="flex items-center gap-2 flex-wrap" data-reveal>
+        <button type="button" onClick={show} disabled={busy}
+          className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-purple-300 text-purple-800 bg-purple-50 rounded-lg text-xs font-semibold hover:bg-purple-100 disabled:opacity-50" data-reveal-open>
+          <Eye size={12} /> {busy ? 'Checking…' : 'Show SSN & bank numbers for ADP entry'}
+        </button>
+        <span className="text-[11px] text-gray-500">Asks for your password; who looked is recorded.</span>
+        {error && <span className="text-xs text-red-700">{error}</span>}
+      </div>
+    );
+  }
+  const rows = [
+    ['ssn', 'SSN', fmtSsn(shown.ssn)], ['ein', 'EIN', shown.ein],
+    ['dd_routing', 'Routing', shown.dd_routing], ['dd_account', 'Account', shown.dd_account],
+  ].filter(([, , v]) => v);
+  return (
+    <div className="bg-purple-50 border border-purple-200 rounded-lg p-2.5 space-y-1.5" data-reveal-shown>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-purple-800">For ADP entry — shown once</p>
+        <button type="button" onClick={() => setShown(null)} className="inline-flex items-center gap-1 text-[11px] text-purple-800 hover:underline"><EyeOff size={11} /> Hide</button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
+        {rows.map(([k, label, v]) => (
+          <div key={k} className="flex items-center gap-2 text-sm">
+            <span className="text-xs text-gray-600 w-16">{label}</span>
+            <code className="font-mono tabular-nums text-gray-900" data-reveal-value={k}>{v}</code>
+            <button type="button" onClick={() => copy(k, String(v).replace(/-/g, ''))} className="text-[11px] text-purple-800 hover:underline inline-flex items-center gap-0.5"><Copy size={10} /> {copied === k ? 'Copied' : 'Copy'}</button>
+          </div>
+        ))}
+      </div>
+      <p className="text-[11px] text-purple-800">Recorded: {shown.revealed_by}, {formatDateTime(shown.revealed_at)}. Hides itself after two minutes.</p>
+    </div>
+  );
+}
+
 function Row({ r, attestations, storageEnabled, onAction }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState('');
@@ -254,6 +321,7 @@ function Row({ r, attestations, storageEnabled, onAction }) {
             <span><b>Emergency:</b> {r.emergency_name ? `${r.emergency_name} (${r.emergency_relationship || '?'}) ${r.emergency_phone || ''}` : '—'}</span>
             {r.adp_submitted_at && <span><b>ADP:</b> submitted {formatDateTime(r.adp_submitted_at)}</span>}
           </div>
+          {r.can_reveal && <Reveal r={r} />}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-2.5 text-xs text-gray-700 space-y-0.5" data-w4>
@@ -370,7 +438,7 @@ export default function OnboardingPanel() {
       <StartForm onSaved={(r) => { setLink(r.link); refresh(); }} />
       <div className="space-y-2">
         {records.map(r => (
-          <Row key={r.id} r={{ ...r, adp_ready: data?.adp_ready }} attestations={data?.attestations}
+          <Row key={r.id} r={{ ...r, adp_ready: data?.adp_ready, can_reveal: data?.can_reveal }} attestations={data?.attestations}
             storageEnabled={!!data?.storage_enabled} onAction={onAction} />
         ))}
         {records.length === 0 && <p className="text-sm text-gray-400 bg-white border border-gray-200 rounded-xl px-4 py-8 text-center">No onboardings yet.</p>}

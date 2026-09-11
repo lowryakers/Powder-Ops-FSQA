@@ -288,6 +288,10 @@ SSN, routing and account numbers are stored **encrypted at rest**
 (AES-256-GCM) under `ONBOARDING_ENC_KEY` (32-byte key, `openssl rand -hex 32`).
 Without that key set, the portal does not ask for those fields at all — it
 says the office will collect them directly — because storing an SSN in the
-clear is worse than not collecting it. The clear values are only ever
-decrypted server-side at the moment of an ADP submission; every screen shows
-last-4.
+clear is worse than not collecting it. The clear values are decrypted server-side in two places only: building an
+ADP submission (switched off), and **the reveal** — since 11 September the
+office can press *Show SSN & bank numbers for ADP entry* on the packet, prove
+it is them with their password (the same prompt a QA signature uses), and see
+the numbers once to key into RUN. Who looked and which fields is written to
+the audit log; the values are not. Office/HR holding the Onboarding grant, or
+an admin. Every other screen and the PDF show last-4.

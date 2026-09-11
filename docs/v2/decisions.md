@@ -2403,3 +2403,24 @@ Partner Reconciliation ledger — should be automated.
   number + amount → linked to a hand-keyed row, a body mention → `needs_info` then routed by the office,
   operator refused, a draft leaving the settlement number at zero; `verify:apdropui` (23) sees the chip and
   the drawer block in a browser; `check:aproute` (11, in `npm run check`) is the pure detector.
+
+## D-076 · 2026-09-11 · the onboarding packet reveals the masked numbers, once, for ADP entry
+
+**Context.** The onboarding module stores the SSN, routing and account numbers encrypted and shows last-4 on
+every screen and in the packet PDF, decrypting only to build an ADP submission. That was right while the ADP
+API was the plan. D-069 established that ADP API Central is a purchase the plant has not made, so the office
+keys every packet into RUN by hand — and could see everything except the three numbers payroll cannot run
+without. The fallback was asking the new hire again, which the wizard already does when no encryption key is
+set, and which is worse than the gap.
+
+**Decision.** One audited door. `POST /onboarding/:id/reveal` returns the clear SSN (or EIN), routing and account
+numbers once, to office/HR holding the Onboarding grant or an admin, behind the same password gate a QA
+signature uses (`gateSignature`: 403 `signature_required`, never 401, five wrong passwords in five minutes locks
+it). The audit entry (`onboarding_revealed`) records who, when, which fields and that the password was checked —
+never the values. Nothing is written to the record; every list and the PDF stay last-4. The client keeps what
+came back in component state only, hides it on demand or after two minutes, and collapsing the row unmounts it.
+
+**Consequences.** Marnee opens the hire, presses *Show SSN & bank numbers for ADP entry*, types her password,
+keys the numbers into RUN, and the trail says she did. A warehouse supervisor holding the same Onboarding grant
+still reads the packet and is refused the reveal before the password is even asked. `verify:onboarding` (98, the
+keyed run) and `verify:onboardingui` (36) cover the door, the refusals, the audit shape and the masking after.
