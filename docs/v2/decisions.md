@@ -3114,3 +3114,61 @@ Verified: `check:gtin` (35, pure, in `npm run check`) — **the control makes `n
 its input and fails 14 of them** — and `verify:artwork` (30, live, in `verify:all`), where the
 control fails 6, including the exact symptom reported: `{stale: true, img: 00850079939066,
 gtin: 850079939066}`, and a proofing ingest 404ing on a product that exists.
+
+---
+
+## D-091 — A client's ReadyDoc is Messages and an account, and nothing else
+
+**14 September 2026.** The first join link went out and worked; what followed it did not. Walked as
+a new client would walk it, the account Matt was texted a link for had five separate rough edges,
+and all five are the same shape — **the boundary was enforced on the server and never rendered.**
+
+**1. The company was inside the name, and the name is what you sign in with.** The accounts were
+created as `Matt (M4 Dynamic)` on purpose: the plant has its own Matt (Formulations) and a member
+list with two of them is the ambiguity this codebase refuses everywhere else. Right instinct,
+wrong place. `users.name` is the string the login screen asks for, and `deriveUsername()` takes the
+first and last **word** — so his sign-in name was literally **`Matt Dynamic)`**. The company is now
+`users.external_org`, a fact about the person like `is_external` itself, shown beside the name
+wherever a plant person reads a roster and never part of what anyone types.
+`repairClientAccountNames()` moves it out of the names already on file, once, at boot: it touches
+only external accounts, never overwrites an org somebody set, follows the sign-in name only when it
+was still the auto-derived one (the `usernames.js` rule), and **refuses to create an ambiguity** —
+if the shortened name is already another account's name or sign-in name the row is reported and
+left exactly as it is.
+
+**2. The login screen asked for something they do not have.** The field is labelled *Username* and
+the placeholder said *"First and last name"*. Not every account has two words in it, and a client's
+does not. It says *"Your name"* now, with the real instruction underneath — start typing and pick
+yourself from the list, which is what the public type-ahead has always been for.
+
+**3. There was no account menu anywhere in Messages.** For a client, Messages IS the app, and from
+it there was no way to change a password, no way to sign out, and nothing that even said what their
+sign-in name is. The only control that left the screen was **"← ReadyDoc"** — which for them opens
+a page explaining they have no modules. `ChangePasswordModal` moved to `common/` (the expired-
+password gate, the ReadyDoc account menu and this one are three callers of one thing) and the comms
+header gained an account menu: their name, **what they sign in as**, change password, add to your
+phone, sign out. It is not client-only — everyone who lives in Messages had to leave it to sign out.
+
+**4. Controls that lead nowhere are worse than no controls.** A guest is now offered no
+"← ReadyDoc", no Split screen, no Schedule, no bottom nav, no **+** to open a channel and no **+**
+to start a DM. The server already refused all of it — `EXTERNAL_MAY_WRITE` (D-087) answers
+**404, never 403** — but a button that returns an error reads as the app being broken rather than as
+the boundary working. A guest also lands in Messages whatever their stored home preference says.
+
+**5. The roster filed them under Operators.** Every client account is an `operator` by role, so it
+sat in the middle of the floor staff where somebody edits one by mistake. Settings → Users has a
+**Guest clients** section now, keyed off `is_external` and **checked before the role**, collapsed by
+default, with the company on the chip. (Its section icon was being coloured with
+`bg-${config.color}-100` — a built Tailwind class, which generates nothing; the tints are written
+out now, so every section's icon has a colour for the first time.)
+
+**What was deliberately NOT changed.** No client gets a module, a grant or a second channel; nothing
+about `EXTERNAL_ALLOWED` or `EXTERNAL_MAY_WRITE` moved. This release renders a boundary that was
+already there; it does not widen one.
+
+Verified: `verify:clientinvite` **66 → 87** (live + a real browser at 390px), including the repair's
+three refusals and the guest's whole first five minutes. **The control makes the shell stop treating
+an external account as a guest and fails 6** — the first being that the client lands on "you have no
+modules" instead of in their channel. `verify:clientchannel` 65 → 67, where a pin assertion that had
+been **failing since D-087 shipped** is fixed by asking the right account: a plant colleague is
+refused 403, a client 404.

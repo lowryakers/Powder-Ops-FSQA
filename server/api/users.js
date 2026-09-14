@@ -50,7 +50,7 @@ function verifyPassword(password, stored) {
 router.get('/', (req, res) => {
   const db = getDb();
   const { role, active } = req.query;
-  let sql = 'SELECT id, name, username, email, role, department, is_active, is_contractor, is_external, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, home_workspace, quick_tabs, phone, sms_access, sms_consent_at, sms_consent_by, created_at FROM users WHERE 1=1';
+  let sql = 'SELECT id, name, username, email, role, department, is_active, is_contractor, is_external, external_org, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, home_workspace, quick_tabs, phone, sms_access, sms_consent_at, sms_consent_by, created_at FROM users WHERE 1=1';
   const params = [];
   if (role) { sql += ' AND role = ?'; params.push(role); }
   if (active !== undefined) { sql += ' AND is_active = ?'; params.push(active === 'true' ? 1 : 0); }
@@ -95,10 +95,10 @@ router.get('/technicians', (_req, res) => {
 });
 
 router.get('/me', (req, res) => {
-  const row = getDb().prepare('SELECT home_workspace, quick_tabs, username, password_changed_at FROM users WHERE id = ?').get(req.user.id) || {};
+  const row = getDb().prepare('SELECT home_workspace, quick_tabs, username, password_changed_at, external_org FROM users WHERE id = ?').get(req.user.id) || {};
   let quickTabs;
   try { quickTabs = row.quick_tabs ? JSON.parse(row.quick_tabs) : null; } catch { quickTabs = null; }
-  res.json({ id: req.user.id, name: req.user.name, username: row.username || req.user.name, role: req.user.role, department: req.user.department, module_access: req.user.module_access, home_workspace: row.home_workspace || 'fsqa', quick_tabs: quickTabs, password_days_left: passwordDaysLeft(row.password_changed_at), password_expired: passwordExpired(row.password_changed_at) });
+  res.json({ id: req.user.id, name: req.user.name, username: row.username || req.user.name, role: req.user.role, department: req.user.department, is_external: !!req.user.is_external, external_org: row.external_org || null, module_access: req.user.module_access, home_workspace: row.home_workspace || 'fsqa', quick_tabs: quickTabs, password_days_left: passwordDaysLeft(row.password_changed_at), password_expired: passwordExpired(row.password_changed_at) });
 });
 
 // The caller's drawn signature — fetched only when a signing surface needs it,
@@ -261,7 +261,7 @@ router.get('/:id/pin', requireRole('admin'), (req, res) => {
 router.post('/', requireRole('admin'), (req, res) => {
   const db = getDb();
   const id = uuid();
-  const { name, username, email, pin, role, department, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, is_external, phone } = req.body;
+  const { name, username, email, pin, role, department, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, is_external, external_org, phone } = req.body;
   if (!name) return res.status(400).json({ error: 'name is required' });
 
   let signIn;
@@ -285,11 +285,11 @@ router.post('/', requireRole('admin'), (req, res) => {
   // it on a new account. That grant stamps a consent date and sends a
   // confirmation text; it is the PUT's, in one place, and a second copy of a
   // consent record is the one that goes stale.
-  db.prepare('INSERT INTO users (id, name, username, email, pin, role, department, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, is_external, phone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(id, name, signIn, email || null, pin || null, role || 'operator', department || 'warehouse', is_contractor ? 1 : 0, contractor_company || null, contractor_license || null, contractor_insurance_expiry || null, contractor_scope || null, moduleAccessStr, is_external ? 1 : 0, tenDigits(phone));
+  db.prepare('INSERT INTO users (id, name, username, email, pin, role, department, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, is_external, external_org, phone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(id, name, signIn, email || null, pin || null, role || 'operator', department || 'warehouse', is_contractor ? 1 : 0, contractor_company || null, contractor_license || null, contractor_insurance_expiry || null, contractor_scope || null, moduleAccessStr, is_external ? 1 : 0, is_external ? (String(external_org || '').trim() || null) : null, tenDigits(phone));
 
   joinDefaultChannels(db, id, is_external);
-  const created = db.prepare('SELECT id, name, username, email, role, department, is_active, is_contractor, is_external, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, phone, sms_access, created_at FROM users WHERE id = ?').get(id);
+  const created = db.prepare('SELECT id, name, username, email, role, department, is_active, is_contractor, is_external, external_org, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, phone, sms_access, created_at FROM users WHERE id = ?').get(id);
   logAudit(req.user, 'create', 'user', id, { name, role: role || 'operator', department: department || 'warehouse' }, null, null, name);
   res.status(201).json(created);
 });
@@ -385,7 +385,7 @@ router.put('/:id', requireRole('admin'), async (req, res) => {
   const existing = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'User not found' });
 
-  const { name, username, email, pin, role, department, is_active, is_contractor, is_external, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, home_workspace, quick_tabs, phone, sms_access } = req.body;
+  const { name, username, email, pin, role, department, is_active, is_contractor, is_external, external_org, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, home_workspace, quick_tabs, phone, sms_access } = req.body;
 
   // An admin-set username wins. Otherwise, if the full name changed and the
   // current username is still the one we derived from the old name — including
@@ -424,18 +424,24 @@ router.put('/:id', requireRole('admin'), async (req, res) => {
   const quickTabsStr = quick_tabs !== undefined
     ? (Array.isArray(quick_tabs) && quick_tabs.length ? JSON.stringify(quick_tabs.slice(0, 4).map(String)) : null)
     : existing.quick_tabs;
-  db.prepare(`UPDATE users SET name=?, username=?, email=?, pin=COALESCE(?, pin), role=?, department=?, is_active=?, is_contractor=?, is_external=?, contractor_company=?, contractor_license=?, contractor_insurance_expiry=?, contractor_scope=?, module_access=?, home_workspace=?, quick_tabs=?, phone=?, sms_access=?, sms_consent_at=?, sms_consent_by=?, updated_at=datetime('now') WHERE id=?`)
+  db.prepare(`UPDATE users SET name=?, username=?, email=?, pin=COALESCE(?, pin), role=?, department=?, is_active=?, is_contractor=?, is_external=?, external_org=?, contractor_company=?, contractor_license=?, contractor_insurance_expiry=?, contractor_scope=?, module_access=?, home_workspace=?, quick_tabs=?, phone=?, sms_access=?, sms_consent_at=?, sms_consent_by=?, updated_at=datetime('now') WHERE id=?`)
     .run(name || existing.name, signIn, email ?? existing.email, pin || null, role || existing.role,
       department || existing.department || 'warehouse',
       is_active !== undefined ? (is_active ? 1 : 0) : existing.is_active,
       is_contractor !== undefined ? (is_contractor ? 1 : 0) : (existing.is_contractor || 0),
       is_external !== undefined ? (is_external ? 1 : 0) : (existing.is_external || 0),
+      // The company only means something on an outside account, so turning
+      // is_external off takes it with it rather than leaving "M4 Dynamic" on a
+      // plant employee.
+      (is_external !== undefined ? is_external : existing.is_external)
+        ? (external_org !== undefined ? (String(external_org || '').trim() || null) : (existing.external_org || null))
+        : null,
       contractor_company ?? existing.contractor_company, contractor_license ?? existing.contractor_license,
       contractor_insurance_expiry ?? existing.contractor_insurance_expiry, contractor_scope ?? existing.contractor_scope,
       moduleAccessStr, homeWorkspace, quickTabsStr, phoneVal, smsVal, consentAt, consentBy,
       req.params.id);
 
-  const updated = db.prepare('SELECT id, name, username, email, role, department, is_active, is_contractor, is_external, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, phone, sms_access, created_at FROM users WHERE id = ?').get(req.params.id);
+  const updated = db.prepare('SELECT id, name, username, email, role, department, is_active, is_contractor, is_external, external_org, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, phone, sms_access, created_at FROM users WHERE id = ?').get(req.params.id);
 
   // Surface security-relevant changes (role, active status, module permissions)
   // as their own explicit audit actions so they're easy to filter for.

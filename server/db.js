@@ -4916,6 +4916,14 @@ function runMigrations() {
   // nobody would notice happening. Their module map does the rest (a NULL map
   // is a Messages-only account).
   addColumnIfMissing('users', 'is_external', 'INTEGER NOT NULL DEFAULT 0');
+  // WHICH outside company. A fact about the person, and deliberately NOT part
+  // of their name: the first client accounts were created as "Matt (M4
+  // Dynamic)" to tell them from the plant's own Matt, and the suffix then WAS
+  // the sign-in name — so the login screen's "first and last name" was wrong
+  // for them and the member list read like a spreadsheet. The name is the
+  // person; this is the company, rendered beside it wherever a plant person
+  // reads a roster and never printed to the client themselves.
+  addColumnIfMissing('users', 'external_org', 'TEXT');
   addColumnIfMissing('users', 'sms_consent_at', 'TEXT');
   addColumnIfMissing('users', 'sms_consent_by', 'TEXT');
   // The iOS Shortcut's key for logging Danny replies without a browser: a

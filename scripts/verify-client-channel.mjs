@@ -77,7 +77,11 @@ const mk = (id, name, role, dept, code, ext) => db.prepare(`INSERT OR REPLACE IN
 mk('cc-admin', 'Chan Admin', 'admin', 'office', 'SC-CA', 0);
 mk('cc-sup', 'Chan Super', 'supervisor', 'batching', 'SC-CS', 0);
 // A real M4 account signs in and posts.
-const matt = members.find(u => /^Matt \(M4/.test(u.name));
+// THE COMPANY IS NOT IN THE NAME ANY MORE (D-091) — it is `external_org`, so
+// this matches the person and asserts the company is where it belongs.
+const matt = members.find(u => u.name === 'Matt' && u.is_external);
+t('a client account is named for the PERSON, with the company in its own column',
+  !!matt && matt.external_org === 'M4 Dynamic' && !/\(/.test(matt.name), JSON.stringify(matt || null).slice(0, 140));
 db.prepare("UPDATE users SET setup_code = 'SC-M4', setup_code_expires_at = datetime('now','+7 day') WHERE id = ?").run(matt.id);
 db.close();
 
@@ -156,7 +160,17 @@ const pinList = await (await call('GET', `/comms/channels/${ch.id}/pinned`, null
 t('the guide is served to a member as a pinned message', pinList.length === 1 && /Add to Home Screen/.test(pinList[0].body));
 t('and it names who pinned it', !!pinList[0].pinned_by);
 const msgId = (await posted.json()).id;
-t('a non-admin cannot pin', (await call('POST', `/comms/messages/${msgId}/pin`, {}, m4)).status === 403);
+// PINNING IS ADMIN-ONLY, and the two refusals are deliberately different.
+// A plant colleague is told no (403). A CLIENT is told the endpoint is not
+// there (404) — `EXTERNAL_MAY_WRITE` refuses every comms write that is not on
+// its allow list, and a client has no business learning which controls exist.
+// This assertion used to expect 403 from the client and had been failing since
+// that boundary shipped, because it was asking the wrong account.
+await call('POST', `/comms/channels/${ch.id}/members`, { user_ids: ['cc-sup'] }, admin);
+{ const pr = await call('POST', `/comms/messages/${msgId}/pin`, {}, sup);
+  t('a plant colleague who is not an admin cannot pin', pr.status === 403, `status ${pr.status}`); }
+{ const pr = await call('POST', `/comms/messages/${msgId}/pin`, {}, m4);
+  t('and a client is refused as 404, never 403', pr.status === 404, `status ${pr.status}`); }
 t('an admin can', (await call('POST', `/comms/messages/${msgId}/pin`, {}, admin)).status === 200);
 t('and unpin', (await call('POST', `/comms/messages/${msgId}/pin`, { pinned: false }, admin)).status === 200);
 t('leaving the guide pinned on its own',

@@ -133,7 +133,7 @@ import { backfillPartnerDocLines } from './server/partner-doc-backfill.js';
 import { recordBackfillNudge } from './server/qa-record-backfill.js';
 import { supplierReviewNudge } from './server/supplier-review.js';
 import { seedControlledForms } from './server/form-registry-seed.js';
-import { seedClientChannels } from './server/client-channel-seed.js';
+import { seedClientChannels, repairClientAccountNames } from './server/client-channel-seed.js';
 import { cleanupDuplicateTasks } from './server/duplicate-task-cleanup.js';
 import { seedKnifeMasterlist } from './server/knife-seed.js';
 import { authenticate, isPublicPath, optionalAuth, sessionUser, readCookie, FILE_COOKIE } from './server/middleware/auth.js';
@@ -1221,6 +1221,10 @@ try {
   // Guarded by a marker in app_settings and never re-run, so removing somebody
   // from the channel — or archiving it — sticks.
   seedClientChannels(db);
+  // The company out of the name and into its own column, for the accounts
+  // created before it had one. The seed above is guarded and never re-runs, so
+  // without this "Matt (M4 Dynamic)" keeps signing in as `Matt Dynamic)`.
+  try { repairClientAccountNames(db); } catch (e) { console.warn('[seed] client account names:', e.message); }
   // Collapse duplicate tasks the old generator guards let through (one-time).
   cleanupDuplicateTasks(db);
   // Purge cached "translations" identical to the original message (one-time).

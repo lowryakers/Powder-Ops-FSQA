@@ -259,6 +259,36 @@ account work at M4 and have never been in the building. One text, one tap, a pas
   carriers cannot tell a shared hosting subdomain from anyone else's traffic on the same host. Point a
   branded domain at the app and set `READYDOC_ORIGIN` to it.
 
+### What a client actually sees, and the five things that were wrong with it (D-091)
+The link worked; what followed it did not. Five rough edges, one shape: **the boundary was enforced on the
+server and never rendered.** Nothing here widens access — no module, no grant, no second channel.
+- **THE COMPANY IS `users.external_org`, NEVER PART OF THE NAME.** The accounts were created as
+  `Matt (M4 Dynamic)` to tell them from the plant's own Matt — right instinct, wrong place: `users.name` is
+  what you sign in with and `deriveUsername` takes the first and last WORD, so his sign-in name was
+  **`Matt Dynamic)`**. `repairClientAccountNames()` (boot, after `seedClientChannels`) moves it out, once:
+  external accounts only, never overwrites an org somebody set, moves the username only if it was still
+  auto-derived, and **refuses to create an ambiguity** — a shortened name already held by another account is
+  reported and left alone.
+- **The login placeholder said "First and last name."** Not every account has two words. It says "Your name"
+  with the real instruction under it — the public type-ahead is the answer.
+- **THERE WAS NO ACCOUNT MENU IN MESSAGES AT ALL** — no password change, no sign out, no statement of what
+  they sign in as. For a client, Messages IS the app. `ChangePasswordModal` moved to `common/` (three
+  callers: the expired-password gate, the ReadyDoc menu, this one) and the comms header has `AccountMenu`.
+  Not client-only: everyone who lives in Messages had to leave it to sign out.
+- **A guest is offered no door that leads nowhere**: no "← ReadyDoc", Split screen, Schedule, bottom nav, or
+  **+** for a channel or a DM. The server already refused all of it (404, never 403) — but a button that
+  errors reads as a fault, not as a boundary. `isGuest` in App.jsx, `isExternal` in CommsView; a guest lands
+  in Messages whatever their home preference says, and the no-modules screen says their account is finished
+  rather than telling them to ask a supervisor.
+- **Settings → Users has a Guest clients section**, keyed off `is_external` and **checked BEFORE the role** —
+  every client is an `operator`, so a role-first test filed them among the floor staff. Its icon tint is
+  **written out, not built**: `bg-${config.color}-100` generates nothing (the `CLAMP[lines]` trap), so no
+  section icon had ever had a colour.
+- Verified: `verify:clientinvite` (66 → **87**, live + browser at 390px; **the control stops the shell
+  treating an external account as a guest and fails 6**) and `verify:clientchannel` (65 → 67 — a pin
+  assertion that had been failing since D-087 is fixed by asking the right account: a colleague gets 403, a
+  client 404).
+
 ### `EXTERNAL_ALLOWED` was half the boundary; `EXTERNAL_MAY_WRITE` is the other half
 D-080's list keeps a client out of every module and lets the whole of `/comms` through. **The gap was
 invisible because everything in it is "Messages".** A client in one channel could open a NEW channel,

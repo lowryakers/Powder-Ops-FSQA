@@ -194,7 +194,7 @@ export default function LoginScreen({ onLogin, onLoginWithToken }) {
               <input ref={nameRef} type="text" required autoComplete="name" value={name}
                 onChange={e => { setName(e.target.value); setShowSuggestions(true); }}
                 onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl text-base" placeholder="First and last name" />
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl text-base" placeholder="Your name" />
             </div>
             {showSuggestions && suggestions.length > 0 && (
               <div ref={suggestionsRef} className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
@@ -212,6 +212,11 @@ export default function LoginScreen({ onLogin, onLoginWithToken }) {
                 ))}
               </div>
             )}
+            {/* NOT "first and last name". Not every account has two words in
+                it — a client's does not — and the placeholder was telling those
+                people to type something that would not find them. The
+                type-ahead is the real answer: start typing, pick yourself. */}
+            <p className="text-[11px] text-gray-400 mt-1">Start typing and pick your name from the list.</p>
           </div>
 
           <div>

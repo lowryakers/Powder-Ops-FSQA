@@ -126,7 +126,14 @@ export default function JoinPage({ token }) {
           </button>
         </form>
 
-        <p className="text-[11px] text-gray-400 mt-4">
+        {/* THE SIGN-IN NAME, SAID ONCE, HERE. The link signs them in on the
+            spot, so the first time they ever need it is weeks later on a
+            different device — by which point there is nothing on screen that
+            tells them, and it is not always what they would guess. */}
+        <p className="text-[11px] text-gray-500 mt-4 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-2" data-join-username>
+          Next time you sign in, your name is <b className="text-gray-800">{info.username}</b> and this password.
+        </p>
+        <p className="text-[11px] text-gray-400 mt-2">
           This link works once. Nobody at Powder Ops can see the password you choose.
         </p>
       </div>

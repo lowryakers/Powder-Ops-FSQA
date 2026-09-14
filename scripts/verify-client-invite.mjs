@@ -239,6 +239,49 @@ console.log('\nThe plant side of the same rules');
   t('and a colleague can still DM a colleague', (await call('/comms/dm/ci-plant', { method: 'POST', token: A })).ok);
 }
 
+console.log('\nThe company is a column, not a suffix on the name');
+{
+  // The first client accounts were created as "Matt (M4 Dynamic)" to tell them
+  // from the plant's own Matt. Right instinct, wrong place: `users.name` is
+  // what a person signs in with, and `deriveUsername` takes the first and last
+  // WORD — so that account's sign-in name was `Matt Dynamic)`.
+  const { repairClientAccountNames } = await import('../server/client-channel-seed.js');
+  const { deriveUsername } = await import('../server/usernames.js');
+  t('CONTROL: the old shape really did derive a broken sign-in name',
+    deriveUsername('Matt (M4 Dynamic)') === 'Matt Dynamic)', deriveUsername('Matt (M4 Dynamic)'));
+
+  const db = open();
+  db.prepare(`INSERT OR REPLACE INTO users (id,name,username,role,department,is_active,is_external,module_access)
+    VALUES ('ci-org','Zed (Acme Foods)',?,'operator','client',1,1,NULL)`).run(deriveUsername('Zed (Acme Foods)'));
+  // A plant employee with a parenthesis is NOT an outside account and is not
+  // this repair's business.
+  db.prepare(`INSERT OR REPLACE INTO users (id,name,username,role,department,is_active,is_external,module_access)
+    VALUES ('ci-inside','Bob (nights)','Bob (nights)','operator','production',1,0,NULL)`).run();
+  // And a client whose shortened name is already taken must not create an
+  // ambiguity — two people answering to one sign-in is worse than an ugly name.
+  db.prepare(`INSERT OR REPLACE INTO users (id,name,username,role,department,is_active,is_external,module_access)
+    VALUES ('ci-dupe','Ci Admin (Acme Foods)','Ci Dupe','operator','client',1,1,NULL)`).run();
+  const out = repairClientAccountNames(db);
+  const zed = db.prepare("SELECT * FROM users WHERE id = 'ci-org'").get();
+  const inside = db.prepare("SELECT * FROM users WHERE id = 'ci-inside'").get();
+  const dupe = db.prepare("SELECT * FROM users WHERE id = 'ci-dupe'").get();
+  t('the person keeps their name', zed.name === 'Zed', zed.name);
+  t('the company moves to its own column', zed.external_org === 'Acme Foods', String(zed.external_org));
+  t('AND THE SIGN-IN NAME FOLLOWS IT — no stray bracket', zed.username === 'Zed', zed.username);
+  t('a plant account with a parenthesis is left completely alone', inside.name === 'Bob (nights)' && !inside.external_org);
+  t('a shortening that would collide is refused and reported', dupe.name === 'Ci Admin (Acme Foods)' && out.skipped.length === 1, JSON.stringify(out.skipped));
+  t('running it again changes nothing', repairClientAccountNames(db).fixed.length === 0);
+  db.close();
+}
+
+console.log('\nWhat /users/me tells the shell about a guest');
+{
+  const me = await J(await call('/users/me', { token: clientToken }));
+  t('the client account reports itself as external', me?.is_external === true, JSON.stringify(me).slice(0, 160));
+  const meAdmin = await J(await call('/users/me', { token: A }));
+  t('and a plant account does not', meAdmin?.is_external === false);
+}
+
 console.log('\nWhat the audit log says');
 {
   const db = open(true);
@@ -287,7 +330,40 @@ console.log('\nOn a phone: the link, and the office screen that sends it');
     t('SETTING IT SIGNS THEM IN AND LANDS THEM IN THE APP — no second login screen',
       !/\/join\//.test(page.url()), page.url());
     const after = await page.locator('body').innerText();
-    t('and what they land on is Messages, with their channel', /client--m4test|Messages/i.test(after), after.slice(0, 200));
+    // A POSITIVE ANCHOR FIRST. Every assertion below is an ABSENCE, and an
+    // absence passes for free on a screen that is not Messages at all — which
+    // is exactly where a guest lands if the shell stops treating them as one.
+    t('A GUEST LANDS IN MESSAGES, not on a page explaining they have no modules',
+      await page.locator('input[placeholder="Search messages…"]').count() === 1, after.slice(0, 160));
+    t('and their channel is there', /client--m4test/.test(after), after.slice(0, 200));
+
+    // WHAT A GUEST CAN SEE FROM HERE. Every control below leads somewhere they
+    // have no access to, and a control that fails reads as the app being
+    // broken rather than as the boundary working.
+    t('NO "← ReadyDoc" — it opens a page telling them they have no modules',
+      await page.locator('button[title="Switch to ReadyDoc"]').count() === 0);
+    t('no Split screen', !/split screen/i.test(after));
+    t('no + to open a channel, and no + to start a DM',
+      await page.locator('[data-tip="New channel"]').count() === 0
+      && await page.locator('[data-tip="New message or group"]').count() === 0);
+
+    // AND WHAT THEY CAN DO: their own account. Until this existed there was no
+    // way from Messages to change a password or even sign out.
+    const hasMenu = await page.locator('[data-account-menu]').count() === 1;
+    t('there IS an account menu', hasMenu);
+    if (hasMenu) {
+      await page.locator('[data-account-menu]').click();
+      await page.waitForTimeout(400);
+      const menu = await page.locator('body').innerText();
+      t('it names them and SAYS WHAT THEY SIGN IN AS', /Signs in as/i.test(menu), menu.slice(0, 200));
+      t('it offers a password change and a way out',
+        await page.locator('[data-account-password]').count() === 1
+        && await page.locator('[data-account-signout]').count() === 1);
+      await page.locator('[data-account-password]').click();
+      await page.waitForTimeout(500);
+      t('and the password form actually opens',
+        /change your password/i.test(await page.locator('body').innerText()));
+    } else { fail += 3; console.log('  ✗ (3 more skipped — no menu to open)'); }
     await page.close();
   }
 

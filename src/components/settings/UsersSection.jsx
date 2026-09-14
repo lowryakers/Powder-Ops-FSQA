@@ -850,10 +850,23 @@ function UserForm({ initial, onSave, onCancel, canViewPin }) {
         </label>
       </div>
       {!!form.is_external && (
-        <p className="text-[11px] text-sky-800 bg-sky-50 border border-sky-200 rounded-lg px-2.5 py-1.5 -mt-1">
-          Messages only. This account is never added to #general or #announcements and cannot reach any
-          ReadyDoc module — add it to the client channel it belongs in, and nothing else.
-        </p>
+        <div className="p-3 bg-sky-50 rounded-lg border border-sky-200 space-y-2 -mt-1">
+          <p className="text-[11px] text-sky-900">
+            Messages only. This account is never added to #general or #announcements and cannot reach any
+            ReadyDoc module — add it to the client channel it belongs in, and nothing else.
+          </p>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Their company</label>
+            {/* THE COMPANY IS NOT PART OF THE NAME. Writing "Matt (M4 Dynamic)"
+                puts it inside the string they sign in with — that is how one
+                client's sign-in name became "Matt Dynamic)". Name the person;
+                the company is shown beside it on our side of the app. */}
+            <input value={form.external_org || ''} onChange={e => setForm({ ...form, external_org: e.target.value })}
+              data-external-org placeholder="M4 Dynamic"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+            <p className="text-[11px] text-gray-500 mt-1">Shown beside their name on our roster and member lists. Keep it out of the Name box.</p>
+          </div>
+        </div>
       )}
       {!!form.is_contractor && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-orange-50 rounded-lg border border-orange-200">
@@ -894,6 +907,20 @@ const ROLE_CONFIG = {
   supervisor: { label: 'Supervisors', color: 'purple', desc: 'Can view and manage most modules' },
   operator: { label: 'Operators', color: 'blue', desc: 'Task-focused access based on assigned modules' },
   auditor: { label: 'Auditors', color: 'emerald', desc: 'Read-only compliance view' },
+  // NOT A ROLE — a fact about the person, which is why it is keyed off
+  // `is_external` and not off `users.role` (every client account is an
+  // operator by role, and always has been). It gets its own section because
+  // "who works here" and "who is a client we talk to" are two different lists,
+  // and a client filed under Operators is one somebody edits by mistake.
+  guest: { label: 'Guest clients', color: 'sky', desc: 'Outside companies — Messages only, one channel, no ReadyDoc module' },
+};
+
+const SECTION_TINT = {
+  red: { bg: 'bg-red-100', fg: 'text-red-600' },
+  purple: { bg: 'bg-purple-100', fg: 'text-purple-600' },
+  blue: { bg: 'bg-blue-100', fg: 'text-blue-600' },
+  emerald: { bg: 'bg-emerald-100', fg: 'text-emerald-600' },
+  sky: { bg: 'bg-sky-100', fg: 'text-sky-600' },
 };
 
 // The roster is a table on a wide screen and a list of cards on a phone, so the
@@ -951,7 +978,9 @@ function UserName({ u }) {
         <span className="ml-2 px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded text-[10px] font-bold">CONTRACTOR</span>
       ) : null}
       {u.is_external ? (
-        <span className="ml-2 px-1.5 py-0.5 bg-sky-100 text-sky-700 rounded text-[10px] font-bold">CLIENT</span>
+        <span className="ml-2 px-1.5 py-0.5 bg-sky-100 text-sky-700 rounded text-[10px] font-bold">
+          {u.external_org ? u.external_org.toUpperCase() : 'CLIENT'}
+        </span>
       ) : null}
       {u.contractor_company && <div className="text-[10px] text-gray-400">{u.contractor_company}</div>}
     </>
@@ -1018,8 +1047,12 @@ function RoleSection({ users, config, onEdit, onToggle, onRemove, defaultOpen, e
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <button onClick={() => setOpen(!open)}
         className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors`}>
-        <div className={`h-8 w-8 rounded-lg flex items-center justify-center bg-${config.color}-100`}>
-          <Shield size={16} className={`text-${config.color}-600`} />
+        {/* WRITTEN OUT, NEVER BUILT. Tailwind generates utilities by scanning
+            source for literal class names, so `bg-${config.color}-100` yields a
+            class in the markup and nothing in the stylesheet — the icon tiles
+            have been rendering plain all along. Same trap as `CLAMP[lines]`. */}
+        <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${SECTION_TINT[config.color]?.bg || 'bg-gray-100'}`}>
+          <Shield size={16} className={SECTION_TINT[config.color]?.fg || 'text-gray-600'} />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
@@ -1333,8 +1366,12 @@ export default function UsersSection({ user: currentUser }) {
 
   if (loading) return <div className="text-center py-12 text-gray-500">Loading...</div>;
 
-  const grouped = { admin: [], supervisor: [], operator: [], auditor: [] };
+  const grouped = { admin: [], supervisor: [], operator: [], auditor: [], guest: [] };
   (users || []).forEach(u => {
+    // The client check comes FIRST. A client account is an operator by role,
+    // so testing the role first would file every one of them under Operators —
+    // which is exactly where they were, mixed in with the floor.
+    if (u.is_external) { grouped.guest.push(u); return; }
     const role = u.role || 'operator';
     if (grouped[role]) grouped[role].push(u);
     else grouped.operator.push(u);
@@ -1362,7 +1399,7 @@ export default function UsersSection({ user: currentUser }) {
       {(showForm && !editing) && <UserForm onSave={handleCreate} onCancel={() => setShowForm(false)} />}
 
       <div className="space-y-3">
-        {['admin', 'supervisor', 'operator', 'auditor'].map(role => (
+        {['admin', 'supervisor', 'operator', 'auditor', 'guest'].map(role => (
           <RoleSection
             key={role}
             role={role}
@@ -1371,7 +1408,7 @@ export default function UsersSection({ user: currentUser }) {
             onEdit={handleEdit}
             onToggle={handleToggleActive}
             onRemove={handleRemove}
-            defaultOpen={role !== 'auditor'}
+            defaultOpen={role !== 'auditor' && role !== 'guest'}
             editingId={editing?.id}
             onSave={handleUpdate}
             onCancel={() => setEditing(null)}

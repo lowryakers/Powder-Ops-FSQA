@@ -76,6 +76,7 @@ import CommsView from './components/comms/CommsView.jsx';
 import UpdateBanner from './components/UpdateBanner.jsx';
 import { applyKioskManifest, setKioskAppTitle } from './lib/kioskManifest.js';
 import PageInfo from './components/PageInfo.jsx';
+import ChangePasswordModal from './components/common/ChangePasswordModal.jsx';
 import SignaturePrompt from './components/common/SignaturePrompt.jsx';
 import DocumentsToSignCard, { SignDocumentHost } from './components/common/DocumentsToSign.jsx';
 const SupplyOrdersPanel = lazy(() => import('./components/office/SupplyOrdersPanel.jsx'));
@@ -704,82 +705,6 @@ function PasswordExpiredGate() {
   );
 }
 
-function ChangePasswordModal({ onClose, forced = false }) {
-  const [cur, setCur] = useState('');
-  const [nw, setNw] = useState('');
-  const [confirm, setConfirm] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
-  const [done, setDone] = useState(false);
-
-  const submit = async (e) => {
-    e.preventDefault();
-    setErr('');
-    if (nw.length < 8) { setErr('New password must be at least 8 characters.'); return; }
-    if (nw !== confirm) { setErr('New passwords do not match.'); return; }
-    setBusy(true);
-    try {
-      const token = localStorage.getItem('auth_token');
-      const res = await fetch('/api/users/me/password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ current_password: cur, new_password: nw }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) { setErr(data.error || 'Could not change password.'); return; }
-      setDone(true);
-    } finally { setBusy(false); }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/40 z-[60] flex items-center justify-center px-4" onClick={forced ? undefined : onClose}>
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-xl w-full max-w-sm p-5 max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center gap-2 mb-1">
-          <KeyRound size={18} className="text-powder-600" />
-          <h3 className="text-base font-bold text-gray-900">{forced ? 'Time to change your password' : 'Change your password'}</h3>
-        </div>
-        {forced && (
-          <p className="text-[12px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg p-2.5 mt-2">
-            Passwords are changed at least once a year. Set a new one to carry on — you'll need your current password.
-          </p>
-        )}
-        {done ? (
-          <div className="mt-3 space-y-3">
-            <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg p-3">Password changed. Use your new password next time you sign in.</p>
-            <button onClick={forced ? () => window.location.reload() : onClose} className="w-full py-2.5 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">Done</button>
-          </div>
-        ) : (
-          <form onSubmit={submit} className="mt-3 space-y-3">
-            <p className="text-xs text-gray-500">Enter your current password, then choose a new one (at least 8 characters).</p>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Current password</label>
-              <input type="password" autoFocus value={cur} onChange={e => setCur(e.target.value)} autoComplete="current-password"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Current password" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">New password</label>
-              <input type="password" value={nw} onChange={e => setNw(e.target.value)} autoComplete="new-password"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="At least 8 characters" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Confirm new password</label>
-              <input type="password" value={confirm} onChange={e => setConfirm(e.target.value)} autoComplete="new-password"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Re-enter new password" />
-            </div>
-            {err && <p className="text-xs text-red-600">{err}</p>}
-            <div className="flex items-center gap-2 pt-1">
-              <button type="submit" disabled={busy} className="flex-1 py-2.5 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700 disabled:opacity-50">
-                {busy ? 'Saving…' : 'Change password'}
-              </button>
-              {!forced && <button type="button" onClick={onClose} className="px-4 py-2.5 text-gray-500 text-sm font-medium rounded-lg hover:bg-gray-100">Cancel</button>}
-            </div>
-          </form>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // Floating "Viewing as" pill — shown while an admin previews the app as
 // another user. Everything renders with that user's access; writes are blocked.
 function ViewAsBar({ viewAs, onExit }) {
@@ -1329,15 +1254,24 @@ function App() {
   useEffect(() => { dockWidthRef.current = dockWidth; }, [dockWidth]);
   const homeApplied = useRef(false);
 
+  // AN OUTSIDE ACCOUNT — a client coordinating production with us. The server
+  // is the authority (`users.is_external`, reported on /users/me); this is only
+  // what the shell renders. It is a fact about the PERSON, not a permission:
+  // what it changes here is that Messages is the whole app, so nothing offers
+  // a door to a module list they have none of.
+  const isGuest = !!user?.is_external;
+
   // Apply the user's default landing workspace once, on first load after login.
   useEffect(() => {
     if (!user) { homeApplied.current = false; return; }
     setHomePref(user.home_workspace || 'fsqa');
     if (!homeApplied.current) {
       homeApplied.current = true;
-      if (user.home_workspace === 'messages') setWorkspace('comms');
+      // A guest lands in Messages whatever their stored preference says —
+      // ReadyDoc for them is a page explaining they have no modules.
+      if (user.home_workspace === 'messages' || isGuest) setWorkspace('comms');
     }
-  }, [user]);
+  }, [user, isGuest]);
 
   const setHome = useCallback((w) => {
     setHomePref(w);
@@ -1827,13 +1761,19 @@ function App() {
 
   // Messages workspace — full-screen, separable from the FSQA workspace.
   if (workspace === 'comms') {
-    const keepBar = wantsMessagesTab(user);
+    const keepBar = wantsMessagesTab(user) && !isGuest;
     return <>
       <CommsView
         user={user}
-        onExit={() => { setWorkspace('fsqa'); setCommsLink(null); }}
-        onSplitScreen={() => { if (!dockChat) toggleDockChat(); setWorkspace('fsqa'); setCommsLink(null); }}
-        onGoToSchedule={canViewModule(user, 'production-schedule') ? () => { setWorkspace('fsqa'); setCommsLink(null); setActiveTab('production-schedule'); } : null}
+        // AN OUTSIDE ACCOUNT IS NEVER OFFERED A DOOR OUT OF MESSAGES. It has no
+        // ReadyDoc module by construction (a NULL map is an empty account), so
+        // "← ReadyDoc", Split screen and Schedule all lead to a page telling it
+        // it has nothing — which reads as the app being broken rather than as
+        // the boundary working. The account menu is what replaces them.
+        onExit={isGuest ? null : () => { setWorkspace('fsqa'); setCommsLink(null); }}
+        onSplitScreen={isGuest ? null : () => { if (!dockChat) toggleDockChat(); setWorkspace('fsqa'); setCommsLink(null); }}
+        onGoToSchedule={!isGuest && canViewModule(user, 'production-schedule') ? () => { setWorkspace('fsqa'); setCommsLink(null); setActiveTab('production-schedule'); } : null}
+        onLogout={logout}
         openChannelName={commsLink?.channel}
         openChannelId={commsLink?.channelId}
         openMessageId={commsLink?.messageId}
@@ -1976,9 +1916,14 @@ function App() {
             <MessageSquare size={40} className="text-powder-500 mx-auto" />
             <div>
               <p className="text-lg font-bold text-gray-900">Welcome, {user.name.split(' ')[0]}</p>
+              {/* A GUEST IS NOT WAITING FOR ANYTHING. Telling a client to "ask
+                  a supervisor about access" invites a request we would refuse
+                  and makes the boundary read as an oversight. Their account is
+                  finished, and this says so. */}
               <p className="text-sm text-gray-600 mt-1">
-                Your account is set up for Messages. ReadyDoc modules are assigned by an admin —
-                ask a supervisor if you're expecting access to one.
+                {isGuest
+                  ? 'Your account is for Messages — that is where we coordinate with you. There is nothing else to set up.'
+                  : "Your account is set up for Messages. ReadyDoc modules are assigned by an admin — ask a supervisor if you're expecting access to one."}
               </p>
             </div>
             <button onClick={() => setWorkspace('comms')}

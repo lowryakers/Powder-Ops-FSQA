@@ -6,7 +6,9 @@ import { getSocket } from '../../lib/socket';
 import { setAppBadge } from '../../lib/appBadge';
 import { notifyDataChanged } from '../../lib/dataChanged';
 import { canDeleteMessage, canEditMessage } from '../../../shared/comms-permissions.js';
-import { Share2, Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink, Columns2, Clock, Film, ChevronUp, Forward, Mic, Camera, CornerUpLeft, Pin, PinOff } from 'lucide-react';
+import ChangePasswordModal from '../common/ChangePasswordModal.jsx';
+import InstallHelp from '../InstallHelp.jsx';
+import { Share2, Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink, Columns2, Clock, Film, ChevronUp, Forward, Mic, Camera, CornerUpLeft, Pin, PinOff, KeyRound, Smartphone } from 'lucide-react';
 import CommsSettings from './CommsSettings.jsx';
 import { shareFile as shareAttachment, canNativeShare } from '../../lib/shareFile.js';
 import NotificationStatus from './NotificationStatus.jsx';
@@ -929,6 +931,64 @@ function MenuPortal({ style, onClose, children }) {
       </div>
     </>,
     document.body,
+  );
+}
+
+/**
+ * Your account, from inside Messages.
+ *
+ * MESSAGES IS THE WHOLE APP FOR SOME PEOPLE. A client account has no ReadyDoc
+ * module at all, so this screen is everything they ever see — and until this
+ * existed there was no way from here to change a password or even sign out.
+ * The only control that left was "← ReadyDoc", which for them opens a page
+ * saying they have no modules. That is not an account menu, it is a dead end.
+ *
+ * It is not client-only. Anyone who lives in Messages had to leave it to sign
+ * out, which is the same fix one screen over.
+ */
+function AccountMenu({ user, onLogout }) {
+  const btn = useRef(null);
+  const [style, setStyle] = useState(null);
+  const [pw, setPw] = useState(false);
+  const [install, setInstall] = useState(false);
+  const close = useCallback(() => setStyle(null), []);
+  const initials = (user?.name || '?').split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+  return (
+    <>
+      <button ref={btn} onClick={() => setStyle(style ? null : menuPosition(btn.current))}
+        data-account-menu data-tip="Your account" data-tip-left
+        className="w-8 h-8 shrink-0 rounded-full bg-powder-100 text-powder-700 text-[11px] font-bold flex items-center justify-center hover:bg-powder-200">
+        {initials}
+      </button>
+      {style && (
+        <MenuPortal style={style} onClose={close}>
+          <div className="px-3 py-2 border-b border-gray-100">
+            <p className="text-sm font-semibold text-gray-900 truncate">{user?.name}</p>
+            {/* The sign-in name, said out loud. It is what the login screen
+                asks for, it is not always the display name, and somebody who
+                has been signed in for six weeks has no other way to find it. */}
+            <p className="text-[11px] text-gray-500 truncate">Signs in as <span className="font-medium">{user?.username || user?.name}</span></p>
+            {user?.external_org && <p className="text-[11px] text-gray-400 truncate">{user.external_org}</p>}
+          </div>
+          {/* The client will live in this on a phone, and the install prompt
+              is otherwise only offered from a sidebar they do not have. */}
+          <button onClick={() => { close(); setInstall(true); }} data-account-install
+            className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
+            <Smartphone size={14} className="text-gray-400" /> Add to your phone
+          </button>
+          <button onClick={() => { close(); setPw(true); }} data-account-password
+            className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
+            <KeyRound size={14} className="text-gray-400" /> Change password
+          </button>
+          <button onClick={() => { close(); onLogout?.(); }} data-account-signout
+            className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
+            <LogOut size={14} className="text-gray-400" /> Sign out
+          </button>
+        </MenuPortal>
+      )}
+      {pw && <ChangePasswordModal onClose={() => setPw(false)} />}
+      {install && <InstallHelp onClose={() => setInstall(false)} />}
+    </>
   );
 }
 
@@ -2264,10 +2324,13 @@ const Message = memo(function Message({ m, me, onReact, onUnreact, onEdit, onDel
   );
 });
 
-export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen, openChannelName, openChannelId, openMessageId, openNonce, backLabel, onBackToModule, homePref, onSetHome, bottomNavPadding = false }) {
+export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen, onLogout, openChannelName, openChannelId, openMessageId, openNonce, backLabel, onBackToModule, homePref, onSetHome, bottomNavPadding = false }) {
   const { data: channels, refresh: refreshChannels } = useApiGet('/comms/channels');
   const { data: users } = useApiGet('/users');
   const { data: commsStatus } = useApiGet('/comms/status');
+  // An outside account: a client coordinating production with us. The server
+  // is the authority (`users.is_external`); this only decides what is OFFERED.
+  const isExternal = !!user?.is_external;
   const storageOn = !!commsStatus?.storage;
   const semanticOn = !!commsStatus?.semantic;
   const askOn = !!commsStatus?.ask;
@@ -3435,6 +3498,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
               {pushSubscribed ? <Bell size={16} /> : <BellOff size={16} />}
             </button>
           )}
+          {onLogout && <AccountMenu user={user} onLogout={onLogout} />}
         </div>
       </div>
 
@@ -3547,7 +3611,12 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
           <div>
             <div className="flex items-center justify-between px-2 mb-1">
               <span className="text-[10px] font-bold uppercase text-gray-400">{sectionGroups.length ? 'Channels' : 'Channels'}</span>
-              <button onClick={() => setNewChannel(true)} className="text-gray-400 hover:text-powder-600" data-tip="New channel" data-tip-left><Plus size={14} /></button>
+              {/* A CONTROL THE SERVER WILL REFUSE IS WORSE THAN NO CONTROL.
+                  An outside account may not open a channel and may not start a
+                  DM (EXTERNAL_MAY_WRITE, D-087) — the refusal is a deliberate
+                  404, so offering the button here means a client taps + and
+                  gets an error that reads like a fault. */}
+              {!isExternal && <button onClick={() => setNewChannel(true)} className="text-gray-400 hover:text-powder-600" data-tip="New channel" data-tip-left><Plus size={14} /></button>}
             </div>
             <div className="space-y-0.5">
               {ungroupedCh.map(c => <ChannelBtn key={c.id} c={c} icon={kindIcon(c)} />)}
@@ -3556,7 +3625,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
           <div>
             <div className="flex items-center justify-between px-2 mb-1">
               <span className="text-[10px] font-bold uppercase text-gray-400">Direct Messages</span>
-              <button onClick={() => setShowDmPicker(s => !s)} className="text-gray-400 hover:text-powder-600" data-tip="New message or group" data-tip-left><Plus size={14} /></button>
+              {!isExternal && <button onClick={() => setShowDmPicker(s => !s)} className="text-gray-400 hover:text-powder-600" data-tip="New message or group" data-tip-left><Plus size={14} /></button>}
             </div>
             {showDmPicker && (
               <div className="mb-1 px-1">
