@@ -3226,3 +3226,61 @@ need reissuing.
 
 Verified: `verify:formnumber` (35, live, in `verify:all`). **The control removes the renumber endpoint —
 the state Daniela was actually in — and fails 11**, the first being that there is no such door.
+
+## D-093 — The fill weight is the one input the artwork cannot supply, and it is transcribed
+
+**Date:** 2026-09-14 · **Status:** shipped on `main`
+
+The Artwork-Proofing service's Net Weight check reconciles `serving size × servings per container`
+against how much product is actually in the bag. Every input but the last is printed on the artwork,
+which is exactly why the check works — and exactly why it cannot run without a number ReadyDoc holds.
+Three revisions reached film while internally consistent: crepe declared 216 g against a 454 g fill,
+pancake declared 686 g against the same 454 (a 51% overstatement of net contents), cupcake declared
+378 g against 380. Proofreading cannot find that class of error; dividing by a measured fill weight can.
+
+`products.fill_weight_g` and the seventeenth `master.csv` column shipped with the Products work and were
+already correct — nullable, a plain number, an empty cell when unset, appended after the sixteen
+contract headers. **What did not exist was a value in any row, and anything on screen saying where the
+number comes from.** A column nobody has filled in is a check that reports UNVERIFIED on every SKU.
+
+`server/fill-weight-seed.js` files the ten weighed ProDough SKUs: Protein Pancake Mix **454**
+(Buttermilk, Chocolate, Cinnamon Swirl, Pumpkin Spice), Protein Cupcake Mix **380** (Vanilla, Chocolate,
+Cinnamon Swirl, Pumpkin Spice), Protein Crepe Mix **454** (Original, Chocolate).
+
+- **TRANSCRIBED, NEVER DERIVED** — the `preventive-controls.js` doctrine. Each value is read off the
+  production formula and confirmed by weighing a sealed bag. Nothing computes it from the declared net
+  weight or the serving size: the moment the two agree by construction rather than by measurement the
+  check is worthless, and it would have passed all three revisions above.
+- **The cupcakes are seeded 380, not the 720 g their artwork declares.** That declaration is the defect
+  being corrected. Seeding the label's number would make the check agree with what it exists to find.
+- **Keyed on the SKU, one line each, never on the product line.** "Every Pancake Mix is 454" is a
+  derivation, and a pancake flavour packed in a different bag would inherit a number nobody weighed.
+  Matched on `sku` OR `legacy_sku`, because a renamed SKU is the same product and `legacy_sku` is never
+  cleared. A SKU absent from the catalogue is REPORTED, never created.
+- **A value already on the row wins**, including one that disagrees with the table — it is somebody's
+  measurement.
+- **A CLEARED value is never refilled, and that is what the one-time marker is for.** Blanking a fill
+  weight is how a person says "that was wrong, we do not know it yet", and the proofer then reports that
+  SKU UNVERIFIED, which is the honest answer. A per-row "top up every NULL" pass would undo that
+  decision on the next deploy — the candidates-seed rule. Guarded in
+  `app_settings.product_fill_weights_seeded`, and it must not stamp its marker over an empty catalogue
+  (the `linkOrgPositionsToUsers` trap), so it runs after `seedProducts`.
+- **Where the number came from travels with it** — audited `fill_weight_seeded` per row, because "who
+  says it is 454" is the first question anyone asks of a check that fails.
+- **The drawer hint is load-bearing, not decoration**: *"From the production formula, confirmed by
+  weighing a sealed bag. Not the net weight printed on the pack — that is what this checks."* Without
+  it the obvious thing to type in that box is the number on the label, which silently defeats the check.
+
+**The header stays lowercase.** All seventeen `master.csv` headers are lowercase because the sixteen are
+a contract with `_fetch_sheet_rows()`, which lowercases and trims before matching. A single title-cased
+`Fill Weight (g)` would read as the odd one out to a human opening the CSV and change nothing for the
+consumer, which accepts eight spellings of it.
+
+**Not built, flagged instead:** a read-only indicator on the product record showing whether the latest
+artwork snapshot reconciles to the fill weight. `artwork_snapshots.snapshot` is a free-form blob of
+whatever the run posted and the catalogue holds none yet, so the key names for serving size, servings
+per container and declared net weight are not known here. Worth doing once a real snapshot exists.
+
+Verified: `verify:artwork` (30 → **38**, live, in `verify:all`). Two controls, both decisive — removing
+the boot call fails 3 (all ten cells blank), and removing the no-overwrite guard fails the typed-value
+assertion with a hand-entered 460 reverting to 454.

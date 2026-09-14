@@ -325,14 +325,22 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
                   // product's own SKU already carried, and the checklist above
                   // now ticks both with a name and a date against them.
                   ['eyemark_color', 'Eyemark colour'], ['drive_url', 'Drive link'],
-                  // What the pack holds, in grams — the proofer's Net Weight check
-                  // compares the printed weight against it. Blank until known.
-                  ['fill_weight_g', 'Fill weight (g)'],
-                ].map(([k, label]) => (
+                  // What the pack actually HOLDS, in grams — the proofer's Net
+                  // Weight check divides by it. The hint is load-bearing, not
+                  // decoration: this is the only input to that check that is
+                  // not printed on the artwork, so the moment somebody copies
+                  // the label's net weight in here the check compares the
+                  // label with itself and passes everything. Blank until
+                  // measured; the proofer reports that SKU UNVERIFIED, which
+                  // is the honest answer and better than a guess.
+                  ['fill_weight_g', 'Fill weight (g)',
+                    'From the production formula, confirmed by weighing a sealed bag. Not the net weight printed on the pack — that is what this checks.'],
+                ].map(([k, label, hint]) => (
                   <label key={k} className="block">
                     <span className="text-xs font-medium text-gray-600">{label}</span>
                     <input value={form[k]} onChange={set(k)}
                       className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                    {hint && <span className="mt-1 block text-[11px] leading-snug text-gray-500">{hint}</span>}
                   </label>
                 ))}
                 <label className="block">

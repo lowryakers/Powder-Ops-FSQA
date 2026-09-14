@@ -540,7 +540,15 @@ the guard 401s any session-less request before the router's public handler runs,
 silently answering *Not authenticated* to the proofer since the NULL-map rule tightened — the proofer caches and
 reports nothing. Found by `npm run verify:artwork`. A seventeenth column, `fill weight (g)`
 (`products.fill_weight_g`, typed in the drawer, blank until known), feeds its Net Weight check; extra columns are
-free. **Ingest stores `snapshot`** — what the run saw on the label — in `artwork_snapshots`, frozen with the
+free. **The fill weight is the ONE input to that check that is not printed on the artwork** (D-093) — which is
+why the check works, and why a label can be internally consistent and still overstate its contents by half
+(pancake declared 686 g against a 454 g fill). `server/fill-weight-seed.js` files the ten weighed ProDough SKUs
+**transcribed, never derived** — pancake 454, cupcake **380 and not the 720 its artwork declares**, crepe 454 —
+keyed on the SKU (a product line is a derivation), matched on `sku` OR `legacy_sku`, and it **never overwrites a
+typed value and never refills a CLEARED one**: blanking it is how somebody says "we do not know it yet", so the
+pass runs once under `app_settings.product_fill_weights_seeded`. The drawer hint is load-bearing — type the net
+weight off the pack in there and the check compares the label with itself. **The headers stay lowercase**: all
+seventeen are, because the sixteen are a contract with a parser that lowercases before matching. **Ingest stores `snapshot`** — what the run saw on the label — in `artwork_snapshots`, frozen with the
 version (a retry of the same job replaces it), and `GET /api/artwork/snapshot?gtin=&sku=` (declared before
 `/sku/:sku`) hands the latest back for a re-proof to compare against.
 

@@ -39,6 +39,39 @@ r = await put(`/products/${encodeURIComponent(product.sku)}`, { fill_weight_g: '
 t('a fill weight is stored as a number of grams', r.status === 200 && (await J(r))?.fill_weight_g === 30, String(r.status));
 csv = await (await fetch(`${B}/products/master.csv?token=${TOKEN}`)).text();
 t('and reaches master.csv', rowOf(csv)?.split(',')[16] === '30', rowOf(csv));
+r = await put(`/products/${encodeURIComponent(product.sku)}`, { fill_weight_g: '0' });
+t('ZERO IS REFUSED, so an empty cell can never mean a stored 0', r.status === 400, String(r.status));
+// The proofer rejects an HTML or JSON body outright and fails the run loudly,
+// so the content type is part of the contract, not a nicety.
+const head = await fetch(`${B}/products/master.csv?token=${TOKEN}`);
+t('the feed is still served as text/csv', /^text\/csv/.test(head.headers.get('content-type') || ''), head.headers.get('content-type'));
+
+console.log('\nThe ten weighed ProDough SKUs carry their fill weight, transcribed and not derived');
+const { FILL_WEIGHTS, seedFillWeights } = await import('../server/fill-weight-seed.js');
+const cellFor = (sku) => csv.split('\n').find(l => l.startsWith(`${sku},`))?.split(',')[16];
+t('all ten are in the catalogue and carry a value',
+  FILL_WEIGHTS.every(f => cellFor(f.sku) === String(f.grams)),
+  FILL_WEIGHTS.map(f => `${f.sku}=${cellFor(f.sku)}`).join(' '));
+t('the cupcakes read 380 — the measured fill — NOT the 720 the artwork declares',
+  cellFor('PCCM-V-04') === '380' && cellFor('PCCM-CH-01') === '380', cellFor('PCCM-V-04'));
+t('and the pancakes and crepes read 454', cellFor('PPM-BM') === '454' && cellFor('PCM-OR') === '454');
+
+// A measurement already on the row wins, including one that disagrees with the
+// table — so the seeder is run again with its marker removed, the hardest case.
+await put('/products/PPM-BM', { fill_weight_g: '460' });
+{ const db = new Database(process.env.DBPATH);
+  db.prepare("DELETE FROM app_settings WHERE key = 'product_fill_weights_seeded'").run();
+  seedFillWeights(db);
+  // Clearing a fill weight is how somebody says "that was wrong, we do not
+  // know it yet". The marker is what stops the next deploy putting a number
+  // back over that, so the run below must change nothing.
+  db.prepare("UPDATE products SET fill_weight_g = NULL WHERE sku = 'PCM-CH'").run();
+  seedFillWeights(db);
+  db.close(); }
+csv = await (await fetch(`${B}/products/master.csv?token=${TOKEN}`)).text();
+t('A TYPED VALUE IS NEVER OVERWRITTEN by the seeder', cellFor('PPM-BM') === '460', cellFor('PPM-BM'));
+t('a CLEARED value stays cleared — the seeder does not refill it', cellFor('PCM-CH') === '', cellFor('PCM-CH'));
+t('and the untouched nine still read as seeded', cellFor('PPM-CS') === '454' && cellFor('PCCM-PS-03') === '380');
 
 console.log('\nIngest stores the snapshot with the version, in one transaction');
 const SNAP = { ingredients: 'Whey protein isolate, cocoa, natural flavour', claims: ['25g protein', 'gluten free'], serving_size: '30 g', net_weight: '900 g' };

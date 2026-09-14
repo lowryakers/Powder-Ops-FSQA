@@ -112,6 +112,7 @@ import nfpRoutes, { linkRouter as nfpLinkRoutes } from './server/api/nfp.js';
 import productFileImportRoutes from './server/api/product-file-import.js';
 import { seedProducts } from './server/products-seed.js';
 import { repairPaddedGtins } from './server/gtin-repair.js';
+import { seedFillWeights } from './server/fill-weight-seed.js';
 import { seedFlavorCodes, seedBottleSpec, repairBaseFlavors } from './server/flavor-code-seed.js';
 import { seedProductShelf } from './server/product-shelf.js';
 import { seedSwabCounts } from './server/swab-stock.js';
@@ -1143,6 +1144,13 @@ try {
   // afterwards. Skipped and reported, never collided, if the bare form is
   // already on another SKU.
   try { repairPaddedGtins(db); } catch (e) { console.warn('[seed] Could not normalise GTINs:', e.message); }
+  // What is actually in the bag, for the ten SKUs that have been weighed. The
+  // proofing service's Net Weight check has no other way to learn it — every
+  // other input is printed on the artwork, which is why a label can be
+  // internally consistent and still overstate its contents by half. Runs ONCE
+  // and is stamped: a fill weight somebody CLEARED means "we do not know it
+  // yet", and a redeploy must not put a number back over that.
+  try { seedFillWeights(db); } catch (e) { console.warn('[seed] Could not seed fill weights:', e.message); }
   // AFTER seedProducts, always: the flavour codes are DERIVED from the product
   // rows, so on a fresh database there is nothing to read until the catalogue
   // is in. Same ordering trap as seedGenericSpecifications, which filed zero
