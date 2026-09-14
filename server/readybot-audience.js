@@ -20,14 +20,20 @@ import { flashRecipients } from './api/flash.js';
 import { payActionRecipients } from './api/pay.js';
 import { cleanupDigestRecipients } from './cleanup-digest.js';
 import { eodMissedRecipients } from './eod-chase.js';
+import { employeeDocumentRecipients } from './api/employee-documents.js';
+import { onboardingFinishedRecipients } from './api/onboarding.js';
+import { supplierReviewRecipients } from './supplier-review.js';
+import { recordBackfillRecipients } from './qa-record-backfill.js';
+import { controlledChangeRecipients } from './api/controlled.js';
+import { auditorPassRecipients } from './api/auditor-pass.js';
 
 const listed = (rows) => rows.map(u => ({ id: u.id, name: u.name }));
 
-const people = (db, sql, ...args) => {
-  try { return listed(db.prepare(sql).all(...args)); } catch { return []; }
-};
-
-const ACTIVE = "is_active = 1 AND name != 'ReadyBot' AND role != 'auditor'";
+// `people(db, sql)` and a local ACTIVE clause used to live here, to run "the
+// same predicate" as a sender. Nothing uses them any more, and that is the
+// point: every audience below is the sender's own exported function, so there
+// is no predicate here to drift. The shared ACTIVE clause is in
+// readybot-recipients.js, where the senders read it too.
 
 /**
  * Every automatic ReadyBot message, with the people it reaches right now.
@@ -54,6 +60,16 @@ export function readybotAudiences(db) {
     } catch { return false; }
   })();
   const pay = payActionRecipients(db);
+  // EVERY ONE OF THESE CALLS THE FUNCTION THAT ACTUALLY SENDS THE MESSAGE.
+  // D-079 allowed a second copy of the predicate here for audiences that were
+  // SQL inside their sender, and by 14 September four of those copies had
+  // drifted from the senders they described. There are no copies now.
+  const employeeDocs = employeeDocumentRecipients(db);
+  const onboardingFin = onboardingFinishedRecipients(db);
+  const supplierRev = supplierReviewRecipients(db);
+  const recordBf = recordBackfillRecipients(db);
+  const ctrlChanges = controlledChangeRecipients(db);
+  const auditorPass = auditorPassRecipients(db);
 
   return [
     {
@@ -92,20 +108,21 @@ export function readybotAudiences(db) {
       label: 'A document to sign',
       what: 'The person a W-4, W-9 or policy was sent to; the office is told when it is signed or declined.',
       when: 'On send, then every other day while it is unsigned.',
-      setting: null, source: 'rule',
-      recipients: people(db, `SELECT id, name FROM users WHERE ${ACTIVE}
-        AND (role = 'admin' OR LOWER(COALESCE(department,'')) IN ('office','hr')) ORDER BY name`),
-      note: 'The employee always gets their own. The people listed are who is told when one is signed.',
+      setting: 'employee_document_recipients',
+      source: employeeDocs.source,
+      recipients: listed(employeeDocs.users),
+      note: 'The employee always gets their own — that follows from being asked and is not set here. '
+        + 'So does whoever sent it. The people listed are who ELSE is told when one is signed or declined.',
     },
     {
       key: 'onboarding_finished',
       label: 'Onboarding packet finished',
       what: 'A new hire has completed their packet and it is ready for review.',
       when: 'The moment they press Finish.',
-      setting: null, source: 'rule',
-      recipients: people(db, `SELECT id, name FROM users WHERE ${ACTIVE}
-        AND (role = 'admin' OR LOWER(COALESCE(department,'')) IN ('office','hr')) ORDER BY name`),
-      note: 'Plus whoever started that onboarding, if they are not already listed.',
+      setting: 'onboarding_finished_recipients',
+      source: onboardingFin.source,
+      recipients: listed(onboardingFin.users),
+      note: 'Plus whoever started that onboarding — that follows from what they did and is not set here.',
     },
     {
       key: 'qa_corrections',
@@ -148,36 +165,45 @@ export function readybotAudiences(db) {
       label: 'Supplier reviews outstanding',
       what: 'Annual vendor reviews past their date, and vendors never qualified at all.',
       when: 'Every third day while either list is not empty.',
-      setting: null, source: 'rule',
-      recipients: people(db, `SELECT id, name FROM users WHERE ${ACTIVE}
-        AND (role = 'admin' OR LOWER(COALESCE(department,'')) IN ('qa','quality','purchasing')) ORDER BY name`),
+      setting: 'supplier_review_recipients',
+      source: supplierRev.source,
+      recipients: listed(supplierRev.users),
+      note: supplierRev.source === 'setting' ? null
+        : 'An overdue review is Quality’s work; a vendor never qualified at all is Purchasing’s chase '
+          + '(D-044). Only Quality is listed by default — add Jake here if the chase should reach him.',
     },
     {
       key: 'record_backfill',
       label: 'QA records waiting to be filed',
       what: 'Checks that were completed as tasks but never reached the QA record they answer.',
       when: 'Every third day while a pile is outstanding.',
-      setting: null, source: 'rule',
-      recipients: people(db, `SELECT id, name FROM users WHERE ${ACTIVE}
-        AND (role = 'admin' OR LOWER(COALESCE(department,'')) IN ('qa','quality')) ORDER BY name`),
+      setting: 'record_backfill_recipients',
+      source: recordBf.source,
+      recipients: listed(recordBf.users),
     },
     {
       key: 'controlled_changes',
       label: 'A change is parked for Document Control',
       what: 'A deployed form or acceptance criterion is waiting on approval, with its Document Change Request.',
       when: 'At boot, when the change is first seen.',
-      setting: null, source: 'rule',
-      recipients: people(db, `SELECT id, name FROM users WHERE ${ACTIVE}
-        AND (role = 'admin' OR LOWER(COALESCE(department,'')) IN ('document_control','document control','quality','qa')) ORDER BY name`),
+      setting: 'controlled_change_recipients',
+      source: ctrlChanges.source,
+      recipients: listed(ctrlChanges.users),
+      note: ctrlChanges.source === 'setting' ? null
+        : 'The people who approve one. The old list added every admin, so a parked form change reached '
+          + 'most of the leadership and the approvers were a minority of it.',
     },
     {
       key: 'auditor_pass',
       label: 'An auditor pass was issued',
       what: 'Somebody who is not an employee has been given a read-only session, and for how long.',
       when: 'The moment a pass is issued.',
-      setting: null, source: 'rule',
-      recipients: people(db, `SELECT id, name FROM users WHERE ${ACTIVE} AND role = 'admin' ORDER BY name`),
-      note: 'The auditor is the subject of the pass and is never told about it.',
+      setting: 'auditor_pass_recipients',
+      source: auditorPass.source,
+      recipients: listed(auditorPass.users),
+      note: 'The auditor is the subject of the pass and is never told about it. Neither is whoever '
+        + 'issued it — they already know. This screen used to say "every admin" while the message also '
+        + 'went to QA, so it under-reported who was told.',
     },
   ];
 }
@@ -188,4 +214,13 @@ export const SETTABLE = {
   pay_action_recipients: 'Pay reminders',
   cleanup_review_recipients: 'Cleanup review digest',
   eod_missed_recipients: 'End-of-day reports missing',
+  // The six that were department-plus-admin SQL until 14 September. Settable is
+  // what makes "is Marnee still the owner" a question Settings answers rather
+  // than one a deploy does.
+  employee_document_recipients: 'A document to sign',
+  onboarding_finished_recipients: 'Onboarding packet finished',
+  supplier_review_recipients: 'Supplier reviews outstanding',
+  record_backfill_recipients: 'QA records waiting to be filed',
+  controlled_change_recipients: 'A change is parked for Document Control',
+  auditor_pass_recipients: 'An auditor pass was issued',
 };

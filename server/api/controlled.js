@@ -1,3 +1,4 @@
+import { resolve, byNames, byDept } from '../readybot-recipients.js';
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
@@ -78,11 +79,22 @@ export default router;
 
 // A blocked change nobody is told about is just an outage. Document Control
 // gets a ReadyBot DM naming what's waiting; the DCR is the auditable record.
+/**
+ * Who is told a change is parked.
+ *
+ * It is Document Control who approves one, so it is Document Control who is
+ * named — not every admin. The fallback stays the department rather than
+ * nothing: a parked change nobody is told about is just an outage, which is the
+ * whole reason this message exists.
+ */
+export function controlledChangeRecipients(db) {
+  return resolve(db, 'controlled_change_recipients', () => {
+    const named = byNames(db, ['daniela servin', 'dayanna meza', 'maria servin']);
+    return named.length ? named : byDept(db, ['document_control', 'document control']);
+  });
+}
 function dcSupervisors(db) {
-  try {
-    return db.prepare(`SELECT id, name FROM users
-      WHERE is_active = 1 AND (LOWER(department) = 'document_control' OR role = 'admin')`).all();
-  } catch { return []; }
+  return controlledChangeRecipients(db).users;
 }
 
 // One Document Change Request per parked definition, so the review lives in

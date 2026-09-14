@@ -1,3 +1,4 @@
+import { resolve, byNames } from './readybot-recipients.js';
 // The annual vendor review — SOP 404 § IV.B, and the piece that stops this
 // register going quiet the way the tracker did.
 //
@@ -134,6 +135,25 @@ export function generateSupplierReviewTasks(db, { today = dayStr(new Date()) } =
  * Best-effort and never throws out of the job: a comms outage must not stop the
  * tasks above from being raised.
  */
+/**
+ * Who hears that vendor reviews are outstanding.
+ *
+ * WAS: every admin, plus any supervisor or manager in QA, quality or purchasing
+ * — which on this roster is most of the leadership, every third day, for work
+ * that belongs to two people. Now: Quality's two, by name.
+ *
+ * NOTE FOR WHOEVER READS THIS NEXT: D-044 deliberately put PURCHASING on this
+ * message, because the two halves are different jobs — an overdue review is
+ * Quality's, but a vendor never qualified at all is a chase and that chase is
+ * Purchasing's. Narrowing to Quality was the plant's instruction on 14 Sep and
+ * it is one tick in Settings to put Purchasing back. It is a setting now
+ * precisely so that answer does not need a deploy.
+ */
+export function supplierReviewRecipients(db) {
+  return resolve(db, 'supplier_review_recipients',
+    () => byNames(db, ['carol pierce', 'maria servin']));
+}
+
 export async function supplierReviewNudge(db, deps = {}) {
   const { botDm, pushToUser } = deps;
   if (!botDm) return { sent: 0 };
@@ -143,19 +163,7 @@ export async function supplierReviewNudge(db, deps = {}) {
   const never = s.never_qualified.length;
   if (!overdue && !never) return { sent: 0, quiet: true };
 
-  // An IIFE returning the value, not `let … = []` then a try that reassigns:
-  // the initialiser is never read, which is the one lint rule this codebase
-  // keeps tripping over. Correct by construction rather than by remembering.
-  const people = (() => {
-    try {
-      return db.prepare(`
-        SELECT id, name FROM users
-        WHERE is_active = 1 AND name != 'ReadyBot'
-          AND (role = 'admin'
-               OR (role IN ('supervisor', 'manager')
-                   AND LOWER(COALESCE(department, '')) IN ('qa', 'quality', 'purchasing')))`).all();
-    } catch { return []; }
-  })();
+  const people = supplierReviewRecipients(db).users;
   if (!people.length) return { sent: 0 };
 
   const link = `${readyDocOrigin()}/?tab=suppliers`;

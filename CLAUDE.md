@@ -1121,6 +1121,29 @@ shared is that several go to **every active admin** by default.
 - **An audience that follows from what somebody DID is reported, never settable** — the reviewer asked, the
   employee sent a document, the filer QA flagged. Narrowing those means somebody not told about their own work.
 
+## Every ReadyBot audience is the sender's own function (D-086)
+`server/readybot-recipients.js` is the shared resolver; each sender exports ONE recipient function; the
+registry calls it. **There is no SQL left in `readybot-audience.js`** — and the unused-variable lint on its
+old `people()` helper is what proved it.
+- **D-079's exception is what drifted.** It allowed "the same predicate run here" for audiences that were
+  SQL inside their sender, and by 14 Sep the screen was wrong about FOUR: supplier reviews and QA-records
+  **over-reported** (the senders require supervisor/manager, the registry listed any department member),
+  parked changes over-reported (registry added quality + QA), and the auditor pass **under-reported**
+  ("all admins" while the sender also messaged QA — the direction nobody checks).
+- **The defaults were `role = 'admin' OR department IN (…)`**, so every admin was on every digest. The
+  control run has the supplier digest naming **eight** people; it names **two** now.
+- **Settable now**: employee documents, onboarding finished, supplier reviews, QA-record backfill, parked
+  changes, auditor pass — joining Flash and Pay. A stored list wins, so "is Marnee still the HR owner" is
+  a Settings question, not a deploy.
+- **Actor-only stays actor-only.** `qa_corrections` (the filer) and `pay_review_asks` (the assigned
+  reviewer) have NO setting and zero broadcast recipients — a picker there opts leadership into somebody
+  else's work. D-083's escalation is untouched.
+- **Unset is never nobody**: a default resolving to no one falls back to active admins. Names resolve from
+  `users`; a name with no account is absent, never invented.
+- **Purchasing came off supplier reviews on instruction, and D-044 had put it there on purpose** — the
+  "never qualified" half is Purchasing's chase. The screen says so; adding Jake back is one tick.
+- `verify:readybot` (41; control fails 5).
+
 ## An edit has to reach the other reader (D-079)
 - **A CACHED TRANSLATION BELONGS TO A VERSION OF THE TEXT.** `autoTrans` was keyed `messageId:lang`, so an
   edited message kept its pre-edit translation for ever — the server drops its cached row on edit, the client

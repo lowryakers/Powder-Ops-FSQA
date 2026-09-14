@@ -1,3 +1,4 @@
+import { resolve, byNames, adam, settle } from '../readybot-recipients.js';
 // New-hire onboarding: the office starts it, the new hire completes it on a
 // magic link with no account, and the packet lands in ADP — through the API
 // once the Marketplace credentials exist, or keyed into RUN from the
@@ -975,10 +976,30 @@ portalRouter.post('/:token/finish', (req, res) => {
 // (admins and the office/HR departments — the same people the pay-action
 // reminder reaches). One DM each, no channel post; a new hire's packet is not
 // plant news.
+/**
+ * Who is told a packet is finished, before the person who started it is added.
+ *
+ * Was every admin plus all of office and HR. Now the named owners — because a
+ * finished packet is one person's next job, not plant news, which is the same
+ * reason it was never a channel post.
+ */
+export function onboardingFinishedRecipients(db) {
+  return resolve(db, 'onboarding_finished_recipients',
+    () => settle(db, adam(db), byNames(db, ['marnee bybee'])));
+}
+
 export function finishWatchers(db, rec) {
-  const rows = db.prepare(`SELECT id, name FROM users WHERE is_active = 1 AND name != 'ReadyBot' AND role != 'auditor'
-      AND (role = 'admin' OR LOWER(COALESCE(department,'')) IN ('office', 'hr') OR name = ?)`).all(rec.created_by || '');
-  return rows;
+  // WHOEVER STARTED IT IS ALWAYS TOLD, and that is deliberately not settable:
+  // it follows from what they did, and narrowing it would mean somebody hearing
+  // nothing about a packet they opened themselves.
+  const out = new Map();
+  for (const u of onboardingFinishedRecipients(db).users) out.set(u.id, u);
+  if (rec.created_by) {
+    const starter = db.prepare(`SELECT id, name FROM users
+      WHERE LOWER(name) = LOWER(?) AND is_active = 1 AND name != 'ReadyBot' AND role != 'auditor'`).get(rec.created_by);
+    if (starter) out.set(starter.id, starter);
+  }
+  return [...out.values()];
 }
 
 async function announceFinished(db, rec) {

@@ -1,3 +1,4 @@
+import { resolve, byNames, adam, settle, ACTIVE } from '../readybot-recipients.js';
 // Documents sent to an existing employee to fill in and sign — a W-4 for a
 // withholding change, a W-9, a policy acknowledgement — and the signed copy
 // kept against that person.
@@ -105,9 +106,30 @@ async function tellEmployee(db, row, { reminder = false } = {}) {
   } catch { return false; }
 }
 
+/**
+ * Who is told when an employee signs or declines.
+ *
+ * The EMPLOYEE always gets their own — that is `tellEmployee`, it follows from
+ * who was asked, and it is not settable. This is the other half: who in the
+ * office hears the answer.
+ *
+ * It used to be every admin plus everyone in office or HR, which on this roster
+ * is most of the leadership hearing about every signed policy. Now: whoever
+ * SENT it — which follows from what they did and is therefore never dropped —
+ * plus the named owners.
+ */
+export function employeeDocumentRecipients(db) {
+  return resolve(db, 'employee_document_recipients',
+    () => settle(db, adam(db), byNames(db, ['marnee bybee'])));
+}
 function officeWatchers(db, row) {
-  const rows = db.prepare(`SELECT id, name, role, department FROM users WHERE is_active = 1 AND role != 'auditor' AND name != 'ReadyBot'`).all();
-  return rows.filter(u => u.id !== row.user_id && (u.id === row.sent_by_id || u.role === 'admin' || ['office', 'hr'].includes((u.department || '').toLowerCase())));
+  const base = employeeDocumentRecipients(db).users;
+  const sender = row.sent_by_id
+    ? db.prepare(`SELECT id, name FROM users WHERE id = ? AND ${ACTIVE}`).get(row.sent_by_id)
+    : null;
+  const out = new Map();
+  for (const u of [...base, ...(sender ? [sender] : [])]) if (u.id !== row.user_id) out.set(u.id, u);
+  return [...out.values()];
 }
 
 async function tellOffice(db, row, what) {

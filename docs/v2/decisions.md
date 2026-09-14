@@ -2836,3 +2836,67 @@ The banner now also renders for supervisors and opens expanded from `?missed=1`,
 lands on the list rather than on a collapsed bar.
 
 Verified: `verify:eodchase` (42, live, in `verify:all`). **The control fails 6 of 42.**
+
+## D-086 · 2026-09-14 · decided — Every ReadyBot audience is the sender's own function, and the defaults are the people who must act
+
+Two problems, and the second one was not in the brief.
+
+**The digests fanned out.** Six of them resolved as `role = 'admin' OR department IN (…)`, so every
+admin landed on every one — Danny, Jake, Lowry, Alex and Marnee getting a supplier-review chase every
+third day for work that belongs to Quality's two people. **In the control run the supplier digest names
+eight people; it now names two.** An audience that wide is one people filter into a folder, and then the
+one that mattered goes into the folder too.
+
+**And the Settings screen was already lying about four of them.** D-079 required each audience to be
+resolved by the function that actually sends it, then allowed an exception: where the audience was a SQL
+predicate inside its sender, "the same predicate is run here". *That exception is what drifted*, exactly
+as the rule predicts:
+
+| Message | The sender messaged | Settings said |
+|---|---|---|
+| Supplier reviews outstanding | admins + **supervisors/managers** in QA / quality / purchasing | **anyone** in those departments — named people who were never messaged |
+| QA records waiting to be filed | admins + **supervisors/managers** in QA / quality | anyone in those departments |
+| A change is parked for Document Control | Document Control + admins | Document Control + admins + **quality + QA** |
+| An auditor pass was issued | admins **+ QA / quality** | "all active admins" — it **under-reported**, the direction nobody checks |
+
+So the exception is gone. `server/readybot-recipients.js` holds the shared resolver; each sender exports
+one function; the registry calls it. **There is no SQL left in `readybot-audience.js` at all** — the
+lint error for its now-unused `people()` helper is what proved it, and the verify asserts it.
+
+**The audiences, after.** Settable means a stored list wins and the screen says *Chosen*; unset means the
+rule, and the screen says *Default*.
+
+| Key | Settable | Default |
+|---|---|---|
+| `flash_report` | yes (unchanged) | active admins |
+| `pay_actions` | yes (unchanged) | admins + office / HR |
+| `pay_review_asks` | **no — actor** | the assigned reviewer, nobody else |
+| `qa_corrections` | **no — actor** | the filer; escalation is D-083's and is not touched here |
+| `employee_documents` | **now yes** | Adam + Marnee, plus whoever sent it (always, by rule) |
+| `onboarding_finished` | **now yes** | Adam + Marnee, plus whoever started it (always, by rule) |
+| `supplier_reviews` | **now yes** | Carol + Maria |
+| `record_backfill` | **now yes** | Maria + Carol |
+| `controlled_changes` | **now yes** | Daniela, Dayanna, Maria — the approvers, not every admin |
+| `auditor_pass` | **now yes** | Adam + Lowry |
+| `cleanup_review`, `eod_missed` | yes (D-084, D-085) | unchanged |
+
+**Actor-only stays actor-only.** A picker on "QA asked for a correction" or "Evaluation asked of you"
+would be a way to opt leadership into somebody else's work, which is the opposite of the point. Both
+report zero broadcast recipients and refuse a setting key.
+
+**Two rules hold for every default.** A stored list wins, so "is Marnee still the HR owner" is a Settings
+question rather than a deploy. And **unset is never nobody** — a default that resolves to no one falls
+back to the active admins, because a message configured and delivered to nobody is indistinguishable
+from a broken job. Names resolve from `users` and nothing is invented; a name with no account is simply
+absent.
+
+**One instruction I followed and want re-read.** Purchasing came off the supplier digest. **D-044 put it
+there deliberately**: an overdue review is Quality's work, but *a vendor never qualified at all is a
+chase, and the chase is Purchasing's* — 22 vendors on the real data. Jake is now off that message. The
+registry note says so on the screen, and adding him back is one tick rather than a deploy, which is
+precisely why it is settable now.
+
+Verified: `verify:readybot` (41, live, in `verify:all`). **The control fails 5 of 41**, the first being
+the supplier digest naming eight people. Two of the assertions were vacuous before they were right: the
+first sent `user_ids` where the endpoint takes `ids`, so it tested the default while believing it had
+chosen a list.

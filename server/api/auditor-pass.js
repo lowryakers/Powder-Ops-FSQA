@@ -1,3 +1,4 @@
+import { resolve, byNames } from '../readybot-recipients.js';
 // Getting an auditor into the evidence binder without a password.
 //
 // The old instruction — "the auditor signs in as auditor@powder-ops.com and
@@ -42,15 +43,28 @@ import { readyDocOrigin } from '../links.js';
 // Best-effort, and never in the way: the pass is already issued and returned
 // before this runs, so a comms outage cannot fail an admin standing next to the
 // person waiting for it.
+/**
+ * Who is told a read-only pass was minted for somebody who does not work here.
+ *
+ * Slim admin awareness by name, rather than every admin plus everyone in QA.
+ * The Settings screen used to say "all active admins" while the sender also
+ * messaged QA — it UNDER-reported, which is the one direction nobody checks.
+ */
+export function auditorPassRecipients(db) {
+  return resolve(db, 'auditor_pass_recipients', () => byNames(db, ['adam bliss', 'lowry akers']));
+}
+
 async function announcePass(db, { visitor_name, note, days, expires, account, by }) {
   // `role != 'auditor'` is the one that is easy to miss and looks silly when it
   // bites: a pass account is created in the QA department, so it matched this
   // query and the auditor was DM'd an announcement of their own pass. An
   // auditor is the SUBJECT of an access grant here, never a watcher of one.
-  const watchers = db.prepare(`SELECT id, name FROM users WHERE is_active = 1 AND name != 'ReadyBot'
-      AND role != 'auditor'
-      AND (role = 'admin' OR LOWER(COALESCE(department,'')) IN ('qa','quality'))`).all()
-    .filter(u => u.name !== by);
+  // (That exclusion now lives in `ACTIVE` in readybot-recipients.js, which every
+  // audience shares, so no future list can forget it.)
+  //
+  // The issuer is still dropped afterwards rather than in the rule: they know,
+  // and this is a second pair of eyes, not a receipt.
+  const watchers = auditorPassRecipients(db).users.filter(u => u.name !== by);
   if (!watchers.length) return 0;
   const when = new Date(expires).toLocaleDateString();
   for (const w of watchers) {

@@ -1,3 +1,4 @@
+import { resolve, byNames } from './readybot-recipients.js';
 // Filing the QA inspection records for checks that were DONE and never recorded.
 //
 // Until this release, completing a Temperature & Humidity, Brittle Plastic &
@@ -188,22 +189,22 @@ export function runQaRecordBackfill(db, { by = 'system', group = null } = {}) {
  * Best-effort throughout: a comms outage must never throw out of a scheduled
  * job, and this reports rather than repairs.
  */
+/**
+ * Who hears that completed checks have no record filed.
+ *
+ * Filing these is Quality's, and the message went to every admin plus every
+ * QA/quality supervisor every third day. Two people, by name.
+ */
+export function recordBackfillRecipients(db) {
+  return resolve(db, 'record_backfill_recipients',
+    () => byNames(db, ['maria servin', 'carol pierce']));
+}
+
 export async function recordBackfillNudge(db) {
   const { total, by_month } = planQaRecordBackfill(db);
   if (!total) return { sent: 0, total: 0 };
 
-  let people;
-  try {
-    people = db.prepare(`
-      SELECT id, name FROM users
-      WHERE is_active = 1 AND name != 'ReadyBot'
-        AND (role = 'admin'
-             OR (role IN ('supervisor', 'manager') AND LOWER(COALESCE(department, '')) IN ('qa', 'quality')))
-    `).all();
-  } catch (e) {
-    console.warn('[qa-backfill] could not resolve recipients:', e.message);
-    return { sent: 0, total };
-  }
+  const people = recordBackfillRecipients(db).users;
   if (!people.length) return { sent: 0, total };
 
   const months = Object.entries(by_month).sort(([a], [b]) => a.localeCompare(b))
