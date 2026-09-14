@@ -125,6 +125,52 @@ function HourInput({ value, onCommit, tone = '', className = 'w-16' }) {
   );
 }
 
+/**
+ * One row of period cards for one kind of worker.
+ *
+ * A CONTRACTOR'S TARGET-DERIVED CARDS READ "—", NOT "0:00". Paid non-working
+ * and overtime are both computed against a weekly target, and a contractor has
+ * none — so those figures do not exist rather than being zero, and printing
+ * 0:00 would state that none was owed when the question was never asked. Same
+ * distinction the readiness model's `applies` draws, and the same one the
+ * Target column already makes on every contractor row below.
+ */
+function TotalsRow({ label, count, totals = {}, kind }) {
+  const contractor = kind === 'contractor';
+  const cards = [
+    { label: 'Worked', value: totals.worked, icon: Clock },
+    { label: 'PTO', value: totals.pto },
+    { label: 'Holiday', value: totals.holiday },
+    { label: 'Paid non-working', value: totals.non_working, alert: (totals.non_working || 0) > 0, na: contractor },
+    { label: 'Overtime', value: totals.overtime, alert: (totals.overtime || 0) > 0, na: contractor },
+  ];
+  return (
+    <div data-totals-kind={kind}>
+      {label && (
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-1">
+          {label}
+          {count != null && <span className="ml-1.5 font-normal text-gray-400">{count} {count === 1 ? 'person' : 'people'}</span>}
+        </p>
+      )}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+        {cards.map(c => (
+          <div key={c.label} className="bg-white rounded-xl border border-gray-200 px-3 py-2">
+            <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">{c.label}</p>
+            {c.na
+              ? <p className="text-lg font-bold text-gray-300" title="No weekly target, so there is nothing to balance up to">—</p>
+              : (
+                <p className={`text-lg font-bold tabular-nums ${c.alert ? 'text-amber-600' : 'text-gray-900'}`}
+                  data-total={`${kind}:${c.label}`}>
+                  {formatHours(c.value, { zero: '0:00' })}
+                </p>
+              )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function HoursTab() {
   const { data: periods } = useApiGet('/office/periods');
   const [period, setPeriod] = useState('');
@@ -160,7 +206,17 @@ export default function HoursTab() {
     refresh();
   };
 
+  // Employees and contractors are totalled SEPARATELY, because they are two
+  // different payroll jobs: one goes to ADP against a weekly target with PTO
+  // and an overtime line, the other is hours worked on somebody's invoice. A
+  // single row of cards covering both reads as the employee figure, since for
+  // most periods the employees are most of it.
+  //
+  // The server derives both from the same rows the grid renders, so a card and
+  // the column under it cannot disagree.
+  const byType = data?.totals_by_type || {};
   const t = data?.totals || {};
+  const hasContractors = (byType.contractor?.people || 0) > 0;
 
   return (
     <div className="space-y-3">
@@ -177,20 +233,22 @@ export default function HoursTab() {
         </span>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-        {[
-          { label: 'Worked', value: t.worked, icon: Clock },
-          { label: 'PTO', value: t.pto },
-          { label: 'Holiday', value: t.holiday },
-          { label: 'Paid non-working', value: t.non_working, alert: (t.non_working || 0) > 0 },
-          { label: 'Overtime', value: t.overtime, alert: (t.overtime || 0) > 0 },
-        ].map(c => (
-          <div key={c.label} className="bg-white rounded-xl border border-gray-200 px-3 py-2">
-            <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">{c.label}</p>
-            <p className={`text-lg font-bold tabular-nums ${c.alert ? 'text-amber-600' : 'text-gray-900'}`}>{formatHours(c.value, { zero: '0:00' })}</p>
+      {hasContractors
+        ? (
+          <div className="space-y-2" data-hours-totals>
+            <TotalsRow label="Employees" count={byType.employee?.people} totals={byType.employee} kind="employee" />
+            <TotalsRow label="Contractors &amp; temps" count={byType.contractor?.people} totals={byType.contractor} kind="contractor" />
+            {/* The combined figure is kept and LABELLED, rather than removed —
+                "what is the whole period" is still a question, it just must not
+                be the only number on the screen. */}
+            <p className="text-[11px] text-gray-500 text-right tabular-nums" data-hours-combined>
+              Everyone · {byType.employee?.people + byType.contractor?.people} people ·
+              {' '}<span className="font-semibold text-gray-700">{formatHours(t.worked, { zero: '0:00' })}</span> worked ·
+              {' '}<span className="font-semibold text-gray-700">{formatHours(t.total, { zero: '0:00' })}</span> paid
+            </p>
           </div>
-        ))}
-      </div>
+        )
+        : <TotalsRow totals={byType.employee || t} kind="employee" />}
 
       {/* Desktop: both weeks side by side */}
       <div className="hidden lg:block bg-white rounded-xl border border-gray-200 overflow-x-auto">
@@ -294,7 +352,9 @@ export default function HoursTab() {
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <p className="font-medium text-gray-900">{p.name}</p>
-                <p className="text-[11px] text-gray-400 capitalize">{(p.department || '').replace('_', ' ')}</p>
+                <p className="text-[11px] text-gray-400 capitalize">
+                  {p.is_contractor ? (p.contractor_company || 'contractor') : (p.department || '').replace('_', ' ')}
+                </p>
               </div>
               <div className="text-right shrink-0">
                 <p className="text-lg font-bold text-gray-900">{hrs(p.period.total)}</p>

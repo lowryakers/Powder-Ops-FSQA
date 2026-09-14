@@ -2976,3 +2976,72 @@ prevent.
 Verified: `verify:clientinvite` (66, live + a real browser at 390px, in `verify:all`) — the link issued,
 spent, refused four different ways, and a real client account driven against every door above. **The
 control removes the guard and fails 11**, the first being a client opening their own channel.
+
+---
+
+## D-088 — The join text carries the opt-out line, because we start it
+*14 September 2026. Supplements D-087; nothing in it is reversed.*
+
+Preparing to actually text the five M4 people surfaced something D-087 got wrong by omission.
+`inviteMessage()` was composed and sent through `sendSms` like every other message here, but it did not
+carry `OPT_OUT_LINE` — and `sms.js` has drawn that line since the em-dash work: **boilerplate goes on a
+message we INITIATE, and not on a reply to somebody who has just asked us a question.**
+
+A join link is the most clearly initiated message in the app. It goes to somebody who does not work here,
+has no account yet, has consented to nothing in ReadyDoc, and did not ask for it. Under A2P 10DLC that is
+precisely the traffic a campaign gets flagged for, and the plant's number is the one that stops working.
+
+The line is on it now. **Measured, not assumed:** the message is 212 GSM-7 units — **two segments**, the
+same as before, because 25 characters of opt-out do not cross the 306-unit boundary for two concatenated
+segments. `inviteSegments()` is exported and asserted, so a future edit that pushes this message to four
+segments of UCS-2 fails a test rather than quietly being filtered by a carrier (the failure mode the
+em-dash work exists to prevent).
+
+**What is deliberately NOT built: a consent gate on the invite.** `sms_consent_at` is stamped by the
+`sms_access` grant, which is the INBOUND allowlist and must stay 0 for a client (D-080). Requiring it here
+would make the grant a prerequisite for a link, which is the opposite of what that column means. The record
+that a text was sent is `user_invites.sent_to` — the last four digits, the person, the time and who issued
+it — and the office tells the recipient a link is coming, which is how the conversation already works with
+a manufacturing partner.
+
+**Also noted rather than fixed:** `readyDocOrigin()` still defaults to `powderops-fsqa.up.railway.app`, and
+`smsStatus().link_warning` already calls that out — carriers cannot tell a shared hosting subdomain apart
+from anyone else's traffic on the same host, which is a common cause of A2P messages being filtered. A
+branded domain pointed at the app and `READYDOC_ORIGIN` set to it is the fix, and it is an infrastructure
+decision, not a code one.
+
+---
+
+## D-089 — Employees and contractors are totalled separately on the Hours tab
+*14 September 2026.*
+
+The five cards at the top of Time Tracking → Hours summed the whole roster. Since contractors were put on
+that roster beside employees, that one row of figures has been covering two different payroll jobs:
+
+- an **employee** is paid against a weekly target, with a PTO balance, a paid-non-working balance and an
+  overtime line, and goes to ADP;
+- a **contractor** has no target at all, so their paid hours are the hours worked, and there is no
+  overtime and no balance to compute.
+
+One figure covering both answers neither question — and it reads as the employee number, because for most
+periods the employees are most of it.
+
+`GET /office/hours` now returns `totals_by_type` alongside the unchanged combined `totals`, **derived from
+the same `people` rows the grid below renders** (the activity-metrics rule: a card and the column under it
+cannot disagree). The two are asserted to reconcile to the combined figure on every key, and the two
+headcounts to partition the roster.
+
+**A CONTRACTOR'S TARGET-DERIVED CARDS READ "—", NOT "0:00".** Paid non-working and overtime are both
+computed against a weekly target and a contractor has none, so those figures do not exist rather than being
+zero. Printing 0:00 would state that none was owed when the question was never asked — the same distinction
+`applies` draws on the readiness model (D-082), and the same one the Target column already makes on every
+contractor row.
+
+**The combined figure is kept and labelled**, on its own quiet line reading "Everyone · N people": "what is
+the whole period" is still a real question, it just must not be the only number on the screen. And the two
+grouped rows appear only when there are contractors on the roster — a plant with no temps sees exactly the
+single row it saw before, rather than a heading over one group and an empty second one.
+
+Verified inside `verify:payroster` (64 total, live + a real browser at 1440px). **The control collapses the
+split back to one figure and fails 4**, the first being the employee total reading 32 hours that belong to
+a contractor.

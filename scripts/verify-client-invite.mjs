@@ -88,6 +88,21 @@ let url = null, token = null;
   })());
 }
 
+console.log('\nThe text itself');
+{
+  const { inviteMessage, inviteSegments } = await import('../server/user-invites.js');
+  const msg = inviteMessage({ name: 'Ci Client (M4)', channelLabel: 'client--m4test', url });
+  t('it names the person and what the link does', /Ci, join client--m4test/.test(msg), msg.slice(0, 90));
+  t('it states both limits — once, and fourteen days', /works once/i.test(msg) && /14 days/.test(msg));
+  t('IT CARRIES THE OPT-OUT LINE — we started this message, to somebody who has consented to nothing',
+    /Reply STOP to opt out/.test(msg), msg);
+  // A long multi-segment message carrying a URL is the shape carriers filter,
+  // and this message is a sentence and a URL. Measured, not hoped for.
+  const seg = inviteSegments(msg);
+  t('and it sends as two GSM-7 segments, not four of UCS-2',
+    seg.encoding === 'GSM-7' && seg.segments <= 2, JSON.stringify(seg));
+}
+
 console.log('\nThe page it opens says who it is for and nothing else');
 {
   const info = await J(await call(`/join/${token}`));

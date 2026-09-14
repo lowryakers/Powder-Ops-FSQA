@@ -30,6 +30,7 @@
 import crypto from 'crypto';
 import { v4 as uuid } from 'uuid';
 import { readyDocOrigin } from './links.js';
+import { OPT_OUT_LINE, segmentInfo, gsmSafe } from './sms.js';
 
 export const INVITE_DAYS = 14;
 
@@ -141,6 +142,20 @@ export function inviteState(db, userId) {
 export function inviteMessage({ name, channelLabel, url }) {
   const who = String(name || '').split(' ')[0];
   const what = channelLabel ? `join ${channelLabel} on ReadyDoc` : 'set up your ReadyDoc account';
+  // THE OPT-OUT LINE IS ON IT BECAUSE WE START THIS MESSAGE. `sms.js` draws
+  // that line already — boilerplate belongs on a message we initiate and not on
+  // a reply to somebody who has just asked us a question — and this is the most
+  // clearly initiated message in the app: it goes to somebody who does not work
+  // here, has no account yet, and has consented to nothing in ReadyDoc. Under
+  // A2P 10DLC that is exactly the traffic a campaign gets flagged for.
   return `Powder Ops: ${who ? who + ', ' : ''}${what}. Set a password on this link. `
-    + `It works once and expires in ${INVITE_DAYS} days.\n${url}`;
+    + `It works once and expires in ${INVITE_DAYS} days. ${OPT_OUT_LINE}\n${url}`;
 }
+
+/**
+ * What the invite costs to send, so "why did that not arrive" is answerable
+ * without a Twilio login. Exported for the test, which asserts it stays inside
+ * two segments: a long multi-segment message carrying a URL is the shape
+ * carriers filter, and this message is nothing but a URL and a sentence.
+ */
+export const inviteSegments = (msg) => segmentInfo(gsmSafe(msg));

@@ -913,14 +913,31 @@ router.get('/hours', (req, res) => {
     };
   });
 
-  const totals = people.reduce((acc, p) => {
-    for (const k of ['worked', 'pto', 'holiday', 'unpaid', 'non_working', 'overtime', 'total']) {
-      acc[k] = Math.round(((acc[k] || 0) + p.period[k]) * 100) / 100;
-    }
+  // TOTALLED BY WORKER TYPE, NOT ONLY COMBINED.
+  //
+  // An employee's period and a contractor's are two different payroll jobs. One
+  // goes to ADP against a weekly target, with a PTO balance, a paid-non-working
+  // balance and an overtime line; the other is hours worked on somebody's
+  // invoice, with no target and therefore no overtime and no balance at all. A
+  // single figure covering both answers neither question — and it reads as the
+  // employee number, because for most periods the employees are most of it.
+  //
+  // Derived from `people`, the same rows the grid renders, so a card and the
+  // column under it cannot disagree — the activity-metrics rule. The combined
+  // `totals` is kept and is the sum of the two, which the test asserts.
+  const KEYS = ['worked', 'pto', 'holiday', 'unpaid', 'non_working', 'overtime', 'total'];
+  const sumOf = (list) => {
+    const acc = {};
+    for (const k of KEYS) acc[k] = Math.round(list.reduce((n, p) => n + p.period[k], 0) * 100) / 100;
+    acc.people = list.length;
     return acc;
-  }, {});
+  };
+  const employeeRows = people.filter(p => !p.is_contractor);
+  const contractorRows = people.filter(p => p.is_contractor);
+  const totals = sumOf(people);
+  const totals_by_type = { employee: sumOf(employeeRows), contractor: sumOf(contractorRows) };
 
-  res.json({ period_start: periodStart, weeks, people, totals });
+  res.json({ period_start: periodStart, weeks, people, totals, totals_by_type });
 });
 
 router.put('/hours', (req, res) => {

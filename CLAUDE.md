@@ -246,6 +246,18 @@ account work at M4 and have never been in the building. One text, one tap, a pas
   work shipped and the handler dropped it, so adding somebody with a number took two saves. `sms_access` is
   still NOT accepted at create — that grant stamps a consent date and sends a confirmation text, and lives
   in one place.
+- **THE TEXT CARRIES `OPT_OUT_LINE` (D-088).** `sms.js` has always drawn the line — boilerplate goes on a
+  message we INITIATE, never on a reply to somebody who just asked us something — and a join link is the
+  most clearly initiated message here: it goes to somebody who does not work here, has no account, and
+  consented to nothing. Under A2P 10DLC that is the traffic a campaign gets flagged for. **Measured: 212
+  GSM-7 units, still two segments**; `inviteSegments()` is exported and asserted so a future edit that
+  pushes it to four segments of UCS-2 fails a test instead of being silently filtered.
+- **No consent GATE on the invite, deliberately.** `sms_consent_at` is stamped by the `sms_access` grant,
+  which is the INBOUND allowlist and must stay 0 for a client — requiring it here would make that grant a
+  prerequisite for a link, the opposite of what the column means. The record is `user_invites.sent_to`.
+- **Texted links still point at `…up.railway.app` by default**, and `smsStatus().link_warning` says so:
+  carriers cannot tell a shared hosting subdomain from anyone else's traffic on the same host. Point a
+  branded domain at the app and set `READYDOC_ORIGIN` to it.
 
 ### `EXTERNAL_ALLOWED` was half the boundary; `EXTERNAL_MAY_WRITE` is the other half
 D-080's list keeps a client out of every module and lets the whole of `/comms` through. **The gap was
@@ -3356,6 +3368,25 @@ Jr." files under S. The surname is the **last word** of `users.name`, the same r
 derives sign-in names with, so Spanish two-surname names file under the maternal surname in both places —
 where someone goes by the paternal one, correct it on their record rather than special-casing the sort. The
 column header says "by last name" because the names still display first-name-first.
+
+## Employees and contractors are totalled separately on the Hours tab (D-089)
+The five cards at the top summed the whole roster, and that one row was covering two different payroll
+jobs: an employee is paid against a weekly target with PTO, a paid-non-working balance and an overtime
+line; a contractor has no target, so their paid hours ARE the hours worked and there is no overtime and no
+balance. One figure covering both reads as the employee number, because for most periods the employees are
+most of it.
+- `GET /office/hours` returns **`totals_by_type`** beside the unchanged combined `totals`, derived from the
+  same `people` rows the grid renders — a card and the column under it cannot disagree. Asserted: the two
+  reconcile to the combined figure on **every** key, and the headcounts partition the roster.
+- **A CONTRACTOR'S TARGET-DERIVED CARDS READ "—", NOT "0:00".** Paid non-working and overtime are computed
+  against a target they do not have, so those figures do not exist rather than being zero; 0:00 would state
+  that none was owed when the question was never asked. The `applies` distinction (D-082), and the same one
+  the Target column already makes on every contractor row.
+- **The combined figure is kept and LABELLED** ("Everyone · N people") rather than removed — "what is the
+  whole period" is still a question, it just must not be the only number on screen. The two grouped rows
+  appear only when contractors are on the roster, so a plant with no temps sees what it saw before.
+- Verified inside `verify:payroster` (64, live + browser at 1440px); **the control collapses the split and
+  fails 4**, the first being the employee total reading a contractor's 32 hours.
 
 ## Temp & Humidity excursions alert Adam (`server/env-limits.js`)
 Completing the daily Temp & Humidity check (Form 110-04) with an out-of-range reading DMs Adam through

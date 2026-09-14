@@ -153,6 +153,30 @@ const after2 = (await call('GET', '/office/hours', null, A)).body.people.find(p 
 t('32 hours is 32 paid — no phantom balance up to 40', after2?.period?.total === 32, String(after2?.period?.total));
 t('and no overtime is invented against a target they do not have', after2?.period?.overtime === 0, String(after2?.period?.overtime));
 
+// The two are totalled SEPARATELY at the top of the tab. One figure covering
+// both reads as the employee number, because for most periods the employees are
+// most of it — and a contractor's hours are a different payroll job entirely.
+{
+  const h = (await call('GET', '/office/hours', null, A)).body;
+  const bt = h?.totals_by_type;
+  t('the period is totalled by worker type', !!bt?.employee && !!bt?.contractor, JSON.stringify(bt || {}).slice(0, 140));
+  t('the contractor total is the contractor hours alone', bt.contractor.worked === 32, String(bt.contractor.worked));
+  t('and the employee total does not include them',
+    bt.employee.worked === h.totals.worked - 32, `${bt.employee.worked} vs ${h.totals.worked}`);
+  // THE TWO RECONCILE TO THE COMBINED FIGURE, every key — the same rule the
+  // Team Activity cards follow. A card that cannot be added back to the number
+  // beside it is a card nobody can check.
+  const keys = ['worked', 'pto', 'holiday', 'unpaid', 'non_working', 'overtime', 'total'];
+  const off = keys.filter(k => Math.abs((bt.employee[k] + bt.contractor[k]) - h.totals[k]) > 0.005);
+  t('EVERY FIGURE RECONCILES to the combined total', off.length === 0, off.join(', '));
+  t('and the two headcounts partition the roster',
+    bt.employee.people + bt.contractor.people === h.people.length,
+    `${bt.employee.people} + ${bt.contractor.people} vs ${h.people.length}`);
+  t('a contractor contributes no overtime and no paid-non-working balance',
+    bt.contractor.overtime === 0 && bt.contractor.non_working === 0,
+    `${bt.contractor.overtime} / ${bt.contractor.non_working}`);
+}
+
 console.log('\n── a rename must not split somebody\'s attendance history ──');
 // Two absences filed under the name as it stood, then the person is renamed.
 for (const d of ['2026-09-02', '2026-09-04']) {
@@ -190,6 +214,55 @@ t('and an entry filed under the old spelling says what it was',
   entries.some(e => e.renamed_from === 'Nadia Okonjo'));
 const byId = (await call('GET', `/office/time/adjustments?employee=${nadiaRow.user_id}`, null, A)).body;
 t('filtering by the account finds all three, whatever name they were filed under', byId.length === 3, String(byId.length));
+
+// ── in the browser: Time Tracking → Hours ────────────────────────────────────
+//
+// The change is a LAYOUT one, so the assertion has to be a rendered one: the
+// reconciliation above proves the numbers, this proves they are on the screen
+// as two labelled groups rather than one row somebody reads as the employee
+// figure.
+console.log('\n── Hours: employees and contractors are totalled separately ──');
+{
+  const ORIGIN = `http://localhost:${PORT}`;
+  const { chromium } = await import('playwright-core');
+  const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  page.on('pageerror', e => { console.log('  [pageerror]', e.message); fail++; });
+  await page.goto(`${ORIGIN}/manifest.webmanifest`);
+  await page.evaluate(([tk, u]) => { localStorage.setItem('auth_token', tk); localStorage.setItem('auth_user', JSON.stringify(u)); }, [A, auth.user]);
+  await page.goto(`${ORIGIN}/?tab=time-tracking`);
+  await page.waitForTimeout(3500);
+  // Time Tracking's strip is built by hand rather than through useModuleTabs,
+  // so it carries no module id and `?view=` does not reach it — click the tab.
+  await page.locator('button', { hasText: /^Hours$/ }).first().click();
+  await page.waitForTimeout(2500);
+
+  const totals = page.locator('[data-hours-totals]');
+  t('there are TWO rows of cards, not one', await totals.count() === 1
+    && await page.locator('[data-totals-kind="employee"]').count() === 1
+    && await page.locator('[data-totals-kind="contractor"]').count() === 1,
+    await page.locator('body').innerText().then(x => x.slice(0, 200)));
+  // innerText reflects the CSS text-transform, so the headings come back
+  // uppercased — match case-insensitively rather than against the source.
+  const text = await totals.innerText();
+  t('each is named, with its headcount',
+    /employees/i.test(text) && /contractors/i.test(text) && /\d+ (people|person)/i.test(text), text.slice(0, 160));
+  t('the contractor Worked card carries the 32 hours logged above',
+    (await page.locator('[data-total="contractor:Worked"]').innerText()).trim() === '32:00',
+    await page.locator('[data-total="contractor:Worked"]').innerText());
+  t("and the employee row's figure is its own, not the combined one",
+    (await page.locator('[data-total="employee:Worked"]').innerText()).trim() !== '32:00');
+  // A CONTRACTOR'S TARGET-DERIVED CARDS READ "—", NOT 0:00. Those figures do
+  // not exist rather than being zero, and 0:00 would state that none was owed
+  // when the question was never asked.
+  t('a contractor is offered no overtime or paid-non-working FIGURE at all',
+    await page.locator('[data-total="contractor:Overtime"]').count() === 0
+    && await page.locator('[data-total="contractor:Paid non-working"]').count() === 0);
+  t('the combined figure is still there and is LABELLED as everyone',
+    /Everyone/.test(await page.locator('[data-hours-combined]').innerText()),
+    await page.locator('[data-hours-combined]').innerText());
+  await browser.close();
+}
 
 console.log(`\n${pass}/${pass + fail} assertions passed`);
 process.exit(fail ? 1 : 0);
