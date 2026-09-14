@@ -7,7 +7,9 @@ import { passwordDaysLeft, passwordExpired } from '../password-policy.js';
 import { issueSession, revokeSessions } from './sessions.js';
 import { ALL_MODULE_IDS } from '../module-access.js';
 import { uniqueUsername, validateUsername, deriveUsername } from '../usernames.js';
-import { smsEnabled, sendOptIn } from '../sms.js';
+import { smsEnabled, sendOptIn, sendSms } from '../sms.js';
+import { issueInvite, revokeInvites, inviteState, inviteBlockedReason, inviteMessage, tenDigits, INVITE_DAYS }
+  from '../user-invites.js';
 
 const router = Router();
 
@@ -53,7 +55,37 @@ router.get('/', (req, res) => {
   if (role) { sql += ' AND role = ?'; params.push(role); }
   if (active !== undefined) { sql += ' AND is_active = ?'; params.push(active === 'true' ? 1 : 0); }
   sql += ' ORDER BY name';
-  res.json(db.prepare(sql).all(...params));
+  const rows = db.prepare(sql).all(...params);
+
+  // WHETHER SOMEBODY CAN GET IN IS A FACT ABOUT THE ROW, and it is the fact the
+  // office is looking for when it opens this screen. `has_password` plus the
+  // state of their latest join link answers "why has Matt not appeared yet"
+  // without anybody guessing. Read in ONE query and merged here rather than a
+  // per-row call, the bounded-endpoint rule.
+  //
+  // The link itself is never in this payload — only its state. A token is
+  // handed back in clear exactly once, at the moment it is issued.
+  const invites = (() => {
+    try {
+      return db.prepare(`SELECT i.user_id, i.expires_at, i.issued_at, i.used_at, i.revoked_at, i.sent_to,
+          datetime('now') > i.expires_at AS expired
+        FROM user_invites i
+        WHERE i.rowid = (SELECT i2.rowid FROM user_invites i2 WHERE i2.user_id = i.user_id
+                         ORDER BY i2.issued_at DESC, i2.rowid DESC LIMIT 1)`).all();
+    } catch { return []; }
+  })();
+  const byUser = new Map(invites.map(i => [i.user_id, i]));
+  const hasPw = new Map(db.prepare('SELECT id, password_hash IS NOT NULL AS p FROM users').all().map(r => [r.id, !!r.p]));
+  res.json(rows.map(u => {
+    const i = byUser.get(u.id);
+    return {
+      ...u,
+      has_password: hasPw.get(u.id) || false,
+      invite_state: !i ? 'none' : i.used_at ? 'used' : i.revoked_at ? 'revoked' : i.expired ? 'expired' : 'live',
+      invite_expires_at: i?.expires_at || null,
+      invite_sent_to: i?.sent_to || null,
+    };
+  }));
 });
 
 router.get('/technicians', (_req, res) => {
@@ -229,7 +261,7 @@ router.get('/:id/pin', requireRole('admin'), (req, res) => {
 router.post('/', requireRole('admin'), (req, res) => {
   const db = getDb();
   const id = uuid();
-  const { name, username, email, pin, role, department, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, is_external } = req.body;
+  const { name, username, email, pin, role, department, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, is_external, phone } = req.body;
   if (!name) return res.status(400).json({ error: 'name is required' });
 
   let signIn;
@@ -242,8 +274,19 @@ router.post('/', requireRole('admin'), (req, res) => {
   }
 
   const moduleAccessStr = module_access ? JSON.stringify(module_access) : null;
-  db.prepare('INSERT INTO users (id, name, username, email, pin, role, department, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, is_external) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(id, name, signIn, email || null, pin || null, role || 'operator', department || 'warehouse', is_contractor ? 1 : 0, contractor_company || null, contractor_license || null, contractor_insurance_expiry || null, contractor_scope || null, moduleAccessStr, is_external ? 1 : 0);
+  // THE NUMBER IS TAKEN AT CREATE, and it was not. The Add User form has asked
+  // for a mobile since the SMS work shipped and this handler quietly dropped it
+  // — so adding somebody with a number meant saving, reopening them, and saving
+  // again, and anybody who did not notice ended up with a roster of accounts
+  // with no way to text them. Same class as the worker-type picker that lived
+  // in the API and not on the form, in the other direction.
+  //
+  // `sms_access` is DELIBERATELY NOT accepted here, and the form does not offer
+  // it on a new account. That grant stamps a consent date and sends a
+  // confirmation text; it is the PUT's, in one place, and a second copy of a
+  // consent record is the one that goes stale.
+  db.prepare('INSERT INTO users (id, name, username, email, pin, role, department, is_contractor, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, is_external, phone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(id, name, signIn, email || null, pin || null, role || 'operator', department || 'warehouse', is_contractor ? 1 : 0, contractor_company || null, contractor_license || null, contractor_insurance_expiry || null, contractor_scope || null, moduleAccessStr, is_external ? 1 : 0, tenDigits(phone));
 
   joinDefaultChannels(db, id, is_external);
   const created = db.prepare('SELECT id, name, username, email, role, department, is_active, is_contractor, is_external, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, phone, sms_access, created_at FROM users WHERE id = ?').get(id);
@@ -560,6 +603,100 @@ router.post('/:id/reset-password', requireRole('admin'), (req, res) => {
   db.prepare('DELETE FROM sessions WHERE user_id = ?').run(user.id); // force re-auth
   logAudit(req.user, 'password_reset', 'user', user.id, { by_admin: true, mode: 'send_to_setup' }, null, null, user.name);
   res.json({ ok: true, setup_code: setupCode, expires_in_days: 14 });
+});
+
+// ── The join link ────────────────────────────────────────────────────────────
+//
+// A setup code is read out to somebody standing in the room. Five of the people
+// who need an account here work at another company and have never been in the
+// building; there is nobody to read it to them. So: a link, texted, one tap,
+// choose a password, in the channel.
+//
+// The rules live in `server/user-invites.js` — single use, fourteen days,
+// hashed, revocable, and only ever for an account with no password. This is
+// only the door.
+
+/**
+ * Issue a link and, when there is a number and Twilio is configured, TEXT IT.
+ *
+ * `to` is optional: unset uses the number on the account. With neither — or
+ * with SMS not configured — the link is returned for sending by hand, which is
+ * the flavor-approval arrangement and the reason this never has to fail.
+ */
+router.post('/:id/invite', requireRole('admin'), async (req, res) => {
+  const db = getDb();
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  const blocked = inviteBlockedReason(user);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  if (blocked) return res.status(400).json({ error: blocked });
+
+  // What they are being invited TO. Taken from the request when given, else the
+  // one channel they are in — which for an external account is the whole of
+  // their access, so the page can name it. NEVER guessed from several: a link
+  // that names the wrong channel is worse than one that names none.
+  const channelId = req.body?.channel_id || (() => {
+    const rows = db.prepare(`SELECT c.id FROM chat_channel_members m JOIN chat_channels c ON c.id = m.channel_id
+      WHERE m.user_id = ? AND c.archived = 0 AND c.kind != 'dm'`).all(user.id);
+    return rows.length === 1 ? rows[0].id : null;
+  })();
+  const channelLabel = channelId
+    ? (db.prepare('SELECT name FROM chat_channels WHERE id = ?').get(channelId)?.name || null) : null;
+
+  const wantsText = req.body?.send !== false;
+  const number = tenDigits(req.body?.to ?? user.phone);
+  const canText = wantsText && !!number && smsEnabled();
+
+  const { token, url } = issueInvite(db, {
+    user_id: user.id, channel_id: channelId, issued_by: req.user?.name || 'system',
+    sent_to: canText ? number.slice(-4) : null,
+  });
+
+  // The row is already written, so a Twilio outage cannot lose a link that was
+  // issued — it is awaited only so the admin is told which happened and can
+  // copy it instead. Silence after pressing a Send button is the failure this
+  // whole SMS path keeps running into.
+  let sent = false, sendError = null;
+  if (canText) {
+    try {
+      await sendSms(number, inviteMessage({ name: user.name, channelLabel, url }));
+      sent = true;
+      logAudit(req.user, 'create', 'user_invite', user.id,
+        { sent_to: `…${number.slice(-4)}`, channel: channelLabel, expires_in_days: INVITE_DAYS },
+        null, null, user.name);
+    } catch (e) { sendError = e.message; }
+  }
+  if (!sent) {
+    logAudit(req.user, 'create', 'user_invite', user.id,
+      { sent_to: null, channel: channelLabel, expires_in_days: INVITE_DAYS, send_error: sendError },
+      null, null, user.name);
+  }
+
+  // THE CLEAR TOKEN IS HANDED BACK HERE AND NOWHERE ELSE, EVER. It is stored as
+  // a hash; a lost link is replaced, not recovered.
+  res.status(201).json({
+    ok: true, url, token, sent, send_error: sendError,
+    sent_to: sent ? `…${number.slice(-4)}` : null,
+    channel: channelLabel, expires_in_days: INVITE_DAYS,
+    ...inviteState(db, user.id),
+  });
+});
+
+/** What the roster row shows — the state of the latest link, never the link. */
+router.get('/:id/invite', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const user = db.prepare('SELECT id, name, is_active, password_hash FROM users WHERE id = ?').get(req.params.id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  res.json({ ...inviteState(db, user.id), blocked_reason: inviteBlockedReason(user) });
+});
+
+/** Withdraw it. A link handed to the wrong person is retired, not chased. */
+router.delete('/:id/invite', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const user = db.prepare('SELECT id, name FROM users WHERE id = ?').get(req.params.id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  const revoked = revokeInvites(db, user.id, req.user?.name || 'system');
+  if (revoked) logAudit(req.user, 'delete', 'user_invite', user.id, { revoked }, null, null, user.name);
+  res.json({ ok: true, revoked, ...inviteState(db, user.id) });
 });
 
 // ── Duplicate detection + merge (post-import cleanup) ─────────────────────────

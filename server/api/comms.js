@@ -19,6 +19,59 @@ import { readyDocOrigin } from '../links.js';
 
 const router = Router();
 
+// ── What an external account may do inside Messages ──────────────────────────
+//
+// `EXTERNAL_ALLOWED` in middleware/auth.js keeps a client out of every ReadyDoc
+// module, and it lets the whole of /comms through — because Messages is the one
+// thing they are here for. THAT IS ONLY HALF THE BOUNDARY, and it is the half
+// that is easy to miss, because everything below this line is "Messages" and
+// Messages is allowed.
+//
+// A client sitting in one channel could still: open a NEW channel, public or
+// private; invite whoever they liked into it; and start a direct message with
+// any plant account whose id they had read off their own channel's member list
+// — Lowry's, Adam's and Jake's are all in `GET /channels/:id`. Every one of
+// those is a conversation happening outside the record the channel exists to
+// be, which is the entire reason the channel exists (D-080).
+//
+// SO: READS ARE ALREADY CORRECT AND ARE LEFT ALONE. Every GET here resolves
+// through `requireChannel`, which is membership-gated for anybody who is not an
+// admin, so an external account can only ever read its own channel; a GET that
+// were not scoped that way would be a bug for every operator in the plant, not
+// just for a client. WRITES ARE AN ALLOW LIST, because a write is where
+// "reaching outside the channel" lives and the set is short enough to name.
+//
+// An allow list, not a deny list, and the failure modes are why: a missing
+// entry breaks something the client tries to do and they say so within the
+// hour; a missing deny-list entry is a door nobody notices. Same shape, and the
+// same reasoning, as EXTERNAL_ALLOWED itself.
+const EXTERNAL_MAY_WRITE = [
+  /^\/channels\/[^/]+\/messages$/,        // say something in their channel
+  /^\/channels\/[^/]+\/attachments$/,     // attach a file to it
+  /^\/channels\/[^/]+\/read$/,            // mark it read
+  /^\/channels\/[^/]+\/translate$/,       // EN/ES on the whole channel
+  /^\/messages\/[^/]+$/,                  // edit or delete their own (canDeleteMessage still decides)
+  /^\/messages\/[^/]+\/reactions(\/|$)/,
+  /^\/messages\/[^/]+\/unread$/,
+  /^\/messages\/[^/]+\/translate$/,
+  /^\/threads\/[^/]+\/read$/,
+  /^\/activity\/read$/,
+  /^\/read-all$/,
+  /^\/push\/(subscribe|unsubscribe|test)$/, // so a mention reaches their phone
+  /^\/ask$/,                               // a POST, but a read — and scoped to their channels
+];
+
+router.use((req, res, next) => {
+  if (!req.user?.is_external) return next();
+  if (req.method === 'GET' || EXTERNAL_MAY_WRITE.some(re => re.test(req.path))) return next();
+  // 404, never 403, for the same reason the module guard answers 404: a client
+  // has no business learning what else this app can do.
+  return res.status(404).json({ error: 'Not found' });
+});
+
+/** Is this account somebody from outside the plant? */
+const isExternal = (db, userId) => !!db.prepare('SELECT is_external FROM users WHERE id = ?').get(userId)?.is_external;
+
 // Uploads land on disk and are streamed to R2 — see server/media.js for why
 // video can't go through the old memory-buffered path. 10 files/message; up to
 // 200 MB for video, 25 MB for anything else.
@@ -644,6 +697,21 @@ router.post('/channels/:id/members', (req, res) => {
     : requireChannel(req, res);
   if (!channel) { if (req.user.role === 'admin') res.status(404).json({ error: 'Channel not found' }); return; }
   const ids = Array.isArray(req.body?.user_ids) ? req.body.user_ids : [];
+  // AN EXTERNAL ACCOUNT BELONGS IN A `client--` CHANNEL AND NOWHERE ELSE.
+  // D-080 closed the boot auto-join that kept putting a client back into
+  // #general; this closes the other door, which is somebody adding them by hand
+  // — to #batching, to a private channel about a different customer, to
+  // anything. The prefix is what the whole family's rules hang off, so it is
+  // what decides here too.
+  if (!isClientChannel(channel.name)) {
+    const outsiders = ids.filter(uid => isExternal(db, uid));
+    if (outsiders.length) {
+      return res.status(400).json({
+        error: `${outsiders.length === 1 ? 'That person works' : 'Those people work'} for another company and can `
+          + `only be added to a ${CLIENT_PREFIX} channel.`,
+      });
+    }
+  }
   const add = db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role) VALUES (?, ?, ?, ?)');
   let added = 0;
   for (const uid of ids) added += add.run(uuid(), channel.id, uid, 'member').changes;
@@ -941,11 +1009,33 @@ router.post('/messages/:id/unread', (req, res) => {
 
 // ── Direct messages ───────────────────────────────────────────────────────────
 // Get-or-create the 1:1 DM channel between the caller and another user.
+// A DIRECT MESSAGE IS NEVER WITH SOMEBODY FROM OUTSIDE THE PLANT, in either
+// direction. The client channel exists so that coordination with another
+// company happens in ONE place, in writing, where the plant can see it; a DM is
+// the same conversation held where nobody else can. The refusal is here, on the
+// path both sides use, rather than only on the external account's own guard —
+// a plant admin opening a DM with a client is the likelier of the two.
+//
+// 404 when the external is the one asking (they learn nothing); a sentence when
+// it is a colleague, because they have asked for something reasonable and need
+// to know where to put it instead.
+function refuseExternalDm(req, res, db, otherIds) {
+  const mine = !!req.user.is_external;
+  if (!mine && !otherIds.some(id => isExternal(db, id))) return false;
+  if (mine) { res.status(404).json({ error: 'Not found' }); return true; }
+  res.status(400).json({
+    error: 'That person works for another company, and coordination with them belongs in their channel '
+      + 'so everybody here can see it. Post in the channel instead.',
+  });
+  return true;
+}
+
 router.post('/dm/:userId', (req, res) => {
   const db = getDb();
   const other = req.params.userId;
   if (other === req.user.id) return res.status(400).json({ error: 'Cannot DM yourself' });
   if (!db.prepare('SELECT 1 FROM users WHERE id = ? AND is_active = 1').get(other)) return res.status(404).json({ error: 'User not found' });
+  if (refuseExternalDm(req, res, db, [other])) return;
   const key = [req.user.id, other].sort().join(':');
   let channel = db.prepare("SELECT * FROM chat_channels WHERE kind = 'dm' AND dm_key = ?").get(key);
   if (!channel) {
@@ -974,6 +1064,7 @@ router.post('/dm', (req, res) => {
   for (const id of others) {
     if (!db.prepare('SELECT 1 FROM users WHERE id = ? AND is_active = 1').get(id)) return res.status(404).json({ error: 'A selected person was not found' });
   }
+  if (refuseExternalDm(req, res, db, others)) return;
   const key = [...memberIds].sort().join(':');
   let channel = db.prepare("SELECT * FROM chat_channels WHERE kind = 'dm' AND dm_key = ?").get(key);
   if (!channel) {

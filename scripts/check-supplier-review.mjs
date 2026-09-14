@@ -19,8 +19,16 @@ db.exec(readFileSync(join(ROOT, 'scripts/fixtures/supplier-schema.sql'), 'utf8')
 db.exec(`CREATE TABLE work_orders (id TEXT PRIMARY KEY, equipment_id TEXT, title TEXT, description TEXT,
   priority TEXT, due_date TEXT, procedure_steps TEXT, task_group TEXT, status TEXT,
   supplier_qualification_id TEXT);
-  CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT, role TEXT, department TEXT, is_active INTEGER);`);
-db.prepare("INSERT INTO users VALUES ('u1','Adam','supervisor','qa',1)").run();
+  CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT, role TEXT, department TEXT, is_active INTEGER);
+  CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT);`);
+// THE DEFAULT NAMES PEOPLE, NOT A DEPARTMENT (D-086) — the old rule was
+// `role = 'admin' OR department IN (...)`, which put every admin on every
+// digest. So the stand-in roster has to carry the names the rule reaches, plus
+// an admin, because "unset is never nobody" is implemented as a fall back TO
+// the active admins and a roster with none would be a silent zero.
+db.prepare("INSERT INTO users VALUES ('u1','Carol Pierce','supervisor','qa',1)").run();
+db.prepare("INSERT INTO users VALUES ('u2','Maria Servin','supervisor','qa',1)").run();
+db.prepare("INSERT INTO users VALUES ('u3','Plant Admin','admin','office',1)").run();
 
 const day = (offset) => new Date(Date.now() + offset * 86400000).toISOString().slice(0, 10);
 const TODAY = day(0);
@@ -81,11 +89,28 @@ t('and the old task is still there — history is not rewritten', titles().lengt
 // The nudge: quiet when there is nothing to say, and it splits the two numbers.
 const sent = [];
 const nudge = await supplierReviewNudge(db, { botDm: async (id, body) => sent.push(body) });
-t('the nudge reaches QA', nudge.sent === 1, `${nudge.sent}`);
+t('the nudge reaches Quality — the two people who act on it, not every admin (D-086)',
+  nudge.sent === 2, `${nudge.sent}`);
 t('it names the overdue reviews AND the never-qualified separately',
   /overdue/i.test(sent[0]) && /never qualified/i.test(sent[0]));
 t('it says explicitly that no task is raised for the never-qualified',
   /no task is raised/i.test(sent[0]));
+
+// UNSET IS NEVER NOBODY, and this is the case that proves it rather than the
+// comment that claims it: a roster where neither named person exists must fall
+// back to the active admins, because a digest configured and delivered to no
+// one is indistinguishable from a broken job. Found by the fixture — the old
+// one had a single user called "Adam" and the narrowed default reached zero
+// people while the test still read `sent === 1`.
+db.prepare("UPDATE users SET name = 'Somebody Else' WHERE id IN ('u1','u2')").run();
+{
+  const out = [];
+  const r = await supplierReviewNudge(db, { botDm: async (id, body) => out.push(body) });
+  t('with neither named person on the roster it still reaches the admins',
+    r.sent === 1 && out.length === 1, `${r.sent}`);
+}
+db.prepare("UPDATE users SET name = 'Carol Pierce' WHERE id = 'u1'").run();
+db.prepare("UPDATE users SET name = 'Maria Servin' WHERE id = 'u2'").run();
 
 db.prepare("UPDATE supplier_qualifications SET next_review_due = ?").run(day(400));
 db.prepare("UPDATE suppliers SET status = 'approved' WHERE status = 'unqualified'").run();

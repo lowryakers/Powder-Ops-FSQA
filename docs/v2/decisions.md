@@ -2900,3 +2900,79 @@ Verified: `verify:readybot` (41, live, in `verify:all`). **The control fails 5 o
 the supplier digest naming eight people. Two of the assertions were vacuous before they were right: the
 first sent `user_ids` where the endpoint takes `ids`, so it tested the default while believing it had
 chosen a list.
+
+---
+
+## D-087 — A client joins on a link, and reaches one channel and nothing else
+*14 September 2026.*
+
+Two things, asked together, and they are one thing: **an account for somebody who does not work here is
+only safe if getting in is easy and getting anywhere else is impossible.**
+
+### Getting in: `/join/<token>`
+
+`users.setup_code` is eight readable characters an administrator reads out to somebody standing in the
+room. Five of the people who need an account now work at M4 Dynamic and have never been in the building,
+so there is nobody to read it to them — and an eight-character code dictated over the telephone, typed
+into a login screen after their own name, is three chances to give up.
+
+`user_invites` + `server/user-invites.js` + the public `server/api/join.js`. One text, one tap, choose a
+password, in the channel. The rules are the ones every other token in this codebase already follows
+(`/approve`, `/nfp`, `/partner`, `/supplier-form`): **stored as SHA-256, clear text returned exactly
+once, looked up by an indexed hash, single use, revocable.** **Fourteen days**, matching the setup code,
+so two doors into one account cannot be open for different lengths of time. Issuing a new one kills the
+live one, because "I lost the link" must not leave two working.
+
+- **ONLY EVER FOR AN ACCOUNT WITH NO PASSWORD.** A link that could set a password on a live account is a
+  takeover for whoever holds the text, issued by the same button people press without thinking. The way
+  round it is Reset password — which clears the hash as a deliberate act — and then a link. The refusal
+  says exactly that rather than "cannot do that".
+- **A REFUSAL SAYS WHICH REFUSAL IT IS.** Used, withdrawn, expired and already-has-a-password need four
+  different next steps. One polite "this link is not valid" makes the office guess on the telephone.
+- **The password and the spending of the link are ONE TRANSACTION.** A password set against a link still
+  marked unused is a link that works twice; a link marked used with no password set locks the person out
+  of an account that can no longer be sent a new one.
+- **It signs them in on the spot.** Being handed a login screen straight after choosing a password is
+  the moment people close the tab, and the server has just issued a real session.
+- Texted through the existing `sendSms`, so `gsmSafe` applies and the message is two segments, not four.
+  **No Twilio, or no number, is not a failure**: the link comes back for sending by hand, the
+  flavor-approval arrangement.
+- **The number is taken when the account is created**, and it was not — the Add User form has asked for
+  a mobile since the SMS work shipped and `POST /users` dropped it silently, so adding somebody with a
+  number took two saves and anybody who did not notice ended up unable to text them. `sms_access` is
+  still deliberately NOT accepted at create: that grant stamps a consent date and sends a confirmation
+  text, and a second copy of a consent record is the one that goes stale.
+
+### Getting nowhere else: the half `EXTERNAL_ALLOWED` did not cover
+
+D-080's `EXTERNAL_ALLOWED` in `middleware/auth.js` keeps a client out of every ReadyDoc module and lets
+the whole of `/comms` through, because Messages is the one thing they are here for. **That is half the
+boundary, and the missing half was invisible precisely because everything in it is "Messages".**
+
+A client sitting in one channel could still open a new channel, public or private; invite whoever they
+liked into it; and start a direct message with any plant account whose id they had read off their own
+channel's member list — Lowry's, Adam's and Jake's are all in `GET /channels/:id`, which they are
+entitled to see, because they are in that channel with those people. Every one of those is the
+coordination happening somewhere the plant cannot see it, which is the whole thing the channel exists to
+prevent.
+
+- **READS WERE ALREADY CORRECT AND ARE LEFT ALONE.** Every GET in comms resolves through
+  `requireChannel`, which is membership-gated for anybody who is not an admin. A GET that were not
+  scoped that way would be a bug for every operator in the plant, not just for a client.
+- **WRITES ARE AN ALLOW LIST** — `EXTERNAL_MAY_WRITE`, one list, same shape and same reasoning as
+  `EXTERNAL_ALLOWED` itself. A write is where "reaching outside the channel" lives and the set is short
+  enough to name. An allow list rather than a deny list because of the failure modes: a missing allow
+  entry breaks something the client tries to do and they say so within the hour; **a missing deny entry
+  is a door nobody notices.**
+- **A DM IS NEVER WITH SOMEBODY FROM OUTSIDE THE PLANT, IN EITHER DIRECTION**, and the refusal is on the
+  shared path rather than only on the client's own guard — a colleague opening a DM with a client is the
+  likelier of the two. The client gets a 404 (they learn nothing); the colleague gets a sentence saying
+  where it belongs, because they have asked for something reasonable.
+- **An external account belongs in a `client--` channel and nowhere else.** D-080 closed the boot
+  auto-join that kept putting a client back into #general; this closes the other door, which is somebody
+  adding them by hand.
+- Refusals stay **404, never 403** — a client has no business learning what else this app can do.
+
+Verified: `verify:clientinvite` (66, live + a real browser at 390px, in `verify:all`) — the link issued,
+spent, refused four different ways, and a real client account driven against every door above. **The
+control removes the guard and fails 11**, the first being a client opening their own channel.

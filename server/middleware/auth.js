@@ -121,6 +121,10 @@ const PUBLIC_ROUTES = [
   // is reached with a hashed token in the URL and is scoped to that one record
   // inside the handler — read and save their own submission, nothing else.
   { prefix: '/onboarding-portal/' },
+  // The join link a new account is texted. The person has no session yet by
+  // definition; the token is compared as a SHA-256 hash in the handler, is
+  // single-use, and can set a password only on an account that has none.
+  { prefix: '/join/' },
   // The Artwork-Proofing service's master-list feed. Read-only, guarded by a
   // hashed token compared in the handler, and off entirely unless
   // PRODUCT_MASTER_TOKEN is set. It exposes only what a printer already holds.

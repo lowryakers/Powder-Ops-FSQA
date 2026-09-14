@@ -4962,6 +4962,44 @@ function runMigrations() {
     console.warn('[migrate] Setup-code backfill skipped:', e.message);
   }
 
+  // A JOIN LINK — the first sign-in for somebody who will never be handed a
+  // code over a counter.
+  //
+  // `users.setup_code` is eight readable characters an office reads out loud.
+  // That is right for an employee standing in the room and wrong for a client
+  // three hundred miles away, who gets a text, taps it, and is in. Those are
+  // two different facts about one account, so they are two things and not one
+  // overloaded column — and they have different security properties: a code is
+  // short because a person types it, a token is long because nobody does.
+  //
+  // Stored as SHA-256 and returned in clear exactly once (the NFP-link and
+  // partner-portal precedent), looked up by an indexed hash rather than a
+  // cleartext scan. Single use, and every state it can be in is a column
+  // somebody can read: used, revoked or expired are three different answers to
+  // "why did my link not work", and collapsing them would make the office
+  // guess.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS user_invites (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      token_hash TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      -- What they are being invited TO, so the landing page can say so. NULL is
+      -- a perfectly good answer for an ordinary account.
+      channel_id TEXT,
+      issued_by TEXT,
+      issued_at TEXT NOT NULL DEFAULT (datetime('now')),
+      -- The last four digits of the number it was texted to, or NULL when the
+      -- link was shown for sending by hand. NEVER the whole number: this row is
+      -- read on a screen and the number is already on the account.
+      sent_to TEXT,
+      used_at TEXT, used_ip TEXT, used_ua TEXT,
+      revoked_at TEXT, revoked_by TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_invites_hash ON user_invites(token_hash);
+    CREATE INDEX IF NOT EXISTS idx_user_invites_user ON user_invites(user_id, issued_at);
+  `);
+
   // Numbers a flavour approval can be texted to. There are only ever three or
   // four, they are not all ReadyDoc accounts (a co-packer contact, a partner),
   // and re-typing ten digits at the moment of sending is how a link goes to the

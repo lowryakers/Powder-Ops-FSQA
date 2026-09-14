@@ -226,6 +226,44 @@ opening the next client's channel needs none of this remembered.
 - Nothing leaves ReadyDoc: no email, no QBO write, no AP Drop or Partner Reconciliation change.
 - Verified: `verify:clientchannel` (65 — live + a real browser at 390px; in `verify:all`).
 
+## A client gets in on a link, and gets nowhere else (D-087)
+`user_invites` (db.js) + `server/user-invites.js` + the public `server/api/join.js` (`/join/<token>`,
+`JoinPage.jsx`, routed before the auth gate) + the **Send a join link by text** control in Settings → Users.
+A setup code is eight characters read out to somebody standing in the room; five of the people who need an
+account work at M4 and have never been in the building. One text, one tap, a password, in the channel.
+- **Single use, 14 days, SHA-256, clear text returned exactly once, revocable** — the `/approve`, `/nfp`,
+  `/partner`, `/supplier-form` pattern. Issuing a new link kills the live one. Fourteen days matches
+  `setup_code_expires_at`: two doors into one account must not be open for different lengths of time.
+- **ONLY FOR AN ACCOUNT WITH NO PASSWORD.** A link onto a live account is a takeover for whoever holds the
+  text. The way round it is Reset password (which clears the hash, deliberately) and then a link, and the
+  refusal says so.
+- **A REFUSAL SAYS WHICH ONE IT IS** — used / withdrawn / expired / already-has-a-password need four
+  different next steps. The password and the spending of the link are ONE transaction, and it signs them in
+  on the spot: a login screen straight after choosing a password is where people close the tab.
+- **No Twilio and no number is not a failure** — the link comes back for sending by hand (the
+  flavor-approval arrangement). Texted through `sendSms`, so `gsmSafe` keeps it to two segments.
+- **`POST /users` now keeps `phone`**, and did not: the Add User form has asked for a mobile since the SMS
+  work shipped and the handler dropped it, so adding somebody with a number took two saves. `sms_access` is
+  still NOT accepted at create — that grant stamps a consent date and sends a confirmation text, and lives
+  in one place.
+
+### `EXTERNAL_ALLOWED` was half the boundary; `EXTERNAL_MAY_WRITE` is the other half
+D-080's list keeps a client out of every module and lets the whole of `/comms` through. **The gap was
+invisible because everything in it is "Messages".** A client in one channel could open a NEW channel,
+invite anyone, and DM any plant account whose id they had read off their own channel's member list — which
+`GET /channels/:id` hands them, correctly, because they are in that channel with those people.
+- **Reads were already right and are untouched**: every comms GET goes through `requireChannel`, which is
+  membership-gated for anyone who is not an admin.
+- **Writes are an ALLOW list** (`EXTERNAL_MAY_WRITE` in `api/comms.js`), one list, same shape as
+  `EXTERNAL_ALLOWED`. Allow and not deny because of the failure modes: a missing allow entry breaks
+  something the client tries and they say so within the hour; **a missing deny entry is a door nobody
+  notices.**
+- **A DM is never with an external account, in EITHER direction**, refused on the shared path — a colleague
+  DMing a client is the likelier of the two. The client gets 404, the colleague gets a sentence naming the
+  channel. **An external account may only be a member of a `client--` channel**; D-080 closed the boot
+  auto-join, this closes adding them by hand.
+- Refusals are **404, never 403**. `verify:clientinvite` (66, live + browser at 390px; control fails 11).
+
 ## Revoking access reaches the sessions it already opened (D-072)
 `revokeSessions(db, userId, { keepToken, devices })` in `api/sessions.js` is the ONE helper; Settings
 deactivation, `end-access`, the auditor-pass revoke and the pass reactivation path all call it. It deletes the

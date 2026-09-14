@@ -99,6 +99,7 @@ const ReimbursementsPanel = lazy(() => import('./components/office/Reimbursement
 const ApDropPanel = lazy(() => import('./components/office/ApDropPanel.jsx'));
 const PartnerPortalPage = lazy(() => import('./components/office/PartnerPortalPage.jsx'));
 const SupplierQuestionnairePage = lazy(() => import('./components/SupplierQuestionnairePage.jsx'));
+const JoinPage = lazy(() => import('./components/JoinPage.jsx'));
 
 const NAV_GROUPS = [
   {
@@ -1582,6 +1583,20 @@ function App() {
   // A supplier completing FORM 404-1 — public and token-gated; the supplier has
   // no account by definition. Same doctrine and the same place in the order as
   // the partner portal.
+  // A join link. Public and token-gated, BEFORE the auth gate, because the
+  // person tapping it has no account they can sign into yet — which is the
+  // whole reason it exists. Same place in the order as the onboarding welcome
+  // page and the partner portal.
+  if (path.startsWith('/join/')) {
+    return (
+      <ModuleBoundary>
+        <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center text-sm text-gray-400">Loading…</div>}>
+          <JoinPage token={decodeURIComponent(path.split('/')[2] || '')} />
+        </Suspense>
+      </ModuleBoundary>
+    );
+  }
+
   if (path.startsWith('/supplier-form/')) {
     return (
       <ModuleBoundary>

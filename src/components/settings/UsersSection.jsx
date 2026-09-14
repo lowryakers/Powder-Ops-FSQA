@@ -1,6 +1,6 @@
 import { useState, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiDelete } from '../../hooks/useApi';
-import { Plus, Shield, ChevronDown, ChevronRight, KeyRound, Users, X } from 'lucide-react';
+import { Plus, Shield, ChevronDown, ChevronRight, KeyRound, Users, X, Link2, Send } from 'lucide-react';
 import { DEPARTMENTS, DEPARTMENT_GROUPS, deptLabel } from '../../constants/departments';
 
 // Accounts, roles, departments and per-module access.
@@ -466,6 +466,123 @@ function ResetPasswordControl({ userId, userName }) {
   );
 }
 
+// A JOIN LINK, TEXTED.
+//
+// The setup code above is read out to somebody standing in the room. Five of
+// the people who now need an account work at another company and have never
+// been in the building, so there is nobody to read it to them — and an
+// eight-character code dictated over the phone, typed in after their own name,
+// is three chances to give up. This is one text: tap, choose a password, in.
+//
+// OFFERED ONLY WHERE IT WOULD WORK. An account that already has a password has
+// nothing for a link to set, and a link that could set one would be a takeover
+// for whoever holds the text. The server refuses it; this does not offer it.
+function InviteControl({ user, onChanged }) {
+  const [open, setOpen] = useState(false);
+  const [to, setTo] = useState(user?.phone || '');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const [done, setDone] = useState(null);   // { url, sent, sent_to, send_error, channel }
+  const [copied, setCopied] = useState(false);
+
+  const call = async (method) => {
+    setErr(null); setBusy(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch(`/api/users/${user.id}/invite`, {
+        method,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: method === 'POST' ? JSON.stringify({ to: to || null }) : undefined,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setErr(data.error || 'Could not do that.'); return; }
+      if (method === 'POST') { setDone(data); setOpen(false); } else { setDone(null); setOpen(false); }
+      onChanged?.();
+    } finally { setBusy(false); }
+  };
+
+  if (user?.has_password) return null;
+
+  if (done) {
+    return (
+      <div className="mt-1.5 bg-green-50 border border-green-200 rounded-lg p-2.5 space-y-2" data-invite-issued>
+        <p className="text-[11px] text-green-800 leading-relaxed">
+          {done.sent
+            ? <>Texted to <span className="font-medium">{done.sent_to}</span>.</>
+            : <>Not texted{done.send_error ? ` (${done.send_error})` : ''} — send this link yourself.</>}
+          {done.channel ? <> It lands them in <span className="font-medium">#{done.channel}</span>.</> : null}
+        </p>
+        <div className="flex items-center gap-2">
+          <code className="px-2 py-1 bg-white border border-green-300 rounded font-mono text-[11px] text-green-900 break-all flex-1"
+            data-invite-url>{done.url}</code>
+          <button type="button" onClick={() => { navigator.clipboard?.writeText(done.url); setCopied(true); }}
+            className="text-[11px] font-medium text-green-800 hover:text-green-900 underline shrink-0">
+            {copied ? 'Copied' : 'Copy'}
+          </button>
+        </div>
+        {/* The one thing that goes wrong: it is shown here once. */}
+        <p className="text-[10px] text-green-700">
+          Works once, expires in {done.expires_in_days ?? 14} days, and is not shown again — send a new one if
+          it gets lost, which retires this one.
+        </p>
+      </div>
+    );
+  }
+
+  if (open) {
+    return (
+      <div className="mt-1.5 bg-gray-50 border border-gray-200 rounded-lg p-2.5 space-y-2">
+        <label className="block text-[11px] font-medium text-gray-700">Text it to</label>
+        <input value={to} onChange={e => setTo(e.target.value)} type="text" inputMode="numeric"
+          placeholder="(801) 555-0100" data-invite-to
+          className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm" />
+        <p className="text-[10px] text-gray-500">
+          Leave it blank and the link is shown here for you to send yourself.
+        </p>
+        {err && <p className="text-[11px] text-red-600">{err}</p>}
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => call('POST')} disabled={busy} data-invite-send
+            className="px-2.5 py-1 bg-powder-600 text-white text-xs font-medium rounded-md disabled:opacity-50">
+            {busy ? 'Sending…' : 'Send join link'}
+          </button>
+          <button type="button" onClick={() => { setOpen(false); setErr(null); }}
+            className="px-2.5 py-1 text-gray-500 text-xs font-medium rounded-md hover:bg-gray-100">Cancel</button>
+        </div>
+      </div>
+    );
+  }
+
+  // THE STATE OF THE LAST LINK, in words. "No link", "sent Tuesday, expires in
+  // nine days", "already used" and "expired" need four different next steps,
+  // and an office that cannot tell them apart chases the wrong thing.
+  const state = user?.invite_state || 'none';
+  const note = {
+    live: `A link is out${user.invite_sent_to ? ` to ${user.invite_sent_to}` : ''} — expires ${String(user.invite_expires_at || '').slice(0, 10)}.`,
+    used: 'They used their link. If they cannot sign in, reset the password instead.',
+    expired: 'Their last link expired. Send another.',
+    revoked: 'Their last link was withdrawn.',
+    none: 'They have never been sent one.',
+  }[state];
+
+  return (
+    <div className="mt-1.5" data-invite-state={state}>
+      <div className="flex items-center gap-3 flex-wrap">
+        <button type="button" onClick={() => setOpen(true)} data-invite-open
+          className="flex items-center gap-1.5 text-xs font-medium text-powder-600 hover:text-powder-700">
+          {state === 'live' ? <Send size={13} /> : <Link2 size={13} />}
+          {state === 'live' ? 'Send a new join link' : 'Send a join link by text'}
+        </button>
+        {state === 'live' && (
+          <button type="button" onClick={() => call('DELETE')} disabled={busy} data-invite-revoke
+            className="text-xs font-medium text-gray-500 hover:text-red-600">Withdraw it</button>
+        )}
+      </div>
+      <p className="text-[10px] text-gray-400 mt-0.5">{note}</p>
+      {err && <p className="text-[11px] text-red-600 mt-1">{err}</p>}
+    </div>
+  );
+}
+
 // Per-user mobile bottom-bar tabs. The four picks are shown across the top in
 // the order they'll appear, can be reordered or removed there, and choosing a
 // fifth swaps out the last one — so the bar is always exactly what you see.
@@ -620,7 +737,10 @@ function UserForm({ initial, onSave, onCancel, canViewPin }) {
           <label className="block text-xs font-medium text-gray-700 mb-1">Password</label>
           {initial?.id ? (
             canViewPin ? (
-              <ResetPasswordControl userId={initial.id} userName={initial.name} />
+              <>
+                <ResetPasswordControl userId={initial.id} userName={initial.name} />
+                <InviteControl user={initial} />
+              </>
             ) : (
               <p className="text-[11px] text-gray-400 mt-2">Only an admin can reset passwords.</p>
             )

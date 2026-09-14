@@ -57,6 +57,7 @@ import retentionRoutes from './server/api/retention.js';
 import stabilityRoutes from './server/api/stability.js';
 import partnerRoutes, { partnerReminderNudges } from './server/api/partners.js';
 import partnerPortalRoutes from './server/api/partner-portal.js';
+import joinRoutes from './server/api/join.js';
 import onboardingRoutes, { portalRouter as onboardingPortalRoutes } from './server/api/onboarding.js';
 import auditorPassRoutes, { publicRouter as auditorPassPublicRoutes } from './server/api/auditor-pass.js';
 import visitorRoutes, { kioskRouter as visitorKioskRoutes, seedVisitorAgreements } from './server/api/visitors.js';
@@ -1937,6 +1938,11 @@ app.use('/api/products', requireModuleWrite('products'), productRoutes);
 // arrangement partner-portal and artwork/ingest use.
 app.use('/api/onboarding', requireModuleWrite('onboarding'), onboardingRoutes);
 app.use('/api/onboarding-portal', onboardingPortalRoutes);
+
+// A join link. Public and token-gated because the person holding it has no
+// account they can sign into yet — that is the whole point of it. Same
+// arrangement, and the same reasoning, as the onboarding portal above.
+app.use('/api/join', joinRoutes);
 // Mounted before the guarded router, and outside requireModuleWrite: the
 // proofing service authenticates with a token, not a session.
 app.use('/api/artwork/ingest', artworkIngestRoutes);
