@@ -2750,3 +2750,40 @@ leaving QA to wonder why a correction never lands.
 
 Verified: `verify:qacorrection` (32, live, in `verify:all`). **The control is decisive — 12 of 32 fail
 with the old behaviour, the first being `A DM REACHED HER — dms=0`.**
+
+## D-084 · 2026-09-14 · decided — The Cleanup Review pile gets a voice, and nothing else
+
+Live on 14 September: Settings → Cleanup review, cutoff today, **116 open tasks and PMs** — a mix of
+pre-go-live junk and Daily Scale / Weekly PM rows dated 24 August, which is the D-012 / D-055 leftover
+rather than junk. Nobody was being asked about any of it, so it sat.
+
+**The digest closes nothing, and that is the whole design.** Cleanup Review's rules are untouched: an
+admin picks the rows, types a reason, and tasks close as `cancelled` while production entries are
+`waived` and never signed. A pile cleared by a scheduled job is indistinguishable from a pile that was
+never there, which is precisely the gap an auditor asks about. The verify's load-bearing assertions are
+the four negatives — no task cancelled, none left the open pile, no entry waived, no schedule touched.
+
+**The counts come from `cleanup.js` itself.** A digest that disagrees with the screen it links to is
+worse than no digest, because whoever opens it cannot tell which number is wrong. Asserted against the
+live endpoint — and the first version of that assertion **passed vacuously**: it asked with `?cutoff=`
+where the endpoint takes `?before=`, got a 400, read `undefined` and passed. Fixed, and the shape of the
+response is now asserted before the number is compared.
+
+**Buckets are read from the SCHEDULE's `frequency_type`, never guessed from the title.** Daily PM /
+Weekly PM / Monthly and longer / one-off. The fourth is its own bucket on purpose: a task with no
+schedule behind it (raised from a chat message, a re-clean) is a different kind of backlog from a cadence
+still producing work nobody does. Where ten or more come off Daily or Weekly the message says so outright
+— **cancelling those rows only clears today's**, and the fix is the schedule.
+
+**Biweekly, weekly while it is big, silent at zero.** A backlog that is merely there does not need
+chasing every week; one growing faster than it is worked does, and `CLEANUP_BUSY_THRESHOLD = 25` is what
+tells those apart without anybody deciding each time. 116 clears it by a wide margin. Zero sends nothing
+at all — a digest that arrives saying nothing is one people learn to delete unread, and then they delete
+the one that mattered.
+
+**Recipients:** `app_settings.cleanup_review_recipients`, listed and settable under Settings → ReadyBot
+messages beside the Flash Report. Unset is not nobody: active admins, QA leadership, and Adam — matched
+by name with a department fallback, the env-limits precedent, so a rename cannot silence it and there is
+no second list of addresses to go stale.
+
+Verified: `verify:cleanupdigest` (32, live, in `verify:all`).

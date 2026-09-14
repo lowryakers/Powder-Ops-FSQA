@@ -18,6 +18,7 @@
 // a department, and is reported rather than offered as a setting.
 import { flashRecipients } from './api/flash.js';
 import { payActionRecipients } from './api/pay.js';
+import { cleanupDigestRecipients } from './cleanup-digest.js';
 
 const listed = (rows) => rows.map(u => ({ id: u.id, name: u.name }));
 
@@ -36,6 +37,12 @@ export function readybotAudiences(db) {
   const flashSet = (() => {
     try {
       const v = JSON.parse(db.prepare("SELECT value FROM app_settings WHERE key = 'flash_report_recipients'").get()?.value || 'null');
+      return Array.isArray(v) && v.length;
+    } catch { return false; }
+  })();
+  const cleanupSet = (() => {
+    try {
+      const v = JSON.parse(db.prepare("SELECT value FROM app_settings WHERE key = 'cleanup_review_recipients'").get()?.value || 'null');
       return Array.isArray(v) && v.length;
     } catch { return false; }
   })();
@@ -97,10 +104,24 @@ export function readybotAudiences(db) {
       key: 'qa_corrections',
       label: 'QA asked for a correction',
       what: 'QA flagged a production entry for the person who filed it, with QA’s own note.',
-      when: 'When the flag is set, then every other day for asks at least two days old.',
+      when: 'When the flag is set, then again once the correction is a day overdue (D-083).',
       setting: null, source: 'rule',
       recipients: [],
-      note: 'Goes to the person who filed the entry. Nobody else is told.',
+      note: 'Goes to the person who filed the entry. If they cannot be reached, or the ask goes '
+        + 'unanswered past its 24-hour clock, it is raised once to the QA who signed and to '
+        + 'production supervisors — otherwise nobody else is told.',
+    },
+    {
+      key: 'cleanup_review',
+      label: 'Cleanup review digest',
+      what: 'How much stale open work is sitting in Cleanup Review, split by cadence, with the oldest date. '
+        + 'It closes nothing — somebody still picks the rows and gives a reason.',
+      when: 'Weekday mornings, every fortnight — weekly while more than 25 tasks are outstanding. Silent at zero.',
+      setting: 'cleanup_review_recipients',
+      source: cleanupSet ? 'setting' : 'default',
+      recipients: listed(cleanupDigestRecipients(db)),
+      note: cleanupSet ? null
+        : 'Nobody has been chosen, so it goes to the admins, QA leadership and Adam — whoever would be asked anyway.',
     },
     {
       key: 'supplier_reviews',
@@ -145,4 +166,5 @@ export function readybotAudiences(db) {
 export const SETTABLE = {
   flash_report_recipients: 'Flash Report',
   pay_action_recipients: 'Pay reminders',
+  cleanup_review_recipients: 'Cleanup review digest',
 };

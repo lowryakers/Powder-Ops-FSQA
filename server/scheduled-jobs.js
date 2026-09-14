@@ -243,6 +243,30 @@ async function runDue(db, deps) {
     }
   }
 
+  // The Cleanup Review pile. It closes NOTHING — Cleanup Review's rules about who
+  // may cancel a task or waive an entry, and with what reason, are untouched.
+  // What this adds is a voice: the pile was 116 open tasks and PMs on
+  // 14 September with nobody being asked about any of it.
+  //
+  // BIWEEKLY BY DEFAULT, WEEKLY WHILE IT IS BIG. A backlog that is merely there
+  // does not need chasing every week; one growing faster than it is worked does,
+  // and the threshold is what tells those apart without anybody deciding. Silent
+  // at zero, because a digest that arrives saying nothing is one people learn to
+  // delete unread — and then they delete the one that mattered.
+  if (deps.sendCleanupDigest && now.getHours() >= 6 && day >= 1 && day <= 5) {
+    const lastCleanup = getFlag(db, 'last_cleanup_digest_at');
+    const elapsed = lastCleanup ? now - new Date(lastCleanup) : Infinity;
+    const pile = (() => { try { return deps.cleanupDigest(db).tasks; } catch { return 0; } })();
+    const every = pile >= (deps.CLEANUP_BUSY_THRESHOLD ?? 25) ? 7 : 14;
+    if (pile > 0 && elapsed >= every * 86400000) {
+      try {
+        const r = await deps.sendCleanupDigest(db, now);
+        setFlag(db, 'last_cleanup_digest_at', now.toISOString());
+        if (r.sent) console.log(`[jobs] cleanup digest: ${r.tasks} tasks to ${r.sent} recipient(s) (every ${every}d)`);
+      } catch (e) { console.warn('[jobs] cleanup digest failed:', e.message); }
+    }
+  }
+
   // Monday PM digest: each team's recurring work for the week, posted into the
   // team's own channel — where people already look — like the schedule publish.
   if (day === 1 && getFlag(db, 'last_pm_digest_week') !== week) {
