@@ -10,7 +10,7 @@ import { execSync } from 'child_process';
 import { v4 as uuid } from 'uuid';
 import multer from 'multer';
 import { getDb, dataDir, logAudit, linkOrgPositionsToUsers } from './server/db.js';
-import { readyDocOrigin } from './server/links.js';
+import { readyDocOrigin, reportOrigins } from './server/links.js';
 import financeRoutes, { backfillFinanceFileText } from './server/api/finance.js';
 import procurementRoutes from './server/api/procurement.js';
 import payRoutes, { payReviewNudges } from './server/api/pay.js';
@@ -254,6 +254,7 @@ app.get('/kiosk-manifest/:slug.webmanifest', (req, res) => {
 // query intact, so links land on the record instead of the picker. The Railway
 // domain and any app custom domains are unaffected and serve the React app
 // below. Override with LAUNCHER_HOST / READYDOC_ORIGIN if either ever changes.
+reportOrigins();
 const LAUNCHER_HOST = (process.env.LAUNCHER_HOST || 'start.powder-ops.com').toLowerCase();
 const LAUNCHER_FILE = path.join(__dirname, 'launcher', 'index.html');
 app.use((req, res, next) => {

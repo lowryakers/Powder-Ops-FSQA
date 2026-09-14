@@ -2871,6 +2871,23 @@ with path+query intact (`server.js`, `READYDOC_ORIGIN`, default the Railway doma
 `/approve/<token>` magic links, and PWA assets on the launcher host all rendered the picker instead.
 **Generate links with `readyDocOrigin()` (`server/links.js`), never `appBaseUrl()`** — `appBaseUrl()` is the
 public front door and is only for the Twilio webhook signature, which must match the console entry exactly.
+**A BARE HOSTNAME IS ACCEPTED AND GETS `https://`** (`normalizeOrigin`). `READYDOC_ORIGIN=app.powder-ops.com`
+is what a person types into Railway, and left alone it produced `app.powder-ops.com/join/<token>` in every
+texted link — which a phone often linkifies anyway, so it *half* works, the worst kind of broken. It also
+made `new URL(origin)` throw (so `smsStatus().link_warning` fired on a perfectly good domain) and turned the
+launcher's `res.redirect(302, origin + path)` into a RELATIVE redirect back onto the launcher host. The same
+value signs the Twilio webhook, where a missing scheme is a signature that never validates.
+- **A scheme already present is never rewritten** — `http://localhost:4987` survives, which is what every
+  live verify runs against. Trailing slashes come off; surrounding whitespace (a paste) is trimmed.
+- **Anything else malformed is NAMED, not guessed at.** `reportOrigins()` warns at boot, so a value that
+  breaks every link is in the deploy log rather than only in a text nobody received, and it also warns while
+  the origin is still a shared hosting domain (`…up.railway.app`) — carriers cannot tell one apart from
+  anyone else's traffic on that host, which is a known cause of A2P messages being filtered. Falling back to
+  the default on a bad value was considered and refused: it would hide the misconfiguration.
+- `npm run check:links` (15, pure, in `npm run check`).
+**The Products feed for Artwork-Proofing is `GET /api/products/master.csv?token=<PRODUCT_MASTER_TOKEN>`** —
+the token is a QUERY parameter, compared as a SHA-256 hash, and the endpoint 401s unless that variable is
+set on the server. `READYDOC_TOKEN` on the proofing service is the same value.
 **PWA installs must happen on the app origin** (the manifest and its start_url must be same-origin), so the
 launcher host can never be installable. In-app help: `src/components/InstallHelp.jsx` +
 `src/lib/useInstallPrompt.js` (captures `beforeinstallprompt` at module load, so the account menu / sidebar
