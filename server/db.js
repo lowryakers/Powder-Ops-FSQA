@@ -726,6 +726,26 @@ function initSchema() {
       UNIQUE (kind, subject)
     );
 
+    -- A NUMBERING CONFLICT SOMEBODY HAS RULED ON.
+    --
+    -- The conflicts themselves are DERIVED on every read — a series written two
+    -- ways, a record form whose number disagrees with the index — so they clear
+    -- themselves the moment the register is put right and a stored to-do list
+    -- would go stale the first time somebody acted. What cannot be derived is
+    -- the OTHER answer: "we looked, both spellings are in use on filed records,
+    -- and this one is correct as it stands". That is a decision, and it needs a
+    -- reason and a name on it exactly as a dismissed coverage gap does.
+    CREATE TABLE IF NOT EXISTS form_numbering_decisions (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      decision TEXT NOT NULL CHECK (decision IN ('ruled','deferred')),
+      reason TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_by TEXT,
+      UNIQUE (kind, subject)
+    );
+
     -- Versioned assessment for a course. Editing publishes a new version so past
     -- attempts stay tied to the exact test the employee took (is_current = latest).
     CREATE TABLE IF NOT EXISTS training_tests (
@@ -3634,6 +3654,18 @@ function runMigrations() {
   // Document review scheduling: each controlled document gets a review frequency
   // (default annual per SQF) that drives an auto-computed next-review date
   // (stored in the existing review_due) and generates Document-Control tasks.
+  // WHAT REPLACED A RETIRED FORM NUMBER.
+  //
+  // A number is retired, never deleted, so a record filed under it still
+  // resolves — but until now a retired row said nothing about what took its
+  // place, which is the one thing somebody holding that record actually asks.
+  // Document Control writes "superseded by FORM 408-01" on the paper index;
+  // this is that line. Written only by the renumber path, in the same
+  // transaction as the number that replaced it.
+  addColumnIfMissing('controlled_forms', 'superseded_by', 'TEXT');
+  addColumnIfMissing('controlled_forms', 'superseded_at', 'TEXT');
+  addColumnIfMissing('controlled_forms', 'superseded_by_whom', 'TEXT');
+  addColumnIfMissing('controlled_forms', 'supersede_reason', 'TEXT');
   addColumnIfMissing('sop_documents', 'review_frequency', 'TEXT');
   addColumnIfMissing('sop_documents', 'last_reviewed', 'TEXT');
   addColumnIfMissing('work_orders', 'document_id', 'TEXT'); // link a review task back to its doc

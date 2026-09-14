@@ -41,7 +41,164 @@ const COLUMNS = [
   { label: '' },
 ];
 
-function FormModal({ form, onClose, onSaved }) {
+/**
+ * CHANGING A NUMBER — issue the new one, supersede this one, in one act.
+ *
+ * The Edit form has always greyed out the number with "a number can't be
+ * changed", and that rule is right. But it left the one screen where the
+ * problem is visible with nothing to do about it: Document Control read the
+ * explanation and then had to issue a row on one screen, remember to retire
+ * this one on another, and the two rows ended up with no link between them.
+ * The button is here, where the refusal is.
+ */
+function RenumberModal({ form, onClose, onDone }) {
+  const [code, setCode] = useState('');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true); setError(null);
+    try {
+      const r = await apiPost(`/forms/${form.id}/renumber`, { code: code.trim(), reason: reason.trim() });
+      onDone(r?.note || `${form.code} is retired and superseded by ${r.code}.`);
+    } catch (err) { setError(err.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <form onSubmit={submit} onClick={e => e.stopPropagation()} data-renumber-modal
+        className="bg-white rounded-xl w-full max-w-lg max-h-[92vh] overflow-y-auto p-5 space-y-3">
+        <h3 className="font-semibold text-gray-900">Reissue {form.code} under a new number</h3>
+        <p className="text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg p-2.5">
+          This is what Document Control does on paper: the new number is issued carrying this form&rsquo;s
+          revision, title, owner and attached paper copy, and <b>{form.code} is retired and marked
+          &ldquo;superseded by&rdquo; the new one</b> — so every record already filed under {form.code} still
+          resolves and says what replaced it. Nothing is renamed and nothing is deleted.
+        </p>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Reissue as</label>
+          <input required autoFocus value={code} onChange={e => setCode(e.target.value)} data-renumber-code
+            placeholder="FORM 408-01"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Why is the number changing?</label>
+          <input required value={reason} onChange={e => setReason(e.target.value)} data-renumber-reason
+            placeholder="DCR 0016 and 0017 both issued it as 408-01; the index is the outlier."
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+        </div>
+        {error && <p className="text-sm text-red-600" data-renumber-error>{error}</p>}
+        <div className="flex gap-2 pt-1">
+          <button type="submit" disabled={busy} data-renumber-submit
+            className="px-4 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium disabled:opacity-50">
+            {busy ? 'Reissuing…' : 'Issue and supersede'}
+          </button>
+          <button type="button" onClick={onClose} className="px-4 py-2 text-gray-600 text-sm">Cancel</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+/**
+ * WHAT IS STILL INCONSISTENT ABOUT THE NUMBERING, and what to do about each.
+ *
+ * Derived on every read, so an item disappears the moment the register is put
+ * right rather than waiting for somebody to tick it off. The third answer —
+ * "we looked and it is correct as it stands" — is not derivable, so it is
+ * recorded with a reason and a name, exactly like a dismissed coverage gap.
+ *
+ * The progress line is counted from the rows below it, never a second query.
+ */
+function NumberingPanel({ forms, canEdit, onRenumber }) {
+  const { data, refresh } = useApiGet('/forms/numbering');
+  const [open, setOpen] = useState(true);
+  const items = data?.items || [];
+  if (!items.length) return null;
+  const outstanding = items.filter(i => !i.ruled);
+
+  const rule = async (item) => {
+    const reason = window.prompt(`Why is this numbering correct as it stands?\n\n${item.title}`, '');
+    if (reason === null) return;
+    try { await apiPost('/forms/numbering/rule', { kind: item.kind, subject: item.subject, reason }); refresh(); }
+    catch (e) { window.alert(e.message); }
+  };
+  const reopen = async (item) => {
+    try { await apiPost('/forms/numbering/reopen', { kind: item.kind, subject: item.subject }); refresh(); }
+    catch (e) { window.alert(e.message); }
+  };
+
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded-xl" data-numbering>
+      <button type="button" onClick={() => setOpen(o => !o)} className="w-full flex items-center gap-2 p-4 text-left">
+        <AlertTriangle size={16} className="text-amber-700 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold text-amber-900 text-sm">Form numbering — {outstanding.length} still to settle</h3>
+          <p className="text-xs text-amber-800" data-numbering-progress>
+            {items.length - outstanding.length} of {items.length} ruled. Each one clears itself once the register is right.
+          </p>
+        </div>
+        {open ? <ChevronUp size={16} className="text-amber-700" /> : <ChevronDown size={16} className="text-amber-700" />}
+      </button>
+      {open && (
+        <div className="px-4 pb-4 space-y-2">
+          {items.map(i => {
+            const target = i.can_renumber && forms.find(f => f.code === i.can_renumber && f.where !== 'retired');
+            return (
+              <div key={`${i.kind}:${i.subject}`} data-numbering-item={`${i.kind}:${i.subject}`}
+                className={`bg-white border rounded-lg p-3 ${i.ruled ? 'border-gray-200 opacity-75' : 'border-amber-200'}`}>
+                <div className="flex items-start justify-between gap-2 flex-wrap">
+                  <p className="text-sm font-semibold text-gray-900">{i.title}</p>
+                  {i.ruled && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-600">RULED</span>}
+                </div>
+                <p className="text-xs text-gray-600 mt-1 font-mono">{i.evidence}</p>
+                {/* The instruction, in full. "Fix the numbering" is not an
+                    instruction; naming which door each half goes through is. */}
+                <p className="text-xs text-gray-800 mt-1.5">{i.action}</p>
+                {i.ruled && (
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    Ruled correct by {i.ruled_by || 'somebody'} — {i.ruled_reason}
+                  </p>
+                )}
+                {canEdit && (
+                  <div className="flex items-center gap-3 mt-2 flex-wrap">
+                    {target && !i.ruled && (
+                      <button onClick={() => onRenumber(target)} data-numbering-renumber
+                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-powder-600 text-white rounded-lg text-xs font-medium hover:bg-powder-700">
+                        Reissue {target.code}…
+                      </button>
+                    )}
+                    {i.ruled
+                      ? <button onClick={() => reopen(i)} className="text-xs text-gray-500 hover:text-amber-700">Put it back on the list</button>
+                      : <button onClick={() => rule(i)} data-numbering-rule className="text-xs text-gray-500 hover:text-amber-700">Correct as it stands…</button>}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// A retired number says what replaced it. Rendered from one definition, so the
+// card and the table can never describe the same row differently.
+function SupersededLine({ form }) {
+  if (!form.superseded_by) return null;
+  return (
+    <p className="text-[11px] text-gray-500 mt-0.5" data-superseded={form.code}>
+      Superseded by <span className="font-mono font-medium text-gray-700">{form.superseded_by}</span>
+      {form.superseded_by_whom ? ` · ${form.superseded_by_whom}` : ''}
+      {form.supersede_reason ? ` — ${form.supersede_reason}` : ''}
+    </p>
+  );
+}
+
+function FormModal({ form, onClose, onSaved, onRenumber }) {
   const isNew = !form?.id;
   const [f, setF] = useState({
     code: form?.code || '', revision: form?.revision || '', title: form?.title || '',
@@ -75,9 +232,19 @@ function FormModal({ form, onClose, onSaved }) {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-100 disabled:text-gray-500" />
             {!isNew && (
               // Renaming the identity would orphan every record filed under the
-              // old number. Document Control issues the new one and retires this.
+              // old number. Document Control issues the new one and retires this
+              // — and THE BUTTON THAT DOES THAT IS HERE, where the refusal is.
+              // It used to explain the remedy and offer nothing, which is a dead
+              // end on the one screen the problem is visible from.
               <p className="text-[11px] text-gray-400 mt-1">
                 A number can&rsquo;t be changed. <RuleTip id="form.number-immutable" label="Why?" />
+                {onRenumber && (
+                  <>
+                    {' · '}
+                    <button type="button" onClick={() => onRenumber(form)} data-open-renumber
+                      className="text-powder-600 font-medium hover:underline">Reissue under a new number</button>
+                  </>
+                )}
               </p>
             )}
           </div>
@@ -327,7 +494,9 @@ export default function FormRegistryPanel() {
   const [where, setWhere] = useState('all');
   const [q, setQ] = useState('');
   const [editing, setEditing] = useState(null);
+  const [renumbering, setRenumbering] = useState(null);
   const [notice, setNotice] = useState(null);
+  const openRenumber = (form) => { setEditing(null); setRenumbering(form); };
 
   const forms = useMemo(() => data?.forms || [], [data]);
   const canEdit = !!data?.can_edit;
@@ -397,7 +566,13 @@ export default function FormRegistryPanel() {
         <GapsPanel schedules={unmappedSchedules} areas={unmappedAreas} canEdit={canEdit} onChanged={refresh} />
       )}
 
-      {disagreements.length > 0 && (
+      {/* The numbering worklist comes FIRST — it is the only part of this
+          screen that has work in it, and it carries the actions. The strip
+          below is the same facts with nothing to do about them, so it is kept
+          only for readers who cannot edit the register. */}
+      <NumberingPanel forms={forms} canEdit={canEdit} onRenumber={openRenumber} />
+
+      {!canEdit && disagreements.length > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4">
           <h3 className="font-semibold text-red-900 flex items-center gap-2 text-sm">
             <AlertTriangle size={16} /> {disagreements.length} form {disagreements.length === 1 ? 'number differs' : 'numbers differ'} between the app and this index
@@ -405,8 +580,15 @@ export default function FormRegistryPanel() {
           <ul className="mt-2 space-y-1">
             {disagreements.map(d => (
               <li key={d.record_type} className="text-xs text-red-900">
-                <span className="font-medium">{d.label}</span> — the record form says
-                <span className="font-mono"> {d.in_app}</span>, the index says<span className="font-mono"> {d.in_registry}</span>
+                <span className="font-medium">{d.label}</span> — the record form prints
+                <span className="font-mono"> {d.in_app}</span>
+                {d.in_code_registry && d.in_code_registry !== d.in_app && (
+                  <>, the matching table says<span className="font-mono"> {d.in_code_registry}</span></>
+                )}
+                {', the register '}
+                {d.register_state === 'absent'
+                  ? 'does not carry it'
+                  : <>says<span className="font-mono"> {d.in_register}</span>{d.register_state === 'retired' ? ' (retired)' : ''}</>}
               </li>
             ))}
           </ul>
@@ -455,6 +637,7 @@ export default function FormRegistryPanel() {
               </span>
             </div>
             {f.note && <p className="text-xs text-gray-500 mt-1">{f.note}</p>}
+            <SupersededLine form={f} />
             <div className="flex items-center gap-3 mt-2 flex-wrap">
               <FileCell form={f} canEdit={canEdit} storageOn={data?.storage_enabled} onChanged={refresh} />
               {canEdit && (
@@ -487,6 +670,7 @@ export default function FormRegistryPanel() {
                     <p className="text-gray-900">{f.title}</p>
                     {f.note && <p className="text-xs text-gray-500 mt-0.5">{f.note}</p>}
                     {f.owner && <p className="text-[11px] text-gray-400 mt-0.5">Owner: {f.owner}</p>}
+                    <SupersededLine form={f} />
                   </td>
                   <td className="px-4 py-2">
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap ${WHERE[f.where]?.cls}`}>
@@ -524,8 +708,12 @@ export default function FormRegistryPanel() {
       <p className="text-xs text-gray-400">Showing {sorted.length} of {forms.length}.</p>
 
       {editing && (
-        <FormModal form={editing} onClose={() => setEditing(null)}
+        <FormModal form={editing} onClose={() => setEditing(null)} onRenumber={openRenumber}
           onSaved={(warning) => { setEditing(null); setNotice(warning); refresh(); }} />
+      )}
+      {renumbering && (
+        <RenumberModal form={renumbering} onClose={() => setRenumbering(null)}
+          onDone={(note) => { setRenumbering(null); setNotice(note); refresh(); }} />
       )}
     </div>
   );

@@ -3172,3 +3172,57 @@ an external account as a guest and fails 6** — the first being that the client
 modules" instead of in their channel. `verify:clientchannel` 65 → 67, where a pin assertion that had
 been **failing since D-087 shipped** is fixed by asking the right account: a plant colleague is
 refused 403, a client 404.
+
+---
+
+## D-092 — A form number is changed by issuing and superseding, and the app has to do both
+
+**14 September 2026.** Daniela was working the form-numbering change request — six places where one
+form is identified two ways — opened FORM 408-1 in the register, and found the number greyed out
+with *"A number can't be changed. Why?"* and nothing else on the screen. She said so in
+#document-control: *"there are some that need to be fixed. Though I'm unable to correct them on my
+end."* She was right, and the rule she hit is right too.
+
+**The rule stands: the code IS the identity.** Renaming FORM 408-1 to FORM 408-01 would orphan every
+record filed under the old number. What was wrong is that the app **explained the remedy and offered
+no way to carry it out**. "Issue the new number and retire this one" is two acts on two screens, and
+Document Control had to remember the second one — and even having done both, the two rows ended up
+with no link between them. A number retired by hand says `retired` and stops. The paper index says
+*superseded by FORM 408-01*, which is the line that keeps a two-year-old record resolvable.
+
+**`POST /forms/:id/renumber` is that one act.** One transaction: the new number is issued carrying the
+old row's revision, title, where it is worked, owner, effective date and its finalised paper copy —
+**by reference, never a second upload** — and the old row is retired and stamped
+`superseded_by` / `superseded_at` / `superseded_by_whom` / `supersede_reason`. A reason is required.
+Two audit entries, because they are two facts about two numbers and somebody looking up either one
+must find it. The refusals are distinct and each names its own next step: a retired number is never
+reissued (409), a retired number cannot be renumbered onward and the refusal names what replaced it,
+and the number it already has is not a change.
+
+**Sharing the paper copy made the delete paths a bug.** Two rows can now legitimately point at one
+stored object, and both the replace and the remove path deleted it unconditionally — so clearing the
+file from either number would have taken the other's document with it, silently. `purgeFormObject()`
+clears the row first and purges only when nothing still references the key: the same refcount rule as
+a forwarded comms attachment and a shared equipment manual.
+
+**The worklist, and the mis-labelling that made it unworkable.** `GET /forms/numbering` derives what is
+still inconsistent — a record form whose number disagrees with the register, and a series written two
+ways (`108-1` beside `108-03`) — with the evidence and the instruction on each, and it **clears itself**
+the moment the register is put right, which is why nothing is stored. The one answer that is not
+derivable is *"we looked, and it is correct as it stands"*: that is `form_numbering_decisions`, a reason
+and a name, the same shape as a dismissed coverage gap, and it is also what makes progress visible to
+somebody who is not Daniela.
+
+The finding that cost the most: **a form number lives in three places, and the old report compared two
+of them and called one "the index"** — the word everybody uses for the register. `qms-config.js` prints
+the number on the record form (a controlled change), `shared/form-registry.js` matches tasks and records
+to numbers (also code), and `controlled_forms` is the register Document Control maintains. The warning
+compared the two CODE files, so correcting the register would not have moved it and nothing on screen
+said why. Every item now names the register's own state — carried, retired, or absent — and the
+**reissue button is offered only when the register is the outlier**. Once the register and the record
+form agree, what is left is code, the item says "raise it in Controlled Changes", and no button is
+offered, because a button on a row that is already right is how somebody reissues a number that did not
+need reissuing.
+
+Verified: `verify:formnumber` (35, live, in `verify:all`). **The control removes the renumber endpoint —
+the state Daniela was actually in — and fails 11**, the first being that there is no such door.

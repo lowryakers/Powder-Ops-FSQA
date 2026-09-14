@@ -57,6 +57,7 @@
     "verify:readybot": "node scripts/verify-readybot-audience.mjs",
     "verify:payactions": "node scripts/verify-pay-actions.mjs",
     "verify:supplierq": "node scripts/verify-supplier-questionnaire.mjs",
+    "verify:formnumber": "node scripts/verify-form-renumber.mjs",
     "verify:checkrecords": "node scripts/verify-check-records.mjs",
     "verify:stability": "node scripts/verify-stability.mjs",
     "verify:changes": "node scripts/verify-change-register.mjs",

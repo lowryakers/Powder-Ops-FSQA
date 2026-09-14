@@ -92,27 +92,69 @@ function listForms(db) {
       updated_by: r.updated_by,
       // Display only: this form's number is printed on live tasks or records.
       wired: wired.has(r.code),
+      // A retired number says what replaced it. Without this a record filed
+      // under the old number resolves to a row that reads "retired" and stops
+      // — which is the question somebody holding that record is asking.
+      superseded_by: r.superseded_by || null,
+      superseded_at: r.superseded_at || null,
+      superseded_by_whom: r.superseded_by_whom || null,
+      supersede_reason: r.supersede_reason || null,
     };
   });
 }
 
 /**
- * Where the register and `qms-config.js` disagree about a number.
+ * A FORM NUMBER LIVES IN THREE PLACES, and this reports where they disagree.
  *
- * Neither is silently rewritten: the in-app value is gated by controlled.js,
- * and only Document Control can say which is right.
+ *   1. `qms-config.js` `formCode` — the number PRINTED on the record form.
+ *      Gated by controlled.js: it cannot move without Document Control
+ *      approving the change, which is right and is not negotiable here.
+ *   2. `shared/form-registry.js` — the matching table that decides which number
+ *      is stamped on a task or an inspection record. Also code, also not
+ *      editable in a settings screen, for the same reason.
+ *   3. `controlled_forms` — the register Document Control actually maintains.
+ *
+ * The first cut of this compared 1 against 2 — TWO CODE FILES — and labelled
+ * one of them "the index", which is the word everybody uses for the register.
+ * So Document Control read "the index says FORM 408-1", corrected the register,
+ * and the warning did not move: nothing they can reach was ever being compared.
+ * Naming which of the three is the outlier is the whole value of this report.
  */
 function qmsDisagreements() {
-  const out = [];
+  const db = getDb();
   const norm = s => String(s || '').toUpperCase().replace(/[\s-]/g, '');
+  const registerRows = (() => {
+    try { return db.prepare('SELECT code, where_used FROM controlled_forms').all(); }
+    catch { return []; }
+  })();
+  const inRegister = (code) => registerRows.find(r => norm(r.code) === norm(code));
+
+  const out = [];
   for (const type of Object.keys(QMS_TYPES)) {
     const cfg = getType(type);
     if (!cfg?.formCode) continue;
     const entry = formFor({ qmsType: type });
-    if (!entry) continue;
-    if (norm(entry.code) !== norm(cfg.formCode)) {
-      out.push({ record_type: type, label: cfg.label, in_app: cfg.formCode, in_registry: entry.code });
-    }
+    const inApp = cfg.formCode;
+    const inCode = entry?.code || null;
+    // The register's own spelling of whichever number the app is printing.
+    const appRow = inRegister(inApp);
+    const codeRow = inCode ? inRegister(inCode) : null;
+
+    const spellings = [...new Set([inApp, inCode].filter(Boolean).map(norm))];
+    const codeAgrees = spellings.length < 2;
+    // Live means: the app prints a number the register carries and has not
+    // retired. That is the only state with nothing to settle.
+    const appLive = appRow && appRow.where_used !== 'retired';
+    if (codeAgrees && appLive) continue;
+
+    out.push({
+      record_type: type,
+      label: cfg.label,
+      in_app: inApp,
+      in_code_registry: inCode,
+      in_register: appRow ? appRow.code : (codeRow ? codeRow.code : null),
+      register_state: appRow ? appRow.where_used : (codeRow ? codeRow.where_used : 'absent'),
+    });
   }
   return out;
 }
@@ -306,6 +348,266 @@ router.delete('/:id', (req, res) => {
   res.json({ ok: true, retired: true });
 });
 
+/* ── Changing a number, the way Document Control does it on paper ─────────── */
+
+/**
+ * ISSUE THE NEW NUMBER AND SUPERSEDE THE OLD ONE, as ONE act.
+ *
+ * `PUT` has always refused to rename a form number, and that refusal is right:
+ * the code IS the identity and renaming it orphans every record filed under it.
+ * But the refusal named the remedy in prose and offered no way to carry it out,
+ * so the one screen where the problem is visible was a dead end — Document
+ * Control read "issue the new number and retire this one", and then had to do
+ * two things on two screens and remember the second.
+ *
+ * Doing it in two steps also loses the link. A number retired by hand says
+ * "retired" and nothing else; the paper index says "superseded by FORM 408-01",
+ * which is the line that keeps a two-year-old record resolvable.
+ *
+ * So: one transaction. The new row carries the old row's facts, INCLUDING the
+ * finalised paper copy — by REFERENCE, never a second upload (the forwarded
+ * attachment rule), so both numbers show the same document and deleting one
+ * cannot take the other's file with it.
+ */
+router.post('/:id/renumber', (req, res) => {
+  if (!requireEdit(req, res)) return;
+  const db = getDb();
+  const from = db.prepare('SELECT * FROM controlled_forms WHERE id = ?').get(req.params.id);
+  if (!from) return res.status(404).json({ error: 'Form not found.' });
+
+  const code = String(req.body?.code || '').trim();
+  const reason = String(req.body?.reason || '').trim();
+  if (!code) return res.status(400).json({ error: 'Give the number this form is being reissued as.' });
+  if (code === from.code) return res.status(400).json({ error: `${code} is the number it already has.` });
+  // A reason, because this is a change to a controlled register and "why" is
+  // what an auditor asks. Same floor as every other reasoned act here.
+  if (reason.length < 3) return res.status(400).json({ error: 'Say why the number is changing.' });
+  // Already superseded once. Renumbering a number that is itself retired would
+  // build a chain nobody can read — correct the live number instead.
+  if (from.where_used === 'retired') {
+    return res.status(400).json({
+      error: from.superseded_by
+        ? `${from.code} is retired and already superseded by ${from.superseded_by}. Renumber ${from.superseded_by} instead.`
+        : `${from.code} is retired. A retired number is not reissued under a new one.`,
+    });
+  }
+  const clash = db.prepare('SELECT code, where_used FROM controlled_forms WHERE code = ?').get(code);
+  if (clash) {
+    return res.status(409).json({
+      error: clash.where_used === 'retired'
+        ? `${code} exists and is retired. A retired number is never reissued — pick the next free number.`
+        : `${code} is already in the register. If it is the same form twice, retire one of them instead.`,
+    });
+  }
+
+  const id = uuid();
+  const by = req.user?.name || 'system';
+  db.transaction(() => {
+    db.prepare(`
+      INSERT INTO controlled_forms
+        (id, code, revision, title, where_used, note, owner, effective_date,
+         storage_key, filename, content_type, size, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, code, from.revision, from.title, from.where_used, from.note, from.owner,
+      from.effective_date, from.storage_key, from.filename, from.content_type, from.size, by);
+    db.prepare(`
+      UPDATE controlled_forms SET where_used = 'retired', superseded_by = ?, superseded_at = datetime('now'),
+        superseded_by_whom = ?, supersede_reason = ?, updated_at = datetime('now'), updated_by = ?
+      WHERE id = ?
+    `).run(code, by, reason, by, from.id);
+  })();
+
+  // Audited as two entries because they are two facts about two numbers, and
+  // somebody looking up either one must find it.
+  logAudit(req.user, 'create', 'controlled_form', id,
+    `Issued ${code} — ${from.title}, replacing ${from.code}: ${reason}`, null, { code, replaces: from.code }, code);
+  logAudit(req.user, 'update', 'controlled_form', from.id,
+    `Retired ${from.code}, superseded by ${code}: ${reason}`, from, { where: 'retired', superseded_by: code }, from.code);
+
+  res.status(201).json({
+    ok: true, id, code, retired: from.code,
+    // Named, not silently done: the number printed on a record form lives in
+    // code and is gated by controlled.js. The register moving does not move it.
+    note: FORM_REGISTRY.some(f => f.match && f.code === from.code)
+      ? `${from.code} is wired to live tasks and records in the app. That half is a controlled change and has NOT moved — raise it with the app before ${code} starts printing.`
+      : null,
+  });
+});
+
+/* ── What is still inconsistent about the numbering ───────────────────────── */
+
+// The series a number belongs to, and how it is written. `FORM 108-03` is
+// series 108 in PADDED style; `FORM 108-1` is series 108 in BARE style. A
+// series written both ways is the thing the index cannot be read consistently
+// against, and it is derivable from the register alone.
+function numberParts(code) {
+  const m = /^(?:FORM\s+)?(\d{3})-(\d{1,3})\b/i.exec(String(code || '').trim());
+  if (!m) return null;
+  return { series: m[1], item: m[2], style: m[2].length > 1 && m[2].startsWith('0') ? 'padded' : 'bare' };
+}
+
+/**
+ * The numbering worklist — DERIVED on every read, never stored.
+ *
+ * Two kinds, and both clear themselves the moment the register is put right,
+ * which is why there is no stored to-do list: one would go stale the first time
+ * somebody acted on it and then disagree with the screen it is printed on.
+ *
+ *   `qms_mismatch` — a record form's number in the app disagrees with the index.
+ *   `style_mixed`  — one series is written two ways in the register.
+ *
+ * A third answer exists and is NOT derivable: "we looked, and it is correct as
+ * it stands". That is `form_numbering_decisions` — a reason and a name, the
+ * same shape as a dismissed coverage gap.
+ */
+function numberingWork(db) {
+  const norm = s => String(s || '').toUpperCase().replace(/[\s-]/g, '');
+  const decided = (() => {
+    try {
+      return new Map(db.prepare('SELECT * FROM form_numbering_decisions').all()
+        .map(d => [`${d.kind}:${d.subject}`, d]));
+    } catch { return new Map(); }
+  })();
+  const rows = db.prepare("SELECT * FROM controlled_forms WHERE where_used != 'retired' ORDER BY code").all();
+  const items = [];
+
+  for (const d of qmsDisagreements()) {
+    // WHICH OF THE THREE IS THE OUTLIER decides what the instruction says, and
+    // whether this screen can do anything about it at all. Offering a button
+    // for the half that is a controlled change would be a lie.
+    const codeSplit = d.in_code_registry && d.in_code_registry !== d.in_app;
+    const evidence = [
+      `The record form in the app prints ${d.in_app}.`,
+      codeSplit ? `The matching table in the app says ${d.in_code_registry}.` : null,
+      d.register_state === 'absent'
+        ? 'The register below does not carry that number at all.'
+        : d.register_state === 'retired'
+          ? `The register below has ${d.in_register} RETIRED.`
+          : `The register below carries ${d.in_register}.`,
+    ].filter(Boolean).join(' ');
+
+    const action = d.register_state === 'absent'
+      ? `Issue ${d.in_app} in the register below if that is the correct number, or — if the app is printing the wrong one — raise it in Controlled Changes. The number printed on a filed record cannot move without Document Control approving it.`
+      : d.register_state === 'retired'
+        ? `The app is printing a number the register has retired. Either put the register right, or raise the app's number in Controlled Changes — it cannot move on its own.`
+        : `Decide which number is correct. The register half you can change here (reissue the number below). The app half is a controlled change and goes through Controlled Changes — nothing on this screen moves it.`;
+
+    items.push({
+      kind: 'qms_mismatch',
+      subject: d.record_type,
+      title: `${d.label} — one form, more than one number`,
+      evidence,
+      action,
+      // OFFERED ONLY WHEN THE REGISTER IS THE OUTLIER. Once the register
+      // carries the number the app prints, there is nothing left here to
+      // reissue — what remains is the matching table, which is code and a
+      // controlled change. A button on a row that is already correct is how
+      // somebody reissues a number that did not need reissuing.
+      can_renumber: d.register_state !== 'absent'
+        && d.register_state !== 'retired'
+        && norm(d.in_register) !== norm(d.in_app)
+        ? d.in_register : null,
+      detail: d,
+    });
+  }
+
+  const bySeries = new Map();
+  for (const r of rows) {
+    const p = numberParts(r.code);
+    if (!p) continue;
+    if (!bySeries.has(p.series)) bySeries.set(p.series, []);
+    bySeries.get(p.series).push({ code: r.code, ...p });
+  }
+  for (const [series, members] of [...bySeries.entries()].sort()) {
+    const styles = new Set(members.map(m => m.style));
+    if (styles.size < 2) continue;
+    const padded = members.filter(m => m.style === 'padded').map(m => m.code);
+    const bare = members.filter(m => m.style === 'bare').map(m => m.code);
+    items.push({
+      kind: 'style_mixed',
+      subject: series,
+      title: `Series ${series} is written two ways`,
+      evidence: `Padded: ${padded.join(', ')}. Bare: ${bare.join(', ')}.`,
+      action: `Rule one style for series ${series}. Renumber the odd ones out below, or rule it as it stands if both spellings are already on filed records.`,
+      can_renumber: null,
+      detail: { series, padded, bare },
+    });
+  }
+
+  return items.map(i => {
+    const d = decided.get(`${i.kind}:${i.subject}`);
+    return { ...i, ruled: !!d, ruled_reason: d?.reason || null, ruled_by: d?.created_by || null, ruled_at: d?.created_at || null };
+  });
+}
+
+// GET /api/forms/numbering — declared BEFORE /:id, or Express reads
+// "numbering" as a form id.
+router.get('/numbering', (req, res) => {
+  const db = getDb();
+  const items = (() => {
+    try { return numberingWork(db); } catch (e) {
+      console.error('[forms] numbering worklist failed:', e.message);
+      return null;
+    }
+  })();
+  if (!items) return res.status(500).json({ error: 'The numbering worklist could not be built.' });
+  const open = items.filter(i => !i.ruled);
+  res.json({
+    items,
+    // Counted from the rows returned, never a second query — a progress line
+    // that disagrees with the list under it is worse than no progress line.
+    total: items.length,
+    open: open.length,
+    ruled: items.length - open.length,
+    can_edit: canEditForms(req.user),
+  });
+});
+
+// Rule a conflict as correct where it stands. A reason and a name, because
+// "both spellings are on filed records and this one is right" is an answer an
+// auditor accepts and a silently hidden row is not.
+router.post('/numbering/rule', (req, res) => {
+  if (!requireEdit(req, res)) return;
+  const kind = String(req.body?.kind || '').trim();
+  const subject = String(req.body?.subject || '').trim();
+  const reason = String(req.body?.reason || '').trim();
+  if (!kind || !subject) return res.status(400).json({ error: 'kind and subject are required.' });
+  if (reason.length < 3) return res.status(400).json({ error: 'Say why this numbering is correct as it stands.' });
+  getDb().prepare(`INSERT INTO form_numbering_decisions (id, kind, subject, decision, reason, created_by)
+    VALUES (?, ?, ?, 'ruled', ?, ?)
+    ON CONFLICT(kind, subject) DO UPDATE SET reason = excluded.reason,
+      created_by = excluded.created_by, created_at = datetime('now')`)
+    .run(uuid(), kind, subject, reason, req.user?.name || 'system');
+  logAudit(req.user, 'update', 'form_numbering', `${kind}:${subject}`, `Ruled as correct: ${reason}`);
+  res.json({ ok: true });
+});
+
+router.post('/numbering/reopen', (req, res) => {
+  if (!requireEdit(req, res)) return;
+  const { kind, subject } = req.body || {};
+  getDb().prepare('DELETE FROM form_numbering_decisions WHERE kind = ? AND subject = ?')
+    .run(String(kind || ''), String(subject || ''));
+  logAudit(req.user, 'update', 'form_numbering', `${kind}:${subject}`, 'Put back on the numbering list');
+  res.json({ ok: true });
+});
+
+/**
+ * Purge a stored object only when NO row still references it.
+ *
+ * A renumbered form carries the finalised paper over BY REFERENCE, so two
+ * numbers legitimately point at one object — and deleting the file from either
+ * one used to take the other's document with it, silently. Same refcount rule
+ * as a forwarded comms attachment and a shared equipment manual: clear the
+ * rows first, then ask whether the key is still spoken for.
+ */
+async function purgeFormObject(db, key, exceptId) {
+  if (!key) return;
+  const stillUsed = db.prepare(
+    'SELECT 1 FROM controlled_forms WHERE storage_key = ? AND id IS NOT ?').get(key, exceptId ?? null);
+  if (stillUsed) return;
+  try { await deleteObject(key); } catch { /* the row is the record */ }
+}
+
 /* ── The finalised paper copy ─────────────────────────────────────────────── */
 
 const upload = mediaUpload({ files: 1 });
@@ -330,7 +632,7 @@ router.post('/:id/file', upload.array('files', 1), async (req, res) => {
     db.prepare(`UPDATE controlled_forms SET storage_key = ?, filename = ?, content_type = ?, size = ?,
       updated_at = datetime('now'), updated_by = ? WHERE id = ?`)
       .run(key, file.originalname, file.mimetype, file.size, req.user?.name || 'system', req.params.id);
-    if (old && old !== key) { try { await deleteObject(old); } catch { /* the row is what matters */ } }
+    if (old && old !== key) await purgeFormObject(db, old, req.params.id);
     logAudit(req.user, 'update', 'controlled_form', req.params.id,
       `Attached ${file.originalname} to ${form.code}`, null, null, form.code);
     res.json({ ok: true, filename: file.originalname });
@@ -361,10 +663,12 @@ router.delete('/:id/file', async (req, res) => {
   const db = getDb();
   const form = db.prepare('SELECT * FROM controlled_forms WHERE id = ?').get(req.params.id);
   if (!form?.storage_key) return res.status(404).json({ error: 'No file is attached to this form.' });
-  try { await deleteObject(form.storage_key); } catch { /* row still clears */ }
+  // The row clears FIRST, then the object is purged only if nothing else
+  // points at it — a renumbered form shares its predecessor's paper copy.
   db.prepare(`UPDATE controlled_forms SET storage_key = NULL, filename = NULL, content_type = NULL,
     size = NULL, updated_at = datetime('now'), updated_by = ? WHERE id = ?`)
     .run(req.user?.name || 'system', req.params.id);
+  await purgeFormObject(db, form.storage_key, null);
   logAudit(req.user, 'update', 'controlled_form', req.params.id, `Removed the file from ${form.code}`, null, null, form.code);
   res.json({ ok: true });
 });

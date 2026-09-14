@@ -33,6 +33,7 @@ const RUNS = [
   ['verify-pm-pause.mjs', 4977],
   ['verify-pay-actions.mjs', 4978],
   ['verify-supplier-questionnaire.mjs', 4979, {}, true],
+  ['verify-form-renumber.mjs', 4981, {}, false],
   ['verify-check-records.mjs', 4982, {}, false],
   ['verify-stability.mjs', 4983, {}, false],
   ['verify-change-register.mjs', 4984, { GIT_SHA: 'abc123def456' }, false],

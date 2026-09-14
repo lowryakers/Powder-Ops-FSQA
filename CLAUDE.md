@@ -2346,6 +2346,34 @@ register family kept by one person; a separate entry made forms look like a diff
   nav item — Reference Library, Forms — was absent from `allModuleIds`, so `?tab=reference-library` resolved
   to nothing and fell back to the first module. A dead deep link reads as the app ignoring you.
 
+### Changing a number: issue and supersede, one act (D-092)
+Document Control was working a numbering change request, opened FORM 408-1, and found the number greyed
+out with *"A number can't be changed"* and **nothing else on the screen** — the rule is right, the remedy
+existed only as prose, on two screens, and the two rows ended up unlinked.
+- **`POST /forms/:id/renumber`** is one transaction: the new number is issued carrying the old row's
+  revision, title, where, owner, effective date and **its paper copy BY REFERENCE** (never a second
+  upload), and the old row is retired with `superseded_by` / `_at` / `_by_whom` / `supersede_reason`. A
+  reason is required; two audit entries, because they are two facts about two numbers. `PUT` still refuses
+  to rename a number — **the button is next to that refusal now**, which is where the problem is seen.
+- **SHARING THE PAPER COPY MADE BOTH DELETE PATHS A BUG.** Two rows can point at one object, and replace
+  and remove both deleted it unconditionally — clearing the file from either number would have taken the
+  other's document. `purgeFormObject()` clears the row first and purges only when nothing else references
+  the key: the forwarded-attachment refcount rule.
+- **`GET /forms/numbering` is the worklist, DERIVED on every read** — a record form disagreeing with the
+  register, and a series written two ways (`108-1` beside `108-03`) — each with the evidence and the
+  instruction, and each **clears itself** when the register is put right. `form_numbering_decisions` holds
+  the one answer that is not derivable ("correct as it stands"), with a reason and a name, which is also
+  what makes progress visible to somebody who is not the person doing it.
+- **A FORM NUMBER LIVES IN THREE PLACES and the old report compared two of them and called one "the
+  index"** — the word everybody uses for the register. `qms-config.js` prints it on the record form (a
+  controlled change), `shared/form-registry.js` matches tasks and records to numbers (also code),
+  `controlled_forms` is the register. Correcting the register could never move that warning and nothing
+  said why. Every item now names the REGISTER's own state (carried / retired / absent), and the reissue
+  button is offered **only when the register is the outlier** — once it agrees with the record form what
+  is left is code, and the item says "raise it in Controlled Changes".
+- Verified: `verify:formnumber` (35, live, in `verify:all`); **the control removes the renumber endpoint —
+  the state she was actually in — and fails 11.**
+
 ## A task must name the controlled form it satisfies (`shared/form-registry.js`)
 The plant's tasks came off numbered paper forms, and an auditor holding the Forms Master Index looking at
 "Brittle Plastic & Glass Inspection — Gown Room" had no way to tell which numbered form it answers. The
