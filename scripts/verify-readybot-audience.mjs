@@ -58,7 +58,8 @@ const ROSTER = [
 
 await post('/users/login', { name: 'Lowry Akers' });
 await post('/users/set-password', { user_id: 'rb-lowry', password: 'ReadyBot2026!', setup_code: 'SC-rb-lowry' });
-token = (await J(await post('/users/login', { name: 'Lowry Akers', password: 'ReadyBot2026!' })))?.token;
+const auth = await J(await post('/users/login', { name: 'Lowry Akers', password: 'ReadyBot2026!' }));
+token = auth?.token;
 t('signed in as an admin', !!token);
 
 const audiences = () => readybotAudiences(open(true));
@@ -170,6 +171,94 @@ console.log('\nWhat did not change');
     /a day overdue/.test(one('qa_corrections')?.when || ''), one('qa_corrections')?.when);
   const keys = audiences().map(a => a.key);
   t('no audience was removed and no new bot lane invented', keys.length === new Set(keys).size && keys.length >= 12, `n=${keys.length}`);
+}
+
+// ── in the browser: Settings → ReadyBot messages ──
+//
+// THE EDITOR OPENS ON THE AUDIENCE THE CARD NAMES. A default audience is still
+// an audience — the card lists the people it reaches — and opening the picker
+// on an empty list contradicted the line directly above it. Worse, empty is the
+// one value that MEANS something here: saving nobody puts the message back to
+// the rule. So the obvious way to add one person to a default list was also the
+// way to clear it, with the button reading "Save (0)" as the only warning.
+console.log('\nThe picker opens on who is actually being messaged');
+{
+  // One card chosen, one left on its rule, so both states are on screen at once.
+  await put('/flash/readybot-audience/record_backfill_recipients', { ids: ['rb-carol'] });
+  const rows = (await J(await req('/flash/readybot-audience')))?.audiences || [];
+  const chosenRow = rows.find(a => a.key === 'record_backfill');
+  const defaultRow = rows.find(a => a.setting && a.source === 'default' && a.recipients.length > 1);
+  const ruleRow = rows.find(a => !a.setting);
+  t('there is a Chosen card, a Default card with several people, and a By-rule card',
+    !!chosenRow && !!defaultRow && !!ruleRow,
+    `chosen=${chosenRow?.key} default=${defaultRow?.key} rule=${ruleRow?.key}`);
+
+  const { chromium } = await import('playwright-core');
+  const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  page.on('pageerror', e => { console.log('  [pageerror]', e.message); fail++; });
+  const URL = `http://localhost:${PORT}`;
+  await page.goto(`${URL}/manifest.webmanifest`);
+  await page.evaluate(([tk, u]) => { localStorage.setItem('auth_token', tk); localStorage.setItem('auth_user', JSON.stringify(u)); }, [token, auth.user]);
+  await page.goto(`${URL}/?tab=settings&section=readybot`);
+  await page.waitForTimeout(3000);
+  t('the ReadyBot messages screen rendered', await page.locator('[data-readybot-audience]').count() === 1);
+
+  const openPicker = async (key) => {
+    await page.locator(`[data-audience-edit="${key}"]`).click();
+    await page.waitForTimeout(400);
+    return page.locator(`[data-audience="${key}"] [data-audience-picker]`);
+  };
+  const tickedIn = async (picker) => {
+    const boxes = picker.locator('input[type="checkbox"]');
+    const out = [];
+    for (let i = 0; i < await boxes.count(); i++) {
+      if (await boxes.nth(i).isChecked()) out.push(await boxes.nth(i).getAttribute('data-audience-person'));
+    }
+    return out.sort();
+  };
+
+  {
+    const picker = await openPicker(defaultRow.key);
+    t('a Default card opens its picker', await picker.count() === 1);
+    const want = defaultRow.recipients.map(r => r.id).sort();
+    const got = await tickedIn(picker);
+    t('AND EVERY PERSON THE CARD NAMES IS ALREADY TICKED',
+      got.join(',') === want.join(','), `want ${want.join(',')} got ${got.join(',')}`);
+    t('so the save button offers the list, not zero',
+      new RegExp(`Save \\(${want.length}\\)`).test(await picker.locator('[data-audience-save]').innerText()),
+      await picker.locator('[data-audience-save]').innerText());
+    await picker.getByText('Cancel').click();
+    await page.waitForTimeout(200);
+  }
+
+  {
+    const picker = await openPicker(chosenRow.key);
+    const got = await tickedIn(picker);
+    t('a Chosen card opens on exactly who was chosen', got.join(',') === 'rb-carol', got.join(','));
+    await picker.getByText('Cancel').click();
+    await page.waitForTimeout(200);
+  }
+
+  t('a By-rule message is still offered no editor at all',
+    await page.locator(`[data-audience-edit="${ruleRow.key}"]`).count() === 0);
+
+  // The behaviour the seeding change must not lose: an emptied list is still
+  // how you go back to the rule.
+  {
+    const picker = await openPicker(chosenRow.key);
+    await picker.locator('[data-audience-person="rb-carol"]').click();
+    await page.waitForTimeout(150);
+    t('clearing every tick reads Save (0)', /Save \(0\)/.test(await picker.locator('[data-audience-save]').innerText()));
+    await picker.locator('[data-audience-save]').click();
+    await page.waitForTimeout(1200);
+    t('and saving nobody puts the message back to its rule',
+      one(chosenRow.key)?.source === 'default', one(chosenRow.key)?.source);
+    t('the badge on screen says Default again',
+      /Default/.test(await page.locator(`[data-audience="${chosenRow.key}"]`).innerText()));
+  }
+  await browser.close();
+  await put('/flash/readybot-audience/record_backfill_recipients', { ids: [] });
 }
 
 console.log(`\n${pass}/${pass + fail} assertions passed`);

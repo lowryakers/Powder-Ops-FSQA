@@ -93,7 +93,14 @@ export default function NotificationsSection() {
           </p>
           {a.recipients.length > 0 && a.note && <p className="text-[11px] text-amber-800">{a.note}</p>}
           {a.setting && editing === a.setting && (
-            <Picker people={data.people || []} chosen={a.source === 'setting' ? a.recipients.map(r => r.id) : []}
+            // SEEDED FROM THE AUDIENCE ON THE CARD, whether it was chosen or is
+            // the default. The card above already names who is being messaged;
+            // opening the editor on an empty list said the opposite, and the
+            // save button reads "Save (0)" — which is the one value that means
+            // "put it back to the default". So the obvious way to add one
+            // person to a default audience silently cleared it instead.
+            <Picker key={`${a.setting}:${a.recipients.map(r => r.id).join(',')}`}
+              people={data.people || []} chosen={a.recipients.map(r => r.id)}
               busy={busy} onCancel={() => setEditing('')} onSave={(ids) => save(a.setting, ids)} />
           )}
         </div>
