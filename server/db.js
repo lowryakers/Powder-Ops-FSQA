@@ -2554,6 +2554,18 @@ function runMigrations() {
   // require handing out blanket edit rights to the whole log.
   addColumnIfMissing('production_entries', 'qa_action_required', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('production_entries', 'qa_action_resolved_at', 'TEXT');
+  // WHETHER THE PERSON WAS ACTUALLY TOLD IS A FACT ABOUT THE RECORD, and until
+  // these columns existed it was not written down anywhere: `notifyQaAction`
+  // fire-and-forgets, and asking "did Debora ever get this?" two weeks later had
+  // no answer but a guess. `qa_action_notified_at` is the last time a message
+  // about this entry LANDED (so it is also the per-entry nudge clock — one
+  // global flag meant every outstanding correction shared one timer),
+  // `_notified_to` the account it reached, `_notify_error` why it did not, and
+  // `_escalated_at` that the ask has been raised past the filer, once.
+  addColumnIfMissing('production_entries', 'qa_action_notified_at', 'TEXT');
+  addColumnIfMissing('production_entries', 'qa_action_notified_to', 'TEXT');
+  addColumnIfMissing('production_entries', 'qa_action_notify_error', 'TEXT');
+  addColumnIfMissing('production_entries', 'qa_action_escalated_at', 'TEXT');
   // Answers to the team's EOD template fields, as a JSON object keyed by field key.
   addColumnIfMissing('production_entries', 'structured_data', 'TEXT');
   // Values for user-added fields (the custom-field engine). One JSON object per

@@ -744,8 +744,119 @@ export function signOffProductionEntry(db, id, { by, notes, actionRequired } = {
   return { entry: updated };
 }
 
+/* ── QA corrections: who is asked, and what happens when nobody answers ──────
+ *
+ * A correction request is an instruction to ONE NAMED PERSON — the account that
+ * filed the entry. Two weeks of silence on the 1 September Alkify Stick entries
+ * is what this block exists to make impossible, and the code had three separate
+ * ways of producing it:
+ *
+ *   1. The lookup FAILED CLOSED. `notifyQaAction` returned a bare `false` when
+ *      it could not resolve the filer, sent nothing, told nobody, and wrote
+ *      nothing down — so an unreachable person and a person who simply ignored
+ *      the DM were indistinguishable afterwards.
+ *   2. The name fallback was EXACT (`WHERE name = ?`) while D-074's own trigger
+ *      resolves case-insensitively and only when unambiguous. A row whose
+ *      `submitted_by_id` is NULL because the name matched two accounts, or whose
+ *      stored name differs by case, was unreachable by a rule the rest of the
+ *      codebase does not use.
+ *   3. NOBODY WAS EVER TOLD THE ASK WAS IGNORED. The nudge re-sent to the same
+ *      person on a two-day clock for ever; QA, who asked, heard nothing.
+ *
+ * So: one resolver, an outcome recorded on the row, and an escalation past the
+ * filer once the SLA has passed. `notifyQaAction` still never throws into the
+ * signature path — the signature is already written — but a failure is now an
+ * audited fact rather than a swallowed promise.
+ */
+
+// Hours before an unanswered correction is chased again and raised past the
+// filer. The plant's decision, not an acceptance criterion, so it is editable —
+// but clamped: under a day chases somebody mid-shift about a shift they may not
+// have finished, and over two days is how this sat a fortnight.
+export const QA_ACTION_SLA_DEFAULT = 24;
+export function qaActionSlaHours(db) {
+  const raw = (() => {
+    try { return db.prepare("SELECT value FROM app_settings WHERE key = 'qa_action_sla_hours'").get()?.value; }
+    catch { return null; }
+  })();
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return QA_ACTION_SLA_DEFAULT;
+  return Math.min(48, Math.max(24, Math.round(n)));
+}
+
+const asUtc = (t) => (t ? new Date(`${String(t).replace(' ', 'T')}Z`).getTime() : null);
+const hoursSince = (t) => { const ms = asUtc(t); return ms == null ? null : (Date.now() - ms) / 3600000; };
+
 /**
- * Tell the supervisor that QA has asked them to correct their own entry.
+ * The account that must make the correction, or why there isn't one.
+ *
+ * Id first — that is the whole point of D-074's `submitted_by_id`. The name
+ * fallback exists for rows filed before the column and uses the SAME rule the
+ * link triggers use: case-insensitive, and only when exactly one account
+ * answers to it. Two people with one name resolve to nothing rather than to a
+ * guess, and "nothing" is now reported rather than silently dropped.
+ */
+export function resolveQaActionTarget(db, entry) {
+  const cols = 'id, name, role, department, is_active, module_access';
+  if (entry.submitted_by_id) {
+    const linked = db.prepare(`SELECT ${cols} FROM users WHERE id = ?`).get(entry.submitted_by_id);
+    if (linked && linked.is_active) return { user: linked };
+    if (linked) return { user: null, reason: 'inactive', label: linked.name };
+    return { user: null, reason: 'no_account', label: entry.submitted_by };
+  }
+  const name = (entry.submitted_by || '').trim();
+  if (!name) return { user: null, reason: 'no_name', label: null };
+  const matches = db.prepare(`SELECT ${cols} FROM users WHERE LOWER(name) = LOWER(?)`).all(name);
+  if (matches.length === 1 && matches[0].is_active) return { user: matches[0] };
+  if (matches.length === 1) return { user: null, reason: 'inactive', label: matches[0].name };
+  if (matches.length > 1) return { user: null, reason: 'ambiguous', label: name };
+  return { user: null, reason: 'no_account', label: name };
+}
+
+const UNREACHABLE = {
+  no_account: 'no ReadyDoc account matches the name on the entry',
+  inactive: 'their account is deactivated',
+  ambiguous: 'two active accounts share that name, so the entry resolves to neither',
+  no_name: 'the entry carries no submitter name',
+};
+
+// Can the person we are about to instruct actually save the correction?
+//
+// `PUT /entries/:id` invites the filer to amend their own flagged entry without
+// a Production Log edit grant — but `requireModuleWrite` sits at the MOUNT and
+// refuses the write before the handler's invitation is ever read. So a filer
+// with view-only access is asked to do something the server will refuse, and
+// the request sits looking ignored. We cannot widen that door from here; what
+// we can do is notice and say so in the escalation.
+const AMEND_MODULES = ['production-log', 'production-schedule', 'production-dashboard', 'operator'];
+function canAmend(user) {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  if (user.role === 'auditor') return false;
+  const ma = (() => {
+    if (user.module_access == null) return null;
+    if (typeof user.module_access !== 'string') return user.module_access;
+    try { return JSON.parse(user.module_access); } catch { return null; }
+  })();
+  if (ma == null) return false;                       // a NULL map is an empty account
+  if (Array.isArray(ma)) return ma.some(id => AMEND_MODULES.includes(id));
+  return AMEND_MODULES.some(id => ma[id] === 'edit');
+}
+
+function entryLabel(entry) {
+  return [entry.date, entry.team, entry.mo_number && `MO ${entry.mo_number}`].filter(Boolean).join(' · ');
+}
+
+function stampNotify(db, id, { at = null, to = null, error = null } = {}) {
+  db.prepare(`UPDATE production_entries
+    SET qa_action_notified_at = COALESCE(?, qa_action_notified_at),
+        qa_action_notified_to = COALESCE(?, qa_action_notified_to),
+        qa_action_notify_error = ?
+    WHERE id = ?`).run(at, to, error, id);
+}
+
+/**
+ * Tell the person QA has asked them to correct their own entry.
  *
  * Without this the ask lived entirely on a banner at the top of the Production
  * Log, which only works if the person happens to open that screen — so entries
@@ -754,55 +865,154 @@ export function signOffProductionEntry(db, id, { by, notes, actionRequired } = {
  *
  * The DM says what to fix and where, because "your entry needs a correction"
  * with no note is an errand, not an instruction.
+ *
+ * Returns `{ ok, reason, user }`. A false `ok` is always accompanied by a reason
+ * and, unless the caller says otherwise, by an escalation — the whole defect
+ * this replaces was a silent `return false`.
  */
-export async function notifyQaAction(db, entry, flaggedBy, { reminder = false } = {}) {
-  // The account behind the entry first; the name only for entries filed
-  // before the id was recorded — a renamed submitter must still be reached.
-  const who = (entry.submitted_by_id && db.prepare('SELECT id, name FROM users WHERE id = ? AND is_active = 1').get(entry.submitted_by_id))
-    || db.prepare('SELECT id, name FROM users WHERE name = ? AND is_active = 1').get(entry.submitted_by);
-  if (!who) return false;
-  const { bot, dm } = botDm(db, who.id);
-  const what = [entry.date, entry.team, entry.mo_number && `MO ${entry.mo_number}`]
-    .filter(Boolean).join(' · ');
-  const age = entry.qa_signoff_at
-    ? Math.floor((Date.now() - new Date(`${String(entry.qa_signoff_at).replace(' ', 'T')}Z`).getTime()) / 86400000)
-    : null;
+export async function notifyQaAction(db, entry, flaggedBy, { reminder = false, escalateOnMiss = true } = {}) {
+  const { user: who, reason, label } = resolveQaActionTarget(db, entry);
+  if (!who) {
+    stampNotify(db, entry.id, { error: reason });
+    logAudit('system', 'qa_action_unreachable', 'production_entry', entry.id,
+      { reason, filed_as: label || entry.submitted_by, reminder }, null, null);
+    if (escalateOnMiss) await escalateQaAction(db, entry, { unreachable: reason, label: label || entry.submitted_by });
+    return { ok: false, reason, user: null };
+  }
+
+  const what = entryLabel(entry);
+  const hrs = hoursSince(entry.qa_signoff_at);
+  const ago = hrs == null ? null
+    : hrs < 48 ? `${Math.max(1, Math.round(hrs))} hour${Math.round(hrs) === 1 ? '' : 's'} ago`
+      : `${Math.floor(hrs / 24)} days ago`;
   const lead = reminder
-    ? `⏰ Still waiting on a correction${age != null ? ` — asked ${age} day${age === 1 ? '' : 's'} ago` : ''}`
+    ? `⏰ Still waiting on a correction${ago ? ` — asked ${ago}` : ''}`
     : `📝 QA has asked you to correct a production entry`;
-  // Bot bold is *text*, not **text** — the chat renderer isn't markdown.
-  await postMessageAs(db, dm, bot,
-    `${lead}\n*${what}*\n${flaggedBy || entry.qa_signoff_by || 'QA'}: "${entry.qa_notes || ''}"\n`
-    + `Open the Production Log to amend it — you can edit this entry without an edit grant, and it returns to Pending QA once corrected.\n`
-    + `${readyDocOrigin()}/?tab=production-log`);
+  try {
+    const { bot, dm } = botDm(db, who.id);
+    // Bot bold is *text*, not **text** — the chat renderer isn't markdown.
+    await postMessageAs(db, dm, bot,
+      `${lead}\n*${what}*\n${flaggedBy || entry.qa_signoff_by || 'QA'}: "${entry.qa_notes || ''}"\n`
+      + `Open the Production Log to amend it — you can edit this entry without an edit grant, and it returns to Pending QA once corrected.\n`
+      + `${readyDocOrigin()}/?tab=production-log`);
+  } catch (e) {
+    // A comms outage is not the same fact as an unreachable person, and calling
+    // it one would send QA chasing a name that is perfectly correct.
+    stampNotify(db, entry.id, { error: `dm_failed: ${e.message}` });
+    logAudit('system', 'qa_action_notify_failed', 'production_entry', entry.id,
+      { to: who.name, error: e.message, reminder }, null, null);
+    return { ok: false, reason: 'dm_failed', user: who };
+  }
   pushToUser(who.id, {
     title: reminder ? 'Correction still needed' : 'QA asked for a correction',
     body: `${what} — ${entry.qa_notes || ''}`.slice(0, 120),
     tag: `qa-action-${entry.id}`, renotify: true, url: '/?tab=production-log',
   }).catch(() => {});
-  return true;
+  stampNotify(db, entry.id, { at: new Date().toISOString(), to: who.id, error: null });
+  return { ok: true, user: who };
 }
 
 /**
- * Chase the corrections nobody has made.
+ * Raise the ask past the filer: the QA who signed, and the supervisors.
+ *
+ * Two cases reach here and they are different facts. UNREACHABLE means the
+ * message never had anywhere to go and QA should fix the account or correct the
+ * entry themselves. OVERDUE means the person was told and has not acted — which
+ * is the state that let this sit a fortnight with everybody assuming somebody
+ * else had it.
+ *
+ * Idempotent on `qa_action_escalated_at`: escalating once is a report, escalating
+ * every run is a thing people filter into a folder.
+ */
+export async function escalateQaAction(db, entry, { unreachable = null, label = null } = {}) {
+  if (entry.qa_action_escalated_at) return { sent: 0, already: true };
+  const what = entryLabel(entry);
+  const who = label || entry.submitted_by || 'the filer';
+  const target = unreachable ? null : resolveQaActionTarget(db, entry).user;
+
+  const recipients = new Map();
+  // The QA who asked, first — it is their request that is not being answered.
+  if (entry.qa_signoff_by) {
+    for (const u of db.prepare(`SELECT id, name FROM users WHERE LOWER(name) = LOWER(?) AND is_active = 1`).all(entry.qa_signoff_by)) {
+      recipients.set(u.id, u);
+    }
+  }
+  // Then whoever can act on it if QA is away: production supervisors and admins.
+  for (const u of db.prepare(`SELECT id, name FROM users WHERE is_active = 1 AND name != 'ReadyBot'
+      AND (role = 'admin' OR (role = 'supervisor' AND LOWER(COALESCE(department,'')) IN ('production','qa')))`).all()) {
+    recipients.set(u.id, u);
+  }
+  if (!recipients.size) return { sent: 0 };
+
+  const hrs = hoursSince(entry.qa_signoff_at);
+  const aged = hrs == null ? '' : hrs < 48 ? ` (asked ${Math.round(hrs)} hours ago)` : ` (asked ${Math.floor(hrs / 24)} days ago)`;
+  const body = unreachable
+    ? `⚠️ *Could not reach ${who} about a correction*\n*${what}*\n`
+      + `${UNREACHABLE[unreachable] || unreachable}. The request is still open and still on the Production Log banner, `
+      + `but nobody has been messaged about it${aged}.\n`
+      + `Fix the account in Settings, or correct the entry yourself.\n`
+    : `⚠️ *A correction has not been made${aged}*\n*${what}*\n`
+      + `${entry.qa_signoff_by || 'QA'}: "${entry.qa_notes || ''}"\n`
+      + `${who} has been messaged and the entry is still flagged.`
+      + `${target && !canAmend(target) ? `\n*${target.name} has no edit access to the Production Log, so the server will refuse their correction.* An admin needs to grant it, or make the correction for them.` : ''}\n`;
+
+  let sent = 0;
+  for (const u of recipients.values()) {
+    try {
+      const { bot, dm } = botDm(db, u.id);
+      await postMessageAs(db, dm, bot, `${body}${readyDocOrigin()}/?tab=production-log`);
+      pushToUser(u.id, {
+        title: unreachable ? 'Correction could not be delivered' : 'Correction still outstanding',
+        body: `${what} — ${who}`.slice(0, 120),
+        tag: `qa-action-esc-${entry.id}`, renotify: false, url: '/?tab=production-log',
+      }).catch(() => {});
+      sent++;
+    } catch { /* one bad DM must not stop the rest */ }
+  }
+  db.prepare("UPDATE production_entries SET qa_action_escalated_at = datetime('now') WHERE id = ?").run(entry.id);
+  logAudit('system', 'qa_action_escalated', 'production_entry', entry.id,
+    { reason: unreachable ? `unreachable:${unreachable}` : 'sla_elapsed', recipients: sent, filed_as: who }, null, null);
+  return { sent };
+}
+
+/**
+ * Chase the corrections nobody has made, on each entry's OWN clock.
  *
  * The flag is set once, so without this a request that is ignored is silent
- * forever — which is exactly the state the QA Review queue was in. Every other
- * day rather than daily: a reminder people mute is worse than none. Only entries
- * asked about at least two days ago, so nobody is chased the morning after.
+ * forever — which is exactly the state the QA Review queue was in. What the
+ * first version got wrong was the clock: a single `last_qa_action_nudge_at` flag
+ * meant every outstanding correction shared one timer and waited two days for
+ * the first chase, so an ask made on a Tuesday afternoon could be first chased
+ * on Friday. Each entry now carries the last time it was messaged about, and is
+ * re-asked once its own SLA has passed.
+ *
+ * At the same threshold the ask is raised past the filer, ONCE, because a person
+ * who has been told and has not acted is a fact QA has to hear from somebody.
  */
 export async function qaActionNudges(db) {
+  const sla = qaActionSlaHours(db);
   const rows = db.prepare(`
     SELECT * FROM production_entries
     WHERE qa_action_required = 1 AND qa_action_resolved_at IS NULL
-      AND qa_signoff_at IS NOT NULL AND qa_signoff_at <= datetime('now', '-2 days')
-    ORDER BY qa_signoff_at`).all();
-  let sent = 0;
+      AND qa_signoff_at IS NOT NULL
+      AND qa_signoff_at <= datetime('now', ?)
+      AND (qa_action_notified_at IS NULL OR qa_action_notified_at <= datetime('now', ?))
+    ORDER BY qa_signoff_at`).all(`-${sla} hours`, `-${sla} hours`);
+  let sent = 0; let escalated = 0; let unreachable = 0;
   for (const entry of rows) {
-    try { if (await notifyQaAction(db, entry, null, { reminder: true })) sent++; }
-    catch { /* one bad DM must not stop the rest */ }
+    try {
+      // Escalate before re-nudging: if the person cannot be reached at all, the
+      // notify call raises that itself and a second escalation would double it.
+      const r = await notifyQaAction(db, entry, null, { reminder: true });
+      if (r.ok) {
+        sent++;
+        const fresh = db.prepare('SELECT * FROM production_entries WHERE id = ?').get(entry.id);
+        const e = await escalateQaAction(db, fresh, {});
+        if (e.sent) escalated++;
+      } else if (!r.user) unreachable++;
+    } catch { /* one bad DM must not stop the rest */ }
   }
-  return { entries: rows.length, sent };
+  return { entries: rows.length, sent, escalated, unreachable, sla_hours: sla };
 }
 
 // PUT /entries/:id/qa-signoff — QA signs off on a production entry
@@ -826,7 +1036,47 @@ router.put('/entries/:id/qa-signoff', (req, res) => {
 // Whose entry is it: the linked account when the row carries one, the name as
 // filed otherwise. Comparing the name alone stopped a renamed supervisor from
 // seeing QA's correction requests on their own entries.
-const isSubmitter = (row, user) => !!user && (row.submitted_by_id ? row.submitted_by_id === user.id : row.submitted_by === user.name);
+// Case-insensitively on the name fallback, because that is the rule D-074's own
+// link triggers use and the rule `resolveQaActionTarget` notifies by. An exact
+// comparison here meant a row filed as `qn filer gomez` was invisible to the
+// account named `Qn Filer Gomez` — the same person, told nothing, shown nothing.
+const isSubmitter = (row, user) => !!user && (row.submitted_by_id
+  ? row.submitted_by_id === user.id
+  : String(row.submitted_by || '').trim().toLowerCase() === String(user.name || '').trim().toLowerCase());
+
+// Two open cards for one shift, one MO and one QA note are one piece of work,
+// and the screen has to say which it is looking at. `MO76790` beside
+// `MO76790 y` on the same day, from the same person, carrying the same note is
+// a keystroke in a free-text field — but DECIDING that here and merging them
+// would be the app overwriting a filed record on a guess. So the group key is
+// the day, the person and the note (the facts that cannot be typos of each
+// other), the entry ids travel with it, and a difference in the MO is REPORTED
+// rather than resolved: `mo_mismatch` is what puts "check the MO" in front of
+// the person who can actually tell.
+const moKey = (v) => String(v || '').toUpperCase().replace(/\s+/g, ' ').trim();
+function groupQaActions(rows) {
+  const groups = new Map();
+  for (const r of rows) {
+    const key = [r.date, r.submitted_by_id || (r.submitted_by || '').toLowerCase(), (r.qa_notes || '').trim()].join('|');
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(r);
+  }
+  return rows.map(r => {
+    const key = [r.date, r.submitted_by_id || (r.submitted_by || '').toLowerCase(), (r.qa_notes || '').trim()].join('|');
+    const peers = groups.get(key);
+    const mos = [...new Set(peers.map(p => moKey(p.mo_number)))];
+    return {
+      ...r,
+      duplicate_group: peers.length > 1 ? key : null,
+      duplicate_count: peers.length,
+      duplicate_ids: peers.length > 1 ? peers.map(p => p.id) : null,
+      // Same person, same day, same note, two different MO strings — one of them
+      // is almost certainly mistyped, and only the filer knows which.
+      mo_mismatch: peers.length > 1 && mos.length > 1,
+      mo_variants: peers.length > 1 && mos.length > 1 ? peers.map(p => p.mo_number) : null,
+    };
+  });
+}
 
 router.get('/entries/qa-actions', (req, res) => {
   const db = getDb();
@@ -836,7 +1086,14 @@ router.get('/entries/qa-actions', (req, res) => {
     WHERE qa_action_required = 1 AND qa_action_resolved_at IS NULL
     ORDER BY date DESC, qa_signoff_at DESC
   `).all();
-  res.json(rows.filter(r => all || isSubmitter(r, req.user)).map(computeMetrics));
+  // WHOSE ENTRY IT IS, DECIDED SERVER-SIDE. The banner used to compare
+  // `submitted_by === user.name` for itself while this endpoint filtered on the
+  // linked id — so a filer whose account name differs at all from the name on
+  // the row saw her own corrections filed under "Other supervisors", which reads
+  // as somebody else's problem. The client renders what it is told, the same
+  // rule `withPermissions()` follows in qms.js.
+  res.json(groupQaActions(rows.filter(r => all || isSubmitter(r, req.user)))
+    .map(r => ({ ...computeMetrics(r), is_mine: isSubmitter(r, req.user) })));
 });
 
 // POST /entries/import — bulk import from CSV data (rewrites the log → same

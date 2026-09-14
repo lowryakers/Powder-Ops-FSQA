@@ -839,12 +839,18 @@ function QASignoffModal({ entry, user, onClose, onSaved }) {
 // no reason to re-open an entry they filed days ago. This sits at the top of
 // the log — the page they're already on to file the next report — and lists
 // what QA has asked them to fix, with the correction one click away.
-function QACorrections({ user, onAmend, refreshKey }) {
+function QACorrections({ onAmend, refreshKey }) {
   const { data: rows } = useApiGet('/production/entries/qa-actions', [refreshKey]);
   const open = rows || [];
   if (!open.length) return null;
-  const mine = open.filter(e => e.submitted_by === user?.name);
-  const others = open.filter(e => e.submitted_by !== user?.name);
+  // WHOSE ENTRY IT IS COMES FROM THE SERVER (`is_mine`). Deciding it here with
+  // `submitted_by === user.name` compared a display name against a stored one
+  // while the endpoint filtered on the linked account id, so the two disagreed
+  // in exactly the case that matters: a filer whose account name has since been
+  // corrected saw her own corrections under "Other supervisors" and reasonably
+  // read them as somebody else's.
+  const mine = open.filter(e => e.is_mine);
+  const others = open.filter(e => !e.is_mine);
   const render = (list, heading) => list.length > 0 && (
     <>
       {heading && <p className="text-[11px] font-semibold uppercase text-amber-700/70 mt-2">{heading}</p>}
@@ -853,11 +859,22 @@ function QACorrections({ user, onAmend, refreshKey }) {
           <li key={e.id} className="rounded-lg bg-white/70 border border-amber-200 px-3 py-2">
             <div className="text-sm font-medium text-amber-900">
               {formatDate(e.date)} · {e.product_name} · MO #{e.mo_number}
-              {e.submitted_by !== user?.name && <span className="font-normal"> — {e.submitted_by}</span>}
+              {!e.is_mine && <span className="font-normal"> — {e.submitted_by}</span>}
             </div>
             <div className="text-xs text-amber-900/90 mt-0.5">
               <span className="font-medium">{e.qa_signoff_by || 'QA'}:</span> {e.qa_notes}
             </div>
+            {/* Two cards for one shift and one note are one piece of work. The
+                server groups them; nothing is merged, because these are two
+                filed entries and only the filer knows which MO is the typo. */}
+            {e.duplicate_count > 1 && (
+              <div data-qa-duplicate className="text-[11px] text-amber-900/80 mt-1 border-t border-amber-200/70 pt-1">
+                {e.duplicate_count} entries filed for this day with the same note
+                {e.mo_mismatch
+                  ? <> — and two MO numbers, <span className="font-medium">{e.mo_variants.join(' / ')}</span>. One is likely mistyped; correct it here.</>
+                  : <> — correct each one.</>}
+              </div>
+            )}
             <button type="button" onClick={() => onAmend(e)}
               className="mt-1.5 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-600 text-white text-xs font-medium hover:bg-amber-700">
               <Pencil size={12} /> Correct this entry
@@ -1447,7 +1464,7 @@ function LogTable({ user }) {
       {/* Corrections QA has asked for, on the page the supervisor already opens
           to file the next report. Everyone sees their own; the endpoint only
           returns other people's to admins and log editors. */}
-      <QACorrections user={user} onAmend={setAmendEntry} refreshKey={dataVersion} />
+      <QACorrections onAmend={setAmendEntry} refreshKey={dataVersion} />
       {/* Missed end-of-day reports are a QA review tool — only QA (and admins) see them. */}
       {(user?.role === 'admin' || user?.department === 'qa') && <MissedReports from={from} to={to} user={user} />}
       <SummaryCards from={from} to={to} />

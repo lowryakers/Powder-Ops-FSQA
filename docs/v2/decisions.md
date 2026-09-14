@@ -2703,3 +2703,50 @@ out of `WRITABLE` — the confirm endpoint owns it, the `nfp_version` doctrine.
 
 Verified in `verify:skurename`, now 37 live assertions; the control — removing `applies` — fails 2, because
 the step then appears on every product in the catalogue.
+
+## D-083 · 2026-09-14 · decided — A correction request is addressed to a person, and silence is now a fact
+
+Reported from the Production Log on 14 September: two "Correct this entry" cards for one operator,
+dated 1 September (Alkify Stick, MO76790 and `MO76790 y`), carrying Maria Servin's note about weighing
+the quantity produced. They had sat roughly two weeks. Lowry's question was the whole finding: *is
+Debora getting ReadyBot?* Nothing in the system could answer it.
+
+**The as-is, read from the code — no production snapshot was available to this session, so these are
+the mechanisms, not a reading of her rows.** Three separate defects each produce exactly this silence:
+
+1. **The lookup failed closed.** `notifyQaAction` returned a bare `false` when it could not resolve the
+   filer: no DM, no push, no escalation, and nothing written down. An unreachable person and a person
+   ignoring their DM were indistinguishable afterwards, for ever.
+2. **The name fallback was exact** (`WHERE name = ?`) while D-074's own link triggers resolve
+   case-insensitively and only when unambiguous. A row whose `submitted_by_id` is NULL — which D-074
+   says happens whenever two accounts share a name — was unreachable by a rule nothing else uses.
+3. **Nobody was ever told the ask had been ignored.** The nudge re-sent to the same person for ever on
+   a single plant-wide two-day timer. QA, who asked, heard nothing.
+
+And a fourth on the screen: the banner split "Yours" from "Other supervisors" on
+`submitted_by === user.name` while the endpoint filtered on the linked id, so the two disagreed in the
+one case that matters. **In the control run the filer sees zero rows, not misfiled ones** — her name
+differs in case from the name on the row, so the old matcher returned nothing at all.
+
+**What changed.** One resolver (`resolveQaActionTarget`), id-first then case-insensitive-unambiguous —
+the same rule as the triggers. The outcome is recorded on the row (`qa_action_notified_at` / `_to` /
+`_notify_error` / `_escalated_at`), so "was she told" is answerable from the record rather than from
+memory. An unresolvable filer **escalates immediately** to the QA who signed and to production
+supervisors, naming why. The SLA is **24 hours, configurable, clamped 24–48** — under a day chases
+somebody about a shift that may still be running, and over two days is how this sat a fortnight. The
+clock is **per entry**, not one flag for the whole plant. At the SLA the filer is chased again and the
+ask is raised past her **once**.
+
+**Duplicates are grouped, never merged.** `MO76790` beside `MO76790 y`, same day, same person, same
+note is a keystroke in a free-text field — but deciding that here would be the app overwriting a filed
+record on a guess. The group key is the day, the person and the note; the MO difference is *reported*
+(`mo_mismatch`) so the one person who knows which is the typo is the one asked.
+
+**Named but not fixed, because it needs a decision:** `requireModuleWrite` sits at the router MOUNT, so
+a filer with view-only production access is refused the amend before the handler's `invited` clause is
+ever read. The promise that a flagged filer needs no edit grant holds only for someone who already has
+edit on one of the four production modules. The escalation now *says so* when it applies rather than
+leaving QA to wonder why a correction never lands.
+
+Verified: `verify:qacorrection` (32, live, in `verify:all`). **The control is decisive — 12 of 32 fail
+with the old behaviour, the first being `A DM REACHED HER — dms=0`.**

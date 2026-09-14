@@ -140,13 +140,25 @@ async function runDue(db, deps) {
   // Production entries QA has asked someone to correct. The flag is set once,
   // so a request that is ignored would otherwise be silent forever — which is
   // how entries sat flagged for weeks with the QA Review queue ageing around
-  // them. Every other day, and only for asks at least two days old.
+  // them.
+  //
+  // THE CLOCK IS PER ENTRY, NOT PER JOB. This used to run every other day behind
+  // a single `last_qa_action_nudge_at` flag, which meant every outstanding
+  // correction in the plant shared one timer: an ask made just after a run
+  // waited two days for its first chase, and one made just before it was chased
+  // the next morning. `qaActionNudges` now selects on each row's own
+  // `qa_action_notified_at` against the configured SLA (default 24h), so this
+  // job only has to run often enough not to be the bottleneck — hourly, with the
+  // per-entry clock deciding who actually hears anything.
   const lastQaAction = getFlag(db, 'last_qa_action_nudge_at');
-  if (deps.qaActionNudges && (!lastQaAction || (now - new Date(lastQaAction)) >= 2 * 86400000)) {
+  if (deps.qaActionNudges && (!lastQaAction || (now - new Date(lastQaAction)) >= 3600000)) {
     try {
       const sent = await deps.qaActionNudges(db);
       setFlag(db, 'last_qa_action_nudge_at', now.toISOString());
-      if (sent.sent) console.log(`[jobs] QA correction nudges: ${sent.sent} of ${sent.entries} outstanding`);
+      if (sent.sent || sent.escalated || sent.unreachable) {
+        console.log(`[jobs] QA corrections (SLA ${sent.sla_hours}h): ${sent.sent} chased, `
+          + `${sent.escalated} escalated, ${sent.unreachable} unreachable, of ${sent.entries} due`);
+      }
     } catch (e) { console.warn('[jobs] QA correction nudges failed:', e.message); }
   }
 
