@@ -45,6 +45,7 @@ const RUNS = [
   ['verify-comms-edit.mjs', 4995, {}, false],
   ['verify-qa-correction-notify.mjs', 4997, {}, false],
   ['verify-cleanup-digest.mjs', 4998, {}, false],
+  ['verify-eod-chase.mjs', 4996, {}, false],
   ['verify-client-channel.mjs', 4996, {}, true],
   ['verify-sku-rename.mjs', 4998, {}, false],
   ['verify-employee-docs.mjs', 4993, {}, true],

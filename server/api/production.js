@@ -546,15 +546,38 @@ router.get('/entries/summary', (req, res) => {
   });
 });
 
-// GET /missed-reports — scheduled production slots (past / today) with no
-// matching end-of-day entry, so a supervisor's missing report is visible at a
-// glance. A slot is "reported" when an entry exists for the same date + room
-// and matching MO# (or team, when the schedule has no MO#).
-router.get('/missed-reports', (req, res) => {
-  const db = getDb();
-  const { from, to, include_today, include_dismissed } = req.query;
+/* ── Scheduled runs with no end-of-day report ────────────────────────────────
+ *
+ * A slot is "reported" when an entry exists for the same date and room whose MO
+ * matches — or, when the schedule carries no MO, whose team matches.
+ *
+ * THE MO COMPARISON WAS RAW STRING EQUALITY, and `mo_number` is a free-text box
+ * on both the schedule and the entry. So `MO76790` on the schedule beside
+ * `MO #MO76790`, `mo76790` or `76790` on the entry read as a MISSING REPORT
+ * when the shift had in fact been filed — and a list of missing reports that
+ * contains reports which exist is one people stop reading, which is how it
+ * reached 44. `normalizeMo` strips the formatting noise (case, spaces, `#`, a
+ * repeated `MO` prefix) and nothing else.
+ *
+ * It deliberately does NOT strip a trailing character: `MO76790 y` normalises to
+ * `76790Y`, which stays distinct from `76790`. Collapsing that would be guessing
+ * that a stray keystroke and a real suffix are the same thing, and the cost of
+ * guessing wrong is a genuinely missing report that never appears. Instead the
+ * row carries `possible_typo` when an entry for that date and room has the same
+ * MO DIGITS under a different string — which names the dirty data without
+ * hiding the gap.
+ */
+export const normalizeMo = (v) => String(v ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^(MO)+/, '');
+const moDigits = (v) => String(v ?? '').replace(/\D/g, '');
+
+/**
+ * The missed-report list. One definition, called by the screen AND by the job
+ * that chases it — a second copy of this filter is how a digest starts
+ * disagreeing with the banner it links to.
+ */
+export function missedReports(db, { from, to, includeToday = false, includeDismissed = false } = {}) {
   const today = new Date().toISOString().slice(0, 10);
-  const cutoff = include_today === '1' ? today : new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const cutoff = includeToday ? today : new Date(Date.now() - 86400000).toISOString().slice(0, 10);
 
   const scheduled = db.prepare(`
     SELECT s.room, s.team, s.mo_number, s.product_name, s.start_time,
@@ -566,17 +589,23 @@ router.get('/missed-reports', (req, res) => {
   );
 
   const entries = db.prepare('SELECT date, room, team, mo_number FROM production_entries').all();
-  const reported = (s) => entries.some(e =>
-    e.date === s.sched_date && e.room === s.room &&
-    (s.mo_number ? String(e.mo_number) === String(s.mo_number) : (s.team ? e.team === s.team : true)));
+  const sameSlot = (e, s) => e.date === s.sched_date && e.room === s.room;
+  const reported = (s) => entries.some(e => sameSlot(e, s) && (s.mo_number
+    ? normalizeMo(e.mo_number) === normalizeMo(s.mo_number)
+    : (s.team ? e.team === s.team : true)));
+  // An entry IS there for that day and room, and its MO reads differently only
+  // in a way normalising cannot safely resolve. Reported, never resolved.
+  const nearMiss = (s) => (s.mo_number
+    ? entries.find(e => sameSlot(e, s) && moDigits(e.mo_number) && moDigits(e.mo_number) === moDigits(s.mo_number))
+    : null);
 
   const dismissals = {};
   for (const d of db.prepare('SELECT * FROM production_missed_dismissals').all()) dismissals[d.dismiss_key] = d;
-  const includeDismissed = include_dismissed === '1';
 
   const missed = scheduled.filter(s => !reported(s)).map(s => {
     const key = missedKey(s.sched_date, s.room, s.mo_number, s.team);
     const dis = dismissals[key];
+    const near = nearMiss(s);
     return {
       date: s.sched_date, room: s.room, team: s.team, mo_number: s.mo_number,
       product_name: s.product_name, start_time: s.start_time,
@@ -586,10 +615,19 @@ router.get('/missed-reports', (req, res) => {
       dismiss_reason: dis?.reason || null,
       dismissed_by: dis?.dismissed_by || null,
       dismissed_at: dis?.created_at || null,
+      possible_typo: near ? near.mo_number : null,
     };
   }).filter(m => includeDismissed || !m.dismissed);
   missed.sort((a, b) => b.date.localeCompare(a.date) || a.room.localeCompare(b.room));
-  res.json(missed);
+  return missed;
+}
+
+// GET /missed-reports — the same list the chase job reads.
+router.get('/missed-reports', (req, res) => {
+  const { from, to, include_today, include_dismissed } = req.query;
+  res.json(missedReports(getDb(), {
+    from, to, includeToday: include_today === '1', includeDismissed: include_dismissed === '1',
+  }));
 });
 
 // Dismiss a missed-report callout after QA review (records who/why for audit).

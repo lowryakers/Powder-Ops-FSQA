@@ -51,6 +51,7 @@
     "verify:pmpause": "node scripts/verify-pm-pause.mjs",
     "verify:qacorrection": "node scripts/verify-qa-correction-notify.mjs",
     "verify:cleanupdigest": "node scripts/verify-cleanup-digest.mjs",
+    "verify:eodchase": "node scripts/verify-eod-chase.mjs",
     "verify:payactions": "node scripts/verify-pay-actions.mjs",
     "verify:supplierq": "node scripts/verify-supplier-questionnaire.mjs",
     "verify:checkrecords": "node scripts/verify-check-records.mjs",

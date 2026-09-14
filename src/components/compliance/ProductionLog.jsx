@@ -7,6 +7,7 @@ import { PRODUCTION_LINES, lineLabel, FILLING_TEAM, PRODUCTION_TEAMS as TEAMS, P
 import { CLEAN_LEVELS, cleanLevel, swabsExpected } from '../../../shared/clean-levels.js';
 import { keepCurrent } from '../../lib/selectOptions';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
+import { getParam } from '../../lib/deepLink';
 import { useCappedList } from '../../lib/useCappedList';
 import ShowMore from '../common/ShowMore.jsx';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
@@ -1231,7 +1232,12 @@ const SORT_COLUMNS = [
 
 function MissedReports({ from, to, user }) {
   // Start collapsed — it's a compact summary line that QA expands when reviewing.
-  const [open, setOpen] = useState(false);
+  // Unless the reader arrived from the ReadyBot chase, which named a number:
+  // landing on a collapsed bar after being told there are 44 is the same dead
+  // end as a notification that opens the wrong screen. `getParam` is read rather
+  // than `window.location.search`, because App consumes the query string in an
+  // effect that has already run by the time this lazily-loaded module mounts.
+  const [open, setOpen] = useState(() => getParam('missed') === '1');
   const [showDismissed, setShowDismissed] = useState(false);
   const [dismissing, setDismissing] = useState(null); // dismiss_key of the row being reviewed
   const [reason, setReason] = useState('');
@@ -1466,7 +1472,11 @@ function LogTable({ user }) {
           returns other people's to admins and log editors. */}
       <QACorrections onAmend={setAmendEntry} refreshKey={dataVersion} />
       {/* Missed end-of-day reports are a QA review tool — only QA (and admins) see them. */}
-      {(user?.role === 'admin' || user?.department === 'qa') && <MissedReports from={from} to={to} user={user} />}
+      {/* Admins and QA review this; SUPERVISORS FILE THE REPORTS, and rendering it
+          for the two groups who cannot write one while hiding it from the group
+          who can is how 44 accumulated. ReadyBot chases them either way. */}
+      {(user?.role === 'admin' || user?.role === 'supervisor' || user?.department === 'qa')
+        && <MissedReports from={from} to={to} user={user} />}
       <SummaryCards from={from} to={to} />
 
       {/* Filter Bar */}

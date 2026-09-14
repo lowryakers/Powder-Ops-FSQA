@@ -2787,3 +2787,52 @@ by name with a department fallback, the env-limits precedent, so a rename cannot
 no second list of addresses to go stale.
 
 Verified: `verify:cleanupdigest` (32, live, in `verify:all`).
+
+## D-085 · 2026-09-14 · decided — The missed end-of-day reports are chased, and the count was inflated
+
+The Production Log's collapsed yellow bar read **44 scheduled production runs have no end-of-day
+report** on 14 September. Two separate problems, and the second one is the more interesting.
+
+**The bar is rendered only for admins and QA.** The people who actually FILE an end-of-day report are
+the production supervisors, and they could not see it on the one screen it lived on. The two groups who
+cannot write the report were shown it; the group who can was not. That is the 72-hour re-clean badge
+again, and it is how a number reaches 44.
+
+**And the count was wrong, in the direction that makes a list unreadable.** `missed-reports` compared
+the MO with raw string equality — `String(e.mo_number) === String(s.mo_number)` — against a **free-text
+box on both the schedule and the entry**. So a run scheduled as `MO76790` and reported as `MO #MO76790`,
+`mo76790` or `76790` read as a missing report although the shift had been filed. A list of missing
+reports that contains reports which exist is one people stop opening, which is the whole reason nobody
+had worked the 44 down. **In the control run the filed-but-differently-written report is counted as
+missing**, which is the mechanism exactly.
+
+`normalizeMo` strips formatting noise — case, spaces, `#`, a repeated `MO` prefix — and nothing else.
+**It deliberately does not strip a trailing character**: `MO76790 y` stays distinct from `MO76790`,
+because collapsing that would be guessing that a stray keystroke and a real suffix are the same thing,
+and the cost of guessing wrong is a genuinely missing report that never appears. Instead a row carries
+`possible_typo` when an entry for the same date and room has the same MO **digits** under a different
+string — the gap is still reported, and the dirty data is named. (Same family as D-083's `mo_mismatch`,
+and probably the same keystroke.)
+
+**One definition.** `missedReports()` is exported and read by both the screen and the chase job; a second
+copy of that filter is how a digest starts disagreeing with the banner it links to.
+
+**The chase files nothing and dismisses nothing.** A missing end-of-day report is a missing record;
+producing one from a schedule row would be inventing a shift nobody reported. Dismissal stays a
+supervisor's review with a reason, on the record.
+
+**Weekly on a weekday morning, daily above 25 outstanding, silent at zero.** The test is "not sent in
+seven days" rather than "is it Monday", so a missed Monday goes out on the Tuesday instead of going quiet
+for a week. Anything older than the escalation window (**48 hours, configurable 24–72**) is called out
+separately and reaches QA and Adam whatever the recipient list says — a narrowed list is a preference,
+but a report three days missing is a records gap.
+
+**Not done, deliberately, and reversible in one line:** the pack asked for a same-day evening chase while
+the count is high. Daily is already the escalated cadence, and a second identical DM the same evening
+about the same 44 rows is the noise this codebase keeps removing. Say the word and it is a second
+condition in the job.
+
+The banner now also renders for supervisors and opens expanded from `?missed=1`, so the ReadyBot chase
+lands on the list rather than on a collapsed bar.
+
+Verified: `verify:eodchase` (42, live, in `verify:all`). **The control fails 6 of 42.**

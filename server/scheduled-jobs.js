@@ -267,6 +267,29 @@ async function runDue(db, deps) {
     }
   }
 
+  // Scheduled runs with no end-of-day report. The banner that carries this is
+  // rendered only for admins and QA, so the supervisors who actually file an EOD
+  // report were the one group never told — which is how it reached 44.
+  //
+  // WEEKLY ON A WEEKDAY MORNING, DAILY WHILE IT IS BIG. Not daily by default: a
+  // handful of gaps is a normal week and chasing it every morning is how the
+  // message stops being read. The "not sent in seven days" test rather than
+  // "is it Monday" means a missed Monday goes out on the Tuesday instead of
+  // going quiet for a week.
+  if (deps.sendEodMissedDigest && now.getHours() >= 6 && day >= 1 && day <= 5) {
+    const lastEod = getFlag(db, 'last_eod_missed_digest_at');
+    const elapsed = lastEod ? now - new Date(lastEod) : Infinity;
+    const gaps = (() => { try { return deps.eodMissedDigest(db, now).total; } catch { return 0; } })();
+    const every = gaps >= (deps.EOD_BUSY_THRESHOLD ?? 25) ? 1 : 7;
+    if (gaps > 0 && elapsed >= every * 86400000) {
+      try {
+        const r = await deps.sendEodMissedDigest(db, now);
+        setFlag(db, 'last_eod_missed_digest_at', now.toISOString());
+        if (r.sent) console.log(`[jobs] missed EOD reports: ${r.total} to ${r.sent} recipient(s) (every ${every}d)`);
+      } catch (e) { console.warn('[jobs] missed EOD digest failed:', e.message); }
+    }
+  }
+
   // Monday PM digest: each team's recurring work for the week, posted into the
   // team's own channel — where people already look — like the schedule publish.
   if (day === 1 && getFlag(db, 'last_pm_digest_week') !== week) {

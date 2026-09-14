@@ -19,6 +19,7 @@
 import { flashRecipients } from './api/flash.js';
 import { payActionRecipients } from './api/pay.js';
 import { cleanupDigestRecipients } from './cleanup-digest.js';
+import { eodMissedRecipients } from './eod-chase.js';
 
 const listed = (rows) => rows.map(u => ({ id: u.id, name: u.name }));
 
@@ -43,6 +44,12 @@ export function readybotAudiences(db) {
   const cleanupSet = (() => {
     try {
       const v = JSON.parse(db.prepare("SELECT value FROM app_settings WHERE key = 'cleanup_review_recipients'").get()?.value || 'null');
+      return Array.isArray(v) && v.length;
+    } catch { return false; }
+  })();
+  const eodSet = (() => {
+    try {
+      const v = JSON.parse(db.prepare("SELECT value FROM app_settings WHERE key = 'eod_missed_recipients'").get()?.value || 'null');
       return Array.isArray(v) && v.length;
     } catch { return false; }
   })();
@@ -112,6 +119,19 @@ export function readybotAudiences(db) {
         + 'production supervisors — otherwise nobody else is told.',
     },
     {
+      key: 'eod_missed',
+      label: 'End-of-day reports missing',
+      what: 'Scheduled production runs with no end-of-day entry, counted by team and room with the oldest date. '
+        + 'It files nothing and dismisses nothing.',
+      when: 'A weekday morning each week — daily while more than 25 are outstanding. Silent at zero.',
+      setting: 'eod_missed_recipients',
+      source: eodSet ? 'setting' : 'default',
+      recipients: listed(eodMissedRecipients(db)),
+      note: eodSet
+        ? 'Anything older than the escalation window still reaches QA and Adam, whatever this list says.'
+        : 'Nobody has been chosen, so it goes to the production supervisors who file the reports, QA, Adam and the admins.',
+    },
+    {
       key: 'cleanup_review',
       label: 'Cleanup review digest',
       what: 'How much stale open work is sitting in Cleanup Review, split by cadence, with the oldest date. '
@@ -167,4 +187,5 @@ export const SETTABLE = {
   flash_report_recipients: 'Flash Report',
   pay_action_recipients: 'Pay reminders',
   cleanup_review_recipients: 'Cleanup review digest',
+  eod_missed_recipients: 'End-of-day reports missing',
 };

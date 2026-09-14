@@ -311,6 +311,39 @@ scanning, not for reading a paragraph.
   source for literal names, so `line-clamp-${n}` yields a class in the markup and nothing in the stylesheet.
 - Measured, not eyeballed: tallest Disposals row 177px → 77px against a 57px median.
 
+### Three things that sat on a screen nobody was looking at (D-083, D-084, D-085)
+Reported together on 14 September, and they are one defect in three places: **an ask that lives only on a
+banner reaches whoever opens that screen, which is never the person who has to act.**
+- **A QA correction request (D-083).** Two cards for one operator had sat two weeks. `notifyQaAction`
+  **failed closed** — a bare `return false` when the filer could not be resolved, so nothing was sent,
+  nobody was told and nothing was written down. Its name fallback was `WHERE name = ?` while D-074's own
+  triggers resolve case-insensitively and only when unambiguous. **`resolveQaActionTarget` is the one
+  resolver now**, the outcome is stamped on the row (`qa_action_notified_at` / `_to` / `_notify_error` /
+  `_escalated_at`) so "was she told" is answerable, an unreachable filer **escalates immediately** to the
+  QA who signed, and the SLA is **24h, clamped 24–48, on each entry's own clock** — one global
+  `last_qa_action_nudge_at` meant every correction in the plant shared one timer. At the SLA the filer is
+  chased again and the ask is raised past her **once**.
+  **`is_mine` is stamped by the server** (the `withPermissions()` rule); the banner comparing
+  `submitted_by === user.name` for itself showed a filer **zero** of her own rows in the control.
+  Duplicate cards are **grouped, never merged** — `MO76790` beside `MO76790 y` on one day with one note
+  is a keystroke, but deciding that here would overwrite a filed record on a guess, so `mo_mismatch`
+  asks the one person who knows. `verify:qacorrection` (32; control fails 12).
+- **The Cleanup Review pile (D-084).** 116 open tasks and PMs behind an admin-only Settings screen.
+  `server/cleanup-digest.js` **closes nothing** — the four load-bearing assertions are negatives.
+  Counts come from `cleanup.js` itself so the digest cannot disagree with the screen. Buckets read the
+  **schedule's `frequency_type`**, never the title, and a task with no schedule is its own bucket.
+  **Biweekly, weekly above 25, silent at zero.** `verify:cleanupdigest` (32).
+- **Missed end-of-day reports (D-085).** The bar renders only for admins and QA — never for the
+  supervisors who file the report. **And the count was inflated**: the MO was compared with raw string
+  equality against a free-text box, so a run scheduled `MO76790` and filed `MO #MO76790` read as
+  missing. `normalizeMo` strips case, spaces, `#` and a repeated `MO` prefix **and nothing else** — a
+  trailing character is kept, because collapsing it would hide a real miss; `possible_typo` names the
+  near-match instead. `missedReports()` is exported so the screen and the job read **one** filter.
+  `verify:eodchase` (42; control fails 6).
+- **All three: DM plus push, recipients in `app_settings` and listed under Settings → ReadyBot messages,
+  unset falls back to real people and never to nobody, fire-and-forget per recipient, and quiet when
+  there is nothing to say.**
+
 ### QA asking for a correction has to reach the person
 `production_entries.qa_action_required` authorizes the filer to amend their own entry — but the ask lived
 only on a banner at the top of the Production Log, so it worked only if they happened to open that screen.
