@@ -3045,3 +3045,72 @@ single row it saw before, rather than a heading over one group and an empty seco
 Verified inside `verify:payroster` (64 total, live + a real browser at 1440px). **The control collapses the
 split back to one figure and fails 4**, the first being the employee total reading 32 hours that belong to
 a contractor.
+
+---
+
+## D-090 — One GS1 number, one spelling (`shared/gtin.js`)
+
+**14 September 2026.** Four bottle drafts carried their GTIN as **fourteen digits** —
+`00850079939226` where every other product carries `850079939226`. The proofing tool flagged
+them ("14 digits, expect 12") and ReadyDoc's own drawer put a red warning on them saying the
+barcode image on file was *for a different number* — when it is for exactly that number.
+
+**Why nothing ever objected.** `00` + a 12-digit UPC-A is that UPC's GTIN-14 form, and the
+GS1 mod-10 check digit of the padded number is **identical** to the bare one's. So the padded
+value passed `gtinValid()` on the way in exactly as the bare one does, and both write paths
+stored it as typed. The catalogue held one number written two ways — this codebase's recurring
+defect, in a new place.
+
+**Three readers disagreed about those rows, and all three were right about what they were
+comparing:**
+
+- `gtinPrefixes()` counts GS1 capacity from 12-digit numbers only, so a padded row was invisible
+  to the allocation it had actually consumed — `850046726` could read 76/100 while more than 76
+  item codes were in use.
+- `barcode_stale` is a **string** compare, so an image made for the number the product still
+  carries read as an image for a different one. That is the worst kind of warning: it looks
+  finished from every other screen and it is about nothing.
+- `master.csv` shipped fourteen digits to Artwork-Proofing, which keys its row on a UPC-A.
+
+**The fix is a normaliser at the write boundary, not a validator.** `normalizeGtin()` strips the
+padding *only while twelve digits remain*, so a 12-digit UPC-A that genuinely begins with a zero
+keeps it. **A real GTIN-14 (indicator digit 1–8) is never touched** — that is a case or carton
+code, a different number, not a spelling of the consumer unit. `gtinValid()` deliberately still
+*accepts* 13 and 14 digits: pasting the padded form off the GS1 site is not a mistake, and
+refusing it at the door would reject a number somebody copied correctly. Only one spelling is
+ever STORED.
+
+**`checkDigit` and `gtinValid` moved into `shared/gtin.js`** with it. What a GS1 number is
+belongs in one file; `server/api/products.js` re-exports them so no caller changed. The proof
+that the one-definition argument is not theoretical is `product-file-match.js`, which already had
+its own private copy of the un-padding regex — **the file matcher un-padded, and the write path
+did not**, which is how a number the matcher would have normalised ended up on file padded.
+
+**Normalised at four boundaries and nowhere else:**
+
+1. the **write path** (`storedGtin()` in POST and PUT) — the owner;
+2. the **readiness fact** (`FACTS.gtin`), because a step signed off against the GTIN has not been
+   undermined by a change of spelling and must not go amber for one;
+3. the **proofing boundary** — `POST /artwork/ingest` and `GET /artwork/snapshot?gtin=`, because a
+   decoder routinely hands a UPC-A back in its padded form, and a padded number arriving from
+   outside was a 404 on a product that exists;
+4. the **feed** (`master.csv`), which is a contract with an outside service.
+
+`barcode_stale` and the single-product `stale` flag now compare with `sameGtin()` — two spellings
+of one number are one number. **A blank is never a match**: an image with no number recorded
+keeps reading as stale, because "nothing recorded" is a gap, not an agreement.
+
+**The rows already on file are repaired once, and reported.** `repairPaddedGtins()` runs at boot
+after `seedProducts`. It changes no number — the padding comes off and the check digit is
+re-derived, never carried over. Three things it may not do: it may not **collide** (`products.gtin`
+is UNIQUE, so a row whose bare form is already on another SKU is skipped and named — two products
+claiming one barcode is a person's decision, not a seeder's); it may not leave the **readiness
+basis** behind (the basis records the spelling each step was signed off against, so re-spelling
+the column alone would make artwork, Shopify and ShipHero read stale on a change that is only a
+change of spelling); and it is **idempotent by construction**, since a normalised number
+normalises to itself. Every change is audited as `gtin_unpadded` with both spellings.
+
+Verified: `check:gtin` (35, pure, in `npm run check`) — **the control makes `normalizeGtin` return
+its input and fails 14 of them** — and `verify:artwork` (30, live, in `verify:all`), where the
+control fails 6, including the exact symptom reported: `{stale: true, img: 00850079939066,
+gtin: 850079939066}`, and a proofing ingest 404ing on a product that exists.

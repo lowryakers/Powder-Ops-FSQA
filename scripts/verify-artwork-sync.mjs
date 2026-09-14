@@ -83,5 +83,63 @@ t('GET /artwork/versions/:id includes the snapshot', /retry wording/.test(detail
 const board = await J(await req(`/artwork/sku/${encodeURIComponent(product.sku)}`));
 t('the SKU history flags which versions have one', Array.isArray(board?.versions) && board.versions.filter(v => v.has_snapshot).length === 2 && board.versions.some(v => v.has_snapshot === false));
 
+console.log('\nONE NUMBER, ONE SPELLING — a GTIN typed in its padded GTIN-14 form');
+// `00` + a UPC-A is that UPC's GTIN-14 form and carries the SAME check digit,
+// so it passed validation and was stored as typed. That left the catalogue
+// holding one number two ways, and three readers disagreed about it.
+const PADDED = `00${product.gtin}`;
+const readinessOf = async () => {
+  const rows = await J(await req('/products?limit=500'));
+  const row = (rows?.products || rows || []).find(x => x.sku === product.sku);
+  return row || {};
+};
+// A step signed off AGAINST the GTIN, so the staleness assertion below has
+// something real to be about rather than passing on an empty list.
+await post(`/products/${encodeURIComponent(product.sku)}/confirm/shopify`, { on: true });
+const before = await readinessOf();
+const stepState = (row, key) => (row.readiness?.steps || []).find(s => s.key === key)?.state;
+t('the Shopify step is signed off against the GTIN', stepState(before, 'shopify') === 'done', stepState(before, 'shopify'));
+r = await put(`/products/${encodeURIComponent(product.sku)}`, { gtin: PADDED });
+body = await J(r);
+t('a padded GTIN is accepted — it is a legitimate way to write the number', r.status === 200, `${r.status} ${JSON.stringify(body).slice(0, 120)}`);
+t('…and STORED as the UPC-A, un-padded at the door', body?.gtin === product.gtin, String(body?.gtin));
+t('…still valid', body?.gtin_valid === 1 || body?.gtin_valid === true, String(body?.gtin_valid));
+
+// The NUMBER did not change, only its spelling — so a step signed off against
+// it must not come back onto the punch list saying "the GTIN moved".
+const after = await readinessOf();
+t('a step signed off against the GTIN does NOT go stale on a change of spelling',
+  stepState(after, 'shopify') === 'done', `${stepState(after, 'shopify')} — ${JSON.stringify((after.readiness?.steps || []).find(s => s.key === 'shopify')?.changed_labels)}`);
+
+csv = await (await fetch(`${B}/products/master.csv?token=${TOKEN}`)).text();
+t('master.csv ships the twelve digits the proofer expects', rowOf(csv)?.split(',')[1] === product.gtin, rowOf(csv)?.split(',').slice(0, 2).join(','));
+
+// From here the row is FORCED to the bare UPC-A in the database, so what is
+// being tested is whether the padded spelling arriving from OUTSIDE resolves —
+// not whether it happens to match a row that is padded too.
+{ const db = new Database(process.env.DBPATH);
+  db.prepare('UPDATE products SET gtin = ? WHERE sku = ?').run(product.gtin, product.sku);
+  db.close(); }
+
+// The proofing service reads whatever is on the label, and a decoder routinely
+// hands a UPC-A back in its padded form. Both spellings must find the product.
+r = await fetch(`${B}/artwork/snapshot?gtin=${PADDED}`, { headers: { Authorization: `Bearer ${token}` } });
+t('a padded GTIN finds the product on the snapshot endpoint', r.status === 200, String(r.status));
+r = await post(`/artwork/ingest?token=${TOKEN}`, { job_id: 'job-padded', gtin: PADDED, component: 'primary', checks: [{ name: 'gtin', result: 'pass' }] });
+body = await J(r);
+t('…and on ingest, resolving to the same SKU rather than 404', r.status === 201 && body?.sku === product.sku, `${r.status} ${JSON.stringify(body).slice(0, 120)}`);
+
+// The red warning Lowry was looking at: an image made for the number the
+// product still carries, reported as being for a different one.
+{ const db = new Database(process.env.DBPATH);
+  db.prepare("UPDATE products SET barcode_key = 'barcodes/test.png', barcode_gtin = ? WHERE sku = ?").run(PADDED, product.sku);
+  db.close(); }
+const withBarcode = await readinessOf();
+t('a barcode image recorded under the padded spelling is NOT stale', withBarcode.barcode_stale === false, JSON.stringify({ stale: withBarcode.barcode_stale, img: withBarcode.barcode_gtin, gtin: withBarcode.gtin }));
+{ const db = new Database(process.env.DBPATH);
+  db.prepare("UPDATE products SET barcode_gtin = '850046726019' WHERE sku = ?").run(product.sku);
+  db.close(); }
+t('…while an image for a genuinely different number still is', (await readinessOf()).barcode_stale === true);
+
 console.log(`\n${pass}/${pass + fail} assertions passed`);
 process.exit(fail ? 1 : 0);

@@ -23,6 +23,7 @@ import fs from 'fs';
 import { getDb, logAudit } from '../db.js';
 import { storageEnabled, putStream, presignGet, deleteObject } from '../storage.js';
 import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
+import { normalizeGtin } from '../../shared/gtin.js';
 import { stampReadiness } from './products.js';
 
 const router = Router();
@@ -129,7 +130,10 @@ router.get('/', (req, res) => {
 // /sku/:sku and /:id or Express reads "snapshot" as one of those.
 router.get('/snapshot', (req, res) => {
   const db = getDb();
-  const gtin = String(req.query.gtin || '').trim();
+  // A decoded barcode arrives in whatever spelling the decoder used — a UPC-A
+  // is routinely handed back in its zero-padded GTIN-14 form. Both name one
+  // number, so both must find the product.
+  const gtin = normalizeGtin(req.query.gtin);
   const sku = String(req.query.sku || '').trim();
   const product = (gtin && db.prepare('SELECT sku, gtin FROM products WHERE gtin = ?').get(gtin))
     || (sku && db.prepare('SELECT sku, gtin FROM products WHERE sku = ?').get(sku));
@@ -408,8 +412,13 @@ ingestRouter.post('/', (req, res) => {
   if (!b.job_id) return res.status(400).json({ error: 'job_id is required.' });
 
   const db = getDb();
-  const product = b.gtin
-    ? db.prepare('SELECT * FROM products WHERE gtin = ?').get(String(b.gtin))
+  // Resolved BY GTIN BEFORE SKU — a decoded barcode is the only unambiguous
+  // identification — and the number is normalised first: the proofing service
+  // reads whatever is on the label, and a UPC-A read back in its padded
+  // GTIN-14 form is the same product, not a missing one.
+  const ingestGtin = normalizeGtin(b.gtin);
+  const product = ingestGtin
+    ? db.prepare('SELECT * FROM products WHERE gtin = ?').get(ingestGtin)
       || db.prepare('SELECT * FROM products WHERE sku = ?').get(String(b.sku || ''))
     : db.prepare('SELECT * FROM products WHERE sku = ?').get(String(b.sku || ''));
   if (!product) {

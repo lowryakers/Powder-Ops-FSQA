@@ -37,9 +37,15 @@
  * time. Keep them cheap — they are computed for every step of every product on
  * every read of the catalogue.
  */
+import { normalizeGtin } from './gtin.js';
+
 export const FACTS = {
   sku: (p) => p.sku || '',
-  gtin: (p) => p.gtin || '',
+  // NORMALISED: a GTIN retyped in its padded form is the same number, and a
+  // step signed off against it has not been undermined. Comparing the raw
+  // string would light up artwork, Shopify and ShipHero amber on a change
+  // that is only a change of spelling.
+  gtin: (p) => normalizeGtin(p.gtin),
   spec: (p) => p.spec_id || '',
   // The name printed on the pack, and the name the panel is filed against.
   flavor: (p) => `${p.flavor || ''}|${p.base_flavor || ''}`,

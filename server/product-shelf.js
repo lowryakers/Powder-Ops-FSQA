@@ -11,6 +11,8 @@
 // moving thing and is worthless the moment it is old. Putting a cadence on
 // everything would produce a shelf permanently in the red, which is how a
 // warning becomes wallpaper.
+import { normalizeGtin } from '../shared/gtin.js';
+
 export const SHELF_SLOTS = [
   {
     key: 'brand_guide',
@@ -168,7 +170,10 @@ export function gtinPrefixes(db) {
   })();
   const byPrefix = new Map();
   for (const r of rows) {
-    const g = String(r.gtin);
+    // Normalised first: a UPC-A written in its zero-padded GTIN-14 form is
+    // the same number and has consumed the same allocation, and skipping it
+    // made a used item code invisible to the capacity count.
+    const g = normalizeGtin(r.gtin);
     // Only a 12-digit UPC-A splits this way. Anything else is counted under its
     // own length rather than being forced into a shape it does not have.
     if (!/^\d{12}$/.test(g)) continue;

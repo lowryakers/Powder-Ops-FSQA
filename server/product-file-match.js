@@ -15,6 +15,7 @@
 // "because a decoded barcode is the only unambiguous identification".
 
 import { cleanFilename, revisionFromFilename } from './filename-meta.js';
+import { normalizeGtin } from '../shared/gtin.js';
 
 /* ── Text shaping ─────────────────────────────────────────────────────────── */
 
@@ -59,7 +60,10 @@ function dice(a, b) {
  * decides what is worth looking up.
  */
 export function gtinsIn(filename) {
-  return (String(filename || '').match(/\d{12,14}/g) || []).map(d => d.replace(/^0+(?=\d{12})/, ''));
+  // ONE definition of what a padded GTIN is (`shared/gtin.js`). This file had
+  // its own copy of that regex, and the write path had none — which is how a
+  // padded number ended up on file that this matcher would have un-padded.
+  return (String(filename || '').match(/\d{12,14}/g) || []).map(normalizeGtin);
 }
 
 /* ── Matching ─────────────────────────────────────────────────────────────── */
@@ -89,7 +93,7 @@ export function matchProduct(filename, products) {
   // 1 — GTIN. Unambiguous, so it wins outright.
   const gtins = gtinsIn(filename);
   if (gtins.length) {
-    const hit = products.find(p => p.gtin && gtins.includes(String(p.gtin)));
+    const hit = products.find(p => p.gtin && gtins.includes(normalizeGtin(p.gtin)));
     if (hit) return { sku: hit.sku, basis: 'gtin', detail: `${CONFIDENCE.gtin}: ${hit.gtin}` };
   }
 

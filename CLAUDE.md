@@ -600,6 +600,34 @@ section in the product drawer). Module grant is `products` — the panel is a pr
 - **The artwork board API returns `packs`, not `current`.** React's compiler treats a `.current` field
   access as a ref and refuses to memoize the consuming component — an eslint error, not a runtime one.
 
+### One GS1 number, one spelling (`shared/gtin.js`, D-090)
+`00` + a 12-digit UPC-A is that UPC's GTIN-14 form and carries the **same check digit**, so a padded number
+passed `gtinValid()` exactly as the bare one does and both write paths stored it as typed. Four bottle drafts
+were on file that way, and three readers disagreed about them — each correctly, about what it was comparing:
+`gtinPrefixes()` counts capacity from 12-digit numbers only (so a used item code was invisible),
+`barcode_stale` is a STRING compare (so an image made for the number the product still carries read "for a
+different number" — a red warning about nothing), and `master.csv` shipped 14 digits to a proofer that keys
+on a UPC-A.
+- **`normalizeGtin()` strips the padding only while twelve digits remain**, so a UPC-A that genuinely begins
+  with a zero keeps it, and **a real GTIN-14 (indicator 1–8) is never touched** — that is a case code, a
+  different number. `gtinValid()` still ACCEPTS 13 and 14 digits on purpose: pasting the padded form off the
+  GS1 site is not a mistake. Only one spelling is ever STORED.
+- **`checkDigit` / `gtinValid` live here now**; `api/products.js` re-exports them. The one-definition argument
+  is not theoretical — `product-file-match.js` already had its own copy of the un-padding regex, so **the
+  file matcher un-padded and the write path did not.**
+- **Normalised at four boundaries and nowhere else:** the write path (`storedGtin()`), `FACTS.gtin` (a step
+  signed off against the GTIN must not go amber for a change of spelling), the proofing boundary
+  (`POST /artwork/ingest` and `GET /artwork/snapshot?gtin=` — a decoder hands a UPC-A back padded, and that
+  was a 404 on a product that exists), and `master.csv`, which is a contract.
+- **`sameGtin()` compares the number, not the string**, in both staleness checks. **A blank never matches** —
+  an image with no number recorded stays stale, because nothing recorded is a gap, not an agreement.
+- **`repairPaddedGtins()` (boot, after `seedProducts`) fixes the rows already on file, once.** It changes no
+  number; the check digit is re-derived, never carried. It may not **collide** (`gtin` is UNIQUE — a row whose
+  bare form is on another SKU is skipped and named), may not leave the **readiness basis** behind (or artwork /
+  Shopify / ShipHero read stale on a re-spelling), and is idempotent by construction. Audited `gtin_unpadded`.
+- Verified: `check:gtin` (35, pure, in `npm run check`; the control fails 14) and `verify:artwork` (30, live,
+  in `verify:all`; the control fails 6, including the reported `stale: true` on matching numbers).
+
 ### GS1 numbers are finite and one block is nearly full
 Every GTIN is a 12-digit UPC-A: 9-digit company prefix + 2-digit item + check digit, so **100 numbers per
 prefix**. `850046726` is at 76/100. Allocation should prefer the roomiest prefix a line already uses and

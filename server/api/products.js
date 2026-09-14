@@ -17,6 +17,7 @@ import { resolveFlavorCodes } from '../flavor-codes.js';
 import { preferredSku, LINE_CODES, PACK_CODES } from '../../shared/sku-format.js';
 import { READINESS, TICKABLE, readinessOf, nextBasis } from '../../shared/product-readiness.js';
 import { shelfState, gtinPrefixes } from '../product-shelf.js';
+import { normalizeGtin, sameGtin, gtinValid } from '../../shared/gtin.js';
 import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { storageEnabled, putStream, presignGet, deleteObject } from '../storage.js';
 import fs from 'fs';
@@ -31,20 +32,23 @@ const canManage = (u) => u && (u.role === 'admin' || u.role === 'supervisor' || 
 
 // ── GS1 ──────────────────────────────────────────────────────────────────────
 
-/** GS1 mod-10 over everything but the final digit. */
-export function checkDigit(body) {
-  let total = 0;
-  for (let i = 0; i < body.length; i++) {
-    total += Number(body[body.length - 1 - i]) * (i % 2 === 0 ? 3 : 1);
-  }
-  return (10 - (total % 10)) % 10;
-}
+// What a GS1 number IS lives in `shared/gtin.js` — the check digit, the
+// lengths, and which spellings are the same number. Re-exported here because
+// this file was its home and several callers import it from this path.
+export { checkDigit, gtinValid } from '../../shared/gtin.js';
 
-export function gtinValid(gtin) {
-  if (!gtin || !/^\d+$/.test(gtin)) return false;
-  if (![8, 12, 13, 14].includes(gtin.length)) return false;
-  return checkDigit(gtin.slice(0, -1)) === Number(gtin[gtin.length - 1]);
-}
+/**
+ * What a typed GTIN is STORED as.
+ *
+ * The check digit of `00` + a UPC-A is the UPC-A's own, so a padded number
+ * passes `gtinValid` exactly as the bare one does and both write paths used to
+ * keep whatever was pasted. One number on file in two spellings is this
+ * codebase's recurring defect; the padding comes off at the door so every
+ * reader downstream — the GS1 capacity count, the barcode-image check, the
+ * proofing feed — sees one number. See `shared/gtin.js` for what is never
+ * touched (a real GTIN-14 case code).
+ */
+const storedGtin = (raw) => normalizeGtin(raw) || null;
 
 // ── Readiness ────────────────────────────────────────────────────────────────
 //
@@ -121,7 +125,10 @@ function hydrate(rows, db) {
       // image was uploaded, the file on record no longer matches the product
       // and must not go to artwork — said out loud rather than left to be
       // discovered on a printed pack.
-      barcode_stale: !!r.barcode_key && !!r.gtin && r.barcode_gtin !== r.gtin,
+      // Compared as NUMBERS, not as strings: one GTIN written two ways is one
+      // GTIN, and a raw compare put a red "this image is for a different
+      // number" on products whose image is for exactly the number they carry.
+      barcode_stale: !!r.barcode_key && !!r.gtin && !sameGtin(r.barcode_gtin, r.gtin),
       barcode_gtin: r.barcode_gtin || null,
     };
   });
@@ -622,7 +629,7 @@ router.get('/:sku/barcode', async (req, res) => {
     url, filename: p.barcode_filename, content_type: p.barcode_content_type,
     gtin: p.barcode_gtin, uploaded_at: p.barcode_uploaded_at, uploaded_by: p.barcode_uploaded_by,
     // The reader is told before they hand it to a designer, not after.
-    stale: !!p.gtin && p.barcode_gtin !== p.gtin,
+    stale: !!p.gtin && !sameGtin(p.barcode_gtin, p.gtin),
     current_gtin: p.gtin,
   });
 });
@@ -920,7 +927,7 @@ router.post('/', (req, res) => {
   if (db.prepare('SELECT 1 FROM products WHERE sku = ?').get(sku)) {
     return res.status(409).json({ error: `${sku} already exists.` });
   }
-  const gtin = (b.gtin || '').trim() || null;
+  const gtin = storedGtin(b.gtin);
   if (gtin && !gtinValid(gtin)) return res.status(400).json({ error: `${gtin} fails its GS1 check digit.` });
   if (gtin && db.prepare('SELECT sku FROM products WHERE gtin = ?').get(gtin)) {
     return res.status(409).json({ error: `${gtin} is already on another product.` });
@@ -960,7 +967,7 @@ router.put('/:sku', (req, res) => {
 
   // A GTIN that fails its check digit is never stored, from any door.
   if (b.gtin !== undefined) {
-    const g = (b.gtin || '').trim();
+    const g = storedGtin(b.gtin) || '';
     if (g && !gtinValid(g)) return res.status(400).json({ error: `${g} fails its GS1 check digit.` });
     const clash = g && db.prepare('SELECT sku FROM products WHERE gtin = ? AND sku != ?').get(g, existing.sku);
     if (clash) return res.status(409).json({ error: `${g} is already on ${clash.sku}.` });
@@ -974,7 +981,10 @@ router.put('/:sku', (req, res) => {
     if (!Number.isFinite(n) || n <= 0) return res.status(400).json({ error: 'Fill weight is a number of grams, e.g. 30.' });
     patch.fill_weight_g = n;
   }
-  if (patch.gtin !== undefined) patch.gtin_valid = gtinValid(patch.gtin) ? 1 : 0;
+  if (patch.gtin !== undefined) {
+    patch.gtin = storedGtin(patch.gtin);
+    patch.gtin_valid = gtinValid(patch.gtin) ? 1 : 0;
+  }
   // Three states and no fourth. A value the readiness step cannot read would
   // silently take the product off Amazon's punch list.
   if (patch.amazon_channel != null && !AMAZON_CHANNELS.includes(patch.amazon_channel)) {
@@ -1083,7 +1093,12 @@ export function masterCsv(req, res) {
     const pms = p.colors.filter((c) => c.pms).map((c) => c.pms).join(' | ');
     const hex = p.colors.filter((c) => c.hex).map((c) => c.hex).join(' | ');
     lines.push([
-      p.sku, p.gtin, p.flavor, PACK_LABEL[p.pack] || p.pack,
+      // The feed is a CONTRACT and the proofer expects the UPC-A that is
+      // printed on the pack, so the number leaves here in one spelling
+      // whatever is on the row. Normalising at the write path makes this a
+      // no-op today; it is here so a row written by any future door cannot
+      // quietly ship 14 digits to a tool that reads 12.
+      p.sku, normalizeGtin(p.gtin), p.flavor, PACK_LABEL[p.pack] || p.pack,
       p.material_structure, p.zipper, p.print_process,
       p.trim_length_mm, p.trim_width_mm, p.gusset_mm, p.front_panel_mm,
       p.wind_direction, pms, hex, p.eyemark_color,

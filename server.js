@@ -111,6 +111,7 @@ import artworkRoutes, { ingestRouter as artworkIngestRoutes } from './server/api
 import nfpRoutes, { linkRouter as nfpLinkRoutes } from './server/api/nfp.js';
 import productFileImportRoutes from './server/api/product-file-import.js';
 import { seedProducts } from './server/products-seed.js';
+import { repairPaddedGtins } from './server/gtin-repair.js';
 import { seedFlavorCodes, seedBottleSpec, repairBaseFlavors } from './server/flavor-code-seed.js';
 import { seedProductShelf } from './server/product-shelf.js';
 import { seedSwabCounts } from './server/swab-stock.js';
@@ -1134,6 +1135,14 @@ try {
   // The finished-goods catalogue. Insert-only and skipped entirely once the
   // table has rows, so a redeploy can never overwrite a corrected GTIN.
   seedProducts();
+  // One number, one spelling. A GTIN pasted in its zero-padded GTIN-14 form is
+  // the same number as the UPC-A it wraps, and it passed validation because the
+  // check digit is identical — so the catalogue held one number written two
+  // ways and three readers disagreed about it. The write path un-pads now;
+  // this is the one-off for rows written before it did, and it finds nothing
+  // afterwards. Skipped and reported, never collided, if the bare form is
+  // already on another SKU.
+  try { repairPaddedGtins(db); } catch (e) { console.warn('[seed] Could not normalise GTINs:', e.message); }
   // AFTER seedProducts, always: the flavour codes are DERIVED from the product
   // rows, so on a fresh database there is nothing to read until the catalogue
   // is in. Same ordering trap as seedGenericSpecifications, which filed zero
