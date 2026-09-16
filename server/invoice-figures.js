@@ -21,16 +21,37 @@ const MONEY = String.raw`\$?\s*\d{1,3}(?:[,\s]\d{3})*(?:\.\d{2})?|\$?\s*\d+(?:\.
  * up recording a total that includes the previous balance on a statement. So
  * the most specific label wins, and a bare "total" is the weakest match rather
  * than the first one found.
+ *
+ * VOCABULARY WIDENED against the phrasing invoice-OCR template libraries
+ * (invoice2data's bundled templates are the reference point) commonly carry
+ * for "this is what you owe now" — "total due" on its own (not just "total
+ * amount due"), and the "payable" family ("amount payable" / "balance
+ * payable" / "total payable"), which some suppliers use instead of "due".
+ * Both stay at rank 0, the same tier as "amount due" — they are the same
+ * claim in different words, not a weaker one.
+ *
+ * "net amount due" is NOT a new pattern: it already resolves through the
+ * existing `amount\s+due` alternative ("Net Amount Due" contains "Amount
+ * Due" with word boundaries on both sides), asserted below so nobody adds a
+ * redundant branch later believing it doesn't work.
  */
 const TOTAL_LABELS = [
-  { re: /\b(?:total\s+amount\s+due|amount\s+due|balance\s+due|please\s+pay|pay\s+this\s+amount)\b/i, rank: 0 },
+  { re: /\b(?:total\s+amount\s+due|amount\s+due|balance\s+due|total\s+due|amount\s+payable|balance\s+payable|total\s+payable|please\s+pay|pay\s+this\s+amount)\b/i, rank: 0 },
   { re: /\b(?:invoice\s+total|order\s+total|grand\s+total)\b/i, rank: 1 },
   { re: /\btotal\b/i, rank: 2 },
 ];
 
 // Lines that carry money but are NEVER the total. Checked before the labels, so
 // "Subtotal" can never be read as a "total" by the weak third pattern.
-const NOT_TOTAL = /\b(?:sub[\s-]?total|tax|vat|gst|shipping|freight|handling|discount|previous\s+balance|paid|credit)\b/i;
+//
+// "previous balance" widened to "previous (balance|total|amount due)" the day
+// "total due" was promoted to rank 0 above — a statement's "Previous Total
+// Due: $1,900.00" line now contains the substring "Total Due" and would
+// otherwise be promoted right along with the real total, and "last within
+// rank wins" only saves you when the aging summary happens to print above the
+// current total, not below it. This closes that gap rather than trusting the
+// line order.
+const NOT_TOTAL = /\b(?:sub[\s-]?total|tax|vat|gst|shipping|freight|handling|discount|previous\s+(?:balance|total(?:\s+due)?|amount\s+due)|paid|credit)\b/i;
 
 export function parseMoney(raw) {
   if (raw == null) return null;

@@ -44,6 +44,49 @@ ok('G-11 the padded form passes its check digit, exactly as the bare one does',
 eq('G-12 the check digit is the GS1 mod-10', checkDigit('85007993922'), 6);
 ok('G-13 a wrong check digit is still refused', !gtinValid('850079939227'));
 
+// ── Cross-checked against two MIT-licensed third-party validators ──────────
+//
+// enorganic/gtin (MIT) — https://github.com/enorganic/gtin — bundles its own
+// documented (body, check-digit) pairs in tests/test_gtin.py. Reused here
+// VERBATIM, so `checkDigit` is being checked against an independent
+// implementation's fixtures, not just its own. All ten already agreed before
+// this file was touched, which is worth having on record.
+//
+// ericblade/barcode-validator (MIT) —
+// https://github.com/ericblade/barcode-validator — a Node/JS validator for
+// ISBN10/13, UPC and GTIN. It ships no bundled test fixtures of its own (its
+// package.json's `test` script is a stub), so nothing from it is reused as a
+// vector; it stays cited as the library ReadyDoc's own gtin.js would be
+// weighed against if this were ever pulled in as a dependency instead of kept
+// in-house (see docs/github-reuse-scan-powder-ops-2026-09.md).
+//
+// NEITHER LIBRARY IMPLEMENTS D-090's NORMALIZATION, and that is not a gap —
+// it is a different job. enorganic's own `GTIN` class does the OPPOSITE
+// operation to `normalizeGtin`: given a short body it PADS UP to the nearest
+// standard length and appends a fresh check digit (its own tests show
+// `GTIN(raw="01234567890")` — 11 digits — becoming "012345678905", a 12-digit
+// number with a NEW check digit computed for it). `normalizeGtin` never
+// invents a check digit and never pads; it only ever strips padding that is
+// ALREADY there on a number whose check digit already checks out, and only
+// down to 12 digits, never past a real GTIN-14 indicator (1–8). A generic
+// validator has no opinion on which of two equally-valid spellings should be
+// the one ReadyDoc stores — that opinion is D-090, and it is not for sale
+// from a third-party checksum library. Nothing here changes `normalizeGtin`.
+const THIRD_PARTY_CHECK_DIGIT_VECTORS = [
+  // [body, expected check digit] — from enorganic/gtin tests/test_gtin.py
+  ['890123456789', 0], ['10101', 1], ['567898901234', 2], ['82957399425', 3],
+  ['5936663101', 4], ['15059928976', 5], ['901234567890', 6], ['36013101', 7],
+  ['123456789012', 8], ['208957399425', 9],
+];
+for (const [body, want] of THIRD_PARTY_CHECK_DIGIT_VECTORS) {
+  eq(`G-13a enorganic/gtin vector: checkDigit('${body}') === ${want}`, checkDigit(body), want);
+}
+// The same source's full-number pair (body + its correct check digit, and the
+// same body with the check digit changed) — a known-good/known-bad GTIN-14
+// pair rather than a bare check-digit arithmetic check.
+ok("G-13b enorganic/gtin's own valid GTIN-14 passes gtinValid", gtinValid('02345678901289'));
+ok("G-13c the same number with only its check digit changed is refused", !gtinValid('02345678901281'));
+
 // ── Two spellings are one number ────────────────────────────────────────────
 ok('G-14 the same number written two ways compares equal', sameGtin(PADDED14, UPC));
 ok('G-15 two different numbers do not', !sameGtin(UPC, '850079939219'));

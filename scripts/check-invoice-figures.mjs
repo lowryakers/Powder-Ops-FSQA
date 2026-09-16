@@ -44,6 +44,28 @@ t('the figure on a total line is the last one on it',
 t('NOTHING LABELLED YIELDS NULL, not the largest number',
   findTotal('12.00\n980.00\n45.00') === null);
 
+console.log('\n── widened vocabulary (invoice-OCR template phrasing) ──');
+// A bare "Total Due" (no "amount" between the words) used to fall to the weak
+// rank-2 bare-"total" match; it is a rank-0 "this is what you owe" claim.
+t('a bare "Total Due" outranks a same-page bare "Total"',
+  findTotal('Subtotal 500.00\nShipping 12.00\nTotal Due 512.00').amount === 512,
+  JSON.stringify(findTotal('Subtotal 500.00\nShipping 12.00\nTotal Due 512.00')));
+// The "payable" family — some suppliers say this instead of "due".
+t('"Balance Payable" reads at the same strength as "Amount Due"',
+  findTotal('Balance Payable 340.50').amount === 340.5);
+// The regression the "Total Due" promotion above would otherwise cause: an
+// aging statement's PRIOR total now also contains the words "Total Due".
+// NOT_TOTAL has to catch it, not line order — so the prior-balance line is
+// placed LAST here on purpose. Ordered the other way round, "last within
+// rank wins" would paper over a missing NOT_TOTAL guard by pure luck of
+// position, which is not something to trust.
+t('a "Previous Total Due" is never read as the total even when it prints AFTER the real one',
+  findTotal('Total Due 569.88\nPrevious Total Due 1,900.00').amount === 569.88,
+  JSON.stringify(findTotal('Total Due 569.88\nPrevious Total Due 1,900.00')));
+// "net amount due" needed no new pattern — it already contains "amount due".
+t('"Net Amount Due" resolves through the existing "amount due" match, no new pattern needed',
+  findTotal('Net Amount Due 97.20').amount === 97.2);
+
 console.log('\n── the date ──');
 t('an ISO date reads', findInvoiceDate('Invoice Date: 2026-08-31').date === '2026-08-31');
 t('a US date reads', findInvoiceDate('Invoice Date 08/31/2026').date === '2026-08-31');
