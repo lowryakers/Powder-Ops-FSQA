@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useApiGet, apiPut } from '../../hooks/useApi';
-import { Bot, Check, Users, Lock } from 'lucide-react';
+import { Bot, Check, Users, Lock, Search } from 'lucide-react';
 
 /**
  * Who gets each automatic ReadyBot message.
@@ -51,6 +51,11 @@ export default function NotificationsSection() {
   const [editing, setEditing] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // A filter across the cards, not just inside the picker once one is open —
+  // the same idea, one level up. Twelve cards is a scroll to reach the two you
+  // actually came to change; matching on the label, the "what"/"when" text and
+  // the Chosen/Default/By rule badge gets there in one line typed.
+  const [cardQ, setCardQ] = useState('');
   const save = async (key, ids) => {
     setBusy(true); setError('');
     try { await apiPut(`/flash/readybot-audience/${key}`, { ids }); setEditing(''); refresh(); }
@@ -58,6 +63,10 @@ export default function NotificationsSection() {
     finally { setBusy(false); }
   };
   if (!data) return <p className="text-sm text-gray-400">Loading…</p>;
+  const q = cardQ.trim().toLowerCase();
+  const badgeText = (a) => (a.setting ? (a.source === 'setting' ? 'Chosen' : 'Default') : 'By rule');
+  const shownAudiences = (data.audiences || []).filter(a => !q
+    || `${a.label} ${a.what} ${a.when} ${badgeText(a)}`.toLowerCase().includes(q));
   return (
     <div className="space-y-3" data-readybot-audience>
       <p className="text-sm text-gray-600 bg-powder-50 border border-powder-200 rounded-xl px-3 py-2 flex items-start gap-2">
@@ -69,7 +78,18 @@ export default function NotificationsSection() {
         </span>
       </p>
       {error && <p className="text-sm text-red-700">{error}</p>}
-      {(data.audiences || []).map(a => (
+      {(data.audiences || []).length > 1 && (
+        <div className="relative">
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input value={cardQ} onChange={e => setCardQ(e.target.value)} placeholder="Filter messages"
+            data-audience-card-filter
+            className="w-full pl-8 pr-2.5 py-1.5 border border-gray-300 rounded-lg text-xs" />
+        </div>
+      )}
+      {q && !shownAudiences.length && (
+        <p className="text-xs text-gray-500 px-1" data-audience-card-empty>Nothing matches &quot;{cardQ.trim()}&quot;.</p>
+      )}
+      {shownAudiences.map(a => (
         <div key={a.key} className="bg-white border border-gray-200 rounded-xl p-3 space-y-1.5" data-audience={a.key}>
           <div className="flex items-center gap-2 flex-wrap">
             <p className="text-sm font-semibold text-gray-900">{a.label}</p>

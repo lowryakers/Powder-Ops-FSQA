@@ -96,8 +96,8 @@ async function tellEmployee(db, row, { reminder = false } = {}) {
   const link = `${readyDocOrigin()}/?sign=${row.id}`;
   const due = row.due_date ? ` Please sign by ${row.due_date}.` : '';
   const body = reminder
-    ? `⏳ Still waiting: *${row.title}* was sent to you to sign ${sentDays} day${sentDays === 1 ? '' : 's'} ago.${due}\nOpen it from "Documents to sign" in ReadyDoc, or here: ${link}`
-    : `✍️ *${row.sent_by || 'The office'}* has sent you a document to fill in and sign: *${row.title}*.${due}\n${row.instructions ? `${row.instructions}\n` : ''}It stays under "Documents to sign" until you have signed it: ${link}`;
+    ? `⏰ Still waiting: *${row.title}* was sent to you to sign ${sentDays} day${sentDays === 1 ? '' : 's'} ago.${due}\nOpen it from "Documents to sign" in ReadyDoc, or [sign it here](${link}).`
+    : `✍️ *${row.sent_by || 'The office'}* has sent you a document to fill in and sign: *${row.title}*.${due}\n${row.instructions ? `${row.instructions}\n` : ''}It stays under "Documents to sign" until you [sign it](${link}).`;
   try {
     const { bot, dm } = botDm(db, row.user_id);
     await postMessageAs(db, dm, bot, body);
@@ -136,8 +136,8 @@ async function tellOffice(db, row, what) {
   const who = db.prepare('SELECT name FROM users WHERE id = ?').get(row.user_id)?.name || row.user_id;
   const link = `${readyDocOrigin()}/?tab=onboarding&view=documents`;
   const body = what === 'signed'
-    ? `✅ *${who}* has signed *${row.title}*. The signed copy is in Onboarding → Employee documents.\n${link}`
-    : `⚠️ *${who}* declined to sign *${row.title}*${row.declined_reason ? `: "${row.declined_reason}"` : '.'}\n${link}`;
+    ? `✅ *${who}* has signed *${row.title}*. The signed copy is in Onboarding → Employee documents.\n[Open Employee documents](${link})`
+    : `⚠️ *${who}* declined to sign *${row.title}*${row.declined_reason ? `: "${row.declined_reason}"` : '.'}\n[Open Employee documents](${link})`;
   for (const w of officeWatchers(db, row)) {
     try {
       const { bot, dm } = botDm(db, w.id);

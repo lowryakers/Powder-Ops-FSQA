@@ -867,7 +867,7 @@ export async function notifySensoryNeeded(db, rec, from) {
         `👅 *Sensory evaluation needed*\n*${what}*\n`
         + `${rec.record_number} was filed by ${from?.name || 'the batching team'}.\n`
         + `Then ${sensoryAsk(getType('flavor_approval'))} — the approval cannot be texted out until you do.\n`
-        + `Open it: ${link}`);
+        + `[Open Flavor Approvals](${link})`);
       pushToUser(p.id, {
         title: 'Sensory evaluation needed',
         body: what.slice(0, 120),

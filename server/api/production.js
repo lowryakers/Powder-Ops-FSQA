@@ -932,7 +932,7 @@ export async function notifyQaAction(db, entry, flaggedBy, { reminder = false, e
     await postMessageAs(db, dm, bot,
       `${lead}\n*${what}*\n${flaggedBy || entry.qa_signoff_by || 'QA'}: "${entry.qa_notes || ''}"\n`
       + `Open the Production Log to amend it — you can edit this entry without an edit grant, and it returns to Pending QA once corrected.\n`
-      + `${readyDocOrigin()}/?tab=production-log`);
+      + `[Open Production Log](${readyDocOrigin()}/?tab=production-log)`);
   } catch (e) {
     // A comms outage is not the same fact as an unreachable person, and calling
     // it one would send QA chasing a name that is perfectly correct.
@@ -998,7 +998,7 @@ export async function escalateQaAction(db, entry, { unreachable = null, label = 
   for (const u of recipients.values()) {
     try {
       const { bot, dm } = botDm(db, u.id);
-      await postMessageAs(db, dm, bot, `${body}${readyDocOrigin()}/?tab=production-log`);
+      await postMessageAs(db, dm, bot, `${body}[Open Production Log](${readyDocOrigin()}/?tab=production-log)`);
       pushToUser(u.id, {
         title: unreachable ? 'Correction could not be delivered' : 'Correction still outstanding',
         body: `${what} — ${who}`.slice(0, 120),

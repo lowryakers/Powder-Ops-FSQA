@@ -1098,7 +1098,7 @@ export async function partnerReminderNudges(db) {
     try {
       const { bot, dm } = botDm(db, r.user_id);
       await postMessageAs(db, dm, bot,
-        `⏰ *${partner.name} reconciliation reminder*\n${r.message}${balance}\nOpen it: ${readyDocOrigin()}${path}`);
+        `⏰ *${partner.name} reconciliation reminder*\n${r.message}${balance}\n[Open Partner Reconciliation](${readyDocOrigin()}${path})`);
       db.prepare("UPDATE partner_reminders SET last_sent_period = ?, updated_at = datetime('now') WHERE id = ?")
         .run(period, r.id);
       pushToUser(r.user_id, {

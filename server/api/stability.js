@@ -169,7 +169,7 @@ router.post('/pulls/:id/result', requireEdit, async (req, res) => {
       .run(result, summary, day, req.user.name, clean(req.body?.coa_request_id, 60), capa?.id || null, p.id);
     logAudit(req.user, 'stability_result_entered', 'stability_pull', p.id, { study: p.study_title, pull_month: p.pull_month, result, capa_number: capa?.capa_number || null });
   })();
-  if (result === 'fail') tellQuality(db, 'Stability failure', `🚨 *Stability failure* — "${p.study_title}", ${p.pull_month}-month pull: ${summary.slice(0, 160)}. ${capa ? `${capa.capa_number} raised.` : ''} ${readyDocOrigin()}/?tab=retention-samples&view=stability`);
+  if (result === 'fail') tellQuality(db, 'Stability failure', `🚨 *Stability failure* — "${p.study_title}", ${p.pull_month}-month pull: ${summary.slice(0, 160)}. ${capa ? `${capa.capa_number} raised.` : ''} [Open Stability](${readyDocOrigin()}/?tab=retention-samples&view=stability)`);
   const row = db.prepare('SELECT * FROM stability_pulls WHERE id = ?').get(p.id);
   res.json({ pull: { ...row, state: pullState(row, today(db)) }, capa: capa ? { id: capa.id, capa_number: capa.capa_number } : null });
 });

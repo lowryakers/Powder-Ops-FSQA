@@ -107,7 +107,7 @@ export function cleanupDigest(db, cutoff = todayStr()) {
  * already renders properly.
  */
 export function renderCleanupDigest(d, { base = '' } = {}) {
-  const lines = [`🧹 *Cleanup Review — ${d.tasks} open task${d.tasks === 1 ? '' : 's'} and PM${d.tasks === 1 ? '' : 's'} due before today*`];
+  const lines = [`⏰ *Still waiting* — 🧹 *Cleanup Review — ${d.tasks} open task${d.tasks === 1 ? '' : 's'} and PM${d.tasks === 1 ? '' : 's'} due before today*`];
   const named = d.buckets.filter(b => b.count > 0);
   if (named.length) lines.push(named.map(b => `${b.label}: ${b.count}`).join(' · '));
   if (d.oldest) lines.push(`Oldest due ${d.oldest}.`);
@@ -120,7 +120,7 @@ export function renderCleanupDigest(d, { base = '' } = {}) {
     lines.push(`\n${recurring} of these come off Daily or Weekly schedules. If those are still generating work nobody does, the schedule is the fix — cancelling the rows only clears today's.`);
   }
   lines.push('\n*Nothing here is closed automatically.* Open Cleanup Review, pick the rows and give a reason; recurring schedules are not touched either way.');
-  lines.push(`${base}/?tab=settings&section=cleanup`);
+  lines.push(`[Open Cleanup Review](${base}/?tab=settings&section=cleanup)`);
   return lines.join('\n');
 }
 

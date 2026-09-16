@@ -943,7 +943,7 @@ export async function payReviewNudges(db) {
   for (const [reviewerId, list] of byReviewer) {
     const lines = list.map(a => `• *${a.employee_name}* — ${a.due_date < now ? `overdue since ${a.due_date}` : `due ${a.due_date}`}`);
     await dm(db, reviewerId,
-      `📋 *Pay evaluation${list.length === 1 ? '' : 's'} waiting on you*\n${lines.join('\n')}\nOpen ReadyDoc → Pay Tracking → Evaluation.`,
+      `⏰ *Still waiting on you — ${list.length} pay evaluation${list.length === 1 ? '' : 's'}*\n${lines.join('\n')}\nOpen ReadyDoc → Pay Tracking → Evaluation.`,
       { title: `${list.length} pay evaluation${list.length === 1 ? '' : 's'} waiting`, body: list.map(a => a.employee_name).join(', '), tag: 'pay-reviews-due', renotify: true });
     sent.reviewers++;
   }
@@ -955,7 +955,7 @@ export async function payReviewNudges(db) {
   const { items, counts } = payActions(db);
   if (!items.length) return sent;
 
-  const parts = [`💵 *Pay reviews — ${counts.total} thing${counts.total === 1 ? '' : 's'} waiting on you*`];
+  const parts = [`⏰ *Still waiting — Pay reviews: ${counts.total} thing${counts.total === 1 ? '' : 's'}*`];
   const decide = items.filter(i => i.kind === 'decide');
   const chase = items.filter(i => i.kind === 'chase');
   const assign = items.filter(i => i.kind === 'assign');
@@ -974,7 +974,7 @@ export async function payReviewNudges(db) {
     parts.push(...assign.slice(0, 8).map(i => `• ${i.employee_name} — ${i.days} days since the last raise or review`));
     if (assign.length > 8) parts.push(`  …and ${assign.length - 8} more`);
   }
-  parts.push(`These stay on the list until you act on them: ${readyDocOrigin()}/?tab=pay-tracking`);
+  parts.push(`These stay on the list until you act on them: [Open Pay Tracking](${readyDocOrigin()}/?tab=pay-tracking).`);
   const body = parts.join('\n');
 
   const { users: office } = payActionRecipients(db);

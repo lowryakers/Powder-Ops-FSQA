@@ -80,7 +80,7 @@ export async function sendEscalation(db, { item, target, inspectionNo, detail, f
         `${icon} *${t.subject}*\nInspection *${inspectionNo}* — ${item}\n`
         + `${detail ? `${detail}\n` : ''}`
         + `${raisedBy}\n`
-        + `Open it: ${link}`);
+        + `[Open it](${link})`);
       pushToUser(p.id, {
         title: t.subject,
         body: `${inspectionNo}: ${item}`.slice(0, 120),

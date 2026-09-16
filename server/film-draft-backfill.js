@@ -61,7 +61,7 @@ export async function backfillFilmDrafts(db) {
           await postMessageAs(db, dm, bot,
             `📦 *Packaging inspection needed*\nInspection *${row.inspection_no}*${row.vendor ? ` (${row.vendor})` : ''} `
             + `was received as packaging, and no QA film/pouch inspection is on file.\n`
-            + `A draft sheet is set up — this link opens it:\n${link}`);
+            + `A draft sheet is set up: [Open the draft inspection](${link})`);
           pushToUser(p.id, {
             title: 'Packaging inspection needed',
             body: `${row.inspection_no}: draft QA sheet is set up`.slice(0, 120),

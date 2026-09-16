@@ -113,7 +113,7 @@ export function eodMissedDigest(db, now = new Date()) {
  * scroll past.
  */
 export function renderEodDigest(d, { base = '' } = {}) {
-  const lines = [`📋 *${d.total} scheduled run${d.total === 1 ? '' : 's'} with no end-of-day report*`];
+  const lines = [`⏰ *Still waiting* — 📋 *${d.total} scheduled run${d.total === 1 ? '' : 's'} with no end-of-day report*`];
   const teams = d.byTeam.filter(x => x.count > 0).map(x => `${x.team}: ${x.count}`).join(' · ');
   if (teams) lines.push(teams);
   const rooms = d.byRoom.slice(0, 6).map(x => `${x.room}: ${x.count}`).join(' · ');
@@ -126,7 +126,7 @@ export function renderEodDigest(d, { base = '' } = {}) {
   }
   lines.push('\nFile the report from the Production Log, or a supervisor dismisses it with a reason. '
     + 'Nothing here is filed or dismissed automatically.');
-  lines.push(`${base}/?tab=production-log&missed=1`);
+  lines.push(`[Open Production Log](${base}/?tab=production-log&missed=1)`);
   return lines.join('\n');
 }
 

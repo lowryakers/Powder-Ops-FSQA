@@ -1016,7 +1016,7 @@ async function announceFinished(db, rec) {
         + (rec.worker_type === 'contractor'
           ? `Review it and press Complete to put them on the roster.\n`
           : `Review it, complete I-9 Section 2 with their original documents, then press Complete.\n`)
-        + `The SSN and bank numbers are behind "Show for ADP entry" on the packet.\n${link}`);
+        + `The SSN and bank numbers are behind "Show for ADP entry" on the packet.\n[Open Onboarding](${link})`);
       pushToUser(w.id, {
         title: 'Onboarding packet finished',
         body: `${who} — ${kind}. Ready for review.`,

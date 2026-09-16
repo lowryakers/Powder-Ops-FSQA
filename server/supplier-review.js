@@ -167,7 +167,7 @@ export async function supplierReviewNudge(db, deps = {}) {
   if (!people.length) return { sent: 0 };
 
   const link = `${readyDocOrigin()}/?tab=suppliers`;
-  const lines = [];
+  const lines = ['⏰ *Still waiting — supplier reviews*'];
   // TWO NUMBERS, NOT ONE — the same split the screen makes, because they are
   // different work for different people and one figure tells neither what to do.
   if (overdue) {
@@ -180,7 +180,7 @@ export async function supplierReviewNudge(db, deps = {}) {
       + `No task is raised for these — a first qualification is a chase, not a recurring review. `
       + `SOP 404 § V.A permits ordering through qualified vendors only.`);
   }
-  const body = `${lines.join('\n')}\n${link}`;
+  const body = `${lines.join('\n')}\n[Open Suppliers](${link})`;
 
   let sent = 0;
   for (const p of people) {

@@ -210,9 +210,9 @@ export async function recordBackfillNudge(db) {
   const months = Object.entries(by_month).sort(([a], [b]) => a.localeCompare(b))
     .map(([m, n]) => `${m} (${n})`).join(', ');
   const link = `${readyDocOrigin()}/?tab=qa-inspections`;
-  const body = `*${total} completed check${total === 1 ? '' : 's'} still ${total === 1 ? 'has' : 'have'} no record filed.*\n`
+  const body = `⏰ *Still waiting — ${total} completed check${total === 1 ? '' : 's'} with no record filed*\n`
     + `These were completed in ReadyDoc but never produced their controlled record: ${months}.\n`
-    + `Open QA Inspections and use *File ${total} record${total === 1 ? '' : 's'}* at the top of the page — each one is filed with the date and person from the original completion.\n${link}`;
+    + `Open QA Inspections and use *File ${total} record${total === 1 ? '' : 's'}* at the top of the page — each one is filed with the date and person from the original completion.\n[Open QA Inspections](${link})`;
 
   let sent = 0;
   for (const p of people) {

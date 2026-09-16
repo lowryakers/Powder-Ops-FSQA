@@ -372,7 +372,7 @@ async function tellQualityQuestionnaireArrived(db, supplier, q, signature) {
   try {
     const users = db.prepare(`SELECT id, name FROM users WHERE is_active = 1 AND name != 'ReadyBot'
       AND (role = 'admin' OR (role = 'supervisor' AND LOWER(department) IN ('qa','quality')) OR LOWER(department) = 'purchasing')`).all();
-    const body = `📄 *Supplier questionnaire received* — *${supplier.name}* completed ${Q_FORM.code} ${Q_FORM.revision} on the link, signed by ${signature.name}${signature.title ? ` (${signature.title})` : ''}.\nIt is filed under the supplier's documents and the risk evaluation can be recorded: ${readyDocOrigin()}/?tab=suppliers`;
+    const body = `📄 *Supplier questionnaire received* — *${supplier.name}* completed ${Q_FORM.code} ${Q_FORM.revision} on the link, signed by ${signature.name}${signature.title ? ` (${signature.title})` : ''}.\nIt is filed under the supplier's documents and the risk evaluation can be recorded: [Open Suppliers](${readyDocOrigin()}/?tab=suppliers).`;
     for (const u of users) {
       try { const { bot, dm } = botDm(db, u.id); if (dm) await postMessageAs(db, dm, bot, body); } catch { /* best effort */ }
       pushToUser(u.id, { title: 'Supplier questionnaire received', body: supplier.name, tag: `supplier-q-${q.id}`, url: '/?tab=suppliers' }).catch(() => {});

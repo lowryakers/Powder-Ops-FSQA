@@ -2015,7 +2015,7 @@ export function startReminderLoop(db) {
         const label = !chan ? 'a channel' : chan.kind === 'dm' ? 'your DM' : `#${chan.name}`;
         const excerpt = (orig?.body || '(attachment)').replace(/\s+/g, ' ').slice(0, 140);
         const link = `${readyDocOrigin()}/?c=${r.channel_id}&m=${r.message_id}`;
-        await postMessageAs(db, dm, bot, `⏰ Reminder — ${from} in ${label}:\n"${excerpt}"\nOpen the message: ${link}`);
+        await postMessageAs(db, dm, bot, `⏰ Reminder — ${from} in ${label}:\n"${excerpt}"\n[Open the message](${link})`);
         // DMs aren't covered by the grouped channel push — notify directly.
         pushToUser(r.user_id, {
           title: '⏰ Reminder', body: `${from}: ${excerpt}`.slice(0, 120),

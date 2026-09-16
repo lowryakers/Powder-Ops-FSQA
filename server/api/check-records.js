@@ -130,9 +130,9 @@ router.post('/emp/samples/:id/result', requireAct, async (req, res) => {
   const row = db.prepare(`${SAMPLE_SQL} WHERE s.id = ?`).get(s.id);
   const label = `${s.test} at ${s.site} (${EMP_ZONES[s.zone]?.label || s.zone}), sampled ${s.sampled_on}`;
   if (out.grade.outcome === 'action') {
-    tellQuality(db, 'EMP action level', `🚨 *Environmental monitoring — ACTION level.* ${label}: *${req.body.result_value}* (action ${out.grade.action_limit}). ${out.capa ? `${out.capa.capa_number} raised.` : ''} ${readyDocOrigin()}/?tab=quality-schedules&view=emp`, `emp-${s.id}`);
+    tellQuality(db, 'EMP action level', `🚨 *Environmental monitoring — ACTION level.* ${label}: *${req.body.result_value}* (action ${out.grade.action_limit}). ${out.capa ? `${out.capa.capa_number} raised.` : ''} [Open EMP results](${readyDocOrigin()}/?tab=quality-schedules&view=emp)`, `emp-${s.id}`);
   } else if (out.grade.outcome === 'alert') {
-    tellQuality(db, 'EMP alert level', `⚠️ *Environmental monitoring — alert level.* ${label}: *${req.body.result_value}* (alert ${out.grade.alert_limit}, action ${out.grade.action_limit}). ${readyDocOrigin()}/?tab=quality-schedules&view=emp`, `emp-${s.id}`);
+    tellQuality(db, 'EMP alert level', `⚠️ *Environmental monitoring — alert level.* ${label}: *${req.body.result_value}* (alert ${out.grade.alert_limit}, action ${out.grade.action_limit}). [Open EMP results](${readyDocOrigin()}/?tab=quality-schedules&view=emp)`, `emp-${s.id}`);
   }
   res.json({ sample: sampleShape(row), outcome: out.grade.outcome, capa: out.capa ? { id: out.capa.id, capa_number: out.capa.capa_number } : null });
 });

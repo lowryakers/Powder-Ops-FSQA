@@ -75,7 +75,7 @@ async function announcePass(db, { visitor_name, note, days, expires, account, by
         `🎫 An auditor pass was issued\n*${visitor_name}*${note ? ` — ${note}` : ''}\n`
         + `Issued by ${by || 'an admin'}, good for ${days} day${days === 1 ? '' : 's'} (until ${when}).\n`
         + `It signs in read-only as *${account}* and every record they open is stamped with that name.\n`
-        + `If this is not expected, revoke it: ${readyDocOrigin()}/?tab=settings&section=links`);
+        + `If this is not expected, [Revoke this pass](${readyDocOrigin()}/?tab=settings&section=links).`);
       pushToUser(w.id, {
         title: 'Auditor pass issued',
         body: `${visitor_name} — ${days} day${days === 1 ? '' : 's'}, by ${by || 'an admin'}`,
