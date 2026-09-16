@@ -20,7 +20,7 @@ import { recordGroupFor, recordAreaForTask } from '../qa-records.js';
 import { checkFormFor, attachCheckForms, fileCheckRecord, missingForCheck } from '../check-records.js';
 import { canonicalArea } from '../sanitation-areas.js';
 import { planStepSplit } from '../../shared/pm-step-split.js';
-import { personMatch, resolveUserId } from '../person-links.js';
+import { personMatch, resolveUserId, withCurrentNames } from '../person-links.js';
 
 // The daily chemical dilution check is a TASK and a RECORD, and it files both.
 //
@@ -266,6 +266,28 @@ const FREQ_DAYS = { daily: 1, weekly: 7, biweekly: 14, monthly: 30, quarterly: 9
 // A resulting due date in the past is correct and deliberate — those days
 // genuinely had no check, and a task that arrives already missed says so,
 // where one quietly scheduled for tomorrow would not.
+/**
+ * WHO THE SCHEDULE SAYS OWNS THIS JOB, resolved to a name that is current today.
+ *
+ * ONE DEFINITION, and both raise paths call it — the manual button and the
+ * recurrence. A second copy is how pressing Raise puts a person on the card and
+ * tomorrow's automatic one arrives blank, which is the exact bug this closes.
+ *
+ * The id is the identity, the stored name is a label (D-074): a schedule owned
+ * by somebody who has since been renamed resolves to their CURRENT name, so the
+ * work order matches them on both columns and their Operator View keeps
+ * finding it. An owner with no account id falls back to the stored name.
+ */
+function scheduleAssignee(db, sched) {
+  const id = sched?.assigned_to_id || null;
+  if (id) {
+    const u = db.prepare('SELECT id, name FROM users WHERE id = ?').get(id);
+    if (u) return { id: u.id, name: u.name };
+  }
+  const name = sched?.assigned_to || null;
+  return { id: name ? resolveUserId(db, name) : null, name };
+}
+
 function createNextWorkOrder(db, sched, triggeredBy = null, { from = null } = {}) {
   const interval = (FREQ_DAYS[sched.frequency_type] || 30) * (sched.frequency_value || 1);
   const parsed = from ? new Date(`${String(from).slice(0, 10)}T12:00:00`) : null;
@@ -283,10 +305,16 @@ function createNextWorkOrder(db, sched, triggeredBy = null, { from = null } = {}
   if (dup) return { id: dup.id, title: dup.title, due_date: dup.due_date, existing: true };
 
   const woId = uuid();
+  // THE SCHEDULE'S OWNER TRAVELS ONTO EVERY INSTANCE IT RAISES, and nothing
+  // travels back. Assigning today's card is about today — a cover for an
+  // absence must not silently become somebody's standing job — so the
+  // recurrence reads the SCHEDULE, never the work order it is replacing.
+  const owner = scheduleAssignee(db, sched);
   db.prepare(`
-    INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'open')
-  `).run(woId, sched.id, sched.equipment_id, sched.title, dueStr, sched.procedure_steps, sched.task_group || 'warehouse');
+    INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status, assigned_to, assigned_to_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
+  `).run(woId, sched.id, sched.equipment_id, sched.title, dueStr, sched.procedure_steps, sched.task_group || 'warehouse',
+    owner.name, owner.id);
   logAudit('system', 'auto_generate', 'work_order', woId, { pm_schedule_id: sched.id, ...(triggeredBy ? { triggered_by: triggeredBy } : {}) }, null, null);
   return { id: woId, title: sched.title, due_date: dueStr };
 }
@@ -477,7 +505,12 @@ router.get('/schedules', (req, res) => {
   if (!equipment_id && req.query.include_inactive_equipment !== 'true') sql += " AND e.status = 'active'";
 
   sql += ' ORDER BY e.name, ps.title';
-  res.json(db.prepare(sql).all(...params));
+  // The owner's CURRENT name, with what was stored kept as
+  // `assigned_to_renamed_from` — the link is the identity, the stored string is
+  // a label (D-074). Without this the screen goes on naming somebody by a
+  // spelling Settings moved past.
+  res.json(withCurrentNames(db, db.prepare(sql).all(...params),
+    { idCol: 'assigned_to_id', nameCol: 'assigned_to' }));
 });
 
 /**
@@ -632,18 +665,24 @@ router.get('/schedules/:id', (req, res) => {
 router.post('/schedules', (req, res) => {
   const db = getDb();
   const id = uuid();
-  const { equipment_id, title, description, frequency_type, frequency_value, procedure_steps, lubricant_type, is_food_grade_lubricant, estimated_minutes, haccp_ccp_id, task_group } = req.body;
+  const { equipment_id, title, description, frequency_type, frequency_value, procedure_steps, lubricant_type, is_food_grade_lubricant, estimated_minutes, haccp_ccp_id, task_group, assigned_to } = req.body;
 
   if (!equipment_id || !title || !frequency_type) {
     return res.status(400).json({ error: 'equipment_id, title, and frequency_type are required' });
   }
 
+  // Optional, and blank is the ordinary case: most recurring work belongs to a
+  // team rather than to one person, and naming somebody who is on holiday is
+  // worse than leaving it to whoever is on the line.
+  const ownerName = String(assigned_to || '').trim() || null;
+
   db.prepare(`
-    INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, lubricant_type, is_food_grade_lubricant, estimated_minutes, haccp_ccp_id, task_group)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, lubricant_type, is_food_grade_lubricant, estimated_minutes, haccp_ccp_id, task_group, assigned_to, assigned_to_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(id, equipment_id, title, description || null, frequency_type, frequency_value ?? 1,
     JSON.stringify(procedure_steps || []), lubricant_type || null,
-    is_food_grade_lubricant ? 1 : 0, estimated_minutes ?? null, haccp_ccp_id || null, task_group || 'warehouse');
+    is_food_grade_lubricant ? 1 : 0, estimated_minutes ?? null, haccp_ccp_id || null, task_group || 'warehouse',
+    ownerName, ownerName ? resolveUserId(db, ownerName) : null);
 
   const created = db.prepare('SELECT * FROM pm_schedules WHERE id = ?').get(id);
   logAudit(req.user, 'create', 'pm_schedule', id, { title, equipment_id }, null, created);
@@ -693,11 +732,12 @@ router.post('/schedules/:id/raise', (req, res) => {
   if (dup) return res.json({ work_order: dup, existing: true });
 
   const woId = uuid();
+  const owner = scheduleAssignee(db, sched);
   db.prepare(`INSERT INTO work_orders
-      (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status, assigned_to)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?)`)
+      (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status, assigned_to, assigned_to_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)`)
     .run(woId, sched.id, sched.equipment_id, sched.title, raw, sched.procedure_steps,
-      sched.task_group || 'warehouse', sched.assigned_to || null);
+      sched.task_group || 'warehouse', owner.name, owner.id);
   logAudit(req.user, 'raise_task', 'work_order', woId,
     { pm_schedule_id: sched.id, due_date: raw, reason: String(req.body?.reason || '').trim() || null },
     null, null, sched.title);
@@ -711,12 +751,19 @@ router.put('/schedules/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM pm_schedules WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'PM schedule not found' });
 
-  const { title, description, frequency_type, frequency_value, procedure_steps, lubricant_type, is_food_grade_lubricant, estimated_minutes, haccp_ccp_id, is_active, task_group } = req.body;
+  const { title, description, frequency_type, frequency_value, procedure_steps, lubricant_type, is_food_grade_lubricant, estimated_minutes, haccp_ccp_id, is_active, task_group, assigned_to } = req.body;
+
+  // An ABSENT field means "leave it alone"; an empty one means "nobody owns
+  // this" — the same rule every other column here follows. Collapsing the two
+  // would unassign a schedule every time somebody edited its description.
+  const ownerGiven = assigned_to !== undefined;
+  const ownerName = ownerGiven ? (String(assigned_to || '').trim() || null) : existing.assigned_to;
+  const ownerId = ownerGiven ? (ownerName ? resolveUserId(db, ownerName) : null) : existing.assigned_to_id;
 
   db.prepare(`
     UPDATE pm_schedules SET title=?, description=?, frequency_type=?, frequency_value=?,
     procedure_steps=?, lubricant_type=?, is_food_grade_lubricant=?, estimated_minutes=?,
-    haccp_ccp_id=?, is_active=?, task_group=?, updated_at=datetime('now') WHERE id=?
+    haccp_ccp_id=?, is_active=?, task_group=?, assigned_to=?, assigned_to_id=?, updated_at=datetime('now') WHERE id=?
   `).run(
     title || existing.title, description ?? existing.description,
     frequency_type || existing.frequency_type, frequency_value ?? existing.frequency_value,
@@ -725,7 +772,8 @@ router.put('/schedules/:id', (req, res) => {
     is_food_grade_lubricant !== undefined ? (is_food_grade_lubricant ? 1 : 0) : existing.is_food_grade_lubricant,
     estimated_minutes ?? existing.estimated_minutes, haccp_ccp_id ?? existing.haccp_ccp_id,
     is_active !== undefined ? (is_active ? 1 : 0) : existing.is_active,
-    task_group !== undefined ? (task_group || null) : existing.task_group, req.params.id
+    task_group !== undefined ? (task_group || null) : existing.task_group,
+    ownerName, ownerId, req.params.id
   );
 
   // If the assignee (task_group) changed, cascade to this PM's still-open work
@@ -733,6 +781,17 @@ router.put('/schedules/:id', (req, res) => {
   if (task_group !== undefined && (task_group || null) !== existing.task_group) {
     db.prepare("UPDATE work_orders SET task_group=? WHERE pm_schedule_id=? AND status IN ('open','in_progress','overdue')")
       .run(task_group || null, req.params.id);
+  }
+
+  // NAMING THE OWNER REACHES THE CARD THAT IS ALREADY ON THE FLOOR, for the
+  // same reason the team cascade above does: told today that the daily
+  // dilution checks are hers, she should see today's, not tomorrow's. 'missed'
+  // is included — past-due work is exactly what a newly named owner is being
+  // pointed at, and D-055's rule is that a change says what it left behind.
+  if (ownerGiven && (ownerName !== existing.assigned_to || ownerId !== existing.assigned_to_id)) {
+    db.prepare(`UPDATE work_orders SET assigned_to=?, assigned_to_id=?
+       WHERE pm_schedule_id=? AND status IN ('open','in_progress','overdue','missed')`)
+      .run(ownerName, ownerId, req.params.id);
   }
 
   const updated = db.prepare('SELECT * FROM pm_schedules WHERE id = ?').get(req.params.id);

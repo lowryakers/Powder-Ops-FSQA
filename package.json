@@ -51,6 +51,7 @@
     "check:gtin": "node scripts/check-gtin.mjs",
     "verify:pcs": "node scripts/verify-preventive-controls.mjs",
     "verify:pmpause": "node scripts/verify-pm-pause.mjs",
+    "verify:schedowner": "node scripts/verify-schedule-owner.mjs",
     "verify:qacorrection": "node scripts/verify-qa-correction-notify.mjs",
     "verify:cleanupdigest": "node scripts/verify-cleanup-digest.mjs",
     "verify:eodchase": "node scripts/verify-eod-chase.mjs",

@@ -3284,3 +3284,70 @@ per container and declared net weight are not known here. Worth doing once a rea
 Verified: `verify:artwork` (30 → **38**, live, in `verify:all`). Two controls, both decisive — removing
 the boot call fails 3 (all ten cells blank), and removing the no-overwrite guard fails the typed-value
 assertion with a hand-entered 460 reverting to 454.
+
+## D-094 — A recurring job can name its owner, and that survives the night
+
+**Date:** 2026-09-16 · **Status:** shipped on `main`
+
+Maria asked whether Zuleika's daily Lysol dilution could show on **her** Operator View. Three findings, and
+the first two are not what the question sounded like.
+
+**1. "Lysol dilution" is not FORM 106-01.** The form names four chemicals — Sani-512, Chlorine (Cloro),
+Dawn Professional Heavy Duty, Simple Green — and Lysol is not one of them. Lysol Power Clean, wipes and
+toilet gel are on the approved chemical list for bathrooms, warehouse and lunch room, and have never been
+part of the daily dilution verification. So either "Lysol dilution" is floor shorthand for the chemical
+station checks, or there is a real Lysol mix nobody ever scheduled. **Asked, not guessed at** — the four
+seeded schedules and the absence of Lysol are both asserted, and adding Lysol to 106-01 would be a
+Document Change Request, not a rename of Sani-512.
+
+**2. THERE WAS NO WAY TO SAY "THIS RECURRING JOB IS HERS" THAT SURVIVED THE NIGHT.** The four dilution
+schedules are `task_group = 'cleaning'`, and the Operator View has correctly shown a task to whoever it is
+assigned to since the department filter grew its OR clause. But assignment only existed on the WORK ORDER:
+assigning today's card worked, and `createNextWorkOrder` raised tomorrow's with nobody on it. A one-off
+Assign died overnight, silently, which reads exactly like the assignment having failed.
+
+**3. `api/pm.js` HAS READ `sched.assigned_to` SINCE THE MANUAL-RAISE PATH WAS WRITTEN, AND THE COLUMN NEVER
+EXISTED.** `pm_schedules` has no such column and the Recurring Schedules editor has no owner field, so that
+line has always copied `null`. Code that reads as "the raise carries the schedule's owner forward" and
+carries nothing is worse than code that does not try.
+
+`pm_schedules.assigned_to` + `assigned_to_id` are that missing half.
+
+- **TWO DIFFERENT FACTS, TWO OWNERS.** The schedule answers *who owns this recurring job*; the work order
+  answers *who is doing this instance*. The schedule seeds every instance it raises and **nothing travels
+  back** — Adam handing Tuesday's clean to somebody covering an absence must never become their standing
+  job. Carrying the previous work order's assignee forward was the obvious shortcut and is the
+  `knife_accountability.status` mirror bug in new clothes.
+- **`scheduleAssignee()` is the ONE resolver** and both raise paths call it — the manual button and the
+  recurrence. A second copy is how pressing Raise puts a person on the card and tomorrow's automatic one
+  arrives blank, which is the exact defect this closes.
+- **The id is the identity, the name is the label** (D-074). A schedule owned by somebody later renamed
+  resolves to their CURRENT name at raise time, so the work order matches on both columns and her Operator
+  View keeps finding it; the list reports the current name with `assigned_to_renamed_from` beside it.
+- **NAMING AN OWNER IS ADDITIVE, and that is asserted in both directions.** `task_group` is untouched, so
+  every cleaner still sees the task on their own list; the owner only *also* gets it. The editor renders the
+  owner UNDER the team rather than instead of it, because presenting it as an alternative is how a
+  supervisor concludes that naming somebody takes the job off everyone else.
+- **Naming an owner reaches the card already on the floor** (`missed` included), the same cascade the team
+  change already does — told today that the checks are hers, she should see today's, not tomorrow's.
+- **An absent field leaves the owner alone; an empty one clears it.** Collapsing those would unassign a
+  schedule every time somebody edited its description.
+- Blank stays the ordinary case. Most recurring work belongs to a team, and naming somebody on holiday is
+  worse than leaving it to whoever is on the line.
+
+**Not done, deliberately: Zuleika's own account was not touched and no dilution schedule was changed.**
+Which of the two paths she needs depends on her `users.department`, which is a live fact this session could
+not read. If she is in Cleaning the cards are already hers and the answer is Settings, not code.
+
+**Named and NOT fixed here — `sanitation` is not a task group.** `shared/task-groups.js` and
+`src/constants/departments.js` agree on nine values; `OrgChart.jsx` keeps a **second, incompatible**
+department list containing `executive`, `quality`, `sanitation`, `admin` and `other`, and the ORG seed files
+Zuleika Mendez as `sanitation`. The Operator View uses `users.department` **as** a `task_group`, so an
+account on `sanitation` — or on legacy `production` / `sticks` / `hand_fill` — filters against a group no
+task ever carries and sees **nothing but personal assignments**. That is a plausible reading of the original
+report and it is a bigger question than this sitting: it needs the live roster, and possibly a boot
+migration. `task-groups.js`'s own header already warns about exactly this drift for Meetings.
+
+Verified: `verify:schedowner` (29, live, in `verify:all`). **Two controls, both decisive** — dropping the
+owner from `createNextWorkOrder` fails the night test AND leaves her Operator View at **0 tasks**, which is
+the reported symptom exactly; removing the cascade leaves a newly named owner waiting until tomorrow.

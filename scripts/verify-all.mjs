@@ -51,6 +51,7 @@ const RUNS = [
   ['verify-client-channel.mjs', 4996, {}, true],
   ['verify-client-invite.mjs', 4988, {}, false],
   ['verify-sku-rename.mjs', 4998, {}, false],
+  ['verify-schedule-owner.mjs', 4997, {}, false],
   ['verify-employee-docs.mjs', 4993, {}, true],
   ['verify-employee-docs-ui.mjs', 4994, {}, true],
   ['verify-name-keys.mjs', 4992, {}, false],

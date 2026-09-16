@@ -2549,6 +2549,24 @@ function runMigrations() {
   // null = role-aware default picks.
   addColumnIfMissing('users', 'quick_tabs', 'TEXT');
   addColumnIfMissing('pm_schedules', 'task_group', "TEXT DEFAULT 'warehouse'");
+  // WHO OWNS THE RECURRING JOB, as distinct from who is doing today's instance.
+  //
+  // `work_orders.assigned_to` has always answered the second question, and it
+  // is the right owner of it — Adam handing Tuesday's clean to somebody else
+  // covers Tuesday and must not become permanent. But there was nowhere at all
+  // to record the first, so "the daily dilution checks are Zuleika's" could
+  // only be said by assigning today's card, and createNextWorkOrder raised
+  // tomorrow's with no assignee. A one-off Assign died overnight, silently.
+  //
+  // `api/pm.js` has read `sched.assigned_to` on the manual-raise path since
+  // that path was written; the column it reads never existed, so it has always
+  // copied null. This is the missing half of code that was already there.
+  //
+  // The id is the identity and the name is the label — D-074's rule. A
+  // schedule owned by somebody who is later renamed keeps working, because the
+  // raise resolves the CURRENT name from the id.
+  addColumnIfMissing('pm_schedules', 'assigned_to', 'TEXT');
+  addColumnIfMissing('pm_schedules', 'assigned_to_id', 'TEXT');
   addColumnIfMissing('work_orders', 'task_group', "TEXT DEFAULT 'warehouse'");
 
   // Flavor approval on a scheduled manufacturing order

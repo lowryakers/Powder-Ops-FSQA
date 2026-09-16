@@ -4620,6 +4620,36 @@ the API aren't offered one that fails. Wired: comms image overlay + file cards, 
 R2 URLs can't be fetched cross-origin (no CORS on the bucket) — always go through the app-origin download
 route, same reason the Download button does.
 
+## A recurring job can name its owner (`pm_schedules.assigned_to`, D-094)
+Maria: "Zuleika performs the Lysol dilution daily — can that show on her Operator View?" Three findings.
+- **"Lysol dilution" is NOT FORM 106-01.** The form is four chemicals — Sani-512, Chlorine (Cloro), Dawn
+  Professional Heavy Duty, Simple Green — and **Lysol is not one of them** (it is on the approved chemical
+  list for bathrooms / warehouse / lunch). Either floor shorthand for the chemical-station checks, or a real
+  mix nobody scheduled. **Ask; never rename Sani-512 to Lysol** — adding a chemical to 106-01 is a DCR.
+- **THERE WAS NO WAY TO SAY "THIS RECURRING JOB IS HERS" THAT SURVIVED THE NIGHT.** Assignment lived only on
+  the WORK ORDER, so assigning today's card worked and `createNextWorkOrder` raised tomorrow's with nobody
+  on it. A one-off Assign died overnight, silently — which reads as the assignment having failed.
+- **`api/pm.js` had read `sched.assigned_to` since the manual-raise path was written and the column never
+  existed**, so it always copied null. Code that reads as carrying the owner forward and carries nothing.
+- **TWO FACTS, TWO OWNERS**: the schedule is *who owns this recurring job*, the work order *who is doing this
+  instance*. The schedule seeds every instance and **nothing travels back** — carrying the previous work
+  order's assignee forward would make a one-day cover permanent (the `knife_accountability` mirror bug).
+- **`scheduleAssignee()` is the ONE resolver**, called by both raise paths. The id is the identity and the
+  name a label (D-074), so a rename follows and `assigned_to_renamed_from` says what was filed.
+- **NAMING AN OWNER IS ADDITIVE, asserted both ways**: `task_group` is untouched, every cleaner still sees
+  the task, the owner *also* does. The editor renders the owner UNDER the team, never instead of it.
+- Naming an owner **cascades onto the cards already open** (`missed` included), like the team change does.
+  An absent field leaves the owner alone; an empty one clears it. Blank stays the ordinary case.
+- **`sanitation` IS NOT A TASK GROUP, and this is still open.** `shared/task-groups.js` and
+  `constants/departments.js` agree on nine values; **`OrgChart.jsx` keeps a second, incompatible list**
+  (`executive`/`quality`/`sanitation`/`admin`/`other`) and the ORG seed files Zuleika Mendez as
+  `sanitation`. The Operator View uses `users.department` **as** a `task_group`, so an account on
+  `sanitation` — or legacy `production`/`sticks`/`hand_fill` — sees **nothing but personal assignments**.
+  Needs the live roster and probably a boot migration; `task-groups.js`'s own header warns about this drift.
+- Verified: `verify:schedowner` (29, live, in `verify:all`). Controls: dropping the owner from the
+  recurrence fails the night test and leaves her Operator View at **0 tasks** — the reported symptom
+  exactly; removing the cascade makes a newly named owner wait until tomorrow.
+
 ## Task snooze, schedule provenance, and the weekly PM digest
 - **`POST /pm/work-orders/:id/snooze`** `{days 1–14, reason ≥3 chars}` — supervisor/QA/admin. An audited
   defer, same shape as the setup-step waiver: due_date moves forward (weekends skipped via `nextWeekday`),

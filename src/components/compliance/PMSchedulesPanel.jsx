@@ -36,14 +36,46 @@ const FREQUENCIES = [
 
 const freqLabel = (v) => FREQUENCIES.find(f => f.value === v)?.label || v || '—';
 
+/**
+ * The team a schedule routes to, and the one person who owns it when there is
+ * one. Rendered by BOTH the table row and the card, so the two layouts cannot
+ * start describing one schedule differently.
+ *
+ * The owner sits UNDER the team rather than replacing it: naming somebody is
+ * additive — the task still reaches the whole team's list, it just also
+ * reaches hers. Presenting it as an alternative to the team is how a
+ * supervisor concludes that naming an owner takes the job off everyone else.
+ */
+function TeamCell({ schedule }) {
+  return (
+    <>
+      {schedule.task_group
+        ? <span className="text-gray-700">{schedule.task_group}</span>
+        : <span className="text-amber-700 font-medium">nobody</span>}
+      {schedule.assigned_to && (
+        <span className="block text-[11px] text-gray-500" data-owner={schedule.id}>
+          {schedule.assigned_to}
+          {schedule.assigned_to_renamed_from && (
+            <span className="text-gray-400"> (was {schedule.assigned_to_renamed_from})</span>
+          )}
+        </span>
+      )}
+    </>
+  );
+}
+
 function EditRow({ schedule, onSaved, onCancel }) {
   const [form, setForm] = useState({
     title: schedule.title || '',
     frequency_type: schedule.frequency_type || 'daily',
     task_group: schedule.task_group || '',
+    assigned_to: schedule.assigned_to || '',
     description: schedule.description || '',
     estimated_minutes: schedule.estimated_minutes ?? '',
   });
+  // The roster the owner is picked from. Blank is the ordinary answer; naming
+  // somebody is the exception, for a recurring job one person actually owns.
+  const { data: technicians } = useApiGet('/users/technicians');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -53,6 +85,7 @@ function EditRow({ schedule, onSaved, onCancel }) {
       await apiPut(`/pm/schedules/${schedule.id}`, {
         ...form,
         task_group: form.task_group || null,
+        assigned_to: form.assigned_to || '',
         estimated_minutes: form.estimated_minutes === '' ? null : Number(form.estimated_minutes),
       });
       onSaved();
@@ -79,6 +112,21 @@ function EditRow({ schedule, onSaved, onCancel }) {
             <select value={form.task_group} onChange={e => setForm(f => ({ ...f, task_group: e.target.value }))} className={cls}>
               <option value="">Nobody — reaches no team's list</option>
               {withCurrent(TASK_GROUPS, form.task_group).map(g => <option key={g.value} value={g.value}>{g.label}</option>)}
+            </select>
+          </label>
+          {/* WHO OWNS THE RECURRING JOB — a different question from which team
+              it belongs to, and the one there was nowhere to answer. The team
+              keeps it on every cleaner's list; naming somebody additionally
+              puts it on theirs, which is what makes it reach an operator whose
+              own department is something else. */}
+          <label className="block">
+            <span className="block text-[11px] font-medium text-gray-500 mb-0.5">Owner (optional)</span>
+            <select value={form.assigned_to} data-schedule-owner
+              onChange={e => setForm(f => ({ ...f, assigned_to: e.target.value }))} className={cls}>
+              <option value="">Nobody in particular — the whole team</option>
+              {(technicians || []).map(t => (
+                <option key={t.id} value={t.name}>{t.name}{t.department ? ` · ${t.department.replace(/_/g, ' ')}` : ''}</option>
+              ))}
             </select>
           </label>
           <label className="block sm:col-span-2 lg:col-span-3">
@@ -268,7 +316,7 @@ export default function PMSchedulesPanel() {
             badge={!s.is_active ? <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-200 text-gray-700">PAUSED</span> : null}
             fields={[
               { label: 'How often', value: freqLabel(s.frequency_type) },
-              { label: 'Team', value: s.task_group || <span className="text-amber-700 font-medium">nobody</span> },
+              { label: 'Team', value: <TeamCell schedule={s} /> },
               { label: 'Open now', value: !s.is_active && openWorkOf(s) > 0
                 ? <span className="text-amber-700 font-medium" title="Raised before the pause; still open">{openWorkOf(s)}</span>
                 : String(openWorkOf(s)) },
@@ -320,11 +368,7 @@ export default function PMSchedulesPanel() {
                       <CalendarClock size={13} className="text-gray-400" />{freqLabel(s.frequency_type)}
                     </span>
                   </td>
-                  <td className="py-2 px-3">
-                    {s.task_group
-                      ? <span className="text-gray-700">{s.task_group}</span>
-                      : <span className="text-amber-700 font-medium">nobody</span>}
-                  </td>
+                  <td className="py-2 px-3"><TeamCell schedule={s} /></td>
                   <td className={`py-2 px-3 tabular-nums ${!s.is_active && openWorkOf(s) > 0 ? 'text-amber-700 font-medium' : 'text-gray-600'}`}
                     title={!s.is_active && openWorkOf(s) > 0 ? 'Raised before the pause; still open' : undefined} data-open-work={s.id}>
                     {openWorkOf(s)}
