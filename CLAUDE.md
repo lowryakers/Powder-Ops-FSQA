@@ -4640,11 +4640,28 @@ Maria: "Zuleika performs the Lysol dilution daily — can that show on her Opera
   the task, the owner *also* does. The editor renders the owner UNDER the team, never instead of it.
 - Naming an owner **cascades onto the cards already open** (`missed` included), like the team change does.
   An absent field leaves the owner alone; an empty one clears it. Blank stays the ordinary case.
-- **SETTLED (D-095): the Lysol half needed no code.** Her department IS `cleaning` and the four dilutions
-  are on her Operator View today. All three Lysol products are `is_food_grade: 0`, bathrooms / warehouse /
-  lunch room — **never food contact, never the Chemical Station** — and two are a wipe and a toilet gel,
-  which cannot be diluted. **Restroom Daily Cleaning (Form 108, `QA-CL-002`) already exists** and is where
-  Lysol is used. One question to Maria decides whether 106-01 gains a fifth chemical; that is a DCR.
+- **D-095 CALLED THE LYSOL HALF FLOOR SHORTHAND. IT IS A REAL DAILY DILUTION — see D-096.** Daniela asked
+  Zuleika; she mixes Lysol Power Clean for the bathrooms and there is no ratio written down anywhere, no
+  task and no record. D-095's reasoning still holds and is what narrows it to that one product (all three
+  Lysol items are `is_food_grade: 0`, bathrooms / warehouse / lunch room — **never food contact, never the
+  Chemical Station** — and two are a wipe and a toilet gel, which cannot be diluted); only its conclusion
+  was an assumption, broken by asking the person who does the work.
+- **THE TWO SHE HAS NO FORMULA FOR ARE THE TWO THAT HAVE NEVER BEEN LOGGED (D-096).** Stamped on a fresh
+  database over the transcribed paper logbook — 126 days, all 464 checks by `ZN`: **Sani-512 232 ·
+  Chlorine 232 · Dawn 0 · Simple Green 0.** The form's header names four; the plant checks two, and
+  `dilution-log-seed.js` said so at transcription time in a comment nobody reads. The two never-logged
+  tasks ReadyDoc raises daily are the form and the practice disagreeing out loud — **not a bug, and
+  deactivating them is the one answer the app may not give.**
+- **`1:10 to 1:30` IS NOT A FORMULA**, it is a span three times wide at one end, with no instruction on
+  which end belongs to which job. She is right holding the paper. Dawn's `1 tsp to 2.5 gal water` is a
+  single instruction and has no such problem.
+- **The product is NOT the gap.** The target is rendered four times — the card face (the work order's
+  `description`), the step list, the completion form header, and the Pass button (*"Mixed to …?"*). Checked
+  before building anything; a UI change here would have been invented work on a correct screen.
+- **All three questions are Document Control's**, parked as `docs/v2/queued/dcr-form-106-01-v4.md`: live
+  checks or header text, one ratio for Simple Green or two named ones, and Lysol onto 106-01 versus its
+  ratio onto **Restroom Daily Cleaning (Form 108, `QA-CL-002`)** — which already runs daily and today names
+  no chemical and has no dilution step. Never rename Sani-512 to Lysol.
 - **D-094 SAID `OrgChart.jsx` WAS INCOMPATIBLE DRIFT. IT IS NOT — see D-095.** `org_positions.department`
   drives exactly one thing, `DEPT_CLASS[node.department]`, the colour of a box; it never routes work and
   never touches `users.department`. Two different facts sharing a word; **do not merge them.**

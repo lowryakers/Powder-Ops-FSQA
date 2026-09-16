@@ -3397,3 +3397,58 @@ and one question to Maria decides it — the app must not answer it by renaming 
 Verified: `verify:schedowner` (29 → **35**, live, in `verify:all`) — the nine go-forward departments are all
 task groups, the legacy ones are not, the org chart's own words are not, and an operator on `production`
 executes the reported symptom: **0 tasks**, until she is named the schedule's owner.
+
+## D-096 — The two dilutions nobody does, and the one nobody wrote down (supersedes the Lysol half of D-095)
+
+**D-095 said "Lysol dilution" read as floor shorthand for the chemical-station checks. That was wrong, and
+this entry corrects it.** Daniela put the question to Zuleika directly. Her answer, and Lowry's confirmation
+— *"Zuleika is currently diluting the Lysol"* — establish a real, daily, unwritten dilution. The reasoning in
+D-095 is still worth having (three Lysol products, all non-food-contact, two of them impossible to dilute,
+a Restroom Daily Cleaning task that already exists), because it is what narrows the fifth chemical to
+**Lysol Power Clean** and points at the form it probably belongs on. The conclusion it drew from that
+reasoning was an assumption, and asking the person who does the work is what broke it.
+
+**Nothing was built. The product is not the gap, and the stamp is what proves it.** Daniela's message named
+two chemicals Zuleika has no formula for — Dawn and Simple Green — so the first hypothesis was that
+`shared/dilution-forms.js` holds both ratios and the Operator View never renders them. It renders them four
+times over: on the card face (the work order's description is `Target: 1:10 to 1:30.` and the card prints
+it), in the expandable step list (`Verify Simple Green is mixed to 1:10 to 1:30`), in the completion form's
+header block, and on the Pass button itself (*"Mixed to 1 tsp to 2.5 gal water?"*). A UI change here would
+have been invented work sitting on top of a correct screen.
+
+**THE TWO SHE HAS NO FORMULA FOR ARE THE TWO THAT HAVE NEVER BEEN LOGGED.** Counted off the transcribed
+paper logbook on a fresh database — 126 days, 25 Nov 2025 to 30 Jun 2026, all 464 checks performed by `ZN`:
+
+| Chemical | On the 106-01 header | Daily task raised | Checks in 126 days |
+|---|---|---|---|
+| Sani-512 Sanitizer | yes | yes | **232** |
+| Chlorine (Cloro) | yes | yes | **232** |
+| Dawn Professional Heavy Duty | yes | yes | **0** |
+| Simple Green | yes | yes | **0** |
+| **Lysol Power Clean** | **no** | **no** | **0**, and it is mixed daily |
+
+`server/dilution-log-seed.js` recorded this at transcription time — *"the form's header names four, but the
+plant logs Sani-512 and chlorine, twice a day, and Dawn and Simple Green appear nowhere in three years of
+sheets"* — and that note has sat in a source file ever since, which is why the question could be asked at all
+eight months later and answered in an afternoon. **It is also the whole defect: a fact that exists in exactly
+one place nobody reads.** The two never-logged tasks ReadyDoc raises every morning are not a bug; they are
+the form and the practice disagreeing, said out loud daily, which is what a task list is for.
+
+**"1:10 to 1:30" IS NOT A FORMULA, AND READING THE FORM DOES NOT HELP HER.** It is a span three times wide
+at one end than the other, with no instruction on which end belongs to which job. Zuleika is right holding
+the paper. Dawn's "1 tsp to 2.5 gal water" is a single instruction and has no such problem — so this is one
+finding about Simple Green, not a general complaint about mixing ratios.
+
+**All three questions are Document Control's, and the app must not answer any of them.** Parked as
+`docs/v2/queued/dcr-form-106-01-v4.md`: (1) are Dawn and Simple Green live checks or header text — and if
+they are not, V4 drops them and the two schedules go with them; (2) one ratio for Simple Green, or two with
+the job each belongs to; (3) Lysol onto 106-01 as a fifth chemical, or its ratio onto Restroom Daily Cleaning
+(Form 108, `QA-CL-002`), which already runs daily and today **names no chemical and has no dilution step**.
+Those are different decisions: 106-01's four are food-contact sanitation at the Chemical Station and Lysol is
+explicitly none of that, while Form 108 is where it is actually used. **Deactivating a check because nobody
+has ever done it is the one answer the app is not allowed to give**, and renaming Sani-512 to Lysol is the
+other. `controlled.js` parks whatever V4 says and keeps serving V3 until it is approved.
+
+No code changed. Verified by stamping a fresh database rather than by reading: four active schedules all
+`task_group = 'cleaning'` with their targets on the work orders, 232/232/0/0 records, zero schedules
+anywhere mentioning Lysol, and Restroom Daily Cleaning's six steps carrying no chemical.
