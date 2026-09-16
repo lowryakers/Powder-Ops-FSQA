@@ -3351,3 +3351,49 @@ migration. `task-groups.js`'s own header already warns about exactly this drift 
 Verified: `verify:schedowner` (29, live, in `verify:all`). **Two controls, both decisive** — dropping the
 owner from `createNextWorkOrder` fails the night test AND leaves her Operator View at **0 tasks**, which is
 the reported symptom exactly; removing the cascade leaves a newly named owner waiting until tomorrow.
+
+## D-095 — The org chart's departments are not task groups, and were never meant to be (supersedes part of D-094)
+
+**Date:** 2026-09-16 · **Status:** shipped on `main`
+
+D-094 closed with a warning that `OrgChart.jsx` keeps "a second, incompatible department list" and implied
+drift to be cleaned up. **That framing was wrong and this entry corrects it.** Asked directly whether the
+second list should go, the answer is **no**.
+
+`org_positions.department` drives exactly one thing: `DEPT_CLASS[node.department]`, the colour of a box on
+the org chart. It never routes work, never touches `users.department`, and never reaches a `task_group` —
+`linkOrgPositionsToUsers` writes only `org_positions.user_id`. The two lists are **two different facts that
+share a word**: the org chart groups by business function for a picture (executive, quality, production,
+admin), `users.department` is a routing key. Merging them would force the chart to say "Cleaning" where the
+business says "Sanitation", and force the routing key to accept `executive`, which is not a team anything
+routes to. The `sanitation` on Zuleika Mendez's org-chart position was never going to affect her Operator
+View, and D-094 should not have suggested it might.
+
+**What survives is smaller and real.** Every go-forward department in `constants/departments.js` IS a task
+group — asserted, so that invariant cannot break silently. The **legacy** values are not: `sticks` and
+`hand_fill` already resolve at boot (`filling-merge.js`, a known merge), but **`production` has no answer
+and must not be given one** — it split into batching / kitting / filling and guessing would route somebody's
+work to a team they are not on. An account still on it filters against a group no task carries, so its
+Operator View can only ever show what is assigned to that person by name, **and nothing on any screen said
+so**. That is the D-091 class again: a boundary enforced and never rendered.
+
+- **`routesTasks(department)` in `shared/task-groups.js` is the one definition**, beside the vocabulary it
+  is asking about. It REPORTS; it maps nothing.
+- **The roster says it where the question gets asked.** Settings → Users renders the department amber with
+  *"No tasks reach this team"* beside it — the same shape as "No modules assigned" one cell over. "Why can't
+  she see her tasks" is now answerable from the app instead of from a database.
+- **A blank department is NOT reported** — `/pm/operator-tasks` falls back to `warehouse`, so that is a
+  different question, and one the same row already asks.
+
+**The Lysol half of D-094 is settled, and nothing was built.** Her department is `cleaning` and the four
+FORM 106-01 dilutions are on her Operator View today. All three Lysol products on the approved list are
+`is_food_grade: 0` and scoped to bathrooms / warehouse / lunch room — **never a food-contact surface, and
+never the Chemical Station (QA-CL-004, Production) where the four are mixed** — and two of the three are a
+wipe and a toilet gel, which cannot be diluted at all. The daily task where Lysol is actually used already
+exists: **Restroom Daily Cleaning (Form 108, `QA-CL-002`)**. So "Lysol dilution" reads as floor shorthand
+for the chemical-station checks. Adding a fifth chemical to 106-01 is a Document Change Request either way,
+and one question to Maria decides it — the app must not answer it by renaming Sani-512.
+
+Verified: `verify:schedowner` (29 → **35**, live, in `verify:all`) — the nine go-forward departments are all
+task groups, the legacy ones are not, the org chart's own words are not, and an operator on `production`
+executes the reported symptom: **0 tasks**, until she is named the schedule's owner.

@@ -147,5 +147,34 @@ t('NONE of them is Lysol — "Lysol dilution" is not this form',
   t('…and every one routes to the CLEANING team', seeded.every(s => s.task_group === 'cleaning'),
     seeded.map(s => `${s.title}=${s.task_group}`).join(' | ')); }
 
+console.log('\nA DEPARTMENT THAT IS NOT A TEAM ROUTES NOTHING, and the app says so');
+const { routesTasks, TASK_GROUP_VALUES } = await import('../shared/task-groups.js');
+const { ASSIGNABLE_DEPARTMENTS, DEPARTMENTS } = await import('../src/constants/departments.js');
+t('EVERY go-forward department IS a task group — the invariant that must not break silently',
+  ASSIGNABLE_DEPARTMENTS.every(d => TASK_GROUP_VALUES.includes(d.value)),
+  ASSIGNABLE_DEPARTMENTS.filter(d => !TASK_GROUP_VALUES.includes(d.value)).map(d => d.value).join(',') || 'all nine match');
+t('…and the LEGACY ones are not, which is the whole hole',
+  DEPARTMENTS.filter(d => d.legacy).every(d => !routesTasks(d.value)),
+  DEPARTMENTS.filter(d => d.legacy).map(d => `${d.value}=${routesTasks(d.value)}`).join(' '));
+t('a blank department is NOT reported — /operator-tasks falls back to warehouse', routesTasks(null) && routesTasks(''));
+t('the org chart\u2019s own words are not task groups either',
+  !routesTasks('sanitation') && !routesTasks('executive') && !routesTasks('quality') && !routesTasks('admin'));
+
+// The symptom, executed: an operator on a legacy department.
+{ const db = new Database(dbPath);
+  db.prepare(`INSERT OR REPLACE INTO users
+    (id,name,username,role,department,is_active,setup_code,setup_code_expires_at,module_access)
+    VALUES ('so-legacy','Legacy Operator','Legacy Operator','operator','production',1,'SC-SO4',datetime('now','+7 day'),'{"pm":"edit"}')`).run();
+  db.close(); }
+const legacyTok = await signIn('so-legacy', 'Legacy Operator', 'SC-SO4', 'Legacy2026!!');
+const legacy = await J(await call('GET', '/pm/operator-tasks', null, legacyTok));
+const legacyList = Array.isArray(legacy) ? legacy : [];
+t('an account on a LEGACY department sees no team work at all — the reported symptom',
+  legacyList.length === 0, `${legacyList.length} task(s)`);
+await call('PUT', `/pm/schedules/${teamOnly.id}`, { assigned_to: 'Legacy Operator' }, tok);
+const legacyAfter = await J(await call('GET', '/pm/operator-tasks', null, legacyTok));
+t('…and naming her the owner is still the way work reaches her',
+  (Array.isArray(legacyAfter) ? legacyAfter : []).some(w => w.title === 'Chemical Dilution — Team Only (owner test)'));
+
 console.log(`\n${pass}/${pass + fail} assertions passed`);
 process.exit(fail ? 1 : 0);

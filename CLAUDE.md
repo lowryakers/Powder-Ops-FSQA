@@ -4640,13 +4640,21 @@ Maria: "Zuleika performs the Lysol dilution daily — can that show on her Opera
   the task, the owner *also* does. The editor renders the owner UNDER the team, never instead of it.
 - Naming an owner **cascades onto the cards already open** (`missed` included), like the team change does.
   An absent field leaves the owner alone; an empty one clears it. Blank stays the ordinary case.
-- **`sanitation` IS NOT A TASK GROUP, and this is still open.** `shared/task-groups.js` and
-  `constants/departments.js` agree on nine values; **`OrgChart.jsx` keeps a second, incompatible list**
-  (`executive`/`quality`/`sanitation`/`admin`/`other`) and the ORG seed files Zuleika Mendez as
-  `sanitation`. The Operator View uses `users.department` **as** a `task_group`, so an account on
-  `sanitation` — or legacy `production`/`sticks`/`hand_fill` — sees **nothing but personal assignments**.
-  Needs the live roster and probably a boot migration; `task-groups.js`'s own header warns about this drift.
-- Verified: `verify:schedowner` (29, live, in `verify:all`). Controls: dropping the owner from the
+- **SETTLED (D-095): the Lysol half needed no code.** Her department IS `cleaning` and the four dilutions
+  are on her Operator View today. All three Lysol products are `is_food_grade: 0`, bathrooms / warehouse /
+  lunch room — **never food contact, never the Chemical Station** — and two are a wipe and a toilet gel,
+  which cannot be diluted. **Restroom Daily Cleaning (Form 108, `QA-CL-002`) already exists** and is where
+  Lysol is used. One question to Maria decides whether 106-01 gains a fifth chemical; that is a DCR.
+- **D-094 SAID `OrgChart.jsx` WAS INCOMPATIBLE DRIFT. IT IS NOT — see D-095.** `org_positions.department`
+  drives exactly one thing, `DEPT_CLASS[node.department]`, the colour of a box; it never routes work and
+  never touches `users.department`. Two different facts sharing a word; **do not merge them.**
+- **What is real is `routesTasks()` (`shared/task-groups.js`).** Every go-forward department IS a task group
+  (asserted, so it cannot break silently); the LEGACY ones are not. `sticks`/`hand_fill` resolve at boot
+  (`filling-merge.js`), but **`production` has no answer and must not be given one** — it split three ways
+  and a guess routes work to the wrong team. An account on it sees only personal assignments, so the roster
+  renders the department amber with *"No tasks reach this team"* — the "No modules assigned" shape. A BLANK
+  department is not reported: `/operator-tasks` falls back to `warehouse`.
+- Verified: `verify:schedowner` (35, live, in `verify:all`). Controls: dropping the owner from the
   recurrence fails the night test and leaves her Operator View at **0 tasks** — the reported symptom
   exactly; removing the cascade makes a newly named owner wait until tomorrow.
 

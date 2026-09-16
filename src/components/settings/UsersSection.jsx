@@ -2,6 +2,7 @@ import { useState, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiDelete } from '../../hooks/useApi';
 import { Plus, Shield, ChevronDown, ChevronRight, KeyRound, Users, X, Link2, Send } from 'lucide-react';
 import { DEPARTMENTS, DEPARTMENT_GROUPS, deptLabel } from '../../constants/departments';
+import { routesTasks } from '../../../shared/task-groups.js';
 
 // Accounts, roles, departments and per-module access.
 //
@@ -938,6 +939,21 @@ function moduleCountOf(u) {
 }
 
 function DeptChip({ department }) {
+  // A DEPARTMENT THAT ROUTES NOWHERE IS SAID OUT LOUD, beside the department
+  // itself. The Operator View uses this value AS a task team, so an account on
+  // a legacy one ('production') sees nothing but its own personal assignments
+  // — and an empty screen reads as the app being broken rather than as a
+  // setting nobody has made. Same class as "No modules assigned" one cell over.
+  if (!routesTasks(department)) {
+    return (
+      <span className="inline-flex flex-col" data-dept-dead={department}>
+        <span className="px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap bg-amber-100 text-amber-800">
+          {deptLabel(department)}
+        </span>
+        <span className="text-[10px] font-semibold text-amber-600 mt-0.5">No tasks reach this team</span>
+      </span>
+    );
+  }
   return (
     <span className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${
       department === 'qa' ? 'bg-teal-100 text-teal-700'
