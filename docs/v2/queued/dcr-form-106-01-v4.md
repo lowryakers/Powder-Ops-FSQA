@@ -26,7 +26,29 @@ months on file, and the transcription note taken at the time says the same of th
 was read from. ReadyDoc raises a daily task for each of them because the form's header names four
 chemicals; the sheets say the plant checks two.
 
-## What is asked
+## The three questions, in plain English
+
+**1. Should we still be checking Dawn and Simple Green every day?**
+The form lists four chemicals. In 126 days of sheets we have a check written down for Sani-512 and for
+Chlorine every single day, and not one for Dawn or Simple Green. So either we should be doing those two and
+have not been, or the form is asking for something we stopped doing a long time ago. If they stay, we need
+the training and the ratio below. If they go, they come off the form and off the daily task list.
+
+**2. What ratio should Simple Green be mixed at?**
+The form says "1:10 to 1:30". That is a range, not an instruction — 1:10 is three times stronger than 1:30,
+and nothing says which one to use or when. Zuleika is right that she has no formula for it, and she would
+still have none reading the form. We need one ratio, or two with the job each one is for. Dawn is fine as
+written: "1 tsp to 2.5 gal water" is a single clear instruction.
+
+**3. Where does Lysol go?**
+Zuleika mixes Lysol Power Clean for the bathrooms every day. There is no ratio written down anywhere, no
+form, and no record of it. Either add it to 106-01 as a fifth chemical (but the other four are food-contact
+sanitation at the Chemical Station, and Lysol is bathrooms only), or put the ratio on Restroom Daily Cleaning
+(Form 108), which already runs daily and is where Lysol is actually used — but names no chemical and has no
+mixing step today. Either way someone in Quality has to write down a ratio; until then she is mixing from
+memory and nothing records what she mixed.
+
+## What is asked, in detail
 
 ### 1. Are Dawn and Simple Green live checks, or header text?
 
