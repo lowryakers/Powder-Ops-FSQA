@@ -24,8 +24,16 @@ const router = Router();
 export function joinDefaultChannels(db, userId, external) {
   if (external) return;
   try {
-    const add = db.prepare("INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role) VALUES (?, ?, ?, 'member')");
-    for (const c of db.prepare('SELECT id FROM chat_channels WHERE is_default = 1').all()) add.run(uuid(), c.id, userId);
+    // Stamped read AS OF NOW. A bare NULL last_read_at reads as "never read
+    // anything" to channelUnread(), which then counts #general's and
+    // #announcements' entire history as unread — for a new hire that can be
+    // months of messages, landing them at the very first one ever posted
+    // instead of the bottom. This runs at account creation AND on every boot
+    // (the loop that re-adds every active user), so it has to get this right
+    // for both a brand-new account and a long-standing one.
+    const now = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS t").get().t;
+    const add = db.prepare("INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role, last_read_at) VALUES (?, ?, ?, 'member', ?)");
+    for (const c of db.prepare('SELECT id FROM chat_channels WHERE is_default = 1').all()) add.run(uuid(), c.id, userId, now);
   } catch { /* chat tables may not exist in some contexts */ }
 }
 

@@ -712,9 +712,17 @@ router.post('/channels/:id/members', (req, res) => {
       });
     }
   }
-  const add = db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role) VALUES (?, ?, ?, ?)');
+  // Stamped read AS OF NOW, not left NULL. A bare NULL last_read_at reads as
+  // "never read anything" — channelUnread() then counts every message the
+  // channel has ever held, from before this person had access, as unread.
+  // Added to a busy channel, that is easily past OPEN_AT_FIRST_UNREAD_MIN and
+  // lands them at message one of a conversation they were never part of. The
+  // self-service join (POST /channels/:id/join) and the lazy read-marker
+  // backfills already stamp `now`; this door was the one left bare.
+  const now = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS t").get().t;
+  const add = db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role, last_read_at) VALUES (?, ?, ?, ?, ?)');
   let added = 0;
-  for (const uid of ids) added += add.run(uuid(), channel.id, uid, 'member').changes;
+  for (const uid of ids) added += add.run(uuid(), channel.id, uid, 'member', now).changes;
   if (added) emitChannelsChanged(db, channel);
   res.json({ added });
 });
@@ -888,9 +896,13 @@ router.put('/channels/:id', (req, res) => {
       newArchived, newPolicy, channel.id);
   // Making a channel private: ensure the admin who owns it stays a member so it
   // doesn't vanish from everyone. Existing members are preserved either way.
+  // If this DOES insert a fresh row (the admin was reading it only via the
+  // admin-sees-everything rule, not membership), stamp it read as of now —
+  // same reasoning as the member-add path above.
   if (newKind === 'private' && channel.kind === 'public') {
-    db.prepare("INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role) VALUES (?, ?, ?, 'owner')")
-      .run(uuid(), channel.id, req.user.id);
+    const now = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS t").get().t;
+    db.prepare("INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role, last_read_at) VALUES (?, ?, ?, 'owner', ?)")
+      .run(uuid(), channel.id, req.user.id, now);
   }
   emitChannelsRefresh(); // visibility set may have changed for anyone
   res.json(getChannel(db, channel.id));
