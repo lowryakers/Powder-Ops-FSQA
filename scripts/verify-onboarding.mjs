@@ -250,9 +250,16 @@ console.log('\nFinishing, once everything is in');
     const bot = d3.prepare("SELECT id FROM users WHERE name = 'ReadyBot'").get();
     const dmTo = bot ? d3.prepare(`SELECT DISTINCT m.user_id FROM chat_channel_members m JOIN chat_channels c ON c.id = m.channel_id
         JOIN chat_messages msg ON msg.channel_id = c.id WHERE msg.body LIKE '%finished their onboarding packet%' AND m.user_id != ?`).all(bot.id).map(r => r.user_id) : [];
+    // The audience is the named owners (Adam, Marnee), not the office/HR
+    // departments — this roster has neither by exact name, so `adam()`'s
+    // department-free fallback is what actually fires, against whichever
+    // account the boot seed's own "Adam B." resolves to.
+    const adamRow = d3.prepare("SELECT id FROM users WHERE LOWER(name) LIKE 'adam%' AND is_active = 1").get();
     d3.close();
     t('ReadyBot DMs the office the moment the packet is finished, naming the hire and the forms', dms.length >= 1 && /Test Hire/.test(dms[0]?.body || '') && /W-4 and I-9 Section 1 signed/.test(dms[0]?.body || ''), JSON.stringify(dms).slice(0, 200));
-    t('…and it reaches the admin who started it and the office supervisor, not the warehouse', dmTo.includes('ob-admin') && dmTo.includes('ob-office') && !dmTo.includes('ob-wh') && !dmTo.includes('ob-op'), JSON.stringify(dmTo));
+    t('…and it reaches the admin who started it and Adam, not a generic office or warehouse supervisor',
+      dmTo.includes('ob-admin') && !!adamRow && dmTo.includes(adamRow.id) && !dmTo.includes('ob-office') && !dmTo.includes('ob-wh') && !dmTo.includes('ob-op'),
+      JSON.stringify({ dmTo, adamRow }));
   }
 }
 

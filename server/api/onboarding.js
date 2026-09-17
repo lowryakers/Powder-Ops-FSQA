@@ -978,16 +978,12 @@ portalRouter.post('/:token/finish', (req, res) => {
   announceFinished(db, db.prepare('SELECT * FROM onboarding_records WHERE id = ?').get(rec.id)).catch(() => {});
 });
 
-// Who is told when a packet is finished: whoever started it, plus the office
-// (admins and the office/HR departments — the same people the pay-action
-// reminder reaches). One DM each, no channel post; a new hire's packet is not
-// plant news.
 /**
  * Who is told a packet is finished, before the person who started it is added.
  *
- * Was every admin plus all of office and HR. Now the named owners — because a
- * finished packet is one person's next job, not plant news, which is the same
- * reason it was never a channel post.
+ * Was every admin plus all of office and HR. Now the named owners (Adam,
+ * Marnee) — because a finished packet is one person's next job, not plant
+ * news, which is the same reason it was never a channel post.
  */
 export function onboardingFinishedRecipients(db) {
   return resolve(db, 'onboarding_finished_recipients',
