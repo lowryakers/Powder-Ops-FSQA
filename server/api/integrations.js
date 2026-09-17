@@ -153,7 +153,11 @@ const SERVICES = [
     what: 'The product master CSV the proofing service reads, and the results it posts back.',
     enabled: () => isSet('PRODUCT_MASTER_TOKEN'),
     required: ['PRODUCT_MASTER_TOKEN'],
-    off: 'The master.csv endpoint is off entirely, so proofing cannot fetch the catalogue.',
+    // Both halves gate on the same token (masterCsv's tokenOk in products.js and
+    // ingestRouter's tokenOk in artwork.js) — naming only the read direction here
+    // undersold what breaks when this is unset.
+    off: 'Both halves of the hand-off are off: proofing cannot fetch the catalogue (master.csv) and cannot '
+      + 'post its results back (/api/artwork/ingest checks the same token).',
     note: 'The proofing service needs this same value as its READYDOC_TOKEN — one shared secret, two halves '
       + 'of one integration.',
   },
