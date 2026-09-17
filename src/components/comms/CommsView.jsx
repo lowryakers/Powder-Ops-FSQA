@@ -268,7 +268,16 @@ function renderBody(text, users, me) {
 // Wrap the current selection in a marker pair. With nothing selected, drop the
 // markers and place the caret between them so you can type into the format.
 const parseMsgDate = (iso) => new Date(iso.endsWith('Z') || iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z');
-const fmtTime = (iso) => parseMsgDate(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+// A bare "Jul 3, 9:54 AM" is ambiguous the moment the message is over a year
+// old — imported Slack history is exactly that. Same rule `dayLabel` already
+// applies to the day divider: the year only shows up when it isn't the
+// current one, so today's messages stay as short as they always were.
+const fmtTime = (iso) => {
+  const d = parseMsgDate(iso);
+  const opts = { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' };
+  if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+  return d.toLocaleString([], opts);
+};
 const dayKey = (iso) => { const d = parseMsgDate(iso); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; };
 // Slack-style day divider label: Today / Yesterday / weekday+date.
 const dayLabel = (iso) => {

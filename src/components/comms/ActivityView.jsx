@@ -32,7 +32,9 @@ function dayLabel(iso) {
   const same = (a, b) => a.toDateString() === b.toDateString();
   if (same(d, today)) return 'Today';
   if (same(d, yest)) return 'Yesterday';
-  return d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  const opts = { weekday: 'long', month: 'long', day: 'numeric' };
+  if (d.getFullYear() !== today.getFullYear()) opts.year = 'numeric';
+  return d.toLocaleDateString(undefined, opts);
 }
 
 const timeLabel = (iso) => {
