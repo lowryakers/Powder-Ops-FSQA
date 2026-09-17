@@ -79,6 +79,7 @@ console.log('\nThe finish gate: nothing goes to the office half done');
   if (keyed) t('…including the SSN', fb.missing.some(m => m.field === 'ssn'));
   t('…the W-4 signature', fb.missing.some(m => m.field === 'w4_signature'));
   t('…and the I-9 signature', fb.missing.some(m => m.field === 'i9_signature'));
+  t('…and a photo of the ID document(s)', fb.missing.some(m => m.field === 'id_document'));
 }
 
 console.log('\nThe data that should never be in clear, and the numbers that must check out');
@@ -178,7 +179,14 @@ console.log('\nThe I-9 Section 1, signed — with the conditional fields the sta
   const beforeSign = await portal(tok, 'PUT', { i9_citizenship: 'citizen', i9_sign: true, signed_name: 'Test Hire', attest: true });
   const sb = await J(beforeSign);
   t('a citizen signs Section 1', beforeSign.ok && sb?.i9_signature?.name === 'Test Hire', JSON.stringify(sb?.i9_signature || sb));
-  t('…and the conditional fields are no longer missing', !(sb?.missing || []).some(m => m.step === 'i9'));
+  // The alien-only conditionals clear; the ID photo is still outstanding here
+  // — it isn't attached until the next section — and the signature itself is
+  // now satisfied, so those are the only two i9-step items left.
+  t('…and the conditional fields are no longer missing',
+    !(sb?.missing || []).some(m => ['i9_work_until', 'i9_uscis_number', 'i9_i94_number', 'i9_passport_number', 'i9_passport_country'].includes(m.field)));
+  t('…the only i9 items left are the ID photo and (already satisfied) the signature',
+    (sb?.missing || []).filter(m => m.step === 'i9').every(m => m.field === 'id_document'),
+    JSON.stringify((sb?.missing || []).filter(m => m.step === 'i9')));
 }
 
 if (storage) {
@@ -220,20 +228,32 @@ console.log('\nFinishing, once everything is in');
     await portal(tok, 'PUT', { pay_method: 'check' });
   }
   const fin2 = (!keyed && !storage) ? await fetch(`${B}/onboarding-portal/${tok}/finish`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }) : fin;
-  t('the packet finishes once the forms are complete and signed', fin2.ok, `${fin2.status} ${JSON.stringify(fb).slice(0, 160)}`);
-  const after = await J(await fetch(`${B}/onboarding-portal/${tok}`));
-  t('the record reads ready with nothing missing', after?.status === 'ready' && after?.missing?.length === 0, JSON.stringify(after?.missing));
-  // The office is TOLD, not left to discover it. The announcement runs after
-  // the response, so give it a moment.
-  await new Promise(r => setTimeout(r, 800));
-  const d3 = new Database(process.env.DBPATH, { readonly: true });
-  const dms = d3.prepare("SELECT body FROM chat_messages WHERE body LIKE '%finished their onboarding packet%'").all();
-  const bot = d3.prepare("SELECT id FROM users WHERE name = 'ReadyBot'").get();
-  const dmTo = bot ? d3.prepare(`SELECT DISTINCT m.user_id FROM chat_channel_members m JOIN chat_channels c ON c.id = m.channel_id
-      JOIN chat_messages msg ON msg.channel_id = c.id WHERE msg.body LIKE '%finished their onboarding packet%' AND m.user_id != ?`).all(bot.id).map(r => r.user_id) : [];
-  d3.close();
-  t('ReadyBot DMs the office the moment the packet is finished, naming the hire and the forms', dms.length >= 1 && /Test Hire/.test(dms[0]?.body || '') && /W-4 and I-9 Section 1 signed/.test(dms[0]?.body || ''), JSON.stringify(dms).slice(0, 200));
-  t('…and it reaches the admin who started it and the office supervisor, not the warehouse', dmTo.includes('ob-admin') && dmTo.includes('ob-office') && !dmTo.includes('ob-wh') && !dmTo.includes('ob-op'), JSON.stringify(dmTo));
+  const fb2 = (!keyed && !storage) ? await J(fin2) : fb;
+  if (!storage) {
+    // WITHOUT STORAGE AN EMPLOYEE CAN NEVER ATTACH THE ID PHOTO — Section 2 is
+    // the employer attesting to a document it examined, so finish must stay
+    // refused rather than let a packet through with nothing to examine. This
+    // is the deliberate product call: refuse until the photo can be stored,
+    // never silently waive it because R2 happens to be unconfigured.
+    t('WITH NO STORAGE, finish stays refused for the missing ID photo — it is never silently waived',
+      fin2.status === 400 && (fb2?.missing || []).some(m => m.field === 'id_document'),
+      `${fin2.status} ${JSON.stringify(fb2).slice(0, 160)}`);
+  } else {
+    t('the packet finishes once the forms are complete and signed', fin2.ok, `${fin2.status} ${JSON.stringify(fb).slice(0, 160)}`);
+    const after = await J(await fetch(`${B}/onboarding-portal/${tok}`));
+    t('the record reads ready with nothing missing', after?.status === 'ready' && after?.missing?.length === 0, JSON.stringify(after?.missing));
+    // The office is TOLD, not left to discover it. The announcement runs after
+    // the response, so give it a moment.
+    await new Promise(r => setTimeout(r, 800));
+    const d3 = new Database(process.env.DBPATH, { readonly: true });
+    const dms = d3.prepare("SELECT body FROM chat_messages WHERE body LIKE '%finished their onboarding packet%'").all();
+    const bot = d3.prepare("SELECT id FROM users WHERE name = 'ReadyBot'").get();
+    const dmTo = bot ? d3.prepare(`SELECT DISTINCT m.user_id FROM chat_channel_members m JOIN chat_channels c ON c.id = m.channel_id
+        JOIN chat_messages msg ON msg.channel_id = c.id WHERE msg.body LIKE '%finished their onboarding packet%' AND m.user_id != ?`).all(bot.id).map(r => r.user_id) : [];
+    d3.close();
+    t('ReadyBot DMs the office the moment the packet is finished, naming the hire and the forms', dms.length >= 1 && /Test Hire/.test(dms[0]?.body || '') && /W-4 and I-9 Section 1 signed/.test(dms[0]?.body || ''), JSON.stringify(dms).slice(0, 200));
+    t('…and it reaches the admin who started it and the office supervisor, not the warehouse', dmTo.includes('ob-admin') && dmTo.includes('ob-office') && !dmTo.includes('ob-wh') && !dmTo.includes('ob-op'), JSON.stringify(dmTo));
+  }
 }
 
 console.log('\nI-9 Section 2 is the employer\'s, under the password gate');

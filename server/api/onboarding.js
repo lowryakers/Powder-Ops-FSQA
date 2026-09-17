@@ -344,6 +344,12 @@ export function missingToFinish(db, rec) {
     if (!blank('i9_passport_number') && blank('i9_passport_country')) m.push({ step: 'i9', field: 'i9_passport_country', label: 'passport country of issuance' });
   }
   if (rec.i9_preparer === 'used' && blank('i9_preparer_name')) m.push({ step: 'i9', field: 'i9_preparer_name', label: 'the preparer or translator\'s name' });
+  // The office keys the packet into RUN from what is on the record, and
+  // Section 2 is the employer attesting to a document it examined — there is
+  // nothing to examine if a photo of it was never attached. Same shape as the
+  // no-key voided-check requirement above: the file itself is the evidence.
+  const hasId = db.prepare("SELECT 1 FROM onboarding_files WHERE onboarding_id = ? AND kind = 'id_document'").get(rec.id);
+  if (!hasId) m.push({ step: 'i9', field: 'id_document', label: 'a photo of your ID document(s)' });
   if (!signatureOf(rec.i9_signature)) m.push({ step: 'i9', field: 'i9_signature', label: 'your signature on the I-9' });
   return m;
 }

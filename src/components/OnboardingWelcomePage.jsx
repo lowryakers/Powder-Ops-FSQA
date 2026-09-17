@@ -528,8 +528,8 @@ export default function OnboardingWelcomePage({ token }) {
           {form.i9_preparer === 'used' && (
             <Field l="Preparer / translator's full name *"><input className={input} value={form.i9_preparer_name || ''} onChange={set('i9_preparer_name')} /></Field>
           )}
-          <Photos token={token} rec={rec} kind="id_document" t={t} title="Photos of your ID documents"
-            hint="Either one List A document (a U.S. passport, or a permanent resident card), or one List B plus one List C (a driver's license plus your Social Security card or birth certificate). Photograph the front and back. Bring the originals on your first day — the office has to see them in person." onChanged={adopt} />
+          <Photos token={token} rec={rec} kind="id_document" t={t} title="Photos of your ID documents *"
+            hint="Required to finish. Either one List A document (a U.S. passport, or a permanent resident card), or one List B plus one List C (a driver's license plus your Social Security card or birth certificate). Photograph the front and back. Bring the originals on your first day — the office has to see them in person." onChanged={adopt} />
           <Signature rec={rec} which="i9" attestation={rec.attestations?.i9_s1} value={sig.i9} onChange={v => setSig(s => ({ ...s, i9: v }))}
             attest={sig.i9_attest} onAttest={v => setSig(s => ({ ...s, i9_attest: v }))} />
           {missing && missing.length > 0 && (
