@@ -3207,20 +3207,35 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
       setTimeout(() => setHighlightId(null), 3000);
     };
     if (inList) { finish(mid); return; }
-    // Not in the main list — likely a thread reply. Resolve its parent and open
-    // the thread drawer on it.
+    // Not in the main list — either a thread reply, or a top-level message
+    // older than the loaded window.
     (async () => {
       try {
         const m = await apiFetch(`/comms/messages/${mid}`);
         if (m.channel_id !== activeId) return; // channel changed underneath us
         if (m.parent_id) {
+          // A reply: resolve its parent and open the thread drawer on it.
           const parent = messages.find(x => x.id === m.parent_id) || await apiFetch(`/comms/messages/${m.parent_id}`);
           pendingMsgRef.current = null;
           setReplyTo(parent);
           if (messages.some(x => x.id === m.parent_id)) finish(m.parent_id);
-        } else {
-          pendingMsgRef.current = null; // older than the loaded window; give up quietly
+          return;
         }
+        // Older than the loaded window: pull the day it was sent on — the
+        // same `?date=` window "Jump to date" already uses — and land there.
+        // pendingMsgRef is left set: this setMessages changes `messages`,
+        // which re-runs this very effect, and next time `inList` is true.
+        const day = String(m.created_at || '').slice(0, 10);
+        if (day) {
+          const msgs = await apiFetch(`/comms/channels/${activeId}/messages?date=${day}`);
+          if (msgs.some(x => x.id === mid)) {
+            pinnedRef.current = false; // we're navigating to a spot, not the live bottom
+            setDateView(day);
+            setMessages(msgs);
+            return;
+          }
+        }
+        pendingMsgRef.current = null; // still not found; give up quietly
       } catch { pendingMsgRef.current = null; }
     })();
     // pendingTick is the wake-up for a target queued while messages/activeId
@@ -3377,12 +3392,19 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   };
   // Land on the message, not just the channel it lives in. The deep-link path
   // already knows how to scroll to a message and open its thread if it's a
-  // reply — a search hit is the same kind of destination.
+  // reply — a search hit (and an Ask "Sources" entry, which renders through
+  // this same list) is the same kind of destination.
+  //
+  // MUST GO THROUGH queueMessage(), not a bare ref assignment: that's what
+  // clears landOnNewRef (a search hit outranks the open-at-first-unread
+  // landing) and bumps pendingTick (the wake-up the resolve effect needs when
+  // the target channel is ALREADY open — messages/activeId won't have
+  // changed, so nothing else would re-run that effect and the scroll would
+  // silently do nothing).
   const openResult = (r) => {
-    const id = r.id;
     clearSearch();
     openChannel(r.channel_id);
-    pendingMsgRef.current = id;
+    queueMessage(r.id);
   };
 
   // Date headings, but only when the order is chronological — grouping a
