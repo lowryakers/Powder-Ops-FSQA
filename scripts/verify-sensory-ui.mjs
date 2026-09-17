@@ -49,6 +49,14 @@ await page.waitForTimeout(1500);
 const text = await page.locator('body').innerText();
 t('the record is in the log with a Pass', /Plant Vanilla Cream/.test(text) && /Pass/.test(text));
 t('THE DRAFT SPEC IS OFFERED TO THE QA LEAD ON THE LOG', await page.locator('[data-spec-strip]').count() === 1 && await page.locator('[data-approve-spec="Plant Vanilla Cream"]').count() === 1);
+t('AND SO IS AN EDIT CONTROL, BEFORE APPROVAL', await page.locator('[data-edit-spec="Plant Vanilla Cream"]').count() === 1);
+await page.locator('[data-edit-spec="Plant Vanilla Cream"]').click();
+await page.waitForTimeout(400);
+await page.locator('[data-spec-edit-field="taste"]').fill('Vanilla cream, mildly sweet, faint bean note');
+await page.locator('[data-spec-save]').click();
+await page.waitForTimeout(900);
+t('the edited wording saves and reads back, still a draft', /faint bean note/.test(await page.locator('[data-spec-strip]').innerText())
+  && await page.locator('[data-spec-strip]').count() === 1);
 await page.locator('[data-approve-spec="Plant Vanilla Cream"]').click();
 await page.waitForTimeout(1200);
 t('approving clears the strip', await page.locator('[data-spec-strip]').count() === 0);

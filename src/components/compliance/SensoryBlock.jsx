@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Check, X, ShieldCheck, PenLine } from 'lucide-react';
-import { useApiGet, apiPost } from '../../hooks/useApi';
+import { Check, X, ShieldCheck, PenLine, Pencil } from 'lucide-react';
+import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { onDataChanged } from '../../lib/dataChanged.js';
 import { SENSORY_ATTRIBUTES, sensoryNoteKey, RESULT_LABELS, LEGACY_SENSORY_LABELS, sensoryShape } from '../../../shared/sensory.js';
 
@@ -141,6 +141,38 @@ export function SensoryResults({ rec }) {
   );
 }
 
+/** One draft's wording, editable — the server refuses this the moment it's approved. */
+function DraftEditRow({ sp, onSaved, onCancel }) {
+  const [form, setForm] = useState(() => Object.fromEntries(SENSORY_ATTRIBUTES.map(a => [a.key, sp[a.key] || ''])));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const save = async () => {
+    setBusy(true); setErr('');
+    try { onSaved(await apiPut(`/qms/sensory-specs/${sp.id}`, form)); }
+    catch (e) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="mt-1.5 space-y-1.5" data-spec-edit={sp.product_name}>
+      {SENSORY_ATTRIBUTES.map(a => (
+        <label key={a.key} className="grid grid-cols-[5rem_1fr] items-center gap-2 text-[12px]">
+          <span className="text-gray-500">{a.label}</span>
+          <input value={form[a.key]} onChange={e => setForm(f => ({ ...f, [a.key]: e.target.value }))}
+            data-spec-edit-field={a.key} className="px-2 py-1 border border-gray-300 rounded text-[12px]" />
+        </label>
+      ))}
+      {err && <p className="text-xs text-red-600">{err}</p>}
+      <div className="flex items-center gap-2 pt-0.5">
+        <button type="button" onClick={save} disabled={busy} data-spec-save
+          className="px-2.5 py-1 bg-powder-600 text-white text-xs font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">
+          {busy ? 'Saving…' : 'Save wording'}
+        </button>
+        <button type="button" onClick={onCancel} disabled={busy} className="text-xs text-gray-500 hover:text-gray-700">Cancel</button>
+      </div>
+    </div>
+  );
+}
+
 // Draft specifications waiting on a QA lead, at the top of the Organoleptic
 // log — where the person who approves them already is.
 export function SpecApprovalStrip() {
@@ -150,6 +182,10 @@ export function SpecApprovalStrip() {
   useEffect(() => onDataChanged(refresh), [refresh]);
   const [busy, setBusy] = useState(null);
   const [err, setErr] = useState('');
+  // Editing is separate from approving: the wording is right until a QA lead
+  // says it is, and Approve is what locks it — the server refuses an edit
+  // once that has happened, so this can only ever touch a still-open draft.
+  const [editing, setEditing] = useState(null);
   const drafts = data?.specs || [];
   if (!drafts.length) return null;
   const approve = async (id) => {
@@ -162,22 +198,37 @@ export function SpecApprovalStrip() {
   return (
     <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-2" data-spec-strip>
       <p className="text-sm font-medium text-amber-900">{drafts.length} product specification{drafts.length === 1 ? '' : 's'} drafted by a test and waiting on a QA lead</p>
-      <p className="text-[11px] text-amber-800">Until approved, tests grade against the draft and say so on the record. Approving locks the wording.</p>
+      <p className="text-[11px] text-amber-800">Until approved, tests grade against the draft and say so on the record. Edit the wording as needed — approving locks it.</p>
       <ul className="space-y-1.5">
         {drafts.map(sp => (
           <li key={sp.id} className="bg-white rounded-lg border border-amber-100 px-3 py-2 flex flex-wrap items-start gap-x-3 gap-y-1">
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-gray-900">{sp.product_name}</p>
               <p className="text-[11px] text-gray-500">Drafted by {sp.drafted_by || 'QA'} on {String(sp.drafted_at || '').slice(0, 10)}</p>
-              <dl className="mt-1 grid sm:grid-cols-2 gap-x-4 gap-y-0.5 text-[12px]">
-                {SENSORY_ATTRIBUTES.map(a => <div key={a.key}><dt className="inline text-gray-500">{a.label}: </dt><dd className="inline text-gray-800">{sp[a.key] || '—'}</dd></div>)}
-              </dl>
+              {editing === sp.id ? (
+                <DraftEditRow sp={sp} onCancel={() => setEditing(null)}
+                  onSaved={() => { setEditing(null); refresh(); }} />
+              ) : (
+                <dl className="mt-1 grid sm:grid-cols-2 gap-x-4 gap-y-0.5 text-[12px]">
+                  {SENSORY_ATTRIBUTES.map(a => <div key={a.key}><dt className="inline text-gray-500">{a.label}: </dt><dd className="inline text-gray-800">{sp[a.key] || '—'}</dd></div>)}
+                </dl>
+              )}
             </div>
-            {data?.can_approve && (
-              <button type="button" onClick={() => approve(sp.id)} disabled={busy === sp.id} data-approve-spec={sp.product_name}
-                className="px-3 py-1.5 bg-powder-600 text-white text-xs font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50 inline-flex items-center gap-1">
-                <ShieldCheck size={13} /> {busy === sp.id ? 'Approving…' : 'Approve specification'}
-              </button>
+            {editing !== sp.id && (data?.can_draft || data?.can_approve) && (
+              <div className="flex items-center gap-2 shrink-0">
+                {data?.can_draft && (
+                  <button type="button" onClick={() => setEditing(sp.id)} data-edit-spec={sp.product_name}
+                    className="px-2.5 py-1.5 border border-gray-300 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-50 inline-flex items-center gap-1">
+                    <Pencil size={13} /> Edit
+                  </button>
+                )}
+                {data?.can_approve && (
+                  <button type="button" onClick={() => approve(sp.id)} disabled={busy === sp.id} data-approve-spec={sp.product_name}
+                    className="px-3 py-1.5 bg-powder-600 text-white text-xs font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50 inline-flex items-center gap-1">
+                    <ShieldCheck size={13} /> {busy === sp.id ? 'Approving…' : 'Approve specification'}
+                  </button>
+                )}
+              </div>
             )}
           </li>
         ))}

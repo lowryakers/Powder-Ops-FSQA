@@ -479,7 +479,7 @@ function applySensoryFiling(db, { productName, data, body, user, recordId, exist
 router.get('/sensory-specs', (req, res) => {
   const db = getDb();
   const status = ['draft', 'approved'].includes(req.query.status) ? req.query.status : null;
-  res.json({ specs: listSpecs(db, { status }), can_approve: canApproveSpec(req.user) });
+  res.json({ specs: listSpecs(db, { status }), can_approve: canApproveSpec(req.user), can_draft: canRecordSensory(req.user) });
 });
 router.get('/sensory-spec', (req, res) => {
   const db = getDb();

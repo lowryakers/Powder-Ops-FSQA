@@ -51,6 +51,17 @@ let spec = (await J(await req(`/qms/sensory-spec?product=${encodeURIComponent(' 
 t('the spec is on file for the product, found however the name is spaced or cased', spec?.status === 'draft' && spec.drafted_by === 'QA Tech', JSON.stringify(spec).slice(0, 120));
 t('a second draft for the same product is not created', (await J(await post('/qms/organoleptic', { product: PRODUCT, lot: 'L-3', ...allPass, sensory_spec_draft: { ...SPEC, taste: 'something else' } })))?.sensory_spec?.attributes?.taste === SPEC.taste);
 
+console.log('\nA draft is editable before it is locked — the whole reason it is drafted first');
+token = op; r = await put(`/qms/sensory-specs/${spec.id}`, { taste: 'not allowed' });
+t('an operator (not QA) cannot edit the wording', r.status === 403, String(r.status));
+token = tech;
+const REVISED_TASTE = 'Blueberry muffin, mildly sweet, faint vanilla note';
+r = await put(`/qms/sensory-specs/${spec.id}`, { taste: REVISED_TASTE });
+body = await J(r);
+t('a QA account can rewrite the draft before approval', r.status === 200 && body?.taste === REVISED_TASTE && body.status === 'draft', JSON.stringify(body).slice(0, 160));
+const listed = await J(await req('/qms/sensory-specs?status=draft'));
+t('the draft list says who may edit it, same right as who may draft one', listed?.can_draft === true && Array.isArray(listed?.specs));
+
 console.log('\nApproval is a QA lead\'s act');
 token = tech; r = await post(`/qms/sensory-specs/${spec.id}/approve`, {});
 t('a QA technician cannot approve', r.status === 403, String(r.status));
