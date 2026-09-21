@@ -3123,12 +3123,46 @@ zone) are editable in the app on purpose. Two defects made every correction look
   A zone that stops appearing is one of exactly two DATA states, both fixable without a deploy: its **area
   is out of service** in the Equipment registry (the orphan backfill joins `equipment` and requires
   `status = 'active'`, so retiring a zone silently ends its inspections) or its **schedule is paused**.
-- **The inventory editor is ONLY on the BP&G task card in the Operator View**, which is department-locked to
-  `qa` — so Document Control cannot reach it. **The facility map is not the place**: its one write endpoint
-  renames a room / records the line sited in it, and FORM 431-01 is a static PDF re-issued through Document
-  Control. A facility-map grant does nothing for the inventories.
-- `verify:bpgitems` (14, live). The control restores both behaviours and fails **3**, the first printing
-  `Windows|8|Glass` on the card after the inspector corrected it to 16.
+- **The inventory editor was ONLY on the BP&G task card in the Operator View**, which is department-locked
+  to `qa` AND gated on `isAdmin` — so Document Control could not reach it. **The facility map is not the
+  place**: its one write endpoint renames a room / records the line sited in it, and FORM 431-01 is a static
+  PDF re-issued through Document Control. A facility-map grant does nothing for the inventories.
+  **That gap is closed — see the zone register below (D-102).**
+- `verify:bpgitems` (14 → 43, live + browser). The D-101 control restores both behaviours and fails **3**,
+  the first printing `Windows|8|Glass` on the card after the inspector corrected it to 16.
+
+### The zone register: the inventory, and why a zone is not being inspected (D-102)
+`server/bpg-zones.js` + `server/api/bpg.js` + `BpgZonesPanel.jsx` as the **Zones & items** view of QA
+Inspections. One payload carries each zone's inventory AND its live inspection state, because a zone that
+is not producing a card has no task card to edit — and that is exactly the zone somebody is asking about.
+- **A ZONE WITH NO CARD NAMES THE REASON AND WHAT TO CHANGE** — *the schedule is paused*, or *the area is
+  "out_of_service" in the Equipment registry*. Derived on every read, so putting either back clears the
+  warning by itself. **Those zones sort FIRST**: it is the only state that looks finished from every other
+  screen. Every card on the screen is `.length` of the rows returned (the `activity-metrics` rule).
+- **MOUNTED WITHOUT `requireModuleWrite`** (the AP Drop / QMS-filing arrangement) because Document Control
+  holds no `pm` grant and the guard would 403 the one department the screen exists for. A router that skips
+  the mount guard owes its own rule per route: read for any account **with modules assigned** (a
+  nothing-assigned account is still refused, or "no modules" would answer reads anyway), write for **admin,
+  Document Control, or a QA supervisor**. Adding or removing an item changes the SCOPE of a controlled
+  inspection, so it is not the floor's call — and the refusal says to report a miscount instead.
+- **ONE WRITER: `writeScheduleItems()`** holds the update, the cascade onto the cards already open
+  (`missed` included) and the audit entry; `PUT /pm/schedules/:id/items` delegates to it. Permission is
+  deliberately NOT decided there — a maintenance supervisor legitimately edits a maintenance schedule's
+  steps — so each door applies its own. **A plain step passes through VERBATIM**: `procedure_steps` is the
+  step list for every kind of schedule, and turning "Check the drive belt" into
+  `Check the drive belt|1|Plastic` would rewrite another team's procedure. A `|` inside a value is
+  **refused by name**, never stripped into a fourth column.
+- **LAST INSPECTED IS READ FROM THE RECORD, not from a completed task** — this plant's BP&G history was
+  imported into `sanitation_records` and never as task completions, so reading the work orders had all
+  seventeen zones saying "never inspected". The area string comes from `recordAreaForTask()`, the one map
+  between a task title and the record it files. **The zone with nothing on file says so** rather than
+  borrowing a date: `Warehouse Area (Main)` is absent from the imported history, which also carries a
+  `Production Rooms 1-8` that is no longer a zone.
+- **Reaching the screen is one tick in Settings**: it is a view of QA Inspections, so DC needs the
+  `qa-inspections` grant — **view is enough**, because the grant reaches the screen and the DEPARTMENT opens
+  the editor. Asserted both ways: she corrects an inventory, and she is offered no Verify on a record.
+- `verify:bpgitems` (43, live + browser at 1280 and 390px; in `verify:all`). **The control removes the
+  `/api/bpg` mount — the state she was actually in — and fails 15.**
 
 ## Several courses in one act (D-100)
 `POST /training/assign` takes `course_ids` beside the single `course_id`; `AssignModal` picks courses as tick

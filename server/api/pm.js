@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { writeScheduleItems } from '../bpg-zones.js';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import { requireDepartment } from '../middleware/auth.js';
@@ -2057,24 +2058,15 @@ router.get('/operator-tasks', (req, res) => {
 });
 
 router.put('/schedules/:id/items', (req, res) => {
-  const db = getDb();
-  const sched = db.prepare('SELECT * FROM pm_schedules WHERE id = ?').get(req.params.id);
-  if (!sched) return res.status(404).json({ error: 'PM schedule not found' });
-  const { items } = req.body;
-  if (!items || !Array.isArray(items)) return res.status(400).json({ error: 'items array required' });
-  const stepsJson = JSON.stringify(items);
-  db.prepare("UPDATE pm_schedules SET procedure_steps = ?, updated_at = datetime('now') WHERE id = ?")
-    .run(stepsJson, req.params.id);
-  // 'missed' IS INCLUDED, and leaving it out is the defect this endpoint was
-  // reported for. A monthly inspection past its date is flipped to 'missed' by
-  // housekeeping — the ordinary state of a BP&G zone — so a corrected item
-  // count reached the SCHEDULE and never the card the inspector was actually
-  // working from. She counts sixteen windows, saves, and the list in front of
-  // her still says eight. Same missed-bucket omission as the Operator View.
-  db.prepare("UPDATE work_orders SET procedure_steps = ? WHERE pm_schedule_id = ? AND status IN ('open','in_progress','overdue','missed')")
-    .run(stepsJson, req.params.id);
-  logAudit(req.user, 'items_updated', 'pm_schedule', req.params.id, { item_count: items.length });
-  res.json(db.prepare('SELECT * FROM pm_schedules WHERE id = ?').get(req.params.id));
+  // ONE WRITER. The update, the cascade onto the cards already open (including
+  // 'missed', which is the whole reason this was reported) and the audit entry
+  // all live in bpg-zones.js, so this door and the zone register cannot fall
+  // out of step. Permission is the mount's — a maintenance supervisor editing
+  // a maintenance schedule's steps is legitimate, and narrowing that here
+  // would be a different decision from the one this change is making.
+  const out = writeScheduleItems(getDb(), req.params.id, req.body?.items, req.user);
+  if (out.status !== 200) return res.status(out.status).json({ error: out.error });
+  res.json(out.schedule);
 });
 
 export default router;

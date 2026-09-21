@@ -14,6 +14,18 @@ import { formatDateTime } from '../../lib/datetime.js';
 import FormChip from '../common/FormChip';
 import { formLabel } from '../../../shared/form-registry.js';
 import { withSignature } from '../../lib/signature';
+import ModuleTabs from '../common/ModuleTabs.jsx';
+import { useModuleTabs } from '../../lib/useModuleTabs';
+import BpgZonesPanel from './BpgZonesPanel.jsx';
+
+// Two views over one form family: the RECORDS an inspection files, and the
+// ZONE REGISTER the inspection is run against. The register is here rather
+// than only on the task card because maintaining those inventories is Quality
+// and Document Control's job, and neither could reach the card-side editor.
+const VIEWS = [
+  { id: 'records', label: 'Records' },
+  { id: 'zones', label: 'Zones & items', icon: ShieldAlert },
+];
 
 // Columns as data, so the header and the sort cannot disagree. The first entry
 // has no key — it is the expand chevron, which is not a value to order by.
@@ -129,6 +141,7 @@ export default function QAInspectionsPanel() {
   const [verifying, setVerifying] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const expand = useRowExpand();
+  const { tab, setTab, tabs } = useModuleTabs({ id: 'qa-inspections', tabs: VIEWS, user });
 
   const revoke = async (r) => {
     if (!window.confirm(`Revoke ${r.verified_by}'s verification so the record can be corrected?`)) return;
@@ -184,6 +197,10 @@ export default function QAInspectionsPanel() {
           and temperature &amp; humidity control (Form 110-03).
         </p>
       </div>
+
+      <ModuleTabs tabs={tabs} value={tab} onChange={setTab} label="QA Inspections sections" />
+
+      {tab === 'zones' ? <BpgZonesPanel /> : (<>
 
       <RecordBackfillStrip group="qa" noun="inspection" onDone={refresh} />
 
@@ -354,6 +371,8 @@ export default function QAInspectionsPanel() {
           </div>
         </>
       )}
+
+      </>)}
     </div>
   );
 }

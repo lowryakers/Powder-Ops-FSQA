@@ -32,6 +32,7 @@ import scaleVerificationRoutes from './server/api/scale-verification.js';
 import qaReviewRoutes from './server/api/qa-review.js';
 import cleanupRoutes from './server/api/cleanup.js';
 import sanitationRoutes from './server/api/sanitation.js';
+import bpgRoutes from './server/api/bpg.js';
 import auditRoutes from './server/api/audit.js';
 import integrationsRoutes from './server/api/integrations.js';
 import complianceRoutes, { buildBackupZip, computeCritical, seedAuditorBinderDefaults } from './server/api/compliance.js';
@@ -1832,6 +1833,12 @@ app.use('/api/scale-verification', requireModuleWrite('calibration'), scaleVerif
 // Both the Sanitation log and QA Inspections read and write this mount — they
 // are two lists over one table, so an edit grant on either module opens it.
 app.use('/api/sanitation', requireModuleWrite('sanitation', 'qa-inspections'), sanitationRoutes);
+// The brittle plastic & glass zone register — the inventories behind FORM
+// 431-01 and whether each zone's inspection is reaching anybody. NOT behind
+// requireModuleWrite: maintaining those lists is Document Control's job and
+// they hold no `pm` grant, so the guard would refuse the one department the
+// screen exists for. The router states its own rule per route.
+app.use('/api/bpg', bpgRoutes);
 // QA Review Center spans several modules, so no single module guard fits — the
 // router checks the reviewer role itself and each source re-checks sign rights.
 app.use('/api/qa-review', qaReviewRoutes);

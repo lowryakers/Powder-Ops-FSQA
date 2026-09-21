@@ -3776,3 +3776,59 @@ beside the zone it belongs to — the plant's call, not the app's.
 
 Verified: `verify:bpgitems` (14, live; in `verify:all`). **The control** restores both behaviours and fails
 **3** — the first printing `Windows|8|Glass` on the card after the inspector had corrected it to 16.
+
+---
+
+## D-102 — The BP&G zone register: the inventory, and why a zone is not being inspected
+**2026-09-21.** D-101 left one thing open and the plant chose it: *"Then do the long-term solution —
+surface the inventory editor so DC can maintain it."* The two data states D-101 named were both ruled out
+on the live site (the Production, Maintenance and Office areas are active in the Equipment registry, and no
+BP&G schedule is paused), so the question *why did those zones not appear* is still open — and that is
+exactly what the screen now answers, instead of leaving somebody to hunt through two other screens for it.
+
+**ONE SCREEN, BOTH HALVES.** `server/bpg-zones.js` derives, per zone, its inventory AND its live inspection
+state — the schedule, the area it inspects, the card that is open, when it was last inspected — and
+`GET /api/bpg/zones` hands both back together. A zone with no card **names the reason and what to change**:
+*the recurring schedule is paused*, or *the area is "out_of_service" in the Equipment registry*. Everything
+is derived on every read, so reactivating an area clears the warning by itself. **A zone nobody is
+inspecting sorts first**, and the order is the point: it is the only state that looks finished from every
+other screen — the schedule exists, the form exists, and no card ever reaches anybody.
+
+**WHY IT NEEDED ITS OWN DOOR.** The only editor was on the BP&G task card in the **Operator View**, which
+is department-locked to `qa` *and* gated on `isAdmin` — so Document Control, whose job maintaining these
+inventories is, had no door from any screen, and a zone that is not producing a card has no card to edit.
+`/api/bpg` is therefore mounted **without `requireModuleWrite`** (the AP Drop / QMS-filing arrangement):
+that guard would 403 the one department the screen exists for, because Daniela holds no `pm` grant. A
+router that skips the mount guard owes its own rule per route, and it states them — a read for any account
+with modules assigned (a nothing-assigned account is still refused, or "no modules" would answer reads
+anyway), a write for **admin, Document Control, or a QA supervisor**.
+
+**ADDING OR REMOVING AN ITEM CHANGES THE SCOPE OF A CONTROLLED INSPECTION**, so it is Quality's or Document
+Control's decision, not the floor's — an inspector who finds a miscount reports it, which is precisely what
+happened here. The refusal says so rather than just saying no.
+
+**ONE WRITER.** `writeScheduleItems()` holds the update, the cascade onto the cards already open (including
+`missed`, D-101's whole finding) and the audit entry; `PUT /pm/schedules/:id/items` now delegates to it, so
+the two doors cannot fall out of step and the `missed` omission cannot be reintroduced in a second copy.
+Permission is deliberately **not** decided in that function: a maintenance supervisor legitimately edits a
+maintenance schedule's steps, so each door applies its own rule. **A plain step passes through verbatim** —
+`procedure_steps` is the step list for every kind of schedule, and a shared writer that turned "Check the
+drive belt" into `Check the drive belt|1|Plastic` would quietly rewrite another team's procedure. A `|`
+inside a value is **refused by name**, never stripped into a fourth column.
+
+**WHEN A ZONE WAS LAST INSPECTED IS READ FROM THE RECORD, not from a completed task.** This plant's BP&G
+history was imported into `sanitation_records` and never as task completions, so reading the work orders
+alone had all seventeen zones saying "never inspected". The area string comes from `recordAreaForTask()` —
+the one map between a task title and the record it files — rather than being spelled a second time. **The
+one zone with nothing on file says so** rather than borrowing another's date: `Warehouse Area (Main)` is
+genuinely absent from the imported history, and the imported history carries a `Production Rooms 1-8` that
+is no longer a zone.
+
+**REACHING THE SCREEN IS STILL ONE TICK IN SETTINGS.** It is a view of QA Inspections, so Document Control
+needs the `qa-inspections` grant to see it — **view is enough**, because the grant reaches the screen and
+the *department* is what opens the editor. Asserted in both directions: she can correct an inventory and
+she is offered no Verify button on an inspection record.
+
+Verified: `verify:bpgitems` (14 → **43**, live + a real browser at 1280 and 390px; in `verify:all`).
+**The control** removes the `/api/bpg` mount — the state she was actually in — and fails **15**, the first
+returning nothing where the register should list seventeen zones.
