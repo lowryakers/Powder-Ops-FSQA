@@ -448,7 +448,7 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
           <div className="mt-3 ml-14 bg-green-50 rounded-xl p-3 space-y-3 border border-green-200">
             {/* A check that files a record asks for what the record needs. */}
             {task.check_form && (
-              <CheckFields form={task.check_form} value={check} onChange={setCheck} lang={lang} />
+              <CheckFields form={task.check_form} value={check} onChange={setCheck} lang={lang} assignee={task.assigned_to} />
             )}
             {/* Type-specific fields */}
             {taskType === 'temp_humidity' && (

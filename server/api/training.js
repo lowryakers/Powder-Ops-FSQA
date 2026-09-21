@@ -12,27 +12,14 @@ import { parseTrainingLog } from '../training-log.js';
 import { parseScanName, similarity, isScanEntry } from '../scanned-tests.js';
 import { extractInvoiceText } from '../invoice-text.js';
 import { requireRole } from '../middleware/auth.js';
+import { addMonths, dueDateFor, supersedeOlder, courseTrainingRevision, insertCompletion } from '../training-records.js';
+import { assignTraining } from '../training-assign.js';
 
 const router = Router();
 
 // ── helpers ───────────────────────────────────────────────────────────────
 function parseJson(raw, fallback) { if (!raw) return fallback; try { return JSON.parse(raw); } catch { return fallback; } }
 
-const addMonths = (isoDate, months) => {
-  if (!isoDate || !months) return null;
-  const d = new Date(isoDate + (isoDate.length <= 10 ? 'T00:00:00' : ''));
-  if (Number.isNaN(d.getTime())) return null;
-  d.setMonth(d.getMonth() + months);
-  return d.toISOString().slice(0, 10);
-};
-
-// Compute a completion's retraining due date from the course cadence.
-function dueDateFor(db, courseId, completionDate) {
-  if (!courseId || !completionDate) return null;
-  const c = db.prepare('SELECT retrain_months FROM training_courses WHERE id = ?').get(courseId);
-  if (!c || !c.retrain_months) return null;
-  return addMonths(completionDate, c.retrain_months);
-}
 
 // A course applies to a user when its role/dept lists are empty (all staff) or
 // the user's role/department is listed — unless an explicit exempt override exists.
@@ -133,50 +120,49 @@ router.get('/', (req, res) => {
   res.json(db.prepare(sql).all(...params));
 });
 
-// Mark any earlier completions of the same course by the same person superseded,
-// so the matrix reflects the most recent completion per person+course.
-//
-// MATCHED ON THE ACCOUNT WHERE THERE IS ONE, the name otherwise. Name-only
-// matching left a renamed person with two "current" completions — the record
-// filed under the old spelling was never superseded — which is the same split
-// the time-adjustment and pay-roster keys had.
-function supersedeOlder(db, employeeName, courseId, keepId, employeeUserId = null) {
-  if (!courseId) return;
-  db.prepare(`UPDATE training_records SET superseded = 1
-    WHERE id != ? AND course_id = ?
-      AND (LOWER(employee_name) = LOWER(?) OR (? IS NOT NULL AND employee_user_id = ?))`)
-    .run(keepId, courseId, employeeName, employeeUserId, employeeUserId);
-}
 
-// The revision of a course's linked document that current training must reflect.
-function courseTrainingRevision(db, courseId) {
-  if (!courseId) return null;
-  const c = db.prepare('SELECT sop_id FROM training_courses WHERE id = ?').get(courseId);
-  if (!c?.sop_id) return null;
-  const d = db.prepare('SELECT training_revision, revision FROM sop_documents WHERE id = ?').get(c.sop_id);
-  return d?.training_revision || d?.revision || null;
-}
 
-function insertCompletion(db, body) {
-  const id = uuid();
-  const completion = body.completion_date || (body.status === 'completed' ? (body.training_date || new Date().toISOString().slice(0, 10)) : null);
-  const next_due = dueDateFor(db, body.course_id, completion);
-  // Stamp the document revision this completion was trained against.
-  const sopRevision = body.sop_revision || courseTrainingRevision(db, body.course_id);
-  db.prepare(`INSERT INTO training_records
-    (id, employee_name, employee_id, employee_user_id, training_topic, course_id, sop_id, trainer, method,
-     training_date, completion_date, status, passed, score, next_due_date, certificate_url, document_url, gdrive_url, test_attempt_id, notes, sop_revision)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-    id, body.employee_name, body.employee_id || null, body.employee_user_id || null,
-    body.training_topic || body.course_title || '', body.course_id || null, body.sop_id || null,
-    body.trainer || null, body.method || null,
-    body.training_date || new Date().toISOString().slice(0, 10), completion,
-    body.status || (completion ? 'completed' : 'scheduled'),
-    body.passed === undefined ? null : (body.passed ? 1 : 0), body.score ?? null, next_due,
-    body.certificate_url || null, body.document_url || null, body.gdrive_url || null, body.test_attempt_id || null, body.notes || null, sopRevision);
-  if (body.status === 'completed' || completion) supersedeOlder(db, body.employee_name, body.course_id, id, body.employee_user_id || null);
-  return db.prepare('SELECT * FROM training_records WHERE id = ?').get(id);
-}
+
+// ── ASSIGNING A COURSE ────────────────────────────────────────────────────
+// The step that was missing: hand a course to people, with a due date, and
+// have it reach them. One work order each — see server/training-assign.js for
+// why an assignment needs no table of its own.
+
+router.post('/assign', (req, res) => {
+  const db = getDb();
+  const { course_id, people, due_date, reason } = req.body || {};
+  if (!course_id) return res.status(400).json({ error: 'Pick a course to assign.' });
+  if (!Array.isArray(people) || !people.length) return res.status(400).json({ error: 'Pick at least one person.' });
+  const out = assignTraining(db, {
+    course_id, people, due_date, reason: String(reason || '').trim().slice(0, 200) || null,
+    assigned_by: req.user?.name || 'ReadyDoc', source: 'manual',
+  });
+  if (out.error) return res.status(404).json({ error: out.error });
+  for (const c of out.created) {
+    logAudit(req.user, 'training_assigned', 'work_order', c.work_order_id,
+      { course: out.course.code || out.course.title, to: c.name, due_date: c.due_date, reason: reason || null }, null, null, c.name);
+  }
+  res.status(201).json(out);
+});
+
+/**
+ * What has been assigned and not yet done — derived from the work orders, so
+ * it cannot disagree with Task Center about whether a course is outstanding.
+ */
+router.get('/assignments', (req, res) => {
+  const db = getDb();
+  const today = new Date().toISOString().slice(0, 10);
+  const rows = db.prepare(`SELECT wo.id, wo.title, wo.due_date, wo.status, wo.assigned_to, wo.assigned_to_id,
+      wo.completed_at, wo.completed_by, c.id AS course_id, c.code AS course_code, c.title AS course_title, c.has_test
+    FROM work_orders wo JOIN training_courses c ON c.id = wo.training_course_id
+    WHERE wo.training_course_id IS NOT NULL
+    ORDER BY CASE WHEN wo.status IN ('open','in_progress','overdue','missed') THEN 0 ELSE 1 END, wo.due_date`).all();
+  res.json(rows.map(r => ({
+    ...r,
+    outstanding: ['open', 'in_progress', 'overdue', 'missed'].includes(r.status),
+    overdue: ['open', 'in_progress', 'overdue', 'missed'].includes(r.status) && !!r.due_date && r.due_date < today,
+  })));
+});
 
 router.post('/', (req, res) => {
   const db = getDb();

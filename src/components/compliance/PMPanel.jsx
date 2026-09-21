@@ -103,7 +103,7 @@ function CompleteForm({ wo, chemicals, onComplete, onCancel }) {
 
   return (
     <form onSubmit={handleSubmit} className="bg-green-50 rounded-lg border border-green-200 p-3 mt-2 space-y-2">
-      {wo.check_form && <CheckFields form={wo.check_form} value={check} onChange={setCheck} />}
+      {wo.check_form && <CheckFields form={wo.check_form} value={check} onChange={setCheck} assignee={wo.assigned_to} />}
       {/* Ticking is what gives QA an account of the work at hygiene clearance.
           Left optional rather than required: this is completed on the floor,
           and a form that refuses to submit is one people work around. */}

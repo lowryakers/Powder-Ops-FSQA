@@ -31,6 +31,10 @@
  *   stability_pull      — a dated pull on a stability study (CAR 4990683-9):
  *                         what was pulled and where it went; the result is
  *                         entered on the study when the laboratory reports.
+ *   training            — an assigned training course. Completing the task is
+ *                         what files the training record, so a course handed
+ *                         to somebody cannot be "done" with nothing on the
+ *                         training log to show for it.
  */
 
 export const GMP_WALK_REVISION = 'DRAFT-1';
@@ -110,7 +114,21 @@ export function missingForCheck(form, check) {
   const c = check || {};
   const out = [];
   if (!form) return out;
-  if (form.kind === 'stability_pull') {
+  if (form.kind === 'training') {
+    // A RESULT OR A TRAINER — whichever the course actually has. A course
+    // carrying a test is finished by a score: either the one the app graded,
+    // or the one somebody marked on paper, because the plant does both and
+    // refusing the paper route would just push the record back out of the
+    // app. A course with no test is finished by a person having delivered it;
+    // "trained by nobody" is not a record, and a tick with nothing behind it
+    // is the fabricated-record refusal in a smaller hat.
+    if (form.has_test) {
+      const scored = String(c.score ?? '').trim() !== '' && Number.isFinite(Number(c.score));
+      if (!c.test_attempt_id && !scored) out.push({ key: 'score', label: 'The test result (take it here, or record the score)' });
+    } else if (!String(c.trainer || '').trim()) {
+      out.push({ key: 'trainer', label: 'Who delivered the training' });
+    }
+  } else if (form.kind === 'stability_pull') {
     if (!String(c.quantity || '').trim()) out.push({ key: 'quantity', label: 'What was pulled (quantity / container)' });
   } else if (form.kind === 'emp') {
     const sites = Array.isArray(c.sites) ? c.sites.map(s => String(s || '').trim()).filter(Boolean) : [];
@@ -138,6 +156,16 @@ export function missingForCheck(form, check) {
 export function normalizeCheck(form, check) {
   const c = check || {};
   if (!form) return null;
+  if (form.kind === 'training') {
+    const raw = String(c.score ?? '').trim();
+    const score = raw !== '' && Number.isFinite(Number(raw)) ? Number(raw) : null;
+    return {
+      test_attempt_id: String(c.test_attempt_id || '').trim().slice(0, 60) || null,
+      score,
+      trainer: String(c.trainer || '').trim().slice(0, 120) || null,
+      method: String(c.method || '').trim().slice(0, 60) || null,
+    };
+  }
   if (form.kind === 'stability_pull') {
     return { quantity: String(c.quantity || '').trim().slice(0, 120), lab: String(c.lab || '').trim().slice(0, 120) || null, sent_on: /^\d{4}-\d{2}-\d{2}$/.test(String(c.sent_on || '')) ? c.sent_on : null };
   }

@@ -29,10 +29,23 @@ const S = {
   quantity: { en: 'What was pulled (quantity / container)', es: 'Qué se tomó (cantidad / envase)' },
   sent_on: { en: 'Sent to the laboratory on (optional)', es: 'Enviado al laboratorio el (opcional)' },
   from_retain: { en: 'From retention sample / box', es: 'De la muestra de retención / caja' },
+  train_h: { en: 'Training', es: 'Capacitación' },
+  train_for: { en: 'This records the training for', es: 'Esto registra la capacitación de' },
+  score: { en: 'Test score (%)', es: 'Puntaje del examen (%)' },
+  score_hint: { en: 'Take the test here, or enter the score from the test that was taken.', es: 'Tome el examen aquí, o ingrese el puntaje del examen que se tomó.' },
+  trainer: { en: 'Who delivered the training', es: 'Quién impartió la capacitación' },
+  method: { en: 'How (optional)', es: 'Cómo (opcional)' },
+  method_person: { en: 'In person', es: 'En persona' },
+  method_video: { en: 'Video', es: 'Video' },
+  method_read: { en: 'Read and understood', es: 'Leído y entendido' },
+  method_test: { en: 'Test taken in ReadyDoc', es: 'Examen tomado en ReadyDoc' },
+  passing: { en: 'Passing score', es: 'Puntaje para aprobar' },
+  renews: { en: 'Records a completion, and the next one comes due in', es: 'Registra la finalización, y la próxima vence en' },
+  months: { en: 'months', es: 'meses' },
 };
 const tr = (lang, k) => (S[k] || {})[lang] || (S[k] || {}).en || k;
 
-export default function CheckFields({ form, value, onChange, lang = 'en' }) {
+export default function CheckFields({ form, value, onChange, lang = 'en', assignee = null }) {
   const v = value || {};
   const set = (patch) => onChange({ ...v, ...patch });
   const missing = missingForCheck(form, v);
@@ -44,6 +57,7 @@ export default function CheckFields({ form, value, onChange, lang = 'en' }) {
       {form.kind === 'gmp_walk' && <WalkFields form={form} v={v} set={set} lang={lang} />}
       {form.kind === 'banned_list_review' && <ReviewFields form={form} v={v} set={set} lang={lang} />}
       {form.kind === 'stability_pull' && <PullFields form={form} v={v} set={set} lang={lang} />}
+      {form.kind === 'training' && <TrainingFields form={form} v={v} set={set} lang={lang} assignee={assignee} />}
       {missing.length > 0 && (
         <p className="text-[11px] text-amber-800" data-check-missing={missing.length}>
           {tr(lang, 'still')}: {missing.map(m => m.label).join(' · ')}
@@ -165,6 +179,57 @@ function PullFields({ form, v, set, lang }) {
         <input value={v.lab || ''} onChange={e => set({ lab: e.target.value })} placeholder={tr(lang, 'lab')} className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
         <input type="date" value={v.sent_on || ''} onChange={e => set({ sent_on: e.target.value })} title={tr(lang, 'sent_on')} className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
       </div>
+    </div>
+  );
+}
+
+/**
+ * An assigned training course.
+ *
+ * WHAT IT ASKS FOR FOLLOWS THE COURSE, not a fixed form. A course carrying a
+ * test is finished by a result; one without is finished by a person having
+ * delivered it. Asking for a trainer on a self-study test, or a score on a
+ * hands-on demonstration, is ceremony people learn to type anything into.
+ *
+ * It names WHO the record will be filed for, because the person completing
+ * the task on a shared floor phone is often not the person who was trained —
+ * a supervisor closing it out must be able to see that before they press it.
+ */
+function TrainingFields({ form, v, set, lang, assignee }) {
+  return (
+    <div className="bg-white rounded-lg border border-green-200 p-2 space-y-2" data-training-check>
+      <p className="text-xs font-semibold text-gray-700">
+        {tr(lang, 'train_h')} <span className="font-normal text-gray-400">— {form.code ? `${form.code} · ` : ''}{form.title}</span>
+      </p>
+      {assignee && (
+        <p className="text-[11px] text-gray-500" data-training-for>{tr(lang, 'train_for')} <span className="font-medium text-gray-700">{assignee}</span></p>
+      )}
+      {form.has_test ? (
+        <>
+          <label className="block">
+            <span className="text-[11px] text-gray-600">{tr(lang, 'score')}</span>
+            <input type="number" min="0" max="100" step="any" inputMode="decimal" value={v.score ?? ''} data-training-score
+              onChange={e => set({ score: e.target.value })}
+              className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
+          </label>
+          <p className="text-[11px] text-gray-500">{tr(lang, 'score_hint')} {tr(lang, 'passing')}: {form.passing_score}%.</p>
+        </>
+      ) : (
+        <>
+          <input value={v.trainer || ''} onChange={e => set({ trainer: e.target.value })} placeholder={tr(lang, 'trainer')} data-training-trainer
+            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
+          <select value={v.method || ''} onChange={e => set({ method: e.target.value })} data-training-method
+            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm">
+            <option value="">{tr(lang, 'method')}</option>
+            <option value="in person">{tr(lang, 'method_person')}</option>
+            <option value="video">{tr(lang, 'method_video')}</option>
+            <option value="read and understood">{tr(lang, 'method_read')}</option>
+          </select>
+        </>
+      )}
+      {!!form.retrain_months && (
+        <p className="text-[11px] text-gray-500">{tr(lang, 'renews')} {form.retrain_months} {tr(lang, 'months')}.</p>
+      )}
     </div>
   );
 }

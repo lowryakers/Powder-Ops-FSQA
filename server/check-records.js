@@ -14,6 +14,7 @@ import {
 } from '../shared/check-forms.js';
 import { EMP_SECTIONS, EMP_FORM_CODE, EMP_REVISION } from './emp-site-list.js';
 import { raiseCapa } from './capa-raise.js';
+import { insertCompletion } from './training-records.js';
 
 export { missingForCheck, normalizeCheck };
 
@@ -43,6 +44,18 @@ function empSitesFor(db, zone) {
  * lookup, and only for tasks that came from a quality schedule.
  */
 export function checkFormFor(db, wo) {
+  if (wo?.training_course_id) {
+    const c = (() => {
+      try { return db.prepare('SELECT id, code, title, has_test, passing_score, retrain_months, sop_id FROM training_courses WHERE id = ?').get(wo.training_course_id); }
+      catch { return null; }
+    })();
+    if (!c) return null;
+    return {
+      kind: 'training', course_id: c.id, code: c.code, title: c.title,
+      has_test: !!c.has_test, passing_score: c.passing_score ?? 80,
+      retrain_months: c.retrain_months || null, sop_id: c.sop_id || null,
+    };
+  }
   if (wo?.stability_pull_id) {
     const p = (() => { try { return db.prepare('SELECT p.pull_month, p.due_date, s.title, s.condition, s.tests, s.retention_sample_id, s.lot_number FROM stability_pulls p JOIN stability_studies s ON s.id = p.study_id WHERE p.id = ?').get(wo.stability_pull_id); } catch { return null; } })();
     if (!p) return null;
@@ -68,6 +81,12 @@ export function checkFormFor(db, wo) {
 export function attachCheckForms(db, rows) {
   const cache = new Map();
   return rows.map(r => {
+    if (r.training_course_id) {
+      const key = `course:${r.training_course_id}`;
+      if (!cache.has(key)) cache.set(key, checkFormFor(db, r));
+      const f = cache.get(key);
+      return f ? { ...r, check_form: f } : r;
+    }
     if (r.stability_pull_id) { const f = checkFormFor(db, r); return f ? { ...r, check_form: f } : r; }
     if (!r.quality_schedule_id) return r;
     if (!cache.has(r.quality_schedule_id)) cache.set(r.quality_schedule_id, checkFormFor(db, r));
@@ -83,6 +102,26 @@ export function attachCheckForms(db, rows) {
 export function fileCheckRecord(db, { form, check, wo, by, when, notes }) {
   const c = normalizeCheck(form, check);
   const day = (when || new Date().toISOString()).slice(0, 10);
+  if (form.kind === 'training') {
+    // THE RECORD IS FILED FOR THE PERSON THE TASK WAS ASSIGNED TO, not
+    // whoever pressed Complete. A supervisor closing out a task on the floor
+    // phone must not end up with the forklift certification against their own
+    // name — the assignee is who was trained, and `assigned_to_id` is the
+    // identity while the name is a label (D-074).
+    const trainee = wo.assigned_to || by;
+    const traineeId = wo.assigned_to_id || null;
+    const passed = c.score === null ? null : c.score >= (form.passing_score ?? 80);
+    const rec = insertCompletion(db, {
+      employee_name: trainee, employee_user_id: traineeId,
+      course_id: form.course_id, course_title: form.title, sop_id: form.sop_id,
+      training_date: day, completion_date: day, status: 'completed',
+      score: c.score, passed: passed === null ? undefined : passed,
+      test_attempt_id: c.test_attempt_id,
+      trainer: c.trainer, method: c.method || (c.test_attempt_id ? 'in-app test' : null),
+      notes: notes || null,
+    });
+    return { kind: 'training', ids: [rec.id], course: form.code || form.title, trainee, next_due: rec.next_due_date };
+  }
   if (form.kind === 'stability_pull') {
     db.prepare(`UPDATE stability_pulls SET status = 'pulled', pulled_on = ?, pulled_by = ?, quantity = ?, lab = ?, sent_on = ?, notes = COALESCE(?, notes), updated_at = datetime('now') WHERE id = ? AND status = 'planned'`)
       .run(day, by, c.quantity, c.lab, c.sent_on, notes || null, wo.stability_pull_id);

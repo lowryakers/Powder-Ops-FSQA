@@ -1896,7 +1896,7 @@ router.get('/operator-tasks', (req, res) => {
   // message. Without it the operator sees only the summarised title — half a
   // sentence, with the instruction it summarises nowhere on the screen.
   let sql = `SELECT wo.id, wo.title, wo.description, wo.status, wo.priority, wo.due_date, wo.assigned_to,
-    wo.procedure_steps, wo.pm_schedule_id, wo.quality_schedule_id, wo.stability_pull_id, wo.task_group,
+    wo.procedure_steps, wo.pm_schedule_id, wo.quality_schedule_id, wo.stability_pull_id, wo.training_course_id, wo.task_group,
     wo.issue_flagged, wo.issue_notes, wo.issue_attachments, wo.issue_flagged_by, wo.issue_flagged_at,
     e.name as equipment_name, e.type as equipment_type, e.location, e.asset_id, e.is_food_contact,
     ps.frequency_type, ps.title as schedule_title

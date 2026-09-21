@@ -2435,6 +2435,19 @@ function initSchema() {
   addColumnIfMissing('work_orders', 'stability_pull_id', 'TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS idx_work_orders_stability_pull ON work_orders(stability_pull_id)');
 
+  // A TRAINING ASSIGNMENT IS A WORK ORDER, and this column is the whole of it.
+  //
+  // Assigning a course was the missing step: courses existed, completions were
+  // filed after the fact by whoever ran the session, and nothing could be
+  // handed to a person. It does not need a table of its own — the ask IS the
+  // task (the meeting_actions rule), the completion files the training record
+  // (the check-record interface), and the RECURRING obligation already exists
+  // as `training_records.next_due_date`, which is what stability_pulls had to
+  // be a table for. Three mechanisms that already work; one column to join
+  // them.
+  addColumnIfMissing('work_orders', 'training_course_id', 'TEXT');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_work_orders_training_course ON work_orders(training_course_id)');
+
 
   runMigrations();
 }

@@ -843,6 +843,136 @@ function GroupSheetBulkModal({ courses, users, onClose, onDone }) {
   );
 }
 
+/**
+ * Assign a course to people — the step that did not exist.
+ *
+ * Each person gets their OWN task, due on a date, on their own Operator View.
+ * It is not a group record: a group record says training already happened,
+ * this says it is owed. Completing the task is what files the record, so
+ * nothing here writes to the training log.
+ */
+function AssignModal({ courses, users, onClose, onAssigned }) {
+  const [courseId, setCourseId] = useState('');
+  // Lazily, and from `new Date()` rather than Date.now(): an impure call in
+  // the component body is a compiler lint error, not merely untidy.
+  const [due, setDue] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() + 14);
+    return d.toISOString().slice(0, 10);
+  });
+  const [reason, setReason] = useState('');
+  const [sel, setSel] = useState({});
+  const [search, setSearch] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null);
+
+  const list = useMemo(
+    () => (users || []).filter(u => u.is_active !== 0 && (!search || u.name.toLowerCase().includes(search.toLowerCase()))),
+    [users, search]);
+  const chosen = Object.entries(sel).filter(([, v]) => v?.checked);
+  const course = (courses || []).find(c => c.id === courseId);
+
+  const assign = async () => {
+    if (!courseId) { setError('Pick a course.'); return; }
+    if (!chosen.length) { setError('Pick at least one person.'); return; }
+    setBusy(true); setError('');
+    try {
+      const res = await apiPost('/training/assign', {
+        course_id: courseId, due_date: due, reason,
+        people: chosen.map(([id, v]) => ({ user_id: id, name: v.name })),
+      });
+      setResult(res);
+      onAssigned?.(res);
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[92vh] flex flex-col" data-assign-modal>
+        <div className="flex items-center justify-between p-4 border-b">
+          <h3 className="font-semibold text-gray-900">Assign training</h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
+        </div>
+        {result ? (
+          <div className="p-4 space-y-3 overflow-y-auto text-sm">
+            <p className="font-semibold text-green-800" data-assign-created={result.created.length}>
+              Assigned to {result.created.length} {result.created.length === 1 ? 'person' : 'people'}.
+            </p>
+            <p className="text-xs text-gray-600">
+              It is on their task list now, due {due}. The record files itself when they complete it.
+            </p>
+            {!!result.skipped?.length && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5" data-assign-skipped={result.skipped.length}>
+                <p className="text-xs font-semibold text-amber-900">Not assigned:</p>
+                <ul className="text-xs text-amber-900 list-disc pl-5">
+                  {result.skipped.map((s, i) => <li key={i}>{s.name} — {s.why}</li>)}
+                </ul>
+              </div>
+            )}
+            <button onClick={onClose} className="px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg">Done</button>
+          </div>
+        ) : (
+          <>
+            <div className="p-4 space-y-3 overflow-y-auto">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Course *</label>
+                <select value={courseId} onChange={e => setCourseId(e.target.value)} data-assign-course
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                  <option value="">Select a course…</option>
+                  {(courses || []).filter(c => c.active !== 0).map(c => (
+                    <option key={c.id} value={c.id}>{c.code ? `${c.code} — ` : ''}{c.title}</option>
+                  ))}
+                </select>
+                {course?.has_test ? (
+                  <p className="text-[11px] text-gray-500 mt-1">This course carries a test; completing the task records the result.</p>
+                ) : course ? (
+                  <p className="text-[11px] text-gray-500 mt-1">No test on this course; completing the task records who delivered it.</p>
+                ) : null}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Due *</label>
+                  <input type="date" value={due} onChange={e => setDue(e.target.value)} data-assign-due
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Why (optional)</label>
+                  <input value={reason} onChange={e => setReason(e.target.value)} placeholder="New hire"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Who *</label>
+                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search people…"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-2" />
+                <div className="border border-gray-200 rounded-lg max-h-56 overflow-y-auto divide-y">
+                  {list.map(u => (
+                    <label key={u.id} className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 cursor-pointer">
+                      <input type="checkbox" checked={!!sel[u.id]?.checked} data-assign-person={u.name}
+                        onChange={() => setSel(s => ({ ...s, [u.id]: s[u.id]?.checked ? { ...s[u.id], checked: false } : { checked: true, name: u.name } }))} />
+                      <span className="text-gray-800">{u.name}</span>
+                      <span className="text-xs text-gray-400 ml-auto">{u.department || ''}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              {error && <p className="text-sm text-red-700">{error}</p>}
+            </div>
+            <div className="flex items-center justify-end gap-2 p-4 border-t">
+              <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600">Cancel</button>
+              <button onClick={assign} disabled={busy || !courseId || !chosen.length} data-assign-submit
+                className="px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg disabled:opacity-50">
+                {busy ? 'Assigning…' : `Assign to ${chosen.length || 0}`}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function GroupTrainingModal({ courses, users, onClose, onSaved }) {
   const today = new Date().toISOString().slice(0, 10);
   const [courseId, setCourseId] = useState('');
@@ -1406,6 +1536,7 @@ export default function TrainingPanel() {
     } catch (e) { alert(e.message); }
   };
   const [groupTraining, setGroupTraining] = useState(false);
+  const [assigning, setAssigning] = useState(false);
   const [course, setCourse] = useState(null);
   const [testCourse, setTestCourse] = useState(null);
   const [search, setSearch] = useState('');
@@ -1449,6 +1580,8 @@ export default function TrainingPanel() {
                 className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Upload size={15} /> Scanned Tests</button>
             )}
             <button onClick={() => setCourse({})} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Plus size={15} /> Course</button>
+            <button onClick={() => setAssigning(true)} title="Hand a course to people, with a due date, on their own task list"
+              data-assign-open className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Users size={15} /> Assign</button>
             <button onClick={() => setGroupTraining(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Users size={15} /> Group Training</button>
             <button onClick={() => setBulkSheets(true)} title="Work a folder of signed group sheets as a queue"
               className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200"><Paperclip size={15} /> Group Sheets</button>
@@ -1646,6 +1779,8 @@ export default function TrainingPanel() {
       {completion && <CompletionModal initial={completion.id ? completion : null} courses={courses} users={users} onClose={() => setCompletion(null)} onSaved={() => { setCompletion(null); refreshAll(); }} />}
       {course && <CourseModal initial={course.id ? course : null} onClose={() => setCourse(null)} onSaved={() => { setCourse(null); refreshCourses(); refreshMatrix(); }} />}
       {testCourse && <TestEditor course={testCourse} aiEnabled={aiOn} onClose={() => setTestCourse(null)} onSaved={() => { setTestCourse(null); refreshCourses(); }} />}
+      {assigning && <AssignModal courses={courses} users={users} onClose={() => setAssigning(false)}
+        onAssigned={(res) => { refreshAll(); setFlash(`Assigned to ${res.created.length} ${res.created.length === 1 ? 'person' : 'people'}.`); setTimeout(() => setFlash(''), 5000); }} />}
       {groupTraining && <GroupTrainingModal courses={courses} users={users} onClose={() => setGroupTraining(false)} onSaved={(n, sheet) => { setGroupTraining(false); refreshAll(); setFlash(`Recorded ${n} completion${n === 1 ? '' : 's'}${sheet ? ' with the sign-in sheet attached' : ''}.`); setTimeout(() => setFlash(''), 5000); }} />}
       {preview && <FilePreview items={[preview]} index={0} onClose={() => setPreview(null)} />}
       {bulkSheets && <GroupSheetBulkModal courses={courses} users={users} onClose={() => setBulkSheets(false)}
