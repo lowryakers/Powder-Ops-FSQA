@@ -13,6 +13,7 @@ import { formFromTitle, gradeDilution, isMeasured } from '../../../shared/diluti
 import FormChip from '../common/FormChip';
 import RuleTip from '../common/RuleTip.jsx';
 import CheckFields from '../common/CheckFields.jsx';
+import TrainingTest from '../common/TrainingTest.jsx';
 import { missingForCheck } from '../../../shared/check-forms.js';
 
 function detectTaskType(task) {
@@ -41,7 +42,7 @@ const PRIORITY_RING = {
   high: 'ring-2 ring-orange-300 border-orange-300',
 };
 
-function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateItems, technicians, isAdmin, batchMode, batchSelected, onBatchToggle, viewDept, t, lang = 'en', tc = (s) => s }) {
+function TaskCard({ task, onComplete, onTestPassed, onFlagIssue, onSkipNA, onAssign, onUpdateItems, technicians, isAdmin, batchMode, batchSelected, onBatchToggle, viewDept, t, lang = 'en', tc = (s) => s }) {
   const [expanded, setExpanded] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [flagging, setFlagging] = useState(false);
@@ -446,6 +447,13 @@ function TaskCard({ task, onComplete, onFlagIssue, onSkipNA, onAssign, onUpdateI
         {/* Inline completion */}
         {completing && (
           <div className="mt-3 ml-14 bg-green-50 rounded-xl p-3 space-y-3 border border-green-200">
+            {/* An assigned course with a test is TAKEN HERE. The assignment is
+                the authorization; the floor has no Training module, and a task
+                telling somebody to take a test they cannot reach is worse than
+                no task. Passing files the record and closes this card. */}
+            {task.check_form?.kind === 'training' && task.check_form.has_test && (
+              <TrainingTest workOrderId={task.id} lang={lang} onDone={onTestPassed} />
+            )}
             {/* A check that files a record asks for what the record needs. */}
             {task.check_form && (
               <CheckFields form={task.check_form} value={check} onChange={setCheck} lang={lang} assignee={task.assigned_to} />
@@ -1343,7 +1351,7 @@ export default function OperatorView() {
           {overdue.length > 0 && (!bucketFilter || bucketFilter === 'overdue') && (
             <SectionHeader icon={AlertTriangle} title={t('section_overdue')} count={overdue.length} color="bg-red-500" defaultOpen={true}>
               {overdue.map(tk => (
-                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} viewDept={viewDept === "all" ? null : viewDept} t={t} lang={lang} tc={tc} />
+                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onTestPassed={refresh} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} viewDept={viewDept === "all" ? null : viewDept} t={t} lang={lang} tc={tc} />
               ))}
             </SectionHeader>
           )}

@@ -12,8 +12,8 @@ import { parseTrainingLog } from '../training-log.js';
 import { parseScanName, similarity, isScanEntry } from '../scanned-tests.js';
 import { extractInvoiceText } from '../invoice-text.js';
 import { requireRole } from '../middleware/auth.js';
-import { addMonths, dueDateFor, supersedeOlder, courseTrainingRevision, insertCompletion } from '../training-records.js';
-import { assignTraining } from '../training-assign.js';
+import { addMonths, dueDateFor, supersedeOlder, courseTrainingRevision, insertCompletion, gradeTestAttempt } from '../training-records.js';
+import { assignTraining, courseAppliesToUser } from '../training-assign.js';
 
 const router = Router();
 
@@ -21,14 +21,6 @@ const router = Router();
 function parseJson(raw, fallback) { if (!raw) return fallback; try { return JSON.parse(raw); } catch { return fallback; } }
 
 
-// A course applies to a user when its role/dept lists are empty (all staff) or
-// the user's role/department is listed — unless an explicit exempt override exists.
-function courseAppliesToUser(course, user) {
-  const roles = parseJson(course.required_roles, []);
-  const depts = parseJson(course.required_departments, []);
-  if (roles.length === 0 && depts.length === 0) return true;
-  return roles.includes(user.role) || depts.includes(user.department);
-}
 
 // ── COURSES ─────────────────────────────────────────────────────────────────
 router.get('/courses', (req, res) => {
@@ -525,45 +517,15 @@ router.post('/courses/:id/test/generate', async (req, res) => {
 // Submit a test attempt: auto-grade, and on pass record a completion.
 router.post('/courses/:id/test/attempt', (req, res) => {
   const db = getDb();
-  const course = db.prepare('SELECT * FROM training_courses WHERE id = ?').get(req.params.id);
-  if (!course) return res.status(404).json({ error: 'Course not found' });
-  const test = db.prepare('SELECT * FROM training_tests WHERE course_id = ? AND is_current = 1').get(req.params.id);
-  if (!test) return res.status(404).json({ error: 'No test for this course' });
   const { employee_name, employee_user_id, answers } = req.body;
   if (!employee_name || !answers) return res.status(400).json({ error: 'employee_name and answers are required' });
-
-  const questions = db.prepare('SELECT * FROM training_questions WHERE test_id = ?').all(test.id);
-  let earned = 0, total = 0;
-  for (const q of questions) {
-    total += q.points;
-    const given = answers[q.id];
-    if (given === undefined || given === null) continue;
-    const correct = String(q.correct_answer ?? '').trim().toLowerCase();
-    if (q.type === 'short_answer') {
-      // Keyword match: correct if the expected answer appears in the response.
-      if (correct && String(given).trim().toLowerCase().includes(correct)) earned += q.points;
-    } else if (String(given).trim().toLowerCase() === correct) {
-      earned += q.points;
-    }
-  }
-  const score = total ? Math.round((earned / total) * 100) : 0;
-  const passed = score >= (test.passing_score ?? 80);
-
-  const attemptId = uuid();
-  db.prepare('INSERT INTO training_test_attempts (id, test_id, course_id, employee_name, employee_user_id, answers, score, passed) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(attemptId, test.id, req.params.id, employee_name, employee_user_id || null, JSON.stringify(answers), score, passed ? 1 : 0);
-
-  let record = null;
-  if (passed) {
-    record = insertCompletion(db, {
-      employee_name, employee_user_id, course_id: req.params.id, course_title: course.title,
-      method: 'online_test', status: 'completed', passed: true, score,
-      completion_date: new Date().toISOString().slice(0, 10), test_attempt_id: attemptId,
-    });
-    db.prepare('UPDATE training_test_attempts SET record_id = ? WHERE id = ?').run(record.id, attemptId);
-  }
-  logAudit(employee_name, 'training_test_attempt', 'training_course', req.params.id, { score, passed, via: req.user ? 'app' : 'kiosk' }, null, null, course.title);
-  res.status(201).json({ attempt_id: attemptId, score, passed, passing_score: test.passing_score, record_id: record?.id || null });
+  // One grader (training-records.js): the Training Records screen, the kiosk
+  // and an operator taking it off their own task all decide a pass the same
+  // way, and passing files the record.
+  const out = gradeTestAttempt(db, { course_id: req.params.id, employee_name, employee_user_id, answers });
+  if (out.error) return res.status(404).json({ error: out.error });
+  logAudit(employee_name, 'training_test_attempt', 'training_course', req.params.id, { score: out.score, passed: out.passed, via: req.user ? 'app' : 'kiosk' }, null, null, out.course.title);
+  res.status(201).json({ attempt_id: out.attempt_id, score: out.score, passed: out.passed, passing_score: out.passing_score, record_id: out.record?.id || null });
 });
 
 // ── IMPORT (ELT) ─────────────────────────────────────────────────────────────

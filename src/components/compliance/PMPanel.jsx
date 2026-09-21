@@ -13,6 +13,7 @@ import { formatDateTime } from '../../lib/datetime.js';
 import FormChip from '../common/FormChip';
 import { TASK_GROUPS } from '../../../shared/task-groups.js';
 import CheckFields from '../common/CheckFields.jsx';
+import TrainingTest from '../common/TrainingTest.jsx';
 import { missingForCheck } from '../../../shared/check-forms.js';
 
 const FREQ_TABS = [
@@ -43,7 +44,7 @@ const STATUS_COLORS = {
   missed: 'bg-gray-200 text-gray-700',
 };
 
-function CompleteForm({ wo, chemicals, onComplete, onCancel }) {
+function CompleteForm({ wo, chemicals, onComplete, onTestPassed, onCancel }) {
   const [form, setForm] = useState({ notes: '', lubricant_used: '', lubricant_is_food_grade: true, chemical_id: '' });
   const [saving, setSaving] = useState(false);
   // A check that files a record (EMP sites, walk-through answers, list
@@ -103,6 +104,13 @@ function CompleteForm({ wo, chemicals, onComplete, onCancel }) {
 
   return (
     <form onSubmit={handleSubmit} className="bg-green-50 rounded-lg border border-green-200 p-3 mt-2 space-y-2">
+      {/* An assigned course with a test is taken here too — one component,
+          because a test that graded differently depending on which screen it
+          was opened from is not a test. Passing files the record and closes
+          the task, so there is nothing left to submit. */}
+      {wo.check_form?.kind === 'training' && wo.check_form.has_test && (
+        <TrainingTest workOrderId={wo.id} onDone={onTestPassed} />
+      )}
       {wo.check_form && <CheckFields form={wo.check_form} value={check} onChange={setCheck} assignee={wo.assigned_to} />}
       {/* Ticking is what gives QA an account of the work at hygiene clearance.
           Left optional rather than required: this is completed on the floor,
@@ -762,7 +770,7 @@ function CompletedTaskDetail({ wo, onClose, canReview, onReviewed }) {
   );
 }
 
-function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplete, chemicals, flagging, onStartFlag, onFlag, onCancelFlag, canSnooze, snoozing, onStartSnooze, onSnooze, onCancelSnooze, canReassign, technicians, onReassign }) {
+function TaskCard({ wo, onStartComplete, completing, onComplete, onTestPassed, onCancelComplete, chemicals, flagging, onStartFlag, onFlag, onCancelFlag, canSnooze, snoozing, onStartSnooze, onSnooze, onCancelSnooze, canReassign, technicians, onReassign }) {
   const steps = wo.procedure_steps || [];
   const attachments = (() => { try { return JSON.parse(wo.attachments || '[]'); } catch { return []; } })();
   const issueAttachments = (() => { try { return JSON.parse(wo.issue_attachments || '[]'); } catch { return []; } })();
@@ -934,7 +942,7 @@ function TaskCard({ wo, onStartComplete, completing, onComplete, onCancelComplet
       )}
 
       {completing === wo.id && (
-        <CompleteForm wo={wo} chemicals={chemicals} onComplete={onComplete} onCancel={onCancelComplete} />
+        <CompleteForm wo={wo} chemicals={chemicals} onComplete={onComplete} onTestPassed={onTestPassed} onCancel={onCancelComplete} />
       )}
     </div>
   );
@@ -1429,7 +1437,7 @@ export default function PMPanel() {
                     </span>
                   </div>
                   <TaskCard wo={wo} completing={completing}
-                    onStartComplete={handleStartWO} onComplete={handleComplete}
+                    onStartComplete={handleStartWO} onComplete={handleComplete} onTestPassed={() => { setCompleting(null); refreshTasks(); }}
                     onCancelComplete={() => setCompleting(null)} chemicals={chemicals}
                     flagging={flagging} onStartFlag={(id) => { setFlagging(flagging === id ? null : id); setCompleting(null); }}
                     onFlag={handleFlagIssue} onCancelFlag={() => setFlagging(null)}
@@ -1464,7 +1472,7 @@ export default function PMPanel() {
                 <div className="space-y-2">
                   {s.items.map(wo => (
                     <TaskCard key={wo.id} wo={wo} completing={completing}
-                      onStartComplete={handleStartWO} onComplete={handleComplete}
+                      onStartComplete={handleStartWO} onComplete={handleComplete} onTestPassed={() => { setCompleting(null); refreshTasks(); }}
                       onCancelComplete={() => setCompleting(null)} chemicals={chemicals}
                       flagging={flagging} onStartFlag={(id) => { setFlagging(flagging === id ? null : id); setCompleting(null); }}
                       onFlag={handleFlagIssue} onCancelFlag={() => setFlagging(null)}
@@ -1498,7 +1506,7 @@ export default function PMPanel() {
               <div className="space-y-2">
                 {items.map(wo => (
                   <TaskCard key={wo.id} wo={wo} completing={completing}
-                    onStartComplete={handleStartWO} onComplete={handleComplete}
+                    onStartComplete={handleStartWO} onComplete={handleComplete} onTestPassed={() => { setCompleting(null); refreshTasks(); }}
                     onCancelComplete={() => setCompleting(null)} chemicals={chemicals}
                     flagging={flagging} onStartFlag={(id) => { setFlagging(flagging === id ? null : id); setCompleting(null); }}
                     onFlag={handleFlagIssue} onCancelFlag={() => setFlagging(null)}

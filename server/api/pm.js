@@ -21,6 +21,7 @@ import { checkFormFor, attachCheckForms, fileCheckRecord, missingForCheck } from
 import { canonicalArea } from '../sanitation-areas.js';
 import { planStepSplit } from '../../shared/pm-step-split.js';
 import { personMatch, resolveUserId, withCurrentNames } from '../person-links.js';
+import { gradeTestAttempt } from '../training-records.js';
 
 // The daily chemical dilution check is a TASK and a RECORD, and it files both.
 //
@@ -1554,6 +1555,94 @@ router.post('/work-orders/:id/review/clear', (req, res) => {
   db.prepare("UPDATE work_orders SET rework_required=0, updated_at=datetime('now') WHERE id=?").run(req.params.id);
   logAudit(req.user, 'rework_cleared', 'work_order', req.params.id, null, wo, null, wo.title);
   res.json(db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id));
+});
+
+// --- An assigned course, taken from the task itself ---
+//
+// THE ASSIGNMENT IS THE AUTHORIZATION, and that is the whole point of these
+// two routes. The test endpoints live under /api/training, behind the
+// Training module — which the floor does not have and should not need, since
+// a warehouse operator has no business in the training REGISTER. So an
+// assigned course was a task telling somebody to take a test they could not
+// reach: the exact half-feature the module map is supposed to prevent, not
+// cause.
+//
+// Same doctrine as `production_entries.qa_action_required`, where the flag
+// authorizes that one person to amend that one entry: holding an open
+// assignment for this course authorizes taking THIS course's test, and
+// nothing else. It is spent when the task closes.
+//
+// The answer key never leaves the server — these serve prompts and options,
+// exactly as the in-app test does for a non-author.
+function trainingTaskFor(db, req, res) {
+  const wo = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
+  if (!wo) { res.status(404).json({ error: 'Work order not found' }); return null; }
+  if (!wo.training_course_id) { res.status(400).json({ error: 'This task is not an assigned course.' }); return null; }
+  // The assignee, or somebody who could complete it for them anyway — a
+  // supervisor sitting with a new hire is the ordinary case, and the record
+  // is filed for the ASSIGNEE either way.
+  const u = req.user || {};
+  const mine = (wo.assigned_to_id && wo.assigned_to_id === u.id)
+    || (wo.assigned_to && u.name && wo.assigned_to.toLowerCase() === String(u.name).toLowerCase());
+  if (!mine && !['admin', 'supervisor'].includes(u.role)) {
+    // 404, not 403: whose course this is is not the caller's business.
+    res.status(404).json({ error: 'Work order not found' }); return null;
+  }
+  return wo;
+}
+
+router.get('/work-orders/:id/training-test', (req, res) => {
+  const db = getDb();
+  const wo = trainingTaskFor(db, req, res);
+  if (!wo) return;
+  const test = db.prepare('SELECT * FROM training_tests WHERE course_id = ? AND is_current = 1').get(wo.training_course_id);
+  if (!test) return res.status(404).json({ error: 'This course has no test.' });
+  const course = db.prepare('SELECT code, title FROM training_courses WHERE id = ?').get(wo.training_course_id);
+  const questions = db.prepare('SELECT id, position, type, prompt, prompt_es, options, options_es, points FROM training_questions WHERE test_id = ? ORDER BY position').all(test.id)
+    .map(q => ({
+      id: q.id, position: q.position, type: q.type, points: q.points,
+      prompt: q.prompt, prompt_es: q.prompt_es || '',
+      options: safeParse(q.options) || [], options_es: safeParse(q.options_es) || [],
+    }));
+  res.json({
+    course: { id: wo.training_course_id, ...course }, title: test.title,
+    passing_score: test.passing_score ?? 80, for: wo.assigned_to, questions,
+  });
+});
+
+router.post('/work-orders/:id/training-test', (req, res) => {
+  const db = getDb();
+  const wo = trainingTaskFor(db, req, res);
+  if (!wo) return;
+  if (!['open', 'in_progress', 'overdue', 'missed'].includes(wo.status)) {
+    return res.status(409).json({ error: 'This task is already closed.' });
+  }
+  // FILED FOR THE ASSIGNEE, never the caller — a supervisor running the test
+  // with a new hire must not end up with the certification themselves.
+  const out = gradeTestAttempt(db, {
+    course_id: wo.training_course_id,
+    employee_name: wo.assigned_to,
+    employee_user_id: wo.assigned_to_id || null,
+    answers: req.body?.answers,
+  });
+  if (out.error) return res.status(404).json({ error: out.error });
+
+  // PASSING IS THE COMPLETION, so the task closes with it. Leaving it open
+  // after a pass is how somebody takes the test twice: the record exists, the
+  // card is still on their phone, and nothing on the screen says why.
+  let closed = false;
+  if (out.passed) {
+    db.prepare(`UPDATE work_orders SET status = 'completed', completed_at = datetime('now'),
+      completed_by = ?, updated_at = datetime('now') WHERE id = ?`).run(wo.assigned_to, wo.id);
+    closed = true;
+  }
+  logAudit(req.user, out.passed ? 'complete' : 'training_test_attempt', 'work_order', wo.id,
+    { course: out.course.title, for: wo.assigned_to, score: out.score, passed: out.passed, record_id: out.record?.id || null },
+    null, null, out.course.title);
+  res.status(201).json({
+    attempt_id: out.attempt_id, score: out.score, passed: out.passed,
+    passing_score: out.passing_score, record_id: out.record?.id || null, work_order_completed: closed,
+  });
 });
 
 // --- Snooze: push a task to a later day, with a name and a reason ---

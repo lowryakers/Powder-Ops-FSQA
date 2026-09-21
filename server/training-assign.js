@@ -128,3 +128,76 @@ export function assignTraining(db, {
 
   return { created, skipped, course: { id: course.id, code: course.code, title: course.title }, source, assigned_by };
 }
+
+/**
+ * Does a course apply to this person?
+ *
+ * Moved here from api/training.js when new hires started being assigned
+ * automatically, so the compliance matrix and the assignment agree by
+ * construction: if the matrix says somebody owes a course, that is the course
+ * they are handed, and a second rule here would let the two disagree about
+ * who needs what.
+ *
+ * An empty role AND department list means everyone — which is not an
+ * oversight in this catalogue but the honest answer for GMP, allergen
+ * awareness, personal hygiene and the new-hire orientation.
+ */
+export function courseAppliesToUser(course, user) {
+  const parse = (raw) => { if (!raw) return []; try { const v = JSON.parse(raw); return Array.isArray(v) ? v : []; } catch { return []; } };
+  const roles = parse(course.required_roles);
+  const depts = parse(course.required_departments);
+  if (roles.length === 0 && depts.length === 0) return true;
+  return roles.includes(user.role) || depts.includes(user.department);
+}
+
+/** A new starter gets longer than the ordinary two weeks — see below. */
+const NEW_HIRE_DUE_DAYS = 30;
+
+/**
+ * Everything a new starter owes, raised the moment their account exists.
+ *
+ * THIS IS THE GAP THE OFFICE KEPT FALLING INTO. Daniela had to remember which
+ * courses a new employee needed and ask for them one message at a time; Juan
+ * had to come and ask for forklift training for a warehouse hire. Neither is
+ * a failure of attention — nothing in the app ever said what a new person
+ * owed, so remembering it was the only mechanism there was.
+ *
+ * WHICH COURSES IS NOT DECIDED HERE. It is read off each course's own
+ * required roles and departments, which the plant already curates on the
+ * course record and which the compliance matrix already reads. A list in this
+ * file would be a second answer to "who needs what" and would start
+ * disagreeing with the matrix the first time somebody edited a course.
+ *
+ * Thirty days, not the usual fourteen: a new starter is learning the job
+ * itself in their first fortnight, and a pile of training that is overdue
+ * before they have found the break room teaches them that overdue is normal.
+ *
+ * NEVER FAILS THE THING THAT CALLED IT. Completing an onboarding is the
+ * record; this is a convenience on top of it, the same standing the pay
+ * roster seed has.
+ */
+export function assignNewHireTraining(db, { user, assigned_by = 'ReadyDoc', reason = 'New hire', today = dayStr(new Date()) } = {}) {
+  if (!user?.id) return { created: [], skipped: [], courses: 0 };
+  const due = plusDays(today, NEW_HIRE_DUE_DAYS);
+  const courses = (() => {
+    try { return db.prepare('SELECT id, code, title, required_roles, required_departments FROM training_courses WHERE active = 1 ORDER BY code, title').all(); }
+    catch { return []; }
+  })();
+
+  const created = [];
+  const skipped = [];
+  for (const c of courses) {
+    if (!courseAppliesToUser(c, user)) continue;
+    const out = assignTraining(db, {
+      course_id: c.id, people: [{ user_id: user.id }], due_date: due,
+      assigned_by, source: 'onboarding', reason,
+      // An automatic pass must never hand somebody a course they are already
+      // current on — that is the difference between this and Daniela
+      // assigning by hand, where a re-train may well be the point.
+      skipCurrent: true, today,
+    });
+    for (const x of out.created) created.push({ ...x, course: c.code || c.title });
+    for (const x of out.skipped) skipped.push({ ...x, course: c.code || c.title });
+  }
+  return { created, skipped, courses: created.length, due_date: due };
+}

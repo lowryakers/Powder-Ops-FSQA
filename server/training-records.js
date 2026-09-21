@@ -74,3 +74,56 @@ export function insertCompletion(db, body) {
   if (body.status === 'completed' || completion) supersedeOlder(db, body.employee_name, body.course_id, id, body.employee_user_id || null);
   return db.prepare('SELECT * FROM training_records WHERE id = ?').get(id);
 }
+
+/**
+ * Grade a test attempt and file what it implies — the ONE grader.
+ *
+ * Extracted when an assigned course became takeable from the task itself:
+ * the Training Records screen, the kiosk and the operator's own task list
+ * all grade the same test, and three copies of "what counts as a pass" is
+ * how one door starts certifying people the others would fail.
+ *
+ * PASSING IS THE COMPLETION. The record is filed here, the moment they pass,
+ * rather than waiting for somebody to press a button afterwards — an
+ * operator who passes the forklift test and closes the app has been trained,
+ * and a record that depends on a second act is one that goes missing.
+ */
+export function gradeTestAttempt(db, { course_id, employee_name, employee_user_id = null, answers }) {
+  const course = db.prepare('SELECT * FROM training_courses WHERE id = ?').get(course_id);
+  if (!course) return { error: 'Course not found' };
+  const test = db.prepare('SELECT * FROM training_tests WHERE course_id = ? AND is_current = 1').get(course_id);
+  if (!test) return { error: 'No test for this course' };
+
+  const questions = db.prepare('SELECT * FROM training_questions WHERE test_id = ?').all(test.id);
+  let earned = 0, total = 0;
+  for (const q of questions) {
+    total += q.points;
+    const given = answers?.[q.id];
+    if (given === undefined || given === null) continue;
+    const correct = String(q.correct_answer ?? '').trim().toLowerCase();
+    if (q.type === 'short_answer') {
+      // Keyword match: correct if the expected answer appears in the response.
+      if (correct && String(given).trim().toLowerCase().includes(correct)) earned += q.points;
+    } else if (String(given).trim().toLowerCase() === correct) {
+      earned += q.points;
+    }
+  }
+  const score = total ? Math.round((earned / total) * 100) : 0;
+  const passing = test.passing_score ?? 80;
+  const passed = score >= passing;
+
+  const attemptId = uuid();
+  db.prepare('INSERT INTO training_test_attempts (id, test_id, course_id, employee_name, employee_user_id, answers, score, passed) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(attemptId, test.id, course_id, employee_name, employee_user_id || null, JSON.stringify(answers || {}), score, passed ? 1 : 0);
+
+  let record = null;
+  if (passed) {
+    record = insertCompletion(db, {
+      employee_name, employee_user_id, course_id, course_title: course.title,
+      method: 'online_test', status: 'completed', passed: true, score,
+      completion_date: new Date().toISOString().slice(0, 10), test_attempt_id: attemptId,
+    });
+    db.prepare('UPDATE training_test_attempts SET record_id = ? WHERE id = ?').run(record.id, attemptId);
+  }
+  return { attempt_id: attemptId, score, passed, passing_score: passing, record, course };
+}

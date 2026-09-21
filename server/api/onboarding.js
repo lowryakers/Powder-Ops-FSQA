@@ -43,6 +43,7 @@ import { storageEnabled, putObject, presignGet, deleteObject } from '../storage.
 import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
 import { I9_EDITION, i9KnownTitle } from '../../shared/i9-documents.js';
+import { assignNewHireTraining } from '../training-assign.js';
 import { revokeSessions } from './sessions.js';
 import { botDm, postMessageAs } from './comms.js';
 import { pushToUser } from '../push.js';
@@ -718,10 +719,38 @@ router.post('/:id/complete', (req, res) => {
     console.warn('[onboarding] pay roster seed skipped:', e.message);
   }
 
+  // AND THE TRAINING THEY OWE, in the same act.
+  //
+  // This is the gap Document Control kept falling into: nothing in the app
+  // ever said what a new person owed, so remembering it was the only
+  // mechanism there was — one message at a time, per hire, per course.
+  // Which courses is read off each course's own required roles and
+  // departments, the same rule the compliance matrix reads, so the list and
+  // the assignments cannot disagree about who needs what.
+  //
+  // ONLY WITH AN ACCOUNT. A task reaches somebody through their own task
+  // list; assigning to a person who cannot sign in files an obligation
+  // nobody can see, which is the defect this whole piece of work is about.
+  // A contractor without a granted account is therefore skipped, and the
+  // response says so rather than leaving it to be noticed.
+  let training = null;
+  if (userId) {
+    try {
+      const u = db.prepare('SELECT id, name, role, department FROM users WHERE id = ?').get(userId);
+      if (u) training = assignNewHireTraining(db, { user: u, assigned_by: req.user?.name || 'ReadyDoc' });
+    } catch (e) {
+      // Same standing as the roster seed: the packet is the record, this is a
+      // convenience on top of it and must never fail the completion.
+      console.warn('[onboarding] new-hire training assignment skipped:', e.message);
+    }
+  }
+
   db.prepare(`UPDATE onboarding_records SET status = 'completed', completed_at = datetime('now'),
     token_hash = NULL, user_id = ?, updated_at = datetime('now') WHERE id = ?`).run(userId || null, rec.id);
-  logAudit(req.user, 'update', 'onboarding', rec.id, { completed: true, user_id: userId || null, pay_employee_id: rosterId }, null, null, nameOf(rec));
-  res.json(shape(db, db.prepare('SELECT * FROM onboarding_records WHERE id = ?').get(rec.id)));
+  logAudit(req.user, 'update', 'onboarding', rec.id,
+    { completed: true, user_id: userId || null, pay_employee_id: rosterId, training_assigned: training?.created?.length || 0 },
+    null, null, nameOf(rec));
+  res.json({ ...shape(db, db.prepare('SELECT * FROM onboarding_records WHERE id = ?').get(rec.id)), training });
 });
 
 /**

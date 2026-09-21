@@ -138,12 +138,106 @@ t('with a trainer it completes', pjDone.ok, `${pjDone.status}`);
 const pjRec = db.prepare('SELECT * FROM training_records WHERE course_id = ? ORDER BY created_at DESC LIMIT 1').get(pj.id);
 t('and the record says who delivered it', pjRec?.trainer === 'Juan Gonzalez' && pjRec?.method === 'in person', JSON.stringify({ trainer: pjRec?.trainer, method: pjRec?.method }));
 
+console.log('\n── the test is taken FROM THE TASK, because the floor has no Training module ──');
+{
+  // Osvaldo still has the Forklift assignment open from the first act.
+  const list = await J(await get('/training/assignments', 'dc'));
+  const os = (list || []).find(a => a.assigned_to === 'Osvaldo Reyes' && a.outstanding);
+  t('Osvaldo still owes the forklift course', !!os);
+
+  // He has no training grant at all — his map is {"pm":"edit"}.
+  await signIn('op2', 'ta-op2', 'Osvaldo Reyes', 'SC-TP', 'OsvaldoPW2026!');
+  const direct = await fetch(`${B}/training/courses/${forklift.id}/test/attempt`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok.op2}` },
+    body: JSON.stringify({ employee_name: 'Osvaldo Reyes', answers: {} }),
+  });
+  t('HE CANNOT REACH THE TRAINING MODULE — which is right; the floor has no business in the register',
+    direct.status === 403, `${direct.status}`);
+
+  const test = await J(await get(`/pm/work-orders/${os.id}/training-test`, 'op2'));
+  t('BUT THE ASSIGNMENT IS THE AUTHORIZATION — he can open the test off his own task',
+    Array.isArray(test?.questions) && test.questions.length > 0, `${test?.questions?.length} question(s)`);
+  t('it says who the record will be for', test?.for === 'Osvaldo Reyes');
+  t('THE ANSWER KEY NEVER COMES DOWN', !JSON.stringify(test).includes('correct_answer'));
+
+  // Somebody else's assignment is not his business — 404, not 403.
+  const notMine = await fetch(`${B}/pm/work-orders/${pjWo}/training-test`, { headers: { Authorization: `Bearer ${tok.op2}` } });
+  t('another person\'s assignment is a 404, never a 403 — whose course it is is not his business', notMine.status === 404, `${notMine.status}`);
+
+  // Fail it first: the task must stay on his list.
+  const wrong = Object.fromEntries(test.questions.map(q => [q.id, 'definitely not the answer']));
+  const failed = await J(await post(`/pm/work-orders/${os.id}/training-test`, { answers: wrong }, 'op2'));
+  t('failing is recorded and does not pass him', failed?.passed === false, JSON.stringify(failed).slice(0, 120));
+  t('…and the task STAYS on his list — he can take it again',
+    db.prepare('SELECT status FROM work_orders WHERE id = ?').get(os.id).status !== 'completed');
+  t('no training record is filed for a fail', !db.prepare(
+    "SELECT 1 FROM training_records WHERE course_id = ? AND employee_user_id = 'ta-op2'").get(forklift.id));
+
+  // Now pass it, using the seeded answer key.
+  const key = db.prepare(`SELECT q.id, q.correct_answer FROM training_questions q
+    JOIN training_tests t ON t.id = q.test_id WHERE t.course_id = ? AND t.is_current = 1`).all(forklift.id);
+  const right = Object.fromEntries(key.map(q => [q.id, q.correct_answer]));
+  const ok = await J(await post(`/pm/work-orders/${os.id}/training-test`, { answers: right }, 'op2'));
+  t('passing scores 100', ok?.passed === true && ok?.score === 100, JSON.stringify(ok).slice(0, 140));
+  t('PASSING IS THE COMPLETION — the record is filed there and then', !!ok?.record_id);
+  t('…and the task closes with it, so it does not sit on his phone after he passed',
+    ok?.work_order_completed === true && db.prepare('SELECT status FROM work_orders WHERE id = ?').get(os.id).status === 'completed');
+  const orec = db.prepare("SELECT * FROM training_records WHERE id = ?").get(ok.record_id);
+  t('the record is HIS, with the score and the method', orec?.employee_user_id === 'ta-op2' && orec?.score === 100 && orec?.method === 'online_test',
+    JSON.stringify({ who: orec?.employee_name, score: orec?.score, method: orec?.method }));
+  t('and exactly ONE record was filed — not one from the test and another from a completion',
+    db.prepare("SELECT COUNT(*) c FROM training_records WHERE course_id = ? AND employee_user_id = 'ta-op2'").get(forklift.id).c === 1);
+
+  const after = await fetch(`${B}/pm/work-orders/${os.id}/training-test`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok.op2}` }, body: JSON.stringify({ answers: right }),
+  });
+  t('a closed task refuses another attempt', after.status === 409, `${after.status}`);
+}
+
+console.log('\n── a new hire is assigned what they owe, the moment the account exists ──');
+{
+  const created = await J(await post('/onboarding', {
+    first_name: 'Nipsi', last_name: 'Batchman', position: 'Stick pack operator',
+    department: 'batching', team: 'Batching', start_date: '2026-10-01',
+  }, 'dc'));
+  t('an onboarding is started', !!created?.id, JSON.stringify(created || {}).slice(0, 120));
+  const done = await J(await post(`/onboarding/${created.id}/complete`, { create_account: true }, 'dc'));
+  const tr2 = done?.training;
+  t('COMPLETING IT ASSIGNS THE TRAINING THEY OWE — nothing has to be remembered',
+    (tr2?.created?.length || 0) > 0, JSON.stringify(tr2?.created?.map(c => c.course) || []));
+
+  const got = (tr2?.created || []).map(c => c.course);
+  t('the universal courses are in it — GMP, allergen, hygiene, the new-hire orientation',
+    ['GMP-101', 'ALG-101', 'HYG-101', 'ONB-101'].every(c => got.includes(c)), JSON.stringify(got));
+  t('BATCHING GETS THE BATCHING ONES — the mixer, and forklift', got.includes('WI021') && got.includes('FORK-101'), JSON.stringify(got));
+  t('…AND NOT THE FILLING LINE\'S, which is the whole point of reading the course\'s own departments',
+    !got.includes('WI003') && !got.includes('WI007'), JSON.stringify(got));
+  t('nor the ones restricted to admins and supervisors', !got.includes('HACCP-201'), JSON.stringify(got));
+  t('they get THIRTY days, not the usual fortnight — a new starter is learning the job itself',
+    (tr2?.created || []).every(c => c.due_date === tr2.due_date) && tr2.due_date > new Date(Date.now() + 25 * 86400000).toISOString().slice(0, 10),
+    tr2?.due_date);
+
+  const uid = db.prepare("SELECT id FROM users WHERE name = 'Nipsi Batchman'").get()?.id;
+  const theirs = db.prepare(`SELECT COUNT(*) c FROM work_orders WHERE training_course_id IS NOT NULL AND assigned_to_id = ?`).get(uid).c;
+  t('and every one of them is a real task on their own list', theirs === tr2.created.length, `${theirs} vs ${tr2.created.length}`);
+
+  // Completing a SECOND time must not double them up.
+  const twice = await J(await post(`/onboarding/${created.id}/complete`, { create_account: true }, 'dc'));
+  t('COMPLETING IT AGAIN RAISES NOTHING — the office pressing the button twice is not two sets of training',
+    (twice?.training?.created?.length || 0) === 0 && (twice?.training?.skipped?.length || 0) > 0,
+    JSON.stringify({ c: twice?.training?.created?.length, s: twice?.training?.skipped?.length }));
+}
+
 console.log('\n── what is outstanding, derived from the tasks themselves ──');
 const list = await J(await get('/training/assignments', 'dc'));
 t('the assignments list is the work orders, so it cannot disagree with Task Center about what is owed',
   Array.isArray(list) && list.length >= 3, `${(list || []).length}`);
 t('the completed ones read as done', (list || []).filter(a => a.id === woId).every(a => a.outstanding === false));
-t('and Osvaldo\'s is still outstanding', (list || []).some(a => a.assigned_to === 'Osvaldo Reyes' && a.outstanding === true));
+t('Osvaldo\'s reads done too — he passed it off his own task, and the list follows the work order',
+  (list || []).some(a => a.assigned_to === 'Osvaldo Reyes' && a.course_code === 'FORK-101' && a.outstanding === false));
+t('and the new hire\'s whole set is outstanding',
+  (list || []).filter(a => a.assigned_to === 'Nipsi Batchman' && a.outstanding).length >= 4,
+  String((list || []).filter(a => a.assigned_to === 'Nipsi Batchman' && a.outstanding).length));
 
 db.close();
 console.log(`\n${pass}/${pass + fail} assertions passed`);
