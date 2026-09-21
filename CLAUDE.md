@@ -325,6 +325,31 @@ DROP+RENAMEd further up to widen its CHECKs and a rebuilt table loses its trigge
 triggers were silently gone while the other three tables' survived. Snapshot columns (`audit_log.actor`,
 `performed_by`, `verified_by`, signatures) deliberately do NOT follow renames. `verify:names` (29, in `verify:all`).
 
+## What the hours cost, read from Pay Tracking (D-099)
+`rateRoster()` + `weekCost()` in `api/office.js`, a Rate column + a labour-cost card on `HoursTab.jsx`, and a
+CSV of the period. Nothing new is stored and no door widens — `GET /office/hours` was already admin-only.
+- **THE RATE IS READ, NEVER COPIED.** `pay_employees.pay_rate` is the one owner; a rate mirrored onto
+  `employee_hours` is how this tab and Pay Tracking start disagreeing about what an hour cost, and every row
+  already filed would need rewriting on a raise. **Keyed on `user_id`**, the link Pay Tracking already
+  maintains — a second name matcher could disagree with the first (D-074). A contractor's hours-list id IS
+  their `pay_employees.id`, so their rate is direct.
+- **THE COST IS THE FIGURES ALREADY ON THE SCREEN**: `total` (worked + PTO + holiday + non-working, never
+  unpaid) at the rate, plus the premium on the SAME `overtime` the column shows. **The premium is HALF the
+  rate** — the OT hour is already inside `worked` and therefore inside `total`, so 1.5× here pays twice.
+  48h at $20 on a 40h target is $1,040.
+- **The overtime it inherits is over each person's OWN target, not over 40, and the screen says so** — only
+  when somebody on the list carries a different target, so it is quiet when moot. A second overtime
+  definition visible only in the money would be worse.
+- **NO RATE IS NO COST — null, never zero**, and the total names how many of the list it covers ("2 of 11
+  people have a rate"). A blank rate on a linked row is **Salaried** (the word the Pay Tracking roster
+  already uses); **no pay row at all is a different gap**, and those people are NAMED with a pointer to Pay
+  Tracking → Roster — an empty rate column that explains nothing reads as the feature being broken.
+- **The CSV is built from the payload on the screen**, not a second endpoint, so the file cannot disagree
+  with the page; a salaried person exports a blank cost, never a 0.
+- `verify:hoursrates` (37, live + browser at 1600 and 390px). Controls: costing *worked* × rate with no
+  premium — the ask's own wording — fails **9** ($960 where the week cost $1,040); a missing rate as zero
+  fails **2**, the total claiming "all 11 people".
+
 ## Flavor approvals via SMS (Danny)
 `flavor_approval` QMS type + FlavorPanel ("Text for approval" row action) → magic link `/approve/<token>`
 (public, single-use, ApprovePage.jsx) → decision updates the record + announces in #batching.

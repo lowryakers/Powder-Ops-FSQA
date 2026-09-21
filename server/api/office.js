@@ -887,6 +887,76 @@ function roster(db) {
  * filter and report; a missing table answers empty rather than throwing,
  * the same way the contractor roster does.
  */
+/**
+ * What each person on the Hours list is paid, READ FROM PAY TRACKING.
+ *
+ * THE RATE IS NEVER COPIED ONTO AN HOURS ROW. `pay_employees.pay_rate` is the
+ * one owner of what somebody is paid — it has a change history behind it and
+ * an admin applies increases against it — so this reads it at request time and
+ * stores nothing. A rate mirrored onto `employee_hours` is how this tab and
+ * Pay Tracking start disagreeing about what an hour cost, and the hours rows
+ * would then have to be rewritten every time somebody got a raise.
+ *
+ * KEYED ON THE ACCOUNT, NOT THE NAME. `pay_employees.user_id` is the link Pay
+ * Tracking already maintains (the seeder matches by name ONCE, the Roster tab
+ * reconciles the rest deliberately). Matching on the name string here would be
+ * a SECOND matcher that could quietly disagree with the first — the same
+ * reasoning that makes the link the identity and the stored name a label. A
+ * roster row nobody has linked yet therefore has no rate here, and says so,
+ * which routes the office to the Roster tab rather than to a guess.
+ *
+ * A CONTRACTOR'S row id IS a `pay_employees.id`, so their rate is direct.
+ *
+ * Returns a Map of row id to `{ rate }`. Present-with-a-null-rate and absent
+ * are DIFFERENT answers: the first is somebody salaried (which is what a blank
+ * rate means on the Pay Tracking roster), the second is a person no pay row
+ * has been linked to at all. Collapsing them would hide the second.
+ */
+function rateRoster(db) {
+  try {
+    const out = new Map();
+    for (const r of db.prepare('SELECT id, user_id, pay_rate FROM pay_employees WHERE active = 1').all()) {
+      out.set(r.id, { rate: r.pay_rate });
+      if (r.user_id) out.set(r.user_id, { rate: r.pay_rate });
+    }
+    return out;
+  } catch { return new Map(); }
+}
+
+// Overtime is paid at time and a half, so the PREMIUM on an overtime hour is
+// half the rate — the hour itself is already inside `worked`, and therefore
+// already inside the paid-hours total, so counting it at 1.5x here would pay
+// for it twice.
+const OT_MULTIPLIER = 1.5;
+const money = (n) => Math.round(n * 100) / 100;
+
+/**
+ * What a week of hours cost, at this person's rate.
+ *
+ * DERIVED FROM THE FIGURES THE GRID ALREADY SHOWS, and that is the whole of
+ * the design. The cost is `total` (what we pay for: worked + PTO + holiday +
+ * paid non-working, never unpaid) at the rate, plus the premium on the SAME
+ * `overtime` figure printed in the column above it. A cost computed from a
+ * second, subtly different reading of the hours is a number that disagrees
+ * with the hours it sits beside, and whoever is looking cannot tell which of
+ * the two is wrong — the activity-metrics rule, applied to money.
+ *
+ * Note what that inherits: `overtime` here is hours over THIS PERSON'S weekly
+ * target, which is 40 for everybody unless the office set otherwise, and is
+ * not the same statement as the statutory over-40 week. The screen says so
+ * whenever somebody on the list carries a different target; inventing a second
+ * overtime definition down here, visible only in the money, would be worse.
+ *
+ * No rate means no cost — null, never zero. A zero would state that the hours
+ * were free, when the truth is that nobody has said what they cost.
+ */
+function weekCost(rate, week) {
+  if (rate == null) return { straight_cost: null, ot_premium: null, cost: null };
+  const straight = money(week.total * rate);
+  const premium = money(week.overtime * rate * (OT_MULTIPLIER - 1));
+  return { straight_cost: straight, ot_premium: premium, cost: money(straight + premium) };
+}
+
 function hoursExclusions(db) {
   try {
     return new Map(db.prepare('SELECT * FROM hours_exclusions').all().map(r => [r.row_id, r]));
@@ -909,8 +979,11 @@ router.get('/hours', (req, res) => {
   // keeps unpicking. They are reported separately so the decision stays
   // visible and reversible, rather than a name that silently vanished.
   const excluded = hoursExclusions(db);
+  const rates = rateRoster(db);
   const all = [...roster(db), ...contractorRoster(db)];
   const people = all.filter(u => !excluded.has(u.id)).map(u => {
+    const pay = rates.get(u.id);
+    const rate = pay ? pay.rate : null;
     const weekRows = weeks.map(w => {
       const r = byUser[u.id]?.[w];
       const worked = r?.worked || 0, pto = r?.pto || 0, holiday = r?.holiday || 0, unpaid = r?.unpaid || 0;
@@ -928,15 +1001,22 @@ router.get('/hours', (req, res) => {
         overtime: u.target == null ? 0 : Math.round(Math.max(0, worked - u.target) * 100) / 100,
         total: Math.round((worked + pto + holiday + nonWorking) * 100) / 100,
       };
-    });
+    }).map(w => ({ ...w, ...weekCost(rate, w) }));
     const sum = (k) => Math.round(weekRows.reduce((n, w) => n + w[k], 0) * 100) / 100;
+    const cash = (k) => (rate == null ? null : money(weekRows.reduce((n, w) => n + w[k], 0)));
     return {
       user_id: u.id, name: u.name, department: u.department, target: u.target,
       is_contractor: !!u.is_contractor, contractor_company: u.contractor_company || null,
       ends_on: u.ends_on || null,
+      // `rate` is what they are paid; `rate_linked` says whether a Pay Tracking
+      // row was found at all. A linked row with a blank rate is somebody
+      // salaried; no row is somebody nobody has linked yet, and those two gaps
+      // are closed in different places.
+      rate, rate_linked: !!pay,
       weeks: weekRows,
       period: { worked: sum('worked'), pto: sum('pto'), holiday: sum('holiday'), unpaid: sum('unpaid'),
-        non_working: sum('non_working'), overtime: sum('overtime'), total: sum('total') },
+        non_working: sum('non_working'), overtime: sum('overtime'), total: sum('total'),
+        straight_cost: cash('straight_cost'), ot_premium: cash('ot_premium'), cost: cash('cost') },
     };
   });
 
@@ -952,11 +1032,23 @@ router.get('/hours', (req, res) => {
   // Derived from `people`, the same rows the grid renders, so a card and the
   // column under it cannot disagree — the activity-metrics rule. The combined
   // `totals` is kept and is the sum of the two, which the test asserts.
+  //
+  // THE COST TOTAL COVERS ONLY THE PEOPLE WHO HAVE A RATE, and says how many
+  // it does not cover. Treating a missing rate as zero would quietly report a
+  // period as cheaper than it was, and a labour figure that understates is one
+  // somebody acts on. `people_rated` / `people_unrated` are what make the
+  // figure interpretable: a cost over 22 of 25 people is a useful number as
+  // long as the screen says it is 22 of 25.
   const KEYS = ['worked', 'pto', 'holiday', 'unpaid', 'non_working', 'overtime', 'total'];
+  const CASH_KEYS = ['straight_cost', 'ot_premium', 'cost'];
   const sumOf = (list) => {
     const acc = {};
     for (const k of KEYS) acc[k] = Math.round(list.reduce((n, p) => n + p.period[k], 0) * 100) / 100;
+    const rated = list.filter(p => p.rate != null);
+    for (const k of CASH_KEYS) acc[k] = money(rated.reduce((n, p) => n + p.period[k], 0));
     acc.people = list.length;
+    acc.people_rated = rated.length;
+    acc.people_unrated = list.length - rated.length;
     return acc;
   };
   const employeeRows = people.filter(p => !p.is_contractor);
@@ -973,7 +1065,12 @@ router.get('/hours', (req, res) => {
     still_on_roster: byId.has(e.row_id),
   })).sort((a, b) => String(a.name).localeCompare(String(b.name)));
 
-  res.json({ period_start: periodStart, weeks, people, totals, totals_by_type, excluded: excludedRows });
+  // `standard_week` is shipped so the screen can say when somebody's overtime
+  // is being measured against a target that is NOT the ordinary 40-hour week —
+  // which is what makes the premium in the cost column interpretable. Quiet
+  // when every target is 40, which is the usual case.
+  res.json({ period_start: periodStart, weeks, people, totals, totals_by_type,
+    standard_week: STANDARD_WEEK_HOURS, ot_multiplier: OT_MULTIPLIER, excluded: excludedRows });
 });
 
 /**

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useApiGet, apiPut, apiPost, apiFetch } from '../../hooks/useApi';
-import { Users, Clock, Plus, X } from 'lucide-react';
+import { Users, Clock, Plus, X, Download, DollarSign } from 'lucide-react';
 import { parseHours, formatHours, hoursInputValue } from '../../lib/hoursFormat';
 
 // Hours worked vs paid non-working time, per pay period — merged in from the
@@ -20,6 +20,24 @@ const weekLabel = (w) => {
   return `${a.getUTCMonth() + 1}/${a.getUTCDate()}–${b.getUTCMonth() + 1}/${b.getUTCDate()}`;
 };
 const hrs = (n) => formatHours(n);
+const money = (n) => (n == null ? '—' : `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+const money0 = (n) => (n == null ? '—' : `$${Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 })}`);
+
+/**
+ * What to print in the Rate cell.
+ *
+ * A BLANK RATE AND NO PAY RECORD ARE DIFFERENT ANSWERS, and each is fixed
+ * somewhere else. A Pay Tracking row with no rate is somebody SALARIED — which
+ * is exactly what that column already says on the Pay Tracking roster, and
+ * inventing a second word for it here would have two screens describing one
+ * blank two ways. No row at all is somebody whose account nobody has linked to
+ * the pay roster yet, which is the Roster tab's reconcile step.
+ */
+function rateLabel(p) {
+  if (p.rate != null) return { text: `${money(p.rate)}/hr`, tone: 'text-gray-700', title: 'From Pay Tracking' };
+  if (p.rate_linked) return { text: 'Salaried', tone: 'text-gray-400', title: 'On the pay roster with no hourly rate — no hourly cost is derived' };
+  return { text: 'No pay record', tone: 'text-amber-600', title: 'Nobody has linked this account to a Pay Tracking row — link it on Pay Tracking → Roster and the rate appears here' };
+}
 
 /**
  * Add a contractor or temporary worker.
@@ -144,6 +162,11 @@ function TotalsRow({ label, count, totals = {}, kind }) {
     { label: 'Paid non-working', value: totals.non_working, alert: (totals.non_working || 0) > 0, na: contractor },
     { label: 'Overtime', value: totals.overtime, alert: (totals.overtime || 0) > 0, na: contractor },
   ];
+  // THE COST FIGURE SAYS HOW MANY PEOPLE IT COVERS. It is the rated people
+  // only — a missing rate is not a free hour — so the figure is worth having
+  // precisely because the line under it says "22 of 25". A bare total that
+  // quietly left three people out would be understated and acted on.
+  const unrated = totals.people_unrated || 0;
   return (
     <div data-totals-kind={kind}>
       {label && (
@@ -166,9 +189,58 @@ function TotalsRow({ label, count, totals = {}, kind }) {
               )}
           </div>
         ))}
+        <div className="bg-white rounded-xl border border-gray-200 px-3 py-2 col-span-2 sm:col-span-5">
+          <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wide flex items-center gap-1">
+            <DollarSign size={11} /> Labour cost at the hours above
+          </p>
+          <p className="text-lg font-bold tabular-nums text-gray-900" data-total={`${kind}:cost`}>
+            {money(totals.cost)}
+          </p>
+          <p className="text-[10px] text-gray-400" data-cost-basis={kind}>
+            {money(totals.straight_cost)} straight
+            {(totals.ot_premium || 0) > 0 && <> · <span className="text-amber-600">{money(totals.ot_premium)} overtime premium</span></>}
+            {' · '}
+            {unrated > 0
+              ? <span className="text-amber-600">{totals.people_rated} of {totals.people} people have a rate</span>
+              : <>all {totals.people_rated} {totals.people_rated === 1 ? 'person' : 'people'}</>}
+          </p>
+        </div>
       </div>
     </div>
   );
+}
+
+/**
+ * The period, as a file.
+ *
+ * BUILT FROM WHAT IS ON THE SCREEN, not from a second endpoint. Every number
+ * in the file is the number in the grid above it, so an export cannot disagree
+ * with the page it was taken from — which is the whole reason anybody trusts
+ * carrying it into a spreadsheet.
+ */
+function exportCsv(data) {
+  const weeks = data?.weeks || [];
+  const q = (v) => (v == null ? '' : `"${String(v).replace(/"/g, '""')}"`);
+  const head = ['Name', 'Department', 'Worker type', 'Rate', 'Target/wk'];
+  for (const w of weeks) head.push(`Worked ${w}`, `PTO ${w}`, `Holiday ${w}`, `Unpaid ${w}`, `Non-working ${w}`, `Overtime ${w}`, `Cost ${w}`);
+  head.push('Period worked', 'Period PTO', 'Period holiday', 'Period unpaid', 'Period non-working',
+    'Period overtime', 'Period paid hours', 'Straight cost', 'Overtime premium', 'Period cost');
+  const lines = [head.map(q).join(',')];
+  for (const p of data?.people || []) {
+    const row = [p.name, p.department || p.contractor_company || '', p.is_contractor ? 'contractor' : 'employee',
+      p.rate ?? '', p.target ?? ''];
+    for (const w of p.weeks) row.push(w.worked, w.pto, w.holiday, w.unpaid, w.non_working, w.overtime, w.cost ?? '');
+    const d = p.period;
+    row.push(d.worked, d.pto, d.holiday, d.unpaid, d.non_working, d.overtime, d.total,
+      d.straight_cost ?? '', d.ot_premium ?? '', d.cost ?? '');
+    lines.push(row.map(q).join(','));
+  }
+  const url = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `hours-${data?.period_start || 'period'}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 /**
@@ -326,6 +398,12 @@ export default function HoursTab() {
   const byType = data?.totals_by_type || {};
   const t = data?.totals || {};
   const hasContractors = (byType.contractor?.people || 0) > 0;
+  const standardWeek = data?.standard_week ?? 40;
+  const offTarget = people.filter(p => !p.is_contractor && p.target != null && p.target !== standardWeek);
+  // Somebody with no Pay Tracking row at all has no rate here and never will
+  // until the two are linked — so the empty cell is named, with where it is
+  // fixed, rather than left reading as the rate column being broken.
+  const unlinked = people.filter(p => !p.is_contractor && !p.rate_linked);
 
   return (
     <div className="space-y-3">
@@ -336,11 +414,37 @@ export default function HoursTab() {
             <option key={p.start} value={p.start}>{periodLabel(p)}{p.current ? ' · current' : ''}</option>
           ))}
         </select>
+        <button onClick={() => exportCsv(data)} disabled={!data} data-hours-export
+          className="inline-flex items-center gap-1 px-2.5 py-2 rounded-lg text-xs font-medium border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40">
+          <Download size={13} /> Export CSV
+        </button>
         <span className="text-xs text-gray-400">
           Weeks run Sunday–Saturday. Enter hours as <span className="font-medium text-gray-500">h:mm</span> (39:56) — decimals still work.
           The rest up to each person&apos;s target shows as paid non-working.
         </span>
       </div>
+
+      {/* THE OVERTIME IN THE COST IS MEASURED AGAINST EACH PERSON'S OWN TARGET,
+          which is the ordinary week for everybody unless somebody set
+          otherwise — and where it is not, the money needs that said out loud
+          rather than left to be inferred. Silent when every target is 40, so
+          it never becomes wallpaper. */}
+      {unlinked.length > 0 && (
+        <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2" data-unlinked-note>
+          <span className="font-semibold">{unlinked.length} {unlinked.length === 1 ? 'person has' : 'people have'} no Pay Tracking record</span>
+          {' '}— {unlinked.map(p => p.name).join(', ')}. Their hours are tracked; their cost cannot be, because nothing says what
+          they are paid. Link the account on Pay Tracking → Roster and the rate appears here.
+        </p>
+      )}
+
+      {offTarget.length > 0 && (
+        <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2" data-ot-basis-note>
+          Overtime — and the premium inside the cost — is hours past each person&apos;s own weekly target, not past
+          {' '}{standardWeek}. {offTarget.length === 1 ? `${offTarget[0].name} carries` : `${offTarget.length} people carry`}
+          {' '}a different target{offTarget.length === 1 ? ` (${hrs(offTarget[0].target)})` : ''}, so their overtime here is not the same
+          statement as a statutory over-{standardWeek} week.
+        </p>
+      )}
 
       {hasContractors
         ? (
@@ -368,13 +472,14 @@ export default function HoursTab() {
                   A–Z-by-surname list otherwise reads as no order at all. */}
               <th className="px-3 py-2">Employee <span className="text-gray-400 normal-case font-normal">· by last name</span></th>
               <th className="px-3 py-2">Target/wk</th>
+              <th className="px-3 py-2">Rate</th>
               {(data?.weeks || []).map(w => (
                 <th key={w} colSpan={5} className="px-3 py-2 text-center border-l border-gray-200">Week of {weekLabel(w)}</th>
               ))}
               <th className="px-3 py-2 text-right border-l border-gray-200">Period total</th>
             </tr>
             <tr className="text-left text-[10px] font-medium text-gray-400">
-              <th className="px-3 pb-2" /><th className="px-3 pb-2" />
+              <th className="px-3 pb-2" /><th className="px-3 pb-2" /><th className="px-3 pb-2" />
               {(data?.weeks || []).map(w => (
                 <th key={w} colSpan={5} className="px-3 pb-2 border-l border-gray-200">
                   <div className="grid grid-cols-5 gap-1 text-center">
@@ -414,6 +519,11 @@ export default function HoursTab() {
                     ? <span className="text-[11px] text-gray-300" title="A contractor has no weekly target">—</span>
                     : <HourInput value={p.target} onCommit={v => saveTarget(p.user_id, v)} tone="text-gray-500" />}
                 </td>
+                <td className="px-3 py-1.5">
+                  {(() => { const r = rateLabel(p); return (
+                    <span className={`text-[11px] tabular-nums ${r.tone}`} title={r.title} data-rate={p.user_id}>{r.text}</span>
+                  ); })()}
+                </td>
                 {p.weeks.map(w => (
                   <td key={w.week_start} colSpan={5} className="px-3 py-1.5 border-l border-gray-200">
                     <div className="grid grid-cols-5 gap-1 items-center">
@@ -435,6 +545,14 @@ export default function HoursTab() {
                 <td className="px-3 py-1.5 text-right border-l border-gray-200">
                   <span className="font-semibold text-gray-900">{hrs(p.period.total)}</span>
                   {p.period.overtime > 0 && <span className="block text-[10px] text-amber-600">{hrs(p.period.overtime)} OT</span>}
+                  {p.period.cost != null && (
+                    <span className="block text-[10px] text-gray-500 tabular-nums" data-cost={p.user_id}
+                      title={p.period.ot_premium > 0
+                        ? `${money(p.period.straight_cost)} straight + ${money(p.period.ot_premium)} overtime premium`
+                        : 'Paid hours at their rate'}>
+                      {money0(p.period.cost)}
+                    </span>
+                  )}
                   {p.is_contractor
                     ? (
                       <button onClick={() => endContractor(p)} title="Take them off the list — hours and pay history are kept"
@@ -470,6 +588,9 @@ export default function HoursTab() {
               <div className="text-right shrink-0">
                 <p className="text-lg font-bold text-gray-900">{hrs(p.period.total)}</p>
                 <p className="text-[10px] text-gray-400">period total</p>
+                {p.period.cost != null && (
+                  <p className="text-[11px] font-semibold text-gray-600 tabular-nums">{money0(p.period.cost)}</p>
+                )}
                 {!p.is_contractor && <ExcludeButton person={p} onDone={refresh} className="mt-0.5" />}
               </div>
             </div>
@@ -479,6 +600,9 @@ export default function HoursTab() {
               {p.is_contractor
                 ? <span className="text-[11px] text-gray-300">—</span>
                 : <HourInput value={p.target} onCommit={v => saveTarget(p.user_id, v)} tone="text-gray-500" />}
+              {(() => { const r = rateLabel(p); return (
+                <span className={`text-[11px] tabular-nums ${r.tone}`} title={r.title}>· {r.text}</span>
+              ); })()}
               {p.period.overtime > 0 && (
                 <span className="ml-auto text-[11px] font-semibold text-amber-600">{hrs(p.period.overtime)} OT</span>
               )}

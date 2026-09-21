@@ -3619,3 +3619,65 @@ complaint:
 Verified: `verify:hoursroster` (27, live + browser, in `verify:all`). The control restores both halves and
 fails 5 — the first printing the reported symptom: Guest Client, Cristian, Matt, M4 Purchasing,
 Jean Salcedo and Sophie all on the payroll hours list.
+
+## D-099 — What the hours cost, read from the rate Pay Tracking already holds (2026-09-21)
+
+**Asked:** "Because we have pay rates in the Pay Tracking module — can we have the rate/employee added
+into the Time Tracking → Hours tab so that we could do some reporting with the actual hours worked?"
+
+**Done.** `rateRoster()` + `weekCost()` in `server/api/office.js`, a Rate column and a labour-cost card on
+`HoursTab.jsx`, and a CSV of the period. The rate itself was the easy half; three things could have gone
+quietly wrong and the design is mostly about those.
+
+**THE RATE IS READ, NEVER COPIED.** `pay_employees.pay_rate` is the one owner of what somebody is paid —
+it has a change history behind it and an admin applies increases against it — so this reads it at request
+time and stores nothing. A rate mirrored onto `employee_hours` is how this tab and Pay Tracking start
+disagreeing about what an hour cost, and every hours row already filed would have to be rewritten on a
+raise. Asserted by moving the rate in Pay Tracking and watching the money here move with it, and by
+asserting no rate or cost column exists on `employee_hours` at all.
+
+**KEYED ON THE ACCOUNT, NOT THE NAME.** `pay_employees.user_id` is the link Pay Tracking already
+maintains (the seeder matches by name ONCE, the Roster tab reconciles the rest deliberately). A second
+matcher here could quietly disagree with the first — the D-074 rule that the link is the identity and the
+stored name is a label. A contractor's hours-list id IS their `pay_employees.id`, so their rate is direct.
+
+**THE COST IS DERIVED FROM THE FIGURES ALREADY ON THE SCREEN.** It is the `total` column (worked + PTO +
+holiday + paid non-working, never unpaid) at the rate, plus the premium on the SAME `overtime` figure
+printed beside it. A cost computed from a second reading of the hours is a number that disagrees with the
+hours above it, and whoever is looking cannot tell which of the two is wrong — the `activity-metrics`
+rule, applied to money. **The premium is HALF the rate**, because the overtime hour itself is already
+inside `worked` and therefore already inside the paid-hours total; charging it at 1.5× here would pay for
+it twice. 48 hours at $20 on a 40-hour target comes to $1,040, which is 40 straight and 8 at time and a
+half.
+
+**THE OVERTIME IT INHERITS IS OVER EACH PERSON'S OWN TARGET, NOT OVER 40, AND THE SCREEN SAYS SO.** That
+is the same statement for everybody whose target is the ordinary week — which is everybody unless the
+office set otherwise — and a different one for anybody whose is not. Inventing a second overtime
+definition down in the money, visible only in the cost, would have been worse than saying it out loud.
+The note renders only when somebody on the list carries a different target, so it is quiet when moot.
+
+**NO RATE IS NO COST — null, never zero.** A zero states that somebody's hours were free, when the truth
+is that nobody has said what they cost, and a labour figure that understates is one people act on. The
+`applies` distinction again (D-082, D-089). **The total says how many of the list it covers**: "2 of 11
+people have a rate" is what makes a partial figure readable.
+
+**A BLANK RATE AND NO PAY RECORD ARE DIFFERENT GAPS, closed in different places.** A linked pay row with
+no rate is somebody **salaried** — which is exactly what the Pay Tracking roster column already calls it,
+and a second word for it here would have two screens describing one blank two ways. No row at all is an
+account nobody has linked yet, and those people are **named** in an amber line pointing at Pay Tracking →
+Roster: an empty rate column that explains nothing reads as the feature being broken, which is how it
+gets ignored.
+
+**The CSV is built from the payload on the screen**, not from a second endpoint, so the file cannot
+disagree with the page it came from — which is the only reason to trust carrying it into a spreadsheet.
+A salaried person exports a BLANK cost, never a zero, the same distinction the screen makes. No new
+endpoint, so no route-ordering or bearer-token-on-an-`<a href>` problem either.
+
+`GET /office/hours` was already `requireAdmin`, so nothing here widens who can read what anybody is paid;
+asserted with a supervisor.
+
+Verified: `verify:hoursrates` (37, live + a real browser at 1600 and 390px; in `verify:all`).
+**Two controls.** Computing the cost the way the ask is worded — actual hours *worked* × rate, no premium
+— fails **9**, the first reading $960 where the week cost $1,040, and it also stops paying for PTO and
+paid non-working. Treating a missing rate as zero and counting everybody in the money fails **2**, the
+headline being a total claiming to cover "all 11 people" when it could price two of them.
