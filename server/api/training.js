@@ -14,6 +14,10 @@ import { extractInvoiceText } from '../invoice-text.js';
 import { requireRole } from '../middleware/auth.js';
 import { addMonths, dueDateFor, supersedeOlder, courseTrainingRevision, insertCompletion, gradeTestAttempt } from '../training-records.js';
 import { assignTraining, courseAppliesToUser } from '../training-assign.js';
+import { evaluationFor, missingToSign, gradeEvaluation, normalizeAnswers, EVALUATION_REVISION, TRUCK_TYPES, RESULTS } from '../practical-evaluations.js';
+import { certificationFor, certificationRoster } from '../training-certification.js';
+import { gateSignature, signatureEvidence } from '../signature.js';
+import { renderCertificate } from '../certificate-pdf.js';
 
 const router = Router();
 
@@ -40,6 +44,11 @@ router.get('/courses', (req, res) => {
     required_departments: parseJson(r.required_departments, []),
     // The current test was written against an older document revision.
     sop_test_stale: !!(r.sop_id && r.has_current_test && r.sop_training_revision && r.test_sop_revision && r.test_sop_revision !== r.sop_training_revision),
+    // WHETHER THIS COURSE ALSO NEEDS SOMEBODY WATCHED DRIVING. Stamped by the
+    // server, which owns the list, rather than the client keeping a second copy
+    // of which codes have an evaluation — that second copy is how a screen
+    // starts offering a form the server does not have, or hiding one it does.
+    has_practical: !!evaluationFor(r.code),
   })));
 });
 
@@ -1159,6 +1168,198 @@ router.post('/import/scans/commit', requireRole('admin'), zipScanUpload.single('
     unreadable: summary.unreadable, evidence_stored: summary.evidence_stored,
   }, null, null, 'Scanned tests import');
   res.json({ ...summary, storage_ready: storageEnabled() });
+});
+
+// ── Practical evaluation and certification ───────────────────────────────────
+//
+// Declared BEFORE /:id, which would otherwise read "certifications" as a
+// training-record id (route order).
+//
+// WHO MAY EVALUATE. The evaluator is making the employer's statement that
+// somebody is competent to operate a powered industrial truck, so it is not
+// open to the person being evaluated or to anyone who happens to hold the
+// module. Admin, or a supervisor or manager — 1910.178(l)(2)(iii) requires
+// the evaluation to be conducted by someone with the knowledge, training and
+// experience to do it, which is a judgement about a named person rather than
+// something a role can assert; naming the evaluator on the record is what
+// makes that answerable. A supervisor still needs the Training grant to reach
+// this router at all (the module-access rule), which is one tick in Settings.
+const canEvaluate = (u) => !!u && (u.role === 'admin' || u.role === 'supervisor'
+  || ['quality', 'qa', 'document_control'].includes(u.department));
+
+const evalShape = (r) => ({
+  ...r,
+  answers: (() => { try { return JSON.parse(r.answers || '{}'); } catch { return {}; } })(),
+  not_evaluated: (() => { try { return JSON.parse(r.not_evaluated || '[]'); } catch { return []; } })(),
+  needs_practice: (() => { try { return JSON.parse(r.needs_practice || '[]'); } catch { return []; } })(),
+  signature: (() => { try { return r.signature ? JSON.parse(r.signature) : null; } catch { return null; } })(),
+});
+
+/** The blank form a course requires, or 404 when it requires none. */
+router.get('/courses/:id/practical', (req, res) => {
+  const db = getDb();
+  const course = db.prepare('SELECT * FROM training_courses WHERE id = ?').get(req.params.id);
+  if (!course) return res.status(404).json({ error: 'Course not found' });
+  const form = evaluationFor(course.code);
+  if (!form) return res.status(404).json({ error: 'This course has no practical evaluation.' });
+  res.json({
+    form, truck_types: TRUCK_TYPES, results: RESULTS,
+    can_evaluate: canEvaluate(req.user),
+    // Said on every screen that shows the form, not only in the code: the
+    // wording is a draft pending Document Control, and a record that did not
+    // say so would read as having been filed against an issued form.
+    draft_note: form.form_code
+      ? null
+      : 'No controlled form has been issued for this evaluation yet. Records are stamped '
+        + `${EVALUATION_REVISION} and the wording is a faithful draft from 29 CFR 1910.178(l)(3), pending Document Control.`,
+  });
+});
+
+/** Who is certified on this course, and who is half way there. */
+router.get('/courses/:id/certifications', (req, res) => {
+  const db = getDb();
+  const course = db.prepare('SELECT * FROM training_courses WHERE id = ?').get(req.params.id);
+  if (!course) return res.status(404).json({ error: 'Course not found' });
+  if (!evaluationFor(course.code)) return res.status(404).json({ error: 'This course does not issue a certification.' });
+  const people = certificationRoster(db, course);
+  // Every count is .length of the rows returned, never a second query — a
+  // card that disagrees with the list under it is the defect this codebase
+  // keeps unpicking.
+  res.json({
+    course: { id: course.id, code: course.code, title: course.title, retrain_months: course.retrain_months },
+    people,
+    counts: {
+      certified: people.filter(p => p.certified).length,
+      expiring_soon: people.filter(p => p.expiring_soon).length,
+      needs_evaluation: people.filter(p => p.gaps.some(g => /practical evaluation/i.test(g))).length,
+      needs_test: people.filter(p => p.gaps.some(g => /written test/i.test(g))).length,
+      total: people.length,
+    },
+    evaluations: (() => { try {
+      return db.prepare(`SELECT * FROM training_practical_evaluations WHERE course_id = ?
+        ORDER BY evaluated_on DESC LIMIT 200`).all(course.id).map(evalShape);
+    } catch { return []; } })(),
+  });
+});
+
+/**
+ * File a practical evaluation.
+ *
+ * SIGNED IN ONE ACT, through the QA-signature gate. This is a statement that a
+ * named person is competent to operate a machine that kills people, made by a
+ * named evaluator — the same weight as I-9 Section 2, and the same 403 +
+ * signature_required rather than a 401 that would sign them out.
+ *
+ * Refused while anything is unanswered, so an evaluation can never be filed
+ * with blank items that read later as though those tasks were watched.
+ */
+router.post('/courses/:id/practical', (req, res) => {
+  const db = getDb();
+  if (!canEvaluate(req.user)) return res.status(403).json({ error: 'A supervisor or an admin signs a practical evaluation.' });
+  const course = db.prepare('SELECT * FROM training_courses WHERE id = ?').get(req.params.id);
+  if (!course) return res.status(404).json({ error: 'Course not found' });
+  const form = evaluationFor(course.code);
+  if (!form) return res.status(400).json({ error: 'This course has no practical evaluation.' });
+
+  const b = req.body || {};
+  const header = {
+    employee_name: String(b.employee_name || '').trim(),
+    evaluator_name: String(b.evaluator_name || req.user.name || '').trim(),
+    evaluated_on: String(b.evaluated_on || '').trim(),
+    truck_type: String(b.truck_type || '').trim(),
+  };
+  // NEVER IN THE FUTURE. A record of something that has not happened is the
+  // one thing back-dating rules exist to refuse (the sanitation rule).
+  if (header.evaluated_on && header.evaluated_on > new Date().toISOString().slice(0, 10)) {
+    return res.status(400).json({ error: 'An evaluation cannot be dated in the future.' });
+  }
+  // EVALUATING YOURSELF IS NOT AN EVALUATION. The standard asks for an
+  // observer; one name in both boxes is a record of nobody having watched.
+  if (header.employee_name && header.evaluator_name
+      && header.employee_name.toLowerCase() === header.evaluator_name.toLowerCase()) {
+    return res.status(400).json({ error: 'Somebody else has to evaluate them — an operator cannot sign their own practical evaluation.' });
+  }
+
+  const answers = normalizeAnswers(form, b.answers);
+  const missing = missingToSign(form, answers, header);
+  if (missing.length) return res.status(400).json({ error: 'Not finished yet.', missing });
+
+  if (!gateSignature(req, res, { action: 'practical_evaluation' })) return;
+
+  const graded = gradeEvaluation(form, answers);
+  const source = b.source === 'paper' ? 'paper' : 'in_app';
+  const id = uuid();
+  db.prepare(`INSERT INTO training_practical_evaluations
+    (id, course_id, course_code, employee_name, employee_user_id, evaluator_name, evaluator_user_id,
+     evaluated_on, truck_type, equipment_id, form_code, form_revision, answers, not_evaluated, needs_practice,
+     result, notes, source, signature, signed_at, signed_by, created_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),?,?)`).run(
+    id, course.id, course.code, header.employee_name, b.employee_user_id || null,
+    header.evaluator_name, b.evaluator_user_id || req.user.id || null,
+    header.evaluated_on, header.truck_type, b.equipment_id || null,
+    form.form_code, form.revision, JSON.stringify(answers),
+    JSON.stringify(graded.not_evaluated), JSON.stringify(graded.needs_practice),
+    graded.result, String(b.notes || '').trim() || null, source,
+    JSON.stringify({ name: req.user.name, at: new Date().toISOString(), ...signatureEvidence() }),
+    req.user.name, req.user.name);
+
+  logAudit(req.user, 'create', 'practical_evaluation', id, {
+    course: course.code, operator: header.employee_name, result: graded.result,
+    evaluated_on: header.evaluated_on, truck_type: header.truck_type, source, revision: form.revision,
+  }, null, null, header.employee_name);
+
+  const row = evalShape(db.prepare('SELECT * FROM training_practical_evaluations WHERE id = ?').get(id));
+  res.status(201).json({
+    evaluation: row, graded,
+    certification: certificationFor(db, course, { employee_name: header.employee_name, employee_user_id: b.employee_user_id || null }),
+  });
+});
+
+/** One person's certification on one course — the derived answer. */
+router.get('/courses/:id/certification', (req, res) => {
+  const db = getDb();
+  const course = db.prepare('SELECT * FROM training_courses WHERE id = ?').get(req.params.id);
+  if (!course) return res.status(404).json({ error: 'Course not found' });
+  const cert = certificationFor(db, course, {
+    employee_name: req.query.name || '', employee_user_id: req.query.user_id || null,
+  });
+  if (!cert) return res.status(404).json({ error: 'No certification for this course and person.' });
+  res.json(cert);
+});
+
+/**
+ * The printable certificate.
+ *
+ * REFUSED WHEN THEY ARE NOT CERTIFIED, and the refusal names what is missing.
+ * Every other document here renders in a draft state with a red stamp, and
+ * that is right for a submission form somebody might sign by hand — it is
+ * wrong for this. A forklift certificate is laminated and carried; one that
+ * prints while half the certification is missing is a hazard, not a draft.
+ */
+router.get('/courses/:id/certificate.pdf', (req, res) => {
+  const db = getDb();
+  const course = db.prepare('SELECT * FROM training_courses WHERE id = ?').get(req.params.id);
+  if (!course) return res.status(404).json({ error: 'Course not found' });
+  const cert = certificationFor(db, course, {
+    employee_name: req.query.name || '', employee_user_id: req.query.user_id || null,
+  });
+  if (!cert) return res.status(404).json({ error: 'No certification for this course and person.' });
+  if (!cert.certified) {
+    return res.status(409).json({
+      error: `${cert.employee_name} is not certified yet, so there is no certificate to print.`,
+      gaps: cert.gaps,
+    });
+  }
+  const form = evaluationFor(course.code);
+  try {
+    renderCertificate(res, { cert, form });
+  } catch (e) {
+    // ONCE doc.pipe(res) HAS STARTED THERE IS NO SENDING JSON — a throw here
+    // would have the global handler write after end and take the process down.
+    // A failure truncates one download instead of causing an outage.
+    console.error('[certificate] render failed:', e.message);
+    try { res.end(); } catch { /* already gone */ }
+  }
 });
 
 // ── ATTACH scanned forms ──────────────────────────────────────────────────────

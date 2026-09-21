@@ -3040,6 +3040,67 @@ TrainingPanel.jsx is the wizard (admin-only **Training Log** button beside Impor
   −3 penalty when only one side of the pair mentions cleaning. Words shorter than 3 chars ("wi") are noise.
   The old `filter(w => w.length > 3)` also made **"GMP" unmatchable** — the one heading named after its course.
 
+## A forklift certification is TWO halves and a certificate (D-098)
+`server/practical-evaluations.js` (the form, PURE), `training_practical_evaluations` (db.js),
+`server/training-certification.js` (the DERIVED answer), `server/certificate-pdf.js`, the routes on
+`api/training.js`, and `OperatorCertifications.jsx` as the **Operator certification** tab of Training.
+- **FORK-101 WAS RECORDING ONE OF THREE THINGS AS ALL OF THEM.** 29 CFR 1910.178(l)(2)(ii) asks for formal
+  instruction, practical training AND an evaluation of the operator's performance in the workplace; (l)(6)
+  requires the employer to CERTIFY that each operator has been trained **and evaluated**. The app had the
+  written quiz only, so passing it filed a completion and the matrix read "trained".
+- **THE EVALUATION IS ITS OWN RECORD, not a `training_records` row.** A completion is "this person did this
+  course"; an evaluation is a graded observation of named tasks by a SECOND person who signs for it, and its
+  items are what the certificate prints. Folding it in would mean an item list in a notes column and would
+  silently re-read every historical completion as half a certification.
+- **CERTIFICATION IS DERIVED, never stored** — a stored flag goes stale the day either half expires. **The
+  clock runs from the EVALUATION** ((l)(4)(iii) evaluates *performance* every three years); both dates are
+  reported and the EARLIER expiry governs.
+- **The verdict is derived from the items and ANY "needs practice" FAILS**, naming the failing tasks.
+  **"Not evaluated" is a real answer, must explain itself, and is PRINTED ON THE CERTIFICATE** — the
+  flattering version of that document leaves it off.
+- **THE CERTIFICATE IS REFUSED (409) WHILE SOMEBODY IS NOT CERTIFIED**, naming the gap. Everything else here
+  renders in draft with a red stamp; that is right for a form somebody might sign by hand and wrong for one
+  that gets laminated and carried. It carries the four facts (l)(6) names plus the truck type, and a
+  cut-out operator card on the same page.
+- **Signed through `gateSignature`** (403, never 401), refused half-answered, refused dated in the future,
+  and **refused when one name is in both boxes** — a self-signed evaluation is a record of nobody watching.
+- **`source: 'paper'` files an evaluation the plant already did, with its real date.** Nobody is asked to
+  re-watch a driver they watched in May.
+- **THE FORM IS DRAFTED, NOT TRANSCRIBED — `DRAFT-1` on every record**, with an amber note on every screen
+  and the DCR at `docs/v2/queued/dcr-forklift-practical-evaluation.md`. No such form is in the Master Index
+  and none was supplied, so the items come from the standard's own topic list at (l)(3). **If the plant
+  sends its own sheet it is transcribed verbatim** — the D-052 shipping-checklist arrangement exactly. **Do
+  not "tidy" the wording without telling Document Control.**
+- **THERE IS NO `requires_practical` COLUMN.** A course needs one exactly when `EVALUATIONS` has a form for
+  its code; the server stamps `has_practical` on `/courses` so the client keeps no second copy. **PJ-101
+  deliberately gets none** — same rule, same cadence, but no material was supplied and that is the plant's
+  call.
+- **Every operator who ever passed the quiz now reads "evaluation not on file", and that is the finding.**
+  Each row names a paper evaluation to file, which is actionable rather than wallpaper.
+- A supervisor still needs the Training grant to reach the router (the module-access rule) — one tick in
+  Settings, not a second mount.
+- Verified: `verify:forkliftcert` (61, live + a real browser at 1280 and 390px; in `verify:all`), reading
+  the four facts back **out of the rendered PDF**. **The control certifies on the written test alone — today's state — and fails 4, with the
+  certificate printing at 200 off half a certification.**
+
+## The Hours list is not the whole roster (D-098)
+`hours_exclusions` (db.js) + `hoursExclusions()` / `POST|DELETE /office/hours/exclude` in `api/office.js` +
+the control and the excluded strip on `HoursTab.jsx`. **Two different answers to one complaint**, and the
+split was decided by counting rather than assuming.
+- **FIVE OF THE FOURTEEN PEOPLE ON THE PAYROLL HOURS LIST WERE M4 GUEST ACCOUNTS.** `users.is_external`
+  already says they do not work here, so `roster()` excludes them BY DERIVATION — asking the office to tick
+  five boxes is making them re-state a fact the app holds. Same reasoning that keeps admins and auditors off.
+- **What is left is genuine judgement**, so it is a decision with a name, a date, who decided and a
+  **required reason**. A name that vanishes off a payroll list with nothing saying why is a gap nobody can
+  resolve in March.
+- **ONE TABLE FOR BOTH POPULATIONS.** An employee row keys on a users.id and a contractor row on a
+  pay_employees.id, so a column would have to live in two tables and be kept in step.
+- **NOT A DEACTIVATION.** The account is untouched and every hour already filed stays filed — this is a
+  payroll LIST, not a payroll record.
+- **They leave the TOTALS with the grid** (a figure counting somebody the list does not show is the
+  recurring defect), and the decision stays on screen with a one-click way back.
+- Admin only. `verify:hoursroster` (27, live + browser); the control restores both halves and fails 5.
+
 ## Work Instruction training courses (`seedWorkInstructionCourses`)
 The plant's own WIs as courses, so the Training Log's `Mixer (WI)` / `Warehouse (WI)` columns have somewhere
 to import to: **WI001** Warehouse, **WI003** Volumetric Stick Pack, **WI004** Hand Filling, **WI007** Auger

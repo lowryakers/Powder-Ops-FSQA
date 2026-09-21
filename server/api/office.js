@@ -863,13 +863,34 @@ function contractorRoster(db) {
 }
 
 function roster(db) {
+  // A GUEST CLIENT IS NOT ON THE PAYROLL, and that is derived rather than
+  // ticked. Five of the fourteen names on this list were M4 accounts —
+  // `users.is_external` already says they do not work here, so asking the
+  // office to exclude each one by hand would be making them re-state a fact
+  // the app holds. The same reasoning that keeps admins and auditors off it.
   return db.prepare(`SELECT id, name, department, weekly_hours_target FROM users
-    WHERE is_active = 1 AND name != 'ReadyBot' AND role NOT IN ('auditor', 'admin')`).all()
+    WHERE is_active = 1 AND name != 'ReadyBot' AND role NOT IN ('auditor', 'admin')
+      AND COALESCE(is_external, 0) = 0`).all()
     .map(u => ({ ...u, target: u.weekly_hours_target || STANDARD_WEEK_HOURS }))
     // Full name breaks ties, so two people who share a surname stay in a
     // stable, predictable order rather than whatever the table returns.
     .sort((a, b) => byName.compare(lastNameOf(a.name), lastNameOf(b.name))
       || byName.compare(a.name || '', b.name || ''));
+}
+
+/**
+ * Who has been taken off the Hours list by hand, keyed on the row's own id —
+ * a `users.id` for an employee, a `pay_employees.id` for a contractor.
+ *
+ * ONE READER, so the grid, the totals and the "excluded" strip can never
+ * disagree about who is on the list. Returns a Map so the caller can both
+ * filter and report; a missing table answers empty rather than throwing,
+ * the same way the contractor roster does.
+ */
+function hoursExclusions(db) {
+  try {
+    return new Map(db.prepare('SELECT * FROM hours_exclusions').all().map(r => [r.row_id, r]));
+  } catch { return new Map(); }
 }
 
 router.get('/hours', (req, res) => {
@@ -883,7 +904,13 @@ router.get('/hours', (req, res) => {
   const byUser = {};
   for (const r of rows) (byUser[r.user_id] = byUser[r.user_id] || {})[r.week_start] = r;
 
-  const people = [...roster(db), ...contractorRoster(db)].map(u => {
+  // Excluded people leave the grid AND the totals — a figure that still counts
+  // somebody the list does not show is the disagreement this whole codebase
+  // keeps unpicking. They are reported separately so the decision stays
+  // visible and reversible, rather than a name that silently vanished.
+  const excluded = hoursExclusions(db);
+  const all = [...roster(db), ...contractorRoster(db)];
+  const people = all.filter(u => !excluded.has(u.id)).map(u => {
     const weekRows = weeks.map(w => {
       const r = byUser[u.id]?.[w];
       const worked = r?.worked || 0, pto = r?.pto || 0, holiday = r?.holiday || 0, unpaid = r?.unpaid || 0;
@@ -937,7 +964,58 @@ router.get('/hours', (req, res) => {
   const totals = sumOf(people);
   const totals_by_type = { employee: sumOf(employeeRows), contractor: sumOf(contractorRows) };
 
-  res.json({ period_start: periodStart, weeks, people, totals, totals_by_type });
+  // Named from the roster where they are still on it, from the stored name
+  // otherwise — somebody excluded and since deactivated must still be
+  // explainable, and a row reading only an id explains nothing.
+  const byId = new Map(all.map(u => [u.id, u]));
+  const excludedRows = [...excluded.values()].map(e => ({
+    ...e, name: byId.get(e.row_id)?.name || e.name || 'Unknown',
+    still_on_roster: byId.has(e.row_id),
+  })).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+
+  res.json({ period_start: periodStart, weeks, people, totals, totals_by_type, excluded: excludedRows });
+});
+
+/**
+ * Take somebody off the Hours list, or put them back.
+ *
+ * NOT A DELETE AND NOT A DEACTIVATION. Their `employee_hours` rows stay
+ * exactly as filed — what we paid somebody is a payroll record — and their
+ * account is untouched, which is what makes this safe to use on a person who
+ * very much still works here and simply is not tracked this way.
+ *
+ * A REASON IS REQUIRED. A name that disappears off a payroll list with
+ * nothing saying why is the sort of gap somebody finds in March and cannot
+ * resolve; three words and a name make it answerable from the record.
+ */
+router.post('/hours/exclude', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const db = getDb();
+  const rowId = String(req.body?.row_id || '').trim();
+  const reason = String(req.body?.reason || '').trim();
+  if (!rowId) return res.status(400).json({ error: 'row_id is required' });
+  if (reason.length < 3) return res.status(400).json({ error: 'Say why they are not tracked here — it is what makes their absence explainable later.' });
+
+  const person = [...roster(db), ...contractorRoster(db)].find(u => u.id === rowId);
+  if (!person) return res.status(404).json({ error: 'That person is not on the hours list.' });
+
+  db.prepare(`INSERT INTO hours_exclusions (row_id, kind, name, reason, excluded_by)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(row_id) DO UPDATE SET reason = excluded.reason, excluded_by = excluded.excluded_by,
+      excluded_at = datetime('now')`)
+    .run(rowId, person.is_contractor ? 'contractor' : 'employee', person.name, reason, req.user.name);
+  logAudit(req.user, 'update', 'hours_exclusion', rowId, { excluded: true, reason }, null, null, person.name);
+  res.json({ ok: true, row_id: rowId, name: person.name, reason });
+});
+
+router.delete('/hours/exclude/:rowId', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM hours_exclusions WHERE row_id = ?').get(req.params.rowId);
+  if (!row) return res.status(404).json({ error: 'Not excluded.' });
+  db.prepare('DELETE FROM hours_exclusions WHERE row_id = ?').run(req.params.rowId);
+  logAudit(req.user, 'update', 'hours_exclusion', req.params.rowId, { excluded: false, was: row.reason }, null, null, row.name);
+  res.json({ ok: true });
 });
 
 router.put('/hours', (req, res) => {

@@ -3531,3 +3531,91 @@ controls, both decisive: removing the `starter` block from `payActions` fails **
 for a starter due in four days — the reported symptom exactly; reverting the join page and `/install` fails
 **9**, with `/install` answering as the sign-in screen (the shell serves any unknown path, which is why the
 assertion is that the install page rendered, not that the address responded).
+
+---
+
+## D-098 — A forklift certification is two halves and a certificate, and the Hours list is not the whole roster
+
+**21 September 2026.** Two unrelated asks, reported together.
+
+### The forklift course was recording one of three things as though it were all of them
+
+Lowry: *"the ones that I uploaded should have had 2 parts + a certification. 1 part was a written
+test… the 2nd part was a physical test — where they actually perform some set of tasks on the lift
+and have the supervisor track/grade them."*
+
+He is describing **29 CFR 1910.178(l)** almost clause for clause, and the app had the first part
+only. FORK-101 shipped with the plant's own twenty-question bilingual quiz, transcribed from their
+signed document; passing it filed a completion and the matrix read "trained". The rule asks for
+three things at (l)(2)(ii) — formal instruction, practical training, and **evaluation of the
+operator's performance in the workplace** — and at (l)(6) requires the employer to **certify that
+each operator has been trained AND evaluated**, naming the four facts the certification must carry.
+
+- **THE EVALUATION IS ITS OWN RECORD, not a training_records row.** A completion is "this person
+  did this course"; an evaluation is a graded observation of named tasks made by a **second person
+  who signs for it**, and its items are what the certificate has to print. Folding it in would have
+  meant a structured item list in a notes column and would have silently re-read every historical
+  completion as half a certification.
+- **CERTIFICATION IS DERIVED, never stored** (`server/training-certification.js`). A stored flag
+  goes stale the day either half expires. Same doctrine as product readiness and the mock-recall
+  verdict. **The clock runs from the EVALUATION** — (l)(4)(iii) evaluates *performance* every three
+  years — and both dates are reported with the earlier expiry governing.
+- **The verdict is derived from the items and any "needs practice" FAILS**, naming the failing
+  tasks. A partial pass is not competence to operate a machine that kills people, and a verdict
+  that did not say which tasks were short would leave the retraining to guesswork.
+- **"Not evaluated" is a real answer, must explain itself, and is PRINTED ON THE CERTIFICATE.** A
+  plant with no trailer on the dock cannot demonstrate trailer entry; recording that as competence
+  would be the fabricated-record refusal in a new place, and leaving it off the certificate would
+  be the more flattering document and the less useful one.
+- **The certificate is REFUSED while somebody is not certified** — a 409 naming the gap. Every
+  other document here renders in draft with a red stamp, which is right for a submission form
+  somebody might sign by hand and wrong for this: a forklift certificate is laminated and carried.
+  It carries the four facts (l)(6) names plus the truck type, and a cut-out operator card.
+- **Signed through the QA-signature gate** (403 `signature_required`, never 401), refused
+  half-answered, refused dated in the future, and **refused when one name is in both boxes** — the
+  standard asks for an observer, and a self-signed evaluation is a record of nobody having watched.
+- **`source: 'paper'` files an evaluation the plant already did, with its real date.** Nobody is
+  asked to re-watch a driver they watched in May because the app arrived afterwards.
+- **THE FORM IS DRAFTED, NOT TRANSCRIBED, AND SAYS SO — DRAFT-1.** No such form exists in the
+  Master Index and none was supplied, so the items are drawn from the standard's own topic list at
+  (l)(3), stamped on every record, with an amber note on every screen and the DCR queued at
+  `docs/v2/queued/dcr-forklift-practical-evaluation.md`. The shipping truck inspection (D-052) is
+  the precedent exactly. **If the plant has its own sheet, send it and it is transcribed verbatim**
+  — the mechanism was built to make that swap cheap.
+- **There is NO `requires_practical` COLUMN.** A course needs an evaluation exactly when
+  `EVALUATIONS` has a form for its code — one owner, nothing to keep in step, and no way for a
+  seeded flag and a missing form to disagree. **PJ-101 deliberately gets none**: the pallet jack is
+  the same rule and the same cadence, but no material was supplied and that is the plant's call
+  (the `FLAVOURLESS_LINES` rule).
+- **On the day this ships, every operator who ever passed the quiz reads "evaluation not on file",
+  and that is the finding rather than wallpaper** — each row names a paper evaluation to file, and
+  filing one takes the date it actually happened.
+
+Verified: `verify:forkliftcert` (61, live + a real browser at 1280 and 390px, in `verify:all`) —
+including the four (l)(6) facts read
+back **out of the rendered PDF** rather than counted in bytes. **The control is decisive: certify
+on the written test alone — the state the plant is in today — and 4 fail, with the certificate
+printing at 200 off half a certification.**
+
+### Five of the fourteen people on the payroll Hours list were M4 clients
+
+Lowry: *"in the Time Tracking module > Hours tab — I need the ability to exclude certain people."*
+Counted rather than assumed: the roster is active accounts that are not admins or auditors, and on
+the real data **five of the fourteen were guest client accounts**. Two different answers to one
+complaint:
+
+- **A guest is off the list BY DERIVATION.** `users.is_external` already says they do not work
+  here, so `roster()` excludes them — asking the office to tick five boxes would be making them
+  re-state a fact the app holds. Same reasoning that keeps admins and auditors off it.
+- **What is left is genuine judgement**, so it is a decision: `hours_exclusions` carries a name, a
+  date, who decided and a **required reason**. ONE TABLE for both populations — an employee row is
+  keyed on a users.id and a contractor row on a pay_employees.id, so a flag would have to live in
+  two tables and be kept in step.
+- **It is not a deactivation.** The account is untouched and every hour already filed stays as
+  filed — this is a payroll LIST, not a payroll record.
+- **They leave the TOTALS with the grid**, and the decision stays on screen with a one-click way
+  back. A name that simply vanished could never be questioned or undone.
+
+Verified: `verify:hoursroster` (27, live + browser, in `verify:all`). The control restores both halves and
+fails 5 — the first printing the reported symptom: Guest Client, Cristian, Matt, M4 Purchasing,
+Jean Salcedo and Sophie all on the payroll hours list.

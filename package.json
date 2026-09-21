@@ -75,6 +75,8 @@
     "verify:commspendingjump": "node scripts/verify-comms-pending-jump.mjs",
     "verify:trainingassign": "node scripts/verify-training-assign.mjs",
     "verify:starterreview": "node scripts/verify-starter-review.mjs",
+    "verify:forkliftcert": "node scripts/verify-forklift-cert.mjs",
+    "verify:hoursroster": "node scripts/verify-hours-roster.mjs",
     "verify:clientchannel": "node scripts/verify-client-channel.mjs",
     "verify:clientinvite": "node scripts/verify-client-invite.mjs",
     "verify:skurename": "node scripts/verify-sku-rename.mjs",

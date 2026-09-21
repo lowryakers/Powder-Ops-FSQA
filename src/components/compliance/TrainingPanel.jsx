@@ -6,6 +6,7 @@ import { GraduationCap, Plus, Upload, Search, X, ExternalLink, Edit2, Paperclip,
 import { DEPARTMENT_VALUES } from '../../constants/departments';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import { useModuleTabs } from '../../lib/useModuleTabs.js';
+import OperatorCertifications from './OperatorCertifications.jsx';
 import { useTableSort } from '../../lib/useTableSort';
 import SortHeader from '../common/SortHeader.jsx';
 import FilePreview from '../FilePreview.jsx';
@@ -1500,17 +1501,25 @@ export default function TrainingPanel() {
   const { data: users } = useApiGet('/users');
   const { data: aiStatus } = useApiGet('/ai/status');
   const aiOn = !!aiStatus?.enabled;
+  // A course needs a practical evaluation exactly when the server says it has
+  // one (`has_practical`, stamped from the form module). Keeping a list of
+  // codes here would be a second copy of that answer, and a second copy is how
+  // a screen offers a form the server does not have.
+  const practicalCourses = useMemo(
+    () => (courses || []).filter(c => c.has_practical && c.active !== 0), [courses]);
   const TABS = useMemo(() => [
     { id: 'matrix', label: 'Compliance Matrix' },
     { id: 'due', label: 'Retraining Due' },
     { id: 'courses', label: 'Courses' },
     { id: 'records', label: 'Records' },
-  ], []);
+    ...(practicalCourses.length ? [{ id: 'certifications', label: 'Operator certification' }] : []),
+  ], [practicalCourses]);
 
   // useModuleTabs, not plain useState: this module had neither ?view=
   // deep-linking nor the remembered-last-tab every other module has, so a link
   // to the Records tab always landed on the matrix.
   const { tabs: trainingTabs, tab: view, setTab: setView } = useModuleTabs({ id: 'training', tabs: TABS });
+  const [certCourseId, setCertCourseId] = useState('');
   // One definition each, rendered by the table row AND the phone card, so the
   // two layouts cannot disagree about a record's state or where its paper is.
   const duePill = (d) => d.overdue
@@ -1770,6 +1779,24 @@ export default function TrainingPanel() {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {view === 'certifications' && (
+        <div className="space-y-3">
+          {/* A selector only once there is something to select. Today the
+              forklift is the one course with an evaluation; the pallet-jack
+              course is the obvious next one and is deliberately not assumed —
+              no material for it was supplied, and that is the plant's call. */}
+          {practicalCourses.length > 1 && (
+            <select value={certCourseId || practicalCourses[0]?.id}
+              onChange={e => setCertCourseId(e.target.value)} data-cert-course
+              className="px-2.5 py-2 border border-gray-200 rounded-lg text-sm bg-white text-gray-700">
+              {practicalCourses.map(c => <option key={c.id} value={c.id}>{c.code} · {c.title}</option>)}
+            </select>
+          )}
+          <OperatorCertifications
+            course={practicalCourses.find(c => c.id === certCourseId) || practicalCourses[0]} />
         </div>
       )}
 

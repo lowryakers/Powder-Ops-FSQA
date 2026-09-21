@@ -171,6 +171,115 @@ function TotalsRow({ label, count, totals = {}, kind }) {
   );
 }
 
+/**
+ * Take somebody off the Hours list.
+ *
+ * WHY THIS EXISTS AT ALL. The roster is derived — active accounts that are
+ * not admins, auditors or guest clients, plus active contractors — and that
+ * covers almost everybody correctly. What it cannot cover is the handful of
+ * real judgement calls: somebody salaried, somebody whose hours are tracked
+ * somewhere else, an account that is not a person. Those are decisions, so
+ * they get a name, a date and a reason rather than a rule nobody agreed.
+ *
+ * IT IS NOT A DEACTIVATION. Their account is untouched and every hour already
+ * filed stays exactly as filed — this is a payroll list, not a payroll record.
+ */
+function ExcludeButton({ person, onDone, className = '' }) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true); setErr('');
+    try {
+      await apiPost('/office/hours/exclude', { row_id: person.user_id, reason });
+      setOpen(false); setReason(''); onDone();
+    } catch (ex) { setErr(ex.message); }
+    finally { setBusy(false); }
+  };
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} data-exclude-open={person.user_id}
+        title="Take them off this list — their account and every hour already filed are untouched"
+        className={`text-[10px] text-gray-400 hover:text-red-600 ${className}`}>
+        <X size={11} className="inline" /> not tracked
+      </button>
+    );
+  }
+  return (
+    <form onSubmit={submit} className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-4"
+      onClick={e => { if (e.target === e.currentTarget) setOpen(false); }}>
+      <div className="bg-white rounded-2xl p-4 w-full max-w-sm space-y-3 max-h-[92vh] overflow-y-auto" data-exclude-modal>
+        <p className="font-semibold text-gray-900">Take {person.name} off the Hours list</p>
+        <p className="text-xs text-gray-500">
+          Their account stays exactly as it is and every hour already filed is kept. They come off this
+          list and out of its totals until somebody puts them back.
+        </p>
+        <label className="block">
+          <span className="block text-xs font-medium text-gray-700 mb-1">Why are they not tracked here?</span>
+          <input autoFocus value={reason} onChange={e => setReason(e.target.value)} data-exclude-reason
+            placeholder="Salaried — not on the hourly list"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+        </label>
+        {err && <p className="text-xs text-red-600">{err}</p>}
+        <div className="flex items-center gap-2">
+          <button type="submit" disabled={busy || reason.trim().length < 3} data-exclude-save
+            className="px-3 py-1.5 bg-gray-900 text-white text-sm font-medium rounded-lg disabled:opacity-40">
+            {busy ? 'Saving…' : 'Take them off'}
+          </button>
+          <button type="button" onClick={() => setOpen(false)}
+            className="px-3 py-1.5 text-sm text-gray-500 rounded-lg hover:bg-gray-100">Cancel</button>
+        </div>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * The people who are off the list, and the way back.
+ *
+ * A NAME THAT SIMPLY VANISHED could never be questioned or undone — the same
+ * reasoning that keeps a waived setup step on the equipment checklist and a
+ * retired room in the log's filter. So the decision stays on screen, with who
+ * made it and why, and putting somebody back is one click.
+ */
+function ExcludedStrip({ rows, onDone }) {
+  const [open, setOpen] = useState(false);
+  if (!rows?.length) return null;
+  const restore = async (r) => {
+    await apiFetch(`/office/hours/exclude/${r.row_id}`, { method: 'DELETE' });
+    onDone();
+  };
+  return (
+    <div className="bg-gray-50 border border-gray-200 rounded-xl p-3" data-excluded-strip>
+      <button type="button" onClick={() => setOpen(o => !o)} data-excluded-toggle
+        className="text-xs font-medium text-gray-600 hover:text-gray-900">
+        {rows.length} {rows.length === 1 ? 'person is' : 'people are'} not tracked on this list
+        <span className="text-gray-400"> · {open ? 'hide' : 'show'}</span>
+      </button>
+      {open && (
+        <ul className="mt-2 space-y-1.5">
+          {rows.map(r => (
+            <li key={r.row_id} className="flex items-start gap-2 text-xs" data-excluded-row={r.row_id}>
+              <span className="font-medium text-gray-800 shrink-0">{r.name}</span>
+              <span className="text-gray-500 min-w-0">
+                {r.reason}
+                <span className="text-gray-400"> — {r.excluded_by || 'unknown'}{r.excluded_at ? `, ${String(r.excluded_at).slice(0, 10)}` : ''}</span>
+                {!r.still_on_roster && <span className="text-gray-400"> · no longer on the roster anyway</span>}
+              </span>
+              <button type="button" onClick={() => restore(r)} data-excluded-restore={r.row_id}
+                className="ml-auto shrink-0 text-[11px] font-medium text-powder-600 hover:text-powder-700">
+                Put back
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export default function HoursTab() {
   const { data: periods } = useApiGet('/office/periods');
   const [period, setPeriod] = useState('');
@@ -326,12 +435,14 @@ export default function HoursTab() {
                 <td className="px-3 py-1.5 text-right border-l border-gray-200">
                   <span className="font-semibold text-gray-900">{hrs(p.period.total)}</span>
                   {p.period.overtime > 0 && <span className="block text-[10px] text-amber-600">{hrs(p.period.overtime)} OT</span>}
-                  {p.is_contractor && (
-                    <button onClick={() => endContractor(p)} title="Take them off the list — hours and pay history are kept"
-                      data-end-contractor className="block ml-auto mt-0.5 text-[10px] text-gray-400 hover:text-red-600">
-                      <X size={11} className="inline" /> remove
-                    </button>
-                  )}
+                  {p.is_contractor
+                    ? (
+                      <button onClick={() => endContractor(p)} title="Take them off the list — hours and pay history are kept"
+                        data-end-contractor className="block ml-auto mt-0.5 text-[10px] text-gray-400 hover:text-red-600">
+                        <X size={11} className="inline" /> remove
+                      </button>
+                    )
+                    : <ExcludeButton person={p} onDone={refresh} className="block ml-auto mt-0.5" />}
                 </td>
               </tr>
             )))}
@@ -359,6 +470,7 @@ export default function HoursTab() {
               <div className="text-right shrink-0">
                 <p className="text-lg font-bold text-gray-900">{hrs(p.period.total)}</p>
                 <p className="text-[10px] text-gray-400">period total</p>
+                {!p.is_contractor && <ExcludeButton person={p} onDone={refresh} className="mt-0.5" />}
               </div>
             </div>
 
@@ -408,6 +520,8 @@ export default function HoursTab() {
           <Plus size={13} /> Add a contractor
         </button>
       </div>
+
+      <ExcludedStrip rows={data?.excluded} onDone={refresh} />
 
       {addingContractor && (
         <AddContractorModal onClose={() => setAddingContractor(false)} onAdded={refresh} />

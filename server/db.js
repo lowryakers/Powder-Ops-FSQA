@@ -772,6 +772,56 @@ function initSchema() {
       FOREIGN KEY (test_id) REFERENCES training_tests(id)
     );
 
+    -- The OTHER half of a powered-industrial-truck certification: a named
+    -- person watching a named person drive a named machine, and signing for it.
+    --
+    -- ITS OWN TABLE, not a training_records row, because the two records are
+    -- different shapes and answer different questions. A completion is "this
+    -- person did this course"; an evaluation is a graded observation of
+    -- specific tasks, made by a SECOND person who signs for it, and its items
+    -- are what the certificate has to be able to print. Folding it into
+    -- training_records would mean a structured item list in a notes column and
+    -- would silently re-read every historical completion as half a
+    -- certification.
+    --
+    -- result is a MIRROR of what gradeEvaluation() derives from the answers
+    -- and is written nowhere else, so a stored verdict can never disagree with
+    -- the items above it. form_revision is stamped on every record, so a
+    -- record filed under DRAFT-1 goes on saying DRAFT-1 after Document Control
+    -- issues the real form.
+    CREATE TABLE IF NOT EXISTS training_practical_evaluations (
+      id              TEXT PRIMARY KEY,
+      course_id       TEXT NOT NULL,
+      course_code     TEXT,
+      employee_name   TEXT NOT NULL,
+      employee_user_id TEXT,
+      evaluator_name  TEXT NOT NULL,
+      evaluator_user_id TEXT,
+      evaluated_on    TEXT NOT NULL,
+      truck_type      TEXT,
+      equipment_id    TEXT,
+      form_code       TEXT,
+      form_revision   TEXT NOT NULL,
+      answers         TEXT NOT NULL DEFAULT '{}',
+      not_evaluated   TEXT NOT NULL DEFAULT '[]',
+      needs_practice  TEXT NOT NULL DEFAULT '[]',
+      result          TEXT CHECK (result IN ('pass','fail')),
+      notes           TEXT,
+      -- source says which door it came through. 'paper' is how an evaluation
+      -- the plant already did on paper is filed with its real date rather than
+      -- being redone — the NFP's own rule, and the reason shipping this does
+      -- not ask anybody to re-evaluate a driver they watched last year.
+      source          TEXT NOT NULL DEFAULT 'in_app' CHECK (source IN ('in_app','paper')),
+      signature       TEXT,
+      signed_at       TEXT,
+      signed_by       TEXT,
+      created_by      TEXT,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (course_id) REFERENCES training_courses(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_practical_eval_course ON training_practical_evaluations(course_id, employee_name);
+
     -- One row per in-app test take, auto-graded; links to the completion it created.
     CREATE TABLE IF NOT EXISTS training_test_attempts (
       id TEXT PRIMARY KEY,
@@ -5107,6 +5157,32 @@ function runMigrations() {
         updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
       );
       CREATE UNIQUE INDEX IF NOT EXISTS idx_employee_hours_week ON employee_hours(user_id, week_start);
+
+      -- WHO IS NOT ON THE HOURS LIST, and why somebody said so.
+      --
+      -- The roster is derived (active accounts that are not admins, auditors or
+      -- guests, plus active contractors), which is right for almost everybody
+      -- and cannot cover the handful of real judgement calls — somebody
+      -- salaried, somebody whose hours are tracked elsewhere, an account that
+      -- is not a person at all.
+      --
+      -- ONE TABLE FOR BOTH POPULATIONS. An employee row is keyed on a users.id
+      -- and a contractor row on a pay_employees.id, so a flag would have to be
+      -- added to two tables and kept in step; the exclusion is the fact, so it
+      -- gets one owner keyed on whatever the row's id is.
+      --
+      -- A REASON IS REQUIRED and the name is stored beside it. "Why is Marnee
+      -- not on this list" has to be answerable months later by reading the
+      -- row, not by asking whoever pressed the button. Reinstating deletes the
+      -- row; both directions are audited.
+      CREATE TABLE IF NOT EXISTS hours_exclusions (
+        row_id        TEXT PRIMARY KEY,
+        kind          TEXT NOT NULL DEFAULT 'employee' CHECK (kind IN ('employee','contractor')),
+        name          TEXT,
+        reason        TEXT NOT NULL,
+        excluded_by   TEXT,
+        excluded_at   TEXT NOT NULL DEFAULT (datetime('now'))
+      );
     `);
   } catch (e) {
     console.warn('[db] employee_hours unavailable:', e.message);
