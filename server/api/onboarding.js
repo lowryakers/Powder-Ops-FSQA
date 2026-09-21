@@ -79,8 +79,14 @@ const PORTAL_FIELDS = [
 // `worker_type` is the OFFICE's to set, never the new hire's: whether somebody
 // is an employee or a contractor is a decision made before the link is sent,
 // and it changes which tax form they are asked to sign.
-const ADMIN_FIELDS = [...PORTAL_FIELDS, 'department', 'team', 'position', 'start_date', 'pay_rate', 'pay_frequency', 'notes', 'worker_type'];
+const ADMIN_FIELDS = [...PORTAL_FIELDS, 'department', 'team', 'position', 'start_date', 'pay_rate', 'pay_frequency', 'notes', 'worker_type', 'review_occasion'];
 const BOOL_FIELDS = ['w4_multiple_jobs', 'w4_exempt', 'w9_backup_withholding'];
+
+// WHICH STARTER CHECK THIS PERSON GETS. The two keys are Pay Tracking's own
+// (`OCCASIONS` in api/pay.js) rather than a second vocabulary — the value is
+// copied onto the roster verbatim and read back there, so a third spelling
+// would be a decision that never becomes a check.
+const REVIEW_OCCASIONS = ['30_day', '90_day', 'none'];
 
 // DIRECT DEPOSIT IS THE ONLY WAY THE PLANT PAYS, so it is no longer a question.
 // 'check' stays readable here and in the packet PDF: a record filed before this
@@ -206,6 +212,13 @@ function applyFields(db, rec, body, allowed) {
   if (patch.w9_tin_type && !TIN_TYPES.includes(patch.w9_tin_type)) return { error: 'A TIN is either an SSN or an EIN.' };
   if (patch.w4_filing_status && !FILING_STATUSES.includes(patch.w4_filing_status)) return { error: 'Unknown filing status.' };
   if (patch.i9_citizenship && !CITIZENSHIP.includes(patch.i9_citizenship)) return { error: 'Unknown citizenship status.' };
+  // REFUSED RATHER THAN STORED AND IGNORED. Pay Tracking only knows the two
+  // occasions; anything else would sit on the packet looking like a decision
+  // and raise nothing, which is worse than no decision at all. 'none' is a
+  // real answer — this plant does one or the other, not always one.
+  if (patch.review_occasion && !REVIEW_OCCASIONS.includes(patch.review_occasion)) {
+    return { error: 'The starter review is the 30-day check, the 90-day check, or neither.' };
+  }
   // Sensitive fields: encrypted or refused, never stored bare. Validated on
   // the way in, because a mistyped routing number is a paycheck that bounces.
   for (const [field, encCol, l4Col] of [['ssn', 'ssn_enc', 'ssn_last4'], ['ein', 'ein_enc', 'ein_last4'], ['dd_routing', 'dd_routing_enc', null], ['dd_account', 'dd_account_enc', 'dd_account_last4']]) {
@@ -689,12 +702,18 @@ router.post('/:id/complete', (req, res) => {
   let rosterId = null;
   try {
     const name = nameOf(rec);
-    const existing = db.prepare('SELECT id, user_id FROM pay_employees WHERE name = ?').get(name);
+    const existing = db.prepare('SELECT id, user_id, review_occasion FROM pay_employees WHERE name = ?').get(name);
     if (existing) {
       rosterId = existing.id;
       if (userId && !existing.user_id) {
         db.prepare("UPDATE pay_employees SET user_id = ?, updated_at = datetime('now') WHERE id = ?").run(userId, existing.id);
         logAudit(req.user, 'update', 'pay_employee', existing.id, { linked_from_onboarding: rec.id }, null, null, name);
+      }
+      // Fills a blank, never overwrites: the same rule the account link
+      // follows. Somebody who has already set the starter review on the
+      // roster by hand has made a decision, and the packet must not undo it.
+      if (rec.review_occasion && !existing.review_occasion) {
+        db.prepare("UPDATE pay_employees SET review_occasion = ?, updated_at = datetime('now') WHERE id = ?").run(rec.review_occasion, existing.id);
       }
     } else {
       rosterId = uuid();
@@ -702,12 +721,17 @@ router.post('/:id/complete', (req, res) => {
       // WORKER TYPE CARRIES ACROSS. Hard-coding 'employee' here filed a 1099
       // contractor onto the roster as staff — into the headcount, the average
       // rate and the review cycle, none of which apply to them.
-      db.prepare(`INSERT INTO pay_employees (id, user_id, name, team, hire_date, pay_rate, worker_type, contractor_company)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      db.prepare(`INSERT INTO pay_employees (id, user_id, name, team, hire_date, pay_rate, worker_type, contractor_company, review_occasion)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         rosterId, userId || null, name, rec.team || rec.department || null,
         rec.start_date || null, Number.isFinite(rate) ? rate : null,
         rec.worker_type === 'contractor' ? 'contractor' : 'employee',
-        rec.worker_type === 'contractor' ? (rec.w9_business_name || null) : null);
+        rec.worker_type === 'contractor' ? (rec.w9_business_name || null) : null,
+        // THE STARTER-REVIEW DECISION TRAVELS WITH THEM. It was made on the
+        // packet, where the hire date and the position are; carrying it here
+        // is what makes Pay Tracking able to chase it without anybody
+        // re-entering the choice or remembering it was made.
+        rec.review_occasion || null);
       logAudit(req.user, 'create', 'pay_employee', rosterId,
         { from_onboarding: rec.id, hire_date: rec.start_date || null, pay_rate: Number.isFinite(rate) ? rate : null },
         null, null, name);

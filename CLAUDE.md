@@ -4930,6 +4930,39 @@ it by role).
 - Verified: 20 assertions covering both visibility gates, the 404-not-403 rule, search scoping, the
   empty-publish and delete-published refusals, and extracted text never leaving the server.
 
+## The starter review is decided on the packet, and the link finishes the job (D-097)
+`onboarding_records.review_occasion` + `pay_employees.review_occasion`, a `starter` kind in `payActions`, and
+`common/InstallReadyDoc.jsx` + the public `/install` page. Two asks, one defect: **a fact or an instruction
+that lives only on a screen the person who needs it never opens.**
+- **THE ARITHMETIC ALREADY EXISTED.** `occasionDue()` and `starter_checks` have derived both dates from the
+  hire date since D-057 — but only in the employee drawer, which nobody opens on the morning a 30-day check
+  falls due, and **nothing recorded WHICH of the two a person gets.** The re-clean badge again.
+- **Asked on the PACKET**, the one moment somebody has the hire date, the position and the supervisor on one
+  screen. **Saves on the spot**, not as a side effect of Complete. `'30_day' | '90_day' | 'none'` are Pay
+  Tracking's own keys, not a second vocabulary; anything else is **refused, never stored and ignored**.
+  `'none'` is a real answer — this plant does one or the other.
+- **Carried to the roster at completion, filling a blank and never overwriting.** That guard was broken and
+  the verify found it: the existing-row lookup projected `id, user_id` only, so `existing.review_occasion`
+  was `undefined` and the guard always passed. **A projection narrower than the code that reads it.**
+- **THE DATE IS NEVER STORED** and there must be no column for it — correcting a start date moves the check
+  with it. Asserted both by moving a hire date and by asserting no such column exists.
+- **A `starter` kind in `payActions`** — the ONE list the queue, the ReadyBot reminder and the bell all read.
+  **7-day lead** (a check that first appears on the day is done late); it leaves the moment a non-cancelled
+  assignment for that occasion exists. **Its own kind, not folded into `assign`**: a starter's first check and
+  an annual review run over are the same act with very different stakes. **ONE PERSON, ONE ASK** — a starter
+  item suppresses that person's `assign` item. It still does NOT create the assignment (D-057's rule stands).
+- **The join link was dropping the third of the job that matters on a phone.** It redirected to the app after
+  1.2s; an app you reach by finding last week's text is one you stop opening. The onboarding wizard's install
+  card is now `common/InstallReadyDoc.jsx` (optional `t` so the wizard keeps its verified wording) and the
+  join page ends on it. **The written instructions ARE the feature** — `beforeinstallprompt` never fires on iOS.
+- **`/install` is public and covers what a join link cannot**: the new phone, the deleted icon, the person set
+  up months ago. It gives nothing away (no plant name, no roster, no modules, no way in) so it is safe to text
+  to anybody, **and it does not sign anybody in** — a password box there is a second, weaker door. EN/ES,
+  defaulting to the phone's language. Offered to the office in Settings → Users, where the question is asked.
+- Verified: `verify:starterreview` (45, live + browser at 390 and 1280; in `verify:all`). Controls: dropping
+  the `starter` block fails **6** (the first returning `[]` for a check due in four days); reverting the join
+  page and `/install` fails **9**.
+
 ## Pay reviews: the office's list clears only when something was DONE (D-057)
 `payActions(db)` in `api/pay.js` is the one list of what waits on the office — **decide** (a submitted
 evaluation, cleared by applying a rate or holding flat with a reason), **chase** (an assignment past its date),

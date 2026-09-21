@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { KeyRound, MessageSquare, AlertTriangle, CheckCircle } from 'lucide-react';
+import InstallReadyDoc from './common/InstallReadyDoc.jsx';
 
 /**
  * The page a join link opens — public, no login, because the person holding it
@@ -52,7 +53,6 @@ export default function JoinPage({ token }) {
       localStorage.setItem('auth_token', d.token);
       localStorage.setItem('auth_user', JSON.stringify(d.user));
       setDone(true);
-      setTimeout(() => { window.location.href = '/'; }, 1200);
     } catch (err) { setError(err.message); }
     finally { setBusy(false); }
   };
@@ -61,13 +61,31 @@ export default function JoinPage({ token }) {
     return <div className="min-h-screen bg-gray-50 flex items-center justify-center text-sm text-gray-400">Loading…</div>;
   }
 
+  // THE LINK'S JOB IS NOT DONE AT "you're in".
+  //
+  // It used to drop them at the app after a second and a quarter, which
+  // answered the first two thirds of what somebody needs — where to go, how to
+  // sign in — and silently skipped the third. On a phone, an app you reach by
+  // finding a text message from last week is one you stop opening. The
+  // instructions are the same ones the onboarding wizard gives, from the same
+  // component, and Open ReadyDoc is still one tap away for anyone who would
+  // rather get on with it.
   if (done) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-        <div className="bg-white border border-gray-200 rounded-2xl p-6 max-w-sm w-full text-center" data-join-done>
-          <CheckCircle size={40} className="text-green-600 mx-auto mb-3" />
-          <p className="text-lg font-semibold text-gray-900">You&apos;re in.</p>
-          <p className="text-sm text-gray-600 mt-1">Opening ReadyDoc…</p>
+      <div className="min-h-screen bg-gray-50 flex items-start justify-center px-4 py-8">
+        <div className="max-w-sm w-full space-y-4" data-join-done>
+          <div className="bg-white border border-gray-200 rounded-2xl p-6 text-center">
+            <CheckCircle size={40} className="text-green-600 mx-auto mb-3" />
+            <p className="text-lg font-semibold text-gray-900">You&apos;re in.</p>
+            <p className="text-sm text-gray-600 mt-1">
+              You&apos;re signed in as <span className="font-medium text-gray-900">{info?.name}</span>.
+            </p>
+          </div>
+          <InstallReadyDoc />
+          <button type="button" onClick={() => { window.location.href = '/'; }} data-join-open
+            className="w-full py-3 bg-gray-900 text-white rounded-xl text-base font-semibold">
+            Open ReadyDoc
+          </button>
         </div>
       </div>
     );

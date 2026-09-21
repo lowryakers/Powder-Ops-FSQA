@@ -46,6 +46,7 @@ const RUNS = [
   ['verify-comms-edit.mjs', 4995, {}, false],
   ['verify-comms-pending-jump.mjs', 4999, {}, false],
   ['verify-training-assign.mjs', 5001, {}, false],
+  ['verify-starter-review.mjs', 5002, {}, false],
   ['verify-qa-correction-notify.mjs', 4997, {}, false],
   ['verify-cleanup-digest.mjs', 4998, {}, false],
   ['verify-eod-chase.mjs', 4996, {}, false],

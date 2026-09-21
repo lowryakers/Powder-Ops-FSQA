@@ -2812,6 +2812,12 @@ function runMigrations() {
     // records the same fact and the stored attestation says which it was.
     ['w9_backup_withholding', 'INTEGER DEFAULT 0'],
     ['w9_signature', 'TEXT'],               // JSON — {name, at, ip, ua, attestation}
+    // WHICH STARTER REVIEW THIS PERSON GETS — '30_day', '90_day' or 'none'.
+    // Asked on the packet, before it is completed, because that is the one
+    // moment somebody has the hire date, the position and the supervisor all
+    // in front of them. Carried onto the roster at completion; Pay Tracking
+    // derives the date from the hire date and never stores it twice.
+    ['review_occasion', 'TEXT'],
   ]) addColumnIfMissing('onboarding_records', col, def);
 
   db.exec(`
@@ -5475,6 +5481,11 @@ function runMigrations() {
     // no place for.
     addColumnIfMissing('pay_employees', 'contractor_company', 'TEXT');
     addColumnIfMissing('pay_employees', 'ends_on', 'TEXT');
+    // Which starter review this person gets, decided on their onboarding
+    // packet. The DATE is not stored — `occasionDue()` derives it from the
+    // hire date, so correcting a hire date moves the check with it rather
+    // than leaving a stored date that quietly disagrees.
+    addColumnIfMissing('pay_employees', 'review_occasion', 'TEXT');
   } catch (e) {
     console.warn('[db] pay tracking tables unavailable:', e.message);
   }

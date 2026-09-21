@@ -3452,3 +3452,82 @@ other. `controlled.js` parks whatever V4 says and keeps serving V3 until it is a
 No code changed. Verified by stamping a fresh database rather than by reading: four active schedules all
 `task_group = 'cleaning'` with their targets on the work orders, 232/232/0/0 records, zero schedules
 anywhere mentioning Lysol, and Restroom Daily Cleaning's six steps carrying no chemical.
+
+---
+
+## D-097 — The starter review is decided where the facts are, and the link's job is not done at "you're in"
+
+**21 September 2026.** Two asks, one shape. Marnee wanted the 30-or-90-day decision made as one of the last
+steps of onboarding "and then have it automatically be tracking that within the pay tracking module"; and a
+link she could text somebody with how to get to ReadyDoc, sign in, and put it on their home screen. Both are
+the same defect this project keeps finding — **a fact or an instruction that exists only on a screen the
+person who needs it never opens.**
+
+### The arithmetic already existed. Nobody was ever shown it.
+
+`OCCASIONS`, `occasionDue()` and `starter_checks` have derived both dates from the hire date since the
+30/90-day work shipped. But `starter_checks` was rendered in **one place — the employee drawer**, which
+somebody opens when they already have that person in mind, and that is never the morning a 30-day check
+falls due. And nothing anywhere recorded **which** of the two a given starter gets, so the choice was made
+by remembering, or not at all. The re-clean badge the cleaner could not see, in Pay Tracking.
+
+- **`review_occasion` is asked on the PACKET** (`onboarding_records`), because that is the one moment
+  somebody has the hire date, the position and who they will work for all on one screen. A week later the
+  decision needs all three looked up again.
+- **It saves on the spot, not as a side effect of Complete.** A setting that only commits when another
+  button is pressed is one people cannot tell they have made.
+- **A value Pay Tracking does not know is REFUSED**, not stored and ignored. `'30_day' | '90_day' | 'none'`
+  are Pay Tracking's own keys rather than a second vocabulary — the value is copied onto the roster verbatim
+  and read back there, so a third spelling would be a decision that never becomes a check. **`'none'` is a
+  real answer**: this plant does one or the other, not always one.
+- **Completing the packet carries it to `pay_employees.review_occasion`, filling a blank and never
+  overwriting** — somebody who set it by hand on the roster made a decision. **That guard was broken and the
+  verify is what found it**: the existing-row lookup projected `id, user_id` only, so `existing.review_occasion`
+  was `undefined` and the guard always passed. A projection narrower than the code that reads it.
+- **THE DATE IS NEVER STORED.** There is no starter-review date column and there must not be one —
+  `occasionDue()` derives it from the hire date, so correcting a start date moves the check with it rather
+  than leaving a stored date that quietly disagrees. Asserted by moving a hire date and watching the check
+  move, and by asserting no such column exists.
+- **A new `starter` kind in `payActions`** — the one list the office queue, the every-third-day ReadyBot
+  reminder and the admin bell badge all read, so none of them can be quiet about it. Raised with a **7-day
+  lead**: a check that first appears the morning it is due is one that gets done late. It **leaves the moment
+  somebody is asked** — a non-cancelled assignment for that occasion is the answer.
+- **Its own kind rather than folded into `assign`.** A new starter's first check and an annual review that
+  has run over are the same act with very different stakes, and a queue that calls them both "assign a
+  reviewer" tells the office nothing about which one cannot wait.
+- **ONE PERSON, ONE ASK.** A starter item suppresses the annual `assign` item for that person; two lines for
+  one piece of work is how a queue stops being read.
+- **It still does not create the assignment.** D-057's "raised one at a time" rule stands: this records the
+  decision and chases it. What changed is that the plant now records *which* check, at the moment somebody
+  has the hire date in front of them.
+- A contractor never reaches it at all — `payActions`' roster already excludes them.
+
+### The link, and the third of the job it was skipping
+
+The join link (D-087) **is** the textable link, and it answered two thirds of what somebody needs: where to
+go, and how to sign in. Then it called `window.location.href = '/'` after 1.2 seconds. **On a phone, an app
+you reach by finding a text message from last week is one you stop opening** — the install step was the
+third, and it was the one dropped.
+
+- **`common/InstallReadyDoc.jsx`** is the onboarding wizard's install card, extracted rather than retyped.
+  `t` is optional so the wizard keeps its own already-translated wording; everywhere else falls back to
+  EN/ES strings in the component. A second copy is how one door starts telling people to tap a menu that
+  moved. **The written instructions are the feature, not a fallback** — `beforeinstallprompt` is Chromium-only
+  and never fires on iOS.
+- **The join page now ends on it**, naming who they are signed in as, with Open ReadyDoc one tap away for
+  anyone who would rather get on with it.
+- **`/install` is a public page, and it is the half a join link cannot cover.** A join link is single use,
+  fourteen days, and refused outright on an account that already has a password — all deliberate, and all
+  wrong for the new phone, the deleted icon, and the person set up months ago who never installed it. The
+  office had a button for the new starter and nothing at all for those. It **gives nothing away**: no plant
+  name, no roster, no module list, no way in — three instructions and a link to the sign-in screen everybody
+  can already reach — so it is safe to text to anybody, and it is the same address whoever is asking. It
+  **does not sign anybody in**; a password box there would be a second, weaker door into the same accounts.
+- EN/ES, defaulting to the phone's own language. A page that opens in English is one half this plant closes.
+- The office reaches it from Settings → Users, under the reset/join controls, where the question is asked.
+
+**Verified:** `verify:starterreview` (45, live + a real browser at 390 and 1280; in `verify:all`). Two
+controls, both decisive: removing the `starter` block from `payActions` fails **6**, the first returning `[]`
+for a starter due in four days — the reported symptom exactly; reverting the join page and `/install` fails
+**9**, with `/install` answering as the sign-in screen (the shell serves any unknown path, which is why the
+assertion is that the install page rendered, not that the address responded).

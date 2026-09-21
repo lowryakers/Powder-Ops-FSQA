@@ -238,6 +238,69 @@ function DocRow({ d, i, setDoc, onRemove, canRemove }) {
   );
 }
 
+/**
+ * Which starter review this person gets — decided on the packet, chased by
+ * Pay Tracking.
+ *
+ * ASKED HERE BECAUSE THIS IS THE ONE MOMENT SOMEBODY HAS THE FACTS. The hire
+ * date, the position and who they will work for are all on this screen; a
+ * week later the decision needs all three looked up again, which is why in
+ * practice it was made by remembering, or not at all.
+ *
+ * It saves as soon as it is picked rather than waiting for Complete: the
+ * choice is worth keeping even if the packet is finished tomorrow, and a
+ * setting that only commits as a side effect of another button is one people
+ * cannot tell they have made.
+ *
+ * Pay Tracking derives the DATE from the hire date — nothing here stores one,
+ * so correcting a start date moves the check with it.
+ */
+function StarterReview({ r, onChanged }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const choose = async (value) => {
+    setBusy(true); setError('');
+    try {
+      await apiPut(`/onboarding/${r.id}`, { review_occasion: value });
+      onChanged();
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+  const OPTS = [
+    { v: '30_day', label: '30-day review' },
+    { v: '90_day', label: '90-day review' },
+    { v: 'none', label: 'Neither' },
+  ];
+  const picked = r.review_occasion || '';
+  const due = r.start_date && picked && picked !== 'none'
+    ? new Date(new Date(`${r.start_date}T00:00:00`).getTime() + (picked === '30_day' ? 30 : 90) * 86400000).toISOString().slice(0, 10)
+    : null;
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-2" data-starter-review>
+      <p className="text-xs font-bold uppercase tracking-wider text-gray-600">Starter review</p>
+      <p className="text-[11px] text-gray-500">
+        Which check this person gets after they start. Pay Tracking works out the date from their start date and chases it.
+      </p>
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {OPTS.map(o => (
+          <button key={o.v} type="button" disabled={busy} onClick={() => choose(o.v)} data-starter-pick={o.v}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${picked === o.v
+              ? 'bg-powder-600 text-white border-powder-600'
+              : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+      {due && <p className="text-[11px] text-gray-600" data-starter-due>Falls due {due}, from a {r.start_date} start.</p>}
+      {picked && picked !== 'none' && !r.start_date && (
+        <p className="text-[11px] text-amber-800">No start date on the packet yet, so this has no date to fall due — add one and it will.</p>
+      )}
+      {!picked && <p className="text-[11px] text-gray-400">Nothing chosen yet.</p>}
+      {error && <p className="text-xs text-red-700">{error}</p>}
+    </div>
+  );
+}
+
 /** I-9 Section 2: what the employer examined, signed under the password gate. */
 function Section2({ r, attestation, onChanged }) {
   const [docs, setDocs] = useState([{ list: 'A', title: '', issuing_authority: '', number: '', expires: '' }]);
@@ -495,6 +558,7 @@ function Row({ r, attestations, storageEnabled, onAction }) {
 
           <Files r={r} storageEnabled={storageEnabled} onChanged={() => onAction('refresh')} />
           {!r.is_contractor && <Section2 key={r.i9_section2 ? 'signed' : 'open'} r={r} attestation={attestations?.i9_s2} onChanged={() => onAction('refresh')} />}
+          {!['completed', 'cancelled'].includes(r.status) && <StarterReview r={r} onChanged={() => onAction('refresh')} />}
 
           {error && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-2">{error}</p>}
           <div className="flex items-center gap-2 flex-wrap">

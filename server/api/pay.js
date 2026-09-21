@@ -56,6 +56,12 @@ function requireEvaluator(req, res) {
 
 const HOURS_PER_YEAR = 2080;
 const today = () => new Date().toISOString().slice(0, 10);
+/** N days on from a date, as YYYY-MM-DD. */
+const addDays = (d, n) => {
+  const t = Date.parse(`${String(d).slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(t)) return null;
+  return new Date(t + n * 86400000).toISOString().slice(0, 10);
+};
 const daysSince = (d) => {
   if (!d) return null;
   const t = Date.parse(`${String(d).slice(0, 10)}T00:00:00Z`);
@@ -179,6 +185,11 @@ router.get('/employees/:id', (req, res) => {
     occasion: occ,
     label: occasionLabel(occ),
     due: occasionDue(row.hire_date, occ),
+    // WHICH ONE THIS PERSON ACTUALLY GETS, decided on their onboarding packet.
+    // Both are still listed — the office can raise either — but the one that
+    // was chosen is marked, so the drawer shows a decision rather than two
+    // equally-weighted options nobody remembers choosing between.
+    chosen: row.review_occasion === occ,
     // Derived on every read: an ask that exists, in whatever state it is in.
     assignment: assignments.find(a => a.occasion === occ && a.status !== 'cancelled') || null,
   }));
@@ -190,7 +201,7 @@ router.get('/employees/:id', (req, res) => {
 // with before/after, so the fix leaves a trail rather than rewriting history
 // silently.
 const EDITABLE = ['name', 'team', 'is_supervisor', 'hire_date', 'pto_plan', 'active', 'notes', 'user_id',
-  'last_reviewed_at', 'last_increase_at', 'worker_type', 'contractor_company', 'ends_on'];
+  'last_reviewed_at', 'last_increase_at', 'worker_type', 'contractor_company', 'ends_on', 'review_occasion'];
 
 // Fields a LINKED row does not own: Settings does. Writing them here would put
 // a value on the roster that the next read overrides anyway, which reads as the
@@ -872,17 +883,57 @@ export function payActions(db) {
       overdue_days: daysSince(a.due_date) });
   }
 
+  // starter — the 30- or 90-day check this person was signed up for on their
+  // onboarding packet, coming due with nobody asked yet.
+  //
+  // THE DECISION EXISTED AND NOTHING WATCHED IT. `starter_checks` has always
+  // derived both dates from the hire date, but only in the employee drawer —
+  // a screen somebody opens when they already have that person in mind, which
+  // is never the moment a 30-day check falls due. That is the same defect as
+  // the re-clean badge the cleaner could not see, and it is why the choice is
+  // now made on the packet and chased here.
+  //
+  // The "raised one at a time" rule in OCCASIONS still stands: this does not
+  // create an assignment, it asks the office to. What changed is that the
+  // plant now records WHICH check a starter gets, at the moment somebody has
+  // the hire date in front of them, instead of having to remember later.
+  const STARTER_LEAD_DAYS = 7;
+  const starters = new Set();
+  for (const e of roster) {
+    const occ = e.review_occasion;
+    if (!OCCASIONS[occ]) continue;
+    const due = occasionDue(e.hire_date, occ);
+    if (!due) continue;
+    // Raised a week ahead: a check that first appears on the day it is due is
+    // one that gets done late or not at all.
+    if (due > addDays(now, STARTER_LEAD_DAYS)) continue;
+    // Already asked for, or already reviewed — the assignment is the answer.
+    const had = db.prepare(`SELECT 1 FROM pay_review_assignments
+      WHERE employee_id = ? AND occasion = ? AND status != 'cancelled' LIMIT 1`).get(e.id, occ);
+    if (had) continue;
+    items.push({
+      kind: 'starter', employee_id: e.id, employee_name: e.name, team: e.team,
+      occasion: occ, occasion_label: occasionLabel(occ), due_date: due,
+      hire_date: e.hire_date, overdue_days: due < now ? daysSince(due) : 0,
+      is_supervisor: isSupervisorRow(db, e) ? 1 : 0,
+    });
+    starters.add(e.id);
+  }
+
   // assign — clock run out, nobody asked, nothing submitted
   for (const e of roster) {
     const st = reviewState(e);
-    if (st.status !== 'due' || assigned.has(e.id) || decided.has(e.id)) continue;
+    // ONE PERSON, ONE ASK. A starter check already on the queue is the ask;
+    // listing the same person again as an annual review due is two lines for
+    // one piece of work, which is how a queue stops being read.
+    if (st.status !== 'due' || assigned.has(e.id) || decided.has(e.id) || starters.has(e.id)) continue;
     items.push({ kind: 'assign', employee_id: e.id, employee_name: e.name, team: e.team, since: st.since, days: st.days,
       is_supervisor: isSupervisorRow(db, e) ? 1 : 0 });
   }
 
-  const order = { decide: 0, chase: 1, assign: 2 };
+  const order = { decide: 0, starter: 1, chase: 2, assign: 3 };
   items.sort((a, b) => order[a.kind] - order[b.kind] || (b.waiting_days ?? b.overdue_days ?? b.days ?? 0) - (a.waiting_days ?? a.overdue_days ?? a.days ?? 0));
-  const counts = { decide: 0, chase: 0, assign: 0 };
+  const counts = { decide: 0, starter: 0, chase: 0, assign: 0 };
   for (const i of items) counts[i.kind]++;
   return { items, counts: { ...counts, total: items.length }, as_of: now };
 }

@@ -1003,6 +1003,12 @@ const KIND = {
   decide: { label: 'Decide', tone: 'border-red-400 bg-red-50', chip: 'bg-red-100 text-red-800', what: 'Evaluation submitted — apply an increase or hold flat' },
   chase: { label: 'Chase', tone: 'border-amber-400 bg-amber-50', chip: 'bg-amber-100 text-amber-800', what: 'Reviewer is past the date' },
   assign: { label: 'Assign', tone: 'border-powder-300 bg-powder-50', chip: 'bg-powder-100 text-powder-800', what: 'Review clock has run out — nobody asked yet' },
+  // The 30- or 90-day check chosen on somebody's onboarding packet. Its own
+  // kind rather than folded into Assign: a new starter's first check and an
+  // annual review that has run over are the same act with very different
+  // stakes, and a queue that calls them both "assign a reviewer" tells the
+  // office nothing about which one cannot wait.
+  starter: { label: 'Starter', tone: 'border-blue-400 bg-blue-50', chip: 'bg-blue-100 text-blue-800', what: 'A new starter\u2019s 30- or 90-day check is coming due' },
 };
 function ActionQueue({ tick, tr, onDecide, onAssign, onChase }) {
   const { data, refresh } = useApiGet('/pay/actions', [tick]);
@@ -1059,9 +1065,13 @@ function ActionQueue({ tick, tr, onDecide, onAssign, onChase }) {
               ? `${i.reviews} review${i.reviews === 1 ? '' : 's'} in (${i.reviewers}) · waiting ${i.waiting_days} day${i.waiting_days === 1 ? '' : 's'}`
               : i.kind === 'chase'
                 ? `${i.reviewer_name || tr('reviewer')} was due ${fmtDate(i.due_date)} · ${i.overdue_days} day${i.overdue_days === 1 ? '' : 's'} over`
-                : `${i.days} ${tr('days since the last raise or review')}`;
+                : i.kind === 'starter'
+                  ? `${i.occasion_label} · ${tr('due')} ${fmtDate(i.due_date)}${i.overdue_days > 0 ? ` · ${i.overdue_days} ${tr('days over')}` : ''}`
+                  : `${i.days} ${tr('days since the last raise or review')}`;
             const act = i.kind === 'decide' ? onDecide : i.kind === 'chase' ? onChase : onAssign;
-            const actLabel = i.kind === 'decide' ? tr('Open and decide') : i.kind === 'chase' ? tr('See assignment') : tr('Assign a reviewer');
+            const actLabel = i.kind === 'decide' ? tr('Open and decide')
+              : i.kind === 'chase' ? tr('See assignment')
+                : i.kind === 'starter' ? tr('Assign the check') : tr('Assign a reviewer');
             return (
               <li key={`${i.kind}-${i.employee_id}-${i.assignment_id || ''}`} className={`flex items-center gap-2 flex-wrap text-sm border-l-4 rounded-r-lg pl-2 pr-2 py-1.5 ${k.tone}`} data-action={i.kind}>
                 <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${k.chip}`}>{tr(k.label)}</span>
@@ -1199,7 +1209,14 @@ export default function PayTrackingPanel() {
       {isAdmin && (
         <ActionQueue tick={tick} tr={tr}
           onDecide={i => setOpenId(i.employee_id)}
-          onAssign={i => { setPresetEmployee(i.employee_id); setTab('assign'); }}
+          onAssign={i => {
+            setPresetEmployee(i.employee_id);
+            // A starter item already knows WHICH check it is, so the form
+            // opens on it. Dropping that here would make the office pick the
+            // occasion again from a queue line that just told them.
+            setPresetOccasion(i.kind === 'starter' ? (i.occasion || '') : '');
+            setTab('assign');
+          }}
           onChase={() => setTab('assign')} />
       )}
 

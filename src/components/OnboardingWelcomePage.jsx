@@ -1,3 +1,4 @@
+import InstallReadyDoc from './common/InstallReadyDoc.jsx';
 import { useState, useEffect } from 'react';
 import PhotoPicker from './common/PhotoPicker.jsx';
 import { LANGS, translator } from '../i18n/onboardingStrings.js';
@@ -579,73 +580,18 @@ export default function OnboardingWelcomePage({ token }) {
   }
 }
 
-/**
- * The hand-off from "the packet is filed" to "ReadyDoc is on your phone".
- *
- * IT INSTALLS, IT DOES NOT SIGN IN. The account does not exist until the office
- * creates it on day one, so an install now lands on a sign-in screen — the card
- * says that plainly rather than letting somebody tap through and conclude the
- * app is broken. NOTIFICATIONS ARE NOT OFFERED HERE for the same reason: a push
- * subscription is per-account and the endpoint that stores one is behind a
- * session, so a permission prompt now would buy a browser grant attached to
- * nobody. The app asks on day one, when it can actually deliver.
- *
- * `beforeinstallprompt` only fires on Chromium, and only when the page is on the
- * app's own origin — which /welcome/<token> is. Where the event never arrives
- * (iOS Safari, always) the per-platform instructions ARE the feature, so they
- * render whether or not a button appeared. `appUrl` comes from the server's own
- * `readyDocOrigin()`; a hard-coded host here is how a link starts pointing at
- * the wrong one of the two origins.
- */
-function InstallReadyDoc({ t, appUrl }) {
-  const [prompt, setPrompt] = useState(null);
-  const [installed, setInstalled] = useState(false);
-  useEffect(() => {
-    const onPrompt = (e) => { e.preventDefault(); setPrompt(e); };
-    const onInstalled = () => { setInstalled(true); setPrompt(null); };
-    window.addEventListener('beforeinstallprompt', onPrompt);
-    window.addEventListener('appinstalled', onInstalled);
-    return () => {
-      window.removeEventListener('beforeinstallprompt', onPrompt);
-      window.removeEventListener('appinstalled', onInstalled);
-    };
-  }, []);
-  const isIos = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
-  const install = async () => {
-    if (!prompt) return;
-    prompt.prompt();
-    const { outcome } = await prompt.userChoice.catch(() => ({ outcome: 'dismissed' }));
-    if (outcome === 'accepted') setInstalled(true);
-    setPrompt(null);
-  };
-  return (
-    <div className="bg-powder-50 border border-powder-200 rounded-xl p-4 space-y-3" data-install>
-      <p className="text-base font-bold text-gray-900">{t('done.installTitle')}</p>
-      <p className="text-sm text-gray-700">{t('done.installWhy')}</p>
-      {installed ? (
-        <p className="text-sm font-semibold text-green-800 bg-green-50 border border-green-200 rounded-lg p-2.5" data-install-done>
-          ✓ {t('done.installDone')}
-        </p>
-      ) : (
-        <>
-          {prompt && (
-            <button type="button" onClick={install} data-install-button
-              className="w-full py-3 bg-powder-600 text-white rounded-xl text-base font-semibold">
-              {t('done.installButton')}
-            </button>
-          )}
-          <p className="text-sm text-gray-700">{t(isIos ? 'done.installIos' : 'done.installAndroid')}</p>
-        </>
-      )}
-      <p className="text-xs text-gray-500">{t('done.notifications')}</p>
-      {appUrl && (
-        <p className="text-xs text-gray-500 break-all">
-          {t('done.openLink')} <a className="text-powder-700 underline" href={appUrl}>{appUrl.replace(/^https?:\/\//, '')}</a>
-        </p>
-      )}
-    </div>
-  );
-}
+// The hand-off from "the packet is filed" to "ReadyDoc is on your phone" now
+// lives in common/InstallReadyDoc.jsx, because the same three sentences are
+// what anybody needs who has just been given access — a new hire here, and
+// somebody following a join link. This page keeps its own wording by passing
+// its translator in.
+//
+// IT INSTALLS, IT DOES NOT SIGN IN. The account does not exist until the
+// office creates it on day one, so an install now lands on a sign-in screen —
+// `done.notifications` says that plainly rather than letting somebody tap
+// through and conclude the app is broken. Notifications are not offered for
+// the same reason: a push subscription is per-account, so a permission prompt
+// now would buy a browser grant attached to nobody.
 
 function Shell({ children, lang, onLang }) {
   return (

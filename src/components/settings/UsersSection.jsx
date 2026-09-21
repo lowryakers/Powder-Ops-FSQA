@@ -1,6 +1,6 @@
 import { useState, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiDelete } from '../../hooks/useApi';
-import { Plus, Shield, ChevronDown, ChevronRight, KeyRound, Users, X, Link2, Send } from 'lucide-react';
+import { Plus, Shield, ChevronDown, ChevronRight, KeyRound, Users, X, Link2, Send, Smartphone } from 'lucide-react';
 import { DEPARTMENTS, DEPARTMENT_GROUPS, deptLabel } from '../../constants/departments';
 import { routesTasks } from '../../../shared/task-groups.js';
 
@@ -584,6 +584,40 @@ function InviteControl({ user, onChanged }) {
   );
 }
 
+// The other half of "send them a link", and the half that had nothing.
+//
+// A JOIN LINK IS FOR AN ACCOUNT WITH NO PASSWORD — single use, fourteen days,
+// refused outright on a live account, all deliberate. So the office had a
+// button for the new starter and nothing at all for the four cases that come
+// up far more often: a new phone, a deleted icon, somebody set up months ago
+// who never installed it, and somebody who cannot remember where the app is.
+// The answer to those was a verbal address read out over a machine.
+//
+// /install is public and gives nothing away — three instructions and a link to
+// the sign-in screen everyone can already reach — so it is safe to text to
+// anybody, and it is the same address whoever is asking.
+function InstallLinkControl() {
+  const [copied, setCopied] = useState(false);
+  const url = `${window.location.origin}/install`;
+  return (
+    <div className="mt-2" data-install-link>
+      <div className="flex items-center gap-2">
+        <Smartphone size={13} className="text-gray-400 shrink-0" />
+        <code className="px-1.5 py-0.5 bg-gray-50 border border-gray-200 rounded font-mono text-[11px] text-gray-700 break-all flex-1">{url}</code>
+        <button type="button" onClick={() => { navigator.clipboard?.writeText(url); setCopied(true); }}
+          data-install-link-copy
+          className="text-[11px] font-medium text-powder-600 hover:text-powder-700 underline shrink-0">
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+      <p className="text-[10px] text-gray-400 mt-0.5">
+        How to put ReadyDoc on a phone and sign in, in English and Spanish. Text it to anyone — it works
+        whether or not they already have a password, and does not expire.
+      </p>
+    </div>
+  );
+}
+
 // Per-user mobile bottom-bar tabs. The four picks are shown across the top in
 // the order they'll appear, can be reordered or removed there, and choosing a
 // fifth swaps out the last one — so the bar is always exactly what you see.
@@ -741,6 +775,7 @@ function UserForm({ initial, onSave, onCancel, canViewPin }) {
               <>
                 <ResetPasswordControl userId={initial.id} userName={initial.name} />
                 <InviteControl user={initial} />
+                <InstallLinkControl />
               </>
             ) : (
               <p className="text-[11px] text-gray-400 mt-2">Only an admin can reset passwords.</p>

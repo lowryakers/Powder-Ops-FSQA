@@ -101,6 +101,7 @@ const ApDropPanel = lazy(() => import('./components/office/ApDropPanel.jsx'));
 const PartnerPortalPage = lazy(() => import('./components/office/PartnerPortalPage.jsx'));
 const SupplierQuestionnairePage = lazy(() => import('./components/SupplierQuestionnairePage.jsx'));
 const JoinPage = lazy(() => import('./components/JoinPage.jsx'));
+const InstallPage = lazy(() => import('./components/InstallPage.jsx'));
 
 const NAV_GROUPS = [
   {
@@ -1521,6 +1522,20 @@ function App() {
   // person tapping it has no account they can sign into yet — which is the
   // whole reason it exists. Same place in the order as the onboarding welcome
   // page and the partner portal.
+  // /install — public, no token, nothing to give away: how to put ReadyDoc on
+  // a phone and where to sign in. A join link covers a NEW account once; this
+  // covers the new phone, the deleted icon and the person set up months ago
+  // who never installed it, and can be texted to anyone at any time.
+  if (path === '/install' || path === '/install/') {
+    return (
+      <ModuleBoundary>
+        <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center text-sm text-gray-400">Loading…</div>}>
+          <InstallPage />
+        </Suspense>
+      </ModuleBoundary>
+    );
+  }
+
   if (path.startsWith('/join/')) {
     return (
       <ModuleBoundary>
