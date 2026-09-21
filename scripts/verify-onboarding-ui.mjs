@@ -146,6 +146,45 @@ t('the ID photo is on the packet', /ui-id\.png/.test(await row.locator('[data-on
 t('Section 2 is open for the employer', await row.locator('[data-section2]').count() === 1);
 t('the SSN shows only as last four', /••••9876/.test(await row.innerText()) && !/321-54-9876|321549876/.test(await row.innerText()));
 
+// ── the I-9's own Lists of Acceptable Documents, offered rather than typed ──
+// The office was typing the document title and the issuing authority into
+// free text boxes. The list is federal and enumerated on the form, so the
+// form offers it; and where the document determines its authority (a U.S.
+// passport is issued by the Department of State and nothing else) picking the
+// document fills it in.
+{
+  const doc = row.locator('[data-i9-doc]').first();
+  const titleOpts = async () => (await doc.locator('[data-i9-title] option').allInnerTexts());
+  t('the document title is a dropdown, not a text box', await doc.locator('[data-i9-title]').count() === 1);
+  t('List A offers List A documents', (await titleOpts()).some(o => /U\.S\. Passport or U\.S\. Passport Card/.test(o)));
+  t('…and not List B ones', !(await titleOpts()).some(o => /Voter's registration card/.test(o)));
+
+  await doc.locator('[data-i9-title]').selectOption({ label: 'U.S. Passport or U.S. Passport Card' });
+  await page.waitForTimeout(200);
+  t('PICKING THE DOCUMENT FILLS IN THE ONE AUTHORITY IT CAN HAVE — it is not a question',
+    await doc.locator('[data-i9-authority]').inputValue() === 'U.S. Department of State');
+
+  await doc.locator('[data-i9-list]').selectOption('B');
+  await page.waitForTimeout(200);
+  t('switching the list offers that list instead', (await titleOpts()).some(o => /Voter's registration card/.test(o)));
+  t('AND CLEARS THE TITLE — a select whose value is not among its options falls back to the first, which is how a passport becomes a driver\'s licence',
+    await doc.locator('[data-i9-title]').inputValue() === '' && await doc.locator('[data-i9-authority]').inputValue() === '');
+
+  await doc.locator('[data-i9-title]').selectOption({ label: "Driver's license or ID card issued by a State or outlying possession of the United States" });
+  await page.waitForTimeout(200);
+  const states = await doc.locator('[data-i9-authority] option').allInnerTexts();
+  t('a state-issued document offers the states, since the authority IS the state', states.includes('Utah') && states.includes('Texas'));
+  t('…and does not pre-pick one of them', await doc.locator('[data-i9-authority]').inputValue() === '');
+
+  await doc.locator('[data-i9-title]').selectOption('__other__');
+  await page.waitForTimeout(200);
+  t('"Other" is still there — the transcription is faithful, not a proof of completeness',
+    await doc.locator('[data-i9-title-other]').count() === 1);
+  t('…and hands back a free text box for the authority too', await doc.locator('input[data-i9-authority]').count() === 1);
+  await doc.locator('[data-i9-list]').selectOption('A');
+  await doc.locator('[data-i9-title]').selectOption({ label: 'U.S. Passport or U.S. Passport Card' });
+}
+
 // THE REVEAL: one button, the password prompt, the numbers shown once.
 t('the office is offered "Show SSN & bank numbers for ADP entry"', await row.locator('[data-reveal-open]').count() === 1);
 await row.locator('[data-reveal-open]').click();

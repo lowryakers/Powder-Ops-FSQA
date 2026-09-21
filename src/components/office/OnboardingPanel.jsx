@@ -4,6 +4,7 @@ import {
   UserPlus, Link2, Copy, CheckCircle2, XCircle, Send, RefreshCw, FileText, Paperclip, Download, ShieldCheck, AlertTriangle, X, Eye, EyeOff,
 } from 'lucide-react';
 import { formatDateTime } from '../../lib/datetime.js';
+import { i9Documents, i9Authorities, i9KnownTitle } from '../../../shared/i9-documents.js';
 import { withSignature } from '../../lib/signature.js';
 import { downloadFile } from '../../lib/downloadFile.js';
 import ModuleTabs from '../common/ModuleTabs.jsx';
@@ -171,6 +172,72 @@ function Files({ r, storageEnabled, onChanged }) {
   );
 }
 
+const OTHER_DOC = '__other__';
+
+/**
+ * One examined document.
+ *
+ * The list letter decides which titles are offered, so changing it CLEARS the
+ * title and the authority — a `<select>` whose value is not among its options
+ * falls back silently to the first one, which is how a List A passport would
+ * quietly become a driver's licence. Where the form already knows the issuing
+ * authority (a U.S. passport is issued by the Department of State and nothing
+ * else) it is filled in on picking the document rather than asked for.
+ *
+ * "Other" stays available on purpose: the lists in `shared/i9-documents.js`
+ * are a faithful transcription, not a proof of completeness, and an employee
+ * may present something genuinely acceptable that is not on them. The server
+ * marks such a title `off_list` rather than refusing it.
+ */
+function DocRow({ d, i, setDoc, onRemove, canRemove }) {
+  const titles = i9Documents(d.list);
+  const typed = d.other === true || (!!d.title && !i9KnownTitle(d.list, d.title));
+  const auth = i9Authorities(d.list, d.title);
+  const pickTitle = (v) => {
+    if (v === OTHER_DOC) return setDoc(i, { title: '', issuing_authority: '', other: true });
+    // One possible authority is not a choice — fill it in.
+    const opts = i9Authorities(d.list, v).options;
+    setDoc(i, { title: v, issuing_authority: opts.length === 1 ? opts[0] : '', other: false });
+  };
+  return (
+    <div className="border border-gray-200 rounded-lg p-2 space-y-1.5" data-i9-doc>
+      <div className="flex gap-1.5">
+        <select className={`${input} w-24 shrink-0`} value={d.list} data-i9-list
+          onChange={e => setDoc(i, { list: e.target.value, title: '', issuing_authority: '', other: false })}>
+          <option value="A">List A</option><option value="B">List B</option><option value="C">List C</option>
+        </select>
+        <select className={`${input} min-w-0 flex-1`} value={typed ? OTHER_DOC : d.title} onChange={e => pickTitle(e.target.value)} data-i9-title>
+          <option value="">Document…</option>
+          {titles.map(t => <option key={t.title} value={t.title}>{t.title}</option>)}
+          <option value={OTHER_DOC}>Other — type it</option>
+        </select>
+        {canRemove && (
+          <button type="button" onClick={onRemove} className="text-gray-400 hover:text-red-600 px-1 shrink-0"><X size={14} /></button>
+        )}
+      </div>
+      {typed && (
+        <input className={input} placeholder="Document title, as it reads on the document"
+          value={d.title} onChange={e => setDoc(i, { title: e.target.value })} data-i9-title-other />
+      )}
+      <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_8rem] gap-1.5">
+        {auth.free ? (
+          <input className={input} placeholder="Issuing authority" value={d.issuing_authority} disabled={!d.title}
+            onChange={e => setDoc(i, { issuing_authority: e.target.value })} data-i9-authority />
+        ) : (
+          <select className={input} value={d.issuing_authority} disabled={!d.title}
+            onChange={e => setDoc(i, { issuing_authority: e.target.value })} data-i9-authority>
+            <option value="">Issuing authority…</option>
+            {auth.options.map(a => <option key={a} value={a}>{a}</option>)}
+          </select>
+        )}
+        <input className={input} placeholder="Document #" value={d.number} onChange={e => setDoc(i, { number: e.target.value })} data-i9-number />
+        <input className={input} type="date" title="Expiration date (if any)" value={d.expires}
+          onChange={e => setDoc(i, { expires: e.target.value })} data-i9-expires />
+      </div>
+    </div>
+  );
+}
+
 /** I-9 Section 2: what the employer examined, signed under the password gate. */
 function Section2({ r, attestation, onChanged }) {
   const [docs, setDocs] = useState([{ list: 'A', title: '', issuing_authority: '', number: '', expires: '' }]);
@@ -186,7 +253,11 @@ function Section2({ r, attestation, onChanged }) {
       <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-xs text-green-900 space-y-1" data-section2-signed>
         <p className="font-semibold flex items-center gap-1"><ShieldCheck size={13} /> I-9 Section 2 completed by {s2.signed_by}{s2.employer_title ? `, ${s2.employer_title}` : ''} · {formatDateTime(s2.signed_at)} · password-verified</p>
         <ul className="list-disc pl-5">
-          {s2.documents.map((d, i) => <li key={i}>List {d.list}: {d.title} · {d.issuing_authority} · #{d.number}{d.expires ? ` · expires ${d.expires}` : ''}</li>)}
+          {s2.documents.map((d, i) => (
+            <li key={i}>List {d.list}: {d.title} · {d.issuing_authority} · #{d.number}{d.expires ? ` · expires ${d.expires}` : ''}
+              {d.off_list && <span className="text-amber-800 font-semibold"> · not on the form's list</span>}
+            </li>
+          ))}
         </ul>
         <p>First day of employment: {s2.first_day}{s2.additional_info ? ` · ${s2.additional_info}` : ''}</p>
       </div>
@@ -195,7 +266,7 @@ function Section2({ r, attestation, onChanged }) {
   if (!r.i9_signature) {
     return <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg p-2.5">I-9 Section 2 opens once the employee has signed Section 1.</p>;
   }
-  const setDoc = (i, k, v) => setDocs(ds => ds.map((d, j) => (j === i ? { ...d, [k]: v } : d)));
+  const setDoc = (i, patch) => setDocs(ds => ds.map((d, j) => (j === i ? { ...d, ...patch } : d)));
   const sign = async () => {
     setBusy(true); setError('');
     try {
@@ -211,18 +282,8 @@ function Section2({ r, attestation, onChanged }) {
     <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-2" data-section2>
       <p className="text-xs font-bold uppercase tracking-wider text-gray-600">I-9 Section 2 — employer review and verification</p>
       <p className="text-[11px] text-gray-500">Examine the ORIGINAL documents in person (the photos above are for reference), then record them: one List A document, or one List B and one List C. Within three business days of the first day.</p>
-      {docs.map((d, i) => (
-        <div key={i} className="grid grid-cols-[4.5rem_1fr_1fr_1fr_7rem_auto] gap-1.5 items-center">
-          <select className={input} value={d.list} onChange={e => setDoc(i, 'list', e.target.value)}>
-            <option value="A">List A</option><option value="B">List B</option><option value="C">List C</option>
-          </select>
-          <input className={input} placeholder="Document title" value={d.title} onChange={e => setDoc(i, 'title', e.target.value)} />
-          <input className={input} placeholder="Issuing authority" value={d.issuing_authority} onChange={e => setDoc(i, 'issuing_authority', e.target.value)} />
-          <input className={input} placeholder="Document #" value={d.number} onChange={e => setDoc(i, 'number', e.target.value)} />
-          <input className={input} type="date" title="Expiration" value={d.expires} onChange={e => setDoc(i, 'expires', e.target.value)} />
-          <button type="button" onClick={() => setDocs(ds => ds.filter((_, j) => j !== i))} disabled={docs.length === 1} className="text-gray-400 hover:text-red-600 disabled:opacity-30 px-1"><X size={14} /></button>
-        </div>
-      ))}
+      {docs.map((d, i) => <DocRow key={i} d={d} i={i} setDoc={setDoc}
+        onRemove={() => setDocs(ds => ds.filter((_, j) => j !== i))} canRemove={docs.length > 1} />)}
       <button type="button" onClick={() => setDocs(ds => [...ds, { list: 'C', title: '', issuing_authority: '', number: '', expires: '' }])}
         className="text-xs font-medium text-powder-700 hover:underline">+ Add a document</button>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">

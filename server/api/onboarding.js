@@ -42,6 +42,7 @@ import { adpEnabled, adpConnected, submitApplicantOnboard, fetchOnboardMeta, mis
 import { storageEnabled, putObject, presignGet, deleteObject } from '../storage.js';
 import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
+import { I9_EDITION, i9KnownTitle } from '../../shared/i9-documents.js';
 import { revokeSessions } from './sessions.js';
 import { botDm, postMessageAs } from './comms.js';
 import { pushToUser } from '../push.js';
@@ -509,13 +510,22 @@ router.post('/:id/i9-section2', (req, res) => {
   if (rec.status === 'cancelled') return res.status(409).json({ error: 'This onboarding was cancelled.' });
   if (!signatureOf(rec.i9_signature)) return res.status(400).json({ error: 'The employee has not signed Section 1 yet. Section 2 follows Section 1.' });
   const b = req.body || {};
-  const docs = (Array.isArray(b.documents) ? b.documents : []).map(d => ({
-    list: String(d.list || '').toUpperCase().slice(0, 1),
-    title: String(d.title || '').trim().slice(0, 120),
-    issuing_authority: String(d.issuing_authority || '').trim().slice(0, 120),
-    number: String(d.number || '').trim().slice(0, 60),
-    expires: String(d.expires || '').trim().slice(0, 20) || null,
-  })).filter(d => d.list && d.title);
+  const docs = (Array.isArray(b.documents) ? b.documents : []).map(d => {
+    const list = String(d.list || '').toUpperCase().slice(0, 1);
+    const title = String(d.title || '').trim().slice(0, 200);
+    return {
+      list,
+      title,
+      issuing_authority: String(d.issuing_authority || '').trim().slice(0, 120),
+      number: String(d.number || '').trim().slice(0, 60),
+      expires: String(d.expires || '').trim().slice(0, 20) || null,
+      // A title the form does not list is NAMED, not refused. The lists are a
+      // faithful transcription rather than a proof of completeness, and
+      // blocking here would stop the office completing a form the law gives
+      // them three business days for. It shows on the signed record instead.
+      ...(title && !i9KnownTitle(list, title) ? { off_list: true } : {}),
+    };
+  }).filter(d => d.list && d.title);
   const lists = docs.map(d => d.list);
   const okA = lists.includes('A');
   const okBC = lists.includes('B') && lists.includes('C');
@@ -530,6 +540,10 @@ router.post('/:id/i9-section2', (req, res) => {
     additional_info: String(b.additional_info || '').slice(0, 500) || null,
     employer_title: String(b.employer_title || '').slice(0, 80) || null,
     signed_by: req.user.name, signed_at: new Date().toISOString(),
+    // Which edition's Lists of Acceptable Documents this was completed
+    // against — the checklist_revision rule. A record filed under 08/01/2023
+    // goes on saying so after a new edition is issued.
+    list_edition: I9_EDITION,
     attestation: I9_S2_ATTESTATION, ...signatureEvidence(),
   };
   db.prepare("UPDATE onboarding_records SET i9_section2 = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(s2), rec.id);
