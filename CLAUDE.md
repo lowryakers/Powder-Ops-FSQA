@@ -3108,6 +3108,28 @@ TrainingPanel.jsx is the wizard (admin-only **Training Log** button beside Impor
   the four facts back **out of the rendered PDF**. **The control certifies on the written test alone — today's state — and fails 4, with the
   certificate printing at 200 off half a certification.**
 
+## The BP&G zone inventories belong to the plant, not the seed (D-101)
+The item lists behind FORM 431-02 (`pm_schedules.procedure_steps`, `item|qty|material`, one schedule per
+zone) are editable in the app on purpose. Two defects made every correction look like it never saved.
+- **THE SEEDER REWROTE ALL SEVENTEEN ZONES ON EVERY BOOT** and said so in the log. Insert-only now, like
+  every other seeder here; **a zone that differs from the code's transcription is REPORTED and LEFT AS THE
+  PLANT HAS IT** (the `ccpDrift()` pattern), because silence hides both the edit and the disagreement.
+- **`PUT /pm/schedules/:id/items` OMITTED `missed`** — and a monthly inspection past its date IS `missed`,
+  the ordinary state of a BP&G card. The correction reached the schedule and never the card being worked
+  from: count sixteen windows, save, the list still says eight. The **team cascade** in the schedule PUT had
+  the same omission (it routed everything except the outstanding work). The owner cascade (D-094) was
+  already right; all three read the same statuses now.
+- **ALL SEVENTEEN ZONES ARE HEALTHY IN CODE** — active, `qa`, each with a live card, asserted zone by zone.
+  A zone that stops appearing is one of exactly two DATA states, both fixable without a deploy: its **area
+  is out of service** in the Equipment registry (the orphan backfill joins `equipment` and requires
+  `status = 'active'`, so retiring a zone silently ends its inspections) or its **schedule is paused**.
+- **The inventory editor is ONLY on the BP&G task card in the Operator View**, which is department-locked to
+  `qa` — so Document Control cannot reach it. **The facility map is not the place**: its one write endpoint
+  renames a room / records the line sited in it, and FORM 431-01 is a static PDF re-issued through Document
+  Control. A facility-map grant does nothing for the inventories.
+- `verify:bpgitems` (14, live). The control restores both behaviours and fails **3**, the first printing
+  `Windows|8|Glass` on the card after the inspector corrected it to 16.
+
 ## Several courses in one act (D-100)
 `POST /training/assign` takes `course_ids` beside the single `course_id`; `AssignModal` picks courses as tick
 boxes rather than a dropdown. A warehouse hire owes four courses, and four passes through one modal is how

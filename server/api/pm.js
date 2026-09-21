@@ -777,10 +777,14 @@ router.put('/schedules/:id', (req, res) => {
     ownerName, ownerId, req.params.id
   );
 
-  // If the assignee (task_group) changed, cascade to this PM's still-open work
-  // orders so the reassignment takes effect immediately, not just on next generation.
+  // If the team (task_group) changed, cascade to this PM's live work orders so
+  // the reassignment takes effect immediately, not just on next generation.
+  // 'missed' IS INCLUDED, for the same reason the owner cascade below includes
+  // it: a past-due card is the one the new team most needs to see, and leaving
+  // it out routed exactly the outstanding work to the team that no longer owns
+  // it. The three cascades on this schedule now read the same set of statuses.
   if (task_group !== undefined && (task_group || null) !== existing.task_group) {
-    db.prepare("UPDATE work_orders SET task_group=? WHERE pm_schedule_id=? AND status IN ('open','in_progress','overdue')")
+    db.prepare("UPDATE work_orders SET task_group=? WHERE pm_schedule_id=? AND status IN ('open','in_progress','overdue','missed')")
       .run(task_group || null, req.params.id);
   }
 
@@ -2061,7 +2065,13 @@ router.put('/schedules/:id/items', (req, res) => {
   const stepsJson = JSON.stringify(items);
   db.prepare("UPDATE pm_schedules SET procedure_steps = ?, updated_at = datetime('now') WHERE id = ?")
     .run(stepsJson, req.params.id);
-  db.prepare("UPDATE work_orders SET procedure_steps = ? WHERE pm_schedule_id = ? AND status IN ('open','in_progress','overdue')")
+  // 'missed' IS INCLUDED, and leaving it out is the defect this endpoint was
+  // reported for. A monthly inspection past its date is flipped to 'missed' by
+  // housekeeping — the ordinary state of a BP&G zone — so a corrected item
+  // count reached the SCHEDULE and never the card the inspector was actually
+  // working from. She counts sixteen windows, saves, and the list in front of
+  // her still says eight. Same missed-bucket omission as the Operator View.
+  db.prepare("UPDATE work_orders SET procedure_steps = ? WHERE pm_schedule_id = ? AND status IN ('open','in_progress','overdue','missed')")
     .run(stepsJson, req.params.id);
   logAudit(req.user, 'items_updated', 'pm_schedule', req.params.id, { item_count: items.length });
   res.json(db.prepare('SELECT * FROM pm_schedules WHERE id = ?').get(req.params.id));

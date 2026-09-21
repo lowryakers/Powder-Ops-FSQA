@@ -78,6 +78,7 @@
     "verify:forkliftcert": "node scripts/verify-forklift-cert.mjs",
     "verify:hoursroster": "node scripts/verify-hours-roster.mjs",
     "verify:hoursrates": "node scripts/verify-hours-rates.mjs",
+    "verify:bpgitems": "node scripts/verify-bpg-items.mjs",
     "verify:clientchannel": "node scripts/verify-client-channel.mjs",
     "verify:clientinvite": "node scripts/verify-client-invite.mjs",
     "verify:skurename": "node scripts/verify-sku-rename.mjs",

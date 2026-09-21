@@ -3730,3 +3730,49 @@ Verified: `verify:trainingassign` (53 → **72**, live + a real browser at 1280 
 `verify:all`). **The control** restores the single-course endpoint and fails **7** assertions before the
 script can carry on — the first returning `{}` where six tasks were owed, and the "already current" option
 simply not existing.
+
+## D-101 — The BP&G zone inventories belong to the plant, not the seed (2026-09-21)
+
+**Reported** by Document Control: Diana was working the Brittle Plastic & Glass log and the Production
+Area, Maintenance Area and Office 1–3 zones did not appear on her end; separately, several zones' item
+counts are wrong (Quality Area has 4 monitors, 2 printers and 16 windows; Kitting 2 lights; Gown Room 9
+walkie talkies) and *"I tried to modify the document. Though I'm still unable to."*
+
+**Two different problems, and only the second is a defect in the code.**
+
+**THE SEEDER REWROTE ALL SEVENTEEN ZONES' ITEM LISTS ON EVERY BOOT.** The inventories are editable in the
+app on purpose — the plant counts the monitors and the windows and corrects what is on file — and
+`seedGlassPlasticPMSchedules` pushed `BPG_ZONE_ITEMS` over every existing zone at startup, announcing it as
+*"Updated 17 brittle plastic/glass PM schedules"*. So a correction survived until the next deploy and then
+silently vanished, which reads exactly like an edit that never saved. Every other seeder here is
+insert-only for this reason (`seedControlledForms`, `seedProducts`, the swab opening counts). It is
+insert-only now, and **a zone that has moved away from the code's transcription is REPORTED in the boot log
+and left as the plant has it** — the `ccpDrift()` pattern. Silence would hide both the edit and the
+disagreement.
+
+**THE ITEM CASCADE OMITTED `missed`.** `PUT /pm/schedules/:id/items` wrote the correction to the schedule
+and to work orders `IN ('open','in_progress','overdue')` — and a monthly inspection past its date is
+`missed`, which is the ordinary state of a BP&G card. So the corrected count reached the schedule and never
+the card the inspector was working from: she counts sixteen windows, saves, and the list in front of her
+still says eight. The same omission was on the **team cascade** in the schedule PUT, where it routed
+everything except the outstanding work to the new team. The owner cascade (D-094) already had it right;
+all three now read the same set of statuses.
+
+**THE ZONES THEMSELVES ARE HEALTHY IN CODE** — all seventeen seed active, routed to `qa`, each carrying a
+live card, asserted zone by zone. So the five that did not appear are a data state on the live site, and
+there are exactly two that produce it, both recoverable without a deploy and both now asserted:
+`markMissedWorkOrders`'s orphan backfill joins the equipment row and requires `e.status = 'active'`, so **a
+zone whose AREA was retired in the Equipment registry never gets another card** (39 of the equipment rows
+are areas, not machines — the confusion D-'asset_kind' exists for); and a **paused schedule** likewise.
+Putting either back restores the inspection by itself.
+
+**WHERE THE INVENTORY IS EDITED IS THE REMAINING GAP, and it is a decision rather than a bug.** The only
+editor is on the BP&G task card in the **Operator View**, which is department-locked to `qa` — so Document
+Control cannot reach it, which is why she could not modify anything. The **facility map is not the place**:
+its one write endpoint renames a room or records which line is sited in it, and the FORM 431-01 diagram is
+a static PDF re-issued through Document Control. Granting facility-map access does not touch the
+inventories. Either QA makes the corrections on the card, or the editor is surfaced on QA Inspections
+beside the zone it belongs to — the plant's call, not the app's.
+
+Verified: `verify:bpgitems` (14, live; in `verify:all`). **The control** restores both behaviours and fails
+**3** — the first printing `Windows|8|Glass` on the card after the inspector had corrected it to 16.

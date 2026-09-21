@@ -727,21 +727,33 @@ export function seedGlassPlasticPMSchedules(db) {
       }
     }
 
-    let updated = 0;
+    // THE ITEM LIST ON A ZONE ALREADY IN THE DATABASE IS THE PLANT'S, NOT THE
+    // CODE'S — and this used to overwrite all seventeen on EVERY boot.
+    //
+    // The inventories are editable in the app on purpose: the plant counts the
+    // monitors and the windows and corrects what is on file. Rewriting them
+    // from this constant at startup meant every one of those corrections was
+    // silently undone by the next deploy, which reads exactly like the edit
+    // never saved. Same rule as every other seeder here (`seedControlledForms`,
+    // `seedProducts`, the swab opening counts): **insert-only, because a
+    // redeploy must never overwrite a number somebody corrected by hand.**
+    //
+    // A DIFFERENCE IS REPORTED RATHER THAN APPLIED — the `ccpDrift()` pattern.
+    // The code's transcription of FORM 431-01 is still worth having as a
+    // reference, so a zone that has moved away from it is NAMED in the boot log
+    // and left exactly as the plant has it. Silence would hide both the edit
+    // and the disagreement.
+    const drifted = [];
     for (const zone of inspectionZones) {
       const items = BPG_ZONE_ITEMS[zone.name];
       if (!items) continue;
-      const stepsJson = JSON.stringify(items);
       const title = `Brittle Plastic & Glass Inspection — ${zone.name}`;
-      const existing = db.prepare("SELECT id FROM pm_schedules WHERE title = ?").get(title);
-      if (existing) {
-        db.prepare("UPDATE pm_schedules SET procedure_steps = ? WHERE id = ?").run(stepsJson, existing.id);
-        db.prepare("UPDATE work_orders SET procedure_steps = ? WHERE pm_schedule_id = ? AND status IN ('open','in_progress','overdue')")
-          .run(stepsJson, existing.id);
-        updated++;
-      }
+      const existing = db.prepare("SELECT id, procedure_steps FROM pm_schedules WHERE title = ?").get(title);
+      if (existing && existing.procedure_steps !== JSON.stringify(items)) drifted.push(zone.name);
     }
-    if (updated > 0) console.log(`[seed] Updated ${updated} brittle plastic/glass PM schedules with Form 431-02 item inventories`);
+    if (drifted.length > 0) {
+      console.log(`[seed] Brittle plastic/glass: ${drifted.length} zone item list(s) differ from the code's transcription and were LEFT AS THE PLANT HAS THEM — ${drifted.join(', ')}`);
+    }
 
     const currentCount = db.prepare("SELECT COUNT(*) as c FROM pm_schedules WHERE title LIKE 'Brittle Plastic%Glass%'").get().c;
     if (currentCount < inspectionZones.length) {
