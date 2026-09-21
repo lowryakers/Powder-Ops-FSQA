@@ -72,6 +72,7 @@
     "verify:apdrop": "node scripts/verify-ap-drop.mjs",
     "verify:apdropui": "node scripts/verify-ap-drop-ui.mjs",
     "verify:commsedit": "node scripts/verify-comms-edit.mjs",
+    "verify:commspendingjump": "node scripts/verify-comms-pending-jump.mjs",
     "verify:clientchannel": "node scripts/verify-client-channel.mjs",
     "verify:clientinvite": "node scripts/verify-client-invite.mjs",
     "verify:skurename": "node scripts/verify-sku-rename.mjs",

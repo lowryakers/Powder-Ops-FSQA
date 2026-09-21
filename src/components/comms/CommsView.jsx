@@ -3221,7 +3221,18 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     (async () => {
       try {
         const m = await apiFetch(`/comms/messages/${mid}`);
-        if (m.channel_id !== activeId) return; // channel changed underneath us
+        // Compare against the LIVE active channel (activeIdRef), never the
+        // `activeId` this effect closed over. That closure is a snapshot from
+        // whenever this invocation started and never moves again, so it only
+        // ever catches a mismatch that already existed before the fetch —
+        // not a reader who switches channels WHILE it's in flight. The old
+        // check let exactly that case sail through: an abandoned deep link
+        // would sit in pendingMsgRef doing nothing until this channel next
+        // became active for any reason, then silently fire a day-window fetch
+        // and drop the reader back into old history with a "Jump to latest"
+        // banner over messages they'd already read. Same race loadMessages()
+        // already fixed once with this same ref, reinvented here.
+        if (m.channel_id !== activeIdRef.current) { pendingMsgRef.current = null; return; }
         if (m.parent_id) {
           // A reply: resolve its parent and open the thread drawer on it.
           const parent = messages.find(x => x.id === m.parent_id) || await apiFetch(`/comms/messages/${m.parent_id}`);
@@ -3236,7 +3247,10 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
         // which re-runs this very effect, and next time `inList` is true.
         const day = String(m.created_at || '').slice(0, 10);
         if (day) {
-          const msgs = await apiFetch(`/comms/channels/${activeId}/messages?date=${day}`);
+          const msgs = await apiFetch(`/comms/channels/${m.channel_id}/messages?date=${day}`);
+          // Checked again: the day fetch is its own round trip, and the
+          // reader may have moved on again while THIS one was in flight.
+          if (m.channel_id !== activeIdRef.current) { pendingMsgRef.current = null; return; }
           if (msgs.some(x => x.id === mid)) {
             pinnedRef.current = false; // we're navigating to a spot, not the live bottom
             setDateView(day);
