@@ -79,6 +79,7 @@
     "verify:hoursroster": "node scripts/verify-hours-roster.mjs",
     "verify:hoursrates": "node scripts/verify-hours-rates.mjs",
     "verify:bpgitems": "node scripts/verify-bpg-items.mjs",
+    "verify:trainingpeople": "node scripts/verify-training-people.mjs",
     "verify:clientchannel": "node scripts/verify-client-channel.mjs",
     "verify:clientinvite": "node scripts/verify-client-invite.mjs",
     "verify:skurename": "node scripts/verify-sku-rename.mjs",

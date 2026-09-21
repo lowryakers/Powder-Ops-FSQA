@@ -51,6 +51,7 @@ const RUNS = [
   ['verify-hours-roster.mjs', 5005, {}, false],
   ['verify-hours-rates.mjs', 5006, {}, false],
   ['verify-bpg-items.mjs', 5010, {}, false],
+  ['verify-training-people.mjs', 5012, {}, false],
   ['verify-qa-correction-notify.mjs', 4997, {}, false],
   ['verify-cleanup-digest.mjs', 4998, {}, false],
   ['verify-eod-chase.mjs', 4996, {}, false],

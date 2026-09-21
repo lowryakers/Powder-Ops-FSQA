@@ -13,7 +13,9 @@ import { parseScanName, similarity, isScanEntry } from '../scanned-tests.js';
 import { extractInvoiceText } from '../invoice-text.js';
 import { requireRole } from '../middleware/auth.js';
 import { addMonths, dueDateFor, supersedeOlder, courseTrainingRevision, insertCompletion, gradeTestAttempt } from '../training-records.js';
-import { assignTraining, courseAppliesToUser } from '../training-assign.js';
+import { assignTraining } from '../training-assign.js';
+import { trainingSnapshot, cellFor, personTraining, trainingRoster } from '../training-status.js';
+import { documentCoverage, applyCourseLinks, TRAINABLE_TYPES, TYPE_LABEL } from '../training-documents.js';
 import { evaluationFor, missingToSign, gradeEvaluation, normalizeAnswers, EVALUATION_REVISION, TRUCK_TYPES, RESULTS } from '../practical-evaluations.js';
 import { certificationFor, certificationRoster } from '../training-certification.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
@@ -42,6 +44,7 @@ router.get('/courses', (req, res) => {
     ...r,
     required_roles: parseJson(r.required_roles, []),
     required_departments: parseJson(r.required_departments, []),
+    required_positions: parseJson(r.required_positions, []),
     // The current test was written against an older document revision.
     sop_test_stale: !!(r.sop_id && r.has_current_test && r.sop_training_revision && r.test_sop_revision && r.test_sop_revision !== r.sop_training_revision),
     // WHETHER THIS COURSE ALSO NEEDS SOMEBODY WATCHED DRIVING. Stamped by the
@@ -54,14 +57,15 @@ router.get('/courses', (req, res) => {
 
 router.post('/courses', (req, res) => {
   const db = getDb();
-  const { code, title, category, description, sop_id, equipment_id, retrain_months, required_roles, required_departments, has_test, passing_score, active, retrain_on_doc_change } = req.body;
+  const { code, title, category, description, sop_id, equipment_id, retrain_months, required_roles, required_departments, required_positions, has_test, passing_score, active, retrain_on_doc_change } = req.body;
   if (!title) return res.status(400).json({ error: 'title is required' });
   const id = uuid();
   db.prepare(`INSERT INTO training_courses
-    (id, code, title, category, description, sop_id, equipment_id, retrain_months, required_roles, required_departments, has_test, passing_score, active, retrain_on_doc_change)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    (id, code, title, category, description, sop_id, equipment_id, retrain_months, required_roles, required_departments, required_positions, has_test, passing_score, active, retrain_on_doc_change)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     id, code || null, title, category || 'GMP', description || null, sop_id || null, equipment_id || null,
     retrain_months || null, JSON.stringify(required_roles || []), JSON.stringify(required_departments || []),
+    JSON.stringify(required_positions || []),
     has_test ? 1 : 0, passing_score ?? 80, active === undefined ? 1 : (active ? 1 : 0),
     retrain_on_doc_change === undefined ? 1 : (retrain_on_doc_change ? 1 : 0));
   logAudit(req.user, 'training_course_created', 'training_course', id, { title }, null, null, title);
@@ -74,13 +78,17 @@ router.put('/courses/:id', (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Not found' });
   const b = req.body;
   db.prepare(`UPDATE training_courses SET code=?, title=?, category=?, description=?, sop_id=?, equipment_id=?, retrain_months=?,
-    required_roles=?, required_departments=?, has_test=?, passing_score=?, active=?, retrain_on_doc_change=?, updated_at=datetime('now') WHERE id=?`).run(
+    required_roles=?, required_departments=?, required_positions=?, has_test=?, passing_score=?, active=?, retrain_on_doc_change=?, updated_at=datetime('now') WHERE id=?`).run(
     b.code ?? existing.code, b.title || existing.title, b.category || existing.category, b.description ?? existing.description,
     b.sop_id !== undefined ? (b.sop_id || null) : existing.sop_id,
     b.equipment_id !== undefined ? (b.equipment_id || null) : existing.equipment_id,
     b.retrain_months !== undefined ? (b.retrain_months || null) : existing.retrain_months,
     b.required_roles !== undefined ? JSON.stringify(b.required_roles) : existing.required_roles,
     b.required_departments !== undefined ? JSON.stringify(b.required_departments) : existing.required_departments,
+    // Absent means "leave it alone", never "clear it" — the same rule every
+    // other column here follows, and the one that stops an edit to a title
+    // silently unhooking a job description's audience.
+    b.required_positions !== undefined ? JSON.stringify(b.required_positions) : existing.required_positions,
     b.has_test !== undefined ? (b.has_test ? 1 : 0) : existing.has_test,
     b.passing_score ?? existing.passing_score,
     b.active !== undefined ? (b.active ? 1 : 0) : existing.active,
@@ -401,52 +409,159 @@ router.put('/:id', (req, res) => {
 // For each active employee × applicable course: current completion + due state.
 router.get('/matrix', (_req, res) => {
   const db = getDb();
-  const users = db.prepare("SELECT id, name, role, department FROM users WHERE is_active = 1 ORDER BY name").all();
-  const courses = db.prepare('SELECT * FROM training_courses WHERE active = 1 ORDER BY category, title').all();
-  const overrides = db.prepare('SELECT * FROM training_requirements').all();
-  const records = db.prepare(`SELECT * FROM training_records WHERE superseded = 0 AND status = 'completed'`).all();
-  const today = new Date().toISOString().slice(0, 10);
-  const soon = addMonths(today, 1);
-
-  // Current training-revision for each course's linked document.
-  const docRev = {};
-  for (const d of db.prepare('SELECT id, training_revision, revision FROM sop_documents').all()) docRev[d.id] = d.training_revision || d.revision || null;
-
-  const ovBy = (courseId, userId) => overrides.find(o => o.course_id === courseId && o.user_id === userId);
-  const cell = (user, course) => {
-    const ov = ovBy(course.id, user.id);
-    if (ov?.rule === 'exempt') return { state: 'exempt' };
-    const required = ov?.rule === 'required' || courseAppliesToUser(course, user);
-    if (!required) return null;
-    const rec = records.find(r =>
-      r.course_id === course.id &&
-      (r.employee_user_id === user.id || r.employee_name?.toLowerCase() === user.name.toLowerCase()));
-    if (!rec) return { state: 'missing' };
-    // The linked document changed materially since this person trained.
-    const needRev = course.sop_id ? docRev[course.sop_id] : null;
-    const docOutdated = course.retrain_on_doc_change && course.sop_id && rec.sop_revision && needRev && rec.sop_revision !== needRev;
-    let state = 'current';
-    if (rec.next_due_date && rec.next_due_date < today) state = 'overdue';
-    else if (docOutdated) state = 'outdated';
-    else if (rec.next_due_date && rec.next_due_date <= soon) state = 'due_soon';
-    return { state, completion_date: rec.completion_date, next_due_date: rec.next_due_date, record_id: rec.id, score: rec.score, passed: rec.passed, sop_revision: rec.sop_revision, current_revision: needRev };
-  };
-
+  // ONE WALK. The grid and the per-person view read the same `cellFor`, so a
+  // figure on one cannot disagree with the other.
+  const snap = trainingSnapshot(db);
   const matrix = {};
   const counts = { missing: 0, overdue: 0, due_soon: 0, current: 0, outdated: 0 };
-  for (const u of users) {
+  for (const u of snap.users) {
     matrix[u.id] = { user: { id: u.id, name: u.name, role: u.role, department: u.department }, cells: {} };
-    for (const c of courses) {
-      const res2 = cell(u, c);
-      matrix[u.id].cells[c.id] = res2;
-      if (res2 && counts[res2.state] !== undefined) counts[res2.state]++;
+    for (const c of snap.courses) {
+      const cell = cellFor(u, c, snap);
+      matrix[u.id].cells[c.id] = cell;
+      if (cell && counts[cell.state] !== undefined) counts[cell.state]++;
     }
   }
   res.json({
-    courses: courses.map(c => ({ id: c.id, code: c.code, title: c.title, category: c.category, retrain_months: c.retrain_months })),
-    users: users.map(u => ({ id: u.id, name: u.name, role: u.role, department: u.department })),
+    courses: snap.courses.map(c => ({ id: c.id, code: c.code, title: c.title, category: c.category, retrain_months: c.retrain_months })),
+    users: snap.users.map(u => ({ id: u.id, name: u.name, role: u.role, department: u.department })),
     matrix, counts,
   });
+});
+
+// ── ONE PERSON ──────────────────────────────────────────────────────────────
+// "Show me the assigned trainings for this individual." The matrix answers it
+// for the plant as a grid; this answers it for Diana, which is the question
+// actually asked of Document Control.
+//
+// Declared BEFORE '/:id' — Express matches in declaration order and "people"
+// is a perfectly good training-record id.
+router.get('/people', (_req, res) => {
+  res.json(trainingRoster(getDb()));
+});
+
+router.get('/people/:userId', (req, res) => {
+  const out = personTraining(getDb(), req.params.userId);
+  if (!out) return res.status(404).json({ error: 'Person not found, or their account is not active.' });
+  res.json(out);
+});
+
+// ── DOCUMENTS PEOPLE ARE TRAINED ON ─────────────────────────────────────────
+// "Train on the SOPs, Work Instructions and Job Descriptions that apply to
+// each department and individual." The linkage has always existed — a course
+// carries `sop_id` — and on this database not one course used it. So the
+// question this answers is the one nobody could ask: WHICH controlled
+// documents have nothing training on them.
+//
+// Declared before '/:id', like '/people'.
+router.get('/documents', (_req, res) => {
+  res.json(documentCoverage(getDb()));
+});
+
+// Link the courses whose CODE is a document NUMBER already in the register.
+// The coverage payload carries the same plan as `linkable`, so the strip that
+// offers this and the act itself cannot differ.
+router.post('/documents/link', (req, res) => {
+  const ids = Array.isArray(req.body?.course_ids) ? req.body.course_ids : null;
+  const out = applyCourseLinks(getDb(), ids);
+  for (const l of out.linked) {
+    logAudit(req.user, 'training_course_updated', 'training_course', l.course_id,
+      { linked_document: l.doc_number }, null, null, l.code || l.course_title);
+  }
+  res.json(out);
+});
+
+// Open a course FOR a document. Everything that can be read off the register
+// is pre-filled — the number becomes the code, the title the title, the
+// revision what the first completions will be recorded against — and the
+// audience is left to the caller, because who a document applies to is a
+// decision and not a thing to infer from its category.
+router.post('/documents/:sopId/course', (req, res) => {
+  const db = getDb();
+  const doc = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.sopId);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+  if (!TRAINABLE_TYPES.includes(doc.doc_type)) {
+    return res.status(400).json({ error: `A ${doc.doc_type} is not a document people are trained on.` });
+  }
+  if (doc.status !== 'active' && doc.status !== 'under_review') {
+    return res.status(400).json({ error: `${doc.doc_number} is ${doc.status}. Training is written against a document that is in force.` });
+  }
+  // One course per document, or "who is trained on WI007" has two answers.
+  const already = db.prepare('SELECT id, code, title FROM training_courses WHERE sop_id = ? AND active = 1').get(doc.id);
+  if (already) return res.status(409).json({ error: `${already.code || already.title} already trains on this document.`, course: already });
+
+  const b = req.body || {};
+  const id = uuid();
+  db.prepare(`INSERT INTO training_courses
+    (id, code, title, category, description, sop_id, retrain_months, required_roles, required_departments, required_positions, has_test, passing_score, active, retrain_on_doc_change)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 80, 1, 1)`).run(
+    id,
+    (b.code || doc.doc_number || '').trim() || null,
+    (b.title || doc.title).trim(),
+    b.category || (doc.doc_type === 'job_description' ? 'Job Description' : doc.category || 'GMP'),
+    b.description || null,
+    doc.id,
+    b.retrain_months || null,
+    JSON.stringify(b.required_roles || []),
+    JSON.stringify(b.required_departments || []),
+    JSON.stringify(b.required_positions || []));
+  logAudit(req.user, 'training_course_created', 'training_course', id,
+    { from_document: doc.doc_number, doc_type: TYPE_LABEL[doc.doc_type] || doc.doc_type }, null, null, b.title || doc.title);
+  res.status(201).json(db.prepare('SELECT * FROM training_courses WHERE id = ?').get(id));
+});
+
+// The org chart as an audience: which positions exist, who holds them, and
+// which job descriptions each cites. Read-only — picking an audience is the
+// caller's act, and this is what they pick from.
+router.get('/positions', (_req, res) => {
+  const db = getDb();
+  const rows = (() => {
+    try {
+      return db.prepare(`
+        SELECT p.id, p.title, p.name, p.department, p.user_id, u.name AS holder_name
+          FROM org_positions p LEFT JOIN users u ON u.id = p.user_id AND u.is_active = 1
+         ORDER BY p.sort_order, p.title
+      `).all();
+    } catch { return []; }
+  })();
+  // A position nobody holds reaches nobody, and saying so is the point: a
+  // course aimed at it is not "assigned to nobody by mistake", it is waiting
+  // for the job to be filled.
+  res.json(rows.map(r => ({ ...r, held: !!r.user_id, holder: r.holder_name || r.name || null })));
+});
+
+// ── NAMED REQUIREMENTS AND EXEMPTIONS ───────────────────────────────────────
+// `training_requirements` has been in the schema and read by the matrix since
+// the matrix was built, and NOTHING HAS EVER WRITTEN TO IT — so the
+// per-individual half of "who needs this course" existed and was unreachable.
+// A course's roles and departments cover a group; this covers the person the
+// group rule gets wrong, in both directions, with a name against it.
+router.post('/courses/:id/requirements', (req, res) => {
+  // Permission is the mount's — an Edit grant on Training, exactly as
+  // POST /assign has. A second rule here would let the two disagree about who
+  // may decide that somebody owes a course.
+  const db = getDb();
+  const { user_id, rule } = req.body || {};
+  if (!user_id) return res.status(400).json({ error: 'user_id required' });
+  if (!['required', 'exempt'].includes(rule)) return res.status(400).json({ error: "rule must be 'required' or 'exempt'" });
+  const course = db.prepare('SELECT id, code, title FROM training_courses WHERE id = ?').get(req.params.id);
+  if (!course) return res.status(404).json({ error: 'Course not found' });
+  const user = db.prepare('SELECT id, name FROM users WHERE id = ? AND is_active = 1').get(user_id);
+  if (!user) return res.status(404).json({ error: 'Person not found' });
+  db.prepare(`INSERT INTO training_requirements (id, course_id, user_id, rule) VALUES (?, ?, ?, ?)
+    ON CONFLICT (course_id, user_id) DO UPDATE SET rule = excluded.rule`).run(uuid(), course.id, user.id, rule);
+  logAudit(req.user, 'requirement_set', 'training_course', course.id,
+    { person: user.name, rule }, null, null, course.code || course.title);
+  res.json({ course_id: course.id, user_id: user.id, rule });
+});
+
+router.delete('/courses/:id/requirements/:userId', (req, res) => {
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM training_requirements WHERE course_id = ? AND user_id = ?').get(req.params.id, req.params.userId);
+  if (!row) return res.status(404).json({ error: 'No exception on file for that person.' });
+  db.prepare('DELETE FROM training_requirements WHERE course_id = ? AND user_id = ?').run(req.params.id, req.params.userId);
+  logAudit(req.user, 'requirement_cleared', 'training_course', req.params.id, { user_id: req.params.userId, was: row.rule });
+  res.json({ cleared: true });
 });
 
 // Flat list of due/overdue retraining, for the reminders view + dashboard.

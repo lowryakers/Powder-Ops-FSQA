@@ -5,6 +5,8 @@ import { canEditModule } from '../../utils/permissions';
 import { GraduationCap, Plus, Upload, Search, X, ExternalLink, Edit2, Paperclip, AlertTriangle, Clock, CheckCircle, Sparkles, Trash2, FileQuestion, Users, Video, FileText, Loader2 } from 'lucide-react';
 import { DEPARTMENT_VALUES } from '../../constants/departments';
 import ModuleTabs from '../common/ModuleTabs.jsx';
+import TrainingPeoplePanel from './TrainingPeoplePanel.jsx';
+import TrainingDocumentsPanel from './TrainingDocumentsPanel.jsx';
 import { useModuleTabs } from '../../lib/useModuleTabs.js';
 import OperatorCertifications from './OperatorCertifications.jsx';
 import { useTableSort } from '../../lib/useTableSort';
@@ -1236,15 +1238,20 @@ function CourseMaterials({ courseId }) {
 function CourseModal({ initial, onClose, onSaved }) {
   const { data: allDocs } = useApiGet('/documents');
   const { data: equipment } = useApiGet('/equipment');
-  const docs = useMemo(() => (allDocs || []).filter(d => d.doc_type === 'sop' || d.doc_type === 'work_instruction'), [allDocs]);
+  const { data: positions } = useApiGet('/training/positions');
+  // Job descriptions and policies are documents people are trained on too —
+  // the list used to offer only SOPs and Work Instructions, so a course could
+  // not name the job description it teaches.
+  const docs = useMemo(() => (allDocs || []).filter(d =>
+    ['sop', 'work_instruction', 'job_description', 'policy'].includes(d.doc_type)), [allDocs]);
   const [form, setForm] = useState(initial || {
     code: '', title: '', category: 'GMP', description: '', retrain_months: 12,
-    required_roles: [], required_departments: [], passing_score: 80, active: true,
+    required_roles: [], required_departments: [], required_positions: [], passing_score: 80, active: true,
     sop_id: '', equipment_id: '', retrain_on_doc_change: true,
   });
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-  const toggle = (k, v) => set(k, form[k].includes(v) ? form[k].filter(x => x !== v) : [...form[k], v]);
+  const toggle = (k, v) => { const cur = form[k] || []; set(k, cur.includes(v) ? cur.filter(x => x !== v) : [...cur, v]); };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -1256,7 +1263,8 @@ function CourseModal({ initial, onClose, onSaved }) {
       onSaved();
     } finally { setSaving(false); }
   };
-  const allStaff = form.required_roles.length === 0 && form.required_departments.length === 0;
+  const allStaff = form.required_roles.length === 0 && form.required_departments.length === 0
+    && (form.required_positions || []).length === 0;
 
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -1303,6 +1311,24 @@ function CourseModal({ initial, onClose, onSaved }) {
           <div className="flex flex-wrap gap-1.5">
             {DEPARTMENTS.map(d => <button type="button" key={d} onClick={() => toggle('required_departments', d)} className={`px-2 py-1 rounded-lg text-xs border capitalize ${form.required_departments.includes(d) ? 'bg-powder-700 text-white border-powder-700' : 'bg-white text-gray-600 border-gray-300'}`}>{d.replace(/_/g, ' ')}</button>)}
           </div>
+          {/* THE THIRD AUDIENCE, and the one neither of the others can say.
+              A Job Description applies to whoever holds that position and to
+              nobody else; keyed on the POSITION, it follows the person who
+              holds the job instead of being re-keyed when somebody moves. */}
+          {(positions || []).length > 0 && (
+            <>
+              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide mt-2 mb-1">Or a job (for a Job Description)</p>
+              <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+                {(positions || []).map(p => (
+                  <button type="button" key={p.id} onClick={() => toggle('required_positions', p.id)}
+                    title={p.held ? `Held by ${p.holder}` : 'Nobody holds this position'}
+                    className={`px-2 py-1 rounded-lg text-xs border ${(form.required_positions || []).includes(p.id) ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-600 border-gray-300'} ${p.held ? '' : 'opacity-60'}`}>
+                    {p.title}{p.held ? '' : ' · vacant'}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Linked document (SOP / WI)</label>
@@ -1583,6 +1609,11 @@ export default function TrainingPanel() {
     () => (courses || []).filter(c => c.has_practical && c.active !== 0), [courses]);
   const TABS = useMemo(() => [
     { id: 'matrix', label: 'Compliance Matrix' },
+    // Turned ninety degrees from the matrix: the grid answers "where does the
+    // plant stand", this answers "what does Diana owe", which is the question
+    // Document Control is actually asked.
+    { id: 'people', label: 'By person' },
+    { id: 'documents', label: 'Documents' },
     { id: 'due', label: 'Retraining Due' },
     { id: 'courses', label: 'Courses' },
     { id: 'records', label: 'Records' },
@@ -1734,6 +1765,10 @@ export default function TrainingPanel() {
       )}
 
       {/* Due */}
+      {view === 'people' && <TrainingPeoplePanel />}
+
+      {view === 'documents' && <TrainingDocumentsPanel onCoursesChanged={refreshAll} />}
+
       {view === 'due' && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           {(due || []).length === 0 ? (

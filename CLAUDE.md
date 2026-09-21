@@ -3108,6 +3108,37 @@ TrainingPanel.jsx is the wizard (admin-only **Training Log** button beside Impor
   the four facts back **out of the rendered PDF**. **The control certifies on the written test alone — today's state — and fails 4, with the
   certificate printing at 200 off half a certification.**
 
+## Training: one person's list, and the documents people are trained on (D-103)
+`server/training-status.js` (`trainingSnapshot` + `cellFor` — ONE walk, read by the matrix AND the
+per-person view), `server/training-documents.js`, the routes on `api/training.js`, and **By person** +
+**Documents** as views of Training. Both asks turned out to be reachable-from-nowhere, not unbuilt.
+- **THE MATRIX IS A MAP, NOT AN ANSWER ABOUT DIANA.** `GET /training/people/:id` gives one person: every
+  course that applies, its state, the open assignment, the last completion, and **WHY it applies** —
+  `Everyone` / `Their role` / `Their department` / `The job they hold` / `Added for them by name`.
+- **`training_requirements` HAD NO DOOR.** Read by the matrix since the matrix was built, written by
+  nothing — the per-individual half of "who needs this" existed and was unreachable.
+  `POST|DELETE /training/courses/:id/requirements` on the **mount's Edit grant**, the same one assigning
+  needs. **A named exemption beats every other rule** and leaves the denominator too (the `applies` rule).
+- **NOT ONE COURSE USED `sop_id`** — including the seven whose code IS a WI number, so
+  `retrain_on_doc_change` was wired, tested and pointing at nothing. `GET /training/documents` is the
+  coverage list and carries `linkable` (`WI007` ↔ `WI 007`; only case and separators are normalised).
+  **Preview and commit share the planner**, it is **derived on every read so acting on it clears it**, and
+  **it runs at boot NOWHERE** — a boot pass only looks at courses with no document, so clearing a wrong
+  link would be undone by the next deploy (the D-101 seeder trap). **Linking declares nobody outdated**:
+  `sop_revision` is what somebody was actually trained against and filling it from today's revision would
+  be a fabricated record. **Two documents on one number are REPORTED, never guessed between.**
+- **A JOB DESCRIPTION IS THE AUDIENCE NEITHER A ROLE NOR A DEPARTMENT CAN SAY.**
+  `training_courses.required_positions` resolves through `org_positions.user_id` — **keyed on the POSITION,
+  so it follows whoever holds the job**; asserted by moving the job and watching the training move. The
+  audience for a JD course is **offered from the positions citing it, never applied** — who a document is
+  for is a decision. **A vacant position says so** rather than looking like a mistake.
+- **`courseAppliesToUser` is still the ONE rule** and now returns its reason; `audienceContext` reads the
+  positions and named exceptions once (the matrix asks several hundred times). `assignNewHireTraining`'s
+  hand-listed projection was narrower than the rule reads and is `SELECT *` now — the D-097 defect again.
+- `verify:trainingpeople` (45, live + browser at 1280 and 390px; in `verify:all`). **The control restores
+  the old audience rule — roles and departments only — and fails 6**, including a job description reaching
+  nobody and an exemption changing nothing.
+
 ## The BP&G zone inventories belong to the plant, not the seed (D-101)
 The item lists behind FORM 431-02 (`pm_schedules.procedure_steps`, `item|qty|material`, one schedule per
 zone) are editable in the app on purpose. Two defects made every correction look like it never saved.

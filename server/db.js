@@ -3983,6 +3983,14 @@ function runMigrations() {
   // which is the whole point of the setup checklist. Nullable: most courses and
   // most documents are not about one piece of equipment.
   addColumnIfMissing('training_courses', 'equipment_id', 'TEXT');
+  // WHO A COURSE IS FOR, third answer. Roles and departments cover "everyone
+  // in QA" and "every supervisor"; neither can express a JOB DESCRIPTION,
+  // which applies to whoever holds that position and to nobody else — and a
+  // job description is a controlled document people are trained on. The
+  // audience is therefore org_positions ids (JSON array), resolved through
+  // org_positions.user_id, so it follows the person who holds the job rather
+  // than being re-keyed every time somebody moves.
+  addColumnIfMissing('training_courses', 'required_positions', 'TEXT');
   addColumnIfMissing('sop_documents', 'equipment_id', 'TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS idx_training_courses_equipment ON training_courses(equipment_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_sop_documents_equipment ON sop_documents(equipment_id)');

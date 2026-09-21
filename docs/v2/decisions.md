@@ -3832,3 +3832,60 @@ she is offered no Verify button on an inspection record.
 Verified: `verify:bpgitems` (14 → **43**, live + a real browser at 1280 and 390px; in `verify:all`).
 **The control** removes the `/api/bpg` mount — the state she was actually in — and fails **15**, the first
 returning nothing where the register should list seventeen zones.
+
+---
+
+## D-103 — Training turned ninety degrees, and the documents people are trained on
+**2026-09-21.** Document Control asked for two things: *"to be able to view the assigned trainings per
+individual"*, and *"to be able to train on SOP's/WI's/Job Descriptions that apply to each
+department/individual."* Both turned out to be reachable-from-nowhere rather than unbuilt.
+
+**THE MATRIX IS A MAP, NOT AN ANSWER ABOUT DIANA.** The Compliance Matrix has always had the whole picture
+— people down the side, courses across the top — and reading one row of twenty cells to work out what
+somebody still owes is what sends people back to a spreadsheet. `server/training-status.js` computes the
+state once (`trainingSnapshot` + `cellFor`) and **the matrix and the new per-person view both read it**, so
+a count on one cannot disagree with the grid on the next tab. `GET /training/people` is the roster,
+`GET /training/people/:id` one person: every course that applies, its state, the assignment that is open,
+the last completion, and **why it applies** — `Everyone` / `Their role` / `Their department` /
+`The job they hold` / `Added for them by name`. "Why am I being asked to do this" is answerable on the
+record instead of in somebody's head.
+
+**`training_requirements` HAS BEEN READ BY THE MATRIX SINCE THE MATRIX WAS BUILT AND NOTHING HAS EVER
+WRITTEN TO IT.** The per-individual half of "who needs this course" existed in the schema, was honoured by
+every reader, and had no door from any screen. It has one now (`POST|DELETE
+/training/courses/:id/requirements`), on the same Edit grant that assigning training needs — a second
+permission rule here would let the two disagree about who may decide somebody owes a course. **A named
+exemption beats every other rule**, and takes the course out of the denominator as well as the list (the
+`applies` distinction, D-082), so the counts never claim work that was never owed.
+
+**NOT ONE OF THE TWENTY COURSES USED `sop_id`** — including the seven whose code IS a work-instruction
+number. So `retrain_on_doc_change` was wired, tested, and pointing at nothing: the courses and the register
+were two lists that never met, and no screen could show it. `GET /training/documents` is the coverage list
+— every active SOP, Work Instruction, Job Description and Policy, and what trains on it — and it carries
+`linkable`, the courses whose CODE is a document NUMBER already in the register (`WI007` ↔ `WI 007`; case
+and separators are all that is normalised). **Preview and commit share the planner** and it is **derived on
+every read, so acting on it clears it**. It runs at boot **nowhere**: a boot pass only looks at courses with
+no document, so deliberately clearing a wrong link would be undone by the next deploy — the seeder trap
+D-101 had just finished unpicking. **Linking declares nobody outdated**: `training_records.sop_revision`
+records the revision a person was actually trained against, and filling it in from today's would be a
+fabricated record. **Two documents claiming one number are reported, never guessed between** — a link to the
+wrong document retrains the plant against the wrong revision.
+
+**A JOB DESCRIPTION IS THE AUDIENCE NEITHER A ROLE NOR A DEPARTMENT CAN EXPRESS.** It applies to whoever
+holds one org-chart position and to nobody else. `training_courses.required_positions` is that third
+audience, resolved through `org_positions.user_id` — **keyed on the POSITION, so it follows whoever holds
+the job** instead of being re-keyed every time somebody moves, which is asserted by moving the job and
+watching the training move with it. A course opened from a job description takes its audience from the
+positions that cite it, **offered and never applied**: who a document is for is a decision, and an org chart
+with a stale link would otherwise assign training by itself. **A position nobody holds says so** rather than
+looking like a mistake — a course aimed at it is waiting for the job to be filled.
+
+`courseAppliesToUser` stays the ONE rule and now returns its reason (`appliesReason`); `audienceContext`
+reads the positions and the named exceptions once, because the matrix asks the question several hundred
+times. `assignNewHireTraining` had a hand-listed projection narrower than the rule reads and is `SELECT *`
+now — the D-097 defect, caught before it bit.
+
+Verified: `verify:trainingpeople` (**45**, live + a real browser at 1280 and 390px; in `verify:all`).
+**The control** restores the old audience rule — roles and departments only, no positions and no named
+exceptions — and fails **6**, including a job description reaching nobody and an exemption changing
+nothing.

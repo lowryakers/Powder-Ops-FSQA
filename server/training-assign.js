@@ -130,24 +130,82 @@ export function assignTraining(db, {
 }
 
 /**
- * Does a course apply to this person?
+ * Does a course apply to this person, and WHY?
  *
  * Moved here from api/training.js when new hires started being assigned
  * automatically, so the compliance matrix and the assignment agree by
  * construction: if the matrix says somebody owes a course, that is the course
  * they are handed, and a second rule here would let the two disagree about
- * who needs what.
+ * who needs what. Everything that answers "who needs this" goes through here
+ * — the matrix, the per-person view, the new-hire pass, the assign modal.
  *
- * An empty role AND department list means everyone — which is not an
- * oversight in this catalogue but the honest answer for GMP, allergen
+ * THREE AUDIENCES AND A NAMED EXCEPTION, because they answer different
+ * questions and none of them can be expressed as another:
+ *   role         — every supervisor
+ *   department   — everyone in QA
+ *   position     — whoever holds this job. A JOB DESCRIPTION is a controlled
+ *                  document people are trained on, and it applies to the
+ *                  holder of one org-chart position and to nobody else. Keyed
+ *                  on the POSITION, not the person, so it follows whoever
+ *                  holds the job instead of being re-keyed when somebody moves.
+ *   named        — `training_requirements`, one person, required or exempt.
+ *
+ * An empty role AND department AND position list means everyone — which is not
+ * an oversight in this catalogue but the honest answer for GMP, allergen
  * awareness, personal hygiene and the new-hire orientation.
+ *
+ * A NAMED EXEMPTION BEATS EVERYTHING and a named requirement beats an empty
+ * match: an exemption is a decision somebody took about one person, and a rule
+ * written afterwards must not quietly undo it.
  */
-export function courseAppliesToUser(course, user) {
-  const parse = (raw) => { if (!raw) return []; try { const v = JSON.parse(raw); return Array.isArray(v) ? v : []; } catch { return []; } };
-  const roles = parse(course.required_roles);
-  const depts = parse(course.required_departments);
-  if (roles.length === 0 && depts.length === 0) return true;
-  return roles.includes(user.role) || depts.includes(user.department);
+export function parseList(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  try { const v = JSON.parse(raw); return Array.isArray(v) ? v : []; } catch { return []; }
+}
+
+// Everything the rule needs that is not on the course or the user row, read
+// ONCE. The matrix asks this question ~450 times; a positions lookup per call
+// would be a query per cell.
+export function audienceContext(db) {
+  const positionsByUser = new Map();
+  try {
+    for (const p of db.prepare("SELECT id, user_id FROM org_positions WHERE user_id IS NOT NULL").all()) {
+      if (!positionsByUser.has(p.user_id)) positionsByUser.set(p.user_id, new Set());
+      positionsByUser.get(p.user_id).add(p.id);
+    }
+  } catch { /* org chart not present */ }
+  const overrides = new Map();
+  try {
+    for (const o of db.prepare('SELECT course_id, user_id, rule FROM training_requirements').all()) {
+      overrides.set(`${o.course_id}:${o.user_id}`, o.rule);
+    }
+  } catch { /* table absent */ }
+  return { positionsByUser, overrides };
+}
+
+// Why this person owes this course — 'exempt' | 'named' | 'role' |
+// 'department' | 'position' | 'everyone' | null. The reason is what makes the
+// per-person screen answerable: "why am I being asked to do this" has an
+// answer on the record rather than in somebody's head.
+export function appliesReason(course, user, ctx = null) {
+  const override = ctx?.overrides?.get(`${course.id}:${user.id}`);
+  if (override === 'exempt') return 'exempt';
+  if (override === 'required') return 'named';
+  const roles = parseList(course.required_roles);
+  const depts = parseList(course.required_departments);
+  const positions = parseList(course.required_positions);
+  if (roles.length === 0 && depts.length === 0 && positions.length === 0) return 'everyone';
+  if (roles.includes(user.role)) return 'role';
+  if (depts.includes(user.department)) return 'department';
+  const held = ctx?.positionsByUser?.get(user.id);
+  if (held && positions.some(id => held.has(id))) return 'position';
+  return null;
+}
+
+export function courseAppliesToUser(course, user, ctx = null) {
+  const why = appliesReason(course, user, ctx);
+  return why !== null && why !== 'exempt';
 }
 
 /** A new starter gets longer than the ordinary two weeks — see below. */
@@ -179,15 +237,19 @@ const NEW_HIRE_DUE_DAYS = 30;
 export function assignNewHireTraining(db, { user, assigned_by = 'ReadyDoc', reason = 'New hire', today = dayStr(new Date()) } = {}) {
   if (!user?.id) return { created: [], skipped: [], courses: 0 };
   const due = plusDays(today, NEW_HIRE_DUE_DAYS);
+  // SELECT *, not a hand-listed projection: the rule reads required_positions
+  // too now, and a projection narrower than the code that reads it is a column
+  // silently arriving undefined — the guard that broke in D-097.
   const courses = (() => {
-    try { return db.prepare('SELECT id, code, title, required_roles, required_departments FROM training_courses WHERE active = 1 ORDER BY code, title').all(); }
+    try { return db.prepare('SELECT * FROM training_courses WHERE active = 1 ORDER BY code, title').all(); }
     catch { return []; }
   })();
+  const ctx = audienceContext(db);
 
   const created = [];
   const skipped = [];
   for (const c of courses) {
-    if (!courseAppliesToUser(c, user)) continue;
+    if (!courseAppliesToUser(c, user, ctx)) continue;
     const out = assignTraining(db, {
       course_id: c.id, people: [{ user_id: user.id }], due_date: due,
       assigned_by, source: 'onboarding', reason,
