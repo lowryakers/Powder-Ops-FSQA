@@ -853,7 +853,7 @@ function GroupSheetBulkModal({ courses, users, onClose, onDone }) {
  * nothing here writes to the training log.
  */
 function AssignModal({ courses, users, onClose, onAssigned }) {
-  const [courseId, setCourseId] = useState('');
+  const [courseSel, setCourseSel] = useState({});
   // Lazily, and from `new Date()` rather than Date.now(): an impure call in
   // the component body is a compiler lint error, not merely untidy.
   const [due, setDue] = useState(() => {
@@ -861,25 +861,40 @@ function AssignModal({ courses, users, onClose, onAssigned }) {
     return d.toISOString().slice(0, 10);
   });
   const [reason, setReason] = useState('');
+  const [skipCurrent, setSkipCurrent] = useState(false);
   const [sel, setSel] = useState({});
   const [search, setSearch] = useState('');
+  const [courseSearch, setCourseSearch] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
 
+  // A GUEST CLIENT IS NOT OFFERED THE PLANT'S TRAINING, and it is derived
+  // rather than ticked: `users.is_external` already says they do not work
+  // here (D-080), and a task assigned to an account with no module reaches
+  // nobody — a card raised into silence, which is worse than none at all.
+  // The same reasoning that keeps them off the payroll hours list (D-098).
   const list = useMemo(
-    () => (users || []).filter(u => u.is_active !== 0 && (!search || u.name.toLowerCase().includes(search.toLowerCase()))),
+    () => (users || []).filter(u => u.is_active !== 0 && !u.is_external
+      && (!search || u.name.toLowerCase().includes(search.toLowerCase()))),
     [users, search]);
+  const active = useMemo(() => (courses || []).filter(c => c.active !== 0), [courses]);
+  const courseList = useMemo(() => {
+    const q = courseSearch.trim().toLowerCase();
+    return q ? active.filter(c => `${c.code || ''} ${c.title}`.toLowerCase().includes(q)) : active;
+  }, [active, courseSearch]);
   const chosen = Object.entries(sel).filter(([, v]) => v?.checked);
-  const course = (courses || []).find(c => c.id === courseId);
+  const chosenCourses = useMemo(() => active.filter(c => courseSel[c.id]), [active, courseSel]);
+  const withTest = chosenCourses.filter(c => c.has_test).length;
 
   const assign = async () => {
-    if (!courseId) { setError('Pick a course.'); return; }
+    if (!chosenCourses.length) { setError('Pick at least one course.'); return; }
     if (!chosen.length) { setError('Pick at least one person.'); return; }
     setBusy(true); setError('');
     try {
       const res = await apiPost('/training/assign', {
-        course_id: courseId, due_date: due, reason,
+        course_ids: chosenCourses.map(c => c.id), due_date: due, reason,
+        skip_current: skipCurrent,
         people: chosen.map(([id, v]) => ({ user_id: id, name: v.name })),
       });
       setResult(res);
@@ -897,18 +912,38 @@ function AssignModal({ courses, users, onClose, onAssigned }) {
         </div>
         {result ? (
           <div className="p-4 space-y-3 overflow-y-auto text-sm">
+            {/* THREE COUNTS, NOT ONE. Fifteen tasks is three courses to five
+                people, and "assigned to 15 people" would be false. */}
             <p className="font-semibold text-green-800" data-assign-created={result.created.length}>
-              Assigned to {result.created.length} {result.created.length === 1 ? 'person' : 'people'}.
+              {result.created.length} {result.created.length === 1 ? 'task' : 'tasks'} raised
+              {' '}— {result.courses?.length || 1} {(result.courses?.length || 1) === 1 ? 'course' : 'courses'}
+              {' '}to {result.people_assigned} {result.people_assigned === 1 ? 'person' : 'people'}.
             </p>
             <p className="text-xs text-gray-600">
-              It is on their task list now, due {due}. The record files itself when they complete it.
+              They are on those task lists now, due {due}. Each record files itself when the task is completed.
             </p>
+            {/* Grouped BY COURSE, because five courses across eight people is
+                forty lines otherwise and a wall of them is read by nobody. */}
             {!!result.skipped?.length && (
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5" data-assign-skipped={result.skipped.length}>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 space-y-1.5" data-assign-skipped={result.skipped.length}>
                 <p className="text-xs font-semibold text-amber-900">Not assigned:</p>
-                <ul className="text-xs text-amber-900 list-disc pl-5">
-                  {result.skipped.map((s, i) => <li key={i}>{s.name} — {s.why}</li>)}
-                </ul>
+                {Object.entries(result.skipped.reduce((acc, x) => {
+                  const k = `${x.course || 'Course'} · ${x.why}`;
+                  (acc[k] = acc[k] || []).push(x.name);
+                  return acc;
+                }, {})).map(([k, names]) => (
+                  <p key={k} className="text-xs text-amber-900">
+                    <span className="font-medium">{k}</span> — {names.join(', ')}
+                  </p>
+                ))}
+              </div>
+            )}
+            {!!result.unavailable?.length && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-2.5" data-assign-unavailable={result.unavailable.length}>
+                <p className="text-xs text-red-800">
+                  {result.unavailable.length} {result.unavailable.length === 1 ? 'course' : 'courses'} could not be assigned:
+                  {' '}{result.unavailable.map(u => u.why).join('; ')}
+                </p>
               </div>
             )}
             <button onClick={onClose} className="px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg">Done</button>
@@ -917,19 +952,39 @@ function AssignModal({ courses, users, onClose, onAssigned }) {
           <>
             <div className="p-4 space-y-3 overflow-y-auto">
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Course *</label>
-                <select value={courseId} onChange={e => setCourseId(e.target.value)} data-assign-course
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                  <option value="">Select a course…</option>
-                  {(courses || []).filter(c => c.active !== 0).map(c => (
-                    <option key={c.id} value={c.id}>{c.code ? `${c.code} — ` : ''}{c.title}</option>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Courses *
+                  {chosenCourses.length > 0 && (
+                    <span className="ml-1.5 font-normal text-gray-500" data-assign-course-count={chosenCourses.length}>
+                      {chosenCourses.length} selected
+                    </span>
+                  )}
+                </label>
+                <input value={courseSearch} onChange={e => setCourseSearch(e.target.value)} placeholder="Search courses…"
+                  data-assign-course-search
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-2" />
+                <div className="border border-gray-200 rounded-lg max-h-40 overflow-y-auto divide-y">
+                  {courseList.map(c => (
+                    <label key={c.id} className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 cursor-pointer">
+                      <input type="checkbox" checked={!!courseSel[c.id]} data-assign-course={c.code || c.title}
+                        onChange={() => setCourseSel(m => ({ ...m, [c.id]: !m[c.id] }))} />
+                      <span className="text-gray-800">{c.code ? <span className="font-medium">{c.code}</span> : null}{c.code ? ' — ' : ''}{c.title}</span>
+                      {/* COERCED, because SQLite hands back 0 and `{0 && …}`
+                          renders a literal "0" beside the title — the
+                          `lab_test_required` trap in a new place. */}
+                      {!!c.has_test && <span className="ml-auto text-[10px] text-gray-400 shrink-0">test</span>}
+                    </label>
                   ))}
-                </select>
-                {course?.has_test ? (
-                  <p className="text-[11px] text-gray-500 mt-1">This course carries a test; completing the task records the result.</p>
-                ) : course ? (
-                  <p className="text-[11px] text-gray-500 mt-1">No test on this course; completing the task records who delivered it.</p>
-                ) : null}
+                  {courseList.length === 0 && <p className="px-3 py-3 text-xs text-gray-400">No course matches that.</p>}
+                </div>
+                {chosenCourses.length > 0 && (
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    {withTest > 0
+                      ? `${withTest} of ${chosenCourses.length} carry a test; completing those tasks records the result.`
+                      : 'No test on these; completing each task records who delivered it.'}
+                    {' '}Each person gets one task per course.
+                  </p>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -944,7 +999,10 @@ function AssignModal({ courses, users, onClose, onAssigned }) {
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Who *</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Who *
+                  {chosen.length > 0 && <span className="ml-1.5 font-normal text-gray-500">{chosen.length} selected</span>}
+                </label>
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search people…"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-2" />
                 <div className="border border-gray-200 rounded-lg max-h-56 overflow-y-auto divide-y">
@@ -958,13 +1016,29 @@ function AssignModal({ courses, users, onClose, onAssigned }) {
                   ))}
                 </div>
               </div>
+              {/* OFF BY DEFAULT, because assigning by hand is often a deliberate
+                  re-train and the app must not second-guess that. It earns its
+                  place once a whole set of courses goes to several people,
+                  where re-issuing what somebody is already current on is the
+                  noise people learn to dismiss. */}
+              <label className="flex items-start gap-2 text-xs text-gray-600 cursor-pointer">
+                <input type="checkbox" checked={skipCurrent} data-assign-skip-current className="mt-0.5"
+                  onChange={() => setSkipCurrent(v => !v)} />
+                <span>
+                  Skip anyone already current on a course
+                  <span className="block text-[11px] text-gray-400">
+                    Leave this off to re-train people on purpose. Somebody with the course already open is skipped either way.
+                  </span>
+                </span>
+              </label>
               {error && <p className="text-sm text-red-700">{error}</p>}
             </div>
             <div className="flex items-center justify-end gap-2 p-4 border-t">
               <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600">Cancel</button>
-              <button onClick={assign} disabled={busy || !courseId || !chosen.length} data-assign-submit
+              <button onClick={assign} disabled={busy || !chosenCourses.length || !chosen.length} data-assign-submit
                 className="px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg disabled:opacity-50">
-                {busy ? 'Assigning…' : `Assign to ${chosen.length || 0}`}
+                {busy ? 'Assigning…'
+                  : `Assign ${chosenCourses.length || 0} ${chosenCourses.length === 1 ? 'course' : 'courses'} to ${chosen.length || 0}`}
               </button>
             </div>
           </>

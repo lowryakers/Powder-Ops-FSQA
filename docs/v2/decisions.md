@@ -3681,3 +3681,52 @@ Verified: `verify:hoursrates` (37, live + a real browser at 1600 and 390px; in `
 — fails **9**, the first reading $960 where the week cost $1,040, and it also stops paying for PTO and
 paid non-working. Treating a missing rate as zero and counting everybody in the money fails **2**, the
 headline being a total claiming to cover "all 11 people" when it could price two of them.
+
+## D-100 — Several courses in one act (2026-09-21)
+
+**Asked:** "can we add the ability to assign multiple trainings/courses at once?"
+
+**Done.** `POST /training/assign` takes `course_ids` beside the existing `course_id`; the Assign modal picks
+courses as tick boxes with a search rather than a single-choice dropdown.
+
+**SEVERAL COURSES IS A LOOP OVER `assignTraining`, NOT A SECOND PATH.** That function already decides
+everything that matters per person — resolving the account from the id, refusing to raise a second identical
+card, writing the work order that IS the assignment — and `assignNewHireTraining` has looped it per course
+since new starters were automated. A bulk endpoint carrying its own copy of that logic is how the
+hand-assigned course and the automatically assigned one start behaving differently, which is this codebase's
+recurring defect in a new place. One task per course per person: a course is certified per operator, so a
+shared card would be a record of nobody in particular.
+
+**`course_id` IS KEPT AND MERGED WITH `course_ids`, DE-DUPLICATED.** Every existing caller sends the scalar
+and the response still carries `course`. Picking a course twice must raise one task — the duplicate would
+otherwise be caught downstream by the already-open guard and reported as a confusing "already assigned"
+beside the card it just created.
+
+**EACH COURSE IS ITS OWN ACT.** A retired or unknown course among five good ones is reported in `unavailable`
+and the other four still go out; refusing the whole request would make the office work out which of five ids
+was the bad one. Nothing resolving at all is still a 404, because then there was no act. An empty
+`course_ids` is a 400 rather than being read as "all of them".
+
+**THREE COUNTS, BECAUSE ONE NUMBER CANNOT ANSWER IT.** `created.length` is tasks, `courses.length` is
+courses, `people_assigned` is people. Six tasks is three courses to two people, and a screen reading
+"assigned to 6 people" would be false. Skips are grouped by course on the result screen — five courses across
+eight people is forty lines otherwise, and a wall of them is read by nobody.
+
+**`skip_current` IS OPT-IN AND OFF BY DEFAULT.** The rule that assigning by hand is not second-guessed stays
+(that is what separates it from the automatic new-hire pass, which must never hand somebody a course they are
+current on). What changes is that handing somebody a whole SET is exactly the case where re-issuing what they
+are already current on is noise, so the office can say so per request rather than as a new rule. An
+already-OPEN assignment is skipped either way, unchanged.
+
+**TWO DEFECTS THE MULTI-SELECT SURFACED**, both found by looking at the rendered screen rather than reading
+the code. `{c.has_test && <span>test</span>}` printed a literal **"0"** beside every course that carries no
+test — SQLite hands the flag back as an integer, the `lab_test_required` trap in a new place. And the people
+list offered the **M4 guest accounts**: a guest is now excluded by derivation on `is_external`, not by a tick,
+because that column already says they do not work here (D-080) and a work order assigned to an account with
+no module reaches nobody — a card raised into silence is worse than no card. Same reasoning that keeps them
+off the payroll hours list (D-098). Each has its own control and each fails 1.
+
+Verified: `verify:trainingassign` (53 → **72**, live + a real browser at 1280 and 390px; already in
+`verify:all`). **The control** restores the single-course endpoint and fails **7** assertions before the
+script can carry on — the first returning `{}` where six tasks were owed, and the "already current" option
+simply not existing.

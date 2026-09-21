@@ -3108,6 +3108,36 @@ TrainingPanel.jsx is the wizard (admin-only **Training Log** button beside Impor
   the four facts back **out of the rendered PDF**. **The control certifies on the written test alone — today's state — and fails 4, with the
   certificate printing at 200 off half a certification.**
 
+## Several courses in one act (D-100)
+`POST /training/assign` takes `course_ids` beside the single `course_id`; `AssignModal` picks courses as tick
+boxes rather than a dropdown. A warehouse hire owes four courses, and four passes through one modal is how
+the fourth gets forgotten.
+- **SEVERAL COURSES IS A LOOP OVER `assignTraining`, NOT A SECOND PATH.** That function already decides
+  everything per person — resolving the account, refusing a second identical card, writing the work order
+  that IS the assignment — and `assignNewHireTraining` has looped it per course since new starters were
+  automated. A bulk endpoint with its own copy is how the hand-assigned course and the automatic one start
+  behaving differently. **One task per course per person**; a course is certified per operator.
+- **`course_id` is kept and MERGED with `course_ids`, de-duplicated.** Picking a course twice must raise one
+  task, not a task plus a confusing "already assigned" beside it.
+- **A retired or unknown course among good ones is REPORTED in `unavailable` and the rest still go out** —
+  refusing the whole request makes the office work out which of five ids was bad. Nothing resolving at all is
+  still a **404**, because then there was no act; an empty `course_ids` is a **400**, never read as "all".
+- **THREE COUNTS, because one number cannot answer it**: `created.length` (tasks), `courses.length`,
+  `people_assigned`. Six tasks is three courses to two people, and "assigned to 6 people" would be false.
+  Skips are **grouped by course** on the result screen — five courses across eight people is forty lines.
+- **`skip_current` is OPT-IN and OFF by default.** Assigning by hand is often a deliberate re-train and the
+  app must not second-guess it (that is what the automatic pass is for); handing somebody a whole SET is the
+  case where re-issuing what they are current on is the noise people dismiss. An already-OPEN assignment is
+  skipped either way.
+- **Two defects the multi-select surfaced, both found by looking at the screen rather than reading it:**
+  `{c.has_test && <span>test</span>}` printed a literal **"0"** beside every course without a test (SQLite
+  hands back an integer — the `lab_test_required` trap), and the people list offered the **M4 guest
+  accounts**. A guest is excluded by DERIVATION on `is_external` (D-080/D-098), not by a tick: a task on an
+  account with no module reaches nobody, which is worse than no task. Controls fail 1 each.
+- `verify:trainingassign` (53 → **72**, live + browser at 1280 and 390px). The control restores the
+  single-course endpoint and fails **7** before the script can continue — the first returning `{}` where six
+  tasks were owed.
+
 ## The Hours list is not the whole roster (D-098)
 `hours_exclusions` (db.js) + `hoursExclusions()` / `POST|DELETE /office/hours/exclude` in `api/office.js` +
 the control and the excluded strip on `HoursTab.jsx`. **Two different answers to one complaint**, and the

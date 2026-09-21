@@ -239,6 +239,122 @@ t('and the new hire\'s whole set is outstanding',
   (list || []).filter(a => a.assigned_to === 'Nipsi Batchman' && a.outstanding).length >= 4,
   String((list || []).filter(a => a.assigned_to === 'Nipsi Batchman' && a.outstanding).length));
 
+console.log('\n── several courses in one act ──');
+//
+// The office hands a warehouse hire four courses, not one. Before this that
+// was four passes through the same modal, which is how the fourth gets
+// forgotten. What is asserted is that several courses is a LOOP OVER THE SAME
+// FUNCTION — every per-person rule the single-course path already enforces has
+// to hold unchanged, or the bulk door quietly behaves differently from the one
+// the automatic new-hire pass uses.
+const all = await J(await get('/training/courses', 'dc'));
+const setOf = (all || []).filter(c => c.active !== 0).slice(0, 3);
+t('three real courses to assign', setOf.length === 3);
+
+const many = await J(await post('/training/assign', {
+  course_ids: setOf.map(c => c.id), due_date: '2026-11-02', reason: 'Warehouse transfer',
+  people: [{ user_id: 'ta-sup', name: 'Wanda Floor' }, { user_id: 'ta-op2', name: 'Osvaldo Reyes' }],
+}, 'dc'));
+t('THREE COURSES TO TWO PEOPLE IS SIX TASKS, raised in one act',
+  many?.created?.length === 6, JSON.stringify({ created: many?.created?.length, skipped: many?.skipped?.length }));
+t('and it is one task PER COURSE PER PERSON, never one shared card — a course is certified per operator',
+  new Set((many.created || []).map(c => `${c.course_id}|${c.user_id}`)).size === 6);
+t('THE THREE COUNTS ARE REPORTED SEPARATELY — six tasks is three courses to two people, and "assigned to 6 people" would be false',
+  many.courses?.length === 3 && many.people_assigned === 2,
+  JSON.stringify({ courses: many.courses?.length, people: many.people_assigned }));
+t('every task carries the course it is for, so the result can be read by course rather than as one list',
+  (many.created || []).every(c => !!c.course && !!c.course_id));
+t('the due date set once applies to all of them', (many.created || []).every(c => c.due_date === '2026-11-02'));
+
+const dupes = await J(await post('/training/assign', {
+  course_ids: [setOf[0].id, setOf[0].id], people: [{ user_id: 'ta-op', name: 'Gaston Ruiz' }],
+}, 'dc'));
+t('THE SAME COURSE PICKED TWICE RAISES ONE TASK — de-duplicated before anything is written, rather than raising a card and then a confusing "already assigned" beside it',
+  (dupes?.created?.length || 0) + (dupes?.skipped?.length || 0) === 1,
+  JSON.stringify({ c: dupes?.created?.length, s: dupes?.skipped?.length }));
+
+const mixed = await J(await post('/training/assign', {
+  course_ids: ['no-such-course', setOf[1].id], people: [{ user_id: 'ta-op', name: 'Gaston Ruiz' }],
+}, 'dc'));
+t('A COURSE THAT DOES NOT EXIST IS REPORTED AND THE REST STILL GO OUT — refusing the whole request would make the office work out which of five ids was the bad one',
+  mixed?.unavailable?.length === 1 && mixed?.courses?.length === 1, JSON.stringify(mixed).slice(0, 160));
+const noneAtAll = await post('/training/assign', {
+  course_ids: ['no-such-course'], people: [{ user_id: 'ta-op', name: 'Gaston Ruiz' }],
+}, 'dc');
+t('…but nothing resolving at all is still a 404, because then there was no act', noneAtAll.status === 404, String(noneAtAll.status));
+const noCourse = await post('/training/assign', { course_ids: [], people: [{ user_id: 'ta-op', name: 'Gaston Ruiz' }] }, 'dc');
+t('an empty list of courses is refused rather than read as "all of them"', noCourse.status === 400, String(noCourse.status));
+
+t('THE SINGLE-COURSE CALLER IS UNTOUCHED — `course_id` still works and still answers with `course`',
+  (await J(await post('/training/assign', { course_id: setOf[2].id, people: [{ user_id: 'ta-op', name: 'Gaston Ruiz' }] }, 'dc')))?.course?.id === setOf[2].id);
+
+console.log('\n── already current is skipped only when asked ──');
+// FORK-101 was completed by Gaston at the top of this run, so he is current on
+// it and Wanda is not. That is the pair the option has to tell apart.
+const reTrain = await J(await post('/training/assign', {
+  course_ids: [forklift.id], people: [{ user_id: 'ta-op', name: 'Gaston Ruiz' }],
+}, 'dc'));
+t('BY DEFAULT A RE-TRAIN IS HONOURED — assigning by hand is often deliberate, and the app must not second-guess it',
+  reTrain?.created?.length === 1, JSON.stringify(reTrain).slice(0, 160));
+// Close it again so the next call is not simply refused as already open.
+const reWo = reTrain.created[0].work_order_id;
+db.prepare("UPDATE work_orders SET status = 'cancelled' WHERE id = ?").run(reWo);
+const skipped = await J(await post('/training/assign', {
+  course_ids: [forklift.id], people: [{ user_id: 'ta-op', name: 'Gaston Ruiz' }, { user_id: 'ta-sup', name: 'Wanda Floor' }],
+  skip_current: true,
+}, 'dc'));
+t('WITH THE OPTION ON, SOMEBODY ALREADY CURRENT IS SKIPPED AND SOMEBODY WHO IS NOT STILL GETS IT — re-issuing a whole set to several people is where that becomes the noise people dismiss',
+  skipped?.created?.length === 1 && skipped.created[0].name === 'Wanda Floor'
+  && skipped?.skipped?.some(x => x.name === 'Gaston Ruiz' && x.why === 'already current'),
+  JSON.stringify({ c: (skipped?.created || []).map(x => x.name), s: (skipped?.skipped || []).map(x => `${x.name}:${x.why}`) }));
+
+console.log('\n── in a real browser ──');
+// A person with nothing assigned yet, so the counts on the result screen are
+// unambiguous — everybody above has courses on them by now.
+db.prepare(`INSERT OR REPLACE INTO users (id,name,username,role,department,is_active,module_access)
+  VALUES ('ta-new','Pilar Nuevo','Pilar Nuevo','operator','warehouse',1,'{"pm":"edit"}')`).run();
+const { chromium } = await import('playwright-core');
+const URL = `http://localhost:${PORT}`;
+const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+page.on('pageerror', e => { console.log('  [pageerror]', e.message); fail++; });
+await page.goto(`${URL}/manifest.webmanifest`);
+await page.evaluate(([tk, u]) => { localStorage.setItem('auth_token', tk); localStorage.setItem('auth_user', JSON.stringify(u)); },
+  [tok.dc, { id: 'ta-dc', name: 'Tessa Control', role: 'admin', department: 'document_control' }]);
+await page.goto(`${URL}/?tab=training`);
+const opened = await page.getByRole('button', { name: /Assign/i }).first().click({ timeout: 20000 })
+  .then(() => page.waitForSelector('[data-assign-modal]', { timeout: 10000 })).then(() => true).catch(() => false);
+t('the Assign control opens the modal', opened);
+
+if (opened) {
+  const boxes = page.locator('[data-assign-modal] [data-assign-course]');
+  t('COURSES ARE A LIST OF TICK BOXES, not a single-choice dropdown — picking four is one pass through the form, not four',
+    await boxes.count() > 1, `${await boxes.count()}`);
+  await boxes.nth(0).check();
+  await boxes.nth(1).check();
+  t('the form says how many are picked', /2 selected/.test(await page.locator('[data-assign-modal]').innerText()));
+  await page.locator('[data-assign-modal] [data-assign-person="Pilar Nuevo"]').check();
+  t('the button names what is about to happen rather than a bare Assign',
+    /2 courses to 1/.test(await page.locator('[data-assign-submit]').innerText()),
+    await page.locator('[data-assign-submit]').innerText());
+  const courseText = await page.locator('[data-assign-modal]').innerText();
+  t('A COURSE WITH NO TEST DOES NOT PRINT A LITERAL "0" beside its title — SQLite hands back an integer and `{0 && …}` renders it',
+    !/Awareness\s+0/.test(courseText) && !/\)\s+0$/m.test(courseText), courseText.split('\n').slice(2, 6).join(' | '));
+  t('A GUEST CLIENT IS NOT OFFERED THE PLANT\'S TRAINING — is_external already says they do not work here, and a task on an account with no module reaches nobody',
+    await page.locator('[data-assign-modal] [data-assign-person="Cristian"]').count() === 0
+    && await page.locator('[data-assign-modal] [data-assign-person]').count() > 0);
+  t('the skip-already-current option is there and is OFF by default',
+    await page.locator('[data-assign-skip-current]').count() === 1
+    && !(await page.locator('[data-assign-skip-current]').isChecked()));
+  await page.locator('[data-assign-submit]').click();
+  await page.waitForSelector('[data-assign-created]', { timeout: 15000 });
+  const said = await page.locator('[data-assign-modal]').innerText();
+  t('and the result reads as courses AND people, not one ambiguous number',
+    /2 tasks raised/.test(said) && /2 courses/.test(said) && /1 person/.test(said),
+    said.replace(/\n/g, ' | ').slice(0, 160));
+}
+await browser.close();
+
 db.close();
 console.log(`\n${pass}/${pass + fail} assertions passed`);
 process.exit(fail ? 1 : 0);

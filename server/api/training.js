@@ -129,21 +129,71 @@ router.get('/', (req, res) => {
 // have it reach them. One work order each — see server/training-assign.js for
 // why an assignment needs no table of its own.
 
+/**
+ * Hand one course, or several, to one person or several.
+ *
+ * SEVERAL COURSES IS A LOOP OVER THE SAME FUNCTION, NOT A SECOND PATH.
+ * `assignTraining` already decides everything that matters per person —
+ * resolving the account, refusing to raise a second identical card, writing
+ * the work order that IS the assignment — and `assignNewHireTraining` has
+ * looped it per course since new starters were automated. A bulk endpoint
+ * with its own copy of that logic is how the hand-assigned course and the
+ * automatic one start behaving differently.
+ *
+ * `course_id` is kept beside `course_ids` because it is what every existing
+ * caller sends, and the two are merged and de-duplicated: picking a course
+ * twice must raise one task, not one task and a confusing "already assigned".
+ *
+ * EACH COURSE IS ITS OWN ACT. A retired course among five good ones is
+ * REPORTED in `unavailable` and the other four still go out — refusing the
+ * whole request would make the office work out which of five ids was the bad
+ * one. Nothing at all resolving is still a 404, because then there was no act.
+ */
 router.post('/assign', (req, res) => {
   const db = getDb();
-  const { course_id, people, due_date, reason } = req.body || {};
-  if (!course_id) return res.status(400).json({ error: 'Pick a course to assign.' });
+  const { course_id, course_ids, people, due_date, reason, skip_current } = req.body || {};
+  const ids = [...new Set(
+    [...(Array.isArray(course_ids) ? course_ids : []), ...(course_id ? [course_id] : [])]
+      .map(v => String(v || '').trim()).filter(Boolean))];
+  if (!ids.length) return res.status(400).json({ error: 'Pick a course to assign.' });
   if (!Array.isArray(people) || !people.length) return res.status(400).json({ error: 'Pick at least one person.' });
-  const out = assignTraining(db, {
-    course_id, people, due_date, reason: String(reason || '').trim().slice(0, 200) || null,
-    assigned_by: req.user?.name || 'ReadyDoc', source: 'manual',
-  });
-  if (out.error) return res.status(404).json({ error: out.error });
-  for (const c of out.created) {
-    logAudit(req.user, 'training_assigned', 'work_order', c.work_order_id,
-      { course: out.course.code || out.course.title, to: c.name, due_date: c.due_date, reason: reason || null }, null, null, c.name);
+
+  const note = String(reason || '').trim().slice(0, 200) || null;
+  const created = [];
+  const skipped = [];
+  const courses = [];
+  const unavailable = [];
+  for (const id of ids) {
+    const out = assignTraining(db, {
+      course_id: id, people, due_date, reason: note,
+      assigned_by: req.user?.name || 'ReadyDoc', source: 'manual',
+      // OPT-IN, and the default is unchanged on purpose: assigning by hand may
+      // well be a deliberate re-train, and second-guessing that is what the
+      // automatic pass does. Handing somebody a whole set of courses is the
+      // case where re-assigning what they are already current on is noise,
+      // so the office can say so — per request, not as a new rule.
+      skipCurrent: !!skip_current,
+    });
+    if (out.error) { unavailable.push({ course_id: id, why: out.error }); continue; }
+    const label = out.course.code || out.course.title;
+    courses.push(out.course);
+    for (const c of out.created) {
+      created.push({ ...c, course_id: out.course.id, course: label });
+      logAudit(req.user, 'training_assigned', 'work_order', c.work_order_id,
+        { course: label, to: c.name, due_date: c.due_date, reason: note }, null, null, c.name);
+    }
+    for (const s of out.skipped) skipped.push({ ...s, course_id: out.course.id, course: label });
   }
-  res.status(201).json(out);
+  if (!courses.length) return res.status(404).json({ error: unavailable[0]?.why || 'Course not found or retired.' });
+
+  // THREE DIFFERENT COUNTS, because one number cannot answer the question.
+  // Fifteen tasks is three courses to five people, and the screen has to be
+  // able to say all three — `created.length` alone reads as fifteen people.
+  res.status(201).json({
+    created, skipped, courses, unavailable,
+    course: courses[0],  // what a single-course caller has always read
+    people_assigned: new Set(created.map(c => c.user_id || c.name)).size,
+  });
 });
 
 /**
