@@ -19,7 +19,7 @@
 
 import { Router } from 'express';
 import { getDb } from '../db.js';
-import { bpgZones, canEditZoneItems, writeScheduleItems, isBpgSchedule } from '../bpg-zones.js';
+import { bpgZones, canEditZoneItems, writeScheduleItems, isBpgSchedule, zoneDrift, bpgDiagram } from '../bpg-zones.js';
 
 const router = Router();
 
@@ -34,9 +34,19 @@ router.get('/zones', (req, res) => {
   if (!assigned(req.user)) {
     return res.status(403).json({ error: 'No modules have been assigned to this account yet. An admin assigns them in Settings.' });
   }
-  const zones = bpgZones(getDb());
+  const db = getDb();
+  const zones = bpgZones(db);
+  // WHEN DOES THE DRAWING NEED RE-ISSUING is the question underneath "can the
+  // diagram update itself". It cannot — FORM 431-01 is a controlled document
+  // with a revision history — but where the plant's own counts have moved away
+  // from it is exactly the trigger for a change request, and until now that
+  // comparison only ever reached a deploy log.
+  const { drifted, untranscribed } = zoneDrift(db);
   res.json({
     zones,
+    diagram: bpgDiagram(db),
+    drift: drifted,
+    untranscribed,
     can_edit: canEditZoneItems(req.user),
     // Counted from the rows returned, never a second query — a figure that can
     // disagree with the list under it is the defect this codebase keeps

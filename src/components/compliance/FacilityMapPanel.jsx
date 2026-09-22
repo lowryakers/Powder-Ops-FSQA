@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { getParam } from '../../lib/deepLink.js';
 import { useApiGet, apiPut } from '../../hooks/useApi';
 import { useCompactLayout } from '../../lib/useCompactLayout.js';
 import {
@@ -361,7 +362,15 @@ function RoomList({ status, overrides = {}, onPick }) {
 }
 
 export default function FacilityMapPanel({ user }) {
-  const [layers, setLayers] = useState({ fixtures: false, traps: false, bpg: false, status: true });
+  // `?layer=bpg` opens the map already on that layer — the Zones & items view
+  // links here, and landing on the cleaning colouring would make that link read
+  // as though it had gone to the wrong screen. A pure read (deepLink.js
+  // captures the query at import, before this lazily-loaded module mounts);
+  // consuming it here would give the value to StrictMode's throwaway call.
+  const [layers, setLayers] = useState(() => {
+    const on = getParam('layer');
+    return { fixtures: false, traps: false, bpg: on === 'bpg', status: on !== 'bpg' };
+  });
   const [selected, setSelected] = useState(null);
   // Fit-to-width by default on a phone: seeing half a building is worse than
   // seeing all of it small. Zoom restores the readable-label size and the

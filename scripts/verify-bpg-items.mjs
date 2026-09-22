@@ -141,6 +141,55 @@ t('…and an area retired in the Equipment registry says SO, naming the registry
   JSON.stringify(regOffice2?.gap_code));
 db.prepare("UPDATE equipment SET status = 'active' WHERE id = ?").run(eq2);
 
+console.log('\n── when does the DRAWING need re-issuing ──');
+// The question underneath "can the diagram update itself". It cannot — FORM
+// 431-01 is a controlled document with a revision history — but where the
+// plant's counts have parted company with it is exactly the DCR trigger, and
+// that comparison only ever reached a deploy log.
+const withDrift = await J(await req('/bpg/zones'));
+const qDrift = (withDrift.drift || []).find(d => d.zone === 'Quality Area');
+t('THE DRIFT IS ON THE SCREEN WHERE THE NUMBERS ARE CORRECTED, not only in a boot log nobody reads',
+  !!qDrift, JSON.stringify((withDrift.drift || []).map(d => d.zone)));
+t('…and it names WHAT moved, not just that something did — 8 windows became 16',
+  qDrift?.changed?.some(c => /^windows$/i.test(c.name) && /8/.test(c.was) && /16/.test(c.now)),
+  JSON.stringify(qDrift?.changed));
+t('…an item the plant added is reported as added',
+  qDrift?.added?.some(i => /^monitors$/i.test(i.name)), JSON.stringify(qDrift?.added));
+t('A RENAME READS AS ONE REMOVED AND ONE ADDED, deliberately — "Monitor" and "Monitors" are the same thing to a person and a guess to the app, and guessing about somebody else\'s inventory is how a drift report starts hiding a real removal',
+  qDrift?.removed?.some(i => /^monitor$/i.test(i.name)) && qDrift?.added?.some(i => /^monitors$/i.test(i.name)));
+t('…and an item that did not move is in none of the three lists',
+  !['added', 'removed', 'changed'].some(k => (qDrift?.[k] || []).some(i => /^exit signs$/i.test(i.name || ''))));
+t('A ZONE NOBODY HAS TOUCHED IS NOT REPORTED — a drift list that names every zone is one nobody reads',
+  !(withDrift.drift || []).some(d => d.zone === 'Break Room'));
+
+// ONE COMPARISON, TWO READERS: the seeder's boot log and this screen.
+const { zoneDrift } = await import('../server/bpg-zones.js');
+t('the boot log and the screen read the SAME comparison, so they cannot disagree about which zones moved',
+  JSON.stringify(zoneDrift(db).drifted.map(d => d.zone).sort())
+    === JSON.stringify((withDrift.drift || []).map(d => d.zone).sort()));
+
+t('…and REORDERING a list is not drift: an inventory is a set of items, not an ordered one',
+  (() => {
+    const bk = db.prepare("SELECT id, procedure_steps p FROM pm_schedules WHERE title LIKE '%Break Room'").get();
+    const rev = JSON.stringify(JSON.parse(bk.p).slice().reverse());
+    db.prepare('UPDATE pm_schedules SET procedure_steps = ? WHERE id = ?').run(rev, bk.id);
+    const still = !zoneDrift(db).drifted.some(d => d.zone === 'Break Room');
+    db.prepare('UPDATE pm_schedules SET procedure_steps = ? WHERE id = ?').run(bk.p, bk.id);
+    return still;
+  })());
+
+console.log('\n── the drawing names itself from the REGISTER ──');
+t('the diagram is named with its revision', withDrift.diagram?.code === 'FORM 431-01' && !!withDrift.diagram?.revision,
+  JSON.stringify(withDrift.diagram));
+t('…read from controlled_forms, the register Document Control maintains',
+  withDrift.diagram?.source === 'register', withDrift.diagram?.source);
+db.prepare("UPDATE controlled_forms SET revision = 'V6' WHERE code = 'FORM 431-01'").run();
+const reissued = await J(await req('/bpg/zones'));
+t('SO THE DAY SHE ISSUES V6 EVERY SCREEN SAYS V6 WITH NO DEPLOY — the revision has one owner, not a fourth hard-coded copy',
+  reissued.diagram?.revision === 'V6' && /V6/.test(reissued.diagram?.href || ''),
+  JSON.stringify(reissued.diagram));
+db.prepare("UPDATE controlled_forms SET revision = 'V5' WHERE code = 'FORM 431-01'").run();
+
 console.log('\n── Document Control can maintain the lists, holding no PM grant ──');
 db.prepare(`INSERT OR REPLACE INTO users (id,name,username,role,department,is_active,setup_code,setup_code_expires_at,module_access)
   VALUES ('bp-dc','Dana Control','Dana Control','supervisor','document_control',1,'SC-DC',datetime('now','+7 day'),'{"sops":"edit","qa-inspections":"view"}')`).run();
@@ -258,6 +307,63 @@ t('…while the RECORDS stay read-only to her — the grant that reaches the scr
   (await page.getByRole('button', { name: /^Verify$/ }).count()) === 0);
 
 await page.goto(`${URL}/?tab=qa-inspections&view=zones`);
+const strip = page.locator('[data-bpg-drift]');
+t('THE DRIFT IS ON THE SCREEN, naming the zones that no longer match the drawing',
+  await strip.waitFor({ timeout: 10000 }).then(() => true).catch(() => false));
+if (await strip.count()) {
+  const stripText = (await strip.innerText()).replace(/\n/g, ' ');
+  t('…and names the drawing by its revision rather than saying "the diagram"',
+    /FORM 431-01 V5/.test(stripText), stripText.slice(0, 140));
+  t('…and says the drawing is Document Control\'s to re-issue, so nobody reads it as the app being wrong',
+    /change request/i.test(stripText) && /Nothing here is wrong/i.test(stripText));
+  await strip.locator('[data-bpg-drift-toggle]').click();
+  await page.waitForTimeout(400);
+  t('…and opens to show WHAT moved: 8 Glass → 16 Glass',
+    /8 Glass\s*→\s*16 Glass/.test((await strip.innerText()).replace(/\n/g, ' ')),
+    (await strip.innerText()).replace(/\n/g, ' ').slice(0, 220));
+}
+
+// The live picture that already existed and nobody knew about.
+t('A DOOR THAT LEADS NOWHERE IS NOT OFFERED — Document Control reaches this screen on the qa-inspections grant and may hold no facility-map grant, and a link that fell back to the first module would read as a fault rather than a boundary',
+  (await page.locator('[data-bpg-map]').count()) === 0);
+
+db.prepare(`UPDATE users SET module_access = '{"sops":"edit","qa-inspections":"view","facility-map":"view"}' WHERE id = 'bp-dc'`).run();
+await page.evaluate((u) => localStorage.setItem('auth_user', JSON.stringify(u)),
+  { id: 'bp-dc', name: 'Dana Control', role: 'supervisor', department: 'document_control',
+    module_access: { sops: 'edit', 'qa-inspections': 'view', 'facility-map': 'view' } });
+await page.goto(`${URL}/?tab=qa-inspections&view=zones`);
+const mapLink = page.locator('[data-bpg-map]');
+await mapLink.waitFor({ timeout: 15000 });
+const mapHref = await mapLink.getAttribute('href');
+t('…and IS offered once she can reach the map', mapHref === '/?tab=facility-map&layer=bpg', mapHref);
+await page.goto(`${URL}${mapHref}`);
+await page.waitForTimeout(2500);
+const mapText = await page.locator('body').innerText();
+t('THE LIVE PICTURE ALREADY EXISTED: the map opens ON the BP&G layer, drawing these same zones from these same inventories — landing on the cleaning colouring would read as the link going to the wrong screen',
+  /Coloured by BP&G zone/i.test(mapText), mapText.replace(/\n/g, ' ').slice(0, 200));
+
+// The inventory sheet an auditor asks for beside the drawing.
+await page.goto(`${URL}/?tab=qa-inspections&view=zones`);
+await page.locator('[data-bpg-print]').waitFor({ timeout: 15000 });
+const popup = await Promise.all([
+  page.waitForEvent('popup', { timeout: 10000 }).catch(() => null),
+  page.locator('[data-bpg-print]').click(),
+]).then(r => r[0]);
+t('Print inventory sheet opens a clean window, not the app styled for print', !!popup);
+if (popup) {
+  await popup.waitForLoadState('domcontentloaded').catch(() => {});
+  const sheet = await popup.locator('body').innerText();
+  t('…carrying every zone and its items', /Quality Area/.test(sheet) && /Windows/.test(sheet) && /Gown Room/.test(sheet));
+  t('IT IS STAMPED AS NOT CONTROLLED and names the drawing that is — a printout that looked controlled would become a shadow copy',
+    /not a controlled document/i.test(sheet) && /FORM 431-01 V5/.test(sheet) && /Uncontrolled when printed/i.test(sheet),
+    sheet.replace(/\n/g, ' ').slice(0, 220));
+  t('…and a zone that is not being inspected says so on the paper too',
+    /NOT CURRENTLY INSPECTED/.test(sheet));
+  await popup.close();
+}
+
+await page.goto(`${URL}/?tab=qa-inspections&view=zones`);
+await page.waitForTimeout(1200);
 await page.setViewportSize({ width: 390, height: 844 });
 await page.waitForTimeout(800);
 const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

@@ -16,10 +16,72 @@
 
 import { useState, useMemo } from 'react';
 import { useApiGet, apiPut } from '../../hooks/useApi';
-import { Search, Pencil, Plus, Trash2, FileText, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { useAuth } from '../../hooks/useAuth';
+import { moduleLevel } from '../../utils/permissions';
+import { Search, Pencil, Plus, Trash2, FileText, AlertTriangle, CheckCircle2, Map, Printer } from 'lucide-react';
 import { formatDate } from '../../lib/datetime.js';
 
 const MATERIALS = ['Plastic', 'Glass'];
+
+// The live inventory sheet — the thing an auditor asks for beside the drawing.
+//
+// IT IS PRINTED, NOT STORED, AND IT SAYS SO. It is derived from the zone cards
+// at the moment somebody presses the button, so it is always current and is
+// therefore NOT a controlled record: the stamp names FORM 431-01 and its
+// revision as the controlled drawing, and the footer says uncontrolled when
+// printed — the same doctrine as printing a controlled document, for the same
+// reason. A printout that looked controlled would become a shadow copy.
+//
+// A clean window rather than the app styled for print: somebody asking for
+// paper should get the inventory, not a screenshot of software.
+function printInventory(zones, diagram) {
+  const w = window.open('', '_blank');
+  if (!w) return;
+  const esc = (v) => String(v ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  const body = zones.map(z => `
+    <section>
+      <h2>${esc(z.zone)}${z.equipment?.asset_id ? ` <span class="asset">${esc(z.equipment.asset_id)}</span>` : ''}</h2>
+      <p class="sub">${z.item_count} item${z.item_count === 1 ? '' : 's'}${z.glass_count ? ` · ${z.glass_count} glass` : ''}${
+        z.inspectable ? '' : ` · NOT CURRENTLY INSPECTED — ${esc(z.gap_reason || '')}`}</p>
+      ${z.item_count === 0
+        ? '<p class="empty">No inventory on file.</p>'
+        : `<table><thead><tr><th>Item</th><th class="n">Qty</th><th>Type</th></tr></thead><tbody>${
+            z.items.map(i => `<tr><td>${esc(i.name)}</td><td class="n">${esc(i.qty)}</td><td>${esc(i.material)}</td></tr>`).join('')
+          }</tbody></table>`}
+    </section>`).join('');
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8">
+    <title>Brittle plastic &amp; glass — zone inventories</title>
+    <style>
+      body { font: 11pt/1.45 Georgia, serif; margin: 0.6in; color: #111; }
+      h1 { font-size: 15pt; margin: 0 0 4px; }
+      .meta { font: 9pt/1.4 Helvetica, Arial, sans-serif; color: #444; border-bottom: 1px solid #999; padding-bottom: 8px; margin-bottom: 14px; }
+      .stamp { font: 9pt/1.45 Helvetica, Arial, sans-serif; border: 2px solid #92400e; color: #7c2d12; padding: 7px 9px; margin: 0 0 16px; }
+      section { break-inside: avoid; margin: 0 0 14px; }
+      h2 { font-size: 11.5pt; margin: 0 0 2px; }
+      .asset { font: 8.5pt Helvetica, Arial, sans-serif; color: #666; font-weight: normal; }
+      .sub { font: 8.5pt Helvetica, Arial, sans-serif; color: #555; margin: 0 0 5px; }
+      .empty { font: 9pt Helvetica, Arial, sans-serif; color: #92400e; margin: 0; }
+      table { border-collapse: collapse; width: 100%; }
+      th, td { border: 1px solid #999; padding: 3px 6px; font-size: 9.5pt; text-align: left; }
+      th { background: #f3f4f6; font: 8.5pt Helvetica, Arial, sans-serif; text-transform: uppercase; }
+      td.n, th.n { text-align: right; width: 3em; font-variant-numeric: tabular-nums; }
+      .foot { margin-top: 18px; font: 8pt Helvetica, Arial, sans-serif; color: #777; border-top: 1px solid #ccc; padding-top: 4px; }
+    </style></head><body>
+    <h1>Brittle plastic &amp; glass — zone inventories</h1>
+    <div class="meta">${zones.length} zones · generated from ReadyDoc ${new Date().toLocaleString()}</div>
+    <div class="stamp">
+      <strong>This sheet is not a controlled document.</strong>
+      It is generated from the zone inventories in ReadyDoc, which the plant maintains.
+      ${diagram?.code ? `The controlled drawing is <strong>${esc(diagram.code)}${diagram.revision ? ` ${esc(diagram.revision)}` : ''}</strong>` : 'The controlled drawing is FORM 431-01'}
+      — where this sheet and the drawing disagree, raise a document change request.
+    </div>
+    ${body}
+    <div class="foot">Uncontrolled when printed. Verify against the controlled drawing in the registry.</div>
+    </body></html>`);
+  w.document.close();
+  w.focus();
+  setTimeout(() => w.print(), 250);
+}
 
 function StateChip({ zone }) {
   if (zone.inspectable) {
@@ -166,7 +228,60 @@ function ZoneCard({ zone, canEdit, onSaved }) {
   );
 }
 
+// Where the plant's own counts have moved away from the issued drawing — the
+// answer to "when does FORM 431-01 need updating", which nothing could answer
+// before: the comparison ran at boot and went to a deploy log.
+//
+// IT REPORTS, IT NEVER REWRITES. The drawing is Document Control's to re-issue,
+// and the inventories are the plant's to correct; this only says the two have
+// parted company. Derived on every read, so it clears itself once the re-issued
+// drawing is transcribed.
+function DriftStrip({ drift, diagram }) {
+  const [open, setOpen] = useState(false);
+  if (!drift?.length) return null;
+  const rev = diagram?.revision ? `${diagram.code} ${diagram.revision}` : (diagram?.code || 'the diagram');
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3" data-bpg-drift>
+      <p className="text-sm font-semibold text-amber-900">
+        {drift.length} zone{drift.length === 1 ? '' : 's'} no longer match {rev}
+      </p>
+      <p className="text-[11px] text-amber-800 mt-0.5">
+        {drift.map(d => d.zone).join(' · ')}
+      </p>
+      <p className="text-[11px] text-amber-700 mt-1">
+        The drawing is a controlled document and does not redraw itself — these are the zones to raise a
+        document change request for. Nothing here is wrong: the counts on the cards are what the plant has.
+      </p>
+      <button type="button" onClick={() => setOpen(v => !v)} data-bpg-drift-toggle
+        className="mt-2 text-xs font-bold text-amber-800 hover:text-amber-900">
+        {open ? 'Hide what changed' : 'Show what changed'}
+      </button>
+      {open && (
+        <div className="mt-2 space-y-2">
+          {drift.map(d => (
+            <div key={d.schedule_id} className="text-[11px] text-amber-900" data-bpg-drift-zone={d.zone}>
+              <span className="font-semibold">{d.zone}</span>
+              <ul className="list-disc ml-4 mt-0.5 space-y-0.5">
+                {d.changed.map(c => <li key={`c${c.name}`}>{c.name}: {c.was} → <span className="font-semibold">{c.now}</span></li>)}
+                {d.added.map(i => <li key={`a${i.name}`}>added {i.name} ({i.qty} {i.material})</li>)}
+                {d.removed.map(i => <li key={`r${i.name}`}>removed {i.name} ({i.qty} {i.material})</li>)}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function BpgZonesPanel() {
+  const { user } = useAuth();
+  // A DOOR THAT LEADS NOWHERE READS AS A FAULT, NOT AS A BOUNDARY. Document
+  // Control reaches this screen through the `qa-inspections` grant and does not
+  // necessarily hold `facility-map`; without it the link falls back to the
+  // first module and looks like the app ignoring the click. Offered only to
+  // somebody who can actually get there — the guest-client rule (D-091).
+  const canSeeMap = !!moduleLevel(user, 'facility-map');
   const { data, loading, refresh } = useApiGet('/bpg/zones');
   const [q, setQ] = useState('');
   const [onlyGaps, setOnlyGaps] = useState(false);
@@ -204,15 +319,36 @@ export default function BpgZonesPanel() {
         ))}
       </div>
 
+      <DriftStrip drift={data?.drift} diagram={data?.diagram} />
+
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" onClick={() => setOnlyGaps(v => !v)}
           className={`px-3 py-1.5 rounded-lg text-sm font-medium ${onlyGaps ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
           Only zones with no card
         </button>
-        <a href="/forms/FORM-431-01-V5-Brittle-Plastic-and-Glass-Diagram.pdf" target="_blank" rel="noreferrer"
+        {/* The revision comes from the register, so the day Document Control
+            issues V6 this button says V6 with no deploy. */}
+        {data?.diagram?.href && (
+          <a href={data.diagram.href} target="_blank" rel="noreferrer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200">
+            <FileText size={14} /> {data.diagram.code} {data.diagram.revision}
+          </a>
+        )}
+        {/* THE LIVE PICTURE ALREADY EXISTS and nobody knew: the Facility Map's
+            BP&G layer draws these same zones on the floor plan and reads these
+            same inventories. It is not FORM 431-01 and never claims to be. */}
+        {canSeeMap && (
+        <a href="/?tab=facility-map&layer=bpg"
+          data-bpg-map
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200">
-          <FileText size={14} /> View diagram
+          <Map size={14} /> See the zones on the map
         </a>
+        )}
+        <button type="button" onClick={() => printInventory(rows, data?.diagram)}
+          data-bpg-print
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200">
+          <Printer size={14} /> Print inventory sheet
+        </button>
         <div className="relative w-full sm:w-64 sm:ml-auto">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search zone or item…"

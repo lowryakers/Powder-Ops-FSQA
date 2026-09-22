@@ -3195,6 +3195,32 @@ is not producing a card has no task card to edit — and that is exactly the zon
 - `verify:bpgitems` (43, live + browser at 1280 and 390px; in `verify:all`). **The control removes the
   `/api/bpg` mount — the state she was actually in — and fails 15.**
 
+### The diagram cannot redraw itself; "when does it need re-issuing" now has an answer (D-104)
+Document Control asked whether FORM 431-01 could update itself from the Zones & items cards. **No — it is a
+controlled drawing with five DCRs behind it (V1→V5), and a picture that silently redrew itself would be a
+controlled document revised with no DCR, no approval and no revision.** It also could not: `Windows|16|Glass`
+carries no positions.
+- **THE LIVE PICTURE ALREADY EXISTED.** The Facility Map's BP&G layer draws the same seventeen zones from the
+  same `procedure_steps`. **`?layer=bpg`** opens the map on it and Zones & items links there — **only when the
+  person holds `facility-map`**, because DC reaches that screen on the `qa-inspections` grant and a link that
+  fell back to the first module reads as a fault, not a boundary (D-091). Caught in the browser, not by reading.
+- **`zoneDrift(db)` is the answer to the real question** — which zones have parted company with the drawing.
+  The comparison existed since D-101 and went to a **deploy log nobody reads**; it lives in `bpg-zones.js` now,
+  so the **boot log and the strip on the screen are one function**, and `BPG_ZONE_ITEMS` moved out of
+  `cleaning-seed.js` with it. Derived on every read, so it clears when a re-issued drawing is transcribed.
+  **It reports, never rewrites.**
+- **Compared as a SET, not two ordered lists** — re-ordering an inventory is not a change, and reporting it as
+  one is the noise that gets a drift report ignored. **A RENAME READS AS ONE REMOVED AND ONE ADDED**:
+  "Monitor"/"Monitors" is obvious to a person and a guess to the app, and guessing about somebody's inventory
+  is how a drift report starts hiding a real removal.
+- **THE REVISION HAS ONE OWNER**: `bpgDiagram(db)` reads `controlled_forms` (DC's register), falls back to
+  `shared/form-registry.js`, and derives the file path. Issue V6 and every screen says V6 with no deploy — it
+  was hard-coded in four places.
+- **The inventory sheet is PRINTED, NOT STORED, and says so** — stamped "not a controlled document", naming
+  FORM 431-01 and its revision as the one that is, footer "uncontrolled when printed". A printout that looked
+  controlled would become a shadow copy.
+- `verify:bpgitems` (43 → **65**). **The control drops drift + diagram from the payload and fails 10.**
+
 ## Several courses in one act (D-100)
 `POST /training/assign` takes `course_ids` beside the single `course_id`; `AssignModal` picks courses as tick
 boxes rather than a dropdown. A warehouse hire owes four courses, and four passes through one modal is how

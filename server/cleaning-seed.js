@@ -1,4 +1,5 @@
 import { v4 as uuid } from 'uuid';
+import { BPG_ZONE_ITEMS, zoneDrift, DIAGRAM_CODE } from './bpg-zones.js';
 
 function weekdaysBetween(startStr, endStr) {
   const dates = [];
@@ -601,79 +602,6 @@ export function seedGlassPlasticRecords(db) {
   if (count > 0) console.log(`[seed] Imported ${count} brittle plastic/glass inspection records (${inspectionDates.length} dates × ${zones.length} zones)`);
 }
 
-const BPG_ZONE_ITEMS = {
-  'Office 1': [
-    'Mini Fridge (door)|1|Glass', 'Window|1|Glass', 'Mirror|1|Glass',
-    'Lights|6|Plastic', 'Lamp Bulbs|2|Plastic', 'Monitors|1|Plastic',
-    'AC|1|Plastic', 'Picture Frame|2|Glass',
-  ],
-  'Office 2': [
-    'Lights|7|Plastic', 'Window|1|Glass', 'Desks|3|Glass',
-    'White Board|1|Glass', 'Monitors|6|Plastic', 'AC|1|Plastic',
-    'Printer|1|Plastic', 'Label Printer|1|Plastic',
-  ],
-  'Office 3': [
-    'Window|2|Glass', 'Lights|7|Plastic', 'Monitor|2|Plastic', 'AC|1|Plastic',
-  ],
-  'Main Lobby': [
-    'Windows|1|Glass', 'Doors|2|Glass', 'Exit Signs|2|Plastic',
-    'Lights|8|Plastic', 'Lamp Bulbs|2|Plastic', 'LED PowderOps Sign|1|Plastic',
-  ],
-  'Maintenance Area': [
-    'Lights|1|Plastic', 'Windows|1|Glass',
-  ],
-  'Bathrooms (1)': [
-    'Disposal Soap|1|Plastic', 'Light|1|Plastic', 'Mirrors|1|Glass',
-    'Air Freshener Dispenser|1|Plastic', 'Paper Disposal Machine|1|Plastic',
-  ],
-  'Bathrooms (2)': [
-    'Disposal Soap|1|Plastic', 'Light|1|Plastic', 'Mirrors|1|Glass',
-    'Air Freshener Dispenser|1|Plastic', 'Paper Disposal Machine|1|Plastic',
-  ],
-  'Sanitation Area': [
-    'Paper Disposal Machine|1|Plastic', 'Soap Disposal Machine|1|Plastic',
-    'Lights|4|Plastic', 'Exit Sign|1|Plastic',
-  ],
-  'Gown Room': [
-    'Printer|1|Plastic', 'Desk|1|Glass', 'Monitor|1|Plastic',
-    'Lights|6|Plastic', 'Walkie Talkies|12|Plastic', 'Mirror|1|Glass',
-    'Thermal Printer|1|Plastic',
-  ],
-  'Break Room': [
-    'Time Clock|1|Plastic', 'Lights|11|Plastic', 'Windows|2|Glass',
-    'Oven|1|Glass', 'Microwaves|4|Glass', 'Soap Dispenser|1|Plastic',
-    'Air Fryer|1|Plastic', 'Paper Dispenser|1|Plastic',
-    'Coffee Machine (Keurig)|1|Plastic', 'Electric Kettle|1|Glass',
-  ],
-  'Production Area': [
-    'Exterior Lights|9|Plastic', 'Sky Lights|2|Plastic', 'Thermometers|2|Plastic',
-    'Clock|1|Plastic', 'Plastic Pallets|N/A|Plastic',
-    'Room 1 Light|1|Plastic', 'Room 3 Light|1|Plastic', 'Room 4 Light|1|Plastic',
-    'Room 5 Light|1|Plastic', 'Room 6 Light|1|Plastic', 'Room 7 Light|1|Plastic',
-    'Room 8 Light|1|Plastic',
-    'Batching 1 Lights|2|Plastic', 'Batching 2 Lights|2|Plastic',
-  ],
-  'Kitting Area': [
-    'N/A|N/A|N/A',
-  ],
-  'Quality Area': [
-    'Lights|4|Plastic', 'Exit Signs|2|Plastic', 'Monitor|1|Plastic',
-    'Printer|1|Plastic', 'Label Printers|2|Plastic', 'Windows|8|Glass',
-  ],
-  'Warehouse Area (1)': [
-    'Desks|2|Glass', 'Monitors|2|Plastic', 'Thermal Printer|1|Plastic', 'Printer|1|Plastic',
-  ],
-  'Warehouse Area (2)': [
-    'Swing Lights|1|Plastic', 'Exit Signs|1|Plastic',
-  ],
-  'Warehouse Area (3)': [
-    'Swing Lights|1|Plastic', 'Exit Signs|1|Plastic',
-  ],
-  'Warehouse Area (Main)': [
-    'Lights|27|Plastic', 'Sky Lights|2|Plastic', 'Thermometer|1|Plastic',
-    'Plastic Pallets|N/A|Plastic',
-  ],
-};
 
 export function seedGlassPlasticPMSchedules(db) {
   // Every row these seeds create is an AREA, not a machine — a cleaning zone, a
@@ -743,16 +671,12 @@ export function seedGlassPlasticPMSchedules(db) {
     // reference, so a zone that has moved away from it is NAMED in the boot log
     // and left exactly as the plant has it. Silence would hide both the edit
     // and the disagreement.
-    const drifted = [];
-    for (const zone of inspectionZones) {
-      const items = BPG_ZONE_ITEMS[zone.name];
-      if (!items) continue;
-      const title = `Brittle Plastic & Glass Inspection — ${zone.name}`;
-      const existing = db.prepare("SELECT id, procedure_steps FROM pm_schedules WHERE title = ?").get(title);
-      if (existing && existing.procedure_steps !== JSON.stringify(items)) drifted.push(zone.name);
-    }
+    // ONE COMPARISON, TWO READERS. `zoneDrift` is what the zone register puts
+    // on the screen, so the boot log and Document Control's drift strip cannot
+    // disagree about which zones have moved away from the drawing.
+    const { drifted } = zoneDrift(db);
     if (drifted.length > 0) {
-      console.log(`[seed] Brittle plastic/glass: ${drifted.length} zone item list(s) differ from the code's transcription and were LEFT AS THE PLANT HAS THEM — ${drifted.join(', ')}`);
+      console.log(`[seed] Brittle plastic/glass: ${drifted.length} zone item list(s) differ from the code's transcription of ${DIAGRAM_CODE} and were LEFT AS THE PLANT HAS THEM — ${drifted.map(d => d.zone).join(', ')}`);
     }
 
     const currentCount = db.prepare("SELECT COUNT(*) as c FROM pm_schedules WHERE title LIKE 'Brittle Plastic%Glass%'").get().c;

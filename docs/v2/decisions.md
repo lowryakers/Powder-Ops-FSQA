@@ -3889,3 +3889,52 @@ Verified: `verify:trainingpeople` (**45**, live + a real browser at 1280 and 390
 **The control** restores the old audience rule — roles and departments only, no positions and no named
 exceptions — and fails **6**, including a job description reaching nobody and an exemption changing
 nothing.
+
+---
+
+## D-104 — The diagram cannot redraw itself; the question underneath it can be answered
+**2026-09-22.** Document Control, on the new Zones & items cards: *"Is there a way to have the BP&G diagram
+be dynamic and be updated based on any updates that are made in those cards?"*
+
+**NO, AND THAT IS THE CONTROL WORKING.** FORM 431-01 is a controlled drawing with a real revision history —
+five numbered change requests in the plant's own DCR log, V1 (13 Nov 2025) through V5. A picture that
+silently redrew itself when somebody corrected a window count would be a controlled document revised with no
+DCR, no approval and no revision number, which is precisely what SOP 406 and `controlled.js` exist to
+prevent. It also could not: an inventory line is `Windows|16|Glass` and carries no positions, so there is
+nothing to draw a floor plan from.
+
+**THE LIVE PICTURE ALREADY EXISTED AND NOBODY HAD BEEN TOLD.** The Facility Map's *Brittle plastic & glass*
+layer maps all seventeen zones onto the real floor plan (`BPG_ZONE_AREAS`) and reads the SAME
+`pm_schedules.procedure_steps` the cards write. `?layer=bpg` now opens the map already on it, and Zones &
+items links there — **but only for somebody who holds `facility-map`**: Document Control reaches that screen
+on the `qa-inspections` grant and may hold no map grant, and a link that fell back to the first module would
+read as a fault rather than a boundary (D-091). Found by the browser check, not by reading.
+
+**WHAT NOTHING COULD ANSWER IS WHEN THE DRAWING NEEDS RE-ISSUING**, and that is the real question. The
+comparison already existed — D-101 made the seeder report zones that differ from the code's transcription —
+and it went to a deploy log nobody reads. `zoneDrift(db)` is that comparison, moved into `server/bpg-zones.js`
+so **the boot log and the strip on the screen read one function**, and surfaced on Zones & items naming the
+zones, what moved, and that raising a DCR is the next step. Derived on every read, so it clears itself once a
+re-issued drawing is transcribed. **It reports and never rewrites**: the drawing is Document Control's, the
+inventories are the plant's, and this only says the two have parted company. `BPG_ZONE_ITEMS` moved out of
+`cleaning-seed.js` for the same reason — two readers, one transcription.
+
+**COMPARED AS A SET, NOT AS TWO ORDERED LISTS.** Re-ordering an inventory is not a change to what a zone
+holds, and reporting it as one is the noise that gets a drift report ignored. **A RENAME READS AS ONE REMOVED
+AND ONE ADDED, deliberately** — "Monitor" and "Monitors" are obviously the same thing to a person and a guess
+to the app, and guessing about somebody else's inventory is how a drift report starts hiding a real removal.
+
+**THE REVISION HAS ONE OWNER.** `bpgDiagram(db)` reads it from `controlled_forms`, the register Document
+Control maintains, falling back to `shared/form-registry.js` for a database that has not seeded it; the file
+path is derived from it. The day she issues V6 every screen says V6 with no deploy. It was hard-coded in four
+places before this.
+
+**The inventory sheet is printed, not stored, and says so.** Generated from the cards at the moment the
+button is pressed, so it is always current and therefore NOT a controlled record: it is stamped *"not a
+controlled document"*, names FORM 431-01 and its revision as the drawing that is, and footers *uncontrolled
+when printed*. A printout that looked controlled would become a shadow copy — the same doctrine as printing a
+controlled document, for the same reason. A zone not being inspected says so on the paper too.
+
+Verified: `verify:bpgitems` (43 → **65**, live + a real browser at 1280 and 390px; in `verify:all`).
+**The control** drops the drift and the diagram from the payload and fails **10** — the first returning `[]`
+where two zones have moved away from the drawing, and the print sheet losing the revision it names.
