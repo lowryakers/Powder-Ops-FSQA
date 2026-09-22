@@ -308,6 +308,80 @@ t('WITH THE OPTION ON, SOMEBODY ALREADY CURRENT IS SKIPPED AND SOMEBODY WHO IS N
   && skipped?.skipped?.some(x => x.name === 'Gaston Ruiz' && x.why === 'already current'),
   JSON.stringify({ c: (skipped?.created || []).map(x => x.name), s: (skipped?.skipped || []).map(x => `${x.name}:${x.why}`) }));
 
+console.log('\n── AND IT REACHES THE PERSON, not only a screen they may not hold ──');
+// The report: "all of the employees that get assigned training don't have
+// anything appearing on their end." Every part of the mechanism was working
+// and the assignment still reached nobody — three ways, all of them the
+// re-clean badge again. See server/training-notify.js.
+db.prepare(`INSERT OR REPLACE INTO users (id,name,username,role,department,is_active,setup_code,setup_code_expires_at,module_access)
+  VALUES ('ta-none','Nadia Nomods','Nadia Nomods','operator','cleaning',1,'SC-TN',datetime('now','+7 day'),NULL)`).run();
+await signIn('none', 'ta-none', 'Nadia Nomods', 'SC-TN', 'NadiaPW2026!');
+db.prepare(`INSERT OR REPLACE INTO users (id,name,username,role,department,is_active,module_access)
+  VALUES ('ta-other','Otto Other','Otto Other','operator','cleaning',1,'{"production-log":"edit"}')`).run();
+const dmsTo = (uid) => db.prepare(`SELECT COUNT(*) c FROM chat_messages m
+  JOIN chat_channels ch ON ch.id = m.channel_id
+  WHERE ch.kind = 'dm' AND ch.dm_key LIKE ? AND m.body LIKE '%training%'`).get(`%${uid}%`)?.c || 0;
+
+const beforeNone = dmsTo('ta-none'), beforePm = dmsTo('ta-op2');
+const reach = await J(await post('/training/assign', {
+  course_id: pj.id,
+  people: [{ user_id: 'ta-none' }, { user_id: 'ta-other' }, { user_id: 'ta-op2' }],
+}, 'dc'));
+await new Promise(r => setTimeout(r, 500));
+t('all three get a task — nothing here refuses to assign', reach?.created?.length === 3, JSON.stringify(reach?.created?.map(c => c.name)));
+
+const nomods = await get('/pm/operator-tasks', 'none');
+t('THE ACCOUNT WITH NO MODULES CANNOT SEE ITS OWN TASK — a NULL map is an empty account, so every guarded mount refuses the read',
+  nomods.status === 403, `HTTP ${nomods.status}`);
+t('…and the assign screen SAYS SO rather than reporting a clean success',
+  (reach?.unreachable || []).some(u => u.name === 'Nadia Nomods' && u.reach?.code === 'no_modules'),
+  JSON.stringify(reach?.unreachable));
+t('…naming the tick in Settings, never applying it — which module somebody gets is the office\'s decision',
+  /Settings/.test((reach?.unreachable || []).find(u => u.name === 'Nadia Nomods')?.reach?.fix || ''));
+t('SOMEBODY WITH MODULES BUT NO TASK LIST IS A DIFFERENT GAP and is reported as one',
+  (reach?.unreachable || []).some(u => u.name === 'Otto Other' && u.reach?.code === 'message_only'),
+  JSON.stringify((reach?.unreachable || []).map(u => `${u.name}:${u.reach?.code}`)));
+t('and somebody who holds My Tasks is NOT listed — a warning that fires when nothing is wrong is wallpaper',
+  !(reach?.unreachable || []).some(u => u.name === 'Osvaldo Reyes'));
+
+t('THE PERSON IS TOLD, whatever their modules — Messages is not behind the guard and is the one thing every account has',
+  dmsTo('ta-none') > beforeNone && dmsTo('ta-op2') > beforePm,
+  `none ${beforeNone}->${dmsTo('ta-none')}, pm ${beforePm}->${dmsTo('ta-op2')}`);
+const dmBody = db.prepare(`SELECT m.body FROM chat_messages m JOIN chat_channels ch ON ch.id = m.channel_id
+  WHERE ch.kind = 'dm' AND ch.dm_key LIKE '%ta-none%' ORDER BY m.created_at DESC LIMIT 1`).get()?.body || '';
+t('the message names the course and its due date — "you have training" with neither is an errand, not an instruction',
+  /PJ-101/.test(dmBody) && /\d{4}-\d{2}-\d{2}/.test(dmBody), dmBody.replace(/\n/g, ' | ').slice(0, 160));
+t('and it says where to look, because a fortnight out the card sits under a collapsed Upcoming header',
+  /Upcoming/i.test(dmBody));
+
+console.log('\n── chased, on each task\'s own clock ──');
+const { trainingNudges } = await import('../server/training-notify.js');
+const quiet = await trainingNudges(db);
+t('NOBODY IS CHASED THE MORNING AFTER BEING ASKED', quiet.sent === 0, JSON.stringify(quiet));
+
+db.prepare("UPDATE work_orders SET created_at = datetime('now','-3 days') WHERE training_course_id IS NOT NULL AND assigned_to_id = 'ta-none'").run();
+// Give her a second outstanding course, so the grouping is exercised.
+await post('/training/assign', { course_id: forklift.id, people: [{ user_id: 'ta-none' }] }, 'dc');
+db.prepare("UPDATE work_orders SET created_at = datetime('now','-3 days') WHERE training_course_id IS NOT NULL AND assigned_to_id = 'ta-none'").run();
+const beforeChase = dmsTo('ta-none');
+const chased = await trainingNudges(db);
+t('an assignment two days old IS chased', chased.sent === 1 && chased.people === 1, JSON.stringify(chased));
+t('ONE MESSAGE PER PERSON however many courses are outstanding — five DMs in the same second is the noise people dismiss',
+  dmsTo('ta-none') === beforeChase + 1, `${beforeChase} -> ${dmsTo('ta-none')}`);
+const chaseBody = db.prepare(`SELECT m.body FROM chat_messages m JOIN chat_channels ch ON ch.id = m.channel_id
+  WHERE ch.kind = 'dm' AND ch.dm_key LIKE '%ta-none%' ORDER BY m.created_at DESC LIMIT 1`).get()?.body || '';
+t('…and it reads as a reminder naming both, not as a fresh request',
+  /Still outstanding/i.test(chaseBody) && /FORK-101/.test(chaseBody) && /PJ-101/.test(chaseBody),
+  chaseBody.replace(/\n/g, ' | ').slice(0, 170));
+
+const again2 = await trainingNudges(db);
+t('THE CLOCK IS ON THE TASK, NOT GLOBAL — a second pass straight afterwards chases nobody', again2.sent === 0, JSON.stringify(again2));
+
+db.prepare("UPDATE work_orders SET status = 'cancelled' WHERE training_course_id IS NOT NULL AND assigned_to_id = 'ta-none'").run();
+db.prepare("UPDATE work_orders SET last_nudge_at = NULL WHERE assigned_to_id = 'ta-none'").run();
+const cleared = await trainingNudges(db);
+t('and doing the course stops it permanently', cleared.sent === 0, JSON.stringify(cleared));
+
 console.log('\n── in a real browser ──');
 // A person with nothing assigned yet, so the counts on the result screen are
 // unambiguous — everybody above has courses on them by now.
@@ -352,6 +426,21 @@ if (opened) {
   t('and the result reads as courses AND people, not one ambiguous number',
     /2 tasks raised/.test(said) && /2 courses/.test(said) && /1 person/.test(said),
     said.replace(/\n/g, ' | ').slice(0, 160));
+  t('a person who holds My Tasks raises NO warning strip', await page.locator('[data-assign-unreachable]').count() === 0);
+
+  // And the same screen, assigning to somebody the card will never reach.
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  await page.getByRole('button', { name: /Assign/i }).first().click();
+  await page.waitForSelector('[data-assign-modal]');
+  await page.locator('[data-assign-modal] [data-assign-course]').nth(2).check();
+  await page.locator('[data-assign-modal] [data-assign-person="Nadia Nomods"]').check();
+  await page.locator('[data-assign-submit]').click();
+  await page.waitForSelector('[data-assign-created]', { timeout: 15000 });
+  const warned = await page.locator('[data-assign-unreachable]').innerText().catch(() => '');
+  t('BUT AN ACCOUNT WITH NO MODULES IS NAMED ON THE SCREEN THAT ASSIGNED IT — "assigned to 5 people" while three hold no task list is a screen stating something untrue',
+    /Nadia Nomods/.test(warned) && /Settings/.test(warned), warned.replace(/\n/g, ' | ').slice(0, 200));
+  t('…and it still says they were messaged, because that part did work',
+    /messaged/i.test(await page.locator('[data-assign-modal]').innerText()));
 }
 await browser.close();
 

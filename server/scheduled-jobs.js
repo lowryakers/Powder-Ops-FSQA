@@ -175,6 +175,20 @@ async function runDue(db, deps) {
     } catch (e) { console.warn('[jobs] employee document nudges failed:', e.message); }
   }
 
+  // Training handed to somebody and not done. Same cadence and the same
+  // reasoning: the assignment IS a work order, and a work order due in a
+  // fortnight sits in a collapsed "Upcoming" header behind the day's work.
+  // The clock is on each task (work_orders.last_nudge_at), not on this flag,
+  // so a course assigned this morning is not read as already chased.
+  const lastTraining = getFlag(db, 'last_training_nudge_at');
+  if (deps.trainingNudges && (!lastTraining || (now - new Date(lastTraining)) >= 2 * 86400000)) {
+    try {
+      const sent = await deps.trainingNudges(db);
+      setFlag(db, 'last_training_nudge_at', now.toISOString());
+      if (sent.sent) console.log(`[jobs] training nudges: ${sent.sent} of ${sent.people} people with outstanding courses`);
+    } catch (e) { console.warn('[jobs] training nudges failed:', e.message); }
+  }
+
   // Checks that were completed but never produced their controlled record.
   // The amber strip on QA Inspections only reaches whoever opens that screen,
   // which is the same gap the re-clean badge had — so the pile is announced.

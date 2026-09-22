@@ -127,6 +127,40 @@ export function hasExplicitEdit(user, moduleId) {
   return !!(ma && !Array.isArray(ma) && ma[moduleId] === 'edit');
 }
 
+/** The one reader of the stored column. Exported so auth.js and anything that
+ * has to judge SOMEBODY ELSE's access (rather than the caller's) parse it the
+ * same way — two readers of one column is how this file's rules start meaning
+ * two things. */
+export function parseModuleAccess(raw) {
+  if (!raw) return null;
+  if (typeof raw === 'object') return raw;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
+// THE SCREENS THAT SHOW A WORK ORDER. A training assignment IS a work order
+// (see server/training-assign.js), so whether an assignment reaches anybody is
+// the question of whether they hold one of these.
+export const TASK_LIST_MODULES = ['operator', 'pm'];
+
+/**
+ * Can this person open a list that would show a task assigned to them?
+ *
+ * Reported, never enforced and never applied: it exists so a screen assigning
+ * work can say who will not see it, instead of reporting success for an
+ * assignment that lands where nobody looks. Granting the module is the
+ * office's decision in Settings.
+ */
+export function taskListReach(row) {
+  if (!row) return { code: 'no_account', label: 'no account' };
+  const user = { ...row, module_access: parseModuleAccess(row.module_access) };
+  if (user.role === 'admin') return { code: 'task_list', label: 'My Tasks' };
+  if (user.module_access == null) {
+    return { code: 'no_modules', label: 'no modules assigned', fix: 'Assign modules in Settings \u2192 Users \u2014 until then this account can only use Messages.' };
+  }
+  if (TASK_LIST_MODULES.some(m => moduleLevel(user, m))) return { code: 'task_list', label: 'My Tasks' };
+  return { code: 'message_only', label: 'no task list', fix: 'Tick My Tasks (operator) or Task Center (pm) in Settings \u2192 Users, or they will only ever see it in Messages.' };
+}
+
 // Express middleware. Writes are gated on edit access to any of the router's
 // modules; GETs pass for any MAPPED user (view-level cross-module reads are
 // load-bearing — the warehouse reading QA's film inspections is the worked

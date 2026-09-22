@@ -3795,6 +3795,14 @@ function runMigrations() {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_work_orders_supplier_qual
     ON work_orders(supplier_qualification_id)`);
 
+  // WHEN THIS TASK'S ASSIGNEE WAS LAST CHASED — a per-task clock, deliberately,
+  // not a global flag. One shared `last_..._nudge_at` is what made every QA
+  // correction in the plant share one timer (D-083); a course assigned this
+  // morning must not read as chased because a different one was chased
+  // yesterday. Read today by the training nudge; generic on purpose, because
+  // the next task kind that has to be chased will want exactly this column.
+  addColumnIfMissing('work_orders', 'last_nudge_at', 'TEXT');
+
   // ── Checks that file a record (D-060) ─────────────────────────────────────
   // Three programs whose scheduled check used to complete with nothing filed.
   // One row per site × test for EMP, because that is how the lab reports it;

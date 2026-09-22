@@ -922,8 +922,29 @@ function AssignModal({ courses, users, onClose, onAssigned }) {
               {' '}to {result.people_assigned} {result.people_assigned === 1 ? 'person' : 'people'}.
             </p>
             <p className="text-xs text-gray-600">
-              They are on those task lists now, due {due}. Each record files itself when the task is completed.
+              They are on those task lists now, due {due}, and each person has been messaged. The record files
+              itself when the task is completed.
             </p>
+            {/* WHO WILL NOT SEE IT, named here rather than discovered a
+                fortnight later. The task is real and the ReadyBot message
+                still reaches them — Messages is the one thing every account
+                has — but nothing in ReadyDoc will show them the card until
+                somebody ticks the module. It says which tick; it does not
+                apply it. */}
+            {!!result.unreachable?.length && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 space-y-1.5" data-assign-unreachable={result.unreachable.length}>
+                <p className="text-xs font-semibold text-amber-900">
+                  {result.unreachable.length === 1 ? 'One person has' : `${result.unreachable.length} people have`} no task list
+                  — they have been messaged, but the card will not appear for them:
+                </p>
+                {result.unreachable.map(u => (
+                  <p key={u.user_id || u.name} className="text-xs text-amber-900">
+                    <span className="font-medium">{u.name}</span> — {u.reach?.label}
+                    {u.reach?.fix ? <span className="block text-amber-800">{u.reach.fix}</span> : null}
+                  </p>
+                ))}
+              </div>
+            )}
             {/* Grouped BY COURSE, because five courses across eight people is
                 forty lines otherwise and a wall of them is read by nobody. */}
             {!!result.skipped?.length && (

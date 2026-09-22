@@ -1,5 +1,6 @@
 import { getDb } from '../db.js';
 import { passwordExpired } from '../password-policy.js';
+import { parseModuleAccess } from '../module-access.js';
 
 const SESSION_QUERY = `
   SELECT u.id, u.name, u.role, u.department, u.module_access, u.is_active, u.is_external, u.password_changed_at
@@ -186,15 +187,6 @@ function lookupSession(token) {
     is_external: !!row.is_external,
     password_changed_at: row.password_changed_at,
   };
-}
-
-function parseModuleAccess(raw) {
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
 }
 
 export function authenticate(req, res, next) {

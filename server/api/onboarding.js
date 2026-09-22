@@ -44,6 +44,7 @@ import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
 import { I9_EDITION, i9KnownTitle } from '../../shared/i9-documents.js';
 import { assignNewHireTraining } from '../training-assign.js';
+import { tellAssignee } from '../training-notify.js';
 import { revokeSessions } from './sessions.js';
 import { botDm, postMessageAs } from './comms.js';
 import { pushToUser } from '../push.js';
@@ -762,6 +763,15 @@ router.post('/:id/complete', (req, res) => {
     try {
       const u = db.prepare('SELECT id, name, role, department FROM users WHERE id = ?').get(userId);
       if (u) training = assignNewHireTraining(db, { user: u, assigned_by: req.user?.name || 'ReadyDoc' });
+      // ONE message naming the whole set, never one per course: a new starter
+      // owes four or five at once and five DMs in the same second is the noise
+      // people learn to dismiss. Fire-and-forget — the packet is the record.
+      if (training?.created?.length) {
+        tellAssignee(db, {
+          user_id: u.id, assigned_by: req.user?.name || 'The office', reason: 'New hire',
+          items: training.created.map(c => ({ course: { title: c.course }, due_date: c.due_date })),
+        }).catch(() => {});
+      }
     } catch (e) {
       // Same standing as the roster seed: the packet is the record, this is a
       // convenience on top of it and must never fail the completion.

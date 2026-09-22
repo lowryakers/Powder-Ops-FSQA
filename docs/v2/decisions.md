@@ -3938,3 +3938,70 @@ controlled document, for the same reason. A zone not being inspected says so on 
 Verified: `verify:bpgitems` (43 → **65**, live + a real browser at 1280 and 390px; in `verify:all`).
 **The control** drops the drift and the diagram from the payload and fails **10** — the first returning `[]`
 where two zones have moved away from the drawing, and the print sheet losing the revision it names.
+
+---
+
+## D-105 — The training assignment was silent, and three things made it invisible (2026-09-22)
+
+Daniela: *"all of the employees that get assigned training don't have anything appearing on their end. Does
+something need to be updated on our end before those show?"*
+
+**Every part of the mechanism was working.** The work order is written, it carries `training_course_id`, it
+is on the assignee's own `/pm/operator-tasks` (the endpoint matches `assigned_to_id` as well as the
+department, D-094), completing it files the training record, and `verify:trainingassign` has asserted all of
+that since the feature shipped. The assignment still reached nobody. Reproduced on a fresh database rather
+than reasoned about, and there are **three causes, which compound**:
+
+1. **AN ACCOUNT WITH NO MODULES cannot see its own task.** A NULL `module_access` map is an empty account
+   (2026-08-13), so `/api/pm` answers **403** and the person gets the no-modules welcome screen. The task
+   exists and no screen in the app will ever show it to them.
+2. **AN ACCOUNT WITH MODULES BUT NEITHER My Tasks NOR the Task Center** holds no screen that asks for work
+   orders. The API answers them perfectly well; there is nowhere to ask from. Measured: a map of
+   `{"production-log":"edit"}` gets HTTP 200 and has no nav item that would ever make the call.
+3. **EVEN WITH THE SCREEN**, the default due date is fourteen days out, so the card lands under *Upcoming* —
+   which `OperatorView` collapses by default once the day's work runs past five tasks. Present, correct, and
+   behind a closed header.
+
+So this is **the 72-hour re-clean badge again, in its fourth place**: an ask that lives only on a screen
+reaches whoever opens that screen, which is not reliably the person who has to act. D-083, D-084 and D-085
+were the same defect and the same answer.
+
+**THE ANSWER IS TO TELL THE PERSON** (`server/training-notify.js`). A ReadyBot DM plus a push the moment a
+course is assigned, carrying the course, its code, the due date, who assigned it and why — and saying to
+look under *Upcoming*, because that is where a fortnight-out card is. **It is the only channel that clears
+all three causes**, because Messages is not behind the module guard and is the one thing every account has.
+Fire-and-forget after the response is composed: a comms outage must never fail an assignment that is already
+written (the `notifyQaAction` rule).
+
+**ONE MESSAGE PER PERSON, however many courses land at once.** A new starter owes four or five the moment
+their account exists, and five DMs in the same second is the noise people learn to dismiss — which is
+precisely what must not happen to this one. The onboarding path sends the same single grouped message.
+
+**Chased every other day, on EACH TASK'S OWN CLOCK.** `work_orders.last_nudge_at` — a new, generic, nullable
+column, not a global `app_settings` flag. One shared flag is what made every QA correction in the plant share
+one timer (D-083); a course assigned this morning must not read as chased because a different one was chased
+yesterday. Only assignments that have sat **two days or more**, so nobody is chased the morning after being
+asked; the reminder reads as a reminder; it goes quiet by itself when the query finds nothing to say.
+
+**AND THE SCREEN THAT ASSIGNED IT NOW SAYS WHO WILL NOT SEE IT.** "3 tasks raised to 3 people" while two of
+them hold no task list is a screen stating something untrue. `taskListReach()` (in `module-access.js`, beside
+the rules it reads) answers `task_list` / `message_only` / `no_modules` / `by_name`, and the result screen
+names those people **with the tick to make in Settings**. It reports; **it never applies** — which module
+somebody gets is the office's decision, and quietly granting My Tasks to make a training assignment land
+would be this codebase's own two-mechanisms defect in a new place.
+
+**`parseModuleAccess` moved into `module-access.js`** and `middleware/auth.js` imports it. It had been a
+private copy in auth.js, and judging *somebody else's* access needs the same reader — two readers of one
+column is how that file's rules start meaning two things.
+
+Nothing here widens access: no module is granted, no due date moves, and a course still cannot be completed
+from a DM.
+
+Verified: `verify:trainingassign` (72 → **90**, live + a real browser at 1280px; in `verify:all`).
+**The control is the state the plant was actually in** — the assignment silent and the screen reporting a
+clean success — and fails **10**: nobody told, nothing chased, and "assigned to 3 people" printed over two
+accounts that could not see it.
+
+**What the office still has to do, and the app now says so:** an employee needs *My Tasks* (or the Task
+Center) ticked in Settings → Users before the card appears for them. That was the honest answer to Daniela's
+question; the change is that nobody has to ask it.

@@ -70,6 +70,7 @@ import reimbursementRoutes from './server/api/reimbursements.js';
 import bankingRoutes from './server/api/banking.js';
 import apDropRoutes from './server/api/ap-drop.js';
 import employeeDocumentRoutes, { employeeDocumentNudges } from './server/api/employee-documents.js';
+import { trainingNudges } from './server/training-notify.js';
 import activityRoutes from './server/api/activity.js';
 import qmsRoutes, { importCsv as importQmsCsv } from './server/api/qms.js';
 import { getType as getQmsType, MAINTENANCE_ITEM_GROUPS } from './server/qms-config.js';
@@ -2076,7 +2077,7 @@ server.listen(PORT, '0.0.0.0', () => {
   backfillInvoiceText().catch(e => console.warn('[invoices] backfill error:', e.message));
   backfillFinanceFileText().catch(e => console.warn('[finance] backfill error:', e.message));
   // Recurring jobs: Friday auto-backup to R2, Monday expiry digest to #quality.
-  startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges, qaActionNudges, employeeDocumentNudges, partnerReminderNudges, recordBackfillNudge, supplierReviewNudge, sendFlashReport, sendCleanupDigest, cleanupDigest, CLEANUP_BUSY_THRESHOLD, sendEodMissedDigest, eodMissedDigest, EOD_BUSY_THRESHOLD });
+  startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges, qaActionNudges, employeeDocumentNudges, trainingNudges, partnerReminderNudges, recordBackfillNudge, supplierReviewNudge, sendFlashReport, sendCleanupDigest, cleanupDigest, CLEANUP_BUSY_THRESHOLD, sendEodMissedDigest, eodMissedDigest, EOD_BUSY_THRESHOLD });
   startReminderLoop(db);
   // Generate any due document-review tasks on startup (idempotent; also runs on
   // every operator-tasks fetch).

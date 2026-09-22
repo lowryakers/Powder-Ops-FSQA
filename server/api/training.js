@@ -14,6 +14,7 @@ import { extractInvoiceText } from '../invoice-text.js';
 import { requireRole } from '../middleware/auth.js';
 import { addMonths, dueDateFor, supersedeOlder, courseTrainingRevision, insertCompletion, gradeTestAttempt } from '../training-records.js';
 import { assignTraining } from '../training-assign.js';
+import { tellAssignee, assignmentReach } from '../training-notify.js';
 import { trainingSnapshot, cellFor, personTraining, trainingRoster } from '../training-status.js';
 import { documentCoverage, applyCourseLinks, TRAINABLE_TYPES, TYPE_LABEL } from '../training-documents.js';
 import { evaluationFor, missingToSign, gradeEvaluation, normalizeAnswers, EVALUATION_REVISION, TRUCK_TYPES, RESULTS } from '../practical-evaluations.js';
@@ -194,11 +195,42 @@ router.post('/assign', (req, res) => {
   }
   if (!courses.length) return res.status(404).json({ error: unavailable[0]?.why || 'Course not found or retired.' });
 
+  // ── the assignment has to REACH the person ────────────────────────────────
+  // It did not, and every part of the mechanism was working. See
+  // server/training-notify.js for the three ways a correct work order landed
+  // where nobody looks. One DM per PERSON, however many courses went at once.
+  const byPerson = new Map();
+  for (const c of created) {
+    const key = c.user_id || `name:${c.name}`;
+    if (!byPerson.has(key)) byPerson.set(key, { user_id: c.user_id, name: c.name, items: [] });
+    byPerson.get(key).items.push({ course: courses.find(x => x.id === c.course_id) || { title: c.course }, due_date: c.due_date });
+  }
+  // Fire-and-forget, after the response is composed: a comms outage must never
+  // fail an assignment that is already written, the rule notifyQaAction follows.
+  for (const p of byPerson.values()) {
+    if (!p.user_id) continue;
+    tellAssignee(db, { user_id: p.user_id, items: p.items, assigned_by: req.user?.name || 'The office', reason: note })
+      .catch(() => {});
+  }
+
+  // AND WHO WILL NOT SEE IT. "Assigned to 5 people" while three of them hold
+  // no task list is a screen stating something untrue; this names the tick in
+  // Settings rather than applying it — which module somebody gets is the
+  // office's decision, not a side effect of assigning a course.
+  const reachOf = new Map();
+  const withReach = created.map(c => {
+    if (!reachOf.has(c.user_id || '')) reachOf.set(c.user_id || '', assignmentReach(db, c.user_id));
+    return { ...c, reach: reachOf.get(c.user_id || '') };
+  });
+  const unreachable = [...new Map(withReach
+    .filter(c => c.reach?.code !== 'task_list')
+    .map(c => [c.user_id || c.name, { user_id: c.user_id, name: c.name, reach: c.reach }])).values()];
+
   // THREE DIFFERENT COUNTS, because one number cannot answer the question.
   // Fifteen tasks is three courses to five people, and the screen has to be
   // able to say all three — `created.length` alone reads as fifteen people.
   res.status(201).json({
-    created, skipped, courses, unavailable,
+    created: withReach, skipped, courses, unavailable, unreachable,
     course: courses[0],  // what a single-course caller has always read
     people_assigned: new Set(created.map(c => c.user_id || c.name)).size,
   });

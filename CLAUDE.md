@@ -3221,6 +3221,39 @@ carries no positions.
   controlled would become a shadow copy.
 - `verify:bpgitems` (43 → **65**). **The control drops drift + diagram from the payload and fails 10.**
 
+## An assignment that reached nobody, and the three things that hid it (D-105)
+`server/training-notify.js` (`tellAssignee`, `trainingNudges`, `assignmentReach`), `taskListReach()` +
+`parseModuleAccess()` in `module-access.js`, `work_orders.last_nudge_at`, the `unreachable` block on the
+assign result. Daniela: *"all of the employees that get assigned training don't have anything appearing on
+their end."* **Every part of the mechanism was working** — the work order is written, it is on the assignee's
+own `/pm/operator-tasks`, completing it files the record, all asserted since the feature shipped. Reproduced
+on a fresh database: **three causes, compounding.**
+- **NO MODULES ⇒ 403 ON ITS OWN TASK.** A NULL `module_access` map is an empty account, so `/api/pm` refuses
+  the read and the person gets the welcome screen. **Modules but neither My Tasks nor the Task Center** is a
+  different gap: HTTP 200, and no nav item that would ever make the call. **And even with the screen**, a
+  due date fourteen days out lands under *Upcoming*, which `OperatorView` collapses once the day's work runs
+  past five tasks. Present, correct, behind a closed header.
+- **THE RE-CLEAN BADGE, FOURTH PLACE. The answer is to TELL THE PERSON** — ReadyBot DM + push on assign,
+  naming the course, the due date, who asked and *where to look*. It is the only channel that clears all
+  three, because **Messages is not behind the module guard and is the one thing every account has.**
+  Fire-and-forget: a comms outage never fails an assignment already written.
+- **ONE MESSAGE PER PERSON however many courses land at once** — a new starter owes four or five the moment
+  their account exists, and five DMs in one second is the noise people dismiss. Onboarding sends the same
+  grouped message.
+- **Chased every other day on EACH TASK'S OWN CLOCK** (`work_orders.last_nudge_at`, generic and nullable —
+  not a global flag, which is what made every QA correction share one timer in D-083). Only assignments two
+  days old or more, so nobody is chased the morning after; quiet by itself once the pile clears.
+- **THE ASSIGN SCREEN NAMES WHO WILL NOT SEE IT.** "3 tasks to 3 people" over two accounts with no task list
+  is a screen stating something untrue. `taskListReach()` answers `task_list` / `message_only` / `no_modules`
+  / `by_name` and the result names those people **with the tick to make in Settings** — it reports, it never
+  applies. Granting a module to make a training assignment land is the two-mechanisms defect in a new place.
+- **`parseModuleAccess` moved out of `middleware/auth.js`** into `module-access.js`: judging somebody ELSE's
+  access needs the same reader, and two readers of one column is how those rules start meaning two things.
+- **What the office still has to do:** tick *My Tasks* (or Task Center) for an employee in Settings → Users.
+  That was the honest answer; the change is that nobody has to ask the question.
+- `verify:trainingassign` (72 → **90**, live + browser). **The control is the state the plant was in** —
+  assignment silent, screen reporting a clean success — and fails **10**.
+
 ## Several courses in one act (D-100)
 `POST /training/assign` takes `course_ids` beside the single `course_id`; `AssignModal` picks courses as tick
 boxes rather than a dropdown. A warehouse hire owes four courses, and four passes through one modal is how
