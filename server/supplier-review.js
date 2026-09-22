@@ -155,8 +155,8 @@ export function supplierReviewRecipients(db) {
 }
 
 export async function supplierReviewNudge(db, deps = {}) {
-  const { botDm, pushToUser } = deps;
-  if (!botDm) return { sent: 0 };
+  const { botDm, pushToUser, postMessageAs } = deps;
+  if (!botDm || !postMessageAs) return { sent: 0 };
   let s;
   try { s = reviewStatus(db); } catch { return { sent: 0 }; }
   const overdue = s.overdue.length;
@@ -184,7 +184,16 @@ export async function supplierReviewNudge(db, deps = {}) {
 
   let sent = 0;
   for (const p of people) {
-    try { await botDm(p.id, body); sent += 1; } catch { /* one failure must not stop the rest */ }
+    // `botDm(db, userId)` OPENS the conversation and returns it; posting is
+    // postMessageAs. Called as `botDm(p.id, body)` it threw on every recipient
+    // and the catch counted the send anyway, so this digest had never once
+    // been delivered — a notifier that reports `sent` for a message nobody got
+    // is worse than one that is plainly off.
+    try {
+      const { bot, dm } = botDm(db, p.id);
+      await postMessageAs(db, dm, bot, body);
+      sent += 1;
+    } catch { /* one failure must not stop the rest */ }
     try { await pushToUser?.(p.id, { title: 'Supplier reviews', body: lines[0].replace(/\*/g, '') }); } catch { /* best effort */ }
   }
   return { sent, overdue, never_qualified: never };

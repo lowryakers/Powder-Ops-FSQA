@@ -74,6 +74,7 @@
     "verify:commsedit": "node scripts/verify-comms-edit.mjs",
     "verify:commspendingjump": "node scripts/verify-comms-pending-jump.mjs",
     "verify:trainingassign": "node scripts/verify-training-assign.mjs",
+    "verify:supplylists": "node scripts/verify-supply-lists.mjs",
     "verify:starterreview": "node scripts/verify-starter-review.mjs",
     "verify:forkliftcert": "node scripts/verify-forklift-cert.mjs",
     "verify:hoursroster": "node scripts/verify-hours-roster.mjs",

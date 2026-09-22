@@ -4729,6 +4729,59 @@ function runMigrations() {
     // arrives in three deliveries is three entries, so "when did the rest
     // turn up" is answerable.
     addColumnIfMissing('supply_orders', 'receipt_history', 'TEXT');
+
+    // ── Groupings, and the standing lists that recur (D-106) ────────────────
+    // `tags` is a JSON array and `label` is now the MIRROR of its first entry
+    // (the mo_lines line-0 rule), so every filter, form and export that reads
+    // `label` keeps working while a request can belong to more than one group.
+    // Matched with json_each, never LIKE: "QA" must not match "Quality".
+    addColumnIfMissing('supply_orders', 'tags', 'TEXT');
+    // Provenance: which cycle of which standing list filed this request.
+    addColumnIfMissing('supply_orders', 'list_cycle_id', 'TEXT');
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS supply_lists (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        cadence TEXT NOT NULL DEFAULT 'monthly' CHECK (cadence IN ('weekly','monthly','quarterly')),
+        day INTEGER NOT NULL DEFAULT 1,
+        tags TEXT,
+        active INTEGER NOT NULL DEFAULT 1,
+        notes TEXT,
+        created_by TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS supply_list_items (
+        id TEXT PRIMARY KEY,
+        list_id TEXT NOT NULL,
+        item_name TEXT NOT NULL,
+        qty REAL, uom TEXT, supplier TEXT, link TEXT, notes TEXT,
+        sort INTEGER NOT NULL DEFAULT 0,
+        active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_supply_list_items ON supply_list_items(list_id, active, sort);
+      -- One row per list per period. UNIQUE is the whole idempotence story:
+      -- the hourly job, a redeploy in the same hour and somebody pressing the
+      -- button all try to open the same cycle, and there is one of it.
+      CREATE TABLE IF NOT EXISTS supply_list_cycles (
+        id TEXT PRIMARY KEY,
+        list_id TEXT NOT NULL,
+        period TEXT NOT NULL,
+        due_date TEXT NOT NULL,
+        opened_at TEXT NOT NULL DEFAULT (datetime('now')),
+        closed_at TEXT, closed_by TEXT,
+        -- 'nothing_needed' is a REAL ANSWER, not an absence: a month somebody
+        -- looked at and skipped is a different fact from one nobody opened.
+        outcome TEXT CHECK (outcome IN ('ordered','nothing_needed')),
+        note TEXT,
+        orders_created INTEGER NOT NULL DEFAULT 0,
+        last_nudge_at TEXT,
+        UNIQUE (list_id, period)
+      );
+      CREATE INDEX IF NOT EXISTS idx_supply_cycles_open ON supply_list_cycles(closed_at, due_date);
+    `);
   } catch (e) {
     console.warn('[db] office ops tables unavailable:', e.message);
   }

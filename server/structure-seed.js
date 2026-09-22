@@ -46,6 +46,17 @@ export function seedStructureLists(db) {
     options: BPG_ZONES,
   });
 
+  // Supply-order groupings. These five were a hard-coded array in
+  // SupplyOrdersPanel.jsx ("For": Warehouse/Production, Cleaning, …), which
+  // meant adding a group was a deploy. They seed here unchanged so day one is
+  // identical, and adding "Lab" is now a Settings task.
+  added += ensureList(db, {
+    key: 'supply_tags',
+    label: 'Supply Orders — Groups',
+    description: 'What a supply request is for. A request can carry more than one; the groups are what standing lists and spend are read by.',
+    options: ['Warehouse/Production', 'Cleaning', 'Break room', 'Maintenance', 'Office'],
+  });
+
   // Meeting types. Management Review and the Food Safety Team meeting are SQF
   // records rather than preferences, so they ship; everything else the plant
   // holds regularly is here as a starting point and editable in Settings.

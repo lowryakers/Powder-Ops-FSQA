@@ -3,6 +3,7 @@ import { useApiGet } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { hasExplicitGrant } from '../../utils/permissions';
 import { OrderForm, QuickReorder } from './SupplyOrdersPanel.jsx';
+import StandingLists from './StandingLists.jsx';
 import { AdjustmentForm } from './TimeTrackingPanel.jsx';
 
 // Form-only pseudo-module for supervisors: submit a supply order or an
@@ -27,6 +28,11 @@ export default function OfficeRequestsPanel() {
 
   const tabs = [
     canSupply && ['supply', 'Supply Order'],
+    // Read-only here: knowing the break-room list exists is how somebody stops
+    // filing a one-off for paper towels. The admin-only Supply Orders module
+    // is where it is edited, and StandingLists renders no control this account
+    // would be refused.
+    canSupply && ['lists', 'Standing lists'],
     canTime && ['time', 'Time Tracking'],
   ].filter(Boolean);
   const active = tabs.some(([v]) => v === tab) ? tab : tabs[0]?.[0];
@@ -50,6 +56,7 @@ export default function OfficeRequestsPanel() {
           <QuickReorder items={items} onCreated={bump} />
         </div>
       )}
+      {active === 'lists' && <StandingLists />}
       {active === 'time' && <AdjustmentForm employees={employees} onCreated={() => {}} />}
       {!active && <p className="text-sm text-gray-500">You don&apos;t have a request form yet. Ask an admin to grant one in Settings.</p>}
     </div>

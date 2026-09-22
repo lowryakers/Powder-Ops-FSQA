@@ -7,6 +7,11 @@ import { aiEnabled, translateText } from '../ai.js';
 import { extractInvoiceText } from '../invoice-text.js';
 import { readInvoiceFigures } from '../invoice-figures.js';
 import { USED_UP_REASON } from '../qms-config.js';
+import { listOptions } from '../custom-fields.js';
+import { CADENCES, periodOf, dueDateOf, cyclesDue, cycleAge, normalizeTags } from '../supply-lists.js';
+import { botDm, postMessageAs } from './comms.js';
+import { pushToUser } from '../push.js';
+import { readyDocOrigin } from '../links.js';
 
 // Office Ops: supply ordering + time tracking (replaces two Monday boards).
 // Submitting is open to supervisors + admins (or anyone explicitly granted the
@@ -105,6 +110,7 @@ function orderShape(row, extra = {}) {
   const state = received <= 0 ? 'none'
     : (!qtyKnown || received >= qty) ? 'complete'
       : 'partial';
+  const tags = parseJson(row.tags, null);
   return {
     ...row,
     qty_received: received,
@@ -112,8 +118,75 @@ function orderShape(row, extra = {}) {
     outstanding,
     receipt_state: state,
     receipt_history: Array.isArray(history) ? history : [],
+    // A row filed before tags existed carries its single `label`, so the chips
+    // and the group filter cover the whole history with no backfill.
+    tags: Array.isArray(tags) && tags.length ? tags : (row.label ? [row.label] : []),
     ...extra,
   };
+}
+
+// ── Groups, and the standing lists that recur (D-106) ────────────────────────
+const today = () => new Date().toISOString().slice(0, 10);
+/** The groups in use: the managed list, so adding one is a Settings task. */
+function knownTags(db) {
+  try { return listOptions(db, 'supply_tags').map(o => o.value); } catch { return []; }
+}
+/**
+ * `tags` is the fact; `label` is its FIRST ENTRY MIRRORED (the mo_lines line-0
+ * rule), written in the same statement and nowhere else. Every filter, form
+ * and export that already reads `label` keeps working, and a request can now
+ * belong to more than one group.
+ */
+function tagFields(db, body) {
+  if (body?.tags === undefined && body?.label === undefined) return null;
+  const raw = body?.tags !== undefined ? body.tags : (body.label ? [body.label] : []);
+  const tags = normalizeTags(raw, knownTags(db));
+  return { tags: tags.length ? JSON.stringify(tags) : null, label: tags[0] || null };
+}
+function listShape(db, row) {
+  const items = db.prepare('SELECT * FROM supply_list_items WHERE list_id = ? AND active = 1 ORDER BY sort, item_name').all(row.id);
+  const open = db.prepare('SELECT * FROM supply_list_cycles WHERE list_id = ? AND closed_at IS NULL ORDER BY due_date LIMIT 1').get(row.id);
+  const last = db.prepare('SELECT * FROM supply_list_cycles WHERE list_id = ? AND closed_at IS NOT NULL ORDER BY closed_at DESC LIMIT 1').get(row.id);
+  const t = today();
+  return {
+    ...row,
+    active: !!row.active,
+    tags: parseJson(row.tags, []) || [],
+    items,
+    item_count: items.length,
+    // DERIVED on every read, never a stored "next run" — a stored date drifts
+    // the first time somebody changes the cadence, and then the list is either
+    // asked about twice or silently never again.
+    next_due: items.length && row.active ? dueDateOf(row.cadence, row.day, t) : null,
+    next_period: items.length && row.active ? periodOf(row.cadence, t) : null,
+    open_cycle: open ? { ...open, days_late: cycleAge(open, t) } : null,
+    last_cycle: last || null,
+  };
+}
+
+/**
+ * Open the cycles that have come due. Idempotent by construction — the UNIQUE
+ * on (list_id, period) is what makes the hourly job, a redeploy in the same
+ * hour and somebody pressing the button all produce one cycle.
+ */
+export function openSupplyCycles(db, on = today()) {
+  // The IIFE form, not `let x = []; try { x = … }`: both branches assign, so
+  // the initialiser is never read and the linter is right to refuse it.
+  const lists = (() => {
+    try {
+      return db.prepare(`SELECT l.*, (SELECT COUNT(*) FROM supply_list_items i
+        WHERE i.list_id = l.id AND i.active = 1) AS item_count FROM supply_lists l`).all();
+    } catch { return null; }
+  })();
+  if (!lists) return { opened: 0, cycles: [] };
+  const existing = new Set(db.prepare('SELECT list_id, period FROM supply_list_cycles').all()
+    .map(c => `${c.list_id}:${c.period}`));
+  const due = cyclesDue(lists, on, existing);
+  const ins = db.prepare(`INSERT OR IGNORE INTO supply_list_cycles (id, list_id, period, due_date)
+    VALUES (?, ?, ?, ?)`);
+  let opened = 0;
+  for (const c of due) { if (ins.run(uuid(), c.list_id, c.period, c.due_date).changes) opened += 1; }
+  return { opened, cycles: due };
 }
 
 // Index any invoices uploaded before content indexing existed (or whose
@@ -143,7 +216,7 @@ router.get('/supply/items', (req, res) => {
   if (!requireSubmit(req, res, 'supply')) return;
   const db = getDb();
   const rows = db.prepare(`
-    SELECT item_name, supplier, link, uom, label, qty, COUNT(*) AS times_ordered, MAX(submitted_at) AS last_ordered
+    SELECT item_name, supplier, link, uom, label, tags, qty, COUNT(*) AS times_ordered, MAX(submitted_at) AS last_ordered
     FROM supply_orders GROUP BY LOWER(item_name), LOWER(COALESCE(supplier,'')) ORDER BY times_ordered DESC, last_ordered DESC LIMIT 400
   `).all();
   res.json(rows);
@@ -152,12 +225,13 @@ router.get('/supply/items', (req, res) => {
 router.post('/supply/orders', (req, res) => {
   if (!requireSubmit(req, res, 'supply')) return;
   const db = getDb();
-  const { item_name, qty, uom, link, supplier, urgent, label, notes } = req.body || {};
+  const { item_name, qty, uom, link, supplier, urgent, notes } = req.body || {};
   if (!item_name || !String(item_name).trim()) return res.status(400).json({ error: 'Item name is required' });
   const id = uuid();
-  db.prepare(`INSERT INTO supply_orders (id, item_name, qty, uom, link, supplier, urgent, label, notes, requested_by, requested_by_id)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(id, String(item_name).trim(), qty ?? null, uom || null, link || null, supplier || null, urgent ? 1 : 0, label || null,
+  const tf = tagFields(db, req.body) || { tags: null, label: null };
+  db.prepare(`INSERT INTO supply_orders (id, item_name, qty, uom, link, supplier, urgent, label, tags, notes, requested_by, requested_by_id)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(id, String(item_name).trim(), qty ?? null, uom || null, link || null, supplier || null, urgent ? 1 : 0, tf.label, tf.tags,
       notes || null, req.user.name, req.user.id);
   const created = db.prepare('SELECT * FROM supply_orders WHERE id = ?').get(id);
   logAudit(req.user, 'create', 'supply_order', id, { item_name, qty, supplier, urgent: !!urgent }, null, created, item_name);
@@ -173,6 +247,15 @@ router.get('/supply/orders', (req, res) => {
   const params = [];
   if (status) { sql += ' AND status = ?'; params.push(status); }
   if (q && String(q).trim()) { sql += ' AND (item_name LIKE ? OR supplier LIKE ? OR label LIKE ?)'; params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+  // A GROUP IS MATCHED AS A WHOLE ELEMENT, never as a substring: "Office" must
+  // not pull in a free group somebody typed as "Front Office". json_each on a
+  // NULL column yields no rows, so the `label` half is what covers every
+  // request filed before tags existed.
+  if (req.query.tag) {
+    sql += ` AND (LOWER(COALESCE(label,'')) = LOWER(?) OR EXISTS (
+      SELECT 1 FROM json_each(supply_orders.tags) t WHERE LOWER(t.value) = LOWER(?)))`;
+    params.push(req.query.tag, req.query.tag);
+  }
   sql += " ORDER BY CASE status WHEN 'new' THEN 0 WHEN 'ordered' THEN 1 WHEN 'received' THEN 2 ELSE 3 END, urgent DESC, submitted_at DESC LIMIT 1000";
   const rows = db.prepare(sql).all(...params);
   // One lookup for every linked invoice rather than a query per row.
@@ -272,9 +355,14 @@ router.put('/supply/orders/:id', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM supply_orders WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Order not found' });
-  const fields = ['item_name', 'qty', 'uom', 'link', 'supplier', 'urgent', 'label', 'status', 'total', 'eta', 'invoice_link', 'invoice_id', 'notes'];
+  const fields = ['item_name', 'qty', 'uom', 'link', 'supplier', 'urgent', 'status', 'total', 'eta', 'invoice_link', 'invoice_id', 'notes'];
   const patch = {};
   for (const f of fields) if (req.body[f] !== undefined) patch[f] = f === 'urgent' ? (req.body[f] ? 1 : 0) : req.body[f];
+  // `label` is written only here, as the mirror of the first tag — an edit
+  // that set one and not the other is how the chips and the group filter start
+  // disagreeing about what a request is for.
+  const tf = tagFields(db, req.body);
+  if (tf) Object.assign(patch, tf);
   if (!Object.keys(patch).length) return res.json(orderShape(existing));
   // qty_received is the fact and receipts are its only writer. An edit that
   // would contradict it is refused and names the door: a delivery miscounted
@@ -327,9 +415,9 @@ router.post('/supply/orders/:id/reorder', (req, res) => {
   if (!src) return res.status(404).json({ error: 'Order not found' });
   const id = uuid();
   const qty = req.body?.qty ?? src.qty;
-  db.prepare(`INSERT INTO supply_orders (id, item_name, qty, uom, link, supplier, urgent, label, notes, requested_by, requested_by_id)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(id, src.item_name, qty, src.uom, src.link, src.supplier, req.body?.urgent ? 1 : 0, src.label, req.body?.notes || null, req.user.name, req.user.id);
+  db.prepare(`INSERT INTO supply_orders (id, item_name, qty, uom, link, supplier, urgent, label, tags, notes, requested_by, requested_by_id)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(id, src.item_name, qty, src.uom, src.link, src.supplier, req.body?.urgent ? 1 : 0, src.label, src.tags, req.body?.notes || null, req.user.name, req.user.id);
   const created = db.prepare('SELECT * FROM supply_orders WHERE id = ?').get(id);
   logAudit(req.user, 'create', 'supply_order', id, { reorder_of: src.id, item_name: src.item_name }, null, created, src.item_name);
   res.status(201).json(orderShape(created));
@@ -711,6 +799,230 @@ function openSuggestions(db) {
   }
   return [...byItem.values()].sort((a, b) => (b.last_reported || '').localeCompare(a.last_reported || ''));
 }
+
+/**
+ * Who is told a standing list has come due.
+ *
+ * The office — whoever actually orders. One function, exported, called by the
+ * sender AND by the Settings screen that describes it, because a registry with
+ * its own copy of the rule is what drifted in D-086. A stored list wins; unset
+ * is never nobody.
+ */
+export function supplyCycleRecipients(db) {
+  let ids = null;
+  try { ids = JSON.parse(db.prepare("SELECT value FROM app_settings WHERE key = 'supply_cycle_recipients'").get()?.value || 'null'); } catch { ids = null; }
+  const all = db.prepare("SELECT id, name, role, department FROM users WHERE is_active = 1 AND name != 'ReadyBot' AND role != 'auditor'").all();
+  if (Array.isArray(ids) && ids.length) {
+    const chosen = all.filter(u => ids.includes(u.id));
+    if (chosen.length) return { users: chosen, source: 'setting' };
+  }
+  const rule = all.filter(u => u.role === 'admin' || ['office', 'hr', 'admin'].includes(String(u.department || '').toLowerCase()));
+  return { users: rule.length ? rule : all.filter(u => u.role === 'admin'), source: 'default' };
+}
+
+/**
+ * A cycle opening has to REACH somebody. D-105, one release earlier: an ask
+ * that lives only on a screen reaches whoever opens that screen, and the whole
+ * point of a standing list is that nobody has to remember to open it.
+ *
+ * Chased every third day while a cycle stands open, on THE CYCLE'S OWN CLOCK
+ * (`supply_list_cycles.last_nudge_at`) rather than one global flag — three
+ * lists on different days must not share one timer (D-083). Quiet by itself:
+ * closing the cycle, either way, is what stops it.
+ */
+export async function supplyCycleNudge(db) {
+  openSupplyCycles(db);
+  const open = (() => {
+    try {
+      return db.prepare(`SELECT c.*, l.name FROM supply_list_cycles c JOIN supply_lists l ON l.id = c.list_id
+        WHERE c.closed_at IS NULL AND l.active = 1 AND c.due_date <= date('now')
+          AND (c.last_nudge_at IS NULL OR c.last_nudge_at <= datetime('now', '-3 days'))
+        ORDER BY c.due_date`).all();
+    } catch { return []; }
+  })();
+  if (!open.length) return { sent: 0, cycles: 0 };
+
+  const t = today();
+  const lines = open.map(c => {
+    const n = db.prepare('SELECT COUNT(*) n FROM supply_list_items WHERE list_id = ? AND active = 1').get(c.list_id).n;
+    const late = cycleAge(c, t);
+    return `• *${c.name}* — ${n} item${n === 1 ? '' : 's'}, due ${c.due_date}${late > 0 ? ` (${late} day${late === 1 ? '' : 's'} ago)` : ''}`;
+  }).join('\n');
+  const body = `🧾 ${open.length === 1 ? 'A standing supply list has' : `${open.length} standing supply lists have`} come due:\n${lines}\n\n`
+    + 'Open *Supply Orders → Standing lists*, tick what is actually low and it files the requests. '
+    + `"Nothing needed" is one click and is recorded.\n[Open Supply Orders](${readyDocOrigin()}/?tab=supply-orders)`;
+
+  const { users } = supplyCycleRecipients(db);
+  let sent = 0;
+  for (const u of users) {
+    try {
+      const { bot, dm } = botDm(db, u.id);
+      await postMessageAs(db, dm, bot, body);
+      pushToUser(u.id, { title: 'Supply list due', body: open.map(c => c.name).join(', '), tag: 'supply-cycle', url: '/?tab=supply-orders' }).catch(() => {});
+      sent += 1;
+    } catch { /* one unreachable recipient must not stop the others */ }
+  }
+  if (sent) {
+    const stamp = db.prepare("UPDATE supply_list_cycles SET last_nudge_at = datetime('now') WHERE id = ?");
+    for (const c of open) stamp.run(c.id);
+  }
+  return { sent, cycles: open.length };
+}
+
+// ── Standing lists ───────────────────────────────────────────────────────────
+// Reading is open to anyone who may submit a request — knowing the break room
+// list exists is how somebody stops filing a one-off for paper towels. Editing
+// a list, and closing a cycle, is the office's (admin), because that is who
+// owns what gets ordered.
+
+router.get('/supply/tags', (req, res) => {
+  if (!requireSubmit(req, res, 'supply')) return;
+  const db = getDb();
+  // Counted from the ORDERS, because the groups in use ARE the orders carrying
+  // them — a stored tally is wrong the first time somebody retags a request.
+  const counts = new Map();
+  for (const r of db.prepare('SELECT label, tags FROM supply_orders').all()) {
+    for (const t of (parseJson(r.tags, null) || (r.label ? [r.label] : []))) {
+      counts.set(t, (counts.get(t) || 0) + 1);
+    }
+  }
+  const known = knownTags(db);
+  // Every suggested group is offered AT ZERO, so a group nobody has ordered
+  // against yet is visibly a category rather than an absence; a free group
+  // somebody typed is listed after them.
+  const rows = known.map(v => ({ value: v, count: counts.get(v) || 0, suggested: true }));
+  for (const [v, count] of counts) if (!known.includes(v)) rows.push({ value: v, count, suggested: false });
+  res.json(rows);
+});
+
+router.get('/supply/lists', (req, res) => {
+  if (!requireSubmit(req, res, 'supply')) return;
+  const db = getDb();
+  // Opened on read as well as on the hourly job: the UNIQUE key makes that
+  // free, and it means the first person to open the screen on the 1st sees the
+  // cycle rather than waiting for a tick.
+  openSupplyCycles(db);
+  const rows = db.prepare('SELECT * FROM supply_lists ORDER BY active DESC, name').all();
+  res.json(rows.map(r => listShape(db, r)));
+});
+
+router.post('/supply/lists', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const db = getDb();
+  const name = String(req.body?.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'Give the list a name.' });
+  const cadence = CADENCES.includes(req.body?.cadence) ? req.body.cadence : 'monthly';
+  const id = uuid();
+  db.prepare(`INSERT INTO supply_lists (id, name, cadence, day, tags, notes, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`)
+    .run(id, name, cadence, Number(req.body?.day) || 1,
+      JSON.stringify(normalizeTags(req.body?.tags, knownTags(db))), req.body?.notes || null, req.user.name);
+  const created = db.prepare('SELECT * FROM supply_lists WHERE id = ?').get(id);
+  logAudit(req.user, 'create', 'supply_list', id, { name, cadence }, null, created, name);
+  res.status(201).json(listShape(db, created));
+});
+
+router.put('/supply/lists/:id', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const db = getDb();
+  const existing = db.prepare('SELECT * FROM supply_lists WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'List not found' });
+  const patch = {};
+  if (req.body.name !== undefined) patch.name = String(req.body.name).trim() || existing.name;
+  if (req.body.cadence !== undefined && CADENCES.includes(req.body.cadence)) patch.cadence = req.body.cadence;
+  if (req.body.day !== undefined) patch.day = Number(req.body.day) || 1;
+  if (req.body.notes !== undefined) patch.notes = req.body.notes || null;
+  if (req.body.active !== undefined) patch.active = req.body.active ? 1 : 0;
+  if (req.body.tags !== undefined) patch.tags = JSON.stringify(normalizeTags(req.body.tags, knownTags(db)));
+  if (!Object.keys(patch).length) return res.json(listShape(db, existing));
+  db.prepare(`UPDATE supply_lists SET ${Object.keys(patch).map(k => `${k} = ?`).join(', ')}, updated_at = datetime('now') WHERE id = ?`)
+    .run(...Object.values(patch), req.params.id);
+  const updated = db.prepare('SELECT * FROM supply_lists WHERE id = ?').get(req.params.id);
+  logAudit(req.user, 'update', 'supply_list', req.params.id, patch, existing, updated, existing.name);
+  res.json(listShape(db, updated));
+});
+
+router.post('/supply/lists/:id/items', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const db = getDb();
+  const list = db.prepare('SELECT * FROM supply_lists WHERE id = ?').get(req.params.id);
+  if (!list) return res.status(404).json({ error: 'List not found' });
+  const item_name = String(req.body?.item_name || '').trim();
+  if (!item_name) return res.status(400).json({ error: 'Item name is required' });
+  const id = uuid();
+  const next = db.prepare('SELECT COALESCE(MAX(sort), 0) + 1 AS n FROM supply_list_items WHERE list_id = ?').get(req.params.id).n;
+  db.prepare(`INSERT INTO supply_list_items (id, list_id, item_name, qty, uom, supplier, link, notes, sort)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(id, req.params.id, item_name, req.body?.qty ?? null, req.body?.uom || null,
+      req.body?.supplier || null, req.body?.link || null, req.body?.notes || null, next);
+  logAudit(req.user, 'update', 'supply_list', req.params.id, { added: item_name }, null, null, list.name);
+  res.status(201).json(listShape(db, list));
+});
+
+// RETIRED, NOT DELETED. A cycle filed last month recorded what it ordered
+// against the list as it stood; removing the row outright would leave that
+// history pointing at nothing.
+router.delete('/supply/lists/:id/items/:itemId', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const db = getDb();
+  const list = db.prepare('SELECT * FROM supply_lists WHERE id = ?').get(req.params.id);
+  if (!list) return res.status(404).json({ error: 'List not found' });
+  const item = db.prepare('SELECT * FROM supply_list_items WHERE id = ? AND list_id = ?').get(req.params.itemId, req.params.id);
+  if (!item) return res.status(404).json({ error: 'Item not found' });
+  db.prepare('UPDATE supply_list_items SET active = 0 WHERE id = ?').run(req.params.itemId);
+  logAudit(req.user, 'update', 'supply_list', req.params.id, { removed: item.item_name }, item, null, list.name);
+  res.json(listShape(db, list));
+});
+
+/**
+ * Close a cycle. THIS is what files real requests.
+ *
+ * Nothing is ordered until somebody says which items and how many, and
+ * "nothing needed this month" is a one-click ANSWER rather than an absence —
+ * a cycle deliberately skipped and one nobody opened are different facts, and
+ * only the first of them is fine.
+ */
+router.post('/supply/cycles/:id/close', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const db = getDb();
+  const cycle = db.prepare('SELECT * FROM supply_list_cycles WHERE id = ?').get(req.params.id);
+  if (!cycle) return res.status(404).json({ error: 'Cycle not found' });
+  if (cycle.closed_at) return res.status(400).json({ error: 'That cycle is already closed.' });
+  const list = db.prepare('SELECT * FROM supply_lists WHERE id = ?').get(cycle.list_id);
+  const picks = Array.isArray(req.body?.items) ? req.body.items : [];
+  const note = String(req.body?.note || '').trim() || null;
+  if (!picks.length && !req.body?.nothing_needed) {
+    return res.status(400).json({ error: 'Pick what needs ordering, or say nothing is needed this month.' });
+  }
+
+  const tags = parseJson(list?.tags, []) || [];
+  const tagJson = tags.length ? JSON.stringify(tags) : null;
+  const ins = db.prepare(`INSERT INTO supply_orders
+    (id, item_name, qty, uom, link, supplier, urgent, label, tags, notes, requested_by, requested_by_id, list_cycle_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  const created = [];
+  db.transaction(() => {
+    for (const p of picks) {
+      const item = db.prepare('SELECT * FROM supply_list_items WHERE id = ? AND list_id = ?').get(p?.item_id, cycle.list_id);
+      if (!item) continue;  // an item retired while the screen was open
+      const id = uuid();
+      ins.run(id, item.item_name, p.qty ?? item.qty ?? null, item.uom, item.link, item.supplier,
+        p.urgent ? 1 : 0, tags[0] || null, tagJson,
+        // The cycle is named on the request, so "why did we order this" has an
+        // answer on the row rather than in somebody's head.
+        [item.notes, `${list.name} — ${cycle.period}`].filter(Boolean).join(' · '),
+        req.user.name, req.user.id, cycle.id);
+      created.push(id);
+    }
+    db.prepare(`UPDATE supply_list_cycles SET closed_at = datetime('now'), closed_by = ?, outcome = ?,
+      note = ?, orders_created = ? WHERE id = ?`)
+      .run(req.user.name, created.length ? 'ordered' : 'nothing_needed', note, created.length, cycle.id);
+  })();
+  const closed = db.prepare('SELECT * FROM supply_list_cycles WHERE id = ?').get(cycle.id);
+  logAudit(req.user, 'update', 'supply_list_cycle', cycle.id,
+    { list: list?.name, period: cycle.period, outcome: closed.outcome, orders: created.length }, cycle, closed, list?.name);
+  res.json({ cycle: closed, created: created.length, list: listShape(db, list) });
+});
 
 router.get('/supply/suggestions', (req, res) => {
   if (!requireAdmin(req, res)) return;

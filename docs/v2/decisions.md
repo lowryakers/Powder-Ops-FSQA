@@ -4005,3 +4005,75 @@ accounts that could not see it.
 **What the office still has to do, and the app now says so:** an employee needs *My Tasks* (or the Task
 Center) ticked in Settings → Users before the card appears for them. That was the honest answer to Daniela's
 question; the change is that nobody has to ask it.
+
+---
+
+## D-106 — A recurring supply order is the wrong object; a standing list is the right one (2026-09-22)
+
+Lowry, for Marnee: *"Can we create a recurring Supply Order for 'Monthly break room snacks and supplies',
+'Monthly cleaning supplies', and 'Monthly production supplies'? What's the best way to do this? Can we allow
+Marnee to 'tag' certain items so that we can track groupings and be able to manage the recurring nature a
+little better?"*
+
+**THOSE THREE THINGS ARE NOT ORDERS, THEY ARE LISTS.** A `supply_orders` row is ONE item — a name, a
+quantity, a unit, a supplier, a link — and that is what gets marked ordered, part-received and paid.
+"Monthly break room supplies" is a dozen of those, and *which* dozen is the whole question each month: some
+months the paper towels do not need doing. So a recurring ORDER would have to be either one row that means a
+dozen things (and then `qty_received`, `total` and the receipt history mean nothing) or a dozen rows filed
+whether or not anything is needed. **What recurs is the ASKING.**
+
+**SO THE CYCLE RAISES ONE PROMPT, NOT N DRAFT ROWS.** A cycle opens, Marnee ticks what is actually low, and
+*that* files real requests. Eighteen rows on the first of every month would put noise in the one queue that
+has to stay readable — the same reason the "used up" strip groups suggestions instead of writing requests,
+and the same reason one stray ATP reading does not raise a re-clean. **The control run is the obvious wrong
+design** (the cycle files every item the moment it opens, groups back to the single `label`) **and it fails
+12 of the 60 assertions**, the first being a quantity nobody chose and the last being an item nobody ticked
+arriving in the queue.
+
+**"NOTHING NEEDED THIS MONTH" IS A RECORDED ANSWER, NOT AN ABSENCE.** One click, and it closes the cycle with
+`outcome = 'nothing_needed'`, a reason, a name and a date — because a month somebody looked at and skipped
+and a month nobody opened are different facts, and only the first of them is fine.
+
+**A LIST WITH NOTHING ON IT ASKS NOBODY ANYTHING.** The three lists ship **named and empty**: the names and
+the cadence are Marnee's, and what is on each one is not something anyone outside the office knows. A seeded
+guess at the break room's dozen items is a list she has to correct before she can trust it. `cyclesDue()`
+skips a list with no active item and the card says so.
+
+**Tags: `supply_orders.label` was already this, badly.** It was a hard-coded five-value array in the panel
+(`Warehouse/Production`, `Cleaning`, `Break room`, `Maintenance`, `Office`) — so adding a group was a deploy
+— and it was **singular**, so a case of gloves that is both Cleaning and Warehouse/Production made somebody
+choose. Now: a **managed list** (`supply_tags`, seeded with exactly those five so day one is identical), and
+`supply_orders.tags` as a JSON array with **`label` as the mirror of its first entry** (the `mo_lines` line-0
+rule), written in one statement and nowhere else. Every filter, form and export that reads `label` keeps
+working, and a row filed before any of this carries its single `label` — so the chips and the group filter
+cover the whole history with **no backfill**.
+
+- **Matched as a whole element with `json_each`, never `LIKE`** — the `candidates.tags` rule. "Lab" must not
+  pull in "Lab bench".
+- **A spelling of a known group is folded into it** ("cleaning" files as "Cleaning"); a genuinely new group
+  is kept exactly as typed. Two spellings of one group is two groups, and the point of this is being able to
+  ask what the break room costs.
+- **Every group is offered at zero**, so one nobody has ordered against yet is visibly a category rather than
+  an absence. Counts are read off the ORDERS, because the groups in use ARE the orders carrying them.
+
+**AND IT REACHES THE PERSON WHO ORDERS.** D-105 is one release old and its lesson applies directly: a prompt
+that lives only on a screen reaches whoever opens that screen, and the whole point of a standing list is that
+nobody has to remember to open it. ReadyBot DMs the office when a cycle comes due and chases every third day
+while it stands open, **on the cycle's own clock** (`supply_list_cycles.last_nudge_at`) — three lists on
+different days must not share one timer. The audience is `supplyCycleRecipients()`, exported from the sender
+and called by the ReadyBot-messages registry (D-086), settable in Settings; unset is never nobody.
+
+**Reading is open to anyone who may submit a request; editing is the office's.** Knowing the break-room list
+exists is how somebody stops filing a one-off for paper towels. A supervisor reaches it through **Requests**
+(the admin-only Supply Orders module is where it is edited) and **is rendered no control the server would
+refuse** — a button that errors reads as a fault, not as a boundary (D-091).
+
+**Found in passing, and fixed: `supplierReviewNudge` had never sent a message.** It called
+`botDm(p.id, body)` where `botDm(db, userId)` *opens* the conversation and returns it — posting is
+`postMessageAs`. Every recipient threw, the catch counted the send anyway, and the digest reported `sent`
+for a message nobody got. `supplyCycleNudge` imports comms directly rather than through `deps`, which
+removes the whole class of mistake.
+
+Verified: `verify:supplylists` (**60**, live + a real browser at 1280 and 390px; in `verify:all`).
+**What Marnee still has to do:** open Supply Orders → Standing lists and write what each of the three covers.
+Until she does, nothing is asked about — and the card says exactly that rather than looking broken.

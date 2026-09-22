@@ -1,0 +1,13 @@
+const PORT=5022, URL=`http://localhost:${PORT}`, B=`${URL}/api`;
+const J=async r=>{try{return await r.json()}catch{return null}};
+const tk=(await J(await fetch(B+'/users/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'Marla Office',password:'MarlaPW2026!'})})))?.token;
+const { chromium } = await import('playwright-core');
+const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+page.on('pageerror', e => console.log('[pageerror]', e.message));
+await page.goto(`${URL}/manifest.webmanifest`);
+await page.evaluate(([t,u])=>{localStorage.setItem('auth_token',t);localStorage.setItem('auth_user',JSON.stringify(u));},[tk,{id:'sl-admin',name:'Marla Office',role:'admin',department:'office'}]);
+await page.goto(`${URL}/?tab=supply-requests`);
+await page.waitForTimeout(3000);
+console.log('BODY:', (await page.locator('body').innerText()).slice(0,900));
+await browser.close();

@@ -96,6 +96,7 @@ import productionRoutes, { qaActionNudges } from './server/api/production.js';
 import structureRoutes from './server/api/structure.js';
 import logBuilderRoutes from './server/api/log-builder.js';
 import { seedStructureLists } from './server/structure-seed.js';
+import { seedSupplyLists } from './server/supply-list-seed.js';
 import { seedQualitySchedules } from './server/api/quality-schedules.js';
 import { seedGenericSpecifications } from './server/spec-seed.js';
 import { seedForm607Specs } from './server/spec-607-seed.js';
@@ -119,7 +120,7 @@ import { seedFlavorCodes, seedBottleSpec, repairBaseFlavors } from './server/fla
 import { seedProductShelf } from './server/product-shelf.js';
 import { seedSwabCounts } from './server/swab-stock.js';
 import { seedPreventiveControls } from './server/preventive-controls.js';
-import officeRoutes, { backfillInvoiceText } from './server/api/office.js';
+import officeRoutes, { backfillInvoiceText, supplyCycleNudge } from './server/api/office.js';
 import { seedDilutionSchedules } from './server/dilution-seed.js';
 import { seedDilutionLog } from './server/dilution-log-seed.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
@@ -1126,6 +1127,10 @@ try {
   seedProductionEntries(db);
   seedEodTemplates(db);
   seedStructureLists(db);
+  // The three standing supply lists Marnee named — AFTER seedStructureLists,
+  // which is where `supply_tags` comes from and what their groups are
+  // canonicalised against.
+  seedSupplyLists(db);
   seedQualitySchedules(db);
   // The four preventive controls, transcribed from Protocol 003 V4 (D-022,
   // OBL-02). Insert-only on the CCP name. AFTER the equipment seed, which ran
@@ -2077,7 +2082,7 @@ server.listen(PORT, '0.0.0.0', () => {
   backfillInvoiceText().catch(e => console.warn('[invoices] backfill error:', e.message));
   backfillFinanceFileText().catch(e => console.warn('[finance] backfill error:', e.message));
   // Recurring jobs: Friday auto-backup to R2, Monday expiry digest to #quality.
-  startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges, qaActionNudges, employeeDocumentNudges, trainingNudges, partnerReminderNudges, recordBackfillNudge, supplierReviewNudge, sendFlashReport, sendCleanupDigest, cleanupDigest, CLEANUP_BUSY_THRESHOLD, sendEodMissedDigest, eodMissedDigest, EOD_BUSY_THRESHOLD });
+  startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges, qaActionNudges, employeeDocumentNudges, trainingNudges, supplyCycleNudge, partnerReminderNudges, recordBackfillNudge, supplierReviewNudge, sendFlashReport, sendCleanupDigest, cleanupDigest, CLEANUP_BUSY_THRESHOLD, sendEodMissedDigest, eodMissedDigest, EOD_BUSY_THRESHOLD });
   startReminderLoop(db);
   // Generate any due document-review tasks on startup (idempotent; also runs on
   // every operator-tasks fetch).

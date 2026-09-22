@@ -6,10 +6,23 @@ import FilePreview from '../FilePreview.jsx';
 import { usePageTranslation } from '../../lib/usePageTranslation.js';
 import LangToggle from '../LangToggle.jsx';
 import SpendTab from './SpendTab.jsx';
+import StandingLists, { TagChips } from './StandingLists.jsx';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 
+// The groups used to be this hard-coded array, so adding one was a deploy.
+// They are a managed list now (`supply_tags`, seeded with exactly these five),
+// and this stays only as the fallback for a database that has not seeded it —
+// a form whose group picker renders empty reads as the app being broken.
 const LABELS = ['Warehouse/Production', 'Cleaning', 'Break room', 'Maintenance', 'Office'];
+const parseTags = (raw) => {
+  if (Array.isArray(raw)) return raw;
+  try { const v = JSON.parse(raw || 'null'); return Array.isArray(v) && v.length ? v : null; } catch { return null; }
+};
+function useTagOptions() {
+  const { data } = useApiGet('/office/supply/tags');
+  return (data?.length ? data.map(t => t.value) : LABELS);
+}
 
 // Items reported "used up / ran out" when they were signed back in — the
 // earliest anyone knows to reorder something.
@@ -92,14 +105,21 @@ const STATUS_META = {
 // Request form — supervisors + admins. Autocompletes from order history so a
 // repeat item fills supplier/link/uom/label in one pick.
 export function OrderForm({ items, onCreated }) {
-  const blank = { item_name: '', qty: '', uom: '', supplier: '', link: '', label: '', urgent: false, notes: '' };
+  const tagOptions = useTagOptions();
+  const blank = { item_name: '', qty: '', uom: '', supplier: '', link: '', tags: [], urgent: false, notes: '' };
   const [form, setForm] = useState(blank);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
 
   const pickHistory = (name) => {
     const h = (items || []).find(i => i.item_name.toLowerCase() === name.toLowerCase());
-    if (h) setForm(f => ({ ...f, item_name: h.item_name, uom: h.uom || f.uom, supplier: h.supplier || f.supplier, link: h.link || f.link, label: h.label || f.label, qty: f.qty || h.qty || '' }));
+    if (h) setForm(f => ({
+      ...f, item_name: h.item_name, uom: h.uom || f.uom, supplier: h.supplier || f.supplier, link: h.link || f.link,
+      // A repeat of an item filed before tags existed carries only `label`, so
+      // picking it still refills the group.
+      tags: f.tags.length ? f.tags : (parseTags(h.tags) || (h.label ? [h.label] : [])),
+      qty: f.qty || h.qty || '',
+    }));
   };
 
   const submit = async (e) => {
@@ -149,13 +169,19 @@ export function OrderForm({ items, onCreated }) {
           <input value={form.link} onChange={e => setForm({ ...form, link: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="https://…" />
         </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">For</label>
-          <select value={form.label} onChange={e => setForm({ ...form, label: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
-            <option value="">—</option>
-            {LABELS.map(l => <option key={l} value={l}>{l}</option>)}
-          </select>
+        <div className="sm:col-span-2">
+          {/* GROUPS, PLURAL. A case of gloves is both Cleaning and
+              Warehouse/Production, and one "For" box made somebody choose. */}
+          <label className="block text-xs font-medium text-gray-700 mb-1">Groups</label>
+          <div className="flex flex-wrap gap-1.5">
+            {tagOptions.map(l => (
+              <button key={l} type="button" data-order-tag={l}
+                onClick={() => setForm(f => ({ ...f, tags: f.tags.includes(l) ? f.tags.filter(x => x !== l) : [...f.tags, l] }))}
+                className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium ${form.tags.includes(l) ? 'border-powder-500 bg-powder-50 text-powder-800' : 'border-gray-300 bg-white text-gray-600'}`}>
+                {l}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="sm:col-span-2">
           <label className="block text-xs font-medium text-gray-700 mb-1">Notes</label>
@@ -184,7 +210,13 @@ export function QuickReorder({ items, onCreated }) {
   if (!top.length) return null;
   const orderAgain = async (i) => {
     setBusy(i.item_name);
-    try { await apiPost('/office/supply/orders', { item_name: i.item_name, qty: i.qty, uom: i.uom, supplier: i.supplier, link: i.link, label: i.label }); onCreated?.(); }
+    try {
+      await apiPost('/office/supply/orders', {
+        item_name: i.item_name, qty: i.qty, uom: i.uom, supplier: i.supplier, link: i.link,
+        tags: parseTags(i.tags) || (i.label ? [i.label] : []),
+      });
+      onCreated?.();
+    }
     finally { setBusy(null); }
   };
   return (
@@ -275,7 +307,8 @@ function ReceiveModal({ order, onClose, onSaved }) {
 }
 
 function EditOrderModal({ order, onClose, onSaved }) {
-  const [form, setForm] = useState({ qty: order.qty ?? '', total: order.total ?? '', eta: order.eta || '', supplier: order.supplier || '', link: order.link || '', notes: order.notes || '' });
+  const tagOptions = useTagOptions();
+  const [form, setForm] = useState({ qty: order.qty ?? '', total: order.total ?? '', eta: order.eta || '', supplier: order.supplier || '', link: order.link || '', notes: order.notes || '', tags: order.tags || [] });
   const save = async () => {
     await apiPut(`/office/supply/orders/${order.id}`, { ...form, qty: form.qty === '' ? null : Number(form.qty), total: form.total === '' ? null : Number(form.total) });
     onSaved(); onClose();
@@ -317,6 +350,18 @@ function EditOrderModal({ order, onClose, onSaved }) {
           </div>
           <div className="col-span-2"><label className="block text-xs font-medium text-gray-700 mb-1">Notes</label>
             <input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+          <div className="col-span-2">
+            <label className="block text-xs font-medium text-gray-700 mb-1">Groups</label>
+            <div className="flex flex-wrap gap-1.5">
+              {tagOptions.map(l => (
+                <button key={l} type="button" data-edit-tag={l}
+                  onClick={() => setForm(f => ({ ...f, tags: f.tags.includes(l) ? f.tags.filter(x => x !== l) : [...f.tags, l] }))}
+                  className={`px-2 py-1 rounded-lg border text-xs font-medium ${form.tags.includes(l) ? 'border-powder-500 bg-powder-50 text-powder-800' : 'border-gray-300 bg-white text-gray-600'}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
         <div className="flex gap-2">
           <button onClick={save} className="px-4 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">Save</button>
@@ -337,6 +382,7 @@ function SortHeader({ label, field, sortField, sortDir, onSort, className = '' }
 }
 
 function OrdersLog({ refreshKey, onChanged }) {
+  const tagOptions = useTagOptions();
   const [statusFilter, setStatusFilter] = useState('open');
   const [labelFilter, setLabelFilter] = useState('');
   const [q, setQ] = useState('');
@@ -351,7 +397,9 @@ function OrdersLog({ refreshKey, onChanged }) {
   const list = useMemo(() => {
     let l = orders || [];
     if (statusFilter === 'open') l = l.filter(o => o.status === 'new' || o.status === 'ordered');
-    if (labelFilter) l = l.filter(o => (o.label || '') === labelFilter);
+    // Matched against the whole group set, not the mirrored `label`, or a
+    // request tagged Cleaning + Warehouse would be invisible under the second.
+    if (labelFilter) l = l.filter(o => (o.tags || []).includes(labelFilter) || o.label === labelFilter);
     const dir = sortDir === 'asc' ? 1 : -1;
     const val = (o) => {
       if (sortField === 'qty' || sortField === 'total') return Number(o[sortField] ?? -Infinity);
@@ -405,10 +453,10 @@ function OrdersLog({ refreshKey, onChanged }) {
           <button key={v} onClick={() => setStatusFilter(v)}
             className={`px-2.5 py-1 rounded-lg text-xs font-medium ${statusFilter === v ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{l}</button>
         ))}
-        <select value={labelFilter} onChange={e => setLabelFilter(e.target.value)}
+        <select value={labelFilter} onChange={e => setLabelFilter(e.target.value)} data-supply-group-filter
           className="px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs bg-white text-gray-600">
-          <option value="">For: all</option>
-          {LABELS.map(l => <option key={l} value={l}>{l}</option>)}
+          <option value="">Group: all</option>
+          {tagOptions.map(l => <option key={l} value={l}>{l}</option>)}
         </select>
         <div className="relative flex-1 min-w-[180px]">
           <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -424,7 +472,8 @@ function OrdersLog({ refreshKey, onChanged }) {
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
                 <div className="font-medium text-gray-900 break-words">{o.item_name}{o.urgent ? <span className="ml-1.5 text-[10px] font-bold text-red-600">URGENT</span> : null}</div>
-                <div className="text-xs text-gray-500">{[o.qty && `${o.qty} ${o.uom || ''}`.trim(), o.supplier, o.label].filter(Boolean).join(' · ')}</div>
+                <div className="text-xs text-gray-500">{[o.qty && `${o.qty} ${o.uom || ''}`.trim(), o.supplier].filter(Boolean).join(' · ')}</div>
+                {!!o.tags?.length && <div className="mt-1"><TagChips tags={o.tags} /></div>}
               </div>
               <div className="shrink-0 flex flex-col items-end gap-1">
                 <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_META[o.status].tone}`}>{STATUS_META[o.status].label}</span>
@@ -470,7 +519,7 @@ function OrdersLog({ refreshKey, onChanged }) {
                 <SortHeader label="Item" field="item_name" sortField={sortField} sortDir={sortDir} onSort={onSort} />
                 <SortHeader label="Qty" field="qty" sortField={sortField} sortDir={sortDir} onSort={onSort} />
                 <SortHeader label="Supplier" field="supplier" sortField={sortField} sortDir={sortDir} onSort={onSort} />
-                <SortHeader label="For" field="label" sortField={sortField} sortDir={sortDir} onSort={onSort} />
+                <SortHeader label="Groups" field="label" sortField={sortField} sortDir={sortDir} onSort={onSort} />
                 <SortHeader label="Requested" field="submitted_at" sortField={sortField} sortDir={sortDir} onSort={onSort} />
                 <SortHeader label="Total" field="total" sortField={sortField} sortDir={sortDir} onSort={onSort} />
                 <SortHeader label="Status" field="status" sortField={sortField} sortDir={sortDir} onSort={onSort} />
@@ -500,7 +549,7 @@ function OrdersLog({ refreshKey, onChanged }) {
                     {o.receipt_state === 'partial' && <div className="text-[11px] font-semibold text-amber-700">{o.qty_received} in · {o.outstanding} to come</div>}
                   </td>
                   <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">{o.supplier || '—'}</td>
-                  <td className="px-3 py-2.5 whitespace-nowrap text-gray-500 text-xs">{o.label || '—'}</td>
+                  <td className="px-3 py-2.5 whitespace-nowrap text-gray-500 text-xs">{o.tags?.length ? <TagChips tags={o.tags} /> : '—'}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap text-gray-500 text-xs">{o.requested_by || '—'}<div className="text-gray-400">{(o.submitted_at || '').slice(0, 10)}</div></td>
                   <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">
                     {o.total != null ? money(o.total) : (o.suggested_total == null ? '—' : null)}
@@ -538,7 +587,7 @@ function OrdersLog({ refreshKey, onChanged }) {
                       { label: 'Received', value: o.receipt_state === 'none' ? '' : `${o.qty_received}${o.qty_known ? ` of ${o.qty}` : ''} ${o.uom || ''}`.trim() },
                       { label: 'Outstanding', value: o.receipt_state === 'partial' ? `${o.outstanding} ${o.uom || ''}`.trim() : '' },
                       { label: 'Supplier', value: o.supplier },
-                      { label: 'For', value: o.label },
+                      { label: 'Groups', value: (o.tags || []).join(', ') },
                       { label: 'Requested by', value: o.requested_by },
                       { label: 'Requested', value: (o.submitted_at || '').slice(0, 16).replace('T', ' ') },
                       { label: 'Unit price', value: o.unit_price != null ? `$${Number(o.unit_price).toFixed(2)}` : '' },
@@ -815,7 +864,7 @@ function InvoiceRepo() {
 // Labels the EN/ES toggle covers on this page.
 const PAGE_STRINGS = [
   'Supply Orders', 'Orders', 'New Request', 'Invoices', 'Item', 'Quantity', 'Supplier',
-  'Status', 'Urgent', 'Needed by', 'Notes', 'Requested by', 'Total', 'No orders', 'Spend',
+  'Status', 'Urgent', 'Needed by', 'Notes', 'Requested by', 'Total', 'No orders', 'Spend', 'Standing lists',
 ];
 
 export default function SupplyOrdersPanel() {
@@ -828,7 +877,9 @@ export default function SupplyOrdersPanel() {
   const { lang, setLang, tr, translating } = usePageTranslation(PAGE_STRINGS);
 
   const tabs = isAdmin
-    ? [['log', 'Orders'], ['form', 'New Request'], ['invoices', 'Invoices'], ['spend', 'Spend']]
+    ? [['log', 'Orders'], ['form', 'New Request'], ['lists', 'Standing lists'], ['invoices', 'Invoices'], ['spend', 'Spend']]
+    // This whole module is admin-only in the nav; a supervisor reaches the
+    // form (and the standing lists, read-only) through Requests.
     : [['form', 'New Request']];
 
   return (
@@ -853,6 +904,7 @@ export default function SupplyOrdersPanel() {
           <QuickReorder items={items} onCreated={bump} />
         </div>
       )}
+      {tab === 'lists' && <StandingLists onChanged={() => { bump(); refreshItems(); }} />}
       {tab === 'log' && isAdmin && <OrdersLog refreshKey={refreshKey} onChanged={refreshItems} />}
       {tab === 'invoices' && isAdmin && <InvoiceRepo />}
       {tab === 'spend' && isAdmin && <SpendTab />}

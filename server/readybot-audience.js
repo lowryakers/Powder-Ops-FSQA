@@ -26,6 +26,7 @@ import { supplierReviewRecipients } from './supplier-review.js';
 import { recordBackfillRecipients } from './qa-record-backfill.js';
 import { controlledChangeRecipients } from './api/controlled.js';
 import { auditorPassRecipients } from './api/auditor-pass.js';
+import { supplyCycleRecipients } from './api/office.js';
 
 const listed = (rows) => rows.map(u => ({ id: u.id, name: u.name }));
 
@@ -70,6 +71,7 @@ export function readybotAudiences(db) {
   const recordBf = recordBackfillRecipients(db);
   const ctrlChanges = controlledChangeRecipients(db);
   const auditorPass = auditorPassRecipients(db);
+  const supplyCycles = supplyCycleRecipients(db);
 
   return [
     {
@@ -102,6 +104,18 @@ export function readybotAudiences(db) {
       setting: null, source: 'rule',
       recipients: [],
       note: 'Goes to the one reviewer the evaluation was assigned to. Nobody else is told.',
+    },
+    {
+      key: 'supply_cycles',
+      label: 'Standing supply list due',
+      what: 'A standing list (break room, cleaning, production) has come round and nobody has said what is needed.',
+      when: 'On the day it falls due, then every third day while the cycle is open.',
+      setting: 'supply_cycle_recipients',
+      source: supplyCycles.source,
+      recipients: listed(supplyCycles.users),
+      note: supplyCycles.source === 'default'
+        ? 'Nobody has been chosen, so it goes to admins and the office / HR departments.'
+        : null,
     },
     {
       key: 'employee_documents',
@@ -223,4 +237,5 @@ export const SETTABLE = {
   record_backfill_recipients: 'QA records waiting to be filed',
   controlled_change_recipients: 'A change is parked for Document Control',
   auditor_pass_recipients: 'An auditor pass was issued',
+  supply_cycle_recipients: 'Standing supply list due',
 };

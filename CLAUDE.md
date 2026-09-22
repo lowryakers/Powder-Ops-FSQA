@@ -3221,6 +3221,39 @@ carries no positions.
   controlled would become a shadow copy.
 - `verify:bpgitems` (43 → **65**). **The control drops drift + diagram from the payload and fails 10.**
 
+## A recurring supply order is the wrong object; a standing list is the right one (D-106)
+`server/supply-lists.js` (PURE — the period arithmetic), `supply_lists` / `supply_list_items` /
+`supply_list_cycles` + `supply_orders.tags` / `list_cycle_id` (db.js), `server/supply-list-seed.js`, the
+routes and `supplyCycleNudge` / `supplyCycleRecipients` in `api/office.js`, `StandingLists.jsx` as the
+**Standing lists** tab of Supply Orders (and read-only in Requests).
+- **THE THREE THINGS MARNEE NAMED ARE NOT ORDERS, THEY ARE LISTS.** A `supply_orders` row is ONE item — that
+  is what gets marked ordered, part-received and paid. "Monthly break room supplies" is a dozen of those and
+  **which** dozen is the question each month. **What recurs is the ASKING.**
+- **A CYCLE RAISES ONE PROMPT, NOT N DRAFT ROWS.** She ticks what is actually low and THAT files real
+  requests. Eighteen rows on the 1st regardless is noise in the one queue that has to stay readable — the
+  "used up" suggestion strip's rule. **The control is the obvious wrong design and fails 12 of 60.**
+- **"Nothing needed this month" is a RECORDED ANSWER** — outcome, reason, name, date. A month somebody
+  skipped and a month nobody opened are different facts.
+- **A LIST WITH NOTHING ON IT ASKS NOBODY ANYTHING.** The three ship **named and empty** (the names and the
+  cadence are hers; what is on each is not something anyone outside the office knows), `cyclesDue()` skips a
+  list with no active item, and the card says so rather than looking broken.
+- **`label` WAS TAGS, BADLY**: a hard-coded five-value array in the panel (so adding a group was a deploy)
+  and singular (so a case of gloves that is Cleaning *and* Warehouse/Production made somebody choose). Now a
+  **managed list** (`supply_tags`, seeded with exactly those five) plus `supply_orders.tags` JSON, with
+  **`label` as the mirror of tags[0]** (the `mo_lines` line-0 rule) — every filter and export that reads it
+  keeps working, and a row filed before this carries its single `label`, so **no backfill**.
+- **Matched with `json_each`, never `LIKE`** ("Lab" must not pull in "Lab bench"); a spelling of a known
+  group is folded into it, a new one kept as typed; every group offered at zero; counts read off the ORDERS.
+- **It reaches the person who orders** — ReadyBot on the day it falls due, chased every third day **on the
+  cycle's own clock** (`supply_list_cycles.last_nudge_at`). D-105, one release old.
+- **Read open to any submitter, edit the office's**, and a supervisor is **rendered no control he would be
+  refused** (D-091). He reaches it through **Requests**; Supply Orders is admin-only in the nav.
+- **FOUND IN PASSING: `supplierReviewNudge` had NEVER sent a message.** It called `botDm(p.id, body)` where
+  `botDm(db, userId)` OPENS the DM and returns it — posting is `postMessageAs`. Every recipient threw, the
+  catch counted the send anyway. `supplyCycleNudge` imports comms directly rather than through `deps`.
+- `verify:supplylists` (60, live + browser at 1280 and 390px). **What Marnee still has to do:** write what
+  each of the three lists covers.
+
 ## An assignment that reached nobody, and the three things that hid it (D-105)
 `server/training-notify.js` (`tellAssignee`, `trainingNudges`, `assignmentReach`), `taskListReach()` +
 `parseModuleAccess()` in `module-access.js`, `work_orders.last_nudge_at`, the `unreachable` block on the

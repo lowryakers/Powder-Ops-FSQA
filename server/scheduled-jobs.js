@@ -189,6 +189,19 @@ async function runDue(db, deps) {
     } catch (e) { console.warn('[jobs] training nudges failed:', e.message); }
   }
 
+  // A standing supply list that has come due. Every third day while the cycle
+  // stands open, on THE CYCLE'S OWN clock (supply_list_cycles.last_nudge_at) —
+  // three lists on different days must not share one timer. Closing it, either
+  // way, is what stops it.
+  const lastSupply = getFlag(db, 'last_supply_cycle_nudge_at');
+  if (deps.supplyCycleNudge && (!lastSupply || (now - new Date(lastSupply)) >= 86400000)) {
+    try {
+      const r = await deps.supplyCycleNudge(db);
+      setFlag(db, 'last_supply_cycle_nudge_at', now.toISOString());
+      if (r.sent) console.log(`[jobs] supply lists due: ${r.cycles} cycle(s), told ${r.sent}`);
+    } catch (e) { console.warn('[jobs] supply cycle nudge failed:', e.message); }
+  }
+
   // Checks that were completed but never produced their controlled record.
   // The amber strip on QA Inspections only reaches whoever opens that screen,
   // which is the same gap the re-clean badge had — so the pile is announced.
