@@ -336,8 +336,20 @@ t('THE ACCOUNT WITH NO MODULES CANNOT SEE ITS OWN TASK — a NULL map is an empt
 t('…and the assign screen SAYS SO rather than reporting a clean success',
   (reach?.unreachable || []).some(u => u.name === 'Nadia Nomods' && u.reach?.code === 'no_modules'),
   JSON.stringify(reach?.unreachable));
+const fixText = (reach?.unreachable || []).find(u => u.name === 'Nadia Nomods')?.reach?.fix || '';
 t('…naming the tick in Settings, never applying it — which module somebody gets is the office\'s decision',
-  /Settings/.test((reach?.unreachable || []).find(u => u.name === 'Nadia Nomods')?.reach?.fix || ''));
+  /Settings/.test(fixText), fixText);
+// THE INSTRUCTION NAMES A CONTROL THAT EXISTS. The floor phone heads this
+// screen "My Tasks"; the tick in Settings is labelled "Operator View", and an
+// instruction naming a control nobody can find is worse than none — which is
+// exactly what the first cut shipped.
+{
+  const settings = await import('fs').then(fs => fs.readFileSync('src/components/settings/UsersSection.jsx', 'utf8'));
+  const labels = [...new Set([...settings.matchAll(/id: '(operator|pm)', label: '([^']+)'/g)].map(m => m[2]))];
+  t('BOTH NAMES IT USES ARE THE LABELS SETTINGS ACTUALLY PRINTS — not the heading the phone shows',
+    labels.length === 2 && labels.every(l => fixText.includes(l)) && !/My Tasks/.test(fixText),
+    `${JSON.stringify(labels)} vs ${fixText}`);
+}
 t('SOMEBODY WITH MODULES BUT NO TASK LIST IS A DIFFERENT GAP and is reported as one',
   (reach?.unreachable || []).some(u => u.name === 'Otto Other' && u.reach?.code === 'message_only'),
   JSON.stringify((reach?.unreachable || []).map(u => `${u.name}:${u.reach?.code}`)));
@@ -353,6 +365,8 @@ t('the message names the course and its due date — "you have training" with ne
   /PJ-101/.test(dmBody) && /\d{4}-\d{2}-\d{2}/.test(dmBody), dmBody.replace(/\n/g, ' | ').slice(0, 160));
 t('and it says where to look, because a fortnight out the card sits under a collapsed Upcoming header',
   /Upcoming/i.test(dmBody));
+t('…naming the screen BOTH ways it is labelled — "Operator View" in the sidebar, "My Tasks" on a floor phone',
+  /Operator View/.test(dmBody) && /My Tasks/.test(dmBody), dmBody.replace(/\n/g, ' | ').slice(0, 160));
 
 console.log('\n── chased, on each task\'s own clock ──');
 const { trainingNudges } = await import('../server/training-notify.js');
@@ -426,7 +440,7 @@ if (opened) {
   t('and the result reads as courses AND people, not one ambiguous number',
     /2 tasks raised/.test(said) && /2 courses/.test(said) && /1 person/.test(said),
     said.replace(/\n/g, ' | ').slice(0, 160));
-  t('a person who holds My Tasks raises NO warning strip', await page.locator('[data-assign-unreachable]').count() === 0);
+  t('a person who holds the Operator View raises NO warning strip', await page.locator('[data-assign-unreachable]').count() === 0);
 
   // And the same screen, assigning to somebody the card will never reach.
   await page.getByRole('button', { name: 'Done', exact: true }).click();

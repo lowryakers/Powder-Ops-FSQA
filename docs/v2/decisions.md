@@ -4077,3 +4077,12 @@ removes the whole class of mistake.
 Verified: `verify:supplylists` (**60**, live + a real browser at 1280 and 390px; in `verify:all`).
 **What Marnee still has to do:** open Supply Orders → Standing lists and write what each of the three covers.
 Until she does, nothing is asked about — and the card says exactly that rather than looking broken.
+
+**Correction to D-105 (2026-09-23).** Both the `fix` text and the ReadyBot message told people to tick
+*"My Tasks"*, **which is not a control that exists in Settings**. That is the heading the floor phone's own
+layout puts on the screen; the tick in Settings → Users is labelled **"Operator View"** (under Overview) or
+**"Task Center"** (under Maintenance). An instruction naming a control nobody can find is worse than no
+instruction — the same defect as a button that errors reading as a fault (D-091), one layer up. The labels
+are now read straight out of `UsersSection.jsx` by `verify:trainingassign`, so they fail a test rather than
+drift; and the DM names the screen **both** ways, because which one somebody sees depends on their layout.
+Found by Lowry asking where "My Tasks" was.

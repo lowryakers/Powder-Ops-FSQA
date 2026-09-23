@@ -153,12 +153,20 @@ export const TASK_LIST_MODULES = ['operator', 'pm'];
 export function taskListReach(row) {
   if (!row) return { code: 'no_account', label: 'no account' };
   const user = { ...row, module_access: parseModuleAccess(row.module_access) };
-  if (user.role === 'admin') return { code: 'task_list', label: 'My Tasks' };
+  if (user.role === 'admin') return { code: 'task_list', label: 'Operator View' };
   if (user.module_access == null) {
-    return { code: 'no_modules', label: 'no modules assigned', fix: 'Assign modules in Settings \u2192 Users \u2014 until then this account can only use Messages.' };
+    return { code: 'no_modules', label: 'no modules assigned',
+      // Names the one that matters for a task as well as the general gap: this
+      // account needs a whole set, but an instruction that stops at "assign
+      // modules" leaves the office to work out WHICH.
+      fix: 'Assign modules in Settings \u2192 Users \u2014 "Operator View" (under Overview) or "Task Center" (under Maintenance) is what shows them a task. Until then this account can only use Messages.' };
   }
-  if (TASK_LIST_MODULES.some(m => moduleLevel(user, m))) return { code: 'task_list', label: 'My Tasks' };
-  return { code: 'message_only', label: 'no task list', fix: 'Tick My Tasks (operator) or Task Center (pm) in Settings \u2192 Users, or they will only ever see it in Messages.' };
+  if (TASK_LIST_MODULES.some(m => moduleLevel(user, m))) return { code: 'task_list', label: 'Operator View' };
+  return { code: 'message_only', label: 'no task list', // NAMED AS SETTINGS NAMES THEM. "My Tasks" is the heading inside the floor
+    // phone's own layout; the tick in Settings \u2192 Users is labelled
+    // "Operator View" (Overview) or "Task Center" (Maintenance), and an
+    // instruction naming a control that does not exist is worse than none.
+    fix: 'Tick "Operator View" (under Overview) or "Task Center" (under Maintenance) in Settings \u2192 Users, or they will only ever see it in Messages.' };
 }
 
 // Express middleware. Writes are gated on edit access to any of the router's

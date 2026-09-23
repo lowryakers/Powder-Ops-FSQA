@@ -69,7 +69,11 @@ export async function tellAssignee(db, { user_id, items = [], assigned_by = 'the
     ? `⏰ Still outstanding: ${one ? 'a training course assigned to you' : `${items.length} training courses assigned to you`}.`
     : `📚 *${assigned_by}* has assigned you ${one ? 'a training course' : `${items.length} training courses`}${reason ? ` — ${reason}` : ''}:`;
   const body = `${head}\n${lines}\n\n`
-    + `Open [My Tasks](${link}) and look under *Upcoming* if it is not due yet. Completing the task is what files your training record.`;
+    // "Operator View" is what the sidebar calls it; the floor phone's own
+    // layout heads the same screen "My Tasks". Naming both is how somebody
+    // finds it on whichever they are looking at.
+    + `Open [Operator View](${link}) — "My Tasks" on a phone — and look under *Upcoming* if it is not due yet.`
+    + ' Completing the task is what files your training record.';
   try {
     const { bot, dm } = botDm(db, user_id);
     await postMessageAs(db, dm, bot, body);

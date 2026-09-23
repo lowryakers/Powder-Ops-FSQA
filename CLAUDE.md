@@ -3282,8 +3282,14 @@ on a fresh database: **three causes, compounding.**
   applies. Granting a module to make a training assignment land is the two-mechanisms defect in a new place.
 - **`parseModuleAccess` moved out of `middleware/auth.js`** into `module-access.js`: judging somebody ELSE's
   access needs the same reader, and two readers of one column is how those rules start meaning two things.
-- **What the office still has to do:** tick *My Tasks* (or Task Center) for an employee in Settings → Users.
-  That was the honest answer; the change is that nobody has to ask the question.
+- **THE INSTRUCTION NAMES A CONTROL THAT EXISTS, and the first cut did not.** The floor phone heads that
+  screen *My Tasks*; the tick in Settings → Users is labelled **"Operator View"** (Overview) or **"Task
+  Center"** (Maintenance). Both the `fix` text and the ReadyBot message said "My Tasks", which is a control
+  nobody can find in Settings — worse than no instruction. The verify now reads the labels straight out of
+  `UsersSection.jsx` and fails if they drift; the DM names **both** ("Operator View — 'My Tasks' on a
+  phone"), because which one somebody is looking at depends on their layout.
+- **What the office still has to do:** tick *Operator View* (or Task Center) for an employee in
+  Settings → Users. That was the honest answer; the change is that nobody has to ask the question.
 - `verify:trainingassign` (72 → **90**, live + browser). **The control is the state the plant was in** —
   assignment silent, screen reporting a clean success — and fails **10**.
 
