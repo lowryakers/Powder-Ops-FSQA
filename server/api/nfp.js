@@ -31,6 +31,7 @@ import { readyDocOrigin } from '../links.js';
 import { botDm, postMessageAs } from './comms.js';
 import { pushToUser } from '../push.js';
 import { stampReadiness } from './products.js';
+import { checkDailyValues } from '../../shared/nutrition-dv.js';
 
 const router = Router();
 
@@ -40,6 +41,76 @@ const nfpUpload = mediaUpload({ files: 5 }).array('files', 5);
 const canManage = (u) => u && (u.role === 'admin' || u.role === 'supervisor' || u.department === 'qa');
 
 const hashToken = (t) => createHash('sha256').update(String(t)).digest('hex');
+
+/* ── The panel's own numbers ──────────────────────────────────────────────────
+ *
+ * A panel version used to be a FILE plus a name: ReadyDoc knew that V3 was
+ * approved on the 20th and nothing whatever about what V3 said. That is enough
+ * to gate print and useless for checking artwork, because the proofing service
+ * can then only compare a label against ITSELF. That catches a panel whose
+ * arithmetic contradicts itself and is blind to the panel where every number is
+ * internally consistent and every number belongs to a different product — which
+ * is eight of the thirteen nutrition errors on the last bottle run, all found
+ * by hand.
+ *
+ * So the values live here, on the version, and the proofing service reads them
+ * over the token-gated feed beside master.csv.
+ *
+ * TWO FACTS, TWO COLUMNS, and this is the one thing not to collapse. `version`
+ * is the label a person chose and a printer quotes ("V3"); `panel_rev` is an
+ * integer this app increments every time the numbers change. One column for
+ * both would make a typo correction look like a new panel to the printer, or a
+ * reprint look like fresh data to the proofer.
+ */
+const PANEL_FIELDS = [
+  'serving_size_desc', 'serving_size_g', 'servings_per_container', 'calories',
+  'total_fat_g', 'total_fat_dv', 'saturated_fat_g', 'saturated_fat_dv', 'trans_fat_g',
+  'cholesterol_mg', 'cholesterol_dv', 'sodium_mg', 'sodium_dv',
+  'total_carbohydrate_g', 'total_carbohydrate_dv', 'dietary_fiber_g', 'dietary_fiber_dv',
+  'total_sugars_g', 'added_sugars_g', 'added_sugars_dv', 'protein_g',
+  'vitamin_d_mcg', 'vitamin_d_dv', 'calcium_mg', 'calcium_dv',
+  'iron_mg', 'iron_dv', 'potassium_mg', 'potassium_dv',
+  'ingredients', 'allergen_statement',
+  // NET WEIGHT LIVES ON THE PANEL and is the DECLARED figure — what the pack
+  // says it contains. It is not products.fill_weight_g, which is what the line
+  // actually fills and is the one input to the proofer's Net Weight check that
+  // is NOT printed on the artwork (D-093). Collapsing the two would delete the
+  // only independent number that check has.
+  'net_weight_oz', 'net_weight_g',
+];
+
+// Stored, NEVER derived. Net carbs has no universal formula and the protein
+// shouted on the front of a pack is a claim that has to match the panel — so
+// the record states the number or states null, and null tells the proofing
+// service to skip that check rather than invent a rule.
+const CALLOUT_FIELDS = ['protein_g', 'calories', 'added_sugar_g', 'net_carbs_g'];
+
+/**
+ * Take the values as the panel writes them.
+ *
+ * "<1" AND "<5" SURVIVE AS STRINGS. 21 CFR 101.9 requires those forms below
+ * certain thresholds, so they are real panel values, and coercing one to a
+ * number would silently turn "less than one gram" into one gram. A plainly
+ * numeric string becomes a number, so the feed reads the way the contract
+ * shows it; anything else is kept exactly as typed.
+ */
+function cleanValues(raw, allowed) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const out = {};
+  for (const k of allowed) {
+    if (!(k in raw)) continue;
+    const val = raw[k];
+    if (val === null || val === undefined || val === '') { out[k] = null; continue; }
+    if (typeof val === 'number') { out[k] = Number.isFinite(val) ? val : null; continue; }
+    const s = String(val).trim();
+    out[k] = /^-?\d+(\.\d+)?$/.test(s) ? Number(s) : s;
+  }
+  return out;
+}
+
+const readJson = (s) => { try { return s ? JSON.parse(s) : null; } catch { return null; } };
+const panelOf = (v) => readJson(v.panel_json);
+const hasValues = (panel) => !!panel && Object.values(panel).some((x) => x !== null && x !== '');
 
 // ── Shaping ──────────────────────────────────────────────────────────────────
 
@@ -64,12 +135,24 @@ function filesFor(db, ids) {
 function hydrate(db, versions) {
   const files = filesFor(db, versions.map((v) => v.id));
   return versions.map((v) => {
-    const { token_hash, ...rest } = v;
+    const { token_hash, panel_json, front_callouts, dv_warnings, ...rest } = v;
+    const panel = readJson(panel_json);
     return {
       ...rest,
+      panel,
+      front_callouts: readJson(front_callouts),
+      // Computed LIVE, not read back from the frozen copy: the screen has to
+      // show what the values say now, or correcting a %DV leaves the warning
+      // sitting on the page telling the person the fix did nothing.
+      dv_check: panel ? checkDailyValues(panel) : [],
+      // What stood at the moment of the decision, frozen with it. NULL means
+      // the panel was decided before this check existed — deliberately a
+      // different state from [], which means it was checked and was clean.
+      dv_warnings_at_approval: readJson(dv_warnings),
       files: files.get(v.id) || [],
       link_live: !!token_hash,
       has_panel: (files.get(v.id) || []).length > 0 || !!v.drive_url,
+      has_values: hasValues(panel),
     };
   });
 }
@@ -77,6 +160,7 @@ function hydrate(db, versions) {
 /** Everything an approver has to be able to see before saying yes. */
 async function approverView(db, v) {
   const product = db.prepare('SELECT sku, flavor, category, pack, gtin FROM products WHERE sku = ?').get(v.sku);
+  const panel = panelOf(v);
   const files = db.prepare("SELECT * FROM nfp_files WHERE version_id = ? ORDER BY kind").all(v.id);
   const panels = [];
   for (const f of files) {
@@ -100,6 +184,13 @@ async function approverView(db, v) {
     sent_to: v.sent_to,
     sent_by: v.token_issued_by,
     panels,
+    panel,
+    front_callouts: readJson(v.front_callouts),
+    // THE APPROVER SEES THE MISMATCHES TOO. They are the person best placed to
+    // know whether 570 mg is really 21%, and the signed link is the door most
+    // of these approvals come through — a warning only the in-app button
+    // showed would be a warning almost nobody ever saw.
+    dv_check: panel ? checkDailyValues(panel) : [],
     // Says out loud when there is no viewable file, so the page can tell the
     // approver to open the Drive link rather than silently showing nothing.
     storage: storageEnabled(),
@@ -366,6 +457,75 @@ router.put('/:id', (req, res) => {
   res.json(hydrate(db, [db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(v.id)])[0]);
 });
 
+/**
+ * Type the panel's numbers in.
+ *
+ * ITS OWN ROUTE rather than more fields on the PUT, for the same reason a SKU
+ * rename is its own endpoint: this is what every pack gets checked against,
+ * `panel_rev` moves on every write, and that should read in the audit log as a
+ * deliberate act rather than as an edit to a text box.
+ *
+ * Values MERGE. A phone filling in the vitamins half of a panel must not blank
+ * the macros somebody typed at a desk an hour ago.
+ */
+router.put('/:id/panel', (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage nutrition panels.' });
+  const db = getDb();
+  const v = db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(req.params.id);
+  if (!v) return res.status(404).json({ error: 'Not found' });
+  // The same rule as everything else on a decided panel: an approved panel is
+  // what artwork was printed from, and rewriting its numbers would make every
+  // pack drawn against it wrong in the record and right on the shelf.
+  if (['approved', 'superseded'].includes(v.status)) {
+    return res.status(409).json({
+      error: 'An approved panel is what artwork was checked against and is never rewritten. File the next version.',
+    });
+  }
+
+  const panelPatch = cleanValues(req.body?.panel, PANEL_FIELDS);
+  const calloutPatch = cleanValues(req.body?.front_callouts, CALLOUT_FIELDS);
+  if (!panelPatch && !calloutPatch) {
+    return res.status(400).json({ error: 'Send panel values to save.' });
+  }
+
+  const before = panelOf(v) || {};
+  const beforeCallouts = readJson(v.front_callouts) || {};
+  const panel = { ...before, ...(panelPatch || {}) };
+  const callouts = { ...beforeCallouts, ...(calloutPatch || {}) };
+  const panelJson = JSON.stringify(panel);
+  const calloutJson = JSON.stringify(callouts);
+  const changed = panelJson !== JSON.stringify(before) || calloutJson !== JSON.stringify(beforeCallouts);
+
+  // A SAVE THAT CHANGED NOTHING IS NOT A REVISION. `panel_rev` is what answers
+  // "was this artwork checked against the panel as it stands now"; bumping it
+  // because somebody opened the form and pressed Save would strand every pack
+  // in the plant on a revision that says the same thing as the one before it.
+  if (changed) {
+    db.prepare(`UPDATE nfp_versions SET panel_json = ?, front_callouts = ?,
+      panel_rev = panel_rev + 1, panel_values_by = ?, panel_values_at = datetime('now'),
+      updated_at = datetime('now') WHERE id = ?`)
+      .run(panelJson, calloutJson, req.user.name, v.id);
+    // The serving size and servings per container are asked for in two places —
+    // the panel, and the summary the approver reads on the link. MIRRORED from
+    // the panel, written nowhere else, so the two cannot tell the approver
+    // different things about the pack he is approving.
+    if (panel.serving_size_desc !== undefined && panel.serving_size_desc !== null) {
+      db.prepare('UPDATE nfp_versions SET serving_size = ? WHERE id = ?').run(String(panel.serving_size_desc), v.id);
+    }
+    if (panel.servings_per_container !== undefined && panel.servings_per_container !== null) {
+      db.prepare('UPDATE nfp_versions SET servings_per_container = ? WHERE id = ?')
+        .run(String(panel.servings_per_container), v.id);
+    }
+    logAudit(req.user, 'nfp_panel_values_updated', 'nfp', v.id,
+      { sku: v.sku, version: v.version, panel_rev: (v.panel_rev || 0) + 1,
+        changed: Object.keys({ ...(panelPatch || {}), ...(calloutPatch || {}) }) },
+      { panel: before, front_callouts: beforeCallouts }, { panel, front_callouts: callouts },
+      `${v.sku} NFP ${v.version}`);
+  }
+
+  res.json(hydrate(db, [db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(v.id)])[0]);
+});
+
 // ── The signed link ──────────────────────────────────────────────────────────
 
 /**
@@ -486,17 +646,46 @@ function strandedArtwork(db, sku, version) {
 }
 
 /**
+ * Raised when an approval would file a panel whose own arithmetic disagrees
+ * with it and nobody has said "approve it anyway". Carries the mismatches so
+ * the route can hand them straight to whoever is holding the button.
+ */
+export class DvUnacknowledged extends Error {
+  constructor(warnings) {
+    super('Panel declares a % Daily Value that does not match its own amount.');
+    this.name = 'DvUnacknowledged';
+    this.warnings = warnings;
+  }
+}
+
+const DV_REFUSAL = 'This panel declares a % Daily Value that does not match its own amount.';
+
+/**
  * Record a decision. Shared by the signed link and the in-app button so a
  * decision is byte-for-byte the same record whichever door it came through —
  * the same rule QA Review follows for signatures.
+ *
+ * THE %DV GATE IS IN HERE, not in the routes. There are three doors that
+ * approve a panel — the in-app button, the single link and the batch link —
+ * and a check applied by two of them is a check with a way round it. Not a
+ * hard block: there are legitimate reasons a declared figure differs, so an
+ * explicit acknowledgement gets through. What is impossible is approving a
+ * defective panel without having been shown the defect.
  */
-function decide(db, v, { decision, by, comments, via }) {
+function decide(db, v, { decision, by, comments, via, dvAck }) {
   const now = new Date().toISOString();
+  const warnings = decision === 'approved' ? checkDailyValues(panelOf(v) || {}) : [];
+  if (warnings.length && !dvAck) throw new DvUnacknowledged(warnings);
   db.transaction(() => {
     if (decision === 'approved') {
       db.prepare(`UPDATE nfp_versions SET status = 'approved', approved_by = ?, approved_at = ?,
-        decided_via = ?, decision_comments = ?, token_hash = NULL, updated_at = datetime('now')
-        WHERE id = ?`).run(by, now.slice(0, 10), via, comments || null, v.id);
+        decided_via = ?, decision_comments = ?, token_hash = NULL,
+        dv_warnings = ?, dv_ack_by = ?, dv_ack_at = ?, updated_at = datetime('now')
+        WHERE id = ?`).run(by, now.slice(0, 10), via, comments || null,
+        // '[]' says CHECKED AND CLEAN. NULL — which is what every panel
+        // approved before this existed still carries — says never checked.
+        JSON.stringify(warnings),
+        warnings.length ? by : null, warnings.length ? now : null, v.id);
       applyApproval(db, v.id, v.sku, v.version, now.slice(0, 10), by);
     } else {
       db.prepare(`UPDATE nfp_versions SET status = 'rejected', rejected_reason = ?, approved_by = ?,
@@ -548,9 +737,19 @@ router.post('/:id/decide', async (req, res) => {
     return res.status(400).json({ error: 'Say what is wrong with the panel — that note is what gets fixed.' });
   }
 
-  const stranded = decide(db, v, { decision, by, comments, via: 'in_app' });
+  let stranded;
+  try {
+    stranded = decide(db, v, { decision, by, comments, via: 'in_app', dvAck: req.body?.dv_ack === true });
+  } catch (err) {
+    if (err instanceof DvUnacknowledged) {
+      return res.status(409).json({ error: DV_REFUSAL, needs_dv_ack: true, dv_warnings: err.warnings });
+    }
+    throw err;
+  }
+  const acked = req.body?.dv_ack === true;
   logAudit(req.user, decision === 'approved' ? 'nfp_approved' : 'nfp_rejected', 'nfp', v.id,
-    { sku: v.sku, version: v.version, by, via: 'in_app' }, null, null, `${v.sku} NFP ${v.version}`);
+    { sku: v.sku, version: v.version, by, via: 'in_app', dv_acknowledged: acked || undefined },
+    null, null, `${v.sku} NFP ${v.version}`);
   res.json({ ok: true, stranded_artwork: stranded,
     version: hydrate(db, [db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(v.id)])[0] });
 });
@@ -611,9 +810,18 @@ linkRouter.post('/:token', async (req, res) => {
     return res.status(400).json({ error: 'Please say what is wrong with the panel.' });
   }
 
-  decide(db, v, { decision, by, comments, via: 'link' });
+  try {
+    decide(db, v, { decision, by, comments, via: 'link', dvAck: req.body?.dv_ack === true });
+  } catch (err) {
+    if (err instanceof DvUnacknowledged) {
+      return res.status(409).json({ error: DV_REFUSAL, needs_dv_ack: true, dv_warnings: err.warnings });
+    }
+    throw err;
+  }
   logAudit(by, decision === 'approved' ? 'nfp_approved' : 'nfp_rejected', 'nfp', v.id,
-    { sku: v.sku, version: v.version, via: 'signed-link' }, null, null, `${v.sku} NFP ${v.version}`);
+    { sku: v.sku, version: v.version, via: 'signed-link',
+      dv_acknowledged: req.body?.dv_ack === true || undefined },
+    null, null, `${v.sku} NFP ${v.version}`);
   await tellIssuer(db, v, decision, by, comments);
   res.json({ ok: true, decision, sku: v.sku, version: v.version });
 });
@@ -705,11 +913,25 @@ linkRouter.post('/batch/:token', async (req, res) => {
     .all(...(wanted ? [b.id, wanted] : [b.id]));
   if (!rows.length) return res.status(409).json({ error: 'Nothing left to decide on this link.' });
 
-  const done = [], stranded = [];
+  const dvAck = req.body?.dv_ack === true;
+  const done = [], stranded = [], blocked = [];
   for (const v of rows) {
-    const s = decide(db, v, { decision, by, comments, via: 'link' });
+    let s;
+    try {
+      s = decide(db, v, { decision, by, comments, via: 'link', dvAck });
+    } catch (err) {
+      if (!(err instanceof DvUnacknowledged)) throw err;
+      // ONE BAD PANEL DOES NOT STOP THE OTHER NINE. The approver sees which
+      // ones were held back and why, and can come back for them — the same
+      // partial-failure rule QA Review's batch signing follows, because
+      // refusing the whole link would leave nine correct panels undecided.
+      blocked.push({ version_id: v.id, sku: v.sku, version: v.version, dv_warnings: err.warnings });
+      continue;
+    }
     logAudit(by, decision === 'approved' ? 'nfp_approved' : 'nfp_rejected', 'nfp', v.id,
-      { sku: v.sku, version: v.version, via: 'signed-link', batch: b.id }, null, null, `${v.sku} NFP ${v.version}`);
+      { sku: v.sku, version: v.version, via: 'signed-link', batch: b.id,
+        dv_acknowledged: dvAck || undefined },
+      null, null, `${v.sku} NFP ${v.version}`);
     done.push({ sku: v.sku, version: v.version });
     // Print-ready artwork drawn against the older panel is REPORTED, never
     // changed — the film already printed is still what is on the shelf.
@@ -717,7 +939,8 @@ linkRouter.post('/batch/:token', async (req, res) => {
     tellIssuer(db, v, decision, by, comments).catch(() => {});
   }
   const left = closeIfFinished(db, b.id);
-  res.json({ ok: true, decision, decided: done, outstanding: left, stranded });
+  res.json({ ok: true, decision, decided: done, outstanding: left, stranded, blocked,
+    needs_dv_ack: blocked.length > 0 || undefined });
 });
 
 export default router;

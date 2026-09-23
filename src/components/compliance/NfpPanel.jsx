@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useApiGet, apiFetch, apiUpload } from '../../hooks/useApi';
 import ProductFileImport from './ProductFileImport.jsx';
+import { computeDv, checkDailyValues } from '../../../shared/nutrition-dv.js';
 import {
   FileText, Link2, Upload, CheckCircle2, XCircle, Clock, Copy, Check,
-  AlertTriangle, Trash2, Plus, Send,
+  AlertTriangle, Trash2, Plus, Send, Table2,
 } from 'lucide-react';
 
 /**
@@ -29,6 +30,245 @@ const STATUS = {
   rejected: { label: 'Sent back', cls: 'bg-red-100 text-red-800', Icon: XCircle },
   superseded: { label: 'Superseded', cls: 'bg-gray-100 text-gray-500', Icon: FileText },
 };
+
+/* ── The panel's own numbers ──────────────────────────────────────────────────
+ *
+ * One row per line of the Nutrition Facts box, in the order it is printed, so
+ * somebody transcribing from artwork reads down the page rather than hunting.
+ * `dv` is absent on the lines that have no % Daily Value — trans fat, total
+ * sugars and protein — because the printed panel has no figure there and a box
+ * offering one invites somebody to invent it.
+ */
+const PANEL_ROWS = [
+  { key: 'total_fat_g', dv: 'total_fat_dv', nutrient: 'total_fat', label: 'Total Fat', unit: 'g' },
+  { key: 'saturated_fat_g', dv: 'saturated_fat_dv', nutrient: 'saturated_fat', label: 'Saturated Fat', unit: 'g', indent: true },
+  { key: 'trans_fat_g', label: 'Trans Fat', unit: 'g', indent: true },
+  { key: 'cholesterol_mg', dv: 'cholesterol_dv', nutrient: 'cholesterol', label: 'Cholesterol', unit: 'mg' },
+  { key: 'sodium_mg', dv: 'sodium_dv', nutrient: 'sodium', label: 'Sodium', unit: 'mg' },
+  { key: 'total_carbohydrate_g', dv: 'total_carbohydrate_dv', nutrient: 'total_carbohydrate', label: 'Total Carbohydrate', unit: 'g' },
+  { key: 'dietary_fiber_g', dv: 'dietary_fiber_dv', nutrient: 'dietary_fiber', label: 'Dietary Fiber', unit: 'g', indent: true },
+  { key: 'total_sugars_g', label: 'Total Sugars', unit: 'g', indent: true },
+  { key: 'added_sugars_g', dv: 'added_sugars_dv', nutrient: 'added_sugars', label: 'Added Sugars', unit: 'g', indent: true },
+  { key: 'protein_g', label: 'Protein', unit: 'g' },
+  { key: 'vitamin_d_mcg', dv: 'vitamin_d_dv', nutrient: 'vitamin_d', label: 'Vitamin D', unit: 'mcg' },
+  { key: 'calcium_mg', dv: 'calcium_dv', nutrient: 'calcium', label: 'Calcium', unit: 'mg' },
+  { key: 'iron_mg', dv: 'iron_dv', nutrient: 'iron', label: 'Iron', unit: 'mg' },
+  { key: 'potassium_mg', dv: 'potassium_dv', nutrient: 'potassium', label: 'Potassium', unit: 'mg' },
+];
+
+const HEAD_ROWS = [
+  { key: 'serving_size_desc', label: 'Serving size', placeholder: '1 Bottle' },
+  { key: 'serving_size_g', label: 'Serving (g)' },
+  { key: 'servings_per_container', label: 'Servings / container' },
+  { key: 'calories', label: 'Calories' },
+];
+
+const WEIGHT_ROWS = [
+  // The DECLARED net weight — what the pack says. Not the fill weight on the
+  // product row, which is what the line actually fills and is the one number
+  // the proofer's Net Weight check has that is NOT printed on the artwork.
+  { key: 'net_weight_oz', label: 'Net weight (oz)' },
+  { key: 'net_weight_g', label: 'Net weight (g)' },
+];
+
+const CALLOUT_ROWS = [
+  { key: 'protein_g', label: 'Protein (g)' },
+  { key: 'calories', label: 'Calories' },
+  { key: 'added_sugar_g', label: 'Added sugar (g)' },
+  { key: 'net_carbs_g', label: 'Net carbs (g)' },
+];
+
+const cell = 'w-full border border-gray-300 rounded px-2 py-1 text-xs';
+
+/**
+ * Every declared %DV that disagrees with its own amount.
+ *
+ * THE EXPLANATION, NEVER THE RULE. The refusal lives in `decide()` on the
+ * server; this renders what that same shared function computes so the person
+ * can see it before they hit a 409. If the two ever disagree the server is
+ * right — but they cannot, because it is one function imported twice.
+ */
+function DvWarnings({ warnings = [], tone = 'amber' }) {
+  if (!warnings.length) return null;
+  const cls = tone === 'red'
+    ? 'text-red-900 bg-red-50 border-red-200' : 'text-amber-900 bg-amber-50 border-amber-200';
+  return (
+    <div data-dv-warning={warnings.length} className={`text-xs border rounded p-2 space-y-1 ${cls}`}>
+      <p className="font-semibold flex items-center gap-1.5">
+        <AlertTriangle size={13} className="shrink-0" />
+        {warnings.length} % Daily Value{warnings.length === 1 ? '' : 's'} on this panel
+        {warnings.length === 1 ? ' does' : ' do'} not match the amount declared beside
+        {warnings.length === 1 ? ' it' : ' them'}
+      </p>
+      <ul className="space-y-0.5 pl-5 list-disc">
+        {warnings.map((w) => <li key={w.nutrient}>{w.note}</li>)}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * Type the panel in.
+ *
+ * EVERY AMOUNT BOX IS type="text", deliberately. "&lt;1 g" and "&lt;5 mg" are
+ * required forms below certain thresholds (21 CFR 101.9), and a number input
+ * refuses the "&lt;" with a browser tooltip that reads as the app being broken —
+ * the same trap the day log's `step="any"` note records.
+ */
+function PanelValues({ v, canEdit, onChanged }) {
+  const [open, setOpen] = useState(false);
+  const [panel, setPanel] = useState(v.panel || {});
+  const [callouts, setCallouts] = useState(v.front_callouts || {});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [saved, setSaved] = useState(false);
+  const locked = ['approved', 'superseded'].includes(v.status) || !canEdit;
+
+  const set = (k) => (e) => { setSaved(false); setPanel((p) => ({ ...p, [k]: e.target.value })); };
+  const setC = (k) => (e) => { setSaved(false); setCallouts((p) => ({ ...p, [k]: e.target.value })); };
+  const val = (o, k) => (o?.[k] === null || o?.[k] === undefined ? '' : String(o[k]));
+
+  // Computed from what is in the boxes right now, by the same function the
+  // server gates on — so the figure moves as you type and the warning goes
+  // away when the number is fixed, instead of at the next save.
+  const live = checkDailyValues(panel);
+
+  const save = async () => {
+    setBusy(true); setError('');
+    try {
+      await apiFetch(`/nfp/${v.id}/panel`, { method: 'PUT', body: { panel, front_callouts: callouts } });
+      setSaved(true);
+      onChanged();
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  };
+
+  const filled = PANEL_ROWS.concat(HEAD_ROWS).filter((r) => val(v.panel, r.key) !== '').length;
+
+  return (
+    <div data-panel-values className="rounded border border-gray-200">
+      <button type="button" data-panel-toggle onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+        <span className="inline-flex items-center gap-1.5">
+          <Table2 size={13} className="text-powder-600" />
+          Panel values
+          {v.panel_rev > 0 && <span className="text-gray-400 font-normal">rev {v.panel_rev}</span>}
+        </span>
+        <span className="text-gray-500 font-normal">
+          {filled ? `${filled} filled in` : 'Not entered — artwork cannot be checked against this panel'}
+        </span>
+      </button>
+
+      {open && (
+        <div className="px-2.5 pb-2.5 space-y-2 border-t border-gray-100 pt-2">
+          <DvWarnings warnings={live} />
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+            {HEAD_ROWS.map((r) => (
+              <label key={r.key} className="block">
+                <span className="text-[11px] text-gray-500">{r.label}</span>
+                <input type="text" disabled={locked} value={val(panel, r.key)} onChange={set(r.key)}
+                  placeholder={r.placeholder || ''} className={cell} />
+              </label>
+            ))}
+          </div>
+
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-[11px] text-gray-500 text-left">
+                <th className="font-normal pb-1">Nutrient</th>
+                <th className="font-normal pb-1 w-24">Amount</th>
+                <th className="font-normal pb-1 w-20">%DV</th>
+                <th className="font-normal pb-1 w-24">Computes to</th>
+              </tr>
+            </thead>
+            <tbody>
+              {PANEL_ROWS.map((r) => {
+                const c = r.nutrient ? computeDv(r.nutrient, panel[r.key]) : null;
+                const bad = r.dv && live.some((w) => w.nutrient === r.nutrient);
+                return (
+                  <tr key={r.key}>
+                    <td className={`py-0.5 pr-2 ${r.indent ? 'pl-3 text-gray-600' : 'text-gray-800 font-medium'}`}>
+                      {r.label} <span className="text-gray-400">({r.unit})</span>
+                    </td>
+                    <td className="py-0.5 pr-1">
+                      <input type="text" data-panel-amount={r.key} disabled={locked}
+                        value={val(panel, r.key)} onChange={set(r.key)} className={cell} />
+                    </td>
+                    <td className="py-0.5 pr-1">
+                      {r.dv ? (
+                        <input type="text" data-panel-dv={r.nutrient} disabled={locked}
+                          value={val(panel, r.dv)} onChange={set(r.dv)}
+                          className={`${cell} ${bad ? 'border-red-400 bg-red-50' : ''}`} />
+                      ) : <span className="text-gray-300">—</span>}
+                    </td>
+                    <td data-panel-computed={r.nutrient || r.key}
+                      className={`py-0.5 text-[11px] ${bad ? 'text-red-700 font-semibold' : 'text-gray-500'}`}>
+                      {c ? `${c.bounded ? 'at most ' : ''}${c.pct}%` : ''}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          <div className="grid grid-cols-2 gap-1.5">
+            {WEIGHT_ROWS.map((r) => (
+              <label key={r.key} className="block">
+                <span className="text-[11px] text-gray-500">{r.label}</span>
+                <input type="text" disabled={locked} value={val(panel, r.key)} onChange={set(r.key)} className={cell} />
+              </label>
+            ))}
+          </div>
+
+          <label className="block">
+            <span className="text-[11px] text-gray-500">Ingredients</span>
+            <textarea rows={2} disabled={locked} value={val(panel, 'ingredients')} onChange={set('ingredients')} className={cell} />
+          </label>
+          <label className="block">
+            <span className="text-[11px] text-gray-500">Allergen statement</span>
+            <input type="text" disabled={locked} value={val(panel, 'allergen_statement')} onChange={set('allergen_statement')} className={cell} />
+          </label>
+
+          <div>
+            <p className="text-[11px] text-gray-500 mb-1">
+              Front-of-pack callouts — what is shouted on the front, which has to agree with the panel.
+              Leave one blank if the pack does not make that claim; blank means the proofing check is skipped,
+              not computed.
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+              {CALLOUT_ROWS.map((r) => (
+                <label key={r.key} className="block">
+                  <span className="text-[11px] text-gray-500">{r.label}</span>
+                  <input type="text" disabled={locked} value={val(callouts, r.key)} onChange={setC(r.key)} className={cell} />
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {error && <p className="text-xs text-red-700 bg-red-50 rounded p-2">{error}</p>}
+          {locked ? (
+            <p className="text-[11px] text-gray-500 italic">
+              {canEdit
+                ? 'An approved panel is what artwork was checked against and is never rewritten. A correction is the next version.'
+                : 'Read only.'}
+            </p>
+          ) : (
+            <div className="flex items-center gap-2">
+              <button type="button" data-panel-save onClick={save} disabled={busy}
+                className="px-3 py-1.5 bg-powder-600 text-white rounded-lg text-xs font-medium disabled:opacity-50">
+                {busy ? 'Saving…' : 'Save panel values'}
+              </button>
+              {saved && <span className="text-xs text-green-700 inline-flex items-center gap-1"><Check size={13} /> Saved</span>}
+              <span className="text-[11px] text-gray-500">
+                Saving moves the revision, which is what a proofing run records against a pack.
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function StatusChip({ status }) {
   const s = STATUS[status] || STATUS.draft;
@@ -191,6 +431,9 @@ function VersionCard({ v, canEdit, onChanged, storage = true }) {
   const [by, setBy] = useState('');
   const [comments, setComments] = useState('');
   const [stranded, setStranded] = useState([]);
+  // The mismatches the server refused on, and the tick that gets past them.
+  const [dvBlock, setDvBlock] = useState([]);
+  const [dvAck, setDvAck] = useState(false);
 
   const open = ['draft', 'sent', 'rejected'].includes(v.status);
 
@@ -217,13 +460,21 @@ function VersionCard({ v, canEdit, onChanged, storage = true }) {
   });
 
   const submitDecision = () => act('decide', async () => {
-    const r = await apiFetch(`/nfp/${v.id}/decide`, {
-      method: 'POST',
-      body: { decision: deciding, approved_by: by, comments },
-    });
-    setStranded(r.stranded_artwork || []);
-    setDeciding(null); setBy(''); setComments('');
-    onChanged();
+    try {
+      const r = await apiFetch(`/nfp/${v.id}/decide`, {
+        method: 'POST',
+        body: { decision: deciding, approved_by: by, comments, dv_ack: dvAck },
+      });
+      setStranded(r.stranded_artwork || []);
+      setDeciding(null); setBy(''); setComments(''); setDvBlock([]); setDvAck(false);
+      onChanged();
+    } catch (e) {
+      // The server refused because the panel disagrees with its own
+      // arithmetic. Show WHAT it found rather than the sentence alone — a
+      // refusal you cannot act on reads as the app being awkward.
+      if (e.data?.needs_dv_ack) { setDvBlock(e.data.dv_warnings || []); return; }
+      throw e;
+    }
   });
 
   return (
@@ -275,6 +526,12 @@ function VersionCard({ v, canEdit, onChanged, storage = true }) {
         </a>
       )}
 
+      <PanelValues v={v} canEdit={canEdit} onChanged={onChanged} />
+
+      {/* Shown on the card itself, not only inside the approve form: the
+          person who can fix it is usually not the person approving. */}
+      {open && (v.dv_check || []).length > 0 && <DvWarnings warnings={v.dv_check} />}
+
       {!v.has_panel && open && (
         <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2 flex items-start gap-1.5">
           <AlertTriangle size={13} className="mt-0.5 shrink-0" />
@@ -315,6 +572,22 @@ function VersionCard({ v, canEdit, onChanged, storage = true }) {
               <textarea value={comments} onChange={(e) => setComments(e.target.value)} rows={2}
                 placeholder={deciding === 'approved' ? 'Comments (optional)' : 'What is wrong with it (required)'}
                 className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm" />
+              {/* NOT A HARD BLOCK — there are legitimate reasons a declared
+                  figure differs. What is impossible is approving a defective
+                  panel without having been shown the defect. */}
+              {deciding === 'approved' && (dvBlock.length > 0 || (v.dv_check || []).length > 0) && (
+                <>
+                  <DvWarnings warnings={dvBlock.length ? dvBlock : v.dv_check} tone="red" />
+                  <label className="flex items-start gap-2 text-xs text-gray-800">
+                    <input type="checkbox" data-dv-ack checked={dvAck}
+                      onChange={(e) => setDvAck(e.target.checked)} className="mt-0.5" />
+                    <span>
+                      I have looked at these and am approving the panel anyway.
+                      This is recorded against my name.
+                    </span>
+                  </label>
+                </>
+              )}
               <div className="flex gap-2">
                 <button onClick={submitDecision} disabled={busy === 'decide'}
                   className={`px-3 py-1.5 rounded-lg text-sm font-medium text-white disabled:opacity-50 ${deciding === 'approved' ? 'bg-green-600' : 'bg-red-600'}`}>

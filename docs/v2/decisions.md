@@ -4086,3 +4086,115 @@ instruction — the same defect as a button that errors reading as a fault (D-09
 are now read straight out of `UsersSection.jsx` by `verify:trainingassign`, so they fail a test rather than
 drift; and the DM names the screen **both** ways, because which one somebody sees depends on their layout.
 Found by Lowry asking where "My Tasks" was.
+
+## D-107 — The panel is a record of numbers, not a record of a file (2026-09-23)
+
+**Asked for:** make Products → Nutrition panels readable by the artwork proofing service at artproof.live,
+so a pack is checked against the approved panel of record instead of against another label.
+
+**The reason it matters, in one number.** A 38-SKU bottle run produced **13 SKUs with nutrition errors.
+Five** were visible to the proofing tool's arithmetic check; the other **eight** were found by diffing
+against the source label **by hand**. Those eight are the whole class this closes: a panel where every
+number is internally consistent and every number belongs to a different product. Nothing on the label
+contradicts anything else on the label, so a tool that can only compare a label to itself is blind to it.
+The tab has said since it shipped that "approving one here is what lets artwork be released to print against
+it" — and until now nothing outside ReadyDoc could read the tab, so that sentence described an intention.
+
+**A panel version used to be a FILE plus a name.** ReadyDoc knew that V3 was approved on the 20th and
+nothing whatever about what V3 said. `nfp_versions.panel_json` is the values, `front_callouts` is what the
+front of the pack shouts, and `GET /api/products/nutrition-panel?gtin=|sku=` serves them under the same
+token as `master.csv` — the two endpoints are the two halves of one integration and a second secret to
+rotate buys nothing. Mounted ahead of `requireModuleWrite` and listed in `isPublicPath()`, because the
+caller is a service holding a token, not a person; getting that wrong turns every read into a silent 401.
+
+**TWO FACTS, TWO COLUMNS, and this is the one thing not to collapse.** The contract asked for a `version`
+that is both the printed label and an integer that increments on every edit. It cannot be both.
+`nfp_versions.version` stays TEXT — it is what a person chose, what a printer quotes, and what
+`artwork_versions.nfp_version` is matched against — and **`panel_rev`** is the integer this app increments
+whenever the numbers move. One column for both would make a typo correction look like a new panel to the
+printer, or a reprint look like fresh data to the proofer. The feed carries both, plus `panel_version` as an
+alias of the integer under the name the proofing tool posts back, so that side can read and return one
+field. **This is a contract change and it has been reported for carrying across.**
+
+**A refusal says which refusal it is.** No panel row, a panel row with nobody having typed the numbers, and
+an unknown product are all 404 to the proofing service — correctly, all three mean unverified — but they are
+three different jobs to the plant, so each carries a `reason` (`no_panel` / `no_panel_values` /
+`product_not_found`) and the second names the version it found. A bare 404 makes "nobody has filed a panel"
+look identical to "the panel is on file and nobody has entered it".
+
+**A draft is returned AND SAID TO BE A DRAFT.** Serving only approved panels would make draft and missing
+the same answer; the proofing service refuses to mark a file releasable against a draft while still checking
+its numbers. A superseded panel is never the answer — artwork drawn against it is already reported as
+stranded.
+
+**`<1` and `<5` survive as strings.** 21 CFR 101.9 requires those forms below certain thresholds, so they
+are real panel values; coercing one would silently turn "less than one gram" into one gram. A plainly
+numeric string becomes a number so the feed reads as specified. The amount boxes in the form are
+`type="text"` for the same reason a quantity carries `step="any"` — a number input refuses the `<` with a
+browser tooltip that reads as the app being broken.
+
+**Net weight lives on the panel and is NOT `products.fill_weight_g`.** The panel's is the **declared**
+figure, what the pack says; the product's is what the line actually fills, and per D-093 it is the one input
+to the proofer's Net Weight check that is not printed on the artwork — which is exactly why that check
+works. Collapsing them would delete the only independent number it has.
+
+### The %DV check, which is the half that did not exist anywhere
+
+`shared/nutrition-dv.js` recomputes every declared % Daily Value from the amount declared beside it. A
+declared %DV is the one number on a panel derived from another number on the same panel, so it can be
+checked with no second source at all. Three that are in artwork right now: `Saturated Fat 0 g ... 5%`
+(zero cannot be 5% of anything), `Sodium 570 mg ... 21%` (computes to 25%), `Dietary Fiber <1 g ... 8%`.
+
+- **THE ROUNDING RULE IS THE TRAP.** Macronutrients round to the nearest whole percent; vitamins and
+  minerals round in increments (21 CFR 101.9(c)(8)(iii)) — nearest 2% to 10%, nearest 5% to 50%, nearest 10%
+  above. **Calcium 150 mg is 11.5%, which is 10% under the mineral rule and 12% under the macronutrient
+  one.** Applying the wrong rule flags almost every correct panel on this line, and a warning that fires on
+  good panels is one people learn to dismiss — which costs more than the check is worth. `check:dv` asserts
+  that case by name, and the control run (delete the `micro` branch) fails seven pure assertions and six
+  live ones, including refusing to approve a correct panel.
+- **A VITAMIN OR MINERAL UNDER 2% MAY BE DECLARED AS ZERO**, found by running the check against the
+  contract's own example panel: iron at 0.3 mg is 1.67%, which the increment rule rounds *up* to 2%, so a
+  correctly formatted 0% was flagged. The same false-positive class as the calcium case, caught by testing
+  rather than by reading.
+- **A bounded amount is a CEILING, not an equality.** "<1 g" of fibre is somewhere below a gram, so anything
+  at or under the bound's %DV is consistent with it and only a higher figure is provably wrong.
+- **A blank is a gap, never a zero**, and a word is not a zero either: `Number('')` is 0 and finite, so
+  stripping the letters out of "n/a" and handing the rest to `Number()` reads a note as a declared nothing.
+- **Correction to the brief:** `Dietary Fiber <1 g` computes to **4%**, not the 3% the specification states
+  (1/28 = 3.571%). The declared 8% is wrong either way, but the figure printed beside it has to be the one
+  the code actually derives.
+
+**THE GATE IS IN `decide()`, NOT IN THE ROUTES.** Three doors approve a panel — the in-app button, the
+signed link and the batch link — and a check applied by two of them is a check with a way round it. Approving
+with unacknowledged mismatches throws; each route turns that into a 409 carrying the mismatches themselves,
+because a refusal you cannot act on reads as the app being awkward (D-091). **Not a hard block**: there are
+legitimate reasons a declared figure differs, so an explicit tick gets through and is recorded with the
+approver's name and the time. What is impossible is approving a defective panel without having been shown
+the defect. `dv_warnings` is frozen with the decision — `[]` means checked and clean, NULL means decided
+before this existed, and those are different states.
+
+**The approver sees them too.** The signed link is the door most of these approvals come through, on a
+phone; a warning only the in-app button showed would be a warning almost nobody ever saw. On the batch link
+one blocked panel does not stop the other nine — they are named back with their mismatches, the
+partial-failure rule QA Review's batch signing follows.
+
+**`shared/`, because both sides run it.** The server decides; the browser runs the same function to show
+what an amount computes to beside the box as somebody types it, which is when a wrong %DV is cheapest to
+fix. One definition, two callers — the `shared/rich-markup.js` arrangement. A second copy in the client is
+how a form and a gate start disagreeing, and the first sign of the disagreement would be a refusal nobody
+could explain.
+
+**Artwork ingest records what it checked against.** `artwork_versions.panel_rev`, accepted under both
+`panel_rev` and `panel_version` because the two halves of this integration were specified apart and they are
+one number. A retry that sends none leaves the value on file rather than blanking it — NULL means "not
+checked against a panel" and a retry is not evidence that it wasn't.
+
+Verified: `check:dv` (**32**, pure) and `verify:nfppanel` (**49**, live) and `verify:nfppanelui` (**19**, a
+real browser at 1280 and a 390px phone) — all three in the standard runs. Controls: removing the gate lets a
+panel declaring `Saturated Fat 0 g ... 5%` approve straight through (7 live assertions fail); applying the
+macronutrient rounding rule to minerals blocks a correct calcium panel (13 fail across the two).
+
+**What is NOT done.** No panel values have been entered for any of the 118 products — the editor exists and
+every panel reads `no_panel_values` until somebody types one in. That is transcription from artwork and it
+is a person's job, not a seeder's: a nutrition panel invented from a plausible-looking source is the
+fabricated-record failure this whole module exists to prevent.

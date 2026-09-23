@@ -109,7 +109,7 @@ import filmInspectionRoutes from './server/api/film-inspection.js';
 import safetyRoutes from './server/api/safety.js';
 import importRoutes from './server/api/imports.js';
 import coaRoutes from './server/api/coa.js';
-import productRoutes, { masterCsv } from './server/api/products.js';
+import productRoutes, { masterCsv, nutritionPanel } from './server/api/products.js';
 import artworkRoutes, { ingestRouter as artworkIngestRoutes } from './server/api/artwork.js';
 import nfpRoutes, { linkRouter as nfpLinkRoutes } from './server/api/nfp.js';
 import productFileImportRoutes from './server/api/product-file-import.js';
@@ -1966,6 +1966,9 @@ app.use('/api/coa', requireModuleWrite('coa'), coaRoutes);
 // caches and reports nothing. Mounted ahead of the guard, the same
 // arrangement /api/artwork/ingest and the partner portal use.
 app.get('/api/products/master.csv', masterCsv);
+// The other half of the nutrition check. Same token, same reason it sits ahead
+// of the guard: the proofing service holds a token, not a session.
+app.get('/api/products/nutrition-panel', nutritionPanel);
 app.use('/api/products', requireModuleWrite('products'), productRoutes);
 
 // New-hire onboarding. The admin router is behind the module grant; the portal

@@ -434,20 +434,36 @@ ingestRouter.post('/', (req, res) => {
   // What the run saw on the label, as sent. Stored with the version and its
   // checks in one transaction; it used to be accepted and dropped.
   const snapshot = b.snapshot && typeof b.snapshot === 'object' && !Array.isArray(b.snapshot) ? b.snapshot : null;
+  // WHICH REVISION OF THE NUTRITION PANEL THIS FILE WAS CHECKED AGAINST.
+  // Accepted under both names because the two halves of this integration were
+  // specified apart: the proofing service posts `panel_version`, ReadyDoc's own
+  // feed calls the integer `panel_rev`, and they are the same number. Taking
+  // one and dropping the other would leave the audit trail empty depending on
+  // which side's vocabulary the caller happened to use.
+  const rawPanelRev = b.panel_rev ?? b.panel_version;
+  const panelRev = Number.isFinite(Number(rawPanelRev)) && rawPanelRev !== null && rawPanelRev !== ''
+    ? Math.trunc(Number(rawPanelRev)) : null;
   const id = existing?.id || uuid();
 
   db.transaction(() => {
     if (!existing) {
       db.prepare(`INSERT INTO artwork_versions
         (id, sku, component, version, status, source, proof_job_id, drive_url, nfp_version,
-         change_summary, created_by)
-        VALUES (?, ?, ?, ?, 'in_review', 'proofing', ?, ?, ?, ?, 'artwork-proofing')`).run(
+         panel_rev, change_summary, created_by)
+        VALUES (?, ?, ?, ?, 'in_review', 'proofing', ?, ?, ?, ?, ?, 'artwork-proofing')`).run(
         id, product.sku, component, nextVersion(db, product.sku, component),
-        String(b.job_id), b.drive_url || null, product.nfp_version || null, b.summary || null);
+        String(b.job_id), b.drive_url || null, product.nfp_version || null, panelRev, b.summary || null);
     } else {
       // A retry replaces the previous check set rather than appending a second
       // copy of the same findings.
       db.prepare('DELETE FROM artwork_checks WHERE version_id = ?').run(id);
+      // A re-run against a newer panel moves the recorded revision; a re-run
+      // that sent none leaves the one already on file rather than blanking it,
+      // because NULL here means "not checked against a panel" and a retry is
+      // not evidence that it wasn't.
+      if (panelRev !== null) {
+        db.prepare('UPDATE artwork_versions SET panel_rev = ? WHERE id = ?').run(panelRev, id);
+      }
     }
     const ins = db.prepare(`INSERT INTO artwork_checks
       (id, version_id, check_name, result, detail, expected, found, checked_by)
@@ -470,6 +486,9 @@ ingestRouter.post('/', (req, res) => {
     ok: true, version_id: id, sku: product.sku, version: version.version,
     failures: version.failures, warnings: version.warnings, replaced: !!existing,
     snapshot_stored: !!snapshot,
+    // Echoed so a retry can see what ReadyDoc actually holds rather than
+    // assuming the field landed.
+    panel_rev: version.panel_rev ?? null,
   });
 });
 

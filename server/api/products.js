@@ -1114,4 +1114,97 @@ export function masterCsv(req, res) {
     .send(lines.join('\n'));
 }
 
+/* ── The approved nutrition panel, for the proofing service ───────────────────
+ *
+ * The other half of the same integration, and the one that closes the hole
+ * master.csv cannot. The proofing tool checks a label against its own
+ * arithmetic, which catches a panel that contradicts itself and is blind to
+ * the panel where every number is internally consistent and every number came
+ * off a different product. That is how a 38-SKU bottle run produced 13
+ * nutrition errors with only 5 of them visible to the check.
+ *
+ * The Nutrition panels tab already says it is the gate — "approving one here
+ * is what lets artwork be released to print against it" — and until this
+ * endpoint existed nothing could read it.
+ *
+ * STATUS IS PART OF THE ANSWER, not a filter applied here. A draft panel is
+ * returned AND SAID TO BE A DRAFT, so the proofing service can refuse to mark
+ * a file releasable against it while still checking the numbers. Returning
+ * only approved panels would make "draft" and "missing" the same 404, and
+ * those are different problems with different fixes.
+ *
+ * A superseded panel is never the answer: it is what was true before the
+ * current one, and artwork drawn against it is already reported as stranded.
+ */
+function currentPanel(db, sku) {
+  return db.prepare(`SELECT * FROM nfp_versions WHERE sku = ? AND status = 'approved'
+                     ORDER BY approved_at DESC, updated_at DESC LIMIT 1`).get(sku)
+    || db.prepare(`SELECT * FROM nfp_versions WHERE sku = ? AND status IN ('draft','sent','rejected')
+                   ORDER BY updated_at DESC LIMIT 1`).get(sku);
+}
+
+export function nutritionPanel(req, res) {
+  if (!tokenOk(req.query.token)) return res.status(401).json({ error: 'Unauthorized' });
+  const gtin = normalizeGtin(req.query.gtin);
+  const sku = String(req.query.sku || '').trim();
+  if (!gtin && !sku) return res.status(400).json({ error: 'Supply a gtin or a sku.' });
+
+  const db = getDb();
+  // GTIN BEFORE SKU, the same order artwork ingest resolves in: a decoded
+  // barcode is the only unambiguous identification of a pack, and a filename
+  // cannot tell a pouch from a stick.
+  const product = (gtin && db.prepare('SELECT * FROM products WHERE gtin = ?').get(gtin))
+    || (sku && db.prepare('SELECT * FROM products WHERE sku = ?').get(sku))
+    || null;
+  if (!product) {
+    return res.status(404).json({ error: 'No product matches that GTIN or SKU.', reason: 'product_not_found' });
+  }
+
+  const v = currentPanel(db, product.sku);
+  // EVERY REFUSAL SAYS WHICH ONE IT IS. All three read as "unverified" to the
+  // proofing service, which is right — but to the plant they are three
+  // different jobs, and a bare 404 makes "nobody has filed a panel" look
+  // identical to "the panel is on file and nobody typed the numbers in".
+  if (!v) {
+    return res.status(404).json({
+      error: `No nutrition panel is on file for ${product.sku}.`,
+      reason: 'no_panel', sku: product.sku, gtin: product.gtin || null,
+    });
+  }
+  // A row whose JSON somehow will not parse is answered as "no values", not
+  // as a 500: to the proofing service that is the same unverified state, and a
+  // crash on one bad row would take the feed down for every product.
+  const parse = (raw) => { try { return raw ? JSON.parse(raw) : null; } catch { return null; } };
+  const panel = parse(v.panel_json);
+  if (!panel || !Object.values(panel).some((x) => x !== null && x !== '')) {
+    return res.status(404).json({
+      error: `${product.sku} panel ${v.version} is on file but its values have not been entered.`,
+      reason: 'no_panel_values', sku: product.sku, gtin: product.gtin || null,
+      version: v.version, status: v.status,
+    });
+  }
+  const callouts = parse(v.front_callouts);
+
+  res.set('Cache-Control', 'no-store').json({
+    sku: product.sku,
+    gtin: normalizeGtin(product.gtin),
+    product_name: [product.flavor, PACK_LABEL[product.pack] || product.pack].filter(Boolean).join(' — '),
+    // THE LABEL, NOT A COUNTER. This is what a person chose and what a printer
+    // quotes; `panel_rev` beside it is the integer that moves on every change
+    // to the numbers, and it is the one to record against a proofing run.
+    // `panel_version` is the same integer under the name the proofing tool
+    // posts back on ingest, so it can read and return one field.
+    version: v.version,
+    panel_rev: v.panel_rev || 0,
+    panel_version: v.panel_rev || 0,
+    status: v.status,
+    approved_by: v.approved_by || null,
+    // As stored: a date, because that is the fact the approval carries. A
+    // fabricated time of day would read as precision nobody recorded.
+    approved_at: v.approved_at || null,
+    panel,
+    front_callouts: callouts,
+  });
+}
+
 export default router;

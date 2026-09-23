@@ -130,6 +130,10 @@ const PUBLIC_ROUTES = [
   // hashed token compared in the handler, and off entirely unless
   // PRODUCT_MASTER_TOKEN is set. It exposes only what a printer already holds.
   { method: 'GET', path: '/products/master.csv' },
+  // The approved nutrition panel, read by the same service against the same
+  // token. Read-only, one product per call, and it exposes only what is
+  // printed on the pack.
+  { method: 'GET', path: '/products/nutrition-panel' },
   // The other half of the same integration: the proofing service files its
   // finished jobs here. Same token, checked in the handler.
   { prefix: '/artwork/ingest' },

@@ -22,6 +22,9 @@ export default function NfpApprovePage({ token }) {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null);
   const [confirming, setConfirming] = useState(null);
+  // Every %DV on the panel that disagrees with its own amount, and the tick
+  // that says the approver looked at them and is approving regardless.
+  const [dvAck, setDvAck] = useState(false);
 
   useEffect(() => {
     fetch(`/api/nfp-link/${encodeURIComponent(token)}`)
@@ -40,7 +43,7 @@ export default function NfpApprovePage({ token }) {
     try {
       const r = await fetch(`/api/nfp-link/${encodeURIComponent(token)}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decision, name, comments }),
+        body: JSON.stringify({ decision, name, comments, dv_ack: dvAck }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || 'Something went wrong');
@@ -80,7 +83,11 @@ export default function NfpApprovePage({ token }) {
     );
   }
 
+  const dvWarnings = info?.dv_check || [];
+  // The same refusal the server applies, said out loud on the button rather
+  // than after it: approving is possible with the tick, impossible without it.
   const canDecide = name.trim().length >= 2;
+  const canApprove = canDecide && (dvWarnings.length === 0 || dvAck);
 
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-8">
@@ -159,6 +166,29 @@ export default function NfpApprovePage({ token }) {
               </a>
             ) : null}
 
+            {/* THE APPROVER IS THE PERSON BEST PLACED TO KNOW whether 570 mg is
+                really 21%, and the link is the door most of these approvals
+                come through — a check only the in-app button showed would be a
+                check almost nobody ever saw. */}
+            {dvWarnings.length > 0 && (
+              <div data-dv-warning={dvWarnings.length} className="bg-red-50 border border-red-200 rounded-2xl p-4 space-y-2">
+                <p className="text-sm font-bold text-red-900 flex items-start gap-2">
+                  <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+                  {dvWarnings.length === 1
+                    ? 'A % Daily Value on this panel does not match the amount beside it'
+                    : `${dvWarnings.length} % Daily Values on this panel do not match the amounts beside them`}
+                </p>
+                <ul className="text-sm text-red-900 space-y-1 pl-6 list-disc">
+                  {dvWarnings.map((w) => <li key={w.nutrient}>{w.note}</li>)}
+                </ul>
+                <label className="flex items-start gap-2 text-sm text-red-900 pt-1">
+                  <input type="checkbox" data-dv-ack checked={dvAck} onChange={(e) => setDvAck(e.target.checked)}
+                    className="mt-1 h-4 w-4" />
+                  <span>I have looked at these and am approving the panel anyway. This is recorded against my name.</span>
+                </label>
+              </div>
+            )}
+
             <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm space-y-3">
               <label className="block">
                 <span className="text-xs font-medium text-gray-600">Your name</span>
@@ -191,7 +221,7 @@ export default function NfpApprovePage({ token }) {
               ) : (
                 <>
                   <div className="grid grid-cols-2 gap-2">
-                    <button onClick={() => setConfirming('approved')} disabled={!canDecide}
+                    <button data-approve onClick={() => setConfirming('approved')} disabled={!canApprove}
                       className="py-4 rounded-xl bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white text-lg font-bold active:scale-[0.98]">
                       ✓ Approve
                     </button>
@@ -201,6 +231,11 @@ export default function NfpApprovePage({ token }) {
                     </button>
                   </div>
                   {!canDecide && <p className="text-xs text-center text-gray-500">Add your name to decide.</p>}
+                  {canDecide && !canApprove && (
+                    <p className="text-xs text-center text-red-700">
+                      Tick the box above to approve this panel as it stands, or send it back for correction.
+                    </p>
+                  )}
                 </>
               )}
             </div>

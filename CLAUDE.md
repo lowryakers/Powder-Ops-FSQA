@@ -635,6 +635,51 @@ section in the product drawer). Module grant is `products` — the panel is a pr
   unauthenticated approver gets are the panel that was uploaded), and 28 in a real browser incl. the public
   page at 390px.
 
+### The panel's own numbers, and the %DV check at approval
+`nfp_versions.panel_json` + `front_callouts` + `panel_rev` (db.js), `shared/nutrition-dv.js`,
+`GET /api/products/nutrition-panel?gtin=|sku=` (products.js, `nutritionPanel`), the Panel values editor in
+`NfpPanel.jsx` and the warning block on `NfpApprovePage.jsx`. A panel version used to be a FILE plus a
+name — ReadyDoc knew V3 was approved on the 20th and nothing about what V3 said — so the proofing service
+could only compare a label to ITSELF. That catches a panel contradicting its own arithmetic and is blind to
+one where every number is consistent and every number belongs to a different product: 8 of the 13 nutrition
+errors on the last bottle run, all found by hand.
+- **`version` is the LABEL, `panel_rev` is the COUNTER, and they are two columns.** `version` is TEXT, what
+  a person chose and a printer quotes, and what `artwork_versions.nfp_version` is matched against;
+  `panel_rev` is the integer that moves whenever the values change. One column for both makes a typo
+  correction look like a new panel to the printer, or a reprint look like fresh data to the proofer. The
+  feed also carries `panel_version` as an alias of the integer — the name the proofing tool posts back.
+- **Same token as `master.csv`** (`PRODUCT_MASTER_TOKEN`), mounted in server.js **ahead of**
+  `requireModuleWrite` and listed in `isPublicPath()`: the caller is a service holding a token, not a
+  person, and getting that wrong turns every read into a silent 401.
+- **A 404 says WHICH 404** — `product_not_found` / `no_panel` / `no_panel_values`. All three read as
+  "unverified" to the proofer, which is right; to the plant they are three different jobs.
+- **A draft is returned and SAID to be a draft.** Serving only approved panels would make draft and missing
+  the same answer. A superseded panel is never the answer.
+- **`<1` and `<5` are stored and returned as STRINGS** (21 CFR 101.9 requires those forms); a plainly
+  numeric string becomes a number. Every amount box is `type="text"` — a number input refuses the `<` with
+  a tooltip that reads as the app being broken, the `step="any"` trap again.
+- **The panel's `net_weight_g` is the DECLARED weight and is NOT `products.fill_weight_g`** — that one is
+  what the line fills and is the only input to the proofer's Net Weight check not printed on the artwork
+  (D-093). Collapsing them deletes that check.
+- **THE ROUNDING RULE IS THE TRAP.** Macros round to the nearest whole percent; vitamins and minerals round
+  in increments (≤10% → 2, ≤50% → 5, >50% → 10). **Calcium 150 mg is 11.5% = 10% as a mineral, 12% as a
+  macro** — the wrong rule flags almost every correct panel on this line. And a vitamin/mineral **under 2%
+  may be declared as 0**: iron 0.3 mg is 1.67%, which the increment rule rounds up to 2%. Both are asserted
+  by name in `check:dv`.
+- **A bounded amount is a CEILING** (`<1 g` fibre: anything at or under 4% is consistent, only higher is
+  provably wrong). **A blank is a gap, never a zero** — and neither is a word, because `Number('')` is 0.
+- **The gate is in `decide()`, not in the routes.** Three doors approve a panel (in-app, signed link, batch
+  link); it throws `DvUnacknowledged` and each route answers 409 **with the mismatches**. Not a hard block —
+  `dv_ack` gets through and records `dv_ack_by` / `dv_ack_at`. `dv_warnings` is frozen with the decision:
+  `[]` = checked and clean, NULL = decided before this existed.
+- **`shared/`, because both sides run it** — the server decides, the browser runs the same function to show
+  "computes to 25%" beside the box as you type. One definition, two callers.
+- **Ingest stores `panel_rev`, accepted under `panel_rev` OR `panel_version`.** A retry that sends none
+  leaves what is on file; NULL means "not checked against a panel", never "checked against rev 0".
+- Verified: `check:dv` (32, pure), `verify:nfppanel` (49), `verify:nfppanelui` (19, browser incl. 390px).
+- **No values are entered for any of the 118 products yet.** Transcribing a panel from artwork is a person's
+  job; seeding a plausible one is the fabricated-record failure this module exists to prevent.
+
 ### Rules that are load-bearing
 - **The seed is insert-only and skips once `products` has rows.** A redeploy must never overwrite a GTIN
   someone corrected by hand — that is worse than no seed at all.

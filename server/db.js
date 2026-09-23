@@ -3369,6 +3369,20 @@ function runMigrations() {
     );
     CREATE INDEX IF NOT EXISTS idx_nfp_files_version ON nfp_files(version_id, kind);
 
+    -- ── The panel's own numbers ──────────────────────────────────────────────
+    --
+    -- Until now a panel was a FILE plus a version label, which is enough to
+    -- approve one and not nearly enough to check artwork against it: the
+    -- proofing service could only compare a label to itself. These columns are
+    -- what let it compare a label to the panel of record.
+    --
+    -- JSON, not thirty columns. The panel is one document-shaped fact approved
+    -- as a unit and never queried a nutrient at a time — the same shape
+    -- artwork_snapshots.snapshot and production_entries.cleaning_events
+    -- already use. Amounts are stored AS WRITTEN, strings included: "<1 g" of
+    -- fibre and "<5 mg" of cholesterol are what 21 CFR 101.9 requires below
+    -- certain thresholds, and coercing them to 1 and 5 would put a number on a
+    -- regulatory document that nobody declared.
     -- ── The product shelf ────────────────────────────────────────────────────
     --
     -- The reference documents the product and artwork work runs on: the brand
@@ -3420,6 +3434,35 @@ function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_product_documents_slot
       ON product_documents(slot_key, effective_date DESC);
   `);
+
+  // ── The panel's own numbers (see the nfp_files block above) ────────────────
+  // AFTER the exec that creates nfp_versions, never in runMigrations() further
+  // up: addColumnIfMissing ALTERs a table, and an ALTER before its CREATE
+  // kills a fresh database at boot.
+  addColumnIfMissing('nfp_versions', 'panel_json', 'TEXT');
+  addColumnIfMissing('nfp_versions', 'front_callouts', 'TEXT');
+  // THE REVISION COUNTER IS NOT THE VERSION LABEL, and they are two facts.
+  // `version` is TEXT because it is what gets PRINTED and what
+  // `artwork_versions.nfp_version` is matched against — "V3", "2026-A", chosen
+  // by a person. `panel_rev` is an integer this app increments on every write
+  // to the values, and it is what answers "was this artwork checked against
+  // the panel as it stands now". Folding them into one column would make a
+  // typo correction look like a new panel to the printer, or a reprint look
+  // like fresh data to the proofer.
+  addColumnIfMissing('nfp_versions', 'panel_rev', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('nfp_versions', 'panel_values_by', 'TEXT');
+  addColumnIfMissing('nfp_versions', 'panel_values_at', 'TEXT');
+  // The %DV mismatches that stood at approval, and who said approve anyway.
+  // Frozen with the decision (the sanitation_records.atp_limit rule): a panel
+  // approved over three warnings goes on saying which three after somebody
+  // corrects the amounts on the next version.
+  addColumnIfMissing('nfp_versions', 'dv_warnings', 'TEXT');
+  addColumnIfMissing('nfp_versions', 'dv_ack_by', 'TEXT');
+  addColumnIfMissing('nfp_versions', 'dv_ack_at', 'TEXT');
+  // Which revision of the panel a proofing run checked this artwork against.
+  // NULL on every version filed before the proofer sent one, which reads as
+  // "not checked against a panel" and never as "checked against rev 0".
+  addColumnIfMissing('artwork_versions', 'panel_rev', 'INTEGER');
 
   // Post-repair hygiene clearance
   addColumnIfMissing('work_orders', 'clearance_required', 'INTEGER DEFAULT 0');
