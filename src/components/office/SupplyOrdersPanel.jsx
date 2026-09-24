@@ -9,6 +9,7 @@ import SpendTab from './SpendTab.jsx';
 import StandingLists, { TagChips } from './StandingLists.jsx';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
+import { externalUrl } from '../../lib/externalUrl.js';
 
 // The groups used to be this hard-coded array, so adding one was a deploy.
 // They are a managed list now (`supply_tags`, seeded with exactly these five),
@@ -84,16 +85,6 @@ function SuggestionStrip({ tr = (x) => x, onOrdered }) {
   );
 }
 const STATUS_FLOW = ['new', 'ordered', 'received', 'paid'];
-// People paste links as "amazon.com/..." as often as with the scheme, and a
-// bare href like that is treated as a path — the click goes nowhere. Normalize
-// before rendering so the link in a request is always the link that opens.
-function externalUrl(raw) {
-  const v = String(raw || '').trim();
-  if (!v) return null;
-  if (/^https?:\/\//i.test(v)) return v;
-  if (/^[\w.-]+\.[a-z]{2,}(\/|$|\?)/i.test(v)) return `https://${v}`;
-  return null;
-}
 
 const STATUS_META = {
   new: { label: 'New', tone: 'bg-blue-100 text-blue-700', next: 'ordered', nextLabel: 'Mark ordered' },

@@ -734,15 +734,17 @@ two it moves. **Both `from` values must still match or nothing is written — th
   corrections out — the state the plant was in — fails **16**, the first being the proofer's own feed line
   still reading `PMS 728 C | PNS 9160 C`; dropping the severity model fails **6** live and **3** pure.
 
-### THE PROOFER DOES NOT READ master.csv TODAY (D-108)
-At `lowryakers/artwork-proofing@c907a6f` the master rows come from a **published Google Sheet**
-(`gtin_default_config.json`); `_load_sheet_config()` prefers a runtime file set in its UI (wiped on
-redeploy), then `GTIN_SHEET_URL`, then that baked default. `_sheet_url_to_csv()` already accepts
-`/api/products/master.csv` — pointing it at ReadyDoc is a config change, not a code change — but nothing has
-been pointed. `readydoc.py` only ever calls `POST /api/artwork/ingest`, `POST .../ingest/:id/files` and
-`GET /api/artwork/snapshot`; it never reads the master list, and nothing in that repo writes to the sheet.
-**Until `GTIN_SHEET_URL` is set on that service, these fields have two sources and a correction made here
-does not reach the proofer.** Fix the sheet too, or make the switch.
+### THE PROOFER READS master.csv NOW — `GTIN_SHEET_URL` IS SET (confirmed by the plant, 2026-09-24)
+D-108 recorded the opposite and it was true when written; it is not any more, and the old wording would send
+the next session to fix a thing that is already fixed. At `lowryakers/artwork-proofing@c907a6f`
+`_load_sheet_config()` prefers a runtime file set in its own UI (**wiped on redeploy** — that is the one way
+this silently reverts), then `GTIN_SHEET_URL`, then a baked default pointing at the old published Google
+Sheet. `_sheet_url_to_csv()` accepts `/api/products/master.csv`, so this was a config change and never a code
+change. `readydoc.py` still only calls `POST /api/artwork/ingest`, `POST .../ingest/:id/files` and
+`GET /api/artwork/snapshot` — it never reads the master list and nothing in that repo writes to the sheet.
+**So ReadyDoc is the single source for those seventeen columns now**, and a correction made here reaches the
+proofer on its next run. The Google Sheet still exists and is no longer read; **do not edit it** — a second
+source somebody keeps updating is how the two start disagreeing again.
 
 ### Rules that are load-bearing
 - **The seed is insert-only and skips once `products` has rows.** A redeploy must never overwrite a GTIN
@@ -3357,6 +3359,35 @@ routes and `supplyCycleNudge` / `supplyCycleRecipients` in `api/office.js`, `Sta
   cycle's own clock** (`supply_list_cycles.last_nudge_at`). D-105, one release old.
 - **Read open to any submitter, edit the office's**, and a supervisor is **rendered no control he would be
   refused** (D-091). He reaches it through **Requests**; Supply Orders is admin-only in the nav.
+
+### An item is four things, and one of them had no box (D-110)
+`item_name` · **`link`** · `supplier` · `qty`. All four were in `supply_list_items` from the start, the adder
+put `link` in its payload, the server stored it, and `POST /cycles/:id/close` already carries it onto the
+`supply_orders` row it files — **and nothing on the screen ever asked for it.** The one field that makes a
+standing list worth ticking (reordering IS opening the page it was bought from last time) was reachable only
+through the API. The column, the route and the hand-off were all correct; the form was the gap.
+- **A CORRECTION MUST NOT COST THE HISTORY.** There was no way to edit an item at all — only add and remove
+  — and removing is a RETIRE, deliberately, because a cycle filed last month recorded what it ordered
+  against the list as it stood. So attaching a link to the items already on a list would have meant
+  retire-and-re-add, which is **a different act**: the retired row is what that cycle ordered against and
+  the new one is a different item with the same name. `PUT /office/supply/lists/:id/items/:itemId` corrects
+  the row in place, audited with the before and the after.
+- **An absent field means LEAVE IT ALONE; a blank field CLEARS it.** The `body.x ?? existing.x` rule — a
+  screen that sends only the link must not blank the supplier, and a blank is how somebody removes a link
+  they mistyped. Both directions asserted.
+- **`externalUrl()` moved to `src/lib/externalUrl.js`.** It was a private copy in `SupplyOrdersPanel` and an
+  identical second one in `SpendTab`; this would have been the third. It adds the scheme at RENDER time and
+  never rewrites the stored value — people paste `costco.com/…` as often as the full address, and a bare
+  href like that is read as a RELATIVE PATH, so the click stays inside ReadyDoc and reads as the link having
+  been saved wrongly. A value that is not an address returns null and renders as plain text.
+- **The name IS the link when there is one** — the shape the orders list and the Spend tab already use. A
+  separate Open button beside the name is a second thing to aim at for one fact.
+- **`apiFetch` SERIALIZES `options.body` ITSELF**, so passing `JSON.stringify(form)` double-encodes it and
+  the server gets a JSON string where it expects an object. Use `apiPut(path, body)`. Found in the browser
+  check, not by reading — the API half passed throughout.
+- `verify:supplylists` (60 → **76**, live + browser at 1280 and 390px). **The control is the state it was
+  in** — no link box, no edit path — and fails **8** before the script can continue, the first being the
+  adder offering three fields where the item has four.
 - **FOUND IN PASSING: `supplierReviewNudge` had NEVER sent a message.** It called `botDm(p.id, body)` where
   `botDm(db, userId)` OPENS the DM and returns it — posting is `postMessageAs`. Every recipient threw, the
   catch counted the send anyway. `supplyCycleNudge` imports comms directly rather than through `deps`.

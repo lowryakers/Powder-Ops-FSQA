@@ -4369,3 +4369,63 @@ punch list at 36 apart.
 **Not done, and it is not in this repository:** `GTIN_SHEET_URL` on the artproof.live service still points at
 the published Google Sheet (D-108), so these three corrections do not reach the proofer until somebody sets
 it. There is no Railway access from a session and the host is not reachable through the container's proxy.
+
+## D-110 — A standing-list item is four things, and correcting one is not retiring it (2026-09-24)
+
+Marnee's ask: *"a place to add the product link to each of the Supply items. So each item should have: item
+name, link, vendor, and qty."* **Every one of those four was already a column** on `supply_list_items`, the
+adder already put `link` in its payload, the server already stored it, and `POST /cycles/:id/close` already
+carries it onto the `supply_orders` row the cycle files. **The form never asked for it.** The column, the
+route and the hand-off were all correct and the one field that makes a standing list worth ticking —
+reordering is opening the page it was bought from last time — was reachable only through the API.
+
+That is the D-105 shape again in a smaller place: a mechanism that works end to end, with no door on the
+screen where the work is done.
+
+### The part that needed a decision
+
+**There was no way to edit an item at all** — only add and remove — and removing is a RETIRE, deliberately,
+because a cycle filed last month recorded what it ordered against the list as it stood. So attaching a link
+to the items already on a list would have meant retire-and-re-add, and **that is a different act**: the
+retired row is what the cycle ordered against, and the new one is a different item that happens to share a
+name. A list is filled in once and lived with, so almost every change to it is a CORRECTION to a row that
+already exists — a link found later, a supplier that moved, a quantity that was always wrong.
+`PUT /office/supply/lists/:id/items/:itemId` corrects in place, audited with the before and the after.
+
+- **An absent field means LEAVE IT ALONE; a blank field CLEARS it.** The `body.x ?? existing.x` rule every
+  editable record here follows: a screen that sends only the link must not blank the supplier, and a blank
+  is how somebody removes a link they mistyped. Both directions asserted, in both places.
+- **An empty name is refused, not quietly kept** — a silent no-op reads as the save having failed.
+- **Correcting the list stays the office's**, like adding and removing; a supervisor reaching it through
+  Requests is rendered no edit control at all (D-091), asserted.
+
+### `externalUrl()` has one definition now
+
+It was a private copy in `SupplyOrdersPanel` and an identical second one in `SpendTab`; a standing-list item
+would have been the third. It lives in `src/lib/externalUrl.js`. It adds the scheme at RENDER time and
+**never rewrites the stored value** — people paste `costco.com/…` as often as the full address, and a bare
+href like that is read as a relative path, so the click stays inside ReadyDoc and reads as the link having
+been saved wrongly. What somebody pasted is what the record holds; correcting it is their edit to make, not
+a normalisation that quietly changes a stored field. A value that is not an address returns null and renders
+as plain text rather than a link that resolves to nothing — the `hexDigits` rule.
+
+**The name IS the link when there is one**, the shape the orders list and the Spend tab already use. A
+separate Open button beside the name is a second thing to aim at for one fact.
+
+### The trap
+
+**`apiFetch` serializes `options.body` itself**, so `apiFetch(path, { method: 'PUT', body:
+JSON.stringify(form) })` double-encodes it and the server receives a JSON string where it expects an object.
+`apiPut(path, body)` is the helper. **Found in the browser check, not by reading** — the API half of the
+verify passed throughout, because it posts its own correctly-shaped bodies.
+
+**Verified:** `verify:supplylists` (60 → **76**, live + a real browser at 1280 and 390px; in `verify:all`).
+**The control is the state it was in** — no link box, no edit path — and fails **8** before the script can
+continue, the first being the adder offering three fields where the item has four.
+
+**Also corrected, on the plant's word:** `GTIN_SHEET_URL` **is set** on the artwork-proofing service, so the
+proofer reads `master.csv` from ReadyDoc rather than the published Google Sheet. D-108 recorded the opposite
+and was right when written; the CLAUDE.md section is rewritten rather than deleted, because the mechanism it
+describes still matters — `_load_sheet_config()` prefers a runtime file set in the proofer's own UI, and
+that file is **wiped on redeploy**, which is the one way this silently reverts to the sheet. The sheet still
+exists and is no longer read: **do not edit it**, or there are two sources again.

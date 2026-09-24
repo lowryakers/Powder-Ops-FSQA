@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useApiGet } from '../../hooks/useApi';
 import { ExternalLink, AlertTriangle } from 'lucide-react';
+import { externalUrl } from '../../lib/externalUrl.js';
 
 // Supply spend per pay period, by category. This replaces the card that used
 // to pull from the Monday board — the orders are already in this app, so the
@@ -10,13 +11,6 @@ const periodLabel = (p) => {
   const f = (d) => { const x = new Date(`${d}T00:00:00Z`); return `${x.getUTCMonth() + 1}/${x.getUTCDate()}`; };
   return `${f(p.start)} – ${f(p.end)}`;
 };
-function externalUrl(raw) {
-  const v = String(raw || '').trim();
-  if (!v) return null;
-  if (/^https?:\/\//i.test(v)) return v;
-  if (/^[\w.-]+\.[a-z]{2,}(\/|$|\?)/i.test(v)) return `https://${v}`;
-  return null;
-}
 
 const TONES = ['bg-blue-100 text-blue-700', 'bg-green-100 text-green-700', 'bg-purple-100 text-purple-700',
   'bg-amber-100 text-amber-700', 'bg-teal-100 text-teal-700', 'bg-gray-100 text-gray-600'];

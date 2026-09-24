@@ -64,14 +64,60 @@ t('A LIST WITH NOTHING ON IT HAS NOTHING TO ASK ABOUT — the items are the offi
   JSON.stringify((lists || []).map(l => [l.item_count, !!l.open_cycle])));
 
 console.log('\n── the list is the thing she maintains ──');
-for (const [name, supplier] of [['Coffee (case)', 'Costco'], ['Paper towels', 'Costco'], ['Creamer', 'Costco']]) {
-  await post(`/office/supply/lists/${breakRoom.id}/items`, { item_name: name, qty: 2, uom: 'Case', supplier });
+for (const [name, supplier, link] of [
+  // REORDERING IS OPENING THE PAGE IT WAS BOUGHT FROM LAST TIME, so the link
+  // is one of the four things an item is. Pasted without a scheme, which is
+  // how people paste them.
+  ['Coffee (case)', 'Costco', 'costco.com/coffee-case.html'],
+  ['Paper towels', 'Costco', ''],
+  ['Creamer', 'Costco', ''],
+]) {
+  await post(`/office/supply/lists/${breakRoom.id}/items`, { item_name: name, qty: 2, uom: 'Case', supplier, link });
 }
 lists = await J(await get('/office/supply/lists'));
 let br = lists.find(l => l.id === breakRoom.id);
 t('three items on the break-room list', br?.item_count === 3, `${br?.item_count}`);
 t('and now that it has items it has a cycle — the 1st has been and gone', !!br?.open_cycle, JSON.stringify(br?.open_cycle));
 t('the cycle names the period it covers', /^\d{4}-\d{2}$/.test(br?.open_cycle?.period || ''), br?.open_cycle?.period);
+
+console.log('\n── an item is a name, a link, a supplier and a quantity ──');
+const coffeeItem = (br?.items || []).find(i => i.item_name === 'Coffee (case)');
+t('AN ITEM CARRIES ALL FOUR, and the link is stored exactly as pasted',
+  coffeeItem?.item_name === 'Coffee (case)' && coffeeItem?.supplier === 'Costco'
+  && Number(coffeeItem?.qty) === 2 && coffeeItem?.link === 'costco.com/coffee-case.html',
+  JSON.stringify(coffeeItem && { n: coffeeItem.item_name, q: coffeeItem.qty, s: coffeeItem.supplier, l: coffeeItem.link }));
+
+// THE CORRECTION MUST NOT COST THE HISTORY. Retire-and-re-add would have
+// worked and is a different act — the retired row is what a past cycle
+// ordered against.
+const towels = (br?.items || []).find(i => i.item_name === 'Paper towels');
+const edited = await J(await put(`/office/supply/lists/${breakRoom.id}/items/${towels.id}`,
+  { link: 'https://costco.com/bounty' }, 'admin'));
+const towelsAfter = (edited?.items || []).find(i => i.id === towels.id);
+t('A LINK CAN BE ADDED TO AN ITEM ALREADY ON THE LIST — the same row, not a new one',
+  towelsAfter?.id === towels.id && towelsAfter?.link === 'https://costco.com/bounty', JSON.stringify(towelsAfter?.link));
+t('…and sending only the link leaves the supplier and the quantity alone',
+  towelsAfter?.supplier === 'Costco' && Number(towelsAfter?.qty) === 2,
+  JSON.stringify({ s: towelsAfter?.supplier, q: towelsAfter?.qty }));
+t('the item is still ACTIVE — a correction never retires the row a past cycle ordered against',
+  db.prepare('SELECT active FROM supply_list_items WHERE id = ?').get(towels.id)?.active === 1);
+t('and the list still has three items, not four',
+  (edited?.items || []).length === 3, `${(edited?.items || []).length}`);
+t('the edit is audited with the before and the after',
+  db.prepare("SELECT COUNT(*) c FROM audit_log WHERE entity_type = 'supply_list' AND new_state LIKE '%bounty%'").get().c >= 1);
+
+// A BLANK IS A REAL ANSWER — it is how somebody clears a link they mistyped.
+const cleared = await J(await put(`/office/supply/lists/${breakRoom.id}/items/${towels.id}`, { link: '' }, 'admin'));
+t('a blank CLEARS the link rather than being read as "not sent"',
+  (cleared?.items || []).find(i => i.id === towels.id)?.link === null,
+  JSON.stringify((cleared?.items || []).find(i => i.id === towels.id)?.link));
+await put(`/office/supply/lists/${breakRoom.id}/items/${towels.id}`, { link: 'https://costco.com/bounty' }, 'admin');
+
+const noName = await put(`/office/supply/lists/${breakRoom.id}/items/${towels.id}`, { item_name: '  ' }, 'admin');
+t('an empty name is refused rather than silently kept', noName.status === 400, `HTTP ${noName.status}`);
+const supEdit = await put(`/office/supply/lists/${breakRoom.id}/items/${towels.id}`, { link: 'x.com' }, 'sup');
+t('and correcting the list is the office\'s, not a supervisor\'s', supEdit.status === 403, `HTTP ${supEdit.status}`);
+br = (await J(await get('/office/supply/lists'))).find(l => l.id === breakRoom.id);
 
 const beforeOrders = db.prepare('SELECT COUNT(*) c FROM supply_orders').get().c;
 await get('/office/supply/lists');
@@ -93,6 +139,8 @@ t('ticking two items files two requests, and only two', filed?.created === 2, JS
 const orders = await J(await get('/office/supply/orders?status=new', 'admin'));
 const coffee = (orders || []).find(o => o.item_name === 'Coffee (case)');
 t('the quantity SHE typed wins over the one on the list', Number(coffee?.qty) === 4, `${coffee?.qty}`);
+t('THE LINK TRAVELS ONTO THE REQUEST, so whoever orders it opens the right page',
+  coffee?.link === 'costco.com/coffee-case.html', coffee?.link);
 t('THE REQUEST CARRIES THE LIST\'S GROUP, so what the break room costs is answerable',
   JSON.stringify(coffee?.tags) === '["Break room"]', JSON.stringify(coffee?.tags));
 t('…mirrored onto `label`, so every filter and export that already reads it keeps working',
@@ -249,6 +297,44 @@ console.log('\n── in a real browser ──');
       `${before} -> ${(after || []).length}`);
     t('and the card now reads up to date', await card.locator('[data-list-due]').count() === 0);
 
+    // ── the four fields, on the screen somebody fills the list in on ──
+    // The link was in the payload and in the column all along and the form
+    // never asked for it, which is the whole of this change.
+    t('the adder asks for all four — name, quantity, supplier AND the product link',
+      await card.locator('[data-list-add-name]').count() === 1
+      && await card.locator('[data-list-add-supplier]').count() === 1
+      && await card.locator('[data-list-add-link]').count() === 1,
+      JSON.stringify({ link: await card.locator('[data-list-add-link]').count() }));
+
+    await card.locator('[data-list-add-name]').fill('Pipette tips 200µL');
+    await card.locator('[data-list-add-supplier]').fill('Fisher');
+    // Pasted the way people paste, with no scheme.
+    await card.locator('[data-list-add-link]').fill('fisher.com/tips-200');
+    await card.locator('[data-list-add]').click();
+    await page.waitForSelector('[data-standing-list="Monthly lab supplies"] [data-list-item="Pipette tips 200µL"]', { timeout: 15000 }).catch(() => {});
+    const added = card.locator('[data-list-item-link="Pipette tips 200µL"]');
+    t('ADDING AN ITEM WITH A LINK MAKES ITS NAME THE LINK', await added.count() === 1);
+    // A bare href like `fisher.com/…` is read as a RELATIVE PATH and the click
+    // stays inside ReadyDoc — which reads as the link having been stored wrong.
+    t('…and a scheme-less paste is rendered as an address that actually opens',
+      await added.getAttribute('href') === 'https://fisher.com/tips-200',
+      await added.getAttribute('href'));
+
+    // Correcting a row that is already there, without retiring it.
+    const gloves = card.locator('[data-list-item="Nitrile gloves (S)"]');
+    t('an item with no link is plain text, never a link that resolves to nothing',
+      await gloves.count() === 1 && await card.locator('[data-list-item-link="Nitrile gloves (S)"]').count() === 0);
+    await card.locator('[data-list-edit="Nitrile gloves (S)"]').click();
+    await card.locator('[data-edit-link]').fill('https://fisher.com/gloves-small');
+    await card.locator('[data-edit-save]').click();
+    await page.waitForSelector('[data-standing-list="Monthly lab supplies"] [data-list-item-link="Nitrile gloves (S)"]', { timeout: 15000 }).catch(() => {});
+    t('A LINK CAN BE PUT ON AN ITEM ALREADY ON THE LIST, from the screen',
+      await card.locator('[data-list-item-link="Nitrile gloves (S)"]').getAttribute('href') === 'https://fisher.com/gloves-small',
+      await card.locator('[data-list-item-link="Nitrile gloves (S)"]').getAttribute('href').catch(() => 'none'));
+    t('…and the list still has the items it had, plus the one that was added',
+      await card.locator('[data-list-item]').count() === 3,
+      `${await card.locator('[data-list-item]').count()}`);
+
     // The groups, on the request form.
     await page.getByRole('button', { name: 'New Request' }).first().click();
     await page.waitForSelector('[data-order-tag]', { timeout: 10000 });
@@ -271,6 +357,7 @@ console.log('\n── in a real browser ──');
     t('HE IS OFFERED NO CONTROL HE WOULD BE REFUSED — no New list, no add, no remove, no cycle to file',
       await page.locator('[data-standing-new]').count() === 0
       && await page.locator('[data-list-add]').count() === 0
+      && await page.locator('[data-list-edit]').count() === 0
       && await page.locator('[data-cycle-file]').count() === 0,
       JSON.stringify({ n: await page.locator('[data-standing-new]').count(), a: await page.locator('[data-list-add]').count(), c: await page.locator('[data-cycle-file]').count() }));
     t('…and the screen says why rather than leaving it looking broken',

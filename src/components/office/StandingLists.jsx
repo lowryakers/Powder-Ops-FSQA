@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { useApiGet, apiPost, apiFetch } from '../../hooks/useApi';
+import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
-import { CalendarClock, Plus, Trash2, Check, X, ListChecks, AlertTriangle } from 'lucide-react';
+import { CalendarClock, Plus, Trash2, Check, X, ListChecks, AlertTriangle, ExternalLink, Pencil } from 'lucide-react';
 import { formatDate } from '../../lib/datetime.js';
+import { externalUrl } from '../../lib/externalUrl.js';
 
 /**
  * Standing lists: the things the office restocks on a cadence.
@@ -127,9 +128,93 @@ function ItemAdder({ list, onSaved }) {
       <input value={form.qty} onChange={e => setForm({ ...form, qty: e.target.value })} placeholder="Qty" type="number" step="any"
         className="w-20 px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm" />
       <input value={form.supplier} onChange={e => setForm({ ...form, supplier: e.target.value })} placeholder="Supplier"
-        className="w-32 px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm" />
+        data-list-add-supplier className="w-32 px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm" />
+      {/* THE LINK WAS IN THE PAYLOAD AND THE COLUMN ALL ALONG — the form sent
+          it, the server stored it, the cycle carries it onto the order, and
+          nothing on the screen ever asked for it. It is the field that makes
+          the list worth ticking: reordering is opening the page you bought it
+          from last time. */}
+      <input value={form.link} onChange={e => setForm({ ...form, link: e.target.value })} placeholder="Product link"
+        data-list-add-link className="flex-1 min-w-[160px] px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm" />
       <button onClick={add} disabled={busy || !form.item_name.trim()} data-list-add
         className="px-2.5 py-1.5 bg-gray-800 text-white rounded-lg text-sm disabled:opacity-40"><Plus size={14} /></button>
+    </div>
+  );
+}
+
+/**
+ * One item, and the inline correction of it.
+ *
+ * A standing list is filled in once and lived with, so the ordinary change to
+ * it is a CORRECTION to a row that is already there. Retire-and-re-add would
+ * have worked and is the wrong act: the retired row is what last month's cycle
+ * ordered against.
+ */
+function ItemRow({ list, item, canManage, onChanged }) {
+  const [edit, setEdit] = useState(false);
+  const [form, setForm] = useState({
+    item_name: item.item_name, qty: item.qty ?? '', uom: item.uom || '',
+    supplier: item.supplier || '', link: item.link || '',
+  });
+  const [busy, setBusy] = useState(false);
+  const href = externalUrl(item.link);
+
+  const save = async () => {
+    if (!form.item_name.trim()) return;
+    setBusy(true);
+    try {
+      // apiPut, NOT apiFetch with a stringified body — `apiFetch` serializes
+      // `options.body` itself, so passing a string double-encodes it and the
+      // server receives a JSON string where it expects an object.
+      await apiPut(`/office/supply/lists/${list.id}/items/${item.id}`, form);
+      setEdit(false);
+      onChanged?.();
+    } finally { setBusy(false); }
+  };
+
+  if (edit) {
+    return (
+      <div className="border-b border-gray-100 py-2 space-y-1.5" data-list-item-edit={item.item_name}>
+        <div className="flex flex-wrap gap-1.5 items-center">
+          <input value={form.item_name} onChange={e => setForm({ ...form, item_name: e.target.value })}
+            data-edit-name className="flex-1 min-w-[140px] px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm" />
+          <input value={form.qty} onChange={e => setForm({ ...form, qty: e.target.value })} placeholder="Qty" type="number" step="any"
+            data-edit-qty className="w-20 px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm" />
+          <input value={form.supplier} onChange={e => setForm({ ...form, supplier: e.target.value })} placeholder="Supplier"
+            data-edit-supplier className="w-32 px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm" />
+        </div>
+        <div className="flex flex-wrap gap-1.5 items-center">
+          <input value={form.link} onChange={e => setForm({ ...form, link: e.target.value })} placeholder="Product link"
+            data-edit-link className="flex-1 min-w-[160px] px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm" />
+          <button onClick={save} disabled={busy || !form.item_name.trim()} data-edit-save
+            className="px-2.5 py-1.5 bg-gray-800 text-white rounded-lg text-sm disabled:opacity-40"><Check size={14} /></button>
+          <button onClick={() => setEdit(false)} disabled={busy}
+            className="px-2.5 py-1.5 bg-white border border-gray-300 text-gray-600 rounded-lg text-sm"><X size={14} /></button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 text-sm text-gray-700 border-b border-gray-100 py-1" data-list-item={item.item_name}>
+      {/* The name IS the link when there is one, the same shape the Spend tab
+          and the orders list already use — a separate "open" button beside the
+          name is a second thing to aim at for one fact. */}
+      {href ? (
+        <a href={href} target="_blank" rel="noreferrer" data-list-item-link={item.item_name} title={item.link}
+          className="flex-1 min-w-0 truncate font-medium text-powder-700 hover:underline inline-flex items-center gap-1">
+          <span className="truncate">{item.item_name}</span><ExternalLink size={11} className="shrink-0" />
+        </a>
+      ) : <span className="flex-1 min-w-0 truncate">{item.item_name}</span>}
+      <span className="text-xs text-gray-400 truncate">{[item.qty, item.uom, item.supplier].filter(Boolean).join(' · ')}</span>
+      {canManage && (
+        <>
+          <button onClick={() => setEdit(true)} data-list-edit={item.item_name}
+            className="text-gray-300 hover:text-powder-600" title="Edit"><Pencil size={13} /></button>
+          <button onClick={() => onChanged?.(item.id)} data-list-remove={item.item_name}
+            className="text-gray-300 hover:text-red-500" title="Remove"><Trash2 size={13} /></button>
+        </>
+      )}
     </div>
   );
 }
@@ -182,11 +267,8 @@ function ListCard({ list, onChanged, canManage }) {
           {list.open_cycle && canManage && <CycleForm list={list} onDone={onChanged} />}
           <div className="space-y-1">
             {list.items.map(i => (
-              <div key={i.id} className="flex items-center gap-2 text-sm text-gray-700 border-b border-gray-100 py-1">
-                <span className="flex-1 min-w-0 truncate">{i.item_name}</span>
-                <span className="text-xs text-gray-400 truncate">{[i.qty, i.uom, i.supplier].filter(Boolean).join(' · ')}</span>
-                {canManage && <button onClick={() => removeItem(i.id)} data-list-remove={i.item_name} className="text-gray-300 hover:text-red-500"><Trash2 size={13} /></button>}
-              </div>
+              <ItemRow key={i.id} list={list} item={i} canManage={canManage}
+                onChanged={(removeId) => (removeId ? removeItem(removeId) : onChanged?.())} />
             ))}
           </div>
           {canManage && <ItemAdder list={list} onSaved={onChanged} />}

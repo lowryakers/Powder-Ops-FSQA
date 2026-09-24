@@ -959,6 +959,56 @@ router.post('/supply/lists/:id/items', (req, res) => {
   res.status(201).json(listShape(db, list));
 });
 
+/**
+ * Correct an item that is already on a list.
+ *
+ * THE LIST IS FILLED IN ONCE AND LIVED WITH, so almost every change to it is a
+ * correction to a row that already exists — a link found later, a supplier that
+ * moved, a quantity that was always wrong. Without this the only way to attach
+ * one was to retire the item and add it back, which is not the same act: the
+ * retired row is what last month's cycle ordered against, and the new one is a
+ * different item with the same name. A correction must not cost the history.
+ *
+ * An absent field means LEAVE IT ALONE, never "clear it" — the `body.x ??
+ * existing.x` rule every other editable record here follows, so a screen that
+ * only sends the link cannot blank the supplier.
+ */
+router.put('/supply/lists/:id/items/:itemId', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const db = getDb();
+  const list = db.prepare('SELECT * FROM supply_lists WHERE id = ?').get(req.params.id);
+  if (!list) return res.status(404).json({ error: 'List not found' });
+  const item = db.prepare('SELECT * FROM supply_list_items WHERE id = ? AND list_id = ?')
+    .get(req.params.itemId, req.params.id);
+  if (!item) return res.status(404).json({ error: 'Item not found' });
+
+  const patch = {};
+  if (req.body.item_name !== undefined) {
+    const name = String(req.body.item_name).trim();
+    // The name is what the order is filed under, so an empty one is refused
+    // rather than quietly kept — a silent no-op reads as the save failing.
+    if (!name) return res.status(400).json({ error: 'Item name is required' });
+    patch.item_name = name;
+  }
+  // A blank on any of these is a real answer: it is how somebody CLEARS a link
+  // or a supplier they typed by mistake. Only `undefined` means "not sent".
+  if (req.body.qty !== undefined) patch.qty = req.body.qty === '' || req.body.qty === null ? null : Number(req.body.qty);
+  for (const k of ['uom', 'supplier', 'link', 'notes']) {
+    if (req.body[k] !== undefined) patch[k] = String(req.body[k] ?? '').trim() || null;
+  }
+  if (!Object.keys(patch).length) return res.json(listShape(db, list));
+  if (patch.qty !== undefined && !Number.isFinite(patch.qty) && patch.qty !== null) {
+    return res.status(400).json({ error: 'Quantity has to be a number.' });
+  }
+
+  db.prepare(`UPDATE supply_list_items SET ${Object.keys(patch).map(k => `${k} = ?`).join(', ')} WHERE id = ?`)
+    .run(...Object.values(patch), req.params.itemId);
+  const updated = db.prepare('SELECT * FROM supply_list_items WHERE id = ?').get(req.params.itemId);
+  logAudit(req.user, 'update', 'supply_list', req.params.id,
+    { item: updated.item_name, changed: Object.keys(patch) }, item, updated, list.name);
+  res.json(listShape(db, list));
+});
+
 // RETIRED, NOT DELETED. A cycle filed last month recorded what it ordered
 // against the list as it stood; removing the row outright would leave that
 // history pointing at nothing.
