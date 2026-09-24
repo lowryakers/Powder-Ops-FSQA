@@ -23,6 +23,7 @@ import { AlertTriangle, Barcode, GitMerge, ChevronDown, ChevronRight } from 'luc
 const KIND_LABEL = {
   no_spec: 'No usable packaging spec',
   bad_color: 'Colour value that cannot be used',
+  color_conflict: 'One Pantone, two different colours',
   no_colors: 'No brand colours at all',
   not_a_sku: 'Not a SKU',
   gtin: 'GS1 barcode problem',
@@ -31,6 +32,9 @@ const KIND_LABEL = {
 const KIND_WHY = {
   no_spec: 'The proofer checks dimensions and material against the spec. Without one it has nothing to check against.',
   bad_color: 'A hex or PMS value the proofer cannot parse, so the colour check silently covers nothing.',
+  color_conflict: 'The same Pantone reference carries a materially different hex on two products, so one of '
+    + 'them was transcribed wrongly. Which one is a question about what is printed on the pack — check both '
+    + 'against the artwork and correct the loser in the product drawer.',
   no_colors: 'No brand colours recorded, so nothing verifies what came back from the printer.',
   not_a_sku: 'A numeric id sitting in the SKU column — almost certainly a Shopify variant id.',
   gtin: 'Missing, or fails its GS1 check digit. A bad barcode scans as another product or not at all.',

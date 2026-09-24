@@ -680,6 +680,45 @@ errors on the last bottle run, all found by hand.
 - **No values are entered for any of the 118 products yet.** Transcribing a panel from artwork is a person's
   job; seeding a plausible one is the fabricated-record failure this module exists to prevent.
 
+### Brand colours: one writer, and it has already run (D-108)
+`product_colors` is written by **exactly one thing** — `seedProducts()`, loading `seed-data/sku_colors.csv`,
+which is insert-only AND returns on its first line once `products` has any row. It runs **once in a
+database's life**. No import, no sync, no derivation, no refresh. `master.csv` joins the slots into the two
+pipe-delimited cells the proofer reads; that is a read, not a source.
+- **So the colours are EDITABLE** (`PUT /api/products/:sku/colors`, `canManage`, the whole slot list
+  replaces what is there) and an edit cannot be overwritten, because nothing is left to overwrite it.
+  `verify:colors` proves that by **rebooting the application** on the same database file, not by reasoning
+  about the seeders.
+- **`pms_valid` / `hex_valid` are RECOMPUTED on every write** (the `gtin_valid` rule), which is why
+  `shared/product-colors.js` exists — pure, imported by both sides, so the live swatch cannot promise a save
+  the server refuses. **It agrees with the audit on all 312 seeded slots and `check:colors` asserts that**:
+  validity is re-derived now, so a rule off by one row would reclassify somebody else's transcription the
+  first time anybody saved that product. `PMS --`, `PNS 9160 C` (typo) and `CMYK 3 1 17 0` (a process build,
+  not a spot ink) are invalid, exactly as the audit marked them.
+- **A CORRECTION NEEDS TWO PLACES, and this is the trap.** Corrections go in the source file — but a seeder
+  that skips once the table has rows reaches a FRESH database and a live one never. `product-color-repair.js`
+  carries it to the rows on the volume; the CSV carries it to the next deployment.
+  **Exact-match only, so it is idempotent by construction** (the `repairPaddedGtins` shape, not an
+  `app_settings` flag); a row somebody has already changed is **reported and left alone**; and the readiness
+  basis is **rebased** so artwork does not go stale over a change of spelling.
+- **PPM-PS slot 2 said `PMS 285 C` beside `HEX C25131`.** PANTONE 285 C is a blue — the same code on
+  `PP-CC-04` and `PSP-CCR` carries `0071CE`, which is that blue. The hex is the evidence; the name was the
+  error. It is `PMS 7580 C`. Both other 285 rows were checked, are correct, and are asserted untouched.
+- **`color_conflict` on Data health is the sweep that finds the next one** — the same Pantone carrying a
+  materially different hex on two rows, derived on every read, ±16 per channel (from the proofer's own ±6).
+  **Reported, never corrected**: which side is wrong is a question about what is printed on a pack. Four
+  codes across twelve SKUs today, worst being PMS 9201 C (a cream on two rows, a dark brown on two others).
+
+### THE PROOFER DOES NOT READ master.csv TODAY (D-108)
+At `lowryakers/artwork-proofing@c907a6f` the master rows come from a **published Google Sheet**
+(`gtin_default_config.json`); `_load_sheet_config()` prefers a runtime file set in its UI (wiped on
+redeploy), then `GTIN_SHEET_URL`, then that baked default. `_sheet_url_to_csv()` already accepts
+`/api/products/master.csv` — pointing it at ReadyDoc is a config change, not a code change — but nothing has
+been pointed. `readydoc.py` only ever calls `POST /api/artwork/ingest`, `POST .../ingest/:id/files` and
+`GET /api/artwork/snapshot`; it never reads the master list, and nothing in that repo writes to the sheet.
+**Until `GTIN_SHEET_URL` is set on that service, these fields have two sources and a correction made here
+does not reach the proofer.** Fix the sheet too, or make the switch.
+
 ### Rules that are load-bearing
 - **The seed is insert-only and skips once `products` has rows.** A redeploy must never overwrite a GTIN
   someone corrected by hand — that is worse than no seed at all.

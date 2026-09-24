@@ -4198,3 +4198,103 @@ macronutrient rounding rule to minerals blocks a correct calcium panel (13 fail 
 every panel reads `no_panel_values` until somebody types one in. That is transcription from artwork and it
 is a person's job, not a seeder's: a nutrition panel invented from a plausible-looking source is the
 fabricated-record failure this whole module exists to prevent.
+
+## D-108 — A field with one writer that has already run is not a synced field (2026-09-24)
+
+**Asked:** trace where `pms_spot_colors` / `hex_spot_colors` come from, make them editable if an edit would
+survive, and correct one wrong value on the pancake Pumpkin Spice row.
+
+**The trace, and it is shorter than it looks.** `product_colors` has **exactly one writer**:
+`seedProducts()`, loading `server/seed-data/sku_colors.csv` — the normalised output of the ProDough audit,
+312 slots — which is `INSERT OR IGNORE` **and** returns on its first line once `products` has any row. So it
+runs **once in a database's life and never again**. There is no import, no sync, no derivation from another
+record and no scheduled refresh. `master.csv` joins the slots into the two pipe-delimited cells the proofing
+service reads (`api/products.js`, `p.colors.filter(...).join(' | ')`); that is a read, not a source. The only
+other thing that touches the table is `moveSkuChildren` on a SKU rename, which carries the rows across.
+
+**Which makes the answer to "will an edit be overwritten" a fact, not a judgement — and the verify proves it
+by REBOOTING THE APPLICATION** against the same database file rather than by reasoning about the seeders.
+Every seeder, repair and backfill runs again in that second boot and the edit is read back afterwards.
+
+**So it is editable: `PUT /api/products/:sku/colors`.** Its own route rather than fields on the PUT, for the
+reason the panel values and a SKU rename are: these go out on the feed the proofing service matches a PDF's
+separation NAMES against, and that should read in the audit log as a deliberate act. `canManage` (the
+catalogue's own ladder — an operator holding the module is refused). The whole slot list is sent and
+replaces what is there, because a redesign dropping a fourth colour is a real edit; both sides go in the
+audit entry, so a removal is in the trail.
+
+- **`pms_valid` / `hex_valid` are RECOMPUTED, never taken from the caller** — the `gtin_valid` rule. Which
+  meant the validator had to be written, and `shared/product-colors.js` is it: pure, imported by both sides,
+  so the swatch beside the box cannot promise a save the server would refuse.
+- **THE ASSERTION THAT MATTERS is that it agrees with the audit on all 312 seeded slots**, every one. Validity
+  is re-derived on write now, so a rule that disagreed by a single row would silently reclassify somebody
+  else's transcription the first time anybody saved that product. It reproduces the audit's own verdicts
+  exactly — including the six it marked invalid: `PMS --` (a slot nobody filled in), `PNS 9160 C` (a typo),
+  `CMYK 3 1 17 0` (a process build, which is not a spot ink), and three hexes of five, seven and
+  not-quite-hex digits.
+- **A value the proofer cannot use is refused rather than stored and flagged.** On the feed it is worse than
+  an empty cell: the check would report a name mismatch against a name nobody printed.
+- **Saving re-dates the colours step, so ARTWORK goes stale** — it depends on colours, and a pack released
+  against a different ink is one worth looking at again.
+
+**THE CORRECTION COULD NOT GO IN THE CSV ALONE, and that is the trap worth remembering.** The house rule is
+that corrections go in the source file and seeders are insert-only — but a seeder that skips once the table
+has rows reaches a FRESH database and a live one never. So the fix is in both places:
+`server/product-color-repair.js` carries it to the rows already on the volume, and the CSV carries it to the
+next deployment. `COLOR_CORRECTIONS` is transcribed with its evidence, the `preventive-controls.js` standing.
+
+- **Exact-match only, so it is idempotent BY CONSTRUCTION** rather than by a marker in `app_settings` — once
+  applied the row no longer matches, so the second boot finds nothing. That is stronger than a flag, which
+  can be cleared, and it is how `repairPaddedGtins` is written.
+- **A row that has moved is REPORTED and left exactly as it is.** Somebody has already been there, and a
+  repair that undoes a person's correction is the quiet undo that makes people stop trusting a setting.
+  Asserted with its own reboot, because one row cannot be both still-wrong and already-corrected.
+- **The readiness basis is REBASED, so artwork does NOT go stale.** The ink never moved; the pack has always
+  printed in C25131. What was wrong was ReadyDoc's transcription of that ink's NAME, and flagging the artwork
+  would be `rebaseGtinBasis`'s own warning — a false alarm over a change of spelling.
+
+### The value itself, and what else carried 285
+`PPM-PS` slot 2 read `PMS 285 C` beside `HEX C25131`. **PANTONE 285 C is a mid blue**, and the same code on
+the two rows where it is correct — `PP-CC-04` and `PSP-CCR`, both Cookie Crumble — carries `HEX 0071CE`,
+which is that blue. C25131 is a burnt orange and is what the pancake pouch prints, so **the hex is the
+evidence and the Pantone name is the error**. It reads `PMS 7580 C` now.
+
+**Every other row carrying 285 was checked and BOTH are correct** — the two Cookie Crumble rows, blue, left
+untouched. That is asserted in both the pure check and the live one, so a future edit cannot quietly widen
+the correction.
+
+**And the sweep that would have caught it without anybody holding the pack is now a punch-list entry.** The
+same Pantone code carrying a materially different hex on two rows is INTERNAL evidence that one was
+transcribed wrongly — it needs no Pantone book, only the catalogue disagreeing with itself. `color_conflict`
+on Data health, **derived on every read**, tolerance 16 per channel taken from the proofing service's own ±6
+(two transcriptions of one swatch off two artwork files routinely differ by a few units, and flagging those
+would bury the real ones). **REPORTED, NEVER CORRECTED**: which side is wrong is a question about what is
+printed on a pack, and the pumpkin row was only resolvable because a person held the artwork.
+
+Four Pantone codes on twelve SKUs, biggest first:
+- **PMS 9201 C** — `F4E1CB` (cream) on the Dulce de Leche beef rows, `502C1E` (dark brown) on `PP-PC-11` /
+  `PSP-PC`. 181 per channel apart; `502C1E` is the hex of PMS 4625 C, which looks like a copy error.
+- **PMS 728 C** — `C49873` (tan) against `9FD560` (yellow-green) on `PP-IM-07` / `PSP-IM`; `9FD560` is the hex
+  of PMS 367 C on another row. 61 apart.
+- **PMS 375 C** (36) and **PMS 123 C** (17), both marginal.
+
+### What the proofing service actually reads, which is not this
+At `lowryakers/artwork-proofing@c907a6f` the master rows come from a **published Google Sheet**, not from
+ReadyDoc: `_load_sheet_config()` prefers a runtime file set in its UI (wiped on redeploy), then
+`GTIN_SHEET_URL`, then the baked `gtin_default_config.json` — which holds the sheet. `_sheet_url_to_csv()`
+*accepts* `/api/products/master.csv` and its comment names it, so pointing it at ReadyDoc is a config change
+and not a code change; nothing has been pointed. The ReadyDoc client (`readydoc.py`) touches three endpoints
+and none of them is the master list: `POST /api/artwork/ingest`, `POST /api/artwork/ingest/:id/files`, and
+`GET /api/artwork/snapshot` (what the LAST run saw on the label, for a re-proof to compare against). There is
+no Google Sheets write anywhere in that repo — no API client, no credentials.
+
+**So until `GTIN_SHEET_URL` is set on that service, the same field has two sources and the one this change
+corrects is not the one the proofer reads.** The sheet needs the same correction, or the switch needs making.
+This session could not reach artproof.live to read its live configuration — the container's proxy refuses it
+— so the deployed value is unconfirmed and is stated as unconfirmed.
+
+Verified: `check:colors` (35, pure) and `verify:colors` (35, live, with two real reboots) and
+`verify:colorsui` (16, browser at 1280 and 390px), all three in the standard runs. Controls: making the
+colour load an authoritative re-import — the shape a sync would have — fails 3, the headline one being a
+person's corrected value replaced by the imported one; removing the repair's exact-match guard fails 2;
+letting any prefix count as a Pantone fails 4, including the 312-slot agreement.

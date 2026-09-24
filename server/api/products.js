@@ -18,6 +18,7 @@ import { preferredSku, LINE_CODES, PACK_CODES } from '../../shared/sku-format.js
 import { READINESS, TICKABLE, readinessOf, nextBasis } from '../../shared/product-readiness.js';
 import { shelfState, gtinPrefixes } from '../product-shelf.js';
 import { normalizeGtin, sameGtin, gtinValid } from '../../shared/gtin.js';
+import { pmsValid, hexValid, hexDigits, colorIssues, isBlankSlot } from '../../shared/product-colors.js';
 import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { storageEnabled, putStream, presignGet, deleteObject } from '../storage.js';
 import fs from 'fs';
@@ -786,7 +787,57 @@ router.get('/data-health', (_req, res) => {
     }))
     .sort((a, b) => a.remaining - b.remaining);
 
-  const KINDS = ['no_spec', 'bad_color', 'no_colors', 'not_a_sku', 'gtin'];
+  /* ── One Pantone, two colours ──────────────────────────────────────────────
+   *
+   * The same Pantone code carrying a materially different hex on two rows is
+   * INTERNAL evidence that one of them was transcribed wrongly — it needs no
+   * Pantone book, only the catalogue disagreeing with itself. This is the
+   * check that would have caught the pancake Pumpkin Spice row, where PMS 285
+   * (a blue) sat beside a burnt-orange hex while the same code on two Cookie
+   * Crumble rows was correctly blue.
+   *
+   * REPORTED, NEVER CORRECTED. Which side is wrong is a question about what is
+   * printed on a pack, and nothing here can see that — the two Pumpkin Spice
+   * rows were only resolvable because a person held the artwork. A punch-list
+   * entry is the honest output; an automatic fix would be a guess written into
+   * the master feed.
+   *
+   * The tolerance is 16 per channel, and it is set from the proofing service's
+   * own: it matches a rendered colour to ±6 because a raster is an
+   * approximation of the vector ink. Two transcriptions of one Pantone
+   * routinely differ by a few units — sampling the same swatch off two
+   * artwork files — and flagging those would bury the four that are real.
+   */
+  const CHANNEL_TOLERANCE = 16;
+  const channels = (h) => {
+    const d = hexDigits(h);
+    return d ? [0, 2, 4].map((i) => parseInt(d.slice(i, i + 2), 16)) : null;
+  };
+  const byPms = new Map();
+  for (const c of colors) {
+    if (!pmsValid(c.pms)) continue;
+    const ch = channels(c.hex);
+    if (!ch) continue;
+    if (!byPms.has(c.pms)) byPms.set(c.pms, []);
+    byPms.get(c.pms).push({ ...c, ch });
+  }
+  for (const [pms, list] of byPms) {
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        const delta = Math.max(...[0, 1, 2].map((k) => Math.abs(list[i].ch[k] - list[j].ch[k])));
+        if (delta <= CHANNEL_TOLERANCE) continue;
+        // Named on BOTH rows: whoever opens the punch list has to be able to
+        // reach either one, and neither is more suspect than the other.
+        for (const [a, b] of [[list[i], list[j]], [list[j], list[i]]]) {
+          add('color_conflict', a.sku,
+            `Slot ${a.slot}: ${pms} is ${a.hex} here and ${b.hex} on ${b.sku} slot ${b.slot}. `
+            + 'One of the two was transcribed wrongly — check both against the artwork.');
+        }
+      }
+    }
+  }
+
+  const KINDS = ['no_spec', 'bad_color', 'color_conflict', 'no_colors', 'not_a_sku', 'gtin'];
   const counts = Object.fromEntries(KINDS.map(k => [k, new Set(issues.filter(i => i.kind === k).map(i => i.sku)).size]));
 
   // WHICH PRODUCTS ARE ON AMAZON AT ALL is a decision, not a defect, so it is
@@ -1008,6 +1059,86 @@ router.put('/:sku', (req, res) => {
   stampReadiness(db, existing.sku, existing, Object.keys(patch), req.user?.name);
   logAudit(req.user, 'product_updated', 'product', existing.sku, { changed: Object.keys(patch) }, null, null, existing.sku);
   res.json(hydrate([db.prepare(`${SELECT} WHERE p.sku = ?`).get(existing.sku)], db)[0]);
+});
+
+/**
+ * Correct the brand colours.
+ *
+ * WHY THIS IS EDITABLE AT ALL, since almost nothing else on a product is.
+ * `product_colors` has exactly ONE writer — `seedProducts()`, which loads
+ * `seed-data/sku_colors.csv` and skips entirely once `products` has any row,
+ * so it runs once in a database's life and never again. There is no sync, no
+ * feed and nothing derived: a value transcribed wrongly in the audit stayed
+ * wrong for good, with no door to correct it through. Making it editable
+ * cannot be overwritten by anything, because there is nothing left to
+ * overwrite it.
+ *
+ * ITS OWN ROUTE rather than fields on the PUT, for the same reason the panel
+ * values and a SKU rename are: the colours go out on `master.csv`, the
+ * proofing service matches a PDF's separation NAMES against them, and a wrong
+ * Pantone reference is a pack checked against the wrong ink. That should read
+ * in the audit log as a deliberate act, not as an edit to a text box.
+ *
+ * The whole slot list is sent and REPLACES what is there. A redesign that
+ * drops a fourth colour is a real edit, and patching slot by slot would leave
+ * no way to express it; the before and after both go in the audit entry, so
+ * the removal is in the trail.
+ */
+router.put('/:sku/colors', (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalogue.' });
+  const db = getDb();
+  const product = db.prepare('SELECT * FROM products WHERE sku = ?').get(req.params.sku);
+  if (!product) return res.status(404).json({ error: 'No such SKU' });
+  if (!Array.isArray(req.body?.colors)) {
+    return res.status(400).json({ error: 'Send the whole colour list.' });
+  }
+
+  // A row with neither value typed into it is an empty line on the form, not
+  // a colour somebody meant to record as blank.
+  const wanted = req.body.colors
+    .filter((c) => !isBlankSlot(c))
+    .map((c) => ({ pms: String(c.pms ?? '').trim() || null, hex: String(c.hex ?? '').trim() || null }));
+
+  // REFUSED, NEVER STORED AND FLAGGED. A value the proofing service cannot
+  // match a separation against is worse on the feed than an empty cell — the
+  // check would report a name mismatch against a name nobody printed. Named
+  // per slot, or the person has to work out which of four boxes it meant.
+  const problems = [];
+  wanted.forEach((c, i) => {
+    for (const msg of colorIssues(c)) problems.push(`Colour ${i + 1}: ${msg}`);
+  });
+  if (problems.length) return res.status(400).json({ error: problems.join(' '), problems });
+
+  const before = db.prepare('SELECT * FROM product_colors WHERE sku = ? ORDER BY slot').all(product.sku);
+  const beforeShape = before.map((c) => ({ slot: c.slot, pms: c.pms, hex: c.hex }));
+  const afterShape = wanted.map((c, i) => ({ slot: i + 1, ...c }));
+  if (JSON.stringify(beforeShape) === JSON.stringify(afterShape)) {
+    return res.json(hydrate([db.prepare(`${SELECT} WHERE p.sku = ?`).get(product.sku)], db)[0]);
+  }
+
+  db.transaction(() => {
+    db.prepare('DELETE FROM product_colors WHERE sku = ?').run(product.sku);
+    const ins = db.prepare(`INSERT INTO product_colors (id, sku, slot, pms, hex, pms_valid, hex_valid)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`);
+    for (const c of afterShape) {
+      // RECOMPUTED, never taken from the caller — the same rule `gtin_valid`
+      // follows. These two columns are what the data-health punch list and the
+      // swatch on the drawer read, so a client may not declare a value good.
+      ins.run(uuid(), product.sku, c.slot, c.pms, c.hex,
+        pmsValid(c.pms) ? 1 : 0, hexValid(c.hex) ? 1 : 0);
+    }
+    db.prepare("UPDATE products SET updated_at = datetime('now') WHERE sku = ?").run(product.sku);
+    // The colours step has just been re-done, so its basis moves to what was
+    // typed — and ARTWORK, which depends on colours, keeps the old one and
+    // comes back onto the punch list saying the brand colours moved. That is
+    // the point: a pack released against PMS 285 was released against a
+    // different ink from the one now on the record.
+    stampReadiness(db, product.sku, { ...product, colors: before }, ['colors'], req.user?.name);
+  })();
+
+  logAudit(req.user, 'product_colors_updated', 'product', product.sku,
+    { slots: afterShape.length }, { colors: beforeShape }, { colors: afterShape }, product.sku);
+  res.json(hydrate([db.prepare(`${SELECT} WHERE p.sku = ?`).get(product.sku)], db)[0]);
 });
 
 /**

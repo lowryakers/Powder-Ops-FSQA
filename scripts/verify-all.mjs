@@ -24,6 +24,8 @@ const RUNS = [
   ['verify-sensory-v2.mjs', 4960],
   ['verify-artwork-sync.mjs', 4961, { PRODUCT_MASTER_TOKEN: 'proof-token' }],
   ['verify-nfp-panel.mjs', 5016, { PRODUCT_MASTER_TOKEN: 'proof-token' }],
+  ['verify-product-colors.mjs', 5018, { PRODUCT_MASTER_TOKEN: 'proof-token' }],
+  ['verify-product-colors-ui.mjs', 5020],
   ['verify-nfp-panel-ui.mjs', 5017, { PRODUCT_MASTER_TOKEN: 'proof-token' }],
   ['verify-supplier-storage.mjs', 4962, {}, true],
   ['verify-signatures.mjs', 4963],

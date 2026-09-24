@@ -10,11 +10,149 @@ import FlavorCodesPanel, { DraftRealign } from './FlavorCodesPanel.jsx';
 import ProductBarcodes from './ProductBarcodes.jsx';
 import ProductShelf from './ProductShelf.jsx';
 import NfpBoard, { NfpForSku } from './NfpPanel.jsx';
+import { hexDigits, pmsValid, hexValid, colorIssues, isBlankSlot } from '../../../shared/product-colors.js';
 import {
   Package, Search, X, AlertTriangle, CheckCircle2, Circle, Pencil, ChevronRight, Stethoscope, Tag,
   Barcode, Upload, ExternalLink, RefreshCw, FolderOpen,
-  FileText,
+  FileText, Plus, Trash2, Palette,
 } from 'lucide-react';
+
+/**
+ * Brand colours, and the one place they can be corrected.
+ *
+ * These were loaded once from the audited colour list and there has never been
+ * a way to change one — so a Pantone reference transcribed wrongly stayed
+ * wrong, and went out on `master.csv` to the proofing service, which matches a
+ * PDF's separation NAMES against it. That is a pack checked against the wrong
+ * ink with nothing on any screen saying so.
+ *
+ * Nothing refreshes this table, so an edit made here is not at risk of being
+ * overwritten: the seeder that filled it skips entirely once the catalogue has
+ * rows, and no other writer exists.
+ *
+ * The validity shown as you type comes from the SAME function the server
+ * stores `pms_valid` / `hex_valid` with (`shared/product-colors.js`), so the
+ * swatch cannot promise a save the server would refuse.
+ */
+function ColorEditor({ sku, colors, canEdit, onSaved }) {
+  const [editing, setEditing] = useState(false);
+  const [rows, setRows] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const open = () => {
+    setRows((colors || []).map((c) => ({ pms: c.pms || '', hex: c.hex || '' })));
+    setError('');
+    setEditing(true);
+  };
+  const set = (i, k) => (e) =>
+    setRows((p) => p.map((r, j) => (j === i ? { ...r, [k]: e.target.value } : r)));
+
+  const filled = rows.filter((r) => !isBlankSlot(r));
+  const problems = filled.flatMap((r, i) => colorIssues(r).map((m) => `Colour ${i + 1}: ${m}`));
+
+  const save = async () => {
+    setBusy(true); setError('');
+    try {
+      await apiFetch(`/products/${encodeURIComponent(sku)}/colors`, {
+        method: 'PUT', body: { colors: filled },
+      });
+      setEditing(false);
+      onSaved?.();
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  };
+
+  // The swatch is drawn only from a hex the validator accepts. A box painted
+  // from an unusable value renders black, which reads as a colour somebody
+  // chose rather than as a value nothing can use.
+  const Swatch = ({ hex }) => (
+    <span className="w-3.5 h-3.5 rounded-sm border border-gray-300 shrink-0"
+      style={{ background: hexValid(hex) ? `#${hexDigits(hex)}` : 'transparent' }} />
+  );
+
+  if (!editing) {
+    return (
+      <div data-colors-block>
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <p className="text-xs font-medium text-gray-600">Brand colours</p>
+          {canEdit && (
+            <button type="button" data-edit-colors onClick={open}
+              className="inline-flex items-center gap-1 text-xs text-powder-700 hover:underline">
+              <Pencil size={11} /> Correct
+            </button>
+          )}
+        </div>
+        {colors?.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {colors.map((c) => (
+              <span key={c.id} data-color-slot={c.slot}
+                className="inline-flex items-center gap-1.5 text-xs border border-gray-200 rounded px-2 py-1">
+                <Swatch hex={c.hex} />
+                <span className={c.pms_valid ? '' : 'text-red-600'}>{c.pms || '—'}</span>
+                <span className={c.hex_valid ? 'text-gray-400' : 'text-red-600'}>{c.hex || '—'}</span>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-gray-500">None recorded.</p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div data-colors-block className="rounded-lg border border-powder-200 bg-powder-50/40 p-2.5 space-y-2">
+      <p className="text-xs font-medium text-gray-700 flex items-center gap-1.5">
+        <Palette size={13} className="text-powder-600" /> Brand colours
+      </p>
+      <p className="text-[11px] text-gray-600">
+        These go out on the master list the artwork proofer checks every pack against, and it matches the
+        Pantone name against the file&rsquo;s own separations. Correcting one here is permanent — nothing
+        re-imports this list.
+      </p>
+      {rows.map((r, i) => (
+        <div key={i} className="flex items-center gap-1.5">
+          <Swatch hex={r.hex} />
+          <input type="text" data-color-pms={i} value={r.pms} onChange={set(i, 'pms')}
+            placeholder="PMS 158 C"
+            className={`flex-1 min-w-0 border rounded px-2 py-1 text-xs ${r.pms && !pmsValid(r.pms) ? 'border-red-400 bg-red-50' : 'border-gray-300'}`} />
+          <input type="text" data-color-hex={i} value={r.hex} onChange={set(i, 'hex')}
+            placeholder="HEX EE7623"
+            className={`w-32 border rounded px-2 py-1 text-xs ${r.hex && !hexValid(r.hex) ? 'border-red-400 bg-red-50' : 'border-gray-300'}`} />
+          <button type="button" data-remove-color={i} onClick={() => setRows((p) => p.filter((_, j) => j !== i))}
+            className="text-gray-400 hover:text-red-600 shrink-0" title="Remove this colour">
+            <Trash2 size={13} />
+          </button>
+        </div>
+      ))}
+      <button type="button" data-add-color onClick={() => setRows((p) => [...p, { pms: '', hex: '' }])}
+        className="inline-flex items-center gap-1 text-xs text-powder-700 hover:underline">
+        <Plus size={12} /> Add a colour
+      </button>
+
+      {problems.length > 0 && (
+        <ul data-color-problems className="text-xs text-red-700 space-y-0.5 list-disc pl-4">
+          {problems.map((m) => <li key={m}>{m}</li>)}
+        </ul>
+      )}
+      {error && <p className="text-xs text-red-700 bg-red-50 rounded p-2">{error}</p>}
+
+      <div className="flex gap-2">
+        <button type="button" data-save-colors onClick={save} disabled={busy || problems.length > 0}
+          className="px-3 py-1.5 bg-powder-600 text-white rounded-lg text-xs font-medium disabled:opacity-50">
+          {busy ? 'Saving…' : 'Save colours'}
+        </button>
+        <button type="button" onClick={() => setEditing(false)}
+          className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs">Cancel</button>
+      </div>
+      <p className="text-[11px] text-gray-500">
+        Saving re-dates the brand-colours step, so the artwork step goes back on the punch list —
+        a pack released against a different ink is a pack worth looking at again.
+      </p>
+    </div>
+  );
+}
 
 /**
  * The master list.
@@ -437,21 +575,8 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
                   ))}
                 </dl>
 
-                {p.colors?.length > 0 && (
-                  <div>
-                    <p className="text-xs font-medium text-gray-600 mb-1">Brand colours</p>
-                    <div className="flex flex-wrap gap-2">
-                      {p.colors.map((c) => (
-                        <span key={c.id} className="inline-flex items-center gap-1.5 text-xs border border-gray-200 rounded px-2 py-1">
-                          <span className="w-3.5 h-3.5 rounded-sm border border-gray-300"
-                            style={{ background: c.hex_valid ? `#${(c.hex || '').replace(/^(HEX|HX)\s+/, '')}` : 'transparent' }} />
-                          <span>{c.pms || '—'}</span>
-                          <span className={c.hex_valid ? 'text-gray-400' : 'text-red-600'}>{c.hex || '—'}</span>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                <ColorEditor sku={sku} colors={p.colors} canEdit={canEdit}
+                  onSaved={() => { refresh(); onSaved?.(); }} />
 
                 {/* The panel workflow lives here, beside the product, because
                     that is where someone already is when they need it. The

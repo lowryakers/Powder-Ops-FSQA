@@ -115,6 +115,7 @@ import nfpRoutes, { linkRouter as nfpLinkRoutes } from './server/api/nfp.js';
 import productFileImportRoutes from './server/api/product-file-import.js';
 import { seedProducts } from './server/products-seed.js';
 import { repairPaddedGtins } from './server/gtin-repair.js';
+import { repairProductColors } from './server/product-color-repair.js';
 import { seedFillWeights } from './server/fill-weight-seed.js';
 import { seedFlavorCodes, seedBottleSpec, repairBaseFlavors } from './server/flavor-code-seed.js';
 import { seedProductShelf } from './server/product-shelf.js';
@@ -1158,6 +1159,13 @@ try {
   // and is stamped: a fill weight somebody CLEARED means "we do not know it
   // yet", and a redeploy must not put a number back over that.
   try { seedFillWeights(db); } catch (e) { console.warn('[seed] Could not seed fill weights:', e.message); }
+  // Brand colours transcribed wrongly by the audit. `product_colors` is
+  // written once in a database's life by seedProducts, so correcting the CSV
+  // reaches a fresh database and never a live one — this is how the fix
+  // travels to the rows already on the volume. Exact-match only, so it finds
+  // nothing after it has run and never overwrites a correction somebody made
+  // through the colours editor.
+  try { repairProductColors(db); } catch (e) { console.warn('[seed] Could not correct brand colours:', e.message); }
   // AFTER seedProducts, always: the flavour codes are DERIVED from the product
   // rows, so on a fresh database there is nothing to read until the catalogue
   // is in. Same ordering trap as seedGenericSpecifications, which filed zero
