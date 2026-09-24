@@ -34,30 +34,55 @@ const KIND_WHY = {
   bad_color: 'A hex or PMS value the proofer cannot parse, so the colour check silently covers nothing.',
   color_conflict: 'The same Pantone reference carries a materially different hex on two products, so one of '
     + 'them was transcribed wrongly. Which one is a question about what is printed on the pack — check both '
-    + 'against the artwork and correct the loser in the product drawer.',
+    + 'against the artwork and correct the loser in the product drawer. A row marked checked is one somebody '
+    + 'has already resolved against the artwork; it stays on the list so the answer is not lost.',
   no_colors: 'No brand colours recorded, so nothing verifies what came back from the printer.',
   not_a_sku: 'A numeric id sitting in the SKU column — almost certainly a Shopify variant id.',
   gtin: 'Missing, or fails its GS1 check digit. A bad barcode scans as another product or not at all.',
 };
 
+/**
+ * A row the server marked `info` is one somebody has already answered — close
+ * enough to be one ink, or checked against the artwork and written down. It is
+ * SHOWN, never hidden: a disagreement that was looked at is a different fact
+ * from one nobody has opened, and losing it means the next person asks again.
+ * It just does not count as work, and does not read as a defect.
+ */
 function Group({ kind, items, open, onToggle }) {
-  const skus = [...new Set(items.map((i) => i.sku))];
+  const work = items.filter((i) => i.severity !== 'info');
+  const skus = [...new Set(work.map((i) => i.sku))];
+  const notedSkus = [...new Set(items.filter((i) => i.severity === 'info').map((i) => i.sku))];
   return (
-    <div className="border border-gray-200 rounded-xl overflow-hidden">
+    <div className="border border-gray-200 rounded-xl overflow-hidden" data-issue-group={kind}>
       <button onClick={onToggle} className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-gray-50">
         {open ? <ChevronDown size={15} className="text-gray-400" /> : <ChevronRight size={15} className="text-gray-400" />}
         <span className="text-sm font-semibold text-gray-900 flex-1">{KIND_LABEL[kind] || kind}</span>
-        <span className="text-sm font-bold text-amber-700">{skus.length}</span>
-        <span className="text-[11px] text-gray-400">SKU{skus.length === 1 ? '' : 's'}</span>
+        {skus.length > 0 && (
+          <>
+            <span className="text-sm font-bold text-amber-700" data-issue-count={kind}>{skus.length}</span>
+            <span className="text-[11px] text-gray-400">SKU{skus.length === 1 ? '' : 's'}</span>
+          </>
+        )}
+        {notedSkus.length > 0 && (
+          <span className="text-[11px] text-gray-500 rounded-full bg-gray-100 px-2 py-0.5"
+            data-issue-noted={kind}>{notedSkus.length} checked</span>
+        )}
       </button>
       {open && (
         <div className="px-3 pb-3 border-t border-gray-100 pt-2">
           <p className="text-[11px] text-gray-500 mb-2">{KIND_WHY[kind]}</p>
           <div className="max-h-64 overflow-y-auto space-y-1">
             {items.map((i, k) => (
-              <div key={k} className="flex items-start gap-2 text-xs">
+              <div key={k} className="flex items-start gap-2 text-xs" data-severity={i.severity || 'warn'}>
                 <span className="font-mono font-medium text-gray-900 shrink-0 w-28 truncate">{i.sku}</span>
-                <span className="text-gray-600">{i.detail}</span>
+                <span className={i.severity === 'info' ? 'text-gray-400' : 'text-gray-600'}>
+                  {i.severity === 'info' && (
+                    <span className="mr-1 rounded bg-gray-100 px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                      checked
+                    </span>
+                  )}
+                  {i.detail}
+                </span>
               </div>
             ))}
           </div>
@@ -76,7 +101,10 @@ export default function ProductDataHealth({ data }) {
 
   const byKind = {};
   for (const i of data.issues || []) (byKind[i.kind] = byKind[i.kind] || []).push(i);
-  const kinds = Object.keys(byKind).sort((a, b) => byKind[b].length - byKind[a].length);
+  // A group that is all `info` sorts last — it is a record of answers, not a
+  // pile of work, and putting it above something outstanding misreads the page.
+  const workOf = (k) => byKind[k].filter((i) => i.severity !== 'info').length;
+  const kinds = Object.keys(byKind).sort((a, b) => workOf(b) - workOf(a) || byKind[b].length - byKind[a].length);
 
   return (
     <div className="space-y-4">

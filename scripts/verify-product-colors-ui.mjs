@@ -82,6 +82,32 @@ t('and the server has it, with its validity recomputed',
   (api.colors || []).length === 4 && api.colors.every((c) => c.pms_valid === 1),
   JSON.stringify((api.colors || []).map((c) => c.pms)));
 
+console.log('\nThe punch list says what has been ANSWERED, not just what is wrong');
+// A disagreement somebody resolved against the artwork stays on the list — it
+// stops reading as work, which is a different thing from being deleted. The
+// answer is what stops the next person asking the same question.
+await page.goto(`${URL}/?tab=products`);
+await page.waitForTimeout(3000);
+await page.locator('button:has-text("Data health")').locator('visible=true').first().click();
+await page.waitForTimeout(1500);
+const group = page.locator('[data-issue-group="color_conflict"]');
+t('the one-Pantone-two-colours group is on the screen', await group.count() === 1);
+t('AND IT SHOWS NO OUTSTANDING SKUs — the corrections landed',
+  await page.locator('[data-issue-count="color_conflict"]').count() === 0,
+  await group.innerText().catch(() => ''));
+t('it reads as N checked instead', /checked/i.test(await group.innerText()),
+  (await group.innerText()).replace(/\n/g, ' '));
+await group.locator('button').first().click();
+await page.waitForTimeout(500);
+const rows = group.locator('[data-severity]');
+t('every row under it is marked as checked, not as a defect',
+  await rows.count() > 0 && await group.locator('[data-severity="warn"]').count() === 0,
+  `${await rows.count()} rows, ${await group.locator('[data-severity="warn"]').count()} warn`);
+const detail = await group.innerText();
+t('and PMS 375 C names who checked it and why, on the screen',
+  /375 C/.test(detail) && /Lowry Akers/.test(detail) && /Key Lime/.test(detail),
+  detail.replace(/\n/g, ' ').slice(0, 220));
+
 console.log('\nAt 390px');
 const phone = await browser.newPage({ viewport: { width: 390, height: 800 } });
 phone.on('pageerror', (e) => { console.log('  [pageerror]', e.message); fail++; });

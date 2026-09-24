@@ -4298,3 +4298,74 @@ Verified: `check:colors` (35, pure) and `verify:colors` (35, live, with two real
 colour load an authoritative re-import — the shape a sync would have — fails 3, the headline one being a
 person's corrected value replaced by the imported one; removing the repair's exact-match guard fails 2;
 letting any prefix count as a Pantone fails 4, including the 312-slot agreement.
+
+## D-109 — Three corrections the other way round, and a disagreement somebody has answered (2026-09-24)
+
+D-108 built the sweep that finds a Pantone carrying two different colours, and shipped one correction:
+`PMS 285 C` on the pancake Pumpkin Spice row, where the NAME was wrong and the hex was the evidence. The
+sweep's other three findings have now been resolved against the artwork PDFs themselves — separation names
+read out of the files, rendered pixels sampled — and **all three go the other way: the Pantone is right and
+the hex beside it was borrowed from another row.** That asymmetry is the decision this entry records.
+
+**A correction names which of the two it is moving, and carries both values either way.** `COLOR_CORRECTIONS`
+was `{from_pms, to_pms, hex}` — a shape that can only express "the name was wrong", because it assumed the
+hex was the fixed evidence. It is `{from: {pms, hex}, to: {pms, hex}}` now. Both `from` values must still
+match or nothing is written, because **the pair IS the evidence**: it is the two values disagreeing that
+proves one of them wrong, and a row where either has moved is a row somebody has already been to. Writing
+`to` out in full means a correction never has to be read as "and the rest stays as it was".
+
+- **`PMS 9201 C` on Peach Cobbler (pouch + stick): `502C1E` → `F4E1CB`.** The cream is in the render; the
+  dark brown is not present as a solid anywhere on the pack. `502C1E` is PMS 4625 C, borrowed.
+- **`PMS 728 C` on Iced Mocha (pouch + stick): `9FD560` → `C49873`.** The tan is about 97,000 pixels of the
+  render; the green is zero of it. `9FD560` is PMS 367 C.
+- **`PNS 9160 C` → `PMS 9160 C` on Iced Mocha (pouch + stick).** A typo, not an unusable value.
+
+**The same two inks sit on the Toffee Cream beef rows carrying the CORRECT hex already, which is how the
+sweep found them** — one ink, two colours, 181 and 61 apart per channel. Those rows are untouched and
+asserted untouched.
+
+**THE TYPO IS THE ONE THAT MOVES VALIDITY, and it is why validity is re-derived rather than carried.**
+`PNS 9160 C` is the only one of the four shapes `shared/product-colors.js` refuses that names a real ink —
+`PMS --` is an empty slot and `CMYK 3 1 17 0` is a process build, and neither is a spot colour a printer can
+be handed. The audit marked it invalid because that is what it read, correctly. So this correction takes
+`pms_valid` from 0 to 1, and a repair that had to *remember* to say so is a repair that forgets: the write
+recomputes both columns through the shared validator, the `gtin_valid` rule. The CSV's flag had to move with
+it or `check:colors`'s 312-slot agreement fails, which is that assertion earning its keep.
+
+### The other half: a disagreement that has been answered is not the same as one nobody has opened
+
+Both real conflicts vanish once the corrections land. What is left is two pairs that are approximations of
+one ink — Key Lime's `PMS 375 C` and Orange's `PMS 123 C` — and the ask was for a tolerance so they stop
+surfacing. **A tolerance alone cannot do it, and that is the finding.**
+
+`PMS 123 C` differs by 17 per channel and drops on a number. `PMS 375 C` differs by **36**, and would still
+have been shouting at any threshold low enough to be worth having — because the whole gap is in the BLUE
+channel of a saturated green, where a max-per-channel overstates a difference nobody can see on a pack.
+Only a person holding the artwork could say so. So there are two mechanisms, not one:
+
+- **`INFO_TOLERANCE = 25`, the plant's number**, the standing the ATP limit and the scale tolerances have.
+  Under it, two transcriptions of one ink are one ink.
+- **`COLOR_PAIR_DECISIONS`**, transcribed with its evidence — who checked it, when, against what the artwork
+  renders (Key Lime `94D600`, Orange `FFC72E`). The `DECIDED` / `form_numbering_decisions` shape: the one
+  answer nothing here can derive. **A decision is PAIR-SPECIFIC** — the same Pantone against a third colour
+  still warns — and it **never hides the row**. A disagreement somebody has explained is a different fact
+  from one nobody has looked at, and deleting it would lose that the question was ever answered.
+
+**THREE BANDS, NOT TWO.** Under 16 is SILENT — 255 pairs in the catalogue are that close, and reporting them
+is the wallpaper that gets a punch list ignored. 16 to 25 is INFO. Over 25 is WARN unless decided.
+
+**Work and answers are counted separately.** `counts` is what somebody has to go and do, `noted` is what has
+already been answered, and `affected` — "of N SKUs need something" — excludes info outright. Every one is
+the size of a set taken straight off `issues`, so a card cannot disagree with the rows under it. On screen
+an info row keeps a grey "checked" chip and the reason travels with it.
+
+**Verified:** `check:colors` (35 → **73**, pure), `verify:colors` (35 → **54**, live, two real reboots) and
+`verify:colorsui` (16 → **21**, browser at 1280 + 390px). **Two decisive controls.** Leaving the three
+corrections out — the state the plant was in — fails **16**, the first being the proofer's own feed line
+still carrying `PMS 728 C | PNS 9160 C` against `HEX 9FD560 | HEX EDEDB2`. Dropping the severity model so
+every reported disagreement reads as work fails **6** live and **3** pure, with `PMS 375 C` back on the
+punch list at 36 apart.
+
+**Not done, and it is not in this repository:** `GTIN_SHEET_URL` on the artproof.live service still points at
+the published Google Sheet (D-108), so these three corrections do not reach the proofer until somebody sets
+it. There is no Railway access from a session and the host is not reachable through the container's proxy.

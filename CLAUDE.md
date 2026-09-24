@@ -705,9 +705,34 @@ pipe-delimited cells the proofer reads; that is a read, not a source.
   `PP-CC-04` and `PSP-CCR` carries `0071CE`, which is that blue. The hex is the evidence; the name was the
   error. It is `PMS 7580 C`. Both other 285 rows were checked, are correct, and are asserted untouched.
 - **`color_conflict` on Data health is the sweep that finds the next one** — the same Pantone carrying a
-  materially different hex on two rows, derived on every read, ±16 per channel (from the proofer's own ±6).
-  **Reported, never corrected**: which side is wrong is a question about what is printed on a pack. Four
-  codes across twelve SKUs today, worst being PMS 9201 C (a cream on two rows, a dark brown on two others).
+  materially different hex on two rows, derived on every read. **Reported, never corrected**: which side is
+  wrong is a question about what is printed on a pack. It found four codes; all four are answered (D-109).
+
+### The other three went the other way, and one of them moved validity (D-109)
+Resolved against the artwork PDFs — separation names read out, rendered pixels sampled. **In all three the
+Pantone is RIGHT and the hex beside it was borrowed from another row**, the opposite of the pumpkin case,
+which is why `COLOR_CORRECTIONS` is now `{from:{pms,hex}, to:{pms,hex}}` and a correction says which of the
+two it moves. **Both `from` values must still match or nothing is written — the PAIR is the evidence.**
+- **`PMS 9201 C` on Peach Cobbler (pouch + stick): `502C1E` → `F4E1CB`** (`502C1E` is PMS 4625 C).
+  **`PMS 728 C` on Iced Mocha (pouch + stick): `9FD560` → `C49873`** (`9FD560` is PMS 367 C). **The same two
+  inks on the Toffee Cream beef rows were already correct** — that is how the sweep found these — and are
+  asserted untouched.
+- **`PNS 9160 C` → `PMS 9160 C` MOVES `pms_valid` 0 → 1**, and is the reason validity is RE-DERIVED on the
+  repair rather than carried in it (the `gtin_valid` rule). It is the only one of the four shapes the
+  validator refuses that names a real ink — `PMS --` is an empty slot, `CMYK 3 1 17 0` is a process build.
+  **The CSV's flag has to move with it** or `check:colors`'s 312-slot agreement fails.
+- **A TOLERANCE ALONE COULD NOT QUIET THE LAST TWO, and that is the finding.** `PMS 123 C` differs by 17 and
+  drops on `INFO_TOLERANCE = 25` (the plant's number). **`PMS 375 C` differs by 36** — the whole gap is in
+  the BLUE channel of a saturated green, where a max-per-channel overstates a difference nobody can see.
+  So `COLOR_PAIR_DECISIONS` records the pairs a person checked, with the evidence (Key Lime renders
+  `94D600`, Orange `FFC72E`). **Pair-specific** — the same Pantone against a third colour still warns — and
+  it **never hides the row**: a disagreement somebody explained is a different fact from one nobody opened.
+- **Three bands: silent under 16** (255 pairs are that close — reporting them is the wallpaper that gets a
+  punch list ignored), **info 16–25, warn above 25 unless decided.** `counts` is work, `noted` is answers,
+  `affected` excludes info, and every figure is `.length` of the rows under it.
+- Verified: `check:colors` (73), `verify:colors` (54), `verify:colorsui` (21). Controls: leaving the three
+  corrections out — the state the plant was in — fails **16**, the first being the proofer's own feed line
+  still reading `PMS 728 C | PNS 9160 C`; dropping the severity model fails **6** live and **3** pure.
 
 ### THE PROOFER DOES NOT READ master.csv TODAY (D-108)
 At `lowryakers/artwork-proofing@c907a6f` the master rows come from a **published Google Sheet**

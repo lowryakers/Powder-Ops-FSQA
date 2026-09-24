@@ -18,7 +18,8 @@ import { preferredSku, LINE_CODES, PACK_CODES } from '../../shared/sku-format.js
 import { READINESS, TICKABLE, readinessOf, nextBasis } from '../../shared/product-readiness.js';
 import { shelfState, gtinPrefixes } from '../product-shelf.js';
 import { normalizeGtin, sameGtin, gtinValid } from '../../shared/gtin.js';
-import { pmsValid, hexValid, hexDigits, colorIssues, isBlankSlot } from '../../shared/product-colors.js';
+import { pmsValid, hexValid, colorIssues, isBlankSlot, conflictSeverity }
+  from '../../shared/product-colors.js';
 import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { storageEnabled, putStream, presignGet, deleteObject } from '../storage.js';
 import fs from 'fs';
@@ -693,7 +694,11 @@ router.get('/data-health', (_req, res) => {
   }
 
   const issues = [];
-  const add = (kind, sku, detail) => issues.push({ kind, sku, detail });
+  // `severity` is 'warn' unless a caller says otherwise. Everything on this
+  // list is something to go and do; only `color_conflict` has a state where
+  // the answer is already known, so it is the only caller that passes one.
+  const add = (kind, sku, detail, severity = 'warn') =>
+    issues.push({ kind, sku, detail, severity });
 
   for (const p of products) {
     // A spec you cannot print from is not a spec. The readiness step asks for
@@ -802,43 +807,72 @@ router.get('/data-health', (_req, res) => {
    * entry is the honest output; an automatic fix would be a guess written into
    * the master feed.
    *
-   * The tolerance is 16 per channel, and it is set from the proofing service's
-   * own: it matches a rendered colour to ±6 because a raster is an
-   * approximation of the vector ink. Two transcriptions of one Pantone
-   * routinely differ by a few units — sampling the same swatch off two
-   * artwork files — and flagging those would bury the four that are real.
+   * THREE BANDS, NOT TWO, and both numbers are the plant's rather than the
+   * code's — the standing the ATP limit and the scale tolerances have.
+   *
+   *   under 16   SILENT. Set from the proofing service's own: it matches a
+   *              rendered colour to plus or minus 6 because a raster is an
+   *              approximation of the vector ink, and two transcriptions of
+   *              one Pantone sampled off two artwork files land a few units
+   *              apart every time. There are 255 such pairs in the catalogue
+   *              today; reporting them is the wallpaper that gets a punch list
+   *              ignored.
+   *   16 to 25   INFO. Far enough apart to be worth saying out loud, close
+   *              enough that it is plainly one ink. `INFO_TOLERANCE`.
+   *   over 25    WARN — unless a person has checked that exact pair against
+   *              the artwork and recorded it in `COLOR_PAIR_DECISIONS`, which
+   *              also reads as info. A decision NEVER hides the row: a
+   *              disagreement somebody has explained is a different fact from
+   *              one nobody has looked at, and the reason travels with it.
+   *
+   * The two named in that table today are a good illustration of why the
+   * tolerance alone cannot do this job. PMS 123 C differs by 17 and drops on
+   * the number; PMS 375 C differs by 36 and would still have been shouting,
+   * because the whole gap is in the BLUE channel of a saturated green — a
+   * max-per-channel overstates a difference nobody can see on a pack. Only a
+   * person holding the artwork could say so, and now it is written down.
    */
-  const CHANNEL_TOLERANCE = 16;
-  const channels = (h) => {
-    const d = hexDigits(h);
-    return d ? [0, 2, 4].map((i) => parseInt(d.slice(i, i + 2), 16)) : null;
-  };
+  const REPORT_FLOOR = 16;
   const byPms = new Map();
   for (const c of colors) {
     if (!pmsValid(c.pms)) continue;
-    const ch = channels(c.hex);
-    if (!ch) continue;
+    if (!hexValid(c.hex)) continue;
     if (!byPms.has(c.pms)) byPms.set(c.pms, []);
-    byPms.get(c.pms).push({ ...c, ch });
+    byPms.get(c.pms).push(c);
   }
   for (const [pms, list] of byPms) {
     for (let i = 0; i < list.length; i++) {
       for (let j = i + 1; j < list.length; j++) {
-        const delta = Math.max(...[0, 1, 2].map((k) => Math.abs(list[i].ch[k] - list[j].ch[k])));
-        if (delta <= CHANNEL_TOLERANCE) continue;
+        const verdict = conflictSeverity(pms, list[i].hex, list[j].hex);
+        if (verdict.delta === null || verdict.delta <= REPORT_FLOOR) continue;
+        const note = verdict.decision
+          ? ` Checked against the artwork by ${verdict.decision.decided_by} on `
+            + `${verdict.decision.decided_at}: ${verdict.decision.reason}`
+          : verdict.severity === 'info'
+            ? ' Close enough to be one ink; worth an eye, not a correction.'
+            : ' One of the two was transcribed wrongly — check both against the artwork.';
         // Named on BOTH rows: whoever opens the punch list has to be able to
         // reach either one, and neither is more suspect than the other.
         for (const [a, b] of [[list[i], list[j]], [list[j], list[i]]]) {
           add('color_conflict', a.sku,
-            `Slot ${a.slot}: ${pms} is ${a.hex} here and ${b.hex} on ${b.sku} slot ${b.slot}. `
-            + 'One of the two was transcribed wrongly — check both against the artwork.');
+            `Slot ${a.slot}: ${pms} is ${a.hex} here and ${b.hex} on ${b.sku} slot ${b.slot}.${note}`,
+            verdict.severity);
         }
       }
     }
   }
 
   const KINDS = ['no_spec', 'bad_color', 'color_conflict', 'no_colors', 'not_a_sku', 'gtin'];
-  const counts = Object.fromEntries(KINDS.map(k => [k, new Set(issues.filter(i => i.kind === k).map(i => i.sku)).size]));
+  // WORK AND NOTES ARE COUNTED SEPARATELY. `counts` is what somebody has to go
+  // and do; `noted` is what has already been answered and is on the list so
+  // that the answer is visible, not so that it can be actioned. Both are the
+  // size of a set taken straight off `issues` — the `activity-metrics` rule —
+  // so a card can never disagree with the list under it, and a SKU carrying
+  // both kinds legitimately appears in both figures.
+  const skusOf = (k, sev) =>
+    new Set(issues.filter(i => i.kind === k && i.severity === sev).map(i => i.sku)).size;
+  const counts = Object.fromEntries(KINDS.map(k => [k, skusOf(k, 'warn')]));
+  const noted = Object.fromEntries(KINDS.map(k => [k, skusOf(k, 'info')]));
 
   // WHICH PRODUCTS ARE ON AMAZON AT ALL is a decision, not a defect, so it is
   // counted here rather than shown as an outstanding readiness step on every
@@ -858,10 +892,12 @@ router.get('/data-health', (_req, res) => {
     products: products.length,
     flavors: names.length,
     counts,
+    noted,
     amazon,
     // SKUs affected, not issues raised — one SKU with three bad colour slots is
-    // one product to go and fix, and reporting three overstates the work.
-    affected: new Set(issues.map(i => i.sku)).size,
+    // one product to go and fix, and reporting three overstates the work. An
+    // `info` row is not work and is deliberately not in this number.
+    affected: new Set(issues.filter(i => i.severity !== 'info').map(i => i.sku)).size,
     issues,
     collisions,
     similar,
