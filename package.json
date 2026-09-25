@@ -82,6 +82,7 @@
     "verify:hoursroster": "node scripts/verify-hours-roster.mjs",
     "verify:hoursrates": "node scripts/verify-hours-rates.mjs",
     "verify:bpgitems": "node scripts/verify-bpg-items.mjs",
+    "verify:recallflow": "node scripts/verify-recall-flow.mjs",
     "verify:trainingpeople": "node scripts/verify-training-people.mjs",
     "verify:clientchannel": "node scripts/verify-client-channel.mjs",
     "verify:clientinvite": "node scripts/verify-client-invite.mjs",

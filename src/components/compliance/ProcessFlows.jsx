@@ -37,11 +37,11 @@ function Step({ step, index }) {
   );
 }
 
-function Flow({ flow }) {
-  const [open, setOpen] = useState(false);
+export function Flow({ flow, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="border border-gray-200 rounded-xl overflow-hidden">
-      <button onClick={() => setOpen(!open)} className="w-full flex items-start justify-between gap-3 p-4 text-left hover:bg-gray-50">
+    <div className="border border-gray-200 rounded-xl overflow-hidden" data-flow={flow.id}>
+      <button onClick={() => setOpen(!open)} data-flow-toggle={flow.id} className="w-full flex items-start justify-between gap-3 p-4 text-left hover:bg-gray-50">
         <div>
           <h4 className="font-semibold text-gray-900">{flow.title}</h4>
           <p className="text-xs text-gray-500 mt-0.5 max-w-2xl">{flow.summary}</p>
@@ -79,6 +79,23 @@ function Department({ dept }) {
         {block('Signs off on', dept.signs)}
         {block('Scheduled work', dept.scheduled)}
       </div>
+    </div>
+  );
+}
+
+/**
+ * The same flow cards, mounted somewhere other than the Auditor View.
+ *
+ * Exported rather than copied: a second renderer is how one process ends up
+ * described two slightly different ways on two screens. `ids` names which
+ * flows to show, in the order given.
+ */
+export function FlowMaps({ ids = [], defaultOpen = false }) {
+  const picked = ids.map(id => FLOWS.find(f => f.id === id)).filter(Boolean);
+  if (!picked.length) return null;
+  return (
+    <div className="space-y-2" data-flow-maps>
+      {picked.map(f => <Flow key={f.id} flow={f} defaultOpen={defaultOpen} />)}
     </div>
   );
 }

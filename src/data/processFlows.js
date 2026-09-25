@@ -97,6 +97,50 @@ export const FLOWS = [
     close: 'A signed investigation, a disposition, and a corrective action being tracked to closure.',
   },
   {
+    id: 'recall',
+    // Recreated for Powder Ops from SOP 415 V3 (Recall and Mock Recall
+    // Procedures). It replaces a flow chart inherited from the previous owner,
+    // which named a Director of Operations and an ownership/legal group this
+    // plant does not have. Actors here are Powder Ops roles, and `form` names
+    // the record that exists — a recall is mostly phone calls and pallets, so
+    // several steps honestly have none.
+    title: 'Recall — problem found → product recovered → recall terminated',
+    summary: 'The real thing, not the drill. SOP 415 covers both, and the mock recall below is the rehearsal of the tracking half of this.',
+    steps: [
+      { actor: 'Anyone', action: 'Something raises the question — a customer complaint, a lab result, an internal finding, or a notice from a supplier that an ingredient we used is affected', form: 'Customer Complaint (419-01) · Deviation (442-01) · Non-Conformance (408-01)' },
+      { actor: 'QA Manager', action: 'Decides whether there is a reasonable probability of a health hazard, and how far it reaches', form: 'FORM 415-1' },
+      { actor: 'QA Manager', action: 'No health hazard: it is closed as an ordinary complaint or non-conformance and no recall is opened', form: 'Complaint Investigation Report (419-01)', branch: true },
+      { actor: 'QA Manager', action: 'Notifies the CEO and the Operations Manager and starts the action log — every call, decision and time from here is written down as it happens, not reconstructed afterwards', form: 'FORM 415-1 · Crisis Management Contact List (501-01)' },
+      { actor: 'Operations Manager', action: 'Stops production and shipment of the affected product and places what is still on site on hold', form: 'On Hold record (424-01)' },
+      { actor: 'QA Manager', action: 'Assembles the recall team and identifies the affected product — item, lot and production date, plus anything else made from the same ingredient or run on the same line', form: 'FORM 415-1' },
+      { actor: 'CEO', action: 'Notifies the brand owner whose product it is, and takes legal advice where the recall reaches the public. Powder Ops co-manufactures, so the decision to announce is rarely ours alone', form: '—' },
+      { actor: 'QA Manager / Warehouse', action: 'Walks whichever of the four tracking procedures applies — distributed product, undistributed product, ingredient or packaging material — to find every unit and where it went', form: 'SOP 415 tracking procedures' },
+      { actor: 'Warehouse', action: 'Isolates and quarantines what is on site; anything recovered later comes back to the same quarantine', form: 'On Hold record (424-01)' },
+      { actor: 'QA Manager', action: 'Notifies the FDA where the product is reportable, then the distributors and customers who received it — recording who was told, how, and when', form: 'FORM 415-1 · FDA 1-866-300-4374' },
+      { actor: 'Purchasing / Production', action: 'Arranges replacement ingredient and replacement product where the recall interrupts supply', form: '—', branch: true },
+      { actor: 'Warehouse / QA', action: 'Recovers the product and reconciles what came back against what was produced and distributed — the mass balance', form: 'FORM 415-1' },
+      { actor: 'QA Manager', action: 'Decides the disposition of the recovered product — destroyed, reworked or released — and records the reason', form: 'Disposal record (411-1)' },
+      { actor: 'QA Manager', action: 'Judges whether the recall was effective on what was actually recovered and how many accounts responded, and terminates it', form: 'FORM 415-1' },
+      { actor: 'QA / Management', action: 'Raises the corrective action and reviews how the recall ran', form: 'CAPA (408-2) · Management review minutes' },
+    ],
+    close: 'A terminated recall with the action log, the reconciliation, the disposition and a corrective action behind it.',
+  },
+  {
+    id: 'mock_recall',
+    title: 'Mock recall — the annual rehearsal of that path',
+    summary: 'Once a year, on a product deliberately different from last time. It walks the tracking half of a recall against a real lot and a clock, and says whether the plant could actually have done it.',
+    steps: [
+      { actor: 'QA', action: 'Picks a product and lot — rotating to a different type from the last exercise — and starts the clock', form: 'Mock Recall · FORM 415-1' },
+      { actor: 'QA', action: 'Walks whichever tracking procedure applies and records which one was walked, since an ingredient trace and a finished-good trace prove different things', form: 'SOP 415 tracking procedures' },
+      { actor: 'QA', action: 'Records every item the SOP names — quantities produced, distributed, quarantined and still in the market, the batch and labeling records, the retention samples, and the method of notification. An item left blank is visible as blank', form: 'FORM 415-1' },
+      { actor: 'QA', action: 'Reconciles what was found against what was produced — the mass balance', form: 'FORM 415-1' },
+      { actor: 'System', action: 'Judges the SOP’s three criteria: recovery of 99.5–100.5%, complete within four hours including the summary report, and the mock recall box checked. Nothing gets a verdict until all three are measured', form: 'Mock Recall · effectiveness check' },
+      { actor: 'QA / Management', action: 'An exercise that misses any criterion needs a root cause and the actions taken before it can be signed off', form: 'Mock Recall · investigation', branch: true },
+      { actor: 'QA / Document Control', action: 'Signs off, with the close-out meeting minutes on the record', form: 'FORM 415-1' },
+    ],
+    close: 'A signed exercise saying whether the plant could recover the lot, on this year’s clock.',
+  },
+  {
     id: 'document',
     title: 'Document change → approval → retraining',
     summary: 'A controlled document only changes through Document Control, and a change that affects training reopens it.',

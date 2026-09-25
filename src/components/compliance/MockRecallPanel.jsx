@@ -3,9 +3,10 @@ import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import {
   Plus, ArrowLeft, Package, Clock, Check, X, AlertTriangle, HelpCircle,
-  ShieldCheck, RotateCcw, FileCheck2, Phone,
+  ShieldCheck, RotateCcw, FileCheck2, Phone, Workflow,
 } from 'lucide-react';
 import { formatDateTime } from '../../lib/datetime.js';
+import { FlowMaps } from './ProcessFlows.jsx';
 
 /**
  * Mock Recall — Form 415-1, driven by the plant's own SOP 415 V3.
@@ -411,6 +412,30 @@ export default function MockRecallPanel() {
             </div>
           </button>
         ))}
+      </div>
+
+      {/*
+        The flow chart, where the drill is run.
+
+        It is the SAME data the Auditor View's process maps render (`FlowMaps`
+        from ProcessFlows.jsx), not a second copy — one process described twice
+        is how two screens start disagreeing. Both flows are here on purpose:
+        SOP 415 is Recall AND Mock Recall Procedures, and the exercise below is
+        the rehearsal of the response above. Whoever runs the drill is the
+        person who should have read how the real one goes.
+      */}
+      <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
+        <div>
+          <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+            <Workflow size={14} className="text-gray-400" /> How a recall runs
+          </h4>
+          <p className="text-[11px] text-gray-500 mt-0.5 max-w-2xl">
+            Powder Ops&rsquo; own reading of SOP 415 {form?.sop_revision || ''} — the recall itself, and this exercise as its
+            rehearsal. A reference, not a controlled drawing: it carries no form number and nothing is stamped on a
+            record from it. The printable copy is in the Auditor View under Process Maps.
+          </p>
+        </div>
+        <FlowMaps ids={['recall', 'mock_recall']} />
       </div>
 
       {form && <ContactsCard contacts={form.contacts} sopRevision={form.sop_revision} />}

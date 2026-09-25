@@ -4549,6 +4549,36 @@ the controlled procedure requires is not evidence the procedure was followed —
   halves of the four-hour criterion, sign-off refused three different ways, and the revoke → correct → sign
   path.
 
+### The recall flow chart is OURS, it is a RECALL chart, and it is where the drill is run (D-111)
+Two entries in `src/data/processFlows.js` — **`recall`** (15 steps) and **`mock_recall`** (7) — rendered by
+the Auditor View's Process Maps **and** by the Mock Recall panel through `FlowMaps`, exported from
+`ProcessFlows.jsx`. It replaces `Mock_Recall_Flow_Chart.pdf`, inherited with the facility from **Arete**.
+- **THE INHERITED CHART IS A RECALL CHART DESPITE ITS FILENAME** — *Receive Complaint · is there a health
+  hazard?* through to *Terminate Recall*. SOP 415 V3 is *Recall **and** Mock Recall Procedures* and
+  FORM 415-1 is the **Recall** Form carrying a mock-recall checkbox (which is why `effectivenessCheck()`
+  has `form_415_1_checked`), so the honest recreation is **two maps**: the response, and the annual
+  rehearsal of its tracking half, which is what the module records.
+- **IT ROUTED THROUGH ROLES THIS PLANT DOES NOT HAVE** — *Director of Operations*, *Ownership / Partners /
+  Legal Counsel*. `RECALL_CONTACTS` names the CEO, Production Manager, QA Manager and Office Manager, and
+  Powder Ops co-manufactures, so "ownership" is usually the **brand owner**. Re-badging it is the
+  aspiration `processFlows.js`'s own header refuses; `verify:recallflow` asserts the dropped roles never
+  come back, and that no person's name is ever an actor.
+- **ONE DEFINITION, TWO CALLERS.** The panel imports `FlowMaps`; the verify asserts it carries no `actor:`
+  of its own and that the binder's text matches the panel's step for step. **It is on the panel because
+  that is where the drill is run** — the binder alone is the re-clean-badge failure.
+- **A REFERENCE, NOT A CONTROLLED DRAWING, and the screen says so in those words.** There is no recall flow
+  chart in the Master Index and no row in the DCR log (SOP 415 V1/V2/V3, FORM 415-1 V1/V2, nothing else), so
+  it carries no number, no revision and is stamped on no record — unlike FORM 431-01 (D-104). A numbered
+  wall copy is Document Control's call: `docs/v2/queued/dcr-sop-415-recall-flow-chart.md` puts it to them
+  with the content to transcribe, what was dropped and why, and a request to withdraw the inherited chart
+  wherever it is still posted.
+- **REPORTED, NOT BUILT: SOP 415 covers a recall and its rehearsal; ReadyDoc records only the rehearsal.**
+  A real recall runs on paper FORM 415-1 beside the complaint, on-hold, disposal and CAPA records that
+  already exist. That may be right — a recall is run on the phone — but the plant should decide it rather
+  than discover it. It is in the DCR.
+- `verify:recallflow` (29, live + browser at 1280 and 390px; in `verify:all`). **The control is the state it
+  was in** — no recall map anywhere — and fails **23**.
+
 ## New equipment: what the machine still owes (`server/equipment-readiness.js`)
 Adding equipment is the start of a chain — a PM schedule, a team to own it, LOTO, a hygienic design
 verification, a course, the work instruction it's taught against — and nothing said so, so a machine went
