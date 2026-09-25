@@ -145,6 +145,19 @@ const strings = {
   sanitizer_contact: { en: 'Sanitizer Contact (min)', es: 'Contacto de Sanitizante (min)' },
   visual_pass: { en: 'Visual inspection pass? *', es: '¿Inspección visual aprobada? *' },
 
+  // The swab block on a RE-CLEAN. The floor strings are in both languages
+  // because a rule shown only in English is a rule half the shift cannot read
+  // — and this one is the instruction that resets the ATP failure chain.
+  swab_heading: { en: 'ATP swab', es: 'Hisopo ATP' },
+  swab_why_reclean: {
+    en: 'Record the swab for this re-clean. Leaving it blank files the clean with no reading.',
+    es: 'Registre el hisopo de esta re-limpieza. Si lo deja en blanco, la limpieza se archiva sin lectura.',
+  },
+  swab_why_second: {
+    en: 'SECOND SWAB. Two readings in a row were over the limit — this one is what clears the area.',
+    es: 'SEGUNDO HISOPO. Dos lecturas seguidas superaron el límite — esta es la que libera el área.',
+  },
+
   // Checklist
   checklist: { en: 'Checklist', es: 'Lista de Verificación' },
   steps_complete: { en: 'steps complete', es: 'pasos completados' },

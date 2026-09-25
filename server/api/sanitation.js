@@ -5,7 +5,7 @@ import { gradeAtp, applyGrade, atpEscalation } from '../atp-limits.js';
 import { recordGroupFor } from '../qa-records.js';
 import { activeChemicalNames } from '../chemicals.js';
 import { areaLabel } from '../../shared/rooms.js';
-import { recleanTaskText as recleanText } from '../../shared/reclean-reasons.js';
+import { recleanTaskText as recleanText, ATP_RECLEAN } from '../../shared/reclean-reasons.js';
 import { canonicalArea, previewAreaNormalization, NON_PRODUCTION_AREAS } from '../sanitation-areas.js';
 import { canVerifySanitation } from '../qa-signing.js';
 import { recordEditPolicy, mayRevokeSignature } from '../record-permissions.js';
@@ -657,7 +657,9 @@ export function raiseAtpRecleanTask(db, { area, record, grade, who }) {
   const eq = db.prepare('SELECT id FROM equipment WHERE room = ? OR location = ? LIMIT 1').get(area, area);
   const woId = uuid();
   const label = areaLabel(area);
-  const title = `Re-clean — ${label} (2 failed ATP swabs)`;
+  // One definition of this wording, beside the other three re-clean titles —
+  // `clean-swabs.js` matches on it to know the task is asking for a SECOND swab.
+  const title = ATP_RECLEAN.title(label);
   db.prepare(`INSERT INTO work_orders (id, equipment_id, title, description, priority, due_date, procedure_steps, task_group, status)
     VALUES (?, ?, ?, ?, 'high', ?, '[]', 'cleaning', 'open')`)
     .run(woId, eq?.id || null, title,

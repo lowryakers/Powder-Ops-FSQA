@@ -61,3 +61,27 @@ export function recleanTaskText(entry, label) {
       + 'Log the clean in Sanitation when done.',
   };
 }
+
+/**
+ * The FOURTH re-clean title, and it is not one of the three above.
+ *
+ * `raiseAtpRecleanTask` raises this one — two consecutive failed ATP swabs on
+ * the same area (D-036) — and it built its title as a bare string inline,
+ * which is the fifth copy of a wording this file exists to hold. It is kept
+ * OUT of `RECLEAN_REASONS` on purpose: that object is keyed by the statuses
+ * `recleanRooms()` produces, and `SanitationPanel` builds its status filter
+ * from `Object.keys(RECLEAN_REASONS)`. An entry here that no room status can
+ * ever equal would be a filter member matching nothing.
+ *
+ * THE PARENTHETICAL IS LOAD-BEARING AND MUST NOT CONTAIN PARENTHESES —
+ * `recordAreaForTask()` strips `\([^()]*\)` to read the area back out.
+ */
+export const ATP_RECLEAN = {
+  title: (label) => `Re-clean — ${label} (2 failed ATP swabs)`,
+  line: () => 'two consecutive ATP swabs over the limit',
+};
+
+/** Was this task raised by the two-failed-swabs rule? */
+export function isAtpReclean(title) {
+  return /\(2 failed ATP swabs\)\s*$/i.test(String(title || ''));
+}

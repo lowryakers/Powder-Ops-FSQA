@@ -19,6 +19,7 @@ import { formFromTitle, gradeDilution, isMeasured, FORM_REVISION as DILUTION_REV
 import { pmCompletion } from '../pm-completion.js';
 import { recordGroupFor, recordAreaForTask } from '../qa-records.js';
 import { checkFormFor, attachCheckForms, fileCheckRecord, missingForCheck } from '../check-records.js';
+import { attachSwabPlans } from '../clean-swabs.js';
 import { canonicalArea } from '../sanitation-areas.js';
 import { planStepSplit } from '../../shared/pm-step-split.js';
 import { personMatch, resolveUserId, withCurrentNames } from '../person-links.js';
@@ -1775,7 +1776,7 @@ router.get('/search', (req, res) => {
     LIMIT 100
   `).all(like, like, like, like, like, like);
 
-  res.json(attachCheckForms(db, rows).map(r => ({ ...r, procedure_steps: safeParse(r.pm_steps || r.procedure_steps) })));
+  res.json(attachSwabPlans(attachCheckForms(db, rows)).map(r => ({ ...r, procedure_steps: safeParse(r.pm_steps || r.procedure_steps) })));
 });
 
 router.get('/by-frequency', (req, res) => {
@@ -1822,7 +1823,7 @@ router.get('/by-frequency', (req, res) => {
   // a fortnight puts fourteen identical rows behind the live card. One card
   // carrying `missed_count` / `missed_since` says "you are behind" without
   // handing somebody the same job fourteen times.
-  const rows = attachCheckForms(db, collapseMissed(db.prepare(sql).all(...params)));
+  const rows = attachSwabPlans(attachCheckForms(db, collapseMissed(db.prepare(sql).all(...params))));
 
   const grouped = {};
   for (const r of rows) {
@@ -2054,7 +2055,7 @@ router.get('/operator-tasks', (req, res) => {
   //
   // This screen is now only work orders: something to go and do, one at a
   // time. Signing is a review, and reviews happen in QA Review.
-  res.json(attachCheckForms(db, collapseMissed(rows)).map(r => ({ ...r, procedure_steps: safeParse(r.procedure_steps) })));
+  res.json(attachSwabPlans(attachCheckForms(db, collapseMissed(rows))).map(r => ({ ...r, procedure_steps: safeParse(r.procedure_steps) })));
 });
 
 router.put('/schedules/:id/items', (req, res) => {

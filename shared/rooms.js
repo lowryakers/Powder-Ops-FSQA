@@ -37,6 +37,21 @@ const ROOM_TOKENS = new Set([
 ]);
 
 /**
+ * Is this token one of the plant's production rooms?
+ *
+ * Exported because whether a clean owes an ATP swab turns on it: a re-clean of
+ * Room 7 does, the restroom clean does not. The set was already here and
+ * private, and a second list of room names somewhere else is how the two start
+ * disagreeing about which rooms are production.
+ *
+ * The retired room answers TRUE, deliberately — a task raised against Room 8
+ * before it was retired still owed its swab.
+ */
+export function isRoomToken(token) {
+  return ROOM_TOKENS.has(String(token ?? '').trim());
+}
+
+/**
  * How a sanitation AREA is written when a person reads it.
  *
  * The sanitation log stores the same token the Production Log and the schedule

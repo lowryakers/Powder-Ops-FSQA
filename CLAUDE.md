@@ -2331,6 +2331,31 @@ screen (`SwabStock.jsx`), and a supply order that raises itself.
   live server on a fresh one, and 13 in a real browser. **The control matters:** restoring `>=` makes 6 of
   the 29 fail and 3 of the 44.
 
+### The task door graded a swab the floor had no box to enter (D-112)
+`server/clean-swabs.js` (`swabPlanForTask`, `attachSwabPlans`), `isRoomToken()` in `shared/rooms.js`,
+`ATP_RECLEAN` in `shared/reclean-reasons.js`, and `AtpSwabField` + the swab block in `OperatorView.jsx`.
+- **`0bf4e75` made the task door grade; the screen decided whether to ASK from a private title regex** —
+  `t.includes('pre-op') || t.includes('changeover') || t.includes('production line')`. **Every title that
+  matches was written by a SEEDER.** The four re-clean titles this app raises at RUNTIME match none, so all
+  four drew the plain cleaning form with no ATP field — **including `Re-clean — … (2 failed ATP swabs)`,
+  which is raised BY two failures to obtain a second, and under D-036 only a passing GRADED reading resets
+  the chain.** The cleaner had nowhere to put the reading that clears her own area. Third time this defect
+  has been found, third map (`recordAreaForTask`, then `closeRecleanTasksFor`, now the screen).
+- **SO IT DERIVES FROM `recordAreaForTask()`** — the map that already answers "what does completing this
+  file, and where" — and decides from the AREA: `Production` or a room token swabs, Restroom / Warehouse /
+  Breakroom do not, anything unplaced is not a clean. **No fourth list of titles**, which is what every
+  previous round added. The server stamps `swab_plan` on the task payload beside `check_form` and the client
+  renders what it is told, so the screen holds no title vocabulary at all.
+- **REPORTED, NEVER REQUIRED.** `canSubmit()` is untouched — *a missing reading is a gap, not a failure*
+  (D-020), and no task got harder to close. Same three-value vocabulary as `shared/clean-levels.js`;
+  `null` ("not a clean that swabs") is deliberately a different fact from a clean that swabs nothing, and an
+  ATP box on the restroom clean is the wallpaper that gets a real one ignored.
+- **`ATP_RECLEAN` is kept OUT of `RECLEAN_REASONS`** — `SanitationPanel` builds its status filter from that
+  object's keys, and an entry no room status can equal is a filter member matching nothing.
+- The re-clean block names **which** swab it wants; a second swab reads in red, EN and ES.
+- `verify:atp` (30 → **43**, live + browser at 390px). **The control reverts the two wirings — the state the
+  screen was in — and fails 8.** It does NOT prove the plant has filed one; that is a live stamp.
+
 ### Three conditions raise a re-clean, and only one of them is the 72-hour rule
 QA asked how often the 72-hour clean is *scheduled*, because tasks appeared on days that were not the
 designated day. **It is not scheduled at all** — there is no cadence and no PM schedule. It is a condition

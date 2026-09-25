@@ -37,6 +37,28 @@ const FREQ_COLORS = {
   annual: 'bg-rose-500',
 };
 
+/**
+ * The ATP reading box — ONE definition, wherever a swab is expected.
+ *
+ * It used to exist only inside the `production_clean` branch, which is reached
+ * by a title regex matching three seeder-written words. The four re-clean
+ * titles this app raises at runtime match none of them, so the task raised BY
+ * two failed swabs had nowhere to enter the second one. The server answers
+ * that question now (`swab_plan`, from `server/clean-swabs.js`) and this
+ * renders what it is told.
+ */
+function AtpSwabField({ value, onChange, lang, t }) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-gray-600 mb-1">{t('atp_reading')}</label>
+      <input type="number" step="any" value={value || ''} onChange={e => onChange(e.target.value)}
+        data-atp-field
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. 10" />
+      <AtpLimitHint value={value} lang={lang} />
+    </div>
+  );
+}
+
 const PRIORITY_RING = {
   critical: 'ring-2 ring-red-400 border-red-400',
   high: 'ring-2 ring-orange-300 border-orange-300',
@@ -205,7 +227,7 @@ function TaskCard({ task, onComplete, onTestPassed, onFlagIssue, onSkipNA, onAss
   };
 
   return (
-    <div className={`bg-white rounded-2xl border-2 transition-all ${
+    <div data-task-card={task.id} className={`bg-white rounded-2xl border-2 transition-all ${
       task.issue_flagged ? 'border-red-400 bg-red-50/30' :
       isOverdue ? 'border-red-400 bg-red-50/30' :
       isCritical ? (PRIORITY_RING[task.priority] || 'border-gray-200') :
@@ -227,6 +249,7 @@ function TaskCard({ task, onComplete, onTestPassed, onFlagIssue, onSkipNA, onAss
             ) : !completing && !flagging && !skippingNA ? (
               <>
                 <button onClick={() => { setCompleting(true); setFlagging(false); setSkippingNA(false); }}
+                  data-complete-task
                   className="w-11 h-11 rounded-full border-2 border-gray-300 flex items-center justify-center text-gray-400 hover:border-green-500 hover:text-green-500 hover:bg-green-50 transition-all active:scale-90"
                   title={t('complete_task')}>
                   <CircleCheck size={22} />
@@ -789,12 +812,7 @@ function TaskCard({ task, onComplete, onTestPassed, onFlagIssue, onSkipNA, onAss
                   <span className="text-sm text-gray-700">{t('allergen_check')}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">{t('atp_reading')}</label>
-                    <input type="number" step="any" value={readings.atp_reading || ''} onChange={e => updateReading('atp_reading', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. 10" />
-                    <AtpLimitHint value={readings.atp_reading} lang={lang} />
-                  </div>
+                  <AtpSwabField value={readings.atp_reading} onChange={v => updateReading('atp_reading', v)} lang={lang} t={t} />
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">{t('sanitizer_contact')}</label>
                     <input type="number" step="any" value={readings.contact_time || ''} onChange={e => updateReading('contact_time', e.target.value)}
@@ -815,6 +833,28 @@ function TaskCard({ task, onComplete, onTestPassed, onFlagIssue, onSkipNA, onAss
                   </div>
                 </div>
               </>
+            )}
+
+            {/* A CLEAN THAT OWES A SWAB, AND IS NOT THE PRE-OP FORM.
+                The server says which (`swab_plan`), so the screen keeps no
+                second list of task titles — the defect that left every
+                re-clean with no ATP box, including the one raised by two
+                failed swabs to get a second one.
+
+                Nothing here gates Complete. A missing reading is a gap, not a
+                failure (D-020), and the completion path grades whatever
+                arrives and files the limit beside it. */}
+            {task.swab_plan && taskType !== 'production_clean' && (
+              <div data-swab-block data-swab-reason={task.swab_plan.reason}>
+                <h4 className="text-xs font-bold text-green-800 uppercase tracking-wide flex items-center gap-1 mb-1">
+                  <Droplets size={12} /> {t('swab_heading')}
+                </h4>
+                <p className={`text-[11px] mb-2 ${task.swab_plan.reason === 'second_swab' ? 'text-red-700 font-semibold' : 'text-gray-500'}`}
+                  data-swab-why>
+                  {task.swab_plan.reason === 'second_swab' ? t('swab_why_second') : t('swab_why_reclean')}
+                </p>
+                <AtpSwabField value={readings.atp_reading} onChange={v => updateReading('atp_reading', v)} lang={lang} t={t} />
+              </div>
             )}
 
             {/* Step-by-step checkoff for cleaning and equipment PM — and ALWAYS

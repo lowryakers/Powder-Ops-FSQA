@@ -4498,3 +4498,80 @@ binder — but the plant should decide it rather than discover it. Written into 
 **Verified:** `verify:recallflow` (29, the map data plus a real browser at 1280 and 390px; in `verify:all`).
 **The control is the state it was in** — no recall map anywhere — and fails **23**, the first being that
 there is no recall flow at all and the eleventh that the Mock Recall panel offers none.
+
+---
+
+## D-112 — The task door graded a swab the floor had no box to enter
+
+**2026-09-25.** Working the refreshed FIXES list. Its P0 #3 reads *"in the live hunt there was no
+Operator/Task Center task with `atp_reading`, the Sanitation Records ATP/swab search returned 0"* and calls
+it a plant gap — seed a demo clean, or make the pre-op cleans actually collect. **It is a code gap, and the
+cause is the defect this codebase keeps finding in a different map each time.**
+
+### What was actually wrong
+
+`0bf4e75` landed the task door: completing a cleaning task grades the ATP reading against PC #1's 35 RLU,
+files it with the limit beside it, and runs D-036's consecutive-failure chain. OBL-32 reads landed and is.
+
+But the only screen that can SUPPLY a reading decided whether to draw the box from a private regex in
+`OperatorView.jsx`:
+
+```
+t.includes('pre-op') || t.includes('changeover') || t.includes('production line')
+```
+
+**Every title that matches was written by a SEEDER.** The four re-clean titles this app raises at RUNTIME
+match none of them — `72h Re-clean — Room 7`, `Re-clean — Room 6 (used since last clean)`,
+`Re-clean — Room 7 (no clean on record)` and `Re-clean — Room 1 (2 failed ATP swabs)` all fell through to
+the plain `cleaning` form, which has no ATP field at all.
+
+**The last one is the finding.** It is raised BY two failed swabs, it exists to obtain a second one, and
+under D-036 only a passing GRADED reading resets the chain. The cleaner holding that task had nowhere to
+put the reading that clears her own area; she had to go and find the Sanitation form. The Task Center's
+`CompleteForm` never asked either — it only renders readings back.
+
+**Third time, third map.** `recordAreaForTask()` was missing the two runtime re-clean titles (a lost record
+and a room stuck flagged); `closeRecleanTasksFor` matched one by exact string; now the screen.
+
+### So it derives from the map that already exists
+
+`server/clean-swabs.js` — `swabPlanForTask(title)` asks **`recordAreaForTask()`**, the one answer to "what
+does completing this task file, and where", and decides from the AREA: `Production` or a room token swabs,
+`Restroom` / `Warehouse & Grounds` / `Breakroom, Lobby & Office` do not, anything it cannot place is not a
+clean. **No fourth list of titles**, which is what every previous round of this added.
+
+- **`attachSwabPlans()` stamps it on the task payload**, beside `check_form`, on all three task-list paths.
+  The client renders what it is told and keeps no title vocabulary at all — the `withPermissions` /
+  `is_mine` / `days_late` rule.
+- **REPORTED, NEVER REQUIRED.** Nothing gates Complete. *A missing reading is a gap, not a failure* (D-020)
+  is the form door's rule and the task door copies it line for line; this only puts the box on the screen.
+  `canSubmit()` is untouched, so no task becomes harder to close than it was yesterday.
+- **The same three-value vocabulary as `shared/clean-levels.js`** — `required` means the clean is defined by
+  its swab and its absence is a GAP, not that the app refuses. `optional` has no member yet and is accepted
+  rather than dropped: a Partial Clean is exactly that category.
+- **`null` is "not a clean that swabs", and is a different fact from a clean that swabs nothing.** An ATP
+  box on the restroom clean is the wallpaper that gets a real one ignored.
+- **`AtpSwabField` is ONE component**, used by the pre-op block and the new one. The re-clean block says
+  *which* swab this is — a second swab reads in red, because that is D-036's instruction and not a
+  formality. Both strings are EN and ES: a safety rule shown in one language is a rule half the shift
+  cannot read.
+- **`ATP_RECLEAN` moved into `shared/reclean-reasons.js`.** That title was a bare string inline in
+  `raiseAtpRecleanTask` — the fifth copy of a wording that file exists to hold. It is kept OUT of
+  `RECLEAN_REASONS`, deliberately: `SanitationPanel` builds its status filter from that object's keys, and
+  an entry no room status can equal would be a filter member matching nothing.
+- **`isRoomToken()` is exported from `shared/rooms.js`** rather than a second list of room names. The
+  retired room answers true — a task raised against Room 8 before it was retired still owed its swab.
+
+**Verified:** `verify:atp` (30 → **43**, live + a real browser at 390px; in `verify:all`). It drives two
+real failures, reads the re-clean `raiseAtpRecleanTask` actually raised, and completes it with a passing
+reading that lands on the record with its limit. **The control reverts the two wirings — the state the
+screen was in — and fails 8**, the first being the task payload carrying `swab_plan: null` and the rest
+being the box not on the card.
+
+### What this does NOT close
+
+`verify:atp` proves the mechanism on a fresh database. **It does not prove the plant has filed one**, which
+is the other half of FIXES P0 #3 and is a live stamp, not a commit. The two remaining P0s are not code at
+all: the Daily Scale PM duplicate (#1) is a pause-or-retire decision in Settings, and the fifteen
+frequency-mixed checklists (#2) are Equipment's own *Review and re-sync*. Both are named here rather than
+papered over with a build.
