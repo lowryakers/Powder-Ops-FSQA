@@ -2356,6 +2356,26 @@ screen (`SwabStock.jsx`), and a supply order that raises itself.
 - `verify:atp` (30 → **43**, live + browser at 390px). **The control reverts the two wirings — the state the
   screen was in — and fails 8.** It does NOT prove the plant has filed one; that is a live stamp.
 
+### The desk screen never asked for the swab either (D-116)
+`common/AtpSwabField.jsx` (moved out of `OperatorView.jsx`, imported by BOTH screens) + the swab block in
+`PMPanel.jsx`'s `CompleteForm`. Reported as live Pre-Ops reading **ATP "—" with no limit** three days after
+D-112. **Reproduced before changing anything:** the body the Task Center's form sends carries **no readings
+at all**, so the record it files through `complete-and-recur` is `atp_reading NULL, atp_limit NULL` — while
+the same task completed on the Operator View files `12 / 35`.
+- **THE SERVER WAS ALREADY TELLING IT.** `attachSwabPlans` has stamped `swab_plan` on `/pm/by-frequency` and
+  `/pm/search` — the two lists the Task Center renders — since D-112. The box was never drawn. **No fourth
+  list of titles**; the verdict stays `recordAreaForTask()`'s.
+- **`AtpSwabField` was PRIVATE to the floor screen, which is why the desk had nothing to render.** It is in
+  `common/` now and both import it. Fifth time this shape has been written down here.
+- **It gates nothing** — a missing reading is a gap, not a failure (D-020), asserted both ways.
+- **THE FLOOR HALF WAS NEVER THE GAP, and that is proven rather than pending.** The browser run opens a real
+  pending Pre-Op on the Operator View at 390px and finds the box, and the same task on the Task Center at
+  1280px. The operator-side check that was scheduled for 29 Sep is answered.
+- **`batch-complete` is deliberately untouched**: it files with no readings, but the Operator View offers its
+  tick box only on `equipment_pm`, so no screen can batch-complete a clean that owes a swab.
+- `verify:atp` (43 → **63**). **The control is the state the plant is in** and fails **5**, the decisive one
+  reading `atp_reading=null`.
+
 ### Three conditions raise a re-clean, and only one of them is the 72-hour rule
 QA asked how often the 72-hour clean is *scheduled*, because tasks appeared on days that were not the
 designated day. **It is not scheduled at all** — there is no cadence and no PM schedule. It is a condition
@@ -2866,6 +2886,26 @@ boot. Two from the performance pass were doing exactly that and a fresh boot wen
 named a table created 400 lines further down. Each now sits next to the thing it indexes — the index for a
 migration column goes immediately after its `addColumnIfMissing`. **Boot a fresh DB (`DB_PATH=` a new path)
 before shipping any schema change**; the production volume will not tell you.
+
+## A training video is the one upload here that is genuinely large (D-116)
+`MAX_LONG_VIDEO_BYTES = 2 GB` in `media.js`, taken **only** by the course-material route
+(`mediaUpload({ files: 5, maxBytes: MAX_LONG_VIDEO_BYTES })`). Reported as a video refused from a course.
+**Two causes, and the second would have survived raising the number.**
+- **200 MB is ~90 seconds of 1080p off a phone**, and a machine procedure is five to ten minutes — the
+  ceiling refused the one thing course materials exist to hold. Opt-in per route like `MAX_ARCHIVE_BYTES`;
+  the comms paperclip keeps 200 MB. **Not raised further because nothing here resumes** — one HTTP request
+  has to survive the whole upload.
+- **`isVideo()` DECIDES WHICH CEILING APPLIES**, so an unrecognised video was not merely unplayable — it fell
+  to the **25 MB non-video rule** and was refused with a message about "non-video files" for a file the
+  person is watching in a video player. `VIDEO_EXT` covered phones only; a camcorder's `.mts`, a screen
+  recorder's `.wmv`, `.mpg` / `.ogv` / `.vob` were all outside it. Nothing downstream assumes these play.
+- **A refusal NAMES THE FILE AND ITS SIZE**, not just the limit. And the route passes its own ceiling to
+  `uploadErrorMessage`, or the refusal names 200 MB and sends somebody to shorten a video that fits — the
+  `MAX_ARCHIVE_BYTES` lesson in the route written after it.
+- **The screen's hint is asserted against the server's number** (`data-material-limits`).
+- `verify:trainingmedia` (**28**, pure + live through the S3 stand-in). **The control is the state the plant
+  is in** and fails **12**, the symptom verbatim: *"gown-room.wmv is larger than the 25 MB limit for
+  non-video files."*
 
 ## Video uploads (comms + training)
 `server/media.js` is the single source of truth for large uploads: **200 MB video / 25 MB everything else**,

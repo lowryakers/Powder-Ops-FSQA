@@ -1249,7 +1249,13 @@ function CourseMaterials({ courseId }) {
         <input ref={inputRef} type="file" multiple className="hidden"
           onChange={e => { const files = Array.from(e.target.files || []); e.target.value = ''; upload(files); }} />
         {error && <p className="text-xs text-red-600">{error}</p>}
-        <p className="text-[11px] text-gray-400">Video up to 200 MB, other files up to 25 MB.</p>
+        {/* The number is the one the server enforces. A hint naming a smaller
+            limit than the route allows is what sends somebody away to trim a
+            video that would have uploaded. */}
+        <p className="text-[11px] text-gray-400" data-material-limits>
+          Video up to 2 GB, other files up to 25 MB. A long video takes a while and cannot resume —
+          stay on this page until it finishes.
+        </p>
       </div>
     </div>
   );

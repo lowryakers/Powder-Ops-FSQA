@@ -5,7 +5,7 @@ import { getDb, logAudit } from '../db.js';
 import { personKey } from '../person-key.js';
 import { aiEnabled, generateTestQuestions, readSheetNames } from '../ai.js';
 import { storageEnabled, putStream, putObject, presignGet, deleteObject } from '../storage.js';
-import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage, isVideo } from '../media.js';
+import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage, isVideo, MAX_LONG_VIDEO_BYTES } from '../media.js';
 import multer from 'multer';
 import AdmZip from 'adm-zip';
 import { parseTrainingLog } from '../training-log.js';
@@ -818,9 +818,15 @@ router.post('/import', (req, res) => {
 // URLs issued only to an authenticated caller — same shape as chat attachments.
 // Degrades like every other storage feature: with R2 unconfigured the list is
 // empty and uploads answer 503 instead of failing halfway.
-const materialUpload = mediaUpload({ files: 5 }).array('files', 5);
+// A COURSE MATERIAL IS THE ONE PLACE A LONG VIDEO BELONGS, so this route opts
+// into the higher ceiling — the comms paperclip and every other upload keep
+// the 200 MB default. The limit is passed to uploadErrorMessage too, or a
+// refusal here would name 200 MB and send somebody to shorten a video that was
+// never over the line (the MAX_ARCHIVE_BYTES lesson, in the route that came
+// after it).
+const materialUpload = mediaUpload({ files: 5, maxBytes: MAX_LONG_VIDEO_BYTES }).array('files', 5);
 const uploadMaterials = (req, res, next) => materialUpload(req, res, (err) => {
-  if (err) return res.status(413).json({ error: uploadErrorMessage(err) });
+  if (err) return res.status(413).json({ error: uploadErrorMessage(err, MAX_LONG_VIDEO_BYTES) });
   next();
 });
 
@@ -1112,7 +1118,7 @@ router.post('/courses/:id/materials', uploadMaterials, async (req, res) => {
     const course = db.prepare('SELECT id, title FROM training_courses WHERE id = ?').get(req.params.id);
     if (!course) return res.status(404).json({ error: 'Course not found' });
     if (!files.length) return res.status(400).json({ error: 'No files uploaded' });
-    const tooBig = rejectOversize(files);
+    const tooBig = rejectOversize(files, { videoMax: MAX_LONG_VIDEO_BYTES });
     if (tooBig) return res.status(413).json({ error: tooBig });
     const out = [];
     for (const f of files) {

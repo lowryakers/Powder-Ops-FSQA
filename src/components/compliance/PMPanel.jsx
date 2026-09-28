@@ -13,6 +13,7 @@ import { formatDateTime } from '../../lib/datetime.js';
 import FormChip from '../common/FormChip';
 import { TASK_GROUPS } from '../../../shared/task-groups.js';
 import CheckFields from '../common/CheckFields.jsx';
+import AtpSwabField from '../common/AtpSwabField.jsx';
 import TrainingTest from '../common/TrainingTest.jsx';
 import { missingForCheck } from '../../../shared/check-forms.js';
 
@@ -50,6 +51,22 @@ function CompleteForm({ wo, chemicals, onComplete, onTestPassed, onCancel }) {
   // A check that files a record (EMP sites, walk-through answers, list
   // editions) — the same fields and the same rule as the Operator View.
   const [check, setCheck] = useState({});
+  // THE SWAB THIS DOOR NEVER ASKED FOR.
+  //
+  // Completing a Production Line Pre-Op here files the same `sanitation_records`
+  // row the Operator View files — through the same endpoint, graded by the same
+  // rule — except that this form sent no readings at all, so every pre-op
+  // finished at a desk landed with `atp_reading` NULL and `atp_limit` NULL.
+  // "ATP —", on the record PC #1's critical limit is meant to grade.
+  //
+  // The server already says which cleans owe a swab (`swab_plan`, D-112) and
+  // already stamps it on the rows this screen renders — the box simply was not
+  // drawn. Fourth time this defect has been found, fourth screen; so the
+  // verdict is still the server's and this keeps no list of titles.
+  //
+  // It gates nothing: a missing reading is a gap, not a failure (D-020).
+  const [atp, setAtp] = useState('');
+  const swab = wo.swab_plan;
   const checkBlocked = !!wo.check_form && missingForCheck(wo.check_form, check).length > 0;
   // This form used to record no steps at all, so every task completed from the
   // Task Center reached QA's hygiene clearance with an empty step list — which
@@ -94,6 +111,9 @@ function CompleteForm({ wo, chemicals, onComplete, onTestPassed, onCancel }) {
       // different (and worse) claim than not recording them.
       await onComplete(wo.id, {
         ...form,
+        // Sent only when there is one. An empty string would be read as a
+        // reading of nothing and grade against the limit.
+        ...(swab && String(atp).trim() !== '' ? { readings: { atp_reading: atp } } : {}),
         ...(wo.check_form ? { check } : {}),
         ...(stepsRequired || tickedCount > 0
           ? { step_results: steps.map((_, i) => !!stepChecks[i]) }
@@ -112,6 +132,22 @@ function CompleteForm({ wo, chemicals, onComplete, onTestPassed, onCancel }) {
         <TrainingTest workOrderId={wo.id} onDone={onTestPassed} />
       )}
       {wo.check_form && <CheckFields form={wo.check_form} value={check} onChange={setCheck} assignee={wo.assigned_to} />}
+      {/* A clean that owes a swab. The server says which and why; the re-clean
+          raised BY two failed readings exists to obtain a second one, and says
+          so rather than looking like an ordinary box. */}
+      {swab && (
+        <div className="bg-white rounded-lg border border-green-200 p-2" data-swab-block data-swab-reason={swab.reason}>
+          <p className="text-xs font-semibold text-gray-700 mb-1 flex items-center gap-1">
+            <Droplets size={12} className="text-green-700" /> ATP swab
+          </p>
+          <p className={`text-[11px] mb-1.5 ${swab.reason === 'second_swab' ? 'text-red-700 font-semibold' : 'text-gray-500'}`} data-swab-why>
+            {swab.reason === 'second_swab'
+              ? 'This re-clean was raised by two failed swabs. Enter the second swab — a passing reading is what clears the area.'
+              : 'This clean is verified by its swab. Enter the reading if one was taken.'}
+          </p>
+          <AtpSwabField value={atp} onChange={setAtp} />
+        </div>
+      )}
       {/* Ticking is what gives QA an account of the work at hygiene clearance.
           Left optional rather than required: this is completed on the floor,
           and a form that refuses to submit is one people work around. */}
@@ -780,7 +816,8 @@ function TaskCard({ wo, onStartComplete, completing, onComplete, onTestPassed, o
   const [reassigning, setReassigning] = useState(false);
 
   return (
-    <div className={`bg-white rounded-xl border p-4 ${wo.issue_flagged ? 'border-red-300 ring-1 ring-red-100' : wo.rework_required ? 'border-amber-300 ring-1 ring-amber-100' : 'border-gray-200'}`}>
+    <div data-wo-card={wo.id}
+      className={`bg-white rounded-xl border p-4 ${wo.issue_flagged ? 'border-red-300 ring-1 ring-red-100' : wo.rework_required ? 'border-amber-300 ring-1 ring-amber-100' : 'border-gray-200'}`}>
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -859,7 +896,7 @@ function TaskCard({ wo, onStartComplete, completing, onComplete, onTestPassed, o
               <CalendarClock size={12} /> Later
             </button>
           )}
-          <button onClick={() => onStartComplete(wo.id, 'complete')}
+          <button onClick={() => onStartComplete(wo.id, 'complete')} data-wo-complete
             className="px-2 py-1 bg-green-50 text-green-700 rounded text-xs hover:bg-green-100 flex items-center gap-1">
             <CheckCircle size={12} /> Done
           </button>

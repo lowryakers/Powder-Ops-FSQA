@@ -201,6 +201,63 @@ console.log('\nThe floor strings exist in both languages');
     missing.length === 0, missing.join(', '));
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// AND THE TASK CENTER NEVER ASKED AT ALL — the reported gap.
+//
+// Live Pre-Ops filed on 27 and 28 September read "ATP —" with no limit, three
+// days after D-112 put the box on the Operator View. Reproduced here: the
+// completion body the Task Center's own form sends carries no readings, so the
+// record it files is graded against nothing. Same endpoint, same rule, same
+// area — the other screen simply did not draw the field, although the server
+// had been stamping `swab_plan` on the very rows it renders.
+//
+// Fourth screen, same defect, so the verdict stays the server's.
+console.log('\nThe Task Center completes the same task through the same door');
+{
+  const d = new Database(process.env.DBPATH);
+  d.prepare(`INSERT OR REPLACE INTO pm_schedules (id,equipment_id,title,frequency_type,frequency_value,task_group,is_active)
+    VALUES ('atp-tc-sch','atp-eq','Production Line Pre-Op Clean — Room 3','daily',1,'cleaning',1)`).run();
+  ['atp-tc-1', 'atp-tc-2'].forEach(id => d.prepare(`INSERT OR REPLACE INTO work_orders (id,pm_schedule_id,equipment_id,title,status,task_group,due_date,assigned_to,procedure_steps)
+    VALUES (?, 'atp-tc-sch','atp-eq','Production Line Pre-Op Clean — Room 3','open','cleaning', date('now'), 'Atp Cleaner','[]')`).run(id));
+  d.prepare(`INSERT OR REPLACE INTO work_orders (id,pm_schedule_id,equipment_id,title,status,task_group,due_date,assigned_to,procedure_steps)
+    VALUES ('atp-tc-rest','atp-schr','atp-eq','Restroom Daily Cleaning','open','cleaning', date('now'), 'Atp Cleaner','[]')`).run();
+  d.close();
+
+  // The list the Task Center actually renders.
+  const byFreq = await J(await req('/pm/by-frequency'));
+  const flat = Object.values(byFreq || {}).flatMap(v => (Array.isArray(v) ? v : (v?.tasks || [])));
+  const row = flat.find(x => x.id === 'atp-tc-1');
+  t('the pre-op is on the Task Center list', !!row, `${flat.length} rows`);
+  t('AND THE SERVER ALREADY TOLD IT A SWAB IS OWED — the box was the only missing half',
+    row?.swab_plan?.atp === 'required', JSON.stringify(row?.swab_plan || null));
+  const restRow = flat.find(x => x.id === 'atp-tc-rest');
+  t('the restroom clean on the same list owes none', !!restRow && !restRow.swab_plan,
+    JSON.stringify(restRow?.swab_plan || null));
+
+  // What the form sends when the reading IS entered — the fix.
+  const r = await complete('atp-tc-1', { readings: { atp_reading: '18' }, notes: 'cleaned', lubricant_used: '', chemical_id: '' });
+  t('the completion is accepted', r.ok, `got ${r.status}`);
+  const rec = record('atp-tc-1');
+  t('THE READING IS ON THE RECORD, filed from the desk', String(rec?.atp_reading) === '18', `atp_reading=${rec?.atp_reading}`);
+  t('…with the limit beside it', Number(rec?.atp_limit) === Number(LIMIT), `atp_limit=${rec?.atp_limit}`);
+
+  // An over-limit reading entered here grades exactly as it does on the floor.
+  const r2 = await complete('atp-tc-2', { readings: { atp_reading: String(LIMIT + 70) }, notes: '', lubricant_used: '', chemical_id: '' });
+  const b2 = await J(r2);
+  const rec2 = record('atp-tc-2');
+  t('an over-limit swab entered here files as a FAIL, exactly as on the floor', rec2?.result === 'fail', `result=${rec2?.result}`);
+  t('…and asks for a re-swab rather than passing silently', b2?.atp_stage === 'reswab', `stage=${b2?.atp_stage}`);
+
+  // And leaving it blank is still a gap, not a refusal.
+  const d2 = new Database(process.env.DBPATH);
+  d2.prepare(`INSERT OR REPLACE INTO work_orders (id,pm_schedule_id,equipment_id,title,status,task_group,due_date,procedure_steps)
+    VALUES ('atp-tc-3','atp-tc-sch','atp-eq','Production Line Pre-Op Clean — Room 3','open','cleaning', date('now'),'[]')`).run();
+  d2.close();
+  const r3 = await complete('atp-tc-3', { notes: 'no swab taken', lubricant_used: '', chemical_id: '' });
+  t('a completion with no reading is still accepted — a gap, not a failure', r3.ok, `got ${r3.status}`);
+  t('…and invents nothing', record('atp-tc-3')?.atp_reading == null);
+}
+
 console.log('\nIn a real browser: the box is on the card');
 {
   const { chromium } = await import('playwright-core');
@@ -223,6 +280,15 @@ console.log('\nIn a real browser: the box is on the card');
     .run(ATP_RECLEAN.title('Room 6'));
   d.prepare(`INSERT OR REPLACE INTO work_orders (id,equipment_id,title,description,status,task_group,due_date,assigned_to,procedure_steps)
     VALUES ('atp-ui-rest', 'atp-eq', 'Restroom Daily Cleaning', 'the negative control, on the same screen', 'open','cleaning', date('now','-1 day'), 'Atp Cleaner', '[]')`).run();
+  // THE PRE-OP ITSELF — the card the plant's reported records came from, and
+  // the one an operator-side check was going to open by hand. It takes a
+  // different branch of this screen from the re-clean above (`production_clean`
+  // rather than the swab block), so it has to be asserted on its own card.
+  d.prepare(`INSERT OR REPLACE INTO work_orders (id,equipment_id,title,description,status,task_group,due_date,assigned_to,procedure_steps)
+    VALUES ('atp-ui-preop', 'atp-eq', 'Production Line Pre-Op Clean — Room 3', 'the reported case', 'open','cleaning', date('now','-1 day'), 'Atp Cleaner', '[]')`).run();
+  // …and one more, still open, for the desk form to actually submit.
+  d.prepare(`INSERT OR REPLACE INTO work_orders (id,pm_schedule_id,equipment_id,title,description,status,task_group,due_date,procedure_steps)
+    VALUES ('atp-tc-4', 'atp-tc-sch', 'atp-eq', 'Production Line Pre-Op Clean — Room 3', 'submitted from the Task Center', 'open','cleaning', date('now'), '[]')`).run();
   d.close();
 
   await page.goto(`${URL}/operator`);
@@ -264,8 +330,90 @@ console.log('\nIn a real browser: the box is on the card');
     cardThere && await rest.locator('[data-swab-block]').count() === 0
     && await rest.locator('[data-atp-field]').count() === 0);
 
+  // The reported card: a pending Pre-Op, opened on the floor screen.
+  const preop = page.locator('[data-task-card="atp-ui-preop"]');
+  const preopThere = await preop.count() > 0;
+  t('a pending Pre-Op is on the Operator View', preopThere);
+  if (preopThere) {
+    await preop.scrollIntoViewIfNeeded().catch(() => {});
+    await preop.locator('[data-complete-task]').click().catch(() => {});
+    await page.waitForTimeout(700);
+  }
+  t('THE PRE-OP ASKS FOR ITS SWAB ON THE FLOOR SCREEN — so the floor half was never the gap',
+    preopThere && await preop.locator('[data-atp-field]').count() > 0);
+  if (preopThere) {
+    await preop.locator('[data-atp-field]').fill(String(LIMIT + 5)).catch(() => {});
+    await page.waitForTimeout(400);
+  }
+  t('…and grades it live against PC #1’s limit',
+    preopThere && new RegExp(String(LIMIT)).test(await preop.innerText()));
+
   const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   t('nothing pans the page sideways at 390px', over <= 1, `${over}px over`);
+
+  // ── The other screen, at a desk ────────────────────────────────────────────
+  // The Task Center completes the same task through the same endpoint. This is
+  // the screen the plant's pre-ops were being finished on, and the one that
+  // asked for nothing.
+  const wide = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  wide.on('pageerror', (e) => { console.log('  [pageerror]', e.message); fail++; });
+  await wide.goto(`${URL}/manifest.webmanifest`);
+  await wide.evaluate(([tok, u]) => {
+    localStorage.setItem('auth_token', tok); localStorage.setItem('auth_user', JSON.stringify(u));
+  }, [token, me]);
+  await wide.goto(`${URL}/?tab=pm`);
+  await wide.waitForTimeout(4000);
+  // Search rather than scroll: the seeded database has seventy-odd open tasks.
+  const search = wide.locator('input[placeholder*="earch" i]').first();
+  if (await search.count()) { await search.fill('Pre-Op Clean — Room 3'); await wide.waitForTimeout(1500); }
+  const tcCard = wide.locator('[data-wo-card="atp-tc-4"]').first();
+  const tcThere = await tcCard.count() > 0;
+  t('the pre-op card is on the Task Center', tcThere,
+    (await wide.locator('body').innerText()).slice(0, 200).replace(/\n/g, ' '));
+  if (tcThere) {
+    await tcCard.scrollIntoViewIfNeeded().catch(() => {});
+    await tcCard.locator('[data-wo-complete]').click().catch(() => {});
+    await wide.waitForTimeout(800);
+  }
+  t('THE ATP BOX IS ON THE DESK FORM TOO — the reported gap, closed',
+    tcThere && await tcCard.locator('[data-atp-field]').count() > 0);
+  t('…and says why it is being asked for',
+    tcThere && await tcCard.locator('[data-swab-block][data-swab-reason="production_clean"]').count() > 0);
+  if (tcThere) {
+    await tcCard.locator('[data-atp-field]').fill(String(LIMIT + 165)).catch(() => {});
+    await wide.waitForTimeout(400);
+  }
+  t('an over-limit reading says so before Done is pressed',
+    tcThere && new RegExp(String(LIMIT)).test(await tcCard.innerText()));
+
+  // THE WHOLE CHAIN, DRIVEN BY THE REAL FORM: type the reading, press Done,
+  // and read the record the server filed. Everything above this proves the
+  // server grades what it is sent; this is the only assertion that proves the
+  // screen sends it — which is the half that was missing.
+  if (tcThere) {
+    await tcCard.locator('[data-atp-field]').fill('21').catch(() => {});
+    await tcCard.locator('button[type="submit"]').first().click().catch(() => {});
+    await wide.waitForTimeout(2500);
+  }
+  const typed = record('atp-tc-4');
+  t('PRESSING DONE ON THE DESK FORM FILES THE READING IT WAS GIVEN',
+    String(typed?.atp_reading) === '21', `atp_reading=${typed?.atp_reading}`);
+  t('…graded against PC #1’s limit, like every other door',
+    Number(typed?.atp_limit) === Number(LIMIT), `atp_limit=${typed?.atp_limit}`);
+
+  // The negative control on the same screen: a clean that owes no swab.
+  if (await search.count()) { await search.fill('Restroom Daily Cleaning'); await wide.waitForTimeout(1500); }
+  const tcRest = wide.locator('[data-wo-card="atp-tc-rest"]').first();
+  if (await tcRest.count()) {
+    await tcRest.scrollIntoViewIfNeeded().catch(() => {});
+    await tcRest.locator('[data-wo-complete]').click().catch(() => {});
+    await wide.waitForTimeout(700);
+  }
+  t('the restroom clean is offered no swab box here either',
+    tcThere && await tcRest.count() > 0
+    && await tcRest.locator('[data-swab-block]').count() === 0
+    && await tcRest.locator('[data-atp-field]').count() === 0);
+
   await browser.close();
 }
 

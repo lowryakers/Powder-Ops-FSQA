@@ -22,10 +22,30 @@ import { v4 as uuid } from 'uuid';
 export const MAX_FILE_BYTES = 25 * 1024 * 1024;
 export const MAX_VIDEO_BYTES = 200 * 1024 * 1024;
 
+// A TRAINING VIDEO IS NOT A CHAT CLIP, and 200 MB is about ninety seconds of
+// 1080p off a phone — not enough for a machine procedure, which is the one
+// thing course materials exist to hold. Disk-backed and streamed to R2 in 8 MB
+// parts, so the ceiling costs disk for the length of the request rather than
+// memory. Opt-in per route like MAX_ARCHIVE_BYTES, never the default: the
+// comms paperclip has no reason to accept two gigabytes.
+//
+// It is not raised further because nothing here resumes. One HTTP request has
+// to survive the whole upload, and past this a slow uplink is likelier to time
+// out than to finish — at which point the answer is to trim the video, not to
+// raise a number again.
+export const MAX_LONG_VIDEO_BYTES = 2 * 1024 * 1024 * 1024;
+
 // Extensions phones and cameras actually produce. Matched on the filename as
 // well as the mime type because browsers are inconsistent about .mov and .mkv
 // (Safari sends video/quicktime, some Android builds send an empty type).
-const VIDEO_EXT = /\.(mp4|mov|m4v|webm|mkv|avi|3gp|hevc)$/i;
+//
+// AN UNRECOGNISED VIDEO IS NOT MERELY UNPLAYABLE — IT FALLS TO THE 25 MB
+// NON-VIDEO RULE, and is refused with a message about "non-video files" for a
+// file the person is looking at in a video player. So the list covers what a
+// camcorder, a screen recorder and Windows produce as well as what a phone
+// does. Nothing downstream assumes these play: the material card already falls
+// back to a download when the browser rejects the codec.
+const VIDEO_EXT = /\.(mp4|mov|m4v|webm|mkv|avi|3gp|3g2|hevc|wmv|mpg|mpeg|mpe|m2v|mts|m2ts|ts|ogv|asf|f4v|divx|vob|mxf)$/i;
 
 export function isVideo(contentType, filename) {
   if ((contentType || '').toLowerCase().startsWith('video/')) return true;
@@ -65,11 +85,20 @@ export const MAX_ARCHIVE_BYTES = 2 * 1024 * 1024 * 1024;
 
 // Enforce the smaller non-video limit. Returns an error message, or null when
 // everything is within bounds.
-export function rejectOversize(files) {
+export function rejectOversize(files, { videoMax = null } = {}) {
   for (const f of files) {
-    if (isVideo(f.mimetype, f.originalname)) continue;
+    if (isVideo(f.mimetype, f.originalname)) {
+      // Multer's own ceiling is the real guard; this only reports a size a
+      // route deliberately allows less of than the request did.
+      if (videoMax && f.size > videoMax) {
+        return `${f.originalname || 'That video'} is ${humanSize(f.size)} — larger than the ${humanSize(videoMax)} limit.`;
+      }
+      continue;
+    }
     if (f.size > MAX_FILE_BYTES) {
-      return `${f.originalname || 'That file'} is larger than the ${humanSize(MAX_FILE_BYTES)} limit for non-video files.`;
+      // NAME THE SIZE, not just the limit. "Too large" sends somebody back to
+      // guess; "312 MB against a 25 MB limit" tells them what to do about it.
+      return `${f.originalname || 'That file'} is ${humanSize(f.size)} — larger than the ${humanSize(MAX_FILE_BYTES)} limit for files that are not video.`;
     }
   }
   return null;

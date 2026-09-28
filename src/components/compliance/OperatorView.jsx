@@ -1,5 +1,4 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import AtpLimitHint from '../common/AtpLimitHint.jsx';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { completeWorkOrder } from '../../lib/completeWorkOrder';
 import { useAuth } from '../../hooks/useAuth';
@@ -13,6 +12,7 @@ import { formFromTitle, gradeDilution, isMeasured } from '../../../shared/diluti
 import FormChip from '../common/FormChip';
 import RuleTip from '../common/RuleTip.jsx';
 import CheckFields from '../common/CheckFields.jsx';
+import AtpSwabField from '../common/AtpSwabField.jsx';
 import TrainingTest from '../common/TrainingTest.jsx';
 import { missingForCheck } from '../../../shared/check-forms.js';
 
@@ -37,27 +37,6 @@ const FREQ_COLORS = {
   annual: 'bg-rose-500',
 };
 
-/**
- * The ATP reading box — ONE definition, wherever a swab is expected.
- *
- * It used to exist only inside the `production_clean` branch, which is reached
- * by a title regex matching three seeder-written words. The four re-clean
- * titles this app raises at runtime match none of them, so the task raised BY
- * two failed swabs had nowhere to enter the second one. The server answers
- * that question now (`swab_plan`, from `server/clean-swabs.js`) and this
- * renders what it is told.
- */
-function AtpSwabField({ value, onChange, lang, t }) {
-  return (
-    <div>
-      <label className="block text-xs font-medium text-gray-600 mb-1">{t('atp_reading')}</label>
-      <input type="number" step="any" value={value || ''} onChange={e => onChange(e.target.value)}
-        data-atp-field
-        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. 10" />
-      <AtpLimitHint value={value} lang={lang} />
-    </div>
-  );
-}
 
 const PRIORITY_RING = {
   critical: 'ring-2 ring-red-400 border-red-400',
@@ -812,7 +791,7 @@ function TaskCard({ task, onComplete, onTestPassed, onFlagIssue, onSkipNA, onAss
                   <span className="text-sm text-gray-700">{t('allergen_check')}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <AtpSwabField value={readings.atp_reading} onChange={v => updateReading('atp_reading', v)} lang={lang} t={t} />
+                  <AtpSwabField value={readings.atp_reading} onChange={v => updateReading('atp_reading', v)} lang={lang} label={t('atp_reading')} />
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">{t('sanitizer_contact')}</label>
                     <input type="number" step="any" value={readings.contact_time || ''} onChange={e => updateReading('contact_time', e.target.value)}
@@ -853,7 +832,7 @@ function TaskCard({ task, onComplete, onTestPassed, onFlagIssue, onSkipNA, onAss
                   data-swab-why>
                   {task.swab_plan.reason === 'second_swab' ? t('swab_why_second') : t('swab_why_reclean')}
                 </p>
-                <AtpSwabField value={readings.atp_reading} onChange={v => updateReading('atp_reading', v)} lang={lang} t={t} />
+                <AtpSwabField value={readings.atp_reading} onChange={v => updateReading('atp_reading', v)} lang={lang} label={t('atp_reading')} />
               </div>
             )}
 

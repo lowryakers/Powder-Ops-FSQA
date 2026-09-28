@@ -4706,3 +4706,77 @@ payload carrying no form at all.
 **Not claimed:** § 5.2 D asks for each mitigation strategy to be rated. ReadyDoc records the ratings as
 written findings against § 5.2 D, not a per-strategy grid, because the Plan's strategy list is not in
 ReadyDoc. That is in the DCR rather than papered over.
+
+---
+
+## D-116 — The Task Center never asked for the swab, and a training video could not be attached
+*2026-09-28. Two reports from the plant, both a screen that did not ask for something the server was
+ready to receive.*
+
+### The ATP readings: fourth screen, same defect
+
+Reported as live Pre-Ops filed on 27 and 28 September reading **ATP "—" with no limit**, three days
+after D-112 put the swab box on the Operator View. **Reproduced exactly** on a fresh database before
+anything was changed: the completion body the Task Center's own form sends — `{notes, lubricant_used,
+lubricant_is_food_grade, chemical_id}` — carries **no readings at all**, so the record it files through
+`complete-and-recur` is `atp_reading NULL, atp_limit NULL` while the same task completed from the
+Operator View files `12 / 35`.
+
+- **THE SERVER WAS ALREADY RIGHT, AND WAS ALREADY TELLING THE SCREEN.** `attachSwabPlans` has stamped
+  `swab_plan` on `/pm/by-frequency` and `/pm/search` — the two lists the Task Center renders — since
+  D-112. The box was simply never drawn. So the fix draws what the server says and **adds no fourth list
+  of titles**; the verdict stays `recordAreaForTask()`'s, as it has been since D-112.
+- **`AtpSwabField` moved to `common/` and both screens import it.** It was private to `OperatorView.jsx`,
+  which is exactly why the Task Center had nothing to render. A second copy is how one of them quietly
+  stops asking again — the fifth time this shape has been written down here.
+- **It gates nothing.** A missing reading is a gap, not a failure (D-020), asserted in both directions:
+  a completion with no reading is still accepted and still invents nothing.
+- **The floor screen was never the gap, and that is now proven rather than pending.** An operator-side
+  check of a pending Pre-Op was scheduled for 29 September; the browser run opens a real pending Pre-Op
+  card on the Operator View at 390px and finds the box, and opens the same task on the Task Center at
+  1280px and finds it there too. The check is answered; the floor half has been correct since D-112.
+- **`batch-complete` is deliberately untouched.** It files a record with no readings, but the Operator
+  View offers its tick box only on `equipment_pm` tasks, so no screen can batch-complete a clean that
+  owes a swab. Reported here rather than changed.
+
+**Verified:** `verify:atp` (43 → **63**, live + a real browser at 390 and 1280). **The control is the
+state the plant is in** — the swab block and the readings taken back out of the desk form — and fails
+**5**, the decisive one reading `atp_reading=null`, which is the record Daniela was looking at.
+
+### The training video: the ceiling, and the extension list underneath it
+
+Reported as a video refused from a course as too large. **Two causes, and the second is the one that
+would have survived raising the number.**
+
+- **200 MB is about ninety seconds of 1080p off a phone**, and a machine procedure is five to ten
+  minutes — so the ceiling refused the one thing course materials exist to hold. `MAX_LONG_VIDEO_BYTES`
+  is **2 GB**, opt-in per route like `MAX_ARCHIVE_BYTES` and taken only by the course-material route:
+  the comms paperclip has no reason to accept two gigabytes. Not raised further because **nothing here
+  resumes** — one HTTP request has to survive the whole upload, and past that a slow uplink is likelier
+  to time out than to finish.
+- **`isVideo()` DECIDES WHICH CEILING APPLIES, so an unrecognised video was not merely unplayable — it
+  fell to the 25 MB non-video rule** and was refused with a message about "non-video files" for a file
+  the person is watching in a video player. The list covered phones only; a camcorder's `.mts`, a screen
+  recorder's `.wmv` and `.mpg` / `.ogv` / `.vob` were all outside it. Nothing downstream assumes these
+  play — the material card already falls back to a download on a codec the browser rejects.
+- **A REFUSAL NAMES THE FILE AND ITS SIZE**, not just the limit: "too large" sends somebody back to
+  guess. And the route passes its own ceiling to `uploadErrorMessage`, or a refusal here would name
+  200 MB and send somebody to shorten a video that was never over the line — the `MAX_ARCHIVE_BYTES`
+  lesson, in the route written after it.
+- **The hint on the screen is asserted against the server's number.** A hint naming a smaller limit than
+  the route allows is what sends somebody away to trim a video that would have uploaded.
+
+**Verified:** `verify:trainingmedia` (**28**, pure + live through a real S3 stand-in — a 40 MB mp4 and a
+30 MB `.wmv` uploaded and read back byte for byte). **The control is the state the plant is in** and
+fails **12**, the reported symptom verbatim: *"gown-room.wmv is larger than the 25 MB limit for
+non-video files."*
+
+### Found in passing: a check that had been red since D-110
+
+`check-supplier-review.mjs` called the nudge as `botDm(id, body)` with no `postMessageAs` — the broken
+convention D-110 *fixed in the sender*. The sender's own guard then returned `{sent: 0}` before doing
+anything, so **five assertions about a real notifier had been failing while the code they cover was
+correct**, and `npm run check` has been red on `main` for it. The stand-in now matches the call
+(`botDm(db, userId)` → `{bot, dm}`, then `postMessageAs`). **A stand-in that does not match the call is a
+test answering a question nobody is asking** — and a suite with a standing red in it is one people stop
+reading, which is the same failure as a badge nobody trusts. `check:suppliers` 15/20 → **41/41**.

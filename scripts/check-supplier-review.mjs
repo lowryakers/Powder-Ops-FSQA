@@ -87,8 +87,21 @@ t('moving the due date produces a new task, not a suppressed duplicate', third.c
 t('and the old task is still there — history is not rewritten', titles().length === 3);
 
 // The nudge: quiet when there is nothing to say, and it splits the two numbers.
+//
+// THE SPY HAS TO BE THE SHAPE THE SENDER CALLS. D-110 corrected
+// `supplierReviewNudge` to `botDm(db, userId)` → `{bot, dm}` followed by
+// `postMessageAs(db, dm, bot, body)`, and left this check written against the
+// broken convention — a single `botDm(id, body)` and no `postMessageAs` at
+// all. The sender's own guard then returned `{sent: 0}` before doing anything,
+// so five assertions about a real notifier have been failing ever since while
+// the code they cover was correct. A stand-in that does not match the call is
+// a test that answers a question nobody is asking.
+const spy = (out) => ({
+  botDm: (_db, userId) => ({ bot: { id: 'readybot' }, dm: { id: `dm-${userId}` } }),
+  postMessageAs: async (_db, _dm, _bot, body) => { out.push(body); },
+});
 const sent = [];
-const nudge = await supplierReviewNudge(db, { botDm: async (id, body) => sent.push(body) });
+const nudge = await supplierReviewNudge(db, spy(sent));
 t('the nudge reaches Quality — the two people who act on it, not every admin (D-086)',
   nudge.sent === 2, `${nudge.sent}`);
 t('it names the overdue reviews AND the never-qualified separately',
@@ -105,7 +118,7 @@ t('it says explicitly that no task is raised for the never-qualified',
 db.prepare("UPDATE users SET name = 'Somebody Else' WHERE id IN ('u1','u2')").run();
 {
   const out = [];
-  const r = await supplierReviewNudge(db, { botDm: async (id, body) => out.push(body) });
+  const r = await supplierReviewNudge(db, spy(out));
   t('with neither named person on the roster it still reaches the admins',
     r.sent === 1 && out.length === 1, `${r.sent}`);
 }
@@ -114,13 +127,18 @@ db.prepare("UPDATE users SET name = 'Maria Servin' WHERE id = 'u2'").run();
 
 db.prepare("UPDATE supplier_qualifications SET next_review_due = ?").run(day(400));
 db.prepare("UPDATE suppliers SET status = 'approved' WHERE status = 'unqualified'").run();
-const quiet = await supplierReviewNudge(db, { botDm: async () => { throw new Error('should not send'); } });
+const quiet = await supplierReviewNudge(db, spy([]));
 t('with nothing outstanding the nudge stays SILENT', quiet.sent === 0 && quiet.quiet === true);
 
 t('a comms failure never throws out of the job', await (async () => {
   db.prepare("UPDATE supplier_qualifications SET next_review_due = ? WHERE id = 'q2'").run(day(-5));
-  try { const r = await supplierReviewNudge(db, { botDm: async () => { throw new Error('comms down'); } });
-        return r.sent === 0; } catch { return false; }
+  try {
+    const r = await supplierReviewNudge(db, {
+      botDm: () => { throw new Error('comms down'); },
+      postMessageAs: async () => { throw new Error('comms down'); },
+    });
+    return r.sent === 0;
+  } catch { return false; }
 })());
 
 console.log(`\n${pass} passed, ${fail} failed`);
