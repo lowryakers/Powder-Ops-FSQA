@@ -1,10 +1,13 @@
 // The records the scheduled checks file (D-060), as tabs on Quality
 // Schedules: environmental monitoring results, GMP walk-throughs, banned-list
-// reviews. Every number is the length of the rows the endpoint returned.
+// reviews, the annual management review and the annual Food Defense Plan
+// challenge. Every number is the length of the rows the endpoint returned.
 import { useState } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { formatDate } from '../../lib/datetime.js';
-import { AlertTriangle, CheckCircle2, Clock, FlaskConical, Plus, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, CalendarCheck, CheckCircle2, Clock, FlaskConical, Plus, ShieldAlert } from 'lucide-react';
+import CheckFields from '../common/CheckFields.jsx';
+import { missingForCheck } from '../../../shared/check-forms.js';
 
 const OUTCOME = {
   pending: { label: 'Awaiting result', cls: 'bg-amber-50 text-amber-800' },
@@ -297,5 +300,169 @@ export function ListReviewsTab() {
         </div>
       )}
     </div>
+  );
+}
+
+/* ── The two annual reviews (SQF 2.1.2.1 · SOP 434 V3 § 5.0) ───────────────── */
+
+/**
+ * One component for both, because they are the same record: a dated list of
+ * items each reviewed or not applicable, with who took part. It renders the
+ * items from the SERVER's form spec, so the screen cannot list a different
+ * eight from the one the completion form asked.
+ *
+ * "Due" is DERIVED from the last one's date on every read — a stored flag
+ * would be wrong the day somebody files one.
+ */
+function AnnualReviewTab({ path, kind, dateCol, title, intro, canAct }) {
+  const { data, refresh } = useApiGet(path);
+  const [filing, setFiling] = useState(false);
+  const rows = data?.[kind === 'management_review' ? 'reviews' : 'challenges'] || [];
+  const form = data?.form;
+  const last = data?.last;
+  const fd = kind === 'food_defense_challenge';
+
+  return (
+    <div className="space-y-3" data-annual-review={kind} data-annual-count={rows.length}>
+      <p className="text-sm text-gray-600 max-w-2xl">{intro}</p>
+
+      <section className={`rounded-xl border p-3 ${data?.due ? 'border-amber-300 bg-amber-50' : 'border-gray-200'}`} data-annual-due={data?.due ? 1 : 0}>
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1 flex items-center gap-1">
+          <CalendarCheck size={13} /> {title}
+        </h4>
+        {last ? (
+          <p className="text-sm">
+            Last done <b>{formatDate(last[dateCol])}</b> by {fd ? last.performed_by : last.reviewed_by}
+            <span className="text-gray-500"> · {data.days_since} days ago</span>
+            {last.source === 'paper' && <span className="ml-1 text-[11px] text-gray-500">(recorded from the paper report)</span>}
+            {data.due && <span className="block text-amber-800 text-xs mt-0.5">More than twelve months ago — the annual one is due.</span>}
+          </p>
+        ) : (
+          <p className="text-xs text-amber-800">
+            None on record. Complete the annual task in the Task Center, or record one that already happened.
+          </p>
+        )}
+      </section>
+
+      {canAct && (
+        <div>
+          <button onClick={() => setFiling(v => !v)} data-annual-file-toggle
+            className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">
+            <Plus size={15} /> {filing ? 'Cancel' : 'Record one that already happened'}
+          </button>
+        </div>
+      )}
+      {filing && form && (
+        <AnnualReviewEntry form={form} path={path} dateCol={dateCol}
+          onDone={() => { setFiling(false); refresh(); }} />
+      )}
+
+      {rows.length > 0 && (
+        <div className="overflow-x-auto rounded-xl border border-gray-200">
+          <table className="min-w-full text-xs">
+            <thead className="bg-gray-50 text-gray-500"><tr>
+              <th className="text-left px-3 py-2">Date</th>
+              <th className="text-left px-3 py-2">{fd ? 'Led by' : 'Reviewed by'}</th>
+              <th className="text-left px-3 py-2">{fd ? 'Team' : 'Took part'}</th>
+              <th className="text-left px-3 py-2">Items</th>
+              <th className="text-left px-3 py-2">{fd ? 'Methods used' : 'Not applicable'}</th>
+              <th className="text-left px-3 py-2">Source</th>
+            </tr></thead>
+            <tbody className="divide-y divide-gray-100">
+              {rows.map(r => {
+                const done = Object.values(r.items || {}).filter(i => i?.result === 'done').length;
+                const total = Object.keys(r.items || {}).length;
+                return (
+                  <tr key={r.id} data-annual-row={r.id}>
+                    <td className="px-3 py-2 whitespace-nowrap">{formatDate(r[dateCol])}</td>
+                    <td className="px-3 py-2">{fd ? r.performed_by : r.reviewed_by}</td>
+                    <td className="px-3 py-2 max-w-xs">{fd ? r.team : r.attendees}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">{done} of {total} reviewed</td>
+                    <td className="px-3 py-2 max-w-xs">
+                      {fd
+                        ? (r.methods || []).map(m => (form?.methods || []).find(x => x.key === m)?.label || m).join(' · ')
+                        : (r.na_count ? `${r.na_count} N/A` : '—')}
+                    </td>
+                    <td className="px-3 py-2 text-gray-500">{r.source === 'paper' ? 'Paper report' : 'ReadyDoc task'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Recording one that already happened. It uses the SAME `CheckFields` the
+ * completion form uses, so a back-filed review asks exactly the questions a
+ * live one asks — and the server re-checks with the same `missingForCheck`,
+ * so this screen can never file a thinner record than the task would.
+ */
+function AnnualReviewEntry({ form, path, dateCol, onDone }) {
+  const [day, setDay] = useState('');
+  const [by, setBy] = useState('');
+  const [check, setCheck] = useState({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const missing = missingForCheck(form, check);
+  const fd = form.kind === 'food_defense_challenge';
+
+  const save = async () => {
+    setBusy(true); setError('');
+    try {
+      await apiPost(path, { ...check, [dateCol]: day, [fd ? 'performed_by' : 'reviewed_by']: by });
+      onDone();
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="rounded-xl border border-gray-200 p-3 space-y-2" data-annual-entry>
+      <p className="text-xs text-gray-500">
+        It is filed with the date it was done and marked as coming from the paper report, so it never reads as one
+        ReadyDoc watched happen.
+      </p>
+      <div className="grid sm:grid-cols-2 gap-2">
+        <label className="text-xs text-gray-600">
+          Date it was done
+          <input type="date" value={day} onChange={e => setDay(e.target.value)} data-annual-date
+            className="mt-0.5 w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
+        </label>
+        <label className="text-xs text-gray-600">
+          {fd ? 'Led by' : 'Reviewed by'}
+          <input value={by} onChange={e => setBy(e.target.value)} data-annual-by
+            className="mt-0.5 w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
+        </label>
+      </div>
+      <CheckFields form={form} value={check} onChange={setCheck} />
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      <button onClick={save} disabled={busy || !day || missing.length > 0} data-annual-save
+        className="px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">
+        {busy ? 'Filing…' : 'File the record'}
+      </button>
+    </div>
+  );
+}
+
+export function ManagementReviewTab({ canAct }) {
+  return (
+    <AnnualReviewTab
+      path="/check-records/management-reviews" kind="management_review" dateCol="reviewed_on" canAct={canAct}
+      title="Annual management review"
+      intro="SQF 2.1.2.1 — the SQF System is reviewed by site management at least annually, and the clause names eight things the review must include. Completing the annual task in the Task Center files this record; each item is marked reviewed, or not applicable with the reason."
+    />
+  );
+}
+
+export function FoodDefenseTab({ canAct }) {
+  return (
+    <AnnualReviewTab
+      path="/check-records/food-defense/challenges" kind="food_defense_challenge" dateCol="performed_on" canAct={canAct}
+      title="Annual Food Defense Plan challenge"
+      intro="SOP 434 V3 § 5.0 — the annual challenge of the Food Defense Plan: review the plan against current operations, walk the restricted and controlled-access areas, evaluate the mitigation strategies, run at least one challenge method and record the outcome, rate each strategy, and assign corrective actions."
+    />
   );
 }

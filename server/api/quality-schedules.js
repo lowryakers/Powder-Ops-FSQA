@@ -154,6 +154,44 @@ const SEED_SCHEDULES = [
     ],
   },
   {
+    // SQF 2.1.2.1: the SQF System is reviewed by site management AT LEAST
+    // ANNUALLY and the clause names eight things the review must include.
+    // The eight are transcribed in shared/check-forms.js; completing this task
+    // files the record that says they were reviewed and by whom.
+    title: 'Annual Management Review (SQF 2.1.2.1)',
+    module_id: 'Management Review',
+    description: 'Annual site management review of the SQF System. Walk the eight items the clause names — documentation changes, annual system test results, trends, food safety culture, objectives and measures, recalls and regulatory issues, hazard analysis updates, and follow-up actions from the last review — recording each as reviewed, or not applicable with the reason. Completing this task files the record.',
+    frequency_type: 'annual',
+    frequency_value: 1,
+    procedure_steps: [
+      'Get site management in the room and record who took part',
+      'Work the eight items in order, noting what was reviewed against each',
+      'Mark an item not applicable only with a reason — the clause requires all eight',
+      'Raise a CAR or an action item for anything the review finds',
+      'Complete this task to file the record',
+    ],
+  },
+  {
+    // SOP 434 V3 § 5.0. The steps are the procedure's own; the record carries
+    // SOP 434 V3 rather than DRAFT-1, because the procedure IS controlled —
+    // what is not yet numbered is the Annual Challenge Report it feeds.
+    title: 'Annual Food Defense Plan Challenge (SOP 434)',
+    module_id: 'Food Defense',
+    description: "Annual challenge of the Food Defense Plan under SOP 434 V3 § 5.0: assemble the team, review the previous report and the plan against current operations, walk the restricted and controlled-access areas, evaluate the mitigation strategies, run at least one operational challenge method and record the outcome and response times, rate each strategy, and assign corrective actions. Completing this task files the record.",
+    frequency_type: 'annual',
+    frequency_value: 1,
+    procedure_steps: [
+      'Schedule the challenge at least 30 days before the anniversary of the previous one (§ 5.1 A)',
+      "Assemble the Food Defense Team and review last year's report, the mitigation strategies, corrective actions and incident logs (§ 5.1 B-C)",
+      'Verify the Plan reflects current operations and re-assess the Key Activity Types (§ 5.2 A)',
+      'Walk the restricted areas, access points, ingredient handling, storage and shipping (§ 5.2 B.1)',
+      'Evaluate access controls, seals and locks, authorization lists, visitor management and surveillance (§ 5.2 B.2)',
+      'Run at least one challenge method and record the outcome and response times (§ 5.2 C)',
+      'Rate each mitigation strategy and identify new vulnerabilities (§ 5.2 D)',
+      'Assign corrective actions with owners and dates; verify completion within 30 days (§ 5.3)',
+    ],
+  },
+  {
     // Their own checklist says "Internal audits are performed monthly", so the
     // schedule comes from the plant's document rather than from a preference.
     title: 'Internal Audit (Form 403-01)',

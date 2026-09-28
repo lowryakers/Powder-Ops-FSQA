@@ -4658,3 +4658,51 @@ reporting **6 current of 9** where only 3 are.
 18:32, 28 Sep 08:52 and 09:24) show ATP "—" and no limit. The operator-side check of a pending Pre-Op is
 on 29 Sep; no code change until that result, because `verify:atp` proves the mechanism on a fresh database
 and what is in question is whether the floor is seeing the box.
+
+## D-115 — Two annual reviews an auditor asks for, on the mechanism that already exists (2026-09-29)
+
+Asked the day before an SQF audit: a **site management review** (the SQF 2.1.2.1 screenshot) and an
+**annual Food Defense Plan challenge** (SOP 434 V3 § 5.0), each recurring by itself, each closed by one
+act, each logged — and the Food Defense challenge run in **March 2026** shown as well.
+
+**Neither is new construction.** `shared/check-forms.js` + `server/check-records.js` (D-060) is exactly
+this: a quality schedule declares what its completion must carry, and the completion files the record
+inside its own transaction. The annual **Banned/Prohibited Substance List Review** has been that shape
+since D-060. So both are a kind in the shared spec, a branch in the writer, a table, and a seeded annual
+schedule. `pm.js`, the Operator View and the Task Center did not change, exactly as D-060 said.
+
+- **BOTH ITEM LISTS ARE TRANSCRIBED, NEVER TYPED.** SQF 2.1.2.1's eight items are the clause's own words,
+  i–viii — an external standard, like 29 CFR 1910.178(l)(3) behind the forklift evaluation. SOP 434 V3
+  § 5.0's nine steps are the **plant's own controlled procedure**, each tagged with its clause. Do not
+  tidy either: an auditor reading the record beside the document has to find the same list.
+- **THE TWO ARE STAMPED DIFFERENTLY, AND THAT IS THE POINT.** The management review record is `DRAFT-1`
+  and says so, because the clause names a review and **no form number exists** (the D-052 arrangement).
+  The Food Defense record carries **`SOP 434 V3`**, because that procedure IS controlled; what is not
+  numbered is the Annual Challenge Report § 6.0 names. Both go to Document Control as
+  `docs/v2/queued/dcr-annual-review-records.md`.
+- **"ONE CHECKBOX" IS THE COMPLETION, NOT THE RECORD.** The ask was a single annual tick. One tick over
+  eight clause items is a record that cannot answer *"show me you reviewed recalls and regulatory
+  issues"* — which is the question. So the act stays one (complete the task), and the record carries
+  each item marked **reviewed**, or **not applicable WITH A REASON**. There is no third answer: the
+  clause says the review shall include all eight, so "skipped" is not a state the standard allows, and
+  an unexplained N/A is the tick-with-nothing-behind-it this codebase keeps refusing.
+- **§ 5.2 C is the procedure's only "must", and the gate follows it** — a challenge with no method used
+  is a review, not a challenge, and is refused.
+- **THE MARCH CHALLENGE IS RECORDED, NOT RE-RUN.** `fileAnnualReview()` is ONE writer with two doors:
+  the task completion and the by-hand entry. A back-filed record takes **its own date**, is stamped
+  `source: 'paper'` (the D-098 forklift rule) so it never reads as one ReadyDoc watched happen, and is
+  validated by the **same `missingForCheck`** — a back-filed review may not be thinner than a live one.
+  Asserted, along with the refusal of a future date.
+- **"Due" is derived from the last record's date on every read.** A stored `last_done` is wrong the day
+  somebody files one.
+- Both tabs live on Quality Schedules beside EMP, GMP walks and List reviews, and are read-open to the
+  module while filing stays Quality leadership — the same ladder.
+
+**Verified:** `verify:annualreviews` (**53**, pure + live + a real browser at 1280; in `verify:all`).
+**The control is the state the plant is in** — the kinds removed, so the tasks exist and their
+completions file nothing — and it fails **8** before the script can continue, the first being a task
+payload carrying no form at all.
+
+**Not claimed:** § 5.2 D asks for each mitigation strategy to be rated. ReadyDoc records the ratings as
+written findings against § 5.2 D, not a per-strategy grid, because the Plan's strategy list is not in
+ReadyDoc. That is in the DCR rather than papered over.

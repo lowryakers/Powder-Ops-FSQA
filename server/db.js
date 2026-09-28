@@ -3914,6 +3914,46 @@ function runMigrations() {
       notes TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    -- The annual site management review (SQF 2.1.2.1) and the annual Food
+    -- Defense Plan challenge (SOP 434 V3 § 5.0). Both are the banned-list
+    -- review's shape: one row per completed check, the items frozen as filed.
+    -- The source column tells a review run through the app from one recorded
+    -- after the fact off the paper report (the forklift paper rule), so a
+    -- back-filed record never reads as one the app watched happen.
+    CREATE TABLE IF NOT EXISTS management_reviews (
+      id TEXT PRIMARY KEY,
+      work_order_id TEXT,
+      quality_schedule_id TEXT,
+      reviewed_on TEXT NOT NULL,
+      reviewed_by TEXT NOT NULL,
+      attendees TEXT NOT NULL,
+      items TEXT NOT NULL,
+      na_count INTEGER NOT NULL DEFAULT 0,
+      clause TEXT NOT NULL,
+      revision TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'task',
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS food_defense_challenges (
+      id TEXT PRIMARY KEY,
+      work_order_id TEXT,
+      quality_schedule_id TEXT,
+      performed_on TEXT NOT NULL,
+      performed_by TEXT NOT NULL,
+      team TEXT NOT NULL,
+      items TEXT NOT NULL,
+      methods TEXT NOT NULL,
+      outcome TEXT,
+      findings TEXT,
+      corrective_actions TEXT,
+      sop_revision TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'task',
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
 

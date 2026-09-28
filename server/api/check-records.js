@@ -12,9 +12,14 @@ import { Router } from 'express';
 import { randomUUID as uuid } from 'crypto';
 import { getDb, logAudit } from '../db.js';
 import { gradeEmpResult, EMP_FORM_CODE, EMP_REVISION } from '../emp-results.js';
-import { EMP_ZONES, GMP_WALK_ITEMS, GMP_WALK_REVISION, BANNED_LISTS } from '../../shared/check-forms.js';
+import {
+  EMP_ZONES, GMP_WALK_ITEMS, GMP_WALK_REVISION, BANNED_LISTS,
+  MANAGEMENT_REVIEW_ITEMS, MANAGEMENT_REVIEW_REVISION, MANAGEMENT_REVIEW_CLAUSE,
+  FOOD_DEFENSE_ITEMS, FOOD_DEFENSE_METHODS, FOOD_DEFENSE_SOP,
+  missingForCheck, normalizeCheck,
+} from '../../shared/check-forms.js';
 import { raiseCapa } from '../capa-raise.js';
-import { currentListEditions } from '../check-records.js';
+import { currentListEditions, fileAnnualReview, annualReviewStatus } from '../check-records.js';
 import { readyDocOrigin } from '../links.js';
 import { postMessageAs, botDm } from './comms.js';
 import { pushToUser } from '../push.js';
@@ -196,5 +201,68 @@ router.get('/list-reviews', (req, res) => {
     .map(r => ({ ...r, editions: JSON.parse(r.editions || '{}') }));
   res.json({ reviews: rows, current: currentListEditions(db), lists: BANNED_LISTS });
 });
+
+/* ── The two annual reviews (SQF 2.1.2.1 and SOP 434 V3 § 5.0) ────────────── */
+
+const MR_FORM = { kind: 'management_review', items: MANAGEMENT_REVIEW_ITEMS, revision: MANAGEMENT_REVIEW_REVISION, clause: MANAGEMENT_REVIEW_CLAUSE, draft: true };
+const FD_FORM = { kind: 'food_defense_challenge', items: FOOD_DEFENSE_ITEMS, methods: FOOD_DEFENSE_METHODS, sop_revision: FOOD_DEFENSE_SOP };
+
+const parseRow = (r) => r && ({
+  ...r,
+  items: JSON.parse(r.items || '{}'),
+  ...(r.methods ? { methods: JSON.parse(r.methods) } : {}),
+});
+
+router.get('/management-reviews', (req, res) => {
+  const db = getDb();
+  const rows = db.prepare('SELECT * FROM management_reviews ORDER BY reviewed_on DESC, created_at DESC LIMIT 200').all().map(parseRow);
+  const st = annualReviewStatus(db, 'management_reviews', 'reviewed_on');
+  res.json({ form: MR_FORM, reviews: rows, last: st.last, due: st.due, days_since: st.days_since });
+});
+
+router.get('/food-defense/challenges', (req, res) => {
+  const db = getDb();
+  const rows = db.prepare('SELECT * FROM food_defense_challenges ORDER BY performed_on DESC, created_at DESC LIMIT 200').all().map(parseRow);
+  const st = annualReviewStatus(db, 'food_defense_challenges', 'performed_on');
+  res.json({ form: FD_FORM, challenges: rows, last: st.last, due: st.due, days_since: st.days_since });
+});
+
+/**
+ * Recording one that already happened.
+ *
+ * The plant ran a Food Defense challenge in March; refusing to record it
+ * because the app was not there would leave a real annual obligation reading
+ * as never done. So the by-hand door takes its OWN date and files through
+ * `fileAnnualReview`, the same writer the task completion uses — stamped
+ * `source: 'paper'`, which is what keeps it honestly distinguishable from one
+ * the app watched happen (the forklift-evaluation rule, D-098).
+ *
+ * The date is refused in the future, and the SAME `missingForCheck` decides
+ * what is complete — a back-filed review may not be thinner than a live one.
+ */
+function handEntry(kind, form, table, dateCol) {
+  return (req, res) => {
+    const db = getDb();
+    const b = req.body || {};
+    const day = String(b[dateCol] || b.performed_on || b.reviewed_on || '').trim();
+    if (!isDay(day)) return res.status(400).json({ error: 'When was it done? (YYYY-MM-DD)' });
+    if (day > db.prepare("SELECT date('now') d").get().d) return res.status(400).json({ error: 'It cannot be dated in the future.' });
+    const missing = missingForCheck(form, b);
+    if (missing.length) return res.status(400).json({ error: 'Still needed: ' + missing.map(m => m.label).join('; '), missing });
+    const by = clean(b.performed_by || b.reviewed_by, 120) || req.user.name;
+    let out;
+    db.transaction(() => {
+      out = fileAnnualReview(db, {
+        form, check: normalizeCheck(form, b), wo: null, by, day,
+        notes: clean(b.notes, 8000), source: 'paper',
+      });
+      logAudit(req.user, `${kind}_filed`, kind, out.ids[0], { [dateCol]: day, by, source: 'paper' });
+    })();
+    res.status(201).json(parseRow(db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(out.ids[0])));
+  };
+}
+
+router.post('/management-reviews', requireAct, handEntry('management_review', MR_FORM, 'management_reviews', 'reviewed_on'));
+router.post('/food-defense/challenges', requireAct, handEntry('food_defense_challenge', FD_FORM, 'food_defense_challenges', 'performed_on'));
 
 export default router;

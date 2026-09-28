@@ -4040,6 +4040,28 @@ Adding one is a kind in the shared spec (`checkKindFor`, fields, `missingForChec
   `emp-pending`) read the same rows.
 - Verified: `verify:checkrecords` (49, live + browser; in `verify:all`).
 
+### Two annual reviews: management review and the Food Defense challenge (D-115)
+`MANAGEMENT_REVIEW_ITEMS` / `FOOD_DEFENSE_ITEMS` + `FOOD_DEFENSE_METHODS` in `shared/check-forms.js`,
+`fileAnnualReview()` in `check-records.js`, `management_reviews` / `food_defense_challenges` (db.js), two
+annual `SEED_SCHEDULES`, and **Management review** + **Food defense** tabs on Quality Schedules. Asked the
+day before an SQF audit; **neither is new construction** — both are D-060's interface, the shape the annual
+Banned-List Review has had all along.
+- **BOTH LISTS ARE TRANSCRIBED.** SQF 2.1.2.1's eight items are the clause's own words (i–viii); SOP 434 V3
+  § 5.0's nine steps are the plant's own procedure, each tagged with its clause. **Do not tidy either.**
+- **STAMPED DIFFERENTLY ON PURPOSE**: the management review is `DRAFT-1` (the clause names a review, no form
+  number exists); the Food Defense record carries **`SOP 434 V3`**, because that procedure IS controlled —
+  what is unnumbered is the Annual Challenge Report § 6.0 names. DCR: `docs/v2/queued/dcr-annual-review-records.md`.
+- **"ONE CHECKBOX" IS THE COMPLETION, NOT THE RECORD.** One tick over eight clause items cannot answer "show
+  me you reviewed recalls and regulatory issues". The ACT is one; the record marks each item **reviewed** or
+  **not applicable WITH A REASON**, and there is no third answer — the clause requires all eight.
+- **§ 5.2 C is the procedure's only "must"**: a challenge with no method used is a review, and is refused.
+- **`fileAnnualReview()` is ONE writer, TWO doors** — the task completion and the by-hand entry. A record of
+  one that already happened takes **its own date**, is stamped `source: 'paper'` (D-098), and is validated by
+  the **same `missingForCheck`**: a back-filed review may not be thinner than a live one.
+- **"Due" is derived from the last record's date on every read**; a stored `last_done` is stale on day one.
+- `verify:annualreviews` (53, pure + live + browser; in `verify:all`). **The control removes the kinds — the
+  state the plant is in — and fails 8**, the first being a task payload carrying no form at all.
+
 ## Recurring QA checks that ship pre-scheduled
 `SEED_SCHEDULES` in `server/api/quality-schedules.js` + `seedQualitySchedules(db)` (called from server.js).
 Seeded **once, keyed on title** — an edited frequency, a paused schedule or a deleted one is a decision, and

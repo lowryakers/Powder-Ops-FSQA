@@ -5,7 +5,7 @@
 // the Task Center's CompleteForm; a third copy is how the two screens start
 // asking different questions about one check.
 import { useState } from 'react';
-import { missingForCheck, GMP_WALK_ANSWERS } from '../../../shared/check-forms.js';
+import { missingForCheck, GMP_WALK_ANSWERS, REVIEW_ANSWERS } from '../../../shared/check-forms.js';
 
 const S = {
   sites_h: { en: 'Sites sampled', es: 'Sitios muestreados' },
@@ -42,6 +42,18 @@ const S = {
   passing: { en: 'Passing score', es: 'Puntaje para aprobar' },
   renews: { en: 'Records a completion, and the next one comes due in', es: 'Registra la finalización, y la próxima vence en' },
   months: { en: 'months', es: 'meses' },
+  mr_h: { en: 'Management review', es: 'Revisión por la dirección' },
+  mr_hint: { en: 'The clause requires all eight. Mark one N/A only with the reason.', es: 'La cláusula exige las ocho. Marque N/A solo con el motivo.' },
+  attendees: { en: 'Who took part (site management)', es: 'Quiénes participaron (dirección del sitio)' },
+  done: { en: 'Reviewed', es: 'Revisado' },
+  why_na: { en: 'Why it does not apply this year', es: 'Por qué no aplica este año' },
+  mr_notes: { en: 'Notes, decisions and actions agreed (optional)', es: 'Notas, decisiones y acciones acordadas (opcional)' },
+  fd_h: { en: 'Food Defense Plan challenge', es: 'Desafío del Plan de Defensa Alimentaria' },
+  fd_team: { en: 'Food Defense Team members taking part', es: 'Miembros del Equipo de Defensa Alimentaria participantes' },
+  fd_methods: { en: 'Challenge method(s) used — at least one (§ 5.2 C)', es: 'Método(s) de desafío usados — al menos uno (§ 5.2 C)' },
+  fd_outcome: { en: 'Outcome and response times (§ 5.2 C)', es: 'Resultado y tiempos de respuesta (§ 5.2 C)' },
+  fd_findings: { en: 'Strengths, weaknesses and gaps; strategy ratings (§ 5.2 D)', es: 'Fortalezas, debilidades y brechas; calificaciones (§ 5.2 D)' },
+  fd_capa: { en: 'Corrective actions, owners and dates (write "none" if none) (§ 5.3)', es: 'Acciones correctivas, responsables y fechas (escriba "ninguna" si no hay) (§ 5.3)' },
 };
 const tr = (lang, k) => (S[k] || {})[lang] || (S[k] || {}).en || k;
 
@@ -56,6 +68,8 @@ export default function CheckFields({ form, value, onChange, lang = 'en', assign
       {form.kind === 'emp' && <EmpFields form={form} v={v} set={set} lang={lang} />}
       {form.kind === 'gmp_walk' && <WalkFields form={form} v={v} set={set} lang={lang} />}
       {form.kind === 'banned_list_review' && <ReviewFields form={form} v={v} set={set} lang={lang} />}
+      {form.kind === 'management_review' && <AnnualReviewFields form={form} v={v} set={set} lang={lang} />}
+      {form.kind === 'food_defense_challenge' && <AnnualReviewFields form={form} v={v} set={set} lang={lang} />}
       {form.kind === 'stability_pull' && <PullFields form={form} v={v} set={set} lang={lang} />}
       {form.kind === 'training' && <TrainingFields form={form} v={v} set={set} lang={lang} assignee={assignee} />}
       {missing.length > 0 && (
@@ -133,6 +147,88 @@ function WalkFields({ form, v, set, lang }) {
           );
         })}
       </ul>
+    </div>
+  );
+}
+
+/**
+ * The two annual reviews. ONE COMPONENT, because they are the same act — walk
+ * a list transcribed from an external standard or the plant's own procedure,
+ * mark each item reviewed or not applicable with a reason, and complete the
+ * task once. A second copy would let the two screens drift into asking
+ * different questions about the same shape.
+ */
+function AnnualReviewFields({ form, v, set, lang }) {
+  const fd = form.kind === 'food_defense_challenge';
+  const items = v.items || {};
+  const setItem = (key, patch) => set({ items: { ...items, [key]: { ...(items[key] || {}), ...patch } } });
+  const methods = v.methods || [];
+  const toggleMethod = (k) => set({ methods: methods.includes(k) ? methods.filter(m => m !== k) : [...methods, k] });
+  const box = 'w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm';
+  return (
+    <div className="bg-white rounded-lg border border-green-200 p-2 space-y-2">
+      <p className="text-xs font-semibold text-gray-700">
+        {tr(lang, fd ? 'fd_h' : 'mr_h')}{' '}
+        <span className="font-normal text-gray-400">— {fd ? form.sop_revision : form.clause}</span>
+      </p>
+      {form.draft && <p className="text-[11px] text-amber-800 bg-amber-50 rounded px-2 py-1">{tr(lang, 'draft')}</p>}
+      {!fd && <p className="text-[11px] text-gray-500">{tr(lang, 'mr_hint')}</p>}
+
+      <input value={(fd ? v.team : v.attendees) || ''} onChange={e => set(fd ? { team: e.target.value } : { attendees: e.target.value })}
+        placeholder={tr(lang, fd ? 'fd_team' : 'attendees')} data-review-people className={box} />
+
+      <ul className="space-y-2">
+        {form.items.map(it => {
+          const a = items[it.key] || {};
+          return (
+            <li key={it.key} className="border-t border-gray-100 pt-2" data-review-item={it.key}>
+              <p className="text-xs text-gray-800 mb-1">
+                <span className="font-semibold text-gray-500">{fd ? it.clause : `${it.roman}.`}</span> {it.label}
+              </p>
+              <div className="flex gap-1.5">
+                {REVIEW_ANSWERS.map(ans => (
+                  <button type="button" key={ans} onClick={() => setItem(it.key, { result: ans })}
+                    data-review-answer={ans} aria-pressed={a.result === ans}
+                    className={`flex-1 py-2 rounded-lg text-xs font-bold border-2 ${a.result === ans
+                      ? (ans === 'done' ? 'bg-green-600 text-white border-green-600' : 'bg-gray-500 text-white border-gray-500')
+                      : 'bg-white text-gray-600 border-gray-200'}`}>
+                    {tr(lang, ans)}
+                  </button>
+                ))}
+              </div>
+              {a.result === 'na' && (
+                <input value={a.note || ''} onChange={e => setItem(it.key, { note: e.target.value })}
+                  placeholder={tr(lang, 'why_na')} data-review-na-note
+                  className="mt-1 w-full px-2 py-1.5 border border-amber-300 rounded-lg text-sm" />
+              )}
+              {a.result === 'done' && (
+                <input value={a.note || ''} onChange={e => setItem(it.key, { note: e.target.value })}
+                  placeholder={lang === 'es' ? 'Qué se revisó (opcional)' : 'What was reviewed (optional)'} data-review-note
+                  className="mt-1 w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm" />
+              )}
+            </li>
+          );
+        })}
+      </ul>
+
+      {fd ? (
+        <>
+          <p className="text-xs font-semibold text-gray-700 pt-1">{tr(lang, 'fd_methods')}</p>
+          <div className="flex flex-wrap gap-1.5">
+            {form.methods.map(m => (
+              <button type="button" key={m.key} onClick={() => toggleMethod(m.key)} data-fd-method={m.key} aria-pressed={methods.includes(m.key)}
+                className={`px-2.5 py-1.5 rounded-full text-xs border ${methods.includes(m.key) ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-700 border-gray-300'}`}>
+                {m.label}
+              </button>
+            ))}
+          </div>
+          <textarea value={v.outcome || ''} onChange={e => set({ outcome: e.target.value })} rows={2} placeholder={tr(lang, 'fd_outcome')} data-fd-outcome className={box} />
+          <textarea value={v.findings || ''} onChange={e => set({ findings: e.target.value })} rows={2} placeholder={tr(lang, 'fd_findings')} data-fd-findings className={box} />
+          <textarea value={v.corrective_actions || ''} onChange={e => set({ corrective_actions: e.target.value })} rows={2} placeholder={tr(lang, 'fd_capa')} data-fd-capa className={box} />
+        </>
+      ) : (
+        <textarea value={v.notes || ''} onChange={e => set({ notes: e.target.value })} rows={3} placeholder={tr(lang, 'mr_notes')} data-mr-notes className={box} />
+      )}
     </div>
   );
 }

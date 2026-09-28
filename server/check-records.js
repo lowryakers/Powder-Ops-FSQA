@@ -10,6 +10,8 @@
 import { v4 as uuid } from 'uuid';
 import {
   checkKindFor, empZoneFor, EMP_ZONES, GMP_WALK_ITEMS, GMP_WALK_REVISION, BANNED_LISTS,
+  MANAGEMENT_REVIEW_ITEMS, MANAGEMENT_REVIEW_REVISION, MANAGEMENT_REVIEW_CLAUSE,
+  FOOD_DEFENSE_ITEMS, FOOD_DEFENSE_METHODS, FOOD_DEFENSE_SOP,
   missingForCheck, normalizeCheck,
 } from '../shared/check-forms.js';
 import { EMP_SECTIONS, EMP_FORM_CODE, EMP_REVISION } from './emp-site-list.js';
@@ -74,6 +76,15 @@ export function checkFormFor(db, wo) {
   }
   if (kind === 'gmp_walk') return { kind, items: GMP_WALK_ITEMS, revision: GMP_WALK_REVISION, draft: true };
   if (kind === 'banned_list_review') return { kind, lists: BANNED_LISTS };
+  if (kind === 'management_review') {
+    return { kind, items: MANAGEMENT_REVIEW_ITEMS, revision: MANAGEMENT_REVIEW_REVISION, clause: MANAGEMENT_REVIEW_CLAUSE, draft: true };
+  }
+  if (kind === 'food_defense_challenge') {
+    // Not draft: SOP 434 V3 is a controlled procedure and the record says
+    // which revision it was run against. The REPORT it feeds (SOP 434 § 6.0)
+    // still has no form number — that is the DCR, not this.
+    return { kind, items: FOOD_DEFENSE_ITEMS, methods: FOOD_DEFENSE_METHODS, sop_revision: FOOD_DEFENSE_SOP };
+  }
   return null;
 }
 
@@ -176,7 +187,56 @@ export function fileCheckRecord(db, { form, check, wo, by, when, notes }) {
       .run(id, wo.id, wo.quality_schedule_id, day, by, JSON.stringify(c.editions), c.changes_found, c.actions_taken, c.materials_rechecked ? 1 : 0, notes || null);
     return { kind: 'banned_list_review', ids: [id] };
   }
+  if (form.kind === 'management_review' || form.kind === 'food_defense_challenge') {
+    return { ...fileAnnualReview(db, { form, check: c, wo, by, day, notes }), capas: [] };
+  }
   return null;
+}
+
+/**
+ * The two annual reviews. One writer, two doors — the task completion above
+ * and the by-hand entry on api/check-records.js both land here, so a review
+ * recorded off the paper report is byte for byte one completed in the app
+ * apart from `source`. A second copy is how the two start disagreeing about
+ * what a review contains.
+ */
+export function fileAnnualReview(db, { form, check, wo, by, day, notes, source = 'task' }) {
+  const id = uuid();
+  const woId = wo?.id || null;
+  const schedId = wo?.quality_schedule_id || null;
+  if (form.kind === 'management_review') {
+    const naCount = Object.values(check.items || {}).filter(v => v?.result === 'na').length;
+    db.prepare(`INSERT INTO management_reviews
+      (id, work_order_id, quality_schedule_id, reviewed_on, reviewed_by, attendees, items, na_count, clause, revision, source, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(id, woId, schedId, day, by, check.attendees, JSON.stringify(check.items),
+        naCount, MANAGEMENT_REVIEW_CLAUSE, MANAGEMENT_REVIEW_REVISION, source, notes || check.notes || null);
+    return { kind: 'management_review', ids: [id] };
+  }
+  db.prepare(`INSERT INTO food_defense_challenges
+    (id, work_order_id, quality_schedule_id, performed_on, performed_by, team, items, methods, outcome, findings, corrective_actions, sop_revision, source, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(id, woId, schedId, day, by, check.team, JSON.stringify(check.items), JSON.stringify(check.methods),
+      check.outcome, check.findings, check.corrective_actions, FOOD_DEFENSE_SOP, source, notes || null);
+  return { kind: 'food_defense_challenge', ids: [id] };
+}
+
+/**
+ * The latest of each, derived on every read — "when was the last one, and is
+ * it inside twelve months". A stored `last_done` goes stale the day somebody
+ * files one; this cannot.
+ */
+export function annualReviewStatus(db, table, dateCol) {
+  try {
+    const row = db.prepare(`SELECT * FROM ${table} ORDER BY ${dateCol} DESC, created_at DESC LIMIT 1`).get();
+    if (!row) return { last: null, due: true, days_since: null };
+    const days = Math.floor((Date.now() - Date.parse(`${row[dateCol]}T12:00:00Z`)) / 86400000);
+    return {
+      last: { ...row, items: JSON.parse(row.items || '{}'), methods: row.methods ? JSON.parse(row.methods) : undefined },
+      due: days >= 365,
+      days_since: days,
+    };
+  } catch { return { last: null, due: true, days_since: null }; }
 }
 
 /** The editions in use: the latest review's. Null until the first review. */

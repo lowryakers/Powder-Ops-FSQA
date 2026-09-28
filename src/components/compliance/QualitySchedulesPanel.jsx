@@ -4,7 +4,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { CalendarClock, Plus, Pencil, Trash2, X, CheckCircle2, PauseCircle } from 'lucide-react';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import { useModuleTabs } from '../../lib/useModuleTabs.js';
-import { EmpResultsTab, GmpWalksTab, ListReviewsTab } from './CheckRecordsTabs.jsx';
+import { EmpResultsTab, GmpWalksTab, ListReviewsTab, ManagementReviewTab, FoodDefenseTab } from './CheckRecordsTabs.jsx';
 
 const FREQUENCIES = [
   { value: 'daily', label: 'Daily' },
@@ -167,6 +167,8 @@ export default function QualitySchedulesPanel() {
     { id: 'emp', label: 'EMP results', badge: empSum?.pending_count || undefined, badgeTone: empSum?.open_action_count ? 'alert' : undefined },
     { id: 'gmp-walks', label: 'GMP walks' },
     { id: 'list-reviews', label: 'List reviews' },
+    { id: 'management-review', label: 'Management review' },
+    { id: 'food-defense', label: 'Food defense' },
   ];
   const { tabs, tab, setTab } = useModuleTabs({ id: 'quality-schedules', tabs: TABS, user });
 
@@ -201,6 +203,8 @@ export default function QualitySchedulesPanel() {
       {tab === 'emp' && <EmpResultsTab canAct={!!canManage} />}
       {tab === 'gmp-walks' && <GmpWalksTab />}
       {tab === 'list-reviews' && <ListReviewsTab />}
+      {tab === 'management-review' && <ManagementReviewTab canAct={!!canManage} />}
+      {tab === 'food-defense' && <FoodDefenseTab canAct={!!canManage} />}
 
       {tab === 'schedules' && (loading ? (
         <p className="text-sm text-gray-400 py-8 text-center">Loading schedules...</p>

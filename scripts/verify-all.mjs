@@ -79,6 +79,7 @@ const RUNS = [
   ['verify-suppliers.mjs', 4841],
   ['verify-kiosk-isolation.mjs', 4967, { BASE: 'http://localhost:4967/api' }],
   ['verify-cal-summary.mjs', 4991, {}],
+  ['verify-annual-reviews.mjs', 4993, {}],
   ['verify-doc-attach.mjs', 4992, {}, true],
 ];
 
