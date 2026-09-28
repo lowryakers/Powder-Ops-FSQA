@@ -78,6 +78,8 @@ const RUNS = [
   // Two older scripts carry their own port.
   ['verify-suppliers.mjs', 4841],
   ['verify-kiosk-isolation.mjs', 4967, { BASE: 'http://localhost:4967/api' }],
+  ['verify-cal-summary.mjs', 4991, {}],
+  ['verify-doc-attach.mjs', 4992, {}, true],
 ];
 
 const wait = (ms) => new Promise(r => setTimeout(r, ms));

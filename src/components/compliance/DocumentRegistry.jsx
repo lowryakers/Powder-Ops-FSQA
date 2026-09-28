@@ -7,6 +7,7 @@ import MarkdownView from '../common/MarkdownView.jsx';
 import DocumentBodyEditor from './DocumentBodyEditor.jsx';
 import RecordHistory from '../common/RecordHistory.jsx';
 import RevisionUploadModal from '../settings/RevisionUploadModal.jsx';
+import SignedCopyBulkModal from './SignedCopyBulkModal.jsx';
 import { SignaturePad } from '../common/SignatureCanvas.jsx';
 import { formatDate } from '../../lib/datetime.js';
 import { pdfViewerUrl } from '../../lib/pdfUrl';
@@ -1011,6 +1012,7 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
   const [importing, setImporting] = useState(false);
   // Updating documents already on file, as distinct from importing new ones.
   const [revising, setRevising] = useState(false);
+  const [attaching, setAttaching] = useState(false);
   const [importMsg, setImportMsg] = useState(null);
   const [selected, setSelected] = useState(() => new Set());
   const [bulkEditing, setBulkEditing] = useState(false);
@@ -1113,6 +1115,10 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
             <button onClick={() => setRevising(true)} title="Upload finalised versions of documents already on file"
               className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">
               <Upload size={15} /> Update from file
+            </button>
+            <button data-attach-signed onClick={() => setAttaching(true)} title="File the signed, scanned originals against the documents they belong to"
+              className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">
+              <Upload size={15} /> Attach signed copies
             </button>
             <button onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">
               <Plus size={16} /> New {typeLabel}
@@ -1254,6 +1260,7 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
         <WithdrawForm doc={withdrawing} onCancel={() => setWithdrawing(null)} onConfirm={handleArchive} />
       )}
       {revising && <RevisionUploadModal onClose={() => setRevising(false)} onDone={refresh} />}
+      {attaching && <SignedCopyBulkModal onClose={() => setAttaching(false)} onDone={refresh} />}
       {importing && (
         <BulkImportModal
           defaultDocType={docType}

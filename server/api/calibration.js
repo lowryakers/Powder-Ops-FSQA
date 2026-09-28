@@ -257,19 +257,43 @@ router.get('/summary', (_req, res) => {
   thirtyDays.setDate(thirtyDays.getDate() + 30);
   const thirtyStr = thirtyDays.toISOString().split('T')[0];
 
-  const total = db.prepare('SELECT COUNT(*) as c FROM calibration_instruments WHERE status != ?').get('retired').c;
-  const overdue = db.prepare("SELECT COUNT(*) as c FROM calibration_instruments WHERE next_due < ? AND status NOT IN ('retired','out_of_service')").get(today).c;
-  const dueSoon = db.prepare("SELECT COUNT(*) as c FROM calibration_instruments WHERE next_due BETWEEN ? AND ? AND status NOT IN ('retired','out_of_service')").get(today, thirtyStr).c;
-  const current = total - overdue - dueSoon;
+  // EVERY FIGURE IS COUNTED, AND THE FIVE PARTITION THE REGISTER.
+  // `current` used to be `total - overdue - due_soon`, and `total` was every
+  // instrument that is not retired while the other two deliberately exclude
+  // out-of-service ones — so an instrument that is OUT OF SERVICE and months
+  // past its date was subtracted from nothing and landed in `current`. The
+  // header read "32 of 32 current, 0 overdue" over two rows the screen itself
+  // showed as out of service and past due (#162 "LOCK OUT TAG OUT", #228).
+  // A number nobody can reconcile against the rows under it is the defect this
+  // codebase keeps unpicking, so nothing is derived by subtraction any more.
+  const count = (where, ...args) =>
+    db.prepare(`SELECT COUNT(*) as c FROM calibration_instruments WHERE ${where}`).get(...args).c;
+  const ACTIVE = "status NOT IN ('retired','out_of_service')";
 
+  const total = count("status != 'retired'");
+  const outOfService = count("status = 'out_of_service'");
+  const overdue = count(`${ACTIVE} AND next_due IS NOT NULL AND next_due < ?`, today);
+  const dueSoon = count(`${ACTIVE} AND next_due BETWEEN ? AND ?`, today, thirtyStr);
+  // An active instrument with no date is a GAP, not a pass. Counted separately
+  // rather than absorbed into `current`, for the same reason as the line above.
+  const noDueDate = count(`${ACTIVE} AND (next_due IS NULL OR next_due = '')`);
+  const current = total - outOfService - overdue - dueSoon - noDueDate;
+
+  // The department roll-up reads the SAME active filter. It did not, so a
+  // department could report an overdue instrument the header counted as current.
   const byDepartment = db.prepare(`
     SELECT department, COUNT(*) as total,
-      SUM(CASE WHEN next_due < ? THEN 1 ELSE 0 END) as overdue
+      SUM(CASE WHEN ${ACTIVE} AND next_due IS NOT NULL AND next_due < ? THEN 1 ELSE 0 END) as overdue,
+      SUM(CASE WHEN status = 'out_of_service' THEN 1 ELSE 0 END) as out_of_service
     FROM calibration_instruments WHERE status != 'retired' AND department IS NOT NULL
     GROUP BY department
   `).all(today);
 
-  res.json({ total, current, overdue, due_soon: dueSoon, by_department: byDepartment });
+  res.json({
+    total, current, overdue, due_soon: dueSoon,
+    out_of_service: outOfService, no_due_date: noDueDate,
+    by_department: byDepartment,
+  });
 });
 
 export default router;

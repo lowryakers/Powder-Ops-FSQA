@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { isoDay, nextReviewDue } from '../review-cadence.js';
-import { cleanFilename, stripRevisionSuffix } from '../filename-meta.js';
+import { cleanFilename, stripRevisionSuffix, revisionFromFilename } from '../filename-meta.js';
 import { orderWorklist, worklistProgress } from '../doc-worklist.js';
 import { v4 as uuid } from 'uuid';
 import multer from 'multer';
@@ -1165,6 +1165,153 @@ const docFileUpload = mediaUpload({ files: 10 }).array('files', 10);
 const uploadDocFiles = (req, res, next) => docFileUpload(req, res, (err) => {
   if (err) return res.status(413).json({ error: uploadErrorMessage(err) });
   next();
+});
+
+// ── The signed originals, attached in one pass ──────────────────────────────
+//
+// A hundred controlled documents come back from Document Control as a hundred
+// scanned, signed PDFs, and the only way to file them was one document at a
+// time — open the document, upload, close, find the next. So the evidence half
+// of the update stayed undone while the revisions went in.
+//
+// THE MATCH IS THE SAME MATCH. `guessMeta` + `matchDocument` already resolve a
+// finalised file to its registry row for the revision upload; a second matcher
+// here is how the two screens would start disagreeing about which document a
+// file belongs to. A scan carries no text at all, so the filename is the whole
+// evidence — which is exactly what those two already fall back to.
+//
+// AND THE PLAN IS BUILT FROM NAMES, NOT BYTES. Nothing is uploaded to find out
+// what would happen: the browser sends the filenames it picked, gets back the
+// plan, and only then sends the files. A hundred scans is hundreds of megabytes
+// and nobody should move them to discover that half are misnamed.
+
+// One planner, both doors — the preview and the commit read the same function,
+// so what lands cannot differ from what was on screen.
+export function planSignedAttachments(db, filenames = []) {
+  const signed = db.prepare(
+    "SELECT document_id, LOWER(filename) AS f FROM document_attachments WHERE kind = 'signed_original'").all();
+  const already = new Set(signed.map(r => `${r.document_id}::${r.f}`));
+  const haveSigned = new Set(signed.map(r => r.document_id));
+
+  const items = [];
+  for (const raw of filenames) {
+    const filename = String(raw || '').trim();
+    if (!filename) continue;
+    // Empty text on purpose: a scan has none, and the filename is what these
+    // are named by. A file that DOES carry text is matched by its name too —
+    // the body is the revision upload's job, not this one's.
+    const meta = guessMeta(filename, '');
+    const { doc, matched_on } = matchDocument(db, meta);
+    if (!doc) {
+      items.push({
+        filename, state: 'unmatched', document_id: null,
+        read_as: meta.doc_number || null,
+        reason: meta.doc_number
+          ? `Nothing in the registry is numbered ${meta.doc_number}.`
+          : 'No document number could be read from the filename.',
+      });
+      continue;
+    }
+    const base = {
+      filename, document_id: doc.id, doc_number: doc.doc_number, title: doc.title,
+      doc_revision: doc.revision, status: doc.status, matched_on,
+      revision: revisionFromFilename(filename) || null,
+      replaces_none: !haveSigned.has(doc.id),
+    };
+    // Re-running a batch must not file the same scan twice. Keyed on the
+    // filename, so next revision's copy (…_V5.pdf) is a new attachment.
+    if (already.has(`${doc.id}::${filename.toLowerCase()}`)) {
+      items.push({ ...base, state: 'already_attached', reason: 'This document already has a signed copy filed under this filename.' });
+      continue;
+    }
+    items.push({ ...base, state: 'match' });
+  }
+
+  // The job is finishable only if you can see what is left. Derived on every
+  // read, so filing one clears it by itself.
+  const missing = db.prepare(`SELECT COUNT(*) AS c FROM sop_documents d
+    WHERE d.status != 'archived'
+      AND NOT EXISTS (SELECT 1 FROM document_attachments a
+        WHERE a.document_id = d.id AND a.kind = 'signed_original')`).get().c;
+
+  return {
+    items,
+    will_attach: items.filter(i => i.state === 'match').length,
+    already_attached: items.filter(i => i.state === 'already_attached').length,
+    unmatched: items.filter(i => i.state === 'unmatched').length,
+    documents_without_signed_copy: missing,
+  };
+}
+
+// POST /attachments/plan — what WOULD be attached, from filenames alone.
+// Writes nothing and uploads nothing.
+router.post('/attachments/plan', (req, res) => {
+  const names = req.body?.filenames;
+  if (!Array.isArray(names) || !names.length) return res.status(400).json({ error: 'filenames is required' });
+  res.json(planSignedAttachments(getDb(), names.slice(0, 500)));
+});
+
+const signedBulkUpload = mediaUpload({ files: 25 }).array('files', 25);
+const uploadSignedFiles = (req, res, next) => signedBulkUpload(req, res, (err) => {
+  if (err) return res.status(413).json({ error: uploadErrorMessage(err) });
+  next();
+});
+
+// POST /attachments/bulk — file the signed copies. The match is RE-DERIVED here
+// from each file's own name rather than taken from the request, so a stale
+// browser cannot attach a signed original to a document nobody chose. There is
+// deliberately no way to override it: removing a signed original is admin-only,
+// which makes a wrong one expensive, and an unmatched file is REPORTED so it
+// can be renamed or attached on the document itself.
+router.post('/attachments/bulk', uploadSignedFiles, async (req, res) => {
+  const files = req.files || [];
+  try {
+    if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured on this server.' });
+    if (!files.length) return res.status(400).json({ error: 'No files uploaded' });
+    const tooBig = rejectOversize(files);
+    if (tooBig) return res.status(413).json({ error: tooBig });
+    const db = getDb();
+
+    const plan = planSignedAttachments(db, files.map(f => f.originalname || ''));
+    const byName = new Map(plan.items.map(i => [i.filename, i]));
+
+    const attached = [];
+    const skipped = [];
+    for (const f of files) {
+      const filename = (f.originalname || 'file').trim();
+      const item = byName.get(filename);
+      if (!item || item.state !== 'match') {
+        skipped.push({ filename, reason: item?.reason || 'No document matched this filename.' });
+        continue;
+      }
+      const doc = db.prepare('SELECT id, doc_number, title FROM sop_documents WHERE id = ?').get(item.document_id);
+      if (!doc) { skipped.push({ filename, reason: 'That document is no longer in the registry.' }); continue; }
+      const id = uuid();
+      const safe = filename.replace(/[^\w.-]+/g, '_').slice(0, 120);
+      const key = `documents/${doc.id}/${id}-${safe}`;
+      try {
+        await putStream(key, createReadStream(f.path), f.mimetype);
+      } catch (e) {
+        // One file that will not store must not lose the other twenty-four.
+        skipped.push({ filename, reason: e.message || 'The file could not be stored.' });
+        continue;
+      }
+      db.prepare(`INSERT INTO document_attachments
+        (id, document_id, kind, title, filename, content_type, size, storage_key, revision, uploaded_by)
+        VALUES (?, ?, 'signed_original', ?, ?, ?, ?, ?, ?, ?)`).run(
+        id, doc.id, 'Signed original', filename.slice(0, 255),
+        f.mimetype || null, f.size || null, key, item.revision, req.user?.name || null);
+      // Audited per document, exactly as a single attachment is — a bulk action
+      // leaves the trail a manual one would.
+      logAudit(req.user, 'attach', 'document', doc.id,
+        { kind: 'signed_original', files: [filename], revision: item.revision, bulk: true },
+        null, null, `${doc.doc_number || ''} ${doc.title}`.trim());
+      attached.push({ filename, document_id: doc.id, doc_number: doc.doc_number, title: doc.title, revision: item.revision });
+    }
+    res.status(201).json({ attached, skipped, documents_without_signed_copy: planSignedAttachments(db, []).documents_without_signed_copy });
+  } finally {
+    cleanupTemp(files);
+  }
 });
 
 router.get('/:id/attachments', async (req, res) => {

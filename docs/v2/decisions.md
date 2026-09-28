@@ -4575,3 +4575,86 @@ is the other half of FIXES P0 #3 and is a live stamp, not a commit. The two rema
 all: the Daily Scale PM duplicate (#1) is a pause-or-retire decision in Settings, and the fifteen
 frequency-mixed checklists (#2) are Equipment's own *Review and re-sync*. Both are named here rather than
 papered over with a build.
+
+## D-113 — The signed originals are filed in one pass, and the plan costs nothing (2026-09-28)
+
+Document Control's update pass produces two things per document: a **Word original** carrying the new
+revision, effective date and body, and a **signed, scanned PDF** which is the evidence. The revision
+upload (D-… `propose-revisions` / the worklist) has always handled the first. The second could only be
+filed one document at a time — open the document, upload, close, find the next — so across ~100 documents
+the evidence half of the update simply stayed undone.
+
+**`planSignedAttachments(db, filenames)` + `POST /documents/attachments/plan` + `POST
+/documents/attachments/bulk`**, and `SignedCopyBulkModal.jsx` as **Attach signed copies** beside *Update
+from file* on Controlled Documents.
+
+- **THE MATCH IS THE SAME MATCH.** `guessMeta` + `matchDocument` already resolve a finalised file to its
+  registry row for the revision upload — document number first, exact title second, **no fuzzy match** —
+  and a second matcher here is how the two screens would start disagreeing about which document a file
+  belongs to. A scan carries no text at all, so the filename is the whole evidence, which is exactly what
+  those two already fall back to.
+- **THE PLAN IS BUILT FROM NAMES, NOT BYTES.** Nothing is uploaded to find out what would happen: the
+  browser sends the filenames it picked and gets the plan back. A hundred scans is hundreds of megabytes
+  and nobody should move them to discover half are misnamed. Asserted in the browser — choosing files
+  leaves the attachment count where it was.
+- **Preview and commit share the planner**, so what lands cannot differ from what was on screen, and the
+  commit **re-derives the match server-side from each file's own name**. There is deliberately **no
+  override**: removing a signed original is admin-only (an existing rule, asserted here), which makes a
+  wrong one expensive, so an unmatched file is REPORTED — rename it, or attach it on the document itself.
+  The same refusal the revision worklist gives.
+- **Idempotent on document + filename**, so re-running a batch files nothing twice while next revision's
+  copy (`…_V5.pdf`) is a new attachment. The plan says so before anything is uploaded.
+- **The revision in the filename travels with the attachment** (`revisionFromFilename`, `…_V4` → `4`), so
+  the row says which revision was signed. A filename naming none carries none — never a guess.
+- **`documents_without_signed_copy` is derived on every read** and printed on the result, because the job
+  is only finishable if you can see what is left. Filing one clears it by itself.
+- **One audit entry per document**, carrying the filename and `bulk: true` — a bulk action leaves the trail
+  a manual one would.
+- **A file that will not store is skipped and named**, never allowed to lose the other twenty-four.
+
+**THE UNMATCHED FILES VANISHED BETWEEN THE PLAN AND THE RESULT, and the browser check is what found it.**
+They are deliberately never uploaded, so the server never sees them and cannot report them — the result
+screen read "1 signed copy filed" with no mention of the scan that belongs to nothing, and the person
+closes the modal believing every file was handled. The client now carries the plan's own non-matches into
+the result. The API half passed throughout.
+
+**Verified:** `verify:docattach` (**48**, live + a real browser at 1280; in `verify:all`, needs the S3
+stand-in). Controls: dropping the idempotence guard fails **5** — the second run files a duplicate signed
+original on all three documents; removing the two routes, which is the state the plant is in, cannot get
+past the first assertion, because the endpoint answers 404.
+
+**Not built, and said so:** there is still no way to point an unmatched file at a document from this
+screen, exactly as the revision worklist refuses to. And a scan is still a picture — it moves no revision,
+no effective date and no body. That is the Word original's job, and the two halves stay separate.
+
+## D-114 — A header that could not be reconciled against the rows under it (2026-09-28)
+
+Live check: Calibration read **"32 of 32 current · 0 overdue"** while the list on the same screen showed
+**#162 ("LOCK OUT TAG OUT")** and **#228** as `out_of_service` with a Next Due of 2026-07-31.
+
+Both figures were correct on their own terms. `total` counted every instrument that is not retired;
+`overdue` and `due_soon` deliberately **exclude** out-of-service instruments, which is right — nobody
+calibrates a machine that is locked out. And `current` was **derived by subtraction**: `total − overdue −
+due_soon`. So an out-of-service instrument months past its date was subtracted from nothing and landed in
+*current*.
+
+- **Nothing is derived by subtraction any more.** Every figure is its own count, and the five —
+  `current`, `overdue`, `due_soon`, `out_of_service`, `no_due_date` — **partition the register**, asserted.
+  The `activity-metrics.js` rule, one module later.
+- **`no_due_date` is the same defect one row over.** An active instrument with no date was not overdue,
+  not due soon, and therefore counted *current*. It is a GAP, not a pass, and it is now its own figure.
+- **The department roll-up read a different filter from the header** — no status test beyond retired — so
+  a department could report an overdue instrument the header counted as current. It reads the same
+  `ACTIVE` clause now, and the department figures sum to the header's.
+- **The two new cards render only when non-zero.** A card reading 0 on every plant that has none is the
+  wallpaper that gets a real one ignored.
+
+**Verified:** `verify:cal-summary` (**18**, live; in `verify:all`) builds the plant's exact shape — two
+out-of-service instruments dated 2026-07-31, one of them the LOCK OUT TAG OUT one — and asserts the list's
+own rows equal the header's figures. **The control restores the subtraction and fails 4**, the first
+reporting **6 current of 9** where only 3 are.
+
+**Held, not built:** the ATP half of the same live check. Pre-Ops filed after the D-112 deploy (27 Sep
+18:32, 28 Sep 08:52 and 09:24) show ATP "—" and no limit. The operator-side check of a pending Pre-Op is
+on 29 Sep; no code change until that result, because `verify:atp` proves the mechanism on a fresh database
+and what is in question is whether the floor is seeing the box.

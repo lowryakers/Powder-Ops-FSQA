@@ -2515,6 +2515,32 @@ register family kept by one person; a separate entry made forms look like a diff
   nav item — Reference Library, Forms — was absent from `allModuleIds`, so `?tab=reference-library` resolved
   to nothing and fell back to the first module. A dead deep link reads as the app ignoring you.
 
+### The signed originals, filed in one pass (D-113)
+`planSignedAttachments()` + `POST /documents/attachments/plan|bulk` (documents.js) +
+`SignedCopyBulkModal.jsx` as **Attach signed copies** beside *Update from file*. An update pass produces
+two files per document — the Word original (revision, effective date, body) and the signed scan (the
+evidence). The first had a bulk path; the second was one document at a time, so across ~100 documents the
+evidence half stayed undone.
+- **THE MATCH IS THE SAME MATCH.** `guessMeta` + `matchDocument`, document number then exact title, **no
+  fuzzy match**. A scan has no text, so the filename is the whole evidence — which is what those two
+  already fall back to. A second matcher is how two screens start disagreeing about which document a file is.
+- **THE PLAN IS BUILT FROM NAMES, NOT BYTES**: the browser sends filenames and gets the plan; the files
+  move only after it is read. Asserted in the browser — choosing files leaves the attachment count alone.
+- **Preview and commit share the planner**, and the commit **re-derives the match server-side**. **No
+  override, deliberately** — removing a signed original is admin-only, so a wrong one is expensive; an
+  unmatched file is REPORTED (rename it, or attach it on the document), the revision worklist's own refusal.
+- **Idempotent on document + filename** — a re-run files nothing twice, `…_V5.pdf` is a new attachment.
+  `revisionFromFilename` stamps which revision was signed; a filename naming none carries none.
+- **`documents_without_signed_copy` is derived on every read** and printed on the result: the job is only
+  finishable if you can see what is left. One audit entry per document, carrying `bulk: true`.
+- **THE UNMATCHED FILES VANISHED BETWEEN THE PLAN AND THE RESULT** — never uploaded, so the server never
+  saw them and could not report them, and the screen read "1 filed" with no mention of the orphan scan.
+  The client carries the plan's own non-matches into the result. **Found in the browser check; the API
+  half passed throughout.**
+- `verify:docattach` (48, live + browser at 1280, needs the S3 stand-in; in `verify:all`). Controls:
+  dropping the idempotence guard fails **5** (a duplicate signed original on all three); removing the
+  routes — the state the plant is in — cannot get past the first assertion.
+
 ### Changing a number: issue and supersede, one act (D-092)
 Document Control was working a numbering change request, opened FORM 408-1, and found the number greyed
 out with *"A number can't be changed"* and **nothing else on the screen** — the rule is right, the remedy
@@ -5321,6 +5347,24 @@ marker, not the channel's** — and the ThreadPanel messages now carry the Mark-
 `POST /threads/:parentId/read` also stamps **millisecond** precision now — its `datetime('now')` was
 second-precision, so a reply landing in the same second as the read compared GREATER than the marker and
 the thread never fully cleared (same class as the /read-all format note).
+
+## The Calibration header has to agree with the rows under it (D-114)
+Live: **"32 of 32 current · 0 overdue"** while the same screen listed **#162 ("LOCK OUT TAG OUT")** and
+**#228** as `out_of_service`, Next Due 2026-07-31. Both figures were right on their own terms —
+`overdue`/`due_soon` correctly exclude out-of-service instruments, and `current` was **derived by
+subtraction** (`total − overdue − due_soon`), so an out-of-service instrument months past its date was
+subtracted from nothing and landed in *current*.
+- **Nothing is derived by subtraction.** Five counted figures — `current`, `overdue`, `due_soon`,
+  `out_of_service`, `no_due_date` — and they **partition the register**, asserted. The `activity-metrics` rule.
+- **`no_due_date` is the same defect one row over**: an active instrument with no date was neither overdue
+  nor due soon and therefore read as current. A gap is not a pass.
+- **The department roll-up read a different filter from the header**, so a department could report an
+  overdue the header counted as current. Same `ACTIVE` clause now, and the rows sum to the header.
+- **The two new cards render only when non-zero** — a card reading 0 everywhere is the wallpaper that gets
+  a real one ignored.
+- `verify:calsummary` (18, live; in `verify:all`) builds the plant's exact shape and asserts the list's own
+  rows equal the header. **The control restores the subtraction and fails 4**, the first reporting **6
+  current of 9** where only 3 are.
 
 ## Calibration instruments: "not in use" (`out_of_service`)
 The server always supported `status = 'out_of_service'` and the module's own KPIs excluded it — but the

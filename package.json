@@ -116,6 +116,8 @@
     "verify:warehouseui": "node scripts/verify-warehouse-ui.mjs",
     "verify:prodcopy": "node scripts/verify-prod-copy.mjs",
     "verify:all": "node scripts/verify-all.mjs",
+    "verify:docattach": "node scripts/verify-doc-attach.mjs",
+    "verify:calsummary": "node scripts/verify-cal-summary.mjs",
     "s3:stand-in": "node scripts/s3-stand-in.mjs"
   },
   "dependencies": {

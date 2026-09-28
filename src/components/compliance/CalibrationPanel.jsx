@@ -423,6 +423,21 @@ export default function CalibrationPanel() {
             <p className={`text-2xl font-bold ${summary.due_soon > 0 ? 'text-amber-600' : 'text-gray-400'}`}>{summary.due_soon}</p>
             <p className="text-xs text-gray-500">Due in 30 Days</p>
           </div>
+          {/* Shown only when there are any — a card reading 0 on every plant
+              that has none is the wallpaper that gets a real one ignored. The
+              two counts are what used to be silently inside "Current". */}
+          {summary.out_of_service > 0 && (
+            <div className="rounded-xl border border-gray-300 bg-gray-50 p-3 text-center">
+              <p className="text-2xl font-bold text-gray-600">{summary.out_of_service}</p>
+              <p className="text-xs text-gray-500">Out of Service</p>
+            </div>
+          )}
+          {summary.no_due_date > 0 && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-center">
+              <p className="text-2xl font-bold text-amber-600">{summary.no_due_date}</p>
+              <p className="text-xs text-gray-500">No Due Date</p>
+            </div>
+          )}
         </div>
       )}
 
