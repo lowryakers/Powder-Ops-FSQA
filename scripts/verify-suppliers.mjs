@@ -5,7 +5,7 @@
 // Executed, not asserted: boot a real server on a fresh database, import the
 // plant's REAL tracker and archive over HTTP, then check what the screen's
 // endpoints actually return.
-const B = 'http://localhost:4841/api';
+const B = `http://localhost:${process.env.PORT || 4841}/api`;
 const J = async (r) => { try { return await r.json(); } catch { return null; } };
 let token = null;
 const req = (p, o = {}) => fetch(B + p, { ...o, headers: {
@@ -36,13 +36,14 @@ let reg = await J(await req('/suppliers'));
 t('register is empty before import', reg?.suppliers?.length === 0, `${reg?.suppliers?.length}`);
 
 // Import the real files, over the real endpoint, exactly as the screen does.
+// The tracker comes from the frozen fixture, not from a spreadsheet on one
+// person's disk — see scripts/lib/supplier-tracker-csv.mjs.
 const { readFileSync } = await import('fs');
-const U = '/root/.claude/uploads/af00ada3-a0aa-542a-9170-4983495b696f/';
+const { trackerCsv } = await import('./lib/supplier-tracker-csv.mjs');
 const listing = JSON.parse(readFileSync('scripts/fixtures/supplier-archive-full.json', 'utf8'));
 const mk = () => {
   const fd = new FormData();
-  fd.append('files', new Blob([readFileSync(U + '64517a7d-Current_Suppliers__Updated_8_6_2026.xlsx')]),
-    'Current Suppliers.xlsx');
+  fd.append('files', new Blob([trackerCsv()], { type: 'text/csv' }), 'Current Suppliers.csv');
   fd.append('files', new Blob([listing.entries.join('\n')], { type: 'text/plain' }), 'supplier-listing.txt');
   return fd;
 };

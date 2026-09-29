@@ -76,7 +76,9 @@ const RUNS = [
   ['verify-onboarding-ui.mjs', 4972, { ONBOARDING_ENC_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' }, true],
   ['verify-sensory-ui.mjs', 4966],
   // Two older scripts carry their own port.
-  ['verify-suppliers.mjs', 4841],
+  // Chained: one fresh server, three scripts in order. The API script imports
+  // the register the two browser scripts then read; each alone is vacuous.
+  [['verify-suppliers.mjs', 'verify-suppliers-screen.mjs', 'verify-supplier-queue.mjs'], 4841, { APP: 'http://localhost:4841' }, true],
   ['verify-kiosk-isolation.mjs', 4967, { BASE: 'http://localhost:4967/api' }],
   ['verify-cal-summary.mjs', 4991, {}],
   ['verify-annual-reviews.mjs', 4993, {}],
@@ -84,7 +86,25 @@ const RUNS = [
   ['verify-training-media.mjs', 5024, {}, true],
   ['verify-scale-due.mjs', 5026, {}, false],
   ['verify-sanitation-areas.mjs', 4905, {}, false],
+  // The sixteen that had been written, passed by hand, and never put here (D-120).
+  ['verify-auth.mjs', 5031, { BASE: 'http://localhost:5031/api' }, false],
+  ['verify-backdated-recurrence.mjs', 5032, {}, false],
+  ['verify-composer-caret.mjs', 5033, {}, false],
+  [['verify-doc-worklist.mjs', 'verify-doc-worklist-screen.mjs'], 5034, { APP: 'http://localhost:5034' }, false],
+  ['verify-duplicate-readings.mjs', 5035, {}, false],
+  ['verify-product-readiness.mjs', 5036, {}, false],
+  ['verify-product-tabs.mjs', 5037, {}, false],
+  ['verify-reaction-tooltip.mjs', 5038, {}, false],
+  ['verify-supply-receiving.mjs', 5040, {}, false],
+  [['verify-swab-stock.mjs', 'verify-swab-ui.mjs'], 5041, {}, false],
 ];
+
+// VERIFY_ONLY=verify-auth.mjs,verify-swab-stock.mjs runs just the entries that
+// name one of those scripts — for checking one change without the whole hour.
+const ONLY = (process.env.VERIFY_ONLY || '').split(',').map(s => s.trim()).filter(Boolean);
+const SELECTED = ONLY.length
+  ? RUNS.filter(([script]) => (Array.isArray(script) ? script : [script]).some(s => ONLY.includes(s)))
+  : RUNS;
 
 const wait = (ms) => new Promise(r => setTimeout(r, ms));
 async function ready(port) {
@@ -106,8 +126,13 @@ function run(cmd, args, env, opts = {}) {
 
 let s3 = null;
 const results = [];
-for (const [script, port, extra = {}, needsS3 = false] of RUNS) {
-  if (!existsSync(join(ROOT, 'scripts', script))) { results.push([script, 'missing']); continue; }
+for (const [entry, port, extra = {}, needsS3 = false] of SELECTED) {
+  // An entry may be one script or a LIST run in order on the same boot — the
+  // API script that files the data, then the browser script that reads it.
+  const scripts = Array.isArray(entry) ? entry : [entry];
+  const script = scripts.join(' → ');
+  const absent = scripts.find(s => !existsSync(join(ROOT, 'scripts', s)));
+  if (absent) { results.push([script, `missing ${absent}`]); continue; }
   const db = join(TMP, `verify-all-${port}.db`);
   for (const f of [db, `${db}-wal`, `${db}-shm`]) if (existsSync(f)) unlinkSync(f);
   const env = { DB_PATH: db, DBPATH: db, PORT: String(port), NODE_ENV: 'test', APP_BASE_URL: `http://localhost:${port}`, ...extra };
@@ -120,15 +145,23 @@ for (const [script, port, extra = {}, needsS3 = false] of RUNS) {
   let line;
   if (!up) line = 'server did not come up';
   else {
-    const { code, out } = await run('node', [`scripts/${script}`], env);
-    const m = /(\d+)\/(\d+) assertions passed|(\d+) passed, (\d+) failed|(\d+) PASS \/ (\d+) FAIL/.exec(out);
-    line = `${code === 0 ? 'ok ' : 'FAIL'} ${m ? m[0] : `exit ${code}`}`;
-    if (code !== 0) line += '\n' + out.split('\n').filter(l => /✗|Error|error/.test(l)).slice(0, 8).map(l => '      ' + l).join('\n');
+    const parts = [];
+    for (const s of scripts) {
+      const { code, out } = await run('node', [`scripts/${s}`], env);
+      const m = /(\d+)\/(\d+) assertions passed|(\d+) passed, (\d+) failed|(\d+) PASS \/ (\d+) FAIL/.exec(out);
+      let part = `${code === 0 ? 'ok ' : 'FAIL'} ${m ? m[0] : `exit ${code}`}`;
+      if (code !== 0) part += '\n' + out.split('\n').filter(l => /✗|Error|error/.test(l)).slice(0, 8).map(l => '      ' + l).join('\n');
+      parts.push(part);
+      if (code !== 0) break;   // a chained script reads what the one before it filed
+    }
+    line = parts.length === 1 ? parts[0]
+      : `${parts.every(p => p.startsWith('ok')) ? 'ok ' : 'FAIL'} ${parts.map(p => p.split('\n')[0].replace(/^(ok |FAIL) /, '')).join(' · ')}`
+        + parts.filter(p => p.includes('\n')).map(p => '\n' + p.split('\n').slice(1).join('\n')).join('');
   }
   server.kill('SIGTERM');
   await wait(600);
   results.push([script, line]);
-  console.log(`${line.startsWith('ok') ? '  ✓' : '  ✗'} ${script.padEnd(32)} ${line}`);
+  console.log(`${line.startsWith('ok') ? '  ✓' : '  ✗'} ${script.padEnd(40)} ${line}`);
 }
 if (s3) s3.kill();
 const failed = results.filter(([, l]) => !l.startsWith('ok'));

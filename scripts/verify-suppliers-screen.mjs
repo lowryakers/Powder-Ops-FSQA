@@ -13,7 +13,11 @@
 import { chromium } from 'playwright-core';
 
 const APP = process.env.APP || 'http://localhost:4841';
-const TRACKER = process.env.TRACKER;   // the .xlsx to import
+import { trackerCsvFile } from './lib/supplier-tracker-csv.mjs';
+// The .xlsx to import; without one, the frozen tracker fixture as a CSV, so
+// the register-with-rows half of this check runs every time rather than only
+// when somebody remembers to pass a file.
+const TRACKER = process.env.TRACKER || trackerCsvFile();
 let pass = 0, fail = 0;
 const t = (n, c, d = '') => { if (c) { pass++; console.log('  ✓ ' + n); } else { fail++; console.log('  ✗ ' + n + (d ? ' — ' + d : '')); } };
 
@@ -106,11 +110,18 @@ if (TRACKER) {
   t('the archive step explains itself', /Attach the documents/i.test(arch));
   t('it reports how much of the catalogue has a document behind it',
     /catalogued\s+documents are stored/i.test(arch), arch.slice(-200));
+  // With no object storage the step says so and offers no input — a control
+  // that would fail is not rendered (D-091). With storage (the S3 stand-in in
+  // verify:all) the zip input is there and Review waits for a file.
   const zipInput = page.locator('input[type="file"][accept=".zip"]');
-  t('a .zip input is offered', await zipInput.count() === 1);
-  const zipCard = zipInput.locator('xpath=ancestor::div[1]');
-  const zipReview = zipCard.locator('button', { hasText: /Review the zip/ });
-  t('its Review is disabled until a zip is attached', await zipReview.first().isDisabled());
+  if (/File storage is not configured/i.test(arch)) {
+    t('without storage, the step explains itself instead of offering an input', await zipInput.count() === 0);
+  } else {
+    t('a .zip input is offered', await zipInput.count() === 1);
+    const zipCard = zipInput.locator('xpath=ancestor::div[1]');
+    const zipReview = zipCard.locator('button', { hasText: /Review the zip/ });
+    t('its Review is disabled until a zip is attached', await zipReview.first().isDisabled());
+  }
 }
 
 console.log('');

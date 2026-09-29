@@ -4918,3 +4918,50 @@ half is open". So the one list of what must be true before V2 ships showed every
 **Register now: 41 obligations covering 163 findings — 13 landed · 23 open · 5 drafted.** The 23 open are
 the same 23 ids as before, each now reading as the plant's, Quality's or Document Control's remainder
 rather than as unbuilt software. `check:obligations` passes.
+
+---
+
+## D-120 — Fourteen verifies were written, passed once by hand, and never run again
+*2026-09-29. Roadmap item 5.*
+
+`scripts/verify-all.mjs` is what "in `verify:all`" means in these notes, and fourteen `verify-*.mjs` scripts
+were not in it: auth, backdated recurrence, the composer caret, the document worklist and its screen,
+duplicate readings, product readiness, the Products tabs, the reaction tooltip, the supplier screen and
+the disposition queue, supply receiving, the swab shelf and its screen. Every one had passed on the day it
+was written. Nothing ran them afterwards — and a test nobody runs cannot fail, which is how the
+sanitation area list (D-118) sat broken in two ways beside a test that covered it.
+
+- **Three of the fourteen no longer passed, and each failure is its own lesson.**
+  - `verify-suppliers.mjs` — the one entry that WAS in the runner — read the tracker spreadsheet from
+    `/root/.claude/uploads/<session>/…`: a path that existed on one machine for one conversation. It has
+    been red for everyone since that session ended. The rows were already frozen in
+    `scripts/fixtures/supplier-tracker.json` (the reconciliation checks read them), and the import endpoint
+    takes CSV as readily as XLSX, so `scripts/lib/supplier-tracker-csv.mjs` rebuilds the file from the
+    fixture. **A verify must not depend on a file the repository does not carry.**
+  - `verify-auth.mjs` failed AC-11 (a filed record is attributed to the signed-in person) with a 403 —
+    and **exited 0 anyway**. The fixture accounts had a NULL module map, which since 13 August is an
+    EMPTY account, so Alba could not file a deviation at all. The protocol printed `21 PASS / 1 FAIL` to
+    stderr and reported success to the shell. The accounts now hold `{deviations: 'view'}` exactly as
+    Settings would set it, and the script exits non-zero on a failed check.
+  - `verify-swab-ui.mjs` found the login screen instead of the Sanitation screen: it wrote the token into
+    localStorage while the SPA at `/` was already running its auth check. The scale-due script had the
+    fix — load a static file on the app origin first — and this one had never been given it.
+  - `verify-suppliers-screen.mjs` asserted a `.zip` input that the archive step no longer renders without
+    object storage (it says so instead — D-091's rule). It accepts either state now, and the chain runs
+    with the S3 stand-in so the input path is the one exercised.
+- **A verify that reads what another verify filed runs on the SAME boot.** Three of the fourteen are
+  browser scripts that assert a screen WITH DATA IN IT (the supplier screen's own header says an empty
+  register renders none of the row markup and the check is vacuous). `verify-all` boots one fresh server
+  per entry, so an entry may now be a LIST of scripts run in order — `verify-suppliers → -screen → -queue`,
+  `verify-doc-worklist → -screen`, `verify-swab-stock → -ui` — and a chain stops at the first failure,
+  because the next script would be reading what the failed one did not file.
+- **`VERIFY_ONLY=a.mjs,b.mjs`** runs the entries naming those scripts. Checking one change no longer
+  costs the whole hour, which is the reason the fourteen were run by hand in the first place.
+- **The suppliers screen script builds its own tracker CSV when none is passed** (`TRACKER` still wins),
+  so its register-with-rows half runs every time rather than only when somebody remembers the file.
+
+**Verified:** the eleven new entries through `verify-all` itself with the filter — 11/11 green, 340
+assertions across fourteen scripts. The controls are the failures above, observed before each fix:
+suppliers could not get past `ECONNREFUSED`/a missing file, auth read green over a red protocol, the swab
+screen found a password box. `verify-prod-copy.mjs` is the one script left out, on purpose — it needs a
+file only production can produce.

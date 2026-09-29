@@ -23,7 +23,9 @@ const auth = await (await api('/users/login', { name: 'Swab Ui', password: PW })
 
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-await page.goto(URL);
+// A static file on the app origin, NOT the SPA: loading `/` runs the login
+// screen, which reads (and can clear) the token while this is being written.
+await page.goto(`${URL}/manifest.webmanifest`);
 await page.evaluate(([tok, u]) => {
   localStorage.setItem('auth_token', tok);
   localStorage.setItem('auth_user', JSON.stringify(u));

@@ -20,11 +20,14 @@ function check(id, title, expected, actual, ok) {
   const { v4: uuid4 } = await import('uuid');
   const db = new Database(DB);
   db.prepare("DELETE FROM users WHERE name IN ('Alba Reyes','Marco Diaz','Nina Fresh')").run();
+  // A NULL module map is an EMPTY account (2026-08-13): it can sign in and
+  // use Messages and nothing else, so the filing check in AC-11 needs Alba
+  // to hold the module she files into, exactly as Settings would set it.
   const ins = db.prepare(`INSERT INTO users (id, name, username, role, department, is_active,
-      setup_code, setup_code_expires_at)
-    VALUES (?, ?, ?, ?, ?, 1, 'SEED-CODE', datetime('now','+7 day'))`);
-  ins.run(uuid4(), 'Alba Reyes', 'Alba Reyes', 'operator', 'qa');
-  ins.run(uuid4(), 'Marco Diaz', 'Marco Diaz', 'operator', 'warehouse');
+      setup_code, setup_code_expires_at, module_access)
+    VALUES (?, ?, ?, ?, ?, 1, 'SEED-CODE', datetime('now','+7 day'), ?)`);
+  ins.run(uuid4(), 'Alba Reyes', 'Alba Reyes', 'operator', 'qa', JSON.stringify({ deviations: 'view' }));
+  ins.run(uuid4(), 'Marco Diaz', 'Marco Diaz', 'operator', 'warehouse', JSON.stringify({ deviations: 'view' }));
   db.close();
 }
 let d = await J(await req('/users/login', { method: 'POST', body: JSON.stringify({ name: 'Alba Reyes' }) }));
@@ -244,3 +247,5 @@ console.log(JSON.stringify(results, null, 1));
 const failed = results.filter(x => x.verdict === 'FAIL');
 console.error(`\n${results.length - failed.length} PASS / ${failed.length} FAIL`);
 for (const f of failed) console.error(`  FAIL ${f.id} ${f.title}\n        actual: ${f.actual}`);
+// A failed check has to fail the run, or verify:all reads a red protocol as green.
+process.exit(failed.length ? 1 : 0);

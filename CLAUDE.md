@@ -1975,6 +1975,27 @@ open receipt" and is kept as-is (which also leaves the legacy bare-number record
 issued at write time, so two people filing at once can't collide. After a save the form clears the field
 (new inspection is the common case) and offers a one-click "Add another line to A-100-####".
 
+## A verify that is not in `verify:all` is a verify nobody runs (D-120)
+Fourteen `verify-*.mjs` scripts had passed once by hand and were never run again; three had rotted —
+`verify-suppliers.mjs` read a spreadsheet from one session's uploads folder (red for everyone since),
+`verify-auth.mjs` **exited 0 over a failed check** (`21 PASS / 1 FAIL` on stderr, success to the shell),
+`verify-swab-ui.mjs` wrote its token while the login screen was running. All fourteen are in `verify-all`
+now; `verify-prod-copy.mjs` is the one deliberate exception.
+- **A `RUNS` entry may be a LIST of scripts run in order on one boot** — the API script that files the
+  data, then the browser script that reads it (`verify-suppliers → -screen → -queue`,
+  `verify-doc-worklist → -screen`, `verify-swab-stock → -ui`). A chain stops at the first failure.
+- **`VERIFY_ONLY=verify-auth.mjs,verify-swab-stock.mjs node scripts/verify-all.mjs`** runs just those
+  entries. Use it to check one change; it is why the fourteen were run by hand and then forgotten.
+- **A verify must not depend on a file the repository does not carry.** The supplier tracker is rebuilt
+  from `scripts/fixtures/supplier-tracker.json` by `scripts/lib/supplier-tracker-csv.mjs`; the import
+  endpoint takes CSV as readily as XLSX.
+- **A verify must `process.exit(1)` on a failed check.** The runner reads the tally line, but it reads
+  the exit code first.
+- **Browser scripts set the token on `/manifest.webmanifest`, never on `/`** — the SPA's auth check races
+  the write and the screen under test is the login page.
+- **Fixture accounts need a module map** (`{deviations: 'view'}`); a NULL map is an empty account and
+  cannot file anything, which is right, and is not what a filing check is testing.
+
 ## The Area dropdown is reconciled against the area list (D-118)
 `pickerDrift()` in `server/sanitation-areas.js`, on the same `/sanitation/areas/preview`; Apply retires
 foldable strays; `POST /sanitation/areas/retire-option` (reason required, canonical refused) for the rest.

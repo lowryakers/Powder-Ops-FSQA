@@ -229,7 +229,7 @@ has actually shipped for eight more, including the Food Defense challenge you go
 plant half of those is genuinely still open — so the register needs to show both halves
 separately, instead of showing everything as untouched.
 
-### 5. Put 16 orphaned tests back into the main test run
+### 5. Put 16 orphaned tests back into the main test run  ← **DONE 29 Sep (D-120): 14 scripts, 11 entries, 340 assertions; three had rotted**
 Including — and this is the embarrassing part — the one covering the sanitation area list I just
 found broken in two ways. A test nobody runs cannot fail.
 
