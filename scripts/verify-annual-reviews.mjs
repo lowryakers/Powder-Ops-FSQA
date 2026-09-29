@@ -9,6 +9,7 @@
 //
 // Caller sets PORT + DBPATH on a FRESH database.
 import crypto from 'crypto';
+import { settleFiledReviews } from '../server/check-records.js';
 const PORT = process.env.PORT || 4993;
 const URL = `http://localhost:${PORT}`;
 let pass = 0, fail = 0;
@@ -273,6 +274,43 @@ try {
     t('and the five SOP methods are offered as taps', await page.locator('[data-fd-method]').count() === 5);
   }
 } finally { await browser.close(); }
+
+// ── A review filed by hand BEFORE D-122 settles its schedule at boot (D-123) ──
+// Lowry's 2 March review went in the day before the settle shipped, so its
+// annual card stayed open and missed. The boot pass applies the same rule once.
+{
+  const dbx = new Database(process.env.DBPATH);
+  const today = dbx.prepare("SELECT date('now') d").get().d;
+  const plusYear = (d) => dbx.prepare("SELECT date(?, '+1 year') d").get(d).d;
+  const day = dbx.prepare("SELECT date('now','-200 days') d").get().d;
+  const woId = crypto.randomUUID();
+  dbx.prepare(`INSERT INTO work_orders (id, title, description, priority, due_date, procedure_steps, task_group, quality_schedule_id, status)
+    VALUES (?, ?, 'Scheduled quality check.', 'normal', date('now','-1 day'), '[]', 'qa', ?, 'missed')`).run(woId, mr.title, mr.id);
+  dbx.prepare('UPDATE quality_schedules SET next_due = ? WHERE id = ?').run(plusYear(today), mr.id);
+  // The live state: the hand-filed review is the only one on file.
+  dbx.prepare('DELETE FROM management_reviews').run();
+  const recId = crypto.randomUUID();
+  // Exactly what the by-hand door wrote before D-122: a paper record, linked to nothing.
+  dbx.prepare(`INSERT INTO management_reviews (id, reviewed_on, reviewed_by, attendees, items, clause, revision, source)
+    VALUES (?, ?, 'Lowry Akers', 'Lowry Akers, Adam Bliss', '{}', 'SQF 2.1.2.1', 'DRAFT-1', 'paper')`).run(recId, day);
+  const first = settleFiledReviews(dbx);
+  const wo = dbx.prepare('SELECT status, completed_at FROM work_orders WHERE id = ?').get(woId);
+  t('THE MISSED CARD LEFT BY A PRE-D-122 REVIEW IS CLOSED AT BOOT', wo?.status === 'completed', JSON.stringify(wo));
+  t('as of the review\'s own date', String(wo?.completed_at || '').startsWith(day), wo?.completed_at);
+  t('and the next one is timed from it',
+    dbx.prepare('SELECT next_due FROM quality_schedules WHERE id = ?').get(mr.id).next_due === plusYear(day));
+  t('the record is linked, so the pass has nothing left to do',
+    dbx.prepare('SELECT quality_schedule_id FROM management_reviews WHERE id = ?').get(recId).quality_schedule_id === mr.id
+    && first.some(r => r.record === recId));
+  t('a second boot settles nothing', !settleFiledReviews(dbx).some(r => r.kind === 'management_review'));
+  // An OLDER unlinked paper record does not reopen the question: the linked one governs.
+  dbx.prepare(`INSERT INTO management_reviews (id, reviewed_on, reviewed_by, attendees, items, clause, revision, source)
+    VALUES (?, date('now','-300 days'), 'Lowry Akers', 'Lowry Akers', '{}', 'SQF 2.1.2.1', 'DRAFT-1', 'paper')`).run(crypto.randomUUID());
+  t('an older hand-filed review is left alone once a later one governs the schedule',
+    !settleFiledReviews(dbx).some(r => r.kind === 'management_review')
+    && dbx.prepare('SELECT next_due FROM quality_schedules WHERE id = ?').get(mr.id).next_due === plusYear(day));
+  dbx.close();
+}
 
 console.log(`\n${pass}/${pass + fail} assertions passed`);
 process.exit(fail ? 1 : 0);

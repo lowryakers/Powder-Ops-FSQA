@@ -1975,6 +1975,21 @@ open receipt" and is kept as-is (which also leaves the legacy bare-number record
 issued at write time, so two people filing at once can't collide. After a save the form clears the field
 (new inspection is the common case) and offers a one-click "Add another line to A-100-####".
 
+## The trucks' daily checklist has ONE owner, and it is not the Equipment list (D-123)
+`server/truck-checklists.js` (`isDesignedChecklist`, `applyTruckChecklists`, the three G/B/X lists).
+The re-sync banner kept the same fifteen machines because a boot pass rewrote every forklift, pallet jack
+and charger daily schedule with the Good/Bad/X inspection on EVERY boot, while the re-sync reduced them to
+the Equipment list's two imported lines. The banner counts were that checklist's lengths: 12, 26, 6.
+- **A step carrying `|` is a DESIGNED checklist** (the trucks' `item|check|section`, a BP&G zone's
+  `item|qty|material`). The Operator View renders by that predicate. The re-sync detector skips it,
+  `syncMaintenanceTasksToPM` skips it, and the boot pass writes only where one is missing, so a hand edit
+  survives a deploy.
+- **The re-sync was the harmful writer**: it took the floor's pre-shift inspection down to two lines until
+  the next deploy. An equipment save did the same.
+- `settleFiledReviews()` (boot, `check-records.js`) settles a schedule from the latest UNLINKED by-hand
+  review, once. It exists for reviews filed before D-122 shipped; a later linked review governs.
+- `verify:truckchecklist` (15; control fails 5), `verify:annualreviews` (76; control fails 6).
+
 ## A review recorded by hand settles the schedule that asked for it (D-122)
 `settleAnnualSchedule()` in `server/check-records.js`, called inside the by-hand transaction in
 `api/check-records.js`. The tab derived "due" from the last record while the quality schedule kept its own

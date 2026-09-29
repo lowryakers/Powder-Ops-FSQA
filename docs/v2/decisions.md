@@ -5040,3 +5040,52 @@ on the annual task reset from the date I logged?"* Both are the two-owners defec
   back, and read the card, the link, `next_due` and the tab; the control is a review 400 days old that
   must leave the card open. **The run before the fix is the control for the picker**: the admin was
   absent from the list.
+
+## D-123 — The re-sync banner that never cleared: two owners of the trucks' daily checklist (2026-09-29)
+
+**Reported:** Lowry re-synced the fifteen machines on the *PM checklists carry steps from other
+frequencies* banner at least twice, and the same fifteen came back each time: Electric Pallet Jack
+daily 12 → 2, ForkLift Reach daily 26 → 5, Forklift Charger 0015–0018 daily 6 → 2 or 1, and the
+pallet jacks.
+
+**Cause, found rather than guessed.** A fresh database re-syncs cleanly and the banner clears, so
+the endpoint was never the defect. `server.js` carried a start-up pass that wrote a hard-coded
+Good/Bad/X pre-shift inspection (`item|check|section`) onto the daily schedule of every forklift,
+pallet jack and charger **on every boot, unconditionally**. The counts on the banner are that
+checklist's lengths exactly: 12, 26, 6. So the re-sync wrote the Equipment list's two imported
+"Daily" lines, reported success, and the next deploy put the inspection back. Two owners, one
+field. D-010's "the mechanism exists and has never been run" was wrong about why: it had been
+run, and it could not stick.
+
+**And the re-sync was the more harmful of the two writers.** The Operator View renders
+`item|check|section` as the G/B/X inspection with inputs such as the hour meter. Between a re-sync
+and the next deploy, the floor's pre-shift truck inspection was two vague lines. An ordinary save
+of a truck's equipment record did the same thing through `syncMaintenanceTasksToPM`.
+
+**Decided: the designed checklist owns the daily schedule; the Equipment list's two lines do not.**
+- `server/truck-checklists.js` holds the three checklists and `isDesignedChecklist()` (any step
+  carrying `|`, which is the predicate the Operator View already renders by).
+- The boot pass writes the checklist **only where the schedule does not already carry one**. It is
+  idempotent by construction, it heals every schedule a re-sync flattened on the next deploy, and it
+  leaves a checklist somebody edited by hand alone, which the old pass silently undid.
+  `missed` work orders are updated too.
+- `stepsOutOfStep()` skips a designed checklist, so the banner no longer counts what the re-sync
+  must not touch. `syncMaintenanceTasksToPM()` skips it, so an equipment edit cannot flatten it.
+  A BP&G zone's `item|qty|material` inventory gets the same protection for the same reason.
+- A genuinely flattened plain schedule on the same machine is still reported and still repaired.
+
+**Also: a review filed by hand before D-122 now settles its schedule.** `settleAnnualSchedule` runs
+at filing, so Lowry's 2 March management review, filed the day before it shipped, left the annual
+card open and missed. `settleFiledReviews()` runs at boot and applies the same rule once, to the
+latest **unlinked** paper record of each kind. Settling links the record, so a second boot finds
+nothing. A later linked review governs, so an older paper record never reopens the question.
+
+**Not changed:** the Equipment list still shows the machine's two imported "Daily" lines under the
+trucks, while the floor works the full inspection. That is now a display difference, not a
+correctness one. Retyping those lines is the plant's call.
+
+Verified: `verify:truckchecklist` (15, live; in `verify:all`). **The control restores the old
+detector and sync and fails 5**: the daily inspection is reported, flattened to two lines on the
+schedule and on yesterday's missed card, left on the banner after a re-sync, and overwritten by an
+equipment edit. `verify:annualreviews` (70 → 76). **Its control disables the boot pass, which is
+the state the plant is in, and fails 6.**

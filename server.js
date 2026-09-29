@@ -98,6 +98,7 @@ import logBuilderRoutes from './server/api/log-builder.js';
 import { seedStructureLists } from './server/structure-seed.js';
 import { seedSupplyLists } from './server/supply-list-seed.js';
 import { seedQualitySchedules } from './server/api/quality-schedules.js';
+import { settleFiledReviews } from './server/check-records.js';
 import { seedGenericSpecifications } from './server/spec-seed.js';
 import { seedForm607Specs } from './server/spec-607-seed.js';
 import { tagQaInspectionRecords, tagQaInspectionTasks } from './server/qa-records.js';
@@ -141,6 +142,7 @@ import { seedControlledForms } from './server/form-registry-seed.js';
 import { seedClientChannels, repairClientAccountNames } from './server/client-channel-seed.js';
 import { cleanupDuplicateTasks } from './server/duplicate-task-cleanup.js';
 import { seedKnifeMasterlist } from './server/knife-seed.js';
+import { applyTruckChecklists } from './server/truck-checklists.js';
 import { authenticate, isPublicPath, optionalAuth, sessionUser, readCookie, FILE_COOKIE } from './server/middleware/auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -451,78 +453,10 @@ try {
   }
 }
 
-// Update forklift daily inspection steps to structured G/B/X format
+// The trucks' pre-shift inspection: written where missing, never over a checklist (D-123).
 {
-  const FORKLIFT_DAILY_STEPS = [
-    'Check the Safety light housing|check|KEY OFF Procedures',
-    'Overhead Light|check|KEY OFF Procedures',
-    'Overhead Fan|check|KEY OFF Procedures',
-    'Dash plastic|check|KEY OFF Procedures',
-    'Head lights (Glass)|check|KEY OFF Procedures',
-    'The vehicle inspection|check|KEY OFF Procedures',
-    'Overhead guard|check|KEY OFF Procedures',
-    'Hydraulic cylinders|check|KEY OFF Procedures',
-    'Mast assembly|check|KEY OFF Procedures',
-    'Lift chains and rollers|check|KEY OFF Procedures',
-    'Forks|check|KEY OFF Procedures',
-    'Tires|check|KEY OFF Procedures',
-    'Examine the battery (any fluids on top? Acid?)|check|KEY OFF Procedures',
-    'Water level (If added, how much?)|input|Fluid Checks',
-    'Check the hydraulic fluid level|check|Fluid Checks',
-    'Brake fluid level|check|Fluid Checks',
-    'Grease Bearings (If need, notify Maintenance)|check|Fluid Checks',
-    'KEY ON Procedures|check|KEY ON Procedures',
-    'Check the gauges|check|KEY ON Procedures',
-    'Hour meter (write the hours)|input|KEY ON Procedures',
-    'Battery Level|check|KEY ON Procedures',
-    'Test the standard equipment|check|KEY ON Procedures',
-    'Steering|check|KEY ON Procedures',
-    'Brakes|check|KEY ON Procedures',
-    'Horn|check|KEY ON Procedures',
-    'Safety seat (if equipped)|check|KEY ON Procedures',
-  ];
-
-  const PALLET_JACK_DAILY_STEPS = [
-    'Forks condition (cracks, bends)|check|Visual Inspection',
-    'Wheels and rollers|check|Visual Inspection',
-    'Handle grip and controls|check|Visual Inspection',
-    'Hydraulic jack/pump|check|Visual Inspection',
-    'Lowering mechanism|check|Functional Check',
-    'Lifting mechanism|check|Functional Check',
-    'Steering operation|check|Functional Check',
-    'Battery charge level (if electric)|check|Functional Check',
-    'Charger and cord condition (if electric)|check|Functional Check',
-    'Leaks (hydraulic fluid)|check|Functional Check',
-    'Horn/alert (if equipped)|check|Functional Check',
-    'Overall cleanliness|check|General',
-  ];
-
-  const CHARGER_DAILY_STEPS = [
-    'Power cord condition|check|Inspection',
-    'Connector/plug condition|check|Inspection',
-    'Indicator lights functioning|check|Inspection',
-    'Ventilation clear and unobstructed|check|Inspection',
-    'No unusual smell or heat|check|Inspection',
-    'Area around charger clean and dry|check|Inspection',
-  ];
-
-  const forkliftEq = db.prepare("SELECT id, name, type FROM equipment WHERE type IN ('Forklift', 'Forklift Charger', 'Pallet Jack')").all();
-  let updatedCount = 0;
-  for (const eq of forkliftEq) {
-    let dailySteps;
-    if (eq.type === 'Forklift') dailySteps = FORKLIFT_DAILY_STEPS;
-    else if (eq.type === 'Pallet Jack') dailySteps = PALLET_JACK_DAILY_STEPS;
-    else dailySteps = CHARGER_DAILY_STEPS;
-
-    const stepsJson = JSON.stringify(dailySteps);
-    const dailyScheds = db.prepare("SELECT id FROM pm_schedules WHERE equipment_id = ? AND frequency_type = 'daily'").all(eq.id);
-    for (const s of dailyScheds) {
-      db.prepare("UPDATE pm_schedules SET procedure_steps = ?, updated_at = datetime('now') WHERE id = ?").run(stepsJson, s.id);
-      db.prepare("UPDATE work_orders SET procedure_steps = ? WHERE pm_schedule_id = ? AND status IN ('open','in_progress')").run(stepsJson, s.id);
-      updatedCount++;
-    }
-  }
-  if (updatedCount > 0) console.log(`[migrate] Updated ${updatedCount} forklift/pallet jack daily PM schedules with G/B/X inspection format`);
+  const { written } = applyTruckChecklists(db);
+  if (written > 0) console.log(`[migrate] Wrote the G/B/X pre-shift inspection onto ${written} forklift/pallet jack/charger daily schedule(s)`);
 }
 
 } catch (migrationErr) {
@@ -1133,6 +1067,12 @@ try {
   // canonicalised against.
   seedSupplyLists(db);
   seedQualitySchedules(db);
+  // A review recorded by hand before D-122 settles its schedule now, once (D-123).
+  try {
+    for (const r of settleFiledReviews(db)) {
+      console.log(`[migrate] ${r.kind} dated ${r.day} settled its schedule: ${r.closed.length} task(s) closed, next due ${r.next_due}`);
+    }
+  } catch (e) { console.warn('[migrate] Could not settle hand-filed reviews:', e.message); }
   // The four preventive controls, transcribed from Protocol 003 V4 (D-022,
   // OBL-02). Insert-only on the CCP name. AFTER the equipment seed, which ran
   // near the top of boot, so PC #4 has X-ray machines to link to.

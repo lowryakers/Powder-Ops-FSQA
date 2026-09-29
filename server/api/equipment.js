@@ -11,6 +11,7 @@ import { trueDuplicates, sameNameDifferentAsset, crossRegistryMatches } from '..
 import { aiEnabled, compareManualToTasks } from '../ai.js';
 import { equipmentReadiness, readinessSummary, READINESS_STEPS, stampEquipmentReadiness } from '../equipment-readiness.js';
 import { ASSET_KINDS, defaultAssetKind } from '../../shared/equipment-types.js';
+import { isDesignedChecklist } from '../truck-checklists.js';
 
 // The status vocabulary the table's CHECK-free column actually uses.
 const STATUSES = ['active', 'partial', 'out_of_service'];
@@ -59,9 +60,17 @@ function syncMaintenanceTasksToPM(db, equipmentId) {
   let tasks;
   try { tasks = JSON.parse(eq.maintenance_tasks || '{}') || {}; } catch { tasks = {}; }
 
-  const schedules = db.prepare('SELECT id, frequency_type FROM pm_schedules WHERE equipment_id = ? AND is_active = 1').all(equipmentId);
+  const schedules = db.prepare('SELECT id, frequency_type, procedure_steps FROM pm_schedules WHERE equipment_id = ? AND is_active = 1').all(equipmentId);
   let updated = 0;
   for (const s of schedules) {
+    // A DESIGNED CHECKLIST IS NOT A COPY OF THE TASK LIST (D-123). The trucks'
+    // pre-shift inspection is `item|check|section` and owned by
+    // truck-checklists.js; writing the machine's imported "Daily" lines over it
+    // took the Good/Bad/X inspection off the floor until the next boot put it
+    // back. Same for a BP&G zone's `item|qty|material` inventory.
+    let current;
+    try { current = JSON.parse(s.procedure_steps || '[]'); } catch { current = []; }
+    if (isDesignedChecklist(current)) continue;
     // EMPTYING A FREQUENCY IS AN EDIT TOO. `stepsForFrequency` returns null
     // both when the machine has no tasks at that cadence and when somebody has
     // just deleted them all, and skipping on null left the schedule — and every
@@ -449,6 +458,10 @@ function stepsOutOfStep(db) {
     if (!want) continue;                       // nothing written for this cadence — left alone
     let have;
     try { have = JSON.parse(r.procedure_steps || '[]'); } catch { have = []; }
+    // A designed checklist is owned elsewhere and the re-sync would not touch
+    // it (D-123) — so it is not "out of step", and counting it is a banner
+    // that can never clear.
+    if (isDesignedChecklist(have)) continue;
     if (Array.isArray(have) && have.length === want.length
       && have.every((v, i) => v === want[i])) continue;   // already right
     if (!byMachine.has(r.id)) byMachine.set(r.id, { id: r.id, name: r.name, type: r.type, asset_id: r.asset_id, schedules: [] });

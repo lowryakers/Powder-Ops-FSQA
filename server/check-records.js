@@ -301,3 +301,39 @@ export function currentListEditions(db) {
     return r ? { ...r, editions: JSON.parse(r.editions || '{}') } : null;
   } catch { return null; }
 }
+
+/**
+ * The reviews recorded by hand BEFORE D-122 never settled their schedule.
+ *
+ * `settleAnnualSchedule` runs when a review is filed by hand, so one filed the
+ * day before it shipped — the 2 March management review — left the annual card
+ * open and missed, and `next_due` counting from the task rather than from the
+ * review. This applies the same rule, once, to the latest unlinked paper record
+ * of each kind. Unlinked is the guard: settling links the record, so a second
+ * boot finds nothing to do, and a record filed through its task is already
+ * linked and never looked at.
+ */
+const HAND_FILED = [
+  { kind: 'management_review', table: 'management_reviews', dateCol: 'reviewed_on', byCol: 'reviewed_by' },
+  { kind: 'food_defense_challenge', table: 'food_defense_challenges', dateCol: 'performed_on', byCol: 'performed_by' },
+];
+
+export function settleFiledReviews(db) {
+  const out = [];
+  for (const h of HAND_FILED) {
+    const row = (() => {
+      try {
+        return db.prepare(`SELECT id, ${h.dateCol} AS day, ${h.byCol} AS who FROM ${h.table}
+          WHERE source = 'paper' AND quality_schedule_id IS NULL
+          ORDER BY ${h.dateCol} DESC, created_at DESC LIMIT 1`).get();
+      } catch { return null; }
+    })();
+    if (!row) continue;
+    // A later review that IS linked already governs the schedule.
+    const newer = db.prepare(`SELECT 1 FROM ${h.table} WHERE ${h.dateCol} > ? AND quality_schedule_id IS NOT NULL LIMIT 1`).get(row.day);
+    if (newer) continue;
+    const settled = settleAnnualSchedule(db, { kind: h.kind, table: h.table, recordId: row.id, day: row.day, by: row.who });
+    if (settled.schedules.length) out.push({ kind: h.kind, record: row.id, day: row.day, ...settled });
+  }
+  return out;
+}
