@@ -1,0 +1,220 @@
+# Scale Verification: why nobody sees it — and the step-by-step list
+
+Written 29 September 2026, checked against the running code.
+
+---
+
+## Part 1 — Your question about the Daily Scale Verification
+
+### Short answer
+
+**It is not hidden. It was never on the operator's screen at all.**
+
+Scale Verification is a **sidebar shortcut**, under the "Quick Forms" group. It is not a task, so
+it never appears in the Operator View ("My Tasks"). I searched the Operator View code for any
+mention of scale verification: there is none.
+
+Three things follow from that:
+
+1. **On a phone the sidebar is behind the hamburger menu.** Somebody who lives in the Operator
+   View has to leave it, open the menu, scroll to Quick Forms, and tap Scale Verification. There
+   is nothing on their task list telling them to.
+
+2. **It only appears for people who have been granted it.** In Settings it is called
+   *"Scale Verification (kiosk form)"*. If a supervisor's module list does not have that ticked,
+   the entry is not in their sidebar at all and they cannot reach the form.
+
+3. **Nothing anywhere tells anybody a check was missed.** I checked: the bell, the Flash Report,
+   QA Review and the notification list all report scale checks **after** they happen — a failed
+   reading, or one waiting for QA to counter-sign. **No part of the app reports a scale check
+   that simply was not done.** The only place "Not checked today" appears is the Calibration
+   screen you screenshotted, which is a QA screen, not a floor screen.
+
+Your screenshot shows the result: Filling was last checked **9/11** — eighteen days ago.
+
+### The part that changes my earlier advice
+
+I told you to start by pausing the Daily Scale PM work orders. **Do not do that yet.**
+
+Those PM cards are, right now, **the only thing that puts a scale check on an operator's phone.**
+They are the wrong path — they record a second, weaker version of the check, which is exactly the
+duplicate we want to remove — but if you switch them off before Scale Verification has its own
+daily prompt, the floor loses the last reminder it has and the checks will lapse further, not
+less.
+
+**Correct order:** give Scale Verification a daily prompt on the Operator View first. Then retire
+the Daily Scale PMs. I have put that at the top of the code list below.
+
+---
+
+## Part 2 — What YOU do, step by step
+
+Five jobs. Two of them are ten minutes. None of them needs me.
+
+---
+
+### JOB 1 — Make sure the people who run the scale checks can actually open the form
+**Who:** you, or anyone with Settings access · **Time:** 10 minutes · **Do this first.**
+
+1. Click the **gear icon** in the top bar → **Settings**.
+2. In the left list of Settings, click **Users**.
+3. Find each **supervisor** who runs a morning scale check. From your screenshot, that is whoever
+   covers: Batching Platform, Batching Pallet, Stick Filling, Filling, and Kitting.
+4. Click **Edit** on that person.
+5. In the **Module access** box, use the filter and type `scale`.
+6. Tick **Scale Verification (kiosk form)**. Set it to **Edit** (not View — they have to file).
+7. Save.
+8. Repeat for each supervisor.
+
+**How you know it worked:** ask one of them to open ReadyDoc on their phone, tap the menu, and
+confirm **Scale Verification** now appears under *Quick Forms*.
+
+**If it was already ticked for all of them** — then the problem is purely that nothing reminds
+them, which Job 5 (my code work) fixes. Tell me either way; it tells us which of the two it is.
+
+---
+
+### JOB 2 — Clean up the PM checklists that ask for the wrong work
+**Who:** you or Adam · **Time:** 30–45 minutes · **Nothing here is dangerous — every button shows
+you a preview first and nothing is written until you confirm.**
+
+There is a banner on the Equipment screen that has said the same thing since 5 September. The
+repair buttons next to it have never been used once. That is the whole problem — it is built and
+waiting.
+
+1. Open **Equipment** from the sidebar (Maintenance group).
+2. Look at the top of the screen for coloured banners. You may see up to three. Work them in this
+   order, top to bottom:
+
+   **a) Red banner — "N machines have maintenance tasks split mid-sentence"**
+   - Click **Review and repair**.
+   - You will see a before/after list. An import broke sentences at their commas, so one task
+     reads as eight, some of them single words like "leaks".
+   - Tick boxes are pre-ticked only where it is obviously safe (single-word fragments).
+   - Read down the list. Untick anything that looks like a real separate task.
+   - Click the confirm button at the bottom.
+
+   **b) Amber banner — "15 PM checklists carry steps from other frequencies"**
+   - Click **Review and re-sync**.
+   - This one is the big one. A daily check is handing the operator the annual work too, so the
+     list is far longer than it should be and the ticks stop meaning anything.
+   - Review the preview, then confirm.
+
+   **c) Red banner — "N PM checklists ask for several frequencies at once"**
+   - Click **Review and split**.
+   - Same idea, one level worse: a whole procedure pasted into one schedule.
+   - Some of these will say **"needs a person to decide"** — leave those alone for now and tell
+     me the count.
+
+3. After each one, the banner should disappear or the number should drop.
+
+**How you know it worked:** the amber banner no longer says 15. Then open Task Center and look at
+a daily PM card — the step list should be short and all of it should be daily work.
+
+---
+
+### JOB 3 — File one real ATP reading
+**Who:** whoever does the pre-op clean, with you or Adam watching · **Time:** 15 minutes ·
+**Do this on a morning when a Pre-Op clean is actually due.**
+
+Background: the box to type the ATP number in was missing from two different screens. Both are
+fixed and deployed. We now need one real reading to prove it works end to end on the plant's own
+database.
+
+1. **First, have them force-refresh.** On their phone: close ReadyDoc completely and reopen it.
+   If a bar appears saying *"Update available — tap to refresh"*, tap it. This matters — without
+   it they are running the old version and the box will still be missing.
+2. Have them open **My Tasks** (Operator View) and find a **Production Line Pre-Op** clean.
+3. Tap **Complete**.
+4. **Confirm the ATP box is there.** It is labelled *"ATP swab reading (RLU)"*.
+5. Type the real number from the swab.
+6. Confirm the green or red hint appears underneath, naming **35 RLU** as the limit.
+7. Submit.
+8. Now open **Sanitation Records** and find that record. It should show the number you typed and
+   **35** beside it — not a dash.
+
+9. **Then repeat once from a desk.** Open **Task Center**, find a Pre-Op card, click **Done**, and
+   confirm the same ATP box is on that form too.
+
+**How you know it worked:** one record in Sanitation Records with a real ATP number and a 35
+limit. Tell me the number and I will confirm it graded correctly.
+
+**If the box is NOT there after refreshing** — stop and tell me. That is a code problem and I
+will fix it.
+
+**If the box IS there and people still leave it blank** — that is a training matter, not a code
+one, and worth knowing.
+
+---
+
+### JOB 4 — Calibration: already done, no action
+Your screenshot confirms it: **32 total · 28 current · 0 overdue · 4 out of service**, and
+28 + 4 = 32. The two instruments that were being miscounted as "current" are now in their own
+Out of Service box. **Cross this off.**
+
+---
+
+### JOB 5 — The Sanitation area list: wait for me
+Do not try to clean this up by hand yet. There are two bugs underneath it and hand-editing now
+would just move the mess. I have explained them below; I will fix them and tell you when to run
+the cleanup.
+
+---
+
+## Part 3 — What I do, in order
+
+### 1. Put Scale Verification on the Operator View  ← **new, and now first**
+Give the daily scale check a card on the operator's own task screen, the way every other daily
+check has one, so nobody has to know the sidebar exists. Then, and only then, the Daily Scale PM
+work orders can be retired without losing the prompt.
+
+Also: report a check that **was not done**. Right now the app can tell you a scale check failed,
+and can tell you one is waiting for QA — but it cannot tell anyone one never happened. That is
+why Filling went eighteen days.
+
+### 2. Retire the Daily Scale PM programs
+Once #1 exists. This is the duplicate-record problem: two programs recording one activity. Safe
+to do — I checked, nothing in the code re-creates these schedules, so pausing them sticks through
+a deploy. The ones to retire: Vevor #148, Uline #81, Counting Scale #84 and #87, and re-check
+Kitchen Tour #0151.
+
+### 3. Fix the Sanitation area list (two bugs)
+- **Bug one:** the dropdown on the cleaning form and the app's real list of areas are **two
+  separate lists**, and nothing compares them. So the "Normalize" button cleans up the *records*
+  and leaves the *dropdown* offering all the same bad options tomorrow. That is why this has not
+  cleared by itself.
+- **Bug two:** the cleanup cannot recognise your most common spelling. `Room 7 (72 HR cleaning)`
+  gets folded correctly; `Room 7 (72 hr) cleanning` — the one your dropdown actually shows — is
+  refused outright. Every record filed that way is invisible to the 72-hour re-clean rule.
+
+### 4. Update the obligations register
+It has not moved since 9 September and it undersells you. It says 5 of 33 done. But the software
+has actually shipped for eight more, including the Food Defense challenge you got yesterday. The
+plant half of those is genuinely still open — so the register needs to show both halves
+separately, instead of showing everything as untouched.
+
+### 5. Put 16 orphaned tests back into the main test run
+Including — and this is the embarrassing part — the one covering the sanitation area list I just
+found broken in two ways. A test nobody runs cannot fail.
+
+### 6. The reachability pass
+The pattern behind almost everything above: **the thing is built, it works, and it is on a screen
+the person who needs it never opens.** Scale Verification is the clearest example yet. Eleven of
+the last twenty fixes have been this same shape. Going forward, every mechanism should name the
+screen its user actually opens, and be tested there.
+
+---
+
+## Part 4 — Not yours and not mine (Document Control)
+
+Seventeen change requests are waiting on Daniela in `docs/v2/queued/`. None of them blocks
+anything above. The ones that have been waiting longest:
+
+- FORM 106-01 V4 — the dilution form (two of its four chemicals have never been logged, and
+  Lysol is mixed daily with no written ratio at all)
+- The forklift practical evaluation form
+- The recall flow chart
+- FORM 431-01 re-issue (the brittle plastic diagram)
+- The two annual review record forms from yesterday
+
+This queue is now the biggest single thing outside the app holding work up.
