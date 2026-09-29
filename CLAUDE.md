@@ -1975,6 +1975,21 @@ open receipt" and is kept as-is (which also leaves the legacy bare-number record
 issued at write time, so two people filing at once can't collide. After a save the form clears the field
 (new inspection is the common case) and offers a one-click "Add another line to A-100-####".
 
+## A review recorded by hand settles the schedule that asked for it (D-122)
+`settleAnnualSchedule()` in `server/check-records.js`, called inside the by-hand transaction in
+`api/check-records.js`. The tab derived "due" from the last record while the quality schedule kept its own
+`next_due` and open task — two clocks. **The record's date owns both now**: an open task for that schedule is
+completed AS OF the record's date (note: "Recorded from the paper review"), `next_due` is pulled EARLIER to
+the record's next anniversary via the generator's own `nextFutureDue` and never pushed later, and the record
+is linked to the task and schedule. **A review older than 365 days files and links but leaves the task open** —
+one is still owed.
+- **`/users/technicians` is every active person who works here**: admins included (the management review,
+  the internal audit and the mock recall are assigned to them), ReadyBot and `is_external` excluded by what
+  they are. It was operators and supervisors only — and offered ReadyBot and the M4 guests.
+- `verify:annualreviews` (70). Raise a quality-schedule task in a verify by INSERTING it as the generator
+  does — `runPmHousekeeping` is throttled to once in five minutes, so a second `/pm/generate` in one run
+  raises nothing.
+
 ## Reachability: every pile names the screen its actor opens (D-121, `docs/v2/reachability.md`)
 The inventory of every strip, banner and queue with three answers each — who acts, where it is shown,
 how they are told. **Add a row when a new one ships.** Banner-only on a screen that is not the actor's

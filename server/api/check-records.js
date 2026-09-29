@@ -19,7 +19,7 @@ import {
   missingForCheck, normalizeCheck,
 } from '../../shared/check-forms.js';
 import { raiseCapa } from '../capa-raise.js';
-import { currentListEditions, fileAnnualReview, annualReviewStatus } from '../check-records.js';
+import { currentListEditions, fileAnnualReview, annualReviewStatus, settleAnnualSchedule } from '../check-records.js';
 import { readyDocOrigin } from '../links.js';
 import { postMessageAs, botDm } from './comms.js';
 import { pushToUser } from '../push.js';
@@ -250,15 +250,18 @@ function handEntry(kind, form, table, dateCol) {
     const missing = missingForCheck(form, b);
     if (missing.length) return res.status(400).json({ error: 'Still needed: ' + missing.map(m => m.label).join('; '), missing });
     const by = clean(b.performed_by || b.reviewed_by, 120) || req.user.name;
-    let out;
+    let out, settled;
     db.transaction(() => {
       out = fileAnnualReview(db, {
         form, check: normalizeCheck(form, b), wo: null, by, day,
         notes: clean(b.notes, 8000), source: 'paper',
       });
       logAudit(req.user, `${kind}_filed`, kind, out.ids[0], { [dateCol]: day, by, source: 'paper' });
+      // The schedule asking for this review is settled by it — the open task
+      // closes as of the record's date and the next one is timed from it.
+      settled = settleAnnualSchedule(db, { kind, table, recordId: out.ids[0], day, by, user: req.user });
     })();
-    res.status(201).json(parseRow(db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(out.ids[0])));
+    res.status(201).json({ ...parseRow(db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(out.ids[0])), settled });
   };
 }
 

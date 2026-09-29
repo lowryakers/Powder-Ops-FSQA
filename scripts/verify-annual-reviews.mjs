@@ -8,6 +8,7 @@
 // stamped `source: 'paper'`.
 //
 // Caller sets PORT + DBPATH on a FRESH database.
+import crypto from 'crypto';
 const PORT = process.env.PORT || 4993;
 const URL = `http://localhost:${PORT}`;
 let pass = 0, fail = 0;
@@ -165,6 +166,72 @@ const byOp = await post('/check-records/management-reviews', { ...full, reviewed
 t('recording one is Quality leadership, not the floor', byOp.status === 403, `HTTP ${byOp.status}`);
 t('an operator can still READ the records',
   (await fetch(`${URL}/api/check-records/management-reviews`, { headers: O })).status === 200);
+
+// ── A review recorded by hand settles the schedule that asked for it (D-122) ──
+// Lowry filed the 2 March review by hand and asked whether the annual task's
+// clock resets from it. Before this the tab said "not due" while the Task
+// Center card stayed open and the next task was timed from the seed date.
+{
+  const dbx = new Database(process.env.DBPATH);
+  const today = dbx.prepare("SELECT date('now') d").get().d;
+  const dayOf = (n) => dbx.prepare("SELECT date('now', ?) d").get(`-${n} days`).d;
+  const plusYear = (d) => dbx.prepare("SELECT date(?, '+1 year') d").get(d).d;
+  // Raise this year's task exactly as the generator does (housekeeping is
+  // throttled to once in five minutes, and the first run was seconds ago):
+  // the card due today, the schedule advanced a year past it.
+  const raise = () => {
+    const id = crypto.randomUUID();
+    dbx.prepare(`INSERT INTO work_orders (id, title, description, priority, due_date, procedure_steps, task_group, quality_schedule_id, status)
+      VALUES (?, ?, 'Scheduled quality check.', 'normal', ?, '[]', 'qa', ?, 'open')`).run(id, mr.title, today, mr.id);
+    dbx.prepare('UPDATE quality_schedules SET next_due = ? WHERE id = ?').run(plusYear(today), mr.id);
+    return dbx.prepare('SELECT id, status FROM work_orders WHERE id = ?').get(id);
+  };
+  const openWo = raise();
+  t('a fresh management review task is open again', openWo?.status === 'open', JSON.stringify(openWo));
+  const raisedNext = dbx.prepare('SELECT next_due FROM quality_schedules WHERE id = ?').get(mr.id).next_due;
+
+  const marchDay = dayOf(211);   // this year's review, done ~seven months ago
+  const byHand = await post('/check-records/management-reviews', { ...full, reviewed_on: marchDay, reviewed_by: 'Lowry Akers' }, A);
+  const byHandBody = await byHand.json();
+  t('a management review recorded by hand files', byHand.status === 201, `HTTP ${byHand.status} ${JSON.stringify(byHandBody).slice(0, 200)}`);
+  const woAfter = dbx.prepare('SELECT status, completed_at, completed_by, notes FROM work_orders WHERE id = ?').get(openWo?.id);
+  t('THE OPEN TASK CARD IS COMPLETED BY THE RECORD', woAfter?.status === 'completed', JSON.stringify(woAfter));
+  t('as of the day the review happened, not today', String(woAfter?.completed_at || '').startsWith(marchDay), woAfter?.completed_at);
+  t('by the person who chaired it, and it says it came off the paper', woAfter?.completed_by === 'Lowry Akers' && /paper review/i.test(woAfter?.notes || ''));
+  t('the record is linked to the task and the schedule it stood in for',
+    byHandBody.work_order_id === openWo?.id && byHandBody.quality_schedule_id === mr.id, JSON.stringify({ w: byHandBody.work_order_id, q: byHandBody.quality_schedule_id }));
+  const nextAfter = dbx.prepare('SELECT next_due FROM quality_schedules WHERE id = ?').get(mr.id).next_due;
+  t("THE ANNUAL CLOCK RUNS FROM THE REVIEW'S DATE: next due is its anniversary", nextAfter === plusYear(marchDay), `${nextAfter} vs ${plusYear(marchDay)}`);
+  t('which is EARLIER than the seed-dated next raise, so nothing waits a year too long', nextAfter < raisedNext, `${nextAfter} < ${raisedNext}`);
+  t('and the response says what it settled', byHandBody.settled?.closed?.length === 1 && byHandBody.settled?.next_due === nextAfter);
+  const tab = await (await fetch(`${URL}/api/check-records/management-reviews`, { headers: A })).json();
+  t('the tab and the schedule agree: not due, and the March review is on it as the paper one',
+    tab.due === false && (tab.reviews || []).some(r => r.reviewed_on === marchDay && r.source === 'paper'),
+    JSON.stringify({ due: tab.due, dates: (tab.reviews || []).map(r => r.reviewed_on) }));
+
+  // A review older than a year does NOT close this year's task — one is still owed.
+  const openAgain = raise();
+  t('a task is open again for the control', openAgain?.status === 'open');
+  const old = await post('/check-records/management-reviews', { ...full, reviewed_on: dayOf(400), reviewed_by: 'Lowry Akers' }, A);
+  t('a review from over a year ago still files', old.status === 201, `HTTP ${old.status}`);
+  t('but LEAVES THE OPEN TASK OPEN — a review is still owed',
+    dbx.prepare('SELECT status FROM work_orders WHERE id = ?').get(openAgain?.id)?.status === 'open');
+  dbx.close();
+}
+
+// ── The assignee picker names the people these tasks belong to (D-122) ───────
+{
+  const dbx = new Database(process.env.DBPATH);
+  dbx.prepare(`INSERT OR REPLACE INTO users (id,name,username,role,department,is_active,is_external,external_org,module_access)
+    VALUES ('ar-guest','Guest Client','Guest Client','operator','qa',1,1,'M4 Dynamic',NULL)`).run();
+  dbx.close();
+  const techs = await (await fetch(`${URL}/api/users/technicians`, { headers: A })).json();
+  const names = (techs || []).map(u => u.name);
+  t('the Task Center assignee list offers an ADMIN — the review is chaired by management', names.includes('Annual Admin'), names.join(', ').slice(0, 200));
+  t('and still the floor', names.includes('Annual Op'));
+  t('but never ReadyBot', !names.includes('ReadyBot'));
+  t('and never a client guest, who is an operator by role and nobody a task can reach', !names.includes('Guest Client'));
+}
 
 // ── In a real browser: the tabs exist and the record is readable ────────────
 const { chromium } = await import('playwright-core');

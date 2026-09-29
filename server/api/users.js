@@ -96,9 +96,18 @@ router.get('/', (req, res) => {
   }));
 });
 
+// Who a task can be assigned to. Every active PERSON who works here — the
+// managers included: the annual management review, the internal audit and the
+// mock recall are assigned to admins, and a picker that could not name Lowry or
+// Adam (D-122) left those tasks on nobody. ReadyBot is an account with the
+// operator role and a client guest is an operator too; neither is somebody a
+// task can reach, so both are excluded by what they ARE, not by a tick.
 router.get('/technicians', (_req, res) => {
   const db = getDb();
-  const techs = db.prepare("SELECT id, name, role, department FROM users WHERE is_active = 1 AND role IN ('operator','supervisor') ORDER BY name").all();
+  const techs = db.prepare(`SELECT id, name, role, department FROM users
+    WHERE is_active = 1 AND role IN ('operator','supervisor','admin')
+      AND name != 'ReadyBot' AND COALESCE(is_external, 0) = 0
+    ORDER BY name`).all();
   res.json(techs);
 });
 

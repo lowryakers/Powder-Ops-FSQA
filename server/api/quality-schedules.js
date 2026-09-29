@@ -31,7 +31,7 @@ function advanceModifier(freqType, freqValue) {
 
 // Compute the first occurrence strictly in the future, stepping by the interval.
 // Caps iterations so a very stale schedule can't spin.
-function nextFutureDue(db, current, freqType, freqValue) {
+export function nextFutureDue(db, current, freqType, freqValue) {
   const mod = advanceModifier(freqType, freqValue);
   let cur = current;
   let guard = 0;

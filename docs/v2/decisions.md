@@ -5006,3 +5006,37 @@ their counts against the screens they mirror, a zone moved and the pile counting
 when it is put back, the bell line appearing with a draft and absent for an operator, and the browser
 walking from the review center to the Zones & items view and to the Forms tab **as a non-admin**. The
 run before the visibility fix is the control: it failed with the Forms tab absent.
+
+---
+
+## D-122 — The annual review had two clocks, and the assignee list could not name the people it belongs to
+*2026-09-29. Reported by Lowry after filing the 2 March management review by hand.*
+
+Two questions from one screen: *"I don't see my or Adam's name in the drop-down"* and *"should the clock
+on the annual task reset from the date I logged?"* Both are the two-owners defect.
+
+- **`/users/technicians` was `role IN ('operator','supervisor')`.** It is the Task Center's assignee
+  list, and the annual management review, the internal audit and the mock recall are assigned to the
+  managers — who are admins here. So the tasks that most need an owner were the ones the picker could
+  not give one. **It also offered ReadyBot and every M4 guest**, both `operator` by role. The list is
+  every active person who works here now: admins in, ReadyBot and `is_external` out — excluded by what
+  they are, not by a tick (the D-100 rule).
+- **The tab derived "due" from the last record; the schedule kept its own `next_due` and its own open
+  task.** Filing the March review by hand left the Task Center card open and the next task timed from the
+  seed date, September. D-115 wrote "due is derived from the last record's date" and that was true of
+  the tab alone. **The record's date is the owner now.** `settleAnnualSchedule()` runs inside the
+  by-hand transaction: an open task for that schedule is completed as of the record's date, by the
+  person who chaired it, with a note saying it came off the paper; `next_due` is pulled earlier to the
+  first anniversary of the record's date (`nextFutureDue`, the generator's own stepper, so the two cannot
+  disagree about arithmetic) and **never pushed later** — later would hide a review that is owed; and
+  the record is linked to the task and schedule it stood in for.
+- **A review older than a year files, links, and leaves the task open.** A March 2025 review does not
+  discharge 2026's obligation; closing the card would make the plant read as current when it is not.
+- **So: yes, the clock resets from 2 March.** Next due 2 March 2027, and the September card is closed as
+  done on 2 March by Lowry. The task-door completion path is unchanged — the generator already advances
+  the schedule when it raises.
+- `verify:annualreviews` (53 → **70**). The added assertions raise the card exactly as the generator
+  does (housekeeping is throttled, so the API cannot raise twice in a run), file by hand ~seven months
+  back, and read the card, the link, `next_due` and the tab; the control is a review 400 days old that
+  must leave the card open. **The run before the fix is the control for the picker**: the admin was
+  absent from the list.

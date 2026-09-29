@@ -17,6 +17,8 @@ import {
 import { EMP_SECTIONS, EMP_FORM_CODE, EMP_REVISION } from './emp-site-list.js';
 import { raiseCapa } from './capa-raise.js';
 import { insertCompletion } from './training-records.js';
+import { nextFutureDue } from './api/quality-schedules.js';
+import { logAudit } from './db.js';
 
 export { missingForCheck, normalizeCheck };
 
@@ -219,6 +221,59 @@ export function fileAnnualReview(db, { form, check, wo, by, day, notes, source =
     .run(id, woId, schedId, day, by, check.team, JSON.stringify(check.items), JSON.stringify(check.methods),
       check.outcome, check.findings, check.corrective_actions, FOOD_DEFENSE_SOP, source, notes || null);
   return { kind: 'food_defense_challenge', ids: [id] };
+}
+
+/**
+ * A review recorded by hand settles the schedule that was asking for it (D-122).
+ *
+ * The annual quality schedule and the record were two clocks: the tab derived
+ * "due" from the last record while the schedule kept its own `next_due` and
+ * its own open task, and filing the March review left the Task Center card
+ * open and the next one timed from the seed date. One fact — when the review
+ * was last done — with two owners. The record's date is the owner now:
+ *   · an open task for that schedule is COMPLETED as of the record's date when
+ *     the record is inside the last year (it IS this year's review); a record
+ *     older than that leaves the task open, because a review is still owed;
+ *   · `next_due` is pulled EARLIER to the first future anniversary of the
+ *     record's date, never pushed later — moving it later would hide a review
+ *     that is owed;
+ *   · the record is linked to the task and the schedule it satisfied.
+ * `nextFutureDue` is the generator's own stepper, so the date agrees with what
+ * the schedule would have computed itself.
+ */
+export function settleAnnualSchedule(db, { kind, table, recordId, day, by, user = null }) {
+  const out = { schedules: [], closed: [], next_due: null };
+  const scheds = (() => {
+    try {
+      return db.prepare('SELECT id, title, module_id, frequency_type, frequency_value, next_due FROM quality_schedules WHERE is_active = 1').all()
+        .filter(s => checkKindFor(s) === kind);
+    } catch { return []; }
+  })();
+  const inWindow = db.prepare("SELECT (date(?) >= date('now', '-365 days')) w").get(day).w === 1;
+  for (const s of scheds) {
+    out.schedules.push(s.id);
+    if (inWindow) {
+      const open = db.prepare(`SELECT id, title FROM work_orders WHERE quality_schedule_id = ?
+        AND status IN ('open','in_progress','overdue','missed')`).all(s.id);
+      for (const w of open) {
+        db.prepare(`UPDATE work_orders SET status = 'completed', completed_at = ?, completed_by = ?,
+            notes = TRIM(COALESCE(notes, '') || ' ' || ?)
+          WHERE id = ?`).run(`${day} 12:00:00`, by, `Recorded from the paper review dated ${day}.`, w.id);
+        logAudit(user || 'system', 'complete', 'work_order', w.id,
+          { source: 'paper', record: recordId, performed_on: day, completed_by: by }, null, null, w.title);
+        out.closed.push(w.id);
+      }
+    }
+    // Linked to the schedule, and to the task it stood in for (the first one).
+    db.prepare(`UPDATE ${table} SET quality_schedule_id = COALESCE(quality_schedule_id, ?),
+        work_order_id = COALESCE(work_order_id, ?) WHERE id = ?`).run(s.id, out.closed[0] || null, recordId);
+    const nd = nextFutureDue(db, day, s.frequency_type, s.frequency_value);
+    if (!s.next_due || nd < s.next_due) {
+      db.prepare("UPDATE quality_schedules SET next_due = ?, updated_at = datetime('now') WHERE id = ?").run(nd, s.id);
+      out.next_due = nd;
+    } else out.next_due = s.next_due;
+  }
+  return out;
 }
 
 /**
