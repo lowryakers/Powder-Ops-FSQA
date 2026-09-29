@@ -2,12 +2,13 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { completeWorkOrder } from '../../lib/completeWorkOrder';
 import { useAuth } from '../../hooks/useAuth';
-import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, CalendarDays, ChevronRight, CircleDot, Filter, Search, Flag, Paperclip, Thermometer, Droplets, Lightbulb, FlaskConical, ClipboardCheck, SquareCheck, Square, Pencil, Plus, Trash2, MinusCircle, CircleCheck, AlertOctagon, ListChecks } from 'lucide-react';
+import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, CalendarDays, ChevronRight, CircleDot, Filter, Search, Flag, Paperclip, Thermometer, Droplets, Lightbulb, FlaskConical, ClipboardCheck, SquareCheck, Square, Pencil, Plus, Trash2, MinusCircle, CircleCheck, AlertOctagon, ListChecks, Scale } from 'lucide-react';
 import { localDateStr, daysAgoStr } from '../../utils/dates';
 import FileUpload from '../FileUpload';
 import { createTranslator, formatDueLabelI18n } from '../../i18n/operatorStrings';
 import { canSeeQaReview } from '../../utils/permissions';
-import { formatDateTime } from '../../lib/datetime.js';
+import { formatDateTime, formatDate } from '../../lib/datetime.js';
+import { onDataChanged } from '../../lib/dataChanged';
 import { formFromTitle, gradeDilution, isMeasured } from '../../../shared/dilution-forms.js';
 import FormChip from '../common/FormChip';
 import RuleTip from '../common/RuleTip.jsx';
@@ -988,6 +989,16 @@ export default function OperatorView() {
   const viewDept = authIsAdmin ? adminViewDept : userDept;
   const groupParam = viewDept === 'all' ? '' : `?group=${viewDept}`;
   const { data: tasks, loading, refresh } = useApiGet(`/pm/operator-tasks${groupParam}`);
+  // The daily scale checks still owed today, scoped by the same department rule
+  // as the tasks. They are not work orders — a check is filed on the Scale
+  // Verification form — so until this they were on no floor screen at all, and
+  // the only prompt was the Daily Scale PM the plant is retiring (D-011).
+  const { data: checks, refresh: refreshChecks } = useApiGet(`/pm/operator-checks${groupParam}`);
+  // Filing the check happens in the kiosk overlay, outside this component; it
+  // announces the write, and this strip has to hear it or it goes on asking for
+  // a check that is already in.
+  useEffect(() => onDataChanged(() => { refreshChecks(); }), [refreshChecks]);
+  const scaleDue = Array.isArray(checks?.scale_checks) ? checks.scale_checks : [];
   const { data: technicians } = useApiGet('/users/technicians');
   // Roster for the View-as picker (admins only).
   const { data: rosterUsers } = useApiGet(authIsAdmin ? '/users' : '/users/technicians');
@@ -1303,6 +1314,37 @@ export default function OperatorView() {
           <span>Records waiting on a QA signature are in <span className="font-semibold">QA Review</span> — sign-offs are approvals, not tasks.</span>
           <ChevronRight size={16} className="shrink-0" />
         </button>
+      )}
+
+      {/* THE SCALE CHECKS OWED TODAY. Not tasks, so never in the list below —
+          this strip is the one place the floor is told one is due. Tapping
+          opens the Scale Verification form already on that scale; the card
+          leaves when the record exists, nothing else. */}
+      {scaleDue.length > 0 && (
+        <div data-scale-due className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2">
+          <h4 className="text-xs font-bold text-amber-900 uppercase tracking-wide flex items-center gap-1">
+            <Scale size={12} /> {t('scale_due_heading')} · {scaleDue.length}
+          </h4>
+          <p className="text-[11px] text-amber-800">{t('scale_due_why')}</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {scaleDue.map(c => (
+              <div key={c.code} data-scale-due-card={c.code}
+                className="bg-white rounded-lg border border-amber-200 px-3 py-2.5 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-gray-900 truncate">{c.short}</div>
+                  <div className="text-[11px] text-gray-500">
+                    Form {c.code} · {c.latest ? `${t('scale_last')} ${formatDate(c.latest.performed_at)}` : t('scale_never')}
+                  </div>
+                </div>
+                <button type="button" data-scale-run
+                  onClick={() => window.dispatchEvent(new CustomEvent('app-navigate', { detail: { form: 'scale', form_code: c.code } }))}
+                  className="shrink-0 px-3 py-2 bg-powder-600 text-white rounded-lg text-xs font-bold hover:bg-powder-700 active:scale-[0.98] transition-transform">
+                  {t('scale_run')}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Search bar */}

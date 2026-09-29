@@ -2132,6 +2132,29 @@ posted `{}`, so a chemical that ran out was either left open forever or filed as
   deserves QA opening the record, not a checkbox. Used up stays routine — a chemical finishing is the ordinary
   end of a sign-out.
 
+## The daily scale check is on the Operator View now, and "today" is the plant's day (D-117)
+`server/scale-checks.js` (`scaleCheckStatus` · `scaleChecksDue` · `scaleChecksOverdueNow`) +
+`server/plant-clock.js` (`PLANT_TZ` default `America/Denver`, `plantDateOf`, `plantHour`, `plantWeekday`,
+server-side `parseServerTime`) + `GET /pm/operator-checks` + the strip in `OperatorView.jsx` + the bell line
+`scale-not-checked`. Lowry asked whether Scale Verification was "too hidden" for operators. **It was never on
+their screen**: a Quick Forms sidebar shortcut, not a task, and nothing anywhere reported a check that was
+NOT done — the bell, Flash and QA Review all read `scale_verifications` after the fact. Filling went 18 days.
+- **ONE DERIVATION, THREE READERS** — the Calibration cards, the Operator View strip and the bell all call
+  `scale-checks.js`; the inline `date('now')` in `/status` is gone. `/pm/operator-checks` copies
+  `/operator-tasks`'s department rule line for line, so a Batching supervisor sees Batching's two scales.
+- **NOTHING IS CREATED.** The card leaves because the record exists (the record IS the completion). *Run the
+  check* opens the existing kiosk on that form (`ScaleKiosk defaultFormCode`) over the screen; the kiosk
+  fires `notifyDataChanged()` because it posts with a raw fetch outside `hooks/useApi`.
+- **THE CONTAINER IS UTC AND NOTHING SETS `TZ`.** `date('now')` flipped every card to "Not checked today" at
+  6pm Mountain. Use `plantDateOf()` for any "today" asked on the server about stamped rows. **Not changed:
+  `scheduled-jobs.js` gates the 06:00 digests on `now.getHours()`, which is midnight Mountain here.**
+- **The bell is gated (`SCALE_CHECK_GRACE_HOUR = 9`, weekdays — the plant's number); the strip is not.**
+- **`quickFormOverlay` renders in ALL THREE signed-in layouts.** The `/operator` route and the operator-only
+  layout had no overlay at all. `app-navigate` accepts `{form, form_code}` and leaves the tab alone.
+- **THIS SHIPS BEFORE THE DAILY SCALE PMs ARE RETIRED (D-011)** — they were the floor's only prompt.
+- `verify:scaledue` (39, live + browser at 390px on both layouts). **The control is the state the plant is
+  in** — UTC today, no strip — and fails **5** before the script can continue.
+
 ## Scale Verification (Forms 417-01 … 417-05)
 Daily three-point scale checks, one form per scale/area. `server/scale-forms.js` holds the five definitions
 (nominal + tolerance per point) — **not user-editable on purpose**: changing a tolerance is a document

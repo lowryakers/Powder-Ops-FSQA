@@ -20,6 +20,7 @@ import { pmCompletion } from '../pm-completion.js';
 import { recordGroupFor, recordAreaForTask } from '../qa-records.js';
 import { checkFormFor, attachCheckForms, fileCheckRecord, missingForCheck } from '../check-records.js';
 import { attachSwabPlans } from '../clean-swabs.js';
+import { scaleChecksDue } from '../scale-checks.js';
 import { canonicalArea } from '../sanitation-areas.js';
 import { planStepSplit } from '../../shared/pm-step-split.js';
 import { personMatch, resolveUserId, withCurrentNames } from '../person-links.js';
@@ -1977,6 +1978,21 @@ function collapseMissed(rows) {
   }
   return out;
 }
+
+// THE CHECKS THAT ARE NOT TASKS, on the screen where tasks are done.
+//
+// A daily scale check (Form 417-xx) is filed on the Scale Verification quick
+// form and has never been a work order — so it was never on the Operator
+// View, and the only prompt the floor had was the Daily Scale PM, the duplicate
+// D-011 retires. This hands the screen the checks still owed today, scoped by
+// the SAME department rule as the tasks beside them. It creates nothing: the
+// strip disappears because the record was filed.
+router.get('/operator-checks', (req, res) => {
+  const db = getDb();
+  const canViewAll = req.user?.role === 'admin';
+  const group = canViewAll ? req.query.group : (req.user?.department || 'warehouse');
+  res.json({ scale_checks: scaleChecksDue(db, { group: group && group !== 'all' ? group : null }) });
+});
 
 router.get('/operator-tasks', (req, res) => {
   const db = getDb();

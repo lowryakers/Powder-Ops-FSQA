@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { notifyDataChanged } from '../../lib/dataChanged';
 import { Scale, CheckCircle, AlertTriangle, ChevronLeft } from 'lucide-react';
 import ScaleProcedureCard from '../common/ScaleProcedureCard.jsx';
 import { useKioskLang } from './useKioskLang.js';
@@ -24,7 +25,10 @@ function pointState(point, raw) {
   return { value: v, deviation: dev, pass: Math.abs(dev) <= point.tolerance + 1e-9 };
 }
 
-export default function ScaleKiosk({ defaultName = '' }) {
+// `defaultFormCode` opens the kiosk already on one form — the Operator View's
+// due-today strip names the scale, so the person should not be asked "which
+// scale?" a second time. Absent, the picker shows as it always has.
+export default function ScaleKiosk({ defaultName = '', defaultFormCode = null }) {
   const { lang, toggle, t } = useKioskLang();
   const [forms, setForms] = useState([]);
   // The directions, so the person at the scale reads them where they type.
@@ -39,9 +43,14 @@ export default function ScaleKiosk({ defaultName = '' }) {
 
   useEffect(() => {
     fetch('/api/submit/scale-forms', { headers: kioskHeaders('scale') }).then(r => r.json())
-      .then(d => { setForms(d.forms || []); setRooms(d.rooms || []); setProcedure(d.procedure || null); })
+      .then(d => {
+        const list = d.forms || [];
+        setForms(list); setRooms(d.rooms || []); setProcedure(d.procedure || null);
+        const pre = defaultFormCode ? list.find(f => f.code === defaultFormCode) : null;
+        if (pre) { setForm(pre); setValues(['', '', '']); }
+      })
       .catch(() => {});
-  }, []);
+  }, [defaultFormCode]);
 
   const states = useMemo(
     () => (form ? form.points.map((p, i) => pointState(p, values[i])) : []),
@@ -64,6 +73,10 @@ export default function ScaleKiosk({ defaultName = '' }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Something went wrong');
       setResult(data.record);
+      // This posts with a raw fetch to a public path, so it is outside the
+      // hooks/useApi announcement — say it here, or the Operator View's due
+      // strip and the bell go on showing a check that has just been filed.
+      notifyDataChanged();
     } catch (err) {
       setError(err.message);
     } finally {

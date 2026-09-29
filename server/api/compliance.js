@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { scaleChecksDue, scaleChecksOverdueNow } from '../scale-checks.js';
 import { payActions } from './pay.js';
 import AdmZip from 'adm-zip';
 import { equipmentSetupGaps, EQUIPMENT_OWNERS, attentionRows, isDrillable } from '../attention-sources.js';
@@ -632,6 +633,21 @@ router.get('/notifications', (req, res) => {
   if (dueSoonWOs > 0) items.push({ id: 'pm-due-soon', tab: 'pm', severity: 'info', count: dueSoonWOs, label: `${dueSoonWOs} PM work order${dueSoonWOs > 1 ? 's' : ''} due within 7 days` });
   if (clearancePending > 0) items.push({ id: 'clearance', tab: 'pm', severity: 'warning', count: clearancePending, label: `${clearancePending} hygiene clearance${clearancePending > 1 ? 's' : ''} awaiting QA sign-off` });
   if (calOverdue > 0) items.push({ id: 'cal-overdue', tab: 'calibration', severity: 'critical', count: calOverdue, label: `${calOverdue} calibration${calOverdue > 1 ? 's' : ''} overdue` });
+  // A daily scale check that was NOT run. Every other read of
+  // scale_verifications here is after the fact — a failed reading, one waiting
+  // on QA. Nothing said a check never happened, and Filling went eighteen
+  // days. Same derivation as the Calibration cards and the Operator View
+  // strip; said here only once the plant's morning is past (weekday, after
+  // the grace hour), because five "not run" at 00:01 is noise.
+  if (isApprover) {
+    try {
+      const due = scaleChecksDue(db);
+      if (due.length > 0 && scaleChecksOverdueNow()) {
+        items.push({ id: 'scale-not-checked', tab: 'calibration', severity: 'warning', count: due.length,
+          label: `${due.length} daily scale check${due.length > 1 ? 's' : ''} not run today (${due.map(d => d.short).join(', ')})` });
+      }
+    } catch { /* table optional */ }
+  }
   if (calDueSoon > 0) items.push({ id: 'cal-due-soon', tab: 'calibration', severity: 'info', count: calDueSoon, label: `${calDueSoon} calibration${calDueSoon > 1 ? 's' : ''} due within 7 days` });
   if (lotoUncovered > 0) items.push({ id: 'loto-uncovered', tab: 'loto', severity: 'warning', count: lotoUncovered, label: `${lotoUncovered} equipment missing LOTO procedure${lotoUncovered > 1 ? 's' : ''}` });
   if (chemMissingSDS > 0) items.push({ id: 'chem-sds', tab: 'chemicals', severity: 'warning', count: chemMissingSDS, label: `${chemMissingSDS} chemical${chemMissingSDS > 1 ? 's' : ''} missing SDS documentation` });

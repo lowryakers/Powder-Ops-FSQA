@@ -148,6 +148,19 @@ const strings = {
   // The swab block on a RE-CLEAN. The floor strings are in both languages
   // because a rule shown only in English is a rule half the shift cannot read
   // — and this one is the instruction that resets the ATP failure chain.
+  // The daily scale checks owed today (Forms 417-01 … 417-05). Not tasks —
+  // filed on the Scale Verification form — so this strip is the only place
+  // the floor is told one is due. The Daily Scale PM used to be that prompt,
+  // and it is the duplicate D-011 retires.
+  scale_due_heading: { en: 'Scale checks due today', es: 'Verificaciones de báscula pendientes hoy' },
+  scale_due_why: {
+    en: 'Run the three-point check at the scale before production starts. It files on Form 417 — this list clears itself once the check is in.',
+    es: 'Haga la verificación de tres puntos en la báscula antes de iniciar producción. Se registra en el Formulario 417 — esta lista se limpia sola cuando la verificación queda registrada.',
+  },
+  scale_run: { en: 'Run the check', es: 'Hacer la verificación' },
+  scale_last: { en: 'last checked', es: 'última verificación' },
+  scale_never: { en: 'never checked', es: 'nunca verificada' },
+
   swab_heading: { en: 'ATP swab', es: 'Hisopo ATP' },
   swab_why_reclean: {
     en: 'Record the swab for this re-clean. Leaving it blank files the clean with no reading.',

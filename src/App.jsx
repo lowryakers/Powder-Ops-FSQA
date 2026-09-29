@@ -1320,12 +1320,26 @@ function App() {
     return () => window.removeEventListener('app-change-password', handler);
   }, []);
 
+  // A quick form popped over whatever is open — a scanned kiosk QR (?form=…),
+  // or a module asking for one (the Operator View's scale strip). `kioskFormCode`
+  // is the 417-xx a scale card named, so the kiosk opens on that form instead of
+  // asking "which scale?" again. Declared above the navigate effect that sets it.
+  const [kioskForm, setKioskForm] = useState(null); // 'knife' | 'components' | 'maintenance' | 'scale'
+  const [kioskFormCode, setKioskFormCode] = useState(null);
   const [deepSection, setDeepSection] = useState(null);
   useEffect(() => {
     // `section` lets a module open a specific Settings pane (PM Schedules →
     // Cleanup Review). Set before the tab so SettingsPanel mounts already
     // knowing it — SettingsShell reads initialSection once, at mount.
     const handler = (e) => {
+      // `form` opens a quick form OVER the current screen and, unless a tab is
+      // also named, leaves the screen where it is — the Operator View asks for
+      // the scale kiosk and wants to still be underneath it when it closes.
+      if (e.detail?.form && ['knife', 'components', 'maintenance', 'scale'].includes(e.detail.form)) {
+        setKioskFormCode(e.detail.form_code || null);
+        setKioskForm(e.detail.form);
+        if (!e.detail.tab) return;
+      }
       if (e.detail?.section) setDeepSection(e.detail.section);
       setActiveTab(e.detail?.tab || 'dashboard');
     };
@@ -1352,7 +1366,6 @@ function App() {
   // Deep links: ?tab=<module> jumps straight to a module (ReadyBot alert
   // links use this), ?form=<kiosk> pops a quick form over whatever's open
   // (kiosk QR codes scanned by signed-in users). Params are consumed once.
-  const [kioskForm, setKioskForm] = useState(null); // 'knife' | 'components' | 'maintenance' | 'scale'
   // `?section=` addresses a pane inside a module (currently Settings). It is
   // read HERE and handed down rather than read by the module itself: this
   // effect wipes the query string, and a lazily-loaded module mounts after it
@@ -1655,6 +1668,24 @@ function App() {
     return <><AuditorView /><UpdateBanner /></>;
   }
 
+  // Quick-form overlay: a scanned kiosk QR (?form=…) or a module's ask pops the
+  // form over whatever's open; closing it returns to the screen underneath.
+  // ONE definition rendered by every signed-in layout — the standalone
+  // /operator route and the operator-only layout had none, so a card on the
+  // floor phone that asked for the scale form would have done nothing there.
+  const quickFormOverlay = user && kioskForm ? (
+    <div className="fixed inset-0 z-[70] bg-gray-50 overflow-y-auto" data-quick-form={kioskForm}>
+      <button onClick={() => { setKioskForm(null); setKioskFormCode(null); }} data-quick-form-close
+        className="fixed top-3 right-3 z-[75] p-2 bg-white border border-gray-200 rounded-full shadow-md text-gray-500 hover:text-gray-800" data-tip="Close form">
+        <X size={18} />
+      </button>
+      {kioskForm === 'knife' && <KnifeKiosk defaultName={user.name} />}
+      {kioskForm === 'components' && <ComponentKiosk defaultName={user.name} />}
+      {kioskForm === 'maintenance' && <MaintenanceKiosk defaultName={user.name} />}
+      {kioskForm === 'scale' && <ScaleKiosk defaultName={user.name} defaultFormCode={kioskFormCode} />}
+    </div>
+  ) : null;
+
   if (path === '/operator') {
     if (loading) {
       return (
@@ -1710,6 +1741,7 @@ function App() {
           <DocumentsToSignCard variant="page" />
           <OperatorView />
         </main>
+        {quickFormOverlay}
         {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
         {showSignature && <SignatureModal onClose={() => setShowSignature(false)} />}
         {showInstall && <InstallHelp onClose={() => setShowInstall(false)} />}
@@ -1896,6 +1928,7 @@ function App() {
           <DocumentsToSignCard variant="page" />
           <OperatorView />
         </main>
+        {quickFormOverlay}
         {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
         {showSignature && <SignatureModal onClose={() => setShowSignature(false)} />}
         {showInstall && <InstallHelp onClose={() => setShowInstall(false)} />}
@@ -2187,20 +2220,7 @@ function App() {
       )}
 
       <MobileBottomNav activeTab={resolvedTab} setActiveTab={setActiveTab} user={user} onOpenComms={() => setWorkspace('comms')} />
-      {/* Quick-form overlay: a scanned kiosk QR (?form=…) pops the form over
-          whatever's open; closing it returns to the normal app view. */}
-      {kioskForm && (
-        <div className="fixed inset-0 z-[70] bg-gray-50 overflow-y-auto">
-          <button onClick={() => setKioskForm(null)}
-            className="fixed top-3 right-3 z-[75] p-2 bg-white border border-gray-200 rounded-full shadow-md text-gray-500 hover:text-gray-800" data-tip="Close form">
-            <X size={18} />
-          </button>
-          {kioskForm === 'knife' && <KnifeKiosk defaultName={user.name} />}
-          {kioskForm === 'components' && <ComponentKiosk defaultName={user.name} />}
-          {kioskForm === 'maintenance' && <MaintenanceKiosk defaultName={user.name} />}
-          {kioskForm === 'scale' && <ScaleKiosk defaultName={user.name} />}
-        </div>
-      )}
+      {quickFormOverlay}
       {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
         {showSignature && <SignatureModal onClose={() => setShowSignature(false)} />}
         {showInstall && <InstallHelp onClose={() => setShowInstall(false)} />}

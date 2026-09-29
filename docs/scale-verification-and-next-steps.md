@@ -154,6 +154,27 @@ Out of Service box. **Cross this off.**
 
 ---
 
+### JOB 4b — Flat Our Feed Conveyor #49 / #50 (from your run of Job 2)
+The duplicate detector only flags two rows when they share **both** the name **and** the asset number.
+So those two rows currently carry the same asset number in the register. Open **Equipment**, find both
+Flat Our Feed Conveyor rows, click **Edit** on each, and check the **Asset #** box — one of them almost
+certainly says `49` and should say `50`. Save, and the banner clears on its own. Not a code problem.
+
+### JOB 6 — Retire the Daily Scale PMs (do this AFTER the deploy with the new scale strip is live)
+**Who:** you or Adam · **Time:** 15 minutes · **Safe:** nothing in the code re-creates these.
+1. Have a supervisor open **My Tasks** on their phone and confirm an amber **"Scale checks due today"**
+   box now appears at the top with a **Run the check** button. If it is not there, stop and tell me.
+2. Open **Task Center** → the **Recurring Schedules** tab.
+3. In the search box type `scale`.
+4. For each of: **Vevor Scale — Daily PM (#148)**, **Daily PM — 81 Uline Scale**, **Counting Scale —
+   Daily PM (#84)**, **Daily PM Checklist — Kitting (Warehouse) (#87)**, and **Kitchen Tour Scale
+   #0151** if it is there: click **Pause**.
+5. When it asks, note it says how many open cards it is leaving behind — that is the missed cards since
+   8/24. They are listed under **Settings → Cleanup Review**; close them there with the reason
+   *"Replaced by Scale Verification (Form 417)"*.
+**How you know it worked:** the Operator View no longer shows "Vevor Scale — Daily PM" cards, and the
+amber scale strip is what prompts the check instead.
+
 ### JOB 5 — The Sanitation area list: wait for me
 Do not try to clean this up by hand yet. There are two bugs underneath it and hand-editing now
 would just move the mess. I have explained them below; I will fix them and tell you when to run
@@ -163,7 +184,7 @@ the cleanup.
 
 ## Part 3 — What I do, in order
 
-### 1. Put Scale Verification on the Operator View  ← **new, and now first**
+### 1. Put Scale Verification on the Operator View  ← **DONE 29 Sep (D-117), deploying with this push**
 Give the daily scale check a card on the operator's own task screen, the way every other daily
 check has one, so nobody has to know the sidebar exists. Then, and only then, the Daily Scale PM
 work orders can be retired without losing the prompt.
@@ -173,7 +194,7 @@ and can tell you one is waiting for QA — but it cannot tell anyone one never h
 why Filling went eighteen days.
 
 ### 2. Retire the Daily Scale PM programs
-Once #1 exists. This is the duplicate-record problem: two programs recording one activity. Safe
+**Unblocked now that #1 is deployed — see the note at the bottom of Part 2 for the exact clicks.** This is the duplicate-record problem: two programs recording one activity. Safe
 to do — I checked, nothing in the code re-creates these schedules, so pausing them sticks through
 a deploy. The ones to retire: Vevor #148, Uline #81, Counting Scale #84 and #87, and re-check
 Kitchen Tour #0151.

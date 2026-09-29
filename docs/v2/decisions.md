@@ -4780,3 +4780,59 @@ correct**, and `npm run check` has been red on `main` for it. The stand-in now m
 (`botDm(db, userId)` → `{bot, dm}`, then `postMessageAs`). **A stand-in that does not match the call is a
 test answering a question nobody is asking** — and a suite with a standing red in it is one people stop
 reading, which is the same failure as a badge nobody trusts. `check:suppliers` 15/20 → **41/41**.
+
+---
+
+## D-117 — The daily scale check was never on the operator's screen
+*2026-09-29. Lowry: "it used to live in the operator's side panel — is it too hidden now?"*
+
+**It was not hidden; it was absent.** Scale Verification (Forms 417-01 … 417-05) is a Quick Forms
+sidebar shortcut and not a work order, so the Operator View — "go and do", work orders only — never
+listed it. On a phone that sidebar is behind the hamburger. And **nothing anywhere reported a check that
+was not done**: the bell, the Flash Report and QA Review all read `scale_verifications` after the fact (a
+failed reading; one waiting on QA's counter-signature). "Not checked today" existed on the Calibration
+tab, a QA screen. Filling was last checked on the 11th. The supervisors already held the `form-scale`
+grant — checked in Settings — so this was purely the prompt, not access.
+
+**This reverses the order given the day before.** The Daily Scale PM work orders (D-011) are the wrong
+recording path, but they were the *only* thing putting a scale check on an operator's phone. Retiring
+them first would have removed the floor's last reminder. So the prompt ships first; the duplicate goes
+after.
+
+- **ONE DERIVATION, THREE READERS.** `server/scale-checks.js` — `scaleCheckStatus`, `scaleChecksDue`,
+  `scaleChecksOverdueNow` — is read by the Calibration tab's cards (`/scale-verification/status`, whose
+  inline query it replaces), the Operator View strip (`GET /pm/operator-checks`, scoped by **the same
+  department rule as `/operator-tasks`**, copied line for line) and the compliance bell
+  (`scale-not-checked`). A supervisor in Batching is handed the two Batching scales and cannot ask for
+  Kitting's.
+- **NOTHING IS CREATED.** No work order, no second record. The card leaves because a `scale_verifications`
+  row exists for that form today — the record IS the completion, `closeRecleanTasksFor`'s rule. Tapping
+  *Run the check* opens the existing kiosk **already on that form** (`defaultFormCode`), over the screen,
+  which stays underneath; the kiosk announces the write (`notifyDataChanged`) because it posts with a
+  raw fetch to a public path, outside `hooks/useApi`.
+- **"TODAY" IS THE PLANT'S DAY, and it was UTC.** Nothing sets `TZ` on the container, so `date('now')` in
+  the old status query flipped every card to "Not checked today" at **6pm Mountain** — a 7am check read as
+  not done on the evening shift. `server/plant-clock.js` (`PLANT_TZ`, `plantDateOf`, `plantHour`,
+  `plantWeekday`, and a server-side `parseServerTime` closing the same zone-less-stamp trap the client's
+  `datetime.js` closes) is the one clock. Asserted with a row stamped `01:00Z` tomorrow — 19:00 today at
+  the plant — counting as today. **Found in passing and not changed here:** `scheduled-jobs.js` gates
+  the morning digests on `now.getHours() >= 6`, which on this container is 06:00 UTC = midnight Mountain.
+- **The bell line is gated; the strip is not.** `SCALE_CHECK_GRACE_HOUR = 9` is the plant's number — the
+  checks run "before production starts", so five "not run" at 00:01 is noise; from 9am on a weekday the
+  silence is worth telling QA. The strip is a prompt to do the work, and a prompt at 5am is when it is
+  wanted.
+- **THE OVERLAY IS ONE DEFINITION IN EVERY LAYOUT.** The quick-form overlay was rendered only by the main
+  app layout; the standalone `/operator` route and the operator-only layout — the floor phones — had
+  none, so a card there would have done nothing when tapped. `quickFormOverlay` renders in all three.
+  `app-navigate` now takes `{form, form_code}` and, with no `tab`, leaves the screen where it is.
+- Spanish strings alongside the English; a prompt shown in one language reaches half the shift.
+
+**Verified:** `verify:scaledue` (**39**, pure + live + a real browser at 390px on both operator layouts;
+in `verify:all`). **The control is the state the plant is in** — UTC "today" and no strip — and fails
+**5** before the script can continue, the first being a 19:00 check reading `today=null`.
+
+**Also on the desk this morning:** the Equipment "duplicate rows" banner named *Flat Our Feed Conveyor*
+#49 and #50 as duplicates, and they are two machines. `trueDuplicates()` flags only a repeated name AND a
+repeated asset number, so the two rows carry the same asset number in the register — one of them is
+almost certainly typed `49` and should read `50`. A data correction in Equipment → Edit, not a code
+change; the detector is behaving as written.

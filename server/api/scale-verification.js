@@ -9,6 +9,7 @@ import { Router } from 'express';
 import { randomUUID as uuid } from 'crypto';
 import { getDb, logAudit } from '../db.js';
 import { hasExplicitEdit } from '../module-access.js';
+import { scaleCheckStatus } from '../scale-checks.js';
 import { SCALE_FORMS, SCALE_PROCEDURE, procedureFor, getScaleForm, gradeReadings } from '../scale-forms.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
 
@@ -102,21 +103,13 @@ router.get('/', (req, res) => {
 
 // GET /status — one row per form: today's check, so "did anyone verify the
 // stick-filling scale this morning" is answerable at a glance.
-router.get('/status', (_req, res) => {
-  const db = getDb();
-  const latest = db.prepare(`SELECT * FROM scale_verifications WHERE form_code = ?
-    ORDER BY performed_at DESC LIMIT 1`);
-  const todayRow = db.prepare(`SELECT * FROM scale_verifications
-    WHERE form_code = ? AND date(performed_at) = date('now')
-    ORDER BY performed_at DESC LIMIT 1`);
-  res.json({
-    forms: SCALE_FORMS.map(f => ({
-      code: f.code, title: f.title, short: f.short, area: f.area,
-      today: todayRow.get(f.code) ? shape(todayRow.get(f.code)) : null,
-      latest: latest.get(f.code) ? shape(latest.get(f.code)) : null,
-    })),
-  });
-});
+//
+// Derived in scale-checks.js and nowhere else: the Operator View's due strip
+// and the compliance bell read the same function, so the three cannot
+// disagree about which scale was checked — and "today" is the PLANT's day,
+// not UTC's (plant-clock.js). The inline `date('now')` this replaced flipped
+// every card to "Not checked today" at 6pm Mountain.
+router.get('/status', (_req, res) => res.json(scaleCheckStatus(getDb())));
 
 // POST / — file a check from inside the app (same grading as the kiosk).
 router.post('/', (req, res) => {
