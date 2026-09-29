@@ -1970,6 +1970,20 @@ open receipt" and is kept as-is (which also leaves the legacy bare-number record
 issued at write time, so two people filing at once can't collide. After a save the form clears the field
 (new inspection is the common case) and offers a one-click "Add another line to A-100-####".
 
+## The Area dropdown is reconciled against the area list (D-118)
+`pickerDrift()` in `server/sanitation-areas.js`, on the same `/sanitation/areas/preview`; Apply retires
+foldable strays; `POST /sanitation/areas/retire-option` (reason required, canonical refused) for the rest.
+- **TWO OWNERS, FOUND:** the form's Area dropdown reads managed list `sanitation_areas`; the 72-hour rule and
+  the normalizer read `SANITATION_AREAS`. `ensureList` is additive, so a stray in the list is offered for ever
+  and Normalize cleaned records while the form re-offered every stray the next morning. Pulse P1 #6.
+- **`RULE_SUFFIX` now admits the cleaning word AFTER the bracket** — `Room 7 (72 hr) cleanning`, the plant's
+  own spelling, was REFUSED while `Room 7 (72 HR cleaning)` folded. Only that word; `… (72 hr) storage` is
+  still refused (could be another room).
+- **A stray that folds is retired with the records on Apply** (audited, `is_active = 0`, revivable). **One
+  that does not — a chemical name — is reported with a Retire button and a reason, never removed by the app.**
+- `check:canonical` 24, `verify:sanareas` 46 (now in `verify:all`; it was an orphan). **Control — the state the
+  plant is in — fails 13.**
+
 ## QA inspections vs. cleaning: one table, two lists
 Light Inspection (110-01/02), Brittle Plastic & Glass (431-02) and Temperature & Humidity (110-04) are
 **QA records stored in `sanitation_records`**. `server/qa-records.js` is the single definition —

@@ -71,7 +71,15 @@ export const NON_PRODUCTION_AREAS = new Set(SANITATION_AREAS.filter(a => !a.appl
 // "(72hr cleaning)", "(72 Hr cleanning)". It describes why the clean happened,
 // not which room it was in, and the 72-hour status is computed and shown on the
 // row anyway. Dropped by the user's decision (2026-08-12).
-const RULE_SUFFIX = /\s*\(\s*72\s*-?\s*h(?:r|rs|our|ours)?s?\b[^)]*\)\s*$/i;
+//
+// AND THE WORD MAY FOLLOW THE BRACKET. The plant's own dominant spelling is
+// "Room 7 (72 hr) cleanning" — bracket closed, then the word — and the first
+// regex anchored the bracket to the end of the string, so that form was
+// REFUSED outright while "Room 7 (72 hr cleanning)" folded. Every record filed
+// the plant's way stayed outside the canonical set and invisible to the
+// 72-hour rule (D-118). Only the cleaning word is allowed after the bracket:
+// arbitrary trailing text could be a different room, and is still refused.
+const RULE_SUFFIX = /\s*\(\s*72\s*-?\s*h(?:r|rs|our|ours)?s?\b[^)]*\)(?:\s*clean(?:n)?(?:ing)?)?\s*$/i;
 
 const squash = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
 const key = (s) => squash(s).toLowerCase();
@@ -145,5 +153,47 @@ export function previewAreaNormalization(db) {
   }
   const bySize = (a, b) => b.records - a.records;
   changes.sort(bySize); unchanged.sort(bySize); unmatched.sort(bySize);
-  return { changes, unchanged, unmatched, records: changes.reduce((n, c) => n + c.records, 0) };
+  return {
+    changes, unchanged, unmatched,
+    records: changes.reduce((n, c) => n + c.records, 0),
+    picker: pickerDrift(db, rows),
+  };
+}
+
+/**
+ * THE PICKER IS A SECOND OWNER OF THIS VOCABULARY, and until D-118 nothing
+ * compared the two.
+ *
+ * The record form's Area dropdown reads the managed list `sanitation_areas`;
+ * the 72-hour rule and the normalizer above read SANITATION_AREAS. The seed
+ * fills the list FROM the canonical set, so they agree on a fresh database —
+ * but `ensureList` is additive by design and never removes, so a spelling that
+ * got into the list stays offered for ever, and Normalize cleaned the RECORDS
+ * while the form went on offering "Room 7 (72 hr) cleanning" the next morning.
+ * That is why the plant's list still showed "Simple Green" twice.
+ *
+ * `strays` are active options the canonical set does not contain. One that
+ * `canonicalArea` can fold is a spelling of a room that already has a name —
+ * the same judgement Normalize makes about a record — and is retired with the
+ * records. One it cannot fold ("Sanitizer Dilution", "Simple Green") is
+ * REPORTED with a Retire button and never removed by the app: it may be a real
+ * area nobody has added to the canonical list yet, and silently taking an
+ * option off a form somebody uses is worse than one odd row in a dropdown.
+ */
+export function pickerDrift(db, recordRows = null) {
+  let options;
+  try {
+    options = db.prepare(
+      "SELECT id, value, label FROM app_list_options WHERE list_key = 'sanitation_areas' AND is_active = 1 ORDER BY sort_order"
+    ).all();
+  } catch { return { strays: [], missing: [] }; }
+  const canonical = new Set(SANITATION_AREAS.map(a => a.value));
+  const counts = new Map((recordRows || []).map(r => [r.area, r.records]));
+  const strays = options
+    .filter(o => !canonical.has(o.value))
+    .map(o => ({ id: o.id, value: o.value, label: o.label, folds_to: canonicalArea(o.value), records: counts.get(o.value) || 0 }))
+    .map(o => ({ ...o, folds_to_label: o.folds_to ? areaLabel(o.folds_to) : null }));
+  const offered = new Set(options.map(o => o.value));
+  const missing = SANITATION_AREAS.filter(a => !offered.has(a.value)).map(a => a.value);
+  return { strays, missing };
 }

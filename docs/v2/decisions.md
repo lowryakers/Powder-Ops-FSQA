@@ -4836,3 +4836,47 @@ in `verify:all`). **The control is the state the plant is in** — UTC "today" a
 repeated asset number, so the two rows carry the same asset number in the register — one of them is
 almost certainly typed `49` and should read `50`. A data correction in Equipment → Edit, not a code
 change; the detector is behaving as written.
+
+---
+
+## D-118 — The Area dropdown and the area list were two owners of one vocabulary
+*2026-09-29. Pulse P1 #6, live-confirmed 25 September: "Simple Green" offered twice, "Room 7 (72 hr)
+cleanning", "Sanitizer Dilution" as an area. The one open Pulse item that turned out to be code.*
+
+Two defects under one symptom, both proven on a fresh boot before anything was changed.
+
+- **THE PICKER READS A DIFFERENT LIST FROM THE RULE.** The record form's Area dropdown reads the managed
+  list `sanitation_areas`; the 72-hour rule and `previewAreaNormalization()` read `SANITATION_AREAS` in
+  `server/sanitation-areas.js`. The seed fills the list *from* the canonical set, so they agree on day one —
+  but `ensureList` is additive by design (never removes, never revives, never overwrites an edited label),
+  so anything that ever got into the list stays offered for ever, and Normalize cleaned the **records**
+  while the form went on offering every stray the next morning. Planted with the five strays the capture
+  photographed: 20 canonical, 25 offered, preview reporting 0. That is why this never cleared by itself.
+- **THE NORMALIZER COULD NOT FOLD THE PLANT'S OWN SPELLING.** `RULE_SUFFIX` anchored the "(72 hr …)" bracket
+  to end of string. `Room 7 (72 HR cleaning)` folded; **`Room 7 (72 hr) cleanning`** — the word *after* the
+  bracket, the form the plant's dropdown actually shows — was **refused**, so every record filed that way sat
+  outside the canonical set and the 72-hour rule could not join it to Room 7's production use, which is the
+  exact failure that module was written to end. Only the cleaning word is admitted after the bracket now;
+  `Room 7 (72 hr) storage` is still refused, because arbitrary trailing text could be a different room.
+- **`pickerDrift()` is the reconciliation, reported on the same preview.** A stray that `canonicalArea()`
+  can fold is a spelling of a room already listed — the same judgement Normalize makes about a record — and
+  **is retired with the records on Apply**, one audit entry each, `is_active = 0`, never deleted (revivable
+  from Settings → Log Structure). A stray it **cannot** fold — "Simple Green", "Sanitizer Dilution" — is
+  **reported with its own Retire button and a required reason, and never removed by the app**: it may be a
+  real area nobody has added yet, and silently taking an option off a form somebody uses is worse than one
+  odd row in a dropdown. A canonical area is refused on that route outright — taking a real room off the
+  form is a Settings act, not a tidy-up. Records already filed under a retired option are left exactly as
+  filed and their count is returned.
+- The strip on Sanitation now shows when there are strays and no records to fold, and offers no Apply in
+  that state — nothing is left that the app may decide alone.
+
+**Verified:** `check:canonical` (18 → **24**, pure) and `verify:sanareas` (20 → **46**, live + a real browser
+at 1280; **now in `verify:all`** — it was one of the sixteen orphans, covering exactly this vocabulary).
+**The control is the state the plant is in** — the end-anchored bracket and no reconciliation — and fails
+**13** before the script can continue, the first being the preview reporting `0` strays over five, and the
+records staying under `Room 7 (72 hr) cleanning`.
+
+**What the office does now (Job 5, unblocked):** open Sanitation, read the amber strip, press Apply — the
+Room 7 / Room 8 spellings fold and leave the dropdown together — then decide the ones the app would not:
+"Simple Green" and "Sanitizer Dilution" are chemical checks (FORM 106-01, D-096), not areas. Whether their
+records move to `Chemical Verification` is Quality's call; the app leaves them as filed.

@@ -175,10 +175,25 @@ certainly says `49` and should say `50`. Save, and the banner clears on its own.
 **How you know it worked:** the Operator View no longer shows "Vevor Scale — Daily PM" cards, and the
 amber scale strip is what prompts the check instead.
 
-### JOB 5 — The Sanitation area list: wait for me
-Do not try to clean this up by hand yet. There are two bugs underneath it and hand-editing now
-would just move the mess. I have explained them below; I will fix them and tell you when to run
-the cleanup.
+### JOB 5 — The Sanitation area list: **unblocked (D-118, deploying with this push)**
+**Who:** you, Adam or Maria · **Time:** 10 minutes · **After the deploy lands.**
+1. Open **Sanitation** from the sidebar.
+2. At the top there is an amber strip. It now says two things: how many *records* are filed under an
+   odd spelling, and how many *options on the Area dropdown* the app does not recognise. Click **Review**.
+3. Click **Apply**. The "Room 7 (72 hr) cleanning" and "Room 8 (72 hr) cleanning" rows fold onto Room 7
+   and Room 8, their records move, **and those two options leave the dropdown** in the same click.
+4. What is left are the ones the app will not decide for you — **"Simple Green"** (twice) and
+   **"Sanitizer Dilution"**. Those are chemical checks, not places. Each has a **Retire from
+   dropdown…** button; click it, type why (e.g. *"a chemical, not an area"*), and it leaves the form.
+   Records already filed under them are left exactly as they are.
+5. Open the record form and check the Area dropdown: one spelling per room, no chemical names.
+
+**How you know it worked:** the amber strip is gone, and the dropdown reads Room 1 … Room 15, Batching
+1–3, Restrooms, Breakroom, Warehouse & Grounds, QA Room, Chemical Verification, Production — nothing else.
+
+**One decision for Maria, not for me:** the records already filed under "Simple Green" and "Sanitizer
+Dilution" are chemical dilution checks (FORM 106-01). Whether they should be moved under *Chemical
+Verification* is Quality's call. The app leaves them as filed until somebody says.
 
 ---
 
@@ -199,7 +214,7 @@ to do — I checked, nothing in the code re-creates these schedules, so pausing 
 a deploy. The ones to retire: Vevor #148, Uline #81, Counting Scale #84 and #87, and re-check
 Kitchen Tour #0151.
 
-### 3. Fix the Sanitation area list (two bugs)
+### 3. Fix the Sanitation area list (two bugs)  ← **DONE 29 Sep (D-118)**
 - **Bug one:** the dropdown on the cleaning form and the app's real list of areas are **two
   separate lists**, and nothing compares them. So the "Normalize" button cleans up the *records*
   and leaves the *dropdown* offering all the same bad options tomorrow. That is why this has not

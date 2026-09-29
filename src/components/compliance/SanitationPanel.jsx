@@ -575,7 +575,14 @@ function AreaNormalizeStrip({ onDone }) {
   const [err, setErr] = useState(null);
 
   const changes = data?.changes || [];
-  if (!canManage || !changes.length) return null;
+  // THE PICKER IS A SECOND OWNER OF THE VOCABULARY (D-118). Options the form
+  // offers that the canonical list does not contain — a stray that folds goes
+  // with Apply; one that does not is shown with its own Retire, because the
+  // app cannot tell an odd spelling from a real area nobody has added yet.
+  const strays = data?.picker?.strays || [];
+  const foldable = strays.filter(o => o.folds_to);
+  const unplaced = strays.filter(o => !o.folds_to);
+  if (!canManage || (!changes.length && !strays.length)) return null;
 
   const go = async () => {
     setBusy(true); setErr(null);
@@ -583,12 +590,22 @@ function AreaNormalizeStrip({ onDone }) {
     catch (e) { setErr(e.message); }
     finally { setBusy(false); }
   };
+  const retireOne = async (o) => {
+    const reason = window.prompt(`Take “${o.label}” off the Area dropdown? Records already filed under it are left exactly as filed.\n\nWhy? (required)`);
+    if (reason == null) return;
+    setBusy(true); setErr(null);
+    try { await apiPost('/sanitation/areas/retire-option', { id: o.id, reason }); refresh(); }
+    catch (e) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
 
   return (
     <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2">
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="text-sm font-semibold text-amber-900">
-          {data.records} record{data.records === 1 ? '' : 's'} filed under {changes.length} spelling{changes.length === 1 ? '' : 's'} of an area that already has a name
+        <div className="text-sm font-semibold text-amber-900" data-area-strip-title>
+          {changes.length > 0 && `${data.records} record${data.records === 1 ? '' : 's'} filed under ${changes.length} spelling${changes.length === 1 ? '' : 's'} of an area that already has a name`}
+          {changes.length > 0 && strays.length > 0 && ' · '}
+          {strays.length > 0 && `${strays.length} option${strays.length === 1 ? '' : 's'} on the Area dropdown that the area list does not know`}
         </div>
         <button onClick={() => setOpen(o => !o)} className="text-[11px] text-amber-700 hover:text-amber-900 underline">
           {open ? 'Hide' : 'Review'}
@@ -616,11 +633,43 @@ function AreaNormalizeStrip({ onDone }) {
               {data.unmatched.map(u => `${u.area} (${u.records})`).join(', ')}
             </div>
           )}
+          {strays.length > 0 && (
+            <div className="text-xs space-y-1" data-area-strays>
+              <div className="font-medium text-gray-700">On the Area dropdown, but not on the area list:</div>
+              <ul className="space-y-0.5">
+                {foldable.map(o => (
+                  <li key={o.id} data-area-stray={o.value} data-area-stray-folds className="flex items-baseline gap-2">
+                    <span className="line-through text-gray-500 break-words">{o.label}</span>
+                    <span className="text-gray-400">→</span>
+                    <span className="font-medium">{o.folds_to_label}</span>
+                    <span className="text-[11px] text-gray-500">— a spelling of a room already listed; leaves the dropdown with Apply</span>
+                  </li>
+                ))}
+                {unplaced.map(o => (
+                  <li key={o.id} data-area-stray={o.value} className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium text-gray-800 break-words">{o.label}</span>
+                    <span className="text-[11px] text-gray-500">
+                      — not a room the app knows{o.records ? ` · ${o.records} record${o.records === 1 ? '' : 's'} filed under it` : ''}. A chemical or a task is not an area.
+                    </span>
+                    <button type="button" onClick={() => retireOne(o)} disabled={busy} data-area-stray-retire
+                      className="px-2 py-0.5 border border-amber-300 text-amber-900 rounded text-[11px] font-medium hover:bg-amber-100 disabled:opacity-50">
+                      Retire from dropdown…
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {err && <p className="text-xs text-red-600">{err}</p>}
-          <button onClick={go} disabled={busy}
-            className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-medium hover:bg-amber-700 disabled:opacity-50">
-            {busy ? 'Applying…' : `Apply to ${data.records} record${data.records === 1 ? '' : 's'}`}
-          </button>
+          {(changes.length > 0 || foldable.length > 0) && (
+            <button onClick={go} disabled={busy} data-area-apply
+              className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-medium hover:bg-amber-700 disabled:opacity-50">
+              {busy ? 'Applying…' : [
+                changes.length > 0 ? `Apply to ${data.records} record${data.records === 1 ? '' : 's'}` : null,
+                foldable.length > 0 ? `retire ${foldable.length} duplicate option${foldable.length === 1 ? '' : 's'}` : null,
+              ].filter(Boolean).join(' and ')}
+            </button>
+          )}
         </div>
       )}
     </div>

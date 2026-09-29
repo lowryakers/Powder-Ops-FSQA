@@ -6,7 +6,7 @@ import { recordGroupFor } from '../qa-records.js';
 import { activeChemicalNames } from '../chemicals.js';
 import { areaLabel } from '../../shared/rooms.js';
 import { recleanTaskText as recleanText, ATP_RECLEAN } from '../../shared/reclean-reasons.js';
-import { canonicalArea, previewAreaNormalization, NON_PRODUCTION_AREAS } from '../sanitation-areas.js';
+import { canonicalArea, previewAreaNormalization, pickerDrift, NON_PRODUCTION_AREAS, SANITATION_AREAS } from '../sanitation-areas.js';
 import { canVerifySanitation } from '../qa-signing.js';
 import { recordEditPolicy, mayRevokeSignature } from '../record-permissions.js';
 import { planQaRecordBackfill, runQaRecordBackfill } from '../qa-record-backfill.js';
@@ -502,12 +502,16 @@ router.post('/areas/normalize', (req, res) => {
   if (!canManageReclean(req.user)) return res.status(403).json({ error: 'Only admins, supervisors, or QA can normalize areas.' });
   const db = getDb();
   const plan = previewAreaNormalization(db);
-  if (!plan.changes.length) return res.json({ ok: true, updated: 0, changes: [] });
+  // Picker options that are a SPELLING of a room already on the list — the same
+  // judgement made about the records below — go with them. Options the rule
+  // cannot fold are left offered and reported; see pickerDrift().
+  const foldable = (plan.picker?.strays || []).filter(o => o.folds_to);
+  if (!plan.changes.length && !foldable.length) return res.json({ ok: true, updated: 0, changes: [], retired: [] });
 
-  const rows = db.prepare(
+  const rows = plan.changes.length ? db.prepare(
     "SELECT id, area FROM sanitation_records WHERE COALESCE(record_group, 'sanitation') = 'sanitation' AND area IN (" +
     plan.changes.map(() => '?').join(',') + ')'
-  ).all(...plan.changes.map(c => c.from));
+  ).all(...plan.changes.map(c => c.from)) : [];
   const to = new Map(plan.changes.map(c => [c.from, c.to]));
   // The group travels with the area, by design rather than by the SELECT's scope.
   const upd = db.prepare('UPDATE sanitation_records SET area = ?, record_group = ? WHERE id = ?');
@@ -524,9 +528,54 @@ router.post('/areas/normalize', (req, res) => {
     }
   })();
 
+  // Retire, never delete: the row stays so the option can be revived from
+  // Settings → Log Structure, and so a record filed under it before this still
+  // has a label to point at. Audited per option — this takes a choice off a form.
+  const retired = [];
+  const retire = db.prepare("UPDATE app_list_options SET is_active = 0, updated_at = datetime('now') WHERE id = ? AND is_active = 1");
+  db.transaction(() => {
+    for (const o of foldable) {
+      if (!retire.run(o.id).changes) continue;
+      logAudit(req.user, 'retire', 'app_list_option', o.id,
+        { list: 'sanitation_areas', value: o.value, folds_to: o.folds_to, source: 'area_normalization' },
+        { is_active: 1 }, { is_active: 0 }, `Sanitation — Areas: ${o.label}`);
+      retired.push({ id: o.id, value: o.value, folds_to: o.folds_to });
+    }
+  })();
+
   logAudit(req.user, 'bulk_update', 'sanitation_record', 'area_normalization',
-    { updated, changes: plan.changes, left_alone: plan.unmatched });
-  res.json({ ok: true, updated, changes: plan.changes, unmatched: plan.unmatched });
+    { updated, changes: plan.changes, left_alone: plan.unmatched, picker_retired: retired });
+  res.json({ ok: true, updated, changes: plan.changes, unmatched: plan.unmatched, retired, picker: pickerDrift(db) });
+});
+
+// Retire one picker option the rule could NOT fold — "Simple Green",
+// "Sanitizer Dilution" — on a person's say-so, with a reason. The app never
+// does this by itself: an option it cannot place may be a real area nobody has
+// added to the canonical list yet. A canonical area is refused here outright;
+// taking a real room off the form is a Settings → Log Structure act, not a
+// tidy-up. Records already filed under the option are left exactly as filed
+// and their count is returned, so nobody is surprised later.
+router.post('/areas/retire-option', (req, res) => {
+  if (!canManageReclean(req.user)) return res.status(403).json({ error: 'Only admins, supervisors, or QA can retire an area option.' });
+  const db = getDb();
+  const id = String(req.body?.id || '').trim();
+  const reason = String(req.body?.reason || '').trim();
+  if (!id) return res.status(400).json({ error: 'id is required.' });
+  if (reason.length < 3) return res.status(400).json({ error: 'A reason is required — say why this option should leave the form.' });
+  const opt = db.prepare("SELECT * FROM app_list_options WHERE id = ? AND list_key = 'sanitation_areas'").get(id);
+  if (!opt) return res.status(404).json({ error: 'That area option was not found.' });
+  if (SANITATION_AREAS.some(a => a.value === opt.value)) {
+    return res.status(400).json({ error: `"${opt.label}" is a real area on the canonical list. Retire it in Settings → Log Structure if that is what you mean.` });
+  }
+  if (!opt.is_active) return res.json({ ok: true, already: true, option: opt });
+  const records = db.prepare(
+    "SELECT COUNT(*) c FROM sanitation_records WHERE COALESCE(record_group, 'sanitation') = 'sanitation' AND area = ?"
+  ).get(opt.value).c;
+  db.prepare("UPDATE app_list_options SET is_active = 0, updated_at = datetime('now') WHERE id = ?").run(id);
+  logAudit(req.user, 'retire', 'app_list_option', id,
+    { list: 'sanitation_areas', value: opt.value, reason, records_left_as_filed: records, source: 'area_picker_review' },
+    { is_active: 1 }, { is_active: 0 }, `Sanitation — Areas: ${opt.label}`);
+  res.json({ ok: true, option: { ...opt, is_active: 0 }, records_left_as_filed: records, picker: pickerDrift(db) });
 });
 
 router.get('/:id', (req, res) => {

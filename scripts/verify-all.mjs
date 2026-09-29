@@ -83,6 +83,7 @@ const RUNS = [
   ['verify-doc-attach.mjs', 4992, {}, true],
   ['verify-training-media.mjs', 5024, {}, true],
   ['verify-scale-due.mjs', 5026, {}, false],
+  ['verify-sanitation-areas.mjs', 4905, {}, false],
 ];
 
 const wait = (ms) => new Promise(r => setTimeout(r, ms));

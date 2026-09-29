@@ -19,6 +19,16 @@ t('the cleaning seed files the canonical spelling', /'Restrooms', 'pre_op'/.test
   && !/'Restroom', 'pre_op'/.test(src('server/cleaning-seed.js')));
 t('the seed spelling is what canonicalArea would produce', canonicalArea('Restrooms') === 'Restrooms');
 
+// D-118: the plant writes the word AFTER the bracket — "Room 7 (72 hr) cleanning"
+// — and the suffix rule anchored the bracket to the end, so the plant's own
+// dominant spelling was refused while the tidier one folded.
+t('"Room 7 (72 hr) cleanning" — the plant\'s spelling — folds to Room 7', canonicalArea('Room 7 (72 hr) cleanning') === '7', canonicalArea('Room 7 (72 hr) cleanning'));
+t('"Room 8 (72 hr) cleaning" folds to the retired Room 8, not nothing', canonicalArea('Room 8 (72 hr) cleaning') === '8');
+t('"Room 7 (72 HR cleaning)" still folds — nothing regressed', canonicalArea('Room 7 (72 HR cleaning)') === '7');
+t('"Batching room 2 (72 Hr cleanning)" still folds', canonicalArea('Batching room 2 (72 Hr cleanning)') === 'Batching 2');
+t('only the cleaning word is allowed after the bracket — "Room 7 (72 hr) storage" is still refused', canonicalArea('Room 7 (72 hr) storage') === null);
+t('a chemical is not a room and is refused, never guessed', canonicalArea('Simple Green') === null && canonicalArea('Sanitizer Dilution') === null);
+
 console.log('\n── scopes ──');
 const scopes = KNOWN_SCOPES.map(s => s.scope);
 for (const dead of ['supply_order', 'disposal', 'qms:deviation', 'qms:non_conformance', 'qms:on_hold']) {
