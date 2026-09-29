@@ -22,6 +22,8 @@
 // same reasoning that keeps deviations out of QA Review.
 
 import { recomputeDocumentReview } from './api/documents.js';
+import { numberingWork } from './api/forms.js';
+import { zoneDrift, bpgDiagram } from './bpg-zones.js';
 import { GO_LIVE_DATE } from './db.js';
 
 // Who is Document Control for the purposes of this screen. Matches the rule the
@@ -151,6 +153,55 @@ export const SOURCES = [
         overdue: false,
         extra: null,
       })),
+    canAct: isDocController,
+  },
+  // ── Two piles that were already derived, on screens Document Control does
+  // not land on (D-121). Neither is batchable: both are worked where the record
+  // is — and `view` names the tab there, so "open it" opens the right one.
+  {
+    key: 'form-numbering',
+    label: 'Form numbers to rule on',
+    module: 'form-registry',   // the Forms tab of Controlled Documents (a hub tab id)
+    noun: 'question',
+    plural: 'questions',
+    help: 'A record form disagreeing with the register about its number, or a series written two ways. Each clears itself when the register is put right, or is ruled correct as it stands with a reason. Worked on the Forms tab of Controlled Documents.',
+    count: (db) => numberingWork(db).filter(i => !i.ruled).length,
+    pending: (db, limit = LIMIT) => numberingWork(db).filter(i => !i.ruled).slice(0, limit)
+      .map(i => ({
+        id: `${i.kind}:${i.subject}`,
+        title: i.title,
+        subtitle: i.evidence || null,
+        date: null,
+        overdue: false,
+        extra: i.action || null,
+      })),
+    canAct: isDocController,
+  },
+  {
+    key: 'bpg-zone-drift',
+    label: 'Zones that have left the BP&G drawing',
+    module: 'qa-inspections',
+    view: 'zones',
+    form: '431-01',
+    noun: 'zone',
+    plural: 'zones',
+    help: 'A zone whose inventory in the app no longer matches what FORM 431-01 shows. The drawing cannot redraw itself: this is the list of what a re-issue has to carry, worked from Zones & items on QA Inspections. It clears when the re-issued drawing is transcribed.',
+    count: (db) => zoneDrift(db).drifted.length,
+    pending: (db, limit = LIMIT) => {
+      const dg = bpgDiagram(db);
+      return zoneDrift(db).drifted.slice(0, limit).map(z => ({
+        id: String(z.schedule_id),
+        title: z.zone,
+        subtitle: [
+          z.added.length && `added: ${z.added.map(i => i.name).join(', ')}`,
+          z.removed.length && `removed: ${z.removed.map(i => i.name).join(', ')}`,
+          z.changed.length && `changed: ${z.changed.map(c => `${c.name} ${c.was} → ${c.now}`).join(', ')}`,
+        ].filter(Boolean).join(' · '),
+        date: null,
+        overdue: false,
+        extra: `${z.moved} item${z.moved === 1 ? '' : 's'} differ from ${dg.code}${dg.revision ? ` ${dg.revision}` : ''}`,
+      }));
+    },
     canAct: isDocController,
   },
 ];

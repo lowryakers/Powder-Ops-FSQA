@@ -1975,6 +1975,23 @@ open receipt" and is kept as-is (which also leaves the legacy bare-number record
 issued at write time, so two people filing at once can't collide. After a save the form clears the field
 (new inspection is the common case) and offers a one-click "Add another line to A-100-####".
 
+## Reachability: every pile names the screen its actor opens (D-121, `docs/v2/reachability.md`)
+The inventory of every strip, banner and queue with three answers each — who acts, where it is shown,
+how they are told. **Add a row when a new one ships.** Banner-only on a screen that is not the actor's
+daily one is the gap; close it with their review center, their bell or their DM before the plant reports it.
+- **Doc Control Review and QA Review are the two registries.** A `SOURCES` entry may carry `view` — the tab
+  inside the module where the pile is worked — and `app-navigate {tab, view}` lands there
+  (`deepLink.setParam('view')`, read by `useModuleTabs` at mount exactly like `?view=`). BP&G zone drift
+  and the form-numbering worklist are DC sources now, derived by the same functions the original screens
+  read.
+- **A HUB TAB THAT "RIDES" ANOTHER GRANT MUST SAY SO IN `visible`.** `ModuleHub` defaults visibility to
+  `canViewModule(u, tab.id)`; `form-registry` and `reference-library` are not grantable modules, so both
+  rendered for admins and for nobody else — Document Control could not see the Forms tab where numbers
+  are ruled on. **Test a tab as the non-admin it is for.**
+- `coa-draft-specs` is on QA's bell: starter specifications are drafts until QA decides, and a draft
+  grades nothing.
+- `verify:reach` (35, live + browser; in `verify:all`).
+
 ## A verify that is not in `verify:all` is a verify nobody runs (D-120)
 Fourteen `verify-*.mjs` scripts had passed once by hand and were never run again; three had rotted —
 `verify-suppliers.mjs` read a spreadsheet from one session's uploads folder (red for everyone since),

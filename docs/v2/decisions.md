@@ -4965,3 +4965,44 @@ assertions across fourteen scripts. The controls are the failures above, observe
 suppliers could not get past `ECONNREFUSED`/a missing file, auth read green over a red protocol, the swab
 screen found a password box. `verify-prod-copy.mjs` is the one script left out, on purpose — it needs a
 file only production can produce.
+
+---
+
+## D-121 — The reachability pass: three piles moved to where their actor looks, and a tab nobody but an admin could see
+*2026-09-29. Roadmap item 6. The inventory is `docs/v2/reachability.md`.*
+
+Eleven of the previous twenty decisions were one shape: a correct mechanism on a screen its actor never
+opens. So this pass asked three questions of every strip, banner and queue in the app — who acts, where
+is it shown, how are they told — and wrote the answers down. Twenty-eight rows; twenty-two already
+reached their person (a DM, a bell line, or the actor's own daily screen), three did not and are fixed
+here, one is a noted gap, two are left as they are on purpose.
+
+- **The BP&G zone drift (D-104) and the form-numbering worklist (D-092) are Document Control's, and were
+  shown on QA Inspections → Zones & items and on the Forms tab.** Neither is where Daniela starts her
+  day; the Doc Control Review Center is. Both are **sources on that center now** — the registry pattern,
+  `count` + `pending`, no batch action because neither is batchable, each derived by the SAME function
+  the original screen reads (`zoneDrift`, `numberingWork`), so the two screens cannot disagree.
+- **A source may name the `view` inside its module.** `app-navigate` carries `view`, `deepLink.setParam`
+  holds it for the lazily-mounted module exactly as a `?view=` in the address bar would, and "Open where
+  it is worked" lands on Zones & items rather than on QA Inspections' first tab. A link to the module
+  that leaves the person to find the tab is the re-clean badge again, one click later.
+- **THE CONTROL FOUND A SECOND GAP.** Asserting the numbering pile's link for a NON-admin on the sops
+  grant, the Forms tab was not there at all. `ModuleHub` defaults a tab's visibility to
+  `canViewModule(user, tab.id)`, and `form-registry` — like `reference-library` — is not a module anyone
+  can be granted, so **both tabs rendered for admins and for nobody else, Document Control included.**
+  The comment beside each said "rides the sops grant". It says so in code now. Every check of the Forms
+  tab until today was run as an admin, which is why it passed.
+- **The starter COA specifications waited on a tab QA rarely opens.** `spec-seed.js` files them as drafts
+  precisely so that a result has a spec to grade against; a draft grades nothing, so a pile left on the
+  Specifications tab is the silently-passing test the seeder exists to prevent. `coa-draft-specs` is on
+  QA's bell, counted by the same query as the strip, quiet at zero.
+- **Left alone, with the reason written down:** the Equipment repair banners (one-off, self-clearing,
+  and run by hand this week), the Products corrections (the actor owns the screen), the obligations
+  register (its reader reads the repository). **Noted as a gap:** the "used up" restock suggestions,
+  banner-only on an admin-only screen — small, and the office's existing DM is the place for it.
+
+**Verified:** `verify:reach` (35, live + a real browser at 1280; in `verify:all`): the two sources and
+their counts against the screens they mirror, a zone moved and the pile counting one and clearing itself
+when it is put back, the bell line appearing with a draft and absent for an operator, and the browser
+walking from the review center to the Zones & items view and to the Forms tab **as a non-admin**. The
+run before the visibility fix is the control: it failed with the Forms tab absent.

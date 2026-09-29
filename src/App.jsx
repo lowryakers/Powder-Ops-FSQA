@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
+import { setParam } from './lib/deepLink.js';
 import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, UserPlus, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Building2, Sliders, BookText, LifeBuoy, PenLine, ListTodo, UserPlus2} from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
@@ -994,13 +995,18 @@ const HUB_TABS = {
     // External standards the plant certifies against (NSF 306, NSF/ANSI 455,
     // the GMP audit guide) — its own tab so they never read as the plant's own
     // SOPs, seeded from server/assets/reference. Rides the sops grant.
-    { id: 'reference-library', label: 'Reference Library', render: () => <DocumentRegistry docType="reference" moduleId="sops" title="Reference Library" typeLabel="Reference" /> },
+    // "Rides the sops grant" has to be SAID: ModuleHub's default visibility is
+    // canViewModule(u, tab.id), and neither of these ids is a module anyone can
+    // be granted — so for every non-admin, Document Control included, both tabs
+    // were simply absent (D-121). The Forms tab is where a number is ruled on.
+    { id: 'reference-library', label: 'Reference Library', visible: (u) => canViewModule(u, 'sops'),
+      render: () => <DocumentRegistry docType="reference" moduleId="sops" title="Reference Library" typeLabel="Reference" /> },
     // The Forms Master Index sits WITH the controlled documents, not beside
     // them: SOPs, WIs, JDs and forms are one register family kept by one
     // person, and a separate nav entry made the forms look like a different
     // system. Rides the `sops` grant for the same reason the Reference Library
     // does — anyone who can see the registry can look up a form number.
-    { id: 'form-registry', label: 'Forms', render: () => <FormRegistryPanel /> },
+    { id: 'form-registry', label: 'Forms', visible: (u) => canViewModule(u, 'sops'), render: () => <FormRegistryPanel /> },
   ],
   // Forms 440-02 (knives/blades) and 703-01 (equipment/tools/chemicals) record
   // the same transaction — a person takes an item, brings it back, condition
@@ -1341,6 +1347,9 @@ function App() {
         if (!e.detail.tab) return;
       }
       if (e.detail?.section) setDeepSection(e.detail.section);
+      // `view` is the tab INSIDE the module (useModuleTabs reads it at mount),
+      // so it must be in place before the tab switch mounts the module.
+      if (e.detail?.view) setParam('view', e.detail.view);
       setActiveTab(e.detail?.tab || 'dashboard');
     };
     window.addEventListener('app-navigate', handler);

@@ -33,4 +33,14 @@ export function consumeParam(name) {
   captured.delete(name);
 }
 
-export default { getParam, consumeParam };
+// A deep link raised from INSIDE the app — `app-navigate` carrying a `view`.
+// The Doc Control Review Center sends somebody to "QA Inspections → Zones &
+// items"; the module it opens is lazy and mounts after the event, and reads
+// its tab from here exactly as it would from a ?view= in the address bar.
+// Set before the tab changes, consumed once by the module that lands.
+export function setParam(name, value) {
+  if (value == null || value === '') captured.delete(name);
+  else captured.set(name, String(value));
+}
+
+export default { getParam, consumeParam, setParam };

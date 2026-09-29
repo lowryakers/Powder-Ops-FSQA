@@ -43,6 +43,8 @@ router.get('/', (req, res) => {
       label: s.label,
       form: s.form || null,
       module: s.module,
+      // The tab inside that module where the pile is worked, when it has one.
+      view: s.view || null,
       noun: s.noun,
       plural: s.plural,
       help: s.help || null,

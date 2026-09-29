@@ -618,6 +618,14 @@ router.get('/notifications', (req, res) => {
       if (held > 0) items.push({ id: 'coa-held', tab: 'coa', severity: 'warning', count: held, label: `${held} lot${held > 1 ? 's' : ''} held by the specification gate` });
       if (gaps > 0) items.push({ id: 'coa-gaps', tab: 'coa', severity: 'info', count: gaps, label: `${gaps} lot${gaps > 1 ? 's' : ''} released carrying specification gaps` });
     } catch { /* columns optional */ }
+    // Starter specifications seeded as drafts (spec-seed.js) wait on the
+    // Specifications tab, which QA opens far less often than Lab Requests. A
+    // draft grades nothing, so a pile left there is the test with no spec that
+    // quietly passes — the reason the seeder exists. Same query as the strip.
+    try {
+      const drafts = db.prepare("SELECT COUNT(*) n FROM coa_specifications WHERE approval_status = 'draft' AND is_active = 0").get().n;
+      if (drafts > 0) items.push({ id: 'coa-draft-specs', tab: 'coa', severity: 'info', count: drafts, label: `${drafts} draft specification${drafts > 1 ? 's' : ''} waiting for QA to approve or discard` });
+    } catch { /* columns optional */ }
   }
   // Environmental monitoring: a result the laboratory owes, and an action
   // level nobody has written against. Both are derived from emp_samples

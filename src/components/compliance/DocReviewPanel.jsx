@@ -17,8 +17,11 @@ import {
 // finish the job.
 
 // Same event the QA Review panel and the dashboard use to change tab.
-const openModule = (moduleId) => {
-  window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab: moduleId } }));
+// `view` is the tab inside the module where that pile is worked (Zones &
+// items on QA Inspections) — a link that lands on the module's first tab and
+// leaves the person to find the right one is half a link.
+const openModule = (moduleId, view = null) => {
+  window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab: moduleId, ...(view ? { view } : {}) } }));
 };
 
 function Row({ item, source, checked, onToggle }) {
@@ -159,7 +162,7 @@ export default function DocReviewPanel() {
 
       <div className="flex gap-1 bg-gray-100 rounded-lg p-1 flex-wrap w-fit">
         {sources.map(s => (
-          <button key={s.key} onClick={() => { setTab(s.key); setShowConsistency(false); setPicked(new Set()); setMsg(null); }}
+          <button key={s.key} data-doc-review-source={s.key} onClick={() => { setTab(s.key); setShowConsistency(false); setPicked(new Set()); setMsg(null); }}
             className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${!showConsistency && active?.key === s.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
             {s.label}
             {s.count > 0 && (
@@ -191,9 +194,9 @@ export default function DocReviewPanel() {
                 </p>
               )}
             </div>
-            <button onClick={() => openModule(active.module)}
+            <button onClick={() => openModule(active.module, active.view)} data-doc-review-open={active.key}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-300 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-50 shrink-0">
-              <ExternalLink size={13} /> Open the module
+              <ExternalLink size={13} /> {active.view ? 'Open where it is worked' : 'Open the module'}
             </button>
           </div>
 

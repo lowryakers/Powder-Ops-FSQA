@@ -97,6 +97,7 @@ const RUNS = [
   ['verify-reaction-tooltip.mjs', 5038, {}, false],
   ['verify-supply-receiving.mjs', 5040, {}, false],
   [['verify-swab-stock.mjs', 'verify-swab-ui.mjs'], 5041, {}, false],
+  ['verify-reachability.mjs', 5042, {}, false],
 ];
 
 // VERIFY_ONLY=verify-auth.mjs,verify-swab-stock.mjs runs just the entries that

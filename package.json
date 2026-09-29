@@ -95,6 +95,7 @@
     "verify:atp": "node scripts/verify-atp-task-door.mjs",
     "verify:trainingmedia": "node scripts/verify-training-media.mjs",
     "verify:scaledue": "node scripts/verify-scale-due.mjs",
+    "verify:reach": "node scripts/verify-reachability.mjs",
     "verify:qmssig": "node scripts/verify-qms-signature.mjs",
     "verify:qmsgate": "node scripts/verify-qms-module-gate.mjs",
     "verify:doors": "node scripts/verify-completion-doors.mjs",

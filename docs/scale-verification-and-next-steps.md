@@ -233,7 +233,7 @@ separately, instead of showing everything as untouched.
 Including — and this is the embarrassing part — the one covering the sanitation area list I just
 found broken in two ways. A test nobody runs cannot fail.
 
-### 6. The reachability pass
+### 6. The reachability pass  ← **DONE 29 Sep (D-121): inventory in `docs/v2/reachability.md`, three piles moved, one tab that only admins could see**
 The pattern behind almost everything above: **the thing is built, it works, and it is on a screen
 the person who needs it never opens.** Scale Verification is the clearest example yet. Eleven of
 the last twenty fixes have been this same shape. Going forward, every mechanism should name the

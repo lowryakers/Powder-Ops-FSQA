@@ -460,7 +460,7 @@ function numberParts(code) {
  * it stands". That is `form_numbering_decisions` — a reason and a name, the
  * same shape as a dismissed coverage gap.
  */
-function numberingWork(db) {
+export function numberingWork(db) {
   const norm = s => String(s || '').toUpperCase().replace(/[\s-]/g, '');
   const decided = (() => {
     try {
