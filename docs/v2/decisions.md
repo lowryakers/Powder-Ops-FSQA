@@ -4880,3 +4880,41 @@ records staying under `Room 7 (72 hr) cleanning`.
 Room 7 / Room 8 spellings fold and leave the dropdown together — then decide the ones the app would not:
 "Simple Green" and "Sanitizer Dilution" are chemical checks (FORM 106-01, D-096), not areas. Whether their
 records move to `Chemical Verification` is Quality's call; the app leaves them as filed.
+
+---
+
+## D-119 — The register could not show the software that had shipped
+*2026-09-29. Roadmap item 4.*
+
+`obligations.json` read **5 landed · 23 open** while the code behind eight of those "open" entries had been
+on `main` for three weeks — EMP results and grading, the GMP walk record, the banned-list review, IQ/OQ/PQ
+readiness steps, the stability holder, the specification release gate, the change register, and the Food
+Defense challenge shipped the day before. **The notes were current** (each carried its "UPDATE 9 Sep"
+paragraph); the *status* was not, because the register has no state for "the software landed; the plant
+half is open". So the one list of what must be true before V2 ships showed everything as untouched, and
+`check:obligations` — which reconciles findings, not claims — could not notice.
+
+- **The doctrine already existed and was applied eight times.** OBL-01 (grade the reading) was split from
+  OBL-27 (validate the number) so a half-discharged obligation is never marked done. The same shape the
+  other way: **OBL-34 … OBL-41 are the software halves, `landed`, each taking the findings that were
+  about the software gap** (a swab whose result went nowhere; IQ/OQ/PQ appearing nowhere in the codebase;
+  the walk finding no record path) **and the original keeps the findings only a person can close** (the
+  NC itself, the SOP rewrite, the protocols, the samples never taken). Every finding still has exactly one
+  owner — the checker enforces that, and it passed.
+- **Two of the eight carry no finding of their own** (OBL-37 the release gate, OBL-40 the stability
+  holder) because their parent's every finding is about the plant half — NC 4.3.6 closes when the
+  specifications exist as approved documents; NC 4.6.21 and both SQF clauses are about the shelf-life
+  basis and the real-time data. Splitting a single NC across two owners would be the two-owners defect
+  in the register itself; an entry that says plainly "this is the software; the finding stays with QA" is
+  the honest one.
+- **The checker now refuses an artifact path that does not exist** — the same rule it has always applied
+  to finding IDs. Its first run caught one: OBL-28 cited `docs/v2/queued/supplier-qualification.md`, which
+  moved to `landed/` when that register shipped (the D-018 convention) and was never updated. A claim
+  with nothing behind it, found by making the claim checkable.
+- **The design record for the eight is `decisions.md`, not a queued file.** None of them was ever
+  queued — they were built and landed in one pass on `main` under D-045 — so there is no file to move to
+  `docs/v2/landed/`. Each entry cites its decision, its code and its verify instead.
+
+**Register now: 41 obligations covering 163 findings — 13 landed · 23 open · 5 drafted.** The 23 open are
+the same 23 ids as before, each now reading as the plant's, Quality's or Document Control's remainder
+rather than as unbuilt software. `check:obligations` passes.

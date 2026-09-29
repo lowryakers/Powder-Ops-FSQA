@@ -91,6 +91,13 @@ fail('Register cites a finding that no document declares — stale reference', u
 fail('Findings claimed by more than one obligation — give each exactly one owner',
   twice.map(([id, os]) => `${id} → ${os.join(', ')}`));
 
+// An artifact that is not there is a claim with nothing behind it — the same
+// defect as a finding cited from a document that no longer declares it.
+import { existsSync } from 'fs';
+const missingArtifacts = register.obligations.flatMap(o =>
+  (o.artifacts || []).filter(a => !existsSync(join(ROOT, a))).map(a => `${o.id} → ${a}`));
+fail('Register cites an artifact path that does not exist', missingArtifacts);
+
 const byStatus = {};
 for (const o of register.obligations) byStatus[o.status] = (byStatus[o.status] || 0) + 1;
 

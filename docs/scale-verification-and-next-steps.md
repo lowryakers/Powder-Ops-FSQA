@@ -223,7 +223,7 @@ Kitchen Tour #0151.
   gets folded correctly; `Room 7 (72 hr) cleanning` — the one your dropdown actually shows — is
   refused outright. Every record filed that way is invisible to the 72-hour re-clean rule.
 
-### 4. Update the obligations register
+### 4. Update the obligations register  ← **DONE 29 Sep (D-119): 41 obligations, 13 landed · 23 open · 5 drafted**
 It has not moved since 9 September and it undersells you. It says 5 of 33 done. But the software
 has actually shipped for eight more, including the Food Defense challenge you got yesterday. The
 plant half of those is genuinely still open — so the register needs to show both halves

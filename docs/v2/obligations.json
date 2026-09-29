@@ -23,7 +23,13 @@
     "",
     "BUCKET (from audit-nc-triage.md):",
     "  A — ReadyDoc is the fix.  B — ReadyDoc makes it stick.  C — outside ReadyDoc.",
-    "  doc — a change to a controlled document; no software involved."
+    "  doc — a change to a controlled document; no software involved.",
+    "",
+    "SPLITTING (D-119, the OBL-01 / OBL-27 precedent): when the SOFTWARE half of an obligation lands and",
+    "the PLANT half is still open, split it — a new entry marked `landed` takes the software findings and",
+    "the artifacts; the original keeps the findings only a person can close. Never mark the original",
+    "landed on the strength of the code, and never leave a built-and-deployed half reading `open`.",
+    "Every `artifacts` path must exist; the check fails on one that does not."
   ],
   "generated": null,
   "obligations": [
@@ -73,10 +79,9 @@
       "sources": [
         "FSP-28",
         "NC-306-6.2.2",
-        "NC-306-6.2.3.1",
         "NC-306-6.2.3.2"
       ],
-      "note": "THREE NONCONFORMANCES, ONE SOP. The draft exists as SOP-DRAFT-BSC. Needs: the SOP written and numbered (C); an annual quality schedule for the list review (B); one line on FORM 204-01 for the purchasing check, which requires a DCR (A). VERIFIED 2 Sep against main: banned-substance-sop-seed.js seeds a full DRAFT of the Banned & Prohibited Substance Control Program (SOP-DRAFT-BSC), citing NSF 306 Annex C, NFL/NFLPA, MLB and WADA by name, and skipped entirely if the plant already has a procedure. It stays a draft until Document Control approves it. APPROVING IT IS THE HIGHEST-VALUE HOUR AVAILABLE — all three GMP for Sport findings hang on that document existing. Still absent: anything that GENERATES the annual list review (6.2.3.1), and the banned-list line on FORM 204-01 (6.2.3.2 — receiving-checklist.js has no such question). OFFICIAL 2026-09-08: CAR 4990682-1 response due 4 Oct 2026; CAR 4990682-2 response due 4 Oct 2026; CAR 4990682-3 response due 4 Oct 2026 (NSF Connect; wording unchanged from the draft report; D-056). UPDATE 9 Sep (D-060): the annual list review now generates work AND a record — 'Banned/Prohibited Substance List Review' quality schedule, completion refused without the edition of each of the four lists + changes + actions; banned_list_reviews; latest review = editions in use; readiness reads it. The SOP and the FORM 204-01 V2 receiving line remain Document Control's. UPDATE 9 Sep (D-064): the §6.2.3.2 receiving line is BUILT as FORM 204-01 V2 (banned_substance_check, NO escalates to Quality) and deployed PARKED — controlled.js records V1 as the approved baseline and serves it until Document Control approves V2 in Controlled Changes; DCR draft docs/v2/queued/dcr-form-204-01-v2.md.",
+      "note": "THREE NONCONFORMANCES, ONE SOP. The draft exists as SOP-DRAFT-BSC. Needs: the SOP written and numbered (C); an annual quality schedule for the list review (B); one line on FORM 204-01 for the purchasing check, which requires a DCR (A). VERIFIED 2 Sep against main: banned-substance-sop-seed.js seeds a full DRAFT of the Banned & Prohibited Substance Control Program (SOP-DRAFT-BSC), citing NSF 306 Annex C, NFL/NFLPA, MLB and WADA by name, and skipped entirely if the plant already has a procedure. It stays a draft until Document Control approves it. APPROVING IT IS THE HIGHEST-VALUE HOUR AVAILABLE — all three GMP for Sport findings hang on that document existing. Still absent: anything that GENERATES the annual list review (6.2.3.1), and the banned-list line on FORM 204-01 (6.2.3.2 — receiving-checklist.js has no such question). OFFICIAL 2026-09-08: CAR 4990682-1 response due 4 Oct 2026; CAR 4990682-2 response due 4 Oct 2026; CAR 4990682-3 response due 4 Oct 2026 (NSF Connect; wording unchanged from the draft report; D-056). UPDATE 9 Sep (D-060): the annual list review now generates work AND a record — 'Banned/Prohibited Substance List Review' quality schedule, completion refused without the edition of each of the four lists + changes + actions; banned_list_reviews; latest review = editions in use; readiness reads it. The SOP and the FORM 204-01 V2 receiving line remain Document Control's. UPDATE 9 Sep (D-064): the §6.2.3.2 receiving line is BUILT as FORM 204-01 V2 (banned_substance_check, NO escalates to Quality) and deployed PARKED — controlled.js records V1 as the approved baseline and serves it until Document Control approves V2 in Controlled Changes; DCR draft docs/v2/queued/dcr-form-204-01-v2.md. SPLIT 29 Sep (D-119): the annual list review is OBL-34, landed. This entry keeps the SOP approval and the parked FORM 204-01 V2 line.",
       "artifacts": [
         "server/check-records.js",
         "shared/check-forms.js",
@@ -106,8 +111,6 @@
       "sources": [
         "NC-455-4.3.9",
         "W2-12",
-        "W2-13",
-        "W2-14",
         "W2-15",
         "W2-33",
         "W2-35",
@@ -115,7 +118,7 @@
         "W2-37",
         "W2-38"
       ],
-      "note": "controlled.js is already a real gate for form definitions and acceptance criteria — widen it. Adds QC approval on every change, which the current DCR flow does not enforce. Software change control is required by this AND by OBL-04: build once. Wave 2 sized both halves. W2-12: SOP 434's title names chemicals, equipment AND services; ReadyDoc records only chemicals (approved_chemicals is a real approval record with approved_by/at and review_due) and has no equipment or services approval record at all — the software has the same scope gap the auditor found in the document. W2-13: controlled.js IS a working change-control gate with an approval and an audit trail, over exactly three things (QMS form definitions, scale tolerances, the ATP limit); it sees no process, utility, physical-plant or software change. W2-14: 111.130(e) wants QC approval and the DCR flow enforces Document Control only. W2-15: SOP 700 may also govern chemical approval. Interlock with OBL-04 — software change control is named in 4.4.39 too. The wording pass confirmed the auditor needs no argument: SOP 434's scope is chemicals, equipment and services, written as one approval path each, and processes/software/utilities/physical plant appear NOWHERE (W2-35) — so closing this is a rewrite of the scope, not an addendum. W2-33 adds a complication found only by reading SOP 421: IT ALSO REQUIRES A CHANGE-CONTROL SYSTEM for qualified equipment and never cites 434, so widening change control has to reconcile the two documents. W2-36: the SOP is titled '...APPROVAL FORM' and the form it requires has no number, so a record cannot say which it was filed against. W2-37 is the closest ReadyDoc comes to satisfying a Wave 2 SOP as written — approved_chemicals is three columns short of the tracking number, approval number and expiry the SOP requires. W2-14 RESOLVED by reading: the SOP does make the QA/QC Manager the final approver, so the document is fine and the DCR flow is the gap. VERIFIED 2 Sep against main: controlled.js gates form definitions and acceptance criteria only — a changed definition is parked until Document Control approves it and raises a change request. It does NOT cover process, software, utility or physical-plant changes, and does not require QC approval on every change. Foundation right, scope narrower than the finding. OFFICIAL 2026-09-08: CAR 4990683-4 response due 18 Sep 2026 (NSF Connect; wording unchanged from the draft report; D-056). UPDATE 9 Sep (D-062): the REGISTER IS BUILT — change_requests for equipment/process/software/utility/facility/document/other; submit refused until the impact assessment (safety, quality, validation, documents, training, risk) is complete; Quality approves with a password signature (gateSignature); implement refused before approval; close refused without approval + effectiveness check + second signature; parked controlled_definitions listed alongside; software_releases recorded at boot from the deploy commit and counted as uncontrolled until linked (verify:changes). Still open and not software: SOP 434 V3 / new SOP, and Quality actually routing every change through it.",
+      "note": "controlled.js is already a real gate for form definitions and acceptance criteria — widen it. Adds QC approval on every change, which the current DCR flow does not enforce. Software change control is required by this AND by OBL-04: build once. Wave 2 sized both halves. W2-12: SOP 434's title names chemicals, equipment AND services; ReadyDoc records only chemicals (approved_chemicals is a real approval record with approved_by/at and review_due) and has no equipment or services approval record at all — the software has the same scope gap the auditor found in the document. W2-13: controlled.js IS a working change-control gate with an approval and an audit trail, over exactly three things (QMS form definitions, scale tolerances, the ATP limit); it sees no process, utility, physical-plant or software change. W2-14: 111.130(e) wants QC approval and the DCR flow enforces Document Control only. W2-15: SOP 700 may also govern chemical approval. Interlock with OBL-04 — software change control is named in 4.4.39 too. The wording pass confirmed the auditor needs no argument: SOP 434's scope is chemicals, equipment and services, written as one approval path each, and processes/software/utilities/physical plant appear NOWHERE (W2-35) — so closing this is a rewrite of the scope, not an addendum. W2-33 adds a complication found only by reading SOP 421: IT ALSO REQUIRES A CHANGE-CONTROL SYSTEM for qualified equipment and never cites 434, so widening change control has to reconcile the two documents. W2-36: the SOP is titled '...APPROVAL FORM' and the form it requires has no number, so a record cannot say which it was filed against. W2-37 is the closest ReadyDoc comes to satisfying a Wave 2 SOP as written — approved_chemicals is three columns short of the tracking number, approval number and expiry the SOP requires. W2-14 RESOLVED by reading: the SOP does make the QA/QC Manager the final approver, so the document is fine and the DCR flow is the gap. VERIFIED 2 Sep against main: controlled.js gates form definitions and acceptance criteria only — a changed definition is parked until Document Control approves it and raises a change request. It does NOT cover process, software, utility or physical-plant changes, and does not require QC approval on every change. Foundation right, scope narrower than the finding. OFFICIAL 2026-09-08: CAR 4990683-4 response due 18 Sep 2026 (NSF Connect; wording unchanged from the draft report; D-056). UPDATE 9 Sep (D-062): the REGISTER IS BUILT — change_requests for equipment/process/software/utility/facility/document/other; submit refused until the impact assessment (safety, quality, validation, documents, training, risk) is complete; Quality approves with a password signature (gateSignature); implement refused before approval; close refused without approval + effectiveness check + second signature; parked controlled_definitions listed alongside; software_releases recorded at boot from the deploy commit and counted as uncontrolled until linked (verify:changes). Still open and not software: SOP 434 V3 / new SOP, and Quality actually routing every change through it. SPLIT 29 Sep (D-119): the change register is OBL-35, landed. This entry keeps the NC and the SOP 434 scope rewrite.",
       "artifacts": [
         "docs/v2/queued/wave-2-sop-review.md",
         "server/change-register.js",
@@ -143,11 +146,7 @@
       "status": "open",
       "owner": "platform + QA",
       "sources": [
-        "SQF-11",
         "NC-455-4.5.84",
-        "WALK-09",
-        "W2-16",
-        "W2-17",
         "W2-18",
         "W2-39",
         "W2-40",
@@ -157,7 +156,7 @@
         "W2-44",
         "W2-45"
       ],
-      "note": "Three independent routes to one conclusion: the walk found no record path, the auditor found the testing was not done, SQF requires results tracked and trended. Schedule also needs location rotation and a documented method for elevated results (2.4.8.2). Wave 2 found the third gap and it is the decisive one. W2-16: completing a quality schedule writes work_orders and quality_schedules and NOTHING else, so a swab never taken and a swab whose result went nowhere are indistinguishable — the auditor's finding in software terms. W2-17: FORM 604-01's alert and action limits are transcribed faithfully in emp-site-list.js and graded against nothing, which is the ATP 35 RLU state exactly, and OBL-01 is now the working template for the fix. W2-18: the form's WATER section has no EMP schedule at all — monthly potable water (TAB, coliforms, free chlorine, each with limits) is served instead by a pre-existing 'Tap Water Testing' schedule that names no test, cites no limit and never references the form; the room-air row is the same story. Two mechanisms for one requirement is how one goes quiet. The wording pass found the most serious single finding in Wave 2 and it is not about software: FOUR BROKEN CROSS-REFERENCES INSIDE THE OOS ESCALATION (W2-39), including 5.3.5 citing itself — so the Zone 1 product-contact positive procedure instructs the reader to follow the Zone 1 procedure, and the water procedure is sent to Zone 1 rather than to the general escalation. Ten-minute fix. W2-40 is a hard dependency on any build here: the SOP states MONTHLY sampling for zones 2-4 while deferring frequency to FORM 604-01, which says semi-annual/annual/quarterly — and the six seeded EMP schedules follow the form, so if the SOP is right every zone schedule is at the wrong cadence. SETTLE THAT BEFORE BUILDING. W2-41: the OOS form is never named and the EMPRCA report has no controlled number. W2-42: 'the Quality Manager and Quality Manager' leaves the corrective-action decision authority unstated. W2-43/44/45: three roles used but never established, an annual verification written as 'should' and then relied on as fact, and two recurring obligations (semi-annual MRB trend review, annual baseline mapping) with no generator. NOTE the plant confirmed 27 Aug that the tap water sampling IS being done and logged in Quality Schedules — so this obligation buys the evidence, the grading and the trend the SOP itself demands (5.6, 5.7), not the work. VERIFIED 2 Sep against main: emp-site-list.js transcribes FORM 604-01 with its alert and action limits and seeds six quality schedules, and EMP_COVERAGE feeds audit-readiness.js. THE RESULT RECORD IS STILL MISSING — no environmental result table exists, so completing a schedule files no result and a swab that never happened still looks like one whose result went nowhere. That is the half that closes 4.5.84. OFFICIAL 2026-09-08: CAR 4990683-8 response due 18 Sep 2026 (NSF Connect; wording unchanged from the draft report; D-056). UPDATE 9 Sep (D-060): the RESULT RECORD IS BUILT — emp_samples, one row per site × test, filed by the sampling task's completion (which is refused without the sites), graded against FORM 604-01 on result entry with the limits frozen onto the row, an action level raising one CAR; historical results filed by hand; trend per site over 12 months; bell + readiness read the same rows (verify:checkrecords 49). Also FIXED the generator bug that had raised NO quality-schedule task since 17 Aug (8 values for 9 columns). Still open: the swabs themselves, and filing the 2026 water/air results.",
+      "note": "Three independent routes to one conclusion: the walk found no record path, the auditor found the testing was not done, SQF requires results tracked and trended. Schedule also needs location rotation and a documented method for elevated results (2.4.8.2). Wave 2 found the third gap and it is the decisive one. W2-16: completing a quality schedule writes work_orders and quality_schedules and NOTHING else, so a swab never taken and a swab whose result went nowhere are indistinguishable — the auditor's finding in software terms. W2-17: FORM 604-01's alert and action limits are transcribed faithfully in emp-site-list.js and graded against nothing, which is the ATP 35 RLU state exactly, and OBL-01 is now the working template for the fix. W2-18: the form's WATER section has no EMP schedule at all — monthly potable water (TAB, coliforms, free chlorine, each with limits) is served instead by a pre-existing 'Tap Water Testing' schedule that names no test, cites no limit and never references the form; the room-air row is the same story. Two mechanisms for one requirement is how one goes quiet. The wording pass found the most serious single finding in Wave 2 and it is not about software: FOUR BROKEN CROSS-REFERENCES INSIDE THE OOS ESCALATION (W2-39), including 5.3.5 citing itself — so the Zone 1 product-contact positive procedure instructs the reader to follow the Zone 1 procedure, and the water procedure is sent to Zone 1 rather than to the general escalation. Ten-minute fix. W2-40 is a hard dependency on any build here: the SOP states MONTHLY sampling for zones 2-4 while deferring frequency to FORM 604-01, which says semi-annual/annual/quarterly — and the six seeded EMP schedules follow the form, so if the SOP is right every zone schedule is at the wrong cadence. SETTLE THAT BEFORE BUILDING. W2-41: the OOS form is never named and the EMPRCA report has no controlled number. W2-42: 'the Quality Manager and Quality Manager' leaves the corrective-action decision authority unstated. W2-43/44/45: three roles used but never established, an annual verification written as 'should' and then relied on as fact, and two recurring obligations (semi-annual MRB trend review, annual baseline mapping) with no generator. NOTE the plant confirmed 27 Aug that the tap water sampling IS being done and logged in Quality Schedules — so this obligation buys the evidence, the grading and the trend the SOP itself demands (5.6, 5.7), not the work. VERIFIED 2 Sep against main: emp-site-list.js transcribes FORM 604-01 with its alert and action limits and seeds six quality schedules, and EMP_COVERAGE feeds audit-readiness.js. THE RESULT RECORD IS STILL MISSING — no environmental result table exists, so completing a schedule files no result and a swab that never happened still looks like one whose result went nowhere. That is the half that closes 4.5.84. OFFICIAL 2026-09-08: CAR 4990683-8 response due 18 Sep 2026 (NSF Connect; wording unchanged from the draft report; D-056). UPDATE 9 Sep (D-060): the RESULT RECORD IS BUILT — emp_samples, one row per site × test, filed by the sampling task's completion (which is refused without the sites), graded against FORM 604-01 on result entry with the limits frozen onto the row, an action level raising one CAR; historical results filed by hand; trend per site over 12 months; bell + readiness read the same rows (verify:checkrecords 49). Also FIXED the generator bug that had raised NO quality-schedule task since 17 Aug (8 values for 9 columns). Still open: the swabs themselves, and filing the 2026 water/air results. SPLIT 29 Sep (D-119): the record, grading and trend are OBL-36, landed. This entry keeps the NC (no samples taken), W2-18 and the SOP wording.",
       "artifacts": [
         "docs/v2/queued/wave-2-sop-review.md",
         "server/check-records.js",
@@ -196,7 +195,7 @@
       "sources": [
         "NC-455-4.3.6"
       ],
-      "note": "Forward half only — the historical gap cannot be fixed by software. Same defect class as the ungraded ATP reading: a test with no active specification quietly passes. Identity by organoleptic alone is not acceptable. VERIFIED 2 Sep against main: spec-seed.js seeds specifications for the most-tested items, and coa.js records a test with no active specification WITHOUT a pass/fail (no_spec_reason) rather than letting it quietly pass. The RELEASE GATE is absent: nothing refuses a lot whose item has no active spec covering identity, purity, strength and composition. OFFICIAL 2026-09-08: CAR 4990683-3 response due 18 Sep 2026 (NSF Connect; wording unchanged from the draft report; D-056). UPDATE 9 Sep (D-063): the release gate EXISTS — shared/spec-coverage.js places each spec in one of the five 111.70 categories, and coa.js refuses (mode on) or stamps the gaps (mode warn, the default) at every release door: roll-up, Mark Pass, bulk pass, certificate signing. Identity must be a RESULT, and an organoleptic pass is named as not enough. Ships in warn mode; the admin enforces from the strip once the specification program covers the active items. What remains is QA's: the specifications themselves as approved documents, and the identity method.",
+      "note": "Forward half only — the historical gap cannot be fixed by software. Same defect class as the ungraded ATP reading: a test with no active specification quietly passes. Identity by organoleptic alone is not acceptable. VERIFIED 2 Sep against main: spec-seed.js seeds specifications for the most-tested items, and coa.js records a test with no active specification WITHOUT a pass/fail (no_spec_reason) rather than letting it quietly pass. The RELEASE GATE is absent: nothing refuses a lot whose item has no active spec covering identity, purity, strength and composition. OFFICIAL 2026-09-08: CAR 4990683-3 response due 18 Sep 2026 (NSF Connect; wording unchanged from the draft report; D-056). UPDATE 9 Sep (D-063): the release gate EXISTS — shared/spec-coverage.js places each spec in one of the five 111.70 categories, and coa.js refuses (mode on) or stamps the gaps (mode warn, the default) at every release door: roll-up, Mark Pass, bulk pass, certificate signing. Identity must be a RESULT, and an organoleptic pass is named as not enough. Ships in warn mode; the admin enforces from the strip once the specification program covers the active items. What remains is QA's: the specifications themselves as approved documents, and the identity method. SPLIT 29 Sep (D-119): the release gate is OBL-37, landed. This entry keeps NC 4.3.6 — the specifications as approved documents and the identity method.",
       "artifacts": [
         "shared/spec-coverage.js",
         "server/api/coa.js",
@@ -234,10 +233,9 @@
       "status": "open",
       "owner": "Operations + QA",
       "sources": [
-        "NC-455-4.2.9",
-        "WALK-10-gmp"
+        "NC-455-4.2.9"
       ],
-      "note": "The only finding about behaviour rather than paperwork, and the only one about product safety today rather than evidence. The behaviour is fixed by Operations now. The record that catches recurrence is the dormant checklist_templates engine, already typed `gmp`. OFFICIAL 2026-09-08: CAR 4990683-1 response due 18 Sep 2026 (NSF Connect; wording unchanged from the draft report; D-056). UPDATE 9 Sep (D-060): the observation record exists — a weekly 'GMP Walk-through' quality schedule whose completion is refused until five items (gowning, hairnets, jewelry, handwashing, footwear) are answered with what was seen; gmp_walkthroughs; the same item not compliant on two consecutive walks raises a CAR. Checklist is DRAFT-1 until Document Control issues a number. The footwear control at the entrance is the plant's, not software.",
+      "note": "The only finding about behaviour rather than paperwork, and the only one about product safety today rather than evidence. The behaviour is fixed by Operations now. The record that catches recurrence is the dormant checklist_templates engine, already typed `gmp`. OFFICIAL 2026-09-08: CAR 4990683-1 response due 18 Sep 2026 (NSF Connect; wording unchanged from the draft report; D-056). UPDATE 9 Sep (D-060): the observation record exists — a weekly 'GMP Walk-through' quality schedule whose completion is refused until five items (gowning, hairnets, jewelry, handwashing, footwear) are answered with what was seen; gmp_walkthroughs; the same item not compliant on two consecutive walks raises a CAR. Checklist is DRAFT-1 until Document Control issues a number. The footwear control at the entrance is the plant's, not software. SPLIT 29 Sep (D-119): the observation record is OBL-38, landed. This entry keeps the NC — the behaviour and the form number.",
       "artifacts": [
         "server/check-records.js",
         "shared/check-forms.js"
@@ -251,14 +249,12 @@
       "owner": "Maintenance + platform",
       "sources": [
         "NC-455-4.5.8",
-        "W2-09",
         "W2-10",
-        "W2-11",
         "W2-31",
         "W2-32",
         "W2-34"
       ],
-      "note": "Performing the qualification is engineering work. Holding it is three more derived steps on equipment-readiness.js, each satisfied by an attached protocol — which makes 'which machines are unqualified' answerable on a screen. Wave 2 confirmed the starting point: 'IQ', 'OQ' and 'PQ' appear NOWHERE in the codebase (W2-09), and equipment-readiness.js derives ten steps per machine of which none is qualification — so 'which machines are unqualified' is not a question the app can be asked. W2-10: no 421-series form number exists for a qualification protocol. W2-11: this is the cheapest of the four Wave 2 SOPs to close — three derived steps on a pattern that already carries its own roll-up and badges. The wording pass produced the finding that decides how NC 4.5.8 is answered: SOP 421's own scope is 'all NEW AND SIGNIFICANTLY MODIFIED facilities and equipment' (W2-31), so read strictly it does not require what the auditor found missing on equipment already in service. Either the SOP gains a retrospective-qualification clause or the plant argues scope against a finding already on the record — and no IQ/OQ/PQ checklist should be derived across 183 machines until that is decided. W2-32 sharpens W2-10: the SOP lists EIGHT record types and numbers none of them. W2-34: it requires approval from an 'Operations Manager' the document never establishes, and a periodic-review schedule with no interval stated. OFFICIAL 2026-09-08: CAR 4990683-6 response due 18 Sep 2026 (NSF Connect; wording unchanged from the draft report; D-056). UPDATE 9 Sep (D-064): iq / oq / pq are readiness steps, each satisfied by an executed protocol attached to the machine under its kind; stale when the model changes; waivable with a reason; rolled up in the readiness review and routed to maintenance + QA on the bell. The protocols themselves are engineering work (CAR 4990683-6 schedules mixers and stick packs first).",
+      "note": "Performing the qualification is engineering work. Holding it is three more derived steps on equipment-readiness.js, each satisfied by an attached protocol — which makes 'which machines are unqualified' answerable on a screen. Wave 2 confirmed the starting point: 'IQ', 'OQ' and 'PQ' appear NOWHERE in the codebase (W2-09), and equipment-readiness.js derives ten steps per machine of which none is qualification — so 'which machines are unqualified' is not a question the app can be asked. W2-10: no 421-series form number exists for a qualification protocol. W2-11: this is the cheapest of the four Wave 2 SOPs to close — three derived steps on a pattern that already carries its own roll-up and badges. The wording pass produced the finding that decides how NC 4.5.8 is answered: SOP 421's own scope is 'all NEW AND SIGNIFICANTLY MODIFIED facilities and equipment' (W2-31), so read strictly it does not require what the auditor found missing on equipment already in service. Either the SOP gains a retrospective-qualification clause or the plant argues scope against a finding already on the record — and no IQ/OQ/PQ checklist should be derived across 183 machines until that is decided. W2-32 sharpens W2-10: the SOP lists EIGHT record types and numbers none of them. W2-34: it requires approval from an 'Operations Manager' the document never establishes, and a periodic-review schedule with no interval stated. OFFICIAL 2026-09-08: CAR 4990683-6 response due 18 Sep 2026 (NSF Connect; wording unchanged from the draft report; D-056). UPDATE 9 Sep (D-064): iq / oq / pq are readiness steps, each satisfied by an executed protocol attached to the machine under its kind; stale when the model changes; waivable with a reason; rolled up in the readiness review and routed to maintenance + QA on the bell. The protocols themselves are engineering work (CAR 4990683-6 schedules mixers and stick packs first). SPLIT 29 Sep (D-119): the readiness steps are OBL-39, landed. This entry keeps the NC (the protocols) and SOP 421's defects.",
       "artifacts": [
         "docs/v2/queued/wave-2-sop-review.md",
         "server/equipment-readiness.js",
@@ -276,7 +272,7 @@
         "SQF-12",
         "SQF-24"
       ],
-      "note": "Laboratory work over real time. SQF-24 sharpens it: the supplements code drops the Food Manufacturing code's 'or established by the site' fallback, so retention is anchored to shelf life with NO alternative basis — and that shelf life is itself under nonconformance 4.6.21. OFFICIAL 2026-09-08: CAR 4990683-9 response due 18 Sep 2026 (NSF Connect; wording unchanged from the draft report; D-056). UPDATE 9 Sep (D-061): the study HOLDER is built — stability_studies with pull months, every pull pre-created so a missed one is a row past its date; tasks raised 14 days ahead via housekeeping; completion through the check-record interface; result entry with a CAR on fail; stability_justifications = the interim basis per SKU, latest-per-SKU derived on read; coverage of the active catalogue derived and counted in readiness (verify:stability 33). Still open and not software: the interim justification per family (Carol/Matt, 31 Oct), the procedure, and the real-time data itself.",
+      "note": "Laboratory work over real time. SQF-24 sharpens it: the supplements code drops the Food Manufacturing code's 'or established by the site' fallback, so retention is anchored to shelf life with NO alternative basis — and that shelf life is itself under nonconformance 4.6.21. OFFICIAL 2026-09-08: CAR 4990683-9 response due 18 Sep 2026 (NSF Connect; wording unchanged from the draft report; D-056). UPDATE 9 Sep (D-061): the study HOLDER is built — stability_studies with pull months, every pull pre-created so a missed one is a row past its date; tasks raised 14 days ahead via housekeeping; completion through the check-record interface; result entry with a CAR on fail; stability_justifications = the interim basis per SKU, latest-per-SKU derived on read; coverage of the active catalogue derived and counted in readiness (verify:stability 33). Still open and not software: the interim justification per family (Carol/Matt, 31 Oct), the procedure, and the real-time data itself. SPLIT 29 Sep (D-119): the study holder is OBL-40, landed. This entry keeps the NC, SQF-12 and SQF-24 — the basis and the data.",
       "artifacts": [
         "server/stability.js",
         "server/api/stability.js"
@@ -416,10 +412,9 @@
       "status": "open",
       "owner": "QA + platform",
       "sources": [
-        "FDP-25",
-        "WALK-05"
+        "FDP-25"
       ],
-      "note": "mock_recalls with a different checklist. SQF 2.7.1.4 sets the cadence at ANNUAL, not the two years the plan states — see OBL-17. Records of both the review and the test are required."
+      "note": "mock_recalls with a different checklist. SQF 2.7.1.4 sets the cadence at ANNUAL, not the two years the plan states — see OBL-17. Records of both the review and the test are required. SPLIT 29 Sep (D-119): the recurring challenge and its record are OBL-41, landed. This entry keeps FDP-25 (the plan's stated cadence) and the March back-file."
     },
     {
       "id": "OBL-20",
@@ -535,9 +530,9 @@
         "W2-25"
       ],
       "artifacts": [
-        "docs/v2/queued/supplier-qualification.md"
+        "docs/v2/landed/supplier-qualification.md"
       ],
-      "note": "Split out of OBL-08 on 27 Aug because the two halves are blocked on different things. SOP 404 V4 added 'and Laboratory' to the title and a section G of TWO SENTENCES — 'Laboratories will be approved upon receipt of ISO certification. An audit report will be requested and kept on file.' It names no standard (ISO 9001 is a management-system certificate, not evidence a lab can run the test; ISO/IEC 17025 per SCOPE OF ACCREDITATION is the one that matters), no expiry, no re-approval, no owner, no form and no record — and V4 never updated §II SCOPE, which still covers only suppliers of raw materials and packaging (W2-24). Meanwhile coa_requests.lab_name is free text, '17025' appears nowhere in the codebase, and coa-grade.js already grades every result on the reasoning that 'it is the accredited party' (W2-06). BUILDING A REGISTER AGAINST THE CURRENT WORDING WOULD ENCODE 'ISO certification' AS A REQUIREMENT, WHICH IS NOT ONE. The document comes first; the register is small once it exists."
+      "note": "Split out of OBL-08 on 27 Aug because the two halves are blocked on different things. SOP 404 V4 added 'and Laboratory' to the title and a section G of TWO SENTENCES — 'Laboratories will be approved upon receipt of ISO certification. An audit report will be requested and kept on file.' It names no standard (ISO 9001 is a management-system certificate, not evidence a lab can run the test; ISO/IEC 17025 per SCOPE OF ACCREDITATION is the one that matters), no expiry, no re-approval, no owner, no form and no record — and V4 never updated §II SCOPE, which still covers only suppliers of raw materials and packaging (W2-24). Meanwhile coa_requests.lab_name is free text, '17025' appears nowhere in the codebase, and coa-grade.js already grades every result on the reasoning that 'it is the accredited party' (W2-06). BUILDING A REGISTER AGAINST THE CURRENT WORDING WOULD ENCODE 'ISO certification' AS A REQUIREMENT, WHICH IS NOT ONE. The document comes first; the register is small once it exists. (Artifact path corrected 29 Sep: the queued design moved to docs/v2/landed/ when the register shipped and this entry still pointed at queued/ — caught by the new artifact-exists check, D-119.)"
     },
     {
       "id": "OBL-29",
@@ -612,6 +607,148 @@
         "docs/v2/landed/preventive-controls-seed.md"
       ],
       "note": "Split out of OBL-02 on 2026-09-05 when the seeder landed. The four rows in haccp_ccps are a faithful draft from the PDF text layer; three lines carry a sourceNote (PC #4 monitoring \"r- ray\" cell split, PC #3 frequency vs the Process Description, PC #2 capitalisation). Read them against the PDF. A correction goes in server/preventive-controls.js, never the database: the seeder is insert-only, so after a wording fix ccpDrift() names the stored row that differs and the readiness review turns amber until the row is re-seeded (delete the row; the next boot re-inserts it from the corrected source)."
+    },
+    {
+      "id": "OBL-34",
+      "title": "The annual banned/prohibited-substance list review generates work and a record",
+      "bucket": "B",
+      "status": "landed",
+      "owner": "platform",
+      "sources": [
+        "NC-306-6.2.3.1"
+      ],
+      "artifacts": [
+        "shared/check-forms.js",
+        "server/check-records.js",
+        "server/api/quality-schedules.js",
+        "scripts/verify-check-records.mjs",
+        "docs/v2/decisions.md"
+      ],
+      "note": "Split out of OBL-03 on 29 Sep 2026 (D-119) the way OBL-27 was split out of OBL-01: the software half is LANDED and says so; the plant half stays on OBL-03, open, with the findings only a person can close. An obligation half-discharged and marked done is worse than one still open — and one fully built and still reading 'open' hides the work. LANDED 9 Sep 2026 (D-060, 994caee). An annual 'Banned/Prohibited Substance List Review' quality schedule; completion is refused without the edition of each of the four lists plus changes and actions; banned_list_reviews holds the record and the latest row IS the editions in use (derived, never a second table); the readiness review reads it. Live-confirmed on the plant 25 Sep (the List reviews tab). What stays on OBL-03: the SOP itself (6.2.2, Document Control), the FORM 204-01 V2 receiving line (6.2.3.2, built and PARKED pending Document Control), and FSP-28."
+    },
+    {
+      "id": "OBL-35",
+      "title": "The change register — every kind of change 21 CFR 111.130(e) names, approved by Quality under signature",
+      "bucket": "A",
+      "status": "landed",
+      "owner": "platform",
+      "sources": [
+        "W2-13",
+        "W2-14"
+      ],
+      "artifacts": [
+        "server/change-register.js",
+        "server/api/change-register.js",
+        "scripts/verify-change-register.mjs",
+        "docs/v2/decisions.md"
+      ],
+      "note": "Split out of OBL-05 on 29 Sep 2026 (D-119) the way OBL-27 was split out of OBL-01: the software half is LANDED and says so; the plant half stays on OBL-05, open, with the findings only a person can close. An obligation half-discharged and marked done is worse than one still open — and one fully built and still reading 'open' hides the work. LANDED 9 Sep 2026 (D-062). One register for equipment / process / software / utility / facility / document / other changes; submit refused until the impact assessment is complete; approve and close are Quality through gateSignature (the QC approval W2-14 found missing); recordRelease() writes every deploy as a software release and counts the ones with no change request. controlled.js still gates deployed form/limit changes and the register lists those rows rather than copying them. What stays on OBL-05: NC 4.3.9 itself and the rewrite of SOP 434's scope (W2-12, W2-15, W2-33, W2-35–38) — a document, not software — and the interlock with OBL-04."
+    },
+    {
+      "id": "OBL-36",
+      "title": "Environmental monitoring results are filed, graded against FORM 604-01 and trended",
+      "bucket": "B",
+      "status": "landed",
+      "owner": "platform",
+      "sources": [
+        "SQF-11",
+        "WALK-09",
+        "W2-16",
+        "W2-17"
+      ],
+      "artifacts": [
+        "shared/check-forms.js",
+        "server/check-records.js",
+        "server/emp-results.js",
+        "server/api/check-records.js",
+        "src/components/compliance/CheckRecordsTabs.jsx",
+        "scripts/verify-check-records.mjs",
+        "docs/v2/decisions.md"
+      ],
+      "note": "Split out of OBL-07 on 29 Sep 2026 (D-119) the way OBL-27 was split out of OBL-01: the software half is LANDED and says so; the plant half stays on OBL-07, open, with the findings only a person can close. An obligation half-discharged and marked done is worse than one still open — and one fully built and still reading 'open' hides the work. LANDED 9 Sep 2026 (D-060). Completing an EMP sampling task writes one emp_samples row per site × test, pending until the laboratory answers (W2-16 closed: a swab never taken and a result that went nowhere are no longer the same thing); a result is graded by emp-results.js against FORM 604-01's alert and action levels with the text frozen onto the row (W2-17 closed, the ATP-limit shape); action raises one CAR, idempotent; the EMP results tab carries the pending list, open actions and the 12-month site trend (SQF-11). Live-confirmed 25 Sep: the tab is on the plant and reads 'No samples on record' — which is the plant half. What stays on OBL-07: NC 4.5.84 (the testing was not done — take the swabs), W2-18 (the water and air rows still ride a separate Tap Water schedule), and the SOP's broken cross-references (W2-39–45), all Quality's."
+    },
+    {
+      "id": "OBL-37",
+      "title": "The specification release gate — a lot is not released until its item is specified for identity, purity, strength, composition and contaminants",
+      "bucket": "A",
+      "status": "landed",
+      "owner": "platform",
+      "sources": [],
+      "artifacts": [
+        "shared/spec-coverage.js",
+        "server/api/coa.js",
+        "scripts/verify-spec-gate.mjs",
+        "docs/v2/decisions.md"
+      ],
+      "note": "Split out of OBL-09 on 29 Sep 2026 (D-119) the way OBL-27 was split out of OBL-01: the software half is LANDED and says so; the plant half stays on OBL-09, open, with the findings only a person can close. An obligation half-discharged and marked done is worse than one still open — and one fully built and still reading 'open' hides the work. LANDED 9 Sep 2026 (D-063). releaseGate() is the one rule and gateFor() applies it at all four release doors (roll-up, Mark Pass, bulk pass, certificate signing); mode off / warn / on in app_settings, warn by default, and warn STAMPS the gaps onto the request so 'released carrying gaps' is exactly the rows with a non-null value; identity must be a result and organoleptic never satisfies it. Carries no finding of its own because NC 4.3.6 is one finding and it closes only when the specifications exist as approved documents — that is OBL-09, QA's. Live 25 Sep: the strip reports 10 lots released with specification gaps (warn mode), which is the gate working."
+    },
+    {
+      "id": "OBL-38",
+      "title": "The weekly GMP walk-through files a record, and two consecutive misses raise a CAR",
+      "bucket": "B",
+      "status": "landed",
+      "owner": "platform",
+      "sources": [
+        "WALK-10-gmp"
+      ],
+      "artifacts": [
+        "shared/check-forms.js",
+        "server/check-records.js",
+        "scripts/verify-check-records.mjs",
+        "docs/v2/decisions.md"
+      ],
+      "note": "Split out of OBL-12 on 29 Sep 2026 (D-119) the way OBL-27 was split out of OBL-01: the software half is LANDED and says so; the plant half stays on OBL-12, open, with the findings only a person can close. An obligation half-discharged and marked done is worse than one still open — and one fully built and still reading 'open' hides the work. LANDED 9 Sep 2026 (D-060). A weekly 'GMP Walk-through' quality schedule whose completion is refused until the five items (gowning, hairnets, jewelry, handwashing, footwear) are answered with what was seen; gmp_walkthroughs; the same item not compliant on two consecutive walks raises a CAR (one miss is a correction on the spot, the D-036 shape). Stamped DRAFT-1 until Document Control issues a form number. What stays on OBL-12: NC 4.2.9 — the footwear control at the entrance is the plant's behaviour, and the form number is Document Control's."
+    },
+    {
+      "id": "OBL-39",
+      "title": "IQ / OQ / PQ are readiness steps on every food-contact machine and measuring instrument",
+      "bucket": "B",
+      "status": "landed",
+      "owner": "platform",
+      "sources": [
+        "W2-09",
+        "W2-11"
+      ],
+      "artifacts": [
+        "server/equipment-readiness.js",
+        "scripts/verify-equipment-qual.mjs",
+        "docs/v2/decisions.md"
+      ],
+      "note": "Split out of OBL-13 on 29 Sep 2026 (D-119) the way OBL-27 was split out of OBL-01: the software half is LANDED and says so; the plant half stays on OBL-13, open, with the findings only a person can close. An obligation half-discharged and marked done is worse than one still open — and one fully built and still reading 'open' hides the work. LANDED 9 Sep 2026 (D-064). Three more derived steps (iq / oq / pq), each satisfied by an executed protocol attached to the machine under its kind, stale when the model changes, waivable with a reason (LOTO stays the only unwaivable step), rolled up in the readiness review and routed to maintenance + QA on the bell — so 'which machines are unqualified' is a question the app answers (W2-09, W2-11 closed). Live 29 Sep, the plant's own Equipment banner: 48 machines with no IQ / OQ / PQ protocol on file. What stays on OBL-13: NC 4.5.8 — the protocols themselves are engineering work (CAR 4990683-6 schedules mixers and stick packs first) — and SOP 421's scope, numbering and approver defects (W2-10, W2-31, W2-32, W2-34)."
+    },
+    {
+      "id": "OBL-40",
+      "title": "The stability study holder — pulls pre-created, tasks raised, results graded, a CAR on fail, and the shelf-life basis per SKU derived on read",
+      "bucket": "B",
+      "status": "landed",
+      "owner": "platform",
+      "sources": [],
+      "artifacts": [
+        "server/stability.js",
+        "server/api/stability.js",
+        "scripts/verify-stability.mjs",
+        "docs/v2/decisions.md"
+      ],
+      "note": "Split out of OBL-14 on 29 Sep 2026 (D-119) the way OBL-27 was split out of OBL-01: the software half is LANDED and says so; the plant half stays on OBL-14, open, with the findings only a person can close. An obligation half-discharged and marked done is worse than one still open — and one fully built and still reading 'open' hides the work. LANDED 9 Sep 2026 (D-061). stability_studies with pull months and every pull a row from day one, so a missed pull is a row past its date; housekeeping raises each pull's work order 14 days ahead; completion through the check-record interface; result entry on the study with a CAR on fail; stability_justifications is the interim basis per SKU with the latest row per SKU derived on read; coverage of the active catalogue derived and counted in readiness (verify:stability 33). Carries no finding of its own because all three of OBL-14's findings are about the shelf-life BASIS and the real-time data, which only the laboratory produces over time — that is OBL-14, QA's and the lab's. The interim justification per family (Carol/Matt, 31 Oct) is also there."
+    },
+    {
+      "id": "OBL-41",
+      "title": "The annual Food Defense Plan challenge is a recurring task whose completion files a record against SOP 434 V3 § 5.0",
+      "bucket": "A",
+      "status": "landed",
+      "owner": "platform",
+      "sources": [
+        "WALK-05"
+      ],
+      "artifacts": [
+        "shared/check-forms.js",
+        "server/check-records.js",
+        "server/api/check-records.js",
+        "scripts/verify-annual-reviews.mjs",
+        "docs/v2/queued/dcr-annual-review-records.md",
+        "docs/v2/decisions.md"
+      ],
+      "note": "Split out of OBL-19 on 29 Sep 2026 (D-119) the way OBL-27 was split out of OBL-01: the software half is LANDED and says so; the plant half stays on OBL-19, open, with the findings only a person can close. An obligation half-discharged and marked done is worse than one still open — and one fully built and still reading 'open' hides the work. LANDED 28 Sep 2026 (D-115, 4e29fcb). An annual 'Food Defense Plan Challenge (SOP 434)' quality schedule seeded at boot; completion walks the nine § 5.0 steps (transcribed, each tagged with its clause), requires at least one § 5.2 C method — the procedure's only 'must' — plus outcome, findings and corrective actions; food_defense_challenges holds the record stamped SOP 434 V3; a challenge already run (March 2026) is back-filed with its own date through the same validation, source 'paper'. The record form itself is unnumbered and is in the DCR. What stays on OBL-19: FDP-25 — the plan says two years where SQF 2.7.1.4 says annual, which is the Protocol 001 re-issue (OBL-17) — and recording the March challenge, which QA is doing."
     }
   ]
 }

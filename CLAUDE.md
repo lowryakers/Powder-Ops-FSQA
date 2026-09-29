@@ -54,9 +54,13 @@ workstreams collide over.
 > open is the wording check against the PDF — OBL-33**, split out rather than marking OBL-02 done on the
 > strength of it. A correction goes in the source file, never the database (the seeder is insert-only).
 >
-> Obligations today: **23 open · 5 drafted · 5 landed** of 33. Landed are OBL-01 (ATP grading), OBL-02 (the
-> four controls seeded and guarded), OBL-08 (supplier register), OBL-31 (annual vendor review raises work)
-> and OBL-32 (the ATP task door).
+> Obligations today: **23 open · 5 drafted · 13 landed** of 41 (D-119, 29 Sep). Landed: OBL-01 (ATP grading),
+> OBL-02 (the four controls seeded and guarded), OBL-08 (supplier register), OBL-31 (annual vendor review
+> raises work), OBL-32 (the ATP task door), and the eight software halves split out on 29 Sep — OBL-34
+> (banned-list review), OBL-35 (change register), OBL-36 (EMP results graded and trended), OBL-37 (spec
+> release gate), OBL-38 (GMP walk record), OBL-39 (IQ/OQ/PQ steps), OBL-40 (stability holder), OBL-41
+> (Food Defense challenge). **The 23 open are the plant's, Quality's or Document Control's remainders, not
+> unbuilt software.** `check:obligations` now also fails on an `artifacts` path that does not exist.
 
 **Walked, and now in the repo** (`docs/v2/preventive-control-walk.md`). The first V2 project
 was a *document* project: Protocol 003 (Food Safety Plan V4) and Protocol 001 (Food Defense Plan V2)
@@ -115,7 +119,8 @@ obligations, one list of what must be true before V2 ships, and the check fails 
 claimed twice, or cited but non-existent. **What it does NOT check is whether a claim matches the code** —
 that is `check-nc-status.mjs`'s job for the NC document, and nothing does it for the register, which is
 why OBL-02 can read `built` over a module with no callers. **Split an obligation
-rather than marking it done when only part of it landed** — OBL-01 was to cover the grading and OBL-27 the
+rather than marking it done when only part of it landed — AND split it the other way when the software
+half lands while the plant half stays open (D-119), or the register hides three weeks of shipped work** — OBL-01 was to cover the grading and OBL-27 the
 limit's validation, because an obligation half-discharged and marked done is worse than one still open.
 The ATP limit's missing validation study is OBL-27, still open.
 
