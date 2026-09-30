@@ -18,7 +18,7 @@
 // edited is not evidence.
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
-import { createHash, timingSafeEqual } from 'crypto';
+import { requireProofToken, checkProofToken, refuseProofToken } from '../proof-token.js';
 import fs from 'fs';
 import { getDb, logAudit } from '../db.js';
 import { storageEnabled, putStream, presignGet, deleteObject } from '../storage.js';
@@ -128,7 +128,17 @@ router.get('/', (req, res) => {
 // GET /artwork/snapshot?gtin=&sku= — what the last proofing run saw on this
 // product's label, so a re-proof can compare against it. Declared before
 // /sku/:sku and /:id or Express reads "snapshot" as one of those.
-router.get('/snapshot', (req, res) => {
+// TWO DOORS, ONE ANSWER (D-126). A signed-in screen reads this through the
+// guarded router below; the proofing service reads it with its token and no
+// session. It sat on the guarded router alone, so every call the proofer made
+// was refused by the global gate before this ran.
+export function artworkSnapshotByToken(req, res) {
+  const auth = checkProofToken(req);
+  if (!auth.ok) return refuseProofToken(res, auth);
+  return artworkSnapshot(req, res);
+}
+
+export function artworkSnapshot(req, res) {
   const db = getDb();
   // A decoded barcode arrives in whatever spelling the decoder used — a UPC-A
   // is routinely handed back in its zero-padded GTIN-14 form. Both name one
@@ -147,7 +157,8 @@ router.get('/snapshot', (req, res) => {
     version_status: row.version_status, proof_job_id: row.proof_job_id, proofed_at: row.proofed_at,
     snapshot: JSON.parse(row.snapshot),
   });
-});
+}
+router.get('/snapshot', artworkSnapshot);
 
 router.get('/sku/:sku', (req, res) => {
   const db = getDb();
@@ -381,15 +392,10 @@ router.post('/versions/:id/status', (req, res) => {
 // arrangement partner-portal uses.
 export const ingestRouter = Router();
 
-// Same token as the master-list feed: the two endpoints are the two halves of
-// one integration, and a second secret to rotate buys nothing.
-function tokenOk(supplied) {
-  const expected = process.env.PRODUCT_MASTER_TOKEN || '';
-  if (!expected || !supplied) return false;
-  const a = createHash('sha256').update(String(supplied)).digest();
-  const b = createHash('sha256').update(expected).digest();
-  return timingSafeEqual(a, b);
-}
+// Same token as the master-list feed, checked by the one copy of that rule in
+// server/proof-token.js (D-126) — the two endpoints are two halves of one
+// integration, and a second secret to rotate buys nothing.
+ingestRouter.use(requireProofToken());
 
 /**
  * A finished proofing job, filed as a version with its checks.
@@ -405,9 +411,6 @@ function tokenOk(supplied) {
  * pouch from a stick.
  */
 ingestRouter.post('/', (req, res) => {
-  if (!tokenOk(req.query.token || req.headers['x-proof-token'])) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
   const b = req.body || {};
   if (!b.job_id) return res.status(400).json({ error: 'job_id is required.' });
 
@@ -494,9 +497,6 @@ ingestRouter.post('/', (req, res) => {
 
 /** Attach a file to an ingested version — the print PDF and its preview PNG. */
 ingestRouter.post('/:id/files', ingestUpload, async (req, res) => {
-  if (!tokenOk(req.query.token || req.headers['x-proof-token'])) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
   const db = getDb();
   const v = db.prepare('SELECT * FROM artwork_versions WHERE id = ?').get(req.params.id);
   if (!v) return res.status(404).json({ error: 'Not found' });

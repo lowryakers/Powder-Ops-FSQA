@@ -1,4 +1,5 @@
 import { getDb } from '../db.js';
+import { carriesProofToken } from '../proof-token.js';
 import { passwordExpired } from '../password-policy.js';
 import { parseModuleAccess } from '../module-access.js';
 
@@ -137,6 +138,11 @@ const PUBLIC_ROUTES = [
   // The other half of the same integration: the proofing service files its
   // finished jobs here. Same token, checked in the handler.
   { prefix: '/artwork/ingest' },
+  // What the last proofing run saw, read back by the same service (D-126). Two
+  // doors: public ONLY when the request carries the proof token — then the
+  // handler checks it — and otherwise the ordinary session gate, because the
+  // signed-in Artwork screens read the same route.
+  { method: 'GET', path: '/artwork/snapshot', when: carriesProofToken },
   // The NFP approval link, texted to whoever signs off a nutrition panel. The
   // token is compared as a SHA-256 hash in the handler and cleared by the
   // decision, so the link is single-use. Read the panel, decide, done.
@@ -163,6 +169,7 @@ const PUBLIC_ROUTES = [
 export function isPublicPath(req) {
   return PUBLIC_ROUTES.some(r => {
     if (r.method && r.method !== req.method) return false;
+    if (r.when && !r.when(req)) return false;
     return r.prefix ? req.path.startsWith(r.prefix) : req.path === r.path;
   });
 }

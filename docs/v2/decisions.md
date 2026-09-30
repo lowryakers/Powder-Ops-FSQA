@@ -5216,3 +5216,43 @@ shift reporting four MOs covered one; and a run scheduled in two cells of one da
 Verified: `verify:preop` (50, live + two reboots on the same file + browser at 1280 and 390px; in `verify:all`).
 **The control is the state the plant is in and fails 19 before the browser half, which cannot find the form.**
 `verify:eodchase` 42 → **45** (control fails 2). The six: 69 · 58 · 31 · 23 · 65 · 89.
+
+## D-126 — The proofing service's token is checked in one place, on all five routes it calls (2026-09-30)
+
+Reported: the proofing tool reads "PANEL MISSING — no approved panel found" on all 38 SKUs, and with one
+token in one browser, `master.csv` answered 200 while `nutrition-panel` answered 401 *Unauthorized* and
+`/artwork/snapshot` 401 *Authentication required*. Two error strings, two refusals, neither master.csv's.
+
+**What was found.** The token check existed in THREE copies (`tokenOk` in products.js for master.csv and
+nutrition-panel, another in artwork.js for ingest) and ONE route had none: `/artwork/snapshot` sat on the
+session-only router, so the global gate refused every call the proofer made before the handler could run
+— that is the *Authentication required*. **The nutrition-panel refusal is NOT reproduced by the code on
+`main`**: its copy of the check is byte-for-byte master.csv's, and on a fresh database with a base64-shaped
+token it accepts `?token=` exactly as master.csv does (the control run below shows it passing). Its refusal
+body is its own handler's, so the handler ran and the comparison failed — which the old code could not
+explain further, because every refusal said only "Unauthorized". The proofer (`readydoc.py` `_get`) sends
+`?token=` via `urlencode` to every route, the same way.
+
+**The fix is the structure, and it makes the next refusal explain itself.** `server/proof-token.js` is the
+one reader of `PRODUCT_MASTER_TOKEN`: one comparison (SHA-256, constant time, off while unset), one reading
+of where the token travels (`?token=`, or the `X-Proof-Token` header ingest already accepted — the same
+secret, carried out of the query string), and a 401 that names its reason — `not_configured`, `missing`,
+`repeated`, `mismatch` — never the expected value. master.csv keeps its plain-text body and is no looser:
+same secret, same comparison. `/artwork/snapshot` has two doors: a request **carrying** the token is public
+in `isPublicPath` (a `when` predicate on the route entry) and checked by the handler; one without it takes
+the session gate to the guarded router as before, because the signed-in Artwork screens read it too. The
+ingest router checks the token BEFORE multer, so an unauthenticated upload is never buffered.
+
+**What to do with the live 401:** after this deploys, the same browser call to nutrition-panel answers with
+a `reason`. `missing` means the token never arrived (an `&` lost or pasted as `&amp;`); `mismatch` means the
+value differs — and note that the proofer reads master.csv through `GTIN_SHEET_URL`, which carries its OWN
+copy of the token, so master.csv working in the proofer does not prove `READYDOC_TOKEN` is right. **Once
+auth passes, "PANEL MISSING" may still be true**: the proofer reports any failure, 401 included, as a
+missing panel, and a product with no panel values entered answers 404 `no_panel` / `no_panel_values`.
+
+Verified: `verify:prooftoken` (34, live, in `verify:all`) — all five routes non-401 with `?token=` and with
+the header, 401 with none / the wrong one / one sent twice and saying which, the proofer reading back the
+snapshot it filed with no session, the signed-in door unchanged, and **only `proof-token.js` reads
+`PRODUCT_MASTER_TOKEN`**, so a sixth copy fails the verify. **The control is the code on `main` and fails
+16**, the first being the snapshot's *Authentication required*. `verify:artwork` 38, `verify:nfppanel` 49,
+`verify:colors` 54, `verify:nfppanelui` 19, `verify:kiosk` 38 and `verify:auth` 22 unchanged.

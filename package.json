@@ -98,6 +98,7 @@
     "verify:scaledue": "node scripts/verify-scale-due.mjs",
     "verify:defaultaccess": "node scripts/verify-default-access.mjs",
     "verify:preop": "node scripts/verify-preop-record.mjs",
+    "verify:prooftoken": "node scripts/verify-proof-token.mjs",
     "verify:truckchecklist": "node scripts/verify-truck-checklist.mjs",
     "verify:reach": "node scripts/verify-reachability.mjs",
     "verify:qmssig": "node scripts/verify-qms-signature.mjs",

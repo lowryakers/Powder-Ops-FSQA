@@ -11,7 +11,8 @@
 //     function is the contract: renaming a column here breaks proofing there,
 //     silently, because its parser skips headers it does not recognise.
 import { Router } from 'express';
-import { createHash, timingSafeEqual, randomUUID as uuid } from 'crypto';
+import { randomUUID as uuid } from 'crypto';
+import { checkProofToken, refuseProofToken } from '../proof-token.js';
 import { getDb, logAudit } from '../db.js';
 import { resolveFlavorCodes } from '../flavor-codes.js';
 import { preferredSku, LINE_CODES, PACK_CODES } from '../../shared/sku-format.js';
@@ -1218,16 +1219,9 @@ router.post('/:sku/rename', (req, res) => {
 
 // ── The Artwork-Proofing feed ────────────────────────────────────────────────
 
-// Public path, guarded by a token compared as a hash. Read-only and it exposes
-// nothing a printer would not already hold. Unset token = endpoint off, same
-// graceful-degradation shape as storageEnabled().
-function tokenOk(supplied) {
-  const expected = process.env.PRODUCT_MASTER_TOKEN || '';
-  if (!expected || !supplied) return false;
-  const a = createHash('sha256').update(String(supplied)).digest();
-  const b = createHash('sha256').update(expected).digest();
-  return timingSafeEqual(a, b);
-}
+// Public path, guarded by the proofing service's token — checked in
+// server/proof-token.js, the one copy of that rule (D-126). Read-only and it
+// exposes nothing a printer would not already hold. Unset token = endpoint off.
 
 const PACK_LABEL = {
   PLG: 'Pouch — large', PSM: 'Pouch — small', STK: 'Stick pack', BOX: 'Carton', CUP: 'Cup',
@@ -1251,7 +1245,8 @@ const csvCell = (v) => {
 };
 
 export function masterCsv(req, res) {
-  if (!tokenOk(req.query.token)) return res.status(401).send('Unauthorized');
+  const auth = checkProofToken(req);
+  if (!auth.ok) return refuseProofToken(res, auth, { text: true });
   const db = getDb();
   const rows = hydrate(db.prepare(`${SELECT} WHERE p.status != 'discontinued' ORDER BY p.sku`).all(), db);
 
@@ -1311,7 +1306,8 @@ function currentPanel(db, sku) {
 }
 
 export function nutritionPanel(req, res) {
-  if (!tokenOk(req.query.token)) return res.status(401).json({ error: 'Unauthorized' });
+  const auth = checkProofToken(req);
+  if (!auth.ok) return refuseProofToken(res, auth);
   const gtin = normalizeGtin(req.query.gtin);
   const sku = String(req.query.sku || '').trim();
   if (!gtin && !sku) return res.status(400).json({ error: 'Supply a gtin or a sku.' });

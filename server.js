@@ -111,7 +111,8 @@ import safetyRoutes from './server/api/safety.js';
 import importRoutes from './server/api/imports.js';
 import coaRoutes from './server/api/coa.js';
 import productRoutes, { masterCsv, nutritionPanel } from './server/api/products.js';
-import artworkRoutes, { ingestRouter as artworkIngestRoutes } from './server/api/artwork.js';
+import artworkRoutes, { ingestRouter as artworkIngestRoutes, artworkSnapshotByToken } from './server/api/artwork.js';
+import { carriesProofToken } from './server/proof-token.js';
 import nfpRoutes, { linkRouter as nfpLinkRoutes } from './server/api/nfp.js';
 import productFileImportRoutes from './server/api/product-file-import.js';
 import { seedProducts } from './server/products-seed.js';
@@ -1973,6 +1974,10 @@ app.use('/api/join', joinRoutes);
 // Mounted before the guarded router, and outside requireModuleWrite: the
 // proofing service authenticates with a token, not a session.
 app.use('/api/artwork/ingest', artworkIngestRoutes);
+// The proofer reads the last snapshot with its token and no session (D-126).
+// Only a request CARRYING the token takes this door; a signed-in screen falls
+// through to the guarded router, which serves the same handler.
+app.get('/api/artwork/snapshot', (req, res, next) => (carriesProofToken(req) ? artworkSnapshotByToken(req, res) : next()));
 app.use('/api/artwork', requireModuleWrite('artwork'), artworkRoutes);
 // The NFP approval link. Public and token-gated for the same reason the flavor
 // magic link is: the person who signs off a nutrition panel has no ReadyDoc

@@ -595,6 +595,16 @@ Idempotent on `(job_id, sku, component)`, one ingest **per file not per job** (a
 a stick — different products, different histories), and it resolves the product **by GTIN before SKU**
 because a decoded barcode is the only unambiguous identification.
 
+### The proofing token is checked in ONE place, on all five routes (D-126)
+`server/proof-token.js` is the only reader of `PRODUCT_MASTER_TOKEN` — master.csv, nutrition-panel,
+`/artwork/snapshot`, `/artwork/ingest` and `/artwork/ingest/:id/files` all call `checkProofToken`, and
+`verify:prooftoken` fails if any other file reads the variable. `?token=` or `X-Proof-Token`; a refusal
+names `not_configured` / `missing` / `repeated` / `mismatch`, never the value. **`/artwork/snapshot` has
+two doors**: carrying the token makes it public (`when: carriesProofToken` in `PUBLIC_ROUTES`) and the
+handler checks it; without the token it takes the session gate, because the Artwork screens read it too.
+It had been session-only, so every proofer call got *Authentication required*. **The proofer reports ANY
+failure, 401 included, as "PANEL MISSING"** — read the reason on the 401 before believing the data.
+
 ### Versions file themselves
 Artwork history is a **side effect of the proofing run**, not an upload. Shaun keeps working in Google
 Drive and changes nothing; the record accumulates because the check was already happening. Manual upload
