@@ -3,18 +3,19 @@ import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 import { useApiGet, apiFetch, apiUpload, apiDelete } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { useTableSort } from '../../lib/useTableSort';
-import SortHeader from '../common/SortHeader';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import ProductDataHealth from './ProductDataHealth.jsx';
 import FlavorCodesPanel, { DraftRealign } from './FlavorCodesPanel.jsx';
 import ProductBarcodes from './ProductBarcodes.jsx';
 import ProductShelf from './ProductShelf.jsx';
 import ProductCompleteness from './ProductCompleteness.jsx';
+import ProductGrid from './ProductGrid.jsx';
 import { getParam } from '../../lib/deepLink.js';
 import NfpBoard, { NfpForSku } from './NfpPanel.jsx';
 import { hexDigits, pmsValid, hexValid, colorIssues, isBlankSlot } from '../../../shared/product-colors.js';
+import { FIELD_RULES, NA_FIELDS, fieldState, PACKAGING_DERIVED, isRollFed } from '../../../shared/product-fields.js';
 import {
-  Package, Search, X, AlertTriangle, CheckCircle2, Circle, Pencil, ChevronRight, Stethoscope, Tag,
+  Package, Search, X, AlertTriangle, CheckCircle2, Circle, Pencil, Stethoscope, Tag,
   Barcode, Upload, ExternalLink, RefreshCw, FolderOpen,
   FileText, Plus, Trash2, Palette,
   ListChecks,
@@ -263,6 +264,10 @@ function ReadinessChecklist({ readiness, sku, canEdit, onChanged }) {
                     </span>
                   )}
                   {stale_ && s.redo && <div className="text-xs text-amber-700">{s.redo}</div>}
+                  {/* EVERY LINE SAYS WHY — the record that makes it done, or what is
+                      missing. A tick with no reason is the Artwork status dropdown
+                      all over again (D-131). */}
+                  {s.reason && <div className="text-[11px] text-gray-500" data-readiness-reason={s.key}>{s.reason}</div>}
                   {s.state === 'done' && s.tick && s.by && (
                     <span className="ml-1.5 text-xs text-gray-400">{s.by}{s.at ? ` · ${s.at.slice(0, 10)}` : ''}</span>
                   )}
@@ -394,6 +399,84 @@ function BarcodeImage({ sku, gtin, canEdit, has, stale, forGtin, onChanged }) {
 }
 
 
+/**
+ * A field on the drawer's edit form, with its rule beside it and the NA control
+ * where the field may carry one. `state` is value / empty / na (shared/product-fields.js).
+ */
+function Field({ k, label, hint, form, set, p, onNa, type = 'text', children }) {
+  const rule = FIELD_RULES[k];
+  const st = fieldState(p, k);
+  const naable = NA_FIELDS.includes(k);
+  return (
+    <label className="block" data-field={k} data-field-state={st}>
+      <span className="text-xs font-medium text-gray-600 flex items-center gap-2">
+        {label}
+        {st === 'na' && <span className="px-1.5 rounded bg-gray-100 text-gray-500 border border-gray-200 text-[10px]" data-na>NA — {p.na?.[k]?.by || 'unknown'}</span>}
+        {naable && onNa && (st === 'na'
+          ? <button type="button" onClick={() => onNa(k, false)} data-na-clear className="text-[10px] text-gray-500 hover:underline">Clear NA</button>
+          : <button type="button" onClick={() => onNa(k, true)} data-na-set className="text-[10px] text-gray-500 hover:underline">Mark not applicable</button>)}
+      </span>
+      {children || (
+        <input value={form[k]} onChange={set(k)} type={type} disabled={st === 'na'}
+          className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-400" />
+      )}
+      {(hint || rule) && <span className="mt-1 block text-[11px] leading-snug text-gray-500">{hint || `Format: ${rule.expected}.`}</span>}
+    </label>
+  );
+}
+
+/** A read-only line whose value is derived, saying which column it was read from. */
+function Derived({ label, value, source, na }) {
+  return (
+    <div data-derived={source} className="flex flex-col">
+      <dt className="text-xs text-gray-500">{label}</dt>
+      <dd className="text-gray-900 break-words">
+        {na ? <span className="text-gray-400 italic">{na}</span> : (value ?? '') !== '' ? value : <span className="text-gray-300">—</span>}
+        <span className="block text-[10px] text-gray-400 font-mono">{source}</span>
+      </dd>
+    </div>
+  );
+}
+
+/** One readiness line with its reason — the record that makes it done, or what is missing. */
+function StepLine({ steps, k }) {
+  const st = (steps || []).find((x) => x.key === k);
+  if (!st) return null;
+  return (
+    <div data-step-line={k} className="flex items-start gap-1.5 text-sm">
+      {st.state === 'done' ? <CheckCircle2 size={14} className="text-green-600 mt-0.5 shrink-0" />
+        : st.state === 'stale' ? <RefreshCw size={14} className="text-amber-600 mt-0.5 shrink-0" />
+          : <Circle size={14} className="text-gray-300 mt-0.5 shrink-0" />}
+      <span><span className="text-gray-900">{st.label}</span>
+        {st.reason && <span className="block text-[11px] text-gray-500">{st.reason}</span>}</span>
+    </div>
+  );
+}
+
+const Block = ({ title, note, children, id }) => (
+  <section data-block={id} className="border border-gray-200 rounded-lg p-3 space-y-2">
+    <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">{title}</h4>
+    {note && <p className="text-[11px] text-gray-500">{note}</p>}
+    {children}
+  </section>
+);
+
+/**
+ * The record page: four blocks in a fixed order (D-131).
+ *
+ *   Identity      — sku, GTIN, product name, base flavour, pack, line, status.
+ *                   The pack format decides which packaging fields apply.
+ *   Formula link  — formula ref, formula version, fill weight. The formula
+ *                   itself lives in Keychain; these are the pointer (D-128).
+ *   Packaging     — DERIVED and read-only: the packaging spec's columns, the
+ *                   colour slots, each naming the column it came from. The eye
+ *                   mark and die line are typed on the product and say so.
+ *   Channels      — Shopify, ShipHero, Amazon: the confirmations with a name
+ *                   and a date, and the identifiers each channel keys on.
+ *
+ * THERE IS NO ARTWORK STATUS FIELD. The readiness line derives it from the
+ * release on the Artwork board and states the reason.
+ */
 function Detail({ sku, canEdit, onClose, onSaved }) {
   const { data, refresh } = useApiGet(`/products/${encodeURIComponent(sku)}`);
   const [editing, setEditing] = useState(false);
@@ -404,15 +487,14 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
   const p = data;
   const startEdit = () => {
     setForm({
-      gtin: p.gtin || '', flavor: p.flavor || '', base_flavor: p.base_flavor || '',
-      status: p.status || 'active', eyemark_color: p.eyemark_color || '',
-      // nfp_version / nfp_approved_at are deliberately absent. They are the
-      // artwork print gate, and they are written by approving a panel — see the
-      // Nutrition panel section below. The server refuses them on PUT.
-      artwork_status: p.artwork_status || '', drive_url: p.drive_url || '', notes: p.notes || '',
+      gtin: p.gtin || '', flavor: p.flavor || '', base_flavor: p.base_flavor || '', category: p.category || '',
+      pack: p.pack || 'PLG', status: p.status || 'active', legacy_sku: p.legacy_sku || '',
+      eyemark_color: p.eyemark_color || '', dieline_required: p.dieline_required ? '1' : '0',
+      drive_url: p.drive_url || '', notes: p.notes || '',
       fill_weight_g: p.fill_weight_g ?? '',
       // The CURRENT formula: what a panel's provenance is checked against (D-128).
       mrp_formula_id: p.mrp_formula_id || '', formula_rev: p.formula_rev || '',
+      shopify_sku: p.shopify_sku || '',
       // Blank is a real answer here — "nobody has said yet" — so it is an
       // option in the select rather than an absence.
       amazon_channel: p.amazon_channel || '', amazon_sku: p.amazon_sku || '', amazon_asin: p.amazon_asin || '',
@@ -424,16 +506,30 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
   const save = async () => {
     setSaving(true); setError('');
     try {
-      await apiFetch(`/products/${encodeURIComponent(sku)}`, { method: 'PUT', body: form });
+      const body = { ...form, dieline_required: form.dieline_required === '1' ? 1 : 0 };
+      // A field marked NA is not sent: it is disabled on the form and a blank
+      // would read as "clear it", which it is not.
+      for (const k of Object.keys(body)) if (fieldState(p, k) === 'na') delete body[k];
+      await apiFetch(`/products/${encodeURIComponent(sku)}`, { method: 'PUT', body });
       setEditing(false); refresh(); onSaved?.();
     } catch (e) { setError(e.message); }
     setSaving(false);
   };
+  const onNa = async (field, on) => {
+    setError('');
+    try {
+      await apiFetch(`/products/${encodeURIComponent(sku)}/na`, { method: 'POST', body: { field, on } });
+      refresh(); onSaved?.();
+    } catch (e) { setError(e.message); }
+  };
+
+  const rollFed = p ? (p.spec_format ? isRollFed(p.spec_format) : true) : true;
+  const naText = p && !rollFed ? `not applicable — a ${String(p.spec_format).toLowerCase()} is not roll-fed film` : null;
 
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex justify-end" onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()}
-        className="bg-white w-full max-w-xl h-full overflow-y-auto p-5 space-y-4 shadow-xl">
+        className="bg-white w-full max-w-xl h-full overflow-y-auto p-5 space-y-4 shadow-xl" data-product-drawer>
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-xs uppercase tracking-wide text-gray-500">
@@ -457,93 +553,85 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
                 <strong>{p.gtin}</strong> fails its GS1 check digit. Do not send this to a printer.
               </p>
             )}
+            {error && <p className="text-sm text-red-700 bg-red-50 rounded p-2" data-drawer-error>{error}</p>}
 
             {editing ? (
               <div className="space-y-3">
-                {error && <p className="text-sm text-red-700 bg-red-50 rounded p-2">{error}</p>}
-                {[
-                  ['flavor', 'Product name'], ['base_flavor', 'Base flavour'], ['gtin', 'GTIN'],
-                  // Shopify SKU and MRP formula are gone from here on purpose:
-                  // they were text boxes holding "Yes" and a number this
-                  // product's own SKU already carried, and the checklist above
-                  // now ticks both with a name and a date against them.
-                  ['eyemark_color', 'Eyemark colour'], ['drive_url', 'Drive link'],
-                  // What the pack actually HOLDS, in grams — the proofer's Net
-                  // Weight check divides by it. The hint is load-bearing, not
-                  // decoration: this is the only input to that check that is
-                  // not printed on the artwork, so the moment somebody copies
-                  // the label's net weight in here the check compares the
-                  // label with itself and passes everything. Blank until
-                  // measured; the proofer reports that SKU UNVERIFIED, which
-                  // is the honest answer and better than a guess.
-                  ['fill_weight_g', 'Fill weight (g)',
-                    'From the production formula, confirmed by weighing a sealed bag. Not the net weight printed on the pack — that is what this checks.'],
-                  ['mrp_formula_id', 'Formula ref (current)', 'The formula this product is made to today, e.g. F-00002.'],
-                  ['formula_rev', 'Formula version (current)',
-                    'Move this when the recipe changes. A panel computed from an older version reads as stale until the next one is approved.'],
-                ].map(([k, label, hint]) => (
-                  <label key={k} className="block">
-                    <span className="text-xs font-medium text-gray-600">{label}</span>
-                    <input value={form[k]} onChange={set(k)}
-                      className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-                    {hint && <span className="mt-1 block text-[11px] leading-snug text-gray-500">{hint}</span>}
-                  </label>
-                ))}
-                <label className="block">
-                  <span className="text-xs font-medium text-gray-600">Status</span>
-                  <select value={form.status} onChange={set('status')}
-                    className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                    {Object.keys(STATUS_STYLE).map((s) => <option key={s} value={s}>{pretty(s)}</option>)}
-                  </select>
-                </label>
-                <label className="block">
-                  <span className="text-xs font-medium text-gray-600">Artwork status</span>
-                  <select value={form.artwork_status} onChange={set('artwork_status')}
-                    className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                    <option value="">Not set</option>
-                    {/* `rejected` is written by artwork.js and must be offerable here, or editing anything else on a rejected product clears the rejection. */}
-                    {['draft', 'in_review', 'approved', 'print_ready', 'rejected', 'superseded'].map((s) =>
-                      <option key={s} value={s}>{pretty(s)}</option>)}
-                  </select>
-                </label>
-                <div className="border border-gray-200 rounded-lg p-3 space-y-3" data-amazon-edit>
-                  <label className="block">
-                    <span className="text-xs font-medium text-gray-600">Sold on Amazon?</span>
-                    <select value={form.amazon_channel} onChange={set('amazon_channel')}
-                      className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-amazon-channel>
-                      <option value="">Not decided yet</option>
-                      <option value="listed">Yes — listed on Amazon</option>
-                      <option value="not_sold">No — not sold on Amazon</option>
+                <Block id="identity" title="Identity">
+                  <Field k="flavor" label="Product name" form={form} set={set} p={p} />
+                  <Field k="base_flavor" label="Base flavour" form={form} set={set} p={p} hint="What joins a flavour across formats; the flavour register keys on it." />
+                  <Field k="gtin" label="GTIN" form={form} set={set} p={p} />
+                  <Field k="category" label="Line" form={form} set={set} p={p} hint="The product line, e.g. Whey Protein." />
+                  <Field k="pack" label="Pack format" form={form} set={set} p={p} hint="Decides which packaging fields apply: film fed off a roll carries a wind direction and an eye mark; a carton or cup has neither.">
+                    <select value={form.pack} onChange={set('pack')} className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                      {Object.entries(PACK_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                     </select>
+                  </Field>
+                  <Field k="legacy_sku" label="Legacy SKU" form={form} set={set} p={p} onNa={onNa} hint="Set by a rename, never cleared; a two-year-old PO must still resolve." />
+                </Block>
+                <Block id="formula" title="Formula link" note="The formula lives in Keychain. These three say which one this product is made to today (D-128).">
+                  <Field k="mrp_formula_id" label="Formula ref (current)" form={form} set={set} p={p} />
+                  <Field k="formula_rev" label="Formula version (current)" form={form} set={set} p={p} />
+                  {/* What the pack actually HOLDS, in grams — the proofer's Net
+                      Weight check divides by it. The hint is load-bearing: this
+                      is the only input to that check that is not printed on the
+                      artwork (D-093). */}
+                  <Field k="fill_weight_g" label="Fill weight (g)" form={form} set={set} p={p}
+                    hint="From the production formula, confirmed by weighing a sealed bag. Not the net weight printed on the pack — that is what this checks." />
+                </Block>
+                <Block id="packaging" title="Packaging spec" note="Material, print, trim and wind direction are the packaging spec's and are not typed here. Two facts are the product's own:">
+                  <Field k="eyemark_color" label="Eye mark colour" form={form} set={set} p={p} onNa={onNa}
+                    hint={naText ? `Not applicable by format — ${naText}.` : 'Printed registration mark colour, e.g. black.'} />
+                  <Field k="dieline_required" label="Die line required" form={form} set={set} p={p}>
+                    <select value={form.dieline_required} onChange={set('dieline_required')} className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                      <option value="1">yes</option><option value="0">no</option>
+                    </select>
+                  </Field>
+                </Block>
+                <Block id="channels" title="Channels">
+                  <Field k="status" label="Status" form={form} set={set} p={p}>
+                    <select value={form.status} onChange={set('status')} className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                      {Object.keys(STATUS_STYLE).map((s) => <option key={s} value={s}>{pretty(s)}</option>)}
+                    </select>
+                  </Field>
+                  <Field k="shopify_sku" label="Shopify SKU" form={form} set={set} p={p} onNa={onNa} hint="Only when Shopify calls it something other than this product's SKU." />
+                  <div className="border border-gray-200 rounded-lg p-3 space-y-3" data-amazon-edit>
+                    <label className="block">
+                      <span className="text-xs font-medium text-gray-600">Sold on Amazon?</span>
+                      <select value={form.amazon_channel} onChange={set('amazon_channel')}
+                        className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" data-amazon-channel>
+                        <option value="">Not decided yet</option>
+                        <option value="listed">Yes — listed on Amazon</option>
+                        <option value="not_sold">No — not sold on Amazon</option>
+                      </select>
+                    </label>
+                    {form.amazon_channel === 'listed' && (
+                      <>
+                        <Field k="amazon_sku" label="Amazon seller SKU" form={form} set={set} p={p} onNa={onNa} hint="Leave blank if it is the same as this product's SKU.">
+                          <input value={form.amazon_sku} onChange={set('amazon_sku')} data-amazon-sku disabled={fieldState(p, 'amazon_sku') === 'na'}
+                            className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50" />
+                        </Field>
+                        <Field k="amazon_asin" label="ASIN" form={form} set={set} p={p} onNa={onNa}>
+                          <input value={form.amazon_asin} onChange={set('amazon_asin')} data-amazon-asin disabled={fieldState(p, 'amazon_asin') === 'na'}
+                            className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50" />
+                        </Field>
+                        <p className="text-[11px] text-gray-500">
+                          The listing hangs off the seller SKU, and FBA stock already in a fulfilment centre is
+                          bound to it — so <strong>Listed on Amazon</strong> goes amber whenever this product&apos;s
+                          SKU or GTIN moves.
+                        </p>
+                      </>
+                    )}
+                  </div>
+                  <Field k="drive_url" label="Drive link" form={form} set={set} p={p} onNa={onNa} />
+                  <label className="block">
+                    <span className="text-xs font-medium text-gray-600">Notes</span>
+                    <textarea value={form.notes} onChange={set('notes')} rows={3}
+                      className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
                   </label>
-                  {form.amazon_channel === 'listed' && (
-                    <>
-                      <label className="block">
-                        <span className="text-xs font-medium text-gray-600">Amazon seller SKU</span>
-                        <input value={form.amazon_sku} onChange={set('amazon_sku')} data-amazon-sku
-                          className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                          placeholder="Leave blank if it is the same as this product's SKU" />
-                      </label>
-                      <label className="block">
-                        <span className="text-xs font-medium text-gray-600">ASIN</span>
-                        <input value={form.amazon_asin} onChange={set('amazon_asin')} data-amazon-asin
-                          className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-                      </label>
-                      <p className="text-[11px] text-gray-500">
-                        The listing hangs off the seller SKU, and FBA stock already in a fulfilment centre is
-                        bound to it — so <strong>Listed on Amazon</strong> goes amber whenever this product&apos;s
-                        SKU or GTIN moves.
-                      </p>
-                    </>
-                  )}
-                </div>
-                <label className="block">
-                  <span className="text-xs font-medium text-gray-600">Notes</span>
-                  <textarea value={form.notes} onChange={set('notes')} rows={3}
-                    className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-                </label>
+                </Block>
                 <div className="flex gap-2">
-                  <button onClick={save} disabled={saving}
+                  <button onClick={save} disabled={saving} data-drawer-save
                     className="px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium disabled:opacity-50">
                     {saving ? 'Saving…' : 'Save'}
                   </button>
@@ -553,47 +641,73 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
               </div>
             ) : (
               <>
-                <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                  {[
-                    ['GTIN', p.gtin], ['Legacy SKU', p.legacy_sku], ['Base flavour', p.base_flavor],
-                    ['Status', pretty(p.status)], ['Protein', p.protein_type],
-                    ['Pack count', p.pack_count], ['Spec', p.spec_name], ['Material', p.material_structure],
-                    ['Zipper', p.zipper], ['Print', p.print_process],
-                    ['Trim', p.trim_length_mm ? `${p.trim_length_mm} × ${p.trim_width_mm} mm` : null],
-                    ['Eyemark', p.eyemark_color],
-                    ['Fill weight', p.fill_weight_g ? `${p.fill_weight_g} g` : null],
-                    // Only worth showing when Shopify calls it something else —
-                    // for most of the catalogue it is this product's own SKU,
-                    // printed one line above.
-                    ['Shopify SKU', p.shopify_sku && p.shopify_sku !== p.sku ? p.shopify_sku : null],
-                    // "Not decided yet" is shown rather than hidden: a blank
-                    // here is the fact that nobody has said, which is exactly
-                    // what a SKU cutover needs to know before it starts.
-                    ['Amazon', p.amazon_channel === 'listed'
-                      ? `Listed${p.amazon_sku && p.amazon_sku !== p.sku ? ` — seller SKU ${p.amazon_sku}` : ''}${p.amazon_asin ? ` · ${p.amazon_asin}` : ''}`
-                      : p.amazon_channel === 'not_sold' ? 'Not sold on Amazon' : 'Not decided yet'],
-                    ['Formula', [p.mrp_formula_id, p.formula_rev].filter(Boolean).join(' ') || null],
-                    ['NFP version', p.nfp_version && `${p.nfp_version}${p.nfp_approved_at ? ` — approved ${p.nfp_approved_at}` : ' — not approved'}`],
-                    ['Artwork', pretty(p.artwork_status)],
-                  ].filter(([, v]) => v !== null && v !== undefined && v !== '').map(([label, v]) => (
-                    <div key={label}>
-                      <dt className="text-xs text-gray-500">{label}</dt>
-                      <dd className="text-gray-900 break-words">{v}</dd>
-                    </div>
-                  ))}
-                </dl>
-
-                <ColorEditor sku={sku} colors={p.colors} canEdit={canEdit}
-                  onSaved={() => { refresh(); onSaved?.(); }} />
+                <Block id="identity" title="Identity">
+                  <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                    {[
+                      ['SKU', <code key="s">{p.sku}</code>], ['GTIN', p.gtin], ['Product name', p.flavor], ['Base flavour', p.base_flavor],
+                      ['Pack format', PACK_LABEL[p.pack] || p.pack], ['Line', p.category], ['Status', pretty(p.status)],
+                      ['Legacy SKU', fieldState(p, 'legacy_sku') === 'na' ? 'NA' : p.legacy_sku],
+                      ['Protein', fieldState(p, 'protein_type') === 'na' ? 'NA' : p.protein_type],
+                      ['Pack count', fieldState(p, 'pack_count') === 'na' ? 'NA' : p.pack_count],
+                    ].filter(([, v]) => v !== null && v !== undefined && v !== '').map(([label, v]) => (
+                      <div key={label}><dt className="text-xs text-gray-500">{label}</dt><dd className="text-gray-900 break-words">{v}</dd></div>
+                    ))}
+                  </dl>
+                  <StepLine steps={p.readiness?.steps} k="sku" /><StepLine steps={p.readiness?.steps} k="gtin" />
+                </Block>
+                <Block id="formula" title="Formula link" note="The formula lives in Keychain; this is the pointer the panel's provenance is checked against.">
+                  <dl className="grid grid-cols-3 gap-x-4 gap-y-2 text-sm">
+                    <div><dt className="text-xs text-gray-500">Formula ref</dt><dd data-value="mrp_formula_id">{p.mrp_formula_id || <span className="text-amber-700 text-xs">empty</span>}</dd></div>
+                    <div><dt className="text-xs text-gray-500">Formula version</dt><dd data-value="formula_rev">{p.formula_rev || <span className="text-amber-700 text-xs">empty</span>}</dd></div>
+                    <div><dt className="text-xs text-gray-500">Fill weight</dt><dd data-value="fill_weight_g">{p.fill_weight_g ? `${p.fill_weight_g} g` : <span className="text-amber-700 text-xs">empty</span>}</dd></div>
+                  </dl>
+                  <StepLine steps={p.readiness?.steps} k="formula" /><StepLine steps={p.readiness?.steps} k="nfp" />
+                </Block>
+                <Block id="packaging" title="Packaging spec" note={`Derived from ${p.spec_id ? `packaging spec ${p.spec_id}` : 'the packaging spec (none assigned)'} and the colour slots; each value names the column it was read from. Nothing here is typed on the product except the eye mark and the die line.`}>
+                  <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm" data-packaging-derived>
+                    <Derived label="Spec" value={p.spec_id ? `${p.spec_id}${p.spec_name ? ` — ${p.spec_name}` : ''}` : null} source="products.spec_id" />
+                    <Derived label="Format" value={p.spec_format} source="packaging_specs.format" />
+                    {PACKAGING_DERIVED.map(([k, label, source]) => (
+                      <Derived key={k} label={label} value={p[k]} source={source}
+                        na={k === 'wind_direction' && !rollFed ? naText : null} />
+                    ))}
+                    <Derived label="Eye mark colour" value={fieldState(p, 'eyemark_color') === 'na' ? 'NA' : p.eyemark_color} source="products.eyemark_color (typed)" na={!rollFed && !p.eyemark_color ? naText : null} />
+                    <Derived label="Die line required" value={p.dieline_required ? 'yes' : 'no'} source="products.dieline_required (typed)" />
+                    <Derived label="PMS spot colours" value={(p.colors || []).filter((c) => c.pms).map((c) => c.pms).join(' | ')} source="product_colors.pms, slots in order" />
+                    <Derived label="Hex spot colours" value={(p.colors || []).filter((c) => c.hex).map((c) => c.hex).join(' | ')} source="product_colors.hex, slots in order" />
+                  </dl>
+                  <StepLine steps={p.readiness?.steps} k="spec" /><StepLine steps={p.readiness?.steps} k="colors" /><StepLine steps={p.readiness?.steps} k="artwork" />
+                  <ColorEditor sku={sku} colors={p.colors} canEdit={canEdit}
+                    onSaved={() => { refresh(); onSaved?.(); }} />
+                  <BarcodeImage sku={sku} gtin={p.gtin} canEdit={canEdit}
+                    has={p.has_barcode_image} stale={p.barcode_stale} forGtin={p.barcode_gtin}
+                    onChanged={() => { refresh(); onSaved?.(); }} />
+                </Block>
+                <Block id="channels" title="Channels">
+                  <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                    {[
+                      ['Status', pretty(p.status)],
+                      // Only worth showing when Shopify calls it something else —
+                      // for most of the catalogue it is this product's own SKU.
+                      ['Shopify SKU', fieldState(p, 'shopify_sku') === 'na' ? 'NA' : p.shopify_sku && p.shopify_sku !== p.sku ? p.shopify_sku : null],
+                      // "Not decided yet" is shown rather than hidden: a blank
+                      // here is the fact that nobody has said.
+                      ['Amazon', p.amazon_channel === 'listed'
+                        ? `Listed${p.amazon_sku && p.amazon_sku !== p.sku ? ` — seller SKU ${p.amazon_sku}` : ''}${p.amazon_asin ? ` · ${p.amazon_asin}` : ''}`
+                        : p.amazon_channel === 'not_sold' ? 'Not sold on Amazon' : 'Not decided yet'],
+                      ['Drive link', fieldState(p, 'drive_url') === 'na' ? 'NA' : p.drive_url],
+                    ].filter(([, v]) => v !== null && v !== undefined && v !== '').map(([label, v]) => (
+                      <div key={label}><dt className="text-xs text-gray-500">{label}</dt><dd className="text-gray-900 break-words">{v}</dd></div>
+                    ))}
+                  </dl>
+                  <StepLine steps={p.readiness?.steps} k="shopify" /><StepLine steps={p.readiness?.steps} k="shiphero" /><StepLine steps={p.readiness?.steps} k="amazon" />
+                  {p.notes && <p className="text-sm text-gray-700 whitespace-pre-line">{p.notes}</p>}
+                </Block>
 
                 {/* The panel workflow lives here, beside the product, because
                     that is where someone already is when they need it. The
                     refresh carries back up so the readiness bar moves the
                     moment a panel is approved. */}
-                <BarcodeImage sku={sku} gtin={p.gtin} canEdit={canEdit}
-                  has={p.has_barcode_image} stale={p.barcode_stale} forGtin={p.barcode_gtin}
-                  onChanged={() => { refresh(); onSaved?.(); }} />
-
                 <div className="pt-2 border-t border-gray-100">
                   <NfpForSku sku={sku} formulaRev={p.formula_rev} canEdit={canEdit}
                     onChanged={() => { refresh(); onSaved?.(); }} />
@@ -615,7 +729,7 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
                 )}
 
                 {canEdit && (
-                  <button onClick={startEdit}
+                  <button onClick={startEdit} data-drawer-edit
                     className="inline-flex items-center gap-1.5 px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50">
                     <Pencil size={14} /> Edit
                   </button>
@@ -649,10 +763,12 @@ export default function ProductsPanel() {
   const barcodeGaps = barcodes ? barcodes.counts.stale + barcodes.counts.bad_gtin : 0;
   const { data: shelf } = useApiGet('/products/shelf');
   const shelfOwed = shelf ? shelf.due.length + shelf.missing.length : 0;
+  // The grid's filter chips and completeness column read the same walk the
+  // Completeness tab reads (D-128) — one derivation, two screens.
+  const { data: completeness, refresh: refreshCompleteness } = useApiGet('/products/completeness');
   const [q, setQ] = useState('');
   const [category, setCategory] = useState('');
   const [pack, setPack] = useState('');
-  const [onlyIncomplete, setOnlyIncomplete] = useState(false);
   const [open, setOpen] = useState(null);
   // `?tab=products&view=completeness` opens a tab directly (deepLink.js: a lazy
   // module mounts after App has consumed the query string).
@@ -673,21 +789,20 @@ export default function ProductsPanel() {
     return products.filter((p) => {
       if (category && p.category !== category) return false;
       if (pack && p.pack !== pack) return false;
-      if (onlyIncomplete && p.readiness?.missing?.length === 0) return false;
       if (!needle) return true;
       return [p.sku, p.legacy_sku, p.gtin, p.flavor, p.base_flavor, p.shopify_sku]
         .some((v) => (v || '').toLowerCase().includes(needle));
     });
-  }, [products, q, category, pack, onlyIncomplete]);
+  }, [products, q, category, pack]);
 
-  const { sorted, sortCol, sortDir, toggleSort } = useTableSort(filtered, COLUMNS, 'sku', 'asc');
+  const { sorted } = useTableSort(filtered, COLUMNS, 'sku', 'asc');
 
   // Panels somebody still has to act on — drafts, links out, and ones sent back.
   const awaitingNfp = (nfp?.versions || [])
     .filter((v) => ['draft', 'sent', 'rejected'].includes(v.status)).length;
 
   const badGtin = products.filter((p) => p.gtin && !p.gtin_valid).length;
-  const incomplete = products.filter((p) => p.readiness?.missing?.length > 0).length;
+  const refreshAll = () => { refresh(); refreshCompleteness(); };
 
   return (
     <div className="space-y-4">
@@ -770,15 +885,9 @@ export default function ProductsPanel() {
           <option value="">All packs</option>
           {Object.entries(PACK_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <button onClick={() => setOnlyIncomplete((v) => !v)}
-          className={`px-3 py-2 rounded-lg text-sm font-medium border ${onlyIncomplete
-            ? 'bg-amber-100 border-amber-300 text-amber-900'
-            : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}>
-          Not ready <span className="tabular-nums">{incomplete}</span>
-        </button>
       </div>
 
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-gray-500 md:hidden">
         {sorted.length} of {products.length}
       </p>
 
@@ -800,62 +909,19 @@ export default function ProductsPanel() {
             ]} />
         ))}
       </RecordCards>
-      <div className="hidden md:block overflow-x-auto border border-gray-200 rounded-lg">
-        <table className="min-w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              {COLUMNS.map((c, i) => (
-                <SortHeader key={c.key || `c${i}`} col={c} sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} />
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {sorted.map((p) => (
-              <tr key={p.sku} onClick={() => setOpen(p.sku)}
-                className="hover:bg-gray-50 cursor-pointer">
-                <td className="px-3 py-2"><code className="text-gray-900">{p.sku}</code></td>
-                <td className="px-3 py-2">
-                  {p.preferred_sku ? (
-                    <code className="text-gray-500">{p.preferred_sku}</code>
-                  ) : (
-                    // The gap is named rather than left blank: this column is
-                    // the punch list for the rename, and "—" says nothing about
-                    // what is stopping it.
-                    <span className="text-[11px] text-amber-700" title={(p.preferred_sku_blocked_by || []).join('; ')}>
-                      {(p.preferred_sku_blocked_by || [])[0] || '—'}
-                    </span>
-                  )}
-                </td>
-                <td className="px-3 py-2 text-gray-700">{p.flavor}</td>
-                <td className="px-3 py-2">
-                  <span className={p.gtin && !p.gtin_valid ? 'text-red-600 font-medium' : 'text-gray-600'}>
-                    {p.gtin || '—'}
-                  </span>
-                </td>
-                <td className="px-3 py-2 text-gray-600">{p.category}</td>
-                <td className="px-3 py-2 text-gray-600">{PACK_LABEL[p.pack] || p.pack}</td>
-                <td className="px-3 py-2">
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_STYLE[p.status] || 'bg-gray-100 text-gray-700'}`}>
-                    {pretty(p.status)}
-                  </span>
-                </td>
-                <td className="px-3 py-2 text-right"><ReadyBar readiness={p.readiness} /></td>
-                <td className="px-3 py-2 text-gray-300"><ChevronRight size={15} /></td>
-              </tr>
-            ))}
-            {sorted.length === 0 && (
-              <tr><td colSpan={COLUMNS.length} className="px-3 py-8 text-center text-sm text-gray-500">
-                Nothing matches. Loosen a filter.
-              </td></tr>
-            )}
-          </tbody>
-        </table>
+      {/* At md and up the catalogue is the GRID — edited in place, filtered
+          by completeness state, exported and imported as CSV (D-131). The
+          cards above are the same rows for a phone, which cannot edit a
+          spreadsheet. */}
+      <div className="hidden md:block">
+        <ProductGrid products={filtered} completeness={completeness} canEdit={canEdit}
+          onOpenSku={setOpen} onChanged={refreshAll} />
       </div>
 
       </>)}
 
       {open && <Detail sku={open} canEdit={canEdit} onClose={() => setOpen(null)}
-        onSaved={() => { refresh(); refreshNfp(); }} />}
+        onSaved={() => { refreshAll(); refreshNfp(); }} />}
     </div>
   );
 }

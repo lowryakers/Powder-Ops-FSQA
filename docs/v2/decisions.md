@@ -5432,3 +5432,67 @@ is roadmap C2, small now that the MMR is out of it.
 
 **Doctrine.** A decision recorded here that reverses a recommendation says so and keeps the reasoning it
 reversed (D-129's stands as the case for the other side). D-059 is not superseded; it is confirmed.
+
+## D-131 — The Products catalogue is a grid you work in; a field is validated where it is typed, has three states, and the packaging block is derived and says where from (2026-09-30)
+
+Lowry's spec, five parts and seven acceptance criteria, built on top of D-128. `shared/product-fields.js` is
+the one definition (field rules, the NA state, where every master.csv column populates from); `ProductGrid.jsx`
+is the default landing on Products at desktop width; the drawer is four blocks in a fixed order.
+
+**What shipped, against the ask.**
+- **A grid as the default view** — filter chips All / Incomplete / Blocked / Stale / Complete counting the rows
+  under the other filters live, from the SAME completeness walk the Completeness tab reads; inline edit with
+  Enter (save, move down), Tab (save, move right), Esc; shift-click a run of rows in one column and fill the top
+  value down (`POST /products/bulk-edit`, one value, refused whole or applied whole, never an identifier);
+  collapsible column groups; CSV export built from the rows and columns on the screen; CSV import keyed on
+  `sku` with a diff before commit (`POST /products/import/preview|commit`). **Commit is refused whole while any
+  cell is invalid** — a file that lands on 90 rows and skips 4 is a file somebody believes went in. The file
+  may carry the grid's labels or master.csv's own header names, so the proofer's feed edits straight back in.
+- **Validated at the field, refused on save.** `buildPatch()` is the ONE reader of the rules for the PUT, the
+  fill-down and the import; a refusal is a 400 naming the expected format, and the grid keeps it in the cell.
+  `formula_ref` `F-\d{5}`, `formula_version` `v\d+\.\d+`, fill weight a number above 0 (the sign is kept, so
+  -3 is refused rather than read as 3), GTIN by GS1 check digit. **`POST /products` and the rename mint a
+  code, so they take the new SKU standard; the 118 legacy codes are never re-tested** — they are join keys.
+- **Three states.** `products.na_fields` is `{ field: { by, at } }`, set by `POST /:sku/na` on `NA_FIELDS`
+  only — the identity fields, the formula and the fill weight are owed by every product and an NA there is a
+  gap wearing a tick. Marking NA clears the value; writing a value clears the NA (the later statement wins);
+  clearing NA leaves the field EMPTY, never restored. Completeness counts empty as a gap and NA as done, and
+  reports them apart (`na`, `na_count`, `na_fields`; `counts.na_skus`). **"N/A" typed into a box is reported
+  on Data health (`typed_na`) and never converted** — it might be initials.
+- **The record page is Identity · Formula link · Packaging spec · Channels, in that order.** The packaging
+  block is read-only and every value names its column (`packaging_specs.material_structure via
+  products.spec_id`, `product_colors.pms, slots in order`); wind direction and the eye mark on a carton read
+  "not applicable — a box is not roll-fed film" from the spec's `format`. Only the eye mark and the die line
+  are typed there, and say so.
+- **There is no Artwork status field.** `artwork_status` / `artwork_version` left `WRITABLE`
+  (`ARTWORK_OWNED`, 400 like `NFP_OWNED`); `api/artwork.js`'s release is the only writer. **Every readiness
+  line states its reason** (`why` per step in `shared/product-readiness.js`; `reason` on the payload) — "No
+  artwork version has been released for this SKU", "GTIN 850046726123 passes its check digit".
+- **`MASTER_CSV_SOURCES` says where each of the seventeen columns comes from and the header list IS its keys**,
+  so the answer and the feed cannot drift. The sixteen contract names are asserted verbatim.
+
+**Three places the ask's letter was not followed, each on purpose.**
+1. **GTIN "14 digits" → 12-digit UPC-A, normalised (D-090).** The proofer keys on the UPC-A and the catalogue
+   stores one spelling; a 13/14-digit padded paste is accepted and stored as the 12.
+2. **`^PMS \d{3,4} [CU]$` → the numeric form OR a named ink** (`PMS Black C`, on real packs today). The strict
+   shape applies to a slot that CHANGED; a slot sent back as transcribed is accepted — the audit wrote
+   `PMS 4625` and `HX FF9015`, and a person correcting slot 3 must not be refused over slot 1 (D-108's
+   validity stays re-derived on every write). `verify:colors`'s fourth-colour case is what found this.
+3. **The SKU rule admits a two-part code** (`GFF-PSM`) because `FLAVOURLESS_LINES` is a real thing in the
+   register; the three-part form is the ask's regex exactly.
+
+**Two traps.** A `const` built from `WRITABLE` above its declaration is a temporal-dead-zone error at BOOT
+(`bulkFields()` is a function for that reason). And **a click on a second grid cell while one is editing never
+arrived**: the input's blur committed and re-rendered under the pointer and the click was lost, so shift-click
+could never extend a selection. The td prevents the mousedown default while a cell is open and `startEdit`
+commits the previous cell itself; a refused value keeps its cell and the click goes nowhere.
+
+Verified: `verify:productgrid` (100, live + browser at 1280 and 390px, in `verify:all`) — the seven
+acceptance criteria, the fill-down, the NA round trip, the typed-NA report, the import refused whole, the
+feed header. **The control is the Products code on `main` — the state the plant is in — and fails 11 before the script can
+continue** (the rename to a code outside the standard goes through at 200 and the row is gone from under the
+next step), the first being "Yes" saved as a formula ref at 200. `check:managed-select` now asserts the artwork select is GONE; `verify:colors` (54),
+`verify:colorsui` (21), `verify:skurename` (37), `verify-product-readiness` (30), `verify:provenance` (52),
+`verify:nfppanel` (49), `verify:nfppanelui` (19), `verify:artwork` (38), `verify-product-tabs` (43),
+`verify-write-doors` (34), `verify-mobile-cards` (58) green; the three whose invented SKUs were outside the
+standard (`WHY-TEST-…`, `WHY-PLG-RENAMED`) now mint codes inside it.

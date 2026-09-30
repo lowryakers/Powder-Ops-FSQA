@@ -100,6 +100,7 @@
     "verify:preop": "node scripts/verify-preop-record.mjs",
     "verify:prooftoken": "node scripts/verify-proof-token.mjs",
     "verify:provenance": "node scripts/verify-panel-provenance.mjs",
+    "verify:productgrid": "node scripts/verify-product-grid.mjs",
     "verify:truckchecklist": "node scripts/verify-truck-checklist.mjs",
     "verify:reach": "node scripts/verify-reachability.mjs",
     "verify:qmssig": "node scripts/verify-qms-signature.mjs",

@@ -36,7 +36,7 @@ await call('POST', '/users/set-password', { user_id: 'sku-admin', password: 'Sku
 const tok = (await (await call('POST', '/users/login', { name: 'Sku Admin', password: 'SkuAdmin2026!' })).json())?.token;
 t('signed in', !!tok);
 
-const NEW = 'WHY-PLG-RENAMED';
+const NEW = 'WHY-PLG-RNM1';
 let NEXT_SKU = NEW;
 const r = await call('POST', `/products/${encodeURIComponent(sku)}/rename`, { sku: NEW }, tok);
 const body = await r.json();
@@ -74,7 +74,7 @@ t('AND KEEPS THE OLD ONE FOREVER — a two-year-old PO still resolves', body?.le
     stateOf(rowBefore, 'shopify') === 'done' && stateOf(rowBefore, 'shiphero') === 'done',
     `${stateOf(rowBefore, 'shopify')}/${stateOf(rowBefore, 'shiphero')}`);
 
-  const AGAIN = 'WHY-PLG-RENAMED2';
+  const AGAIN = 'WHY-PLG-RNM2';
   t('renamed again', (await call('POST', `/products/${NEW}/rename`, { sku: AGAIN }, tok)).status === 200);
   const after = await (await call('GET', `/products?sku=${AGAIN}`, null, tok)).json();
   const rowAfter = (Array.isArray(after) ? after : after.products || []).find((x) => x.sku === AGAIN);
@@ -124,7 +124,7 @@ t('AND KEEPS THE OLD ONE FOREVER — a two-year-old PO still resolves', body?.le
   t('confirming it is accepted now', (await call('POST', `/products/${NEXT_SKU}/confirm/amazon`, {}, tok)).status === 200);
   t('and it reads done', stepOf(await get(NEXT_SKU), 'amazon')?.state === 'done');
 
-  const AMZ = 'WHY-PLG-RENAMED3';
+  const AMZ = 'WHY-PLG-RNM3';
   t('renamed once more', (await call('POST', `/products/${NEXT_SKU}/rename`, { sku: AMZ }, tok)).status === 200);
   const moved = await get(AMZ);
   t('THE AMAZON STEP GOES STALE WITH THE SKU — FBA stock is bound to the seller SKU',

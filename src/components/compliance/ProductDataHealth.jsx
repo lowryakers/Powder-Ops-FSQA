@@ -27,6 +27,7 @@ const KIND_LABEL = {
   no_colors: 'No brand colours at all',
   not_a_sku: 'Not a SKU',
   gtin: 'GS1 barcode problem',
+  typed_na: '"NA" typed into a field',
 };
 
 const KIND_WHY = {
@@ -38,6 +39,7 @@ const KIND_WHY = {
     + 'has already resolved against the artwork; it stays on the list so the answer is not lost.',
   no_colors: 'No brand colours recorded, so nothing verifies what came back from the printer.',
   not_a_sku: 'A numeric id sitting in the SKU column — almost certainly a Shopify variant id.',
+  typed_na: 'Not applicable is a control with a name on it, not a value: typed "NA" would reach the proofer\'s feed as an eye mark colour called NA. Open the product and mark the field not applicable instead.',
   gtin: 'Missing, or fails its GS1 check digit. A bad barcode scans as another product or not at all.',
 };
 

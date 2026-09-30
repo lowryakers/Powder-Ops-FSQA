@@ -33,6 +33,7 @@
 // the catalogue's (shared/panel-provenance.js `provenanceStale`).
 
 import { provenanceOf, provenanceMissing, provenanceStale } from '../shared/panel-provenance.js';
+import { naOf } from '../shared/product-fields.js';
 
 export const PACK_LABEL = { PLG: 'Pouch — large', PSM: 'Pouch — small', STK: 'Stick pack', BOX: 'Carton', CUP: 'Cup', BTL: 'Bottle' };
 
@@ -91,7 +92,11 @@ export const GROUPS = [
         if (rollFed) {
           if (!present(spec.wind_direction)) missing.push(`Wind direction (${spec.spec_id})`);
         } else na.push('Wind direction');
-        if (rollFed) {
+        // NA BY DECISION is a different fact from NA by derivation, and both are
+        // done, not gaps: the carton has no eye mark because cartons do not;
+        // this pouch has none because somebody with a name said so.
+        if (naOf(p).eyemark_color) na.push('Eye mark colour (marked not applicable)');
+        else if (rollFed) {
           if (!present(p.eyemark_color)) missing.push('Eye mark colour');
         } else na.push('Eye mark colour');
       }
@@ -169,9 +174,14 @@ export function completenessOf({ p, spec, colors = [], panel = null, artwork = n
   }
   const stale = panel ? provenanceStale(panel.provenance, p) : [];
   const state = block ? 'blocked' : (missing.length ? 'incomplete' : 'complete');
+  // EMPTY AND NOT-APPLICABLE ARE COUNTED APART: `gaps` is what is missing,
+  // `na` is what was answered "does not apply" — by the pack format or by a
+  // person (`na_fields`, the explicit ones, with who and when).
+  const naLabels = Object.values(groups).flatMap((g) => g.na);
   return {
     sku: p.sku, product: p.flavor, line: lineOf(p), status: p.status,
     state, groups, missing, gaps: missing.length, stale,
+    na: naLabels, na_count: naLabels.length, na_fields: naOf(p),
     block: block ? { reason: block.reason, owner: block.owner, by: block.blocked_by, at: block.blocked_at } : null,
     panel_version: panel?.version || null, panel_status: panel?.status || null,
   };
@@ -244,6 +254,9 @@ export function catalogueCompleteness(db) {
       blocked: rows.filter((r) => r.state === 'blocked').length,
       stale: rows.filter((r) => r.stale.length).length,
       gaps: rows.filter((r) => r.state === 'incomplete').reduce((n, r) => n + r.gaps, 0),
+      // SKUs carrying an explicit not-applicable, and the fields so marked.
+      na_skus: rows.filter((r) => Object.keys(r.na_fields).length).length,
+      na_fields: rows.reduce((n, r) => n + Object.keys(r.na_fields).length, 0),
     },
     groups: GROUPS.map((g) => ({ key: g.key, label: g.label })),
   };

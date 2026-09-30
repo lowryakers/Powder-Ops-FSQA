@@ -30,7 +30,8 @@ t('admin signed in', !!token);
 
 // Unique per run: this creates a real catalogue row and the script has to be
 // re-runnable against the same database.
-const SKU = `WHY-TEST-${Date.now().toString(36).toUpperCase().slice(-5)}`;
+// New-standard shape (shared/product-fields.js): LINE-PACK-FLAVOUR, the third part up to four characters.
+const SKU = `WHY-BTL-${Date.now().toString(36).toUpperCase().slice(-4)}`;
 const stepOf = (p, key) => p.readiness.steps.find((s) => s.key === key);
 
 console.log('\n── the checklist a new product arrives with ──');
@@ -124,7 +125,7 @@ console.log('\n── the 118 seeded rows are not lit up by the deploy ──');
 const all = (await J(await req('/products'))).products;
 // Rows this script left behind on an earlier run are excluded — they are
 // deliberately stale, which is the mechanism working, not a false alarm.
-const litUp = all.filter((x) => !x.sku.startsWith('WHY-TEST-') && (x.readiness.stale || []).length > 0);
+const litUp = all.filter((x) => !/^WHY-(TEST|BTL)-/.test(x.sku) && (x.readiness.stale || []).length > 0);
 t('NO EXISTING PRODUCT IS FLAGGED STALE', litUp.length === 0,
   litUp.slice(0, 3).map((x) => `${x.sku}: ${x.readiness.stale.join()}`).join(' | '));
 t('the catalogue is intact', all.length > 100, `${all.length}`);

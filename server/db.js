@@ -3257,6 +3257,10 @@ function runMigrations() {
   // punch list naming what changed. Generalises `barcode_gtin`, which is the
   // same idea for one file.
   addColumnIfMissing('products', 'readiness_basis', 'TEXT');
+  // The fields somebody marked NOT APPLICABLE on this SKU, as JSON
+  // `{ field: { by, at } }` — a state set by a control, never typed, and
+  // counted as done rather than as a gap (shared/product-fields.js, D-131).
+  addColumnIfMissing('products', 'na_fields', 'TEXT');
 
   // The confirmation backfill needs app_settings for its done-marker, so it
   // runs further down, directly after that table is created.

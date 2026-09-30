@@ -104,6 +104,7 @@ const RUNS = [
   // The proofing service's token, on all five routes it calls (D-126). A base64-shaped secret on purpose.
   ['verify-proof-token.mjs', 5046, { PRODUCT_MASTER_TOKEN: 'pr00f+tok/en=ab' }],
   ['verify-panel-provenance.mjs', 5047, { PRODUCT_MASTER_TOKEN: 'prov-token' }],
+  ['verify-product-grid.mjs', 5048, { PRODUCT_MASTER_TOKEN: 'grid-token' }],
 ];
 
 // VERIFY_ONLY=verify-auth.mjs,verify-swab-stock.mjs runs just the entries that

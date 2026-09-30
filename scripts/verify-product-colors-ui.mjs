@@ -33,7 +33,8 @@ await page.evaluate(([tok, u]) => {
 await page.goto(`${URL}/?tab=products`);
 await page.waitForTimeout(3500);
 
-await page.locator('tr:has(code:text-is("PPM-PS"))').locator('visible=true').first().click();
+// The catalogue is a grid now (D-131); the SKU cell is the door to the drawer.
+await page.locator('[data-grid-row="PPM-PS"] [data-open-row]').locator('visible=true').first().click();
 await page.waitForTimeout(2000);
 t('the product drawer opens on the pancake Pumpkin Spice',
   /Pumpkin Spice/.test(await page.locator('body').innerText()));

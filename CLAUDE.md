@@ -713,6 +713,34 @@ errors on the last bottle run, all found by hand.
 - **No values are entered for any of the 118 products yet.** Transcribing a panel from artwork is a person's
   job; seeding a plausible one is the fabricated-record failure this module exists to prevent.
 
+### The catalogue is a grid, a field has three states, and the packaging block says where it came from (D-131)
+`shared/product-fields.js` (the ONE definition: `FIELD_RULES`, `validateField`, `NA_FIELDS`, `naOf`, `fieldState`,
+`MASTER_CSV_SOURCES`, `PACKAGING_DERIVED`), `ProductGrid.jsx` (the default Products landing at `md`+; cards below),
+`buildPatch()` / `applyPatch()` / `writeColors()` in `api/products.js`, `POST /products/bulk-edit`,
+`POST /products/:sku/na`, `POST /products/import/preview|commit`, `products.na_fields`.
+- **ONE READER OF THE RULES.** The PUT, the fill-down and the CSV import all go through `buildPatch`; a refusal
+  is a 400 naming the expected format and the grid keeps it IN THE CELL. Reject on save, never warn.
+- **THE RULES ARE FOR NEW WRITES.** `POST /products` and the rename mint a code and take the new SKU standard
+  (`LINE-PACK-FLAVOUR`, or two parts for a flavourless line); the 118 legacy codes are join keys and are never
+  re-tested. A colour slot that CHANGED takes the strict shape (`PMS 158 C` or a named ink, `HEX EE7623`); a slot
+  sent back as transcribed is accepted — a person correcting slot 3 must not be refused over slot 1.
+- **NA IS A CONTROL, NEVER A VALUE.** Set by `POST /:sku/na` on `NA_FIELDS` only (never the identity fields,
+  the formula or the fill weight); marking clears the value, a value written clears the NA, clearing leaves the
+  field EMPTY. Completeness counts empty as a gap and NA as done, apart. **"N/A" typed into a box is `typed_na`
+  on Data health, reported, never converted.**
+- **`artwork_status` / `artwork_version` are `ARTWORK_OWNED`** (400 on PUT, like `NFP_OWNED`); `api/artwork.js`'s
+  release is the only writer and the drawer has no dropdown. **Every readiness step has `why(p)`** and the payload
+  carries `reason` — a tick with no reason is the dropdown all over again.
+- **The drawer is four blocks in a fixed order**: Identity · Formula link · Packaging spec (read-only, each value
+  naming its column; wind direction / eye mark "not applicable by format" from `packaging_specs.format`) ·
+  Channels. `MASTER_CSV_SOURCES` is the header list AND the answer to "where does the proofer's material come from".
+- **A click on a second grid cell while one is editing was LOST** — the blur-commit re-rendered under the pointer.
+  The td prevents the mousedown default while a cell is open and `startEdit` commits the previous cell itself.
+- **A `const` derived from `WRITABLE` above its declaration kills BOOT** (temporal dead zone) — `bulkFields()`.
+- `verify:productgrid` (100, live + browser; the control is the code on `main` and fails 11 before it can continue). Existing verifies that minted SKUs outside
+  the standard (`WHY-TEST-…`, `WHY-PLG-RENAMED`) now mint inside it; `check:managed-select` asserts the artwork
+  select is gone.
+
 ### What a panel was computed from, and the spec sheet's named gaps (D-128)
 `shared/panel-provenance.js` (PURE, both sides), the provenance columns on `nfp_versions`,
 `server/product-completeness.js` + `GET /api/products/completeness`, **Products → Completeness**

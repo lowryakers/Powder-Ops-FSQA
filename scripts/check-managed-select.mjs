@@ -36,9 +36,13 @@ t('the receiving FORM selects (UOM, release status) both go through it — the l
   (src('src/components/warehouse/ReceivingLogPanel.jsx').match(/withCurrent\((uomList|statusList)\?\.options, form\./g) || []).length === 2);
 t('the sanitation area select no longer maps the raw list',
   !/\(areas\?\.options \|\| \[\]\)\.map/.test(src('src/components/compliance/SanitationPanel.jsx')));
-t('ProductsPanel offers `rejected`, the status artwork.js writes',
-  /'print_ready', 'rejected', 'superseded'/.test(src('src/components/compliance/ProductsPanel.jsx'))
-  && /'rejected'/.test(src('server/api/artwork.js')));
+// The artwork status used to be a <select> here and had to offer `rejected`
+// (the status artwork.js writes) or editing anything else cleared it. It is
+// not a field any more (D-131): artwork.js owns the column and the drawer
+// derives the line. The check is now that no such select comes back.
+t('ProductsPanel has NO artwork status select — the release on the Artwork board owns it',
+  !/'print_ready', 'rejected', 'superseded'/.test(src('src/components/compliance/ProductsPanel.jsx'))
+  && /ARTWORK_OWNED/.test(src('server/api/products.js')) && /'rejected'/.test(src('server/api/artwork.js')));
 t('the training method select offers a blank for imported rows',
   /<option value="">Not recorded<\/option>/.test(src('src/components/compliance/TrainingPanel.jsx')));
 

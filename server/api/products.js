@@ -21,6 +21,8 @@ import { preferredSku, LINE_CODES, PACK_CODES } from '../../shared/sku-format.js
 import { READINESS, TICKABLE, readinessOf, nextBasis } from '../../shared/product-readiness.js';
 import { shelfState, gtinPrefixes } from '../product-shelf.js';
 import { normalizeGtin, sameGtin, gtinValid } from '../../shared/gtin.js';
+import { validateField, FIELD_RULES, NA_FIELDS, naOf, looksLikeTypedNa, MASTER_CSV_SOURCES } from '../../shared/product-fields.js';
+import { parseDelimited } from '../tabular.js';
 import { pmsValid, hexValid, colorIssues, isBlankSlot, conflictSeverity }
   from '../../shared/product-colors.js';
 import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
@@ -69,7 +71,7 @@ const storedGtin = (raw) => normalizeGtin(raw) || null;
 // ── Shaping ──────────────────────────────────────────────────────────────────
 
 const SELECT = `
-  SELECT p.*, s.name AS spec_name, s.material_structure, s.zipper, s.print_process,
+  SELECT p.*, s.name AS spec_name, s.format AS spec_format, s.material_structure, s.zipper, s.print_process,
          s.trim_length_mm, s.trim_width_mm, s.gusset_mm, s.front_panel_mm,
          s.wind_direction, s.vendor_spec_string
   FROM products p LEFT JOIN packaging_specs s ON s.spec_id = p.spec_id`;
@@ -135,6 +137,10 @@ function hydrate(rows, db) {
       // number" on products whose image is for exactly the number they carry.
       barcode_stale: !!r.barcode_key && !!r.gtin && !sameGtin(r.barcode_gtin, r.gtin),
       barcode_gtin: r.barcode_gtin || null,
+      // The fields somebody has marked NOT APPLICABLE on this SKU, with who and
+      // when (shared/product-fields.js). Parsed here so no reader touches the
+      // JSON column.
+      na: naOf(r),
     };
   });
 }
@@ -688,6 +694,204 @@ router.delete('/flavor-codes/:id', (req, res) => {
 // ── The spec sheet's completeness (D-128, server/product-completeness.js) ────
 // Named gaps per SKU and a roll-up by line — never a score. DECLARED BEFORE
 // `/:sku`, or Express reads "completeness" as a product code.
+// ── Fill-down and the CSV import (D-131) ─────────────────────────────────────
+//
+// Both go through `buildPatch` + `applyPatch`, the same pair the PUT uses, so
+// a value the drawer refuses is a value the grid and the file refuse. Neither
+// writes anything a person did not see first: the fill-down is one value the
+// person typed applied to the rows they selected, and the import shows its
+// diff before anything is committed.
+
+/** The fields a fill-down may set. Never an identifier — filling a GTIN or a seller SKU down ten rows is ten collisions. */
+// A function, not a constant: WRITABLE is declared further down the file and
+// a top-level read here is a temporal-dead-zone error at boot.
+const bulkFields = () => WRITABLE.filter((c) => !['gtin', 'legacy_sku', 'shopify_sku', 'shopify_variant_id', 'amazon_sku', 'amazon_asin'].includes(c));
+
+router.post('/bulk-edit', (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalogue.' });
+  const db = getDb();
+  const { field, value } = req.body || {};
+  const skus = [...new Set((Array.isArray(req.body?.skus) ? req.body.skus : []).map((x) => String(x)))];
+  if (!skus.length) return res.status(400).json({ error: 'Name the SKUs to fill.' });
+  if (!bulkFields().includes(field)) {
+    return res.status(400).json({ error: `${field || 'That field'} cannot be filled down. It can be: ${bulkFields().join(', ')}.` });
+  }
+  const rows = skus.map((sku) => db.prepare('SELECT * FROM products WHERE sku = ?').get(sku));
+  const missing = skus.filter((_, i) => !rows[i]);
+  if (missing.length) return res.status(404).json({ error: `No such SKU: ${missing.join(', ')}` });
+  // Validated per row (an NA cleared on one, an Amazon confirmation dropped on
+  // another) but refused as a whole: a fill-down that lands on six rows and
+  // not the seventh is a screen that lies about what it did.
+  const plans = [];
+  for (const existing of rows) {
+    const built = buildPatch(db, existing, { [field]: value ?? '' });
+    if (built.error) return res.status(built.status).json({ error: `${existing.sku}: ${built.error}`, field: built.field, expected: built.expected });
+    plans.push([existing, built.patch]);
+  }
+  db.transaction(() => {
+    for (const [existing, patch] of plans) if (Object.keys(patch).length) applyPatch(db, existing, patch, req.user, { fill_down: true });
+  })();
+  logAudit(req.user, 'product_bulk_edit', 'product', field, { field, value: value ?? null, skus }, null, null, `${field} on ${skus.length} SKUs`);
+  res.json({ updated: plans.filter(([, patch]) => Object.keys(patch).length).length, skus, field });
+});
+
+/**
+ * The columns a CSV may carry. The key is the products column; the aliases
+ * are what a header may say — the grid's own labels, and master.csv's names,
+ * so the feed a person exported and edited in a spreadsheet imports straight
+ * back. `pms` / `hex` are the colour slots, pipe-delimited as the feed writes
+ * them.
+ */
+const IMPORT_COLUMNS = [
+  ['gtin', ['gtin', 'upc']],
+  ['flavor', ['flavor', 'flavour', 'product', 'product name']],
+  ['base_flavor', ['base_flavor', 'base flavour', 'base flavor', 'flavour']],
+  ['category', ['category', 'line']],
+  ['pack', ['pack', 'packaging type', 'pack format']],
+  ['pack_count', ['pack_count', 'pack count']],
+  ['protein_type', ['protein_type', 'protein']],
+  ['status', ['status']],
+  ['spec_id', ['spec_id', 'spec', 'packaging spec']],
+  ['eyemark_color', ['eyemark_color', 'eye mark color', 'eyemark colour', 'eye mark']],
+  ['dieline_required', ['dieline_required', 'die line required', 'dieline']],
+  ['mrp_formula_id', ['mrp_formula_id', 'formula_ref', 'formula ref']],
+  ['formula_rev', ['formula_rev', 'formula_version', 'formula version']],
+  ['fill_weight_g', ['fill_weight_g', 'fill weight (g)', 'fill weight']],
+  ['shopify_sku', ['shopify_sku', 'shopify sku']],
+  ['amazon_channel', ['amazon_channel', 'amazon channel']],
+  ['amazon_sku', ['amazon_sku', 'amazon sku']],
+  ['amazon_asin', ['amazon_asin', 'asin']],
+  ['drive_url', ['drive_url', 'drive link', 'drive']],
+  ['notes', ['notes']],
+  ['pms', ['pms', 'pms spot colors', 'pms spot colours']],
+  ['hex', ['hex', 'hex spot colors', 'hex spot colours']],
+];
+const importFieldFor = (header) => {
+  const h = String(header || '').trim().toLowerCase();
+  if (h === 'sku') return 'sku';
+  for (const [field, aliases] of IMPORT_COLUMNS) if (aliases.includes(h)) return field;
+  return null;
+};
+const yesNo = (v) => (/^(?:1|yes|y|true)$/i.test(v) ? 1 : /^(?:0|no|n|false)$/i.test(v) ? 0 : null);
+const joinSlots = (colors, k) => colors.filter((c) => c[k]).map((c) => c[k]).join(' | ');
+const splitSlots = (v) => String(v || '').split('|').map((x) => x.trim()).filter(Boolean);
+
+/**
+ * The import plan: per SKU, each field that would change, from → to, and any
+ * cell the field rules refuse. Writes nothing. Preview and commit both call it,
+ * so what is on the screen is what lands.
+ */
+function planImport(db, csvText) {
+  const grid = parseDelimited(String(csvText || '')).filter((r) => r.some((c) => String(c ?? '').trim() !== ''));
+  if (!grid.length) return { error: 'The file is empty.' };
+  const headers = grid[0].map((h) => String(h ?? '').trim());
+  const fields = headers.map(importFieldFor);
+  const skuCol = fields.indexOf('sku');
+  if (skuCol < 0) return { error: 'The file needs a "sku" column — every row is matched on it.' };
+  const unknown_columns = headers.filter((_, i) => fields[i] === null && headers[i] !== '');
+
+  const rows = []; const unknown_skus = []; const seen = new Set();
+  for (const r of grid.slice(1)) {
+    const sku = String(r[skuCol] ?? '').trim().toUpperCase();
+    if (!sku) continue;
+    if (seen.has(sku)) { rows.push({ sku, error: 'This SKU appears twice in the file.', changes: [] }); continue; }
+    seen.add(sku);
+    const existing = db.prepare(`${SELECT} WHERE p.sku = ?`).get(sku);
+    if (!existing) { unknown_skus.push(sku); continue; }
+    const colors = db.prepare('SELECT * FROM product_colors WHERE sku = ? ORDER BY slot').all(sku);
+    const body = {}; const changes = []; let colorPlan = null;
+    const wantPms = { set: false, v: null }; const wantHex = { set: false, v: null };
+    fields.forEach((field, i) => {
+      if (!field || field === 'sku') return;
+      const to = String(r[i] ?? '').trim();
+      if (field === 'pms') { wantPms.set = true; wantPms.v = to; return; }
+      if (field === 'hex') { wantHex.set = true; wantHex.v = to; return; }
+      let from = existing[field];
+      let toValue = to;
+      if (field === 'dieline_required') {
+        from = existing[field] ? 'yes' : 'no';
+        if (to !== '') { const yn = yesNo(to); if (yn === null) { changes.push({ field, from, to, error: 'Die line required is yes or no.' }); return; } toValue = yn; }
+        if (to === '' || String(from) === (yesNo(to) ? 'yes' : 'no')) return;
+        body[field] = toValue; changes.push({ field, from, to }); return;
+      }
+      const fromStr = from === null || from === undefined ? '' : String(from);
+      if (fromStr === to) return;
+      // A field rule normalises before it compares (F-00002 typed in lower case is the same value).
+      const v = validateField(field, to);
+      if (!v.ok) { changes.push({ field, from: fromStr, to, error: v.error }); return; }
+      if (String(v.value ?? '') === fromStr) return;
+      body[field] = to; changes.push({ field, from: fromStr, to: v.value === null ? '' : String(v.value) });
+    });
+    if (wantPms.set || wantHex.set) {
+      const pmsList = wantPms.set ? splitSlots(wantPms.v) : colors.map((c) => c.pms);
+      const hexList = wantHex.set ? splitSlots(wantHex.v) : colors.map((c) => c.hex);
+      const n = Math.max(pmsList.length, hexList.length);
+      const slots = Array.from({ length: n }, (_, i) => ({ pms: pmsList[i] || null, hex: hexList[i] || null }));
+      const plan = planColors(db, existing, slots);
+      if (plan.error) {
+        changes.push({ field: 'colors', from: `${joinSlots(colors, 'pms')} / ${joinSlots(colors, 'hex')}`, to: `${pmsList.join(' | ')} / ${hexList.join(' | ')}`, error: plan.error });
+      } else if (plan.changed) {
+        colorPlan = slots;
+        if (wantPms.set && joinSlots(colors, 'pms') !== joinSlots(plan.afterShape, 'pms')) changes.push({ field: 'pms', from: joinSlots(colors, 'pms'), to: joinSlots(plan.afterShape, 'pms') });
+        if (wantHex.set && joinSlots(colors, 'hex') !== joinSlots(plan.afterShape, 'hex')) changes.push({ field: 'hex', from: joinSlots(colors, 'hex'), to: joinSlots(plan.afterShape, 'hex') });
+      }
+    }
+    let patch = {};
+    if (Object.keys(body).length) {
+      const built = buildPatch(db, existing, body);
+      if (built.error) changes.push({ field: built.field || 'row', from: '', to: '', error: built.error });
+      else patch = built.patch;
+    }
+    if (!changes.length) continue;
+    rows.push({ sku, product: existing.flavor, changes, errors: changes.filter((c) => c.error).length, _existing: existing, _patch: patch, _colors: colorPlan });
+  }
+  const counts = {
+    rows_in_file: grid.length - 1,
+    skus_changing: rows.filter((r) => !r.error && r.changes.some((c) => !c.error)).length,
+    changes: rows.reduce((n, r) => n + r.changes.filter((c) => !c.error).length, 0),
+    errors: rows.reduce((n, r) => n + (r.error ? 1 : 0) + r.changes.filter((c) => c.error).length, 0),
+    unknown_skus: unknown_skus.length,
+  };
+  return { rows, unknown_skus, unknown_columns, counts, headers };
+}
+const publicPlan = (plan) => ({ ...plan, rows: plan.rows.map(({ _existing, _patch, _colors, ...r }) => r) });
+
+router.post('/import/preview', (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalogue.' });
+  const plan = planImport(getDb(), req.body?.csv);
+  if (plan.error) return res.status(400).json({ error: plan.error });
+  res.json(publicPlan(plan));
+});
+
+/**
+ * COMMIT REFUSES THE WHOLE FILE WHILE ANY CELL IS INVALID. Reject on save, not
+ * warn: a file that lands on 90 rows and skips 4 is a file somebody believes
+ * went in. The preview names every refused cell, so the fix is in the file.
+ */
+router.post('/import/commit', (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalogue.' });
+  const db = getDb();
+  const plan = planImport(db, req.body?.csv);
+  if (plan.error) return res.status(400).json({ error: plan.error });
+  if (plan.counts.errors) {
+    return res.status(400).json({ error: `${plan.counts.errors} cell${plan.counts.errors === 1 ? '' : 's'} refused — fix the file and preview again. Nothing was written.`, ...publicPlan(plan) });
+  }
+  let applied = 0;
+  db.transaction(() => {
+    for (const r of plan.rows) {
+      if (r.error) continue;
+      if (Object.keys(r._patch).length) applyPatch(db, r._existing, r._patch, req.user, { import: true });
+      if (r._colors) {
+        const w = writeColors(db, db.prepare('SELECT * FROM products WHERE sku = ?').get(r.sku), r._colors, req.user);
+        if (w.error) throw new Error(`${r.sku}: ${w.error}`);
+      }
+      applied++;
+    }
+  })();
+  logAudit(req.user, 'product_import', 'product', 'csv', { skus: applied, changes: plan.counts.changes, unknown_skus: plan.unknown_skus }, null, null, `${applied} SKUs from a CSV`);
+  res.json({ applied, ...publicPlan(plan) });
+});
+
 router.get('/completeness', (_req, res) => {
   res.json(catalogueCompleteness(getDb()));
 });
@@ -758,6 +962,14 @@ router.get('/data-health', (_req, res) => {
     // A row whose "SKU" is an 8+ digit number is a Shopify variant id that got
     // into the SKU column. It is not a code anyone prints.
     if (/^\d{8,}$/.test(p.sku)) add('not_a_sku', p.sku, 'This is a numeric id, not a SKU');
+
+    // "NA" TYPED INTO A BOX is a value, and it would reach the proofer's feed
+    // as an eye mark colour called NA. Not applicable is a control with a name
+    // on it (POST /:sku/na); reported here, never converted — "NA" might be
+    // somebody's initials in a notes field, so a person moves it.
+    for (const c of NA_FIELDS) {
+      if (looksLikeTypedNa(p[c])) add('typed_na', p.sku, `"${p[c]}" is typed into ${c} — mark the field not applicable instead`);
+    }
 
     const cs = bySku.get(p.sku) || [];
     if (!cs.length) add('no_colors', p.sku, 'No brand colours recorded');
@@ -907,7 +1119,7 @@ router.get('/data-health', (_req, res) => {
     }
   }
 
-  const KINDS = ['no_spec', 'bad_color', 'color_conflict', 'no_colors', 'not_a_sku', 'gtin'];
+  const KINDS = ['no_spec', 'bad_color', 'color_conflict', 'no_colors', 'not_a_sku', 'gtin', 'typed_na'];
   // WORK AND NOTES ARE COUNTED SEPARATELY. `counts` is what somebody has to go
   // and do; `noted` is what has already been answered and is on the list so
   // that the answer is visible, not so that it can be actioned. Both are the
@@ -972,8 +1184,89 @@ const WRITABLE = [
   // POST /confirm/amazon, the same doctrine that keeps `nfp_version` off the
   // ordinary edit form.
   'amazon_channel', 'amazon_sku', 'amazon_asin',
-  'artwork_version', 'artwork_status', 'drive_url', 'notes', 'fill_weight_g',
+  'drive_url', 'notes', 'fill_weight_g',
 ];
+
+/**
+ * `artwork_status` and `artwork_version` are NOT in WRITABLE either (D-131).
+ *
+ * They were a dropdown on the edit form, and the readiness step "Artwork
+ * print-ready" read the dropdown — so the print gate opened by picking
+ * "print ready" from a list, with no artwork version behind it. They are a
+ * MIRROR now, written by the release in api/artwork.js in the same transaction
+ * as the artwork_versions row, and by nothing else; the readiness line says
+ * which version and when. Refused loudly, the NFP_OWNED rule.
+ */
+const ARTWORK_OWNED = ['artwork_status', 'artwork_version'];
+
+/**
+ * Turn a request body into the patch a write path applies — ONE reader of
+ * the field rules for the PUT, the fill-down and the CSV import, so a value
+ * the grid refuses is a value the import refuses.
+ *
+ * Returns `{ patch }` or `{ status, error }`. Nothing is written here.
+ */
+function buildPatch(db, existing, b) {
+  if (NFP_OWNED.some((c) => b[c] !== undefined)) {
+    return { status: 400, code: 'NFP_OWNED', error: 'The NFP version and its approval date are set by approving a panel, not by typing them. Open the product\'s NFP panels.' };
+  }
+  if (ARTWORK_OWNED.some((c) => b[c] !== undefined)) {
+    return { status: 400, code: 'ARTWORK_OWNED', error: 'Artwork status and version are set by releasing a version on the Artwork board, not by typing them.' };
+  }
+  const patch = {};
+  for (const c of WRITABLE) if (b[c] !== undefined) patch[c] = b[c] === '' ? null : b[c];
+
+  // VALIDATED AT THE FIELD, REFUSED ON SAVE (shared/product-fields.js). The
+  // refusal names the expected format, so "Yes" in the formula ref comes back
+  // as "F- followed by five digits" rather than as a saved lie.
+  for (const c of Object.keys(patch)) {
+    if (!FIELD_RULES[c] || patch[c] === null) continue;
+    const v = validateField(c, patch[c]);
+    if (!v.ok) return { status: 400, code: 'FIELD_FORMAT', field: c, error: v.error, expected: v.expected };
+    patch[c] = v.value;
+  }
+  if (patch.gtin !== undefined) {
+    patch.gtin_valid = gtinValid(patch.gtin) ? 1 : 0;
+    const clash = patch.gtin && db.prepare('SELECT sku FROM products WHERE gtin = ? AND sku != ?').get(patch.gtin, existing.sku);
+    if (clash) return { status: 409, error: `${patch.gtin} is already on ${clash.sku}.` };
+  }
+  // Three states and no fourth. A value the readiness step cannot read would
+  // silently take the product off Amazon's punch list.
+  if (patch.amazon_channel != null && !AMAZON_CHANNELS.includes(patch.amazon_channel)) {
+    return { status: 400, error: `Amazon channel is ${AMAZON_CHANNELS.join(' or ')}, or blank for "nobody has said yet".` };
+  }
+  // Moving a product OFF Amazon drops the confirmation with it — a stamped
+  // listing date on a product marked not sold is a record of something that is
+  // no longer true, and it would come straight back if it were ever relisted.
+  if (patch.amazon_channel === 'not_sold' && existing.amazon_listed_at) {
+    patch.amazon_listed_at = null; patch.amazon_listed_by = null;
+  }
+  // A VALUE WRITTEN INTO A FIELD CLEARS ITS "NOT APPLICABLE". The two cannot
+  // both be true, and the value is the later statement.
+  const na = naOf(existing);
+  const cleared = Object.keys(patch).filter((c) => na[c] && patch[c] !== null);
+  if (cleared.length) {
+    for (const c of cleared) delete na[c];
+    patch.na_fields = Object.keys(na).length ? JSON.stringify(na) : null;
+  }
+  return { patch };
+}
+
+/** Apply a patch built by `buildPatch`: one UPDATE, the readiness stamp, one audit entry. */
+function applyPatch(db, existing, patch, user, detail = {}) {
+  const cols = Object.keys(patch);
+  if (!cols.length) return existing;
+  const sets = cols.map((c) => `${c} = ?`).join(', ');
+  db.prepare(`UPDATE products SET ${sets}, updated_at = datetime('now') WHERE sku = ?`)
+    .run(...cols.map((c) => patch[c]), existing.sku);
+  // What each satisfied step is now true against. Editing the GTIN here is
+  // exactly the case this exists for: the step's own basis moves, and every
+  // step that DEPENDED on the GTIN — the artwork, the Shopify listing — keeps
+  // the old one and comes back onto the punch list saying so.
+  stampReadiness(db, existing.sku, existing, cols, user?.name);
+  logAudit(user, 'product_updated', 'product', existing.sku, { changed: cols, ...detail }, null, null, existing.sku);
+  return db.prepare('SELECT * FROM products WHERE sku = ?').get(existing.sku);
+}
 
 /**
  * `nfp_version` and `nfp_approved_at` are deliberately NOT in WRITABLE.
@@ -1051,9 +1344,17 @@ router.post('/:sku/confirm/:step', (req, res) => {
 router.post('/', (req, res) => {
   if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalogue.' });
   const b = req.body || {};
-  const sku = (b.sku || '').trim().toUpperCase();
+  const skuCheck = validateField('sku', b.sku);
+  const sku = skuCheck.ok ? skuCheck.value : null;
   if (!sku || !b.flavor?.trim() || !b.category?.trim() || !b.pack?.trim()) {
-    return res.status(400).json({ error: 'SKU, flavour, category and pack are required.' });
+    return res.status(400).json({ error: skuCheck.ok ? 'SKU, flavour, category and pack are required.' : skuCheck.error, expected: skuCheck.expected });
+  }
+  // The same rules the edit path applies, from the first write (D-131).
+  for (const c of ['mrp_formula_id', 'formula_rev', 'fill_weight_g']) {
+    if (b[c] === undefined || b[c] === null || b[c] === '') continue;
+    const v = validateField(c, b[c]);
+    if (!v.ok) return res.status(400).json({ error: v.error, field: c, expected: v.expected });
+    b[c] = v.value;
   }
   const db = getDb();
   if (db.prepare('SELECT 1 FROM products WHERE sku = ?').get(sku)) {
@@ -1089,58 +1390,122 @@ router.put('/:sku', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM products WHERE sku = ?').get(req.params.sku);
   if (!existing) return res.status(404).json({ error: 'No such SKU' });
-  const b = req.body || {};
-
-  if (NFP_OWNED.some((c) => b[c] !== undefined)) {
-    return res.status(400).json({
-      error: 'The NFP version and its approval date are set by approving a panel, not by typing them. Open the product\'s NFP panels.',
-    });
-  }
-
-  // A GTIN that fails its check digit is never stored, from any door.
-  if (b.gtin !== undefined) {
-    const g = storedGtin(b.gtin) || '';
-    if (g && !gtinValid(g)) return res.status(400).json({ error: `${g} fails its GS1 check digit.` });
-    const clash = g && db.prepare('SELECT sku FROM products WHERE gtin = ? AND sku != ?').get(g, existing.sku);
-    if (clash) return res.status(409).json({ error: `${g} is already on ${clash.sku}.` });
-  }
-
-  const patch = {};
-  for (const c of WRITABLE) if (b[c] !== undefined) patch[c] = b[c] === '' ? null : b[c];
-  // A fill weight is a number in grams or nothing — never a guess or a unit.
-  if (patch.fill_weight_g !== undefined && patch.fill_weight_g !== null) {
-    const n = Number(String(patch.fill_weight_g).replace(/[^\d.]/g, ''));
-    if (!Number.isFinite(n) || n <= 0) return res.status(400).json({ error: 'Fill weight is a number of grams, e.g. 30.' });
-    patch.fill_weight_g = n;
-  }
-  if (patch.gtin !== undefined) {
-    patch.gtin = storedGtin(patch.gtin);
-    patch.gtin_valid = gtinValid(patch.gtin) ? 1 : 0;
-  }
-  // Three states and no fourth. A value the readiness step cannot read would
-  // silently take the product off Amazon's punch list.
-  if (patch.amazon_channel != null && !AMAZON_CHANNELS.includes(patch.amazon_channel)) {
-    return res.status(400).json({ error: `Amazon channel is ${AMAZON_CHANNELS.join(' or ')}, or blank for "nobody has said yet".` });
-  }
-  // Moving a product OFF Amazon drops the confirmation with it — a stamped
-  // listing date on a product marked not sold is a record of something that is
-  // no longer true, and it would come straight back if it were ever relisted.
-  if (patch.amazon_channel === 'not_sold' && existing.amazon_listed_at) {
-    patch.amazon_listed_at = null; patch.amazon_listed_by = null;
-  }
-  if (!Object.keys(patch).length) return res.json(existing);
-
-  const sets = Object.keys(patch).map((c) => `${c} = ?`).join(', ');
-  db.prepare(`UPDATE products SET ${sets}, updated_at = datetime('now') WHERE sku = ?`)
-    .run(...Object.values(patch), existing.sku);
-  // What each satisfied step is now true against. Editing the GTIN here is
-  // exactly the case this exists for: the step's own basis moves, and every
-  // step that DEPENDED on the GTIN — the artwork, the Shopify listing — keeps
-  // the old one and comes back onto the punch list saying so.
-  stampReadiness(db, existing.sku, existing, Object.keys(patch), req.user?.name);
-  logAudit(req.user, 'product_updated', 'product', existing.sku, { changed: Object.keys(patch) }, null, null, existing.sku);
+  const built = buildPatch(db, existing, req.body || {});
+  if (built.error) return res.status(built.status).json({ error: built.error, code: built.code, field: built.field, expected: built.expected });
+  if (!Object.keys(built.patch).length) return res.json(existing);
+  applyPatch(db, existing, built.patch, req.user);
   res.json(hydrate([db.prepare(`${SELECT} WHERE p.sku = ?`).get(existing.sku)], db)[0]);
 });
+
+/**
+ * Not applicable, as a decision with a name on it.
+ *
+ * `POST /:sku/na { field, on }`. On: the field's value is cleared and the NA
+ * recorded with who and when; off: the NA is removed and the field is EMPTY
+ * again, never restored to what it held. Only the fields in `NA_FIELDS` — the
+ * identity fields, the formula and the fill weight are owed by every product,
+ * and an NA on one of those would be a gap wearing a tick.
+ */
+router.post('/:sku/na', (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalogue.' });
+  const db = getDb();
+  const existing = db.prepare('SELECT * FROM products WHERE sku = ?').get(req.params.sku);
+  if (!existing) return res.status(404).json({ error: 'No such SKU' });
+  const field = String(req.body?.field || '');
+  if (!NA_FIELDS.includes(field)) {
+    return res.status(400).json({ error: `${field || 'That field'} cannot be marked not applicable. It can be: ${NA_FIELDS.join(', ')}.`, na_fields: NA_FIELDS });
+  }
+  const on = req.body?.on !== false;
+  const na = naOf(existing);
+  const patch = {};
+  if (on) {
+    na[field] = { by: req.user?.name || null, at: new Date().toISOString() };
+    if (existing[field] !== null && existing[field] !== undefined) patch[field] = null;
+  } else {
+    delete na[field];
+  }
+  patch.na_fields = Object.keys(na).length ? JSON.stringify(na) : null;
+  applyPatch(db, existing, patch, req.user, { na: { field, on } });
+  res.json(hydrate([db.prepare(`${SELECT} WHERE p.sku = ?`).get(existing.sku)], db)[0]);
+});
+
+/**
+ * Write the whole colour list for one product. Shared by the drawer's editor,
+ * the grid's pms/hex cells and the CSV import, so one rule decides.
+ *
+ * TWO RULES, and which one applies depends on whether the slot CHANGED. A slot
+ * the caller sends back exactly as stored is accepted as it stands — the audit
+ * transcribed `PMS Black C` and `PMS 4625`, and a person correcting slot 3 must
+ * not be refused over slot 1. A slot whose value MOVED takes the strict shape
+ * (`PMS 158 C`, `HEX EE7623`; shared/product-fields.js), because that is the
+ * one moment a shape is being chosen. `colorIssues` (D-108) still runs on every
+ * slot, so the placeholder and process-build refusals stand.
+ *
+ * Returns `{ product }` (re-read and hydrated) or `{ status, error, problems }`.
+ */
+function planColors(db, product, colors) {
+  if (!Array.isArray(colors)) return { status: 400, error: 'Send the whole colour list.' };
+  // A row with neither value typed into it is an empty line on the form, not
+  // a colour somebody meant to record as blank.
+  const wanted = colors
+    .filter((c) => !isBlankSlot(c))
+    .map((c) => ({ pms: String(c.pms ?? '').trim() || null, hex: String(c.hex ?? '').trim() || null }));
+
+  const before = db.prepare('SELECT * FROM product_colors WHERE sku = ? ORDER BY slot').all(product.sku);
+  const beforeShape = before.map((c) => ({ slot: c.slot, pms: c.pms, hex: c.hex }));
+
+  // REFUSED, NEVER STORED AND FLAGGED. A value the proofing service cannot
+  // match a separation against is worse on the feed than an empty cell — the
+  // check would report a name mismatch against a name nobody printed. Named
+  // per slot, or the person has to work out which of four boxes it meant.
+  const problems = [];
+  wanted.forEach((c, i) => {
+    for (const msg of colorIssues(c)) problems.push(`Colour ${i + 1}: ${msg}`);
+    const was = beforeShape[i] || {};
+    for (const k of ['pms', 'hex']) {
+      if (c[k] === null || c[k] === (was[k] ?? null)) continue;
+      const v = validateField(k, c[k]);
+      if (!v.ok) problems.push(`Colour ${i + 1}: ${v.error}`);
+      else c[k] = v.value;
+    }
+  });
+  if (problems.length) return { status: 400, error: problems.join(' '), problems };
+
+  const afterShape = wanted.map((c, i) => ({ slot: i + 1, ...c }));
+  return { before, beforeShape, afterShape, changed: JSON.stringify(beforeShape) !== JSON.stringify(afterShape) };
+}
+
+function writeColors(db, product, colors, user) {
+  const plan = planColors(db, product, colors);
+  if (plan.error) return plan;
+  const { before, beforeShape, afterShape } = plan;
+  const read = () => hydrate([db.prepare(`${SELECT} WHERE p.sku = ?`).get(product.sku)], db)[0];
+  if (!plan.changed) return { product: read(), unchanged: true };
+
+  db.transaction(() => {
+    db.prepare('DELETE FROM product_colors WHERE sku = ?').run(product.sku);
+    const ins = db.prepare(`INSERT INTO product_colors (id, sku, slot, pms, hex, pms_valid, hex_valid)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`);
+    for (const c of afterShape) {
+      // RECOMPUTED, never taken from the caller — the same rule `gtin_valid`
+      // follows. These two columns are what the data-health punch list and the
+      // swatch on the drawer read, so a client may not declare a value good.
+      ins.run(uuid(), product.sku, c.slot, c.pms, c.hex,
+        pmsValid(c.pms) ? 1 : 0, hexValid(c.hex) ? 1 : 0);
+    }
+    db.prepare("UPDATE products SET updated_at = datetime('now') WHERE sku = ?").run(product.sku);
+    // The colours step has just been re-done, so its basis moves to what was
+    // typed — and ARTWORK, which depends on colours, keeps the old one and
+    // comes back onto the punch list saying the brand colours moved. That is
+    // the point: a pack released against PMS 285 was released against a
+    // different ink from the one now on the record.
+    stampReadiness(db, product.sku, { ...product, colors: before }, ['colors'], user?.name);
+  })();
+
+  logAudit(user, 'product_colors_updated', 'product', product.sku,
+    { slots: afterShape.length }, { colors: beforeShape }, { colors: afterShape }, product.sku);
+  return { product: read() };
+}
 
 /**
  * Correct the brand colours.
@@ -1170,56 +1535,9 @@ router.put('/:sku/colors', (req, res) => {
   const db = getDb();
   const product = db.prepare('SELECT * FROM products WHERE sku = ?').get(req.params.sku);
   if (!product) return res.status(404).json({ error: 'No such SKU' });
-  if (!Array.isArray(req.body?.colors)) {
-    return res.status(400).json({ error: 'Send the whole colour list.' });
-  }
-
-  // A row with neither value typed into it is an empty line on the form, not
-  // a colour somebody meant to record as blank.
-  const wanted = req.body.colors
-    .filter((c) => !isBlankSlot(c))
-    .map((c) => ({ pms: String(c.pms ?? '').trim() || null, hex: String(c.hex ?? '').trim() || null }));
-
-  // REFUSED, NEVER STORED AND FLAGGED. A value the proofing service cannot
-  // match a separation against is worse on the feed than an empty cell — the
-  // check would report a name mismatch against a name nobody printed. Named
-  // per slot, or the person has to work out which of four boxes it meant.
-  const problems = [];
-  wanted.forEach((c, i) => {
-    for (const msg of colorIssues(c)) problems.push(`Colour ${i + 1}: ${msg}`);
-  });
-  if (problems.length) return res.status(400).json({ error: problems.join(' '), problems });
-
-  const before = db.prepare('SELECT * FROM product_colors WHERE sku = ? ORDER BY slot').all(product.sku);
-  const beforeShape = before.map((c) => ({ slot: c.slot, pms: c.pms, hex: c.hex }));
-  const afterShape = wanted.map((c, i) => ({ slot: i + 1, ...c }));
-  if (JSON.stringify(beforeShape) === JSON.stringify(afterShape)) {
-    return res.json(hydrate([db.prepare(`${SELECT} WHERE p.sku = ?`).get(product.sku)], db)[0]);
-  }
-
-  db.transaction(() => {
-    db.prepare('DELETE FROM product_colors WHERE sku = ?').run(product.sku);
-    const ins = db.prepare(`INSERT INTO product_colors (id, sku, slot, pms, hex, pms_valid, hex_valid)
-      VALUES (?, ?, ?, ?, ?, ?, ?)`);
-    for (const c of afterShape) {
-      // RECOMPUTED, never taken from the caller — the same rule `gtin_valid`
-      // follows. These two columns are what the data-health punch list and the
-      // swatch on the drawer read, so a client may not declare a value good.
-      ins.run(uuid(), product.sku, c.slot, c.pms, c.hex,
-        pmsValid(c.pms) ? 1 : 0, hexValid(c.hex) ? 1 : 0);
-    }
-    db.prepare("UPDATE products SET updated_at = datetime('now') WHERE sku = ?").run(product.sku);
-    // The colours step has just been re-done, so its basis moves to what was
-    // typed — and ARTWORK, which depends on colours, keeps the old one and
-    // comes back onto the punch list saying the brand colours moved. That is
-    // the point: a pack released against PMS 285 was released against a
-    // different ink from the one now on the record.
-    stampReadiness(db, product.sku, { ...product, colors: before }, ['colors'], req.user?.name);
-  })();
-
-  logAudit(req.user, 'product_colors_updated', 'product', product.sku,
-    { slots: afterShape.length }, { colors: beforeShape }, { colors: afterShape }, product.sku);
-  res.json(hydrate([db.prepare(`${SELECT} WHERE p.sku = ?`).get(product.sku)], db)[0]);
+  const r = writeColors(db, product, req.body?.colors, req.user);
+  if (r.error) return res.status(r.status).json({ error: r.error, problems: r.problems });
+  res.json(r.product);
 });
 
 /**
@@ -1234,14 +1552,20 @@ router.post('/:sku/rename', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM products WHERE sku = ?').get(req.params.sku);
   if (!existing) return res.status(404).json({ error: 'No such SKU' });
-  const next = (req.body?.sku || '').trim().toUpperCase();
-  if (!/^[A-Z0-9-]{3,24}$/.test(next)) {
-    return res.status(400).json({ error: 'A SKU is letters, digits and hyphens, 3 to 24 characters.' });
+  // A rename MINTS a code, so it takes the new standard (shared/product-fields.js).
+  // The legacy shapes already on file are never re-tested — they are join keys.
+  const typed = String(req.body?.sku || '').trim().toUpperCase();
+  if (typed === existing.sku) return res.json(existing);
+  // A code another row already holds is refused as TAKEN before its shape is
+  // judged — the row is real whatever shape its code is.
+  if (typed && db.prepare('SELECT 1 FROM products WHERE sku = ?').get(typed)) {
+    return res.status(409).json({ error: `${typed} already exists.` });
   }
-  if (next === existing.sku) return res.json(existing);
-  if (db.prepare('SELECT 1 FROM products WHERE sku = ?').get(next)) {
-    return res.status(409).json({ error: `${next} already exists.` });
+  const nextCheck = validateField('sku', typed);
+  if (!nextCheck.ok || !nextCheck.value) {
+    return res.status(400).json({ error: nextCheck.error || 'A SKU is required.', expected: nextCheck.expected || FIELD_RULES.sku.expected });
   }
+  const next = nextCheck.value;
   db.transaction(() => {
     // Foreign keys are enforced app-wide (db.js sets foreign_keys = ON), so
     // renaming the parent leaves the child rows pointing at a SKU that no
@@ -1273,15 +1597,13 @@ const PACK_LABEL = {
 
 // These sixteen header names are the contract with Artwork-Proofing's
 // _fetch_sheet_rows(). Do not rename them to match our column names.
-const CSV_HEADERS = [
-  'sku', 'gtin', 'flavor', 'packaging type', 'material', 'zipper', 'print',
-  'trim length', 'trim width', 'gusset dimension', 'front panel dimension',
-  'wind direction', 'pms spot colors', 'hex spot colors', 'eye mark color',
-  'die line required',
-  // An extra column is free — the proofer skips headers it does not know —
-  // and this one is what its Net Weight check reads (alias: Fill Weight (g)).
-  'fill weight (g)',
-];
+// WHERE EACH COLUMN POPULATES FROM is written beside its name in
+// `MASTER_CSV_SOURCES` (shared/product-fields.js) — the one place that answers
+// "which table does the proofer's 'material' come from" — and the header list
+// is its keys, in order, so the two cannot drift. The seventeenth column,
+// `fill weight (g)`, is an extra the proofer's Net Weight check reads; extra
+// columns are free, the sixteen are not.
+const CSV_HEADERS = MASTER_CSV_SOURCES.map(([name]) => name);
 
 const csvCell = (v) => {
   const s = v === null || v === undefined ? '' : String(v);

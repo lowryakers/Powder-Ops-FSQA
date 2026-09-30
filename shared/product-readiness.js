@@ -86,16 +86,19 @@ export const READINESS = [
     // not a SKU somebody assigned.
     ok: (p) => !!p.sku && !/^\d{8,}$/.test(p.sku),
     owns: ['sku'],
+    why: (p) => (!p.sku ? 'No SKU on the row' : /^\d{8,}$/.test(p.sku) ? `${p.sku} is a Shopify variant id, not a SKU` : `SKU ${p.sku} is on the row`),
   },
   {
     key: 'gtin', label: 'GS1 barcode',
     ok: (p) => !!p.gtin && !!p.gtin_valid,
     owns: ['gtin'],
+    why: (p) => (!p.gtin ? 'No GS1 number on the row' : !p.gtin_valid ? `${p.gtin} fails its GS1 check digit` : `GTIN ${normalizeGtin(p.gtin)} passes its check digit`),
   },
   {
     key: 'spec', label: 'Packaging spec',
     ok: (p) => !!p.spec_id && !!p.material_structure,
     owns: ['spec_id'],
+    why: (p) => (!p.spec_id ? 'No packaging spec assigned' : !p.material_structure ? `${p.spec_id} has no material structure recorded` : `${p.spec_id} carries a material structure`),
   },
   {
     // "MRP formula" named the system rather than the fact, and the system is
@@ -104,11 +107,16 @@ export const READINESS = [
     key: 'formula', label: 'Approved formula', tick: true,
     ok: (p) => !!p.formula_approved_at,
     owns: ['formula_approved_at', 'mrp_formula_id', 'formula_rev'],
+    why: (p) => (p.formula_approved_at
+      ? `Confirmed approved${p.formula_approved_by ? ` by ${p.formula_approved_by}` : ''} on ${String(p.formula_approved_at).slice(0, 10)}${p.mrp_formula_id ? ` (${p.mrp_formula_id}${p.formula_rev ? ` ${p.formula_rev}` : ''})` : ''}`
+      : 'Nobody has confirmed the formula is approved where it lives (Keychain / the MRP)'),
   },
   {
     key: 'nfp', label: 'NFP approved',
     ok: (p) => !!p.nfp_version && !!p.nfp_approved_at,
     owns: ['nfp_version', 'nfp_approved_at'],
+    why: (p) => (p.nfp_version && p.nfp_approved_at ? `Panel ${p.nfp_version} approved ${String(p.nfp_approved_at).slice(0, 10)}`
+      : p.nfp_version ? `Panel ${p.nfp_version} is on file and not approved` : 'No nutrition panel approved for this SKU'),
     // The panel is computed FROM the recipe and carries the product's name.
     depends: ['formula', 'flavor'],
     redo: 'Approve the next panel version under Nutrition panels.',
@@ -117,6 +125,11 @@ export const READINESS = [
     key: 'artwork', label: 'Artwork print-ready',
     ok: (p) => p.artwork_status === 'print_ready',
     owns: ['artwork_status', 'artwork_version'],
+    // DERIVED from the release on the Artwork board — the column is a mirror
+    // api/artwork.js writes with the artwork_versions row, and the edit form
+    // no longer offers it (D-131). The reason names the version.
+    why: (p) => (p.artwork_status === 'print_ready' ? `Artwork ${p.artwork_version ? `V${String(p.artwork_version).replace(/^v/i, '')} ` : ''}released print-ready on the Artwork board`
+      : p.artwork_status ? `Latest artwork is ${String(p.artwork_status).replace(/_/g, ' ')}, not released print-ready` : 'No artwork version has been released for this SKU'),
     // Everything printed on the film. A change to any of them means the film
     // on file is not the film this product needs.
     depends: ['gtin', 'spec', 'nfp', 'flavor', 'colors'],
@@ -126,11 +139,13 @@ export const READINESS = [
     key: 'colors', label: 'Brand colours',
     ok: (p) => (p.colors || []).length > 0,
     owns: [],
+    why: (p) => ((p.colors || []).length ? `${p.colors.length} colour slot${p.colors.length === 1 ? '' : 's'} on file` : 'No brand colours on file'),
   },
   {
     key: 'shopify', label: 'Listed in Shopify', tick: true,
     ok: (p) => !!p.shopify_listed_at,
     owns: ['shopify_listed_at', 'shopify_sku'],
+    why: (p) => (p.shopify_listed_at ? `Confirmed listed${p.shopify_listed_by ? ` by ${p.shopify_listed_by}` : ''} on ${String(p.shopify_listed_at).slice(0, 10)}` : 'Nobody has confirmed the Shopify listing'),
     // Shopify snapshots the SKU onto every order line and scans the barcode.
     depends: ['sku', 'gtin'],
   },
@@ -138,6 +153,7 @@ export const READINESS = [
     key: 'shiphero', label: 'Synced to ShipHero', tick: true,
     ok: (p) => !!p.shiphero_synced_at,
     owns: ['shiphero_synced_at'],
+    why: (p) => (p.shiphero_synced_at ? `Confirmed synced${p.shiphero_synced_by ? ` by ${p.shiphero_synced_by}` : ''} on ${String(p.shiphero_synced_at).slice(0, 10)}` : 'Nobody has confirmed the ShipHero sync'),
     // Inventory locations and open order lines are keyed to the SKU.
     depends: ['sku', 'gtin'],
   },
@@ -152,6 +168,7 @@ export const READINESS = [
     applies: (p) => p.amazon_channel === 'listed',
     ok: (p) => !!p.amazon_listed_at,
     owns: ['amazon_listed_at', 'amazon_sku'],
+    why: (p) => (p.amazon_listed_at ? `Confirmed listed${p.amazon_listed_by ? ` by ${p.amazon_listed_by}` : ''} on ${String(p.amazon_listed_at).slice(0, 10)}` : 'Marked as sold on Amazon; nobody has confirmed the listing'),
     // A listing hangs off the SELLER SKU, and FBA stock already in a fulfilment
     // centre is bound to it — the most expensive place a rename can land.
     depends: ['sku', 'gtin'],
@@ -197,12 +214,15 @@ export const stepApplies = (s, p) => (typeof s.applies === 'function' ? !!s.appl
 export function readinessOf(p) {
   const basis = parseBasis(p.readiness_basis);
   const steps = READINESS.filter((s) => stepApplies(s, p)).map((s) => {
-    const meta = { key: s.key, label: s.label, tick: !!s.tick, redo: s.redo || null };
+    // EVERY LINE STATES ITS REASON — what record makes it done, or what is
+    // missing — so a tick is never a bare tick (D-131).
+    const meta = { key: s.key, label: s.label, tick: !!s.tick, redo: s.redo || null, reason: s.why ? s.why(p) : null };
     if (!s.ok(p)) return { ...meta, state: 'todo', done: false, changed: [] };
     const rec = basis[s.key];
     const moved = movedSince(s, p, rec?.deps);
     return {
       ...meta,
+      reason: moved.length ? `${meta.reason}; since then ${moved.map((d) => FACT_LABEL[d] || d).join(' and ')} changed` : meta.reason,
       state: moved.length ? 'stale' : 'done',
       // `done` is kept for callers that only ever asked the yes/no question.
       // A STALE STEP IS NOT DONE — that is what puts it back on the list.
