@@ -177,6 +177,13 @@ function gates({ p, panel, artwork, po }) {
   if (!artwork) out.artwork = { met: false, why: 'No artwork released print-ready.' };
   else if (!panel) out.artwork = { met: false, why: `Artwork V${artwork.version} is released, but there is no approved panel for it to be drawn against.` };
   else if (String(artwork.nfp_version || '') !== String(panel.version)) out.artwork = { met: false, why: `Artwork V${artwork.version} was drawn against panel ${artwork.nfp_version || '(none recorded)'}; the approved panel is ${panel.version}.` };
+  // The spec's film moved under released artwork (D-136): held at 8 until it is
+  // checked against the spec or released again. Only the film — the other
+  // reasons the artwork step can go stale are D-134's to decide, not this one's.
+  else if (step('artwork')?.state === 'stale' && step('artwork').film_fields?.length) {
+    const f = step('artwork').film_fields.map((x) => `${x.label} ${x.from || 'blank'} → ${x.to || 'blank'}`).join(', ');
+    out.artwork = { met: false, why: `Artwork V${artwork.version} was released before the packaging spec changed (${f}) — check it against the spec or release it again.` };
+  }
   else out.artwork = { met: true, why: `Artwork V${artwork.version} released against panel ${panel.version}.` };
 
   // 9 · Packaging PO against the current artwork.

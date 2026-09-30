@@ -442,6 +442,63 @@ function Derived({ label, value, source, na }) {
   );
 }
 
+/**
+ * The spec's film moved under released artwork (D-136). Names each field that
+ * moved and offers "Checked against the spec, still fits" with a note — which
+ * re-bases that ONE dependency; the release still owns the step. Once checked
+ * and nothing has moved since, it says who checked it and why.
+ */
+function FilmCheck({ sku, steps, canEdit, onDone, onOpenSpec, specId }) {
+  const art = (steps || []).find((x) => x.key === 'artwork');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  if (!art) return null;
+  const waiting = art.state === 'stale' && art.film_fields?.length > 0;
+  if (!waiting) {
+    const c = art.film_checked;
+    return c && art.state === 'done' ? (
+      <p className="text-[11px] text-gray-500" data-film-checked>
+        Checked against the spec by {c.by || 'unknown'} on {String(c.at).slice(0, 10)} — {c.note}
+      </p>
+    ) : null;
+  }
+  const submit = async () => {
+    setBusy(true); setError('');
+    try {
+      await apiFetch(`/products/${encodeURIComponent(sku)}/artwork/film-check`, { method: 'POST', body: { note } });
+      setNote(''); onDone?.();
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  };
+  return (
+    <div className="border border-amber-300 bg-amber-50 rounded-lg p-3 space-y-2 text-sm" data-film-waiting={sku}>
+      <p className="text-amber-900">
+        The released artwork was drawn before the packaging spec changed{specId && onOpenSpec
+          ? <> (<button type="button" onClick={() => onOpenSpec(specId)} className="underline">{specId}</button>)</> : null}:
+      </p>
+      <ul className="list-disc pl-5 text-amber-900" data-film-fields>
+        {art.film_fields.map((f) => (
+          <li key={f.key} data-film-field={f.key}><span className="capitalize">{f.label}</span>: {f.from || 'blank'} → <strong>{f.to || 'blank'}</strong></li>
+        ))}
+      </ul>
+      <p className="text-[11px] text-amber-800">Check the artwork against the spec. If it already fits, say so here; if it does not, redraw it and release it again. The artwork stays released either way.</p>
+      {canEdit && (
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input value={note} onChange={(e) => setNote(e.target.value)} data-film-note
+            placeholder="What was checked, e.g. dieline already 250 mm"
+            className="flex-1 border border-amber-300 rounded-lg px-3 py-1.5 text-sm bg-white" />
+          <button type="button" onClick={submit} disabled={busy || note.trim().length < 3} data-film-fits
+            className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 disabled:opacity-50 whitespace-nowrap">
+            {busy ? 'Saving…' : 'Checked against the spec, still fits'}
+          </button>
+        </div>
+      )}
+      {error && <p className="text-xs text-red-700">{error}</p>}
+    </div>
+  );
+}
+
 /** One readiness line with its reason — the record that makes it done, or what is missing. */
 function StepLine({ steps, k }) {
   const st = (steps || []).find((x) => x.key === k);
@@ -729,6 +786,8 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
                     <Derived label="Hex spot colors" value={(p.colors || []).filter((c) => c.hex).map((c) => c.hex).join(' | ')} source="product_colors.hex, slots in order" />
                   </dl>
                   <StepLine steps={p.readiness?.steps} k="spec" /><StepLine steps={p.readiness?.steps} k="colors" /><StepLine steps={p.readiness?.steps} k="artwork" />
+                  <FilmCheck sku={sku} steps={p.readiness?.steps} canEdit={canEdit} specId={p.spec_id} onOpenSpec={onOpenSpec}
+                    onDone={() => { refresh(); onSaved?.(); }} />
                   <ColorEditor sku={sku} colors={p.colors} canEdit={canEdit}
                     onSaved={() => { refresh(); onSaved?.(); }} />
                   <BarcodeImage sku={sku} gtin={p.gtin} canEdit={canEdit}
@@ -922,7 +981,7 @@ export default function ProductsPanel() {
       {view === 'barcodes' && <ProductBarcodes onOpenSku={(sku) => { setView('list'); setOpen(sku); }} />}
       {view === 'shelf' && <ProductShelf canEdit={canEdit} />}
       {view === 'specs' && <PackagingSpecsPanel canEdit={canEdit} focus={specFocus}
-        onOpenSku={(sku) => { setView('list'); setOpen(sku); }} onChanged={refreshAll} />}
+        onOpenSku={(sku, gate) => openAt(sku, gate)} onChanged={refreshAll} />}
 
       {view === 'nfp' && <NfpBoard data={nfp} onOpenSku={(s) => { setView('list'); setOpen(s); }}
         canManage={canEdit} onChanged={refreshNfp} />}

@@ -27,17 +27,17 @@ export const SPEC_ID_RE = /^SPEC-[A-Z0-9]+(?:-[A-Z0-9]+)*$/;
 // kind: 'text' | 'long' | 'mm' | 'money' | 'bool' | 'format'
 export const SPEC_FIELDS = [
   { key: 'name', label: 'Name', kind: 'text', required: true, group: 'identity' },
-  { key: 'format', label: 'Format', kind: 'format', required: true, group: 'identity',
+  { key: 'format', label: 'Format', kind: 'format', required: true, group: 'identity', film: true,
     hint: 'Pouch, stick and bottle are roll-fed: wind direction and the eye mark apply only to those.' },
-  { key: 'material_structure', label: 'Material', kind: 'long', group: 'film',
+  { key: 'material_structure', label: 'Material', kind: 'long', group: 'film', film: true,
     hint: 'The laminate as the vendor states it, outside layer first.' },
-  { key: 'zipper', label: 'Zipper', kind: 'text', group: 'film' },
-  { key: 'print_process', label: 'Print', kind: 'text', group: 'film', hint: 'e.g. CMYK' },
-  { key: 'trim_length_mm', label: 'Trim length (mm)', kind: 'mm', group: 'film' },
-  { key: 'trim_width_mm', label: 'Trim width (mm)', kind: 'mm', group: 'film' },
-  { key: 'gusset_mm', label: 'Gusset (mm)', kind: 'mm', group: 'film' },
-  { key: 'front_panel_mm', label: 'Front panel (mm)', kind: 'mm', group: 'film' },
-  { key: 'wind_direction', label: 'Wind direction', kind: 'text', group: 'film',
+  { key: 'zipper', label: 'Zipper', kind: 'text', group: 'film', film: true },
+  { key: 'print_process', label: 'Print', kind: 'text', group: 'film', film: true, hint: 'e.g. CMYK' },
+  { key: 'trim_length_mm', label: 'Trim length (mm)', kind: 'mm', group: 'film', film: true },
+  { key: 'trim_width_mm', label: 'Trim width (mm)', kind: 'mm', group: 'film', film: true },
+  { key: 'gusset_mm', label: 'Gusset (mm)', kind: 'mm', group: 'film', film: true },
+  { key: 'front_panel_mm', label: 'Front panel (mm)', kind: 'mm', group: 'film', film: true },
+  { key: 'wind_direction', label: 'Wind direction', kind: 'text', group: 'film', film: true,
     hint: 'The printer\'s wind number, as the vendor quotes it.' },
   { key: 'core_in', label: 'Core (in)', kind: 'text', group: 'film' },
   { key: 'dieline_required', label: 'Die line required', kind: 'bool', group: 'film' },
@@ -48,6 +48,28 @@ export const SPEC_FIELDS = [
   { key: 'notes', label: 'Notes', kind: 'long', group: 'purchasing' },
 ];
 export const SPEC_FIELD_KEYS = SPEC_FIELDS.map((f) => f.key);
+
+/**
+ * THE FILM FIELDS (D-136): the facts the artwork is drawn to. A change to one
+ * of them on a spec whose products carry released artwork marks that artwork
+ * for another look (`film` in shared/product-readiness.js). Vendor, cost, the
+ * PO footer, notes, the name and the core size are not printed and do not.
+ */
+export const FILM_FIELDS = SPEC_FIELDS.filter((f) => f.film).map((f) => f.key);
+
+/** A spec field's value as a product row carries it (the join aliases `format`). */
+export const filmValueOf = (p, key) => (key === 'format' ? p?.spec_format : p?.[key]);
+
+/** One film value, normalised so 254 and 254.0 are one number and a blank is ''. */
+export function filmCell(v) {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'number') return String(v);
+  const t = String(v).trim();
+  return t !== '' && Number.isFinite(Number(t)) && /^-?[\d.]+$/.test(t) ? String(Number(t)) : t;
+}
+
+export const specFieldLabel = (key) => (SPEC_FIELDS.find((f) => f.key === key)?.label || key)
+  .replace(/ \(mm\)$/, '').toLowerCase();
 
 /** The master.csv header a spec column feeds, or null. The proofer reads these. */
 export function masterHeaderFor(key) {

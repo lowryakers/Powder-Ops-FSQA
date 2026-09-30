@@ -5665,3 +5665,38 @@ spec route was `GET /api/products/specs`. The film facts had one owner and no do
   edit reaching a bottle product's readiness and master.csv's `material` cell with trim length still blank, the
   importer still writing none of it, a new spec and a product moved onto it, the grid link, the drawer link, the
   deep link. **The control is `main` and fails 27 before it can continue.**
+
+## D-136 — A film field changed on a packaging spec marks the released artwork on it for another look (2026-09-30)
+**Asked** (D-135's open question): should a changed trim or material on a spec with released artwork stale that
+artwork? The plant: undecided, leaning yes. **Decided yes, narrowly**: film fields only, never a gate, and an
+honest way to say "checked, still fits" — a warning that forces a re-release on every product for a typo is the one
+people learn to ignore.
+- **A new readiness fact, `film`** (`shared/product-readiness.js`): what the spec SAYS — format, material, zipper,
+  print, trim length and width, gusset, front panel, wind direction — read through the join, stored as JSON so a stale
+  step names the FIELD and both values ("trim length (228.6 → 230)"). `spec` stays WHICH spec. The artwork step
+  depends on both. Vendor, cost, PO footer, notes, name and core size are not printed and move nothing.
+  `FILM_FIELDS` (the `film: true` flag in `shared/packaging-spec.js`) is the one list.
+- **Moving a product to another spec names the spec once**, never "the spec and its film" — one problem, one line.
+- **A first value typed into a blank counts as a move.** Nothing says the artwork was drawn to the number now written
+  down; SPEC-BOTTLE has no released artwork, so it costs nothing today.
+- **NOTHING WENT AMBER ON THE DAY.** The first-sight rule would leave artwork released before today with no `film`
+  baseline — so a correction next week would never flag it, the exact case asked about. `adoptFilmBasis()`
+  (`server/readiness-film-adopt.js`, boot, after the catalogue repairs) records the spec AS IT STANDS as the baseline
+  for every print-ready product lacking one. It ADDS a missing key and never overwrites, so it is idempotent by
+  construction and changes no step's state when it runs. A new release records `film` with everything else.
+- **Reported, never gated**: the release is not withdrawn and nothing refuses a PO. The step reads stale (not done,
+  the Ready count drops), the Pipeline's artwork gate stops being met with the reason, and the spec card lists the
+  released artwork waiting to be checked (`artwork_to_check`, derived through `readinessOf`, so the list and the
+  drawer cannot disagree). Only the FILM reason moves the stage gate; the artwork step's other stale reasons were
+  D-134's call and are left as they were.
+- **"Checked against the spec, still fits"** (`POST /products/:sku/artwork/film-check`, `canManage`, a note of at
+  least three characters, audited as `artwork_film_checked`): re-bases ONE dependency — the film — on that product's
+  artwork step and records who, when, why and which fields in `film_checked`. **It is not a tick on the artwork
+  step**, which the release still owns (the D-131 rule that artwork is evidence): a GTIN or panel change on the same
+  artwork stays stale, a product not waiting is refused 409, and a re-release drops the check with the old basis.
+  The next spec change marks it again.
+- **The spec edit's audit entry names the artwork it marked**; the edit form says so before Save; the save note says
+  how many are now waiting.
+- `verify:artworkfilm` (40, live + two reboots + browser at 1280 and 390px; in `verify:all`, port 5052 and 5152).
+  **The control is `main` and fails 15 before it can continue.** `check:readiness` 37 → 47 (the dependency-list
+  assertion now includes `film`).

@@ -18,7 +18,7 @@ import { catalogueCompleteness } from '../product-completeness.js';
 import { getDb, logAudit } from '../db.js';
 import { resolveFlavorCodes } from '../flavor-codes.js';
 import { preferredSku, LINE_CODES, PACK_CODES } from '../../shared/sku-format.js';
-import { READINESS, TICKABLE, readinessOf, nextBasis } from '../../shared/product-readiness.js';
+import { READINESS, TICKABLE, readinessOf, nextBasis, FACTS, parseBasis } from '../../shared/product-readiness.js';
 import { shelfState, gtinPrefixes } from '../product-shelf.js';
 import { normalizeGtin, sameGtin, gtinValid } from '../../shared/gtin.js';
 import { validateField, FIELD_RULES, NA_FIELDS, naOf, looksLikeTypedNa, MASTER_CSV_SOURCES, PACKAGING_DERIVED } from '../../shared/product-fields.js';
@@ -355,20 +355,37 @@ router.get('/barcodes', (_req, res) => {
  *
  * Declared before `/:sku`, or Express reads "specs" as a product code.
  */
+/**
+ * The products on a spec whose released artwork is waiting to be checked
+ * against what the spec now says (D-136) — the artwork readiness step, stale
+ * with the spec's film named. Read through `readinessOf`, the one rule, so this
+ * list and the drawer's amber line cannot disagree.
+ */
+function artworkToCheck(db, specId) {
+  const rows = db.prepare(`${SELECT} WHERE p.spec_id = ? AND p.artwork_status = 'print_ready' ORDER BY p.sku`).all(specId);
+  const colors = db.prepare('SELECT * FROM product_colors WHERE sku = ? ORDER BY slot');
+  return rows.map((r) => {
+    const art = readinessOf({ ...r, colors: colors.all(r.sku) }).steps.find((x) => x.key === 'artwork');
+    return art?.state === 'stale' && art.changed.includes('film') ? { sku: r.sku, fields: art.film_fields } : null;
+  }).filter(Boolean);
+}
+
 function specsWithUse(db, where = '', args = []) {
   const specs = db.prepare(`SELECT * FROM packaging_specs ${where} ORDER BY spec_id`).all(...args);
   const using = db.prepare(`SELECT sku, flavor, status, artwork_status FROM products
     WHERE spec_id = ? ORDER BY sku`);
   return specs.map((s) => {
     const products = using.all(s.spec_id);
+    const toCheck = artworkToCheck(db, s.spec_id);
     return {
       ...s,
       products,
       products_using: products.length,
       // Artwork already released against this spec. Reported beside an edit,
-      // never gated: a film fact that moves under a printed pack is somebody's
-      // question to ask, not the app's to answer.
+      // never gated: a film fact that moves under a printed pack marks that
+      // artwork for another look (D-136); it never withdraws the release.
       print_ready: products.filter((p) => p.artwork_status === 'print_ready').length,
+      artwork_to_check: toCheck,
     };
   });
 }
@@ -420,10 +437,47 @@ router.put('/specs/:specId', (req, res) => {
   if (Object.keys(patch).length) {
     const before = Object.fromEntries(Object.keys(patch).map((k) => [k, existing[k]]));
     logAudit(req.user, 'packaging_spec_updated', 'packaging_spec', existing.spec_id,
-      { fields: Object.keys(patch), products_using: updated.products_using, print_ready: updated.print_ready },
+      { fields: Object.keys(patch), products_using: updated.products_using, print_ready: updated.print_ready,
+        artwork_to_check: updated.artwork_to_check.map((a) => a.sku) },
       before, patch, existing.name);
   }
   res.json({ spec: updated, changed: Object.keys(patch) });
+});
+
+/**
+ * "Checked against the spec, still fits" (D-136).
+ *
+ * A film field moved on the spec and the released artwork went amber. Often the
+ * artwork is fine — a typo corrected, a blank filled in with what the dieline
+ * already says — and forcing a re-release on every product on the spec for
+ * that is how the warning gets resented. This re-bases ONE dependency, the
+ * spec's film, on the artwork step, with a note and a name. It is not a tick on
+ * the artwork step: the release still owns that, nothing else that moved (the
+ * GTIN, the panel, the colours) is cleared, and a product whose artwork is not
+ * waiting on the spec is refused.
+ */
+router.post('/:sku/artwork/film-check', (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Only QA, supervisors and admins can sign artwork off against the spec' });
+  const db = getDb();
+  const note = String(req.body?.note || '').trim();
+  if (note.length < 3) return res.status(400).json({ error: 'Say what was checked — e.g. "dieline already 250 mm, spec corrected to match".' });
+  const row = db.prepare(`${SELECT} WHERE p.sku = ?`).get(req.params.sku);
+  if (!row) return res.status(404).json({ error: 'No such SKU' });
+  const colors = db.prepare('SELECT * FROM product_colors WHERE sku = ? ORDER BY slot').all(row.sku);
+  const p = { ...row, colors };
+  const art = readinessOf(p).steps.find((x) => x.key === 'artwork');
+  if (!art || art.state !== 'stale' || !art.changed.includes('film')) {
+    return res.status(409).json({ error: `${row.sku}'s artwork is not waiting to be checked against its packaging spec.` });
+  }
+  const basis = parseBasis(row.readiness_basis);
+  const checked = { at: new Date().toISOString(), by: req.user?.name || null, note, fields: art.film_fields };
+  basis.artwork = { ...basis.artwork, deps: { ...(basis.artwork?.deps || {}), film: FACTS.film(p) }, film_checked: checked };
+  db.prepare('UPDATE products SET readiness_basis = ? WHERE sku = ?').run(JSON.stringify(basis), row.sku);
+  logAudit(req.user, 'artwork_film_checked', 'product', row.sku,
+    { spec_id: row.spec_id, artwork_version: row.artwork_version, note, fields: art.film_fields },
+    null, null, row.flavor || row.sku);
+  const [fresh] = hydrate([db.prepare(`${SELECT} WHERE p.sku = ?`).get(row.sku)], db);
+  res.json({ product: fresh, film_checked: checked });
 });
 
 // Registered BEFORE /:sku — Express matches in declaration order, and

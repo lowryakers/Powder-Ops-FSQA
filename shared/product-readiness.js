@@ -38,6 +38,7 @@
  * every read of the catalogue.
  */
 import { normalizeGtin } from './gtin.js';
+import { FILM_FIELDS, filmValueOf, filmCell, specFieldLabel } from './packaging-spec.js';
 
 export const FACTS = {
   sku: (p) => p.sku || '',
@@ -52,6 +53,14 @@ export const FACTS = {
   // A re-approved formula is a new formula as far as the panel is concerned.
   formula: (p) => `${p.formula_approved_at || ''}|${p.mrp_formula_id || ''}|${p.formula_rev || ''}`,
   nfp: (p) => p.nfp_version || '',
+  // WHAT THE PACKAGING SPEC SAYS ABOUT THE FILM (D-136). `spec` above is WHICH
+  // spec; this is what that spec says — material, trim, gusset, front panel,
+  // wind direction, zipper, print and format — read through the join. A
+  // correction on the spec moves it for every product on the spec at once.
+  // Stored as JSON so a stale step can name the FIELD that moved, not just
+  // "the spec". A first value typed into a blank counts as a move: nothing
+  // says the artwork was drawn to the number now written down.
+  film: (p) => JSON.stringify(Object.fromEntries(FILM_FIELDS.map((k) => [k, filmCell(filmValueOf(p, k))]))),
   colors: (p) => (p.colors || [])
     .map((c) => `${c.pms_code || c.pms || ''}:${c.hex || ''}`).sort().join(','),
 };
@@ -61,7 +70,21 @@ export const FACT_LABEL = {
   sku: 'the SKU', gtin: 'the GTIN', spec: 'the packaging spec',
   flavor: 'the product name', formula: 'the approved formula',
   nfp: 'the nutrition panel', colors: 'the brand colors',
+  film: "the packaging spec's film",
 };
+
+/**
+ * Which film fields differ between a recorded `film` fact and the product now,
+ * as `{ key, label, from, to }`. An unreadable record names nothing.
+ */
+export function filmFieldsMoved(recorded, p) {
+  const was = (() => { try { return JSON.parse(recorded || '{}'); } catch { return {}; } })();
+  const now = JSON.parse(FACTS.film(p));
+  return FILM_FIELDS.filter((k) => k in was && was[k] !== now[k])
+    .map((k) => ({ key: k, label: specFieldLabel(k), from: was[k], to: now[k] }));
+}
+
+const describeFilm = (f) => f.map((x) => `${x.label} (${x.from || 'blank'} → ${x.to || 'blank'})`).join(', ');
 
 /**
  * The steps, in the order they are shown.
@@ -132,7 +155,8 @@ export const READINESS = [
       : p.artwork_status ? `Latest artwork is ${String(p.artwork_status).replace(/_/g, ' ')}, not released print-ready` : 'No artwork version has been released for this SKU'),
     // Everything printed on the film. A change to any of them means the film
     // on file is not the film this product needs.
-    depends: ['gtin', 'spec', 'nfp', 'flavor', 'colors'],
+    // `film` (D-136): what the spec says, not only which spec it is.
+    depends: ['gtin', 'spec', 'film', 'nfp', 'flavor', 'colors'],
     redo: 'Release the artwork again once it has been redrawn.',
   },
   {
@@ -219,16 +243,25 @@ export function readinessOf(p) {
     const meta = { key: s.key, label: s.label, tick: !!s.tick, redo: s.redo || null, reason: s.why ? s.why(p) : null };
     if (!s.ok(p)) return { ...meta, state: 'todo', done: false, changed: [] };
     const rec = basis[s.key];
-    const moved = movedSince(s, p, rec?.deps);
+    let moved = movedSince(s, p, rec?.deps);
+    // Moving the product to ANOTHER spec already says the film moved; naming
+    // both reads as two problems when it is one.
+    if (moved.includes('spec')) moved = moved.filter((d) => d !== 'film');
+    const filmFields = moved.includes('film') ? filmFieldsMoved(rec.deps.film, p) : [];
+    const label = (d) => (d === 'film' && filmFields.length ? `the packaging spec's ${describeFilm(filmFields)}` : FACT_LABEL[d] || d);
     return {
       ...meta,
-      reason: moved.length ? `${meta.reason}; since then ${moved.map((d) => FACT_LABEL[d] || d).join(' and ')} changed` : meta.reason,
+      reason: moved.length ? `${meta.reason}; since then ${moved.map(label).join(' and ')} changed` : meta.reason,
       state: moved.length ? 'stale' : 'done',
       // `done` is kept for callers that only ever asked the yes/no question.
       // A STALE STEP IS NOT DONE — that is what puts it back on the list.
       done: moved.length === 0,
       changed: moved,
       changed_labels: moved.map((d) => FACT_LABEL[d] || d),
+      // The spec fields behind a `film` move, and the last "checked against
+      // the spec, still fits" on this step (D-136).
+      film_fields: filmFields,
+      film_checked: rec?.film_checked || null,
       at: rec?.at || null,
       by: rec?.by || null,
     };

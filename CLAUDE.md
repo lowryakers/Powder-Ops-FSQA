@@ -959,9 +959,23 @@ spec" lands. **The grid's Spec cell, the drawer's Spec line and the importer's m
   never edited**; open a new spec and move the product (the drawer has a spec picker now; the film facts are still
   never typed on a product). Absent leaves alone, blank clears; audited with before/after and the reach.
 - `buildPatch` refuses a `spec_id` that does not exist by name (no foreign-key 500).
-- The reach ("on N products — M with released artwork") shows before Save. **A spec edit does not stale artwork**
-  (`FACTS.spec` keys `spec_id` only) — an open question, not an oversight.
+- The reach ("on N products — M with released artwork") shows before Save.
 - `verify:packagingspecs` (47, live + browser; control fails 27).
+
+### A film field changed on a spec marks the released artwork for another look (D-136)
+`FACTS.film` in `shared/product-readiness.js` (what the spec SAYS; `spec` is WHICH spec), `FILM_FIELDS` in
+`shared/packaging-spec.js`, `adoptFilmBasis()` (`server/readiness-film-adopt.js`, boot), `artwork_to_check` on
+`GET /products/specs`, `POST /products/:sku/artwork/film-check`, `FilmCheck` in the product drawer.
+- **Film fields only** (format, material, zipper, print, trim, gusset, front panel, wind direction). Vendor, cost,
+  footer, notes, name, core move nothing. The stale reason names the field and both values. A first value in a
+  blank counts. A move to another spec names the spec once.
+- **Reported, never gated**: the release stands; the step is stale (not done); the Pipeline's artwork gate is unmet
+  for the FILM reason only; the spec card lists what waits.
+- **Released artwork took the spec as it stood on the day as its baseline** — added once, never overwritten — so
+  nothing went amber at deploy and the NEXT correction flags it.
+- **"Checked against the spec, still fits" re-bases the film dependency only**, with a note, a name and the fields;
+  it is not a tick on the artwork step — a GTIN change stays stale, a re-release drops the check.
+- `verify:artworkfilm` (40, live + reboots + browser; control fails 15).
 
 ## Not built yet: the rest of product management
 

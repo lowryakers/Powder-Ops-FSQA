@@ -46,7 +46,7 @@ const b1 = nextBasis(before, after, ['artwork_status'], 'Lowry');
 const parsed = JSON.parse(b1);
 t('releasing artwork records its basis', !!parsed.artwork);
 t('the basis holds every dependency the step declares',
-  Object.keys(parsed.artwork.deps).sort().join(',') === 'colors,flavor,gtin,nfp,spec',
+  Object.keys(parsed.artwork.deps).sort().join(',') === 'colors,film,flavor,gtin,nfp,spec',
   Object.keys(parsed.artwork.deps).join(','));
 t('and who did it', parsed.artwork.by === 'Lowry');
 
@@ -121,6 +121,27 @@ t('only the recorded dependencies are compared',
   readinessOf({ ...partial, spec_id: 'SPEC-OTHER' }).stale.length === 0);
 t('...and a recorded one still bites',
   readinessOf({ ...partial, gtin: '850079939059' }).stale.includes('Artwork print-ready'));
+
+console.log('\n── what the spec SAYS moves the artwork too, not only which spec (D-136) ──');
+const pouch = { ...ready, spec_id: 'SPEC-POUCH-LG', spec_format: 'Pouch', trim_length_mm: 254, trim_width_mm: 254, gusset_mm: 76.2 };
+const pouchReleased = { ...pouch, readiness_basis: nextBasis({ ...pouch, artwork_status: null, readiness_basis: null }, pouch, ['artwork_status'], 'Lowry') };
+t('a release records the spec\'s film', 'film' in JSON.parse(pouchReleased.readiness_basis).artwork.deps);
+const trimmed = { ...pouchReleased, trim_length_mm: 250 };
+const art = step(readinessOf(trimmed), 'artwork');
+t('a trim corrected on the spec makes the released artwork stale', art.state === 'stale' && art.changed.join() === 'film', art.state);
+t('...naming the field and both values', art.film_fields.length === 1 && art.film_fields[0].label === 'trim length'
+  && art.film_fields[0].from === '254' && art.film_fields[0].to === '250' && /trim length \(254 → 250\)/.test(art.reason), art.reason);
+t('254 and 254.0 are one number, not a move', step(readinessOf({ ...pouchReleased, trim_length_mm: 254.0 }), 'artwork').state === 'done');
+t('a first value in a blank counts as a move', step(readinessOf({ ...pouchReleased, front_panel_mm: 190.5 }), 'artwork').film_fields[0]?.from === '');
+t('vendor, cost and notes are not film', step(readinessOf({ ...pouchReleased, vendor: 'X', last_unit_cost: 9, notes: 'y' }), 'artwork').state === 'done');
+const moved = step(readinessOf({ ...pouchReleased, spec_id: 'SPEC-POUCH-SM', trim_length_mm: 228.6 }), 'artwork');
+t('moving to another spec names the spec once, not the spec and its film', moved.changed.join() === 'spec' && moved.film_fields.length === 0, moved.changed.join());
+t('artwork released before `film` existed reads done, never stale (first sight)',
+  step(readinessOf({ ...trimmed, readiness_basis: JSON.stringify({ artwork: { deps: { gtin: FACTS.gtin(trimmed) } } }) }), 'artwork').state === 'done');
+t('a product edit does not absorb the move (the basis is kept)',
+  step(readinessOf({ ...trimmed, readiness_basis: nextBasis(trimmed, trimmed, ['notes'], 'Lowry') }), 'artwork').state === 'stale');
+t('re-releasing the artwork clears it',
+  step(readinessOf({ ...trimmed, readiness_basis: nextBasis(trimmed, trimmed, ['artwork_version'], 'Lowry') }), 'artwork').state === 'done');
 
 console.log('\n── bad input ──');
 t('an unparseable basis is treated as none', readinessOf({ ...full(), readiness_basis: '{oops' }).stale.length === 0);

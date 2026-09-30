@@ -134,8 +134,10 @@ function SpecForm({ spec, isNew, onCancel, onSaved }) {
       {!isNew && spec.products_using > 0 && (
         <p className="text-[12px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2" data-spec-reach>
           This spec is on <strong>{spec.products_using}</strong> product{spec.products_using === 1 ? '' : 's'}
-          {spec.print_ready > 0 && <> — <strong>{spec.print_ready}</strong> with released artwork, printed against the spec as it stands</>}.
+          {spec.print_ready > 0 && <> — <strong>{spec.print_ready}</strong> with released artwork</>}.
           A change reaches every one of them, and the proofer on its next run.
+          {spec.print_ready > 0 && <> Changing a film field (format, material, zipper, print, trim, gusset, front panel or wind direction)
+            marks that artwork to be checked against the spec; it stays released.</>}
         </p>
       )}
       {error && <p className="text-sm text-red-700" data-spec-save-error>{error}</p>}
@@ -181,6 +183,7 @@ function SpecCard({ spec: listed, canEdit, focused, onOpenSku, onSaved }) {
               {spec.products_using} product{spec.products_using === 1 ? '' : 's'}
             </button>
             {spec.print_ready > 0 && <span className="ml-2">· {spec.print_ready} with released artwork</span>}
+            {spec.artwork_to_check?.length > 0 && <span className="ml-2 text-amber-800 font-medium" data-spec-to-check-count>· {spec.artwork_to_check.length} to check against this spec</span>}
             {spec.updated_at && <span className="ml-2 text-gray-400">· updated {String(spec.updated_at).slice(0, 10)}</span>}
           </p>
         </div>
@@ -191,6 +194,23 @@ function SpecCard({ spec: listed, canEdit, focused, onOpenSku, onSaved }) {
           </button>
         )}
       </header>
+
+      {spec.artwork_to_check?.length > 0 && (
+        // Derived on every read from the artwork step itself (D-136), so it
+        // clears by itself once each product is checked or released again.
+        <div className="text-[12px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 space-y-1" data-spec-to-check>
+          <p>Released artwork drawn before this spec last changed — open each to check it or release it again:</p>
+          <ul className="flex flex-wrap gap-1.5">
+            {spec.artwork_to_check.map((a) => (
+              <li key={a.sku}>
+                <button type="button" onClick={() => onOpenSku?.(a.sku, 'artwork')} data-spec-to-check-sku={a.sku}
+                  title={a.fields.map((f) => `${f.label}: ${f.from || 'blank'} → ${f.to || 'blank'}`).join('; ')}
+                  className="font-mono px-1.5 py-0.5 rounded border border-amber-300 bg-white hover:bg-amber-100">{a.sku}</button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {showProducts && (
         <ul className="flex flex-wrap gap-1.5" data-spec-products>
@@ -213,8 +233,10 @@ function SpecCard({ spec: listed, canEdit, focused, onOpenSku, onSaved }) {
           onSaved={(updated, changed) => {
             setEditing(false);
             setSaved(updated);
+            const toCheck = updated.artwork_to_check?.length || 0;
             setNote(changed?.length
               ? `Saved ${changed.length} field${changed.length === 1 ? '' : 's'} — now read by ${updated.products_using} product${updated.products_using === 1 ? '' : 's'}.`
+                + (toCheck ? ` ${toCheck} released artwork${toCheck === 1 ? ' is' : 's are'} waiting to be checked against the spec.` : '')
               : 'Nothing changed.');
             onSaved();
           }} />
