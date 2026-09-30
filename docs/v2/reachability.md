@@ -19,6 +19,7 @@ to go and look.
 | Missed end-of-day reports (D-085) | File the report | Shift supervisors | Production Log bar (supervisors, QA, admins) | DM to the supervisor | reached |
 | 72-hour / dirty / no-record re-clean | Clean the room, swab it | Cleaning | A task on the cleaner's own list | The task IS the notice; Sanitation strip for QA | reached |
 | ATP reading owed (D-112, D-116) | Enter the reading | Whoever completes the clean | The completion form, both doors | The box is in the form | reached |
+| **Pre-Op / changeover clean (D-125)** | Clean, swab, file Form 117.21 at the start of a run | Cleaning / the line | Sanitation → New record (Pre-Op, the room) | Was: a DAILY card, raised whether or not anything ran, so it sat N/A or missed. **The card is retired; nothing prompts the clean when a run starts** — that is OBL-22 | **gap — OBL-22** |
 | QA record backfill | File the checks done as tasks | QA leadership | QA Inspections + Sanitation strips | DM every third day while a pile exists | reached |
 | Sanitation area strays (D-118) | Fold the spellings, retire the strays | QA | Sanitation strip | Banner only — the one-off is assigned (Job 5); QA opens Sanitation daily | reached |
 | Training assigned (D-105) | Do the course | The assignee | Their task list, if they hold one | DM + push naming where to look; chased every other day; the assign screen names who will not see it | reached |

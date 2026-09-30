@@ -100,6 +100,7 @@ const RUNS = [
   ['verify-reachability.mjs', 5042, {}, false],
   ['verify-truck-checklist.mjs', 5043, { APP: 'http://localhost:5043' }],
   ['verify-default-access.mjs', 5044, { APP: 'http://localhost:5044' }],
+  ['verify-preop-record.mjs', 5045, { APP: 'http://localhost:5045' }],
 ];
 
 // VERIFY_ONLY=verify-auth.mjs,verify-swab-stock.mjs runs just the entries that

@@ -449,7 +449,7 @@
       "sources": [
         "WALK-08"
       ],
-      "note": "DEFERRED BY DECISION (D-019). Every generator is a calendar and three of four preventive controls fire per production run. Architecture move 05, after the audit. The record leg (OBL-01) is what an auditor asks for; this is the refinement."
+      "note": "DEFERRED BY DECISION (D-019). Every generator is a calendar and three of four preventive controls fire per production run. Architecture move 05, after the audit. The record leg (OBL-01) is what an auditor asks for; this is the refinement. 30 Sep (D-125): the answer to 'which event is a run' is the Sanitation record itself — the daily Pre-Op card is retired and Form 117.21 is filed on the record when the clean is done. Still open: nothing PROMPTS the clean when a run starts."
     },
     {
       "id": "OBL-23",

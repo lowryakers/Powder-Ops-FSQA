@@ -125,6 +125,7 @@ import { seedPreventiveControls } from './server/preventive-controls.js';
 import officeRoutes, { backfillInvoiceText, supplyCycleNudge } from './server/api/office.js';
 import { seedDilutionSchedules } from './server/dilution-seed.js';
 import { seedDilutionLog } from './server/dilution-log-seed.js';
+import { retireDailyPreOp } from './server/preop-retire.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
 import { seedProductionEntries, seedEodTemplates } from './server/production-seed.js';
 import { seedTrainingCourses, seedWorkInstructionCourses } from './server/training-seed.js';
@@ -1033,6 +1034,22 @@ try {
   // cleaning seeds, because it files into sanitation_records and the QA-record
   // tagger below has to see these rows.
   seedDilutionLog(db);
+  // The daily Pre-Op / Changeover card is retired (D-125): the clean happens at
+  // the start of a run and is filed on the Sanitation record, Form 117.21 and
+  // all. AFTER seedCleaningPMSchedules, which is what creates the schedule on a
+  // fresh database; once per database, so a person who resumes it keeps it.
+  // The marker is written only once a schedule has been seen (the
+  // oncePerDatabase rule — that helper is block-scoped above, out of reach).
+  if (!db.prepare("SELECT 1 FROM app_settings WHERE key = 'preop_daily_retired_v1'").get()) {
+    const r = retireDailyPreOp(db, logAudit);
+    if (r.schedules) {
+      db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('preop_daily_retired_v1', ?, datetime('now'))")
+        .run(new Date().toISOString());
+    }
+    if (r.paused || r.cancelled || r.steps_fixed) {
+      console.log(`[migrate] Daily Pre-Op retired: ${r.paused} schedule(s) paused, ${r.cancelled} open card(s) cancelled, ${r.steps_fixed} step list(s) corrected`);
+    }
+  }
   // Inspection records seed into sanitation_records with the default group, so
   // the tagger has to run again here — the migration pass in db.js saw an empty
   // table on a fresh database. Idempotent.

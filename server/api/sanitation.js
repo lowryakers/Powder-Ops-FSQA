@@ -12,6 +12,7 @@ import { recordEditPolicy, mayRevokeSignature } from '../record-permissions.js';
 import { planQaRecordBackfill, runQaRecordBackfill } from '../qa-record-backfill.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
 import { SWAB_TYPES, SWABS_PER_BOX, swabState, reorderPoint, setReorderPoint } from '../swab-stock.js';
+import { PREOP_FORM, preopApplies, normalizePreopForm, parsePreopForm, allergenFailures } from '../../shared/preop-form.js';
 
 const router = Router();
 
@@ -586,6 +587,44 @@ router.get('/:id', (req, res) => {
   res.json(record);
 });
 
+// FORM 117.21 ON THE RECORD (D-125, shared/preop-form.js). `raw` undefined means
+// "leave what is stored alone" (the `body.x ?? existing.x` rule); anything else
+// replaces it. Answers are refused on a record the form does not belong to —
+// silently dropping them would read as the cleaner never having answered.
+function resolvePreop(raw, type, area, stored) {
+  let form = parsePreopForm(stored);
+  if (raw !== undefined) {
+    const { form: next, errors } = normalizePreopForm(raw);
+    if (errors.length) return { error: errors.join(' ') };
+    form = next ? { ...next, revision: form?.revision || PREOP_FORM.revision } : null;
+  }
+  if (form && !preopApplies(type, area)) {
+    return { error: `${PREOP_FORM.code} answers belong on a Pre-Op clean of a production room — `
+      + `this record is ${type} in "${area}". Change the type or area, or clear the checklist.` };
+  }
+  return { form };
+}
+
+// EVERY SWAB CAN FAIL THE CLEAN; NONE CAN PASS IT (atp-limits.js rule 2). The
+// record's own `atp_reading` is ATP swab 1; Form 117.21 carries a second line,
+// graded against the same limit, and two allergen swabs whose "no pass" fails
+// the clean too. The grade returned is the failing one when there is one — it
+// is what the escalation and the stamped limit have to describe.
+function gradeClean(result, atpReading, form) {
+  const graded = [gradeAtp(atpReading), gradeAtp(form?.atp?.[1]?.reading)].filter(Boolean);
+  const grade = graded.find(g => !g.pass) || graded[0] || null;
+  let decided = applyGrade(result, grade);
+  const allergen = allergenFailures(form);
+  if (allergen.length && decided.result !== 'fail') {
+    decided = {
+      result: 'fail', overridden: true,
+      reason: `Allergen swab ${allergen.map(s => s.line).join(' and ')} marked no pass (${PREOP_FORM.code}).`,
+    };
+  }
+  return { grade, decided, allergen_failed: allergen.length };
+}
+
+
 // Filing a clean, including one done days ago.
 //
 // `performed_at` used to be "now" and nothing else, so work that was genuinely
@@ -634,8 +673,9 @@ router.post('/', (req, res) => {
   // PC #1's critical limit decides the result when a reading is present. The
   // grade can FAIL a record and never PASS one — a clean has reasons to fail
   // that no swab sees. A blank reading grades to null and changes nothing.
-  const grade = gradeAtp(atp_reading);
-  const decided = applyGrade(result, grade);
+  const pre = resolvePreop(req.body.preop_form, type, area, null);
+  if (pre.error) return res.status(400).json({ error: pre.error });
+  const { grade, decided, allergen_failed } = gradeClean(result, atp_reading, pre.form);
   // Was the previous GRADED reading for this area also a failure? A pass in
   // between resets it, which is the right reading of "we swabbed again and it
   // came back clean".
@@ -645,12 +685,12 @@ router.post('/', (req, res) => {
   const escalation = atpEscalation(grade, priorGradedFail);
 
   db.prepare(`
-    INSERT INTO sanitation_records (id, area, type, equipment_id, performed_by, chemicals_used, concentration, contact_time_minutes, rinse_verified, result, atp_reading, atp_limit, notes, chemical_id, record_group, performed_at, entered_at, entered_late, late_entry_reason)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), datetime('now'), ?, ?)
+    INSERT INTO sanitation_records (id, area, type, equipment_id, performed_by, chemicals_used, concentration, contact_time_minutes, rinse_verified, result, atp_reading, atp_limit, notes, chemical_id, record_group, performed_at, entered_at, entered_late, late_entry_reason, preop_form)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), datetime('now'), ?, ?, ?)
   `).run(id, area, type, equipment_id || null, performed_by, chemicals_used || null,
     concentration || null, contact_time_minutes ?? null, rinse_verified ? 1 : 0,
     decided.result, atp_reading ?? null, grade?.limit ?? null, notes || null, chemical_id || null, recordGroupFor(area),
-    when, late, late ? String(late_entry_reason).trim() : null);
+    when, late, late ? String(late_entry_reason).trim() : null, pre.form ? JSON.stringify(pre.form) : null);
 
   const created = db.prepare('SELECT * FROM sanitation_records WHERE id = ?').get(id);
   // Reads `decided.result`, not `result`: an over-limit swab must not close the
@@ -669,6 +709,7 @@ router.post('/', (req, res) => {
   }
   logAudit(req.user || performed_by, 'create', 'sanitation_record', id,
     { area, type, result: decided.result, atp_overridden: decided.overridden,
+      override_reason: decided.reason || null, allergen_failed, preop_form: !!pre.form,
       atp_stage: escalation?.stage || null, reclean_work_order_id: recleanWorkOrderId,
       entered_late: !!late, performed_at: created.performed_at, reclean_tasks_closed: closed },
     null, created);
@@ -906,13 +947,14 @@ router.put('/:id', (req, res) => {
   // Deliberately no escalation here: raising a task from an EDIT would let one
   // failure raise a second work order every time somebody fixed a typo.
   const editReading = b.atp_reading === undefined ? before.atp_reading : (b.atp_reading ?? null);
-  const editGrade = gradeAtp(editReading);
-  const editDecided = applyGrade(pick('result', before.result), editGrade);
+  const editPre = resolvePreop(b.preop_form, pick('type', before.type), area, before.preop_form);
+  if (editPre.error) return res.status(400).json({ error: editPre.error });
+  const { grade: editGrade, decided: editDecided } = gradeClean(pick('result', before.result), editReading, editPre.form);
 
   db.prepare(`UPDATE sanitation_records SET area = ?, type = ?, equipment_id = ?, performed_by = ?,
       chemicals_used = ?, concentration = ?, contact_time_minutes = ?, rinse_verified = ?, result = ?,
       atp_reading = ?, atp_limit = ?, notes = ?, chemical_id = ?, record_group = ?, performed_at = ?,
-      entered_late = ?, late_entry_reason = ?
+      entered_late = ?, late_entry_reason = ?, preop_form = ?
     WHERE id = ?`)
     .run(area, pick('type', before.type), pick('equipment_id', before.equipment_id) || null,
       pick('performed_by', before.performed_by),
@@ -926,7 +968,8 @@ router.put('/:id', (req, res) => {
       pick('chemical_id', before.chemical_id) || null,
       // The group follows the area — moving a record between the Sanitation
       // and QA Inspections lists is a consequence of what it IS, not a field.
-      recordGroupFor(area), when, late ? 1 : 0, lateReason || null, before.id);
+      recordGroupFor(area), when, late ? 1 : 0, lateReason || null,
+      editPre.form ? JSON.stringify(editPre.form) : null, before.id);
 
   const after = db.prepare('SELECT * FROM sanitation_records WHERE id = ?').get(before.id);
   logAudit(req.user, 'update', 'sanitation_record', before.id, null, before, after, area);

@@ -326,8 +326,19 @@ console.log('\nOn a phone: the link, and the office screen that sends it');
     await page.locator('[data-join-confirm]').fill('PhoneJoin2026!');
     await page.waitForTimeout(150);
     await page.locator('[data-join-submit]').click();
+    // D-097: the page no longer redirects on its own — it ends on the
+    // add-to-home-screen card, because an app reached by finding last week's
+    // text is one people stop opening. It is ALREADY SIGNED IN at that point,
+    // and Open ReadyDoc is the one tap into the app. This check asserted the old
+    // redirect and had been red since D-097 shipped (found in D-124's full run).
+    await page.waitForSelector('[data-join-done]', { timeout: 10000 }).catch(() => {});
+    t('SETTING IT SIGNS THEM IN ON THE SPOT — a session exists before they tap anything',
+      !!(await page.evaluate(() => localStorage.getItem('auth_token'))));
+    t('and the page ends on the install card (D-097), not a login screen',
+      await page.locator('[data-join-done]').count() === 1 && await page.locator('[data-join-open]').count() === 1);
+    await page.locator('[data-join-open]').click().catch(() => {});
     await page.waitForTimeout(3500);
-    t('SETTING IT SIGNS THEM IN AND LANDS THEM IN THE APP — no second login screen',
+    t('ONE TAP LANDS THEM IN THE APP — no second login screen',
       !/\/join\//.test(page.url()), page.url());
     const after = await page.locator('body').innerText();
     // A POSITIVE ANCHOR FIRST. Every assertion below is an ABSENCE, and an

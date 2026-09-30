@@ -73,7 +73,10 @@ t('a supervisor bell does not carry the office item', !(supNotif.items || []).so
   const sent = await payReviewNudges(db);
   t('the reminder went to the office recipients (Lowry and Marnee) and the reviewer', sent.office >= 2 && sent.reviewers === 1, JSON.stringify(sent));
   const msgs = db.prepare('SELECT body FROM chat_messages ORDER BY rowid DESC LIMIT 10').all().map(m => m.body || '');
-  const office = msgs.find(b => new RegExp(`${base + 3} things waiting on you`).test(b));
+  // The heading was reworded in the ReadyBot pass (47a36c1: "Still waiting —
+  // Pay reviews: N things"); the check found the message by the old words and
+  // so asserted nothing about it. It keys on the count, which is the fact.
+  const office = msgs.find(b => new RegExp(`Pay reviews: ${base + 3} things`).test(b));
   t('the office message names all three items, including the submitted evaluation awaiting a decision', !!office && /awaiting your decision/.test(office) && /Ana Decide/.test(office) && /Ben Chase/.test(office) && /Cara Assign/.test(office), (office || msgs[0] || '').slice(0, 200));
   t('and says they stay on the list until acted on', /stay on the list until you act/.test(office || ''));
   t('messages were actually written', db.prepare('SELECT COUNT(*) c FROM chat_messages').get().c > before);

@@ -12,7 +12,9 @@ let pass = 0, fail = 0;
 const t = (n, c, d = '') => { if (c) { pass++; console.log('  ✓ ' + n); } else { fail++; console.log('  ✗ ' + n + (d ? ' — ' + d : '')); } };
 
 const { readFileSync } = await import('fs');
-const U = '/root/.claude/uploads/af00ada3-a0aa-542a-9170-4983495b696f/';
+// Nothing is read from outside the repository (D-120 / D-125).
+const { trackerCsv } = await import('./lib/supplier-tracker-csv.mjs');
+const { driveZip } = await import('./lib/supplier-drive-zips.mjs');
 const { default: Database } = await import('better-sqlite3');
 {
   const db = new Database(process.env.DBPATH);
@@ -28,7 +30,7 @@ console.log('\n── the catalogue first ──');
 const listing = JSON.parse(readFileSync('scripts/fixtures/supplier-archive-full.json', 'utf8'));
 const mk = () => {
   const fd = new FormData();
-  fd.append('files', new Blob([readFileSync(U + '64517a7d-Current_Suppliers__Updated_8_6_2026.xlsx')]), 'Current Suppliers.xlsx');
+  fd.append('files', new Blob([trackerCsv()], { type: 'text/csv' }), 'Current Suppliers.csv');
   fd.append('files', new Blob([listing.entries.join('\n')], { type: 'text/plain' }), 'supplier-listing.txt');
   return fd;
 };
@@ -39,7 +41,9 @@ t('NONE of them has bytes yet', cov.stored === 0, `${cov.stored}`);
 t('storage reports itself enabled', cov.storage_enabled === true);
 
 console.log('\n── attaching a real vendor zip ──');
-const zipFd = (name) => { const fd = new FormData(); fd.append('files', new Blob([readFileSync(U + name)]), name.replace(/^[0-9a-f]+-/, '')); return fd; };
+const ZIPS = {};
+for (const n of ['a6011ded-AIFI20260827T204145Z1001.zip', 'e67fe1b2-Mill_Haven20260827T204157Z1001.zip']) ZIPS[n] = await driveZip(n);
+const zipFd = (name) => { const fd = new FormData(); fd.append('files', new Blob([ZIPS[name]]), name.replace(/^[0-9a-f]+-/, '')); return fd; };
 
 // Storing is BATCHED, so the client loops until nothing is left. The test does
 // the same thing — asserting a single call finishes would be asserting the

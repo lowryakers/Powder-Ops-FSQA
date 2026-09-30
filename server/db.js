@@ -3524,6 +3524,9 @@ function runMigrations() {
   // a receiving checklist already follow. Never back-filled: a record filed
   // before the limit was enforced was graded against nothing.
   addColumnIfMissing('sanitation_records', 'atp_limit', 'REAL');
+  // Form 117.21 V5's answers on a production pre-op clean (D-125,
+  // shared/preop-form.js) — JSON, carrying the revision it was asked under.
+  addColumnIfMissing('sanitation_records', 'preop_form', 'TEXT');
 
   // Chemical location tracking
   addColumnIfMissing('approved_chemicals', 'location_for_use', 'TEXT');

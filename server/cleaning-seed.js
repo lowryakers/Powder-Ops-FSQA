@@ -364,9 +364,9 @@ export function seedCleaningPMSchedules(db) {
             'Wipe down all equipment/product-contact surfaces to remove powder/residue',
             'Clean all surfaces with sanitizer — let sit 60+ seconds',
             'Verify cleaning passes inspection',
-            'ATP Test — swab surface, record location, swab #, and result',
-            'Allergen Test — swab surface, record location, swab #, and result',
-            'QA sign-off',
+            // The ATP and allergen swabs are ENTERED on the Sanitation record
+            // (Form 117.21, shared/preop-form.js), and QA signs through Verify —
+            // none of the three is a tick for the cleaner (D-125).
           ],
         },
       ],

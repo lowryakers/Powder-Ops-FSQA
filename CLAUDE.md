@@ -1975,6 +1975,28 @@ open receipt" and is kept as-is (which also leaves the legacy bare-number record
 issued at write time, so two people filing at once can't collide. After a save the form clears the field
 (new inspection is the common case) and offers a one-click "Add another line to A-100-####".
 
+## The Pre-Op clean is filed on the record, not ticked off a daily card (D-125)
+`shared/preop-form.js` (Form 117.21 V5, the one list) + `sanitation_records.preop_form` + `PreopChecklist.jsx`
+on the Sanitation record form, and `server/preop-retire.js` (once per database, `preop_daily_retired_v1`).
+- **The daily `Production Line Pre-Op…` schedules are PAUSED, their outstanding cards (missed included)
+  cancelled with the reason.** PC #1 fires "at the beginning of every run"; a calendar card sat N/A or missed.
+  A person who resumes one keeps it resumed. **OBL-22 is still open** — nothing prompts the clean now.
+- **The form shows on a Pre-Op in a production room** (`preopApplies`: `Production` or `isRoomToken`, the
+  clean-swabs.js rule). Room number = Area, "Did the cleaning Pass?" = Result, **ATP swab 1 = the graded
+  `atp_reading`** — the general ATP box is not drawn beside it.
+- **Every swab can fail the clean, none can pass it**: ATP swab 2 graded against the same limit, an allergen
+  swab "No pass" stores `fail`. `gradeClean()` in api/sanitation.js, both doors. Nothing is required.
+- **Refused where it does not belong** (restroom, post-op) and on an edit that would move answers out of
+  production; an edit not mentioning `preop_form` leaves it alone. The revision rides in the JSON.
+- The step list lost "ATP Test", "Allergen Test" and "QA sign-off" — exact match, seed + repair.
+- **Open for Document Control:** the task chip says FORM 108-03 V2, the transcription Form 117.21 V5.
+- `verify:preop` (50, live + reboots + browser at 1280/390; control fails 19).
+
+## A hub tab is admitted AFTER the predicate loop (D-125)
+`effectiveModules` admits `HUB_OF` tabs once the `visible(user)` loop has run — a hub admitted by predicate
+(Accounting for AP Drop) never admitted its tabs when the order was the other way, and `?tab=ap-drop` fell back
+to the first module. `missedReports()` counts every `mo_lines` MO and de-duplicates on `dismiss_key`.
+
 ## The trucks' daily checklist has ONE owner, and it is not the Equipment list (D-123)
 `server/truck-checklists.js` (`isDesignedChecklist`, `applyTruckChecklists`, the three G/B/X lists).
 The re-sync banner kept the same fifteen machines because a boot pass rewrote every forklift, pallet jack

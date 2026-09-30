@@ -19,6 +19,9 @@ const RECLEAN_STATUSES = new Set(Object.keys(RECLEAN_REASONS));
 import FormChip from '../common/FormChip';
 import { withSignature } from '../../lib/signature';
 import { withCurrent } from '../../lib/managedList.js';
+import { PreopFields, PreopAnswers } from './PreopChecklist.jsx';
+import { preopToState } from '../../lib/preopState.js';
+import { preopApplies, parsePreopForm } from '../../../shared/preop-form.js';
 
 // Reason dialog for dismiss / N-A / not-in-use on a 72h re-clean flag.
 const RECLEAN_ACTION_META = {
@@ -314,6 +317,8 @@ function SanitationDetail({ record, onClose, onEdit, onRevoke }) {
             )}
           </div>
 
+          <PreopAnswers form={parsePreopForm(record.preop_form)} atpReading={record.atp_reading} />
+
           {record.notes && (
             <div>
               <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Notes</p>
@@ -357,6 +362,10 @@ function RecordForm({ equipment, chemicals, initial, onSave, onCancel }) {
     // the server keeps both dates and asks why.
     performed_at: initialDate, late_entry_reason: '',
   });
+  // Form 117.21 rides on a pre-op clean of a production room (D-125). Kept in
+  // its own state so switching the area away and back does not lose answers.
+  const [preop, setPreop] = useState(() => preopToState(parsePreopForm(initial?.preop_form)));
+  const hasPreop = preopApplies(form.type, form.area);
   const todayStr = new Date().toISOString().split('T')[0];
   // "Earlier" starts the day before, because same-day is just filing at the
   // end of a shift and needs no explanation. A correction never re-asks — the
@@ -402,6 +411,10 @@ function RecordForm({ equipment, chemicals, initial, onSave, onCancel }) {
     setSaving(true);
     const payload = { ...form, chemicals_used: chemicalsJoined, contact_time_minutes: form.contact_time_minutes ? parseInt(form.contact_time_minutes) : null, atp_reading: form.atp_reading ? parseFloat(form.atp_reading) : null };
     if (initial && form.performed_at === initialDate) delete payload.performed_at;
+    // Not sent when the record is not a production pre-op: the server keeps
+    // what is stored and says so if it no longer fits, rather than this form
+    // quietly erasing answers because the area changed.
+    if (hasPreop) payload.preop_form = preop;
     try { await onSave(payload); } catch (saveErr) {
       // A refused save must SAY so. This was try/finally with NO catch, so a
       // 403 or a validation 400 cleared the spinner and left the modal sitting
@@ -518,12 +531,16 @@ function RecordForm({ equipment, chemicals, initial, onSave, onCancel }) {
           <input type="number" step="any" value={form.contact_time_minutes} onChange={e => setForm({ ...form, contact_time_minutes: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
         </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">ATP Reading (RLU)</label>
-          <input type="number" step="0.1" value={form.atp_reading} onChange={e => setForm({ ...form, atp_reading: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-          <AtpLimitHint value={form.atp_reading} />
-        </div>
+        {/* On a production pre-op the reading is ATP swab 1 of Form 117.21 and
+            is entered in that section below — one box, not two. */}
+        {!hasPreop && (
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">ATP Reading (RLU)</label>
+            <input type="number" step="0.1" value={form.atp_reading} onChange={e => setForm({ ...form, atp_reading: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+            <AtpLimitHint value={form.atp_reading} />
+          </div>
+        )}
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Result *</label>
           <select value={form.result} onChange={e => setForm({ ...form, result: e.target.value })}
@@ -534,6 +551,10 @@ function RecordForm({ equipment, chemicals, initial, onSave, onCancel }) {
           </select>
         </div>
       </div>
+      {hasPreop && (
+        <PreopFields value={preop} onChange={setPreop}
+          atpReading={form.atp_reading} onAtpReading={v => setForm(f => ({ ...f, atp_reading: v }))} />
+      )}
       <label className="flex items-center gap-2">
         <input type="checkbox" checked={form.rinse_verified} onChange={e => setForm({ ...form, rinse_verified: e.target.checked })} />
         {/* The FILER is answering a step of their own clean, not counter-signing

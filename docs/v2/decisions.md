@@ -5160,3 +5160,59 @@ spreadsheet from one session's uploads folder — the D-120 rot, missed), `verif
 360px), `verify-pay-actions` (2 assertions on the office reminder's wording), `verify-ap-drop-ui`,
 `verify-bpg-items` and `verify-client-invite` (7 assertions after the join page started ending on the install
 card, D-097). The full run is 75/83 before the client fix and those six after it. They are the next job.
+
+## D-125 — The daily Pre-Op card is retired and Form 117.21 moves onto the record; the six red verifies are green; the missed-EOD list stops double-counting (2026-09-30)
+
+**1. The Pre-Op / Changeover Clean is not a daily task (decided by Lowry, 30 Sep).** Protocol 003 V4 places
+PC #1's monitoring "at the beginning of every run" — an event. A daily card raised whether or not anything ran
+was either marked N/A (Daniela's June card) or left to go missed, and neither is a record of a clean.
+`server/preop-retire.js`, once per database (`app_settings.preop_daily_retired_v1`, written only once a
+schedule has been seen): every schedule titled `Production Line Pre-Op…` is **paused, not deleted**; its open,
+in-progress, overdue and **missed** cards are cancelled with the reason on each (pausing alone cascades nothing,
+D-012/D-055); completed cleans are untouched. A person who resumes the schedule keeps it resumed.
+
+**This does NOT close OBL-22.** Nothing now prompts the clean at all — the calendar card was noise, and it is
+gone, but a per-run trigger is still unbuilt. What changed is that the clean is filed where it is done.
+
+**2. The checklist moved to where the clean is filed.** `shared/preop-form.js` (the one definition, both sides)
++ `sanitation_records.preop_form` (JSON, carrying its revision — the `atp_limit` rule) + `PreopChecklist.jsx`.
+A Sanitation record of type Pre-Op in a production room (`Production` or a room token — the area rule
+`clean-swabs.js` already uses) shows **Form 117.21 V5**: setup, the five yes/no/N-A verification questions
+verbatim, asset tag and condition, two ATP lines, two allergen lines. Three paper boxes are the record's own
+fields and are not asked twice: Room number = Area, "Did the cleaning Pass?" = Result, **ATP swab 1 = the graded
+`atp_reading`** (the form's general ATP box is not drawn beside it — one box, not two).
+- **Nothing gates a filing**; a blank is a gap (D-020). An untouched checklist stores NULL.
+- **Every swab can fail the clean, none can pass it** (atp-limits.js rule 2): ATP swab 2 is graded against the
+  same 35 RLU; an allergen swab marked *No pass* stores `fail`, with the reason in the audit entry. The grade
+  the escalation sees is the failing one.
+- **Answers are refused where the form does not belong** (a restroom, a post-op) — silently dropping them would
+  read as the cleaner never having answered — and an edit that moves a record carrying answers out of
+  production is refused rather than erasing them. An edit that does not mention the checklist leaves it alone.
+- **The step list lost three lines the cleaner should never have ticked** — "ATP Test …" and "Allergen Test …"
+  (the swabs are entered, with a reading) and "QA sign-off" (QA signs through Verify). Seed and exact-match
+  repair on the schedules; a list somebody edited keeps what they wrote.
+- **Reported, not changed:** the Pre-Op task's form chip reads FORM 108-03 V2 while the transcription it came
+  from says Form 117.21 V5. Which number is right is Document Control's. The Chemical Dilution step list ends
+  "QA verification signature" — the same defect, not touched because nobody asked.
+
+**3. The six verifies that were red on `main` (D-124) are green**, each for its own reason:
+`verify-supplier-storage` rebuilds its two Drive zips from `scripts/fixtures/supplier-archive-full.json` with
+real text-layer PDFs (`scripts/lib/supplier-drive-zips.mjs`) instead of one session's uploads folder;
+`verify-mobile-cards` — the Controlled Documents header's buttons now wrap at 360px (a real overflow);
+`verify-pay-actions` counted the office reminder absolutely and the seed already puts people in it — relative
+to the baseline now; `verify-ap-drop-ui` — **a real bug**: `?tab=ap-drop` fell back to the first module
+because the HUB_OF tab admission ran BEFORE the `visible`-predicate loop that admits the Accounting hub, so a
+hub admitted by predicate never admitted its tabs; `verify-bpg-items` — the script's own synchronous SQLite
+writes stalled the server's keep-alive socket, retried once on `UND_ERR_SOCKET`; `verify-client-invite` asserted
+the old post-join redirect, and now asserts what D-097 made it: signed in, the install card, and Open.
+
+**4. The missed end-of-day list double-counted** — found reading Lowry's and Maria's screenshots side by side.
+Their counts were not in conflict: QA Review holds entries waiting on a QA signature (2); the correction banner
+waits on the FILER; the missed-EOD list is runs with no report at all, a supervisor's job with nothing for QA
+to sign. But the list was inflated two ways. `missedReports()` read only an entry's first MO, so a Batching
+shift reporting four MOs covered one; and a run scheduled in two cells of one day was listed twice. Every
+`mo_lines` MO now counts (matched on the day regardless of room), and rows de-duplicate on `dismiss_key`.
+
+Verified: `verify:preop` (50, live + two reboots on the same file + browser at 1280 and 390px; in `verify:all`).
+**The control is the state the plant is in and fails 19 before the browser half, which cannot find the form.**
+`verify:eodchase` 42 → **45** (control fails 2). The six: 69 · 58 · 31 · 23 · 65 · 89.

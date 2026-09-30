@@ -1108,7 +1108,10 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
           <p className="text-sm text-gray-500">{filtered.length} document{filtered.length === 1 ? '' : 's'}</p>
         </div>
         {canEdit && (
-          <div className="flex items-center gap-2">
+          // WRAPS ON A PHONE (D-125). Four buttons since "Attach signed copies"
+          // (D-113) are ~385px, and a row that cannot wrap pans the whole page
+          // at 360 — the Schedule toolbar's defect, caught by verify:mobilecards.
+          <div className="flex items-center gap-2 flex-wrap">
             <button onClick={() => setImporting(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">
               <Upload size={15} /> Import PDFs
             </button>

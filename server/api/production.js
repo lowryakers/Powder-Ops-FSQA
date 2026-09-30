@@ -588,11 +588,26 @@ export function missedReports(db, { from, to, includeToday = false, includeDismi
     r.sched_date && r.sched_date <= cutoff && (!from || r.sched_date >= from) && (!to || r.sched_date <= to)
   );
 
-  const entries = db.prepare('SELECT date, room, team, mo_number FROM production_entries').all();
+  // EVERY MO A REPORT COVERS, not only its first (D-125). A Batching entry
+  // carries several runs in `mo_lines` and mirrors only line 0 into
+  // `mo_number`, so every later MO on a filed report read as MISSING — the
+  // same inflation D-085 found in the MO spelling, one column over. Each line
+  // counts, in the room that line names (blank = the shift's room).
+  const entries = [];
+  for (const e of db.prepare('SELECT date, room, team, mo_number, mo_lines FROM production_entries').all()) {
+    entries.push({ date: e.date, room: e.room, team: e.team, mo_number: e.mo_number });
+    const lines = (() => { try { return JSON.parse(e.mo_lines || '[]'); } catch { return []; } })();
+    for (const l of Array.isArray(lines) ? lines : []) {
+      if (l?.mo_number) entries.push({ date: e.date, room: l.room || e.room, team: e.team, mo_number: l.mo_number });
+    }
+  }
   const sameSlot = (e, s) => e.date === s.sched_date && e.room === s.room;
-  const reported = (s) => entries.some(e => sameSlot(e, s) && (s.mo_number
-    ? normalizeMo(e.mo_number) === normalizeMo(s.mo_number)
-    : (s.team ? e.team === s.team : true)));
+  // An MO reported that day IS reported, whichever room it ended up filed
+  // under — a run moved between rooms on the day is not a missing report. With
+  // no MO to go on, the room and team still have to match.
+  const reported = (s) => entries.some(e => (s.mo_number
+    ? e.date === s.sched_date && normalizeMo(e.mo_number) === normalizeMo(s.mo_number)
+    : sameSlot(e, s) && (s.team ? e.team === s.team : true)));
   // An entry IS there for that day and room, and its MO reads differently only
   // in a way normalising cannot safely resolve. Reported, never resolved.
   const nearMiss = (s) => (s.mo_number
@@ -618,8 +633,14 @@ export function missedReports(db, { from, to, includeToday = false, includeDismi
       possible_typo: near ? near.mo_number : null,
     };
   }).filter(m => includeDismissed || !m.dismissed);
-  missed.sort((a, b) => b.date.localeCompare(a.date) || a.room.localeCompare(b.room));
-  return missed;
+  // ONE ROW PER MISSING REPORT (D-125). The same MO in two cells of one day
+  // and room — a run split across two slots — is one report owed, and it
+  // already shares one dismiss key; listing it twice made the count and the
+  // list disagree with what the Dismiss button does.
+  const seen = new Set();
+  const unique = missed.filter(m => (seen.has(m.dismiss_key) ? false : (seen.add(m.dismiss_key), true)));
+  unique.sort((a, b) => b.date.localeCompare(a.date) || a.room.localeCompare(b.room));
+  return unique;
 }
 
 // GET /missed-reports — the same list the chase job reads.

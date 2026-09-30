@@ -19,7 +19,20 @@ const J = async r => { try { return await r.json(); } catch { return null; } };
 let pass = 0, fail = 0;
 const t = (n, c, d = '') => { if (c) { pass++; console.log('  ✓ ' + n); } else { fail++; console.log('  ✗ ' + n + (d ? ' — ' + d : '')); } };
 let tok = null;
-const req = (p, o = {}) => fetch(B + p, { ...o, headers: { 'Content-Type': 'application/json', ...(tok ? { Authorization: `Bearer ${tok}` } : {}), ...(o.headers || {}) } });
+// ONE RETRY WHEN THE REQUEST NEVER ARRIVED (D-125). This script runs PM
+// housekeeping IN ITS OWN PROCESS on the server's database file, and a
+// better-sqlite3 statement waiting on the server's lock blocks this event loop
+// for up to five seconds. The server closes the idle keep-alive socket in that
+// time, and the next fetch goes down the dead socket: "other side closed". The
+// request never reached the server, so sending it again is safe; any other
+// failure is still a failure.
+const req = async (p, o = {}) => {
+  const go = () => fetch(B + p, { ...o, headers: { 'Content-Type': 'application/json', ...(tok ? { Authorization: `Bearer ${tok}` } : {}), ...(o.headers || {}) } });
+  try { return await go(); } catch (e) {
+    if (e?.cause?.code === 'UND_ERR_SOCKET') return go();
+    throw e;
+  }
+};
 const post = (p, b) => req(p, { method: 'POST', body: JSON.stringify(b) });
 const put = (p, b) => req(p, { method: 'PUT', body: JSON.stringify(b) });
 

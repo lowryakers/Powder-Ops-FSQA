@@ -1865,9 +1865,7 @@ function App() {
   // and silently fell back to the first module the person could see — a dead
   // deep link that looks like the app ignoring you. HUB_OF already knows which
   // hub owns each tab.
-  for (const [tabId, hubId] of Object.entries(HUB_OF)) {
-    if (effectiveModules.includes(hubId) && !effectiveModules.includes(tabId)) effectiveModules = [...effectiveModules, tabId];
-  }
+  // (The loop itself runs BELOW, after the visible-predicate loop — see there.)
   // "Checked Out" follows its own opt-in rule rather than plain module access.
   effectiveModules = canSeeCheckedOut(user)
     ? (effectiveModules.includes('currently-out') ? effectiveModules : [...effectiveModules, 'currently-out'])
@@ -1892,6 +1890,18 @@ function App() {
     const ok = i.visible(user);
     if (ok && !effectiveModules.includes(i.id)) effectiveModules = [...effectiveModules, i.id];
     if (!ok && effectiveModules.includes(i.id)) effectiveModules = effectiveModules.filter(id => id !== i.id);
+  }
+  // HUB TABS JOIN AFTER THEIR HUB HAS (D-125). This loop ran before the one
+  // above, so a hub admitted only by its own `visible` predicate — Accounting,
+  // for anybody who reaches it through AP Drop rather than a ledger grant — had
+  // not joined yet, `?tab=ap-drop` resolved to nothing, and an operator landed
+  // on their first module instead of the drop zone. A tab with its own rule is
+  // admitted by that rule, the same one ModuleHub renders it by.
+  for (const [tabId, hubId] of Object.entries(HUB_OF)) {
+    if (!effectiveModules.includes(hubId) || effectiveModules.includes(tabId)) continue;
+    const tab = (HUB_TABS[hubId] || []).find(x => x.id === tabId);
+    if (tab?.visible && !tab.visible(user)) continue;
+    effectiveModules = [...effectiveModules, tabId];
   }
   const operatorOnly = effectiveModules.length === 1 && effectiveModules[0] === 'operator';
 

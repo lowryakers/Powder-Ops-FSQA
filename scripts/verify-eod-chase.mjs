@@ -96,6 +96,35 @@ console.log('\nA near-miss is reported, never resolved');
   t('and it names the entry that nearly matches', near?.possible_typo === 'MO76791 y', `possible_typo=${near?.possible_typo}`);
 }
 
+console.log('\nEvery MO a report covers counts, and one missing report is one row (D-125)');
+{
+  const db = open();
+  const put = (id, off, room, team, mo, slotNo) => db.prepare(`INSERT OR REPLACE INTO production_schedule
+    (id, week_start, day_of_week, room, room_type, team, mo_number, product_name, slot)
+    VALUES (?,?,?,?,'production',?,?,'Alkify Stick',?)`).run(id, monday, off, room, team, mo, slotNo);
+  put('eo-s5', 4, '5', 'Batching', 'MO76800', 0);
+  put('eo-s6', 4, '6', 'Batching', 'MO76801', 0);
+  put('eo-s8', 4, '7', 'Filling', 'MO76802', 0);
+  put('eo-s9', 4, '7', 'Filling', 'MO76802', 1);   // the same run split across two cells
+  // A Batching shift that ran BOTH MOs, the second in another room: line 0 is
+  // mirrored into mo_number, line 1 lives only in mo_lines.
+  db.prepare(`INSERT OR REPLACE INTO production_entries
+    (id,date,team,room,product_name,mo_number,lot_number,start_time,end_time,quantity_completed,people_count,submitted_by,mo_lines)
+    VALUES ('eo-e5', ?, 'Batching', '5', 'Alkify Stick', 'MO76800', 'L1', '06:00', '14:00', 100, 3, 'Eo Filling Sup', ?)`)
+    .run(dayOf(4), JSON.stringify([{ mo_number: 'MO76800', quantity: 50 }, { mo_number: 'MO76801', room: '6', quantity: 50 }]));
+  db.close();
+  const rows = missedReports(open(true), {}).filter(r => r.date === dayOf(4));
+  t('A SECOND MO ON A FILED BATCHING REPORT IS NOT "MISSING" — the list read only the mirrored first line',
+    !rows.some(r => r.mo_number === 'MO76801'), rows.map(r => `${r.room}/${r.mo_number}`).join(', '));
+  t('the first MO is not missing either', !rows.some(r => r.mo_number === 'MO76800'));
+  const dup = rows.filter(r => r.mo_number === 'MO76802');
+  t('ONE RUN IN TWO CELLS IS ONE MISSING REPORT, not two — it has one dismiss key', dup.length === 1, `${dup.length} rows`);
+  const clean = open();
+  clean.prepare("DELETE FROM production_schedule WHERE id IN ('eo-s5','eo-s6','eo-s8','eo-s9')").run();
+  clean.prepare("DELETE FROM production_entries WHERE id = 'eo-e5'").run();
+  clean.close();
+}
+
 console.log('\nWho is chased');
 {
   const db = open();
