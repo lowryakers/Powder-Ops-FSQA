@@ -85,12 +85,12 @@ export function fillWeightCheck(bomFillG, catalogueFillG) {
 export function fillCheckSentence(c) {
   if (!c) return '';
   if (c.status === 'mismatch') {
-    return `The panel was computed at ${c.bom} g; the Catalogue fill weight is ${c.catalogue} g — `
+    return `The panel was computed at ${c.bom} g; the Catalog fill weight is ${c.catalogue} g — `
       + `${c.diff_pct}% apart (more than 1%).`;
   }
-  if (c.status === 'no_catalogue') return 'No Catalogue fill weight to check the panel\'s against.';
+  if (c.status === 'no_catalogue') return 'No Catalog fill weight to check the panel\'s against.';
   if (c.status === 'no_bom') return 'No BOM fill weight recorded on the panel.';
-  return `Fill weight agrees with the Catalogue (${c.bom} g against ${c.catalogue} g).`;
+  return `Fill weight agrees with the Catalog (${c.bom} g against ${c.catalogue} g).`;
 }
 
 /**
@@ -103,7 +103,7 @@ export function provenanceStale(block, product) {
   const curRef = blank(product.mrp_formula_id) ? null : String(product.mrp_formula_id);
   const curVer = blank(product.formula_rev) ? null : String(product.formula_rev);
   if (block.formula_ref && curRef && block.formula_ref !== curRef) {
-    out.push(`Panel computed from ${block.formula_ref}; the catalogue's formula is ${curRef}.`);
+    out.push(`Panel computed from ${block.formula_ref}; the catalog's formula is ${curRef}.`);
   }
   if (block.formula_version && curVer && block.formula_version !== curVer
       && (!block.formula_ref || !curRef || block.formula_ref === curRef)) {

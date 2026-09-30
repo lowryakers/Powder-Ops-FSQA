@@ -164,7 +164,7 @@ export function preferredSku(product, codeByFlavor = {}) {
   const missing = [
     !lineCode && (line ? `no code agreed for ${line}` : 'no product line'),
     !pack && `no pack code for ${product?.pack || product?.format || 'this format'}`,
-    flavourCode === null && (flavour ? `${flavour} has no flavour code yet` : 'no flavour'),
+    flavourCode === null && (flavour ? `${flavour} has no flavor code yet` : 'no flavor'),
   ].filter(Boolean);
 
   if (missing.length) return { sku: null, blocked_by: missing };

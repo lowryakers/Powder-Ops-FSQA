@@ -149,7 +149,7 @@ export const COLOR_PAIR_DECISIONS = [
     // see on a pack. Checked by Lowry Akers, 2026-09-24.
     decided_by: 'Lowry Akers', decided_at: '2026-09-24',
     reason: 'Both are the Key Lime green. The artwork renders 94D600 and each '
-      + 'catalogue value is that ink; the gap is in the blue channel of a '
+      + 'catalog value is that ink; the gap is in the blue channel of a '
       + 'saturated green, which is not a visible difference.',
   },
   {
@@ -157,7 +157,7 @@ export const COLOR_PAIR_DECISIONS = [
     // The Orange artwork renders FFC72E. Checked by Lowry Akers, 2026-09-24.
     decided_by: 'Lowry Akers', decided_at: '2026-09-24',
     reason: 'Both are the same yellow. The artwork renders FFC72E and each '
-      + 'catalogue value is within a few units of it.',
+      + 'catalog value is within a few units of it.',
   },
 ];
 

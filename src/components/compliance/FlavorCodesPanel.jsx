@@ -35,13 +35,13 @@ function BottleDrafts({ canEdit }) {
           <h4 className="text-sm font-semibold text-gray-900">Bottle SKUs</h4>
           <p className="text-xs text-gray-600 mt-0.5">
             {plan.length > 0
-              ? `${plan.length} can be drafted now, one per protein flavour that has a code.`
+              ? `${plan.length} can be drafted now, one per protein flavor that has a code.`
               : 'Every bottle SKU that can be drafted already exists.'}
-            {blocked.length > 0 && ` ${blocked.length} cannot yet — their flavour still needs a code.`}
+            {blocked.length > 0 && ` ${blocked.length} cannot yet — their flavor still needs a code.`}
           </p>
           {done && (
             <p className="text-xs text-green-700 mt-1 font-medium">
-              Added {done.created} draft{done.created === 1 ? '' : 's'} to the catalogue.
+              Added {done.created} draft{done.created === 1 ? '' : 's'} to the catalog.
               They carry no GTIN — readiness will show that until the GS1 numbers are allocated.
             </p>
           )}
@@ -123,7 +123,7 @@ export function DraftRealign({ canEdit, onDone }) {
         <AlertTriangle size={16} className="text-amber-600 mt-0.5 shrink-0" />
         <div className="flex-1 min-w-0">
           <h4 className="text-sm font-semibold text-gray-900">
-            {plan.length > 0 ? `${plan.length} draft${plan.length === 1 ? '' : 's'} carry an old flavour code` : 'Drafts realigned'}
+            {plan.length > 0 ? `${plan.length} draft${plan.length === 1 ? '' : 's'} carry an old flavor code` : 'Drafts realigned'}
           </h4>
           <p className="text-xs text-gray-600 mt-0.5">
             {plan.length > 0
@@ -204,12 +204,12 @@ export default function FlavorCodesPanel() {
     <div className="space-y-4">
       <div className="bg-white border border-gray-200 rounded-xl p-4">
         <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
-          <Tag size={17} className="text-powder-600" /> Flavour codes
+          <Tag size={17} className="text-powder-600" /> Flavor codes
         </h3>
         <p className="text-sm text-gray-600 mt-1">
           The middle part of every new SKU — <code className="px-1 bg-gray-100 rounded">WHY-BTL-BLM</code> is
-          whey, bottle, Blueberry Muffin. Each flavour has exactly one code and each code means exactly one
-          flavour. <strong>A code is never changed once issued</strong>: it is printed on film and it is a
+          whey, bottle, Blueberry Muffin. Each flavor has exactly one code and each code means exactly one
+          flavor. <strong>A code is never changed once issued</strong>: it is printed on film and it is a
           join key on every PO.
         </p>
       </div>
@@ -225,7 +225,7 @@ export default function FlavorCodesPanel() {
           <div className="px-4 py-2.5 border-b border-amber-200 flex items-center gap-2">
             <AlertTriangle size={15} className="text-amber-600" />
             <span className="text-sm font-semibold text-amber-900">
-              {pending.length} flavour{pending.length === 1 ? '' : 's'} still need a code
+              {pending.length} flavor{pending.length === 1 ? '' : 's'} still need a code
             </span>
           </div>
           <ul className="divide-y divide-amber-200/70">
@@ -251,17 +251,17 @@ export default function FlavorCodesPanel() {
             ))}
           </ul>
           <p className="px-4 py-2 border-t border-amber-200 text-[11px] text-amber-900/80">
-            Bottle SKUs for these flavours cannot be minted until each has one code.
+            Bottle SKUs for these flavors cannot be minted until each has one code.
           </p>
         </div>
       )}
 
       {form && (
         <form onSubmit={submit} className="bg-white border border-powder-300 rounded-xl p-4 space-y-3">
-          <h4 className="text-sm font-semibold text-gray-900">Issue a code for {form.flavor || 'a new flavour'}</h4>
+          <h4 className="text-sm font-semibold text-gray-900">Issue a code for {form.flavor || 'a new flavor'}</h4>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <label className="block">
-              <span className="block text-[11px] text-gray-600 mb-0.5">Flavour</span>
+              <span className="block text-[11px] text-gray-600 mb-0.5">Flavor</span>
               <input value={form.flavor} required
                 onChange={e => setForm(f => ({ ...f, flavor: e.target.value }))}
                 className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm" />
@@ -299,17 +299,17 @@ export default function FlavorCodesPanel() {
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-3">
           <span className="text-sm font-semibold text-gray-700">In use ({active.length})</span>
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Find a flavour or code"
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Find a flavor or code"
             className="ml-auto w-48 px-2.5 py-1 border border-gray-300 rounded-lg text-xs" />
           {canEdit && !form && (
             <button type="button" onClick={() => { setError(null); setForm({ flavor: '', code: '', source: 'new' }); }}
               className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 bg-powder-600 text-white rounded-lg text-xs font-medium hover:bg-powder-700">
-              <Plus size={13} /> New flavour
+              <Plus size={13} /> New flavor
             </button>
           )}
         </div>
         {shown.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-gray-500 text-center">No flavour matches that.</p>
+          <p className="px-4 py-6 text-sm text-gray-500 text-center">No flavor matches that.</p>
         ) : (
           <ul className="divide-y divide-gray-100">
             {shown.map(c => (

@@ -5496,3 +5496,30 @@ next step), the first being "Yes" saved as a formula ref at 200. `check:managed-
 `verify:nfppanel` (49), `verify:nfppanelui` (19), `verify:artwork` (38), `verify-product-tabs` (43),
 `verify-write-doors` (34), `verify-mobile-cards` (58) green; the three whose invented SKUs were outside the
 standard (`WHY-TEST-…`, `WHY-PLG-RENAMED`) now mint codes inside it.
+
+## D-132 — US spelling on the Products module's display labels; every key, column, alias and header untouched (2026-09-30)
+
+Lowry's ask: a US brand on US packaging with FDA panels should not read "Base flavour" and "Eyemark colour".
+Display strings only, and the caveat was the whole job: `master.csv` already serves `flavor` and
+`eye mark color`, Artwork-Proofing parses that file by column name on every run and reads
+`/api/products/nutrition-panel` by key, and a renamed key fails SILENTLY downstream (a missing column
+reads as an empty value, the `split(',')` shape that blanked the spot-colour check for weeks).
+- **What moved:** labels, hints, headers, buttons, chips, refusal messages and completeness gap names across
+  `ProductsPanel`, `ProductGrid`, `ProductDataHealth`, `FlavorCodesPanel`, `ProductBarcodes`, `ProductShelf`,
+  `NfpApprovePage`, and the server strings those screens print (`product-completeness.js` gap labels,
+  `product-fields.js` expected formats, `product-readiness.js` labels and reasons, `products.js` and `nfp.js`
+  errors, the `sku-format.js` blocked-by phrases, `panel-provenance.js` phrases, `flavor-codes.js` reason).
+  "Catalogue" → "Catalog" on the tab; "fulfilment centre" → "fulfillment center".
+- **What did not:** every column (`base_flavor`, `eyemark_color`, `product_colors.pms`), every API key
+  (`fill_check.catalogue`, `no_catalogue`, `na_fields`), every CSV header, every identifier
+  (`FLAVOURLESS_LINES`, `flavourCode`, `catalogueCompleteness`), and the CSV import's aliases, which
+  deliberately accept BOTH spellings — a spreadsheet somebody typed may say either. Comments were left as
+  written; the diff is strings.
+- **The schema was already US**, so this was the five-minute case the ask allowed for — no key is spelled
+  `flavour` anywhere, and nothing needs coordinating with Artwork-Proofing.
+- **Verified:** `master.csv` from a fresh database is BYTE-IDENTICAL before and after (24,078 bytes, `cmp`);
+  the two verifies that asserted the old labels (`verify:productgrid`, `verify:provenance`) now assert the
+  new ones; the rest of the Products verifies are unchanged and green.
+- Also in this commit: the NSF Connect note for CAR 4990683-7 is drafted at
+  `docs/v2/car-responses/nsf-connect-note-4990683-7.md` (D-130's owed note) — Carol posts it, and it names
+  14 October for the run-scheduling requirement, which must be true on the day it is posted.

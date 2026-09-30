@@ -201,10 +201,10 @@ export default function NfpApprovePage({ token }) {
               <div data-fill-warning className="bg-red-50 border border-red-200 rounded-2xl p-4 space-y-2">
                 <p className="text-sm font-bold text-red-900 flex items-start gap-2">
                   <AlertTriangle size={18} className="mt-0.5 shrink-0" />
-                  The panel was computed at a different fill weight from the catalogue's
+                  The panel was computed at a different fill weight from the catalog's
                 </p>
                 <p className="text-sm text-red-900">
-                  {info.fill_check.bom} g on the panel against {info.fill_check.catalogue} g in the catalogue —
+                  {info.fill_check.bom} g on the panel against {info.fill_check.catalogue} g in the catalog —
                   {' '}{info.fill_check.diff_pct}% apart.
                 </p>
                 <label className="flex items-start gap-2 text-sm text-red-900 pt-1">

@@ -162,7 +162,7 @@ console.log('\n── Part 2 · (2) a SKU missing only hex_spot_colors reports e
   db.prepare("UPDATE product_colors SET hex = NULL WHERE sku = ?").run(pouch.sku);
   row = (await comp()).rows.find(r => r.sku === pouch.sku);
   t('WITHOUT ITS HEX IT REPORTS EXACTLY THAT FIELD — not "87%"',
-    JSON.stringify(row?.missing) === JSON.stringify(['Packaging: Hex spot colours']), JSON.stringify(row?.missing));
+    JSON.stringify(row?.missing) === JSON.stringify(['Packaging: Hex spot colors']), JSON.stringify(row?.missing));
   t('…and only the Packaging group is incomplete', Object.entries(row.groups).filter(([, g]) => g.state === 'incomplete').map(([k]) => k).join() === 'packaging');
   db.prepare("UPDATE product_colors SET hex = 'C25131' WHERE sku = ?").run(pouch.sku);
 }

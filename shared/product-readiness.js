@@ -60,7 +60,7 @@ export const FACTS = {
 export const FACT_LABEL = {
   sku: 'the SKU', gtin: 'the GTIN', spec: 'the packaging spec',
   flavor: 'the product name', formula: 'the approved formula',
-  nfp: 'the nutrition panel', colors: 'the brand colours',
+  nfp: 'the nutrition panel', colors: 'the brand colors',
 };
 
 /**
@@ -136,10 +136,10 @@ export const READINESS = [
     redo: 'Release the artwork again once it has been redrawn.',
   },
   {
-    key: 'colors', label: 'Brand colours',
+    key: 'colors', label: 'Brand colors',
     ok: (p) => (p.colors || []).length > 0,
     owns: [],
-    why: (p) => ((p.colors || []).length ? `${p.colors.length} colour slot${p.colors.length === 1 ? '' : 's'} on file` : 'No brand colours on file'),
+    why: (p) => ((p.colors || []).length ? `${p.colors.length} color slot${p.colors.length === 1 ? '' : 's'} on file` : 'No brand colors on file'),
   },
   {
     key: 'shopify', label: 'Listed in Shopify', tick: true,

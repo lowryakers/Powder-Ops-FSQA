@@ -53,7 +53,7 @@ function ColorEditor({ sku, colors, canEdit, onSaved }) {
     setRows((p) => p.map((r, j) => (j === i ? { ...r, [k]: e.target.value } : r)));
 
   const filled = rows.filter((r) => !isBlankSlot(r));
-  const problems = filled.flatMap((r, i) => colorIssues(r).map((m) => `Colour ${i + 1}: ${m}`));
+  const problems = filled.flatMap((r, i) => colorIssues(r).map((m) => `Color ${i + 1}: ${m}`));
 
   const save = async () => {
     setBusy(true); setError('');
@@ -79,7 +79,7 @@ function ColorEditor({ sku, colors, canEdit, onSaved }) {
     return (
       <div data-colors-block>
         <div className="flex items-center justify-between gap-2 mb-1">
-          <p className="text-xs font-medium text-gray-600">Brand colours</p>
+          <p className="text-xs font-medium text-gray-600">Brand colors</p>
           {canEdit && (
             <button type="button" data-edit-colors onClick={open}
               className="inline-flex items-center gap-1 text-xs text-powder-700 hover:underline">
@@ -108,7 +108,7 @@ function ColorEditor({ sku, colors, canEdit, onSaved }) {
   return (
     <div data-colors-block className="rounded-lg border border-powder-200 bg-powder-50/40 p-2.5 space-y-2">
       <p className="text-xs font-medium text-gray-700 flex items-center gap-1.5">
-        <Palette size={13} className="text-powder-600" /> Brand colours
+        <Palette size={13} className="text-powder-600" /> Brand colors
       </p>
       <p className="text-[11px] text-gray-600">
         These go out on the master list the artwork proofer checks every pack against, and it matches the
@@ -125,14 +125,14 @@ function ColorEditor({ sku, colors, canEdit, onSaved }) {
             placeholder="HEX EE7623"
             className={`w-32 border rounded px-2 py-1 text-xs ${r.hex && !hexValid(r.hex) ? 'border-red-400 bg-red-50' : 'border-gray-300'}`} />
           <button type="button" data-remove-color={i} onClick={() => setRows((p) => p.filter((_, j) => j !== i))}
-            className="text-gray-400 hover:text-red-600 shrink-0" title="Remove this colour">
+            className="text-gray-400 hover:text-red-600 shrink-0" title="Remove this color">
             <Trash2 size={13} />
           </button>
         </div>
       ))}
       <button type="button" data-add-color onClick={() => setRows((p) => [...p, { pms: '', hex: '' }])}
         className="inline-flex items-center gap-1 text-xs text-powder-700 hover:underline">
-        <Plus size={12} /> Add a colour
+        <Plus size={12} /> Add a color
       </button>
 
       {problems.length > 0 && (
@@ -145,13 +145,13 @@ function ColorEditor({ sku, colors, canEdit, onSaved }) {
       <div className="flex gap-2">
         <button type="button" data-save-colors onClick={save} disabled={busy || problems.length > 0}
           className="px-3 py-1.5 bg-powder-600 text-white rounded-lg text-xs font-medium disabled:opacity-50">
-          {busy ? 'Saving…' : 'Save colours'}
+          {busy ? 'Saving…' : 'Save colors'}
         </button>
         <button type="button" onClick={() => setEditing(false)}
           className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs">Cancel</button>
       </div>
       <p className="text-[11px] text-gray-500">
-        Saving re-dates the brand-colours step, so the artwork step goes back on the punch list —
+        Saving re-dates the brand-colors step, so the artwork step goes back on the punch list —
         a pack released against a different ink is a pack worth looking at again.
       </p>
     </div>
@@ -559,7 +559,7 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
               <div className="space-y-3">
                 <Block id="identity" title="Identity">
                   <Field k="flavor" label="Product name" form={form} set={set} p={p} />
-                  <Field k="base_flavor" label="Base flavour" form={form} set={set} p={p} hint="What joins a flavour across formats; the flavour register keys on it." />
+                  <Field k="base_flavor" label="Base flavor" form={form} set={set} p={p} hint="What joins a flavor across formats; the flavor register keys on it." />
                   <Field k="gtin" label="GTIN" form={form} set={set} p={p} />
                   <Field k="category" label="Line" form={form} set={set} p={p} hint="The product line, e.g. Whey Protein." />
                   <Field k="pack" label="Pack format" form={form} set={set} p={p} hint="Decides which packaging fields apply: film fed off a roll carries a wind direction and an eye mark; a carton or cup has neither.">
@@ -580,8 +580,8 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
                     hint="From the production formula, confirmed by weighing a sealed bag. Not the net weight printed on the pack — that is what this checks." />
                 </Block>
                 <Block id="packaging" title="Packaging spec" note="Material, print, trim and wind direction are the packaging spec's and are not typed here. Two facts are the product's own:">
-                  <Field k="eyemark_color" label="Eye mark colour" form={form} set={set} p={p} onNa={onNa}
-                    hint={naText ? `Not applicable by format — ${naText}.` : 'Printed registration mark colour, e.g. black.'} />
+                  <Field k="eyemark_color" label="Eye mark color" form={form} set={set} p={p} onNa={onNa}
+                    hint={naText ? `Not applicable by format — ${naText}.` : 'Printed registration mark color, e.g. black.'} />
                   <Field k="dieline_required" label="Die line required" form={form} set={set} p={p}>
                     <select value={form.dieline_required} onChange={set('dieline_required')} className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
                       <option value="1">yes</option><option value="0">no</option>
@@ -616,7 +616,7 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
                             className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50" />
                         </Field>
                         <p className="text-[11px] text-gray-500">
-                          The listing hangs off the seller SKU, and FBA stock already in a fulfilment centre is
+                          The listing hangs off the seller SKU, and FBA stock already in a fulfillment center is
                           bound to it — so <strong>Listed on Amazon</strong> goes amber whenever this product&apos;s
                           SKU or GTIN moves.
                         </p>
@@ -644,7 +644,7 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
                 <Block id="identity" title="Identity">
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                     {[
-                      ['SKU', <code key="s">{p.sku}</code>], ['GTIN', p.gtin], ['Product name', p.flavor], ['Base flavour', p.base_flavor],
+                      ['SKU', <code key="s">{p.sku}</code>], ['GTIN', p.gtin], ['Product name', p.flavor], ['Base flavor', p.base_flavor],
                       ['Pack format', PACK_LABEL[p.pack] || p.pack], ['Line', p.category], ['Status', pretty(p.status)],
                       ['Legacy SKU', fieldState(p, 'legacy_sku') === 'na' ? 'NA' : p.legacy_sku],
                       ['Protein', fieldState(p, 'protein_type') === 'na' ? 'NA' : p.protein_type],
@@ -663,7 +663,7 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
                   </dl>
                   <StepLine steps={p.readiness?.steps} k="formula" /><StepLine steps={p.readiness?.steps} k="nfp" />
                 </Block>
-                <Block id="packaging" title="Packaging spec" note={`Derived from ${p.spec_id ? `packaging spec ${p.spec_id}` : 'the packaging spec (none assigned)'} and the colour slots; each value names the column it was read from. Nothing here is typed on the product except the eye mark and the die line.`}>
+                <Block id="packaging" title="Packaging spec" note={`Derived from ${p.spec_id ? `packaging spec ${p.spec_id}` : 'the packaging spec (none assigned)'} and the color slots; each value names the column it was read from. Nothing here is typed on the product except the eye mark and the die line.`}>
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm" data-packaging-derived>
                     <Derived label="Spec" value={p.spec_id ? `${p.spec_id}${p.spec_name ? ` — ${p.spec_name}` : ''}` : null} source="products.spec_id" />
                     <Derived label="Format" value={p.spec_format} source="packaging_specs.format" />
@@ -671,10 +671,10 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
                       <Derived key={k} label={label} value={p[k]} source={source}
                         na={k === 'wind_direction' && !rollFed ? naText : null} />
                     ))}
-                    <Derived label="Eye mark colour" value={fieldState(p, 'eyemark_color') === 'na' ? 'NA' : p.eyemark_color} source="products.eyemark_color (typed)" na={!rollFed && !p.eyemark_color ? naText : null} />
+                    <Derived label="Eye mark color" value={fieldState(p, 'eyemark_color') === 'na' ? 'NA' : p.eyemark_color} source="products.eyemark_color (typed)" na={!rollFed && !p.eyemark_color ? naText : null} />
                     <Derived label="Die line required" value={p.dieline_required ? 'yes' : 'no'} source="products.dieline_required (typed)" />
-                    <Derived label="PMS spot colours" value={(p.colors || []).filter((c) => c.pms).map((c) => c.pms).join(' | ')} source="product_colors.pms, slots in order" />
-                    <Derived label="Hex spot colours" value={(p.colors || []).filter((c) => c.hex).map((c) => c.hex).join(' | ')} source="product_colors.hex, slots in order" />
+                    <Derived label="PMS spot colors" value={(p.colors || []).filter((c) => c.pms).map((c) => c.pms).join(' | ')} source="product_colors.pms, slots in order" />
+                    <Derived label="Hex spot colors" value={(p.colors || []).filter((c) => c.hex).map((c) => c.hex).join(' | ')} source="product_colors.hex, slots in order" />
                   </dl>
                   <StepLine steps={p.readiness?.steps} k="spec" /><StepLine steps={p.readiness?.steps} k="colors" /><StepLine steps={p.readiness?.steps} k="artwork" />
                   <ColorEditor sku={sku} colors={p.colors} canEdit={canEdit}
@@ -716,7 +716,7 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
                 {p.siblings?.length > 0 && (
                   <div>
                     <p className="text-xs font-medium text-gray-600 mb-1">
-                      Same flavour, other SKUs — a change here probably touches these
+                      Same flavor, other SKUs — a change here probably touches these
                     </p>
                     <ul className="space-y-1">
                       {p.siblings.map((s) => (
@@ -817,7 +817,7 @@ export default function ProductsPanel() {
       </div>
 
       <ModuleTabs value={view} onChange={setView} tabs={[
-        { id: 'list', label: 'Catalogue', icon: Package, badge: products.length },
+        { id: 'list', label: 'Catalog', icon: Package, badge: products.length },
         // Panels waiting on somebody. Counted here rather than left to be found
         // in a product drawer, because "who still owes us an approval" is the
         // question that holds artwork up.
@@ -830,7 +830,7 @@ export default function ProductsPanel() {
         // The register the new SKU standard is built on. Badged with the
         // flavours that still owe a decision, because those are the ones whose
         // SKUs cannot be minted.
-        { id: 'flavor-codes', label: 'Flavour codes', icon: Tag,
+        { id: 'flavor-codes', label: 'Flavor codes', icon: Tag,
           badge: pendingCodes || undefined, badgeTone: pendingCodes ? 'alert' : undefined },
         // Badged on what must NOT print — a wrong number or a barcode image
         // encoding one. "No image yet" is a punch list item and lives on the
@@ -858,7 +858,7 @@ export default function ProductsPanel() {
       {view === 'list' && (<>
       {/* A draft whose SKU disagrees with the New standard column, fixable here.
           The strip renders nothing once every draft matches the register, and
-          the same component sits on the Flavour codes tab — a second copy is
+          the same component sits on the Flavor codes tab — a second copy is
           how the two screens would start offering different renames. */}
       <DraftRealign canEdit={canEdit} onDone={refresh} />
       {badGtin > 0 && (
@@ -872,7 +872,7 @@ export default function ProductsPanel() {
         <div className="relative flex-1 min-w-[14rem]">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input value={q} onChange={(e) => setQ(e.target.value)}
-            placeholder="Search SKU, flavour, GTIN, Shopify SKU"
+            placeholder="Search SKU, flavor, GTIN, Shopify SKU"
             className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm" />
         </div>
         <select value={category} onChange={(e) => setCategory(e.target.value)}

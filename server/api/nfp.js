@@ -342,7 +342,7 @@ router.post('/', (req, res) => {
 
   const db = getDb();
   const product = db.prepare('SELECT * FROM products WHERE sku = ?').get(sku);
-  if (!product) return res.status(400).json({ error: `${sku} is not in the catalogue.` });
+  if (!product) return res.status(400).json({ error: `${sku} is not in the catalog.` });
   if (db.prepare('SELECT 1 FROM nfp_versions WHERE sku = ? AND version = ?').get(sku, version)) {
     return res.status(409).json({ error: `${sku} already has a panel ${version}. Panels are never rewritten — file the next version.` });
   }

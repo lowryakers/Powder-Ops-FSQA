@@ -53,7 +53,7 @@ export const HEX_RE = /^HEX [0-9A-F]{6}$/;
 export const FIELD_RULES = {
   sku: {
     label: 'SKU',
-    expected: 'LINE-PACK-FLAVOUR in capitals, e.g. WHY-BTL-BLM (three letters, three letters, one to four letters or digits; a flavourless line is two parts, e.g. GFF-PSM)',
+    expected: 'LINE-PACK-FLAVOR in capitals, e.g. WHY-BTL-BLM (three letters, three letters, one to four letters or digits; a flavorless line is two parts, e.g. GFF-PSM)',
     normalize: (v) => String(v ?? '').trim().toUpperCase(),
     test: (v) => SKU_RE.test(v),
     unique: true,
@@ -88,7 +88,7 @@ export const FIELD_RULES = {
     test: (v) => Number.isFinite(v) && v > 0,
   },
   pms: {
-    label: 'PMS spot colour',
+    label: 'PMS spot color',
     expected: 'PMS, a space, a three- or four-digit number (or a named ink such as Black), a space, C or U — e.g. PMS 158 C',
     // The prefix and the C/U suffix are upper-cased; a named ink keeps the
     // case it was typed in, because the proofer matches the separation NAME
@@ -101,7 +101,7 @@ export const FIELD_RULES = {
     test: (v) => PMS_RE.test(v),
   },
   hex: {
-    label: 'Hex spot colour',
+    label: 'Hex spot color',
     expected: 'HEX, a space, six hex digits — e.g. HEX EE7623',
     normalize: (v) => String(v ?? '').trim().replace(/\s+/g, ' ').toUpperCase().replace(/^HEX\s*#?/, 'HEX '),
     test: (v) => HEX_RE.test(v),

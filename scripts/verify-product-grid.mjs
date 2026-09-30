@@ -76,7 +76,7 @@ console.log('\n── (2) validation at the field: refused on save, naming the e
   await put(`/products/${C1}/colors`, { colors });
 
   r = await post('/products', { sku: 'PP-NEW-23X', flavor: 'Legacy Shape', base_flavor: 'Legacy', category: 'Whey Protein', pack: 'PLG' });
-  t('a NEW SKU in the legacy shape is refused — the standard applies to what is minted', r.status === 400 && /LINE-PACK-FLAVOUR/.test((await J(r))?.error || ''));
+  t('a NEW SKU in the legacy shape is refused — the standard applies to what is minted', r.status === 400 && /LINE-PACK-FLAVOR/.test((await J(r))?.error || ''));
   r = await post('/products', { sku: 'gff-psm', flavor: 'Two Part', base_flavor: 'Two Part', category: 'Gluten Free Flour', pack: 'PSM', status: 'draft' });
   t('a two-part SKU (a flavourless line) is minted, upper-cased', r.status === 201 && !!row('GFF-PSM'), `${r.status}`);
   r = await post(`/products/${S1}/rename`, { sku: 'WHY-PLG-RENAMED' });
@@ -102,17 +102,17 @@ console.log('\n── (4) not applicable is a state set by a control, distinct f
 {
   const comp = async (sku) => (await J(await call('/products/completeness'))).rows.find(r => r.sku === sku);
   let c2 = await comp(S2);
-  t('a roll-fed SKU with no eye mark has it as a GAP', c2.groups.packaging.missing.includes('Eye mark colour'), JSON.stringify(c2.groups.packaging));
+  t('a roll-fed SKU with no eye mark has it as a GAP', c2.groups.packaging.missing.includes('Eye mark color'), JSON.stringify(c2.groups.packaging));
   let r = await post(`/products/${S2}/na`, { field: 'mrp_formula_id', on: true });
   t('the formula ref may NOT be marked NA (every product owes one)', r.status === 400 && /cannot be marked not applicable/.test((await J(r))?.error || ''));
   r = await post(`/products/${S2}/na`, { field: 'eyemark_color', on: true });
   const p2 = await J(r);
   t('the eye mark can be — with who and when', r.status === 200 && p2?.na?.eyemark_color?.by === 'Gwen Grid' && !!p2.na.eyemark_color.at, JSON.stringify(p2?.na));
   c2 = await comp(S2);
-  t('NA is DONE, not a gap: the eye mark leaves the missing list', !c2.groups.packaging.missing.includes('Eye mark colour'));
-  t('…and is counted as NA, apart from the gaps', c2.na.includes('Eye mark colour (marked not applicable)') && c2.na_count >= 1 && Object.keys(c2.na_fields).includes('eyemark_color'), JSON.stringify([c2.na, c2.na_fields]));
+  t('NA is DONE, not a gap: the eye mark leaves the missing list', !c2.groups.packaging.missing.includes('Eye mark color'));
+  t('…and is counted as NA, apart from the gaps', c2.na.includes('Eye mark color (marked not applicable)') && c2.na_count >= 1 && Object.keys(c2.na_fields).includes('eyemark_color'), JSON.stringify([c2.na, c2.na_fields]));
   const c3 = await comp(S3);
-  t('an EMPTY eye mark on the next stick is still a gap — the two states are different facts', c3.groups.packaging.missing.includes('Eye mark colour') && c3.na_count === (await comp(S3)).na.length && !c3.na_fields.eyemark_color);
+  t('an EMPTY eye mark on the next stick is still a gap — the two states are different facts', c3.groups.packaging.missing.includes('Eye mark color') && c3.na_count === (await comp(S3)).na.length && !c3.na_fields.eyemark_color);
   const all = await J(await call('/products/completeness'));
   t('the roll-up counts SKUs carrying an explicit NA', all.counts.na_skus >= 1 && all.counts.na_fields >= 1, JSON.stringify(all.counts));
   r = await put(`/products/${S2}`, { eyemark_color: 'black' });
@@ -202,9 +202,12 @@ try {
   await page.goto(`${URL}/?tab=products`);
   await page.waitForSelector('[data-product-grid]', { timeout: 20000 }).catch(() => {});
   t('(1) the grid is the default landing on Products', await page.locator('[data-product-grid]').count() === 1);
-  await page.waitForSelector('[data-grid-filter="incomplete"][data-count]', { timeout: 10000 }).catch(() => {});
   const comp = await J(await call('/products/completeness'));
   const n = db.prepare("SELECT COUNT(*) n FROM products").get().n;
+  // The chips count what has LOADED; wait for both fetches (products, then completeness) to have landed
+  // before reading them, or the read races the data — the first run printed "119 vs 119" and failed.
+  await page.waitForSelector(`[data-grid-filter="all"][data-count="${n}"]`, { timeout: 15000 }).catch(() => {});
+  await page.waitForSelector(`[data-grid-filter="incomplete"][data-count="${comp.counts.incomplete}"]`, { timeout: 15000 }).catch(() => {});
   const cnt = async (k) => Number(await page.locator(`[data-grid-filter="${k}"]`).getAttribute('data-count'));
   t('the All chip counts the catalogue', await cnt('all') === n, `${await cnt('all')} vs ${n}`);
   t('the Incomplete / Blocked / Stale chips are the completeness walk\'s own counts', await cnt('incomplete') === comp.counts.incomplete && await cnt('blocked') === comp.counts.blocked && await cnt('stale') === comp.counts.stale,
@@ -291,7 +294,7 @@ try {
   const text = await (await dl.createReadStream()).toArray().then(chunks => Buffer.concat(chunks).toString('utf8'));
   const lines = text.trim().split('\n');
   t('(1) the CSV export has one row per visible SKU', lines.length - 1 === await page.locator('[data-grid-row]').count(), `${lines.length - 1}`);
-  t('…with the grid\'s own headers', /^SKU,Product name,Base flavour/.test(lines[0]), lines[0]);
+  t('…with the grid\'s own headers', /^SKU,Product name,Base flavor/.test(lines[0]), lines[0]);
 
   // Import from the screen: the diff, then the commit.
   await page.locator('[data-import]').click();

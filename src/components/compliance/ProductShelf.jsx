@@ -172,7 +172,7 @@ export default function ProductShelf({ canEdit }) {
     <div className="space-y-3">
       <p className="text-sm text-gray-500 max-w-2xl">
         The reference documents this work runs on — what a proof is checked against, what a retailer asks
-        for, and the exports the catalogue is reconciled against. Not controlled documents: replacing one
+        for, and the exports the catalog is reconciled against. Not controlled documents: replacing one
         of these should not need a Document Change Request.
       </p>
 

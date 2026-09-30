@@ -117,7 +117,7 @@ export default function ProductBarcodes({ onOpenSku }) {
 
       <div className="relative">
         <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search SKU, GTIN or flavour…"
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search SKU, GTIN or flavor…"
           className="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-lg text-sm" />
       </div>
 

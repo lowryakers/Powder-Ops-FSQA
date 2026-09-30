@@ -118,7 +118,7 @@ export function resolveFlavorCodes(rows, { issued = {} } = {}) {
       continue;
     }
     if (free) {
-      resolved.push({ flavor: f, code: free, from: options, reason: 'the only one of its codes no other flavour claims' });
+      resolved.push({ flavor: f, code: free, from: options, reason: 'the only one of its codes no other flavor claims' });
       taken.add(free);
       continue;
     }

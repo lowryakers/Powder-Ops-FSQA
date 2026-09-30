@@ -188,7 +188,7 @@ router.get('/shelf', (_req, res) => {
 // Upload a document into a slot. The file's text is indexed for search the way
 // equipment manuals and policies are — searched, never shipped.
 router.post('/shelf/:slot', mediaUpload().array('files', 1), async (req, res) => {
-  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalogue.' });
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalog.' });
   const db = getDb();
   const files = req.files || [];
   try {
@@ -260,7 +260,7 @@ router.get('/shelf/documents/:id/file', async (req, res) => {
 });
 
 router.delete('/shelf/documents/:id', async (req, res) => {
-  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalogue.' });
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalog.' });
   const db = getDb();
   const d = db.prepare('SELECT * FROM product_documents WHERE id = ?').get(req.params.id);
   if (!d) return res.status(404).json({ error: 'Not found.' });
@@ -274,7 +274,7 @@ router.delete('/shelf/documents/:id', async (req, res) => {
 // first time the row is created and a decision afterwards — hence editable,
 // and hence the seeder never touching a row that exists.
 router.put('/shelf/:slot', (req, res) => {
-  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalogue.' });
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalog.' });
   const db = getDb();
   const slot = db.prepare('SELECT * FROM product_doc_slots WHERE key = ?').get(req.params.slot);
   if (!slot) return res.status(404).json({ error: 'No such document slot.' });
@@ -375,11 +375,11 @@ router.get('/flavor-codes', (req, res) => {
 });
 
 router.post('/flavor-codes', (req, res) => {
-  if (!canManage(req.user)) return res.status(403).json({ error: 'Only QA, a supervisor or an admin can issue a flavour code.' });
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Only QA, a supervisor or an admin can issue a flavor code.' });
   const db = getDb();
   const flavor = String(req.body?.flavor || '').trim();
   const code = String(req.body?.code || '').trim().toUpperCase();
-  if (!flavor) return res.status(400).json({ error: 'A flavour name is required.' });
+  if (!flavor) return res.status(400).json({ error: 'A flavor name is required.' });
   if (!/^[A-Z]{2,4}$/.test(code)) return res.status(400).json({ error: 'A code is two to four letters — it is printed on film.' });
 
   // BOTH DIRECTIONS ARE REFUSED, and the message says which, because the two
@@ -443,7 +443,7 @@ function planBottleDrafts(db) {
     const lineCode = LINE_CODES[r.category];
     const flavourCode = codes[r.base_flavor];
     if (!lineCode || !flavourCode) {
-      const why = !lineCode ? `no code agreed for ${r.category}` : `${r.base_flavor} has no flavour code yet`;
+      const why = !lineCode ? `no code agreed for ${r.category}` : `${r.base_flavor} has no flavor code yet`;
       if (!blocked.some(b => b.flavor === r.base_flavor && b.category === r.category)) {
         blocked.push({ category: r.category, flavor: r.base_flavor, reason: why });
       }
@@ -510,7 +510,7 @@ router.post('/bottle-drafts', (req, res) => {
  * exists to catch.
  */
 router.post('/:sku/barcode', barcodeUpload, async (req, res) => {
-  if (!canManage(req.user)) return res.status(403).json({ error: 'Only QA, a supervisor or an admin can change the catalogue.' });
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Only QA, a supervisor or an admin can change the catalog.' });
   const db = getDb();
   const files = req.files || [];
   try {
@@ -606,7 +606,7 @@ function moveSkuChildren(db, from, to) {
 }
 
 router.post('/drafts/realign', (req, res) => {
-  if (!canManage(req.user)) return res.status(403).json({ error: 'Only QA, a supervisor or an admin can change the catalogue.' });
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Only QA, a supervisor or an admin can change the catalog.' });
   const db = getDb();
   const { plan, blocked } = planDraftRealign(db);
   if (!plan.length) return res.json({ renamed: 0, blocked });
@@ -624,7 +624,7 @@ router.post('/drafts/realign', (req, res) => {
   })();
   for (const r of plan) {
     logAudit(req.user, 'product_renamed', 'product', r.to,
-      { from: r.from, to: r.to, reason: 'draft realigned to the flavour register' }, null, null, `${r.from} → ${r.to}`);
+      { from: r.from, to: r.to, reason: 'draft realigned to the flavor register' }, null, null, `${r.from} → ${r.to}`);
   }
   res.json({ renamed: plan.length, plan, blocked });
 });
@@ -646,7 +646,7 @@ router.get('/:sku/barcode', async (req, res) => {
 });
 
 router.delete('/:sku/barcode', async (req, res) => {
-  if (!canManage(req.user)) return res.status(403).json({ error: 'Only QA, a supervisor or an admin can change the catalogue.' });
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Only QA, a supervisor or an admin can change the catalog.' });
   const db = getDb();
   const p = db.prepare('SELECT * FROM products WHERE sku = ?').get(req.params.sku);
   if (!p?.barcode_key) return res.status(404).json({ error: 'No barcode image on file.' });
@@ -659,7 +659,7 @@ router.delete('/:sku/barcode', async (req, res) => {
 });
 
 router.delete('/flavor-codes/:id', (req, res) => {
-  if (!canManage(req.user)) return res.status(403).json({ error: 'Only QA, a supervisor or an admin can retire a flavour code.' });
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Only QA, a supervisor or an admin can retire a flavor code.' });
   const db = getDb();
   const row = db.prepare('SELECT * FROM flavor_codes WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found.' });
@@ -708,7 +708,7 @@ router.delete('/flavor-codes/:id', (req, res) => {
 const bulkFields = () => WRITABLE.filter((c) => !['gtin', 'legacy_sku', 'shopify_sku', 'shopify_variant_id', 'amazon_sku', 'amazon_asin'].includes(c));
 
 router.post('/bulk-edit', (req, res) => {
-  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalogue.' });
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalog.' });
   const db = getDb();
   const { field, value } = req.body || {};
   const skus = [...new Set((Array.isArray(req.body?.skus) ? req.body.skus : []).map((x) => String(x)))];
@@ -857,7 +857,7 @@ function planImport(db, csvText) {
 const publicPlan = (plan) => ({ ...plan, rows: plan.rows.map(({ _existing, _patch, _colors, ...r }) => r) });
 
 router.post('/import/preview', (req, res) => {
-  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalogue.' });
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalog.' });
   const plan = planImport(getDb(), req.body?.csv);
   if (plan.error) return res.status(400).json({ error: plan.error });
   res.json(publicPlan(plan));
@@ -869,7 +869,7 @@ router.post('/import/preview', (req, res) => {
  * went in. The preview names every refused cell, so the fix is in the file.
  */
 router.post('/import/commit', (req, res) => {
-  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalogue.' });
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalog.' });
   const db = getDb();
   const plan = planImport(db, req.body?.csv);
   if (plan.error) return res.status(400).json({ error: plan.error });
@@ -972,7 +972,7 @@ router.get('/data-health', (_req, res) => {
     }
 
     const cs = bySku.get(p.sku) || [];
-    if (!cs.length) add('no_colors', p.sku, 'No brand colours recorded');
+    if (!cs.length) add('no_colors', p.sku, 'No brand colors recorded');
     for (const c of cs) {
       if (!c.hex_valid) add('bad_color', p.sku, `Slot ${c.slot}: "${c.hex}" is not a usable hex value`);
       else if (!c.pms_valid) add('bad_color', p.sku, `Slot ${c.slot}: "${c.pms}" is not a usable PMS value`);
@@ -1309,7 +1309,7 @@ const CONFIRMATIONS = {
 const AMAZON_CHANNELS = ['listed', 'not_sold'];
 
 router.post('/:sku/confirm/:step', (req, res) => {
-  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalogue.' });
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalog.' });
   const c = CONFIRMATIONS[req.params.step];
   if (!c || !TICKABLE.includes(req.params.step)) {
     return res.status(400).json({ error: `${req.params.step} is not something a person confirms here.` });
@@ -1342,12 +1342,12 @@ router.post('/:sku/confirm/:step', (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalogue.' });
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalog.' });
   const b = req.body || {};
   const skuCheck = validateField('sku', b.sku);
   const sku = skuCheck.ok ? skuCheck.value : null;
   if (!sku || !b.flavor?.trim() || !b.category?.trim() || !b.pack?.trim()) {
-    return res.status(400).json({ error: skuCheck.ok ? 'SKU, flavour, category and pack are required.' : skuCheck.error, expected: skuCheck.expected });
+    return res.status(400).json({ error: skuCheck.ok ? 'SKU, flavor, category and pack are required.' : skuCheck.error, expected: skuCheck.expected });
   }
   // The same rules the edit path applies, from the first write (D-131).
   for (const c of ['mrp_formula_id', 'formula_rev', 'fill_weight_g']) {
@@ -1386,7 +1386,7 @@ router.post('/', (req, res) => {
 });
 
 router.put('/:sku', (req, res) => {
-  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalogue.' });
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalog.' });
   const db = getDb();
   const existing = db.prepare('SELECT * FROM products WHERE sku = ?').get(req.params.sku);
   if (!existing) return res.status(404).json({ error: 'No such SKU' });
@@ -1407,7 +1407,7 @@ router.put('/:sku', (req, res) => {
  * and an NA on one of those would be a gap wearing a tick.
  */
 router.post('/:sku/na', (req, res) => {
-  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalogue.' });
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalog.' });
   const db = getDb();
   const existing = db.prepare('SELECT * FROM products WHERE sku = ?').get(req.params.sku);
   if (!existing) return res.status(404).json({ error: 'No such SKU' });
@@ -1444,7 +1444,7 @@ router.post('/:sku/na', (req, res) => {
  * Returns `{ product }` (re-read and hydrated) or `{ status, error, problems }`.
  */
 function planColors(db, product, colors) {
-  if (!Array.isArray(colors)) return { status: 400, error: 'Send the whole colour list.' };
+  if (!Array.isArray(colors)) return { status: 400, error: 'Send the whole color list.' };
   // A row with neither value typed into it is an empty line on the form, not
   // a colour somebody meant to record as blank.
   const wanted = colors
@@ -1460,12 +1460,12 @@ function planColors(db, product, colors) {
   // per slot, or the person has to work out which of four boxes it meant.
   const problems = [];
   wanted.forEach((c, i) => {
-    for (const msg of colorIssues(c)) problems.push(`Colour ${i + 1}: ${msg}`);
+    for (const msg of colorIssues(c)) problems.push(`Color ${i + 1}: ${msg}`);
     const was = beforeShape[i] || {};
     for (const k of ['pms', 'hex']) {
       if (c[k] === null || c[k] === (was[k] ?? null)) continue;
       const v = validateField(k, c[k]);
-      if (!v.ok) problems.push(`Colour ${i + 1}: ${v.error}`);
+      if (!v.ok) problems.push(`Color ${i + 1}: ${v.error}`);
       else c[k] = v.value;
     }
   });
@@ -1531,7 +1531,7 @@ function writeColors(db, product, colors, user) {
  * the removal is in the trail.
  */
 router.put('/:sku/colors', (req, res) => {
-  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalogue.' });
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalog.' });
   const db = getDb();
   const product = db.prepare('SELECT * FROM products WHERE sku = ?').get(req.params.sku);
   if (!product) return res.status(404).json({ error: 'No such SKU' });
@@ -1548,7 +1548,7 @@ router.put('/:sku/colors', (req, res) => {
  * edit. legacy_sku is only ever set here, and never cleared.
  */
 router.post('/:sku/rename', (req, res) => {
-  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalogue.' });
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalog.' });
   const db = getDb();
   const existing = db.prepare('SELECT * FROM products WHERE sku = ?').get(req.params.sku);
   if (!existing) return res.status(404).json({ error: 'No such SKU' });

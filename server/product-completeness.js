@@ -73,7 +73,7 @@ export const GROUPS = [
       if (!present(p.gtin)) missing.push('GTIN');
       else if (!p.gtin_valid) missing.push('GTIN (fails its check digit)');
       if (!present(p.flavor)) missing.push('Product name');
-      if (!present(p.base_flavor)) missing.push('Flavour');
+      if (!present(p.base_flavor)) missing.push('Flavor');
       if (!present(p.category)) missing.push('Line');
       if (!present(p.pack)) missing.push('Packaging type');
       return { missing };
@@ -95,13 +95,13 @@ export const GROUPS = [
         // NA BY DECISION is a different fact from NA by derivation, and both are
         // done, not gaps: the carton has no eye mark because cartons do not;
         // this pouch has none because somebody with a name said so.
-        if (naOf(p).eyemark_color) na.push('Eye mark colour (marked not applicable)');
+        if (naOf(p).eyemark_color) na.push('Eye mark color (marked not applicable)');
         else if (rollFed) {
-          if (!present(p.eyemark_color)) missing.push('Eye mark colour');
-        } else na.push('Eye mark colour');
+          if (!present(p.eyemark_color)) missing.push('Eye mark color');
+        } else na.push('Eye mark color');
       }
-      if (!colors.some((c) => present(c.pms))) missing.push('PMS spot colours');
-      if (!colors.some((c) => present(c.hex))) missing.push('Hex spot colours');
+      if (!colors.some((c) => present(c.pms))) missing.push('PMS spot colors');
+      if (!colors.some((c) => present(c.hex))) missing.push('Hex spot colors');
       if (p.dieline_required === null || p.dieline_required === undefined) missing.push('Die line required');
       return { missing, na };
     },

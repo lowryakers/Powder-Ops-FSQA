@@ -22,9 +22,9 @@ import { AlertTriangle, Barcode, GitMerge, ChevronDown, ChevronRight } from 'luc
 
 const KIND_LABEL = {
   no_spec: 'No usable packaging spec',
-  bad_color: 'Colour value that cannot be used',
-  color_conflict: 'One Pantone, two different colours',
-  no_colors: 'No brand colours at all',
+  bad_color: 'Color value that cannot be used',
+  color_conflict: 'One Pantone, two different colors',
+  no_colors: 'No brand colors at all',
   not_a_sku: 'Not a SKU',
   gtin: 'GS1 barcode problem',
   typed_na: '"NA" typed into a field',
@@ -32,14 +32,14 @@ const KIND_LABEL = {
 
 const KIND_WHY = {
   no_spec: 'The proofer checks dimensions and material against the spec. Without one it has nothing to check against.',
-  bad_color: 'A hex or PMS value the proofer cannot parse, so the colour check silently covers nothing.',
+  bad_color: 'A hex or PMS value the proofer cannot parse, so the color check silently covers nothing.',
   color_conflict: 'The same Pantone reference carries a materially different hex on two products, so one of '
     + 'them was transcribed wrongly. Which one is a question about what is printed on the pack — check both '
     + 'against the artwork and correct the loser in the product drawer. A row marked checked is one somebody '
     + 'has already resolved against the artwork; it stays on the list so the answer is not lost.',
-  no_colors: 'No brand colours recorded, so nothing verifies what came back from the printer.',
+  no_colors: 'No brand colors recorded, so nothing verifies what came back from the printer.',
   not_a_sku: 'A numeric id sitting in the SKU column — almost certainly a Shopify variant id.',
-  typed_na: 'Not applicable is a control with a name on it, not a value: typed "NA" would reach the proofer\'s feed as an eye mark colour called NA. Open the product and mark the field not applicable instead.',
+  typed_na: 'Not applicable is a control with a name on it, not a value: typed "NA" would reach the proofer\'s feed as an eye mark color called NA. Open the product and mark the field not applicable instead.',
   gtin: 'Missing, or fails its GS1 check digit. A bad barcode scans as another product or not at all.',
 };
 
@@ -99,7 +99,7 @@ function Group({ kind, items, open, onToggle }) {
 export default function ProductDataHealth({ data }) {
   const [open, setOpen] = useState(null);
 
-  if (!data) return <p className="text-sm text-gray-400">Checking the catalogue…</p>;
+  if (!data) return <p className="text-sm text-gray-400">Checking the catalog…</p>;
 
   const byKind = {};
   for (const i of data.issues || []) (byKind[i.kind] = byKind[i.kind] || []).push(i);
@@ -117,10 +117,10 @@ export default function ProductDataHealth({ data }) {
         </div>
         <div className="rounded-xl border border-gray-200 px-3 py-2">
           <p className="text-lg font-bold text-gray-900">{data.flavors}</p>
-          <p className="text-[11px] text-gray-500">distinct flavours</p>
+          <p className="text-[11px] text-gray-500">distinct flavors</p>
         </div>
         <p className="text-xs text-gray-500 flex-1 min-w-[16rem]">
-          Counted live from the catalogue. Nothing here is fixed automatically — each one is a decision
+          Counted live from the catalog. Nothing here is fixed automatically — each one is a decision
           about a real product.
         </p>
       </div>
@@ -146,7 +146,7 @@ export default function ProductDataHealth({ data }) {
           </div>
           {data.gs1.some((g) => g.low) && (
             <p className="text-[11px] text-amber-700 mt-1.5">
-              A prefix under 25 free is roughly one flavour launched across every format. Ordering the next
+              A prefix under 25 free is roughly one flavor launched across every format. Ordering the next
               block takes weeks — start before a launch needs it, not when it does.
             </p>
           )}
@@ -158,11 +158,11 @@ export default function ProductDataHealth({ data }) {
       {data.collisions?.length > 0 && (
         <div>
           <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5 mb-1">
-            <GitMerge size={15} className="text-red-600" /> One abbreviation, two flavours ({data.collisions.length})
+            <GitMerge size={15} className="text-red-600" /> One abbreviation, two flavors ({data.collisions.length})
           </h4>
           <p className="text-xs text-gray-600 mb-2">
-            The new SKU standard uses the flavour abbreviation as a key, and a key that means two things is
-            not a key. <span className="font-medium">Decide these before the flavour table is frozen</span> —
+            The new SKU standard uses the flavor abbreviation as a key, and a key that means two things is
+            not a key. <span className="font-medium">Decide these before the flavor table is frozen</span> —
             a code that has been printed cannot be changed.
           </p>
           <div className="space-y-1.5">
@@ -187,7 +187,7 @@ export default function ProductDataHealth({ data }) {
       {data.similar?.length > 0 && (
         <div>
           <h4 className="text-sm font-semibold text-gray-900 mb-1">
-            Flavour names that may be the same thing ({data.similar.length})
+            Flavor names that may be the same thing ({data.similar.length})
           </h4>
           <p className="text-xs text-gray-600 mb-2">
             One name is contained in the other. Sometimes two real products, sometimes one product named
@@ -212,7 +212,7 @@ export default function ProductDataHealth({ data }) {
           <AlertTriangle size={15} className="text-amber-600" /> Data to fix
         </h4>
         {kinds.length === 0 ? (
-          <p className="text-sm text-gray-500">Nothing outstanding — every SKU has a spec, colours and a valid barcode.</p>
+          <p className="text-sm text-gray-500">Nothing outstanding — every SKU has a spec, colors and a valid barcode.</p>
         ) : (
           <div className="space-y-2">
             {kinds.map((kind) => (

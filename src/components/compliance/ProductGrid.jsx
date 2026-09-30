@@ -48,7 +48,7 @@ const GROUPS = [
   { key: 'identity', label: 'Identity', columns: [
     { key: 'sku', label: 'SKU', door: true },
     { key: 'flavor', label: 'Product name', edit: 'text' },
-    { key: 'base_flavor', label: 'Base flavour', edit: 'text' },
+    { key: 'base_flavor', label: 'Base flavor', edit: 'text' },
     { key: 'category', label: 'Line', edit: 'text' },
     { key: 'pack', label: 'Pack', edit: 'select', options: Object.keys(PACK_LABEL), render: (v) => PACK_LABEL[v] || v },
     { key: 'gtin', label: 'GTIN', edit: 'text' },
@@ -65,8 +65,8 @@ const GROUPS = [
       .map(([k, label, source]) => ({ key: k, label, source: `${source} via products.spec_id` })),
     { key: 'eyemark_color', label: 'Eye mark', edit: 'text' },
     { key: 'dieline_required', label: 'Die line', edit: 'select', options: ['1', '0'], render: (v) => (v === null || v === undefined ? '' : v ? 'yes' : 'no'), get: (p) => (p.dieline_required ? '1' : '0') },
-    { key: 'pms', label: 'PMS spot colours', edit: 'colors', get: (p) => joinSlots(p.colors, 'pms') },
-    { key: 'hex', label: 'Hex spot colours', edit: 'colors', get: (p) => joinSlots(p.colors, 'hex') },
+    { key: 'pms', label: 'PMS spot colors', edit: 'colors', get: (p) => joinSlots(p.colors, 'pms') },
+    { key: 'hex', label: 'Hex spot colors', edit: 'colors', get: (p) => joinSlots(p.colors, 'hex') },
   ] },
   { key: 'channels', label: 'Channels', columns: [
     { key: 'status', label: 'Status', edit: 'select', options: STATUSES, render: pretty },
@@ -179,10 +179,10 @@ function ImportModal({ onClose, onDone }) {
               <span className="px-2 py-1 rounded-full border border-gray-300">{c.rows_in_file} rows in the file</span>
               <span className="px-2 py-1 rounded-full border border-gray-300" data-import-changes>{c.changes} change{c.changes === 1 ? '' : 's'} on {c.skus_changing} SKU{c.skus_changing === 1 ? '' : 's'}</span>
               {c.errors > 0 && <span className="px-2 py-1 rounded-full border border-red-300 bg-red-50 text-red-800" data-import-errors>{c.errors} refused</span>}
-              {c.unknown_skus > 0 && <span className="px-2 py-1 rounded-full border border-amber-300 bg-amber-50 text-amber-900" title={plan.unknown_skus.join(', ')}>{c.unknown_skus} SKU{c.unknown_skus === 1 ? '' : 's'} not in the catalogue</span>}
+              {c.unknown_skus > 0 && <span className="px-2 py-1 rounded-full border border-amber-300 bg-amber-50 text-amber-900" title={plan.unknown_skus.join(', ')}>{c.unknown_skus} SKU{c.unknown_skus === 1 ? '' : 's'} not in the catalog</span>}
               {plan.unknown_columns.length > 0 && <span className="px-2 py-1 rounded-full border border-gray-300 text-gray-600" title={plan.unknown_columns.join(', ')}>{plan.unknown_columns.length} column{plan.unknown_columns.length === 1 ? '' : 's'} ignored</span>}
             </div>
-            {plan.rows.length === 0 ? <p className="text-sm text-gray-600">Nothing in the file differs from the catalogue.</p> : (
+            {plan.rows.length === 0 ? <p className="text-sm text-gray-600">Nothing in the file differs from the catalog.</p> : (
               <div className="overflow-x-auto border border-gray-200 rounded-lg">
                 <table className="min-w-full text-xs">
                   <thead className="bg-gray-50 border-b border-gray-200">

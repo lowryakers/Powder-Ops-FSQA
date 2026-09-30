@@ -152,7 +152,7 @@ triage and the per-CAR evidence table, `docs/audit-2026-08-findings.md` the shor
   `docs/v2/roadmap-2026-09-30.md`.
 - **DECIDED 30 Sep (D-130): THE MMR LIVES IN KEYCHAIN — D-059 stands.** ReadyDoc makes the run NAME its approved
   MMR (`mmr_ref` on the schedule assignment and the EOD MO line, off/warn/on) and holds no master record; a dated
-  note on 4990683-7 in NSF Connect is owed before the visit. The SOP 444 split is the D-056 one (Lowry drafts the
+  note on 4990683-7 in NSF Connect is owed before the visit (drafted: `docs/v2/car-responses/nsf-connect-note-4990683-7.md`). The SOP 444 split is the D-056 one (Lowry drafts the
   package, Carol writes the SOP and the MRP Easy request, Maria approves). **Shelf life:** an expiration date only
   where stability data covers the SKU, otherwise Best by; the rule goes in the SOP 413 revision, the BASIS per SKU
   is `stability_justifications.basis` and the date type is DERIVED from it (a Completeness gap, a `date type`
@@ -737,6 +737,10 @@ errors on the last bottle run, all found by hand.
 - **A click on a second grid cell while one is editing was LOST** — the blur-commit re-rendered under the pointer.
   The td prevents the mousedown default while a cell is open and `startEdit` commits the previous cell itself.
 - **A `const` derived from `WRITABLE` above its declaration kills BOOT** (temporal dead zone) — `bulkFields()`.
+- **DISPLAY LABELS ARE US SPELLING (D-132) — "Base flavor", "Eyemark color", "Brand colors", "Catalog".** Keys,
+  columns, API keys, CSV headers, identifiers and the import aliases (which accept both spellings) never move:
+  the proofer reads `master.csv` by column name and a renamed key fails silently. `master.csv` was asserted
+  byte-identical across the change.
 - `verify:productgrid` (100, live + browser; the control is the code on `main` and fails 11 before it can continue). Existing verifies that minted SKUs outside
   the standard (`WHY-TEST-…`, `WHY-PLG-RENAMED`) now mint inside it; `check:managed-select` asserts the artwork
   select is gone.
