@@ -5388,3 +5388,47 @@ what changed is that the **submitted text, not the draft, is what the plant is h
 
 **Doctrine kept.** A returned or overtaken response is answered by a dated note in NSF Connect, never by
 rewriting. Where a September date is not true by the visit, the note goes in before the visit.
+
+## D-130 — The MMR lives in Keychain (D-059 stands); the SOP 444 split is confirmed; the shelf-life plan (2026-09-30)
+
+Lowry decided the three questions D-129 left open, the same day. All three are in
+`docs/v2/roadmap-2026-09-30.md` §1 with their consequences; this entry keeps the reasoning.
+
+**1. The MMR lives in Keychain, not ReadyDoc. D-059 stands and D-129's recommendation is overruled.**
+D-129 argued that the controlled-document layer here is strong and that NSF was told ReadyDoc. Both are
+true and neither decides it. The master manufacturing record is a formula at a batch size with a bill of
+materials, and Keychain is the system that will hold the formula, raise the manufacturing order and consume
+the BOM; a master record here would put the one fact a run depends on in two systems from the first day,
+which is the defect this whole project exists to remove. What ReadyDoc does is **make the run name its
+approved MMR**: `mmr_ref` (identifier + revision — a Keychain MMR id once Keychain is live, the approved
+FORM 413-1 number until then) on the Production Schedule assignment and the EOD MO line, behind an
+`off / warn / on` setting in the D-063 shape, warn first. That enforces the sentence NSF approved — *"a copy
+of the approved MMR will be required to sign off a work order before starting a run"* — without holding
+the document. `check:ncstatus`'s assertion that no MMR table exists is now a permanent statement about
+the tree, not a pending one. **Owed before the visit, outside the code:** a dated note on CAR 4990683-7 in
+NSF Connect saying the record is held in Keychain and that ReadyDoc requires its identifier on every run,
+and the SOP 413 revision saying the same. Lowry writes the note; Daniela the SOP. The gate is on *an
+approved MMR*, not on Keychain — the plant is not blocked on an ERP go-live to satisfy the CAR.
+
+**2. SOP 444 and the validation package: the D-056 split, confirmed.** Lowry drafts the plan, the Part 11
+assessment, the IQ/OQ/PQ protocols, the requirement-to-test matrix and the summary; Carol writes SOP 444
+and sends the MRP Easy vendor request; Maria approves both. Nothing changed but the date, which is past
+(committed 25 Sep). The dated note on the CAR goes in with the first approved deliverable (roadmap C1).
+
+**3. The shelf-life plan.** One rule: **an expiration date is printed only where stability data covers the
+SKU — the client's, an in-house study, or a documented read-across; otherwise the pack says Best by — and
+the basis is recorded per SKU either way.** Its home is a shelf-life section in the **SOP 413 revision**
+beside the MMR review checklist (one procedure, not a new SOP); the checklist Keychain's MMR review uses
+reads the basis from ReadyDoc. ReadyDoc owns the basis: `stability_justifications` (D-061,
+`currentJustifications`) gains a `basis` kind — `client_data` / `in_house_study` / `read_across` /
+`none_best_by` — and the product's **date type is derived** from it, never stored on the product. It is a
+named gap on Products → Completeness, shown on the drawer, and an extra `date type` column on `master.csv`
+so the proofer can check that the artwork prints EXP or BEST BY (extra columns are free, D-093). **Nothing
+is backfilled**: every SKU reads "no basis recorded" until a person records one, which is the true state.
+Carol and Matt send one request per client naming that client's SKUs (their data, or our protocol) by
+14 Oct and log each answer as a justification row with the document; where nothing arrives by 15 Nov Maria
+records `none_best_by` with the date of the request — a decision with a name, not a blank. The software half
+is roadmap C2, small now that the MMR is out of it.
+
+**Doctrine.** A decision recorded here that reverses a recommendation says so and keeps the reasoning it
+reversed (D-129's stands as the case for the other side). D-059 is not superseded; it is confirmed.

@@ -150,6 +150,13 @@ triage and the per-CAR evidence table, `docs/audit-2026-08-findings.md` the shor
   4990683-5 commits a new **SOP 444** and a validation package dated 25 Sep that does not exist yet (roadmap C1);
   4990683-9 is now "clients' stability data, or best-by" on an MMR review checklist. The roadmap that follows is
   `docs/v2/roadmap-2026-09-30.md`.
+- **DECIDED 30 Sep (D-130): THE MMR LIVES IN KEYCHAIN — D-059 stands.** ReadyDoc makes the run NAME its approved
+  MMR (`mmr_ref` on the schedule assignment and the EOD MO line, off/warn/on) and holds no master record; a dated
+  note on 4990683-7 in NSF Connect is owed before the visit. The SOP 444 split is the D-056 one (Lowry drafts the
+  package, Carol writes the SOP and the MRP Easy request, Maria approves). **Shelf life:** an expiration date only
+  where stability data covers the SKU, otherwise Best by; the rule goes in the SOP 413 revision, the BASIS per SKU
+  is `stability_justifications.basis` and the date type is DERIVED from it (a Completeness gap, a `date type`
+  column on `master.csv`); Carol + Matt ask every client by 14 Oct, Maria records `none_best_by` by 15 Nov.
 - **The twelve responses were drafted** in `docs/v2/car-responses/responses.mjs` (one source; `scripts/build-car-responses.mjs`
   renders the Markdown copy and the page Carol pastes from). **NAMES AND TITLES COME FROM THE ORG CHART** (the `ORG` seed
   in `server.js`, Version 6, effective 2026-02-20) — never from these notes, which name people by what they do in the
