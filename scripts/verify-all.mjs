@@ -107,6 +107,7 @@ const RUNS = [
   ['verify-product-grid.mjs', 5048, { PRODUCT_MASTER_TOKEN: 'grid-token' }],
   ['verify-mmr-gate.mjs', 5049, { PRODUCT_MASTER_TOKEN: 'mmr-token' }],
   ['verify-product-stage.mjs', 5050, {}],
+  ['verify-packaging-specs.mjs', 5051, { PRODUCT_MASTER_TOKEN: 'spec-token' }],
 ];
 
 // VERIFY_ONLY=verify-auth.mjs,verify-swab-stock.mjs runs just the entries that

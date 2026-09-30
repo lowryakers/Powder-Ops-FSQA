@@ -13,6 +13,7 @@ import ProductGrid from './ProductGrid.jsx';
 import ProductPipeline from './ProductPipeline.jsx';
 import NewProductFlow from './NewProductFlow.jsx';
 import ProductStagePanel from './ProductStagePanel.jsx';
+import PackagingSpecsPanel from './PackagingSpecsPanel.jsx';
 import { getParam } from '../../lib/deepLink.js';
 import NfpBoard, { NfpForSku } from './NfpPanel.jsx';
 import { hexDigits, pmsValid, hexValid, colorIssues, isBlankSlot } from '../../../shared/product-colors.js';
@@ -21,7 +22,7 @@ import {
   Package, Search, X, AlertTriangle, CheckCircle2, Circle, Pencil, Stethoscope, Tag,
   Barcode, Upload, ExternalLink, RefreshCw, FolderOpen,
   FileText, Plus, Trash2, Palette,
-  ListChecks,
+  ListChecks, Layers,
 } from 'lucide-react';
 
 /**
@@ -484,7 +485,7 @@ const Block = ({ title, note, children, id, anchor }) => (
 // Opening a product from the Pipeline lands on its first unmet gate.
 const FOCUS_RING = ['ring-2', 'ring-amber-400'];
 
-function Detail({ sku, canEdit, onClose, onSaved, focus = null }) {
+function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
   const { data, refresh } = useApiGet(`/products/${encodeURIComponent(sku)}`);
   const drawerRef = useRef(null);
   const focusedOnce = useRef(false);
@@ -508,6 +509,7 @@ function Detail({ sku, canEdit, onClose, onSaved, focus = null }) {
       gtin: p.gtin || '', flavor: p.flavor || '', base_flavor: p.base_flavor || '', category: p.category || '',
       pack: p.pack || 'PLG', status: p.status || 'active', legacy_sku: p.legacy_sku || '',
       eyemark_color: p.eyemark_color || '', dieline_required: p.dieline_required ? '1' : '0',
+      spec_id: p.spec_id || '',
       drive_url: p.drive_url || '', notes: p.notes || '',
       fill_weight_g: p.fill_weight_g ?? '',
       // The CURRENT formula: what a panel's provenance is checked against (D-128).
@@ -520,6 +522,9 @@ function Detail({ sku, canEdit, onClose, onSaved, focus = null }) {
     setEditing(true);
   };
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  // Which spec the product is on is the product's own fact; what the spec
+  // SAYS is edited on Packaging specs (D-135). Fetched only while editing.
+  const { data: specData } = useApiGet(editing ? '/products/specs' : null, [editing]);
 
   const save = async () => {
     setSaving(true); setError('');
@@ -598,7 +603,16 @@ function Detail({ sku, canEdit, onClose, onSaved, focus = null }) {
                   <Field k="fill_weight_g" label="Fill weight (g)" form={form} set={set} p={p}
                     hint="From the production formula, confirmed by weighing a sealed bag. Not the net weight printed on the pack — that is what this checks." />
                 </Block>
-                <Block id="packaging" title="Packaging spec" note="Material, print, trim and wind direction are the packaging spec's and are not typed here. Two facts are the product's own:">
+                <Block id="packaging" title="Packaging spec" note="Material, print, trim and wind direction are the packaging spec's and are not typed here. Three facts are the product's own:">
+                  <Field k="spec_id" label="Packaging spec" form={form} set={set} p={p}
+                    hint="Which spec this product prints on. What the spec says — material, trim, wind direction — is edited on Packaging specs, for every product on it at once.">
+                    <select value={form.spec_id} onChange={set('spec_id')} data-spec-select
+                      className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
+                      <option value="">— none assigned —</option>
+                      {form.spec_id && !(specData?.specs || []).some((s) => s.spec_id === form.spec_id) && <option value={form.spec_id}>{form.spec_id}</option>}
+                      {(specData?.specs || []).map((s) => <option key={s.spec_id} value={s.spec_id}>{s.spec_id} — {s.name}</option>)}
+                    </select>
+                  </Field>
                   <Field k="eyemark_color" label="Eye mark color" form={form} set={set} p={p} onNa={onNa}
                     hint={naText ? `Not applicable by format — ${naText}.` : 'Printed registration mark color, e.g. black.'} />
                   <Field k="dieline_required" label="Die line required" form={form} set={set} p={p}>
@@ -696,7 +710,14 @@ function Detail({ sku, canEdit, onClose, onSaved, focus = null }) {
                 </Block>
                 <Block id="packaging" anchor="artwork" title="Packaging spec" note={`Derived from ${p.spec_id ? `packaging spec ${p.spec_id}` : 'the packaging spec (none assigned)'} and the color slots; each value names the column it was read from. Nothing here is typed on the product except the eye mark and the die line.`}>
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm" data-packaging-derived>
-                    <Derived label="Spec" value={p.spec_id ? `${p.spec_id}${p.spec_name ? ` — ${p.spec_name}` : ''}` : null} source="products.spec_id" />
+                    <Derived label="Spec" source="products.spec_id"
+                      value={p.spec_id ? (
+                        <button type="button" onClick={() => onOpenSpec?.(p.spec_id)} data-drawer-spec-link={p.spec_id}
+                          className="text-left text-powder-700 hover:underline">
+                          {p.spec_id}{p.spec_name ? ` — ${p.spec_name}` : ''}
+                          <span className="block text-[11px] text-powder-600">Edit the spec →</span>
+                        </button>
+                      ) : null} />
                     <Derived label="Format" value={p.spec_format} source="packaging_specs.format" />
                     {PACKAGING_DERIVED.map(([k, label, source]) => (
                       <Derived key={k} label={label} value={p[k]} source={source}
@@ -807,6 +828,10 @@ export default function ProductsPanel() {
   // `?tab=products&view=completeness` opens a tab directly (deepLink.js: a lazy
   // module mounts after App has consumed the query string).
   const [view, setView] = useState(() => getParam('view') || 'list');
+  // The spec a link landed on (`?view=specs&spec=SPEC-BOTTLE`, the grid's Spec
+  // cell, the drawer's Spec line, the importer's mismatch note — D-135).
+  const [specFocus, setSpecFocus] = useState(() => getParam('spec') || null);
+  const openSpec = (specId) => { setSpecFocus(specId || null); setOpen(null); setFocus(null); setView('specs'); };
 
   const canEdit = ['admin', 'supervisor'].includes(user?.role)
     || ['qa', 'quality'].includes((user?.department || '').toLowerCase());
@@ -875,6 +900,9 @@ export default function ProductsPanel() {
         // board; putting it in the badge would make the badge permanent.
         { id: 'barcodes', label: 'GTIN barcodes', icon: Barcode,
           badge: barcodeGaps || undefined, badgeTone: barcodeGaps ? 'alert' : undefined },
+        // Where the film facts are edited — material, print, trim, wind
+        // direction — for every product on a spec at once (D-135).
+        { id: 'specs', label: 'Packaging specs', icon: Layers },
         { id: 'shelf', label: 'Registry', icon: FolderOpen,
           badge: shelfOwed || undefined, badgeTone: shelfOwed ? 'alert' : undefined },
         // The spec sheet's named gaps, per SKU and by line (D-128). No badge:
@@ -893,6 +921,8 @@ export default function ProductsPanel() {
       {view === 'flavor-codes' && <FlavorCodesPanel />}
       {view === 'barcodes' && <ProductBarcodes onOpenSku={(sku) => { setView('list'); setOpen(sku); }} />}
       {view === 'shelf' && <ProductShelf canEdit={canEdit} />}
+      {view === 'specs' && <PackagingSpecsPanel canEdit={canEdit} focus={specFocus}
+        onOpenSku={(sku) => { setView('list'); setOpen(sku); }} onChanged={refreshAll} />}
 
       {view === 'nfp' && <NfpBoard data={nfp} onOpenSku={(s) => { setView('list'); setOpen(s); }}
         canManage={canEdit} onChanged={refreshNfp} />}
@@ -959,12 +989,12 @@ export default function ProductsPanel() {
           spreadsheet. */}
       <div className="hidden md:block">
         <ProductGrid products={filtered} completeness={completeness} canEdit={canEdit}
-          onOpenSku={setOpen} onChanged={refreshAll} />
+          onOpenSku={setOpen} onOpenSpec={openSpec} onChanged={refreshAll} />
       </div>
 
       </>)}
 
-      {open && <Detail key={`${open}|${focus || ''}`} sku={open} focus={focus} canEdit={canEdit} onClose={() => { setOpen(null); setFocus(null); }}
+      {open && <Detail key={`${open}|${focus || ''}`} sku={open} focus={focus} canEdit={canEdit} onOpenSpec={openSpec} onClose={() => { setOpen(null); setFocus(null); }}
         onSaved={() => { refreshAll(); refreshNfp(); }} />}
     </div>
   );

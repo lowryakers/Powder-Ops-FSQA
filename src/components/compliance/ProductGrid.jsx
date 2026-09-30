@@ -60,9 +60,9 @@ const GROUPS = [
     { key: 'fill_weight_g', label: 'Fill weight (g)', edit: 'text', type: 'number' },
   ] },
   { key: 'packaging', label: 'Packaging spec', columns: [
-    { key: 'spec_id', label: 'Spec', source: 'products.spec_id — the pointer; the spec sheet is edited on Specifications' },
+    { key: 'spec_id', label: 'Spec', source: 'products.spec_id — the pointer; the spec itself is edited on Packaging specs', link: true },
     ...PACKAGING_DERIVED.filter(([k]) => ['material_structure', 'print_process', 'trim_length_mm', 'trim_width_mm', 'wind_direction'].includes(k))
-      .map(([k, label, source]) => ({ key: k, label, source: `${source} via products.spec_id` })),
+      .map(([k, label, source]) => ({ key: k, label, source: `${source} via products.spec_id — edited on Packaging specs` })),
     { key: 'eyemark_color', label: 'Eye mark', edit: 'text' },
     { key: 'dieline_required', label: 'Die line', edit: 'select', options: ['1', '0'], render: (v) => (v === null || v === undefined ? '' : v ? 'yes' : 'no'), get: (p) => (p.dieline_required ? '1' : '0') },
     { key: 'pms', label: 'PMS spot colors', edit: 'colors', get: (p) => joinSlots(p.colors, 'pms') },
@@ -111,7 +111,7 @@ function download(name, text) {
 /** Whether a derived packaging column applies to this row's pack format. */
 const applies = (p, key) => !(['wind_direction', 'eyemark_color'].includes(key) && p.spec_format && !isRollFed(p.spec_format));
 
-function ImportModal({ onClose, onDone }) {
+function ImportModal({ onClose, onDone, onOpenSpec }) {
   const [csv, setCsv] = useState('');
   const [plan, setPlan] = useState(null);
   const [error, setError] = useState('');
@@ -197,7 +197,9 @@ function ImportModal({ onClose, onDone }) {
                   <ul className="list-disc pl-4 space-y-0.5" data-import-mismatch-list>
                     {plan.spec_mismatches.map((m, i) => (
                       <li key={`${m.sku}-${m.column}-${i}`} data-import-mismatch={m.sku} data-import-mismatch-column={m.column}>
-                        <span className="font-mono">{m.sku}</span> · {m.label}: file says <em>{m.file_value}</em>, spec {m.spec_id || '(none assigned)'} says <em>{m.spec_value || 'empty'}</em>
+                        <span className="font-mono">{m.sku}</span> · {m.label}: file says <em>{m.file_value}</em>, spec {m.spec_id
+                          ? <button type="button" onClick={() => { onClose(); onOpenSpec?.(m.spec_id); }} className="underline hover:text-sky-700" data-import-spec-link={m.spec_id}>{m.spec_id}</button>
+                          : '(none assigned)'} says <em>{m.spec_value || 'empty'}</em>
                       </li>
                     ))}
                   </ul>
@@ -240,7 +242,7 @@ function ImportModal({ onClose, onDone }) {
   );
 }
 
-export default function ProductGrid({ products, completeness, canEdit, onOpenSku, onChanged }) {
+export default function ProductGrid({ products, completeness, canEdit, onOpenSku, onOpenSpec, onChanged }) {
   const [filter, setFilter] = useState('all');
   const [collapsed, setCollapsed] = useState(() => new Set());
   const [editing, setEditing] = useState(null); // { sku, field }
@@ -513,7 +515,12 @@ export default function ProductGrid({ products, completeness, canEdit, onOpenSku
                         onMouseDown={(e) => { if (canEdit && c.edit && editing) e.preventDefault(); }}
                         onClick={(e) => startEdit(p, c, e)}
                         className={`px-2 py-1 whitespace-nowrap max-w-[16rem] truncate ${c.edit && canEdit ? 'cursor-text' : ''} ${selected ? 'bg-powder-100' : ''} ${c.source ? 'text-gray-500 italic' : 'text-gray-800'}`}>
-                        {st === 'na' ? <span className="inline-block px-1.5 rounded bg-gray-100 text-gray-500 border border-gray-200" data-na>NA</span>
+                        {c.link && value ? (
+                          // The Spec cell is a DOOR to the spec it names (D-135): the
+                          // film facts beside it are that spec's, edited there.
+                          <button type="button" onClick={(e) => { e.stopPropagation(); onOpenSpec?.(rawOf(p, c)); }}
+                            data-spec-link={rawOf(p, c)} className="not-italic text-powder-700 hover:underline font-mono">{value}</button>
+                        ) : st === 'na' ? <span className="inline-block px-1.5 rounded bg-gray-100 text-gray-500 border border-gray-200" data-na>NA</span>
                           : notApplicable ? <span className="text-gray-300" title="Does not apply to this pack format">n/a by format</span>
                             : value !== '' ? value : <span className="text-gray-300">—</span>}
                         {err && <span className="block text-[10px] text-red-700 whitespace-normal" data-cell-error>{err}</span>}
@@ -548,7 +555,7 @@ export default function ProductGrid({ products, completeness, canEdit, onOpenSku
         </table>
       </div>
 
-      {importing && <ImportModal onClose={() => setImporting(false)} onDone={onChanged} />}
+      {importing && <ImportModal onClose={() => setImporting(false)} onDone={onChanged} onOpenSpec={onOpenSpec} />}
     </div>
   );
 }

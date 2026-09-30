@@ -328,7 +328,10 @@ try {
   await page.waitForTimeout(300);
   t('(5) the edit form has NO artwork status dropdown', await page.locator('[data-product-drawer] select option[value="print_ready"]').count() === 0);
   t('…and its blocks are the same four', (await page.locator('[data-product-drawer] [data-block]').evaluateAll(els => els.map(e => e.getAttribute('data-block')))).join(',') === 'identity,formula,packaging,channels');
-  t('…the packaging block types only the eye mark and the die line', await page.locator('[data-block="packaging"] [data-field]').count() === 2);
+  // D-135 added the spec POINTER (which spec the product is on — its own fact);
+  // the film facts themselves are still never typed on a product.
+  const typed = await page.locator('[data-block="packaging"] [data-field]').evaluateAll(els => els.map(e => e.getAttribute('data-field')).sort());
+  t('…the packaging block types only the eye mark, the die line and which spec — no film fact', typed.join(',') === 'dieline_required,eyemark_color,spec_id', typed.join(','));
   t('…the formula field shows its rule beside the box', /F-00002|five digits/.test(await page.locator('[data-field="mrp_formula_id"]').innerText()));
   await page.locator('[data-field="mrp_formula_id"] input').fill('Yes');
   await page.locator('[data-drawer-save]').click();

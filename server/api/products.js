@@ -24,6 +24,7 @@ import { normalizeGtin, sameGtin, gtinValid } from '../../shared/gtin.js';
 import { validateField, FIELD_RULES, NA_FIELDS, naOf, looksLikeTypedNa, MASTER_CSV_SOURCES, PACKAGING_DERIVED } from '../../shared/product-fields.js';
 import { shelfLifeBasis, shelfLifeFor, NO_BASIS, BASIS_KIND_LABEL, DATE_TYPE_LABEL } from '../stability.js';
 import { stageInputs, stageFor } from '../product-stages.js';
+import { buildSpecPatch, SPEC_ID_RE } from '../../shared/packaging-spec.js';
 import { parseDelimited } from '../tabular.js';
 import { pmsValid, hexValid, colorIssues, isBlankSlot, conflictSeverity }
   from '../../shared/product-colors.js';
@@ -344,8 +345,85 @@ router.get('/barcodes', (_req, res) => {
   });
 });
 
+/* ── Packaging specs (D-135) ────────────────────────────────────────────────
+ *
+ * `packaging_specs` is the one owner of the film facts every product on the
+ * spec reads through `products.spec_id`, and master.csv hands them to the
+ * proofer. The import refuses to write them per product (D-133) and says
+ * "set it on the spec" — these routes are where that is done. The rules live
+ * in `shared/packaging-spec.js`, which the editor reads too.
+ *
+ * Declared before `/:sku`, or Express reads "specs" as a product code.
+ */
+function specsWithUse(db, where = '', args = []) {
+  const specs = db.prepare(`SELECT * FROM packaging_specs ${where} ORDER BY spec_id`).all(...args);
+  const using = db.prepare(`SELECT sku, flavor, status, artwork_status FROM products
+    WHERE spec_id = ? ORDER BY sku`);
+  return specs.map((s) => {
+    const products = using.all(s.spec_id);
+    return {
+      ...s,
+      products,
+      products_using: products.length,
+      // Artwork already released against this spec. Reported beside an edit,
+      // never gated: a film fact that moves under a printed pack is somebody's
+      // question to ask, not the app's to answer.
+      print_ready: products.filter((p) => p.artwork_status === 'print_ready').length,
+    };
+  });
+}
+
 router.get('/specs', (_req, res) => {
-  res.json({ specs: getDb().prepare('SELECT * FROM packaging_specs ORDER BY spec_id').all() });
+  res.json({ specs: specsWithUse(getDb()) });
+});
+
+router.post('/specs', (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Only QA, supervisors and admins can change a packaging spec' });
+  const db = getDb();
+  const body = req.body || {};
+  const specId = String(body.spec_id || '').trim().toUpperCase();
+  if (!SPEC_ID_RE.test(specId)) {
+    return res.status(400).json({ error: 'A spec code is SPEC- followed by letters, digits and hyphens, e.g. SPEC-BOTTLE-SM', errors: { spec_id: 'e.g. SPEC-BOTTLE-SM' } });
+  }
+  if (db.prepare('SELECT 1 FROM packaging_specs WHERE spec_id = ?').get(specId)) {
+    return res.status(409).json({ error: `${specId} already exists — edit it rather than opening a second one`, errors: { spec_id: 'already exists' } });
+  }
+  const { patch, errors } = buildSpecPatch(body, null);
+  if (Object.keys(errors).length) return res.status(400).json({ error: Object.values(errors)[0], errors });
+  const row = { spec_id: specId, ...patch };
+  const cols = Object.keys(row);
+  db.prepare(`INSERT INTO packaging_specs (${cols.join(', ')}) VALUES (${cols.map((c) => `@${c}`).join(', ')})`).run(row);
+  const [created] = specsWithUse(db, 'WHERE spec_id = ?', [specId]);
+  logAudit(req.user, 'packaging_spec_created', 'packaging_spec', specId, { fields: Object.keys(patch) }, null, created, created.name);
+  res.status(201).json({ spec: created });
+});
+
+router.put('/specs/:specId', (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Only QA, supervisors and admins can change a packaging spec' });
+  const db = getDb();
+  const existing = db.prepare('SELECT * FROM packaging_specs WHERE spec_id = ?').get(req.params.specId);
+  if (!existing) return res.status(404).json({ error: `No packaging spec ${req.params.specId}` });
+  const body = req.body || {};
+  // The join key. Products, POs and the proofer resolve through it; a
+  // different spec is a new spec, opened with POST.
+  if (body.spec_id !== undefined && String(body.spec_id).trim() !== existing.spec_id) {
+    return res.status(400).json({ error: 'A spec code cannot be changed — open a new spec and move the products to it', errors: { spec_id: 'cannot be changed' } });
+  }
+  const { patch, errors } = buildSpecPatch(body, existing);
+  if (Object.keys(errors).length) return res.status(400).json({ error: Object.values(errors)[0], errors });
+  if (Object.keys(patch).length) {
+    const sets = Object.keys(patch).map((k) => `${k} = @${k}`).join(', ');
+    db.prepare(`UPDATE packaging_specs SET ${sets}, updated_at = datetime('now') WHERE spec_id = @spec_id`)
+      .run({ ...patch, spec_id: existing.spec_id });
+  }
+  const [updated] = specsWithUse(db, 'WHERE spec_id = ?', [existing.spec_id]);
+  if (Object.keys(patch).length) {
+    const before = Object.fromEntries(Object.keys(patch).map((k) => [k, existing[k]]));
+    logAudit(req.user, 'packaging_spec_updated', 'packaging_spec', existing.spec_id,
+      { fields: Object.keys(patch), products_using: updated.products_using, print_ready: updated.print_ready },
+      before, patch, existing.name);
+  }
+  res.json({ spec: updated, changed: Object.keys(patch) });
 });
 
 // Registered BEFORE /:sku — Express matches in declaration order, and
@@ -1311,6 +1389,11 @@ function buildPatch(db, existing, b) {
     const v = validateField(c, patch[c]);
     if (!v.ok) return { status: 400, code: 'FIELD_FORMAT', field: c, error: v.error, expected: v.expected };
     patch[c] = v.value;
+  }
+  // A pointer to a spec that does not exist is refused by name, not by the
+  // foreign key's bare 500. Specs are opened on Packaging specs (D-135).
+  if (patch.spec_id != null && !db.prepare('SELECT 1 FROM packaging_specs WHERE spec_id = ?').get(patch.spec_id)) {
+    return { status: 400, field: 'spec_id', error: `No packaging spec ${patch.spec_id} — open it under Products → Packaging specs first.` };
   }
   if (patch.gtin !== undefined) {
     patch.gtin_valid = gtinValid(patch.gtin) ? 1 : 0;

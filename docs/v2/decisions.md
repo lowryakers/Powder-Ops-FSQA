@@ -5634,3 +5634,34 @@ artwork released · packaging PO — a stage on every product, a Pipeline view, 
   with the API, the owner filter, the click landing on the panel gate, the grid showing the stage with no gap
   count, and the reference tab in under two screens at 1280×900. **The control is `main` before this change and
   fails 23 before it can continue.** The Pipeline shows "Loading…" until the catalog arrives — columns of zeros read as "nothing needs work", and the first batch run caught exactly that.
+
+## D-135 — Packaging specs are edited on their own tab; the grid's Spec cell is the door to it (2026-09-30)
+**Asked:** "Where do I edit a packaging spec record? The CSV importer told me material, trim length, trim width,
+print and wind direction live on packaging_specs and must be set on the spec — but I can't find where to edit
+SPEC-BOTTLE." **Nowhere.** D-133 made the importer refuse those columns and say "set it on the spec", and the only
+spec route was `GET /api/products/specs`. The film facts had one owner and no door; the advice pointed at nothing.
+- **Products → Packaging specs** (`PackagingSpecsPanel.jsx`, `?tab=products&view=specs&spec=SPEC-BOTTLE`): every
+  spec with its fields, the products on it, and an Edit form. `PUT /products/specs/:specId` edits, `POST
+  /products/specs` opens a new one; both `canManage` (admin, supervisor, QA) — a floor account holding the
+  products grant is refused, the second door. Declared before `/:sku`.
+- **The grid's Spec cell is a link to that spec**, and so is the drawer's Spec line and each spec named in the
+  importer's mismatch list. A fix that is not where the problem is seen is a fix nobody runs.
+- **ONE DEFINITION: `shared/packaging-spec.js`** (`SPEC_FIELDS`, `validateSpecField`, `buildSpecPatch`), read by the
+  PUT/POST and by the form's live check, so the screen cannot promise a save the server refuses.
+- **BLANK IS NOT ZERO.** A dimension of 0 is refused by name — SPEC-BOTTLE's film fields are NULL on purpose (a
+  bottle has no trim or gusset), and a 0 would read as measured. "76.2 mm" and "$0.44" are read as numbers.
+- **`spec_id` is the join key and is never edited** (400); a different spec is a new spec, and a product is moved
+  to it. **Absent leaves alone, blank clears**, only fields that moved are written, and one audit entry carries the
+  before and after plus how many products read the spec. Re-sending what is there writes and audits nothing.
+- **The reach is shown BEFORE Save**: "on N products — M with released artwork". Reported, never gated, and the
+  readiness model is untouched: `FACTS.spec` still keys only `spec_id`, so a spec edit does not stale artwork. Open
+  question for the plant: should a changed trim or material on a spec with released artwork stale that artwork?
+- **The drawer now also picks WHICH spec a product is on** (`spec_id` was always writable, but only by CSV). That is
+  the product's own fact; the film facts are still never typed on a product (`verify:productgrid`'s D-131 assertion
+  tightened to say exactly that). `buildPatch` refuses a `spec_id` that does not exist by name, not by the foreign
+  key's bare 500 — the importer inherits it.
+- The formats are the five already in use (Pouch, Stick, Bottle, Box, Cup); `isRollFed` reads the same words.
+- `verify:packagingspecs` (47, live + browser at 1280 and 390px; in `verify:all`, port 5051): the refusals, the
+  edit reaching a bottle product's readiness and master.csv's `material` cell with trim length still blank, the
+  importer still writing none of it, a new spec and a product moved onto it, the grid link, the drawer link, the
+  deep link. **The control is `main` and fails 27 before it can continue.**

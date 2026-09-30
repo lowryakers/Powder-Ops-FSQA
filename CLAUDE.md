@@ -949,6 +949,20 @@ product from `hydrate()`, `packaging_po_records` + `POST /products/:sku/packagin
 - **The grid's Stage column replaced the gap count** (rule e); `data-comp-gaps` no longer exists.
 - `verify:productstage` (50, live + browser; control fails 23). The Pipeline renders "Loading…" until the catalog is in — zeros first read as "nothing needs work".
 
+## Packaging specs are edited on Products → Packaging specs (D-135)
+`shared/packaging-spec.js` (`SPEC_FIELDS`, `validateSpecField`, `buildSpecPatch`, `masterHeaderFor`),
+`GET|POST /products/specs`, `PUT /products/specs/:specId`, `PackagingSpecsPanel.jsx` (`?view=specs&spec=…`).
+The film facts (material, zipper, print, trim, gusset, front panel, wind direction) have ONE owner and every
+product on the spec reads them; the importer refuses them per product (D-133) and this is where "set it on the
+spec" lands. **The grid's Spec cell, the drawer's Spec line and the importer's mismatch list all link here.**
+- **Blank is not zero** — a 0 dimension is refused by name (SPEC-BOTTLE's NULLs are deliberate). **`spec_id` is
+  never edited**; open a new spec and move the product (the drawer has a spec picker now; the film facts are still
+  never typed on a product). Absent leaves alone, blank clears; audited with before/after and the reach.
+- `buildPatch` refuses a `spec_id` that does not exist by name (no foreign-key 500).
+- The reach ("on N products — M with released artwork") shows before Save. **A spec edit does not stale artwork**
+  (`FACTS.spec` keys `spec_id` only) — an open question, not an oversight.
+- `verify:packagingspecs` (47, live + browser; control fails 27).
+
 ## Not built yet: the rest of product management
 
 Built in this order deliberately — the destinations first, then the thing that feeds them. A triage screen
