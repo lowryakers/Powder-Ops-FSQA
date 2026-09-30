@@ -450,6 +450,10 @@ banner reaches whoever opens that screen, which is never the person who has to a
   trailing character is kept, because collapsing it would hide a real miss; `possible_typo` names the
   near-match instead. `missedReports()` is exported so the screen and the job read **one** filter.
   `verify:eodchase` (42; control fails 6).
+- **The chase reaches each TEAM's supervisor with their own runs (D-127).** The default asked for
+  department `production` (legacy, D-094), so the Filling / Batching / Kitting supervisors who file the
+  reports were never told. `departmentForTeam()` + `teamSupervisors()` in `eod-chase.js`; always sent
+  whatever the stored list says (the actor rule); a team with no supervisor is named on the summary.
 - **All three: DM plus push, recipients in `app_settings` and listed under Settings → ReadyBot messages,
   unset falls back to real people and never to nobody, fire-and-forget per recipient, and quiet when
   there is nothing to say.**

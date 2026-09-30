@@ -5256,3 +5256,27 @@ snapshot it filed with no session, the signed-in door unchanged, and **only `pro
 `PRODUCT_MASTER_TOKEN`**, so a sixth copy fails the verify. **The control is the code on `main` and fails
 16**, the first being the snapshot's *Authentication required*. `verify:artwork` 38, `verify:nfppanel` 49,
 `verify:colors` 54, `verify:nfppanelui` 19, `verify:kiosk` 38 and `verify:auth` 22 unchanged.
+
+## D-127 — A missed end-of-day report reaches the supervisor of the team that owes it (2026-09-30)
+
+QA asked whether the runs on the Production Log's missed-report bar "just sit there stale" because they are
+not in QA Review. **QA Review is right not to hold them** — it is the queue of records waiting on a QA
+signature, and a report nobody filed has nothing to sign. But the question found the real gap: the chase
+(`server/eod-chase.js`, D-085) defaulted to admins, Adam, and supervisors in department **`production`** —
+the LEGACY value that split into batching / kitting / filling (D-094). Every go-forward supervisor carries
+their TEAM as their department, so **the people who file these reports were the one group never told**,
+while QA and the admins received a plant-wide count they cannot act on.
+- **A schedule row's team names its owner.** `departmentForTeam()` maps Filling / Batching / Kitting (and the
+  merged Sticks / Hand Fill) to the department of the same word; `teamSupervisors()` are that department's
+  supervisors. Each is sent **their own team's runs by MO**, capped at twelve lines, with the way out named:
+  file it, or dismiss it with the reason if the run never happened.
+- **Always, whatever the stored list says** — a report somebody owes is their own work, the D-079/D-086 actor
+  rule. The list still governs who receives the plant summary. **One message per person**: a team supervisor
+  gets their list, not the summary as well.
+- **A team with no supervisor is NAMED on the summary** ("Kitting: 1 with no supervisor to tell"), never
+  guessed at — the D-094 rule that `production` has no answer.
+- The default list adds filling / batching / kitting supervisors; external accounts are excluded by what they
+  are. Settings → ReadyBot messages says the team rule in words.
+
+`verify:eodchase` 45 → **54**. **The control restores the old chase and fails 6** before the script crashes
+on the result it no longer returns — the first being a Filling supervisor absent from the default list.

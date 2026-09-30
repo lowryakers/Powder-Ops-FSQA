@@ -185,6 +185,44 @@ console.log('\nIt files nothing and dismisses nothing');
   t('the supervisor who files them has it in writing', dm > 0, `dms=${dm}`);
 }
 
+console.log('\nEach team\'s own supervisor is told about their own runs (D-127)');
+{
+  // Live 30 Sep: 35 runs on the bar, QA asking whether they "just sit there". The
+  // default list asked for supervisors in department `production` — the legacy
+  // value (D-094). Today's supervisors carry their TEAM as their department, so
+  // the people who file these were never told.
+  const db = open();
+  const user = (id, name, role, dept) => db.prepare(`INSERT OR REPLACE INTO users
+    (id,name,username,role,department,is_active,module_access,setup_code,setup_code_expires_at)
+    VALUES (?,?,?,?,?,1,NULL,?,datetime('now','+7 day'))`).run(id, name, id, role, dept, 'SC-' + id);
+  user('eo-fill', 'Fiona Filling', 'supervisor', 'filling');
+  user('eo-batch', 'Bea Batching', 'supervisor', 'batching');
+  db.prepare(`INSERT OR REPLACE INTO production_schedule (id, week_start, day_of_week, room, room_type, team, mo_number, product_name, slot)
+    VALUES ('eo-k1', ?, 2, '15', 'production', 'Kitting', 'MO76799', 'Variety Box', 0)`).run(monday);
+  const to = eodMissedRecipients(db).map(u => u.name);
+  t('A FILLING SUPERVISOR (department filling) IS ON THE DEFAULT LIST', to.includes('Fiona Filling'), to.join(', '));
+  // Narrow the list to one admin: the team supervisors must STILL hear about their own runs.
+  db.prepare("INSERT OR REPLACE INTO app_settings (key,value) VALUES ('eod_missed_recipients', ?)").run(JSON.stringify(['eo-admin']));
+  const dmsFor = (id) => open(true).prepare(`SELECT m.body FROM chat_messages m JOIN chat_channels ch ON ch.id = m.channel_id
+    WHERE ch.kind = 'dm' AND ch.dm_key LIKE ? AND m.body LIKE '%end-of-day report%' ORDER BY m.created_at`).all(`%${id}%`).map(r => r.body);
+  const before = { fill: dmsFor('eo-fill').length, admin: dmsFor('eo-admin').length };
+  const r = await sendEodMissedDigest(db, new Date());
+  db.prepare("DELETE FROM app_settings WHERE key = 'eod_missed_recipients'").run();
+  const fill = dmsFor('eo-fill'), batch = dmsFor('eo-batch'), admin = dmsFor('eo-admin');
+  t('THE FILLING SUPERVISOR IS TOLD, EVEN WITH THE LIST NARROWED TO SOMEBODY ELSE', fill.length === before.fill + 1, `${before.fill} → ${fill.length}`);
+  const f = fill.at(-1) || '';
+  t('…about FILLING\'s runs, by MO', /Filling: \d+ scheduled run/.test(f) && f.includes('MO76791'), f.slice(0, 200));
+  t('…and not Batching\'s', !f.includes('MO76792'));
+  t('…with the way out named: file it, or dismiss it if it never ran', /did not happen.*dismiss/s.test(f));
+  t('the Batching supervisor is told about Batching\'s', (batch.at(-1) || '').includes('MO76792'));
+  t('a team with NO supervisor is named on the summary, not guessed at',
+    /Kitting: 1 with no supervisor to tell/.test(admin.at(-1) || ''), (admin.at(-1) || '').slice(0, 300));
+  t('the summary still reaches the list', admin.length === before.admin + 1);
+  t('the result names who was told about their own team', ['Fiona Filling', 'Bea Batching'].every(n => r.team_told.includes(n)), JSON.stringify(r.team_told));
+  db.prepare("DELETE FROM production_schedule WHERE id = 'eo-k1'").run();
+  db.close();
+}
+
 console.log('\nFiling the report drops it; dismissing drops it too');
 {
   const db = open();

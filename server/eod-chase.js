@@ -37,7 +37,30 @@ export function eodEscalateHours(db) {
   return Math.min(72, Math.max(24, Math.round(n)));
 }
 
-const ACTIVE = "is_active = 1 AND name != 'ReadyBot' AND role != 'auditor'";
+const ACTIVE = "is_active = 1 AND name != 'ReadyBot' AND role != 'auditor' AND COALESCE(is_external, 0) = 0";
+
+// A SCHEDULED RUN BELONGS TO A TEAM, AND THE TEAM HAS A SUPERVISOR (D-127).
+// The default list asked for supervisors in department `production` — the
+// LEGACY value that split into batching / kitting / filling (D-094). Every
+// go-forward supervisor carries their TEAM as their department, so the people
+// who file these reports were the one group the chase never reached, while QA
+// and the admins got a plant-wide count they cannot file. A schedule's team
+// names the team; the team's department is the same word (`shared/task-groups`).
+// Sticks and Hand Fill merged into Filling (filling-merge.js), so old rows
+// still find today's supervisor. Anything else has no owner and is REPORTED.
+const TEAM_TO_DEPARTMENT = {
+  filling: 'filling', batching: 'batching', kitting: 'kitting',
+  sticks: 'filling', 'hand fill': 'filling', hand_fill: 'filling',
+};
+export const departmentForTeam = (team) => TEAM_TO_DEPARTMENT[String(team ?? '').trim().toLowerCase()] || null;
+export const PRODUCTION_DEPARTMENTS = ['filling', 'batching', 'kitting'];
+
+/** The supervisors who own a production team's reports. */
+export function teamSupervisors(db, department) {
+  if (!department) return [];
+  return db.prepare(`SELECT id, name FROM users WHERE ${ACTIVE}
+    AND role = 'supervisor' AND LOWER(COALESCE(department,'')) = ? ORDER BY name`).all(department);
+}
 
 /**
  * Who is chased.
@@ -58,7 +81,7 @@ export function eodMissedRecipients(db) {
   }
   return db.prepare(`SELECT id, name FROM users WHERE ${ACTIVE}
     AND (role = 'admin'
-         OR (role = 'supervisor' AND LOWER(COALESCE(department,'')) IN ('production','qa'))
+         OR (role = 'supervisor' AND LOWER(COALESCE(department,'')) IN ('production','qa','filling','batching','kitting'))
          OR LOWER(name) LIKE 'adam %' OR LOWER(name) = 'adam')
     ORDER BY name`).all();
 }
@@ -94,8 +117,22 @@ export function eodMissedDigest(db, now = new Date()) {
       .sort((a, b) => b.count - a.count);
   };
 
+  // Who owns each team's gaps, and which teams have nobody to tell.
+  const byDept = new Map();
+  for (const r of rows) {
+    const dept = departmentForTeam(r.team);
+    const k = dept || `unowned:${r.team || '—'}`;
+    if (!byDept.has(k)) byDept.set(k, { department: dept, team: r.team || '—', rows: [] });
+    byDept.get(k).rows.push(r);
+  }
+  const owners = [...byDept.values()].map(g => ({
+    ...g, supervisors: g.department ? teamSupervisors(db, g.department) : [],
+  }));
+
   return {
     total: rows.length,
+    owners,
+    unowned: owners.filter(o => !o.supervisors.length).map(o => ({ team: o.team, count: o.rows.length })),
     oldest: rows.length ? rows.map(r => r.date).sort()[0] : null,
     byTeam: tally('team'),
     byRoom: tally('room'),
@@ -124,8 +161,33 @@ export function renderEodDigest(d, { base = '' } = {}) {
     lines.push(`${d.possible_typos} of these have an entry filed for the same day and room under a `
       + `differently written MO — those are a typo to correct, not a report to write.`);
   }
+  for (const u of d.unowned || []) {
+    lines.push(`*${u.team}: ${u.count} with no supervisor to tell* — nobody set as a ${u.team} supervisor in Settings, `
+      + 'so these reach only this message.');
+  }
   lines.push('\nFile the report from the Production Log, or a supervisor dismisses it with a reason. '
     + 'Nothing here is filed or dismissed automatically.');
+  lines.push(`[Open Production Log](${base}/?tab=production-log&missed=1)`);
+  return lines.join('\n');
+}
+
+/**
+ * The TEAM's own list, for its supervisor (D-127). Their runs by name — this is
+ * their work, not a plant statistic — capped so a phone can still read it, with
+ * the way out named: file it, or dismiss it with a reason if it never ran.
+ */
+export const TEAM_LIST_CAP = 12;
+export function renderTeamDigest(owner, { base = '' } = {}) {
+  const rows = [...owner.rows].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const n = rows.length;
+  const lines = [`📋 *${owner.team}: ${n} scheduled run${n === 1 ? '' : 's'} with no end-of-day report*`];
+  for (const r of rows.slice(0, TEAM_LIST_CAP)) {
+    lines.push(`• ${r.date} · Room ${r.room} · ${r.mo_number || 'no MO'}${r.product_name ? ` · ${r.product_name}` : ''}`
+      + (r.possible_typo ? ' _(an entry exists under a differently written MO — correct the MO)_' : ''));
+  }
+  if (n > TEAM_LIST_CAP) lines.push(`…and ${n - TEAM_LIST_CAP} more on the screen.`);
+  lines.push('\nFile the report — or, if the run did not happen (moved, cancelled), dismiss it on the '
+    + 'Production Log with the reason. Nothing is filed or dismissed automatically.');
   lines.push(`[Open Production Log](${base}/?tab=production-log&missed=1)`);
   return lines.join('\n');
 }
@@ -137,23 +199,46 @@ export async function sendEodMissedDigest(db, now = new Date()) {
   const d = eodMissedDigest(db, now);
   if (!d.total) return { sent: 0, ...d };       // a clean week says nothing at all
 
-  const text = renderEodDigest(d, { base: readyDocOrigin() });
-  const people = new Map();
-  for (const u of eodMissedRecipients(db)) people.set(u.id, u);
-  if (d.overdue) for (const u of escalationWatchers(db)) people.set(u.id, u);
+  const base = readyDocOrigin();
+  const text = renderEodDigest(d, { base });
+
+  // ONE MESSAGE PER PERSON. A team's supervisor is told about THEIR team's runs
+  // whatever the stored list says — a report somebody owes is their own work,
+  // the actor rule (D-079/D-086) — and gets that list rather than the plant
+  // count. Everybody else on the list, and the escalation watchers, get the
+  // plant summary as before.
+  const messages = new Map();       // user id → { user, text, count }
+  for (const o of d.owners) {
+    if (!o.supervisors.length) continue;
+    const t = renderTeamDigest(o, { base });
+    for (const u of o.supervisors) {
+      const prior = messages.get(u.id);
+      messages.set(u.id, prior
+        ? { user: u, text: `${prior.text}\n\n${t}`, count: prior.count + o.rows.length }
+        : { user: u, text: t, count: o.rows.length });
+    }
+  }
+  const summary = new Map();
+  for (const u of eodMissedRecipients(db)) summary.set(u.id, u);
+  if (d.overdue) for (const u of escalationWatchers(db)) summary.set(u.id, u);
+  for (const u of summary.values()) if (!messages.has(u.id)) messages.set(u.id, { user: u, text, count: d.total });
 
   let sent = 0;
-  for (const u of people.values()) {
+  for (const { user: u, text: body, count } of messages.values()) {
     try {
       const { bot, dm } = botDm(db, u.id);
-      await postMessageAs(db, dm, bot, text);
+      await postMessageAs(db, dm, bot, body);
       pushToUser(u.id, {
         title: 'End-of-day reports missing',
-        body: `${d.total} scheduled run${d.total === 1 ? '' : 's'}${d.oldest ? `, oldest ${d.oldest}` : ''}`,
+        body: `${count} scheduled run${count === 1 ? '' : 's'}${d.oldest ? `, oldest ${d.oldest}` : ''}`,
         tag: 'eod-missed', renotify: false, url: '/?tab=production-log&missed=1',
       }).catch(() => {});
       sent++;
     } catch { /* one bad DM must not stop the rest */ }
   }
-  return { sent, recipients: people.size, ...d };
+  return {
+    sent, recipients: messages.size,
+    team_told: [...new Set(d.owners.flatMap(o => o.supervisors.map(u => u.name)))],
+    ...d, owners: undefined,
+  };
 }

@@ -158,9 +158,10 @@ export function readybotAudiences(db) {
       setting: 'eod_missed_recipients',
       source: eodSet ? 'setting' : 'default',
       recipients: listed(eodMissedRecipients(db)),
-      note: eodSet
+      note: (eodSet
         ? 'Anything older than the escalation window still reaches QA and Adam, whatever this list says.'
-        : 'Nobody has been chosen, so it goes to the production supervisors who file the reports, QA, Adam and the admins.',
+        : 'Nobody has been chosen, so it goes to the Filling, Batching and Kitting supervisors, QA, Adam and the admins.')
+        + ' Each team\'s supervisor is always told about their own team\'s runs, by name, whatever this list says.',
     },
     {
       key: 'cleanup_review',
