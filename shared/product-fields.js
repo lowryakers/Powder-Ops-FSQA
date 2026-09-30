@@ -190,9 +190,24 @@ export const MASTER_CSV_SOURCES = [
   ['eye mark color', 'products.eyemark_color — typed on the product'],
   ['die line required', 'products.dieline_required — typed on the product, sent as yes/no'],
   ['fill weight (g)', 'products.fill_weight_g — weighed, never the label\'s net weight (D-093)'],
+  // The eighteenth (D-133): which date the pack may print. DERIVED from the
+  // shelf-life basis in force for the SKU (stability_justifications.basis_kind,
+  // server/stability.js shelfLifeBasis) — "expiration" only where a covering
+  // basis with data is recorded, else "best by", which is also the answer for
+  // a SKU with nothing recorded. Never stored on the product.
+  ['date type', 'stability_justifications.basis_kind in force for the SKU, derived: "expiration" only with client data, an in-house study or a read-across on file; otherwise "best by" (D-133)'],
 ];
+/** The first sixteen names are the proofer's contract and must not move. Asserted by verify:mmrgate. */
+export const MASTER_CSV_CONTRACT = ['sku', 'gtin', 'flavor', 'packaging type', 'material', 'zipper', 'print', 'trim length', 'trim width', 'gusset dimension', 'front panel dimension', 'wind direction', 'pms spot colors', 'hex spot colors', 'eye mark color', 'die line required'];
 
-/** The packaging facts the drawer derives, with the column each one is read from. */
+/**
+ * The packaging facts the drawer derives, with the column each one is read
+ * from. Also what the CSV importer RECOGNISES AND DOES NOT WRITE: a file
+ * carrying `wind direction` or `trim length` is naming a packaging spec's
+ * column, and writing it per product would rewrite the spec every product on
+ * it shares. The importer names the spec and reports a value that differs
+ * (D-133); the correction is on the spec.
+ */
 export const PACKAGING_DERIVED = [
   ['material_structure', 'Material', 'packaging_specs.material_structure'],
   ['zipper', 'Zipper', 'packaging_specs.zipper'],

@@ -9,6 +9,7 @@ import { readyDocOrigin } from '../links.js';
 import { roomLabel } from '../../shared/rooms.js';
 import { CLEAN_LEVEL_VALUES } from '../../shared/clean-levels.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
+import { mmrGateMode, mmrGateCheck, mmrRef, mmrCoverage, MMR_GATE_MODES, MMR_GATE_KEY } from '../mmr-gate.js';
 
 // Production teams whose schedule gets published to a matching comms channel.
 // Team name (as stored on assignments) → the channel it maps to.
@@ -163,6 +164,10 @@ function normalizeMoLines(raw) {
       product_name: text(l?.product_name),
       mo_number: text(l?.mo_number, 60),
       lot_number: text(l?.lot_number, 60),
+      // The approved MMR this run was made to — Keychain's identifier and
+      // revision (D-133). Per LINE, because two MOs on one shift are two
+      // products with two master records; line 0 is mirrored to the scalar.
+      mmr_ref: mmrRef(l?.mmr_ref),
       // Which room THIS run was in. A shift is not one room — Bernardo blends
       // one MO in Batching 1 and the next in Batching 2 — and a single
       // shift-level room silently filed the second one in the wrong place. The
@@ -679,6 +684,7 @@ router.post('/missed-reports/restore', requireRole('admin', 'supervisor'), (req,
 router.post('/entries', (req, res) => {
   const db = getDb();
   let { date, team, room, line, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, submitted_by, notes, structured_data, mo_lines, cleaning_events } = req.body;
+  let mmr_ref = mmrRef(req.body.mmr_ref);
 
   // A shift can carry several MOs (Batching). When mo_lines is present, line 0
   // is mirrored into the scalar product/MO/lot/quantity columns so everything
@@ -689,6 +695,9 @@ router.post('/entries', (req, res) => {
     product_name = lines[0].product_name || product_name;
     mo_number = lines[0].mo_number || mo_number;
     lot_number = lines[0].lot_number || lot_number;
+    // The MMR reference mirrors from line 0 like the other three — a multi-MO
+    // entry's own box is the LINE's.
+    mmr_ref = lines[0].mmr_ref || mmr_ref;
     if (quantity_completed == null) quantity_completed = lineQuantity(lines);
   }
 
@@ -750,6 +759,15 @@ router.post('/entries', (req, res) => {
     return res.status(400).json({ error: `Missing required fields: ${missing.join(', ')}` });
   }
 
+  // THE MMR GATE (D-133). Every run on the entry — each MO line, or the
+  // single MO — must name its approved master record when the gate is ON;
+  // under WARN the entry files and carries the mode it was filed under, so
+  // the runs filed without one are a query. A cleaning-only shift names no
+  // run and is not asked.
+  const gate = mmrGateCheck(db, lines.length ? lines : [{ mo_number, product_name, mmr_ref }]);
+  if (!gate.ok) return res.status(400).json(gate.refusal);
+  const gateStamp = (lines.length || !cleanOnly) ? gate.mode : null;
+
   // Team EOD template answers, stored as JSON. Only an object is accepted.
   const structured = structured_data && typeof structured_data === 'object' && !Array.isArray(structured_data)
     ? JSON.stringify(structured_data) : null;
@@ -758,9 +776,9 @@ router.post('/entries', (req, res) => {
 
   const id = uuid();
   db.prepare(`
-    INSERT INTO production_entries (id, date, team, room, line, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, notes, submitted_by, structured_data, mo_lines, cleaning_events)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, date, team, room, line || null, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, notes || null, submitted_by, structured, moLinesJson, cleansJson);
+    INSERT INTO production_entries (id, date, team, room, line, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, notes, submitted_by, structured_data, mo_lines, cleaning_events, mmr_ref, mmr_gate_mode)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, date, team, room, line || null, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, notes || null, submitted_by, structured, moLinesJson, cleansJson, mmr_ref || null, gateStamp);
 
   const created = db.prepare('SELECT * FROM production_entries WHERE id = ?').get(id);
   logAudit(submitted_by, 'create', 'production_entry', id, req.body, null, created);
@@ -1197,7 +1215,7 @@ const canEditLog = (u) => u?.role === 'admin' || hasExplicitEdit(u, 'production-
 // `date` is deliberately absent: an EOD report filed against the wrong day is
 // a different record, not a typo, and should be voided and re-filed.
 const AMENDABLE = {
-  product_name: 'Product', mo_number: 'MO #', lot_number: 'Lot #',
+  product_name: 'Product', mo_number: 'MO #', lot_number: 'Lot #', mmr_ref: 'Approved MMR',
   team: 'Team', room: 'Room', line: 'Line',
   start_time: 'Start time', end_time: 'End time',
   quantity_completed: 'Quantity completed', people_count: 'People',
@@ -1210,7 +1228,7 @@ const AMENDABLE = {
 // deferred to the direct patch, so a QA-signed shift record could carry a
 // product name its own mo_lines contradicted. On a single-MO entry (mo_lines
 // NULL) the scalars ARE the record and stay amendable.
-const MIRRORED_ON_MULTI = ['product_name', 'mo_number', 'lot_number', 'quantity_completed', 'room', 'start_time', 'end_time'];
+const MIRRORED_ON_MULTI = ['product_name', 'mo_number', 'lot_number', 'mmr_ref', 'quantity_completed', 'room', 'start_time', 'end_time'];
 const NUMERIC_FIELDS = new Set(['quantity_completed', 'people_count']);
 const MIN_REASON = 10;
 
@@ -1292,7 +1310,7 @@ router.put('/entries/:id', (req, res) => {
       values.push(nextJson);
       if (nextLines.length) {
         const first = nextLines[0];
-        const mirror = { product_name: first.product_name, mo_number: first.mo_number, lot_number: first.lot_number };
+        const mirror = { product_name: first.product_name, mo_number: first.mo_number, lot_number: first.lot_number, mmr_ref: first.mmr_ref };
         for (const [f, v] of Object.entries(mirror)) {
           if (v && req.body[f] === undefined && String(existing[f] ?? '') !== String(v)) {
             updates.push(`${f} = ?`); values.push(v);
@@ -1353,6 +1371,30 @@ router.put('/entries/:id', (req, res) => {
 
   if (!changes.length) return res.status(400).json({ error: 'Nothing was changed.' });
 
+  // THE EDIT PATH REFUSES ONLY THE REMOVAL OF AN MMR REFERENCE while the gate
+  // is on (D-133). An entry filed with none under warn, corrected after the
+  // gate was turned on, must still take the correction — the gate is on the
+  // FILE path. But a reference that was there and would not be afterwards is
+  // the limit being edited away, and that is refused with the run named.
+  if (mmrGateMode(db) === 'on') {
+    const stored = (col) => { try { return JSON.parse(existing[col] || '[]'); } catch { return []; } };
+    const hadLines = normalizeMoLines(stored('mo_lines'));
+    const willLines = req.body.mo_lines !== undefined ? normalizeMoLines(req.body.mo_lines) : hadLines;
+    const removed = [];
+    if (hadLines.length) {
+      for (const before of hadLines) {
+        if (!before.mmr_ref) continue;
+        const after = willLines.find(l => l.mo_number === before.mo_number && l.product_name === before.product_name) || null;
+        if (after && !after.mmr_ref) removed.push(before.mo_number || before.product_name);
+      }
+    } else if (mmrRef(existing.mmr_ref) && req.body.mmr_ref !== undefined && !mmrRef(req.body.mmr_ref)) {
+      removed.push(existing.mo_number || existing.product_name);
+    }
+    if (removed.length) {
+      return res.status(400).json({ error: `The MMR reference cannot be removed from a filed run while the gate is on (${removed.join(', ')}). Correct it to the right reference instead.`, code: 'MMR_REQUIRED', missing: removed, mode: 'on' });
+    }
+  }
+
   const wasSigned = existing.qa_signoff_by
     ? { by: existing.qa_signoff_by, at: existing.qa_signoff_at, notes: existing.qa_notes || null }
     : null;
@@ -1406,6 +1448,25 @@ router.get('/schedule', (req, res) => {
   res.json({ assignments, cleaning_levels });
 });
 
+// ── The MMR gate (D-133, CAR 4990683-7) ──────────────────────────────────────
+// GET: the mode and the report for the visit — runs since `since` (default the
+// committed 14 October 2026), named and unnamed. PUT: admin moves the mode,
+// audited; the D-063 release-gate shape. Nothing here holds MMR content.
+router.get('/mmr-gate', (req, res) => {
+  const db = getDb();
+  const since = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.since || '')) ? String(req.query.since) : undefined;
+  res.json(mmrCoverage(db, since ? { since } : {}));
+});
+router.put('/mmr-gate', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const mode = req.body?.mode;
+  if (!MMR_GATE_MODES.includes(mode)) return res.status(400).json({ error: `Mode must be one of ${MMR_GATE_MODES.join(', ')}.` });
+  const before = mmrGateMode(db);
+  db.prepare('INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(MMR_GATE_KEY, mode);
+  logAudit(req.user, 'mmr_gate_changed', 'app_setting', MMR_GATE_KEY, { from: before, to: mode });
+  res.json({ mode, modes: MMR_GATE_MODES });
+});
+
 // POST /schedule — create or update a schedule assignment
 router.post('/schedule', (req, res) => {
   const db = getDb();
@@ -1415,6 +1476,13 @@ router.post('/schedule', (req, res) => {
   if (!week_start || day_of_week == null || !room) {
     return res.status(400).json({ error: 'week_start, day_of_week, and room are required' });
   }
+
+  // THE RUN NAMES ITS APPROVED MMR (D-133). A cell that names an MO or a
+  // product is a run; when the gate is on it is refused without the Keychain
+  // reference. A cell that only sets a team is not a run and is not asked.
+  const mmr_ref = mmrRef(req.body.mmr_ref);
+  const gate = mmrGateCheck(db, [{ mo_number, product_name, mmr_ref }]);
+  if (!gate.ok) return res.status(400).json(gate.refusal);
 
   // `append` means "add a line to this cell", not "write slot N". The repeat /
   // copy-to-next-week paths use it: they target a cell the editor isn't looking
@@ -1431,9 +1499,11 @@ router.post('/schedule', (req, res) => {
 
   if (existing) {
     db.prepare(`
-      UPDATE production_schedule SET room_type = ?, team = ?, mo_number = ?, product_name = ?, start_time = ?, notes = ?, updated_by = ?, updated_at = datetime('now')
+      UPDATE production_schedule SET room_type = ?, team = ?, mo_number = ?, product_name = ?, start_time = ?, notes = ?, mmr_ref = ?, updated_by = ?, updated_at = datetime('now')
       WHERE id = ?
-    `).run(room_type || 'production', team || null, mo_number || null, product_name || null, start_time || null, notes || null, updated_by || null, existing.id);
+    `).run(room_type || 'production', team || null, mo_number || null, product_name || null, start_time || null, notes || null,
+      // An absent field leaves the reference alone; an empty one clears it.
+      req.body.mmr_ref === undefined ? existing.mmr_ref : (mmr_ref || null), updated_by || null, existing.id);
     // A different MO in this cell invalidates any prior flavor approval.
     if ((existing.mo_number || '') !== (mo_number || '') && existing.flavor_approved_at) {
       db.prepare('UPDATE production_schedule SET flavor_approved_by = NULL, flavor_approved_at = NULL WHERE id = ?').run(existing.id);
@@ -1444,9 +1514,9 @@ router.post('/schedule', (req, res) => {
   } else {
     const id = uuid();
     db.prepare(`
-      INSERT INTO production_schedule (id, week_start, day_of_week, room, slot, room_type, team, mo_number, product_name, start_time, notes, created_by, updated_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, week_start, day_of_week, room, effectiveSlot, room_type || 'production', team || null, mo_number || null, product_name || null, start_time || null, notes || null, updated_by || null, updated_by || null);
+      INSERT INTO production_schedule (id, week_start, day_of_week, room, slot, room_type, team, mo_number, product_name, start_time, notes, mmr_ref, created_by, updated_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, week_start, day_of_week, room, effectiveSlot, room_type || 'production', team || null, mo_number || null, product_name || null, start_time || null, notes || null, mmr_ref || null, updated_by || null, updated_by || null);
     const created = db.prepare('SELECT * FROM production_schedule WHERE id = ?').get(id);
     logAudit(updated_by || 'system', 'create', 'production_schedule', id, req.body, null, created);
     res.status(201).json(created);
@@ -1513,8 +1583,8 @@ router.post('/schedule/duplicate-day', (req, res) => {
   const deleteAssignments = db.prepare('DELETE FROM production_schedule WHERE week_start = ? AND day_of_week = ?');
   const deleteCleaning = db.prepare('DELETE FROM production_cleaning_levels WHERE week_start = ? AND day_of_week = ?');
   const insertAssignment = db.prepare(`
-    INSERT INTO production_schedule (id, week_start, day_of_week, room, slot, room_type, team, mo_number, product_name, start_time, notes, created_by, updated_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO production_schedule (id, week_start, day_of_week, room, slot, room_type, team, mo_number, product_name, start_time, notes, mmr_ref, created_by, updated_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const insertCleaning = db.prepare(`
     INSERT INTO production_cleaning_levels (id, week_start, day_of_week, room, level, updated_by)
@@ -1528,7 +1598,8 @@ router.post('/schedule/duplicate-day', (req, res) => {
       if (includeAssignments) {
         deleteAssignments.run(week_start, day);
         for (const a of assignments) {
-          insertAssignment.run(uuid(), week_start, day, a.room, a.slot || 0, a.room_type, a.team, a.mo_number, a.product_name, a.start_time, a.notes, updated_by || null, updated_by || null);
+          // The MMR reference travels with the copied run — a copy that dropped it would be a run filed without one.
+          insertAssignment.run(uuid(), week_start, day, a.room, a.slot || 0, a.room_type, a.team, a.mo_number, a.product_name, a.start_time, a.notes, a.mmr_ref || null, updated_by || null, updated_by || null);
           copied_assignments++;
         }
       }

@@ -15,6 +15,7 @@ to go and look.
 | Mechanism | What it asks | Who acts | Where it is shown | How they are told | State |
 |---|---|---|---|---|---|
 | Scale checks due today (D-117) | Run this morning's 417-xx check | Batching / Filling / Kitting operators | Operator View strip, per team | The strip is on the screen the floor opens first; bell line for approvers after 09:00 | reached |
+| **MMR reference on the run (D-133)** | Name the approved MMR on the schedule cell and the EOD line; turn the gate on | Production supervisors (the reference); admin (the gate) | The box on both forms; the gate strip on the Production Log for admins and QA, with the runs filed without one | The box is in the form, the refusal is on screen when the gate is on; the strip counts the warn-era runs — no DM, because the person who has to act is the one filing the form | reached |
 | QA correction asked (D-083) | Amend your own entry | The filer | Production Log banner | DM + push at once; chased on each entry's own 24h clock; escalates past them once | reached |
 | Missed end-of-day reports (D-085) | File the report | Shift supervisors | Production Log bar (supervisors, QA, admins) | DM to the supervisor | reached |
 | 72-hour / dirty / no-record re-clean | Clean the room, swab it | Cleaning | A task on the cleaner's own list | The task IS the notice; Sanitation strip for QA | reached |

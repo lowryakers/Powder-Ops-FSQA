@@ -165,6 +165,40 @@ triage and the per-CAR evidence table, `docs/audit-2026-08-findings.md` the shor
   Document Control Manager, Jake Waits Purchasing Manager, Ricardo Avalos Maintenance, Matt Schramm Formulations.
   Anything going outside the plant is written in plain English — short sentences, no app vocabulary.
 
+## The run names its approved MMR, and the SKU carries its shelf-life basis (D-133, roadmap C2)
+`server/mmr-gate.js` (`mmrGateMode`, `mmrGateCheck`, `mmrCoverage`), `production_schedule.mmr_ref`,
+`production_entries.mmr_ref` + `mmr_gate_mode`, `mmr_ref` per MO line, `GET|PUT /api/production/mmr-gate`,
+`MmrGateStrip` on the Production Log, the box on the schedule cell editor and on both entry forms;
+`stability_justifications.basis_kind`, `shelfLifeBasis()` in `server/stability.js`, `shelf_life` on
+`GET /products/:sku`, the Formula-group gap on Completeness, master.csv's 18th column `date type`.
+- **THE MMR IS KEYCHAIN'S (D-130). ReadyDoc holds the REFERENCE on the run — never the record, never a table.**
+  `check:ncstatus` asserts no MMR table exists and that assertion is permanent. Do not build one.
+- **`app_settings.mmr_gate` off / warn (default) / on**, the D-063 shape. **Warn STAMPS** the mode on the entry;
+  **on REFUSES** a schedule cell or EOD line that names an MO or a product with no reference (`400 MMR_REQUIRED`,
+  naming the MO). A team-only cell and a cleaning-only shift are not runs and are not asked. **An admin turns it
+  on from the strip; a deploy never does.** The visit's report is `mmrCoverage()` — runs since 14 Oct, named and
+  unnamed — read off `production_entries`.
+- **THE EDIT PATH REFUSES ONLY THE REMOVAL of a reference** while the gate is on. An entry filed without one
+  under warn still takes a typo correction; clearing a reference that was there is refused. The scalar on a
+  multi-MO entry is a mirror of line 0 (`MIRRORED_ON_MULTI`); copying a day carries the reference.
+- **The date type is DERIVED, never stored on the product.** `basis_kind` is REQUIRED on every new justification
+  (`client_data` / `in_house_study` / `read_across` / `none_best_by`); *expiration* only with data, *best by*
+  otherwise **and for a SKU with nothing recorded** (`recorded: false` — the Completeness gap "Shelf-life
+  basis"). A pre-D-133 row with no kind reads `kind_missing` and best by; it is never promoted. **Nothing is
+  backfilled.** `currentJustifications` lives in `server/stability.js` now — the router, Completeness and the
+  feed all read it.
+- **master.csv's first sixteen names are the proofer's contract and `verify:mmrgate` asserts them as a
+  LITERAL**, not by importing `MASTER_CSV_CONTRACT` — a control on code without the export must still reach the
+  assertion. `date type` is the eighteenth, after `fill weight (g)`; extra columns are free.
+- **THE IMPORTER RECOGNISES THE PACKAGING SPEC'S COLUMNS AND WRITES NONE OF THEM.** `eye mark color` is a
+  `products` column and imports as a value; `wind direction`, `trim length`, `trim width`, `print`, material,
+  zipper, gusset and front panel are `packaging_specs` columns via `spec_id` — one row for every product on the
+  spec — so `DERIVED_IMPORT_COLUMNS` (both spellings) lists them as read-not-written, names the spec, and reports
+  a differing cell as a `spec_mismatch`. **Do not alias them into `IMPORT_COLUMNS`**: that writes a shared spec
+  from one CSV row, or invents a product-level copy of a film fact.
+- `verify:mmrgate` (81, live + browser at 1280; in `verify:all`). **The control is `main` before the change and
+  fails 57 of the first 67**, then cannot start the browser half.
+
 ## AP Drop: one intake for every finance PDF, and the queue it waits in (D-073)
 `ap_drops` + `ap_drop_events` (db.js), `server/api/ap-drop.js`, `server/ap-drop-parse.js` (PURE — text in,
 suggestions out, each with the line it came from), `ApDropPanel.jsx`. Its **own nav entry `ap-drop`**, not

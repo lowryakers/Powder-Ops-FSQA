@@ -304,9 +304,14 @@ function CellModal({ cell, weekStart, nextWeekStart, nextWeekLabel, dayIndex, ro
     team: cell?.team || (roomType === 'batching' ? 'Batching' : ''),
     mo_number: cell?.mo_number || '',
     product_name: cell?.product_name || '',
+    mmr_ref: cell?.mmr_ref || '',
     start_time: cell?.start_time || '',
     notes: cell?.notes || '',
   });
+  const [saveError, setSaveError] = useState('');
+  // The MMR gate's mode, so the modal can say whether the reference is
+  // required before the server refuses (D-133). The server still decides.
+  const { data: mmrGate } = useApiGet('/production/mmr-gate');
   const [repeatDays, setRepeatDays] = useState([]);
   const [repeatNextDays, setRepeatNextDays] = useState([]); // days in the following week
   const [showNextWeek, setShowNextWeek] = useState(false);
@@ -351,10 +356,12 @@ function CellModal({ cell, weekStart, nextWeekStart, nextWeekLabel, dayIndex, ro
         team: form.team,
         mo_number: form.mo_number,
         product_name: form.product_name,
+        mmr_ref: form.mmr_ref,
         start_time: form.start_time,
         notes: form.notes,
         updated_by: userName,
       };
+      setSaveError('');
       await apiPost('/production/schedule', { ...payload, week_start: weekStart, day_of_week: dayIndex });
       // The repeat paths target cells the editor isn't looking at, so they send
       // `append` — writing this cell's slot number into another day overwrote
@@ -373,6 +380,9 @@ function CellModal({ cell, weekStart, nextWeekStart, nextWeekLabel, dayIndex, ro
       }
     } catch (err) {
       console.error('Failed to save:', err);
+      // A refusal has to be READ — the MMR gate refuses a run with no
+      // reference, and a modal that just stays open reads as a fault.
+      setSaveError(err.message || 'Could not save.');
     } finally {
       setSaving(false);
     }
@@ -445,6 +455,29 @@ function CellModal({ cell, weekStart, nextWeekStart, nextWeekLabel, dayIndex, ro
               placeholder="e.g. Daily Fuel Vanilla"
             />
           </div>
+          {/* The approved master record this run is scheduled against —
+              Keychain's identifier and revision (D-133). Required when the
+              gate is enforcing; recorded as a gap under warn. */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Approved MMR (Keychain ref · revision){mmrGate?.mode === 'on' && (form.mo_number || form.product_name) ? ' *' : ''}
+            </label>
+            <input
+              value={form.mmr_ref}
+              onChange={e => setForm({ ...form, mmr_ref: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              placeholder="e.g. MMR-0042 rev 3"
+              data-cell-mmr-ref
+            />
+            {mmrGate && (
+              <p className="mt-1 text-[11px] text-gray-500" data-cell-mmr-note={mmrGate.mode}>
+                {mmrGate.mode === 'on' ? 'The MMR gate is enforcing: a run cannot be scheduled without its approved MMR.'
+                  : mmrGate.mode === 'warn' ? 'A run scheduled without one is recorded as filed without an MMR reference.'
+                    : 'Optional — the MMR gate is off.'}
+              </p>
+            )}
+          </div>
+          {saveError && <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2" data-cell-save-error>{saveError}</p>}
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Notes</label>
             <textarea
@@ -928,6 +961,7 @@ function MobileDayCards({ monday, assignmentMap, canEdit, onEditCell, initialDay
                           {a.team && <div className="text-[10px] font-semibold uppercase tracking-wide" style={{ color }}>{a.team}</div>}
                           {a.mo_number && <div className="text-sm font-semibold text-gray-900">{a.mo_number}</div>}
                           {a.product_name && <div className="text-sm text-gray-600">{a.product_name}</div>}
+                          {a.mmr_ref && <div className="text-[10px] text-gray-500" data-cell-mmr>MMR {a.mmr_ref}</div>}
                           {a.flavor_approved_at && (
                             <div className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-green-700 bg-green-50 border border-green-200 rounded px-1 py-px">
                               <Check size={9} /> Flavor approved
@@ -1341,6 +1375,7 @@ export default function ProductionSchedule({ user }) {
                   )}
                   {a.mo_number && <div className="font-semibold text-gray-900">{a.mo_number}</div>}
                   {a.product_name && <div className="text-gray-600">{a.product_name}</div>}
+                  {a.mmr_ref && <div className="text-[10px] text-gray-500" data-cell-mmr>MMR {a.mmr_ref}</div>}
                   {a.flavor_approved_at && (
                     <div className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-green-700 bg-green-50 border border-green-200 rounded px-1 py-px" title={`Flavor approved by ${a.flavor_approved_by || ''}`}>
                       <Check size={9} className="shrink-0" /> Flavor

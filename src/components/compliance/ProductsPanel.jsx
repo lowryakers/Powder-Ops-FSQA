@@ -660,6 +660,18 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
                     <div><dt className="text-xs text-gray-500">Formula ref</dt><dd data-value="mrp_formula_id">{p.mrp_formula_id || <span className="text-amber-700 text-xs">empty</span>}</dd></div>
                     <div><dt className="text-xs text-gray-500">Formula version</dt><dd data-value="formula_rev">{p.formula_rev || <span className="text-amber-700 text-xs">empty</span>}</dd></div>
                     <div><dt className="text-xs text-gray-500">Fill weight</dt><dd data-value="fill_weight_g">{p.fill_weight_g ? `${p.fill_weight_g} g` : <span className="text-amber-700 text-xs">empty</span>}</dd></div>
+                    {/* Which date the pack may print, and what it rests on —
+                        DERIVED from the shelf-life basis in force for this SKU
+                        (Retention Samples → Stability), never typed here (D-133). */}
+                    <div className="col-span-3">
+                      <dt className="text-xs text-gray-500">Date type · shelf-life basis</dt>
+                      <dd data-value="shelf_life" data-date-type={p.shelf_life?.date_type} data-basis-recorded={p.shelf_life?.recorded ? '1' : '0'}>
+                        {p.shelf_life?.recorded
+                          ? <>{p.shelf_life.date_type_label}{p.shelf_life.basis_label ? ` — ${p.shelf_life.basis_label}` : ''}{p.shelf_life.kind_missing ? <span className="text-amber-700 text-xs"> — kind not recorded on the justification</span> : ''}{p.shelf_life.shelf_life_months ? ` · ${p.shelf_life.shelf_life_months} months` : ''}{p.shelf_life.decided_on ? ` · ${p.shelf_life.decided_on}` : ''}</>
+                          : <>Best by <span className="text-amber-700 text-xs">— no shelf-life basis recorded; record one under Retention Samples → Stability</span></>}
+                        <span className="block text-[10px] text-gray-400 font-mono">derived: stability_justifications.basis_kind</span>
+                      </dd>
+                    </div>
                   </dl>
                   <StepLine steps={p.readiness?.steps} k="formula" /><StepLine steps={p.readiness?.steps} k="nfp" />
                 </Block>

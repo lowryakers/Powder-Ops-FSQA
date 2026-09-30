@@ -88,3 +88,72 @@ export function stabilityStatus(db, { today = dayStr(new Date()) } = {}) {
     today,
   };
 }
+
+/* ── The shelf-life BASIS, and the date type derived from it (D-133) ─────────
+ *
+ * CAR 4990683-9's rule: an EXPIRATION date only where stability data covers
+ * the SKU; otherwise BEST BY. The data is the client's, an in-house study's,
+ * or read across from a covered SKU; "none" is a recorded decision that the
+ * pack prints Best by. The kind lives on the justification that is in force
+ * for the SKU (the most recent one naming it — currentJustifications), and
+ * the date type is DERIVED from it on every read. It is never stored on the
+ * product: a column there is the second owner of this fact, and the day a
+ * newer justification lands the two disagree.
+ *
+ * NOTHING IS BACKFILLED. A SKU no justification names reads `recorded: false`
+ * and best by — the rule's own answer for "no data" — and Completeness names
+ * it as a gap. A justification filed before the kind existed reads
+ * `kind_missing` (best by, still): free text nobody classified is not data
+ * the app may promote to an expiration date.
+ */
+export const BASIS_KINDS = ['client_data', 'in_house_study', 'read_across', 'none_best_by'];
+export const BASIS_KIND_LABEL = {
+  client_data: 'Client stability data',
+  in_house_study: 'In-house stability study',
+  read_across: 'Read across from a covered SKU',
+  none_best_by: 'No data — Best by',
+};
+/** The date type a kind permits: data ⇒ expiration; none, or no kind ⇒ best by. */
+export const dateTypeFor = (kind) => (kind && kind !== 'none_best_by' && BASIS_KINDS.includes(kind) ? 'expiration' : 'best_by');
+export const DATE_TYPE_LABEL = { expiration: 'Expiration date', best_by: 'Best by' };
+
+/**
+ * The basis in force for each SKU is the MOST RECENT justification naming it —
+ * derived on read, never a stored flag. A later justification for one SKU of a
+ * family does not unsay the earlier one for the rest of the family; each row
+ * reports `current_for`, the SKUs it still speaks for.
+ */
+export function currentJustifications(db) {
+  const rows = db.prepare('SELECT * FROM stability_justifications ORDER BY decided_on DESC, created_at DESC, rowid DESC').all()
+    .map(j => ({ ...j, skus: JSON.parse(j.product_skus || '[]') }));
+  const claimed = new Set();
+  for (const j of rows) {
+    j.current_for = j.skus.filter(k => !claimed.has(k));
+    for (const k of j.current_for) claimed.add(k);
+    // A pre-D-133 row linked to a study IS an in-house study; anything else
+    // unclassified stays unclassified.
+    j.kind = j.basis_kind || (j.basis_type === 'study' ? 'in_house_study' : null);
+    j.date_type = dateTypeFor(j.kind);
+  }
+  return rows;
+}
+
+/** What a SKU with nothing on file reads: the rule's answer for no data. */
+export const NO_BASIS = Object.freeze({ recorded: false, basis_kind: null, kind_missing: false, date_type: 'best_by', shelf_life_months: null, justification_id: null, decided_on: null, decided_by: null });
+
+/** sku → { recorded, basis_kind, kind_missing, date_type, shelf_life_months, justification_id, decided_on, decided_by }. One walk for the whole catalogue. */
+export function shelfLifeBasis(db) {
+  const out = new Map();
+  const rows = (() => { try { return currentJustifications(db); } catch { return []; } })();
+  for (const j of rows) {
+    for (const sku of j.current_for) {
+      out.set(sku, {
+        recorded: true, basis_kind: j.kind, kind_missing: !j.kind, date_type: j.date_type,
+        shelf_life_months: j.shelf_life_months, justification_id: j.id, decided_on: j.decided_on, decided_by: j.decided_by,
+      });
+    }
+  }
+  return out;
+}
+/** One SKU's basis, or the no-data answer. */
+export const shelfLifeFor = (db, sku) => shelfLifeBasis(db).get(String(sku || '').toUpperCase()) || NO_BASIS;

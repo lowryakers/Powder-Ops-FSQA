@@ -5523,3 +5523,58 @@ reads as an empty value, the `split(',')` shape that blanked the spot-colour che
 - Also in this commit: the NSF Connect note for CAR 4990683-7 is drafted at
   `docs/v2/car-responses/nsf-connect-note-4990683-7.md` (D-130's owed note) — Carol posts it, and it names
   14 October for the run-scheduling requirement, which must be true on the day it is posted.
+
+## D-133 — The run names its approved MMR, the SKU carries its shelf-life basis, and the importer names the spec's columns instead of ignoring them (2026-09-30)
+
+Roadmap C2, built so the 14 October date in the NSF Connect note (D-130, D-132) holds. Two fields and a
+derivation, exactly as C2 was scoped; no MMR content, no BPR, no checklist screen, no MMR table.
+- **`mmr_ref` on the run — the schedule assignment and the EOD MO line** (`production_schedule.mmr_ref`,
+  `production_entries.mmr_ref` mirrored from line 0 like product/MO/lot, per line in `mo_lines`). The master
+  record is Keychain's; ReadyDoc holds the identifier and revision of the approved one the run was made to.
+- **`app_settings.mmr_gate` = off / warn (default) / on** (`server/mmr-gate.js`, the D-063 release-gate shape;
+  `GET|PUT /api/production/mmr-gate`, PUT admin-only and audited). **Warn STAMPS** — `production_entries.mmr_gate_mode`
+  is the mode at filing, so "every run filed without a reference since 14 October" is
+  `mmr_ref IS NULL AND mmr_gate_mode = 'warn'`, read by `mmrCoverage()` and printed on the Production Log strip.
+  **On REFUSES** the schedule cell and the EOD line with `400 MMR_REQUIRED` naming the MO — one line missing on
+  a two-MO shift names that line only. **A run is a cell or a line that names an MO or a product**: a
+  team-only cell and a cleaning-only shift are not asked and carry no stamp. Warn first because there are 118
+  products and no Keychain go-live date; a gate enforced on day one is one that gets switched off.
+- **THE EDIT PATH REFUSES ONLY THE REMOVAL.** An entry filed without a reference under warn must still take a
+  typo correction after the gate is turned on, or the gate becomes a reason not to correct records; but a
+  reference that was there and would not be afterwards is the limit being edited away, and is refused naming
+  the run. The ATP escalation's file-path/edit-path split. On a multi-MO entry the scalar is a mirror
+  (`MIRRORED_ON_MULTI`), corrected through the line. Copying a day carries the reference with the run.
+- **`stability_justifications.basis_kind`** — `client_data` / `in_house_study` / `read_across` / `none_best_by` —
+  **required on every new justification**; the **date type is DERIVED** per SKU from the kind in force
+  (`shelfLifeBasis()` in `server/stability.js`, over `currentJustifications`, which moved there from the router
+  because three readers need it): *expiration* only with data, *best by* for `none_best_by` **and for a SKU
+  with nothing recorded** — the rule's own answer for no data. **Nothing is backfilled and nothing is stored on
+  the product**: a SKU no justification names reads `recorded: false`; a justification filed before kinds existed
+  reads `kind_missing` and best by — free text nobody classified is not data the app may promote to an
+  expiration date. A pre-D-133 row linked to a study is an in-house study, by what it is.
+- **Where it is seen:** `GET /products/:sku` carries `shelf_life`; **Products → Completeness** names
+  "Shelf-life basis" (and "Shelf-life basis kind") in the Formula group, counts `no_shelf_life_basis` and offers
+  it as a filter chip; the drawer's Formula block prints the date type and the basis; **`master.csv` gains an
+  eighteenth column, `date type`** (`expiration` / `best by`) so the proofer can check the pack prints the date it
+  may — **the first sixteen names are byte-for-byte the proofer's contract and are asserted as a literal in the
+  verify**, not by importing our own constant.
+- **The importer and the packaging spec's columns.** Lowry asked for `wind direction` to be aliased like
+  `eye mark color`, and for `trim length`, `trim width` and `print`. **They are not the same kind of column**: the
+  eye mark is a `products` column; those four (and material, zipper, gusset, front panel) are `packaging_specs`
+  columns reached through `products.spec_id` — the same row for every product on that spec. Writing one per
+  product would either rewrite the spec for every product on it from one CSV row, or need a product-level copy,
+  which is a second owner of a film fact. So `DERIVED_IMPORT_COLUMNS` recognises all eight (both spellings,
+  `wind direction` and `wind_direction`), the preview lists them as **read, not written**, names the spec each
+  value comes from, and reports a cell that DIFFERS from the spec as a **mismatch** (`spec_mismatches`, file value
+  beside spec value); commit writes none of them, asserted by comparing the spec row before and after. A file
+  carrying them no longer imports as "ignored", which was the complaint.
+- **Verified:** `verify:mmrgate` (81 — live + a real browser at 1280 on the Production Log strip, the entry
+  form for both team shapes, the schedule cell editor refusing on screen, the drawer, Completeness and the
+  Stability form; in `verify:all`, port 5049). **The control is `main` before this change and fails 57 of the
+  first 67 before the browser half can start.** `verify:stability` files its justifications with a kind now;
+  `check:ncstatus` still asserts no MMR table (63); the Products, proof-token, colours, artwork-sync and kiosk
+  verifies are unchanged and green.
+- **What is still the plant's:** the references themselves — every run from 14 October names its MMR, which
+  is Adam's floor and Maria's approval; the SOP 413 revision (31 Oct); the client ask (Carol + Matt, 14 Oct);
+  `none_best_by` recorded per SKU by 15 Nov. The gate is turned ON by an admin on the day the plant is ready,
+  not by a deploy.

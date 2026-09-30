@@ -2484,6 +2484,13 @@ function initSchema() {
   `);
   addColumnIfMissing('work_orders', 'stability_pull_id', 'TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS idx_work_orders_stability_pull ON work_orders(stability_pull_id)');
+  // WHAT KIND of basis a justification is (D-133, CAR 4990683-9): client_data /
+  // in_house_study / read_across / none_best_by. The product's DATE TYPE is
+  // derived from the kind in force for the SKU (server/stability.js
+  // shelfLifeBasis) and is never stored on the product. Nullable because the
+  // rows filed before this existed carry free text only — those read as "kind
+  // not recorded" rather than being guessed at.
+  addColumnIfMissing('stability_justifications', 'basis_kind', 'TEXT');
 
   // A TRAINING ASSIGNMENT IS A WORK ORDER, and this column is the whole of it.
   //
@@ -2641,6 +2648,17 @@ function runMigrations() {
   // distinguishable and new lines (auto pouch, sachet, bottling) need no team.
   addColumnIfMissing('production_entries', 'line', 'TEXT');
   addColumnIfMissing('production_schedule', 'line', 'TEXT');
+
+  // THE RUN NAMES ITS APPROVED MMR (D-133, CAR 4990683-7). The master
+  // manufacturing record lives in Keychain (D-130); ReadyDoc holds the
+  // REFERENCE — identifier + revision — on the scheduled assignment and on the
+  // filed run. `mmr_gate_mode` is the gate's mode when the entry was filed
+  // (the `release_gate_mode` shape): a run filed with no reference under
+  // `warn` is exactly the rows `mmr_ref IS NULL AND mmr_gate_mode = 'warn'`.
+  // No MMR table here, deliberately — check:ncstatus asserts there is none.
+  addColumnIfMissing('production_schedule', 'mmr_ref', 'TEXT');
+  addColumnIfMissing('production_entries', 'mmr_ref', 'TEXT');
+  addColumnIfMissing('production_entries', 'mmr_gate_mode', 'TEXT');
 
   // Good documentation practice for the production log: a filed EOD report is
   // a record, so it is never quietly overwritten. Corrections are appended

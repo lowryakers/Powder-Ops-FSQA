@@ -107,6 +107,13 @@ function Row({ r, groups, canEdit, onChanged, onOpenSku }) {
                   <AlertTriangle size={11} /> Stale
                 </span>
               )}
+              {r.shelf_life && (
+                <span data-date-type={r.shelf_life.date_type} data-basis-recorded={r.shelf_life.recorded ? '1' : '0'}
+                  className={`text-[11px] px-1.5 py-0.5 rounded border ${r.shelf_life.recorded ? 'bg-gray-50 text-gray-700 border-gray-200' : 'bg-amber-50 text-amber-800 border-amber-200'}`}
+                  title={r.shelf_life.recorded ? `Basis: ${r.shelf_life.basis_label || 'kind not recorded'}` : 'No shelf-life basis recorded — prints Best by by rule'}>
+                  {r.shelf_life.date_type === 'expiration' ? 'Expiration date' : 'Best by'}{r.shelf_life.recorded ? '' : ' · no basis'}
+                </span>
+              )}
             </div>
             <div className="flex flex-wrap gap-1">
               {groups.map((g) => <GroupChip key={g.key} g={g} res={r.groups[g.key]} />)}
@@ -171,7 +178,7 @@ export default function ProductCompleteness({ canEdit, onOpenSku }) {
   const rows = useMemo(() => {
     const all = data?.rows || [];
     const needle = q.trim().toLowerCase();
-    return all.filter((r) => (state === 'all' || (state === 'stale' ? r.stale.length > 0 : r.state === state))
+    return all.filter((r) => (state === 'all' || (state === 'stale' ? r.stale.length > 0 : state === 'no_basis' ? !r.shelf_life?.recorded : r.state === state))
       && (!line || r.line === line)
       && (!needle || r.sku.toLowerCase().includes(needle) || (r.product || '').toLowerCase().includes(needle)
         || r.missing.some((m) => m.toLowerCase().includes(needle))));
@@ -189,7 +196,9 @@ export default function ProductCompleteness({ canEdit, onOpenSku }) {
         </p>
         <div className="flex flex-wrap gap-2 text-xs" data-completeness-counts>
           {[['incomplete', `${c.incomplete} incomplete · ${c.gaps} named gaps`], ['blocked', `${c.blocked} blocked`],
-            ['stale', `${c.stale} stale`], ['complete', `${c.complete} complete`], ['all', `${c.skus} SKUs`]].map(([k, label]) => (
+            ['stale', `${c.stale} stale`], ['complete', `${c.complete} complete`], ['all', `${c.skus} SKUs`],
+            // The 14 October punch list (D-133): SKUs whose date rests on nothing recorded.
+            ...(c.no_shelf_life_basis > 0 ? [['no_basis', `${c.no_shelf_life_basis} with no shelf-life basis`]] : [])].map(([k, label]) => (
             <button key={k} type="button" onClick={() => setState(k)} data-filter={k}
               className={`px-2.5 py-1 rounded-full border ${state === k ? 'bg-powder-600 text-white border-powder-600' : 'bg-white text-gray-700 border-gray-300'}`}>
               {label}

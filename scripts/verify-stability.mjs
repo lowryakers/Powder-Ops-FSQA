@@ -76,9 +76,9 @@ const before = list.coverage;
 t('coverage is derived from the catalogue: two SKUs covered by the study, the rest not', before.covered === 2 && before.uncovered === before.products.length - 2 && before.products.find(p => p.sku === SKUS[0])?.covered === true);
 r = await call('POST', '/stability/justifications', { product_skus: SKUS[2], shelf_life_months: 24, basis: 'short' }, A);
 t('a justification with no real basis is refused', r.status === 400);
-r = await call('POST', '/stability/justifications', { product_family: 'Whey pouches', product_skus: `${SKUS[2]}, ${SKUS[3]}`, shelf_life_months: 24, basis: 'Ingredient supplier stability data (24 months at ambient), aw < 0.4 measured on three lots, foil laminate pouch; to be confirmed by the real-time study.', document_ref: 'QA memo 2026-09', decided_on: '2026-09-09' }, A); j = await r.json();
+r = await call('POST', '/stability/justifications', { product_family: 'Whey pouches', product_skus: `${SKUS[2]}, ${SKUS[3]}`, shelf_life_months: 24, basis_kind: 'read_across', basis: 'Ingredient supplier stability data (24 months at ambient), aw < 0.4 measured on three lots, foil laminate pouch; to be confirmed by the real-time study.', document_ref: 'QA memo 2026-09', decided_on: '2026-09-09' }, A); j = await r.json();
 t('an interim justification files and moves two more products to covered', r.status === 201 && j.coverage.covered === before.covered + 2);
-r = await call('POST', '/stability/justifications', { product_skus: SKUS[2], shelf_life_months: 18, basis: 'Shortened to 18 months after the 12-month aw trend; study continues.', decided_on: '2026-09-09' }, A); j = await r.json();
+r = await call('POST', '/stability/justifications', { product_skus: SKUS[2], shelf_life_months: 18, basis_kind: 'read_across', basis: 'Shortened to 18 months after the 12-month aw trend; study continues.', decided_on: '2026-09-09' }, A); j = await r.json();
 const js = await (await call('GET', '/stability/justifications', null, A)).json();
 t('a newer basis speaks for its SKU; the older one still speaks for the rest of the family', j.coverage.covered === before.covered + 2 && js.justifications.length === 2
   && js.justifications[0].shelf_life_months === 18 && js.justifications[0].current_for.join() === SKUS[2]

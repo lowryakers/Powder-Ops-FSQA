@@ -160,7 +160,7 @@ function StudyForm({ onDone, onCancel }) {
 }
 
 function JustificationForm({ onDone, onCancel }) {
-  const [f, setF] = useState({ product_family: '', product_skus: '', shelf_life_months: '', basis: '', document_ref: '', decided_on: '' });
+  const [f, setF] = useState({ product_family: '', product_skus: '', shelf_life_months: '', basis_kind: '', basis: '', document_ref: '', decided_on: '' });
   const [err, setErr] = useState('');
   const submit = async (e) => {
     e.preventDefault(); setErr('');
@@ -172,6 +172,16 @@ function JustificationForm({ onDone, onCancel }) {
       <input value={f.product_family} onChange={e => setF({ ...f, product_family: e.target.value })} placeholder="Product family" className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
       <input value={f.product_skus} onChange={e => setF({ ...f, product_skus: e.target.value })} placeholder="SKUs covered, comma-separated *" required className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm" data-just-skus />
       <input type="number" min="1" value={f.shelf_life_months} onChange={e => setF({ ...f, shelf_life_months: e.target.value })} placeholder="Shelf life (months) *" required className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm" data-just-months />
+      {/* WHAT KIND of basis decides which date the pack may print (D-133):
+          data of any kind permits an expiration date; "no data" is the recorded
+          decision that it prints Best by. Derived on the product, never typed there. */}
+      <select value={f.basis_kind} onChange={e => setF({ ...f, basis_kind: e.target.value })} required className="sm:col-span-3 px-2 py-1.5 border border-gray-300 rounded-lg text-sm" data-just-kind>
+        <option value="">What kind of basis is this? *</option>
+        <option value="client_data">Client stability data — the pack may carry an expiration date</option>
+        <option value="in_house_study">In-house stability study — expiration date</option>
+        <option value="read_across">Read across from a covered SKU — expiration date</option>
+        <option value="none_best_by">No data — the pack prints Best by</option>
+      </select>
       <textarea value={f.basis} onChange={e => setF({ ...f, basis: e.target.value })} placeholder="Basis for the date *" required rows={2} className="sm:col-span-3 px-2 py-1.5 border border-gray-300 rounded-lg text-sm" data-just-basis />
       <input value={f.document_ref} onChange={e => setF({ ...f, document_ref: e.target.value })} placeholder="Document reference" className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
       <input type="date" value={f.decided_on} onChange={e => setF({ ...f, decided_on: e.target.value })} className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />

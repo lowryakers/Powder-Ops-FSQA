@@ -181,8 +181,35 @@ function ImportModal({ onClose, onDone }) {
               {c.errors > 0 && <span className="px-2 py-1 rounded-full border border-red-300 bg-red-50 text-red-800" data-import-errors>{c.errors} refused</span>}
               {c.unknown_skus > 0 && <span className="px-2 py-1 rounded-full border border-amber-300 bg-amber-50 text-amber-900" title={plan.unknown_skus.join(', ')}>{c.unknown_skus} SKU{c.unknown_skus === 1 ? '' : 's'} not in the catalog</span>}
               {plan.unknown_columns.length > 0 && <span className="px-2 py-1 rounded-full border border-gray-300 text-gray-600" title={plan.unknown_columns.join(', ')}>{plan.unknown_columns.length} column{plan.unknown_columns.length === 1 ? '' : 's'} ignored</span>}
+              {plan.derived_columns?.length > 0 && (
+                <span className="px-2 py-1 rounded-full border border-sky-300 bg-sky-50 text-sky-900" data-import-derived={plan.derived_columns.length}
+                  title={plan.derived_columns.map((d) => `${d.header} ← ${d.source}`).join('\n')}>
+                  {plan.derived_columns.length} packaging-spec column{plan.derived_columns.length === 1 ? '' : 's'} read, not written
+                </span>
+              )}
+              {c.spec_mismatches > 0 && <span className="px-2 py-1 rounded-full border border-amber-300 bg-amber-50 text-amber-900" data-import-mismatches={c.spec_mismatches}>{c.spec_mismatches} differ{c.spec_mismatches === 1 ? 's' : ''} from the spec</span>}
             </div>
-            {plan.rows.length === 0 ? <p className="text-sm text-gray-600">Nothing in the file differs from the catalog.</p> : (
+            {/* A packaging-spec column in the file is compared with the spec the
+                product is on and reported, never written: the value belongs to
+                every product on that spec, so the correction is on the spec. */}
+            {plan.derived_columns?.length > 0 && (
+              <div className="rounded-lg border border-sky-200 bg-sky-50/60 p-2 text-xs text-sky-900 space-y-1" data-import-derived-note>
+                <p>
+                  <strong>{plan.derived_columns.map((d) => d.header).join(', ')}</strong>: these come from the packaging spec the product is on
+                  ({plan.derived_columns.map((d) => d.source).join(' · ')}) and are not written per product. A value that differs from the spec is listed here; correct it on the spec.
+                </p>
+                {plan.spec_mismatches?.length > 0 && (
+                  <ul className="list-disc pl-4 space-y-0.5" data-import-mismatch-list>
+                    {plan.spec_mismatches.map((m, i) => (
+                      <li key={`${m.sku}-${m.column}-${i}`} data-import-mismatch={m.sku} data-import-mismatch-column={m.column}>
+                        <span className="font-mono">{m.sku}</span> · {m.label}: file says <em>{m.file_value}</em>, spec {m.spec_id || '(none assigned)'} says <em>{m.spec_value || 'empty'}</em>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+            {plan.rows.length === 0 ? <p className="text-sm text-gray-600">Nothing in the file differs from the catalog{plan.derived_columns?.length ? ' on the columns that are written' : ''}.</p> : (
               <div className="overflow-x-auto border border-gray-200 rounded-lg">
                 <table className="min-w-full text-xs">
                   <thead className="bg-gray-50 border-b border-gray-200">

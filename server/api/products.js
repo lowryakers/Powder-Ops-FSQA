@@ -21,7 +21,8 @@ import { preferredSku, LINE_CODES, PACK_CODES } from '../../shared/sku-format.js
 import { READINESS, TICKABLE, readinessOf, nextBasis } from '../../shared/product-readiness.js';
 import { shelfState, gtinPrefixes } from '../product-shelf.js';
 import { normalizeGtin, sameGtin, gtinValid } from '../../shared/gtin.js';
-import { validateField, FIELD_RULES, NA_FIELDS, naOf, looksLikeTypedNa, MASTER_CSV_SOURCES } from '../../shared/product-fields.js';
+import { validateField, FIELD_RULES, NA_FIELDS, naOf, looksLikeTypedNa, MASTER_CSV_SOURCES, PACKAGING_DERIVED } from '../../shared/product-fields.js';
+import { shelfLifeBasis, shelfLifeFor, NO_BASIS, BASIS_KIND_LABEL, DATE_TYPE_LABEL } from '../stability.js';
 import { parseDelimited } from '../tabular.js';
 import { pmsValid, hexValid, colorIssues, isBlankSlot, conflictSeverity }
   from '../../shared/product-colors.js';
@@ -766,6 +767,35 @@ const IMPORT_COLUMNS = [
   ['pms', ['pms', 'pms spot colors', 'pms spot colours']],
   ['hex', ['hex', 'hex spot colors', 'hex spot colours']],
 ];
+/**
+ * THE PACKAGING SPEC'S COLUMNS ARE RECOGNISED AND NOT WRITTEN (D-133).
+ *
+ * `eye mark color` is a products column and imports as a value; `wind
+ * direction`, `trim length`, `trim width`, `print`, `material`, `zipper`, the
+ * gusset and the front panel are `packaging_specs` columns reached through
+ * `products.spec_id` — the same row for every product on that spec. Writing
+ * one per product would either rewrite the spec for all of them from one
+ * row of a CSV or need a product-level copy, which is a second owner of a
+ * film fact. So a file carrying them is not "ignored": the preview names the
+ * spec each value comes from and reports a cell that DIFFERS from it as a
+ * mismatch to take to the spec. Nothing on these columns is ever written.
+ */
+const DERIVED_IMPORT_COLUMNS = [
+  ['material_structure', ['material', 'material_structure', 'material structure']],
+  ['zipper', ['zipper']],
+  ['print_process', ['print', 'print_process', 'print process']],
+  ['trim_length_mm', ['trim length', 'trim_length', 'trim_length_mm', 'trim length (mm)']],
+  ['trim_width_mm', ['trim width', 'trim_width', 'trim_width_mm', 'trim width (mm)']],
+  ['gusset_mm', ['gusset dimension', 'gusset', 'gusset_mm', 'gusset (mm)']],
+  ['front_panel_mm', ['front panel dimension', 'front panel', 'front_panel_mm', 'front panel (mm)']],
+  ['wind_direction', ['wind direction', 'wind_direction']],
+];
+const DERIVED_SOURCE = Object.fromEntries(PACKAGING_DERIVED.map(([k, label, source]) => [k, { label, source }]));
+const derivedColumnFor = (header) => {
+  const h = String(header || '').trim().toLowerCase();
+  for (const [column, aliases] of DERIVED_IMPORT_COLUMNS) if (aliases.includes(h)) return column;
+  return null;
+};
 const importFieldFor = (header) => {
   const h = String(header || '').trim().toLowerCase();
   if (h === 'sku') return 'sku';
@@ -788,9 +818,12 @@ function planImport(db, csvText) {
   const fields = headers.map(importFieldFor);
   const skuCol = fields.indexOf('sku');
   if (skuCol < 0) return { error: 'The file needs a "sku" column — every row is matched on it.' };
-  const unknown_columns = headers.filter((_, i) => fields[i] === null && headers[i] !== '');
+  const derived = headers.map((h, i) => (fields[i] === null ? derivedColumnFor(h) : null));
+  const unknown_columns = headers.filter((_, i) => fields[i] === null && derived[i] === null && headers[i] !== '');
+  // The spec columns the file carries, each with where its value really lives.
+  const derived_columns = headers.map((h, i) => (derived[i] ? { header: h, column: derived[i], label: DERIVED_SOURCE[derived[i]]?.label, source: DERIVED_SOURCE[derived[i]]?.source } : null)).filter(Boolean);
 
-  const rows = []; const unknown_skus = []; const seen = new Set();
+  const rows = []; const unknown_skus = []; const seen = new Set(); const mismatches = [];
   for (const r of grid.slice(1)) {
     const sku = String(r[skuCol] ?? '').trim().toUpperCase();
     if (!sku) continue;
@@ -801,6 +834,17 @@ function planImport(db, csvText) {
     const colors = db.prepare('SELECT * FROM product_colors WHERE sku = ? ORDER BY slot').all(sku);
     const body = {}; const changes = []; let colorPlan = null;
     const wantPms = { set: false, v: null }; const wantHex = { set: false, v: null };
+    // A spec column in the file: compared with the spec the product is on,
+    // reported when it differs, never written. Compared as trimmed text; a
+    // blank cell is not a claim about anything.
+    derived.forEach((column, i) => {
+      if (!column) return;
+      const to = String(r[i] ?? '').trim();
+      if (to === '') return;
+      const from = existing[column] === null || existing[column] === undefined ? '' : String(existing[column]).trim();
+      if (from === to) return;
+      mismatches.push({ sku, column, header: headers[i], label: DERIVED_SOURCE[column]?.label || column, spec_id: existing.spec_id || null, source: DERIVED_SOURCE[column]?.source || null, spec_value: from, file_value: to });
+    });
     fields.forEach((field, i) => {
       if (!field || field === 'sku') return;
       const to = String(r[i] ?? '').trim();
@@ -851,8 +895,10 @@ function planImport(db, csvText) {
     changes: rows.reduce((n, r) => n + r.changes.filter((c) => !c.error).length, 0),
     errors: rows.reduce((n, r) => n + (r.error ? 1 : 0) + r.changes.filter((c) => c.error).length, 0),
     unknown_skus: unknown_skus.length,
+    derived_columns: derived_columns.length,
+    spec_mismatches: mismatches.length,
   };
-  return { rows, unknown_skus, unknown_columns, counts, headers };
+  return { rows, unknown_skus, unknown_columns, derived_columns, spec_mismatches: mismatches, counts, headers };
 }
 const publicPlan = (plan) => ({ ...plan, rows: plan.rows.map(({ _existing, _patch, _colors, ...r }) => r) });
 
@@ -1172,6 +1218,11 @@ router.get('/:sku', (req, res) => {
   product.siblings = db
     .prepare('SELECT sku, flavor, category, pack FROM products WHERE base_flavor = ? AND sku != ? ORDER BY sku')
     .all(row.base_flavor, row.sku);
+  // What the date on the pack rests on, and which date it may therefore be
+  // (D-133). Derived from the justification in force for the SKU on every
+  // read; never a product column.
+  const shelf = shelfLifeFor(db, row.sku);
+  product.shelf_life = { ...shelf, basis_label: shelf.basis_kind ? BASIS_KIND_LABEL[shelf.basis_kind] : null, date_type_label: DATE_TYPE_LABEL[shelf.date_type] };
   res.json(product);
 });
 
@@ -1615,6 +1666,9 @@ export function masterCsv(req, res) {
   if (!auth.ok) return refuseProofToken(res, auth, { text: true });
   const db = getDb();
   const rows = hydrate(db.prepare(`${SELECT} WHERE p.status != 'discontinued' ORDER BY p.sku`).all(), db);
+  // The date type per SKU, one walk (D-133). "best by" is also the answer for
+  // a SKU with no basis recorded — the rule's own answer for no data.
+  const shelf = shelfLifeBasis(db);
 
   const lines = [CSV_HEADERS.join(',')];
   for (const p of rows) {
@@ -1632,6 +1686,7 @@ export function masterCsv(req, res) {
       p.wind_direction, pms, hex, p.eyemark_color,
       p.dieline_required ? 'yes' : 'no',
       p.fill_weight_g ?? '',
+      (shelf.get(p.sku) || NO_BASIS).date_type === 'expiration' ? 'expiration' : 'best by',
     ].map(csvCell).join(','));
   }
 

@@ -188,7 +188,7 @@ console.log('\n── (§5) master.csv says where every column comes from, and t
   const header = text.split('\n')[0];
   t('the header IS the source map\'s keys, in order', header === MASTER_CSV_SOURCES.map(([n]) => n).join(','), header);
   t('the sixteen contract names come first, verbatim', header.startsWith('sku,gtin,flavor,packaging type,material,zipper,print,trim length,trim width,gusset dimension,front panel dimension,wind direction,pms spot colors,hex spot colors,eye mark color,die line required'));
-  t('every column names the table and column it populates from', MASTER_CSV_SOURCES.every(([, src]) => /^(products|packaging_specs|product_colors)\./.test(src)));
+  t('every column names the table and column it populates from', MASTER_CSV_SOURCES.every(([, src]) => /^(products|packaging_specs|product_colors|stability_justifications)\./.test(src)));
 }
 
 console.log('\n── the screen: the grid at 1280, the cards at 390 ──');

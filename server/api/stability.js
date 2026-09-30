@@ -11,7 +11,7 @@
 import { Router } from 'express';
 import { randomUUID as uuid } from 'crypto';
 import { getDb, logAudit } from '../db.js';
-import { planPulls, generateStabilityPullTasks, stabilityStatus, pullState } from '../stability.js';
+import { planPulls, generateStabilityPullTasks, stabilityStatus, pullState, currentJustifications, BASIS_KINDS, dateTypeFor } from '../stability.js';
 import { raiseCapa } from '../capa-raise.js';
 import { readyDocOrigin } from '../links.js';
 import { postMessageAs, botDm } from './comms.js';
@@ -40,22 +40,8 @@ function studyShape(db, s, t) {
   };
 }
 
-/**
- * The basis in force for each SKU is the MOST RECENT justification naming it —
- * derived on read, never a stored flag. A later justification for one SKU of a
- * family does not unsay the earlier one for the rest of the family; each row
- * reports `current_for`, the SKUs it still speaks for.
- */
-function currentJustifications(db) {
-  const rows = db.prepare('SELECT * FROM stability_justifications ORDER BY decided_on DESC, created_at DESC, rowid DESC').all()
-    .map(j => ({ ...j, skus: JSON.parse(j.product_skus || '[]') }));
-  const claimed = new Set();
-  for (const j of rows) {
-    j.current_for = j.skus.filter(k => !claimed.has(k));
-    for (const k of j.current_for) claimed.add(k);
-  }
-  return rows;
-}
+// currentJustifications lives in ../stability.js (D-133): the products feed,
+// Completeness and this router all derive the SKU's date type from it.
 
 /** Every active product and what its expiration date rests on. */
 function coverage(db) {
@@ -69,7 +55,8 @@ function coverage(db) {
   const rows = products.map(p => {
     const st = studies.filter(s => s.skus.includes(p.sku));
     const js = just.filter(j => j.current_for.includes(p.sku));
-    return { ...p, studies: st.map(s => ({ id: s.id, title: s.title, status: s.status })), justifications: js.map(j => ({ id: j.id, shelf_life_months: j.shelf_life_months, basis_type: j.basis_type })),
+    return { ...p, studies: st.map(s => ({ id: s.id, title: s.title, status: s.status })), justifications: js.map(j => ({ id: j.id, shelf_life_months: j.shelf_life_months, basis_type: j.basis_type, basis_kind: j.kind, date_type: j.date_type })),
+      date_type: js.length ? js[0].date_type : 'best_by',
       covered: st.length > 0 || js.length > 0 };
   });
   return { products: rows, uncovered: rows.filter(r => !r.covered).length, covered: rows.filter(r => r.covered).length };
@@ -85,7 +72,7 @@ router.get('/', (req, res) => {
 
 router.get('/justifications', (_req, res) => {
   const db = getDb();
-  res.json({ justifications: currentJustifications(db).map(j => ({ ...j, product_skus: j.skus, skus: undefined })) });
+  res.json({ justifications: currentJustifications(db).map(j => ({ ...j, product_skus: j.skus, skus: undefined })), basis_kinds: BASIS_KINDS });
 });
 
 router.post('/', requireEdit, (req, res) => {
@@ -205,15 +192,24 @@ router.post('/justifications', requireEdit, (req, res) => {
   if (!Number.isFinite(months) || months <= 0) return res.status(400).json({ error: 'Shelf life in months is required.' });
   const type = b.basis_type === 'study' ? 'study' : 'interim';
   if (type === 'study' && !db.prepare('SELECT 1 FROM stability_studies WHERE id = ?').get(b.study_id || '')) return res.status(400).json({ error: 'A study-based justification must name the study.' });
+  // WHAT KIND of basis this is decides the date the pack may print (D-133):
+  // data of any of the three kinds permits an expiration date; "none" is the
+  // recorded decision that it prints Best by. Required on every new row — a
+  // justification with no kind derives nothing, which is the state the rows
+  // filed before this existed are in and the reason they read "kind not
+  // recorded" rather than being guessed at.
+  const kind = String(b.basis_kind || '').trim();
+  if (!BASIS_KINDS.includes(kind)) return res.status(400).json({ error: `Say what kind of basis this is: ${BASIS_KINDS.join(', ')}. The date type (expiration or Best by) is derived from it.`, basis_kinds: BASIS_KINDS });
+  if (type === 'study' && kind !== 'in_house_study') return res.status(400).json({ error: 'A justification that names a study is an in-house study basis.' });
   const id = uuid();
   const day = isDay(b.decided_on) ? b.decided_on : today(db);
   db.transaction(() => {
-    db.prepare(`INSERT INTO stability_justifications (id, product_family, product_skus, shelf_life_months, basis_type, study_id, basis, document_ref, decided_by, decided_on)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(id, clean(b.product_family, 120), JSON.stringify(list), months, type, type === 'study' ? b.study_id : null, basis, clean(b.document_ref, 200), clean(b.decided_by, 120) || req.user.name, day);
-    logAudit(req.user, 'stability_justification_filed', 'stability_justification', id, { skus: list, shelf_life_months: months, basis_type: type });
+    db.prepare(`INSERT INTO stability_justifications (id, product_family, product_skus, shelf_life_months, basis_type, study_id, basis, document_ref, decided_by, decided_on, basis_kind)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(id, clean(b.product_family, 120), JSON.stringify(list), months, type, type === 'study' ? b.study_id : null, basis, clean(b.document_ref, 200), clean(b.decided_by, 120) || req.user.name, day, kind);
+    logAudit(req.user, 'stability_justification_filed', 'stability_justification', id, { skus: list, shelf_life_months: months, basis_type: type, basis_kind: kind, date_type: dateTypeFor(kind) });
   })();
-  res.status(201).json({ justification: { ...db.prepare('SELECT * FROM stability_justifications WHERE id = ?').get(id), product_skus: list }, coverage: coverage(db) });
+  res.status(201).json({ justification: { ...db.prepare('SELECT * FROM stability_justifications WHERE id = ?').get(id), product_skus: list, date_type: dateTypeFor(kind) }, coverage: coverage(db) });
 });
 
 export default router;

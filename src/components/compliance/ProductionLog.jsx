@@ -57,6 +57,7 @@ const INITIAL_FORM = {
   product_name: '',
   mo_number: '',
   lot_number: '',
+  mmr_ref: '',
   start_time: '',
   end_time: '',
   quantity_completed: '',
@@ -68,7 +69,7 @@ const INITIAL_FORM = {
 
 const WORK_STAGES = ['Weighed', 'Sifted', 'Blended'];
 const blankMoLine = (room = '') => ({
-  product_name: '', mo_number: '', lot_number: '', room, work_stages: [], portion: '',
+  product_name: '', mo_number: '', lot_number: '', mmr_ref: '', room, work_stages: [], portion: '',
   batches: '', batch_weights: '', quantity: '', start_time: '', end_time: '',
   is_adjustment: false, note: '',
 });
@@ -140,6 +141,13 @@ function MoLinesField({ lines, setLines, defaultRoom = '', rooms = ROOMS }) {
             <div>
               <label className="block text-[11px] text-gray-600 mb-0.5">Lot #</label>
               <input value={l.lot_number} onChange={e => setLine(i, { lot_number: e.target.value })} className={cls} placeholder="Lot #" />
+            </div>
+            {/* The approved master record this run was made to — Keychain's
+                identifier and revision (D-133). Per LINE: two MOs on one shift
+                are two products with two master records. */}
+            <div className="sm:col-span-2">
+              <label className="block text-[11px] text-gray-600 mb-0.5">Approved MMR (Keychain ref · revision)</label>
+              <input value={l.mmr_ref || ''} onChange={e => setLine(i, { mmr_ref: e.target.value })} className={cls} placeholder="e.g. MMR-0042 rev 3" data-mo-mmr-ref />
             </div>
             <div className="sm:col-span-2">
               <label className="block text-[11px] text-gray-600 mb-0.5">Room this run was in</label>
@@ -354,6 +362,7 @@ function MoLinesSummary({ lines }) {
           {l.room && <span className="ml-1 px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 text-[10px] font-medium">{l.room}</span>}
           {l.product_name && <span> · {l.product_name}</span>}
           {l.lot_number && <span className="text-gray-500"> · Lot {l.lot_number}</span>}
+          {l.mmr_ref && <span className="text-gray-500" data-line-mmr> · MMR {l.mmr_ref}</span>}
           {l.work_stages?.length ? <span className="text-gray-500"> · {l.work_stages.join(', ')}{l.portion ? ` ${l.portion}` : ''}</span> : null}
           {(l.batches != null && l.batches !== '') && <span className="text-gray-500"> · {l.batches} batch{Number(l.batches) === 1 ? '' : 'es'}</span>}
           {l.batch_weights && <span className="text-gray-500"> · {l.batch_weights}</span>}
@@ -661,6 +670,14 @@ function EntryForm({ user, onSuccess, initial, dayLogId, onBackToDay }) {
             <input required value={form.lot_number} onChange={e => set('lot_number', e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Lot number" />
           </div>
+          {/* The approved master record the run was made to (D-133). The
+              server decides whether it is required (the MMR gate); the box is
+              always here so a run can name it before the gate is enforced. */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Approved MMR (Keychain ref · revision)</label>
+            <input value={form.mmr_ref || ''} onChange={e => set('mmr_ref', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. MMR-0042 rev 3" data-entry-mmr-ref />
+          </div>
         </>)}
         {/* On a multi-MO team the times live on the work itself — each MO run
             and each clean has its own window — so the shift window is derived
@@ -908,6 +925,7 @@ const AMEND_FIELDS = [
   { key: 'product_name', label: 'Product', type: 'text' },
   { key: 'mo_number', label: 'MO #', type: 'text' },
   { key: 'lot_number', label: 'Lot #', type: 'text' },
+  { key: 'mmr_ref', label: 'Approved MMR (Keychain ref · revision)', type: 'text' },
   { key: 'team', label: 'Team', type: 'select', options: TEAMS },
   // A line is which FILLING machine a run went through — the tag that exists
   // because Stick Pack and Hand Fill merged into one team. Kitting has no line,
@@ -991,7 +1009,7 @@ function AmendModal({ entry, onClose, onSaved }) {
   // Entries with MO lines edit those instead of the scalar product/MO/lot/qty,
   // which the server derives from line 0.
   const multiMo = Array.isArray(entry.mo_lines) && entry.mo_lines.length > 0;
-  const HIDDEN_FOR_MO = new Set(['product_name', 'mo_number', 'lot_number', 'quantity_completed']);
+  const HIDDEN_FOR_MO = new Set(['product_name', 'mo_number', 'lot_number', 'mmr_ref', 'quantity_completed']);
   const [form, setForm] = useState(() => {
     const f = {};
     for (const { key } of AMEND_FIELDS) f[key] = entry[key] ?? '';
@@ -1229,6 +1247,57 @@ const SORT_COLUMNS = [
   { label: 'Units/Min/Person', key: 'units_per_min_per_person', type: 'number' },
   { label: 'QA Status', key: 'qa_signoff_by', type: 'boolean' },
 ];
+
+// The MMR gate (D-133, CAR 4990683-7). The master record lives in Keychain;
+// every run names the approved one it was made to. This reads
+// /production/mmr-gate — the mode, and every run since the committed date with
+// no reference — and lets an admin move the mode, audited. The D-063 release
+// gate's strip, one module over.
+function MmrGateStrip({ isAdmin, refreshKey }) {
+  const { data, refresh } = useApiGet('/production/mmr-gate', [refreshKey]);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  if (!data) return null;
+  const setMode = async (mode) => {
+    if (!isAdmin || busy) return;
+    if (mode === 'on' && !window.confirm('Enforce the gate? A run — a schedule cell or an end-of-day line that names an MO or a product — can no longer be saved without its approved MMR reference.')) return;
+    setBusy(true);
+    try { await apiPut('/production/mmr-gate', { mode }); refresh(); } catch (e) { window.alert(e.message); } finally { setBusy(false); }
+  };
+  const tone = data.mode === 'on' ? 'border-green-200 bg-green-50 text-green-900' : data.mode === 'warn' ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-red-200 bg-red-50 text-red-900';
+  return (
+    <div data-mmr-gate={data.mode} className={`rounded-xl border px-4 py-3 text-sm ${tone}`}>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="font-semibold">MMR gate: {data.mode === 'on' ? 'enforcing' : data.mode === 'warn' ? 'warn only' : 'off'}</div>
+        <div className="text-xs">
+          <span data-mmr-named={data.runs_named}>{data.runs_named} of {data.runs_total} runs since {data.since} name their approved MMR</span>
+          {' · '}<span data-mmr-unnamed={data.runs_unnamed}>{data.runs_unnamed} filed without one</span>
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          {isAdmin && (
+            <select value={data.mode} onChange={e => setMode(e.target.value)} disabled={busy} data-mmr-gate-mode
+              className="px-2 py-1 border border-gray-300 rounded-lg text-xs bg-white text-gray-800">
+              <option value="off">Off</option>
+              <option value="warn">Warn — file, record the gap</option>
+              <option value="on">Enforce — refuse a run with no MMR</option>
+            </select>
+          )}
+          {data.runs_unnamed > 0 && <button type="button" onClick={() => setOpen(o => !o)} className="text-xs underline">{open ? 'Hide' : 'Which runs'}</button>}
+        </div>
+      </div>
+      <p className="mt-1 text-xs opacity-80">
+        The master manufacturing record is held in Keychain; a run here names the approved MMR it was made to (identifier and revision), on the schedule and on the end-of-day report.
+        {data.mode === 'warn' && ' In warn mode a run files without one and is counted here — the list to clear before the gate is enforced.'}
+        {data.mode === 'off' && ' The gate is OFF: nothing is asked and nothing is recorded about a missing reference.'}
+      </p>
+      {open && data.unnamed.length > 0 && (
+        <ul className="mt-2 space-y-0.5 text-xs max-h-56 overflow-y-auto" data-mmr-unnamed-list>
+          {data.unnamed.map((r, i) => <li key={`${r.entry_id}-${i}`}>{r.date} · {r.team} · MO {r.mo_number || '—'}{r.product_name ? ` · ${r.product_name}` : ''} · {r.submitted_by}</li>)}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 function MissedReports({ from, to, user }) {
   // Start collapsed — it's a compact summary line that QA expands when reviewing.
@@ -1477,6 +1546,9 @@ function LogTable({ user }) {
           who can is how 44 accumulated. ReadyBot chases them either way. */}
       {(user?.role === 'admin' || user?.role === 'supervisor' || user?.department === 'qa')
         && <MissedReports from={from} to={to} user={user} />}
+      {/* The MMR gate: its mode, and the runs filed without a reference — the
+          report for the visit. Read by admins and QA; only an admin moves it. */}
+      {(user?.role === 'admin' || user?.department === 'qa') && <MmrGateStrip isAdmin={user?.role === 'admin'} refreshKey={dataVersion} />}
       <SummaryCards from={from} to={to} />
 
       {/* Filter Bar */}
@@ -1549,7 +1621,7 @@ function LogTable({ user }) {
                 {entry.line && <span className="font-medium text-gray-700">{lineLabel(entry.line)}</span>}
                 {entry.mo_lines?.length > 1
                   ? <span className="font-medium text-gray-700">{entry.mo_lines.length} MOs</span>
-                  : <>{entry.mo_number && <span>MO {entry.mo_number}</span>}{entry.lot_number && <span>Lot {entry.lot_number}</span>}</>}
+                  : <>{entry.mo_number && <span>MO {entry.mo_number}</span>}{entry.lot_number && <span>Lot {entry.lot_number}</span>}{entry.mmr_ref && <span data-entry-mmr>MMR {entry.mmr_ref}</span>}</>}
                 <span>{formatTime(entry.start_time)}–{formatTime(entry.end_time)}</span>
                 {entry.duration_hours != null && <span>{Number(entry.duration_hours).toFixed(1)}h</span>}
                 <span>Qty {Number(entry.quantity_completed).toLocaleString()}</span>
@@ -1667,6 +1739,7 @@ function LogTable({ user }) {
                         { label: 'Date', value: formatDate(entry.date) },
                         { label: 'Team', value: [entry.team, entry.line ? lineLabel(entry.line) : null].filter(Boolean).join(' · ') },
                         { label: 'Room', value: entry.room },
+                        { label: 'Approved MMR', value: entry.mo_lines?.length > 1 ? '' : (entry.mmr_ref || (entry.mmr_gate_mode ? 'not named' : '')) },
                         { label: 'Shift', value: `${formatTime(entry.start_time)}–${formatTime(entry.end_time)}` },
                         { label: 'Duration', value: entry.duration_hours != null ? `${Number(entry.duration_hours).toFixed(1)}h` : '' },
                         { label: 'People', value: entry.people_count },

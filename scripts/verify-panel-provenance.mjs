@@ -157,6 +157,10 @@ console.log('\n── Part 2 · (2) a SKU missing only hex_spot_colors reports e
   t('its panel approves cleanly (provenance, fill weight and %DV all in order)', ap.ok, JSON.stringify(await J(ap)).slice(0, 200));
   db.prepare(`INSERT INTO artwork_versions (id, sku, component, version, status, source, proof_job_id, nfp_version, panel_rev)
     VALUES ('pv-art', ?, 'primary', 1, 'print_ready', 'proofing', 'job-777', 'V3', 1)`).run(pouch.sku);
+  // Finished includes what the date on the pack rests on (D-133): a shelf-life basis with its kind.
+  const sl = await post('/stability/justifications', { product_skus: pouch.sku, shelf_life_months: 18, basis_kind: 'client_data',
+    basis: 'Client real-time stability data for this pouch, 18 months at ambient.' });
+  t('its shelf-life basis files (client data, so an expiration date)', sl.status === 201, `${sl.status}`);
   let row = (await comp()).rows.find(r => r.sku === pouch.sku);
   t('finished in every group, it reads COMPLETE with zero gaps', row?.state === 'complete' && row.gaps === 0, JSON.stringify(row?.missing));
   db.prepare("UPDATE product_colors SET hex = NULL WHERE sku = ?").run(pouch.sku);

@@ -34,6 +34,7 @@
 
 import { provenanceOf, provenanceMissing, provenanceStale } from '../shared/panel-provenance.js';
 import { naOf } from '../shared/product-fields.js';
+import { shelfLifeBasis, NO_BASIS, BASIS_KIND_LABEL } from './stability.js';
 
 export const PACK_LABEL = { PLG: 'Pouch — large', PSM: 'Pouch — small', STK: 'Stick pack', BOX: 'Carton', CUP: 'Cup', BTL: 'Bottle' };
 
@@ -108,11 +109,19 @@ export const GROUPS = [
   },
   {
     key: 'formula', label: 'Formula',
-    check: ({ p }) => {
+    check: ({ p, shelf }) => {
       const missing = [];
       if (!present(p.mrp_formula_id)) missing.push('Formula ref');
       if (!present(p.formula_rev)) missing.push('Formula version');
       if (!present(p.fill_weight_g)) missing.push('Fill weight (g)');
+      // WHAT THE DATE ON THE PACK RESTS ON (D-133, CAR 4990683-9). A SKU with
+      // no basis recorded prints Best by by rule and is a named gap until a
+      // person records which kind of basis it has — including "none". A
+      // justification filed before kinds existed is a different gap: it is
+      // on file and unclassified, so the date type cannot be derived from it.
+      const sl = shelf || NO_BASIS;
+      if (!sl.recorded) missing.push('Shelf-life basis');
+      else if (sl.kind_missing) missing.push('Shelf-life basis kind');
       return { missing };
     },
   },
@@ -163,11 +172,11 @@ export const GROUPS = [
 const groupState = (r) => (r.missing.length ? 'incomplete' : 'complete');
 
 /** One SKU. Pure: every input is already fetched. */
-export function completenessOf({ p, spec, colors = [], panel = null, artwork = null, block = null }) {
+export function completenessOf({ p, spec, colors = [], panel = null, artwork = null, block = null, shelf = null }) {
   const groups = {};
   const missing = [];
   for (const g of GROUPS) {
-    const r = g.check({ p, spec, colors, panel, artwork });
+    const r = g.check({ p, spec, colors, panel, artwork, shelf });
     const res = { state: groupState(r), missing: r.missing, na: r.na || [] };
     groups[g.key] = res;
     for (const m of r.missing) missing.push(`${g.label}: ${m}`);
@@ -178,9 +187,13 @@ export function completenessOf({ p, spec, colors = [], panel = null, artwork = n
   // `na` is what was answered "does not apply" — by the pack format or by a
   // person (`na_fields`, the explicit ones, with who and when).
   const naLabels = Object.values(groups).flatMap((g) => g.na);
+  const sl = shelf || NO_BASIS;
   return {
     sku: p.sku, product: p.flavor, line: lineOf(p), status: p.status,
     state, groups, missing, gaps: missing.length, stale,
+    // The date type and its basis, derived (server/stability.js), so the
+    // screen can say "best by — no basis recorded" beside the gap.
+    shelf_life: { recorded: sl.recorded, basis_kind: sl.basis_kind, basis_label: sl.basis_kind ? BASIS_KIND_LABEL[sl.basis_kind] : null, date_type: sl.date_type, kind_missing: sl.kind_missing },
     na: naLabels, na_count: naLabels.length, na_fields: naOf(p),
     block: block ? { reason: block.reason, owner: block.owner, by: block.blocked_by, at: block.blocked_at } : null,
     panel_version: panel?.version || null, panel_status: panel?.status || null,
@@ -223,10 +236,12 @@ export function catalogueCompleteness(db) {
   const panels = currentPanels(db);
   const artwork = currentArtwork(db);
   const blocks = new Map(db.prepare('SELECT * FROM product_completeness_blocks').all().map((b) => [b.sku, b]));
+  const shelf = shelfLifeBasis(db);
 
   const rows = products.map((p) => completenessOf({
     p, spec: specs.get(p.spec_id) || null, colors: colors.get(p.sku) || [],
     panel: panels.get(p.sku) || null, artwork: artwork.get(p.sku) || null, block: blocks.get(p.sku) || null,
+    shelf: shelf.get(p.sku) || null,
   }));
 
   // Counts of things, never a ratio. Every figure is `.length` of the rows under it.
@@ -257,6 +272,8 @@ export function catalogueCompleteness(db) {
       // SKUs carrying an explicit not-applicable, and the fields so marked.
       na_skus: rows.filter((r) => Object.keys(r.na_fields).length).length,
       na_fields: rows.reduce((n, r) => n + Object.keys(r.na_fields).length, 0),
+      // SKUs whose date rests on nothing recorded (D-133) — the 14 October punch list.
+      no_shelf_life_basis: rows.filter((r) => !r.shelf_life.recorded).length,
     },
     groups: GROUPS.map((g) => ({ key: g.key, label: g.label })),
   };
