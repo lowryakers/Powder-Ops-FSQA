@@ -5350,3 +5350,41 @@ panel code on `main` and fails 11** before it can continue, the decisive one app
 nothing at 200. `verify:nfppanel` (49) and `verify:nfppanelui` (19) now file their fixtures with a provenance
 block, since both approve; `verify:artwork` 38, `verify:colors` 54, `verify:skurename` 37,
 `verify-product-readiness` 30, `verify-product-tabs` 43, `verify:prooftoken` 34 unchanged.
+
+## D-129 — The twelve corrective action plans are APPROVED; the approved text is the commitment now, and one of them contradicts D-059 (2026-09-30)
+
+NSF's reviewer approved all twelve plans on 29 September — nine on 4990683 (455-2), three on 4990682
+(GMP for Sport) — each with the same comment: *supporting documents are not reviewed at this time;
+completeness and effectiveness shall be evaluated at the next visit.* Nothing is closed (D-056 stands);
+what changed is that the **submitted text, not the draft, is what the plant is held to.**
+`docs/v2/car-responses/approved-2026-09-29.md` transcribes the approved responses and compares each with
+`responses.mjs`; `docs/v2/roadmap-2026-09-30.md` is the plan that follows from them.
+
+**What the comparison found.**
+- **Every committed completion date is between 13 and 30 September 2026.** The drafts staggered the work
+  to March 2027; the submissions did not. An auditor will read those dates as done.
+- **4990683-7 (MMR) was submitted as "held as a controlled document in ReadyDoc", with "a copy of the
+  approved MMR required to sign off a work order before starting a run."** D-059 had decided Keychain,
+  and the draft said Keychain. The approved text says ReadyDoc. **D-059 is therefore in conflict with an
+  approved CAR and needs a decision (roadmap D1).** The recommendation recorded there is to build the
+  master record in ReadyDoc — it is L1 work on a layer that is strong, the gate needs no ERP, and it is
+  what NSF was told — and to leave the executed batch record to Keychain, saying so in SOP 413. Until
+  that decision is taken `check:ncstatus`'s "no MMR table exists" assertion stays, deliberately: it is
+  the honest description of the tree, not a statement of intent.
+- **4990683-5 gained a new document, SOP 444 (Computer System Validation), and a completion date of
+  25 September.** Nothing in the five-part package exists beyond the two executed protocols the auditor
+  saw. This is the most exposed line in either report and is C1 on the roadmap.
+- **4990683-9 is a different plan**: stability data from the clients, a protocol offered where none
+  exists, and *"best by"* by default where no data comes — carried on an MMR review checklist. The
+  stability holder (D-061) still holds whatever data arrives; the new software is the expiration-vs-best-by
+  rule, which waits on the MMR decision.
+- **The GMP for Sport findings are answered inside SOP 404**, not a new SOP; the seeded draft
+  (SOP-DRAFT-BSC) is source material now. 6.2.3.2(a) — the banned-list check recorded on the supplier's
+  record with the list editions used — is promised and **not built** (roadmap C3).
+- Two new document commitments the drafts did not make: SOP 604 revised to name the ReadyDoc EM tasks;
+  SOP 204 revised alongside FORM 204-01 V2.
+- The responsible names moved to Carol (eleven of twelve) and Maria (eight). Fine for NSF; the roadmap
+  names the people who do the work, from the drafts.
+
+**Doctrine kept.** A returned or overtaken response is answered by a dated note in NSF Connect, never by
+rewriting. Where a September date is not true by the visit, the note goes in before the visit.

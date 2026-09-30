@@ -143,7 +143,14 @@ triage and the per-CAR evidence table, `docs/audit-2026-08-findings.md` the shor
   (scope, Part 11 gap assessment, protocols approved by Quality as validation, software change control) is
   what does not exist. Do not answer it with more test scripts.
 - The PDFs are NOT in the repo (NSF Confidential); they belong in the Reference Library beside `REF-NSF-GMP-AUDIT`.
-- **The twelve responses are drafted** in `docs/v2/car-responses/responses.mjs` (one source; `scripts/build-car-responses.mjs`
+- **ALL TWELVE PLANS WERE APPROVED ON 29 SEPTEMBER 2026 (D-129)** — as plans; effectiveness is checked at the
+  next visit. **The approved text, not the draft, is the commitment**: `docs/v2/car-responses/approved-2026-09-29.md`
+  has it and the differences. Every committed completion date is 13–30 Sep 2026. **4990683-7 was submitted as
+  "the MMR is a controlled document in ReadyDoc"** — the opposite of D-059 — and needs a decision (roadmap D1);
+  4990683-5 commits a new **SOP 444** and a validation package dated 25 Sep that does not exist yet (roadmap C1);
+  4990683-9 is now "clients' stability data, or best-by" on an MMR review checklist. The roadmap that follows is
+  `docs/v2/roadmap-2026-09-30.md`.
+- **The twelve responses were drafted** in `docs/v2/car-responses/responses.mjs` (one source; `scripts/build-car-responses.mjs`
   renders the Markdown copy and the page Carol pastes from). **NAMES AND TITLES COME FROM THE ORG CHART** (the `ORG` seed
   in `server.js`, Version 6, effective 2026-02-20) — never from these notes, which name people by what they do in the
   app. The first draft wrote "Adam (QA)"; Adam Bliss is Production Manager / Food Safety PCQI and Quality is Maria

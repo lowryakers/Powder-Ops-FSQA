@@ -1,5 +1,10 @@
 // The twelve NSF corrective action responses, September 2026 — ONE source.
 //
+// THESE ARE THE DRAFTS. What was actually submitted and APPROVED on 29 Sep 2026
+// differs on several CARs (dates, the MMR's home, SOP 444, shelf life) and is
+// transcribed in docs/v2/car-responses/approved-2026-09-29.md (D-129). The
+// approved text is the commitment; this file is the record of what was proposed.
+//
 // `scripts/build-car-responses.mjs` renders this into the Markdown copy kept
 // in docs/v2/queued/ and the HTML page Carol pastes from. Edit here, never the
 // outputs. Anything in [CAROL: …] is a decision, date or fact only the plant
