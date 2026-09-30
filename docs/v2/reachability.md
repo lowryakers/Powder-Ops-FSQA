@@ -39,7 +39,7 @@ to go and look.
 | Equipment repair banners (D-010: split task text, duplicates, schedules-from-tasks) | Run a reviewed repair once | Admin (Maintenance for the task text) | Equipment list, top | Banner only, shown only while there is something to repair | run by hand 29 Sep (Job 2); one-off, self-clearing — **left as is** |
 | Products: draft realign, colour conflicts, Data health | Catalogue corrections | Product management (Lowry) | Products catalogue and Data health | Banner only | actor owns the screen — left as is |
 | Sensory spec approval (D-050) | Approve a product's draft spec | A QA lead | Organoleptic log strip | Banner; the first test DMs QA to taste | reached through the tasting DM |
-| "Used up" restock suggestions | Add to orders | The office | Supply Orders strip | Banner only, grouped by item | **gap, noted**: Supply Orders is admin-only in the nav; the cycle nudges cover the standing lists but not the suggestions. Small — a `supply_suggestions` line in the office's existing pay/supply DM would close it |
+| "Used up" restock suggestions | Add to orders | The office | Supply Orders strip | Was: banner only. **Now a bell line `supply-suggestions` for admins, counted by item from the strip's own `openSuggestions()`** | **fixed D-124** |
 | Obligations register (`docs/v2/obligations.json`) | Close the 23 open obligations | Whoever runs V2 | The repository | `npm run check:obligations` | not an app mechanism — its reader reads the repo. Left as is |
 
 ## The two rules this pass adds

@@ -970,7 +970,7 @@ function moduleCountOf(u) {
     return u.module_access;
   })();
   // One rule for the row and the form — see accessSummary in shared/module-access.js.
-  return { access, ...accessSummary(u.role, access, ALL_MODULE_IDS) };
+  return { access, ...accessSummary(u.role, access, ALL_MODULE_IDS, { is_external: u.is_external }) };
 }
 
 function DeptChip({ department }) {
@@ -1005,10 +1005,13 @@ function DeptChip({ department }) {
 }
 
 function AccessNote({ u }) {
-  const { full, count, total } = moduleCountOf(u);
+  const { full, count, total, defaults_only } = moduleCountOf(u);
   if (full) return <span className="text-[10px] text-gray-400">All modules</span>;
   // Amber, because this account can open nothing until someone acts.
   if (count === 0) return <span className="text-[10px] font-semibold text-amber-600">No modules assigned</span>;
+  // Operator View arrives with the account (D-124), so "nothing ticked" is a
+  // working floor account now — said plainly, not in the colour of a gap.
+  if (defaults_only) return <span className="text-[10px] text-gray-500" data-access-defaults>Operator View only</span>;
   return <span className="text-[10px] text-gray-500">{count}/{total} modules</span>;
 }
 
@@ -1294,7 +1297,14 @@ function BulkAccessModal({ users, onClose, onDone }) {
   const [access, setAccess] = useState({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const eligible = (users || []).filter(u => u.role !== 'admin');
+  // WHO A MODULE GRANT IS FOR: people who work here and can still sign in.
+  // A deactivated account cannot use a module, a client's boundary is
+  // Messages whatever its map says (EXTERNAL_ALLOWED refuses the rest at the
+  // door), and an auditor pass is read-only everywhere by contract — ticking
+  // any of them here is a grant that does nothing, on a list long enough to
+  // hide the people it is meant for. Admins already hold everything.
+  const eligible = (users || []).filter(u => u.role !== 'admin' && u.role !== 'auditor'
+    && u.is_active && !u.is_external && u.name !== 'ReadyBot');
   const chosen = Object.keys(selected).filter(id => selected[id]);
   const toggle = (id) => setSelected(s => ({ ...s, [id]: !s[id] }));
   const changeCount = Object.keys(access || {}).length;
@@ -1329,15 +1339,15 @@ function BulkAccessModal({ users, onClose, onDone }) {
             <p className="text-xs font-medium text-gray-700 mb-1">Apply to ({chosen.length} selected)</p>
             <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-72 overflow-y-auto">
               {eligible.map(u => (
-                <label key={u.id} className="flex items-center gap-2 px-3 py-1.5 cursor-pointer">
+                <label key={u.id} data-bulk-person={u.name} className="flex items-center gap-2 px-3 py-1.5 cursor-pointer">
                   <input type="checkbox" checked={!!selected[u.id]} onChange={() => toggle(u.id)} />
                   <span className="text-sm text-gray-800">{u.name}</span>
                   <span className="text-[11px] text-gray-400 capitalize ml-auto">{u.role}</span>
                 </label>
               ))}
-              {eligible.length === 0 && <p className="text-sm text-gray-500 text-center py-4">No non-admin users.</p>}
+              {eligible.length === 0 && <p className="text-sm text-gray-500 text-center py-4">No active employees to set.</p>}
             </div>
-            <p className="text-[11px] text-gray-400 mt-1">Admins always have full access and are excluded.</p>
+            <p className="text-[11px] text-gray-400 mt-1">Active employees only. Admins already have everything; clients, auditor passes and deactivated accounts are not listed.</p>
           </div>
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2 flex-wrap">

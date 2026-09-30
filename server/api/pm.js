@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { CLOSED_STATUSES } from '../../shared/work-order-status.js';
 import { writeScheduleItems } from '../bpg-zones.js';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
@@ -1081,13 +1082,31 @@ export function missingStepTicks(procedureStepsJson, stepResults) {
   return { total: steps.filter(t => !isHeading(t)).length, outstanding };
 }
 
+// A TASK THAT IS CLOSED IS CLOSED, whichever way it was closed (D-124).
+// Completion refused only `completed`, so a task already marked NOT APPLICABLE
+// — or cancelled by the cleanup — could be completed afterwards: the recorded
+// outcome ("not applicable, no changeover", who said so, when) was overwritten
+// by a completion stamped today, and whatever record that completion files was
+// filed against a task closed months before. Found on a Pre-Op marked N/A in
+// June that the Task Center was still offering to complete, ATP box and all.
+// (A duplicate NEXT task was never the risk — createNextWorkOrder already
+// refuses a second task on the same due date.) One set, read by every door
+// that closes a task and by the card that offers the buttons.
+const CLOSED_WORDS = { completed: 'already completed', not_applicable: 'already marked not applicable', cancelled: 'cancelled' };
+function closedRefusal(wo) {
+  if (!CLOSED_STATUSES.includes(wo.status)) return null;
+  return {
+    error: `This task was ${CLOSED_WORDS[wo.status]}${wo.completed_by ? ` by ${wo.completed_by}` : ''}${wo.completed_at ? ` on ${String(wo.completed_at).slice(0, 10)}` : ''}. A closed task is not completed again — if the work was done, file it on its own record form with the date it was done.`,
+    closed: wo.status,
+  };
+}
+
 router.post('/work-orders/:id/complete-and-recur', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Work order not found' });
-  if (existing.status === 'completed') {
-    return res.status(409).json({ error: 'Work order is already completed' });
-  }
+  const closed = closedRefusal(existing);
+  if (closed) return res.status(409).json(closed);
 
   const { notes, lubricant_used, lubricant_is_food_grade, readings, step_results, reading_result,
     performed_on, late_entry_reason } = req.body;
@@ -1324,7 +1343,11 @@ router.post('/work-orders/batch-complete', (req, res) => {
   const batchRun = db.transaction(() => {
     for (const id of ids) {
       const wo = getWO.get(id);
-      if (!wo || wo.status === 'completed') continue;
+      if (!wo) continue;
+      if (CLOSED_STATUSES.includes(wo.status)) {
+        if (wo.status !== 'completed') skipped.push({ id, title: wo.title, reason: `already closed (${wo.status.replace('_', ' ')})` });
+        continue;
+      }
 
       const eq = getEq.get(wo.equipment_id);
       const needsClearance = eq && eq.is_food_contact === 1 ? 1 : 0;
@@ -1392,6 +1415,9 @@ router.post('/work-orders/:id/not-applicable', (req, res) => {
   const db = getDb();
   const wo = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
   if (!wo) return res.status(404).json({ error: 'Work order not found' });
+  // Same rule: marking a closed task N/A again rewrote who closed it and why.
+  const closed = closedRefusal(wo);
+  if (closed) return res.status(409).json(closed);
 
   const { reason } = req.body;
   const actor = req.user.name;

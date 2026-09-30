@@ -11,6 +11,7 @@
 //    the dashboard; no repeat pings while the same areas stay red.
 
 import { readyDocOrigin } from './links.js';
+import { plantWallClock } from './plant-clock.js';
 
 export function startScheduledJobs(db, deps) {
   const tick = () => {
@@ -33,17 +34,21 @@ function setFlag(db, key, value) {
   db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))").run(key, value);
 }
 
-async function runDue(db, deps) {
+// Exported, and `now` injectable, so check:plantclock can drive the real gates
+// at a chosen instant rather than asserting a copy of them.
+export async function runDue(db, deps, now = new Date()) {
   const { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser } = deps;
-  const now = new Date();
-  const week = isoWeek(now);
-  const day = now.getDay(); // 0 Sun … 5 Fri
+  // The plant's wall clock for every "which day / which hour / which week"
+  // gate, the real instant for elapsed time and stored stamps (D-124).
+  const wall = plantWallClock(now);
+  const week = isoWeek(wall);
+  const day = wall.getDay(); // 0 Sun … 5 Fri
 
   // Weekly backup: due Friday; a boot on Sat/Sun still catches the missed run.
   if (day >= 5 || day === 0) {
     if (getFlag(db, 'last_auto_backup_week') !== week && storageEnabled()) {
       try {
-        const name = `readydoc-backup-${now.toISOString().slice(0, 10)}.zip`;
+        const name = `readydoc-backup-${ymdLocal(wall)}.zip`;
         const key = `backups/${name}`;
         const buf = buildBackupZip(db, 'scheduled weekly job');
         await putObject(key, buf, 'application/zip');
@@ -97,7 +102,7 @@ async function runDue(db, deps) {
 
   // Daily critical-programs alert. Runs once per day (first hourly tick),
   // but only posts when the red set actually changed since the last post.
-  const todayStr = now.toISOString().slice(0, 10);
+  const todayStr = ymdLocal(wall);
   if (deps.computeCritical && getFlag(db, 'last_critical_alert_check') !== todayStr) {
     try {
       const { readiness, categories } = deps.computeCritical(db);
@@ -251,8 +256,8 @@ async function runDue(db, deps) {
    * skipped for the day.
    */
   if (deps.sendFlashReport) {
-    const hour = now.getHours();
-    const lastOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() === now.getDate();
+    const hour = wall.getHours();
+    const lastOfMonth = new Date(wall.getFullYear(), wall.getMonth() + 1, 0).getDate() === wall.getDate();
     const due = [];
     // Not before 6am, and not at the weekend for the daily — a report nobody
     // is at work to read is one they scroll past on Monday.
@@ -280,7 +285,7 @@ async function runDue(db, deps) {
   // and the threshold is what tells those apart without anybody deciding. Silent
   // at zero, because a digest that arrives saying nothing is one people learn to
   // delete unread — and then they delete the one that mattered.
-  if (deps.sendCleanupDigest && now.getHours() >= 6 && day >= 1 && day <= 5) {
+  if (deps.sendCleanupDigest && wall.getHours() >= 6 && day >= 1 && day <= 5) {
     const lastCleanup = getFlag(db, 'last_cleanup_digest_at');
     const elapsed = lastCleanup ? now - new Date(lastCleanup) : Infinity;
     const pile = (() => { try { return deps.cleanupDigest(db).tasks; } catch { return 0; } })();
@@ -303,7 +308,7 @@ async function runDue(db, deps) {
   // message stops being read. The "not sent in seven days" test rather than
   // "is it Monday" means a missed Monday goes out on the Tuesday instead of
   // going quiet for a week.
-  if (deps.sendEodMissedDigest && now.getHours() >= 6 && day >= 1 && day <= 5) {
+  if (deps.sendEodMissedDigest && wall.getHours() >= 6 && day >= 1 && day <= 5) {
     const lastEod = getFlag(db, 'last_eod_missed_digest_at');
     const elapsed = lastEod ? now - new Date(lastEod) : Infinity;
     const gaps = (() => { try { return deps.eodMissedDigest(db, now).total; } catch { return 0; } })();
@@ -321,7 +326,7 @@ async function runDue(db, deps) {
   // team's own channel — where people already look — like the schedule publish.
   if (day === 1 && getFlag(db, 'last_pm_digest_week') !== week) {
     try {
-      await postPmWeekDigest(db, deps, now);
+      await postPmWeekDigest(db, deps, wall);
       setFlag(db, 'last_pm_digest_week', week);
     } catch (e) { console.warn('[jobs] PM digest failed:', e.message); }
   }

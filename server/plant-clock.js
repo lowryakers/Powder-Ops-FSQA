@@ -54,3 +54,24 @@ export function plantHour(now = new Date()) {
 export function plantWeekday(now = new Date()) {
   return !['Sat', 'Sun'].includes(weekdayFmt.format(now));
 }
+
+const partsFmt = new Intl.DateTimeFormat('en-US', {
+  timeZone: PLANT_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+});
+
+/**
+ * A Date whose LOCAL fields read the plant's wall clock (D-124).
+ *
+ * The scheduler asks "is it Monday", "is it past 06:00", "which week is it" and
+ * "what is today" with getDay / getHours / getDate — and the container runs in
+ * UTC with nothing setting TZ, so the 06:00 digests went out at midnight
+ * Mountain and Monday's began on Sunday evening. Built from the plant's parts
+ * with the local constructor, so its local fields are the plant's whatever
+ * zone the process runs in. For gates and labels ONLY: never store it or
+ * subtract it from a real instant — elapsed time uses the real `now`.
+ */
+export function plantWallClock(now = new Date()) {
+  const p = Object.fromEntries(partsFmt.formatToParts(now).map(x => [x.type, x.value]));
+  return new Date(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second);
+}

@@ -27,6 +27,7 @@
 // and are not behind this guard; their exposure is bounded by their handlers.
 
 import { OPT_IN_SET } from '../shared/opt-in-modules.js';
+import { defaultLevel } from '../shared/default-modules.js';
 
 // Must include every id used in Settings' MODULE_GROUPS (src side).
 export const ALL_MODULE_IDS = [
@@ -103,10 +104,12 @@ export function moduleLevel(user, moduleId) {
     return 'edit';
   }
   if (user.role === 'auditor') return 'view';
-  if (ma == null) return null; // nothing assigned — see the note at the top
-  if (Array.isArray(ma)) return ma.includes(moduleId) ? (user.role === 'supervisor' ? 'edit' : 'view') : null;
+  // Operator View is every working account's (D-124); an explicit entry wins.
+  const dflt = defaultLevel(user, moduleId);
+  if (ma == null) return dflt; // nothing assigned beyond the defaults — see the note at the top
+  if (Array.isArray(ma)) return ma.includes(moduleId) ? (user.role === 'supervisor' ? 'edit' : 'view') : dflt;
   const lvl = ma[moduleId];
-  return lvl === 'edit' ? 'edit' : lvl === 'view' ? 'view' : null;
+  return lvl === 'edit' ? 'edit' : lvl === 'view' ? 'view' : dflt;
 }
 
 export function canEditAny(user, moduleIds) {
@@ -154,6 +157,10 @@ export function taskListReach(row) {
   if (!row) return { code: 'no_account', label: 'no account' };
   const user = { ...row, module_access: parseModuleAccess(row.module_access) };
   if (user.role === 'admin') return { code: 'task_list', label: 'Operator View' };
+  // Every working account holds Operator View by default now (D-124), so a
+  // NULL map reaches a task list; only an external account or an explicit
+  // narrowing falls through to the two gaps below.
+  if (TASK_LIST_MODULES.some(m => moduleLevel(user, m))) return { code: 'task_list', label: 'Operator View' };
   if (user.module_access == null) {
     return { code: 'no_modules', label: 'no modules assigned',
       // Names the one that matters for a task as well as the general gap: this
@@ -176,11 +183,32 @@ export function taskListReach(row) {
 // account whose GETs are refused is the NOTHING-ASSIGNED account: a NULL map
 // means no modules, and "no modules" that still answered every read would be
 // the same two-mechanisms gap this rule just closed on the write side.
+// THE TASK-DOING WRITES (D-124). Doing your own work is not editing the
+// module: completing a task, flagging a problem, marking it not applicable and
+// taking the training test are what Operator View exists for, and they were
+// refused to anybody holding it at View. Named, not inferred — an allow list
+// fails loudly (somebody says "I can't complete this") where a deny list fails
+// silently (a floor account rewriting a PM schedule). Paths are relative to the
+// router's mount.
+export const TASK_WRITES = [
+  /^POST \/work-orders\/[^/]+\/complete-and-recur$/,
+  /^POST \/work-orders\/batch-complete$/,
+  /^POST \/work-orders\/[^/]+\/flag-issue$/,
+  /^POST \/work-orders\/[^/]+\/not-applicable$/,
+  /^POST \/work-orders\/[^/]+\/training-test$/,
+];
+
 export function requireModuleWrite(...moduleIds) {
+  // A trailing options object: `{ taskWrites }`, the writes any holder of one
+  // of these modules may make whatever its level (the pm mount's TASK_WRITES).
+  const opts = moduleIds.length && typeof moduleIds[moduleIds.length - 1] === 'object' ? moduleIds.pop() : {};
   return (req, res, next) => {
     const user = req.user;
     if (!user) return res.status(401).json({ error: 'Not authenticated' });
-    const unassigned = user.role !== 'admin' && user.role !== 'auditor' && user.module_access == null;
+    // Nothing assigned AND nothing this mount serves by default. A NULL map
+    // still reaches the pm router, because Operator View is every account's.
+    const unassigned = user.role !== 'admin' && user.role !== 'auditor' && user.module_access == null
+      && !moduleIds.some(m => defaultLevel(user, m));
     if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
       if (unassigned) return res.status(403).json({ error: 'No modules have been assigned to this account yet. An admin assigns them in Settings.' });
       return next();
@@ -189,6 +217,8 @@ export function requireModuleWrite(...moduleIds) {
     if (user.role === 'auditor') return res.status(403).json({ error: 'Auditor accounts are read-only.' });
     if (unassigned) return res.status(403).json({ error: 'No modules have been assigned to this account yet. An admin assigns them in Settings.' });
     if (canEditAny(user, moduleIds)) return next();
+    const line = `${req.method} ${req.path}`;
+    if ((opts.taskWrites || []).some(r => r.test(line)) && moduleIds.some(m => moduleLevel(user, m))) return next();
     return res.status(403).json({ error: 'You have view-only access to this module. An admin can grant edit access in Settings.' });
   };
 }

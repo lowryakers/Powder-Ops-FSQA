@@ -44,6 +44,13 @@ export function issueSession(db, user, res = null, { notAfter = null } = {}) {
       username: user.username || user.name,
       role: user.role,
       department: user.department || 'warehouse',
+      // WHETHER THIS IS A CLIENT has to be on the FIRST user object the shell
+      // sees, not only on /users/me afterwards (D-124). The shell decides the
+      // guest layout and the default Operator View from it; without the field
+      // a client signed in by password or join link was drawn as an internal
+      // account — Operator View and all — until the next refresh.
+      is_external: !!user.is_external,
+      external_org: user.external_org || null,
       module_access: moduleAccess,
       home_workspace: user.home_workspace || 'fsqa',
       quick_tabs: quickTabs,

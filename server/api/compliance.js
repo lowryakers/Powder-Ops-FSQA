@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { openSuggestions } from './office.js';
 import { scaleChecksDue, scaleChecksOverdueNow } from '../scale-checks.js';
 import { payActions } from './pay.js';
 import AdmZip from 'adm-zip';
@@ -751,6 +752,17 @@ router.get('/notifications', (req, res) => {
       // The office's own list — a decision to make, a reviewer to chase, a
       // review to assign. Same function the screen and the reminder read, so
       // the badge cannot clear while the list still has something on it.
+      // "USED UP" RESTOCK SUGGESTIONS (D-124). They lived only as a strip on
+      // Supply Orders — an admin-only screen nobody opens to look for them —
+      // the one open row in reachability.md. Counted by ITEM, as the strip
+      // groups them, from the strip's own function.
+      if (req.user.role === 'admin') {
+        try {
+          const sugg = openSuggestions(db);
+          if (sugg.length) items.push({ id: 'supply-suggestions', tab: 'supply-orders', severity: 'info', count: sugg.length,
+            label: `${sugg.length} item${sugg.length > 1 ? 's' : ''} reported used up — add to orders or dismiss` });
+        } catch { /* table optional */ }
+      }
       if (req.user.role === 'admin') {
         const { counts } = payActions(db);
         if (counts.total > 0) {

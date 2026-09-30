@@ -778,7 +778,7 @@ const SUGGESTION_SQL = `
     AND COALESCE(json_extract(data, '$.suggestion_state'), 'open') = 'open'
   ORDER BY record_date DESC, created_at DESC LIMIT 500`;
 
-function openSuggestions(db) {
+export function openSuggestions(db) {
   let rows;
   try { rows = db.prepare(SUGGESTION_SQL).all(USED_UP_REASON); } catch { return []; }
   // Group by item: "3 people reported this" is one thing to act on, not three.

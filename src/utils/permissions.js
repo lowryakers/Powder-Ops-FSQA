@@ -1,7 +1,7 @@
 // Per-module access levels.
 //
 // A user's `module_access` can be:
-//   - null            → NOTHING ASSIGNED — no modules at all (decided 2026-08-13)
+//   - null            → NOTHING ASSIGNED — Messages and Operator View only (D-124)
 //   - ["a","b"]       → legacy: visible modules; edit per role (auto-migrated to object form)
 //   - { a:"edit", b:"view" } → explicit per-module level; modules absent = no access
 //
@@ -21,6 +21,7 @@
 
 const ADMIN_ALWAYS = new Set(['settings']);
 import { OPT_IN_SET } from '../../shared/opt-in-modules.js';
+import { defaultLevel, defaultModuleIds } from '../../shared/default-modules.js';
 
 // An admin's map is a RESTRICTION only when it narrows the ordinary modules.
 // A map that holds nothing but opt-in grants ({'dannys-list':'edit'}) is an
@@ -47,10 +48,12 @@ export function moduleLevel(user, moduleId) {
     return 'edit';
   }
   if (user.role === 'auditor') return 'view';
-  if (ma == null) return null;
-  if (Array.isArray(ma)) return ma.includes(moduleId) ? roleDefault(user.role) : null;
+  // Operator View is every working account's (D-124); an explicit entry wins.
+  const dflt = defaultLevel(user, moduleId);
+  if (ma == null) return dflt;
+  if (Array.isArray(ma)) return ma.includes(moduleId) ? roleDefault(user.role) : dflt;
   const lvl = ma[moduleId];
-  return lvl === 'edit' ? 'edit' : lvl === 'view' ? 'view' : null;
+  return lvl === 'edit' ? 'edit' : lvl === 'view' ? 'view' : dflt;
 }
 
 export const canViewModule = (user, moduleId) => moduleLevel(user, moduleId) != null;
@@ -77,10 +80,11 @@ export function visibleModuleIds(user, allIds) {
   // Auditors never see this nav — they land in the Auditor View — but the
   // answer stays consistent with moduleLevel if anything else asks.
   if (user.role === 'auditor') return allIds;
-  // Nothing assigned means nothing shown — see the note at the top.
-  if (ma == null) return [];
-  if (Array.isArray(ma)) return allIds.filter(id => ma.includes(id));
-  return allIds.filter(id => ma[id]);
+  // Nothing assigned means only the defaults — Operator View (D-124).
+  const dflt = new Set(defaultModuleIds(user));
+  if (ma == null) return allIds.filter(id => dflt.has(id));
+  if (Array.isArray(ma)) return allIds.filter(id => ma.includes(id) || dflt.has(id));
+  return allIds.filter(id => ma[id] || dflt.has(id));
 }
 
 // Who may work the QA Review Center — QA/quality by department, supervisors and

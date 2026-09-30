@@ -5089,3 +5089,74 @@ detector and sync and fails 5**: the daily inspection is reported, flattened to 
 schedule and on yesterday's missed card, left on the banner after a re-sync, and overwritten by an
 equipment edit. `verify:annualreviews` (70 → 76). **Its control disables the boot pass, which is
 the state the plant is in, and fails 6.**
+
+## D-124 — Operator View arrives with the account; a closed task stays closed; three roadmap items (2026-09-30)
+
+**Asked:** Lowry ticked Operator View for everyone and asked whether it should be standard for every account,
+like Messages — everybody is assigned training. Bulk Permissions should list active employees only, not
+clients. Daniela sent a screenshot of a Production Line Pre-Op / Changeover Clean card, due 17 June, status
+*not applicable*, still offering the ATP box and "Complete & Generate Next". And: go ahead with the next
+roadmap items in code (status-2026-09-29.md §6, items 1–3).
+
+**1. Operator View is a default, at VIEW, with the task-doing writes named (supersedes part of the
+2026-08-13 NULL-map rule and D-105's "no modules ⇒ 403 on its own task").** `shared/default-modules.js` is
+read by both `moduleLevel` copies, `visibleModuleIds` and `accessSummary`. It is **View, not Edit**, because
+the pm router has no role gates: Edit on Operator View already lets an account create and rewrite PM
+schedules through the API, and making that everybody's would widen a door nobody decided to open. What a
+floor account needs is to DO its tasks, so those writes are an allow list (`TASK_WRITES`: complete, batch
+complete, flag an issue, mark N/A, take the training test), honoured for any level of the mount's modules.
+An explicit Settings entry wins; a client never gets it; every other guarded mount still refuses a NULL map.
+`taskListReach` sees the default, so the assign screen stops naming people who can now see the task.
+
+**2. A closed task stays closed.** Completion refused only `completed`. A task marked *not applicable* (or
+cancelled by the cleanup) could be completed afterwards, and that **overwrote its recorded outcome** — the
+June "no changeover, marked by X" became a completion stamped today, filing whatever record the completion
+files. Marking it N/A again rewrote who closed it and why. `shared/work-order-status.js` `CLOSED_STATUSES` is
+now read by complete-and-recur and not-applicable (409, naming who closed it and pointing to the record form),
+batch-complete (skipped by name) and the Task Center card (no Done; "Marked not applicable by X · date").
+**Corrected in passing:** my first draft said this also raised a duplicate next task. It cannot —
+`createNextWorkOrder` refuses a second task on the same due date — and the verify asserts that as a regression
+rather than claiming it as the fix.
+
+**3. The four boot passes that rewrote editable PM fields run once per database.** The cleaning and
+maintenance `task_group` moves, the Light Inspection quarterly → semi-annual rewrite and the schedule-title fix
+ran on every deploy — the D-123 shape, found by the sweep that D-123 called for. The title pass also rewrote
+the titles of COMPLETED work orders; its one remaining run touches open work only. `oncePerDatabase` writes
+its marker only once `pm_schedules` has rows, so a fresh database seeded later in the boot is not marked done
+early.
+
+**4. The scheduler reads the plant's wall clock.** Every "which weekday / which hour / which week / today"
+gate in `runDue` read the container's clock, which is UTC with no TZ set — so the 06:00 digests went at
+midnight Mountain and the Monday jobs (expiry digest, PM week digest) ran on Sunday evening. `plantWallClock()`
+builds a Date whose local fields are the plant's; the real instant stays for elapsed time and stored stamps.
+
+**5. "Used up" restock suggestions reach the admins' bell** (`supply-suggestions`, counted by item from the
+strip's own function) — the last open row in `reachability.md`.
+
+**6. Bulk Permissions lists active employees only**: no clients, auditor passes, deactivated accounts or
+ReadyBot. A grant to any of those does nothing.
+
+**Reported, not built — Daniela's screenshot says more than the defect.** The Pre-Op / Changeover Clean is a
+DAILY schedule for something that happens per changeover, which is why a June card was sitting N/A and why QA
+asked earlier whether the reading can simply be filed "whenever it is performed". It can — the Sanitation
+record form takes a reading with its own date and grades it. The task existing at all is OBL-22 (every
+generator is a calendar; three of the four preventive controls fire per run). The procedure steps on that
+schedule also ask the cleaner to tick "ATP Test", "Allergen Test" beside the swab box, and "QA sign-off",
+which is an approval, not a step. Both are the plant's to decide; neither was changed.
+
+Verified: `verify:defaultaccess` (29, live, two reboots on the same file, browser at 1280; in `verify:all`).
+**The control reverts all four behaviours and fails 17.** `check:plantclock` (9, pure, in `npm run check`;
+control fails 3). `check:modaccess` 22 → 27. `verify:trainingassign` 94 (its D-105 assertions rewritten to
+D-124's).
+
+**Found by the full run, and fixed:** the sign-in payload (`issueSession`) never carried `is_external`, so the
+shell drew a client as an internal account until `/users/me` answered. Before D-124 that only delayed the guest
+layout; with a default module it handed a client Operator View on first load, and `verify:clientchannel` caught
+it (67/67 on `main`, red on this change until fixed). The payload carries `is_external` and `external_org` now.
+
+**Found by the full run, NOT caused here and NOT fixed:** six scripts in `verify:all` fail identically on the
+committed code before this change (run side by side from a worktree): `verify-supplier-storage` (reads a
+spreadsheet from one session's uploads folder — the D-120 rot, missed), `verify-mobile-cards` (a row 25px past
+360px), `verify-pay-actions` (2 assertions on the office reminder's wording), `verify-ap-drop-ui`,
+`verify-bpg-items` and `verify-client-invite` (7 assertions after the join page started ending on the install
+card, D-097). The full run is 75/83 before the client fix and those six after it. They are the next job.

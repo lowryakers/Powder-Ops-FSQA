@@ -15,6 +15,7 @@
 // These four functions are the one definition of the rule, imported by the
 // editor and by the check that asserts it against the real `moduleLevel`.
 import { OPT_IN_SET } from './opt-in-modules.js';
+import { defaultLevel } from './default-modules.js';
 
 export const ordinaryIds = (allIds) => (allIds || []).filter(id => !OPT_IN_SET.has(id));
 
@@ -58,12 +59,19 @@ export function expandedMap(role, map, allIds) {
 // and are not part of "full access", so they are neither counted nor in the
 // denominator. `count` is the number of ordinary modules moduleLevel() would
 // answer non-null for.
-export function accessSummary(role, map, allIds) {
+//
+// `person` carries what the default grant turns on (D-124): Operator View is
+// every working account's, so it is counted, and `defaults_only` says when it
+// is the whole of what somebody holds — a real state, not the amber "nothing".
+export function accessSummary(role, map, allIds, person = {}) {
   const ordinary = ordinaryIds(allIds);
   const full = isFullAccess(role, map, allIds);
+  const who = { role, is_external: person.is_external };
+  const explicit = (id) => !map ? false
+    : Array.isArray(map) ? map.includes(id)
+    : (map[id] === 'edit' || map[id] === 'view');
   const count = full ? ordinary.length
-    : !map ? 0
-    : Array.isArray(map) ? ordinary.filter(id => map.includes(id)).length
-    : ordinary.filter(id => map[id] === 'edit' || map[id] === 'view').length;
-  return { full, count, total: ordinary.length };
+    : ordinary.filter(id => explicit(id) || defaultLevel(who, id)).length;
+  const defaults_only = !full && count > 0 && !ordinary.some(explicit);
+  return { full, count, total: ordinary.length, defaults_only };
 }

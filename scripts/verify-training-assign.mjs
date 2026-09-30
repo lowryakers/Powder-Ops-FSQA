@@ -331,18 +331,34 @@ await new Promise(r => setTimeout(r, 500));
 t('all three get a task — nothing here refuses to assign', reach?.created?.length === 3, JSON.stringify(reach?.created?.map(c => c.name)));
 
 const nomods = await get('/pm/operator-tasks', 'none');
-t('THE ACCOUNT WITH NO MODULES CANNOT SEE ITS OWN TASK — a NULL map is an empty account, so every guarded mount refuses the read',
-  nomods.status === 403, `HTTP ${nomods.status}`);
-t('…and the assign screen SAYS SO rather than reporting a clean success',
-  (reach?.unreachable || []).some(u => u.name === 'Nadia Nomods' && u.reach?.code === 'no_modules'),
-  JSON.stringify(reach?.unreachable));
-const fixText = (reach?.unreachable || []).find(u => u.name === 'Nadia Nomods')?.reach?.fix || '';
-t('…naming the tick in Settings, never applying it — which module somebody gets is the office\'s decision',
+// D-124 SUPERSEDES the D-105 assertion that stood here ("an account with no
+// modules cannot see its own task"). Operator View is now every working
+// account's by default, because everybody is assigned training.
+const nomodsBody = nomods.status === 200 ? await nomods.json() : null;
+const nomodsTasks = Array.isArray(nomodsBody) ? nomodsBody : (nomodsBody?.tasks || []);
+t('AN ACCOUNT WITH NOTHING TICKED NOW SEES ITS OWN TASK — Operator View is every working account\'s (D-124)',
+  nomods.status === 200 && nomodsTasks.some(w => /PJ-101|Pallet Jack/i.test(w.title || '')),
+  `HTTP ${nomods.status} ${JSON.stringify(nomodsTasks.map(w => w.title)).slice(0, 160)}`);
+t('…so the assign screen no longer lists her as unreachable — the warning would now be wallpaper',
+  !(reach?.unreachable || []).some(u => u.name === 'Nadia Nomods'), JSON.stringify(reach?.unreachable));
+t('and neither is somebody ticked only for another module',
+  !(reach?.unreachable || []).some(u => u.name === 'Otto Other'), JSON.stringify(reach?.unreachable));
+{
+  const myTask = nomodsTasks.find(w => /PJ-101|Pallet Jack/i.test(w.title || ''));
+  const done = myTask ? await post(`/pm/work-orders/${myTask.id}/flag-issue`, { notes: 'verify: can I reach this?' }, 'none') : null;
+  t('THE DEFAULT IS ENOUGH TO DO THE TASK — a task-doing write passes at View',
+    done && done.status !== 403, done ? `HTTP ${done.status}` : 'no task');
+  const sched = await post('/pm/schedules', { equipment_id: null, title: 'verify: a floor account writing a schedule', frequency_type: 'daily' }, 'none');
+  t('BUT NOT TO REWRITE THE MODULE — creating a PM schedule is refused, because the default is View and the pm router has no role gate of its own',
+    sched.status === 403, `HTTP ${sched.status}`);
+}
+// The label check still stands for the one account the default never reaches:
+// a client. Asked of the function directly — a client is never offered for
+// assignment at all (D-100), so no assign call can produce one.
+const { taskListReach } = await import('../server/module-access.js');
+const fixText = taskListReach({ role: 'operator', is_external: 1, module_access: null })?.fix || '';
+t('a client account still reads as unreachable and the fix names Settings — the default is never a client\'s',
   /Settings/.test(fixText), fixText);
-// THE INSTRUCTION NAMES A CONTROL THAT EXISTS. The floor phone heads this
-// screen "My Tasks"; the tick in Settings is labelled "Operator View", and an
-// instruction naming a control nobody can find is worse than none — which is
-// exactly what the first cut shipped.
 {
   const settings = await import('fs').then(fs => fs.readFileSync('src/components/settings/UsersSection.jsx', 'utf8'));
   const labels = [...new Set([...settings.matchAll(/id: '(operator|pm)', label: '([^']+)'/g)].map(m => m[2]))];
@@ -350,9 +366,6 @@ t('…naming the tick in Settings, never applying it — which module somebody g
     labels.length === 2 && labels.every(l => fixText.includes(l)) && !/My Tasks/.test(fixText),
     `${JSON.stringify(labels)} vs ${fixText}`);
 }
-t('SOMEBODY WITH MODULES BUT NO TASK LIST IS A DIFFERENT GAP and is reported as one',
-  (reach?.unreachable || []).some(u => u.name === 'Otto Other' && u.reach?.code === 'message_only'),
-  JSON.stringify((reach?.unreachable || []).map(u => `${u.name}:${u.reach?.code}`)));
 t('and somebody who holds My Tasks is NOT listed — a warning that fires when nothing is wrong is wallpaper',
   !(reach?.unreachable || []).some(u => u.name === 'Osvaldo Reyes'));
 
@@ -450,10 +463,12 @@ if (opened) {
   await page.locator('[data-assign-modal] [data-assign-person="Nadia Nomods"]').check();
   await page.locator('[data-assign-submit]').click();
   await page.waitForSelector('[data-assign-created]', { timeout: 15000 });
-  const warned = await page.locator('[data-assign-unreachable]').innerText().catch(() => '');
-  t('BUT AN ACCOUNT WITH NO MODULES IS NAMED ON THE SCREEN THAT ASSIGNED IT — "assigned to 5 people" while three hold no task list is a screen stating something untrue',
-    /Nadia Nomods/.test(warned) && /Settings/.test(warned), warned.replace(/\n/g, ' | ').slice(0, 200));
-  t('…and it still says they were messaged, because that part did work',
+  // D-124: an account with nothing ticked holds Operator View by default, so
+  // the strip that used to name her (D-105) must now stay away.
+  t('AN ACCOUNT WITH NOTHING TICKED RAISES NO WARNING NOW — she holds Operator View by default (D-124)',
+    await page.locator('[data-assign-unreachable]').count() === 0,
+    (await page.locator('[data-assign-unreachable]').innerText().catch(() => '')).slice(0, 200));
+  t('…and it still says they were messaged',
     /messaged/i.test(await page.locator('[data-assign-modal]').innerText()));
 }
 await browser.close();

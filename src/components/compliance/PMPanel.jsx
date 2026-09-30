@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { isClosedStatus } from '../../../shared/work-order-status.js';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { completeWorkOrder } from '../../lib/completeWorkOrder';
 import { useAuth } from '../../hooks/useAuth';
@@ -881,6 +882,16 @@ function TaskCard({ wo, onStartComplete, completing, onComplete, onTestPassed, o
           )}
           {showSchedule && wo.pm_schedule_id && <ScheduleInfo scheduleId={wo.pm_schedule_id} />}
         </div>
+        {isClosedStatus(wo.status) ? (
+          // A CLOSED TASK OFFERS NOTHING TO DO (D-124). It was offered Done —
+          // and with it the ATP box and "Complete & Generate Next" — on a Pre-Op
+          // marked N/A in June; completing it overwrote that recorded outcome.
+          <p className="ml-2 shrink-0 text-xs text-gray-500 text-right max-w-[14rem]" data-wo-closed={wo.status}>
+            {wo.status === 'not_applicable' ? 'Marked not applicable' : wo.status === 'cancelled' ? 'Cancelled' : 'Completed'}
+            {wo.completed_by ? ` by ${wo.completed_by}` : ''}
+            {wo.completed_at ? ` · ${String(wo.completed_at).slice(0, 10)}` : ''}
+          </p>
+        ) : (
         <div className="flex gap-1 ml-2 shrink-0">
           {wo.status === 'open' && (
             <button onClick={() => onStartComplete(wo.id, 'start')}
@@ -901,6 +912,7 @@ function TaskCard({ wo, onStartComplete, completing, onComplete, onTestPassed, o
             <CheckCircle size={12} /> Done
           </button>
         </div>
+        )}
       </div>
 
       {wo.rework_required === 1 && (

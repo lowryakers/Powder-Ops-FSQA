@@ -74,7 +74,7 @@ import { trainingNudges } from './server/training-notify.js';
 import activityRoutes from './server/api/activity.js';
 import qmsRoutes, { importCsv as importQmsCsv } from './server/api/qms.js';
 import { getType as getQmsType, MAINTENANCE_ITEM_GROUPS } from './server/qms-config.js';
-import { requireModuleWrite } from './server/module-access.js';
+import { requireModuleWrite, TASK_WRITES } from './server/module-access.js';
 import certificationRoutes from './server/api/certifications.js';
 import { DCR_LOG_CSV, DEVIATION_LOG_CSVS, NON_CONFORMANCE_LOG_CSV, ON_HOLD_LOG_CSV, ORGANOLEPTIC_LOG_CSV } from './server/qms-seed.js';
 import orgRoutes from './server/api/org.js';
@@ -388,8 +388,31 @@ try {
   }
 }
 
+// ONCE PER DATABASE, NOT ONCE PER BOOT (D-124). The four passes below were
+// written to put a one-off state right and then kept running on every deploy
+// against fields a person edits: a schedule routed to another team was routed
+// back, a Light Inspection deliberately set quarterly went semi-annual again,
+// and a renamed schedule got its old title back — along with the titles of its
+// COMPLETED work orders, rewriting filed history. The truck checklist pass was
+// the same shape and is what hid the re-sync (D-123).
+//
+// The marker is written only once the tables it acts on have rows, or a fresh
+// database — seeded later in this boot — would be marked done before there was
+// anything to do (the linkOrgPositionsToUsers rule).
+function oncePerDatabase(key, fn) {
+  try {
+    if (db.prepare('SELECT 1 FROM app_settings WHERE key = ?').get(key)) return;
+    const hadRows = db.prepare('SELECT COUNT(*) c FROM pm_schedules').get().c > 0;
+    fn();
+    if (hadRows) {
+      db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))")
+        .run(key, new Date().toISOString());
+    }
+  } catch (e) { console.warn(`[migrate] ${key} skipped:`, e.message); }
+}
+
 // Migrate cleaning tasks from 'qa' to 'cleaning' group
-{
+oncePerDatabase('migrate_cleaning_group_v1', () => {
   const cleaningEqIds = db.prepare("SELECT id FROM equipment WHERE asset_id LIKE 'QA-CL-%'").all().map(e => e.id);
   if (cleaningEqIds.length > 0) {
     const ph = cleaningEqIds.map(() => '?').join(',');
@@ -399,16 +422,16 @@ try {
       console.log(`[migrate] Re-tagged ${updated.changes} cleaning PM schedules and ${updatedWO.changes} work orders from 'qa' to 'cleaning'`);
     }
   }
-}
+});
 
 // Fix light inspection frequency from quarterly to semi_annual (biannual)
-{
+oncePerDatabase('migrate_light_inspection_frequency_v1', () => {
   const updated = db.prepare("UPDATE pm_schedules SET frequency_type = 'semi_annual' WHERE title LIKE 'Light Inspection%' AND frequency_type = 'quarterly'").run();
   if (updated.changes > 0) console.log(`[migrate] Updated ${updated.changes} light inspection schedules from quarterly to semi_annual (biannual)`);
-}
+});
 
 // Fix PM schedule and work order titles to match cleaned equipment names
-{
+oncePerDatabase('migrate_pm_titles_v1', () => {
   const FREQ_LABEL = { daily: 'Daily', weekly: 'Weekly', biweekly: 'Bi-Weekly', monthly: 'Monthly', quarterly: 'Quarterly', semi_annual: 'Semi-Annual', annual: 'Annual' };
   // Skip consolidated checklists — their anchor equipment_id is just one of many
   // machines, so "normalizing" their title would mislabel a 20-machine checklist
@@ -420,7 +443,8 @@ try {
       AND (ps.description IS NULL OR ps.description NOT LIKE 'Consolidated daily checks%')
   `).all();
   const updatePM = db.prepare('UPDATE pm_schedules SET title = ? WHERE id = ?');
-  const updateWO = db.prepare('UPDATE work_orders SET title = ? WHERE pm_schedule_id = ?');
+  // Open work only: a completed task's title is what was filed at the time.
+  const updateWO = db.prepare("UPDATE work_orders SET title = ? WHERE pm_schedule_id = ? AND status IN ('open','in_progress','overdue','missed')");
   let fixed = 0;
   const tx = db.transaction(() => {
     for (const s of scheds) {
@@ -435,10 +459,10 @@ try {
   });
   tx();
   if (fixed > 0) console.log(`[migrate] Fixed ${fixed} PM schedule/work order titles to match equipment names`);
-}
+});
 
 // Separate "maintenance" group from "warehouse" — production equipment moves to maintenance
-{
+oncePerDatabase('migrate_maintenance_group_v1', () => {
   const maintenanceTypes = ['Auger', 'Coder', 'Compressor', 'Conveyor', 'Dehumidifier', 'Dust Collector',
     'Fan', 'Feeder', 'Filler', 'HEPA Filter', 'Hand Tool',
     'Heat Tunnel', 'Hydraulic Lift', 'Mixer', 'Scissor Lift', 'Sealer',
@@ -451,7 +475,7 @@ try {
     const u2 = db.prepare(`UPDATE work_orders SET task_group = 'maintenance' WHERE task_group = 'warehouse' AND equipment_id IN (${eqPh})`).run(...maintEqIds);
     if (u1.changes > 0) console.log(`[migrate] Moved ${u1.changes} PM schedules and ${u2.changes} work orders from 'warehouse' to 'maintenance'`);
   }
-}
+});
 
 // The trucks' pre-shift inspection: written where missing, never over a checklist (D-123).
 {
@@ -1780,7 +1804,7 @@ app.use('/api', (req, res, next) => {
 // qms (exact per-type check inside requireType).
 app.use('/api/equipment', requireModuleWrite('equipment'), equipmentRoutes);
 app.use('/api/haccp', haccpRoutes);
-app.use('/api/pm', requireModuleWrite('pm', 'operator'), pmRoutes);
+app.use('/api/pm', requireModuleWrite('pm', 'operator', { taskWrites: TASK_WRITES }), pmRoutes);
 app.use('/api/checklists', requireModuleWrite('pm', 'operator', 'sanitation'), checklistRoutes);
 app.use('/api/calibration', requireModuleWrite('calibration'), calibrationRoutes);
 app.use('/api/scale-verification', requireModuleWrite('calibration'), scaleVerificationRoutes);

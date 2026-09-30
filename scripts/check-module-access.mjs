@@ -127,7 +127,8 @@ ok('the opt-in module is in neither the count nor the denominator', () => {
   assert.equal(s.count, countOf(user('operator', { 'production-log': 'view', [OPT_IN]: 'edit' })));
 });
 ok('an operator with no map counts zero, both sides', () => {
-  assert.deepEqual(accessSummary('operator', null, IDS), { full: false, count: 0, total: ORDINARY.length });
+  const { full, count, total } = accessSummary('operator', null, IDS);
+  assert.deepEqual({ full, count, total }, { full: false, count: 0, total: ORDINARY.length });
   assert.equal(countOf(user('operator', null)), 0);
 });
 ok('a narrowed admin counts what is left, both sides', () => {
@@ -141,6 +142,36 @@ ok('a legacy array counts its ordinary entries, both sides', () => {
   const s = accessSummary('supervisor', map, IDS);
   assert.equal(s.count, 2);
   assert.equal(s.count, countOf(user('supervisor', map)));
+});
+
+
+console.log('\nOperator View arrives with the account (D-124)');
+const IDS2 = [...IDS, 'operator'];
+const ORD2 = IDS2.filter(id => !OPT_IN_MODULES.includes(id));
+const countOf2 = (u) => ORD2.filter(id => moduleLevel(u, id) != null).length;
+ok('an operator with no map holds Operator View at VIEW — never edit, the pm router has no role gate', () => {
+  assert.equal(moduleLevel(user('operator', null), 'operator'), 'view');
+  assert.equal(moduleLevel(user('operator', null), 'production-log'), null);
+});
+ok('the row counts it, both sides, and says it is the defaults only', () => {
+  const s = accessSummary('operator', null, IDS2);
+  assert.equal(s.count, 1);
+  assert.equal(s.count, countOf2(user('operator', null)));
+  assert.equal(s.defaults_only, true);
+});
+ok('an explicit Edit wins over the default View', () => {
+  assert.equal(moduleLevel(user('supervisor', { operator: 'edit' }), 'operator'), 'edit');
+});
+ok('somebody ticked for another module holds both, and is not "defaults only"', () => {
+  const s = accessSummary('operator', { 'production-log': 'view' }, IDS2);
+  assert.equal(s.count, 2);
+  assert.equal(s.count, countOf2(user('operator', { 'production-log': 'view' })));
+  assert.equal(s.defaults_only, false);
+});
+ok('A CLIENT NEVER GETS IT — their boundary is Messages', () => {
+  const ext = { ...user('operator', null), is_external: 1 };
+  assert.equal(moduleLevel(ext, 'operator'), null);
+  assert.equal(accessSummary('operator', null, IDS2, { is_external: 1 }).count, 0);
 });
 
 console.log(`\n${n - bad}/${n} assertions passed`);

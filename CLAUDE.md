@@ -2848,7 +2848,37 @@ clicks Add to orders. What gets ordered stays the office's decision.
 `data.suggestion_state` (`open` / `dismissed` / `ordered`) lives on that record, so nothing can fall out of
 sync. `openSuggestions()` reads it with `json_extract`, bounded to 500.
 
+## Operator View arrives with the account; a closed task stays closed (D-124)
+**Supersedes the NULL-map rule below in one respect:** a NULL map is Messages AND Operator View now.
+`shared/default-modules.js` (`DEFAULT_MODULES = { operator: 'view' }`, `defaultLevel`) is read by BOTH
+`moduleLevel` copies (server `module-access.js`, client `utils/permissions.js`), `visibleModuleIds` and
+`accessSummary` — so the nav, the API and the roster row agree. Everybody is assigned training, and a
+training assignment IS a work order (D-105).
+- **VIEW, NEVER EDIT.** The pm router has no role gates, so edit on Operator View already lets an account
+  write PM schedules through the API. The task-doing writes are an ALLOW list instead — `TASK_WRITES`
+  (complete-and-recur, batch-complete, flag-issue, not-applicable, training-test), passed to the pm mount as
+  `requireModuleWrite('pm','operator', { taskWrites })` and honoured for any level of either module.
+- **Never a client** (`is_external`), and admins/auditors are decided before the default is asked. An
+  explicit Settings entry wins. A NULL-map account still gets 403 on every OTHER guarded mount.
+- The roster row reads "Operator View only" (`defaults_only`), not the amber "No modules assigned".
+- **A CLOSED TASK IS CLOSED** (`shared/work-order-status.js` `CLOSED_STATUSES`): complete-and-recur and
+  not-applicable 409 on completed / not_applicable / cancelled, batch-complete skips them by name, and the
+  Task Center card offers no Done. Completing a June N/A **overwrote the recorded outcome** with a completion
+  stamped today; a duplicate next task was never possible (`createNextWorkOrder`'s same-date guard).
+- **Bulk Permissions lists active employees only** — no clients, auditor passes, deactivated accounts, ReadyBot.
+- **The four boot passes that rewrote editable PM fields run ONCE per database** (`oncePerDatabase` in
+  server.js; the marker is written only once `pm_schedules` has rows). A renamed schedule, a Light Inspection
+  set quarterly and a re-routed schedule now survive a deploy; the title pass no longer touches completed work.
+- **The scheduler reads the plant's wall clock** (`plantWallClock` in `plant-clock.js`) for every day / hour /
+  week / today gate; the real instant for elapsed time and stamps. `runDue` is exported with an injectable
+  `now`. `check:plantclock` (9, in `npm run check`; control fails 3 — digests at midnight Mountain, Monday
+  jobs on Sunday evening).
+- "Used up" restock suggestions are a bell line (`supply-suggestions`) for admins.
+- `verify:defaultaccess` (29, live + two reboots + browser; in `verify:all`). **The control reverts all four
+  and fails 17.** `verify:trainingassign` (94) now asserts the D-124 behaviour where it asserted D-105's.
+
 ## Module access: a NULL map is an EMPTY account (decided 2026-08-13, tightened same day)
+> **D-124 changed one thing below:** a NULL map now also holds Operator View at View (see the section above).
 `requireModuleWrite` used to pass every user WITHOUT a granular map straight through — a migration grace
 period so the floor kept working while maps were being set. With every employee mapped, that hole closed;
 the first cut made NULL mean "role decides" (supervisor edit, operator view everywhere). **The user's rule
