@@ -13,6 +13,8 @@
 import { Router } from 'express';
 import { randomUUID as uuid } from 'crypto';
 import { checkProofToken, refuseProofToken } from '../proof-token.js';
+import { provenanceOf, provenanceMissing, provenanceStale } from '../../shared/panel-provenance.js';
+import { catalogueCompleteness } from '../product-completeness.js';
 import { getDb, logAudit } from '../db.js';
 import { resolveFlavorCodes } from '../flavor-codes.js';
 import { preferredSku, LINE_CODES, PACK_CODES } from '../../shared/sku-format.js';
@@ -589,7 +591,7 @@ router.get('/drafts/realign/preview', (req, res) => {
  *
  * A new table keyed on the SKU goes in this list, or a rename loses it.
  */
-const SKU_CHILD_TABLES = ['product_colors', 'artwork_versions', 'artwork_snapshots', 'nfp_versions'];
+const SKU_CHILD_TABLES = ['product_colors', 'artwork_versions', 'artwork_snapshots', 'nfp_versions', 'product_completeness_blocks'];
 
 function moveSkuChildren(db, from, to) {
   for (const t of SKU_CHILD_TABLES) {
@@ -683,6 +685,48 @@ router.delete('/flavor-codes/:id', (req, res) => {
  * which flavour keeps `CC`, whether Key Lime and Key Lime Pie are one flavour,
  * whether a missing colour was never chosen or never recorded.
  */
+// ── The spec sheet's completeness (D-128, server/product-completeness.js) ────
+// Named gaps per SKU and a roll-up by line — never a score. DECLARED BEFORE
+// `/:sku`, or Express reads "completeness" as a product code.
+router.get('/completeness', (_req, res) => {
+  res.json(catalogueCompleteness(getDb()));
+});
+
+/**
+ * Mark a SKU blocked: it cannot be completed yet for a reason somebody owns —
+ * "formula not final — Danny". Blocked is its own state, not "incomplete": the
+ * SKU stays listed with every gap, and leaves the incomplete count.
+ */
+router.post('/:sku/completeness-block', (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the spec sheet.' });
+  const db = getDb();
+  const p = db.prepare('SELECT sku FROM products WHERE sku = ?').get(req.params.sku);
+  if (!p) return res.status(404).json({ error: 'No such SKU' });
+  const reason = String(req.body?.reason || '').trim();
+  const owner = String(req.body?.owner || '').trim();
+  if (reason.length < 3) return res.status(400).json({ error: 'Say why it cannot be completed yet.' });
+  if (owner.length < 2) return res.status(400).json({ error: 'Name who owns unblocking it.' });
+  const before = db.prepare('SELECT * FROM product_completeness_blocks WHERE sku = ?').get(p.sku) || null;
+  db.prepare(`INSERT INTO product_completeness_blocks (sku, reason, owner, blocked_by, blocked_by_id, blocked_at)
+    VALUES (?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(sku) DO UPDATE SET reason = excluded.reason, owner = excluded.owner,
+      blocked_by = excluded.blocked_by, blocked_by_id = excluded.blocked_by_id, blocked_at = excluded.blocked_at`)
+    .run(p.sku, reason.slice(0, 500), owner.slice(0, 120), req.user.name, req.user.id || null);
+  logAudit(req.user, 'product_completeness_blocked', 'product', p.sku, { reason, owner }, before,
+    db.prepare('SELECT * FROM product_completeness_blocks WHERE sku = ?').get(p.sku), p.sku);
+  res.json({ ok: true });
+});
+
+router.delete('/:sku/completeness-block', (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the spec sheet.' });
+  const db = getDb();
+  const before = db.prepare('SELECT * FROM product_completeness_blocks WHERE sku = ?').get(req.params.sku);
+  if (!before) return res.status(404).json({ error: 'That SKU is not blocked.' });
+  db.prepare('DELETE FROM product_completeness_blocks WHERE sku = ?').run(req.params.sku);
+  logAudit(req.user, 'product_completeness_unblocked', 'product', req.params.sku, null, before, null, req.params.sku);
+  res.json({ ok: true });
+});
+
 router.get('/data-health', (_req, res) => {
   const db = getDb();
   const products = db.prepare(`${SELECT}`).all();
@@ -1347,6 +1391,7 @@ export function nutritionPanel(req, res) {
     });
   }
   const callouts = parse(v.front_callouts);
+  const prov = provenanceOf(v);
 
   res.set('Cache-Control', 'no-store').json({
     sku: product.sku,
@@ -1367,6 +1412,18 @@ export function nutritionPanel(req, res) {
     approved_at: v.approved_at || null,
     panel,
     front_callouts: callouts,
+    // WHERE THE NUMBERS CAME FROM (D-128), so the proofer can say "artwork
+    // matches approved panel v3, but that panel was computed against formula
+    // v2.0 and the catalogue's current formula is v2.1". `approved_provenance`
+    // is what the approval was given against, frozen; `provenance` is the
+    // record's own block, derived — `source_system: 'unknown'` and
+    // `provenance_missing: true` until a person fills it.
+    provenance: prov,
+    provenance_missing: provenanceMissing(prov).length > 0,
+    approved_provenance: parse(v.approved_provenance),
+    current_formula: { formula_ref: product.mrp_formula_id || null, formula_version: product.formula_rev || null },
+    fill_weight_g: product.fill_weight_g ?? null,
+    provenance_stale: provenanceStale(prov, product),
   });
 }
 

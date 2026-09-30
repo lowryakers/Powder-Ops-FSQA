@@ -34,12 +34,15 @@ t('signed in', !!token);
 
 const products = (() => {
   const db = new Database(process.env.DBPATH, { readonly: true });
-  const rows = db.prepare(`SELECT sku, gtin, flavor FROM products
+  const rows = db.prepare(`SELECT sku, gtin, flavor, fill_weight_g FROM products
     WHERE gtin IS NOT NULL AND gtin != ''
       AND sku NOT IN (SELECT sku FROM nfp_versions) ORDER BY sku LIMIT 2`).all();
   db.close(); return rows;
 })();
 const P = products[0], P2 = products[1];
+// Approval needs to know what the panel was computed from (D-128). The fill
+// weight is the Catalogue's own, so these checks stay about the %DV gate.
+const prov = (p) => ({ formula_ref: 'F-TEST', formula_version: 'v1', bom_fill_weight_g: p.fill_weight_g || 30 });
 t('two seeded products with GTINs and no panel on file', !!P?.gtin && !!P2?.gtin, JSON.stringify(products));
 
 const panelFor = (q) => fetch(`${B}/products/nutrition-panel?${q}&token=${TOKEN}`);
@@ -59,7 +62,7 @@ t('A PRODUCT WITH NO PANEL IS 404 no_panel, never an empty panel',
   r.status === 404 && b?.reason === 'no_panel' && !('panel' in (b || {})), `${r.status} ${JSON.stringify(b)}`);
 
 console.log('\nA panel on file with nobody having typed the numbers is its own answer');
-r = await post('/nfp', { sku: P.sku, version: 'V1', drive_url: 'https://drive.example/panel-v1' });
+r = await post('/nfp', { sku: P.sku, version: 'V1', drive_url: 'https://drive.example/panel-v1', provenance: prov(P) });
 const v1 = await J(r);
 t('the panel version files', r.status === 201 && !!v1?.id, String(r.status));
 t('and starts at panel_rev 0', v1?.panel_rev === 0, String(v1?.panel_rev));
@@ -177,7 +180,7 @@ r = await put(`/nfp/${v1.id}/panel`, { panel: { sodium_mg: 100 } });
 t('AN APPROVED PANEL IS NEVER REWRITTEN — the numbers are refused too', r.status === 409, String(r.status));
 
 console.log('\nA CORRECT PANEL RAISES NOTHING — the regression this whole feature turns on');
-r = await post('/nfp', { sku: P2.sku, version: 'V1', drive_url: 'https://drive.example/p2' });
+r = await post('/nfp', { sku: P2.sku, version: 'V1', drive_url: 'https://drive.example/p2', provenance: prov(P2) });
 const v2 = await J(r);
 // Calcium 150 mg is 11.5% of the 1300 mg DV. The MINERAL increment rule rounds
 // that to 10; the macronutrient rule would say 12 and flag a panel that is

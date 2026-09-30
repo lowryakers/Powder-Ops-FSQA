@@ -9,12 +9,15 @@ import ProductDataHealth from './ProductDataHealth.jsx';
 import FlavorCodesPanel, { DraftRealign } from './FlavorCodesPanel.jsx';
 import ProductBarcodes from './ProductBarcodes.jsx';
 import ProductShelf from './ProductShelf.jsx';
+import ProductCompleteness from './ProductCompleteness.jsx';
+import { getParam } from '../../lib/deepLink.js';
 import NfpBoard, { NfpForSku } from './NfpPanel.jsx';
 import { hexDigits, pmsValid, hexValid, colorIssues, isBlankSlot } from '../../../shared/product-colors.js';
 import {
   Package, Search, X, AlertTriangle, CheckCircle2, Circle, Pencil, ChevronRight, Stethoscope, Tag,
   Barcode, Upload, ExternalLink, RefreshCw, FolderOpen,
   FileText, Plus, Trash2, Palette,
+  ListChecks,
 } from 'lucide-react';
 
 /**
@@ -408,6 +411,8 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
       // Nutrition panel section below. The server refuses them on PUT.
       artwork_status: p.artwork_status || '', drive_url: p.drive_url || '', notes: p.notes || '',
       fill_weight_g: p.fill_weight_g ?? '',
+      // The CURRENT formula: what a panel's provenance is checked against (D-128).
+      mrp_formula_id: p.mrp_formula_id || '', formula_rev: p.formula_rev || '',
       // Blank is a real answer here — "nobody has said yet" — so it is an
       // option in the select rather than an absence.
       amazon_channel: p.amazon_channel || '', amazon_sku: p.amazon_sku || '', amazon_asin: p.amazon_asin || '',
@@ -473,6 +478,9 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
                   // is the honest answer and better than a guess.
                   ['fill_weight_g', 'Fill weight (g)',
                     'From the production formula, confirmed by weighing a sealed bag. Not the net weight printed on the pack — that is what this checks.'],
+                  ['mrp_formula_id', 'Formula ref (current)', 'The formula this product is made to today, e.g. F-00002.'],
+                  ['formula_rev', 'Formula version (current)',
+                    'Move this when the recipe changes. A panel computed from an older version reads as stale until the next one is approved.'],
                 ].map(([k, label, hint]) => (
                   <label key={k} className="block">
                     <span className="text-xs font-medium text-gray-600">{label}</span>
@@ -564,7 +572,7 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
                     ['Amazon', p.amazon_channel === 'listed'
                       ? `Listed${p.amazon_sku && p.amazon_sku !== p.sku ? ` — seller SKU ${p.amazon_sku}` : ''}${p.amazon_asin ? ` · ${p.amazon_asin}` : ''}`
                       : p.amazon_channel === 'not_sold' ? 'Not sold on Amazon' : 'Not decided yet'],
-                    ['Formula ref', p.mrp_formula_id],
+                    ['Formula', [p.mrp_formula_id, p.formula_rev].filter(Boolean).join(' ') || null],
                     ['NFP version', p.nfp_version && `${p.nfp_version}${p.nfp_approved_at ? ` — approved ${p.nfp_approved_at}` : ' — not approved'}`],
                     ['Artwork', pretty(p.artwork_status)],
                   ].filter(([, v]) => v !== null && v !== undefined && v !== '').map(([label, v]) => (
@@ -646,7 +654,9 @@ export default function ProductsPanel() {
   const [pack, setPack] = useState('');
   const [onlyIncomplete, setOnlyIncomplete] = useState(false);
   const [open, setOpen] = useState(null);
-  const [view, setView] = useState('list');
+  // `?tab=products&view=completeness` opens a tab directly (deepLink.js: a lazy
+  // module mounts after App has consumed the query string).
+  const [view, setView] = useState(() => getParam('view') || 'list');
 
   const canEdit = ['admin', 'supervisor'].includes(user?.role)
     || ['qa', 'quality'].includes((user?.department || '').toLowerCase());
@@ -714,7 +724,13 @@ export default function ProductsPanel() {
           badge: barcodeGaps || undefined, badgeTone: barcodeGaps ? 'alert' : undefined },
         { id: 'shelf', label: 'Registry', icon: FolderOpen,
           badge: shelfOwed || undefined, badgeTone: shelfOwed ? 'alert' : undefined },
+        // The spec sheet's named gaps, per SKU and by line (D-128). No badge:
+        // on a catalogue this young every SKU has gaps, and a permanent red
+        // number is the wallpaper the first-sight rule exists to prevent.
+        { id: 'completeness', label: 'Completeness', icon: ListChecks },
       ]} />
+
+      {view === 'completeness' && <ProductCompleteness canEdit={canEdit} onOpenSku={(sku) => { setView('list'); setOpen(sku); }} />}
 
       {view === 'flavor-codes' && <FlavorCodesPanel />}
       {view === 'barcodes' && <ProductBarcodes onOpenSku={(sku) => { setView('list'); setOpen(sku); }} />}

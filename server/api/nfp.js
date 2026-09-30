@@ -32,6 +32,9 @@ import { botDm, postMessageAs } from './comms.js';
 import { pushToUser } from '../push.js';
 import { stampReadiness } from './products.js';
 import { checkDailyValues } from '../../shared/nutrition-dv.js';
+import {
+  provenanceOf, provenanceMissing, fillWeightCheck, fillCheckSentence, provenanceStale, PROVENANCE_LABEL,
+} from '../../shared/panel-provenance.js';
 
 const router = Router();
 
@@ -86,6 +89,59 @@ const PANEL_FIELDS = [
 const CALLOUT_FIELDS = ['protein_g', 'calories', 'added_sugar_g', 'net_carbs_g'];
 
 /**
+ * A callout is THREE states, not two (D-128): a number; `null`, "this pack does
+ * not make that claim", said on purpose; and ABSENT, nobody has answered. A
+ * blank box used to store null, so "not claimed" and "never looked at" were the
+ * same value and the spec sheet could not tell a finished pack from a started
+ * one. Now a blank box removes the key and only an explicit null says null.
+ */
+function cleanCallouts(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const set = {}; const unset = [];
+  for (const k of CALLOUT_FIELDS) {
+    if (!(k in raw)) continue;
+    const val = raw[k];
+    if (val === null) { set[k] = null; continue; }
+    if (val === undefined || String(val).trim() === '') { unset.push(k); continue; }
+    if (typeof val === 'number') { if (Number.isFinite(val)) set[k] = val; else unset.push(k); continue; }
+    const s = String(val).trim();
+    set[k] = /^-?\d+(\.\d+)?$/.test(s) ? Number(s) : s;
+  }
+  return { set, unset };
+}
+
+// ── Provenance (D-128, shared/panel-provenance.js) ───────────────────────────
+
+const PROVENANCE_COLUMNS = {
+  source_system: 'provenance_source', formula_ref: 'formula_ref', formula_version: 'formula_rev',
+  bom_fill_weight_g: 'bom_fill_weight_g', generated_at: 'provenance_generated_at',
+  generated_by: 'provenance_generated_by', notes: 'provenance_notes',
+};
+
+/** Validate a provenance patch. Returns `{ columns, error }`; an absent key is left alone. */
+function provenancePatch(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { columns: {} };
+  const columns = {};
+  for (const [key, col] of Object.entries(PROVENANCE_COLUMNS)) {
+    if (!(key in raw)) continue;
+    const val = raw[key];
+    if (val === null || val === undefined || String(val).trim() === '') { columns[col] = null; continue; }
+    if (key === 'bom_fill_weight_g') {
+      const n = Number(val);
+      if (!Number.isFinite(n) || n <= 0) return { error: 'The BOM fill weight is grams — a number above zero.' };
+      columns[col] = n; continue;
+    }
+    if (key === 'generated_at' && !/^\d{4}-\d{2}-\d{2}$/.test(String(val).trim())) {
+      return { error: 'The generated date is a date (YYYY-MM-DD).' };
+    }
+    columns[col] = String(val).trim().slice(0, 500);
+  }
+  return { columns };
+}
+
+const catalogueFill = (db, sku) => db.prepare('SELECT fill_weight_g, mrp_formula_id, formula_rev FROM products WHERE sku = ?').get(sku) || null;
+
+/**
  * Take the values as the panel writes them.
  *
  * "<1" AND "<5" SURVIVE AS STRINGS. 21 CFR 101.9 requires those forms below
@@ -134,11 +190,28 @@ function filesFor(db, ids) {
  */
 function hydrate(db, versions) {
   const files = filesFor(db, versions.map((v) => v.id));
+  const products = new Map();
+  for (const v of versions) if (!products.has(v.sku)) products.set(v.sku, catalogueFill(db, v.sku));
   return versions.map((v) => {
-    const { token_hash, panel_json, front_callouts, dv_warnings, ...rest } = v;
+    const { token_hash, panel_json, front_callouts, dv_warnings, approved_provenance, fill_check, ...rest } = v;
     const panel = readJson(panel_json);
+    const provenance = provenanceOf(v);
+    const missingProv = provenanceMissing(provenance);
+    const product = products.get(v.sku);
     return {
       ...rest,
+      // Derived, never backfilled: a panel with nothing recorded reads as
+      // `source_system: 'unknown'` and `provenance_missing: true` until a person
+      // fills it — the honest state, and what drives the re-approval work.
+      provenance,
+      provenance_missing: missingProv.length > 0,
+      provenance_missing_fields: missingProv,
+      // Live against the catalogue as it stands, for the screen before the
+      // button; the one frozen at the decision is `approved_provenance`.
+      fill_check_live: fillWeightCheck(provenance.bom_fill_weight_g, product?.fill_weight_g),
+      provenance_stale: provenanceStale(provenance, product),
+      approved_provenance: readJson(approved_provenance),
+      fill_check: readJson(fill_check),
       panel,
       front_callouts: readJson(front_callouts),
       // Computed LIVE, not read back from the frozen copy: the screen has to
@@ -191,6 +264,10 @@ async function approverView(db, v) {
     // of these approvals come through — a warning only the in-app button
     // showed would be a warning almost nobody ever saw.
     dv_check: panel ? checkDailyValues(panel) : [],
+    // What the numbers were computed from, and whether that fill weight agrees
+    // with the catalogue — the approver is agreeing to both (D-128).
+    provenance: provenanceOf(v),
+    fill_check: fillWeightCheck(provenanceOf(v).bom_fill_weight_g, catalogueFill(db, v.sku)?.fill_weight_g),
     // Says out loud when there is no viewable file, so the page can tell the
     // approver to open the Drive link rather than silently showing nothing.
     storage: storageEnabled(),
@@ -270,6 +347,9 @@ router.post('/', (req, res) => {
     return res.status(409).json({ error: `${sku} already has a panel ${version}. Panels are never rewritten — file the next version.` });
   }
 
+  const prov = provenancePatch(b.provenance);
+  if (prov.error) return res.status(400).json({ error: prov.error });
+
   const paper = b.source === 'paper';
   const approvedBy = (b.approved_by || '').trim();
   const approvedAt = (b.approved_at || '').trim();
@@ -285,11 +365,27 @@ router.post('/', (req, res) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       id, sku, version, paper ? 'approved' : 'draft', paper ? 'paper' : 'upload',
       b.serving_size || null, b.servings_per_container || null,
-      b.formula_rev || product.formula_rev || null,
+      // Only what the filer SAID it was computed from. Copying the catalogue's
+      // current version here would assert provenance nobody gave (D-128).
+      b.formula_rev || null,
       b.drive_url || null, b.change_summary || null,
       paper ? approvedBy : null, paper ? approvedAt : null, paper ? 'paper' : null,
       req.user.name);
-    if (paper) applyApproval(db, id, sku, version, approvedAt, approvedBy);
+    const cols = Object.entries(prov.columns);
+    if (cols.length) {
+      db.prepare(`UPDATE nfp_versions SET ${cols.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`)
+        .run(...cols.map(([, val]) => val), id);
+    }
+    // A panel approved on PAPER records what it was approved against as it
+    // stands — often nothing, which then reads as provenance missing. It is
+    // not refused: the approval already happened, and refusing to record it
+    // would lose the record rather than the gap.
+    if (paper) {
+      const row = db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(id);
+      db.prepare('UPDATE nfp_versions SET approved_provenance = ? WHERE id = ?')
+        .run(JSON.stringify({ ...provenanceOf(row), recorded_from: 'paper' }), id);
+      applyApproval(db, id, sku, version, approvedAt, approvedBy);
+    }
   })();
 
   logAudit(req.user, 'nfp_version_created', 'nfp', id,
@@ -340,6 +436,8 @@ router.post('/batch/send', (req, res) => {
     }
     const hasFile = db.prepare('SELECT COUNT(*) n FROM nfp_files WHERE version_id = ?').get(v.id).n > 0;
     if (!hasFile && !v.drive_url) bad.push(`${v.sku} ${v.version} has no panel to look at`);
+    const pm = provenanceMissing(provenanceOf(v));
+    if (pm.length) bad.push(`${v.sku} ${v.version} has no ${pm.map(k => PROVENANCE_LABEL[k].toLowerCase()).join(', ')}`);
   }
   if (bad.length) return res.status(409).json({ error: `Cannot send: ${bad.join('; ')}.`, problems: bad });
 
@@ -483,7 +581,7 @@ router.put('/:id/panel', (req, res) => {
   }
 
   const panelPatch = cleanValues(req.body?.panel, PANEL_FIELDS);
-  const calloutPatch = cleanValues(req.body?.front_callouts, CALLOUT_FIELDS);
+  const calloutPatch = cleanCallouts(req.body?.front_callouts);
   if (!panelPatch && !calloutPatch) {
     return res.status(400).json({ error: 'Send panel values to save.' });
   }
@@ -491,7 +589,8 @@ router.put('/:id/panel', (req, res) => {
   const before = panelOf(v) || {};
   const beforeCallouts = readJson(v.front_callouts) || {};
   const panel = { ...before, ...(panelPatch || {}) };
-  const callouts = { ...beforeCallouts, ...(calloutPatch || {}) };
+  const callouts = { ...beforeCallouts, ...(calloutPatch?.set || {}) };
+  for (const k of calloutPatch?.unset || []) delete callouts[k];
   const panelJson = JSON.stringify(panel);
   const calloutJson = JSON.stringify(callouts);
   const changed = panelJson !== JSON.stringify(before) || calloutJson !== JSON.stringify(beforeCallouts);
@@ -518,12 +617,41 @@ router.put('/:id/panel', (req, res) => {
     }
     logAudit(req.user, 'nfp_panel_values_updated', 'nfp', v.id,
       { sku: v.sku, version: v.version, panel_rev: (v.panel_rev || 0) + 1,
-        changed: Object.keys({ ...(panelPatch || {}), ...(calloutPatch || {}) }) },
+        changed: [...Object.keys(panelPatch || {}), ...Object.keys(calloutPatch?.set || {}), ...(calloutPatch?.unset || [])] },
       { panel: before, front_callouts: beforeCallouts }, { panel, front_callouts: callouts },
       `${v.sku} NFP ${v.version}`);
   }
 
   res.json(hydrate(db, [db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(v.id)])[0]);
+});
+
+/**
+ * Record where the panel's numbers came from (D-128). Editable while the panel
+ * is undecided; an approved panel is what artwork was checked against and is
+ * never rewritten — its provenance is what the approval recorded, and a
+ * correction is the next version, approved against the right formula.
+ */
+router.put('/:id/provenance', (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage nutrition panels.' });
+  const db = getDb();
+  const v = db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(req.params.id);
+  if (!v) return res.status(404).json({ error: 'Not found' });
+  if (['approved', 'superseded'].includes(v.status)) {
+    return res.status(409).json({
+      error: 'An approved panel keeps the provenance it was approved against. File the next version against the right formula.',
+    });
+  }
+  const { columns, error } = provenancePatch(req.body);
+  if (error) return res.status(400).json({ error });
+  const cols = Object.entries(columns);
+  if (!cols.length) return res.status(400).json({ error: 'Send the provenance fields to save.' });
+  const before = provenanceOf(v);
+  db.prepare(`UPDATE nfp_versions SET ${cols.map(([c]) => `${c} = ?`).join(', ')}, updated_at = datetime('now') WHERE id = ?`)
+    .run(...cols.map(([, val]) => val), v.id);
+  const after = db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(v.id);
+  logAudit(req.user, 'nfp_provenance_updated', 'nfp', v.id, { sku: v.sku, version: v.version },
+    before, provenanceOf(after), `${v.sku} NFP ${v.version}`);
+  res.json(hydrate(db, [after])[0]);
 });
 
 // ── The signed link ──────────────────────────────────────────────────────────
@@ -551,6 +679,14 @@ router.post('/:id/send', (req, res) => {
   if (!hasFile && !v.drive_url) {
     return res.status(409).json({
       error: 'Attach the panel or add a Drive link first — there is nothing for the approver to look at.',
+    });
+  }
+  // A link the approver could only ever be refused on is not worth sending.
+  const provMissing = provenanceMissing(provenanceOf(v));
+  if (provMissing.length) {
+    return res.status(409).json({
+      error: `Record where this panel came from before sending it: ${provMissing.map(k => PROVENANCE_LABEL[k]).join(', ')}.`,
+      needs_provenance: provMissing,
     });
   }
 
@@ -651,11 +787,46 @@ function strandedArtwork(db, sku, version) {
  * the route can hand them straight to whoever is holding the button.
  */
 export class DvUnacknowledged extends Error {
-  constructor(warnings) {
+  constructor(warnings, fillCheck = null) {
     super('Panel declares a % Daily Value that does not match its own amount.');
     this.name = 'DvUnacknowledged';
     this.warnings = warnings;
+    // D-128: the fill-weight cross-check rides on the same acknowledgement
+    // shape — shown both numbers, tick to proceed — but is its OWN tick, so
+    // agreeing to a %DV note never waves a fill-weight gap through.
+    this.fillCheck = fillCheck;
   }
+}
+
+/** Approval has a gate that no tick gets past: what it was approved against (D-128). */
+export class ProvenanceMissing extends Error {
+  constructor(missing) {
+    super('Record where this panel came from before approving it.');
+    this.name = 'ProvenanceMissing';
+    this.missing = missing;
+  }
+}
+
+/** The 409 every approval door answers with. One shape, three doors. */
+export function refusalBody(err) {
+  if (err instanceof ProvenanceMissing) {
+    return {
+      error: `This panel cannot be approved until it says what it was computed from: `
+        + `${err.missing.map(k => PROVENANCE_LABEL[k]).join(', ')}.`,
+      needs_provenance: err.missing,
+    };
+  }
+  if (err instanceof DvUnacknowledged) {
+    const fillPending = err.fillCheck?.status === 'mismatch';
+    return {
+      error: err.warnings.length ? DV_REFUSAL : fillCheckSentence(err.fillCheck),
+      needs_dv_ack: err.warnings.length > 0 || undefined,
+      dv_warnings: err.warnings,
+      needs_fill_ack: fillPending || undefined,
+      fill_check: err.fillCheck,
+    };
+  }
+  return null;
 }
 
 const DV_REFUSAL = 'This panel declares a % Daily Value that does not match its own amount.';
@@ -672,12 +843,29 @@ const DV_REFUSAL = 'This panel declares a % Daily Value that does not match its 
  * explicit acknowledgement gets through. What is impossible is approving a
  * defective panel without having been shown the defect.
  */
-function decide(db, v, { decision, by, comments, via, dvAck }) {
+function decide(db, v, { decision, by, comments, via, dvAck, fillAck }) {
   const now = new Date().toISOString();
-  const warnings = decision === 'approved' ? checkDailyValues(panelOf(v) || {}) : [];
-  if (warnings.length && !dvAck) throw new DvUnacknowledged(warnings);
+  const approving = decision === 'approved';
+  const provenance = provenanceOf(v);
+  if (approving) {
+    const missing = provenanceMissing(provenance);
+    if (missing.length) throw new ProvenanceMissing(missing);
+  }
+  const warnings = approving ? checkDailyValues(panelOf(v) || {}) : [];
+  const fill = approving ? fillWeightCheck(provenance.bom_fill_weight_g, catalogueFill(db, v.sku)?.fill_weight_g) : null;
+  const fillPending = fill?.status === 'mismatch' && !fillAck;
+  if ((warnings.length && !dvAck) || fillPending) {
+    throw new DvUnacknowledged(warnings.length && !dvAck ? warnings : [], fill);
+  }
   db.transaction(() => {
-    if (decision === 'approved') {
+    if (approving) {
+      // WHAT WAS APPROVED IS FROZEN WITH THE APPROVAL (D-128): the formula, its
+      // version and the fill weight, and the fill check as it stood. "Approved"
+      // means approved against F-00002 v2.0 at 88 g, not that a button was
+      // pressed — and the record says so after any later edit anywhere else.
+      db.prepare(`UPDATE nfp_versions SET approved_provenance = ?, fill_check = ?, fill_ack_by = ?, fill_ack_at = ?
+        WHERE id = ?`).run(JSON.stringify({ ...provenance, approved_at: now, approved_by: by }), JSON.stringify(fill),
+        fill?.status === 'mismatch' ? by : null, fill?.status === 'mismatch' ? now : null, v.id);
       db.prepare(`UPDATE nfp_versions SET status = 'approved', approved_by = ?, approved_at = ?,
         decided_via = ?, decision_comments = ?, token_hash = NULL,
         dv_warnings = ?, dv_ack_by = ?, dv_ack_at = ?, updated_at = datetime('now')
@@ -739,16 +927,18 @@ router.post('/:id/decide', async (req, res) => {
 
   let stranded;
   try {
-    stranded = decide(db, v, { decision, by, comments, via: 'in_app', dvAck: req.body?.dv_ack === true });
+    stranded = decide(db, v, { decision, by, comments, via: 'in_app',
+      dvAck: req.body?.dv_ack === true, fillAck: req.body?.fill_ack === true });
   } catch (err) {
-    if (err instanceof DvUnacknowledged) {
-      return res.status(409).json({ error: DV_REFUSAL, needs_dv_ack: true, dv_warnings: err.warnings });
-    }
+    const body = refusalBody(err);
+    if (body) return res.status(409).json(body);
     throw err;
   }
   const acked = req.body?.dv_ack === true;
   logAudit(req.user, decision === 'approved' ? 'nfp_approved' : 'nfp_rejected', 'nfp', v.id,
-    { sku: v.sku, version: v.version, by, via: 'in_app', dv_acknowledged: acked || undefined },
+    { sku: v.sku, version: v.version, by, via: 'in_app', dv_acknowledged: acked || undefined,
+      fill_acknowledged: req.body?.fill_ack === true || undefined,
+      provenance: decision === 'approved' ? provenanceOf(v) : undefined },
     null, null, `${v.sku} NFP ${v.version}`);
   res.json({ ok: true, stranded_artwork: stranded,
     version: hydrate(db, [db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(v.id)])[0] });
@@ -811,16 +1001,18 @@ linkRouter.post('/:token', async (req, res) => {
   }
 
   try {
-    decide(db, v, { decision, by, comments, via: 'link', dvAck: req.body?.dv_ack === true });
+    decide(db, v, { decision, by, comments, via: 'link',
+      dvAck: req.body?.dv_ack === true, fillAck: req.body?.fill_ack === true });
   } catch (err) {
-    if (err instanceof DvUnacknowledged) {
-      return res.status(409).json({ error: DV_REFUSAL, needs_dv_ack: true, dv_warnings: err.warnings });
-    }
+    const body = refusalBody(err);
+    if (body) return res.status(409).json(body);
     throw err;
   }
   logAudit(by, decision === 'approved' ? 'nfp_approved' : 'nfp_rejected', 'nfp', v.id,
     { sku: v.sku, version: v.version, via: 'signed-link',
-      dv_acknowledged: req.body?.dv_ack === true || undefined },
+      dv_acknowledged: req.body?.dv_ack === true || undefined,
+      fill_acknowledged: req.body?.fill_ack === true || undefined,
+      provenance: decision === 'approved' ? provenanceOf(v) : undefined },
     null, null, `${v.sku} NFP ${v.version}`);
   await tellIssuer(db, v, decision, by, comments);
   res.json({ ok: true, decision, sku: v.sku, version: v.version });
@@ -914,18 +1106,20 @@ linkRouter.post('/batch/:token', async (req, res) => {
   if (!rows.length) return res.status(409).json({ error: 'Nothing left to decide on this link.' });
 
   const dvAck = req.body?.dv_ack === true;
+  const fillAck = req.body?.fill_ack === true;
   const done = [], stranded = [], blocked = [];
   for (const v of rows) {
     let s;
     try {
-      s = decide(db, v, { decision, by, comments, via: 'link', dvAck });
+      s = decide(db, v, { decision, by, comments, via: 'link', dvAck, fillAck });
     } catch (err) {
-      if (!(err instanceof DvUnacknowledged)) throw err;
+      const body = refusalBody(err);
+      if (!body) throw err;
       // ONE BAD PANEL DOES NOT STOP THE OTHER NINE. The approver sees which
       // ones were held back and why, and can come back for them — the same
       // partial-failure rule QA Review's batch signing follows, because
       // refusing the whole link would leave nine correct panels undecided.
-      blocked.push({ version_id: v.id, sku: v.sku, version: v.version, dv_warnings: err.warnings });
+      blocked.push({ version_id: v.id, sku: v.sku, version: v.version, ...body });
       continue;
     }
     logAudit(by, decision === 'approved' ? 'nfp_approved' : 'nfp_rejected', 'nfp', v.id,
@@ -940,7 +1134,8 @@ linkRouter.post('/batch/:token', async (req, res) => {
   }
   const left = closeIfFinished(db, b.id);
   res.json({ ok: true, decision, decided: done, outstanding: left, stranded, blocked,
-    needs_dv_ack: blocked.length > 0 || undefined });
+    needs_dv_ack: blocked.some(x => x.needs_dv_ack) || undefined,
+    needs_fill_ack: blocked.some(x => x.needs_fill_ack) || undefined });
 });
 
 export default router;

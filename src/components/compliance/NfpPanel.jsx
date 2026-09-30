@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useApiGet, apiFetch, apiUpload } from '../../hooks/useApi';
 import ProductFileImport from './ProductFileImport.jsx';
 import { computeDv, checkDailyValues } from '../../../shared/nutrition-dv.js';
+import { provenancePhrase, fillCheckSentence, PROVENANCE_LABEL } from '../../../shared/panel-provenance.js';
 import {
   FileText, Link2, Upload, CheckCircle2, XCircle, Clock, Copy, Check,
   AlertTriangle, Trash2, Plus, Send, Table2,
@@ -126,6 +127,9 @@ function PanelValues({ v, canEdit, onChanged }) {
 
   const set = (k) => (e) => { setSaved(false); setPanel((p) => ({ ...p, [k]: e.target.value })); };
   const setC = (k) => (e) => { setSaved(false); setCallouts((p) => ({ ...p, [k]: e.target.value })); };
+  // Null is an ANSWER ("this pack does not make that claim"); a blank box is
+  // not answered yet, and saves as absent (D-128).
+  const setNotClaimed = (k) => (e) => { setSaved(false); setCallouts((p) => ({ ...p, [k]: e.target.checked ? null : '' })); };
   const val = (o, k) => (o?.[k] === null || o?.[k] === undefined ? '' : String(o[k]));
 
   // Computed from what is in the boxes right now, by the same function the
@@ -232,16 +236,25 @@ function PanelValues({ v, canEdit, onChanged }) {
           <div>
             <p className="text-[11px] text-gray-500 mb-1">
               Front-of-pack callouts — what is shouted on the front, which has to agree with the panel.
-              Leave one blank if the pack does not make that claim; blank means the proofing check is skipped,
-              not computed.
+              Tick <em>Not on pack</em> when the pack does not make that claim. A blank box is not answered yet,
+              and the spec sheet counts it as a gap.
             </p>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-              {CALLOUT_ROWS.map((r) => (
-                <label key={r.key} className="block">
-                  <span className="text-[11px] text-gray-500">{r.label}</span>
-                  <input type="text" disabled={locked} value={val(callouts, r.key)} onChange={setC(r.key)} className={cell} />
-                </label>
-              ))}
+              {CALLOUT_ROWS.map((r) => {
+                const notClaimed = callouts?.[r.key] === null;
+                return (
+                  <div key={r.key} className="block" data-callout={r.key}>
+                    <span className="text-[11px] text-gray-500">{r.label}</span>
+                    <input type="text" disabled={locked || notClaimed} value={val(callouts, r.key)} onChange={setC(r.key)}
+                      placeholder={notClaimed ? 'not on pack' : ''} className={cell} />
+                    <label className="flex items-center gap-1 text-[10px] text-gray-500 mt-0.5">
+                      <input type="checkbox" data-callout-not-claimed={r.key} disabled={locked}
+                        checked={notClaimed} onChange={setNotClaimed(r.key)} />
+                      Not on pack
+                    </label>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -264,6 +277,110 @@ function PanelValues({ v, canEdit, onChanged }) {
               </span>
             </div>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const PROV_FIELDS = [
+  { key: 'formula_ref', placeholder: 'F-00002', required: true },
+  { key: 'formula_version', placeholder: 'v2.0', required: true },
+  { key: 'bom_fill_weight_g', placeholder: '88.0', required: true },
+  { key: 'source_system', placeholder: 'Genesis R&D' },
+  { key: 'generated_by', placeholder: 'Matt Schramm' },
+  { key: 'generated_at', type: 'date' },
+];
+
+/**
+ * Where the numbers came from (D-128), in one line near the status, and the
+ * form that records it while the panel is undecided. An approved panel shows
+ * what its approval was given AGAINST — frozen with the decision — and is
+ * never edited here: a correction is the next version.
+ */
+function Provenance({ v, canEdit, onChanged }) {
+  const open = ['draft', 'sent', 'rejected'].includes(v.status);
+  const frozen = v.approved_provenance;
+  const block = frozen || v.provenance || {};
+  const phrase = provenancePhrase(block);
+  const [editing, setEditing] = useState(false);
+  const [f, setF] = useState(() => Object.fromEntries(
+    [...PROV_FIELDS.map(x => x.key), 'notes'].map(k => [k, v.provenance?.[k] == null || v.provenance?.[k] === 'unknown' ? '' : String(v.provenance[k])])));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const save = async () => {
+    setBusy(true); setError('');
+    try {
+      await apiFetch(`/nfp/${v.id}/provenance`, { method: 'PUT', body: f });
+      setEditing(false); onChanged();
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  };
+
+  const who = v.status === 'approved' || v.status === 'superseded'
+    ? [v.approved_by, v.approved_at].filter(Boolean).join(', ')
+    : [block.generated_by, block.generated_at].filter(Boolean).join(', ');
+  const statusWord = { approved: 'Approved', superseded: 'Superseded', sent: 'Sent', rejected: 'Sent back' }[v.status] || 'Draft';
+  const missing = frozen
+    ? ['formula_ref', 'formula_version', 'bom_fill_weight_g'].filter(k => frozen[k] == null || frozen[k] === '')
+    : (v.provenance_missing_fields || []);
+
+  return (
+    <div data-provenance className="space-y-1.5">
+      <p data-provenance-line className={`text-xs ${missing.length ? 'text-amber-800' : 'text-gray-700'}`}>
+        <span className="font-medium">{statusWord} {v.version}</span>
+        {' · '}
+        {phrase || <span className="font-medium">provenance unknown</span>}
+        {who && ` · ${who}`}
+        {block.source_system && block.source_system !== 'unknown' && <span className="text-gray-500"> · {block.source_system}</span>}
+      </p>
+      {missing.length > 0 && (
+        <p data-provenance-missing className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+          {frozen ? 'Approved without ' : 'Not yet recorded: '}
+          {missing.map(k => PROVENANCE_LABEL[k].toLowerCase()).join(', ')}.
+          {open ? ' Approval is refused until these are filled.' : ' File the next version against the formula it was computed from.'}
+        </p>
+      )}
+      {(v.provenance_stale || []).length > 0 && (
+        <ul data-provenance-stale className="text-[11px] text-red-800 bg-red-50 border border-red-200 rounded px-2 py-1 list-disc pl-5">
+          {v.provenance_stale.map((x) => <li key={x}>{x}</li>)}
+        </ul>
+      )}
+      {open && canEdit && !editing && (
+        <button type="button" data-provenance-edit onClick={() => setEditing(true)}
+          className="text-[11px] text-powder-700 hover:underline">
+          {missing.length ? 'Record where this panel came from' : 'Edit provenance'}
+        </button>
+      )}
+      {editing && (
+        <div className="rounded border border-gray-200 p-2 space-y-1.5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+            {PROV_FIELDS.map((x) => (
+              <label key={x.key} className="block">
+                <span className="text-[11px] text-gray-500">{PROVENANCE_LABEL[x.key]}{x.required ? ' *' : ''}</span>
+                <input type={x.type || 'text'} data-prov-field={x.key} value={f[x.key]} placeholder={x.placeholder || ''}
+                  onChange={(e) => setF((p) => ({ ...p, [x.key]: e.target.value }))} className={cell} />
+              </label>
+            ))}
+          </div>
+          <label className="block">
+            <span className="text-[11px] text-gray-500">{PROVENANCE_LABEL.notes}</span>
+            <input type="text" value={f.notes} placeholder="e.g. erythritol removed"
+              onChange={(e) => setF((p) => ({ ...p, notes: e.target.value }))} className={cell} />
+          </label>
+          {v.fill_check_live && v.fill_check_live.status !== 'no_bom' && (
+            <p className={`text-[11px] ${v.fill_check_live.status === 'mismatch' ? 'text-red-700' : 'text-gray-500'}`}>
+              {fillCheckSentence(v.fill_check_live)}
+            </p>
+          )}
+          {error && <p className="text-xs text-red-700 bg-red-50 rounded p-1.5">{error}</p>}
+          <div className="flex gap-2">
+            <button type="button" data-prov-save onClick={save} disabled={busy}
+              className="px-2.5 py-1 bg-powder-600 text-white rounded text-xs font-medium disabled:opacity-50">
+              {busy ? 'Saving…' : 'Save provenance'}
+            </button>
+            <button type="button" onClick={() => setEditing(false)} className="px-2.5 py-1 border border-gray-300 rounded text-xs">Cancel</button>
+          </div>
         </div>
       )}
     </div>
@@ -308,7 +425,9 @@ function LinkBox({ link }) {
 function NewPanelForm({ sku, formulaRev, onDone, onCancel, storage = true }) {
   const [f, setF] = useState({
     version: '', serving_size: '', servings_per_container: '',
-    formula_rev: formulaRev || '', drive_url: '', change_summary: '',
+    // Blank, not the catalogue's current version: which version the numbers
+    // came from is the filer's to say, and a pre-filled box gets accepted (D-128).
+    formula_rev: '', drive_url: '', change_summary: '',
     source: 'upload', approved_by: '', approved_at: '',
   });
   const [busy, setBusy] = useState(false);
@@ -348,11 +467,12 @@ function NewPanelForm({ sku, formulaRev, onDone, onCancel, storage = true }) {
     <div className="rounded-lg border border-gray-200 p-3 space-y-2.5">
       {error && <p className="text-sm text-red-700 bg-red-50 rounded p-2">{error}</p>}
       <div className="grid grid-cols-2 gap-2">
-        {[['version', 'Panel version *'], ['formula_rev', 'Formula revision'],
+        {[['version', 'Panel version *'], ['formula_rev', 'Formula version it was computed from'],
           ['serving_size', 'Serving size'], ['servings_per_container', 'Servings / container']].map(([k, label]) => (
           <label key={k} className="block">
             <span className="text-xs font-medium text-gray-600">{label}</span>
             <input value={f[k]} onChange={set(k)}
+              placeholder={k === 'formula_rev' && formulaRev ? `current: ${formulaRev}` : undefined}
               className="mt-1 w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm" />
           </label>
         ))}
@@ -434,6 +554,9 @@ function VersionCard({ v, canEdit, onChanged, storage = true }) {
   // The mismatches the server refused on, and the tick that gets past them.
   const [dvBlock, setDvBlock] = useState([]);
   const [dvAck, setDvAck] = useState(false);
+  // The fill-weight cross-check (D-128): its own tick, never folded into the %DV one.
+  const [fillBlock, setFillBlock] = useState(null);
+  const [fillAck, setFillAck] = useState(false);
 
   const open = ['draft', 'sent', 'rejected'].includes(v.status);
 
@@ -463,16 +586,21 @@ function VersionCard({ v, canEdit, onChanged, storage = true }) {
     try {
       const r = await apiFetch(`/nfp/${v.id}/decide`, {
         method: 'POST',
-        body: { decision: deciding, approved_by: by, comments, dv_ack: dvAck },
+        body: { decision: deciding, approved_by: by, comments, dv_ack: dvAck, fill_ack: fillAck },
       });
       setStranded(r.stranded_artwork || []);
       setDeciding(null); setBy(''); setComments(''); setDvBlock([]); setDvAck(false);
+      setFillBlock(null); setFillAck(false);
       onChanged();
     } catch (e) {
       // The server refused because the panel disagrees with its own
       // arithmetic. Show WHAT it found rather than the sentence alone — a
       // refusal you cannot act on reads as the app being awkward.
-      if (e.data?.needs_dv_ack) { setDvBlock(e.data.dv_warnings || []); return; }
+      if (e.data?.needs_dv_ack || e.data?.needs_fill_ack) {
+        setDvBlock(e.data.dv_warnings || []);
+        setFillBlock(e.data.needs_fill_ack ? e.data.fill_check : null);
+        return;
+      }
       throw e;
     }
   });
@@ -492,6 +620,8 @@ function VersionCard({ v, canEdit, onChanged, storage = true }) {
         </div>
         <StatusChip status={v.status} />
       </div>
+
+      <Provenance v={v} canEdit={canEdit} onChanged={onChanged} />
 
       {v.change_summary && <p className="text-xs text-gray-600">{v.change_summary}</p>}
 
@@ -585,6 +715,18 @@ function VersionCard({ v, canEdit, onChanged, storage = true }) {
                       I have looked at these and am approving the panel anyway.
                       This is recorded against my name.
                     </span>
+                  </label>
+                </>
+              )}
+              {deciding === 'approved' && (fillBlock || v.fill_check_live?.status === 'mismatch') && (
+                <>
+                  <p data-fill-warning className="text-xs text-red-800 bg-red-50 border border-red-200 rounded p-2">
+                    {fillCheckSentence(fillBlock || v.fill_check_live)}
+                  </p>
+                  <label className="flex items-start gap-2 text-xs text-gray-800">
+                    <input type="checkbox" data-fill-ack checked={fillAck}
+                      onChange={(e) => setFillAck(e.target.checked)} className="mt-0.5" />
+                    <span>I have checked the fill weight and am approving the panel anyway. Recorded against my name.</span>
                   </label>
                 </>
               )}

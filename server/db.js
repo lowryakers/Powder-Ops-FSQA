@@ -3459,6 +3459,27 @@ function runMigrations() {
   addColumnIfMissing('nfp_versions', 'dv_warnings', 'TEXT');
   addColumnIfMissing('nfp_versions', 'dv_ack_by', 'TEXT');
   addColumnIfMissing('nfp_versions', 'dv_ack_at', 'TEXT');
+  // WHERE THE PANEL'S NUMBERS CAME FROM (D-128, shared/panel-provenance.js).
+  // The formula VERSION is the existing `formula_rev`, not a second column.
+  // Approval is refused without formula_ref + formula_rev + bom_fill_weight_g,
+  // and `approved_provenance` freezes what the approval was against.
+  addColumnIfMissing('nfp_versions', 'formula_ref', 'TEXT');
+  addColumnIfMissing('nfp_versions', 'bom_fill_weight_g', 'REAL');
+  addColumnIfMissing('nfp_versions', 'provenance_source', 'TEXT');
+  addColumnIfMissing('nfp_versions', 'provenance_generated_at', 'TEXT');
+  addColumnIfMissing('nfp_versions', 'provenance_generated_by', 'TEXT');
+  addColumnIfMissing('nfp_versions', 'provenance_notes', 'TEXT');
+  addColumnIfMissing('nfp_versions', 'approved_provenance', 'TEXT');
+  addColumnIfMissing('nfp_versions', 'fill_check', 'TEXT');
+  addColumnIfMissing('nfp_versions', 'fill_ack_by', 'TEXT');
+  addColumnIfMissing('nfp_versions', 'fill_ack_at', 'TEXT');
+  // A SKU the spec sheet cannot finish yet for a reason somebody owns (D-128):
+  // "formula not final — Danny". Excluded from the incomplete count, still listed.
+  db.exec(`CREATE TABLE IF NOT EXISTS product_completeness_blocks (
+    sku TEXT PRIMARY KEY, reason TEXT NOT NULL, owner TEXT NOT NULL,
+    blocked_by TEXT, blocked_by_id TEXT, blocked_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  // (The callout-null conversion runs below, after app_settings exists.)
   // Which revision of the panel a proofing run checked this artwork against.
   // NULL on every version filed before the proofer sent one, which reads as
   // "not checked against a panel" and never as "checked against rev 0".
@@ -4452,6 +4473,27 @@ function runMigrations() {
   } catch (e) {
     console.warn('[db] app_settings unavailable:', e.message);
   }
+
+  // D-128. A callout stored as null BEFORE D-128 was a blank box — there was no way to
+  // say "not claimed on this pack" on purpose. From D-128 null means exactly
+  // that, so the old nulls become ABSENT once, or every panel ever saved would
+  // read as having answered all four callouts. Same fact, honest spelling.
+  try {
+    if (!db.prepare("SELECT 1 FROM app_settings WHERE key = 'callout_nulls_unset_v1'").get()) {
+      const rows = db.prepare('SELECT id, front_callouts FROM nfp_versions WHERE front_callouts IS NOT NULL').all();
+      let moved = 0;
+      const upd = db.prepare('UPDATE nfp_versions SET front_callouts = ? WHERE id = ?');
+      for (const r of rows) {
+        const c = (() => { try { return JSON.parse(r.front_callouts); } catch { return null; } })();
+        if (!c || typeof c !== 'object') continue;
+        const kept = Object.fromEntries(Object.entries(c).filter(([, v]) => v !== null && v !== ''));
+        if (Object.keys(kept).length !== Object.keys(c).length) { upd.run(JSON.stringify(kept), r.id); moved++; }
+      }
+      db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('callout_nulls_unset_v1', ?, datetime('now'))")
+        .run(String(moved));
+      if (moved) console.log(`[migrate] ${moved} panel(s): blank callouts stored as null now read as unanswered (D-128)`);
+    }
+  } catch (e) { console.warn('[migrate] callout nulls:', e.message); }
 
   // Link the org chart to accounts. Here rather than beside its ALTER TABLE
   // because it stores its done-marker in app_settings, which is created

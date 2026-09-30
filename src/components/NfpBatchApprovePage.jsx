@@ -23,6 +23,12 @@ export default function NfpBatchApprovePage({ token }) {
   const [done, setDone] = useState(null);
   const [rejecting, setRejecting] = useState(null);
   const [reason, setReason] = useState('');
+  // Per panel: the approver's tick past a %DV mismatch or a fill-weight gap.
+  // A panel held back for either is NAMED in the result (D-128) — before this
+  // the batch page recorded the others and said nothing about the one it kept.
+  const [acks, setAcks] = useState({});
+  const ackOf = (id) => acks[id] || {};
+  const setAck = (id, k, v) => setAcks((a) => ({ ...a, [id]: { ...(a[id] || {}), [k]: v } }));
 
   const load = useCallback(async () => {
     try {
@@ -82,6 +88,15 @@ export default function NfpBatchApprovePage({ token }) {
               Recorded: {done.decided.map(d => `${d.sku} ${d.version}`).join(', ')} {done.decision}.
             </p>
             {done.outstanding > 0 && <p className="mt-0.5">{done.outstanding} still to decide.</p>}
+            {done.blocked?.length > 0 && (
+              <div data-batch-blocked className="mt-1 text-red-800">
+                Held back, not approved:
+                <ul className="list-disc pl-5">
+                  {done.blocked.map((b) => <li key={b.version_id}>{b.sku} {b.version} — {b.error}</li>)}
+                </ul>
+                Tick the note on that panel below and approve it on its own.
+              </div>
+            )}
             {done.outstanding === 0 && <p className="mt-0.5">That is all of them — thank you. This link is now closed.</p>}
             {done.stranded?.length > 0 && (
               <p className="mt-1 text-amber-800">
@@ -118,6 +133,12 @@ export default function NfpBatchApprovePage({ token }) {
                     {p.servings_per_container && ` · ${p.servings_per_container} per container`}
                   </p>
                   {p.change_summary && <p className="mt-1 text-sm text-gray-700">{p.change_summary}</p>}
+                  {p.provenance?.formula_ref && (
+                    <p data-batch-provenance className="text-xs text-gray-600">
+                      Computed from {p.provenance.formula_ref}{p.provenance.formula_version ? ` ${p.provenance.formula_version}` : ''}
+                      {p.provenance.bom_fill_weight_g != null ? ` at ${p.provenance.bom_fill_weight_g} g` : ''}
+                    </p>
+                  )}
                 </div>
                 {p.decided && (
                   <span className={`shrink-0 text-xs font-medium ${p.status === 'approved' ? 'text-green-700' : 'text-red-700'}`}>
@@ -147,10 +168,33 @@ export default function NfpBatchApprovePage({ token }) {
                 )}
               </div>
 
+              {!p.decided && (p.dv_check?.length > 0 || p.fill_check?.status === 'mismatch') && (
+                <div className="mt-2 rounded-lg border border-red-200 bg-red-50 p-2 space-y-1 text-xs text-red-900">
+                  {p.dv_check?.length > 0 && (
+                    <>
+                      <ul className="list-disc pl-5">{p.dv_check.map((w) => <li key={w.nutrient}>{w.note}</li>)}</ul>
+                      <label className="flex items-start gap-1.5">
+                        <input type="checkbox" checked={!!ackOf(p.id).dv} onChange={(e) => setAck(p.id, 'dv', e.target.checked)} className="mt-0.5" />
+                        I have looked at these and am approving anyway.
+                      </label>
+                    </>
+                  )}
+                  {p.fill_check?.status === 'mismatch' && (
+                    <>
+                      <p>Computed at {p.fill_check.bom} g; the catalogue says {p.fill_check.catalogue} g ({p.fill_check.diff_pct}% apart).</p>
+                      <label className="flex items-start gap-1.5">
+                        <input type="checkbox" checked={!!ackOf(p.id).fill} onChange={(e) => setAck(p.id, 'fill', e.target.checked)} className="mt-0.5" />
+                        I have checked the fill weight and am approving anyway.
+                      </label>
+                    </>
+                  )}
+                </div>
+              )}
+
               {!p.decided && (
                 <div className="mt-2.5 flex flex-wrap items-center gap-2">
                   <button type="button" disabled={busy || name.trim().length < 2}
-                    onClick={() => send({ decision: 'approved', version_id: p.id })}
+                    onClick={() => send({ decision: 'approved', version_id: p.id, dv_ack: !!ackOf(p.id).dv, fill_ack: !!ackOf(p.id).fill })}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-600 text-white text-xs font-medium hover:bg-green-700 disabled:opacity-50">
                     <CheckCircle2 size={13} /> Approve this one
                   </button>

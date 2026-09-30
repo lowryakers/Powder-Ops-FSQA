@@ -699,6 +699,31 @@ errors on the last bottle run, all found by hand.
 - **No values are entered for any of the 118 products yet.** Transcribing a panel from artwork is a person's
   job; seeding a plausible one is the fabricated-record failure this module exists to prevent.
 
+### What a panel was computed from, and the spec sheet's named gaps (D-128)
+`shared/panel-provenance.js` (PURE, both sides), the provenance columns on `nfp_versions`,
+`server/product-completeness.js` + `GET /api/products/completeness`, **Products → Completeness**
+(`ProductCompleteness.jsx`). Apple Pie was computed at a 33.32 g fill from a stale formula copy while the BOM
+said 34.86 g, and nothing on the panel record could have shown it.
+- **`formula_version` IS `nfp_versions.formula_rev`**, not a second column; the product's CURRENT formula is
+  `products.mrp_formula_id` / `formula_rev` (now on the drawer). A panel is stale when they disagree.
+- **Approval requires `formula_ref`, `formula_version`, `bom_fill_weight_g`** — gated in `decide()` (all three
+  doors; `refusalBody()` shapes the 409), and **a link is refused while they are missing**. The paper door is
+  NOT gated: it records a decision already taken.
+- **`approved_provenance` + `fill_check` are frozen with the decision**; provenance on an approved panel is
+  closed. The one-line summary (`provenancePhrase`) is `Approved V1 · from F-00002 v2.0 @ 33.3g · who, date`.
+- **Fill weight vs the Catalogue's `fill_weight_g`: more than 1% apart needs `fill_ack`**, its own tick — a
+  %DV acknowledgment does not cover it. Open question: `fill_weight_g` is the PACK fill, so a per-serving BOM
+  on a multi-serving pouch would warn every time.
+- **Nothing is backfilled** — no provenance reads `source_system: 'unknown'`, `provenance_missing: true`. And
+  **filing a panel no longer copies the catalogue's formula version onto it**; that default asserted provenance
+  nobody gave. Do not put it back.
+- **Callouts are tri-state**: number · `null` = not claimed on this pack · absent = not answered. `''` unsets.
+- **Completeness has NO SCORE** — seven groups, each gap named by field. Blocked (`product_completeness_blocks`,
+  on `SKU_CHILD_TABLES`) leaves the incomplete count and stays visible. The line is `category · pack`. The CSV
+  is built from the payload on screen, one row per incomplete SKU.
+- **The Products tabs deep-link now** (`?tab=products&view=completeness`, `getParam('view')`).
+- `verify:provenance` (52, live + browser; control fails 11).
+
 ### Brand colours: one writer, and it has already run (D-108)
 `product_colors` is written by **exactly one thing** — `seedProducts()`, loading `seed-data/sku_colors.csv`,
 which is insert-only AND returns on its first line once `products` has any row. It runs **once in a

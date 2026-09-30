@@ -5280,3 +5280,73 @@ while QA and the admins received a plant-wide count they cannot act on.
 
 `verify:eodchase` 45 → **54**. **The control restores the old chase and fails 6** before the script crashes
 on the result it no longer returns — the first being a Filling supervisor absent from the default list.
+
+## D-128 — A nutrition panel records what it was computed from, and the spec sheet names its gaps (2026-09-30)
+
+Two panels were internally right and wrong about the product. Apple Pie was computed from a spreadsheet copy
+of the formula at a **33.32 g** fill while the live BOM said **34.86 g** and the recipe had since gained
+flavor, guar gum and MCT oil — it surfaced 1 g of added sugar against a front panel claiming 0 g. Four
+pancake formulas lost their erythritol and their serving size moved while servings per container stayed 4.5.
+**No field on the panel record could have shown either**: a panel was a file, a label and a set of numbers,
+and nothing said which formula produced them.
+
+**Part 1 — provenance on every panel** (`shared/panel-provenance.js`, `server/api/nfp.js`):
+- The block is `{source_system, formula_ref, formula_version, bom_fill_weight_g, generated_at, generated_by,
+  notes}`. **`formula_version` IS the existing `nfp_versions.formula_rev`** — the column already documented
+  as "which formula the panel was calculated from" — not a second copy beside it. The product's CURRENT
+  formula is `products.mrp_formula_id` / `products.formula_rev`, now editable on the product drawer and shown
+  as one "Formula" line.
+- **Approval requires formula_ref, formula_version and bom_fill_weight_g.** The gate is in `decide()`, so the
+  in-app button, the signed link and the batch link all refuse (`needs_provenance`, naming the fields). A
+  draft may be blank. **Sending a link is refused too** — a link that could only be refused is not worth
+  sending. **The paper door is not gated**: it records a decision already taken, and demanding facts the
+  paper never carried would be the fabricated-record failure.
+- **The approval records what it approved**: `approved_provenance` (the block + who + when) and `fill_check`
+  are written in the same statement as the decision and never again, and the audit entry carries the block.
+  An approved panel's provenance is closed (`PUT /nfp/:id/provenance` 409s) — a correction is the next version.
+- **One line near the status**: `Approved V1 · from F-00002 v2.0 @ 33.3g · Maria Servin, 2026-09-30`, on the
+  version card, the approval page and the batch page.
+- **`GET /api/products/nutrition-panel` returns `provenance`, `provenance_missing`, `approved_provenance`,
+  the product's `current_formula` and `provenance_stale`** — the proofer can say "computed from v2.0, current
+  is v2.1" on its own.
+- **The fill weight is checked against the Catalogue's** (`products.fill_weight_g`, D-093). More than 1% apart
+  → the approver is shown both numbers and must tick an acknowledgment (`fill_ack`, recorded as
+  `fill_ack_by` / `_at`) — the %DV pattern, and **its own tick**: acknowledging a %DV mismatch does not wave a
+  fill mismatch through. 33.32 against 34.86 is 4.42%.
+- **Nothing is backfilled.** Every panel on file reads `source_system: 'unknown'`, `provenance_missing: true`
+  until a person fills it, derived on read. **And filing a panel no longer copies the catalogue's current
+  formula version onto it** — that default was asserting provenance nobody gave, and would have hidden the
+  Apple Pie case exactly. The new-panel box is blank with the current version as a placeholder.
+- **Front call-outs have three states**: a number, **null = "not claimed on this pack"** (a tick beside the
+  box), and absent = not answered. The old form stored a blank box as null, so a one-time pass
+  (`callout_nulls_unset_v1`) turns those nulls into "not answered" — nobody ever chose them.
+
+**Part 2 — the Completeness view** (`server/product-completeness.js`, `GET /api/products/completeness`,
+Products → **Completeness**):
+- **One row per SKU**, seven groups — Identity, Packaging, Formula, Nutrition panel, Front call-outs,
+  Provenance, Artwork — each complete / incomplete / N/A, and **every gap named by field** ("Packaging: Hex
+  spot colors"). **No score, no percentage, no ratio** — asserted against the payload. Wind direction and eye
+  mark are N/A off the roll-fed formats (pouch, stick, bottle).
+- **Blocked** (`product_completeness_blocks`, reason + owner required, audited) takes a SKU out of the
+  incomplete count and leaves it on screen with its gaps. The table is on `SKU_CHILD_TABLES`, so a rename
+  carries it.
+- **Stale** when the panel's formula ref or version is not the catalogue's current one, or its fill weight is
+  more than 1% off — each reason names both values.
+- **Roll-up by line**, and the line is `category · pack` — finer than the list in the ask, because a Plant
+  Protein bottle and a Plant Protein pouch are different spec sheets.
+- **CSV export**: one row per incomplete SKU, missing fields comma-separated, built from the payload on screen.
+- `?tab=products&view=<tab>` deep-links a Products tab now; it did not before.
+
+**One question left open on purpose:** the fill check compares the panel's BOM fill weight with the
+Catalogue's `fill_weight_g`, which is the PACK fill (pancake 454 g). On a stick the serving is the pack and
+the two are the same figure; on a multi-serving pouch a panel computed per serving would warn every time.
+The spec says Catalogue fill, and that is what is built — if "BOM fill weight" means per serving on some
+formulas, the comparison needs `× servings per container`, and that is the plant's answer to give.
+
+Verified: `verify:provenance` (52, live + browser at 1280 and 390px, in `verify:all`) — all seven acceptance
+criteria, the three callout states, the stale flag on the read endpoint, the four plant bottles blocked
+"formula not final — Danny", the CSV row count, and the migration surviving a reboot. **The control is the
+panel code on `main` and fails 11** before it can continue, the decisive one approving a panel that records
+nothing at 200. `verify:nfppanel` (49) and `verify:nfppanelui` (19) now file their fixtures with a provenance
+block, since both approve; `verify:artwork` 38, `verify:colors` 54, `verify:skurename` 37,
+`verify-product-readiness` 30, `verify-product-tabs` 43, `verify:prooftoken` 34 unchanged.

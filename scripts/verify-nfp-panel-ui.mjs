@@ -30,15 +30,18 @@ await post('/users/set-password', { user_id: 'nfp-ui', password: 'Panel2026!', s
 const auth = await (await post('/users/login', { name: 'Panel QA', password: 'Panel2026!' })).json();
 t('signed in', !!auth?.token);
 
-const sku = (() => {
+const row = (() => {
   const db = new Database(process.env.DBPATH, { readonly: true });
-  const p = db.prepare(`SELECT sku FROM products WHERE gtin IS NOT NULL AND gtin != ''
+  const p = db.prepare(`SELECT sku, fill_weight_g FROM products WHERE gtin IS NOT NULL AND gtin != ''
     AND sku NOT IN (SELECT sku FROM nfp_versions) ORDER BY sku LIMIT 1`).get();
-  db.close(); return p?.sku;
+  db.close(); return p;
 })();
+const sku = row?.sku;
 const api = (p, body, method = 'POST') => fetch(`${URL}/api${p}`,
   { method, headers: { ...H, Authorization: `Bearer ${auth.token}` }, body: JSON.stringify(body) });
-const version = await (await api('/nfp', { sku, version: 'V1', drive_url: 'https://drive.example/v1' })).json();
+// Approval needs to know what the panel was computed from (D-128).
+const version = await (await api('/nfp', { sku, version: 'V1', drive_url: 'https://drive.example/v1',
+  provenance: { formula_ref: 'F-TEST', formula_version: 'v1', bom_fill_weight_g: row?.fill_weight_g || 30 } })).json();
 t('a panel to work on', !!version?.id, sku);
 
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });

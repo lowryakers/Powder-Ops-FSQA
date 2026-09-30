@@ -41,6 +41,7 @@ to go and look.
 | Products: draft realign, colour conflicts, Data health | Catalogue corrections | Product management (Lowry) | Products catalogue and Data health | Banner only | actor owns the screen — left as is |
 | Sensory spec approval (D-050) | Approve a product's draft spec | A QA lead | Organoleptic log strip | Banner; the first test DMs QA to taste | reached through the tasting DM |
 | "Used up" restock suggestions | Add to orders | The office | Supply Orders strip | Was: banner only. **Now a bell line `supply-suggestions` for admins, counted by item from the strip's own `openSuggestions()`** | **fixed D-124** |
+| Spec-sheet completeness (D-128) | Fill the named fields, or block the SKU with a reason and an owner | Whoever owns the product data (Lowry, Matt, Shaun) | Products → Completeness | None — a derived punch list, read where the product data is kept. A block names its owner in words, not an account, so nobody is messaged | reported, not wired: a block's owner is not told |
 | Obligations register (`docs/v2/obligations.json`) | Close the 23 open obligations | Whoever runs V2 | The repository | `npm run check:obligations` | not an app mechanism — its reader reads the repo. Left as is |
 
 ## The two rules this pass adds
