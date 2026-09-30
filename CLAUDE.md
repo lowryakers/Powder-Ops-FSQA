@@ -932,6 +932,23 @@ prefix**. `850046726` is at 76/100. Allocation should prefer the roomiest prefix
 warn under 25 free. All 118 existing check digits verify, which is the most expensive thing to get right
 and is genuinely well maintained — the job is keeping it that way.
 
+## Where a product is in the new-product flow: a DERIVED stage, the Pipeline, and the reference tab (D-134)
+`shared/product-stage.js` (`STAGES`, `INCIDENTS`, `stageOf` — PURE, the ONE definition), `server/product-stages.js`
+(`stageInputs` reads the approved panel, released artwork, PO and block once per list; `stageFor`), `stage` on every
+product from `hydrate()`, `packaging_po_records` + `POST /products/:sku/packaging-po`, `ProductPipeline.jsx`
+(**Pipeline** tab), `NewProductFlow.jsx` (**New Product Creation** tab), `ProductStagePanel.jsx` (top of the drawer).
+- **NEVER STORED, NEVER TYPED, NEVER READ BY A WRITE PATH.** Gates report; no edit is refused because of a stage.
+- **Stage = furthest gate holding with every gate before it; 0 = Not started.** A gate met out of order is
+  **held** (amber). Formula version past the approved panel's provenance, or fill weight >1% off its BOM ⇒ drops to
+  4 by itself; a new artwork release leaves the old PO behind ⇒ drops to 8. It is a loop; 9 is "holds today".
+- **The reference tab prints `STAGES` itself** — edit a gate's words there, never in the component.
+- **Gate 3 accepts a legacy code on film, refuses a purely numeric one**; gate 6 treats a blank `shopify_sku` as the
+  same SKU; gate 9 reads `packaging_po_records` keyed on the artwork version — NOT `purchase_orders`, which is
+  procurement's part-number table. Packaging orders (the builder) is still not built.
+- **Blocked is `product_completeness_blocks`** (D-128), shown apart, out of the needs-work count.
+- **The grid's Stage column replaced the gap count** (rule e); `data-comp-gaps` no longer exists.
+- `verify:productstage` (50, live + browser; control fails 23). The Pipeline renders "Loading…" until the catalog is in — zeros first read as "nothing needs work".
+
 ## Not built yet: the rest of product management
 
 Built in this order deliberately — the destinations first, then the thing that feeds them. A triage screen

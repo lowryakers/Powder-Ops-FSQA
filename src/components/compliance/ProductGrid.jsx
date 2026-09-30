@@ -107,11 +107,6 @@ function download(name, text) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-const STATE_STYLE = {
-  complete: 'bg-green-50 text-green-800 border-green-200',
-  incomplete: 'bg-amber-50 text-amber-900 border-amber-200',
-  blocked: 'bg-gray-100 text-gray-700 border-gray-300',
-};
 
 /** Whether a derived packaging column applies to this row's pack format. */
 const applies = (p, key) => !(['wind_direction', 'eyemark_color'].includes(key) && p.spec_format && !isRollFed(p.spec_format));
@@ -450,7 +445,7 @@ export default function ProductGrid({ products, completeness, canEdit, onOpenSku
                   </button>
                 </th>
               ))}
-              <th className="text-left px-2 py-1.5 font-semibold text-gray-700">Completeness</th>
+              <th className="text-left px-2 py-1.5 font-semibold text-gray-700">Stage</th>
             </tr>
             <tr>
               {groupsShown.map((g) => (g.open
@@ -459,7 +454,7 @@ export default function ProductGrid({ products, completeness, canEdit, onOpenSku
                     className={`text-[11px] whitespace-nowrap ${c.source ? 'text-gray-400' : ''}`} />
                 ))
                 : <th key={g.key} className="px-2 py-1 text-[11px] text-gray-400">…</th>))}
-              <th className="px-2 py-1 text-[11px] font-medium text-gray-600">state · gaps · NA</th>
+              <th className="px-2 py-1 text-[11px] font-medium text-gray-600">stage · next gate · NA</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -526,10 +521,18 @@ export default function ProductGrid({ products, completeness, canEdit, onOpenSku
                     );
                   }) : <td key={g.key} className="px-2 py-1 text-gray-300">…</td>))}
                   <td className="px-2 py-1 whitespace-nowrap" data-cell="completeness">
+                    {/* THE STAGE REPLACES THE RAW GAP COUNT (D-134, rule e): "34 gaps"
+                        told nobody anything; the first unmet gate, named, does.
+                        The field-by-field list is still on Completeness. */}
                     {comp ? (
                       <span className="inline-flex items-center gap-1.5">
-                        <span className={`px-1.5 py-0.5 rounded border ${STATE_STYLE[comp.state]}`} data-comp-state={comp.state}>{comp.state}</span>
-                        <span className="tabular-nums text-amber-900" title="fields empty" data-comp-gaps>{comp.gaps} gap{comp.gaps === 1 ? '' : 's'}</span>
+                        {p.stage && (
+                          <span className={`px-1.5 py-0.5 rounded border ${p.stage.blocked ? 'bg-gray-100 text-gray-700 border-gray-300' : p.stage.stage === 9 ? 'bg-green-50 text-green-800 border-green-200' : 'bg-amber-50 text-amber-900 border-amber-200'}`}
+                            data-grid-stage={p.stage.stage} data-comp-state={comp.state} title={p.stage.summary}>
+                            {p.stage.stage}{p.stage.blocked ? ' · blocked' : ''}
+                          </span>
+                        )}
+                        {p.stage?.next && <span className="text-gray-700 max-w-[14rem] truncate" title={p.stage.next.why} data-grid-next={p.stage.next.key}>next: {p.stage.next.label.toLowerCase()}</span>}
                         <span className="tabular-nums text-gray-500" title="fields answered not applicable" data-comp-na>{comp.na_count} NA</span>
                         {comp.stale?.length > 0 && <AlertTriangle size={12} className="text-red-600" title={comp.stale.join('; ')} />}
                       </span>

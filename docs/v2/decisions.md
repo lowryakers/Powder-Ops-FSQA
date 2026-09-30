@@ -5578,3 +5578,59 @@ derivation, exactly as C2 was scoped; no MMR content, no BPR, no checklist scree
   is Adam's floor and Maria's approval; the SOP 413 revision (31 Oct); the client ask (Carol + Matt, 14 Oct);
   `none_best_by` recorded per SKU by 15 Nov. The gate is turned ON by an admin on the day the plant is ready,
   not by a deploy.
+
+## D-134 — Where a product is in the new-product flow is a DERIVED stage; the Pipeline shows it; the reference tab explains it (2026-09-30)
+
+Lowry's spec (`PROMPT_readydoc_new_product_flow.md`): nine gates in a fixed order — formula final · fill weight
+confirmed · SKU created in ReadyDoc · GTIN · nutrition panel approved with provenance · Shopify · ShipHero ·
+artwork released · packaging PO — a stage on every product, a Pipeline view, and a one-screen reference tab.
+- **ONE DEFINITION: `shared/product-stage.js`** (`STAGES`, `INCIDENTS`, `stageOf`, PURE). The reference tab prints
+  the same `STAGES` entries the stage is computed from, so the page cannot describe a gate the code tests
+  differently. `server/product-stages.js` reads the facts once per list (the APPROVED panel, the current
+  RELEASED artwork, the PO recorded against it, the block) and `hydrate()` stamps `stage` on every product the
+  API returns. **No stage column, and there must never be one** — asserted.
+- **The stage is the furthest gate that holds WITH every gate before it.** Stage 0 is "Not started" (the formula
+  gate does not hold) — a deliberate reading of the ask's "1–9": calling a product with no final formula
+  "stage 1" would claim the formula gate. The Pipeline shows column 0 on the left.
+- **A gate met out of order is HELD, not done** — shown amber, "met, held until the gates before it hold
+  again". That is rule (d): move `formula_rev` past the approved panel's provenance and the product drops from 9
+  to 4 by itself, naming both versions, and the artwork step reads held. Putting the formula back puts the
+  stage back. The 33.32 g / 34.86 g case drops it the same way through `fillWeightCheck` (the 1% rule of D-128).
+- **GATES REPORT, THEY NEVER REFUSE.** Nothing in the stage is read by a write path; any field is writable in any
+  order (asserted on a stage-0 product: formula, fill weight, a Shopify confirmation and a PO all accepted).
+- **Three readings of the gates that are decisions, not transcriptions — for Lowry to overrule:**
+  - **Gate 3 accepts a LEGACY code already on film** (`PP-BLM-23`, `HBF-CHU` style) as well as the new
+    standard, and says which. The ask's literal "matches the naming standard" would pile 114 of 118 products at
+    stage 2 and contradict D-131 (legacy codes are join keys and are never re-tested). **A purely numeric code is
+    refused** — the four `42224277…` rows stop at gate 3 with "a number from another system, not a SKU".
+  - **Gate 6 accepts a blank `shopify_sku`** as "the same SKU": the column is only set when Shopify's code
+    genuinely differs (the readiness doctrine). A different one fails, naming both.
+  - **Gate 9 needed a record that did not exist.** `purchase_orders` is procurement's raw-material table keyed on
+    a part number, and the Packaging orders builder is still "Not built yet". So `packaging_po_records` records
+    that a PO was placed and **against which artwork version** (`POST /products/:sku/packaging-po`, the server picks
+    the currently released artwork). Keyed on the artwork version, so a new release leaves the old PO behind and the
+    product drops back to 8 — the loop. Moves with a rename (`SKU_CHILD_TABLES`). With no released artwork the PO
+    is still recorded and says it counts against nothing — never refused.
+- **The loop, and where it differs from the ask.** "A reformulated product re-enters at stage 1" would need a
+  signal that a new formula is in development, and the formula lives in Keychain. What ReadyDoc can see is the
+  version moving, and that drops the product to 4 at once (rule d) — so stage 9 is "every gate holds today",
+  never a filing state. Blocking with a reason ("formula not final — Danny") is the way to say it is back in
+  formulation.
+- **Blocked reuses `product_completeness_blocks`** (reason, owner, who, when; D-128) — one owner for "this SKU is
+  waiting on something outside the flow". Blocked products leave the needs-work count and are listed apart in the
+  Pipeline, never hidden. Block/unblock and the PO form are on the drawer's new stage panel.
+- **Owners are ROLES** (Formulator · Ops · Design · Fulfillment), proposed from the ask's four and editable in
+  `STAGES`: formula and panel the Formulator, fill/SKU/GTIN/Shopify/PO Ops, ShipHero Fulfillment, artwork Design.
+  The Pipeline's owner filter is the owner of the NEXT gate (or the block's named owner).
+- **Rule (e): the grid's Stage column replaces the raw gap count** — `Stage 4 · next: nutrition panel…`, the
+  reason on hover. The field-by-field list stays on Completeness, where it is the point.
+- **Opening a product from the Pipeline lands on its first unmet gate**: the drawer scrolls to the block carrying
+  `data-gate-anchor` for that gate and rings it.
+- **The Pipeline tab carries no badge** — nearly the whole catalog needs work today and a permanent number is
+  wallpaper; the count is on the Pipeline itself.
+- `verify:productstage` (50, live + browser at 1280 and 390px; in `verify:all`, port 5050): a legacy stick walked
+  through all nine gates, the Apple Pie drop to 4 with the artwork held, the fill-weight drop, a new artwork
+  leaving the old PO behind, blocked excluded from needs work, no gate refusing, every Pipeline column reconciling
+  with the API, the owner filter, the click landing on the panel gate, the grid showing the stage with no gap
+  count, and the reference tab in under two screens at 1280×900. **The control is `main` before this change and
+  fails 23 before it can continue.** The Pipeline shows "Loading…" until the catalog arrives — columns of zeros read as "nothing needs work", and the first batch run caught exactly that.

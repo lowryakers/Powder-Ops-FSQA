@@ -23,6 +23,7 @@ import { shelfState, gtinPrefixes } from '../product-shelf.js';
 import { normalizeGtin, sameGtin, gtinValid } from '../../shared/gtin.js';
 import { validateField, FIELD_RULES, NA_FIELDS, naOf, looksLikeTypedNa, MASTER_CSV_SOURCES, PACKAGING_DERIVED } from '../../shared/product-fields.js';
 import { shelfLifeBasis, shelfLifeFor, NO_BASIS, BASIS_KIND_LABEL, DATE_TYPE_LABEL } from '../stability.js';
+import { stageInputs, stageFor } from '../product-stages.js';
 import { parseDelimited } from '../tabular.js';
 import { pmsValid, hexValid, colorIssues, isBlankSlot, conflictSeverity }
   from '../../shared/product-colors.js';
@@ -111,6 +112,8 @@ function hydrate(rows, db) {
     ).all().map(r => [r.flavor, r.code]));
   } catch { /* the column may not exist on a very old database */ }
   const colors = db.prepare('SELECT * FROM product_colors ORDER BY sku, slot').all();
+  // The new-product stage's facts, read once for the whole list (D-134).
+  const stageFacts = stageInputs(db);
   const bySku = new Map();
   for (const c of colors) {
     if (!bySku.has(c.sku)) bySku.set(c.sku, []);
@@ -123,9 +126,14 @@ function hydrate(rows, db) {
     // are broken. It is NOT this product's SKU — the existing catalogue keeps
     // its codes and the rename is its own project.
     const pref = preferredSku({ ...withColors, product_line: withColors.category }, codeByFlavor);
+    const readiness = readinessOf(withColors);
     return {
       ...withColors,
-      readiness: readinessOf(withColors),
+      readiness,
+      // Where the product is in the new-product flow, and the first gate it is
+      // waiting on, named (shared/product-stage.js). Derived on every read;
+      // there is no stage column and there must never be one.
+      stage: stageFor(stageFacts, { ...withColors, readiness }),
       preferred_sku: pref.sku,
       preferred_sku_blocked_by: pref.blocked_by,
       has_barcode_image: !!r.barcode_key,
@@ -598,7 +606,7 @@ router.get('/drafts/realign/preview', (req, res) => {
  *
  * A new table keyed on the SKU goes in this list, or a rename loses it.
  */
-const SKU_CHILD_TABLES = ['product_colors', 'artwork_versions', 'artwork_snapshots', 'nfp_versions', 'product_completeness_blocks'];
+const SKU_CHILD_TABLES = ['product_colors', 'artwork_versions', 'artwork_snapshots', 'nfp_versions', 'product_completeness_blocks', 'packaging_po_records'];
 
 function moveSkuChildren(db, from, to) {
   for (const t of SKU_CHILD_TABLES) {
@@ -947,6 +955,32 @@ router.get('/completeness', (_req, res) => {
  * "formula not final — Danny". Blocked is its own state, not "incomplete": the
  * SKU stays listed with every gap, and leaves the incomplete count.
  */
+/**
+ * RECORD A PACKAGING PO against the current released artwork (D-134, stage 9).
+ * The server decides which artwork — the one print-ready now — so a PO can
+ * never be filed against film that has since been replaced. Never refused for
+ * being "out of order": with no released artwork it is still recorded, and the
+ * stage says there is nothing for it to count against.
+ */
+router.post('/:sku/packaging-po', (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalog.' });
+  const db = getDb();
+  const p = db.prepare('SELECT sku FROM products WHERE sku = ?').get(req.params.sku);
+  if (!p) return res.status(404).json({ error: 'No such SKU' });
+  const po = String(req.body?.po_number || '').trim().slice(0, 60);
+  if (!po) return res.status(400).json({ error: 'The PO number is what this records.' });
+  const placed = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.placed_on || '')) ? req.body.placed_on : null;
+  const art = stageInputs(db).artwork.get(p.sku) || null;
+  const id = uuid();
+  db.prepare(`INSERT INTO packaging_po_records (id, sku, artwork_version_id, po_number, vendor, placed_on, note, recorded_by, recorded_by_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, p.sku, art?.id || null, po, String(req.body?.vendor || '').trim().slice(0, 120) || null,
+    placed, String(req.body?.note || '').trim().slice(0, 500) || null, req.user?.name || null, req.user?.id || null);
+  logAudit(req.user, 'packaging_po_recorded', 'product', p.sku, { po_number: po, artwork_version_id: art?.id || null, artwork_version: art?.version ?? null }, null, null, p.sku);
+  const row = db.prepare(`${SELECT} WHERE p.sku = ?`).get(p.sku);
+  const [product] = hydrate([row], db);
+  res.status(201).json({ id, artwork_version: art?.version ?? null, against_artwork: !!art, stage: product.stage });
+});
+
 router.post('/:sku/completeness-block', (req, res) => {
   if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the spec sheet.' });
   const db = getDb();
@@ -1223,6 +1257,8 @@ router.get('/:sku', (req, res) => {
   // read; never a product column.
   const shelf = shelfLifeFor(db, row.sku);
   product.shelf_life = { ...shelf, basis_label: shelf.basis_kind ? BASIS_KIND_LABEL[shelf.basis_kind] : null, date_type_label: DATE_TYPE_LABEL[shelf.date_type] };
+  product.packaging_pos = db.prepare(`SELECT r.*, a.version AS artwork_version FROM packaging_po_records r
+    LEFT JOIN artwork_versions a ON a.id = r.artwork_version_id WHERE r.sku = ? ORDER BY r.recorded_at DESC LIMIT 50`).all(row.sku);
   res.json(product);
 });
 

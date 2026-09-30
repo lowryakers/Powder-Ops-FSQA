@@ -102,6 +102,7 @@
     "verify:provenance": "node scripts/verify-panel-provenance.mjs",
     "verify:productgrid": "node scripts/verify-product-grid.mjs",
     "verify:mmrgate": "node scripts/verify-mmr-gate.mjs",
+    "verify:productstage": "node scripts/verify-product-stage.mjs",
     "verify:truckchecklist": "node scripts/verify-truck-checklist.mjs",
     "verify:reach": "node scripts/verify-reachability.mjs",
     "verify:qmssig": "node scripts/verify-qms-signature.mjs",

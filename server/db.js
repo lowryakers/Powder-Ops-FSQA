@@ -3501,6 +3501,17 @@ function runMigrations() {
     sku TEXT PRIMARY KEY, reason TEXT NOT NULL, owner TEXT NOT NULL,
     blocked_by TEXT, blocked_by_id TEXT, blocked_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`);
+  // A packaging PO recorded against the artwork it was placed from (D-134) —
+  // stage 9 of the new-product flow. Keyed on the ARTWORK VERSION, so a new
+  // release leaves the old PO behind and the stage drops back to 8 by itself:
+  // the flow is a loop. Not the Packaging orders builder (CLAUDE.md "Not built
+  // yet"); this records that a PO was placed and which film it was placed for.
+  db.exec(`CREATE TABLE IF NOT EXISTS packaging_po_records (
+    id TEXT PRIMARY KEY, sku TEXT NOT NULL, artwork_version_id TEXT,
+    po_number TEXT NOT NULL, vendor TEXT, placed_on TEXT, note TEXT,
+    recorded_by TEXT, recorded_by_id TEXT, recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_packaging_po_sku ON packaging_po_records(sku, artwork_version_id)');
   // (The callout-null conversion runs below, after app_settings exists.)
   // Which revision of the panel a proofing run checked this artwork against.
   // NULL on every version filed before the proofer sent one, which reads as

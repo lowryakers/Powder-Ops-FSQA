@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 import { useApiGet, apiFetch, apiUpload, apiDelete } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
@@ -10,6 +10,9 @@ import ProductBarcodes from './ProductBarcodes.jsx';
 import ProductShelf from './ProductShelf.jsx';
 import ProductCompleteness from './ProductCompleteness.jsx';
 import ProductGrid from './ProductGrid.jsx';
+import ProductPipeline from './ProductPipeline.jsx';
+import NewProductFlow from './NewProductFlow.jsx';
+import ProductStagePanel from './ProductStagePanel.jsx';
 import { getParam } from '../../lib/deepLink.js';
 import NfpBoard, { NfpForSku } from './NfpPanel.jsx';
 import { hexDigits, pmsValid, hexValid, colorIssues, isBlankSlot } from '../../../shared/product-colors.js';
@@ -453,8 +456,8 @@ function StepLine({ steps, k }) {
   );
 }
 
-const Block = ({ title, note, children, id }) => (
-  <section data-block={id} className="border border-gray-200 rounded-lg p-3 space-y-2">
+const Block = ({ title, note, children, id, anchor }) => (
+  <section data-block={id} data-gate-anchor={anchor} className="border border-gray-200 rounded-lg p-3 space-y-2">
     <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">{title}</h4>
     {note && <p className="text-[11px] text-gray-500">{note}</p>}
     {children}
@@ -477,8 +480,23 @@ const Block = ({ title, note, children, id }) => (
  * THERE IS NO ARTWORK STATUS FIELD. The readiness line derives it from the
  * release on the Artwork board and states the reason.
  */
-function Detail({ sku, canEdit, onClose, onSaved }) {
+// Where each gate of the new-product flow is worked in this drawer (D-134).
+// Opening a product from the Pipeline lands on its first unmet gate.
+const FOCUS_RING = ['ring-2', 'ring-amber-400'];
+
+function Detail({ sku, canEdit, onClose, onSaved, focus = null }) {
   const { data, refresh } = useApiGet(`/products/${encodeURIComponent(sku)}`);
+  const drawerRef = useRef(null);
+  const focusedOnce = useRef(false);
+  useEffect(() => {
+    if (!data || !focus || focusedOnce.current || !drawerRef.current) return;
+    const el = drawerRef.current.querySelector(`[data-gate-anchor~="${focus}"]`);
+    if (!el) return;
+    focusedOnce.current = true;
+    el.scrollIntoView({ block: 'start' });
+    el.setAttribute('data-gate-focus', focus);
+    el.classList.add(...FOCUS_RING);
+  }, [data, focus]);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(null);
   const [error, setError] = useState('');
@@ -529,7 +547,7 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex justify-end" onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()}
-        className="bg-white w-full max-w-xl h-full overflow-y-auto p-5 space-y-4 shadow-xl" data-product-drawer>
+        className="bg-white w-full max-w-xl h-full overflow-y-auto p-5 space-y-4 shadow-xl" data-product-drawer ref={drawerRef}>
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-xs uppercase tracking-wide text-gray-500">
@@ -543,6 +561,7 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
 
         {!p ? <p className="text-sm text-gray-500">Loading…</p> : (
           <>
+            <ProductStagePanel p={p} sku={sku} canEdit={canEdit} onChanged={() => { refresh(); onSaved?.(); }} />
             {p.readiness.missing.length > 0 && (
               <ReadinessChecklist readiness={p.readiness} sku={sku} canEdit={canEdit}
                 onChanged={() => { refresh(); onSaved?.(); }} />
@@ -641,7 +660,7 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
               </div>
             ) : (
               <>
-                <Block id="identity" title="Identity">
+                <Block id="identity" anchor="sku gtin" title="Identity">
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                     {[
                       ['SKU', <code key="s">{p.sku}</code>], ['GTIN', p.gtin], ['Product name', p.flavor], ['Base flavor', p.base_flavor],
@@ -655,7 +674,7 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
                   </dl>
                   <StepLine steps={p.readiness?.steps} k="sku" /><StepLine steps={p.readiness?.steps} k="gtin" />
                 </Block>
-                <Block id="formula" title="Formula link" note="The formula lives in Keychain; this is the pointer the panel's provenance is checked against.">
+                <Block id="formula" anchor="formula fill" title="Formula link" note="The formula lives in Keychain; this is the pointer the panel's provenance is checked against.">
                   <dl className="grid grid-cols-3 gap-x-4 gap-y-2 text-sm">
                     <div><dt className="text-xs text-gray-500">Formula ref</dt><dd data-value="mrp_formula_id">{p.mrp_formula_id || <span className="text-amber-700 text-xs">empty</span>}</dd></div>
                     <div><dt className="text-xs text-gray-500">Formula version</dt><dd data-value="formula_rev">{p.formula_rev || <span className="text-amber-700 text-xs">empty</span>}</dd></div>
@@ -675,7 +694,7 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
                   </dl>
                   <StepLine steps={p.readiness?.steps} k="formula" /><StepLine steps={p.readiness?.steps} k="nfp" />
                 </Block>
-                <Block id="packaging" title="Packaging spec" note={`Derived from ${p.spec_id ? `packaging spec ${p.spec_id}` : 'the packaging spec (none assigned)'} and the color slots; each value names the column it was read from. Nothing here is typed on the product except the eye mark and the die line.`}>
+                <Block id="packaging" anchor="artwork" title="Packaging spec" note={`Derived from ${p.spec_id ? `packaging spec ${p.spec_id}` : 'the packaging spec (none assigned)'} and the color slots; each value names the column it was read from. Nothing here is typed on the product except the eye mark and the die line.`}>
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm" data-packaging-derived>
                     <Derived label="Spec" value={p.spec_id ? `${p.spec_id}${p.spec_name ? ` — ${p.spec_name}` : ''}` : null} source="products.spec_id" />
                     <Derived label="Format" value={p.spec_format} source="packaging_specs.format" />
@@ -695,7 +714,7 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
                     has={p.has_barcode_image} stale={p.barcode_stale} forGtin={p.barcode_gtin}
                     onChanged={() => { refresh(); onSaved?.(); }} />
                 </Block>
-                <Block id="channels" title="Channels">
+                <Block id="channels" anchor="shopify shiphero" title="Channels">
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                     {[
                       ['Status', pretty(p.status)],
@@ -720,7 +739,7 @@ function Detail({ sku, canEdit, onClose, onSaved }) {
                     that is where someone already is when they need it. The
                     refresh carries back up so the readiness bar moves the
                     moment a panel is approved. */}
-                <div className="pt-2 border-t border-gray-100">
+                <div className="pt-2 border-t border-gray-100" data-gate-anchor="panel">
                   <NfpForSku sku={sku} formulaRev={p.formula_rev} canEdit={canEdit}
                     onChanged={() => { refresh(); onSaved?.(); }} />
                 </div>
@@ -782,6 +801,9 @@ export default function ProductsPanel() {
   const [category, setCategory] = useState('');
   const [pack, setPack] = useState('');
   const [open, setOpen] = useState(null);
+  // The gate a product was opened at — set by the Pipeline, cleared on close.
+  const [focus, setFocus] = useState(null);
+  const openAt = (sku, gate) => { setFocus(gate || null); setView('list'); setOpen(sku); };
   // `?tab=products&view=completeness` opens a tab directly (deepLink.js: a lazy
   // module mounts after App has consumed the query string).
   const [view, setView] = useState(() => getParam('view') || 'list');
@@ -830,6 +852,10 @@ export default function ProductsPanel() {
 
       <ModuleTabs value={view} onChange={setView} tabs={[
         { id: 'list', label: 'Catalog', icon: Package, badge: products.length },
+        // Every product by its derived stage in the new-product flow (D-134).
+        // No badge: nearly the whole catalog needs work today, and a permanent
+        // number is wallpaper; the count is on the Pipeline itself.
+        { id: 'pipeline', label: 'Pipeline', icon: ListChecks },
         // Panels waiting on somebody. Counted here rather than left to be found
         // in a product drawer, because "who still owes us an approval" is the
         // question that holds artwork up.
@@ -855,7 +881,12 @@ export default function ProductsPanel() {
         // on a catalogue this young every SKU has gaps, and a permanent red
         // number is the wallpaper the first-sight rule exists to prevent.
         { id: 'completeness', label: 'Completeness', icon: ListChecks },
+        // The reference for the flow the Pipeline measures. Static; one screen.
+        { id: 'new-product', label: 'New Product Creation', icon: FileText },
       ]} />
+
+      {view === 'pipeline' && <ProductPipeline products={products} loading={!data} onOpen={openAt} />}
+      {view === 'new-product' && <NewProductFlow />}
 
       {view === 'completeness' && <ProductCompleteness canEdit={canEdit} onOpenSku={(sku) => { setView('list'); setOpen(sku); }} />}
 
@@ -917,6 +948,7 @@ export default function ProductsPanel() {
               { label: 'GTIN', value: p.gtin ? <span className={!p.gtin_valid ? 'text-red-600 font-medium' : ''}>{p.gtin}</span> : null },
               { label: 'Category', value: p.category },
               { label: 'Pack', value: PACK_LABEL[p.pack] || p.pack },
+              { label: 'Stage', value: p.stage ? <span data-card-stage={p.stage.stage}>{p.stage.stage} · {p.stage.next ? `next: ${p.stage.next.label.toLowerCase()}` : 'every gate holds'}{p.stage.blocked ? ' · blocked' : ''}</span> : null, wide: true },
               { label: 'Ready', value: <ReadyBar readiness={p.readiness} />, wide: true },
             ]} />
         ))}
@@ -932,7 +964,7 @@ export default function ProductsPanel() {
 
       </>)}
 
-      {open && <Detail sku={open} canEdit={canEdit} onClose={() => setOpen(null)}
+      {open && <Detail key={`${open}|${focus || ''}`} sku={open} focus={focus} canEdit={canEdit} onClose={() => { setOpen(null); setFocus(null); }}
         onSaved={() => { refreshAll(); refreshNfp(); }} />}
     </div>
   );
