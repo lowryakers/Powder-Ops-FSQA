@@ -5883,3 +5883,24 @@ paused if emptied); their open, overdue and missed cards cancelled. Each is audi
 - **The control is `main` and fails 15**, its Operator View listing "Daily PM — 148 Vevor Scale", both #81
   programs and "Daily PM Checklist — Kitting".
 - `verify:pmpause` was rewritten from D-055's "pausing closed nothing" to this rule (18).
+
+## D-140 — ReadyDoc lives at app.powder-ops.com, and the launcher's tile reads the same setting (2026-10-01)
+
+**Confirmed by the plant:** `READYDOC_ORIGIN = https://app.powder-ops.com`. That is the app's base URL. Every
+generated link (join, approval, NFP, supplier form, ReadyBot deep links, newsletter) already reads it through
+`readyDocOrigin()`, and the shared-hosting warning `reportOrigins()` logs at boot no longer fires.
+`start.powder-ops.com` (`APP_BASE_URL`) stays the front door: its bare `/` is the workspace picker, any other
+path 302s to `app.powder-ops.com`, and it is the address the Twilio inbound webhook is signed against.
+
+**The one place that disagreed was the launcher's own tile.** `launcher/index.html` hard-coded
+`https://powderops-fsqa.up.railway.app/` in two places. Anyone starting from the picker therefore landed on the
+Railway domain while every texted and ReadyBot link opened `app.powder-ops.com`. A browser keeps a session and a
+home-screen install **per domain**, so the same person could be signed in on one and signed out on the other, or
+install the app from the wrong one. **`server.js` now substitutes `readyDocOrigin()` for that placeholder when it
+serves the launcher**, so `READYDOC_ORIGIN` is the one owner of where the app lives; unset, the page is
+unchanged. Checked live on a local server with the Host header: tile and redirect both read
+`app.powder-ops.com`, and with the variable unset they read the Railway domain as before.
+
+**Outside this repository and worth checking:** the Artwork-Proofing service's `READYDOC_URL`, any printed kiosk
+QR poster or saved home-screen icon made before the domain moved. The Railway domain still serves the app, so
+those keep working, but each one is a second origin with its own session.

@@ -308,7 +308,7 @@ account work at M4 and have never been in the building. One text, one tap, a pas
 - **No consent GATE on the invite, deliberately.** `sms_consent_at` is stamped by the `sms_access` grant,
   which is the INBOUND allowlist and must stay 0 for a client — requiring it here would make that grant a
   prerequisite for a link, the opposite of what the column means. The record is `user_invites.sent_to`.
-- **Texted links still point at `…up.railway.app` by default**, and `smsStatus().link_warning` says so:
+- **Texted links pointed at `…up.railway.app` by default** — now `app.powder-ops.com` (D-140) — and `smsStatus().link_warning` says so when it is not:
   carriers cannot tell a shared hosting subdomain from anyone else's traffic on the same host. Point a
   branded domain at the app and set `READYDOC_ORIGIN` to it.
 
@@ -3548,6 +3548,9 @@ typed exactly.
 landing request (`/`, no query) gets the launcher; every other GET on that host 302s to the ReadyDoc origin
 with path+query intact (`server.js`, `READYDOC_ORIGIN`, default the Railway domain). Before that, deep links,
 `/approve/<token>` magic links, and PWA assets on the launcher host all rendered the picker instead.
+**THE APP LIVES AT `https://app.powder-ops.com`** (`READYDOC_ORIGIN`, confirmed 2026-10-01, D-140). The
+launcher's tile is served with that value substituted for its Railway placeholder, so the picker and every
+generated link open the same origin — a browser keeps sessions and installs per domain.
 **Generate links with `readyDocOrigin()` (`server/links.js`), never `appBaseUrl()`** — `appBaseUrl()` is the
 public front door and is only for the Twilio webhook signature, which must match the console entry exactly.
 **A BARE HOSTNAME IS ACCEPTED AND GETS `https://`** (`normalizeOrigin`). `READYDOC_ORIGIN=app.powder-ops.com`

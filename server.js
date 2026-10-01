@@ -270,6 +270,7 @@ app.get('/kiosk-manifest/:slug.webmanifest', (req, res) => {
 reportOrigins();
 const LAUNCHER_HOST = (process.env.LAUNCHER_HOST || 'start.powder-ops.com').toLowerCase();
 const LAUNCHER_FILE = path.join(__dirname, 'launcher', 'index.html');
+const LAUNCHER_PLACEHOLDER = 'https://powderops-fsqa.up.railway.app/';
 app.use((req, res, next) => {
   const host = (req.headers.host || '').split(':')[0].toLowerCase();
   if (host !== LAUNCHER_HOST) return next();
@@ -280,7 +281,18 @@ app.use((req, res, next) => {
   const isLanding = req.path === '/' && !req.originalUrl.includes('?');
   if (!isLanding && appOrigin) return res.redirect(302, appOrigin + req.originalUrl);
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  return res.sendFile(LAUNCHER_FILE);
+  // THE TILE POINTS WHERE EVERY OTHER LINK POINTS. The file carries the old
+  // Railway domain as its placeholder; READYDOC_ORIGIN is the one owner of
+  // where the app lives. A tile hard-coded to a second origin put people who
+  // start from the launcher on a different domain from every ReadyBot and
+  // texted link — and a browser keeps a session and a home-screen install per
+  // domain, so they were signed in on one and signed out on the other.
+  try {
+    const html = readFileSync(LAUNCHER_FILE, 'utf8').split(LAUNCHER_PLACEHOLDER).join(`${appOrigin}/`);
+    return res.type('html').send(html);
+  } catch {
+    return res.sendFile(LAUNCHER_FILE);
+  }
 });
 
 // Initialize database on startup
