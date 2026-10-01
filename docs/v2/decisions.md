@@ -5753,3 +5753,62 @@ three ways, and in the browser submits once, then submits through a connection t
 drops the answer and lets the outbox replay it. **The control is `main` and fails 13 before the browser half can
 start, the first reading "22 open" and the strip `avg_total: 17.7`** — the screenshot. `verify:payactions` 31,
 `verify:payroster` 64, `verify:starterreview` 45 unchanged.
+
+## D-138 — A room checklist covers every machine it has a line for; a line whose machine has its own daily schedule comes off it (2026-10-01)
+
+**Reported:** QA's Operator View, filtered to "temp", showed four tasks where the plant runs three: the Temp &
+Humidity checks for Warehouse, Production 1 and Production 2 (FORM 110-03), and **"Daily PM Checklist —
+Production (Qa)"**, with no form number, naming only the Production 1 monitor. "Are there other similar bugs?"
+
+**Where it came from.** PM consolidation v1 (22 July, `server.js`) folded every team's DAILY schedules into one
+checklist per (team, room), one line per machine, `Machine #ASSET — tasks`, and retired the originals. It did
+not ask whose work it was folding: the two production monitors share a room, so QA's two Temp & Humidity checks
+became "Daily PM Checklist — Production (Qa)". The repair that followed (`temp_humidity_points_v1`) reactivated
+the two per-point schedules — correctly: FORM 110-03 is run at each point and each files its own record — and
+said in so many words that it would "leave everything else consolidation did alone". So the merged checklist
+kept running beside the checks it had replaced. It is the same check twice, and the copy carries no form number
+and **files no record** (no title in `recordAreaForTask()` matches it).
+
+**The other bugs of the same kind are all one fact read wrongly.** The checklist row can carry only ONE
+`equipment_id`, so it hangs on the first machine folded (the "anchor"). Every reader of
+`pm_schedules.equipment_id` took that literally:
+1. **Duplicates on the floor** wherever a folded machine has its own daily schedule again — revived by a repair,
+   or created afresh by **"Create schedules from these tasks"**, which saw every non-anchor machine as having no
+   daily schedule and offered each one a Daily PM of its own.
+2. **The setup checklist** said "N tasks written, but nothing generates them" for every non-anchor machine — the
+   80-machine figure behind that button was inflated by exactly the machines already on a room checklist.
+3. **Saving the anchor's task list overwrote the whole checklist** with the anchor's own Daily list
+   (`syncMaintenanceTasksToPM`), taking every other machine off the room.
+4. **Re-routing the anchor's team re-routed the whole room's checklist** (`syncTaskGroupToPM`).
+5. **Deleting the anchor** (when it had no completed history) deleted the checklist with it.
+
+**Decided:**
+- **`server/pm-coverage.js` is the one answer to "which machines does this checklist cover"**, read from its
+  lines: the asset number first (equipment names were normalised after consolidation ran), the exact name
+  otherwise. Every reader above asks it.
+- **A line is a duplicate when its machine has its own active daily schedule** — the checklist's own
+  description says it "replaces the individual daily PM tasks", so a machine with both is tracked twice. On
+  every boot (idempotent by construction) such lines come off the checklist and off its outstanding cards; a
+  checklist left with no lines is **paused, never deleted**, and its outstanding cards — missed included — are
+  cancelled with the reason on each (the D-125 shape). Completed work is left as filed. Audited with the lines
+  removed and the schedule that owns each.
+- **The readers:** a machine with a line counts as scheduled daily (setup step done, "On the room checklist …";
+  "Create schedules from these tasks" skips Daily and says why); the anchor's task-list save and team change
+  leave the checklist alone; the anchor cannot be deleted while the checklist hangs on it (409, naming it).
+- **Consolidation now folds machine care only** (`maintenance`, `warehouse`), so a fresh database can never fold
+  QA's or Cleaning's controlled checks again. It already ran once everywhere it matters; this is for the next
+  database.
+- **REPORTED, NEVER UNFOLDED:** a room checklist still carrying `qa` or `cleaning` work whose per-point
+  schedules are NOT running is named at boot (`Room checklist "…" carries N … check(s) and files no record`).
+  Bringing per-point schedules back is a decision about what the plant runs — D-125 paused the daily Pre-Op on
+  purpose — so the app says so rather than guessing. Run against today's seeded schedules, consolidation would
+  also have folded the four Chemical Dilution checks (FORM 106-01, all on the Chemical Station) and Restroom +
+  Breakroom cleaning; whether production's 22 July run did depends on what existed that day, which this
+  repository's history does not reach. The first boot's log answers it either way.
+
+**Verified:** `verify:checklistoverlap` (19, live + two reboots + browser at 390px; port 5054/5154; in
+`verify:all`) builds the reported state — the QA room checklist over two live per-point checks with an open, a
+missed and a completed card — plus a maintenance checklist with one machine given its own Daily PM, reboots,
+and asserts the repair, idempotence, QA's list via the API and on the Operator View, the setup step, the
+schedules-from-tasks preview, and the three anchor guards. **The control is `main` and fails 12 — every claim**,
+including QA's list still carrying "Daily PM Checklist — Production (Qa)".

@@ -110,6 +110,7 @@ const RUNS = [
   ['verify-packaging-specs.mjs', 5051, { PRODUCT_MASTER_TOKEN: 'spec-token' }],
   ['verify-artwork-film.mjs', 5052, {}],
   ['verify-pay-reviews.mjs', 5053, {}],
+  ['verify-checklist-overlap.mjs', 5054, {}],
 ];
 
 // VERIFY_ONLY=verify-auth.mjs,verify-swab-stock.mjs runs just the entries that

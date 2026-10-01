@@ -12,6 +12,7 @@ import { aiEnabled, compareManualToTasks } from '../ai.js';
 import { equipmentReadiness, readinessSummary, READINESS_STEPS, stampEquipmentReadiness } from '../equipment-readiness.js';
 import { ASSET_KINDS, defaultAssetKind } from '../../shared/equipment-types.js';
 import { isDesignedChecklist } from '../truck-checklists.js';
+import { checklistCoverage, isConsolidated, CONSOLIDATED_LIKE } from '../pm-coverage.js';
 
 // The status vocabulary the table's CHECK-free column actually uses.
 const STATUSES = ['active', 'partial', 'out_of_service'];
@@ -60,9 +61,13 @@ function syncMaintenanceTasksToPM(db, equipmentId) {
   let tasks;
   try { tasks = JSON.parse(eq.maintenance_tasks || '{}') || {}; } catch { tasks = {}; }
 
-  const schedules = db.prepare('SELECT id, frequency_type, procedure_steps FROM pm_schedules WHERE equipment_id = ? AND is_active = 1').all(equipmentId);
+  const schedules = db.prepare('SELECT id, frequency_type, procedure_steps, description FROM pm_schedules WHERE equipment_id = ? AND is_active = 1').all(equipmentId);
   let updated = 0;
   for (const s of schedules) {
+    // A ROOM CHECKLIST IS NOT THIS MACHINE'S SCHEDULE (D-138). It hangs on the
+    // first machine folded into it and carries one line per machine; writing
+    // this machine's Daily list over it took every other machine off the room.
+    if (isConsolidated(s)) continue;
     // A DESIGNED CHECKLIST IS NOT A COPY OF THE TASK LIST (D-123). The trucks'
     // pre-shift inspection is `item|check|section` and owned by
     // truck-checklists.js; writing the machine's imported "Daily" lines over it
@@ -97,8 +102,12 @@ function syncTaskGroupToPM(db, equipmentId, taskGroup) {
   // QA's inspections on this machine (tagged 'qa' by tagQaInspectionTasks)
   // are QA's whichever department maintains the machine — re-routing them
   // silently moved them off QA's list until the next restart re-tagged them.
-  db.prepare("UPDATE pm_schedules SET task_group = ?, updated_at = datetime('now') WHERE equipment_id = ? AND COALESCE(task_group, '') != 'qa'").run(tg, equipmentId);
-  db.prepare("UPDATE work_orders SET task_group = ? WHERE equipment_id = ? AND status IN ('open','in_progress','overdue') AND COALESCE(task_group, '') != 'qa'").run(tg, equipmentId);
+  // A room checklist anchored on this machine is the ROOM's team's, not this
+  // machine's (D-138) — re-routing one machine must not move a whole room.
+  db.prepare(`UPDATE pm_schedules SET task_group = ?, updated_at = datetime('now') WHERE equipment_id = ? AND COALESCE(task_group, '') != 'qa'
+    AND (description IS NULL OR description NOT LIKE ?)`).run(tg, equipmentId, CONSOLIDATED_LIKE);
+  db.prepare(`UPDATE work_orders SET task_group = ? WHERE equipment_id = ? AND status IN ('open','in_progress','overdue') AND COALESCE(task_group, '') != 'qa'
+    AND (pm_schedule_id IS NULL OR pm_schedule_id NOT IN (SELECT id FROM pm_schedules WHERE description LIKE ?))`).run(tg, equipmentId, CONSOLIDATED_LIKE);
 }
 
 router.get('/', (req, res) => {
@@ -250,17 +259,29 @@ const FREQ_TO_SCHEDULE = {
  * by the write — a preview computed differently from the commit is a preview
  * that lies, and this one is shown before a bulk write across 80 machines.
  */
-function planSchedulesFromTasks(db, eq) {
+function planSchedulesFromTasks(db, eq, coverage = checklistCoverage(db)) {
   let tasks;
   try { tasks = JSON.parse(eq.maintenance_tasks || '{}') || {}; } catch { tasks = {}; }
-  const existing = db.prepare('SELECT frequency_type FROM pm_schedules WHERE equipment_id = ? AND is_active = 1').all(eq.id);
+  // A ROOM CHECKLIST IS A SCHEDULE FOR EVERY MACHINE IT HAS A LINE FOR (D-138),
+  // not only for the one it hangs on. Without this, each of the other machines
+  // read as having no daily schedule and was offered a Daily PM of its own —
+  // a second daily task beside its line on the room checklist.
+  const existing = [
+    ...db.prepare(`SELECT frequency_type, title FROM pm_schedules WHERE equipment_id = ? AND is_active = 1
+      AND (description IS NULL OR description NOT LIKE ?)`).all(eq.id, CONSOLIDATED_LIKE),
+    ...(coverage.get(eq.id) || []),
+  ];
   const create = [];
   const skip = [];
   for (const [freq, list] of Object.entries(tasks)) {
     if (!Array.isArray(list) || !list.filter(Boolean).length) continue;
     const freqType = FREQ_TO_SCHEDULE[freq];
     if (!freqType) { skip.push({ frequency: freq, reason: 'not a recurring frequency' }); continue; }
-    if (existing.some(x => x.frequency_type === freqType)) { skip.push({ frequency: freq, reason: 'already has a schedule' }); continue; }
+    const has = existing.find(x => x.frequency_type === freqType);
+    if (has) {
+      skip.push({ frequency: freq, reason: /^Daily PM Checklist/.test(has.title || '') ? `on the room checklist "${has.title}"` : 'already has a schedule' });
+      continue;
+    }
     create.push({ frequency: freq, frequency_type: freqType, steps: list.filter(Boolean) });
   }
   return { create, skip };
@@ -292,8 +313,9 @@ router.get('/schedules-from-tasks/preview', (_req, res) => {
   const db = getDb();
   const rows = db.prepare("SELECT * FROM equipment WHERE status = 'active' ORDER BY name").all();
   const machines = [];
+  const coverage = checklistCoverage(db);
   for (const eq of rows) {
-    const plan = planSchedulesFromTasks(db, eq);
+    const plan = planSchedulesFromTasks(db, eq, coverage);
     if (!plan.create.length) continue;
     machines.push({
       id: eq.id, name: eq.name, type: eq.type, asset_id: eq.asset_id,
@@ -623,6 +645,16 @@ router.delete('/:id', (req, res) => {
     schedules: count('SELECT COUNT(*) c FROM pm_schedules WHERE equipment_id = ?', eq.id),
     calibration_records: count('SELECT COUNT(*) c FROM calibration_records WHERE instrument_id IN (SELECT id FROM calibration_instruments WHERE equipment_id = ?)', eq.id),
   };
+  // A machine that a ROOM CHECKLIST hangs on cannot take the checklist with it
+  // (D-138): the schedule row would go, and with it every other machine's line.
+  const anchors = db.prepare(`SELECT title, procedure_steps FROM pm_schedules WHERE equipment_id = ? AND is_active = 1 AND description LIKE ?`)
+    .all(eq.id, CONSOLIDATED_LIKE);
+  if (anchors.length) {
+    return res.status(409).json({
+      error: `"${anchors[0].title}" is recorded against this machine and covers other machines too. Set this one Out of service instead, or move the checklist first.`,
+      history,
+    });
+  }
   if (history.completed_work_orders || history.calibration_records) {
     return res.status(409).json({
       error: `This machine has ${history.completed_work_orders} completed task${history.completed_work_orders === 1 ? '' : 's'}${history.calibration_records ? ` and ${history.calibration_records} calibration record${history.calibration_records === 1 ? '' : 's'}` : ''} against it. Deleting it would leave that history naming nothing — set it Out of service instead, which stops it generating work and keeps the record.`,

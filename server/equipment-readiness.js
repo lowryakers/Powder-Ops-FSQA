@@ -37,6 +37,7 @@
  * created, and the vocabulary the form offers.
  */
 import { needsLoto, needsTraining, needsCalibration, isZone } from '../shared/equipment-types.js';
+import { checklistsCovering } from './pm-coverage.js';
 
 /* ── What a step was true against ─────────────────────────────────────────────
  *
@@ -213,6 +214,10 @@ const STEPS = [
     check: (db, eq) => {
       const n = db.prepare('SELECT COUNT(*) c FROM pm_schedules WHERE equipment_id = ? AND is_active = 1').get(eq.id).c;
       if (n) return { done: true, detail: `${n} recurring schedule${n === 1 ? '' : 's'}` };
+      // A line on a room checklist IS this machine's daily schedule (D-138);
+      // the checklist row just hangs on another machine's id.
+      const room = checklistsCovering(db, eq.id);
+      if (room.length) return { done: true, detail: `On the room checklist "${room[0].title}"` };
       let tasks;
       try { tasks = JSON.parse(eq.maintenance_tasks || '{}') || {}; } catch { tasks = {}; }
       const written = Object.values(tasks).reduce((t, arr) => t + (Array.isArray(arr) ? arr.length : 0), 0);

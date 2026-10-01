@@ -1304,6 +1304,23 @@ disagreeing about whether a task exists.
 - The card shows `5× missed since <date>` in EN and ES. Completing a missed task works, so seeing it is
   actionable rather than just informational.
 
+## A room checklist covers every machine it has a line for (D-138, `server/pm-coverage.js`)
+PM consolidation v1 (22 Jul) folded each team's dailies into one checklist per (team, room) — `Machine #ASSET —
+tasks` per line, description `Consolidated daily checks…` — hung on ONE machine's `equipment_id` (the anchor).
+It folded QA's two production Temp & Humidity checks into **"Daily PM Checklist — Production (Qa)"**; the later
+`temp_humidity_points_v1` repair revived the per-point schedules and left the merged one running: the same check
+twice, no form number, files no record.
+- **`checklistCoverage(db)` / `checklistsCovering()` is the one answer to which machines a checklist covers**
+  (asset number first — names were normalised later — then exact name). Never read `equipment_id` alone.
+- **`repairChecklistOverlap` (every boot, idempotent):** a line whose machine has its own active daily schedule
+  comes off the checklist and its outstanding cards; an emptied checklist is PAUSED, its cards (missed
+  included) cancelled with the reason. Audited; completed work untouched.
+- Readers fixed: setup step counts a line as scheduled; "Create schedules from these tasks" never offers a
+  second Daily; the anchor's task-list save and team change skip the checklist; deleting the anchor is 409.
+- Consolidation now folds `maintenance`/`warehouse` only. A remaining `qa`/`cleaning` checklist is **reported
+  at boot, never unfolded** — reviving per-point schedules is the plant's decision (D-125 paused Pre-Op).
+- `verify:checklistoverlap` (19, live + reboots + browser; control fails 12).
+
 ## A paused schedule says what it left behind (D-012 → D-055)
 Pausing a PM schedule cascades nothing: the tasks it already raised stay open or missed, nobody completes
 them because the work is recorded elsewhere, and the floor sees the retirement as never having happened —

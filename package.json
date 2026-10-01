@@ -104,6 +104,7 @@
     "verify:mmrgate": "node scripts/verify-mmr-gate.mjs",
     "verify:productstage": "node scripts/verify-product-stage.mjs",
     "verify:packagingspecs": "node scripts/verify-packaging-specs.mjs",
+    "verify:checklistoverlap": "node scripts/verify-checklist-overlap.mjs",
     "verify:payreviews": "node scripts/verify-pay-reviews.mjs",
     "verify:artworkfilm": "node scripts/verify-artwork-film.mjs",
     "verify:truckchecklist": "node scripts/verify-truck-checklist.mjs",

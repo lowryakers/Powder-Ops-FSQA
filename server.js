@@ -128,6 +128,7 @@ import officeRoutes, { backfillInvoiceText, supplyCycleNudge } from './server/ap
 import { seedDilutionSchedules } from './server/dilution-seed.js';
 import { seedDilutionLog } from './server/dilution-log-seed.js';
 import { retireDailyPreOp } from './server/preop-retire.js';
+import { repairChecklistOverlap, consolidatedChecklists } from './server/pm-coverage.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
 import { seedProductionEntries, seedEodTemplates } from './server/production-seed.js';
 import { seedTrainingCourses, seedWorkInstructionCourses } from './server/training-seed.js';
@@ -659,6 +660,12 @@ try {
                COALESCE(NULLIF(e.room,''), NULLIF(e.location,''), 'Facility') place
         FROM pm_schedules ps JOIN equipment e ON e.id = ps.equipment_id
         WHERE ps.is_active = 1 AND ps.frequency_type = 'daily'
+          -- MACHINE care only (D-138). QA's and Cleaning's dailies are controlled
+          -- forms run at named points — Temp & Humidity per monitor, a dilution
+          -- per chemical — and each files its own record. Folding two monitors
+          -- into "Daily PM Checklist — Production (Qa)" left a card with no form
+          -- number that files nothing.
+          AND COALESCE(ps.task_group, 'warehouse') IN ('maintenance', 'warehouse')
         ORDER BY e.name, e.asset_id`).all();
       const groups = new Map();
       for (const s of dailies) {
@@ -1070,6 +1077,26 @@ try {
   // issued and the scanner refused to sign it out again. Re-derive on every
   // boot: idempotent, only touches rows that actually disagree, and names what
   // it corrected rather than fixing things silently.
+  // A machine on a consolidated room checklist that ALSO has its own daily
+  // schedule is the same check twice (D-138) — "Daily PM Checklist —
+  // Production (Qa)" beside the two Temp & Humidity checks it had folded.
+  // Every boot, idempotent by construction: the line comes off the checklist,
+  // and a checklist left empty is paused with its open cards cancelled.
+  for (const r of repairChecklistOverlap(db, logAudit)) {
+    console.log(`[migrate] Checklist overlap: "${r.title}" — ${r.removed.length} line(s) removed (each machine has its own daily schedule)`
+      + (r.paused ? `, checklist paused, ${r.cancelled} open card(s) cancelled` : `, ${r.kept} line(s) kept`));
+    for (const x of r.removed) console.log(`[migrate]   ${x.line} → ${x.own_schedule.join(', ')}`);
+  }
+  // REPORTED, NEVER UNFOLDED: a room checklist still carrying QA's or
+  // Cleaning's work whose per-point schedules are NOT running. Completing it
+  // files no record (no title in recordAreaForTask matches it), so the form
+  // goes empty — but bringing the per-point schedules back is a decision about
+  // what the plant runs, and one of them may have been paused on purpose.
+  for (const c of consolidatedChecklists(db)) {
+    if (!['qa', 'cleaning'].includes(c.schedule.task_group)) continue;
+    console.warn(`[migrate] Room checklist "${c.schedule.title}" carries ${c.lines.length} ${c.schedule.task_group} check(s) and files no record: `
+      + c.lines.map(l => l.label).filter(Boolean).join('; '));
+  }
   // Duplicate scheduled tasks already on the floor. Runs after the seeds, since
   // a seeder is one of the things that can produce them.
   const dupTasks = collapseDuplicateWorkOrders(db);
