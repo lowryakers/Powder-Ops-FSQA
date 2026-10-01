@@ -221,9 +221,13 @@ const STEPS = [
       let tasks;
       try { tasks = JSON.parse(eq.maintenance_tasks || '{}') || {}; } catch { tasks = {}; }
       const written = Object.values(tasks).reduce((t, arr) => t + (Array.isArray(arr) ? arr.length : 0), 0);
+      // Paused is a decision (D-139): say so, rather than "nothing generates
+      // them", which read as an instruction to create the schedule again.
+      const paused = db.prepare('SELECT COUNT(*) c FROM pm_schedules WHERE equipment_id = ? AND is_active = 0').get(eq.id).c;
       return {
         done: false,
-        detail: written
+        detail: paused ? `${paused} schedule${paused === 1 ? '' : 's'} paused — resume one in Recurring Schedules if this machine still needs it`
+          : written
           ? `${written} task${written === 1 ? '' : 's'} written, but nothing generates them`
           : 'No recurring schedule',
       };

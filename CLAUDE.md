@@ -1321,6 +1321,21 @@ twice, no form number, files no record.
   at boot, never unfolded** — reviving per-point schedules is the plant's decision (D-125 paused Pre-Op).
 - `verify:checklistoverlap` (19, live + reboots + browser; control fails 12).
 
+## Pausing a schedule closes what it raised (D-139, `server/pm-pause.js`) — supersedes D-055 below
+`PUT /pm/schedules/:id` with `is_active: false` cancels the schedule's `open`/`overdue`/`missed` cards in the
+same transaction (`closeScheduleWork`, reason + who on each, never deleted); a STARTED card is left and counted;
+response `closed_work`, audit `closed_work` + `open_work_left`. The Operator View lists by card status, so a
+pause that closed nothing left 38-day-old Daily Scale PM cards on screen.
+- **A scale had THREE daily programs**: its original `Daily PM — <asset>`, a line on a July room checklist
+  ("Daily PM Checklist — Production (Warehouse)" was all 22 scales; "— Kitting" the counting scales), and a
+  `<name> — Daily PM` that "Create schedules from these tasks" made because it read a PAUSED schedule as none.
+  `retireDailyScalePMs` (once, `daily_scale_pm_retired_v1`) pauses every daily PM on a `Scale`, takes scale lines
+  off room checklists (emptied ⇒ paused), cancels their cards. Scale Verification (D-117) is the daily check.
+- **A paused schedule is a decision**: the create-from-tasks planner counts it ("paused — resume it rather than
+  create a second"); the setup step says "N paused", not "nothing generates them".
+- Pre-Op stays paused (OBL-22); weekly+ scale PMs untouched. `verify:scalepmretire` (27, four boots + browser;
+  control fails 15), `verify:pmpause` (18) asserts the new rule.
+
 ## A paused schedule says what it left behind (D-012 → D-055)
 Pausing a PM schedule cascades nothing: the tasks it already raised stay open or missed, nobody completes
 them because the work is recorded elsewhere, and the floor sees the retirement as never having happened —

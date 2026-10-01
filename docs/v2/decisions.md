@@ -5812,3 +5812,74 @@ missed and a completed card — plus a maintenance checklist with one machine gi
 and asserts the repair, idempotence, QA's list via the API and on the Operator View, the setup step, the
 schedules-from-tasks preview, and the three anchor guards. **The control is `main` and fails 12 — every claim**,
 including QA's list still carrying "Daily PM Checklist — Production (Qa)".
+
+## D-139 — Pausing a schedule closes what it raised; the Daily Scale PMs are retired in all three places they lived (2026-10-01)
+
+**Supersedes D-055's "pausing still closes nothing" and settles D-012's second act.** Reported live on 1 Oct:
+Lowry paused the Daily Scale PMs in Settings, and the Operator View (signed in as Lowry, admin) still showed
+"Vevor Scale — Daily PM #148" 38 days overdue, two programs on Uline #81 (missed since 24 and 25 Aug), Counting
+#84, two on #87 including "Daily PM Checklist — Kitting (Warehouse)", and Kitchen Tour #0151 — while the Scale
+Verification strip (D-117) read *Scale checks due today · 5*. The D-125 Pre-Op retirement had worked.
+
+**Answers, from the code; the live database was not available to this session:**
+1. **Pause writes `pm_schedules.is_active = 0` and nothing else** (`PUT /pm/schedules/:id`, audited
+   `{paused: true, open_work_left: N}`). The cards come from `markMissedWorkOrders`' orphan backfill (in
+   `runPmHousekeeping`) and `POST /pm/generate`. **Both filter `ps.is_active = 1`**, so a paused schedule raises
+   nothing new. `complete-and-recur` checks it too.
+2. **Pause closed nothing — by design** (D-012, D-055). The cards a schedule had raised kept `open`/`missed`
+   forever; the Settings screen said so ("pausing does not close them") and pointed at Cleanup Review. D-125
+   worked because `retireDailyPreOp` did the second act itself. **This is the 38-day card.**
+3. **Three programs per scale, and pausing one left the others.**
+   - The original `Daily PM — <asset> <name>`.
+   - **PM consolidation v1 (22 Jul) had folded every per-scale daily PM into two room checklists**:
+     "Daily PM Checklist — Production (Warehouse)" (22 lines, every one a scale) and "Daily PM Checklist —
+     Kitting" (the counting scales). It set the originals inactive.
+   - **"Create schedules from these tasks"** read only ACTIVE schedules, so a scale whose daily PM was paused
+     (or folded) read as unscheduled and was offered — and given — a new `<name> — Daily PM`. That is the second
+     program on #81 and #87.
+
+   Pause is per schedule. Nothing connected a scale's three daily programs.
+4. **No boot pass or scheduler resets `is_active`.** The four D-124 passes write titles, groups and frequency,
+   once. The only `is_active = 1` writer is the one-time Temp & Humidity restore, matched on its title. What
+   reappeared after a pause came from the second and third programs, not from a reset.
+5. **The Operator View filters on card status only** (`open`, `in_progress`, `overdue`, `missed`), never on the
+   schedule's `is_active`.
+6. **Whether each pause saved cannot be read from here.** If it did, the Settings row reads PAUSED, the amber
+   "paused schedules still carry N open tasks" strip lists it, and the audit log has
+   `pm_schedule · update · {"paused":true,…}`. The symptoms are fully explained by (2) and (3) with every pause
+   saved.
+
+**Decided:**
+- **Pause is both acts, in one transaction** (`server/pm-pause.js`, `closeScheduleWork`).
+  - `is_active = 0`, and every card the schedule raised that is `open`, `overdue` or `missed` is **cancelled**
+    with the reason on it: who paused it, when, and the optional `pause_reason`. Never deleted.
+  - A card somebody has **started** (`in_progress`) is left and counted; it is what the D-055 strip now lists.
+  - Completed work is untouched, and resuming raises a fresh card through the generator.
+  - The response carries `closed_work`, and the audit entry records `closed_work` and `open_work_left`.
+- **The Daily Scale PMs are retired, ONCE per database** (`retireDailyScalePMs`, marker
+  `daily_scale_pm_retired_v1`, written only once the register holds a scale).
+  - Every **daily** schedule on equipment typed `Scale` (not QA's, not a room checklist) is paused, and its open,
+    overdue and missed cards are cancelled — including those left by the 24 Aug pauses.
+  - Every scale's line comes off the room checklists, and off their outstanding cards. A checklist left empty is
+    paused the same way; a mixed one keeps its other machines.
+  - Weekly, monthly, quarterly and annual scale PMs are untouched, the scales stay in the register, and a
+    schedule somebody resumes afterwards stays resumed.
+  - Scale Verification (FORM 417-01 … 417-05, the D-117 strip) is the daily scale check.
+- **A paused schedule is a decision, not a gap.** "Create schedules from these tasks" now counts a paused
+  schedule at that cadence and says *"… is paused — resume it rather than create a second"*. The setup step reads
+  "N schedule(s) paused" instead of "nothing generates them", which had read as an instruction to re-create it.
+- **Not touched:** the Pre-Op dailies stay paused (OBL-22), and the ATP, Sanitation and re-clean work is
+  unchanged. The Operator View query is unchanged too: a pause now leaves only cards somebody started, which
+  belong on their screen.
+
+**Data changed on deploy:** daily scale schedules paused; scale lines removed from the room checklists (which are
+paused if emptied); their open, overdue and missed cards cancelled. Each is audited and named in the boot log
+(`[migrate] Daily Scale PMs retired: …`).
+
+**Verified:**
+- `verify:scalepmretire` (27, live, four boots, the generator, housekeeping, and a browser at 1280; port
+  5055/5155; in `verify:all`). It builds the reported state: #148 paused with a missed card, two programs on #81,
+  the Kitting checklist, a mixed checklist, a weekly scale PM, a started card and the paused Pre-Op.
+- **The control is `main` and fails 15**, its Operator View listing "Daily PM — 148 Vevor Scale", both #81
+  programs and "Daily PM Checklist — Kitting".
+- `verify:pmpause` was rewritten from D-055's "pausing closed nothing" to this rule (18).

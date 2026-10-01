@@ -192,11 +192,9 @@ export default function PMSchedulesPanel() {
 
   const paused = (schedules || []).filter(s => !s.is_active).length;
   const orphaned = (schedules || []).filter(s => s.is_active && !s.task_group).length;
-  // Pausing stops a schedule raising work and closes nothing (D-012). The work
-  // it already raised sits open or missed until somebody closes it, dragging
-  // completion down and filling the floor's Overdue bucket — which is the exact
-  // symptom the pause was meant to remove. Named here, where the pause was
-  // pressed, with the way out.
+  // Pausing now closes what the schedule had raised (D-139). What can still be
+  // left behind is a card somebody had STARTED, and anything paused before
+  // D-139 shipped — named here, where the pause was pressed, with the way out.
   const leftovers = (schedules || []).filter(s => !s.is_active && openWorkOf(s) > 0);
   const leftoverTasks = leftovers.reduce((n, s) => n + openWorkOf(s), 0);
   const isAdmin = user?.role === 'admin';
@@ -207,8 +205,13 @@ export default function PMSchedulesPanel() {
     try {
       const r = await apiPut(`/pm/schedules/${s.id}`, { is_active: !s.is_active });
       const left = Number(r?.open_work) || 0;
-      if (s.is_active && left > 0) {
-        setRaised(`${s.title}: paused. ${left} task${left === 1 ? '' : 's'} it already raised ${left === 1 ? 'is' : 'are'} still open — pausing does not close them.`);
+      const closed = Number(r?.closed_work) || 0;
+      if (s.is_active) {
+        setRaised(`${s.title}: paused.`
+          + (closed ? ` ${closed} open or missed task${closed === 1 ? '' : 's'} it had raised ${closed === 1 ? 'was' : 'were'} closed, with the reason on each.` : '')
+          + (left ? ` ${left} task${left === 1 ? '' : 's'} somebody had started ${left === 1 ? 'is' : 'are'} left open.` : ''));
+      } else {
+        setRaised(`${s.title}: resumed — the next task will be raised shortly.`);
       }
       refresh();
     }
@@ -243,14 +246,14 @@ export default function PMSchedulesPanel() {
       <div>
         <h2 className="text-xl font-bold text-gray-900">Recurring Schedules</h2>
         <p className="text-sm text-gray-500">
-          The rules that generate work. Pausing one stops new tasks being raised and leaves anything
-          already open alone.
+          The rules that generate work. Pausing one stops new tasks being raised and closes the open and
+          missed tasks it had already raised, with the reason on each; a task somebody has started is left open.
         </p>
       </div>
 
       {raised && (
         <div className="bg-powder-50 border border-powder-200 rounded-xl p-3 flex items-start justify-between gap-3">
-          <p className="text-sm text-powder-900">{raised}</p>
+          <p className="text-sm text-powder-900" data-raised>{raised}</p>
           <button type="button" onClick={() => setRaised('')} className="text-powder-700 shrink-0"><X size={14} /></button>
         </div>
       )}
@@ -262,8 +265,8 @@ export default function PMSchedulesPanel() {
             <span className="font-semibold">
               {leftovers.length} paused schedule{leftovers.length === 1 ? '' : 's'} still carr{leftovers.length === 1 ? 'ies' : 'y'} {leftoverTasks} open task{leftoverTasks === 1 ? '' : 's'}
             </span>{' '}
-            raised before the pause. Pausing stops new work; it does not close what was already raised, and
-            nobody will complete it because the work is recorded elsewhere now.{' '}
+            — started before the pause, or paused before pausing closed open work. Nobody will complete them
+            if the work is recorded elsewhere now.{' '}
             {isAdmin
               ? <button type="button" onClick={openCleanup} className="underline font-medium hover:text-amber-950" data-open-cleanup>Close them in Cleanup Review</button>
               : <span>An admin closes them in Settings → Cleanup Review.</span>}
@@ -370,7 +373,7 @@ export default function PMSchedulesPanel() {
                   </td>
                   <td className="py-2 px-3"><TeamCell schedule={s} /></td>
                   <td className={`py-2 px-3 tabular-nums ${!s.is_active && openWorkOf(s) > 0 ? 'text-amber-700 font-medium' : 'text-gray-600'}`}
-                    title={!s.is_active && openWorkOf(s) > 0 ? 'Raised before the pause; still open' : undefined} data-open-work={s.id}>
+                    title={!s.is_active && openWorkOf(s) > 0 ? 'Started before the pause; still open' : undefined} data-open-work={s.id}>
                     {openWorkOf(s)}
                   </td>
                   <td className="py-2 px-3 text-right whitespace-nowrap">

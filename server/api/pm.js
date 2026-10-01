@@ -26,6 +26,7 @@ import { canonicalArea } from '../sanitation-areas.js';
 import { planStepSplit } from '../../shared/pm-step-split.js';
 import { personMatch, resolveUserId, withCurrentNames } from '../person-links.js';
 import { gradeTestAttempt } from '../training-records.js';
+import { closeScheduleWork, pauseReason } from '../pm-pause.js';
 
 // The daily chemical dilution check is a TASK and a RECORD, and it files both.
 //
@@ -756,7 +757,7 @@ router.put('/schedules/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM pm_schedules WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'PM schedule not found' });
 
-  const { title, description, frequency_type, frequency_value, procedure_steps, lubricant_type, is_food_grade_lubricant, estimated_minutes, haccp_ccp_id, is_active, task_group, assigned_to } = req.body;
+  const { title, description, frequency_type, frequency_value, procedure_steps, lubricant_type, is_food_grade_lubricant, estimated_minutes, haccp_ccp_id, is_active, task_group, assigned_to, pause_reason } = req.body;
 
   // An ABSENT field means "leave it alone"; an empty one means "nobody owns
   // this" — the same rule every other column here follows. Collapsing the two
@@ -765,6 +766,9 @@ router.put('/schedules/:id', (req, res) => {
   const ownerName = ownerGiven ? (String(assigned_to || '').trim() || null) : existing.assigned_to;
   const ownerId = ownerGiven ? (ownerName ? resolveUserId(db, ownerName) : null) : existing.assigned_to_id;
 
+  const pausing = !!existing.is_active && is_active !== undefined && !is_active;
+  let closed = { cancelled: 0, in_progress: 0 };
+  db.transaction(() => {
   db.prepare(`
     UPDATE pm_schedules SET title=?, description=?, frequency_type=?, frequency_value=?,
     procedure_steps=?, lubricant_type=?, is_food_grade_lubricant=?, estimated_minutes=?,
@@ -780,6 +784,18 @@ router.put('/schedules/:id', (req, res) => {
     task_group !== undefined ? (task_group || null) : existing.task_group,
     ownerName, ownerId, req.params.id
   );
+  // PAUSING CLOSES WHAT THE SCHEDULE ALREADY RAISED (D-139), in the same
+  // transaction. D-012 made this a second act with no button, and it never got
+  // done: the paused Daily Scale PMs kept their missed cards on the Operator
+  // View for 38 days. Cancelled with the reason, never deleted; a card somebody
+  // has started is left alone and counted. See server/pm-pause.js.
+  if (pausing) {
+    const by = req.user?.name || 'ReadyDoc';
+    closed = closeScheduleWork(db, req.params.id, {
+      by, reason: pauseReason(existing.title, by, String(pause_reason || '').trim().slice(0, 300)), logAudit: (...a) => logAudit(req.user || a[0], ...a.slice(1)),
+    });
+  }
+  })();
 
   // If the team (task_group) changed, cascade to this PM's live work orders so
   // the reassignment takes effect immediately, not just on next generation.
@@ -809,10 +825,9 @@ router.put('/schedules/:id', (req, res) => {
   // audit entry both carry the count left behind, so the pause cannot look
   // like it did more than it did.
   const open_work = openWorkFor(db, req.params.id);
-  const paused = !!existing.is_active && !updated.is_active;
   logAudit(req.user, 'update', 'pm_schedule', req.params.id,
-    paused ? { paused: true, open_work_left: open_work } : null, existing, updated);
-  res.json({ ...updated, open_work });
+    pausing ? { paused: true, closed_work: closed.cancelled, open_work_left: open_work } : null, existing, updated);
+  res.json({ ...updated, open_work, closed_work: closed.cancelled });
 });
 
 // --- Work Orders ---

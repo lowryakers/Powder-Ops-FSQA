@@ -266,10 +266,17 @@ function planSchedulesFromTasks(db, eq, coverage = checklistCoverage(db)) {
   // not only for the one it hangs on. Without this, each of the other machines
   // read as having no daily schedule and was offered a Daily PM of its own —
   // a second daily task beside its line on the room checklist.
+  //
+  // A PAUSED SCHEDULE IS A DECISION, NOT A GAP (D-139). Reading only active
+  // ones, a scale whose Daily PM the plant had paused — because Scale
+  // Verification does that check — read as unscheduled, and this offered to
+  // create it again; the new one raised cards nobody had asked for, beside the
+  // paused one the plant thought it had retired.
   const existing = [
-    ...db.prepare(`SELECT frequency_type, title FROM pm_schedules WHERE equipment_id = ? AND is_active = 1
-      AND (description IS NULL OR description NOT LIKE ?)`).all(eq.id, CONSOLIDATED_LIKE),
-    ...(coverage.get(eq.id) || []),
+    ...db.prepare(`SELECT frequency_type, title, is_active FROM pm_schedules WHERE equipment_id = ?
+      AND (description IS NULL OR description NOT LIKE ?)
+      ORDER BY is_active DESC`).all(eq.id, CONSOLIDATED_LIKE),
+    ...(coverage.get(eq.id) || []).map(c => ({ ...c, is_active: 1 })),
   ];
   const create = [];
   const skip = [];
@@ -279,7 +286,8 @@ function planSchedulesFromTasks(db, eq, coverage = checklistCoverage(db)) {
     if (!freqType) { skip.push({ frequency: freq, reason: 'not a recurring frequency' }); continue; }
     const has = existing.find(x => x.frequency_type === freqType);
     if (has) {
-      skip.push({ frequency: freq, reason: /^Daily PM Checklist/.test(has.title || '') ? `on the room checklist "${has.title}"` : 'already has a schedule' });
+      skip.push({ frequency: freq, reason: !has.is_active ? `"${has.title}" is paused — resume it rather than create a second`
+        : /^Daily PM Checklist/.test(has.title || '') ? `on the room checklist "${has.title}"` : 'already has a schedule' });
       continue;
     }
     create.push({ frequency: freq, frequency_type: freqType, steps: list.filter(Boolean) });
