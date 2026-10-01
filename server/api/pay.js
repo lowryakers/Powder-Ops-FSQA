@@ -483,23 +483,46 @@ router.post('/employees/:id/reviews', (req, res) => {
   if (!Object.keys(scores).length) return res.status(400).json({ error: 'Scores are required.' });
 
   const when = String(req.body?.review_date || today()).slice(0, 10);
+  const draft = {
+    review_date: when, scores: JSON.stringify(scores), total,
+    recommendation: String(req.body?.recommendation || '').slice(0, 120) || null,
+    notes: String(req.body?.notes || '').trim().slice(0, 4000) || null,
+    attendance_flag: req.body?.attendance_flag ? 1 : 0,
+  };
+
+  // ONE OPEN REVIEW PER REVIEWER PER PERSON (D-137). Rosaura read "22 reviews
+  // in" — twenty identical copies of one supervisor's review — because nothing
+  // here asked whether this reviewer had already said this. The form stayed
+  // live after a submit, and a submit made on a dropped connection is queued
+  // and replayed; every tap and every replay filed another row, and each one
+  // pulled the "combined" average toward that one reviewer.
+  //  - The SAME review again (same scores, notes, date, flag) files NOTHING and
+  //    answers with the one on file: a repeat is not a second opinion.
+  //  - A DIFFERENT review from the same reviewer REPLACES their open one: the
+  //    earlier row is kept, marked superseded, and leaves the combined score.
+  // A second REVIEWER is a second opinion and is never touched.
+  const mine = openReviewsBy(db, emp.id, req.user);
+  if (mine[0] && reviewFingerprint(mine[0]) === reviewFingerprint(draft)) {
+    db.prepare(`UPDATE pay_review_assignments SET status = 'completed', review_id = ?, completed_at = datetime('now')
+      WHERE employee_id = ? AND reviewer_id = ? AND status = 'open'`).run(mine[0].id, emp.id, req.user.id);
+    return res.json({ id: mine[0].id, total: mine[0].total, review_date: mine[0].review_date, duplicate: true });
+  }
+
   const id = uuid();
   db.transaction(() => {
     db.prepare(`INSERT INTO pay_reviews (id, employee_id, reviewer_id, reviewer_name, review_date, scores, total, recommendation, notes, attendance_flag)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       id, emp.id, req.user.id || null, req.user.name, when,
-      JSON.stringify(scores), total,
-      String(req.body?.recommendation || '').slice(0, 120) || null,
-      String(req.body?.notes || '').trim().slice(0, 4000) || null,
-      req.body?.attendance_flag ? 1 : 0);
+      draft.scores, total, draft.recommendation, draft.notes, draft.attendance_flag);
+    for (const r of mine) supersedeReview(db, r, req.user.name, `Replaced by ${req.user.name}'s later review (${when})`);
     db.prepare("UPDATE pay_employees SET last_reviewed_at = ?, updated_at = datetime('now') WHERE id = ?").run(when, emp.id);
     // Doing the evaluation is what closes the ask — the assignment is not a
     // separate thing to remember to tick off.
     db.prepare(`UPDATE pay_review_assignments SET status = 'completed', review_id = ?, completed_at = datetime('now')
       WHERE employee_id = ? AND reviewer_id = ? AND status = 'open'`).run(id, emp.id, req.user.id);
   })();
-  logAudit(req.user, 'create', 'pay_review', id, { employee: emp.name, total }, null, null, emp.name);
-  res.status(201).json({ id, total, review_date: when });
+  logAudit(req.user, 'create', 'pay_review', id, { employee: emp.name, total, superseded: mine.length || undefined }, null, null, emp.name);
+  res.status(201).json({ id, total, review_date: when, superseded: mine.length });
 });
 
 // Admins read every review; an evaluator reads only their own. Neither list
@@ -818,6 +841,66 @@ async function dm(db, userId, body, push) {
     if (channel) await postMessageAs(db, channel, bot, body);
   } catch (e) { console.warn('[pay] nudge DM failed:', e.message); }
   if (push) pushToUser(userId, push).catch(() => {});
+}
+
+/* ── One open review per reviewer per person (D-137) ─────────────────────── */
+
+// The same reviewer, by account where there is one and by name for a row filed
+// without an id.
+function openReviewsBy(db, employeeId, reviewer) {
+  return db.prepare(`SELECT * FROM pay_reviews WHERE employee_id = ? AND status = 'open'
+      AND (reviewer_id = ? OR (reviewer_id IS NULL AND reviewer_name = ?))
+    ORDER BY created_at DESC, rowid DESC`).all(employeeId, reviewer.id || null, reviewer.name);
+}
+
+// What a review SAYS: two rows with the same fingerprint are one review filed
+// twice. Scores are compared with their keys sorted, so key order is not content.
+export function reviewFingerprint(r) {
+  const sc = (() => { try { return typeof r.scores === 'string' ? JSON.parse(r.scores || '{}') : (r.scores || {}); } catch { return {}; } })();
+  const sorted = Object.keys(sc).sort().map(k => `${k}=${sc[k]}`).join(',');
+  return [r.review_date, sorted, (r.notes || '').trim(), r.attendance_flag ? 1 : 0, r.recommendation || ''].join('|');
+}
+
+// Kept, never deleted: a superseded review is still on the record and still in
+// the drawer under "earlier reviews" — it simply stops counting as open.
+function supersedeReview(db, r, by, why) {
+  db.prepare(`UPDATE pay_reviews SET status = 'superseded', resolved_by = ?, resolved_at = datetime('now'), resolution = ?
+    WHERE id = ? AND status = 'open'`).run(by, why, r.id);
+}
+
+/**
+ * The same rule applied to reviews ALREADY ON FILE, once per boot and
+ * idempotent by construction: for each person and reviewer with more than one
+ * OPEN review, the latest stays open and the rest are superseded, worded by
+ * whether they were an identical repeat or a different earlier review. Nothing
+ * is deleted, no score is changed, a second reviewer is never touched, and
+ * every person it touched is audited with the counts.
+ */
+export function supersedeRepeatReviews(db) {
+  const groups = db.prepare(`SELECT employee_id, COALESCE(reviewer_id, 'name:' || reviewer_name) AS who, COUNT(*) AS n
+    FROM pay_reviews WHERE status = 'open' GROUP BY employee_id, who HAVING COUNT(*) > 1`).all();
+  let repeats = 0, replaced = 0;
+  for (const g of groups) {
+    const rows = db.prepare(`SELECT * FROM pay_reviews WHERE employee_id = ? AND status = 'open'
+        AND COALESCE(reviewer_id, 'name:' || reviewer_name) = ? ORDER BY created_at DESC, rowid DESC`).all(g.employee_id, g.who);
+    const [keep, ...rest] = rows;
+    const fp = reviewFingerprint(keep);
+    let rep = 0, rpl = 0;
+    db.transaction(() => {
+      for (const r of rest) {
+        if (reviewFingerprint(r) === fp) { supersedeReview(db, r, 'system', `Repeat submission — identical to the review kept (${keep.reviewer_name}, ${keep.review_date})`); rep++; }
+        else { supersedeReview(db, r, 'system', `Replaced by ${keep.reviewer_name}'s later review (${keep.review_date})`); rpl++; }
+      }
+    })();
+    repeats += rep; replaced += rpl;
+    const emp = db.prepare('SELECT name FROM pay_employees WHERE id = ?').get(g.employee_id);
+    logAudit('system', 'update', 'pay_review', keep.id,
+      { superseded_repeats: rep, superseded_replaced: rpl, reviewer: keep.reviewer_name, kept: keep.id }, null, null, emp?.name || null);
+  }
+  if (repeats || replaced) {
+    console.log(`[seed] Pay reviews: ${repeats} repeat submission(s) and ${replaced} earlier review(s) superseded — one open review per reviewer per person`);
+  }
+  return { repeats, replaced, people: groups.length };
 }
 
 /**

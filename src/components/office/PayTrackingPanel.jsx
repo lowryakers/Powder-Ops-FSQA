@@ -78,6 +78,7 @@ function Evaluation({ people, canApply, isAdmin = false, onClose, onRecorded, tr
   const hardFlag = CHARACTERISTICS.some(c => c.hardFlagAtOne && scores[c.key] === 1);
 
   const reset = () => { setScores({}); setNotes(''); setDone(null); setError(''); };
+  const finish = (msg) => { setPersonId(''); setAssignmentId(''); setScores({}); setNotes(''); setError(''); setDone(msg); };
 
   // The hand-out for the meeting. It carries the descriptor picked for each
   // value — the feedback in the company's own words — plus notes and the
@@ -120,13 +121,25 @@ function Evaluation({ people, canApply, isAdmin = false, onClose, onRecorded, tr
     try {
       // The recommendation is stored in English regardless of the page
       // language — it's the band label the admin reads against the rubric.
-      await apiPost(`/pay/employees/${person.id}/reviews`, {
+      const r = await apiPost(`/pay/employees/${person.id}/reviews`, {
         scores, notes, review_date: todayStr(),
         recommendation: band?.label || '', attendance_flag: hardFlag,
       });
-      setDone('Review submitted. The scores and notes are now visible to the admin, who decides any increase.');
+      // THE FORM CLOSES ON SUBMIT (D-137). It used to stay filled in with the
+      // Submit button live, and every further tap filed another copy — twenty
+      // of one supervisor's review on one person. Picking the person again
+      // starts a fresh review, which then REPLACES this one on the server.
+      finish(r?.duplicate
+        ? `${person.name}: ${tr('This review was already submitted — nothing new was filed.')}`
+        : `${person.name}: ${tr('Review submitted. The scores and notes are now visible to the admin, who decides any increase.')}`);
       onRecorded?.();
-    } catch (e) { setError(e.message); }
+    } catch (e) {
+      // A submit on a dropped connection is QUEUED and sent later — that is a
+      // save, not a failure, and offering the button again is how it got
+      // queued twenty times. The server files a repeat once at most.
+      if (e.queued) finish(`${person.name}: ${e.message}`);
+      else setError(e.message);
+    }
     finally { setBusy(false); }
   };
 
@@ -199,6 +212,12 @@ function Evaluation({ people, canApply, isAdmin = false, onClose, onRecorded, tr
         )}
       </div>
 
+      {done && (
+        <p data-review-done className="rounded-xl border border-green-200 bg-green-50 px-3 py-2.5 text-sm text-green-800 font-medium">
+          {done}
+        </p>
+      )}
+
       {person && (
         <>
           {CHARACTERISTICS.map(c => (
@@ -210,7 +229,7 @@ function Evaluation({ people, canApply, isAdmin = false, onClose, onRecorded, tr
                   const picked = scores[c.key] === n;
                   const heading = n === 1 ? 'Below Expectation' : n === 2 ? 'Meets Expectation' : 'Exceeds Expectation';
                   return (
-                    <button key={n} type="button"
+                    <button key={n} type="button" data-score-key={c.key} data-score={n}
                       onClick={() => setScores(s => ({ ...s, [c.key]: picked ? undefined : n }))}
                       className={`text-left rounded-lg border p-2.5 transition-colors ${picked
                         ? 'border-powder-500 bg-powder-50 ring-1 ring-powder-400'
@@ -268,7 +287,6 @@ function Evaluation({ people, canApply, isAdmin = false, onClose, onRecorded, tr
             )}
           </div>
 
-          {done && <p className="text-sm text-green-700 font-medium">{tr(done)}</p>}
           {error && <p className="text-sm text-red-600">{error}</p>}
 
           <div className="flex flex-wrap gap-2">
@@ -279,7 +297,7 @@ function Evaluation({ people, canApply, isAdmin = false, onClose, onRecorded, tr
             <span className="text-[11px] text-gray-500 self-center">
               {tr('The sheet carries the feedback and the recommendation — no score.')}
             </span>
-            <button onClick={submitReview} disabled={busy || !complete}
+            <button data-review-submit onClick={submitReview} disabled={busy || !complete}
               className="inline-flex items-center gap-1.5 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-semibold hover:bg-powder-700 disabled:opacity-50">
               <Check size={14} /> {busy ? tr('Submitting…') : tr('Submit review')}
             </button>
@@ -956,6 +974,7 @@ const PAGE_STRINGS = [
   'PDF for the conversation', 'Building…', 'Submit review', 'Submitting…', 'Clear', 'Close',
   'To apply the increase, open this person on the Roster tab.',
   'Review submitted. The scores and notes are now visible to the admin, who decides any increase.',
+  'This review was already submitted — nothing new was filed.',
   'Reviews', 'Combined', 'reviews', 'attendance flag', 'Show scores', 'Hide scores',
   'No open reviews — earlier ones are below.',
   'Applying an increase below closes these reviews with the decision on them.',

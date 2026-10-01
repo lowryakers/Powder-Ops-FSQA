@@ -5902,6 +5902,21 @@ that is only the office's — which is the crack this closes. Recipients: `pay_a
 `verify:payactions` (31, live + browser) is written **relative to the seeded baseline** — a fresh DB already
 seeds people past the clock, and asserting "empty" was the test's mistake, not the code's.
 
+## One open pay review per reviewer per person (D-137)
+Rosaura read "22 reviews in" — twenty identical copies of one supervisor's review. **Not ReadyBot**: reminders
+only DM; a `pay_reviews` row is only ever a Submit press. The form stayed filled in with Submit live, and a
+submit on a dropped connection is queued and replayed (`offline.js`) — every tap and replay filed a row, and
+the plain-average "Combined" let twenty copies outvote the second reviewer (17.7 where it is 16.5).
+- **The same review again files NOTHING** (`reviewFingerprint`: date, sorted scores, notes, flag,
+  recommendation) and answers `200 {duplicate: true}` — so the outbox replay is safe. **A different review from
+  the same reviewer REPLACES theirs** (`status = 'superseded'`, kept, with a reason). **A second reviewer is
+  never touched.** Same reviewer = `reviewer_id`, or `reviewer_name` when the id is NULL.
+- **The Evaluation form closes on submit** (`finish()`), and a queued submit counts as one.
+- `supersedeRepeatReviews(db)` (boot, after `seedPayTracking`) applies the rule to rows already on file: latest
+  open per pair stays, the rest superseded and audited. **Nothing deleted**; idempotent by construction.
+- Everything that counts reviews reads `status = 'open'`; superseded rows sit under "Show earlier reviews".
+- `verify:payreviews` (29, live + reboots + browser at 390px; control fails 13 — "22 open", `avg_total 17.7`).
+
 ## Pay: who can review, and the roster's supervisor flag
 - **`GET /pay/reviewers`** is the picker: active `supervisor`/`admin` only, ReadyBot excluded. It used to
   be `/users/technicians` — the whole roster — which offered operators (who never evaluate anyone) and

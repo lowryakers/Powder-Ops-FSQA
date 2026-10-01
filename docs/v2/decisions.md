@@ -5700,3 +5700,56 @@ people learn to ignore.
 - `verify:artworkfilm` (40, live + two reboots + browser at 1280 and 390px; in `verify:all`, port 5052 and 5152).
   **The control is `main` and fails 15 before it can continue.** `check:readiness` 37 → 47 (the dependency-list
   assertion now includes `film`).
+
+## D-137 — One open pay review per reviewer per person; repeats already on file are superseded, never deleted (2026-10-01)
+
+**Asked:** "Why are there so many reviews? 22 for Rosaura and 12 for Osvaldo? Was this prompting the supervisors
+that many times to complete a review?"
+
+**No — and nothing that prompts can file a review.** `payReviewNudges` and the assignment notice only send a
+ReadyBot DM and a push. A `pay_reviews` row is written by exactly one route, `POST /pay/employees/:id/reviews`,
+which is a person pressing **Submit review**. Rosaura's twenty Debora rows are twenty presses of the same form:
+same date, same 18/18, same notes word for word.
+
+**Why one person could press it twenty times:**
+- **The form stayed live after a submit.** It put a green line under the scores and left the scores, the notes and
+  an enabled Submit button exactly where they were. Nothing told the reviewer the review had gone in except a
+  line that looks like a hint, and tapping Submit again on a phone that seemed not to respond filed another copy.
+- **A submit on a dropped connection is QUEUED** (the offline outbox, `src/lib/offline.js`) and its message — "Saved
+  on this device…" — was shown in the ERROR slot with the button still live, and a request that reached the server
+  but lost its answer is queued and REPLAYED. Each tap and each replay was a new row.
+- **The server never asked whether this reviewer had already said this.** No idempotence, no rule about a second
+  review from the same person.
+
+**It distorted the decision, not just the count.** "Combined" is the plain average of every open review, so twenty
+copies of one reviewer's 18 outvoted the other reviewer's 15: Rosaura read **17.7** where the two opinions average
+**16.5**. The drawer offered the increase band for the wrong number.
+
+**Decided:**
+- **One open review per reviewer per person.** The SAME review again (scores compared with keys sorted, notes,
+  date, attendance flag, recommendation) **files nothing** and answers `200 { duplicate: true }` with the review
+  on file — a replay is safe by construction. A DIFFERENT review from the same reviewer **replaces** theirs: the
+  earlier row is kept, `status = 'superseded'`, with a sentence saying by what. **A second reviewer is a second
+  opinion and is never touched** — the plant's design is supervisor + Adam, combined.
+- **The form closes on submit**, and a queued submit counts as a submit. The person, scores and notes clear; the
+  confirmation names the person; the only way back in is picking someone, which starts a fresh review.
+- **The rows already on file are put right once, at boot, by the same rule** (`supersedeRepeatReviews`): for each
+  person and reviewer with more than one open review the latest stays open and the rest are superseded, worded
+  *"Repeat submission — identical…"* or *"Replaced by X's later review…"*. **Nothing is deleted and no score is
+  changed** — every row is still in the drawer under "Show earlier reviews". Idempotent by construction (a second
+  boot finds one open review per pair and does nothing); each pair touched is audited with the counts; the boot
+  log says how many. A review filed with no account id is matched by name. This is a status change on records
+  that are still open and undecided, not a rewrite of a decision — which is why it is applied rather than asked.
+- `superseded` is a fourth `pay_reviews.status` beside open / resolved / dismissed. Everything that counts open
+  reviews already reads `status = 'open'`, so the strip, the bell, the reminder and the drawer's combined score
+  follow with no change.
+
+**On the plant's database after deploy:** Rosaura → 2 open (Debora's and Adam's later one), Osvaldo → 1, Liseth
+→ 1. Adam's two 9/30 reviews of Rosaura (one without notes, one with) differ, so the earlier reads *replaced*.
+
+**Verified:** `verify:payreviews` (29, live + two reboots + a real browser at 390px, port 5053/5153; in
+`verify:all`) — builds the plant's exact shape, reboots, reads the strip and the drawer, submits the same review
+three ways, and in the browser submits once, then submits through a connection that delivers the request and
+drops the answer and lets the outbox replay it. **The control is `main` and fails 13 before the browser half can
+start, the first reading "22 open" and the strip `avg_total: 17.7`** — the screenshot. `verify:payactions` 31,
+`verify:payroster` 64, `verify:starterreview` 45 unchanged.
