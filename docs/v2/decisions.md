@@ -6094,3 +6094,29 @@ reported this on 28 September, and **D-124 (30 September) gave every working acc
 `main` and fails 4, then cannot continue**: the trainee's typed 100 closes the course before the test is taken.
 `verify:checkrecords` (49), `verify:trainingassign` (94), `verify:forkliftcert` (61), `verify:trainingpeople` (45)
 and `verify:defaultaccess` (29) stay green.
+
+## D-145 — Retiring "Simple Green" and "Sanitizer Dilution" from the Area dropdown is the plant's act, and history survives it (2026-10-05)
+
+**Asked in the 5 October fix pass (A7):** Apply and Retire the chemical-as-area options with a reason, re-stamp
+the Area dropdown, and make sure Retire does not delete history.
+
+**No code change was needed. The mechanism is D-118's, and it is an admin act on live:**
+1. Sanitation → the amber strip → **Review**.
+2. **Apply** folds the strays a rule can place (the "3 records filed under 2 spellings" banner) and retires
+   their dropdown options.
+3. **Retire** on "Simple Green" and on "Sanitizer Dilution", each with a reason.
+
+There is no separate "re-stamp" step: the dropdown reads the managed list on every load, so a retired option is
+gone from the form at once and the strip clears itself. The "Re-clean required before next use" banners for
+Rooms 4–7 and Batching 2 are the 72-hour rule working. They clear when those rooms are cleaned, not when the
+vocabulary is tidied.
+
+**Proven rather than assumed.** `verify:sanareas` (46 → **49**) now retires "Simple Green" while a clean is
+filed under it, and asserts three things:
+- the response reports the one record left as filed;
+- the record still reads "Simple Green";
+- the option row is retired (`is_active = 0`), not deleted.
+
+The browser half then retires the last stray and the strip disappears without a reload, which is the end state
+A7 asks the plant to reach. `ensureList` is `INSERT OR IGNORE` and neither chemical is on `SANITATION_AREAS`, so
+no redeploy can put a retired option back.

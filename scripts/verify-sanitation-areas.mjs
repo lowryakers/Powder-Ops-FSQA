@@ -182,6 +182,19 @@ console.log('\nRetiring one the app cannot place is a person’s act, with a rea
   const after = await J(await req('/structure/lists/sanitation_areas'));
   t('the form no longer offers it', !(after.options || []).some(o => o.value === 'Simple green'));
   t('Room 7 is still offered', (after.options || []).some(o => o.value === '7'));
+
+  // RETIRING NEVER TOUCHES HISTORY (fix doc A7, 5 Oct): a clean filed under
+  // "Simple Green" stays filed under it, readable, and the option row is kept
+  // retired rather than deleted, so the record still resolves.
+  const sg = plan.picker.strays.find(x => x.value === 'Simple Green');
+  const res = await J(await post('/sanitation/areas/retire-option', { id: sg.id, reason: 'A chemical, not an area (fix doc A7)' }));
+  t('retiring "Simple Green" reports the one record it left as filed', res?.records_left_as_filed === 1, JSON.stringify(res?.records_left_as_filed));
+  const rec = await J(await req('/sanitation/stray-rec-3'));
+  t('…and that record is still there, still reading "Simple Green"', rec?.area === 'Simple Green');
+  const dbr = new Database(process.env.DBPATH, { readonly: true });
+  const row = dbr.prepare("SELECT is_active FROM app_list_options WHERE list_key = 'sanitation_areas' AND value = 'Simple Green'").get();
+  dbr.close();
+  t('the option row is retired, not deleted', row && row.is_active === 0);
 }
 
 console.log('\nIn a real browser: the strip names the strays where the log is');
@@ -198,14 +211,14 @@ console.log('\nIn a real browser: the strip names the strays where the log is');
   await page.goto(`${URL}/?tab=sanitation`);
   await page.waitForTimeout(4000);
   const title = page.locator('[data-area-strip-title]');
-  t('the strip is on the Sanitation screen with only strays left (no records to fold)', await title.count() === 1 && /2 options/.test(await title.innerText().catch(() => '')), (await title.innerText().catch(() => '')).slice(0, 120));
+  t('the strip is on the Sanitation screen with only strays left (no records to fold)', await title.count() === 1 && /1 option\b/.test(await title.innerText().catch(() => '')), (await title.innerText().catch(() => '')).slice(0, 120));
   await page.getByText('Review', { exact: true }).click().catch(() => {});
   await page.waitForTimeout(500);
-  t('it lists Sanitizer Dilution and Simple Green', await page.locator('[data-area-stray="Sanitizer Dilution"]').count() === 1 && await page.locator('[data-area-stray="Simple Green"]').count() === 1);
-  t('with a Retire button each, and no Apply — nothing left that the app may decide alone', await page.locator('[data-area-stray-retire]').count() === 2 && await page.locator('[data-area-apply]').count() === 0);
+  t('it lists Sanitizer Dilution, and not Simple Green (retired above)', await page.locator('[data-area-stray="Sanitizer Dilution"]').count() === 1 && await page.locator('[data-area-stray="Simple Green"]').count() === 0);
+  t('with a Retire button each, and no Apply — nothing left that the app may decide alone', await page.locator('[data-area-stray-retire]').count() === 1 && await page.locator('[data-area-apply]').count() === 0);
   await page.locator('[data-area-stray="Sanitizer Dilution"] [data-area-stray-retire]').click();
   await page.waitForTimeout(1500);
-  t('retiring it from the screen takes it off the list without a reload', await page.locator('[data-area-stray="Sanitizer Dilution"]').count() === 0 && await page.locator('[data-area-stray="Simple Green"]').count() === 1);
+  t('retiring the last one from the screen clears the strip without a reload — the state A7 asks the plant to reach', await page.locator('[data-area-stray="Sanitizer Dilution"]').count() === 0 && await page.locator('[data-area-strip-title]').count() === 0);
   await browser.close();
 }
 
