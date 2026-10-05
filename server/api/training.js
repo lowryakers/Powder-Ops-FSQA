@@ -12,7 +12,7 @@ import { parseTrainingLog } from '../training-log.js';
 import { parseScanName, similarity, isScanEntry } from '../scanned-tests.js';
 import { extractInvoiceText } from '../invoice-text.js';
 import { requireRole } from '../middleware/auth.js';
-import { addMonths, dueDateFor, supersedeOlder, courseTrainingRevision, insertCompletion, gradeTestAttempt } from '../training-records.js';
+import { addMonths, dueDateFor, supersedeOlder, courseTrainingRevision, insertCompletion, gradeTestAttempt, attemptReview } from '../training-records.js';
 import { assignTraining } from '../training-assign.js';
 import { tellAssignee, assignmentReach } from '../training-notify.js';
 import { trainingSnapshot, cellFor, personTraining, trainingRoster } from '../training-status.js';
@@ -720,6 +720,32 @@ router.post('/courses/:id/test/generate', async (req, res) => {
   }
 });
 
+// ── Reviewing an attempt, question by question (D-144) ──────────────────────
+// "No way for the reviewer to see which questions were scored good or bad."
+// The answers were stored on every attempt and never shown to anybody. The
+// list is bounded and newest first; the detail carries each question, what
+// was given, what the key said, and whether it was right. Behind the Training
+// module like the rest of this router — the floor never sees the key.
+router.get('/attempts', (req, res) => {
+  const db = getDb();
+  const limit = Math.min(Number(req.query.limit) || 200, 500);
+  const params = [];
+  let where = '1=1';
+  if (req.query.course_id) { where += ' AND a.course_id = ?'; params.push(req.query.course_id); }
+  if (req.query.employee) { where += ' AND LOWER(a.employee_name) LIKE ?'; params.push(`%${String(req.query.employee).toLowerCase()}%`); }
+  const rows = db.prepare(`SELECT a.id, a.course_id, a.employee_name, a.employee_user_id, a.score, a.passed, a.record_id, a.taken_at,
+      a.results IS NOT NULL AS frozen, c.title AS course_title, c.code AS course_code
+    FROM training_test_attempts a LEFT JOIN training_courses c ON c.id = a.course_id
+    WHERE ${where} ORDER BY a.taken_at DESC LIMIT ?`).all(...params, limit);
+  res.json(rows.map(r => ({ ...r, passed: !!r.passed, frozen: !!r.frozen })));
+});
+
+router.get('/attempts/:id', (req, res) => {
+  const out = attemptReview(getDb(), req.params.id);
+  if (!out) return res.status(404).json({ error: 'Attempt not found' });
+  res.json(out);
+});
+
 // Submit a test attempt: auto-grade, and on pass record a completion.
 router.post('/courses/:id/test/attempt', (req, res) => {
   const db = getDb();
@@ -731,7 +757,7 @@ router.post('/courses/:id/test/attempt', (req, res) => {
   const out = gradeTestAttempt(db, { course_id: req.params.id, employee_name, employee_user_id, answers });
   if (out.error) return res.status(404).json({ error: out.error });
   logAudit(employee_name, 'training_test_attempt', 'training_course', req.params.id, { score: out.score, passed: out.passed, via: req.user ? 'app' : 'kiosk' }, null, null, out.course.title);
-  res.status(201).json({ attempt_id: out.attempt_id, score: out.score, passed: out.passed, passing_score: out.passing_score, record_id: out.record?.id || null });
+  res.status(201).json({ attempt_id: out.attempt_id, score: out.score, passed: out.passed, passing_score: out.passing_score, record_id: out.record?.id || null, missed: out.missed, questions: out.results.length });
 });
 
 // ── IMPORT (ELT) ─────────────────────────────────────────────────────────────

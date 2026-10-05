@@ -46,7 +46,9 @@ const LIVE = "('open','in_progress','overdue','missed')";
  */
 export function assignmentReach(db, userId) {
   if (!userId) return { code: 'by_name', label: 'assigned by name — no account to reach' };
-  const u = db.prepare('SELECT id, role, module_access FROM users WHERE id = ?').get(userId);
+  // is_external too: defaultLevel() reads it, and without it a client account
+  // read as holding Operator View (D-144).
+  const u = db.prepare('SELECT id, role, module_access, is_external FROM users WHERE id = ?').get(userId);
   return taskListReach(u);
 }
 

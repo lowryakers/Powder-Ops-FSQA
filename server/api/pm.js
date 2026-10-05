@@ -1211,6 +1211,19 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
         requires_check: true, missing, check_form: checkForm,
       });
     }
+    // A TEST GRADES ITSELF (D-144). The assignee completing a test course with
+    // a typed score is a self-reported result beside a graded one — refused.
+    // The test route closes the task by itself on a pass; a typed score is for
+    // somebody else recording a test taken on paper FOR the trainee.
+    if (checkForm.kind === 'training' && checkForm.has_test && !String(req.body.check?.test_attempt_id || '').trim()) {
+      const u = req.user || {};
+      const own = (existing.assigned_to_id && existing.assigned_to_id === u.id)
+        || (existing.assigned_to && u.name && existing.assigned_to.toLowerCase() === String(u.name).toLowerCase());
+      if (own) {
+        return res.status(403).json({ self_score_refused: true,
+          error: 'Your score comes from taking the test on this task — it is worked out when you submit it. A score cannot be typed in for your own test.' });
+      }
+    }
   }
 
   // Validated BEFORE the transaction: a bad date must refuse the completion
@@ -1702,6 +1715,8 @@ router.post('/work-orders/:id/training-test', (req, res) => {
   res.status(201).json({
     attempt_id: out.attempt_id, score: out.score, passed: out.passed,
     passing_score: out.passing_score, record_id: out.record?.id || null, work_order_completed: closed,
+    // Which questions to look at again, by number — never the answers (D-144).
+    missed: out.missed, questions: out.results.length,
   });
 });
 

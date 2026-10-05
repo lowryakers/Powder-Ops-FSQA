@@ -94,27 +94,21 @@ export function gradeTestAttempt(db, { course_id, employee_name, employee_user_i
   const test = db.prepare('SELECT * FROM training_tests WHERE course_id = ? AND is_current = 1').get(course_id);
   if (!test) return { error: 'No test for this course' };
 
-  const questions = db.prepare('SELECT * FROM training_questions WHERE test_id = ?').all(test.id);
-  let earned = 0, total = 0;
-  for (const q of questions) {
-    total += q.points;
-    const given = answers?.[q.id];
-    if (given === undefined || given === null) continue;
-    const correct = String(q.correct_answer ?? '').trim().toLowerCase();
-    if (q.type === 'short_answer') {
-      // Keyword match: correct if the expected answer appears in the response.
-      if (correct && String(given).trim().toLowerCase().includes(correct)) earned += q.points;
-    } else if (String(given).trim().toLowerCase() === correct) {
-      earned += q.points;
-    }
-  }
+  const questions = db.prepare('SELECT * FROM training_questions WHERE test_id = ? ORDER BY position').all(test.id);
+  const results = questions.map((q, i) => questionResult(q, answers?.[q.id], i));
+  const earned = results.reduce((n, r) => n + (r.correct ? r.points : 0), 0);
+  const total = results.reduce((n, r) => n + r.points, 0);
   const score = total ? Math.round((earned / total) * 100) : 0;
   const passing = test.passing_score ?? 80;
   const passed = score >= passing;
 
+  // THE PER-QUESTION OUTCOME IS FROZEN WITH THE ATTEMPT (D-144), the expected
+  // answer included — so a reviewer reads what this person got right and
+  // wrong against the key as it stood that day, not against a test somebody
+  // has since re-written. The `atp_limit` rule.
   const attemptId = uuid();
-  db.prepare('INSERT INTO training_test_attempts (id, test_id, course_id, employee_name, employee_user_id, answers, score, passed) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(attemptId, test.id, course_id, employee_name, employee_user_id || null, JSON.stringify(answers || {}), score, passed ? 1 : 0);
+  db.prepare('INSERT INTO training_test_attempts (id, test_id, course_id, employee_name, employee_user_id, answers, score, passed, results) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(attemptId, test.id, course_id, employee_name, employee_user_id || null, JSON.stringify(answers || {}), score, passed ? 1 : 0, JSON.stringify(results));
 
   let record = null;
   if (passed) {
@@ -125,5 +119,54 @@ export function gradeTestAttempt(db, { course_id, employee_name, employee_user_i
     });
     db.prepare('UPDATE training_test_attempts SET record_id = ? WHERE id = ?').run(record.id, attemptId);
   }
-  return { attempt_id: attemptId, score, passed, passing_score: passing, record, course };
+  // The trainee is told WHICH questions to look at again — by number, never
+  // with the answer, or the retake is a copy of the key.
+  const missed = results.filter(r => !r.correct).map(r => r.number);
+  return { attempt_id: attemptId, score, passed, passing_score: passing, record, course, missed, results };
+}
+
+/**
+ * One question graded: the given answer against the key. ONE rule, used by the
+ * grader and by the review of an attempt filed before results were frozen.
+ * Short answer is a keyword match: correct when the expected text appears.
+ */
+export function questionResult(q, given, index) {
+  const correctRaw = String(q.correct_answer ?? '').trim();
+  const correct = correctRaw.toLowerCase();
+  const g = given === undefined || given === null ? '' : String(given).trim();
+  let ok = false;
+  if (g !== '') {
+    ok = q.type === 'short_answer' ? (!!correct && g.toLowerCase().includes(correct)) : g.toLowerCase() === correct;
+  }
+  return {
+    // The number the trainee saw: questions are served in position order and
+    // shown as "3 of 20", so it is the index, not the stored position.
+    question_id: q.id, number: index + 1,
+    prompt: q.prompt, type: q.type, given: g || null, expected: correctRaw || null,
+    correct: ok, points: Number(q.points) || 0,
+  };
+}
+
+/**
+ * An attempt with its per-question outcome for a reviewer. An attempt filed
+ * before D-144 has no frozen results: they are re-derived from its stored
+ * answers against the CURRENT key and SAID to be (`derived: true`) — the key
+ * may have moved since.
+ */
+export function attemptReview(db, id) {
+  const a = db.prepare(`SELECT a.*, c.title AS course_title, c.code AS course_code FROM training_test_attempts a
+    LEFT JOIN training_courses c ON c.id = a.course_id WHERE a.id = ?`).get(id);
+  if (!a) return null;
+  let derived = false;
+  let results = (() => { try { return a.results ? JSON.parse(a.results) : null; } catch { return null; } })();
+  if (!results) {
+    let answers = {};
+    try { answers = JSON.parse(a.answers || '{}'); } catch { answers = {}; }
+    const qs = db.prepare('SELECT * FROM training_questions WHERE test_id = ? ORDER BY position').all(a.test_id);
+    results = qs.map((q, i) => questionResult(q, answers[q.id], i));
+    derived = true;
+  }
+  const { answers: _a, results: _r, ...rest } = a;
+  return { ...rest, passed: !!a.passed, results, derived,
+    right: results.filter(r => r.correct).length, wrong: results.filter(r => !r.correct).length };
 }

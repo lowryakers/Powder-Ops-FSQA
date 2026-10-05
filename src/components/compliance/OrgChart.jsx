@@ -69,7 +69,7 @@ function PositionModal({ initial, parentTitle, allPositions, jobDescriptions, pe
                 a leaver kept their box. The free-text field survives below for
                 a contractor or an agency temp with no ReadyDoc account. */}
             <label className="block text-xs font-medium text-gray-700 mb-1">Person</label>
-            <select value={form.user_id || ''} onChange={e => set('user_id', e.target.value)}
+            <select value={form.user_id || ''} onChange={e => set('user_id', e.target.value)} data-position-person
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
               <option value="">— Vacant / not an account —</option>
               {(people || []).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
@@ -399,11 +399,21 @@ export default function OrgChart() {
           <p className="text-sm font-medium text-amber-900">
             {data.unplaced.length} {data.unplaced.length === 1 ? 'person is' : 'people are'} not on the chart
           </p>
-          <p className="mt-0.5 text-xs text-amber-800">
-            {data.unplaced.map(u => u.name).join(', ')}
+          {/* EACH NAME OPENS "ADD POSITION" FOR THAT PERSON (D-144). "All new
+              employees must be addable to the Org Chart" — the list named them
+              and left the office to retype each one into a blank form. */}
+          <p className="mt-1 flex flex-wrap gap-1.5">
+            {data.unplaced.map(u => canEdit ? (
+              <button key={u.id} type="button" data-place-person={u.id}
+                onClick={() => setAdding({ _defaultParent: '', parentTitle: null, user_id: u.id, name: u.name, department: DEPARTMENTS.includes(u.department) ? u.department : undefined })}
+                className="text-xs px-2 py-0.5 rounded-full border border-amber-300 bg-white text-amber-900 hover:bg-amber-100">
+                {u.name} <span className="text-amber-600">+ position</span>
+              </button>
+            ) : <span key={u.id} className="text-xs text-amber-800">{u.name}</span>)}
           </p>
           <p className="mt-1 text-[11px] text-amber-700">
-            Add a position for each, or link them to one that already exists.
+            {canEdit ? 'Click a name to add a position for them, or edit an existing position to link them to it.'
+              : 'Somebody with the Org Chart edit grant places them.'}
           </p>
         </div>
       )}
@@ -432,7 +442,7 @@ export default function OrgChart() {
 
       {(editing || adding) && (
         <PositionModal
-          initial={editing || { _defaultParent: adding._defaultParent }}
+          initial={editing || { _defaultParent: adding._defaultParent, user_id: adding.user_id, name: adding.name, department: adding.department }}
           parentTitle={adding?.parentTitle}
           allPositions={positions}
           jobDescriptions={jobDescriptions}

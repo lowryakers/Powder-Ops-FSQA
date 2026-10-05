@@ -8,9 +8,9 @@
 // It reads and submits through the WORK ORDER, never /api/training: the
 // assignment is the authorization (see pm.js), and the floor has no Training
 // module. The answer key never comes down.
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { apiFetch, apiPost } from '../../hooks/useApi';
-import { GraduationCap, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { GraduationCap, Loader2, CheckCircle2, XCircle, Languages } from 'lucide-react';
 
 const S = {
   take: { en: 'Take the test', es: 'Tomar el examen' },
@@ -31,10 +31,21 @@ const S = {
   close: { en: 'Close', es: 'Cerrar' },
   for: { en: 'This records the training for', es: 'Esto registra la capacitación de' },
   type_answer: { en: 'Your answer', es: 'Su respuesta' },
+  all_right: { en: 'Every question was right.', es: 'Todas las preguntas estaban correctas.' },
+  look_again: { en: 'Questions to look at again:', es: 'Preguntas para repasar:' },
+  machine: { en: '', es: 'Traducción automática: la pregunta en inglés es la que se califica.' },
+  translating: { en: '', es: 'Traduciendo…' },
+  no_mt: { en: '', es: 'No hay traducción para esta pregunta: se muestra en inglés.' },
 };
 const tr = (lang, k) => (S[k] || {})[lang] || (S[k] || {}).en || k;
 
-export default function TrainingTest({ workOrderId, lang = 'en', onDone }) {
+export default function TrainingTest({ workOrderId, lang: initialLang = 'en', onDone }) {
+  // THE TEST CARRIES ITS OWN LANGUAGE SWITCH (D-144). It took the language of
+  // the screen around it, and the Task Center has no switch at all — so a
+  // Spanish reader opening an assigned course at a desk got English with no
+  // way out. The switch is here, on the test, whichever screen opened it.
+  const [lang, setLang] = useState(initialLang);
+  const [mt, setMt] = useState({});          // questionId -> { prompt, options } machine translation
   const [open, setOpen] = useState(false);
   const [test, setTest] = useState(null);
   const [answers, setAnswers] = useState({});
@@ -89,6 +100,11 @@ export default function TrainingTest({ workOrderId, lang = 'en', onDone }) {
         <p className="text-sm text-gray-700">
           {tr(lang, 'you_scored')} <span className="font-bold">{result.score}%</span> · {tr(lang, 'need')} {result.passing_score}%
         </p>
+        {Array.isArray(result.missed) && (
+          <p className="text-xs text-gray-700" data-test-missed={result.missed.join(',')}>
+            {result.missed.length ? <>{tr(lang, 'look_again')} <span className="font-semibold">{result.missed.join(', ')}</span></> : tr(lang, 'all_right')}
+          </p>
+        )}
         <p className="text-xs text-gray-600">{tr(lang, ok ? 'filed' : 'retry')}</p>
         {ok ? (
           <button type="button" onClick={() => { setOpen(false); onDone?.(result); }} className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-semibold">{tr(lang, 'close')}</button>
@@ -101,19 +117,56 @@ export default function TrainingTest({ workOrderId, lang = 'en', onDone }) {
 
   if (!test) return <p className="text-sm text-red-700">{error}</p>;
 
+  return <TestBody {...{ test, i, setI, answers, setAnswers, lang, setLang, mt, setMt, error, busy, submit }} />;
+}
+
+/**
+ * The question on screen. A question the plant translated shows the plant's
+ * Spanish. One it did not is offered a MACHINE translation, labelled as one on
+ * the question itself: the graded question is still the English, and the
+ * answer recorded is still the English option — only the label moves.
+ */
+function TestBody({ test, i, setI, answers, setAnswers, lang, setLang, mt, setMt, error, busy, submit }) {
   const q = test.questions[i];
+  const needsMt = lang === 'es' && !q.prompt_es && !mt[q.id];
+  useEffect(() => {
+    if (!needsMt) return undefined;
+    let stale = false;
+    const texts = [q.prompt, ...(q.options || [])];
+    apiPost('/ai/translate-content', { texts, lang: 'es' })
+      .then((r) => {
+        if (stale) return;
+        // Translation off on this server: SAY so, never leave "translating…".
+        if (!Array.isArray(r?.translations) || r.enabled === false) { setMt((m) => ({ ...m, [q.id]: { none: true } })); return; }
+        const [prompt, ...options] = r.translations;
+        setMt((m) => ({ ...m, [q.id]: { prompt, options } }));
+      })
+      .catch(() => setMt((m) => ({ ...m, [q.id]: { none: true } })));
+    return () => { stale = true; };
+  }, [needsMt, q, setMt]);
+  const machineRaw = lang === 'es' && !q.prompt_es ? mt[q.id] : null;
+  const machine = machineRaw && !machineRaw.none ? machineRaw : null;
   // The floor reads Spanish; the plant's own translation is on the question
   // where there is one, and a machine-translated safety question is not the
   // question anybody signed.
-  const prompt = (lang === 'es' && q.prompt_es) ? q.prompt_es : q.prompt;
-  const options = (lang === 'es' && q.options_es?.length) ? q.options_es : q.options;
+  const prompt = (lang === 'es' && q.prompt_es) ? q.prompt_es : (machine?.prompt || q.prompt);
+  const options = (lang === 'es' && q.options_es?.length) ? q.options_es : (machine?.options?.length === (q.options || []).length ? machine.options : q.options);
   const answered = test.questions.filter(x => answers[x.id] !== undefined && answers[x.id] !== '').length;
 
   return (
     <div className="rounded-lg border border-powder-200 bg-white p-3 space-y-3" data-training-test>
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold text-gray-700">{test.course?.code ? `${test.course.code} — ` : ''}{test.title || test.course?.title}</p>
-        <span className="text-[11px] text-gray-400">{i + 1} {tr(lang, 'of')} {test.questions.length}</span>
+        <span className="flex items-center gap-2">
+          <span className="inline-flex rounded-md border border-gray-200 overflow-hidden text-[11px]" data-test-lang>
+            <Languages size={12} className="mx-1 self-center text-gray-400" />
+            {['en', 'es'].map(l => (
+              <button type="button" key={l} onClick={() => setLang(l)} data-test-lang-btn={l}
+                className={`px-1.5 py-0.5 font-semibold ${lang === l ? 'bg-powder-600 text-white' : 'text-gray-500'}`}>{l.toUpperCase()}</button>
+            ))}
+          </span>
+          <span className="text-[11px] text-gray-400">{i + 1} {tr(lang, 'of')} {test.questions.length}</span>
+        </span>
       </div>
       {test.for && <p className="text-[11px] text-gray-500">{tr(lang, 'for')} <span className="font-medium text-gray-700">{test.for}</span></p>}
       <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
@@ -121,6 +174,9 @@ export default function TrainingTest({ workOrderId, lang = 'en', onDone }) {
       </div>
 
       <p className="text-sm font-medium text-gray-900" data-test-prompt>{prompt}</p>
+      {lang === 'es' && !q.prompt_es && (
+        <p className="text-[11px] text-amber-700" data-test-machine={machine ? 'machine' : machineRaw?.none ? 'none' : 'pending'}>{machine ? tr(lang, 'machine') : machineRaw?.none ? tr(lang, 'no_mt') : tr(lang, 'translating')}</p>
+      )}
       {q.type === 'short_answer' ? (
         <input value={answers[q.id] ?? ''} onChange={e => setAnswers(a => ({ ...a, [q.id]: e.target.value }))}
           placeholder={tr(lang, 'type_answer')} data-test-input

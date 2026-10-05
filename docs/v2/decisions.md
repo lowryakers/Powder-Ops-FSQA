@@ -6034,3 +6034,63 @@ keywords, scrollbars that stay on screen while he scrolls, and every field edita
 **Verified:** `verify:pogrid` (20, live and a browser at 1280 with 73 rows; in `verify:all`). The control is
 `main`: it fails 8 on the API half and cannot reach the browser half. `verify:payactions` (31),
 `verify:payroster` (64) and `verify:payreviews` (29), the other `DataGrid` screen, stay green.
+
+## D-144 — The employee's test: no typed score, a language switch on the test, and every attempt question by question (2026-10-05)
+
+**Reported by Daniela on 28 September.** Five items. Three are fixed, two are partly fixed and partly a decision
+for the plant.
+
+**1. The trainee was asked to type a percentage under the test. Fixed.** The completion form for a course with
+a test rendered a "Test score (%)" box beside the "Take the test" button. The intent was to let somebody record
+a test taken on paper. What it did was invite the person who just took the test to type a number, and the
+server accepted it: **the control (`main`) shows a trainee typing 100 and closing their own course with it.**
+- The trainee now sees one sentence: the score is worked out when the test is submitted and shown at the end.
+- **The server refuses a typed score from the assignee** on a test course (403 `self_score_refused`), whatever
+  any screen offers.
+- A supervisor recording a paper test **for somebody else** still can. The test route closes the task by itself
+  on a pass, as it always did.
+
+**2. The reviewer could not see which questions were right or wrong. Fixed.** Every attempt has stored its
+answers since tests existed, and nothing ever showed them.
+- `gradeTestAttempt` now **freezes the per-question outcome on the attempt** (`training_test_attempts.results`):
+  the given answer, the expected answer **as the key stood that day**, and right or wrong. This is the
+  `atp_limit` rule: a test re-written later does not re-grade history.
+- `questionResult()` is the one grading rule, used by the grader and by the review.
+- **Training → Test answers** lists every attempt, failed ones included, newest first. Each opens question by
+  question. A training record from a test carries an **Answers** link.
+- An attempt from before this change is re-graded against today's key and **says so**.
+- The trainee is told **which question numbers** to look at again, never the answers, or the retake is a copy of
+  the key.
+
+**3. Translation was not reachable from the test. Fixed.** The test took its language from the screen around
+it, and the Task Center has no language switch, so a Spanish reader at a desk got English with no way out.
+- **The test carries its own EN/ES switch.**
+- A question the plant translated shows the plant's Spanish.
+- A question it did not is offered a **machine translation, labelled as one on the question**: the English is the
+  question graded, and the recorded answer is still the English option. With translation off on the server, the
+  test says so rather than "translating…" for ever.
+- *A decision for the plant:* whether a safety test should ever be shown in machine translation. The label
+  states the risk; translating the tests is the real answer.
+
+**4. Jose Luna's assignment "bounced" with "no Operator View". The likely cause predates the fix.** Daniela
+reported this on 28 September, and **D-124 (30 September) gave every working account Operator View**. The
+"no task list" warning she saw was the D-105 reach report on an account without it.
+- **A residual next door is fixed:** a person picked by *name* lands on their account through the D-074 trigger,
+  but the reach report read the request's empty `user_id`. It told the office that person had no task list, and
+  skipped their DM, while the card was on their list. It now reads the account the work order landed on.
+- `assignmentReach` also never selected `is_external`, so a client account read as holding Operator View.
+- His password reset is an admin action (C list).
+
+**5. A job description for review and signature only, and new employees on the Org Chart.**
+- **Org Chart: fixed.** The chart already listed who is not on it, as plain text. Each name is now a button that
+  opens Add Position with that person filled in.
+- **A job description for review and signature only is a product decision, not built.** What exists today:
+  Onboarding → **Employee documents** (D-077) sends any PDF, a JD included, to an account to read and sign,
+  password-gated, with the signed copy filed. A training course without a test instead asks "who delivered it".
+  The options are a "read and sign" completion on a course, or a "Send for signature" button on a JD in
+  Controlled Documents that uses the D-077 path. Either is a choice about which record a signed JD is.
+
+**Verified:** `verify:trainingtest` (21, live and a browser at 390 and 1280; in `verify:all`). **The control is
+`main` and fails 4, then cannot continue**: the trainee's typed 100 closes the course before the test is taken.
+`verify:checkrecords` (49), `verify:trainingassign` (94), `verify:forkliftcert` (61), `verify:trainingpeople` (45)
+and `verify:defaultaccess` (29) stay green.

@@ -3656,6 +3656,17 @@ TrainingPanel.jsx is the wizard (admin-only **Training Log** button beside Impor
   −3 penalty when only one side of the pair mentions cleaning. Words shorter than 3 chars ("wi") are noise.
   The old `filter(w => w.length > 3)` also made **"GMP" unmatchable** — the one heading named after its course.
 
+## The employee's test: no typed score, its own EN/ES switch, every attempt question by question (D-144)
+`TrainingTest.jsx` carries an EN/ES switch; a question with no plant Spanish gets a LABELLED machine translation
+(the English is graded). **The trainee is never asked for a score** — `CheckFields` shows a sentence instead, and
+`complete-and-recur` 403s `self_score_refused` on a typed score from the assignee (a supervisor recording a paper
+test for someone else still can). `training_test_attempts.results` freezes each question's outcome and the key
+as it stood; `questionResult()` / `attemptReview()` in `training-records.js`; **Training → Test answers**
+(`GET /training/attempts[/:id]`) and an Answers link on a record. The trainee is told the missed question
+NUMBERS, never answers. `assignTraining` reads back the account the trigger resolved (a by-name pick read as
+"no task list"). Org Chart: each unplaced person is a button into Add Position. `verify:trainingtest` (21;
+control fails 4 then stops).
+
 ## A forklift certification is TWO halves and a certificate (D-098)
 `server/practical-evaluations.js` (the form, PURE), `training_practical_evaluations` (db.js),
 `server/training-certification.js` (the DERIVED answer), `server/certificate-pdf.js`, the routes on

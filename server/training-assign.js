@@ -122,7 +122,12 @@ export function assignTraining(db, {
         // one person's certification on everybody's list.
         null,
         course.id, person.name, person.user_id || null);
-      created.push({ work_order_id: id, name: person.name, user_id: person.user_id || null, due_date: due });
+      // THE ACCOUNT THE TASK LANDED ON, read back (D-144). A person picked by
+      // name only is resolved to an account by the D-074 trigger on insert;
+      // reporting the request's empty user_id told the office that person had
+      // no task list — and skipped their DM — when the card was on their list.
+      const landed = db.prepare('SELECT assigned_to_id FROM work_orders WHERE id = ?').get(id)?.assigned_to_id || null;
+      created.push({ work_order_id: id, name: person.name, user_id: person.user_id || landed, due_date: due });
     }
   })();
 

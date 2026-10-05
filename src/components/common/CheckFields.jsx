@@ -4,6 +4,7 @@
 // the server then rejects. Rendered by the Operator View (phone, EN/ES) and
 // the Task Center's CompleteForm; a third copy is how the two screens start
 // asking different questions about one check.
+import { useAuth } from '../../hooks/useAuth';
 import { useState } from 'react';
 import { missingForCheck, GMP_WALK_ANSWERS, REVIEW_ANSWERS } from '../../../shared/check-forms.js';
 
@@ -32,7 +33,8 @@ const S = {
   train_h: { en: 'Training', es: 'Capacitación' },
   train_for: { en: 'This records the training for', es: 'Esto registra la capacitación de' },
   score: { en: 'Test score (%)', es: 'Puntaje del examen (%)' },
-  score_hint: { en: 'Take the test here, or enter the score from the test that was taken.', es: 'Tome el examen aquí, o ingrese el puntaje del examen que se tomó.' },
+  score_hint: { en: 'Only for a test taken on paper: enter the score from it.', es: 'Solo para un examen hecho en papel: ingrese su puntaje.' },
+  self_test: { en: 'Your score is worked out when you submit the test above, and shown to you at the end. There is nothing to type here.', es: 'Su puntaje se calcula al enviar el examen de arriba y se le muestra al final. Aquí no hay nada que escribir.' },
   trainer: { en: 'Who delivered the training', es: 'Quién impartió la capacitación' },
   method: { en: 'How (optional)', es: 'Cómo (opcional)' },
   method_person: { en: 'In person', es: 'En persona' },
@@ -292,6 +294,14 @@ function PullFields({ form, v, set, lang }) {
  * a supervisor closing it out must be able to see that before they press it.
  */
 function TrainingFields({ form, v, set, lang, assignee }) {
+  // THE TRAINEE IS NEVER ASKED FOR A SCORE (D-144). A test grades itself; a
+  // box under it inviting the person who took it to type a percentage is a
+  // self-reported result beside a graded one, and Daniela found employees
+  // filling it in. The paper route stays for somebody recording a test taken
+  // on paper FOR the trainee — a supervisor — and the server refuses a typed
+  // score from the assignee whatever this screen shows.
+  const { user } = useAuth() || {};
+  const self = !!(user?.name && assignee && user.name.toLowerCase() === String(assignee).toLowerCase());
   return (
     <div className="bg-white rounded-lg border border-green-200 p-2 space-y-2" data-training-check>
       <p className="text-xs font-semibold text-gray-700">
@@ -300,7 +310,9 @@ function TrainingFields({ form, v, set, lang, assignee }) {
       {assignee && (
         <p className="text-[11px] text-gray-500" data-training-for>{tr(lang, 'train_for')} <span className="font-medium text-gray-700">{assignee}</span></p>
       )}
-      {form.has_test ? (
+      {form.has_test && self ? (
+        <p className="text-[11px] text-gray-600" data-training-self>{tr(lang, 'self_test')}</p>
+      ) : form.has_test ? (
         <>
           <label className="block">
             <span className="text-[11px] text-gray-600">{tr(lang, 'score')}</span>

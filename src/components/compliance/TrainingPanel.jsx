@@ -4,6 +4,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import { GraduationCap, Plus, Upload, Search, X, ExternalLink, Edit2, Paperclip, AlertTriangle, Clock, CheckCircle, Sparkles, Trash2, FileQuestion, Users, Video, FileText, Loader2 } from 'lucide-react';
 import { DEPARTMENT_VALUES } from '../../constants/departments';
+import TrainingAttemptsPanel, { AttemptReview } from './TrainingAttempts.jsx';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import TrainingPeoplePanel from './TrainingPeoplePanel.jsx';
 import TrainingDocumentsPanel from './TrainingDocumentsPanel.jsx';
@@ -1644,6 +1645,9 @@ export default function TrainingPanel() {
     { id: 'due', label: 'Retraining Due' },
     { id: 'courses', label: 'Courses' },
     { id: 'records', label: 'Records' },
+    // Each attempt question by question (D-144): the reviewer could see a
+    // score and nothing behind it.
+    { id: 'attempts', label: 'Test answers' },
     ...(practicalCourses.length ? [{ id: 'certifications', label: 'Operator certification' }] : []),
   ], [practicalCourses]);
 
@@ -1652,6 +1656,12 @@ export default function TrainingPanel() {
   // to the Records tab always landed on the matrix.
   const { tabs: trainingTabs, tab: view, setTab: setView } = useModuleTabs({ id: 'training', tabs: TABS });
   const [certCourseId, setCertCourseId] = useState('');
+  const [reviewAttempt, setReviewAttempt] = useState(null);
+  // A record that came from an in-app test opens its answers.
+  const answersLink = (r) => r.test_attempt_id
+    ? <button type="button" onClick={() => setReviewAttempt(r.test_attempt_id)} data-record-answers={r.id}
+        className="text-xs text-powder-700 hover:underline">Answers</button>
+    : null;
   // One definition each, rendered by the table row AND the phone card, so the
   // two layouts cannot disagree about a record's state or where its paper is.
   const duePill = (d) => d.overdue
@@ -1794,6 +1804,9 @@ export default function TrainingPanel() {
       {/* Due */}
       {view === 'people' && <TrainingPeoplePanel />}
 
+      {view === 'attempts' && <TrainingAttemptsPanel />}
+      <AttemptReview attemptId={reviewAttempt} onClose={() => setReviewAttempt(null)} />
+
       {view === 'documents' && <TrainingDocumentsPanel onCoursesChanged={refreshAll} />}
 
       {view === 'due' && (
@@ -1878,8 +1891,9 @@ export default function TrainingPanel() {
                   { label: 'Completed', value: r.completion_date },
                   { label: 'Score', value: r.score != null ? `${r.score}%` : null },
                 ]}
-                actions={(evidenceLink(r) || canEdit) ? <>
+                actions={(evidenceLink(r) || answersLink(r) || canEdit) ? <>
                   {evidenceLink(r)}
+                  {answersLink(r)}
                   {canEdit && <button onClick={() => setCompletion(r)} className="text-xs text-gray-500 hover:text-powder-600 inline-flex items-center gap-1"><Edit2 size={12} /> Edit</button>}
                 </> : null} />
             ))}
@@ -1904,7 +1918,8 @@ export default function TrainingPanel() {
                           different field from the hand-attached document_url,
                           and the reason this column used to read "—" on rows
                           whose paper was stored all along. */}
-                      {evidenceLink(r) || <span className="text-gray-300 text-xs">—</span>}
+                      {evidenceLink(r) || answersLink(r) || <span className="text-gray-300 text-xs">—</span>}
+                      {evidenceLink(r) && answersLink(r) ? <span className="ml-2">{answersLink(r)}</span> : null}
                     </td>
                     <td className="px-4 py-2 text-right">
                       {canEdit && <button onClick={() => setCompletion(r)} className="p-1.5 text-gray-400 hover:text-powder-600 rounded-lg"><Edit2 size={14} /></button>}

@@ -4113,6 +4113,9 @@ function runMigrations() {
   // marks a revision as a typo/formatting fix that should NOT trigger retraining.
   addColumnIfMissing('training_courses', 'retrain_on_doc_change', 'INTEGER NOT NULL DEFAULT 1');
   addColumnIfMissing('training_records', 'sop_revision', 'TEXT');
+  // Per-question outcome, frozen at grading (D-144): which questions were
+  // right, what was given and what the key said THEN.
+  addColumnIfMissing('training_test_attempts', 'results', 'TEXT');
   // The scanned test itself, kept as the EVIDENCE behind the completion — an
   // auditor asking "show me he passed it" wants the paper, not a row.
   // evidence_text is the PDF's own text layer where it has one; a photographed
