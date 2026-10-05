@@ -5957,3 +5957,50 @@ The fixtures are live-shaped:
 
 **The control is `main` on that state and fails 15**; its Operator View still lists both "(Warehouse)"
 checklists. `verify:checklistoverlap` (19) and `verify:pmpause` (18) pass on the new resolver.
+
+## D-142 — Every active schedule is either raising work or says why it is not (2026-10-05)
+
+**Reported by Adam on 2 October:** daily forklift tasks are fine, weekly ones are not generating, and he was unsure
+about monthly and annual.
+
+**What was checked.** Nothing in the code stops a truck's non-daily schedule:
+- The generator (`markMissedWorkOrders`, run by housekeeping) raises a card for every active schedule on an
+  in-service machine with nothing outstanding, at any cadence.
+- `createNextWorkOrder` advances weekly by 7, monthly by 30, and so on.
+- D-138, D-139 and D-141 touch only DAILY schedules.
+- The truck checklist pass (D-123) writes only the daily ones.
+
+`verify:pmgeneration` builds a forklift carrying all five cadences, titled the way live titles them ("Weekly PM —
+0009 ForkLift Reach"). Every cadence gets a card, the weekly is on the warehouse Operator View, and it is on the
+Task Center's Weekly tab. **So the live gap is in the live data, and the live database cannot be read from here.**
+
+**What the code could not do was say so.** The generator skips three kinds of schedule without a word. Each skip
+is correct, and each is indistinguishable from a generator that has stopped:
+- a machine not in service;
+- an equipment row that no longer exists (the generator's inner join drops the schedule);
+- a title another schedule on the same machine already has a card out for (the same-job guard).
+
+**Decided:**
+- **`server/pm-generation.js` → `generationSweep(db)`** is the one answer, derived on every read. For each
+  active schedule it gives `raising` (its outstanding card and due date) or `equipment_missing` /
+  `equipment_inactive` / `same_job` (pointing at the card that covers it) / `pending` (housekeeping will raise it
+  within five minutes). It also rolls up by cadence. It reads the same three conditions as the generator, in the
+  same order.
+- `GET /pm/schedules/generation` runs housekeeping first, so `pending` means what it says.
+- **Recurring Schedules → "Raising work"** shows each cadence as *N of M* and lists every schedule that is not
+  raising, with its reason in words. The boot log names the skipped ones too.
+- **Found in passing, and stated rather than changed:** the PM auto-seed matched `pm-seed-data.json` to
+  `seed-data.json` by asset number, and the two files disagree on **369 of 587 rows**, every truck included. A
+  **fresh database or a restore** therefore comes up with no forklift PMs at all, and the seed now logs that as a
+  WARNING naming the machines. It does not affect the live database, which was seeded long ago. Re-matching the
+  seed would change the schedule set under every verify, so it is left as a decision.
+
+**What to read on live** (the B list): Recurring Schedules → Raising work, under Weekly. If the forklift weekly
+schedules are absent from the count, they do not exist on live. "Create schedules from these tasks" makes them
+from the truck's written Weekly tasks. If they are listed with a reason, the reason is the fix. If they are
+raising, the card is due later in the week and sits under "This week" or "Later" on the Operator View, not
+"Today".
+
+**Verified:** `verify:pmgeneration` (21, live, a reboot and a browser at 1280; in `verify:all`). **The control is
+`main` and fails 13**: there is no sweep to ask, and the strip does not exist. Its Operator View and Task Center
+assertions pass on `main` too, which is the honest finding that `main`'s generator does raise the weekly.

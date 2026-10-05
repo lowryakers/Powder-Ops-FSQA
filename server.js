@@ -130,6 +130,7 @@ import { seedDilutionLog } from './server/dilution-log-seed.js';
 import { retireDailyPreOp } from './server/preop-retire.js';
 import { repairChecklistOverlap, consolidatedChecklists } from './server/pm-coverage.js';
 import { retireDailyScalePMs, retireSummary } from './server/pm-pause.js';
+import { generationSweep } from './server/pm-generation.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
 import { seedProductionEntries, seedEodTemplates } from './server/production-seed.js';
 import { seedTrainingCourses, seedWorkInstructionCourses } from './server/training-seed.js';
@@ -358,10 +359,15 @@ if (pmCount === 0 && db.prepare('SELECT COUNT(*) as c FROM equipment').get().c >
     `);
     let seededPM = 0;
     let seededWO = 0;
+    // A seed row naming an asset the register does not hold is SKIPPED — and
+    // that used to be silent. The two seed files disagree on asset numbers for
+    // 369 of 587 rows (every truck among them), so a fresh database or a
+    // restore came up with no forklift PMs at all and said nothing (D-142).
+    const unmatched = new Map();
     const pmTx = db.transaction(() => {
       for (const pm of pmData) {
         const equipId = eqIdMap[pm.equipment_asset_id];
-        if (!equipId) continue;
+        if (!equipId) { unmatched.set(pm.equipment_name, (unmatched.get(pm.equipment_name) || 0) + 1); continue; }
         const pmId = uuid();
         const steps = JSON.stringify(pm.tasks);
         insertPM.run(pmId, equipId, pm.title, null, pm.frequency, steps);
@@ -375,6 +381,11 @@ if (pmCount === 0 && db.prepare('SELECT COUNT(*) as c FROM equipment').get().c >
     });
     pmTx();
     console.log(`[seed] Auto-seeded ${seededPM} PM schedules and ${seededWO} work orders`);
+    if (unmatched.size) {
+      const n = [...unmatched.values()].reduce((a, b) => a + b, 0);
+      console.warn(`[seed] WARNING ${n} PM seed row(s) on ${unmatched.size} machine(s) name an asset the register does not hold and were NOT seeded: `
+        + [...unmatched.keys()].slice(0, 12).join(', ') + (unmatched.size > 12 ? `, +${unmatched.size - 12} more` : ''));
+    }
   } catch (e) {
     console.warn('[seed] Could not seed PM schedules:', e.message);
   }
@@ -1123,6 +1134,19 @@ try {
     console.log(`[migrate] Checklist overlap: "${r.title}" — ${r.removed.length} line(s) removed (each machine has its own daily schedule)`
       + (r.paused ? `, checklist paused, ${r.cancelled} open card(s) cancelled` : `, ${r.kept} line(s) kept`));
     for (const x of r.removed) console.log(`[migrate]   ${x.line} → ${x.own_schedule.join(', ')}`);
+  }
+  // An active schedule the generator skips is NAMED at boot (D-142) — the same
+  // sweep Recurring Schedules shows, so the deploy log says it too.
+  {
+    const sw = generationSweep(db);
+    const named = sw.not_raising.filter(s => s.state !== 'pending');
+    if (named.length) {
+      const by = {};
+      for (const s of named) by[s.state] = (by[s.state] || 0) + 1;
+      console.warn(`[pm] ${named.length} active schedule(s) raise nothing: `
+        + Object.entries(by).map(([k, n]) => `${n} ${k.replace(/_/g, ' ')}`).join(', ')
+        + ' — see Recurring Schedules → Raising work');
+    }
   }
   // REPORTED, NEVER UNFOLDED: a room checklist still carrying QA's or
   // Cleaning's work whose per-point schedules are NOT running. Completing it

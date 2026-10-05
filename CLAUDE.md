@@ -1347,6 +1347,15 @@ checklists scanned, **warns on zero matches** and on every line resolving to not
 other machines' lines is re-hung off the scale. `verify:scalepmretire` (31; fixtures live-shaped, v1 marker
 pre-set; control fails 15).
 
+## Every active schedule is raising work or names why not (D-142, `server/pm-generation.js`)
+`generationSweep(db)` → `raising` | `equipment_missing` | `equipment_inactive` | `same_job` | `pending`, with a
+per-cadence roll-up; `GET /pm/schedules/generation` (runs housekeeping first) and the **Raising work** strip on
+Recurring Schedules. The generator skips those three silently and correctly; this is where the skip is named.
+Asked because Adam saw no forklift weekly cards: the code raises every cadence for a truck (asserted), so the
+live cause is data the sweep will show. **The PM seed silently dropped 369 of 587 rows** (the two seed files
+disagree on asset numbers, every truck included); a fresh database now WARNS with the machine names.
+`verify:pmgeneration` (21; control fails 13).
+
 ## A paused schedule says what it left behind (D-012 → D-055)
 Pausing a PM schedule cascades nothing: the tasks it already raised stay open or missed, nobody completes
 them because the work is recorded elsewhere, and the floor sees the retirement as never having happened —

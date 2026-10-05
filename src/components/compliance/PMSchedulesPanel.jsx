@@ -37,6 +37,55 @@ const FREQUENCIES = [
 const freqLabel = (v) => FREQUENCIES.find(f => f.value === v)?.label || v || '—';
 
 /**
+ * Which active schedules are raising work, per cadence, and why any are not
+ * (D-142). The generator skips a schedule whose machine is out of service,
+ * whose equipment row is gone, or whose title matches a card another schedule
+ * on the machine already has — all correct, and all silent until this strip.
+ * Every figure is `.length` of the rows the server returned.
+ */
+function GenerationSweep({ refreshKey }) {
+  const { data } = useApiGet('/pm/schedules/generation', [refreshKey]);
+  const [open, setOpen] = useState(false);
+  if (!data) return null;
+  const order = ['daily', 'weekly', 'biweekly', 'monthly', 'quarterly', 'semi_annual', 'annual'];
+  const freqs = order.filter(f => data.by_frequency?.[f]);
+  const silent = data.not_raising || [];
+  const tone = silent.some(s => s.state !== 'pending') ? 'amber' : 'gray';
+  return (
+    <div className={tone === 'amber' ? 'bg-amber-50 border border-amber-200 rounded-xl p-3' : 'bg-white border border-gray-200 rounded-xl p-3'} data-generation-sweep>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+        <span className="font-semibold text-gray-900">Raising work</span>
+        {freqs.map(f => {
+          const r = data.by_frequency[f];
+          return (
+            <span key={f} className="text-gray-700" data-sweep-freq={f}>
+              {freqLabel(f)}: <span className="tabular-nums">{r.raising} of {r.active}</span>
+              {r.not_raising > 0 && <span className="text-amber-700 font-medium"> · {r.not_raising} not</span>}
+            </span>
+          );
+        })}
+        {silent.length > 0 && (
+          <button type="button" onClick={() => setOpen(o => !o)} className="ml-auto text-xs underline text-amber-800" data-sweep-toggle>
+            {open ? 'Hide' : `Why ${silent.length} ${silent.length === 1 ? 'is' : 'are'} raising nothing`}
+          </button>
+        )}
+      </div>
+      {open && (
+        <ul className="mt-2 space-y-1.5 text-sm" data-sweep-list>
+          {silent.map(s => (
+            <li key={s.id} className="text-gray-800" data-sweep-row={s.id} data-sweep-state={s.state}>
+              <span className="font-medium">{s.title}</span>
+              <span className="text-gray-500"> · {freqLabel(s.frequency_type)}{s.equipment_name ? ` · ${s.equipment_name}${s.asset_id ? ` #${s.asset_id}` : ''}` : ''}</span>
+              <span className="block text-[12px] text-amber-800">{s.reason}{s.blocking ? ` (“${s.blocking.title}”)` : ''}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
  * The team a schedule routes to, and the one person who owns it when there is
  * one. Rendered by BOTH the table row and the card, so the two layouts cannot
  * start describing one schedule differently.
@@ -276,6 +325,8 @@ export default function PMSchedulesPanel() {
           </div>
         </div>
       )}
+
+      <GenerationSweep refreshKey={raised} />
 
       {orphaned > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2">

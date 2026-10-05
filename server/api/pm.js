@@ -27,6 +27,7 @@ import { planStepSplit } from '../../shared/pm-step-split.js';
 import { personMatch, resolveUserId, withCurrentNames } from '../person-links.js';
 import { gradeTestAttempt } from '../training-records.js';
 import { closeScheduleWork, pauseReason } from '../pm-pause.js';
+import { generationSweep } from '../pm-generation.js';
 
 // The daily chemical dilution check is a TASK and a RECORD, and it files both.
 //
@@ -517,6 +518,17 @@ router.get('/schedules', (req, res) => {
   // spelling Settings moved past.
   res.json(withCurrentNames(db, db.prepare(sql).all(...params),
     { idCol: 'assigned_to_id', nameCol: 'assigned_to' }));
+});
+
+/**
+ * Which active schedules are raising work, and why the rest are not (D-142).
+ * Housekeeping runs first so "pending" means what it says. BEFORE
+ * '/schedules/:id', or Express reads "generation" as a schedule id.
+ */
+router.get('/schedules/generation', (_req, res) => {
+  const db = getDb();
+  runPmHousekeeping(db);
+  res.json(generationSweep(db));
 });
 
 /**
