@@ -1338,6 +1338,9 @@ pause that closed nothing left 38-day-old Daily Scale PM cards on screen.
   off room checklists (emptied ⇒ paused), cancels their cards. Scale Verification (D-117) is the daily check.
 - **A paused schedule is a decision**: the create-from-tasks planner counts it ("paused — resume it rather than
   create a second"); the setup step says "N paused", not "nothing generates them".
+- **A Quality Schedule pause or delete closes its cards too (D-148)** — `closeScheduleWork(db, id, { column:
+  'quality_schedule_id' })` (an allow-list of two columns). It had set `is_active = 0` and left them, D-139's bug in
+  the second generator. `verify:pmpause` (21; control fails 3).
 - Pre-Op stays paused (OBL-22); weekly+ scale PMs untouched. `verify:scalepmretire` (27, four boots + browser;
   control fails 15), `verify:pmpause` (18) asserts the new rule.
 
