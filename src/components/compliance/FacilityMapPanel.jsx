@@ -5,8 +5,11 @@ import { useCompactLayout } from '../../lib/useCompactLayout.js';
 import {
   Map as MapIcon, Layers, Printer, X, Droplets, Factory, Wrench, AlertTriangle,
   Bug, FlaskConical, CalendarDays, ExternalLink, Maximize2, Minimize2, ChevronRight,
-  Pencil, Save, RotateCcw,
+  Pencil, Save, RotateCcw, Link2, ImageDown,
 } from 'lucide-react';
+import CopyButton from '../common/CopyButton.jsx';
+import { copyText } from '../../lib/clipboard.js';
+import { fixtureLocations, locationsText } from '../../lib/fixtureLocations.js';
 import {
   PLAN, SPANS, ROOMS, ROOM_KINDS, FIXTURES, FIXTURE_KINDS, TRAPS, TRAPS_UNPLACED,
   ZONE_OF_ROOM, BPG_ZONE_AREAS,
@@ -103,6 +106,87 @@ function Fixture({ f }) {
   const w = f.type === 'foursink' ? 14 : 7;
   const h = f.type === 'foursink' ? 3.5 : 7;
   return <rect x={f.x - w / 2} y={f.y - h / 2} width={w} height={h} rx="1" fill={k.color} stroke={k.edge} strokeWidth="0.7" />;
+}
+
+// The number beside an extinguisher is the number on the copied list (D-152),
+// so "number 6" means the same thing on the phone and on the wall map.
+function FixtureNumber({ loc }) {
+  return (
+    <g data-fixture-number={loc.n} style={{ pointerEvents: 'none' }}>
+      <circle cx={loc.x + 10} cy={loc.y + 4} r="5.2" fill="#fff" stroke="#c2410c" strokeWidth="0.9" />
+      <text x={loc.x + 10} y={loc.y + 6.3} textAnchor="middle" fontSize="6.4" fontWeight="700" fill="#9a3412">{loc.n}</text>
+    </g>
+  );
+}
+
+// The map as a picture you can text: the SVG on screen, drawn onto a canvas.
+// No server round trip and no second drawing — whatever layers are on is what
+// the picture shows. A phone offers its share sheet; elsewhere it downloads.
+async function saveMapImage(svg, filename) {
+  const clone = svg.cloneNode(true);
+  const vb = svg.viewBox.baseVal;
+  const width = 2000;
+  const height = Math.round((width * vb.height) / vb.width);
+  clone.setAttribute('width', width); clone.setAttribute('height', height);
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  clone.setAttribute('font-family', 'Helvetica, Arial, sans-serif');
+  const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(clone)], { type: 'image/svg+xml' }));
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const i = new Image(); i.onload = () => resolve(i); i.onerror = reject; i.src = url;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = width; canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(img, 0, 0, width, height);
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+    const file = new File([blob], filename, { type: 'image/png' });
+    if (navigator.canShare?.({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: filename }); return; }
+      catch (e) { if (e?.name === 'AbortError') return; }
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  } finally { URL.revokeObjectURL(url); }
+}
+
+function ExtinguisherList({ list, svgRef }) {
+  const [linkDone, setLinkDone] = useState(false);
+  const link = `${window.location.origin}/?tab=facility-map&layer=extinguishers`;
+  const btn = 'inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50';
+  return (
+    <div data-extinguisher-list="" className="border border-orange-200 bg-orange-50/40 rounded-xl p-3 space-y-2">
+      <div className="flex items-start justify-between gap-2 flex-wrap">
+        <p className="text-sm font-semibold text-gray-800">Fire extinguishers — {list.length}</p>
+        <div className="flex flex-wrap gap-1.5">
+          <span data-copy-extinguishers=""><CopyButton getText={() => locationsText('Fire extinguisher', list)} label="Copy list" /></span>
+          <button type="button" data-copy-extinguisher-link="" className={btn}
+            onClick={async () => { if (await copyText(link)) { setLinkDone(true); setTimeout(() => setLinkDone(false), 2000); } }}>
+            <Link2 size={14} /> {linkDone ? 'Link copied' : 'Copy link'}
+          </button>
+          <button type="button" data-save-map-image="" className={btn}
+            onClick={() => svgRef.current && saveMapImage(svgRef.current, 'fire-extinguishers.png')}>
+            <ImageDown size={14} /> Save map image
+          </button>
+        </div>
+      </div>
+      <ol className="text-sm text-gray-800 grid sm:grid-cols-2 gap-x-6 gap-y-1">
+        {list.map(l => (
+          <li key={l.n} data-extinguisher={l.n} className="flex gap-2">
+            <span className="shrink-0 w-5 h-5 rounded-full border border-orange-600 text-orange-800 text-[11px] font-bold flex items-center justify-center bg-white">{l.n}</span>
+            <span>{l.text.charAt(0).toUpperCase()}{l.text.slice(1)}</span>
+          </li>
+        ))}
+      </ol>
+      <p className="text-xs text-gray-500">
+        Numbers match the map. Positions were read off the paper facility map and are approximate. The list and
+        the picture can go to anyone; the link opens this map and needs a ReadyDoc sign-in.
+      </p>
+    </div>
+  );
 }
 
 // The label column stacks above the value on a phone. A fixed 8rem label beside
@@ -369,7 +453,10 @@ export default function FacilityMapPanel({ user }) {
   // consuming it here would give the value to StrictMode's throwaway call.
   const [layers, setLayers] = useState(() => {
     const on = getParam('layer');
-    return { fixtures: false, traps: false, bpg: on === 'bpg', status: on !== 'bpg' };
+    // `?layer=extinguishers` (the Copy link on the extinguisher list, D-152)
+    // opens on the fixtures alone — cleaning colours behind them are noise.
+    const fix = on === 'extinguishers' || on === 'fixtures';
+    return { fixtures: fix, traps: false, bpg: on === 'bpg', status: on !== 'bpg' && !fix };
   });
   const [selected, setSelected] = useState(null);
   // Fit-to-width by default on a phone: seeing half a building is worse than
@@ -378,6 +465,7 @@ export default function FacilityMapPanel({ user }) {
   const [zoomed, setZoomed] = useState(false);
   const compact = useCompactLayout();
   const detailRef = useRef(null);
+  const svgRef = useRef(null);
   const { data, refresh } = useApiGet('/facility/map-status');
   const canEdit = user?.role === 'admin' || user?.role === 'supervisor';
 
@@ -396,6 +484,8 @@ export default function FacilityMapPanel({ user }) {
   const overrides = data?.overrides || {};
   const nameOf = (r) => overrides[r.id]?.label || r.label;
   const toggle = (k) => setLayers(l => ({ ...l, [k]: !l[k] }));
+  // Derived from the drawing and the plant's own room names, on every render.
+  const extinguishers = fixtureLocations('extinguisher', { rooms: ROOMS, fixtures: FIXTURES, plan: PLAN, nameOf });
 
   // A stable colour per BP&G zone so the same zone reads the same everywhere.
   const zoneColour = useMemo(() => {
@@ -473,7 +563,7 @@ export default function FacilityMapPanel({ user }) {
             {zoomed ? <><Minimize2 size={12} /> Fit</> : <><Maximize2 size={12} /> Zoom</>}
           </button>
         )}
-        <svg viewBox={`-6 -6 ${PLAN.width + 12} ${PLAN.height + 26}`}
+        <svg ref={svgRef} viewBox={`-6 -6 ${PLAN.width + 12} ${PLAN.height + 26}`}
           className={`w-full ${compact && !zoomed ? '' : 'min-w-[680px]'}`}
           role="img" aria-label="Facility floor plan">
           {/* building outline */}
@@ -503,6 +593,7 @@ export default function FacilityMapPanel({ user }) {
           ))}
 
           {layers.fixtures && FIXTURES.map((f, i) => <Fixture key={i} f={f} />)}
+          {layers.fixtures && extinguishers.map(l => <FixtureNumber key={l.n} loc={l} />)}
 
           {layers.traps && TRAPS.map(t => (
             <g key={t.n}>
@@ -514,6 +605,8 @@ export default function FacilityMapPanel({ user }) {
       </div>
 
       <Legend layers={layers} />
+
+      {layers.fixtures && <ExtinguisherList list={extinguishers} svgRef={svgRef} />}
 
       {/* Directly under the map on every layout: tap a room, the answer is the
           next thing you see rather than something below two legend blocks. */}

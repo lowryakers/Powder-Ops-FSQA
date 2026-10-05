@@ -6379,3 +6379,23 @@ MO in MRPEasy, the downloaded file is "wonky", and it should look like Form 442-
   form's (Form 442-01 · Rev*n* from the register · Page X of Y, counted truthfully).
 - `verify:deviationform` (40, live, reading the text back out of the downloaded PDF; in `verify:all`). **Control —
   `main`'s export — fails 25**, including the full-width product name printing as raw bytes.
+
+## D-152 — The extinguisher locations copy off the Facility Map as words, a link and a picture (2026-10-05)
+**Asked** (Lowry, with a fire-extinguisher inspector on site): "a simple way to export/copy then paste" the
+extinguisher locations from the Facility Map.
+- **The map held every position and said nothing about them** — eight orange marks, no number, no words, nothing to
+  paste. Nothing new is stored: `src/lib/fixtureLocations.js` (pure) DERIVES each line from the drawing — `FIXTURES`
+  for the point, `ROOMS` (with the plant's in-app renames) for the place — on every render.
+- **In / beside / nearest is decided by distance, not guessed.** Inside a space → "in"; within 24 map units →
+  "beside"; further → "nearest", because "beside Locked Gate" for an extinguisher in the far corner sends somebody to
+  the wrong wall. Every line also names where it sits in the building (north-west corner, east side…) — the one
+  description that survives a room being renamed.
+- **Numbered in drawing order, and the same number is drawn beside each mark**, so "number 6" means one thing on the
+  phone and on the map. The list says the positions are approximate — they were read off the paper map by eye.
+- Three ways out, all on the **Sinks & extinguishers** layer: **Copy list** (plain numbered text, through the shared
+  `copyText`), **Copy link** (`?tab=facility-map&layer=extinguishers`, which opens on the fixtures with the cleaning
+  colours off — needs a sign-in, and the screen says so), and **Save map image** (the on-screen SVG drawn to a PNG in
+  the browser; the share sheet on a phone, a download elsewhere). The inspector needs no account for the first or
+  the last.
+- `verify:extinguishers` (30, pure + live + browser at 1280 and 390; in `verify:all`). **Control — `main` — fails 4**,
+  stopping at the first assertion of every screen: there is no list to read.

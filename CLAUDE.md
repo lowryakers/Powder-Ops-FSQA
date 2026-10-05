@@ -4711,6 +4711,13 @@ deliberate scroller doesn't read as a bug. Run it on new screens.
 *behave* differently on a phone (CommsView's inline copy now imports it). A second copy is how a component
 and its own markup start disagreeing about which layout is on screen.
 
+### Extinguisher locations copy off the map (D-152)
+`src/lib/fixtureLocations.js` (`fixtureLocations`, `locationsText`, PURE) derives each extinguisher's place from
+`FIXTURES` + `ROOMS` (with in-app renames) — **in** a space, **beside** one within 24 units, otherwise **nearest**,
+plus where in the building. Numbered in drawing order and the number is drawn on the map. On the Sinks &
+extinguishers layer: Copy list, Copy link (`?layer=extinguishers`), Save map image (SVG → PNG in the browser).
+Nothing stored. `verify:extinguishers` (30, port 5068; control fails 4).
+
 ## Supplier Qualification (`server/api/suppliers.js` + `SuppliersPanel.jsx`)
 Who we buy from and whether they are qualified to sell it to us — SOP 404 V4, and the record NSF/ANSI
 455-2 **NC 4.3.1** found missing. Before this there was **no supplier record in ReadyDoc of any kind**:

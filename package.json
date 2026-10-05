@@ -110,6 +110,7 @@
     "verify:frozenscroll": "node scripts/verify-frozen-scroll.mjs",
     "verify:hourspaylink": "node scripts/verify-hours-pay-link.mjs",
     "verify:deviationform": "node scripts/verify-deviation-form.mjs",
+    "verify:extinguishers": "node scripts/verify-facility-extinguishers.mjs",
     "verify:trainingtest": "node scripts/verify-training-test.mjs",
     "verify:productionruns": "node scripts/verify-production-runs.mjs",
     "verify:apdropvendor": "node scripts/verify-ap-drop-vendor.mjs",
