@@ -40,7 +40,7 @@ import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import { storageEnabled, putObject, presignGet, getObjectBuffer } from '../storage.js';
 import { extractInvoiceText } from '../invoice-text.js';
-import { parseFinanceDocument } from '../ap-drop-parse.js';
+import { parseFinanceDocument, notAVendor } from '../ap-drop-parse.js';
 import { detectPartner } from '../ap-drop-route.js';
 import { dueDateFor } from '../partner-recon.js';
 import { moduleLevel } from '../module-access.js';
@@ -469,5 +469,31 @@ router.post('/:id/reparse', async (req, res) => {
   const parsed = await readAndApply(row.id, buf, row.content_type, row.filename);
   res.json({ parsed, drop: shape(loadDrop(getDb(), row.id), req.user) });
 });
+
+
+/**
+ * Drops already on file whose vendor the READER filled with something that is
+ * not a vendor — a markdown table header, a bare country (D-147). Only a value
+ * equal to the reader's own `parsed_json.fields.vendor` is touched: a vendor a
+ * person typed or corrected is theirs and is never cleared. Idempotent by
+ * construction (a cleared row no longer matches). Status is left alone — a
+ * drop with no vendor is still on the Outstanding list for a person to name.
+ */
+export function repairHeaderVendors(db) {
+  const rows = db.prepare(`SELECT id, vendor_name, parsed_json FROM ap_drops
+    WHERE vendor_name IS NOT NULL AND vendor_name != '' AND parsed_json IS NOT NULL
+      AND vendor_name = json_extract(parsed_json, '$.fields.vendor')`).all();
+  const cleared = [];
+  db.transaction(() => {
+    for (const r of rows) {
+      if (!notAVendor(r.vendor_name)) continue;
+      db.prepare("UPDATE ap_drops SET vendor_name = NULL, updated_at = datetime('now') WHERE id = ?").run(r.id);
+      event(db, r.id, null, 'vendor_cleared', { was: r.vendor_name, reason: 'The reader took a table header or a country for the vendor (D-147). A person names the vendor.' });
+      logAudit('system', 'update', 'ap_drop', r.id, { vendor_cleared: r.vendor_name, source: 'D-147' }, { vendor_name: r.vendor_name }, { vendor_name: null });
+      cleared.push({ id: r.id, was: r.vendor_name });
+    }
+  })();
+  return cleared;
+}
 
 export default router;

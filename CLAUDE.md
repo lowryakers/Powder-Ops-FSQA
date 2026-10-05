@@ -237,6 +237,11 @@ an Accounting tab, so it survives the AP/AR pages being slimmed. `ap@powder-ops.
   typing "M4" (a party) differently from a reference the reader found on page two (body text), and the
   columns cannot tell them apart afterwards.
 - Verified: `check:apdrop` (20), `check:aproute` (11), `verify:apdrop` (71), `verify:apdropui` (23 at 1280 + 360).
+- **A TABLE HEADER IS NEVER A VENDOR (D-147).** `notAVendor()` in `ap-drop-parse.js` refuses `|` markup, a row of
+  column headings, a bare country ("USA") and "City, ST" — the 14 Sep drop filed `| ACTIVITY | QTY | | RATE |…` as
+  its vendor. `repairHeaderVendors()` (boot) clears such a vendor ONLY where it equals the reader's own
+  `parsed_json.fields.vendor`; a typed vendor is never touched. `verify:apdropvendor` runs on **5062** — 5060/5061
+  are SIP ports Node's fetch refuses ("server did not come up").
 
 ## A private channel for a client, and everything that follows from its name (D-080)
 `shared/client-channels.js` (`isClientChannel`, `WIP_DEFINITION`, the guide text — imported by BOTH

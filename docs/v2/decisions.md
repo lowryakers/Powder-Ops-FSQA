@@ -6159,3 +6159,44 @@ verify spaces its runs and cleans minutes apart, as the floor does.
 fails 2 and cannot continue, because there is no run to start. These stay green: `verify:atp` (63),
 `verify:productionmirror` (16), `verify:eodchase` (54), `verify:preop` (50), `verify:mmrgate` (81),
 `npm run check`, and `check:obligations` (42 obligations · 14 landed · 23 open · 5 drafted).
+
+## D-147 — AP Drop: a table header is never a vendor; and the ATP column shows the limit a reading was graded against (2026-10-05)
+
+**A8. The 14 Sep drop for $27,180.49 filed "| ACTIVITY | QTY | | RATE | | AMOUNT |" as its vendor. The reader was
+the cause.** `findVendor` takes the first "namey" line and skips anything with a money figure, a date, a colon or
+a label word. An OCR pass that writes tables as markdown hands it a header row with none of those. The control
+(`main`) reproduces the live vendor string exactly.
+
+**Decided:**
+- **`notAVendor()` refuses** table markup (any `|`, or a separator line), a row made only of column headings
+  (ACTIVITY / QTY / RATE / AMOUNT / DESCRIPTION / …), a bare country ("USA", the earlier watch item) and a
+  "City, ST" line.
+- Markdown emphasis on a real name (`# **Acme**`) is stripped from the value, and the evidence keeps the line as
+  read.
+- With no vendor, the drop stays on the Outstanding list for a person to name. A wrong vendor reads as handled.
+  An empty one is a question.
+- **`repairHeaderVendors()` at boot clears the rows already on file**, but only where the stored vendor equals
+  the reader's own `parsed_json.fields.vendor` and fails the new test. A vendor a person typed is never touched,
+  and status is left alone. Each clear gets an event, an audit entry and a boot-log line. It is idempotent by
+  construction.
+- **The possible duplicate (Jake Waits $7,464.34 / $7,464.49) is data, left for the Controller.** The bytes
+  differ, so the 30-day same-bytes rule correctly does not flag it. Whether two amounts 15¢ apart are one bill
+  read twice or two bills is a question about the documents.
+
+**A5. ATP, code side only; no reading created or backfilled.**
+- A post-D-125 Pre-Op in a production room draws Form 117.21 and **one** ATP box, whose value is
+  `atp_reading`: `verify:preop` (50) asserts both, at 1280 and 390px.
+- The task door files that reading graded against 35 (`verify:atp`, 63).
+- The Sanitation Records ATP column read `atp_reading` and showed it **bare**. The grade was there (an over-limit
+  swab is already a fail in Result) but not the limit. It now reads **"12 / 35"**, using the limit stored with the
+  record (`atp_limit`, D-020), and **red when over**. A reading filed before grading shows its bare number and is
+  never re-judged.
+- The six Pre-Ops reading "—" on 2 October are a plant action: somebody has to enter a real swab reading.
+
+**Verified:**
+- `check:apdrop` (20 → **28**, pure; the control fails 2 with the exact live string).
+- `verify:apdropvendor` (6, live boot repair; in `verify:all` on port **5062**, because 5060 and 5061 are SIP
+  ports that Node's `fetch` refuses as "bad ports", which reads as a server that never came up).
+- `verify:productionruns` (24 → **25**: the Sanitation log shows "80 / 35" in red).
+- `verify:apdrop` (71), `verify:apdropui` (23), `check:aproute` (11), `verify:preop` (50), `verify:sanareas` (49)
+  and `verify:atp` (63) stay green.

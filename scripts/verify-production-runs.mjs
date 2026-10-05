@@ -121,6 +121,17 @@ try {
   await page.waitForTimeout(600);
   t('Close run closes it', q("SELECT status FROM production_runs WHERE run_no = 'RUN-0005'")[0]?.status === 'closed');
   t('no sideways scroll at 390px', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+
+  // A5 (code side): the Sanitation log's ATP column reads the record's own
+  // graded reading against the limit stored with it. Nothing is created here —
+  // the readings are the ones this run filed above.
+  const p2 = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  await p2.goto(`${URL}/manifest.webmanifest`);
+  await p2.evaluate(([tk, u]) => { localStorage.setItem('auth_token', tk); localStorage.setItem('auth_user', JSON.stringify(u)); }, [sup.token, sup.user]);
+  await p2.goto(`${URL}/?tab=sanitation`);
+  await p2.locator('[data-atp-cell]:visible').first().waitFor({ timeout: 15000 });
+  const cells = await p2.locator('[data-atp-cell]:visible').evaluateAll((els) => els.map((e) => `${e.getAttribute('data-atp-cell')}:${e.textContent}`));
+  t('Sanitation: the over-limit swab reads "80 / 35" in red, the clean ones within', cells.includes('over:80 / 35') && cells.some((x) => x.startsWith('within:12 / 35')), JSON.stringify(cells));
 } catch (e) { t('the Runs tab rendered', false, e.message); }
 finally { await browser.close(); }
 

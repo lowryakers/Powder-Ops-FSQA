@@ -68,7 +68,7 @@ import { KIOSKS } from './server/kiosk-tokens.js';
 import { seedCandidates } from './server/candidates-seed.js';
 import reimbursementRoutes from './server/api/reimbursements.js';
 import bankingRoutes from './server/api/banking.js';
-import apDropRoutes from './server/api/ap-drop.js';
+import apDropRoutes, { repairHeaderVendors } from './server/api/ap-drop.js';
 import employeeDocumentRoutes, { employeeDocumentNudges } from './server/api/employee-documents.js';
 import { trainingNudges } from './server/training-notify.js';
 import activityRoutes from './server/api/activity.js';
@@ -1324,6 +1324,11 @@ try {
   // created before it had one. The seed above is guarded and never re-runs, so
   // without this "Matt (M4 Dynamic)" keeps signing in as `Matt Dynamic)`.
   try { repairClientAccountNames(db); } catch (e) { console.warn('[seed] client account names:', e.message); }
+  // A vendor the AP Drop reader took from a table header (D-147). Only the
+  // reader's own value is cleared; every boot, idempotent, and it names each.
+  try {
+    for (const c of repairHeaderVendors(db)) console.log(`[migrate] AP Drop ${c.id}: vendor "${c.was}" was a table header, not a vendor — cleared for a person to name`);
+  } catch (e) { console.warn('[migrate] AP Drop vendor repair:', e.message); }
   // Collapse duplicate tasks the old generator guards let through (one-time).
   cleanupDuplicateTasks(db);
   // Purge cached "translations" identical to the original message (one-time).

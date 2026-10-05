@@ -1,5 +1,5 @@
 // The AP Drop reader, on its own: text in, suggestions out.
-import { parseFinanceDocument, findVendor, findDueDate, findOrderRefs, findInvoiceNumber } from '../server/ap-drop-parse.js';
+import { parseFinanceDocument, findVendor, findDueDate, findOrderRefs, findInvoiceNumber, notAVendor } from '../server/ap-drop-parse.js';
 let pass = 0, fail = 0;
 const t = (n, c, d = '') => { if (c) { pass++; console.log('  ✓ ' + n); } else { fail++; console.log('  ✗ ' + n + (d ? ' — ' + d : '')); } };
 
@@ -44,5 +44,21 @@ t('a CO reference is read and typed', findOrderRefs('Ref CO# 88231 and PO 4471')
 t('duplicate references collapse', findOrderRefs('PO 4471\nPO 4471 again').length === 1);
 r = parseFinanceDocument('Credit Memo No: CM-77\nAcme\nTotal -$50.00');
 t('a credit memo number is read', r.fields.invoice_number === 'CM-77', r.fields.invoice_number);
+
+// D-147: the 14 Sep drop ($27,180.49) whose vendor was a markdown table header.
+const MD = `| ACTIVITY | QTY | | RATE | | AMOUNT |
+|---|---|---|---|---|---|
+| Blending services | 1 | | 27,180.49 | | 27,180.49 |
+Total $27,180.49`;
+t('a markdown table header row is never the vendor', findVendor(MD) === null, JSON.stringify(findVendor(MD)));
+r = parseFinanceDocument(MD);
+t('…so that drop reads its total and leaves the vendor for a person', r.fields.vendor === null && r.fields.total === 27180.49, JSON.stringify(r.fields));
+t('a row of column headings without pipes is refused too', notAVendor('Description Quantity Rate Amount') && notAVendor('ITEM QTY PRICE TOTAL'));
+t('a bare country is not a vendor ("USA")', findVendor('USA\nTotal $50.00') === null && notAVendor('United States'));
+t('a "City, ST" line is not a vendor', notAVendor('Salt Lake City, UT'));
+t('markdown emphasis is stripped from a real name, the evidence kept as read', findVendor('# **Acme Packaging LLC**')?.value === 'Acme Packaging LLC'
+  && findVendor('# **Acme Packaging LLC**')?.evidence === '# **Acme Packaging LLC**');
+t('a real vendor after the header noise is still found', findVendor('USA\n| QTY | RATE |\nBeta Boxes Co')?.value === 'Beta Boxes Co');
+t('an ordinary company name passes', !notAVendor('Mountain Flavor Supply') && !notAVendor('Rate Card Printing Co'));
 
 console.log(`\n${pass}/${pass + fail} assertions passed`); process.exit(fail ? 1 : 0);

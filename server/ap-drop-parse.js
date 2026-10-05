@@ -96,14 +96,45 @@ export function findOrderRefs(text) {
  * own names are never the vendor (they are the bill-to party).
  */
 export function findVendor(text) {
-  for (const line of lines(text).slice(0, 25)) {
+  for (const raw of lines(text).slice(0, 25)) {
+    if (notAVendor(raw)) continue;
+    // Markdown emphasis an OCR pass adds (`# Acme`, `**Acme**`) is not part of
+    // the name; the evidence keeps the line as it was read.
+    const line = raw.replace(/^#+\s*/, '').replace(/\*\*|__/g, '').trim();
     if (line.length < 3 || line.length > 60) continue;
     if (OUR_NAMES.test(line)) continue;
     if (/\d{3,}|\$|:|\b(?:invoice|bill\s+to|ship\s+to|remit|date|due|total|page|www\.|@)\b/i.test(line)) continue;
     if (!/[A-Za-z]{3,}/.test(line)) continue;
-    return { value: line.replace(/\s{2,}/g, ' '), evidence: line };
+    return { value: line.replace(/\s{2,}/g, ' '), evidence: raw };
   }
   return null;
+}
+
+// Words that head an invoice's line-item columns. A line made of nothing else
+// is the table's header row, never a company.
+const COLUMN_WORDS = new Set(['activity', 'qty', 'quantity', 'rate', 'amount', 'description', 'item', 'items', 'price',
+  'unit', 'units', 'uom', 'total', 'subtotal', 'sku', 'product', 'products', 'service', 'services', 'date', 'hours', 'hrs',
+  'each', 'ea', 'balance', 'payment', 'tax', 'discount', 'no', 'number', 'code', 'part', 'cost', 'ext', 'extended', 'line']);
+const COUNTRY = /^(?:usa|u\.s\.a\.?|u\.s\.|us|united states(?: of america)?|canada|mexico|m[ée]xico)$/i;
+
+/**
+ * A line that can never be the vendor, whatever else it looks like (D-147).
+ * The 14 Sep drop for $27,180.49 filed "| ACTIVITY | QTY | | RATE | | AMOUNT |"
+ * as its vendor — an OCR pass that writes tables as markdown hands the reader
+ * a header row with no digit, no colon and no label word in it, which every
+ * other test above lets through. Refused: table markup, a row of column
+ * headings, a bare country, and a "City, ST" line. With no vendor the drop
+ * stays Outstanding for a person to name; a wrong vendor reads as handled.
+ */
+export function notAVendor(line) {
+  const l = String(line || '').trim();
+  if (!l) return true;
+  if (l.includes('|') || /^[\s\-=:_+*|#]+$/.test(l)) return true;
+  const words = l.toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean);
+  if (words.length && words.every((w) => COLUMN_WORDS.has(w))) return true;
+  if (COUNTRY.test(l.replace(/[.,]+$/, ''))) return true;
+  if (/^[A-Za-z .'-]+,\s*[A-Z]{2}\.?$/.test(l)) return true;
+  return false;
 }
 
 /** Who the document is addressed to, when a "Bill To" block is present. */

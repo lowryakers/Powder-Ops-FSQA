@@ -721,6 +721,25 @@ const SANITATION_COLUMNS = [
   { label: '', width: '2.5rem' },
 ];
 
+/**
+ * A reading beside the limit IT WAS GRADED AGAINST (D-147, A5) — the limit
+ * travels with the record (`atp_limit`, D-020), so a record graded under 35
+ * says 35 after the number moves. Over the limit reads red; a reading with no
+ * stored limit (filed before grading) is the bare number, never re-judged.
+ * The grade itself is the server's: an over-limit swab is already a fail.
+ */
+function AtpCell({ record: r }) {
+  if (r.atp_reading == null || r.atp_reading === '') return <span>—</span>;
+  if (r.atp_limit == null) return <span data-atp-cell="ungraded">{r.atp_reading}</span>;
+  const over = Number(r.atp_reading) > Number(r.atp_limit);
+  return (
+    <span data-atp-cell={over ? 'over' : 'within'} className={over ? 'text-red-700 font-semibold' : ''}
+      title={`Graded against ${r.atp_limit} RLU (Protocol 003 V4, PC #1)`}>
+      {r.atp_reading}<span className="text-gray-400 font-normal"> / {r.atp_limit}</span>
+    </span>
+  );
+}
+
 export default function SanitationPanel() {
   const { user } = useAuth() || {};
   // FILTER ON THE SERVER, NOT INSIDE THE CAP.
@@ -894,7 +913,7 @@ export default function SanitationPanel() {
                   <span>{r.performed_by}</span>
                   <span className="text-gray-400">{formatDateTime(r.performed_at)}</span>
                   <LateChip record={r} />
-                  {r.atp_reading != null && <span>ATP: {r.atp_reading}</span>}
+                  {r.atp_reading != null && <span>ATP: <AtpCell record={r} /></span>}
                 </div>
                 <div className="mt-1.5">
                   {r.verified_by ? (
@@ -948,7 +967,7 @@ export default function SanitationPanel() {
                         {formatDateTime(r.performed_at)} <LateChip record={r} />
                       </td>
                       <td className="px-4 py-3 text-gray-600">{r.chemicals_used || '—'}{r.concentration ? ` (${r.concentration})` : ''}</td>
-                      <td className="px-4 py-3 text-gray-600">{r.atp_reading ?? '—'}</td>
+                      <td className="px-4 py-3 text-gray-600"><AtpCell record={r} /></td>
                       <td className="px-4 py-3 whitespace-nowrap"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${RESULT_COLORS[r.result]}`}>{r.result}</span></td>
                       <td className="px-4 py-3">
                         {r.verified_by ? (
