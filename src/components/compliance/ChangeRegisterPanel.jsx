@@ -9,6 +9,7 @@ import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { withSignature } from '../../lib/signature.js';
 import { formatDate, formatDateTime } from '../../lib/datetime.js';
 import { ShieldCheck, Plus, Check, X, AlertTriangle, GitCommit, Clock } from 'lucide-react';
+import FrozenScroll from '../common/FrozenScroll';
 
 const KIND_LABEL = { equipment: 'Equipment', process: 'Process', software: 'Software', utility: 'Utility', facility: 'Physical plant', document: 'Controlled document', other: 'Other' };
 const STATUS = {
@@ -60,7 +61,7 @@ export default function ChangeRegisterPanel() {
       </div>
 
       {reqs.length === 0 ? <p className="text-sm text-gray-400 border border-dashed border-gray-200 rounded-xl p-6 text-center">No change requests{filter !== 'all' ? ' in this view' : ' yet'}.</p> : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+        <FrozenScroll className="rounded-xl border border-gray-200 bg-white">
           <table className="min-w-full text-xs">
             <thead className="bg-gray-50 text-gray-500"><tr><th className="text-left px-3 py-2">#</th><th className="text-left px-3 py-2">Kind</th><th className="text-left px-3 py-2">Change</th><th className="text-left px-3 py-2">Raised</th><th className="text-left px-3 py-2">Risk</th><th className="text-left px-3 py-2">Status</th><th className="text-left px-3 py-2">Quality</th></tr></thead>
             <tbody className="divide-y divide-gray-100">
@@ -77,7 +78,7 @@ export default function ChangeRegisterPanel() {
               ))}
             </tbody>
           </table>
-        </div>
+        </FrozenScroll>
       )}
 
       {open && reqs.find(r => r.id === open) && <ChangeDetail r={reqs.find(r => r.id === open)} isQuality={!!data?.is_quality} onChanged={refresh} onClose={() => setOpen(null)} />}

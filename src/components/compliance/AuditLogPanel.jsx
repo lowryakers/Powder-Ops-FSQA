@@ -5,6 +5,7 @@ import { useRowExpand } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import { formatDateTime } from '../../lib/datetime.js';
 import SortHeader from '../common/SortHeader.jsx';
+import FrozenScroll from '../common/FrozenScroll';
 
 // Columns as data. These keys are the ones the server allowlists in SORTABLE —
 // offering a header the server would ignore is how a click silently does
@@ -246,7 +247,7 @@ export default function AuditLogPanel() {
               )}
             </div>
             {/* Desktop: full table */}
-            <div className="hidden md:block overflow-x-auto">
+            <FrozenScroll className="hidden md:block">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b">
                   <tr>
@@ -302,7 +303,7 @@ export default function AuditLogPanel() {
                   )}
                 </tbody>
               </table>
-            </div>
+            </FrozenScroll>
           </>
         )}
       </div>

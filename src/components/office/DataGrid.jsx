@@ -4,6 +4,7 @@ import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import TextCell from '../common/TextCell.jsx';
 import { searchTerms } from '../../lib/searchTerms.js';
+import FrozenScroll from '../common/FrozenScroll';
 
 // A plain, fast table for the office data sheets: click a header to sort,
 // type to search everything, and pick values from any column marked filterable.
@@ -131,7 +132,7 @@ export default function DataGrid({
       </div>
 
       {/* Desktop: the full table */}
-      <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-auto max-h-[calc(100dvh-11rem)] min-h-[12rem]" data-grid-scroll>
+      <FrozenScroll className="hidden md:block bg-white rounded-xl border border-gray-200 min-h-[12rem]" data-grid-scroll>
         <table className="w-full text-sm">
           <thead className="bg-gray-50 sticky top-0 z-10">
             <tr>
@@ -207,7 +208,7 @@ export default function DataGrid({
             ))}
           </tbody>
         </table>
-      </div>
+      </FrozenScroll>
       {/* Mobile: one card per row. The first column is the heading, the second
           the subheading, and the rest are label/value pairs — tapping an
           editable value opens the same inline input the table uses. */}

@@ -13,6 +13,7 @@ import { formatDate } from '../../lib/datetime.js';
 import { pdfViewerUrl } from '../../lib/pdfUrl';
 import SearchSelect from '../common/SearchSelect.jsx';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
+import FrozenScroll from '../common/FrozenScroll';
 
 /**
  * Wet signatures on a controlled document — the drawn image beside name,
@@ -1192,7 +1193,7 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
           ))}
         </RecordCards>
         <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
+          <FrozenScroll>
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
@@ -1241,7 +1242,7 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
                 ))}
               </tbody>
             </table>
-          </div>
+          </FrozenScroll>
         </div>
         </>
       )}

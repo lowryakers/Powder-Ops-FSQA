@@ -17,6 +17,7 @@ import { keepCurrent } from '../../lib/selectOptions';
 import { useTableSort } from '../../lib/useTableSort';
 import SortHeader from '../common/SortHeader.jsx';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
+import FrozenScroll from '../common/FrozenScroll';
 
 // Columns as data for both tables on this module. Entries with no key are the
 // expand chevron and the actions cell — neither is a value to order by.
@@ -502,7 +503,7 @@ export default function CalibrationPanel() {
           </div>
 
           {/* Desktop: instrument table */}
-          <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-x-auto">
+          <FrozenScroll className="hidden md:block bg-white rounded-xl border border-gray-200">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b">
                 <tr>
@@ -590,7 +591,7 @@ export default function CalibrationPanel() {
                 )}
               </tbody>
             </table>
-          </div>
+          </FrozenScroll>
 
           {calibrating && (
             <CalibrateForm instrument={calibrating} onSave={handleCalibrate} onCancel={() => setCalibrating(null)} />
@@ -616,7 +617,7 @@ export default function CalibrationPanel() {
         </RecordCards>
       )}
       {tab === 'records' && (
-        <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-x-auto">
+        <FrozenScroll className="hidden md:block bg-white rounded-xl border border-gray-200">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
@@ -666,7 +667,7 @@ export default function CalibrationPanel() {
               )}
             </tbody>
           </table>
-        </div>
+        </FrozenScroll>
       )}
     </div>
   );

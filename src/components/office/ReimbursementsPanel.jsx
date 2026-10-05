@@ -10,6 +10,7 @@ import {
   Wallet, Plus, X, Check, Ban, Trash2, Receipt as ReceiptIcon,
   AlertTriangle, Search, ExternalLink,
 } from 'lucide-react';
+import FrozenScroll from '../common/FrozenScroll';
 
 // Getting somebody their own money back.
 //
@@ -394,7 +395,7 @@ export default function ReimbursementsPanel({ user }) {
       </div>
 
       <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
+        <FrozenScroll>
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
@@ -488,7 +489,7 @@ export default function ReimbursementsPanel({ user }) {
               )}
             </tbody>
           </table>
-        </div>
+        </FrozenScroll>
         <ShowMore view={view} noun="claims" />
       </div>
 

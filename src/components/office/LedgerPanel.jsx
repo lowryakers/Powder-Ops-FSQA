@@ -8,6 +8,7 @@ import { Plus, Search, Upload, Paperclip, Trash2, X, RefreshCw, FileText } from 
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import ModuleTabs from '../common/ModuleTabs.jsx';
+import FrozenScroll from '../common/FrozenScroll';
 
 // Accounts Payable / Accounts Receivable, one component driven by a ledger
 // config — the two sides are the same job with the money pointing the other
@@ -357,7 +358,7 @@ export default function LedgerPanel({ ledger }) {
           </div>
 
           {/* Desktop table */}
-          <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-x-auto">
+          <FrozenScroll className="hidden md:block bg-white rounded-xl border border-gray-200">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 sticky top-0">
                 <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
@@ -431,7 +432,7 @@ export default function LedgerPanel({ ledger }) {
                 )}
               </tbody>
             </table>
-          </div>
+          </FrozenScroll>
         </>
       )}
     </div>

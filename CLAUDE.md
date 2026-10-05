@@ -3431,6 +3431,19 @@ orders: every field editable incl. board status (`source_status`), one `coercePo
 mass edit, **Set a field…** on the selection bar, an unknown status refused by name (it was dropped silently).
 `verify:pogrid` (20; control fails 8).
 
+## A log table is frozen in place (D-149, `common/FrozenScroll.jsx`) — supersedes D-143's scroll box
+Wrap a log table's desktop scroller in `<FrozenScroll className="…">` (it adds `overflow-auto`) with the `<table>` as
+its DIRECT child. The box is MEASURED to end 16px above the bottom of its scroller, so with the page at the top the
+rows and columns scroll inside it and both scrollbars are on screen. D-143's `max-h-[calc(100dvh-11rem)]` assumed
+the table started near the top and ran ~200px off the window — and its verify scrolled the page first, so it passed.
+- Under 260px left ⇒ the box takes the whole window, and while a wide table has started on screen a copy of its
+  horizontal scrollbar (`data-frozen-scrollbar`) is pinned to the window bottom, synced both ways.
+- Header pinning is ONE CSS rule in `index.css` (`[data-frozen-scroll] > table > thead > tr > th`, `@layer base`);
+  the child combinator keeps a detail row's nested table from pinning its header over the log's.
+- Caps, never stretches; phones (`useCompactLayout`) keep the page scroll. 41 tables wired; modal/drawer tables and
+  ones that already cap themselves left alone. A sticky first column is per table and not swept.
+- `verify:frozenscroll` (54, 1280×800 / 1024×700 / 390, port 5064) and `verify:pogrid` measure with the page AT THE TOP.
+
 ## Office finance: AP / AR (+ QuickBooks) — TABS HIDDEN since 2026-09-11 (D-075)
 **The AP ledger, AR ledger, Banking and QuickBooks tabs are no longer in the Accounting hub, their three
 Settings grants are gone from the module list, and the QuickBooks / Plaid rows are off Settings → Integrations.**

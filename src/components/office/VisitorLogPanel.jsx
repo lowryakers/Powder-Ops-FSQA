@@ -4,6 +4,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { Search, LogOut, X, FileText, Users, QrCode } from 'lucide-react';
 import { formatDateTime } from '../../lib/datetime.js';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
+import FrozenScroll from '../common/FrozenScroll';
 
 // Who has been in the building, and what they signed.
 //
@@ -170,7 +171,7 @@ export default function VisitorLogPanel() {
             ) : null} />
         ))}
       </RecordCards>
-      <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-x-auto">
+      <FrozenScroll className="hidden md:block bg-white rounded-xl border border-gray-200">
         <table className="w-full text-sm min-w-[44rem]">
           <thead>
             <tr className="border-b border-gray-200 text-left text-xs text-gray-500">
@@ -220,7 +221,7 @@ export default function VisitorLogPanel() {
             ))}
           </tbody>
         </table>
-      </div>
+      </FrozenScroll>
 
       <p className="text-[11px] text-gray-400 flex items-center gap-1.5">
         <Users size={12} />

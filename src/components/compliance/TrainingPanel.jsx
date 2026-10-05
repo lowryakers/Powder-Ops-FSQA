@@ -15,6 +15,7 @@ import SortHeader from '../common/SortHeader.jsx';
 import FilePreview from '../FilePreview.jsx';
 import { pdfViewerUrl } from '../../lib/pdfUrl';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
+import FrozenScroll from '../common/FrozenScroll';
 
 // Columns as data for the Records tab. Evidence and the actions cell have no
 // key — a link is not a value to order by.
@@ -1764,11 +1765,11 @@ export default function TrainingPanel() {
               <span key={k} className="flex items-center gap-1.5"><span className={`inline-block w-3 h-3 rounded-sm ${v.bg}`} /> {v.label}</span>
             ))}
           </div>
-          <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+          <FrozenScroll className="bg-white rounded-xl border border-gray-200">
             <table className="text-sm border-collapse">
               <thead>
                 <tr className="border-b border-gray-200">
-                  <th className="text-left px-3 py-2 font-medium text-gray-600 sticky left-0 bg-white z-10 min-w-[160px]">Employee</th>
+                  <th className="text-left px-3 py-2 font-medium text-gray-600 sticky left-0 bg-white z-20 min-w-[160px]">Employee</th>
                   {matrix.courses.map(c => (
                     <th key={c.id} className="px-2 py-2 font-medium text-gray-500 text-center min-w-[52px]" title={`${c.title} · ${freqLabel(c.retrain_months)}`}>
                       <span className="text-[11px]">{c.code || c.title.slice(0, 6)}</span>
@@ -1797,7 +1798,7 @@ export default function TrainingPanel() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </FrozenScroll>
         </div>
       )}
 
@@ -1898,7 +1899,7 @@ export default function TrainingPanel() {
                 </> : null} />
             ))}
           </RecordCards>
-          <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-x-auto">
+          <FrozenScroll className="hidden md:block bg-white rounded-xl border border-gray-200">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b"><tr>
                 {TRAINING_RECORD_COLUMNS.map((c, i) => (
@@ -1929,7 +1930,7 @@ export default function TrainingPanel() {
                 {filteredRecords.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-500">No training records yet.</td></tr>}
               </tbody>
             </table>
-          </div>
+          </FrozenScroll>
         </div>
       )}
 

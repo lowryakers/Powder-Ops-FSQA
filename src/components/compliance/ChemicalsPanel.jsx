@@ -5,6 +5,7 @@ import { Plus, Edit2, ShieldCheck, AlertTriangle, Search, ChevronUp, ChevronDown
 import { localDateStr } from '../../utils/dates';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
+import FrozenScroll from '../common/FrozenScroll';
 
 const CATEGORIES = [
   { value: 'lubricant', label: 'Lubricant', color: 'bg-blue-100 text-blue-800' },
@@ -311,7 +312,7 @@ export default function ChemicalsPanel() {
       </div>
 
       {/* Desktop: table view */}
-      <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <FrozenScroll className="hidden md:block bg-white rounded-xl border border-gray-200">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b">
             <tr>
@@ -420,7 +421,7 @@ export default function ChemicalsPanel() {
             )}
           </tbody>
         </table>
-      </div>
+      </FrozenScroll>
     </div>
   );
 }

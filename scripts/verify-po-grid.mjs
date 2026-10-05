@@ -1,4 +1,4 @@
-// verify:pogrid — D-143, live on a fresh database and a real browser at 1280.
+// verify:pogrid — D-143 (scroll box: D-149), live on a fresh database and a real browser at 1280.
 //
 // Jake (2 Oct) on Procurement → Purchase Orders: mass edit, a search bar that
 // takes several keywords, scrollbars that stay on screen, and every field
@@ -83,13 +83,15 @@ try {
   await page.waitForTimeout(200);
 
   const box = page.locator('[data-grid-scroll]').first();
-  // Scroll the PAGE until the grid's own search row is at the top — where
-  // somebody working the list sits — and the whole box must then be on screen.
-  await page.evaluate(() => { const s = document.querySelector('[data-grid-search]'); window.scrollBy(0, s.getBoundingClientRect().top - 8); });
-  const geo = await box.evaluate((el) => ({ bottom: el.getBoundingClientRect().bottom, vh: window.innerHeight,
+  // D-149: with the page NOT scrolled — the D-143 version of this check scrolled
+  // the page down to the grid first, which is how it passed while Jake could
+  // not see a scrollbar.
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(300);
+  const geo = await box.evaluate((el) => ({ bottom: el.getBoundingClientRect().bottom, vh: window.innerHeight, pageY: window.scrollY,
     scrolls: el.scrollHeight > el.clientHeight, wide: el.scrollWidth > el.clientWidth }));
-  t('the table scrolls inside a box that ends on screen — its horizontal scrollbar is in view with the search row, not under the last row',
-    geo.scrolls && geo.bottom <= geo.vh + 1, JSON.stringify(geo));
+  t('the table scrolls inside a box that ends on screen with the page at the top — its horizontal scrollbar is in view, not under the last row',
+    geo.scrolls && geo.pageY === 0 && geo.bottom <= geo.vh + 1, JSON.stringify(geo));
   const pinned = await box.evaluate((el) => { el.scrollTop = 600; const h = el.querySelector('thead'); return Math.abs(h.getBoundingClientRect().top - el.getBoundingClientRect().top); });
   t('the header row stays pinned while the rows scroll', pinned <= 2, String(pinned));
   await box.evaluate((el) => { el.scrollTop = 0; });

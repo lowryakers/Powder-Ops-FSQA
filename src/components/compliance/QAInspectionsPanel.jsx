@@ -17,6 +17,7 @@ import { withSignature } from '../../lib/signature';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import { useModuleTabs } from '../../lib/useModuleTabs';
 import BpgZonesPanel from './BpgZonesPanel.jsx';
+import FrozenScroll from '../common/FrozenScroll';
 
 // Two views over one form family: the RECORDS an inspection files, and the
 // ZONE REGISTER the inspection is run against. The register is here rather
@@ -280,7 +281,8 @@ export default function QAInspectionsPanel() {
           <div className="md:hidden"><ShowMore view={view} noun="inspections" /></div>
 
           {/* Desktop table */}
-          <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-x-auto">
+          <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <FrozenScroll>
             <table className="w-full text-sm">
               <thead className="bg-gray-50 sticky top-0">
                 <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
@@ -367,6 +369,7 @@ export default function QAInspectionsPanel() {
                 ))}
               </tbody>
             </table>
+          </FrozenScroll>
             <ShowMore view={view} noun="inspections" />
           </div>
         </>

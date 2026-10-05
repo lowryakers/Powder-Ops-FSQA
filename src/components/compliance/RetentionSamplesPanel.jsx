@@ -15,6 +15,7 @@ import {
   Boxes, CalendarClock, Upload, Check,
 } from 'lucide-react';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
+import FrozenScroll from '../common/FrozenScroll';
 
 // The Retention Sample log — the plant's physical library of what it made.
 //
@@ -587,7 +588,7 @@ function LotTrace() {
         </RecordCards>
       )}
       {rows?.length > 0 && (
-        <div className="hidden md:block overflow-x-auto">
+        <FrozenScroll className="hidden md:block">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
@@ -616,7 +617,7 @@ function LotTrace() {
               ))}
             </tbody>
           </table>
-        </div>
+        </FrozenScroll>
       )}
     </div>
   );
@@ -786,7 +787,7 @@ export default function RetentionSamplesPanel({ user }) {
 
           {/* Desktop table */}
           <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="overflow-x-auto">
+            <FrozenScroll>
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b">
                   <tr>
@@ -851,7 +852,7 @@ export default function RetentionSamplesPanel({ user }) {
                   )}
                 </tbody>
               </table>
-            </div>
+            </FrozenScroll>
           </div>
 
           <ShowMore view={view} noun="records" />

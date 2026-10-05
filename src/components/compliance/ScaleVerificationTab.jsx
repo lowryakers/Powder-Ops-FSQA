@@ -28,6 +28,7 @@ import KioskQrModal from '../kiosk/KioskQrModal.jsx';
 import { daysAgoStr, localDateStr } from '../../utils/dates';
 import { formatDateTime } from '../../lib/datetime.js';
 import { withSignature } from '../../lib/signature';
+import FrozenScroll from '../common/FrozenScroll';
 
 // Scale Verification — the daily three-point checks (Forms 417-01 … 417-05)
 // filed from the floor kiosk. It sits inside Calibration because that's where
@@ -197,7 +198,7 @@ export default function ScaleVerificationTab() {
           </div>
 
           {/* Desktop table */}
-          <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-x-auto">
+          <FrozenScroll className="hidden md:block bg-white rounded-xl border border-gray-200">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b">
                 <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
@@ -290,7 +291,7 @@ export default function ScaleVerificationTab() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </FrozenScroll>
         </>
       )}
 

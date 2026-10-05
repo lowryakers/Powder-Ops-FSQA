@@ -10,6 +10,7 @@ import { formatDateTime } from '../../lib/datetime.js';
 import { useTableSort } from '../../lib/useTableSort';
 import SortHeader from '../common/SortHeader.jsx';
 import TextCell from '../common/TextCell.jsx';
+import FrozenScroll from '../common/FrozenScroll';
 
 // Columns as data, driving both the header and the sort. The first has no key
 // — it is the expand chevron, not a value.
@@ -532,7 +533,7 @@ export default function LOTOPanel() {
           {(!executions || executions.length === 0) && <div className="text-center py-8 text-gray-400 text-sm">No LOTO executions recorded</div>}
         </div>
         {/* Desktop: table */}
-        <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-x-auto">
+        <FrozenScroll className="hidden md:block bg-white rounded-xl border border-gray-200">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
@@ -577,7 +578,7 @@ export default function LOTOPanel() {
               )}
             </tbody>
           </table>
-        </div>
+        </FrozenScroll>
         </>
       )}
     </div>

@@ -27,6 +27,7 @@ const ROLES = [
 // separate grants and the difference is easy to miss when they are apart.
 import { OPT_IN_MODULES, OPT_IN_SET } from '../../../shared/opt-in-modules.js';
 import { isFullAccess, fullAccessMap, noAccessMap, expandedMap, accessSummary, optInEntries as optInOnly } from '../../../shared/module-access.js';
+import FrozenScroll from '../common/FrozenScroll';
 
 const MODULE_GROUPS = [
   {
@@ -1124,7 +1125,7 @@ function RoleSection({ users, config, onEdit, onToggle, onRemove, defaultOpen, e
           edits. Below md the same rows are cards, and the edit form is a plain
           full-width block underneath. */}
       {open && users.length > 0 && (
-        <div className="hidden md:block overflow-x-auto">
+        <FrozenScroll className="hidden md:block">
         <table className="w-full text-sm min-w-[560px]">
           <thead className="bg-gray-50 border-t border-b">
             <tr>
@@ -1150,7 +1151,7 @@ function RoleSection({ users, config, onEdit, onToggle, onRemove, defaultOpen, e
             ))}
           </tbody>
         </table>
-        </div>
+        </FrozenScroll>
       )}
       {open && users.length > 0 && (
         <div className="md:hidden border-t divide-y divide-gray-100">

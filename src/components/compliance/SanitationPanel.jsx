@@ -22,6 +22,7 @@ import { withCurrent } from '../../lib/managedList.js';
 import { PreopFields, PreopAnswers } from './PreopChecklist.jsx';
 import { preopToState } from '../../lib/preopState.js';
 import { preopApplies, parsePreopForm } from '../../../shared/preop-form.js';
+import FrozenScroll from '../common/FrozenScroll';
 
 // Reason dialog for dismiss / N-A / not-in-use on a 72h re-clean flag.
 const RECLEAN_ACTION_META = {
@@ -940,7 +941,7 @@ export default function SanitationPanel() {
 
       {/* Desktop: table view */}
       <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
+        <FrozenScroll>
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
@@ -989,7 +990,7 @@ export default function SanitationPanel() {
               )}
             </tbody>
           </table>
-        </div>
+        </FrozenScroll>
         <ShowMore view={view} noun="records" />
       </div>
     </div>

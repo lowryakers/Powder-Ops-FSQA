@@ -8,6 +8,7 @@ import {
   Scale, Search, Check, FileText, Pencil, Plus, X, Link2,
   ArrowUpRight, ArrowDownLeft, Ban, Trash2, Copy, ExternalLink, History, Upload, CheckCircle2, Bell,
 } from 'lucide-react';
+import FrozenScroll from '../common/FrozenScroll';
 
 // X − Y = Z.
 //
@@ -1080,7 +1081,7 @@ export default function PartnerReconPanel({ user }) {
           </div>
 
           <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="overflow-x-auto">
+            <FrozenScroll>
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b">
                   <tr>
@@ -1226,7 +1227,7 @@ export default function PartnerReconPanel({ user }) {
                   )}
                 </tbody>
               </table>
-            </div>
+            </FrozenScroll>
           </div>
         </div>
       )}

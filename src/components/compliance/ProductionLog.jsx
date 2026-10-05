@@ -18,6 +18,7 @@ import { formatDateTime, formatTime as fmtClock } from '../../lib/datetime.js';
 import { withSignature } from '../../lib/signature';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 import { withCurrent } from '../../lib/managedList.js';
+import FrozenScroll from '../common/FrozenScroll';
 
 // The same rooms the schedule offers, so a shift can be reported in the room it
 // was scheduled in. This list used to be built by hand here and had drifted:
@@ -1656,7 +1657,7 @@ function LogTable({ user }) {
       {/* Desktop: table view */}
       {!loading && !error && (
         <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
+          <FrozenScroll>
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
@@ -1774,7 +1775,7 @@ function LogTable({ user }) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </FrozenScroll>
           <ShowMore view={view} noun="entries" />
         </div>
       )}

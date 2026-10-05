@@ -18,6 +18,7 @@ import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import { canFilmInspect } from '../../utils/permissions';
 import { getParam, consumeParam } from '../../lib/deepLink';
 import { withCurrent } from '../../lib/managedList.js';
+import FrozenScroll from '../common/FrozenScroll';
 
 // Receiving Log — incoming raw material, labels and components (replaces the
 // Monday board). Both dropdowns are managed lists and the extra questions are
@@ -579,7 +580,7 @@ function ReceivingTable({ user }) {
       {/* Desktop table */}
       {!loading && !error && (
         <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
+          <FrozenScroll>
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
@@ -706,7 +707,7 @@ function ReceivingTable({ user }) {
                 })}
               </tbody>
             </table>
-          </div>
+          </FrozenScroll>
           <ShowMore view={view} noun="receipts" />
         </div>
       )}

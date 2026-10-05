@@ -17,6 +17,7 @@ import { formatDateTime } from '../../lib/datetime.js';
 import TextCell from '../common/TextCell.jsx';
 import { pdfViewerUrl } from '../../lib/pdfUrl';
 import { withCurrent } from '../../lib/managedList.js';
+import FrozenScroll from '../common/FrozenScroll';
 
 // Mirror of server canSignApproval — admin always; else role/department match.
 //
@@ -1277,7 +1278,7 @@ export default function QMSRecordsPanel({ recordType, moduleId, rowAction = null
         </div>
         {/* Desktop: full table */}
         <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
+          <FrozenScroll>
             <table className="w-full border-collapse">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
@@ -1333,7 +1334,7 @@ export default function QMSRecordsPanel({ recordType, moduleId, rowAction = null
                 ))}
               </tbody>
             </table>
-          </div>
+          </FrozenScroll>
         </div>
         </>
       )}

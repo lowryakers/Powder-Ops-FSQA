@@ -11,6 +11,7 @@ import FilePreview from '../FilePreview';
 import TextCell from '../common/TextCell.jsx';
 import PhotoPicker from '../common/PhotoPicker.jsx';
 import { Inbox, Upload, FileText, X, Search, RefreshCw, ExternalLink, AlertTriangle, Copy, Mail, Handshake } from 'lucide-react';
+import FrozenScroll from '../common/FrozenScroll';
 
 // AP Drop — hand in a finance PDF, and the queue the office works it through.
 //
@@ -297,7 +298,8 @@ function DropTable({ rows, onOpen, compact, canWork }) {
     );
   }
   return (
-    <div className="overflow-x-auto">
+    <div>
+      <FrozenScroll>
       <table className="w-full text-sm" data-ap-table>
         <thead className="text-left text-xs uppercase tracking-wide text-gray-500 border-b border-gray-100">
           <tr>
@@ -325,6 +327,7 @@ function DropTable({ rows, onOpen, compact, canWork }) {
           ))}
         </tbody>
       </table>
+    </FrozenScroll>
       {!canWork && <div className="px-3 py-2 text-xs text-gray-400">Showing what you dropped. The office sees the whole queue.</div>}
     </div>
   );

@@ -5,6 +5,7 @@ import { Search, Pause, Play, Save, X, CalendarClock, AlertTriangle, CalendarPlu
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 import { TASK_GROUPS } from '../../../shared/task-groups.js';
 import { withCurrent } from '../../lib/managedList.js';
+import FrozenScroll from '../common/FrozenScroll';
 
 // The recurring schedules that generate work.
 //
@@ -388,7 +389,7 @@ export default function PMSchedulesPanel() {
             </> : null} />
         ))}
       </RecordCards>
-      <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-x-auto">
+      <FrozenScroll className="hidden md:block bg-white rounded-xl border border-gray-200">
         <table className="w-full text-sm min-w-[46rem]">
           <thead>
             <tr className="border-b border-gray-200 text-left text-xs text-gray-500">
@@ -451,7 +452,7 @@ export default function PMSchedulesPanel() {
             ))}
           </tbody>
         </table>
-      </div>
+      </FrozenScroll>
     </div>
   );
 }

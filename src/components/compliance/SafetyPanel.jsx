@@ -7,6 +7,7 @@ import ModuleTabs from '../common/ModuleTabs.jsx';
 import { useModuleTabs } from '../../lib/useModuleTabs.js';
 import { formatDate } from '../../lib/datetime.js';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
+import FrozenScroll from '../common/FrozenScroll';
 
 /**
  * Safety: the three controlled safety forms in one place.
@@ -306,7 +307,7 @@ function FirstAidLog({ form, user }) {
             );
           })}
         </RecordCards>
-        <div className="hidden md:block bg-white border border-gray-200 rounded-xl overflow-x-auto">
+        <FrozenScroll className="hidden md:block bg-white border border-gray-200 rounded-xl">
           <table className="w-full text-sm min-w-[640px]">
             <thead>
               <tr className="text-[11px] text-gray-500 uppercase tracking-wide border-b border-gray-200">
@@ -334,7 +335,7 @@ function FirstAidLog({ form, user }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </FrozenScroll>
         </>
       )}
     </div>

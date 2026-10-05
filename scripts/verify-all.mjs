@@ -114,6 +114,7 @@ const RUNS = [
   ['verify-scale-pm-retire.mjs', 5055, {}],
   ['verify-pm-generation.mjs', 5056, {}],
   ['verify-po-grid.mjs', 5057, {}, false],
+  ['verify-frozen-scroll.mjs', 5064, {}, false],
   ['verify-training-test.mjs', 5058, {}, false],
   ['verify-production-runs.mjs', 5059, {}, false],
   ['verify-ap-drop-vendor.mjs', 5062, {}, false],

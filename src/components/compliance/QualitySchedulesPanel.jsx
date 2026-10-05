@@ -5,6 +5,7 @@ import { CalendarClock, Plus, Pencil, Trash2, X, CheckCircle2, PauseCircle } fro
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import { useModuleTabs } from '../../lib/useModuleTabs.js';
 import { EmpResultsTab, GmpWalksTab, ListReviewsTab, ManagementReviewTab, FoodDefenseTab } from './CheckRecordsTabs.jsx';
+import FrozenScroll from '../common/FrozenScroll';
 
 const FREQUENCIES = [
   { value: 'daily', label: 'Daily' },
@@ -250,7 +251,7 @@ export default function QualitySchedulesPanel() {
         </div>
 
         {/* Desktop: table view */}
-        <div className="hidden md:block overflow-x-auto border border-gray-200 rounded-xl">
+        <FrozenScroll className="hidden md:block border border-gray-200 rounded-xl">
           <table className="min-w-full text-sm">
             <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
               <tr>
@@ -291,7 +292,7 @@ export default function QualitySchedulesPanel() {
               ))}
             </tbody>
           </table>
-        </div>
+        </FrozenScroll>
         </>
       ))}
 

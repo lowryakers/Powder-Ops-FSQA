@@ -10,6 +10,7 @@ import EquipmentFiles, { ManualSearch } from './EquipmentFiles.jsx';
 import { MACHINE_TYPES, ZONE_TYPES, defaultAssetKind } from '../../../shared/equipment-types.js';
 import { keepCurrent } from '../../lib/selectOptions.js';
 import ResyncStepsModal from './ResyncStepsModal.jsx';
+import FrozenScroll from '../common/FrozenScroll';
 
 // Types come from shared/equipment-types.js so the form, the setup checklist
 // and the boot migrations all speak the same vocabulary. The type only sets the
@@ -1118,7 +1119,7 @@ export default function EquipmentPanel() {
 
       {/* Desktop: full table */}
       <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
+        <FrozenScroll>
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
@@ -1204,7 +1205,7 @@ export default function EquipmentPanel() {
               </td></tr></tbody>
             )}
           </table>
-        </div>
+        </FrozenScroll>
       </div>
 
       {someSelected && (

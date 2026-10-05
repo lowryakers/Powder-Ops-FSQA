@@ -7,6 +7,7 @@ import { Plus, Search, Edit2, Trash2, Download, Upload, X, Trash, Check, Papercl
 import { formatDate } from '../../lib/datetime.js';
 import TextCell from '../common/TextCell.jsx';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
+import FrozenScroll from '../common/FrozenScroll';
 
 const CATEGORIES = [
   { value: '', label: '—' },
@@ -674,7 +675,7 @@ export default function DisposalsPanel() {
         </div>
         {/* Desktop: full table */}
         <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
+          <FrozenScroll>
             <table className="w-full border-collapse">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
@@ -724,7 +725,7 @@ export default function DisposalsPanel() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </FrozenScroll>
         </div>
         </>
       )}

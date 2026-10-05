@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 import { useApiGet } from '../../hooks/useApi';
 import { AlertTriangle, Search } from 'lucide-react';
+import FrozenScroll from '../common/FrozenScroll';
 
 /**
  * The barcode board — the same question the Nutrition panels tab answers, for
@@ -134,7 +135,7 @@ export default function ProductBarcodes({ onOpenSku }) {
         ))}
       </RecordCards>
       <div className="hidden md:block bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <div className="overflow-x-auto">
+        <FrozenScroll>
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
@@ -176,7 +177,7 @@ export default function ProductBarcodes({ onOpenSku }) {
               )}
             </tbody>
           </table>
-        </div>
+        </FrozenScroll>
       </div>
       {filter && STATE[filter].note && <p className="text-xs text-gray-500">{STATE[filter].note}</p>}
     </div>

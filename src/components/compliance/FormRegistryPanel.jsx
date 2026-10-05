@@ -16,6 +16,7 @@ import { useApiGet, apiPost, apiPut, apiDelete, apiFetch, apiUpload } from '../.
 import { useTableSort } from '../../lib/useTableSort';
 import SortHeader from '../common/SortHeader.jsx';
 import RuleTip from '../common/RuleTip.jsx';
+import FrozenScroll from '../common/FrozenScroll';
 
 const WHERE = {
   readydoc: { label: 'In ReadyDoc', cls: 'bg-green-100 text-green-800' },
@@ -652,7 +653,7 @@ export default function FormRegistryPanel() {
       </div>
 
       <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
+        <FrozenScroll>
           <table className="w-full text-sm min-w-[640px]">
             <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
               <tr>
@@ -702,7 +703,7 @@ export default function FormRegistryPanel() {
               )}
             </tbody>
           </table>
-        </div>
+        </FrozenScroll>
       </div>
 
       <p className="text-xs text-gray-400">Showing {sorted.length} of {forms.length}.</p>

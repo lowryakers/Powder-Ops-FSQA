@@ -6280,3 +6280,46 @@ plain day offset. The generator never puts a task on a weekend (`nextWeekday`), 
 a Sunday and the real one is the Monday after: red by construction every Monday, and every Friday for its "due
 tomorrow" check. No recurrence code moved in this pass. The expected dates now take the same weekday step, which
 corrects the check rather than skipping it; 19/19.
+
+## D-149 — A log table is frozen in place: sized to the window, header pinned, scrollbar always reachable (2026-10-05)
+**Asked** (Lowry, after D-143): "do the sticky scrollbars on the other log tables too. Did we also add that it's
+frozen in place? I'm not seeing that functionality." **He was right not to see it.** D-143 capped the office
+DataGrid at `max-h-[calc(100dvh-11rem)]`, a number that assumed the grid started ~11rem from the top of the window.
+It starts 250-300px lower (page header, cards, tab strip, filter row), so the box ran ~200px past the bottom of the
+window and its horizontal scrollbar sat below the fold until the PAGE was scrolled down to it. `verify-po-grid`
+passed because it scrolled the page to the grid before measuring — it checked the state after the step the person
+never takes.
+
+**Decided:** one shared box, `common/FrozenScroll.jsx`, around every log table's desktop scroller.
+- **The height is MEASURED, not guessed.** The box ends 16px above the bottom of whatever scrolls it (the window, or
+  a modal's own scroller), from wherever it actually starts, re-measured on resize and whenever the page above it
+  changes height. With the page at the top: rows and columns scroll inside the box, both scrollbars on screen.
+- **Where less than 260px would be left** (a module with a lot above its log — Sanitation's log starts ~1,500px down
+  on a fresh database — or a 700px laptop), the box takes the whole window instead: one page scroll brings it fully
+  into view and from there it holds. Until then, if the table is wide and has started on screen, **a copy of its
+  horizontal scrollbar is pinned to the bottom of the window** and the two move together; it steps aside once the
+  real one is in view. A table wholly below the fold gets no copy — there is nothing of it on screen to scroll.
+- **The header is pinned by one CSS rule** (`[data-frozen-scroll] > table > thead > tr > th`, in `@layer base` so a
+  cell's own sticky / bg / z utilities still win). The child combinator is deliberate: an expanded detail row
+  carrying its own table must not pin ITS header over the log's. The sticky cell needs a background of its own (the
+  thead's does not travel with it) — read from the thead's `bg-gray-50` / `-100` / `slate-50`, white otherwise.
+- **Caps, never stretches**: a short log is exactly as tall as before. **Phones keep the page scroll** — a box that
+  traps the thumb on a 390px screen is worse, and most of these logs render as cards there.
+- **Wired into 41 tables**: the office DataGrid (Procurement, Pay Tracking), and Receiving, Production Log,
+  Sanitation, QA Inspections, Equipment, Chemicals, LOTO executions, Calibration (both), Scale Verification,
+  QMS records, Disposals, COA requests + specifications, Controlled Documents, Form register, Retention (both),
+  Training (matrix + records), Check records (three), Safety, Suppliers, Change Register, Audit log, Quality
+  Schedules, PM schedules, Product grid, GTIN barcodes, Ledger, Partner Reconciliation, Visitor log, Spend, Time
+  Tracking (both), Supply Orders (both), Reimbursements, AP Drop, Hours, Settings → Users. **Left alone:** the
+  production schedule grid (it already had its own measured box), small tables inside modals and drawers, and
+  tables that already cap themselves (`max-h-64`, `max-h-[55vh]`).
+- The Training matrix's corner cell moved z-10 → z-20, or the sticky first-column cells scrolled up over it.
+
+**Not built, offered:** a frozen first column on the other logs (the Training matrix and the Product grid already
+have one). It is per table — which column identifies a row differs — so it is a choice, not a sweep.
+
+Verified: `verify:frozenscroll` (54, live + browser at 1280×800, 1024×700 and 390; in `verify:all`) on six screens —
+box sized to its window, scrollbar on screen with the page at the top (box fits, or the pinned copy shows, or the
+table is wholly below the fold), dragging the copy scrolls the table, one page scroll brings the whole box into view
+and the copy steps aside, header pinned while rows scroll, nothing capped at 390px and no sideways pan.
+`verify:pogrid` now measures with the page at the top (20). **Control — `main`'s client: `verify:pogrid` fails 1 (the box ends at 1,039px in an 800px window — the report exactly) and `verify:frozenscroll` fails 13 of 14.**

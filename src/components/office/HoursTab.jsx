@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useApiGet, apiPut, apiPost, apiFetch } from '../../hooks/useApi';
 import { Users, Clock, Plus, X, Download, DollarSign } from 'lucide-react';
 import { parseHours, formatHours, hoursInputValue } from '../../lib/hoursFormat';
+import FrozenScroll from '../common/FrozenScroll';
 
 // Hours worked vs paid non-working time, per pay period — merged in from the
 // standalone tracker. The roster is live from Settings, so nobody keeps a
@@ -464,7 +465,7 @@ export default function HoursTab() {
         : <TotalsRow totals={byType.employee || t} kind="employee" />}
 
       {/* Desktop: both weeks side by side */}
-      <div className="hidden lg:block bg-white rounded-xl border border-gray-200 overflow-x-auto">
+      <FrozenScroll className="hidden lg:block bg-white rounded-xl border border-gray-200">
         <table className="w-full text-sm">
           <thead className="bg-gray-50">
             <tr className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
@@ -571,7 +572,7 @@ export default function HoursTab() {
             )}
           </tbody>
         </table>
-      </div>
+      </FrozenScroll>
 
       {/* Phone and tablet: one card per person, one block per week. The same
           four numbers, big enough to actually tap. */}

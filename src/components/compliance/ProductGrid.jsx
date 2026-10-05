@@ -28,6 +28,7 @@ import { useTableSort } from '../../lib/useTableSort';
 import SortHeader from '../common/SortHeader';
 import { FIELD_RULES, NA_FIELDS, fieldState, PACKAGING_DERIVED, isRollFed } from '../../../shared/product-fields.js';
 import { ChevronDown, ChevronRight, Download, Upload, X, AlertTriangle } from 'lucide-react';
+import FrozenScroll from '../common/FrozenScroll';
 
 const PACK_LABEL = {
   PLG: 'Pouch — large', PSM: 'Pouch — small', STK: 'Stick', BOX: 'Carton', CUP: 'Cup', BTL: 'Bottle',
@@ -434,7 +435,7 @@ export default function ProductGrid({ products, completeness, canEdit, onOpenSku
         <p className="text-[11px] text-gray-500">Click a cell to edit · Enter saves and moves down · Tab saves and moves right · Esc cancels · Shift-click another row in the same column to fill down.</p>
       )}
 
-      <div className="overflow-x-auto border border-gray-200 rounded-lg">
+      <FrozenScroll className="border border-gray-200 rounded-lg">
         <table className="min-w-full text-xs">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
@@ -553,7 +554,7 @@ export default function ProductGrid({ products, completeness, canEdit, onOpenSku
             )}
           </tbody>
         </table>
-      </div>
+      </FrozenScroll>
 
       {importing && <ImportModal onClose={() => setImporting(false)} onDone={onChanged} onOpenSpec={onOpenSpec} />}
     </div>

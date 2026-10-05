@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useApiGet } from '../../hooks/useApi';
 import { ExternalLink, AlertTriangle } from 'lucide-react';
 import { externalUrl } from '../../lib/externalUrl.js';
+import FrozenScroll from '../common/FrozenScroll';
 
 // Supply spend per pay period, by category. This replaces the card that used
 // to pull from the Monday board — the orders are already in this app, so the
@@ -77,7 +78,7 @@ export default function SpendTab() {
         )}
       </div>
 
-      <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-x-auto">
+      <FrozenScroll className="hidden md:block bg-white rounded-xl border border-gray-200">
         <table className="w-full text-sm">
           <thead className="bg-gray-50">
             <tr className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
@@ -114,7 +115,7 @@ export default function SpendTab() {
             )}
           </tbody>
         </table>
-      </div>
+      </FrozenScroll>
 
       {/* Phone: the same orders as cards */}
       <div className="md:hidden space-y-2">

@@ -16,6 +16,7 @@ import {
   Building2, Search, AlertTriangle, Upload, Check, X, ShieldCheck,
   CalendarClock, FileWarning, Link2, Loader2, Trash2,
 } from 'lucide-react';
+import FrozenScroll from '../common/FrozenScroll';
 
 // Supplier and laboratory qualification — SOP 404 V4.
 //
@@ -217,7 +218,7 @@ export default function SuppliersPanel({ user }) {
               </RecordCard>
             ))}
           </RecordCards>
-          <div className="hidden md:block overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
+          <FrozenScroll className="hidden md:block rounded-lg border border-slate-200 dark:border-slate-700">
             <table className="w-full min-w-[720px] text-sm">
               <thead className="bg-slate-50 dark:bg-slate-800">
                 <tr>{COLUMNS.map((c, i) => (
@@ -264,7 +265,7 @@ export default function SuppliersPanel({ user }) {
                 )}
               </tbody>
             </table>
-          </div>
+          </FrozenScroll>
           <ShowMore view={capped} noun="suppliers" />
         </>
       )}

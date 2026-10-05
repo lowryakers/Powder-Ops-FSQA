@@ -9,6 +9,7 @@ import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import HoursTab from './HoursTab.jsx';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
+import FrozenScroll from '../common/FrozenScroll';
 
 const TYPES = [
   { value: 'absent', label: 'Absent', icon: UserX, tone: 'bg-red-100 text-red-700' },
@@ -367,7 +368,7 @@ function AdjustmentsLog({ tr = (x) => x }) {
 
       {/* Desktop table */}
       <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
+        <FrozenScroll>
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
@@ -463,7 +464,7 @@ function AdjustmentsLog({ tr = (x) => x }) {
               {list.length === 0 && <tr><td colSpan={10} className="px-4 py-8 text-center text-gray-400">{tr('No entries')}</td></tr>}
             </tbody>
           </table>
-        </div>
+        </FrozenScroll>
       </div>
     </div>
   );
@@ -485,7 +486,7 @@ function StatsTab() {
       ))}
     </RecordCards>
     <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div className="overflow-x-auto">
+      <FrozenScroll>
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b">
             <tr>
@@ -508,7 +509,7 @@ function StatsTab() {
             {(stats || []).length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No activity in the last 90 days</td></tr>}
           </tbody>
         </table>
-      </div>
+      </FrozenScroll>
     </div>
     </>
   );

@@ -8,6 +8,7 @@ import { formatDate } from '../../lib/datetime.js';
 import { AlertTriangle, CalendarCheck, CheckCircle2, Clock, FlaskConical, Plus, ShieldAlert } from 'lucide-react';
 import CheckFields from '../common/CheckFields.jsx';
 import { missingForCheck } from '../../../shared/check-forms.js';
+import FrozenScroll from '../common/FrozenScroll';
 
 const OUTCOME = {
   pending: { label: 'Awaiting result', cls: 'bg-amber-50 text-amber-800' },
@@ -235,7 +236,7 @@ export function GmpWalksTab() {
         The same item not compliant on two consecutive walks raises a CAR.
       </p>
       {walks.length === 0 ? <p className="text-xs text-gray-400">No walk-through on record yet. The first one is in the Task Center under Quality.</p> : (
-        <div className="overflow-x-auto rounded-xl border border-gray-200">
+        <FrozenScroll className="rounded-xl border border-gray-200">
           <table className="min-w-full text-xs">
             <thead className="bg-gray-50 text-gray-500"><tr><th className="text-left px-3 py-2">Walked</th><th className="text-left px-3 py-2">By</th><th className="text-left px-3 py-2">Area</th>
               {(data?.items || []).map(it => <th key={it.key} className="text-left px-3 py-2">{it.label.split(' — ')[0]}</th>)}<th className="text-left px-3 py-2">CARs</th></tr></thead>
@@ -256,7 +257,7 @@ export function GmpWalksTab() {
               ))}
             </tbody>
           </table>
-        </div>
+        </FrozenScroll>
       )}
     </div>
   );
@@ -284,7 +285,7 @@ export function ListReviewsTab() {
         ) : <p className="text-xs text-amber-800">No review on record — the first one, from the Task Center, sets the baseline editions.</p>}
       </section>
       {reviews.length > 0 && (
-        <div className="overflow-x-auto rounded-xl border border-gray-200">
+        <FrozenScroll className="rounded-xl border border-gray-200">
           <table className="min-w-full text-xs">
             <thead className="bg-gray-50 text-gray-500"><tr><th className="text-left px-3 py-2">Reviewed</th><th className="text-left px-3 py-2">By</th><th className="text-left px-3 py-2">Changes found</th><th className="text-left px-3 py-2">Actions taken</th><th className="text-left px-3 py-2">Materials re-checked</th></tr></thead>
             <tbody className="divide-y divide-gray-100">
@@ -297,7 +298,7 @@ export function ListReviewsTab() {
               ))}
             </tbody>
           </table>
-        </div>
+        </FrozenScroll>
       )}
     </div>
   );
@@ -358,7 +359,7 @@ function AnnualReviewTab({ path, kind, dateCol, title, intro, canAct }) {
       )}
 
       {rows.length > 0 && (
-        <div className="overflow-x-auto rounded-xl border border-gray-200">
+        <FrozenScroll className="rounded-xl border border-gray-200">
           <table className="min-w-full text-xs">
             <thead className="bg-gray-50 text-gray-500"><tr>
               <th className="text-left px-3 py-2">Date</th>
@@ -389,7 +390,7 @@ function AnnualReviewTab({ path, kind, dateCol, title, intro, canAct }) {
               })}
             </tbody>
           </table>
-        </div>
+        </FrozenScroll>
       )}
     </div>
   );

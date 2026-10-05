@@ -10,6 +10,7 @@ import StandingLists, { TagChips } from './StandingLists.jsx';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import { externalUrl } from '../../lib/externalUrl.js';
+import FrozenScroll from '../common/FrozenScroll';
 
 // The groups used to be this hard-coded array, so adding one was a deploy.
 // They are a managed list now (`supply_tags`, seeded with exactly these five),
@@ -502,7 +503,7 @@ function OrdersLog({ refreshKey, onChanged }) {
 
       {/* Desktop table */}
       <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
+        <FrozenScroll>
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
@@ -611,7 +612,7 @@ function OrdersLog({ refreshKey, onChanged }) {
               {list.length === 0 && <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-400">No orders</td></tr>}
             </tbody>
           </table>
-        </div>
+        </FrozenScroll>
       </div>
       {editing && <EditOrderModal order={editing} onClose={() => setEditing(null)} onSaved={refresh} />}
       {receiving && <ReceiveModal order={receiving} onClose={() => setReceiving(null)} onSaved={() => { refresh(); onChanged?.(); }} />}
@@ -788,7 +789,7 @@ function InvoiceRepo() {
 
       {/* Desktop table */}
       <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
+        <FrozenScroll>
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr>
@@ -842,7 +843,7 @@ function InvoiceRepo() {
               {list.length === 0 && <tr><td colSpan={6} className="px-4 py-10 text-center text-gray-400">No invoices yet. Upload PDFs or photos — everything is searchable for accounting later.</td></tr>}
             </tbody>
           </table>
-        </div>
+        </FrozenScroll>
       </div>
       {editing && <EditInvoiceModal inv={editing} onClose={() => setEditing(null)} onSaved={refresh} />}
       {previewIdx !== null && (

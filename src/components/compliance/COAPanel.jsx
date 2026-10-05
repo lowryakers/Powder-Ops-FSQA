@@ -9,6 +9,7 @@ import CopyButton from '../common/CopyButton.jsx';
 import { downloadFile } from '../../lib/downloadFile.js';
 import { SignaturePad } from '../common/SignatureCanvas.jsx';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
+import FrozenScroll from '../common/FrozenScroll';
 
 // Typed-confirmation dialog for permanent, irreversible bulk deletion.
 function ConfirmDeleteModal({ count, onConfirm, onClose }) {
@@ -2379,7 +2380,7 @@ export default function COAPanel() {
             </div>
             {/* Desktop: full table */}
             <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
-              <div className="overflow-x-auto">
+              <FrozenScroll>
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
@@ -2427,7 +2428,7 @@ export default function COAPanel() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </FrozenScroll>
             </div>
             </>
           )}
@@ -2477,7 +2478,7 @@ export default function COAPanel() {
               ))}
             </RecordCards>
             <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
-              <div className="overflow-x-auto">
+              <FrozenScroll>
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
@@ -2516,7 +2517,7 @@ export default function COAPanel() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </FrozenScroll>
             </div>
           </>) : !showForm && (
             <div className="text-center py-8 text-gray-400">No specifications yet. Add specs per item/test to enable auto pass/fail.</div>
