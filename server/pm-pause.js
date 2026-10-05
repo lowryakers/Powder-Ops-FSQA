@@ -18,6 +18,8 @@
 // Completed work is history and is never touched. Resuming the schedule raises
 // a fresh card through the ordinary generator.
 
+import { consolidatedChecklists, CONSOLIDATED_LIKE } from './pm-coverage.js';
+
 export const CLOSABLE = "('open','overdue','missed')";
 
 /** Cancel what a schedule left outstanding. Returns { cancelled, in_progress }. */
@@ -65,9 +67,17 @@ export function pauseReason(scheduleTitle, by, why) {
 const SCALE_REASON = 'Scale Verification (FORM 417-01 … 417-05) is the daily scale check and files the record; '
   + 'the generic Daily Scale PM duplicated it (D-011, D-012, D-139).';
 
+/** A scale, by its type — `Scale`, `scale `, `Floor Scale`, `Scales` (D-141). */
+export const isScaleType = (type) => /\bscales?\b/i.test(String(type || ''));
+
+/**
+ * Returns what it did AND what it looked at, so the boot log can say when it
+ * matched nothing (D-141: the first pass reported the per-scale PMs and was
+ * silent about the 2 room checklists whose lines it could not resolve).
+ */
 export function retireDailyScalePMs(db, logAudit) {
-  const scaleIds = new Set(db.prepare("SELECT id FROM equipment WHERE LOWER(COALESCE(type,'')) = 'scale'").all().map((r) => r.id));
-  const out = { scales: scaleIds.size, paused: [], lines_removed: [], cancelled: 0, in_progress: 0 };
+  const scaleIds = new Set(db.prepare('SELECT id, type FROM equipment').all().filter((e) => isScaleType(e.type)).map((r) => r.id));
+  const out = { scales: scaleIds.size, paused: [], lines_removed: [], reanchored: [], unresolved: [], checklists_scanned: 0, cancelled: 0, in_progress: 0 };
   if (!scaleIds.size) return out;
   const pause = db.prepare("UPDATE pm_schedules SET is_active = 0, updated_at = datetime('now') WHERE id = ?");
   const reasonFor = (title) => `Closed because "${title}" was retired: ${SCALE_REASON}`;
@@ -76,7 +86,7 @@ export function retireDailyScalePMs(db, logAudit) {
     // 1. Per-scale daily PMs, however they were made.
     const own = db.prepare(`SELECT ps.* FROM pm_schedules ps WHERE ps.frequency_type = 'daily'
       AND COALESCE(ps.task_group, '') != 'qa'
-      AND (ps.description IS NULL OR ps.description NOT LIKE 'Consolidated daily checks%')`).all()
+      AND (ps.description IS NULL OR ps.description NOT LIKE ?)`).all(CONSOLIDATED_LIKE)
       .filter((s) => scaleIds.has(s.equipment_id));
     for (const s of own) {
       if (s.is_active) pause.run(s.id);
@@ -90,28 +100,35 @@ export function retireDailyScalePMs(db, logAudit) {
       out.cancelled += r.cancelled; out.in_progress += r.in_progress;
     }
 
-    // 2. Scale lines on the room checklists, active or not.
-    const rooms = db.prepare("SELECT * FROM pm_schedules WHERE description LIKE 'Consolidated daily checks%'").all();
-    for (const s of rooms) {
-      let steps; try { steps = JSON.parse(s.procedure_steps || '[]'); } catch { steps = []; }
-      if (!Array.isArray(steps) || !steps.length) continue;
-      const isScaleLine = (step) => {
-        const i = typeof step === 'string' ? step.indexOf(' — ') : -1;
-        if (i < 0) return false;
-        const label = step.slice(0, i).trim();
-        const m = label.match(/#(\S+)$/);
-        const ids = m ? db.prepare('SELECT id FROM equipment WHERE asset_id = ?').all(m[1]).map((r) => r.id) : [];
-        const hits = ids.length ? ids : db.prepare('SELECT id FROM equipment WHERE name = ?').all(label).map((r) => r.id);
-        return hits.some((id) => scaleIds.has(id));
-      };
-      const removed = steps.filter(isScaleLine);
+    // 2. Scale lines on the room checklists, active or not — resolved by the
+    //    ONE resolver every checklist reader uses (pm-coverage.js).
+    for (const c of consolidatedChecklists(db, { includeInactive: true })) {
+      const s = c.schedule;
+      if (!c.steps.length) continue;
+      out.checklists_scanned++;
+      for (const l of c.lines) if (l.label && !l.equipment_ids.length) out.unresolved.push({ checklist: s.title, line: l.label });
+      const isScaleLine = (l) => l.equipment_ids.some((id) => scaleIds.has(id));
+      const removed = c.lines.filter(isScaleLine);
       if (!removed.length) continue;
-      const kept = steps.filter((x) => !isScaleLine(x));
+      const keptLines = c.lines.filter((l) => !isScaleLine(l));
+      const kept = keptLines.map((l) => l.step);
       const json = JSON.stringify(kept);
       db.prepare("UPDATE pm_schedules SET procedure_steps = ?, updated_at = datetime('now') WHERE id = ?").run(json, s.id);
-      let cancelled = 0, inProgress = 0;
+      let cancelled = 0, inProgress = 0, anchor = null;
       if (kept.length) {
-        db.prepare(`UPDATE work_orders SET procedure_steps = ? WHERE pm_schedule_id = ? AND status IN ('open','in_progress','overdue','missed')`).run(json, s.id);
+        // A checklist hung on a scale that keeps other machines' lines would
+        // still read "on Counting Scale #87" on every card. It is re-hung on
+        // the first machine it still carries — the anchor was only ever "the
+        // first machine folded" (D-138).
+        if (scaleIds.has(s.equipment_id)) {
+          anchor = keptLines.flatMap((l) => l.equipment_ids).find((id) => !scaleIds.has(id)) || null;
+        }
+        if (anchor) {
+          db.prepare("UPDATE pm_schedules SET equipment_id = ? WHERE id = ?").run(anchor, s.id);
+          out.reanchored.push({ id: s.id, title: s.title, from: s.equipment_id, to: anchor });
+        }
+        db.prepare(`UPDATE work_orders SET procedure_steps = ?${anchor ? ', equipment_id = ?' : ''} WHERE pm_schedule_id = ? AND status IN ('open','in_progress','overdue','missed')`)
+          .run(...(anchor ? [json, anchor, s.id] : [json, s.id]));
       } else {
         if (s.is_active) pause.run(s.id);
         const r = closeScheduleWork(db, s.id, { reason: reasonFor(s.title), logAudit });
@@ -121,9 +138,24 @@ export function retireDailyScalePMs(db, logAudit) {
       out.cancelled += cancelled; out.in_progress += inProgress;
       out.lines_removed.push({ id: s.id, title: s.title, removed: removed.length, kept: kept.length });
       logAudit?.('system', 'update', 'pm_schedule', s.id,
-        { retired: 'daily_scale_pm_lines', reason: SCALE_REASON, removed_lines: removed.map((x) => x.split(' — ')[0]), kept: kept.length, cancelled, in_progress_left: inProgress },
-        { procedure_steps: steps, is_active: s.is_active }, { procedure_steps: kept, is_active: kept.length ? s.is_active : 0 }, s.title);
+        { retired: 'daily_scale_pm_lines', reason: SCALE_REASON, removed_lines: removed.map((l) => l.label), kept: kept.length, cancelled, in_progress_left: inProgress, reanchored_to: anchor },
+        { procedure_steps: c.steps, is_active: s.is_active, equipment_id: s.equipment_id },
+        { procedure_steps: kept, is_active: kept.length ? s.is_active : 0, equipment_id: anchor || s.equipment_id }, s.title);
     }
   })();
   return out;
+}
+
+/** One line for the boot log, flagging a pass that matched nothing it looked at. */
+export function retireSummary(r) {
+  const lines = r.lines_removed.reduce((n, x) => n + x.removed, 0);
+  let msg = `[migrate] Daily Scale PMs retired: ${r.paused.filter((p) => p.was_active).length} schedule(s) paused, ${lines} scale line(s) off `
+    + `${r.lines_removed.length} room checklist(s), ${r.cancelled} open/missed card(s) cancelled, ${r.in_progress} started card(s) left`
+    + ` — ${r.scales} scale(s) in the register, ${r.checklists_scanned} room checklist(s) scanned`;
+  if (r.reanchored.length) msg += `, ${r.reanchored.length} checklist(s) re-hung off a scale`;
+  const warn = [];
+  if (!r.paused.length && !lines) warn.push('[migrate] WARNING Daily Scale PM retirement MATCHED NOTHING — check equipment types and checklist labels');
+  if (r.unresolved.length) warn.push(`[migrate] WARNING ${r.unresolved.length} room-checklist line(s) resolve to no equipment: `
+    + r.unresolved.slice(0, 12).map((u) => `"${u.line}" on ${u.checklist}`).join('; '));
+  return { msg, warn };
 }

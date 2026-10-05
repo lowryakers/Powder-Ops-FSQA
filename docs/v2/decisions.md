@@ -5904,3 +5904,56 @@ unchanged. Checked live on a local server with the Host header: tile and redirec
 **Outside this repository and worth checking:** the Artwork-Proofing service's `READYDOC_URL`, any printed kiosk
 QR poster or saved home-screen icon made before the domain moved. The Railway domain still serves the app, so
 those keep working, but each one is a second origin with its own session.
+
+## D-141 — The scale lines D-139 missed: a July label does not name today's asset number (2026-10-05)
+
+**Reported live on 2 October, the day after D-139 deployed.** "Daily PM Checklist — Kitting (Warehouse)" (on
+Counting Scale #87) was missed once since 10/1, and "Daily PM Checklist — Production (Warehouse)" (on
+C051746402 Scale warehouse #85) was on the Operator View that morning. The per-scale cards were gone, so the
+first half of `retireDailyScalePMs` had run. The room-checklist half had matched nothing.
+
+**Cause, from the code and the seed. The live database is not readable from here, so this is reasoned and the
+boot log on the next deploy confirms it:**
+- PM consolidation v1 wrote each line on 22 July as `Name #ASSET — tasks`, with the asset number **of that day**.
+  The seed register has the counting scales at **#114/#115** and the warehouse scale at **#124**. Live shows
+  **#87** and **#85**, so the floor's asset numbers have been renumbered since. The line labels never moved.
+- D-139 resolved a label by its asset number first. A renumbered number finds nothing, or another machine. Its
+  fallback then compared the **whole label, `#114` included**, against `equipment.name`, which can never match.
+  The scale was not found, the line stayed, and the checklist kept raising.
+- It ran **once per database** under `daily_scale_pm_retired_v1`, so no corrected matcher would ever have run
+  on live. It also logged only what it did, never what it looked at, so a pass that matched none of the lines
+  was silent.
+
+**Decided:**
+- **`resolveLabel()` in `server/pm-coverage.js` is the one resolver**, exported, and every checklist reader goes
+  through it. Strongest evidence first: (1) asset number and name agree, (2) the name alone, (3) the asset
+  number alone. Names are folded with `normName()`: case and spacing, a trailing `#asset`, and a leading number
+  (a line written before `cleanEquipmentNames` moved "124 C051746402 Scale warehouse" into `asset_id`).
+  `lineLabel()` accepts an en-dash or spaced hyphen only when the line has no em-dash.
+- **A scale is matched by type with `/\bscales?\b/i`**, not `LOWER(type) = 'scale'`, so a "Floor Scale" or
+  "Scales" counts.
+- **v2 marker `daily_scale_pm_retired_v2`**: the corrected pass runs once more on live. The pause and cancel are
+  D-139's `closeScheduleWork`. Weekly, monthly, quarterly and annual scale PMs are untouched.
+- **The boot log now says what it scanned**: scales in the register, room checklists scanned, lines removed,
+  checklists re-hung. It logs **WARNING** when nothing matched, and names every line that resolves to no
+  equipment. The summary goes into the marker's value.
+- **A checklist hung on a scale that keeps other machines' lines is re-hung on the first remaining machine**,
+  outstanding cards included. Otherwise every card reads "on Counting Scale #87" after the scale lines are gone.
+- **Cost, stated:** a per-scale daily PM somebody resumed between 1 October and this deploy is paused again by
+  v2. Nobody reported resuming one.
+
+**Not this change, for the plant:** if "Kitting (Warehouse)" also carries the non-scale machines named in the
+fix doc (Laser Coder #35, Meenjet #51, Roller Conveyor #43, Tape Machine #47), it keeps running for those, now
+hung on one of them. Whether those dailies stay is the plant's decision.
+
+**Verified:** `verify:scalepmretire` (27 → **31**, live, four boots, the generator, housekeeping and a browser).
+The fixtures are live-shaped:
+- titles "… Kitting (Warehouse)" and "… Production (Warehouse)";
+- scales renumbered to #87/#88/#85 with lines still written as #114/#115/#124;
+- six label forms on Production;
+- a "Floor Scale";
+- a mixed checklist hung on a scale with a line naming no equipment;
+- **the v1 marker already written**, as on live.
+
+**The control is `main` on that state and fails 15**; its Operator View still lists both "(Warehouse)"
+checklists. `verify:checklistoverlap` (19) and `verify:pmpause` (18) pass on the new resolver.

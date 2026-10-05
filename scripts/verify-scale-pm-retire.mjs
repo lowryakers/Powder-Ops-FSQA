@@ -48,7 +48,8 @@ const card = (sid, eq, title, status, due) => {
     VALUES (?,?,?,?,?,'["Check zero"]','warehouse',?)`).run(id, sid, eq.id, title, due, status);
   return id;
 };
-db.prepare("DELETE FROM app_settings WHERE key = 'daily_scale_pm_retired_v1'").run();
+db.prepare("DELETE FROM app_settings WHERE key = 'daily_scale_pm_retired_v2'").run();
+db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('daily_scale_pm_retired_v1', '{}', datetime('now'))").run();
 // #148: the original Daily PM, paused on 24 Aug in Settings, its card left missed.
 const old148 = db.prepare("SELECT id, title FROM pm_schedules WHERE equipment_id = ? AND frequency_type = 'daily' AND description IS NULL").get(V148.id);
 db.prepare('UPDATE pm_schedules SET is_active = 0 WHERE id = ?').run(old148.id);
@@ -60,20 +61,42 @@ db.prepare('UPDATE pm_schedules SET is_active = 1 WHERE id = ?').run(old81.id);
 const W81a = card(old81.id, U81, old81.title, 'missed', '2026-08-24');
 const new81 = sched(U81, 'Uline Scale — Daily PM', { desc: 'Created from the maintenance tasks written on Uline Scale.' });
 const W81b = card(new81, U81, 'Uline Scale — Daily PM', 'missed', '2026-08-25');
-// The Kitting room checklist, scale lines back on it, a card due today.
-const KIT = sched(C114, 'Daily PM Checklist — Kitting', { desc: 'Consolidated daily checks for 2 equipment items in Kitting. One line per machine; replaces the individual daily PM tasks.',
-  steps: [`Counting Scale #114 — Check zero`, `Counting Scale #115 — Check zero`] });
-const WKIT = card(KIT, C114, 'Daily PM Checklist — Kitting', 'open', day(0));
-// A mixed room checklist: a scale line beside a fan line — only the scale goes.
-const MIX = sched(FAN, 'Daily PM Checklist — Mixed room', { desc: 'Consolidated daily checks for 2 equipment items in Mixed. One line per machine; replaces the individual daily PM tasks.',
-  steps: [`Kitchen Tour Scale #151 — Check zero`, `DeWalt Fan #94 — Check blades`] });
-const WMIX = card(MIX, FAN, 'Daily PM Checklist — Mixed room', 'open', day(0));
+// ── LIVE-SHAPED (D-141) ──
+// The register has been renumbered since the July consolidation wrote its
+// lines: the counting scales written #114/#115 are #87/#88 on the floor, the
+// warehouse scale written #124 is #85. The live titles carry "(Warehouse)"
+// because more than one team shares each place. One scale is typed
+// "Floor Scale", not "Scale". And the v1 marker is ALREADY written — the
+// state of the live database, where the first pass ran on 1 October and
+// matched none of these lines.
+const renumber = db.prepare('UPDATE equipment SET asset_id = ? WHERE id = ?');
+renumber.run('87', C114.id); renumber.run('88', eqA('115').id); renumber.run('85', eqA('124').id);
+db.prepare("UPDATE equipment SET type = 'Floor Scale' WHERE id = ?").run(eqA('125').id);
+const C085 = eqA('85'), K152 = eqA('152');
+const CONS = (n, place) => `Consolidated daily checks for ${n} equipment items in ${place}. One line per machine; replaces the individual daily PM tasks.`;
+// Kitting (Warehouse), hung on Counting Scale #87, both lines written under the old numbers.
+const KIT = sched(C114, 'Daily PM Checklist — Kitting (Warehouse)', { desc: CONS(2, 'Kitting'),
+  steps: ['Counting Scale #114 — Power, display, zero/tare check', 'Counting Scale #115 — Power, display, zero/tare check'] });
+const WKIT = card(KIT, C114, 'Daily PM Checklist — Kitting (Warehouse)', 'missed', day(1));
+// Production (Warehouse), hung on the warehouse scale (#85 now): every line a
+// scale, in every form a July label can take — a renumbered asset, a name that
+// still carried its number, odd case and spacing, the Floor Scale.
+const PROD = sched(C085, 'Daily PM Checklist — Production (Warehouse)', { desc: CONS(6, 'Production'),
+  steps: ['C051746402 Scale warehouse #124 — Power, display, zero/tare check', 'Scale #75 — Power, display, zero/tare check',
+    '123 Uline82 Scale — Power, display, zero/tare check', 'MAQ2202IN0801 Scale Floor #125 — Level, zero',
+    'vevor  scale #149 — Power, display', 'Kitchen Tour Scale #153 — Power, display'] });
+const WPROD = card(PROD, C085, 'Daily PM Checklist — Production (Warehouse)', 'open', day(0));
+// A mixed checklist HUNG ON A SCALE: the scale line goes, the fan stays, and a
+// line naming a machine the register no longer has is kept and REPORTED.
+const MIX = sched(K152, 'Daily PM Checklist — Mixed room (Warehouse)', { desc: CONS(3, 'Mixed'),
+  steps: ['Kitchen Tour Scale #152 — Check zero', 'DeWalt Fan #94 — Check blades', 'Old Labeler #999 — Check ink'] });
+const WMIX = card(MIX, K152, 'Daily PM Checklist — Mixed room (Warehouse)', 'open', day(0));
 // What must NOT move: a weekly scale PM, a started daily scale card, and the paused Pre-Op.
 const WEEK = sched(K151, 'Weekly PM — 151 Kitchen Tour Scale', { freq: 'weekly' });
 const START = card(new81, U81, 'Uline Scale — Daily PM', 'in_progress', day(1));
 const preop = db.prepare("SELECT id, is_active FROM pm_schedules WHERE title LIKE 'Production Line Pre-Op%'").all();
 db.close();
-t('the plant\'s state is built: #148 paused with a missed card, #81 twice, the Kitting checklist, a mixed checklist',
+t('the plant\'s state is built: #148 paused with a missed card, #81 twice, two live-shaped room checklists, a mixed one hung on a scale',
   !!old148 && !!old81 && preop.length > 0 && preop.every((p) => p.is_active === 0));
 
 async function boot(port) {
@@ -93,21 +116,27 @@ const st = (id) => q('SELECT status FROM work_orders WHERE id = ?', id)[0]?.stat
 const act = (id) => q('SELECT is_active FROM pm_schedules WHERE id = ?', id)[0]?.is_active;
 const SCALE_DAILY = `SELECT COUNT(*) n FROM work_orders wo JOIN pm_schedules ps ON ps.id = wo.pm_schedule_id
   JOIN equipment e ON e.id = ps.equipment_id
-  WHERE wo.status IN ('open','overdue','missed') AND ps.frequency_type = 'daily' AND e.type = 'Scale'`;
+  WHERE wo.status IN ('open','overdue','missed') AND ps.frequency_type = 'daily' AND LOWER(e.type) LIKE '%scale%'`;
 
 console.log('\n── the deploy: the Daily Scale PMs are retired, once ──');
 const one = await boot(BOOT2);
 t('the application booted again', one.ready);
-t('the boot log says what it retired', /Daily Scale PMs retired: \d+ schedule\(s\) paused, \d+ scale line\(s\) off 2 room checklist\(s\), \d+ open\/missed card\(s\) cancelled, 1 started card\(s\) left/.test(one.log()),
+t('the boot log says what it retired, and what it scanned', /Daily Scale PMs retired: \d+ schedule\(s\) paused, 9 scale line\(s\) off 3 room checklist\(s\), \d+ open\/missed card\(s\) cancelled, 1 started card\(s\) left — \d+ scale\(s\) in the register, \d+ room checklist\(s\) scanned, 1 checklist\(s\) re-hung off a scale/.test(one.log()),
   one.log().split('\n').filter((l) => /Scale PMs/.test(l)).join(' | ') || 'no line');
+t('a line naming no equipment is REPORTED in the boot log, not dropped', /WARNING 1 room-checklist line\(s\) resolve to no equipment: "Old Labeler #999"/.test(one.log()),
+  one.log().split('\n').filter((l) => /WARNING/.test(l)).join(' | ') || 'no warning');
 t('#81: both daily programs are paused', act(old81.id) === 0 && act(new81) === 0);
 t('#148: the paused program\'s 38-day-old missed card is cancelled', st(W148) === 'cancelled');
 t('#81: both missed cards are cancelled', st(W81a) === 'cancelled' && st(W81b) === 'cancelled');
 t('the reason is on the card, naming Scale Verification', /Scale Verification \(FORM 417-01/.test(q('SELECT notes FROM work_orders WHERE id = ?', W81a)[0]?.notes || ''));
-t('the Kitting room checklist (two scales) is paused and today\'s card cancelled', act(KIT) === 0 && st(WKIT) === 'cancelled');
-const mix = q('SELECT is_active, procedure_steps FROM pm_schedules WHERE id = ?', MIX)[0];
-t('a mixed room checklist loses its scale line and keeps the fan', mix.is_active === 1 && JSON.parse(mix.procedure_steps).join() === 'DeWalt Fan #94 — Check blades'
-  && JSON.parse(q('SELECT procedure_steps FROM work_orders WHERE id = ?', WMIX)[0].procedure_steps).length === 1 && st(WMIX) === 'open');
+t('Kitting (Warehouse), its lines written under the old asset numbers, is paused and its missed card cancelled', act(KIT) === 0 && st(WKIT) === 'cancelled');
+t('Production (Warehouse) — six scale lines in six label forms — is paused and today\'s card cancelled', act(PROD) === 0 && st(WPROD) === 'cancelled');
+const mix = q('SELECT is_active, procedure_steps, equipment_id FROM pm_schedules WHERE id = ?', MIX)[0];
+t('a mixed room checklist loses its scale line and keeps the fan and the unknown line', mix.is_active === 1
+  && JSON.parse(mix.procedure_steps).join('|') === 'DeWalt Fan #94 — Check blades|Old Labeler #999 — Check ink'
+  && JSON.parse(q('SELECT procedure_steps FROM work_orders WHERE id = ?', WMIX)[0].procedure_steps).length === 2 && st(WMIX) === 'open');
+t('…and is re-hung on the fan, card included, so nothing reads "on Kitchen Tour Scale"', mix.equipment_id === FAN.id
+  && q('SELECT equipment_id FROM work_orders WHERE id = ?', WMIX)[0].equipment_id === FAN.id);
 t('the weekly scale PM is untouched', act(WEEK) === 1);
 t('a card somebody had STARTED is left open, and counted', st(START) === 'in_progress');
 t('the Pre-Op dailies stay paused (OBL-22)', q("SELECT is_active FROM pm_schedules WHERE title LIKE 'Production Line Pre-Op%'").every((p) => p.is_active === 0));
@@ -126,10 +155,14 @@ await A('POST', '/pm/generate');
 await A('GET', '/pm/operator-tasks');
 t('after the generator and the housekeeping the boot ran, no daily scale card exists', q(SCALE_DAILY)[0].n === 0, String(q(SCALE_DAILY)[0].n));
 const ops = await J(await A('GET', '/pm/operator-tasks'));
-const titles = (Array.isArray(ops) ? ops : []).filter((x) => x.status !== 'in_progress').map((x) => x.title);
+const opsRows = (Array.isArray(ops) ? ops : []).filter((x) => x.status !== 'in_progress');
+const titles = opsRows.map((x) => x.title);
 t('the admin\'s unfiltered Operator View list is not empty (so the next check is not vacuous)', titles.length > 0, String(titles.length));
-t('the Operator View carries none of the daily scale programs (a card somebody started aside)', !titles.some((x) => /Daily PM — (148|81|114|151) |Uline Scale — Daily PM|Daily PM Checklist — Kitting/.test(x)),
+t('the Operator View carries none of the daily scale programs (a card somebody started aside)', !titles.some((x) => /Daily PM — (148|81|114|151) |Uline Scale — Daily PM|Daily PM Checklist — (Kitting|Production) \(Warehouse\)/.test(x)),
   titles.filter((x) => /Scale|Kitting/.test(x)).join(', '));
+t('no daily card on the Operator View is hung on a scale (the searches for Counting, Scale, Kitting and Warehouse)',
+  !opsRows.some((x) => x.status !== 'in_progress' && /daily/i.test(x.frequency_type || x.title) && /scale/i.test(`${x.equipment_name || ''} ${x.equipment_type || ''}`)),
+  opsRows.filter((x) => /scale/i.test(`${x.equipment_name || ''}`)).map((x) => `${x.title} on ${x.equipment_name}`).join(', '));
 const checks = await J(await A('GET', '/pm/operator-checks'));
 t('Scale Verification is still what asks for the daily check (the strip has scales due)', (checks?.scale_checks || []).length > 0, JSON.stringify(checks).slice(0, 120));
 const prev = await J(await A('GET', '/equipment/schedules-from-tasks/preview'));
@@ -181,7 +214,7 @@ try {
   await page.locator('[data-scale-due]').waitFor({ timeout: 15000 });
   const body = await page.locator('body').innerText();
   t('the Scale Verification strip is there', await page.locator('[data-scale-due-card]').count() > 0);
-  const hits = body.match(/Daily PM — (148|81|114|151) [^\n]*|Uline Scale — Daily PM|Daily PM Checklist — Kitting/g) || [];
+  const hits = body.match(/Daily PM — (148|81|114|151) [^\n]*|Uline Scale — Daily PM|Daily PM Checklist — (Kitting|Production) \(Warehouse\)/g) || [];
   // The one daily scale card left is the one somebody had STARTED before the
   // retirement — left open on purpose, and on screen because it is theirs.
   t('and the only Daily Scale PM card on it is the one somebody had started', hits.length === 1 && hits[0] === 'Uline Scale — Daily PM', JSON.stringify(hits));

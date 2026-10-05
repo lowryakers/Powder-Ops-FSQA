@@ -1336,6 +1336,17 @@ pause that closed nothing left 38-day-old Daily Scale PM cards on screen.
 - Pre-Op stays paused (OBL-22); weekly+ scale PMs untouched. `verify:scalepmretire` (27, four boots + browser;
   control fails 15), `verify:pmpause` (18) asserts the new rule.
 
+### A July label does not name today's asset number (D-141)
+`resolveLabel()` / `normName()` / `lineLabel()` in `server/pm-coverage.js` are the ONE resolver for checklist
+lines, and `retireDailyScalePMs` uses it. Order: asset AND name agree → name alone (folded: case, spacing, a
+trailing `#asset`, a leading number) → asset alone. **The floor renumbered its assets after consolidation wrote
+the lines** (Counting Scale #114 → #87, warehouse scale #124 → #85), so the asset-first matcher missed every
+room-checklist line on live while the per-scale half worked. Scales match `/\bscales?\b/i` on type.
+**Marker `daily_scale_pm_retired_v2`** re-runs the corrected pass once. The boot log names scales and
+checklists scanned, **warns on zero matches** and on every line resolving to nothing. A checklist that keeps
+other machines' lines is re-hung off the scale. `verify:scalepmretire` (31; fixtures live-shaped, v1 marker
+pre-set; control fails 15).
+
 ## A paused schedule says what it left behind (D-012 → D-055)
 Pausing a PM schedule cascades nothing: the tasks it already raised stay open or missed, nobody completes
 them because the work is recorded elsewhere, and the floor sees the retirement as never having happened —

@@ -26,28 +26,66 @@
 export const CONSOLIDATED_LIKE = 'Consolidated daily checks%';
 export const isConsolidated = (s) => /^Consolidated daily checks/.test(String(s?.description || ''));
 
-/** The machine label at the head of a checklist line, or null. */
+/**
+ * The machine label at the head of a checklist line, or null. Consolidation
+ * wrote `Name #ASSET — tasks` with an em-dash; an en-dash or a spaced hyphen is
+ * accepted only when there is no em-dash, so a name containing " - " is never
+ * cut short when the line also carries the real separator.
+ */
 export function lineLabel(step) {
   if (typeof step !== 'string') return null;
-  const i = step.indexOf(' — ');
-  return i > 0 ? step.slice(0, i).trim() : null;
+  for (const sep of [' — ', ' – ', ' - ']) {
+    const i = step.indexOf(sep);
+    if (i > 0) return step.slice(0, i).trim();
+  }
+  return null;
 }
 
 /**
- * Resolve a line's label to equipment ids. The asset number is the stable part
- * (`#QA-TH-011`) — equipment NAMES were normalised after consolidation ran — so
- * it is tried first; a label with no asset number matches on the exact name.
- * Two rows sharing an asset number are both returned: they are the duplicate
+ * A machine name as a line label can carry it (D-141): case and spacing
+ * folded, a trailing `#asset` dropped, and a leading asset number dropped
+ * (`cleanEquipmentNames` moved "124 C051746402 Scale warehouse" into asset_id,
+ * so a line written before that carries the number in the name).
+ */
+export function normName(s) {
+  return String(s || '').toLowerCase().replace(/\s*#\S+$/, '').replace(/^\s*\d{1,4}\s+/, '').replace(/\s+/g, ' ').trim();
+}
+
+/** Equipment indexed once per walk: by asset number and by folded name. */
+export function equipmentIndex(db) {
+  const rows = db.prepare('SELECT id, name, asset_id, type FROM equipment').all();
+  const byAsset = new Map(), byName = new Map();
+  for (const e of rows) {
+    const a = String(e.asset_id ?? '').trim();
+    if (a) { if (!byAsset.has(a)) byAsset.set(a, []); byAsset.get(a).push(e); }
+    const n = normName(e.name);
+    if (n) { if (!byName.has(n)) byName.set(n, []); byName.get(n).push(e); }
+  }
+  return { byAsset, byName };
+}
+
+/**
+ * Resolve a line's label to equipment ids (D-141). The label was written in
+ * July and the register has moved since: asset numbers were renumbered on the
+ * floor (a scale written `#124` can be `#85` today) and names were normalised.
+ * Trusting the asset number first matched a renumbered line to NOTHING — or to
+ * whichever machine holds that number now. Strongest evidence first:
+ *  1. the asset number AND the name agree;
+ *  2. the name alone, folded — a renumbered machine is still found by name;
+ *  3. the asset number alone — the last resort, when the name has changed.
+ * Two rows sharing an identity are both returned: they are the duplicate
  * entries consolidation (a) already found, and either may hold the schedule.
  */
-function resolveLabel(db, label) {
-  const m = label.match(/#(\S+)$/);
-  if (m) {
-    const rows = db.prepare('SELECT id FROM equipment WHERE asset_id = ?').all(m[1]);
-    if (rows.length) return rows.map((r) => r.id);
-  }
-  const name = m ? label.slice(0, m.index).trim() : label;
-  return db.prepare('SELECT id FROM equipment WHERE name = ?').all(name).map((r) => r.id);
+export function resolveLabel(db, label, idx = equipmentIndex(db)) {
+  const m = String(label).match(/#(\S+)$/);
+  const asset = m ? m[1] : null;
+  const name = normName(label);
+  const byAsset = asset ? (idx.byAsset.get(asset) || []) : [];
+  const both = byAsset.filter((e) => normName(e.name) === name);
+  if (both.length) return both.map((e) => e.id);
+  const byName = name ? (idx.byName.get(name) || []) : [];
+  if (byName.length) return byName.map((e) => e.id);
+  return byAsset.map((e) => e.id);
 }
 
 /**
@@ -57,13 +95,14 @@ function resolveLabel(db, label) {
 export function consolidatedChecklists(db, { includeInactive = false } = {}) {
   const rows = db.prepare(`SELECT * FROM pm_schedules WHERE description LIKE ?
     ${includeInactive ? '' : 'AND is_active = 1'} ORDER BY title`).all(CONSOLIDATED_LIKE);
+  const idx = equipmentIndex(db);
   return rows.map((s) => {
     let steps;
     try { steps = JSON.parse(s.procedure_steps || '[]'); } catch { steps = []; }
     if (!Array.isArray(steps)) steps = [];
     const lines = steps.map((step, index) => {
       const label = lineLabel(step);
-      return { index, step, label, equipment_ids: label ? resolveLabel(db, label) : [] };
+      return { index, step, label, equipment_ids: label ? resolveLabel(db, label, idx) : [] };
     });
     return { schedule: s, steps, lines };
   });

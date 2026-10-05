@@ -129,7 +129,7 @@ import { seedDilutionSchedules } from './server/dilution-seed.js';
 import { seedDilutionLog } from './server/dilution-log-seed.js';
 import { retireDailyPreOp } from './server/preop-retire.js';
 import { repairChecklistOverlap, consolidatedChecklists } from './server/pm-coverage.js';
-import { retireDailyScalePMs } from './server/pm-pause.js';
+import { retireDailyScalePMs, retireSummary } from './server/pm-pause.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
 import { seedProductionEntries, seedEodTemplates } from './server/production-seed.js';
 import { seedTrainingCourses, seedWorkInstructionCourses } from './server/training-seed.js';
@@ -1096,17 +1096,22 @@ try {
   // are cancelled with the reason. ONCE per database — a schedule somebody
   // resumes afterwards stays resumed — and the marker is written only once
   // the register holds a scale (on a fresh database the seed comes first).
-  if (!db.prepare("SELECT 1 FROM app_settings WHERE key = 'daily_scale_pm_retired_v1'").get()) {
+  // v2 (D-141): the v1 pass resolved checklist lines by their July asset
+  // number, so on a register renumbered since then it matched the per-scale
+  // PMs and none of the room-checklist lines, and said nothing. v2 runs the
+  // corrected matcher once more and logs what it scanned, warning on zero.
+  if (!db.prepare("SELECT 1 FROM app_settings WHERE key = 'daily_scale_pm_retired_v2'").get()) {
     const r = retireDailyScalePMs(db, logAudit);
     if (r.scales) {
-      db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('daily_scale_pm_retired_v1', ?, datetime('now'))")
-        .run(JSON.stringify({ at: new Date().toISOString(), paused: r.paused.map(p => p.title), lines_removed: r.lines_removed, cancelled: r.cancelled }));
-    }
-    if (r.paused.length || r.lines_removed.length) {
-      console.log(`[migrate] Daily Scale PMs retired: ${r.paused.filter(p => p.was_active).length} schedule(s) paused, `
-        + `${r.lines_removed.reduce((n, l) => n + l.removed, 0)} scale line(s) off ${r.lines_removed.length} room checklist(s), `
-        + `${r.cancelled} open/missed card(s) cancelled${r.in_progress ? `, ${r.in_progress} started card(s) left` : ''}`);
+      db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('daily_scale_pm_retired_v2', ?, datetime('now'))")
+        .run(JSON.stringify({ at: new Date().toISOString(), scales: r.scales, checklists_scanned: r.checklists_scanned,
+          paused: r.paused.map(p => p.title), lines_removed: r.lines_removed, reanchored: r.reanchored,
+          unresolved: r.unresolved, cancelled: r.cancelled }));
+      const { msg, warn } = retireSummary(r);
+      console.log(msg);
       for (const p of r.paused) console.log(`[migrate]   ${p.title}${p.was_active ? ' — paused' : ' — already paused'}, ${p.cancelled} card(s) cancelled`);
+      for (const l of r.lines_removed) console.log(`[migrate]   ${l.title}: ${l.removed} scale line(s) off, ${l.kept} kept`);
+      for (const w of warn) console.warn(w);
     }
   }
   // A machine on a consolidated room checklist that ALSO has its own daily
