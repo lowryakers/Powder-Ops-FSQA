@@ -4377,6 +4377,14 @@ what the author saw in the editor. `parseRuns()` (one line → styled runs), `pa
   through `richBlocks`. Text with no markup takes the plain path untouched, so wiring this into another export
   can't change how existing documents lay out.
 
+## A deviation exports as FORM 442-01; every QMS PDF uses an embedded Unicode font (D-151)
+`server/deviation-form-pdf.js` (`renderDeviationForm`) draws the form's grid for `GET /qms/deviation/:id/pdf` —
+the form's own spellings kept, ticks from the record, Room# blank (no field), signatures in plant time, record
+history on page 2 marked "not part of Form 442-01". `server/pdf-unicode.js` (`registerUnicodeFonts`, `printable` =
+NFKC + control-char strip) embeds Liberation Sans (OFL, Helvetica-metric) — **Helvetica writes any character outside
+WinAnsi as raw UTF-16 bytes** (full-width `Ｅ` → `ÿ%`), which was the garbled Product Description. Use it in any
+new pdfkit export that prints user text. `verify:deviationform` (40, port 5067).
+
 ## Emoji in generated PDFs
 `server/pdf-emoji.js` + `server/assets/NotoEmoji-Regular.ttf` (OFL 1.1, licence beside it). pdfkit's built-in
 Helvetica is **WinAnsi — 256 characters, no emoji**, so `doc.text('Welcome! 👋')` wrote the raw UTF-16 bytes

@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import crypto from 'crypto';
 import PDFDocument from 'pdfkit';
+import { renderDeviationForm } from '../deviation-form-pdf.js';
+import { registerUnicodeFonts, printable } from '../pdf-unicode.js';
 import { getDb, logAudit } from '../db.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
 import { moduleLevel } from '../module-access.js';
@@ -1459,20 +1461,50 @@ router.get('/:type/:id/pdf', (req, res) => {
   const row = db.prepare('SELECT * FROM qms_records WHERE id = ? AND record_type = ?').get(req.params.id, cfg.key);
   if (!row) return res.status(404).json({ error: 'Not found' });
   const rec = flatten(row);
+  const humanize = (a) => String(a || '')
+    .replace(/^qms_signed_/, 'Signed — ')
+    .replace(/^qms_unsigned_/, 'Signature revoked — ')
+    .replace(/_/g, ' ');
+  const filename = `${cfg.short}_${(rec.record_number || rec.id).toString().replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`;
+
+  // A DEVIATION PRINTS AS FORM 442-01 ITSELF (D-151) — the grid Quality attaches
+  // to the MO in MRPEasy, not the generic label-and-value list below.
+  if (cfg.key === 'deviation') {
+    const history = db.prepare('SELECT timestamp, actor, action FROM audit_log WHERE entity_type = ? AND entity_id = ? ORDER BY timestamp ASC')
+      .all(cfg.key, req.params.id).map(h => ({ ...h, action: humanize(h.action) }));
+    const revision = (() => {
+      try { return db.prepare("SELECT revision FROM controlled_forms WHERE REPLACE(UPPER(code), ' ', '') = 'FORM442-01'").get()?.revision; }
+      catch { return null; }
+    })() || 'V1';
+    const doc = new PDFDocument({ size: 'LETTER', margin: 0, bufferPages: true, info: { Title: `Deviation ${rec.record_number || ''} — Form 442-01` } });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    doc.pipe(res);
+    // Once the pipe has started there is no answering with JSON — a render
+    // failure ends this one download, never the process (the coa-submission rule).
+    try { renderDeviationForm(doc, { rec, approvals: cfg.approvals, history, revision }); }
+    catch (e) { console.error('[deviation pdf]', e.message); }
+    doc.end();
+    return;
+  }
+
   const pdf = new PDFDocument({ size: 'LETTER', margins: { top: 48, bottom: 48, left: 48, right: 48 } });
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="${cfg.short}_${(rec.record_number || rec.id).toString().replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf"`);
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   pdf.pipe(res);
+  // Every other record type keeps its list layout, in the embedded Unicode font
+  // so a character outside WinAnsi prints as itself, not as raw bytes (D-151).
+  const UF = registerUnicodeFonts(pdf);
 
-  pdf.fontSize(15).font('Helvetica-Bold').text(cfg.singular, { align: 'center' });
-  pdf.fontSize(8).font('Helvetica').text(cfg.formCode || '', { align: 'center' });
+  pdf.fontSize(15).font(UF.bold).text(cfg.singular, { align: 'center' });
+  pdf.fontSize(8).font(UF.regular).text(cfg.formCode || '', { align: 'center' });
   pdf.moveDown(0.6);
-  pdf.fontSize(10).font('Helvetica-Bold')
+  pdf.fontSize(10).font(UF.bold)
     .text(`${cfg.short} #: ${rec.record_number || '—'}`, { continued: true })
     .text(`      ${cfg.dateLabel || 'Date'}: ${rec.record_date || '—'}`);
   pdf.moveDown(0.5);
 
-  pdf.font('Helvetica').fontSize(9);
+  pdf.font(UF.regular).fontSize(9);
   for (const f of cfg.fields) {
     // The sensory rows are printed as one block against their specification below.
     if (f.type === 'sensory' || f.type === 'sensory_note') continue;
@@ -1480,44 +1512,44 @@ router.get('/:type/:id/pdf', (req, res) => {
     if (v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length)) continue;
     if (f.type === 'checkbox') v = v ? 'Yes' : 'No';
     if (Array.isArray(v)) v = v.join(', ');
-    pdf.font('Helvetica-Bold').text(`${f.label}: `, { continued: true }).font('Helvetica').text(String(v));
+    pdf.font(UF.bold).text(`${f.label}: `, { continued: true }).font(UF.regular).text(printable(v));
     pdf.moveDown(0.2);
   }
-  if (rec.notes) { pdf.moveDown(0.2).font('Helvetica-Bold').text('Notes: ', { continued: true }).font('Helvetica').text(rec.notes); }
+  if (rec.notes) { pdf.moveDown(0.2).font(UF.bold).text('Notes: ', { continued: true }).font(UF.regular).text(printable(rec.notes)); }
 
   if (cfg.statuses?.length) {
     const sd = cfg.statuses.find(s => s.value === rec.status);
-    pdf.moveDown(0.4).font('Helvetica-Bold').text('Status: ', { continued: true }).font('Helvetica').text(sd?.label || rec.status || '—');
+    pdf.moveDown(0.4).font(UF.bold).text('Status: ', { continued: true }).font(UF.regular).text(sd?.label || rec.status || '—');
   }
   if (cfg.sensory) {
     const r = sensoryResult(rec);
-    if (r) pdf.moveDown(0.4).font('Helvetica-Bold').text('Result: ', { continued: true }).font('Helvetica').text(r === 'fail' ? 'FAIL' : 'PASS');
+    if (r) pdf.moveDown(0.4).font(UF.bold).text('Result: ', { continued: true }).font(UF.regular).text(r === 'fail' ? 'FAIL' : 'PASS');
     if (sensoryShape(rec) === 'v2') {
       const spec = rec.sensory_spec?.attributes || {};
-      pdf.moveDown(0.4).font('Helvetica-Bold').text(`Checked against the product specification${rec.sensory_spec?.status === 'approved' ? ` (approved by ${rec.sensory_spec.approved_by})` : rec.sensory_spec ? ' (DRAFT — not yet approved)' : ''}`);
-      pdf.font('Helvetica');
+      pdf.moveDown(0.4).font(UF.bold).text(`Checked against the product specification${rec.sensory_spec?.status === 'approved' ? ` (approved by ${rec.sensory_spec.approved_by})` : rec.sensory_spec ? ' (DRAFT — not yet approved)' : ''}`);
+      pdf.font(UF.regular);
       for (const [k, label] of SENSORY_LABELS) {
         const v = String(rec[k] || '').toLowerCase();
         pdf.text(`${label}: ${RESULT_LABELS[v] || '—'}${spec[k] ? ` · spec: ${spec[k]}` : ''}${rec[sensoryNoteKey(k)] ? ` · seen: ${rec[sensoryNoteKey(k)]}` : ''}`);
       }
     } else if (sensoryShape(rec) === 'v1') {
-      pdf.moveDown(0.2).font('Helvetica-Oblique').text('Filed on FORM 602-01 V1 (scored 1–5, below 3 fails).').font('Helvetica');
+      pdf.moveDown(0.2).font(UF.italic).text('Filed on FORM 602-01 V1 (scored 1–5, below 3 fails).').font(UF.regular);
       for (const k of LEGACY_SENSORY_KEYS) if (rec[k]) pdf.text(`${k.charAt(0).toUpperCase() + k.slice(1)}: ${rec[k]} / 5`);
     }
   }
   if (cfg.approvals?.length) {
-    pdf.moveDown(0.6).font('Helvetica-Bold').fontSize(10).text('Approvals');
-    pdf.fontSize(9).font('Helvetica').moveDown(0.2);
+    pdf.moveDown(0.6).font(UF.bold).fontSize(10).text('Approvals');
+    pdf.fontSize(9).font(UF.regular).moveDown(0.2);
     if (rec.paper_record) {
-      pdf.font('Helvetica-Oblique').text('Logged on paper — signatures on file on the original form.').font('Helvetica').moveDown(0.2);
+      pdf.font(UF.italic).text('Logged on paper — signatures on file on the original form.').font(UF.regular).moveDown(0.2);
     }
     const sigDate = (s) => (s?.signed_at ? new Date(s.signed_at).toLocaleString() : '__________');
     for (const a of cfg.approvals) {
       const s = rec.approvals[a.key];
-      pdf.font('Helvetica-Bold').text(`${a.label}${a.required ? ' *' : ''}: `, { continued: true })
-        .font('Helvetica').text(`${s?.name || '__________________'}     Date: ${sigDate(s)}`);
+      pdf.font(UF.bold).text(`${a.label}${a.required ? ' *' : ''}: `, { continued: true })
+        .font(UF.regular).text(`${s?.name || '__________________'}     Date: ${sigDate(s)}`);
       if (s?.attestation) {
-        pdf.fontSize(8).font('Helvetica-Oblique').text(`   "${s.attestation}"`).font('Helvetica').fontSize(9);
+        pdf.fontSize(8).font(UF.italic).text(`   "${s.attestation}"`).font(UF.regular).fontSize(9);
       }
       pdf.moveDown(0.25);
     }
@@ -1529,12 +1561,8 @@ router.get('/:type/:id/pdf', (req, res) => {
     'SELECT timestamp, actor, action FROM audit_log WHERE entity_type = ? AND entity_id = ? ORDER BY timestamp ASC'
   ).all(cfg.key, req.params.id);
   if (history.length) {
-    const humanize = (a) => String(a || '')
-      .replace(/^qms_signed_/, 'Signed — ')
-      .replace(/^qms_unsigned_/, 'Signature revoked — ')
-      .replace(/_/g, ' ');
-    pdf.moveDown(0.6).font('Helvetica-Bold').fontSize(10).text('Record History');
-    pdf.fontSize(8).font('Helvetica').moveDown(0.2);
+    pdf.moveDown(0.6).font(UF.bold).fontSize(10).text('Record History');
+    pdf.fontSize(8).font(UF.regular).moveDown(0.2);
     for (const h of history) {
       const ts = h.timestamp ? new Date(h.timestamp).toLocaleString() : '';
       pdf.text(`${ts}   ·   ${h.actor || 'system'}   ·   ${humanize(h.action)}`);

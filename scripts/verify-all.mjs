@@ -116,6 +116,7 @@ const RUNS = [
   ['verify-po-grid.mjs', 5057, {}, false],
   ['verify-frozen-scroll.mjs', 5064, {}, false],
   ['verify-hours-pay-link.mjs', 5066, {}, false],
+  ['verify-deviation-form.mjs', 5067, {}],
   ['verify-training-test.mjs', 5058, {}, false],
   ['verify-production-runs.mjs', 5059, {}, false],
   ['verify-ap-drop-vendor.mjs', 5062, {}, false],

@@ -6351,3 +6351,31 @@ Three reports from Lowry, one release.
   raise or resolution explains is left. Audited per person, named in the boot log.
 - `verify:hourspaylink` (28, live + browser at 1400; in `verify:all`). **Control — `main` — fails 15**, including the
   submit reading `status: ok, days: 0` and the contractor still on the list after remove.
+
+## D-151 — A deviation exports as FORM 442-01, and a PDF prints the characters it was given (2026-10-05)
+**Asked** (Lowry, with a photo of the export and the controlled form): Quality is attaching every deviation to its
+MO in MRPEasy, the downloaded file is "wonky", and it should look like Form 442-01.
+- **Two defects in one photo.** (1) The export was the generic QMS layout — a column of "Label: value" lines under a
+  heading — nothing like the form it records. (2) The Product Description printed as `"d"a•4,TB tööBÔÖE…`: pdfkit's
+  built-in Helvetica is WinAnsi (256 characters), and a character outside it is written as its **raw UTF-16 bytes**,
+  read back as Latin-1 (reproduced: full-width `Ｅｌｅｃ` → `ÿ%ÿLÿEÿC`, Chinese → `u5‰ã`, emoji → `Ø=Ü§`). The record
+  was fine; the font had nowhere to put it. Same defect `pdf-emoji.js` fixed for the newsletter, never applied here.
+- **`server/pdf-unicode.js`** embeds **Liberation Sans** (SIL OFL 1.1, licence in `assets/`) — metric-compatible with
+  Helvetica, so a layout drawn for Helvetica lays out the same — and `printable()` applies **NFKC**, which folds
+  full-width and styled ("𝐇𝐲𝐝𝐫") letters onto the letters they are without changing what the text says. Latin,
+  Greek and Cyrillic print as themselves; a glyph the font still lacks (CJK) prints as an empty box, never as invented
+  letters. **Every QMS record export now uses it**, not only deviations.
+- **`server/deviation-form-pdf.js` draws the form**: the grid, sections and order of FORM 442-01 Rev1, geometry taken
+  off the paper as fractions of the box width, the logo and title, checkboxes ticked from the record (change type,
+  protocol deviation, CAPA yes/no — an unanswered one left empty), boxes that grow with their text and break between
+  rows. **The form's own spellings are kept** ("Product Discription", "disignee", "Bill Or Material") — a record that
+  quietly corrects its controlled form disagrees with it; fixing the form is a DCR. **Room#** has no field on the
+  record and is left blank, never filled. "Protocol" and "Other" have no box on Rev1 and are written on the Other line.
+- **Signatures** print the signer, "(electronically signed in ReadyDoc)", the attestation, and the time **in plant
+  time** — the old export used the server's clock, so Maria's QA signature on D-51 read 8/23 4:05 AM (UTC) where she
+  signed 8/22 10:05 PM. A paper-logged record says "Signed on the paper original".
+- **The record history moves to page 2, titled "not part of Form 442-01"** — the chain of custody is worth having in
+  the MO's file, and printing it inside the grid would make the attachment disagree with the form. The footer is the
+  form's (Form 442-01 · Rev*n* from the register · Page X of Y, counted truthfully).
+- `verify:deviationform` (40, live, reading the text back out of the downloaded PDF; in `verify:all`). **Control —
+  `main`'s export — fails 25**, including the full-width product name printing as raw bytes.
