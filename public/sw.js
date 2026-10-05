@@ -1,8 +1,10 @@
 /* Powder Ops service worker — app-shell caching (Phase 5c) + web push (Phase 5d).
    Bump CACHE_VERSION to force clients onto a new shell. */
-const CACHE_VERSION = 'v8';
+const CACHE_VERSION = 'v9';  // v9 (D-153): drops every v8 cache, which may hold HTML stored under a chunk's name
 const SHELL_CACHE = `powder-shell-${CACHE_VERSION}`;
 const OFFLINE_URL = '/';
+
+const isPage = (res) => /text\/html/i.test(res.headers.get('Content-Type') || '');
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
@@ -41,11 +43,19 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Hashed build assets & icons: cache-first (immutable), revalidate in background.
+  // A page is never a build file (D-153). Before this, a missing chunk answered
+  // with the app shell was stored under the chunk's name and served cache-first
+  // on every load after, so the import failed and Reload could not get out.
+  // Only a real file is stored, and an HTML entry already cached is thrown away.
   if (url.pathname.startsWith('/assets') || url.pathname.endsWith('.png') || url.pathname.endsWith('.svg')) {
     event.respondWith((async () => {
       const cache = await caches.open(SHELL_CACHE);
-      const cached = await cache.match(request);
-      const network = fetch(request).then(res => { if (res.ok) cache.put(request, res.clone()); return res; }).catch(() => null);
+      let cached = await cache.match(request);
+      if (cached && isPage(cached)) { await cache.delete(request); cached = null; }
+      const network = fetch(request).then(res => {
+        if (res.ok && !isPage(res)) cache.put(request, res.clone());
+        return res;
+      }).catch(() => null);
       return cached || (await network) || Response.error();
     })());
   }

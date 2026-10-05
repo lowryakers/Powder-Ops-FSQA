@@ -6399,3 +6399,25 @@ extinguisher locations from the Facility Map.
   the last.
 - `verify:extinguishers` (30, pure + live + browser at 1280 and 390; in `verify:all`). **Control — `main` — fails 4**,
   stopping at the first assertion of every screen: there is no list to read.
+
+## D-153 — A missing build file is a 404, and the service worker never stores a page as one (2026-10-05)
+**Reported** (Lowry, screenshot): `/install` loops on "ReadyDoc was updated — Reload", and Reload brings the same
+screen back.
+- **Not the page.** A fresh build renders `/install` correctly. The loop is two faults that compound. (1) The SPA
+  fallback answered a MISSING `/assets/*.js` with `index.html`, **200, text/html**. (2) `sw.js` stored any `res.ok`
+  under `/assets` and served it **cache-first**. So a chunk requested once across a deploy cut-over (new HTML, the
+  request landing on the old instance, or the old hash just gone) was stored as HTML under the chunk's name, the
+  import failed on every load after, and Reload asked the same worker for the same copy. The boundary was right
+  that it was a stale build; its Reload could never fix it.
+- **The server 404s a missing build file** (`/assets` miss handler after the static mount, `no-store`), so the
+  failure mode cannot recur on that side.
+- **The worker refuses a page as a build file**: an HTML response is never stored under `/assets` or an icon, and
+  an HTML entry already cached is deleted and fetched again. `CACHE_VERSION` v8 → **v9**, so every phone holding
+  a poisoned v8 cache drops it when the new worker activates (`sw.js` is `max-age=0`, checked on navigation).
+- **The boundary's Reload clears the shell caches first** (`powder-shell-*` only; the offline read cache is
+  IndexedDB and `pending-nav` is kept) and asks the registration to update, so the button gets out of a stuck
+  worker rather than reloading into it. Still only on the person's press — a form half typed is never thrown away.
+- A phone stuck today needs **one or two reloads after this deploys**: the first fetches the new worker, which
+  drops v8 on activate.
+- `verify:stalechunk` (14, live + browser with a real service worker; in `verify:all`). **Control — `main` — fails
+  5**, the decisive one rendering "ReadyDoc was updated" after a reload, exactly as reported.

@@ -3231,6 +3231,17 @@ a failure single-bundle didn't have — a deploy replaces hashed chunks under a 
 before it — so `ModuleBoundary` catches the failed import and offers a reload instead of a white screen.
 Adding a module means adding it to the lazy list, not a plain import.
 
+## A missing build file is a 404; the service worker never stores a page as one (D-153)
+`/install` looped on "ReadyDoc was updated" and Reload brought it back. The SPA fallback answered a MISSING
+`/assets/*.js` with `index.html` (200), and `public/sw.js` stored any 200 under `/assets` and served it
+cache-first — one chunk fetched across a deploy cut-over was HTML under a .js name on that phone for good.
+- `server.js`: a 404 handler right after the `/assets` static mount. **Never let the SPA fallback answer /assets.**
+- `sw.js`: `isPage()` — an HTML response is never cached as an asset, and one already cached is deleted.
+  **Bump `CACHE_VERSION` whenever the caching rule changes** (v9 dropped the poisoned v8 caches).
+- `ModuleBoundary`'s Reload (`reloadFresh`, `data-reload-fresh`) deletes `powder-shell-*` caches and updates the
+  registration before reloading; `pending-nav` and the IndexedDB read cache are kept.
+- `verify:stalechunk` (14, port 5070, a real service worker; control fails 5).
+
 ## Never push a red build again (`npm run verify` + `.githooks/pre-push`)
 Three consecutive releases went out with `main` red, every one the same rule (`no-useless-assignment`) and
 every one the same cause: the checks were run, then the code was edited again before the push. **"Run lint

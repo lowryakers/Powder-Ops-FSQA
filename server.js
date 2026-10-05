@@ -2139,6 +2139,15 @@ app.use('/assets', express.static(path.join(__dirname, 'dist', 'assets'), {
   maxAge: '1y',
   immutable: true,
 }));
+// A build file that does not exist is a 404, NEVER the app shell (D-153). The
+// SPA fallback below answered a missing chunk with index.html and a 200, and the
+// service worker stores any 200 under /assets — so one chunk requested across a
+// deploy cut-over was cached as HTML under a .js name and served from then on:
+// "ReadyDoc was updated", Reload, the same screen, forever.
+app.use('/assets', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.status(404).type('text/plain').send('Not found');
+});
 app.use(express.static(path.join(__dirname, 'dist'), {
   setHeaders: (res, filePath) => {
     if (filePath.endsWith('.html')) {

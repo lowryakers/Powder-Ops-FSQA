@@ -15,6 +15,23 @@ import { AlertTriangle, RefreshCw } from 'lucide-react';
  * Resets on `resetKey` (the active tab), so navigating away from a broken
  * module gives you a working app again without a reload.
  */
+// Reload, having first thrown away the service worker's copies of the build
+// (D-153). A plain reload is not enough when the worker itself is what serves
+// the broken file: it answered cache-first and the same screen came straight
+// back. Only the shell caches go — the offline read cache is IndexedDB and a
+// pending notification target lives in its own cache, both kept.
+async function reloadFresh() {
+  try {
+    if (typeof caches !== 'undefined') {
+      const keys = await caches.keys();
+      await Promise.all(keys.filter((k) => k.startsWith('powder-shell')).map((k) => caches.delete(k)));
+    }
+    const reg = await navigator.serviceWorker?.getRegistration?.();
+    await reg?.update?.();
+  } catch { /* a reload is still worth trying */ }
+  window.location.reload();
+}
+
 export default class ModuleBoundary extends Component {
   constructor(props) {
     super(props);
@@ -55,7 +72,8 @@ export default class ModuleBoundary extends Component {
             : 'Something went wrong opening this module. Reload, or pick another module from the menu.'}
         </p>
         <button
-          onClick={() => window.location.reload()}
+          data-reload-fresh=""
+          onClick={reloadFresh}
           className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700"
         >
           <RefreshCw size={14} /> Reload

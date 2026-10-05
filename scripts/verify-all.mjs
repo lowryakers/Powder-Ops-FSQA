@@ -118,6 +118,7 @@ const RUNS = [
   ['verify-hours-pay-link.mjs', 5066, {}, false],
   ['verify-deviation-form.mjs', 5067, {}],
   ['verify-facility-extinguishers.mjs', 5068, {}, false],
+  ['verify-stale-chunk.mjs', 5070, {}, false],
   ['verify-training-test.mjs', 5058, {}, false],
   ['verify-production-runs.mjs', 5059, {}, false],
   ['verify-ap-drop-vendor.mjs', 5062, {}, false],
