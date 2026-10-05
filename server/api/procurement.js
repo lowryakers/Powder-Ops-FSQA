@@ -213,9 +213,11 @@ router.get('/demand/parts', (req, res) => {
 
 const PO_FIELDS = ['po_number', 'vendor', 'part_no', 'description', 'qty', 'uom', 'unit_price',
   'order_date', 'expected_date', 'received_date', 'status', 'urgent', 'notes',
-  // The Monday columns the grid now shows and edits. source_status stays
-  // read-only provenance (Monday's own word for the row) and is not here.
-  'customer', 'customer_po', 'bol', 'lead_time_days', 'quarter'];
+  // The Monday columns the grid shows and edits. `source_status` — the board's
+  // own status word — is editable too since D-143: Jake works the board here
+  // now, and a column he can read and not correct is a spreadsheet he goes
+  // back to. Re-importing the Monday board still writes it from the file.
+  'customer', 'customer_po', 'bol', 'lead_time_days', 'quarter', 'source_status'];
 const QUARTER_RE = /^\d{4}-Q[1-4]$/;
 // '' clears the override (back to date-derived); anything else must be a real
 // quarter, normalized so "2026-q4" works from an inline cell.
@@ -225,6 +227,29 @@ function normQuarter(v) {
   return QUARTER_RE.test(t) ? { value: t } : { error: 'Quarter must look like 2026-Q4 (or blank to follow the expected date).' };
 }
 const PO_STATUSES = ['draft', 'open', 'confirmed', 'shipped', 'received', 'cancelled'];
+
+/**
+ * What a value typed into a PO field becomes, or why it is refused (D-143).
+ * ONE coercion for the single-cell edit and the mass edit. An unknown status
+ * used to be dropped silently by the single edit (the old value kept, the
+ * screen saying nothing) — it is refused now, by name.
+ */
+function coercePoField(f, v) {
+  if (f === 'qty' || f === 'unit_price') return { value: num(v) };
+  if (f === 'lead_time_days') return { value: v === '' || v == null ? null : Math.round(num(v)) };
+  if (f === 'urgent') return { value: v && v !== '0' && v !== 'false' ? 1 : 0 };
+  if (f === 'status') {
+    return PO_STATUSES.includes(v) ? { value: v } : { error: `Status must be one of: ${PO_STATUSES.join(', ')}.` };
+  }
+  if (f === 'quarter') return normQuarter(v);
+  if (f === 'vendor') {
+    const t = String(v ?? '').trim();
+    return t ? { value: t } : { error: 'A purchase order needs a vendor.' };
+  }
+  const t = v == null ? null : String(v).trim();
+  return { value: t === '' ? null : t };
+}
+
 
 router.get('/pos', (req, res) => {
   if (!requireAccess(req, res, 'view')) return;
@@ -291,31 +316,33 @@ router.put('/pos/bulk', (req, res) => {
   const db = getDb();
   const ids = Array.isArray(req.body?.ids) ? req.body.ids.slice(0, 500) : [];
   if (!ids.length) return res.status(400).json({ error: 'Nothing selected.' });
+  // ANY field the grid edits can be set on a selection (D-143), through the
+  // same coercion the single-cell edit uses — one rule for what a value may
+  // be, whichever door it came through. A refused value refuses the batch
+  // before anything is written.
   const patch = {};
   const b = req.body?.patch || {};
-  if (b.status !== undefined) {
-    if (!PO_STATUSES.includes(b.status)) return res.status(400).json({ error: 'Unknown status.' });
-    patch.status = b.status;
+  for (const [k, v] of Object.entries(b)) {
+    if (!PO_FIELDS.includes(k)) return res.status(400).json({ error: `"${k}" is not a purchase-order field.` });
+    const c = coercePoField(k, v);
+    if (c.error) return res.status(400).json({ error: c.error });
+    patch[k] = c.value;
   }
-  if (b.urgent !== undefined) patch.urgent = b.urgent ? 1 : 0;
-  if (b.quarter !== undefined) {
-    const q = normQuarter(b.quarter);
-    if (q.error) return res.status(400).json({ error: q.error });
-    patch.quarter = q.value;
-  }
-  if (b.expected_date !== undefined) patch.expected_date = b.expected_date || null;
-  if (b.vendor !== undefined && String(b.vendor).trim()) patch.vendor = String(b.vendor).trim();
   if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to change.' });
 
   const get = db.prepare('SELECT * FROM purchase_orders WHERE id = ?');
   const upd = db.prepare(`UPDATE purchase_orders SET ${Object.keys(patch).map(k => `${k} = ?`).join(', ')},
     updated_at = datetime('now') WHERE id = ?`);
+  // Marking received without a date fills today's on each row that has none —
+  // the rule the single edit follows; the date is the point.
+  const fillReceived = db.prepare("UPDATE purchase_orders SET received_date = date('now') WHERE id = ? AND (received_date IS NULL OR received_date = '')");
   let updated = 0;
   db.transaction(() => {
     for (const id of ids) {
       const row = get.get(id);
       if (!row) continue;
       upd.run(...Object.values(patch), id);
+      if (patch.status === 'received' && patch.received_date === undefined) fillReceived.run(id);
       logAudit(req.user, 'update', 'purchase_order', id, { bulk: true, ...patch }, row, get.get(id),
         row.po_number || row.vendor);
       updated++;
@@ -335,16 +362,9 @@ router.put('/pos/:id', (req, res) => {
   const next = {};
   for (const f of PO_FIELDS) {
     if (body[f] === undefined) { next[f] = existing[f]; continue; }
-    if (f === 'qty' || f === 'unit_price') next[f] = num(body[f]);
-    else if (f === 'lead_time_days') next[f] = body[f] === '' || body[f] === null ? null : Math.round(num(body[f]));
-    else if (f === 'urgent') next[f] = body.urgent ? 1 : 0;
-    else if (f === 'status') next[f] = PO_STATUSES.includes(body.status) ? body.status : existing.status;
-    else if (f === 'quarter') {
-      const q = normQuarter(body.quarter);
-      if (q.error) return res.status(400).json({ error: q.error });
-      next[f] = q.value;
-    }
-    else next[f] = body[f] ?? null;
+    const c = coercePoField(f, body[f]);
+    if (c.error) return res.status(400).json({ error: c.error });
+    next[f] = c.value;
   }
   // Marking received without a date fills today's — the date is the point.
   if (next.status === 'received' && !next.received_date) next.received_date = new Date().toISOString().slice(0, 10);

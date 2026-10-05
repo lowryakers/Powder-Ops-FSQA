@@ -3,6 +3,7 @@ import { Search, ArrowUpDown, ArrowUp, ArrowDown, X } from 'lucide-react';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import TextCell from '../common/TextCell.jsx';
+import { searchTerms } from '../../lib/searchTerms.js';
 
 // A plain, fast table for the office data sheets: click a header to sort,
 // type to search everything, and pick values from any column marked filterable.
@@ -10,7 +11,19 @@ import TextCell from '../common/TextCell.jsx';
 // so — that's what makes these feel like the spreadsheets they replace.
 //
 // columns: [{ key, label, width, align, type: 'text'|'number'|'money'|'date',
-//             filter: true, edit: true, render: (row) => node }]
+//             filter: true, edit: true, options: [values] (edits as a select),
+//             render: (row) => node }]
+//
+// SEARCH TAKES SEVERAL WORDS (D-143): every word must appear somewhere in the
+// row, in any column, so "acme 2026-Q4 urgent" narrows to the rows carrying
+// all three. A "quoted phrase" is matched as one term. One box searching one
+// string meant typing "acme q4" found nothing and read as the search being
+// broken.
+//
+// THE SCROLLBARS STAY ON SCREEN (D-143): the desktop table scrolls inside a
+// box no taller than the window, so its horizontal scrollbar sits at the
+// bottom of the screen rather than under the last of 900 rows, and the header
+// row stays pinned while the rows move.
 export default function DataGrid({
   columns, rows, loading, empty = 'Nothing here yet.',
   onEdit, canEdit = false, searchPlaceholder = 'Search…', toolbar, rowClass,
@@ -42,9 +55,12 @@ export default function DataGrid({
     for (const [key, val] of Object.entries(filters)) {
       if (val) list = list.filter(r => String(r[key] ?? '') === val);
     }
-    const needle = q.toLowerCase().trim();
-    if (needle) {
-      list = list.filter(r => columns.some(c => String(r[c.key] ?? '').toLowerCase().includes(needle)));
+    const terms = searchTerms(q);
+    if (terms.length) {
+      list = list.filter(r => {
+        const hay = columns.map(c => String(r[c.key] ?? '').toLowerCase()).join('\u0001');
+        return terms.every(t => hay.includes(t));
+      });
     }
     if (sort) {
       const col = columns.find(c => c.key === sort.key);
@@ -68,9 +84,10 @@ export default function DataGrid({
     setEditing({ id: row.id, key: col.key });
     setDraft(row[col.key] ?? '');
   };
-  const commit = async (row, col) => {
+  const commit = async (row, col, picked) => {
     setEditing(null);
-    const value = col.type === 'number' || col.type === 'money' ? Number(draft) || 0 : draft;
+    const raw = picked !== undefined ? picked : draft;
+    const value = col.type === 'number' || col.type === 'money' ? Number(raw) || 0 : raw;
     if (String(row[col.key] ?? '') === String(value)) return;
     await onEdit?.(row, col.key, value);
   };
@@ -93,7 +110,8 @@ export default function DataGrid({
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-full sm:min-w-[220px]">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder={searchPlaceholder}
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder={searchPlaceholder} data-grid-search
+            title="Several words narrow the list: every word must appear in the row. Put a phrase in quotes to match it whole."
             className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm bg-white" />
         </div>
         {filterable.map(c => (
@@ -113,7 +131,7 @@ export default function DataGrid({
       </div>
 
       {/* Desktop: the full table */}
-      <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-x-auto">
+      <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-auto max-h-[calc(100dvh-11rem)] min-h-[12rem]" data-grid-scroll>
         <table className="w-full text-sm">
           <thead className="bg-gray-50 sticky top-0 z-10">
             <tr>
@@ -160,10 +178,7 @@ export default function DataGrid({
                       onClick={canEdit && c.edit ? stopRowClick : undefined}
                       className={`px-3 py-1.5 ${c.align === 'right' ? 'text-right' : ''} ${canEdit && c.edit ? 'cursor-text' : ''}`}>
                       {isEditing ? (
-                        <input autoFocus value={draft} onChange={e => setDraft(e.target.value)}
-                          onBlur={() => commit(row, c)}
-                          onKeyDown={e => { if (e.key === 'Enter') commit(row, c); if (e.key === 'Escape') setEditing(null); }}
-                          type={c.type === 'number' || c.type === 'money' ? 'number' : 'text'} step="any"
+                        <CellEditor col={c} draft={draft} setDraft={setDraft} onCommit={(v) => commit(row, c, v)} onCancel={() => setEditing(null)}
                           className={`w-full px-1 py-0.5 border border-powder-400 rounded text-sm ${c.align === 'right' ? 'text-right' : ''}`} />
                       ) : (
                         // A grid column can hold a note somebody typed a
@@ -216,10 +231,7 @@ export default function DataGrid({
                       <dt className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">{c.label}</dt>
                       <dd className="text-sm text-gray-800 break-words" onClick={() => startEdit(row, c)}>
                         {isEditing ? (
-                          <input autoFocus value={draft} onChange={e => setDraft(e.target.value)}
-                            onBlur={() => commit(row, c)}
-                            onKeyDown={e => { if (e.key === 'Enter') commit(row, c); if (e.key === 'Escape') setEditing(null); }}
-                            type={c.type === 'number' || c.type === 'money' ? 'number' : 'text'} step="any"
+                          <CellEditor col={c} draft={draft} setDraft={setDraft} onCommit={(v) => commit(row, c, v)} onCancel={() => setEditing(null)}
                             className="w-full px-1 py-0.5 border border-powder-400 rounded text-sm" />
                         ) : fmt(row, c)}
                       </dd>
@@ -235,5 +247,32 @@ export default function DataGrid({
       {canEdit && <p className="hidden md:block text-[11px] text-gray-400">Double-click a highlighted cell to edit it.</p>}
       {canEdit && <p className="md:hidden text-[11px] text-gray-400">Tap a value to edit it.</p>}
     </div>
+  );
+}
+
+/**
+ * The in-place editor for one cell: a select when the column names its values
+ * (a status, a flag), a text or number box otherwise. A select commits on the
+ * pick — a list of fixed values typed by hand is how "recieved" gets filed.
+ */
+function CellEditor({ col, draft, setDraft, onCommit, onCancel, className }) {
+  if (Array.isArray(col.options)) {
+    const opts = col.options.includes(draft) || draft === '' ? col.options : [draft, ...col.options];
+    return (
+      <select autoFocus value={draft ?? ''} data-cell-select={col.key}
+        onChange={e => { setDraft(e.target.value); onCommit(e.target.value); }}
+        onBlur={() => onCancel()}
+        onKeyDown={e => { if (e.key === 'Escape') onCancel(); }}
+        className={className}>
+        {opts.map(o => <option key={String(o)} value={o}>{o === '' ? '—' : String(o)}</option>)}
+      </select>
+    );
+  }
+  return (
+    <input autoFocus value={draft} onChange={e => setDraft(e.target.value)} data-cell-input={col.key}
+      onBlur={() => onCommit()}
+      onKeyDown={e => { if (e.key === 'Enter') onCommit(); if (e.key === 'Escape') onCancel(); }}
+      type={col.type === 'number' || col.type === 'money' ? 'number' : 'text'} step="any"
+      className={className} />
   );
 }

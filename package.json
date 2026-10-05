@@ -106,6 +106,7 @@
     "verify:packagingspecs": "node scripts/verify-packaging-specs.mjs",
     "verify:scalepmretire": "node scripts/verify-scale-pm-retire.mjs",
     "verify:pmgeneration": "node scripts/verify-pm-generation.mjs",
+    "verify:pogrid": "node scripts/verify-po-grid.mjs",
     "verify:checklistoverlap": "node scripts/verify-checklist-overlap.mjs",
     "verify:payreviews": "node scripts/verify-pay-reviews.mjs",
     "verify:artworkfilm": "node scripts/verify-artwork-film.mjs",

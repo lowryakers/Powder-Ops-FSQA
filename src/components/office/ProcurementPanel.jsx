@@ -162,6 +162,44 @@ function POForm({ onSave, onCancel }) {
   );
 }
 
+// Set ANY editable column on the selected rows (D-143) — the four fixed
+// buttons beside it are the common cases; this is every other field. The
+// server runs the same coercion the single-cell edit does, so a value the cell
+// would refuse is refused here, before any row is written.
+const DATE_KEYS = new Set(['order_date', 'expected_date', 'received_date']);
+function BulkFieldSetter({ columns, busy, onApply }) {
+  const editable = columns.filter(c => c.edit && c.label);
+  const [key, setKey] = useState('');
+  const [value, setValue] = useState('');
+  const col = editable.find(c => c.key === key);
+  const apply = () => { if (!col) return; onApply(col.key, value); setValue(''); };
+  return (
+    <span className="flex flex-wrap items-center gap-1" data-bulk-field>
+      <select value={key} disabled={busy} onChange={e => { setKey(e.target.value); setValue(''); }} data-bulk-field-key
+        className="px-2 py-1.5 border border-gray-300 rounded-lg text-xs bg-white">
+        <option value="">Set a field…</option>
+        {editable.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+      </select>
+      {col && (Array.isArray(col.options) ? (
+        <select value={value} disabled={busy} onChange={e => setValue(e.target.value)} data-bulk-field-value
+          className="px-2 py-1.5 border border-gray-300 rounded-lg text-xs bg-white">
+          <option value="">Choose…</option>
+          {col.options.map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+      ) : (
+        <input value={value} disabled={busy} onChange={e => setValue(e.target.value)} data-bulk-field-value
+          type={DATE_KEYS.has(col.key) ? 'date' : col.type === 'number' || col.type === 'money' ? 'number' : 'text'} step="any"
+          placeholder="Blank clears it"
+          className="px-2 py-1 border border-gray-300 rounded-lg text-xs bg-white w-36" />
+      ))}
+      {col && (
+        <button type="button" disabled={busy || (Array.isArray(col.options) && !value)} onClick={apply} data-bulk-field-apply
+          className="px-2.5 py-1.5 bg-powder-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50">Apply</button>
+      )}
+    </span>
+  );
+}
+
 export default function ProcurementPanel() {
   const { user } = useAuth();
   const canEdit = canEditModule(user, 'procurement');
@@ -247,11 +285,12 @@ export default function ProcurementPanel() {
     { key: 'customer', label: 'Customer', filter: true, edit: true },
     { key: 'customer_po', label: 'Customer PO', edit: true },
     { key: 'bol', label: 'BOL', edit: true },
-    // Monday's own word for the row, kept verbatim — provenance, not editable.
-    { key: 'source_status', label: 'Board status', filter: true },
+    // The board's own status word. Editable since D-143 — Jake works the
+    // board here now; re-importing the Monday board still writes it.
+    { key: 'source_status', label: 'Board status', filter: true, edit: true },
     { key: 'notes', label: 'Notes', edit: true },
     {
-      key: 'status', label: 'Status', filter: true, edit: true,
+      key: 'status', label: 'Status', filter: true, edit: true, options: PO_STATUSES,
       render: (r) => (
         <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${
           r.status === 'received' ? 'bg-green-100 text-green-700'
@@ -360,13 +399,14 @@ export default function ProcurementPanel() {
                 <input type="date" disabled={bulkBusy} onChange={e => { if (e.target.value) { bulk({ expected_date: e.target.value }); e.target.value = ''; } }}
                   className="px-2 py-1 border border-gray-300 rounded-lg text-xs bg-white" />
               </label>
+              <BulkFieldSetter columns={poColumns} busy={bulkBusy} onApply={(key, value) => bulk({ [key]: value })} />
               <button onClick={() => setSelected(new Set())} className="ml-auto text-xs text-gray-500 hover:text-gray-700">Clear selection</button>
             </div>
           )}
           <DataGrid
             columns={poColumns} rows={pos} loading={posLoading} canEdit={canEdit} onEdit={editPO}
             selectable={canEdit} selected={selected} onToggleRow={toggleRow} onToggleAll={toggleAll}
-            searchPlaceholder="Search PO #, vendor, part, notes…"
+            searchPlaceholder="Search — several words narrow it (vendor, part, PO #, notes…)"
             empty="No purchase orders yet."
             rowClass={r => (r.delayed ? 'bg-red-50/40' : '')}
             toolbar={canEdit && !adding ? (

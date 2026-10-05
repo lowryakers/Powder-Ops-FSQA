@@ -6004,3 +6004,33 @@ raising, the card is due later in the week and sits under "This week" or "Later"
 **Verified:** `verify:pmgeneration` (21, live, a reboot and a browser at 1280; in `verify:all`). **The control is
 `main` and fails 13**: there is no sweep to ask, and the strip does not exist. Its Operator View and Task Center
 assertions pass on `main` too, which is the honest finding that `main`'s generator does raise the weekly.
+
+## D-143 — The Purchase Orders grid: every field editable, any field in bulk, several search words, scrollbars on screen (2026-10-05)
+
+**Asked by Jake on 2 October** for Procurement → Purchase Orders: mass edit, a search bar that takes several
+keywords, scrollbars that stay on screen while he scrolls, and every field editable, board status included.
+
+**Decided:**
+- **Every PO field is editable, board status (`source_status`) included.** It had been read-only as "Monday's
+  own word for the row", but Jake works the board here now, and a column he can read and not correct is the
+  spreadsheet he goes back to. Re-importing the Monday board still writes it from the file.
+- **One coercion, `coercePoField()`**, for the single-cell edit and the mass edit. An unknown status had been
+  **dropped silently** by the single edit: the old value kept, the cell showing nothing wrong. It is refused by
+  name now. So is a blank vendor and any key that is not a PO field.
+- **Mass edit is "select rows, set one field"**, the simple version the fix doc allowed. Beside the four quick
+  buttons, a **Set a field…** control offers every editable column, with the value as a list where the column
+  has fixed values, a date where it is a date, and a box otherwise. One refused value refuses the batch before
+  any row is written. Each row is audited, plus one summary, the Time Tracking rule. Marking received in bulk
+  fills the received date on rows that have none, as a single edit always did.
+- **The search takes several words, in the shared `DataGrid`** (so Pay Tracking gets it too). Every word must
+  appear somewhere in the row, and a "quoted phrase" is one term. `searchTerms()` in `src/lib/searchTerms.js`
+  is the one definition. Typing "acme q4" had searched for that exact string and found nothing.
+- **The scrollbars stay on screen.** The desktop table scrolls inside a box no taller than the window
+  (`max-h: 100dvh − 11rem`). Its horizontal scrollbar sits at the bottom of the screen rather than under row
+  900, and the header row stays pinned while the rows move.
+- **A column with fixed values edits as a list** (`options` on a DataGrid column): status picks from the six
+  real statuses instead of being typed.
+
+**Verified:** `verify:pogrid` (20, live and a browser at 1280 with 73 rows; in `verify:all`). The control is
+`main`: it fails 8 on the API half and cannot reach the browser half. `verify:payactions` (31),
+`verify:payroster` (64) and `verify:payreviews` (29), the other `DataGrid` screen, stay green.

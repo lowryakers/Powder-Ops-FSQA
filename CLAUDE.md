@@ -3406,6 +3406,14 @@ an uploaded lab result is parsed (`coa.js` extraction), matched to the active sp
 auto-graded pass/fail from min/max; the request rolls up to pass/fail; the facility COA PDF exports with logo
 + QA e-signature.
 
+## The office DataGrid takes several search words and keeps its scrollbars on screen (D-143)
+`DataGrid.jsx` (Procurement, Pay Tracking): every word must appear in the row, a "quoted phrase" is one term
+(`src/lib/searchTerms.js`); the desktop table scrolls inside a window-high box (`data-grid-scroll`) so the
+horizontal scrollbar and the pinned header stay in view; a column with `options` edits as a select. Purchase
+orders: every field editable incl. board status (`source_status`), one `coercePoField()` for the cell and the
+mass edit, **Set a field…** on the selection bar, an unknown status refused by name (it was dropped silently).
+`verify:pogrid` (20; control fails 8).
+
 ## Office finance: AP / AR (+ QuickBooks) — TABS HIDDEN since 2026-09-11 (D-075)
 **The AP ledger, AR ledger, Banking and QuickBooks tabs are no longer in the Accounting hub, their three
 Settings grants are gone from the module list, and the QuickBooks / Plaid rows are off Settings → Integrations.**
