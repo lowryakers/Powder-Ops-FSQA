@@ -26,6 +26,11 @@ const t = (n, c, d = '') => { if (c) { pass++; console.log('  ✓ ' + n); } else
 const { default: Database } = await import('better-sqlite3');
 const day = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
 const TODAY = day(0), YDAY = day(-1), TOMORROW = day(1);
+// The generator never puts a task on a weekend (`nextWeekday` in api/pm.js), so
+// an EXPECTED next-due date has to take the same step — written with plain
+// day offsets, this check failed by construction every Monday (Sunday + 7) and
+// would every Friday ("tomorrow" is Saturday).
+const weekday = (iso) => { const d = new Date(`${iso}T12:00:00Z`); while ([0, 6].includes(d.getUTCDay())) d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10); };
 
 const db = new Database(process.env.DBPATH);
 db.prepare(`INSERT OR REPLACE INTO users (id,name,username,role,department,is_active,setup_code,setup_code_expires_at)
@@ -88,7 +93,7 @@ console.log('\nAn ordinary completion is completely unchanged');
   const r = await post('/pm/work-orders/bd-wo-2/complete-and-recur', {
     readings: { temperature: '70', humidity: '40' }, notes: '' });
   const b = await J(r);
-  t('next task is due tomorrow, as before', b?.next_work_order?.due_date === TOMORROW,
+  t('next task is due tomorrow, as before', b?.next_work_order?.due_date === weekday(TOMORROW),
     `got ${b?.next_work_order?.due_date}`);
   t('nothing extra was raised for today', liveFor('bd-plain', TODAY).length === 0);
 }
@@ -98,8 +103,8 @@ console.log('\nWeekly schedules advance a week from the performed day');
   const r = await post('/pm/work-orders/bd-wo-4/complete-and-recur', {
     readings: { temperature: '66' }, notes: '', performed_on: YDAY, late_entry_reason: 'late' });
   const b = await J(r);
-  t('a weekly check done yesterday is next due 6 days out, not 7', b?.next_work_order?.due_date === day(6),
-    `got ${b?.next_work_order?.due_date} want ${day(6)}`);
+  t('a weekly check done yesterday is next due 6 days out, not 7', b?.next_work_order?.due_date === weekday(day(6)),
+    `got ${b?.next_work_order?.due_date} want ${weekday(day(6))}`);
 }
 
 console.log('\nNever two live tasks for one schedule on one day');

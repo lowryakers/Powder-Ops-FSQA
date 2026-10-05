@@ -6273,3 +6273,10 @@ with what was found, what was fixed, and what was left and why. **Nothing outsid
   rule, which D-124 never widened.
 - Fixed in passing (D-144): the training reach report read the request's `user_id`, not the account the task
   landed on, and never selected `is_external`.
+
+**Addendum (same day), from the full `verify:all` run: 98/99 green.** The one red was
+`verify-backdated-recurrence`. "A weekly check done yesterday is next due 6 days out" wrote its expected date as a
+plain day offset. The generator never puts a task on a weekend (`nextWeekday`), so on a Monday the expected date is
+a Sunday and the real one is the Monday after: red by construction every Monday, and every Friday for its "due
+tomorrow" check. No recurrence code moved in this pass. The expected dates now take the same weekday step, which
+corrects the check rather than skipping it; 19/19.
