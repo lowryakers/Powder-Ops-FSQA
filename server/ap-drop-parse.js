@@ -144,7 +144,12 @@ export function findBillTo(text) {
   if (i < 0) return null;
   const same = ls[i].replace(/^.*?\b(?:bill(?:ed)?\s+to|sold\s+to|customer)\b\s*:?\s*/i, '').trim();
   const value = same || ls[i + 1] || '';
-  return value ? { value: value.slice(0, 80), evidence: ls[i] } : null;
+  // A table's header row is not who it is billed to (D-148, the D-147 class):
+  // "| BILL TO | SHIP TO |" left "| SHIP TO |" here. A pipe or a heading-only
+  // line yields nothing — an unread bill-to is a gap, a wrong one routes the
+  // drop to the wrong ledger.
+  if (!value || /\|/.test(value) || notAVendor(value)) return null;
+  return { value: value.slice(0, 80), evidence: ls[i] };
 }
 
 export function findCurrency(text) {

@@ -1,3 +1,4 @@
+import { closeScheduleWork, pauseReason } from '../pm-pause.js';
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
@@ -285,27 +286,48 @@ router.put('/:id', requireManage, (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Not found' });
   const { title, description, module_id, frequency_type, frequency_value, procedure_steps, next_due, is_active } = req.body;
   const freq = QUALITY_FREQUENCIES.includes(frequency_type) ? frequency_type : existing.frequency_type;
-  db.prepare(`UPDATE quality_schedules SET
-    title=?, description=?, module_id=?, frequency_type=?, frequency_value=?, procedure_steps=?, next_due=?, is_active=?, updated_at=datetime('now')
-    WHERE id=?`).run(
-    title ?? existing.title, description ?? existing.description, module_id ?? existing.module_id,
-    freq, frequency_value != null ? Math.max(1, parseInt(frequency_value, 10) || 1) : existing.frequency_value,
-    procedure_steps !== undefined ? JSON.stringify(Array.isArray(procedure_steps) ? procedure_steps : []) : existing.procedure_steps,
-    (next_due && /^\d{4}-\d{2}-\d{2}$/.test(next_due)) ? next_due : existing.next_due,
-    is_active !== undefined ? (is_active ? 1 : 0) : existing.is_active,
-    req.params.id
-  );
-  logAudit(req.user, 'quality_schedule_updated', 'quality_schedule', req.params.id, { title: title ?? existing.title });
-  res.json(db.prepare('SELECT * FROM quality_schedules WHERE id = ?').get(req.params.id));
+  const nextActive = is_active !== undefined ? (is_active ? 1 : 0) : existing.is_active;
+  // PAUSING CLOSES WHAT IT RAISED (D-148, the D-139 rule for this generator):
+  // the open, overdue and missed cards are cancelled in the same transaction
+  // with the reason on each; a started card is left and counted.
+  const pausing = existing.is_active && !nextActive;
+  let closed = { cancelled: 0, in_progress: 0 };
+  db.transaction(() => {
+    db.prepare(`UPDATE quality_schedules SET
+      title=?, description=?, module_id=?, frequency_type=?, frequency_value=?, procedure_steps=?, next_due=?, is_active=?, updated_at=datetime('now')
+      WHERE id=?`).run(
+      title ?? existing.title, description ?? existing.description, module_id ?? existing.module_id,
+      freq, frequency_value != null ? Math.max(1, parseInt(frequency_value, 10) || 1) : existing.frequency_value,
+      procedure_steps !== undefined ? JSON.stringify(Array.isArray(procedure_steps) ? procedure_steps : []) : existing.procedure_steps,
+      (next_due && /^\d{4}-\d{2}-\d{2}$/.test(next_due)) ? next_due : existing.next_due,
+      nextActive,
+      req.params.id
+    );
+    if (pausing) {
+      closed = closeScheduleWork(db, req.params.id, { column: 'quality_schedule_id', by: req.user?.name || 'ReadyDoc',
+        reason: pauseReason(existing.title, req.user?.name || 'an admin'), logAudit: (...a) => logAudit(req.user, ...a.slice(1)) });
+    }
+  })();
+  logAudit(req.user, 'quality_schedule_updated', 'quality_schedule', req.params.id,
+    { title: title ?? existing.title, ...(pausing ? { paused: true, closed_work: closed.cancelled, open_work_left: closed.in_progress } : {}) });
+  res.json({ ...db.prepare('SELECT * FROM quality_schedules WHERE id = ?').get(req.params.id), closed_work: closed.cancelled, open_work: closed.in_progress });
 });
 
 router.delete('/:id', requireManage, (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM quality_schedules WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
-  db.prepare('DELETE FROM quality_schedules WHERE id = ?').run(req.params.id);
-  logAudit(req.user, 'quality_schedule_deleted', 'quality_schedule', req.params.id, { title: existing.title });
-  res.json({ deleted: req.params.id });
+  // A deleted schedule's cards would otherwise sit on somebody's list for ever
+  // with nothing behind them (D-148). Cancelled with the reason, never deleted.
+  let closed = { cancelled: 0 };
+  db.transaction(() => {
+    closed = closeScheduleWork(db, req.params.id, { column: 'quality_schedule_id', by: req.user?.name || 'ReadyDoc',
+      reason: `Closed because the Quality Schedule "${existing.title}" was deleted by ${req.user?.name || 'an admin'}.`,
+      logAudit: (...a) => logAudit(req.user, ...a.slice(1)) });
+    db.prepare('DELETE FROM quality_schedules WHERE id = ?').run(req.params.id);
+  })();
+  logAudit(req.user, 'quality_schedule_deleted', 'quality_schedule', req.params.id, { title: existing.title, closed_work: closed.cancelled });
+  res.json({ deleted: req.params.id, closed_work: closed.cancelled });
 });
 
 export default router;

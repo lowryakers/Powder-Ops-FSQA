@@ -1084,6 +1084,10 @@ try {
     }
     if (r.paused || r.cancelled || r.steps_fixed) {
       console.log(`[migrate] Daily Pre-Op retired: ${r.paused} schedule(s) paused, ${r.cancelled} open card(s) cancelled, ${r.steps_fixed} step list(s) corrected`);
+    } else if (!r.schedules && db.prepare('SELECT COUNT(*) c FROM pm_schedules').get().c > 0) {
+      // A once-per-database pass that matched NOTHING says so (D-148) — the
+      // D-141 lesson: a matcher that misses live data is otherwise silent for ever.
+      console.warn("[migrate] WARNING Daily Pre-Op retirement matched no schedule titled 'Production Line Pre-Op…' — nothing retired, marker not written");
     }
   }
   // Inspection records seed into sanitation_records with the default group, so

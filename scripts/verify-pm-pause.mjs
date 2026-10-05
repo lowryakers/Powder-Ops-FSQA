@@ -67,6 +67,27 @@ const s2 = await (await call('POST', `/pm/schedules/${sched.id}/raise`, { due_da
   db.close(); }
 const p2 = await (await call('PUT', `/pm/schedules/${sched.id}`, { is_active: false }, tok)).json();
 t('pausing again closes the open card and leaves the started one', Number(p2.closed_work) === 1 && Number(p2.open_work) === 1, JSON.stringify({ c: p2.closed_work, o: p2.open_work, s2: !!(s2.id || s2.work_order?.id) }));
+console.log('\n── a Quality Schedule pause closes what it raised too (D-148) ──');
+{
+  const qs = await (await call('POST', '/quality-schedules', { title: 'Tap Water Testing (pause test)', frequency_type: 'monthly', first_due: day(-30) }, tok)).json();
+  const qs2 = await (await call('POST', '/quality-schedules', { title: 'Air Testing (delete test)', frequency_type: 'annual', first_due: day(-30) }, tok)).json();
+  const db = new Database(dbPath);
+  const ins = db.prepare(`INSERT INTO work_orders (id, quality_schedule_id, title, due_date, procedure_steps, task_group, status)
+    VALUES (?, ?, ?, ?, '[]', 'qa', ?)`);
+  ins.run('qs-open', qs.id, qs.title, day(0), 'open');
+  ins.run('qs-missed', qs.id, qs.title, day(-31), 'missed');
+  ins.run('qs-started', qs.id, qs.title, day(-2), 'in_progress');
+  ins.run('qs2-open', qs2.id, qs2.title, day(0), 'open');
+  db.close();
+  const p = await (await call('PUT', `/quality-schedules/${qs.id}`, { is_active: false }, tok)).json();
+  const st = (id) => { const d = new Database(dbPath, { readonly: true }); try { return d.prepare('SELECT status, notes FROM work_orders WHERE id = ?').get(id); } finally { d.close(); } };
+  t('pausing a Quality Schedule cancels its open and missed cards and says so', p.is_active === 0 && Number(p.closed_work) === 2
+    && st('qs-open').status === 'cancelled' && st('qs-missed').status === 'cancelled', JSON.stringify({ a: p.is_active, c: p.closed_work }));
+  t('…leaves the started one, counted, and names who paused it on each card', st('qs-started').status === 'in_progress' && Number(p.open_work) === 1
+    && /paused by Plant Admin/.test(st('qs-open').notes || ''));
+  const d = await (await call('DELETE', `/quality-schedules/${qs2.id}`, null, tok)).json();
+  t('deleting one cancels its card rather than orphaning it', Number(d.closed_work) === 1 && st('qs2-open').status === 'cancelled');
+}
 console.log('\n── in the browser: Recurring Schedules ──');
 {
   const { chromium } = await import('playwright-core');

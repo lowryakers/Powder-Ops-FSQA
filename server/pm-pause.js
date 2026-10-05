@@ -23,16 +23,23 @@ import { consolidatedChecklists, CONSOLIDATED_LIKE } from './pm-coverage.js';
 export const CLOSABLE = "('open','overdue','missed')";
 
 /** Cancel what a schedule left outstanding. Returns { cancelled, in_progress }. */
-export function closeScheduleWork(db, scheduleId, { by = 'ReadyDoc', reason, logAudit } = {}) {
-  const rows = db.prepare(`SELECT id, title, status FROM work_orders WHERE pm_schedule_id = ? AND status IN ${CLOSABLE}`).all(scheduleId);
+// `column` names which generator raised the work: a PM schedule
+// (`pm_schedule_id`, the default) or a Quality Schedule (`quality_schedule_id`,
+// D-148 — pausing one of those left its cards behind exactly as D-139 found
+// for PMs). A fixed allow-list, never a caller's string in the SQL.
+const SCHEDULE_COLUMNS = new Set(['pm_schedule_id', 'quality_schedule_id']);
+
+export function closeScheduleWork(db, scheduleId, { by = 'ReadyDoc', reason, logAudit, column = 'pm_schedule_id' } = {}) {
+  if (!SCHEDULE_COLUMNS.has(column)) throw new Error(`closeScheduleWork: unknown column ${column}`);
+  const rows = db.prepare(`SELECT id, title, status FROM work_orders WHERE ${column} = ? AND status IN ${CLOSABLE}`).all(scheduleId);
   const cancel = db.prepare(`UPDATE work_orders SET status = 'cancelled', completed_at = datetime('now'), completed_by = ?,
     notes = COALESCE(notes || char(10), '') || ?, updated_at = datetime('now') WHERE id = ?`);
   for (const w of rows) {
     cancel.run(by, reason, w.id);
     logAudit?.(by === 'ReadyDoc' ? 'system' : by, 'cancel', 'work_order', w.id,
-      { reason, was: w.status, pm_schedule_id: scheduleId }, null, null, w.title);
+      { reason, was: w.status, [column]: scheduleId }, null, null, w.title);
   }
-  const inProgress = db.prepare("SELECT COUNT(*) c FROM work_orders WHERE pm_schedule_id = ? AND status = 'in_progress'").get(scheduleId).c;
+  const inProgress = db.prepare(`SELECT COUNT(*) c FROM work_orders WHERE ${column} = ? AND status = 'in_progress'`).get(scheduleId).c;
   return { cancelled: rows.length, in_progress: inProgress };
 }
 

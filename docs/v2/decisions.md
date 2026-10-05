@@ -6200,3 +6200,76 @@ a label word. An OCR pass that writes tables as markdown hands it a header row w
 - `verify:productionruns` (24 → **25**: the Sanitation log shows "80 / 35" in red).
 - `verify:apdrop` (71), `verify:apdropui` (23), `check:aproute` (11), `verify:preop` (50), `verify:sanareas` (49)
   and `verify:atp` (63) stay green.
+
+## D-148 — The same bugs, hunted: three more fixed, the rest named (2026-10-05)
+
+The 5 October fix pass ended by asking for every other instance of the classes it fixed. Each class is listed
+with what was found, what was fixed, and what was left and why. **Nothing outside the list was changed.**
+
+**1. Once-per-database passes that can silently miss live data.**
+- Found: `daily_scale_pm_retired_v1` (fixed as v2 in D-141). `preop_daily_retired_v1` writes its marker only on a
+  match, but on zero matches it was silent on every boot. The `oncePerDatabase` passes (`migrate_*_v1`) and the
+  historical one-offs (`pm_consolidation_v1`, `pm_cleanup_v2`, `temp_humidity_points_v1`) normalise data that
+  already ran on live.
+- Fixed: the Pre-Op retirement now **warns when it matched nothing**, as the v2 scale pass does (it logs what it
+  scanned, and warns on zero and on unresolved labels).
+- Left: the historical one-offs. They ran in July and August, and re-running or re-logging them changes nothing.
+
+**2. Matchers keyed on exact strings.**
+- Fixed (D-141): `LOWER(type) = 'scale'` became `/\bscales?\b/i`. The checklist-line resolver is name-and-asset
+  tolerant, so a renumbered asset no longer misses.
+- Left: `truck-checklists.js` matches `type IN ('Forklift','Forklift Charger','Pallet Jack')` exactly. Types come
+  from the closed type dropdown (`shared/equipment-types.js`), and Adam confirms the daily truck checklist works on
+  live, so the exact match is correct today. `CONSOLIDATED_LIKE` is a prefix of a description this code itself
+  writes, not a person.
+
+**3. Verify fixtures that do not mirror live shapes.**
+- Fixed: `verify:scalepmretire` (D-141) now uses live titles, renumbered assets, the v1 marker pre-set, and a
+  "Floor Scale".
+- Left: a general audit of all ~120 verifies' fixtures. That is not a code change, and it is the next session's
+  if wanted.
+
+**4. Pause, retire or delete paths that do not cancel cards.**
+- Found: **pausing a Quality Schedule** set `is_active = 0` and left its open and missed cards on the list, the
+  D-139 bug in the second generator. **Deleting** one left its cards orphaned with no schedule behind them.
+- Fixed: `closeScheduleWork()` takes the schedule column (`pm_schedule_id` | `quality_schedule_id`, an
+  allow-list). The Quality Schedule PUT cancels on pause, in the same transaction, with the reason and who paused
+  it on each card; a started card is left and counted. DELETE cancels too. `verify:pmpause` 18 → **21**, and the
+  control fails 3.
+- Left: an **out-of-service machine's** open cards stay open on purpose (documented: somebody may still need to
+  close them honestly, and the machine may come back). A **retired training course's** open assignments are the
+  assignee's open work and are left. The dilution seed's lumped schedule already cancels its cards.
+
+**5. Generators that skip non-daily frequencies or types silently.**
+- Fixed (D-142): the generation sweep names every active schedule raising nothing (equipment missing, not in
+  service, same job). The **PM auto-seed** dropped 369 of 587 rows on a fresh database (every truck) and now
+  says so.
+- Left: re-matching the seed. That changes the fresh-database schedule set under every verify, and is a decision.
+
+**6. Duplicate recordings of one obligation.**
+- Fixed before this pass: the Daily Scale PMs (D-139/D-141), the Temp & Humidity room checklist (D-138) and the
+  daily Pre-Op card (D-125).
+- Left, for the plant (C list): the generic Daily PMs on the Laser Coder #35, Meenjet #51, Roller Conveyor #43 and
+  Tape Machine #47; and Dawn and Simple Green on FORM 106-01, which are raised daily and have never been logged
+  (D-096, a Document Control question).
+
+**7. Parsers that can take a header, table or markdown text as a value.**
+- Fixed: the AP Drop **vendor** (D-147). **`findBillTo` had the same hole**: "| BILL TO | SHIP TO |" left
+  "| SHIP TO |" as the bill-to, and the bill-to drives partner routing. A pipe or heading-only line now yields
+  nothing. `check:apdrop` 28 → **30**.
+- Left, checked and not this class: the invoice-total reader reads labelled lines only, and NOT_TOTAL drops
+  subtotal and tax. `readTable` skips repeated header rows by design. The training-log, retention-log and
+  scanned-test importers read cells and filenames, not free OCR text.
+
+**8. Read-only grid fields and sticky scrollbars on other wide grids.**
+- Fixed (D-143): the shared office `DataGrid` (Procurement, Pay Tracking), so every grid built on it gets
+  several-word search, the on-screen scrollbars and select editors.
+- Left: the hand-written log tables (Production Log, Sanitation Records, Receiving Log, the QMS logs) still scroll
+  their horizontal bar with the page. Changing nine logs' layout is outside this list; it is offered, not done.
+
+**9. Role gates that refuse an account D-124 meant to include.**
+- Found none live. Server `moduleLevel` and client `permissions` both read `defaultLevel`; the roster reads
+  `accessSummary`; `canAmend` in production.js refuses a NULL map on purpose, because it mirrors the mount's write
+  rule, which D-124 never widened.
+- Fixed in passing (D-144): the training reach report read the request's `user_id`, not the account the task
+  landed on, and never selected `is_external`.

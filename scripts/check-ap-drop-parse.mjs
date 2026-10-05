@@ -1,5 +1,5 @@
 // The AP Drop reader, on its own: text in, suggestions out.
-import { parseFinanceDocument, findVendor, findDueDate, findOrderRefs, findInvoiceNumber, notAVendor } from '../server/ap-drop-parse.js';
+import { parseFinanceDocument, findVendor, findBillTo, findDueDate, findOrderRefs, findInvoiceNumber, notAVendor } from '../server/ap-drop-parse.js';
 let pass = 0, fail = 0;
 const t = (n, c, d = '') => { if (c) { pass++; console.log('  ✓ ' + n); } else { fail++; console.log('  ✗ ' + n + (d ? ' — ' + d : '')); } };
 
@@ -60,5 +60,8 @@ t('markdown emphasis is stripped from a real name, the evidence kept as read', f
   && findVendor('# **Acme Packaging LLC**')?.evidence === '# **Acme Packaging LLC**');
 t('a real vendor after the header noise is still found', findVendor('USA\n| QTY | RATE |\nBeta Boxes Co')?.value === 'Beta Boxes Co');
 t('an ordinary company name passes', !notAVendor('Mountain Flavor Supply') && !notAVendor('Rate Card Printing Co'));
+
+t('a markdown header row is never the bill-to (D-148)', findBillTo('| BILL TO | SHIP TO |\n| Powder Ops | Powder Ops |') === null);
+t('an ordinary Bill To still reads', findBillTo('Bill To: Powder Ops LLC')?.value === 'Powder Ops LLC');
 
 console.log(`\n${pass}/${pass + fail} assertions passed`); process.exit(fail ? 1 : 0);
