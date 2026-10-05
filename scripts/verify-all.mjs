@@ -115,6 +115,7 @@ const RUNS = [
   ['verify-pm-generation.mjs', 5056, {}],
   ['verify-po-grid.mjs', 5057, {}, false],
   ['verify-training-test.mjs', 5058, {}, false],
+  ['verify-production-runs.mjs', 5059, {}, false],
 ];
 
 // VERIFY_ONLY=verify-auth.mjs,verify-swab-stock.mjs runs just the entries that

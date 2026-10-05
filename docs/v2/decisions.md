@@ -6120,3 +6120,42 @@ filed under it, and asserts three things:
 The browser half then retires the last stray and the strip disappears without a reload, which is the end state
 A7 asks the plant to reach. `ensureList` is `INSERT OR IGNORE` and neither chemical is on `SANITATION_AREAS`, so
 no redeploy can put a retired option back.
+
+## D-146 — A production run opens and closes, and its start asks for the Pre-Op (OBL-22 → OBL-42, 2026-10-05)
+
+**The gap.** Protocol 003 V4, PC #1: *"a pre-operational clean at the beginning of every run"*. D-009 found that
+every generator here is a calendar while three of the four controls fire per run. D-125 retired the daily Pre-Op
+card, because a calendar card sat N/A or missed, and nothing in ReadyDoc knew a run had begun. OBL-22 has said
+since 30 September: *nothing PROMPTS the clean when a run starts.*
+
+**Decided:**
+- **A run is opened when it starts and closed when it ends**, in the Receiving Log's shape: the act issues the
+  number (`RUN-####`). `production_runs` holds room, team, MO, product, who and when. The screen is
+  **Production Log → Runs** (`?view=runs`), and starting or closing takes the same right as filing an end-of-day
+  report. One open run per room. A run outside a production or batching room is refused, because a Pre-Op belongs
+  to one.
+- **Whether a run's Pre-Op is on record is DERIVED, never stored** (`preopFor`). It means a **passing** `pre_op`
+  sanitation record in the run's room since the room's previous run (24 hours back for the first run on record).
+  It reads `before` (PC met), `after` (filed after the start: late, but there) or `owed`. The run table has no
+  clean column, and the verify asserts that.
+- **A start with no Pre-Op on record raises one Cleaning task for the room**, "Pre-Op clean — Room 4 (run RUN-0007
+  starting)", high priority, due today, naming PC #1. A second run started before the clean shares it.
+  `recordAreaForTask` maps the title back to the room token, so **completing it files the Pre-Op record**, with
+  the ATP box the task door already draws for a production room (D-112, D-116).
+- **A Pre-Op filed on the Sanitation form closes that task** (`closeRunPromptsFor`, the `closeRecleanTasksFor`
+  rule: the clean is the completion).
+- **An over-limit swab is not a Pre-Op.** It is graded a fail, the run still reads `owed`, and the task stays
+  open.
+- **REPORTED, NEVER GATED.** A run starts and closes whatever the record says. Stopping production on a software
+  check is the plant's decision, and an app enforcing a rule the plant has not decided is itself a finding.
+- **Register:** PC #1's half is split out of OBL-22 as **OBL-42, landed** (D-119). OBL-22 stays open for PC #2
+  and PC #3, which still run on paper per run, and for the plant's decisions: whether a run is ever refused
+  without its Pre-Op, and that supervisors start runs here at all.
+
+**Timestamps are to the second**, so "the room's previous run" breaks a same-second tie by insert order, and the
+verify spaces its runs and cleans minutes apart, as the floor does.
+
+**Verified:** `verify:productionruns` (24, live and a browser at 390px; in `verify:all`). The control is `main`: it
+fails 2 and cannot continue, because there is no run to start. These stay green: `verify:atp` (63),
+`verify:productionmirror` (16), `verify:eodchase` (54), `verify:preop` (50), `verify:mmrgate` (81),
+`npm run check`, and `check:obligations` (42 obligations · 14 landed · 23 open · 5 drafted).

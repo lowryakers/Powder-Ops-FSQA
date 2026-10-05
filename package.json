@@ -108,6 +108,7 @@
     "verify:pmgeneration": "node scripts/verify-pm-generation.mjs",
     "verify:pogrid": "node scripts/verify-po-grid.mjs",
     "verify:trainingtest": "node scripts/verify-training-test.mjs",
+    "verify:productionruns": "node scripts/verify-production-runs.mjs",
     "verify:checklistoverlap": "node scripts/verify-checklist-overlap.mjs",
     "verify:payreviews": "node scripts/verify-pay-reviews.mjs",
     "verify:artworkfilm": "node scripts/verify-artwork-film.mjs",

@@ -1,6 +1,6 @@
 import { useState, useMemo, Fragment } from 'react';
 import { useApiGet, apiFetch, apiPost, apiPut } from '../../hooks/useApi';
-import { ClipboardList, Plus, CheckCircle, Filter, Package, Hash, Clock, AlertCircle, X, ChevronUp, ChevronDown, Check, Undo2, Pencil, NotebookPen } from 'lucide-react';
+import { ClipboardList, Plus, CheckCircle, Filter, Package, Hash, Clock, AlertCircle, X, ChevronUp, ChevronDown, Check, Undo2, Pencil, NotebookPen, PlayCircle } from 'lucide-react';
 import { localDateStr, daysAgoStr } from '../../utils/dates';
 import { hasExplicitGrant } from '../../utils/permissions';
 import { PRODUCTION_LINES, lineLabel, FILLING_TEAM, PRODUCTION_TEAMS as TEAMS, PRODUCTION_ROOMS, RETIRED_ROOMS, CLEAN_SCOPE } from '../../constants/productionLines';
@@ -13,6 +13,7 @@ import ShowMore from '../common/ShowMore.jsx';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import ProductionDayLog from './ProductionDayLog.jsx';
+import ProductionRuns from './ProductionRuns.jsx';
 import { formatDateTime, formatTime as fmtClock } from '../../lib/datetime.js';
 import { withSignature } from '../../lib/signature';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
@@ -1957,7 +1958,9 @@ function TemplateEditor() {
 /* ── Main Component ──────────────────────────────────────── */
 
 export default function ProductionLog({ user, directEntry }) {
-  const [tab, setTab] = useState('log');
+  // ?view=runs deep-links the Runs tab (D-146) — the Pre-Op task names a run,
+  // and a link to it must land there, not on the log.
+  const [tab, setTab] = useState(() => (getParam('view') === 'runs' ? 'runs' : 'log'));
   const [refreshKey, setRefreshKey] = useState(0);
   // The day log being turned into a report: { id, initial }. Held here rather
   // than in EntryForm so leaving the tab and coming back doesn't lose it.
@@ -1995,6 +1998,8 @@ export default function ProductionLog({ user, directEntry }) {
       { id: 'day', label: 'My Day', icon: NotebookPen },
       { id: 'form', label: 'Entry Form', icon: Plus },
     ] : []),
+    // A run opens and closes and asks for its Pre-Op (D-146, OBL-22).
+    { id: 'runs', label: 'Runs', icon: PlayCircle },
     ...(canEditTemplates ? [{ id: 'templates', label: 'EOD Templates', icon: Pencil }] : []),
   ];
 
@@ -2021,6 +2026,7 @@ export default function ProductionLog({ user, directEntry }) {
       {tab === 'log' && (
         <LogTable key={refreshKey} user={user} />
       )}
+      {tab === 'runs' && <ProductionRuns />}
       {tab === 'templates' && canEditTemplates && (
         <TemplateEditor />
       )}

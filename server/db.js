@@ -2414,6 +2414,37 @@ function initSchema() {
     );
   `);
 
+  // ── A production run: the boundary PC #1 fires on (D-146, OBL-22) ─────────
+  // Protocol 003 V4 PC #1 is "a pre-operational clean at the beginning of every
+  // run" — a TRIGGER, not a calendar (D-009). D-125 retired the daily Pre-Op
+  // card and nothing said when a run began. A run is opened when it starts and
+  // closed when it ends, the Receiving Log's shape: the act issues the number.
+  // Whether its Pre-Op is on record is DERIVED from sanitation_records on every
+  // read and never stored here — one owner of the clean.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS production_runs (
+      id TEXT PRIMARY KEY,
+      run_no TEXT NOT NULL UNIQUE,
+      room TEXT NOT NULL,
+      team TEXT,
+      mo_number TEXT,
+      product_name TEXT,
+      started_at TEXT NOT NULL DEFAULT (datetime('now')),
+      started_by TEXT,
+      started_by_id TEXT,
+      ended_at TEXT,
+      ended_by TEXT,
+      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
+      -- The Pre-Op task a start raised when no clean was on record. A link to
+      -- the prompt, not a copy of the clean.
+      prompt_work_order_id TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_production_runs_room ON production_runs(room, started_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_production_runs_status ON production_runs(status);
+  `);
+
   // ── Stability (CAR 4990683-9) ─────────────────────────────────────────────
   // A study is the plan: which product family, which storage condition, when
   // the pulls fall. A pull is one dated sample against a retention jar; it is

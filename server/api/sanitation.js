@@ -1,3 +1,4 @@
+import { closeRunPromptsFor } from '../production-runs.js';
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
@@ -696,6 +697,10 @@ router.post('/', (req, res) => {
   // Reads `decided.result`, not `result`: an over-limit swab must not close the
   // re-clean task the failure should have raised.
   const closed = decided.result === 'pass' ? closeRecleanTasksFor(db, area, req.user?.name || performed_by, created) : 0;
+  // A passing Pre-Op closes the prompt a run start raised for this room (D-146).
+  if (decided.result === 'pass' && type === 'pre_op') {
+    try { closeRunPromptsFor(db, area, req.user?.name || performed_by, created, logAudit); } catch (e) { console.warn('[runs] prompt close skipped:', e.message); }
+  }
   let recleanWorkOrderId = null;
   if (escalation?.stage === 'escalate') {
     // Best-effort: the record is already written and honest. A failure to raise

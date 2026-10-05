@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import { requireRole } from '../middleware/auth.js';
-import { hasExplicitEdit } from '../module-access.js';
+import { hasExplicitEdit, hasExplicitGrant } from '../module-access.js';
+import { listRuns, startRun, closeRun } from '../production-runs.js';
 import { getChannelByName, postMessageAs, getModuleLinks, botDm } from './comms.js';
 import { pushToUser } from '../push.js';
 import { readyDocOrigin } from '../links.js';
@@ -1872,6 +1873,35 @@ router.post('/schedule/seen', (req, res) => {
   const db = getDb();
   if (req.user?.id) db.prepare("UPDATE users SET schedule_seen_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE id = ?").run(req.user.id);
   res.json({ ok: true });
+});
+
+
+// ── Runs: the boundary PC #1 fires on (D-146, OBL-22) ───────────────────────
+// Starting a run issues its number and, when no Pre-Op is on record for the
+// room since its last run, raises the Cleaning task that asks for one.
+// Reported, never gated — see server/production-runs.js.
+const mayRunLine = (u) => !!u && (u.role === 'admin' || u.role === 'supervisor'
+  || hasExplicitGrant(u, 'production-eod') || hasExplicitEdit(u, 'production-log'));
+
+router.get('/runs', (req, res) => {
+  const status = ['open', 'closed'].includes(req.query.status) ? req.query.status : undefined;
+  res.json({ runs: listRuns(getDb(), { status }), can_run: mayRunLine(req.user) });
+});
+
+router.post('/runs', (req, res) => {
+  if (!mayRunLine(req.user)) return res.status(403).json({ error: 'Starting a run is for supervisors, admins and whoever files the end-of-day report.' });
+  const b = req.body || {};
+  const out = startRun(getDb(), { room: b.room, team: b.team, mo_number: b.mo_number, product_name: b.product_name, notes: b.notes,
+    by: req.user.name, byId: req.user.id, logAudit: (...a) => logAudit(req.user, ...a.slice(1)) });
+  if (out.error) return res.status(out.status).json({ error: out.error });
+  res.status(201).json(out);
+});
+
+router.post('/runs/:id/close', (req, res) => {
+  if (!mayRunLine(req.user)) return res.status(403).json({ error: 'Closing a run is for supervisors, admins and whoever files the end-of-day report.' });
+  const out = closeRun(getDb(), req.params.id, { by: req.user.name, logAudit: (...a) => logAudit(req.user, ...a.slice(1)) });
+  if (out.error) return res.status(out.status).json({ error: out.error });
+  res.json(out);
 });
 
 export default router;

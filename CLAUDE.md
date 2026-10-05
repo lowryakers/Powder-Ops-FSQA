@@ -54,7 +54,7 @@ workstreams collide over.
 > open is the wording check against the PDF — OBL-33**, split out rather than marking OBL-02 done on the
 > strength of it. A correction goes in the source file, never the database (the seeder is insert-only).
 >
-> Obligations today: **23 open · 5 drafted · 13 landed** of 41 (D-119, 29 Sep). Landed: OBL-01 (ATP grading),
+> Obligations today: **23 open · 5 drafted · 14 landed** of 42 (D-146, 5 Oct — OBL-42, PC #1's run trigger, split out of OBL-22). Landed: OBL-01 (ATP grading),
 > OBL-02 (the four controls seeded and guarded), OBL-08 (supplier register), OBL-31 (annual vendor review
 > raises work), OBL-32 (the ATP task door), and the eight software halves split out on 29 Sep — OBL-34
 > (banned-list review), OBL-35 (change register), OBL-36 (EMP results graded and trended), OBL-37 (spec
@@ -2207,6 +2207,15 @@ on the Sanitation record form, and `server/preop-retire.js` (once per database, 
 - The step list lost "ATP Test", "Allergen Test" and "QA sign-off" — exact match, seed + repair.
 - **Open for Document Control:** the task chip says FORM 108-03 V2, the transcription Form 117.21 V5.
 - `verify:preop` (50, live + reboots + browser at 1280/390; control fails 19).
+
+## A production run opens and closes, and its start asks for the Pre-Op (D-146, OBL-42)
+`production_runs` + `server/production-runs.js` (`startRun`, `closeRun`, `preopFor`, `closeRunPromptsFor`),
+`GET|POST /production/runs`, `POST /production/runs/:id/close`, **Production Log → Runs** (`ProductionRuns.jsx`,
+`?view=runs`). `RUN-####` issued on start. **The Pre-Op is DERIVED** — a passing `pre_op` sanitation record in the
+room since its previous run — never stored on the run. A start with none raises ONE Cleaning task per room
+("Pre-Op clean — Room N (run RUN-… starting)"; `recordAreaForTask` maps it to the room token, so completing it
+files the record); a Pre-Op filed on the Sanitation form closes it. **Reported, never gated.** OBL-22 stays open
+for PC #2/#3 and the plant's gate decision. `verify:productionruns` (24; control fails 2 then stops).
 
 ## A hub tab is admitted AFTER the predicate loop (D-125)
 `effectiveModules` admits `HUB_OF` tabs once the `visible(user)` loop has run — a hub admitted by predicate

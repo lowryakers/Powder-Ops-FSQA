@@ -128,6 +128,10 @@ const AREA_FROM_TITLE = [
   // token the log stores, or the record files under an area the rule cannot
   // join. The trailing "(2 failed ATP swabs)" is stripped.
   [/^(?:72h\s+)?Re-?clean\s*[—–-]\s*(.+?)\s*(?:\([^()]*\))?$/i, label => areaToken(label)],
+  // THE PRE-OP A RUN START ASKS FOR (D-146), raised at runtime like the two
+  // above: "Pre-Op clean — Room 4 (run RUN-0007 starting)". Completing it files
+  // the room's Pre-Op record under the TOKEN, which is what the run reads.
+  [/^Pre-?Op clean\s*[—–-]\s*(.+?)\s*(?:\([^()]*\))?$/i, label => areaToken(label)],
 ];
 
 /**

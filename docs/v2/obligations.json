@@ -449,7 +449,7 @@
       "sources": [
         "WALK-08"
       ],
-      "note": "DEFERRED BY DECISION (D-019). Every generator is a calendar and three of four preventive controls fire per production run. Architecture move 05, after the audit. The record leg (OBL-01) is what an auditor asks for; this is the refinement. 30 Sep (D-125): the answer to 'which event is a run' is the Sanitation record itself — the daily Pre-Op card is retired and Form 117.21 is filed on the record when the clean is done. Still open: nothing PROMPTS the clean when a run starts."
+      "note": "DEFERRED BY DECISION (D-019). Every generator is a calendar and three of four preventive controls fire per production run. Architecture move 05, after the audit. The record leg (OBL-01) is what an auditor asks for; this is the refinement. 30 Sep (D-125): the answer to 'which event is a run' is the Sanitation record itself — the daily Pre-Op card is retired and Form 117.21 is filed on the record when the clean is done. Still open: nothing PROMPTS the clean when a run starts. 5 Oct (D-146): PC #1's half is LANDED and split out as OBL-42 — a production run opens and closes (Production Log → Runs) and its start raises the Pre-Op task when none is on record for the room since its last run. Still open here: the other two run-boundary controls (PC #2 and PC #3 still fire on paper per run, nothing in ReadyDoc knows their run), and the plant's decisions — whether a run is ever REFUSED without its Pre-Op (it is reported, never gated), and that supervisors start runs here at all."
     },
     {
       "id": "OBL-23",
@@ -749,6 +749,21 @@
         "docs/v2/decisions.md"
       ],
       "note": "Split out of OBL-19 on 29 Sep 2026 (D-119) the way OBL-27 was split out of OBL-01: the software half is LANDED and says so; the plant half stays on OBL-19, open, with the findings only a person can close. An obligation half-discharged and marked done is worse than one still open — and one fully built and still reading 'open' hides the work. LANDED 28 Sep 2026 (D-115, 4e29fcb). An annual 'Food Defense Plan Challenge (SOP 434)' quality schedule seeded at boot; completion walks the nine § 5.0 steps (transcribed, each tagged with its clause), requires at least one § 5.2 C method — the procedure's only 'must' — plus outcome, findings and corrective actions; food_defense_challenges holds the record stamped SOP 434 V3; a challenge already run (March 2026) is back-filed with its own date through the same validation, source 'paper'. The record form itself is unnumbered and is in the DCR. What stays on OBL-19: FDP-25 — the plan says two years where SQF 2.7.1.4 says annual, which is the Protocol 001 re-issue (OBL-17) — and recording the March challenge, which QA is doing."
+    },
+    {
+      "id": "OBL-42",
+      "title": "PC #1's run boundary: a production run opens and closes, and its start asks for the Pre-Op clean",
+      "bucket": "A",
+      "status": "landed",
+      "owner": "platform",
+      "sources": [],
+      "artifacts": [
+        "server/production-runs.js",
+        "src/components/compliance/ProductionRuns.jsx",
+        "scripts/verify-production-runs.mjs",
+        "docs/v2/decisions.md"
+      ],
+      "note": "Split out of OBL-22 on 5 Oct 2026 (D-146) the D-119 way: the software half for PC #1 is landed and says so; OBL-22 keeps WALK-08 and the two controls and the plant decisions that remain. A run gets RUN-#### when it starts (the Receiving Log shape); whether its Pre-Op is on record is DERIVED from sanitation_records (a passing pre_op in the room since its previous run); a start with none raises one Cleaning task per room, completing it files the record, and a Pre-Op filed on the Sanitation form closes it. Reported, never gated."
     }
   ]
 }
