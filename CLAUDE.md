@@ -5995,6 +5995,16 @@ that lives only on a screen the person who needs it never opens.**
   the `starter` block fails **6** (the first returning `[]` for a check due in four days); reverting the join
   page and `/install` fails **9**.
 
+## The review clock moves on the DECISION; Hours links a missing pay record where it is seen (D-150)
+- **Submitting an evaluation does NOT touch `last_reviewed_at`.** Applying a rate or holding flat does. The person
+  stays Due with `review.awaiting_decision` ("decide" beside the chip). `repairUndecidedReviewStamps` (boot, once)
+  undid the earlier resets.
+- **Hours "No pay record" ⇒ "Link…"**: unlinked pay rows (and rows linked to a gone/deactivated account,
+  `stale_link`), suggestions first, a person picks; `POST /pay/employees/:id/link`, or add a rate-less pay row.
+- **NEVER `JSON.stringify` a body into `apiFetch`** — it serializes itself. Four screens did and their buttons were
+  dead (contractor remove, Training by-person rules, Training documents link/course). `apiFetch` now passes a string
+  through untouched; `verify:hourspaylink` (28, port 5066) fails if any caller does it again.
+
 ## Pay reviews: the office's list clears only when something was DONE (D-057)
 `payActions(db)` in `api/pay.js` is the one list of what waits on the office — **decide** (a submitted
 evaluation, cleared by applying a rate or holding flat with a reason), **chase** (an assignment past its date),

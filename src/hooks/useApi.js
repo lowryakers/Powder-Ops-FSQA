@@ -49,7 +49,11 @@ async function apiFetch(path, options = {}) {
     res = await fetch(`${BASE}${path}`, {
       ...options,
       headers,
-      body: options.body ? JSON.stringify(options.body) : undefined,
+      // A string is taken as ALREADY serialized. Four callers passed
+      // JSON.stringify(...) here and got it encoded twice — the server read a
+      // bare string, every field came through undefined, and the buttons looked
+      // dead (D-150). Pass an object; a string is no longer encoded again.
+      body: options.body ? (typeof options.body === 'string' ? options.body : JSON.stringify(options.body)) : undefined,
     });
   } catch (err) {
     // fetch only rejects when the request never completed — the radio is off,

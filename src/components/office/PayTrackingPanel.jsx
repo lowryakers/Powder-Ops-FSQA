@@ -1184,8 +1184,19 @@ export default function PayTrackingPanel() {
     { key: 'review_days', label: tr('Days'), type: 'number', align: 'right', render: r => r.review?.days ?? '—' },
     { key: 'review_status', label: tr('Review'), filter: false,
       render: r => (
-        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${REVIEW_TONE[r.review?.status || 'unknown']}`}>
-          {tr(REVIEW_LABEL[r.review?.status || 'unknown'])}
+        <span className="inline-flex items-center gap-1 whitespace-nowrap">
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${REVIEW_TONE[r.review?.status || 'unknown']}`}>
+            {tr(REVIEW_LABEL[r.review?.status || 'unknown'])}
+          </span>
+          {/* Evaluations in, decision not yet made (D-150). The clock — and
+              the Days column — move only when a raise is applied or the review
+              is held flat, so "Due" here means the decision is the office's. */}
+          {r.review?.awaiting_decision > 0 && (
+            <span className="text-[10px] font-semibold text-indigo-700" data-awaiting-decision={r.id}
+              title={tr('Evaluation submitted — the review clock resets when you apply a raise or hold flat')}>
+              {tr('decide')}
+            </span>
+          )}
         </span>
       ) },
   ];

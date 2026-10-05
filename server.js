@@ -13,7 +13,7 @@ import { getDb, dataDir, logAudit, linkOrgPositionsToUsers } from './server/db.j
 import { readyDocOrigin, reportOrigins } from './server/links.js';
 import financeRoutes, { backfillFinanceFileText } from './server/api/finance.js';
 import procurementRoutes from './server/api/procurement.js';
-import payRoutes, { payReviewNudges, supersedeRepeatReviews } from './server/api/pay.js';
+import payRoutes, { payReviewNudges, supersedeRepeatReviews, repairUndecidedReviewStamps } from './server/api/pay.js';
 import flashRoutes, { sendFlashReport } from './server/api/flash.js';
 import { sendCleanupDigest, cleanupDigest, CLEANUP_BUSY_THRESHOLD } from './server/cleanup-digest.js';
 import { sendEodMissedDigest, eodMissedDigest, EOD_BUSY_THRESHOLD } from './server/eod-chase.js';
@@ -973,6 +973,10 @@ try {
 // One open review per reviewer per person (D-137): repeats already on file are
 // superseded, never deleted. Idempotent — a second boot finds nothing to do.
 try { supersedeRepeatReviews(db); } catch (e) { console.warn('[seed] pay review repeats skipped:', e.message); }
+try {
+  const r = repairUndecidedReviewStamps(db);
+  if (r.repaired) console.log(`[repair] pay review clock: ${r.repaired} reset by a submitted evaluation put back — ${r.people.map(p => `${p.name} ${p.from} → ${p.to || 'last raise/hire'}`).join('; ')}`);
+} catch (e) { console.warn('[repair] pay review clock skipped:', e.message); }
 
 
 // Ensure auditor user exists (for existing databases)

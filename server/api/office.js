@@ -12,6 +12,7 @@ import { CADENCES, periodOf, dueDateOf, cyclesDue, cycleAge, normalizeTags } fro
 import { botDm, postMessageAs } from './comms.js';
 import { pushToUser } from '../push.js';
 import { readyDocOrigin } from '../links.js';
+import { normalizeName } from '../pay-seed.js';
 
 // Office Ops: supply ordering + time tracking (replaces two Monday boards).
 // Submitting is open to supervisors + admins (or anyone explicitly granted the
@@ -1319,6 +1320,17 @@ function weekCost(rate, week) {
   return { straight_cost: straight, ot_premium: premium, cost: money(straight + premium) };
 }
 
+function payRowsUnlinked(db) {
+  try {
+    return db.prepare(`SELECT p.id, p.name, p.team, p.pay_rate, p.user_id,
+        CASE WHEN p.user_id IS NULL THEN 'unlinked' ELSE 'stale_link' END AS state
+      FROM pay_employees p LEFT JOIN users u ON u.id = p.user_id AND u.is_active = 1
+      WHERE p.active = 1 AND COALESCE(p.worker_type, 'employee') <> 'contractor'
+        AND (p.user_id IS NULL OR u.id IS NULL)
+      ORDER BY p.name`).all();
+  } catch { return []; }
+}
+
 function hoursExclusions(db) {
   try {
     return new Map(db.prepare('SELECT * FROM hours_exclusions').all().map(r => [r.row_id, r]));
@@ -1427,12 +1439,31 @@ router.get('/hours', (req, res) => {
     still_on_roster: byId.has(e.row_id),
   })).sort((a, b) => String(a.name).localeCompare(String(b.name)));
 
+  // THE PAY ROWS NOBODY HAS TIED TO AN ACCOUNT, offered beside each "No pay
+  // record" so the link is made where the gap is seen (the re-clean badge
+  // rule) instead of on another tab. A row whose link points at an account
+  // that is gone or deactivated is offered too: rateRoster keys on the live
+  // account, so that row is as unreachable from here as an unlinked one — and
+  // Pay Tracking's own reconcile list skips it, because it carries a user_id.
+  // The match is SUGGESTED (same name, then same first name), never applied:
+  // the link is the identity, and a person decides it (D-150).
+  const unlinkedPay = payRowsUnlinked(db);
+  const firstOf = (n) => String(n || '').trim().split(/\s+/)[0]?.toLowerCase() || '';
+  for (const p of people) {
+    if (p.is_contractor || p.rate_linked) continue;
+    const exact = unlinkedPay.filter(r => normalizeName(r.name) === normalizeName(p.name));
+    const first = unlinkedPay.filter(r => !exact.includes(r) && firstOf(r.name) === firstOf(p.name));
+    p.pay_suggestions = [...exact.map(r => ({ id: r.id, why: 'same name' })),
+      ...first.map(r => ({ id: r.id, why: 'same first name' }))];
+  }
+
   // `standard_week` is shipped so the screen can say when somebody's overtime
   // is being measured against a target that is NOT the ordinary 40-hour week —
   // which is what makes the premium in the cost column interpretable. Quiet
   // when every target is 40, which is the usual case.
   res.json({ period_start: periodStart, weeks, people, totals, totals_by_type,
-    standard_week: STANDARD_WEEK_HOURS, ot_multiplier: OT_MULTIPLIER, excluded: excludedRows });
+    standard_week: STANDARD_WEEK_HOURS, ot_multiplier: OT_MULTIPLIER, excluded: excludedRows,
+    pay_rows_unlinked: unlinkedPay });
 });
 
 /**

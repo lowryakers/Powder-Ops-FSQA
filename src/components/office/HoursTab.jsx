@@ -37,7 +37,81 @@ const money0 = (n) => (n == null ? '—' : `$${Number(n).toLocaleString('en-US',
 function rateLabel(p) {
   if (p.rate != null) return { text: `${money(p.rate)}/hr`, tone: 'text-gray-700', title: 'From Pay Tracking' };
   if (p.rate_linked) return { text: 'Salaried', tone: 'text-gray-400', title: 'On the pay roster with no hourly rate — no hourly cost is derived' };
-  return { text: 'No pay record', tone: 'text-amber-600', title: 'Nobody has linked this account to a Pay Tracking row — link it on Pay Tracking → Roster and the rate appears here' };
+  return { text: 'No pay record', tone: 'text-amber-600', title: 'No Pay Tracking row is linked to this account — Link it here and the rate appears' };
+}
+
+/**
+ * Tie an account to its Pay Tracking row, from the row that says it has none.
+ *
+ * THE RATE STAYS PAY TRACKING'S (D-099); this only makes the link that lets
+ * the Hours tab read it — `POST /pay/employees/:id/link`, the same call the
+ * Roster tab makes. Suggestions (same name, then same first name) are offered
+ * first and NOTHING is linked until somebody picks: the link is the identity,
+ * and a wrong one puts somebody else's rate on this person's hours. Nobody on
+ * the list ⇒ "Add them to Pay Tracking" opens a row with no rate, which is
+ * entered there on purpose, never guessed (D-150).
+ */
+function LinkPayButton({ person, rows = [], onDone }) {
+  const [open, setOpen] = useState(false);
+  const [pick, setPick] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const sugg = new Map((person.pay_suggestions || []).map(s => [s.id, s.why]));
+  const ordered = [...rows].sort((a, b) => (sugg.has(b.id) - sugg.has(a.id)) || String(a.name).localeCompare(String(b.name)));
+  const start = () => { setPick(person.pay_suggestions?.[0]?.id || ''); setErr(null); setOpen(true); };
+  const link = async () => {
+    setBusy(true); setErr(null);
+    try { await apiPost(`/pay/employees/${pick}/link`, { user_id: person.user_id }); setOpen(false); onDone?.(); }
+    catch (e) { setErr(e.message || 'Could not link.'); }
+    finally { setBusy(false); }
+  };
+  const add = async () => {
+    setBusy(true); setErr(null);
+    try { await apiPost('/pay/sync', { add: [person.user_id] }); setOpen(false); onDone?.(); }
+    catch (e) { setErr(e.message || 'Could not add.'); }
+    finally { setBusy(false); }
+  };
+  if (!open) {
+    return (
+      <button type="button" onClick={start} data-link-pay={person.user_id}
+        className="block text-[10px] font-semibold text-powder-700 hover:underline">Link…</button>
+    );
+  }
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => !busy && setOpen(false)}>
+      <div className="bg-white rounded-2xl p-4 w-full max-w-md space-y-3 max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()} data-link-pay-modal>
+        <div>
+          <p className="font-semibold text-gray-900">Which Pay Tracking row is {person.name}?</p>
+          <p className="text-xs text-gray-500 mt-0.5">The rate stays on Pay Tracking — this only connects the row to their account, so their hours can be costed here.</p>
+        </div>
+        {ordered.length > 0 ? (
+          <div className="space-y-1 max-h-72 overflow-y-auto" data-link-pay-options>
+            {ordered.map(r => (
+              <label key={r.id} className={`flex items-center gap-2 px-2.5 py-2 rounded-lg border text-sm cursor-pointer ${pick === r.id ? 'border-powder-400 bg-powder-50' : 'border-gray-200'}`}>
+                <input type="radio" name={`link-${person.user_id}`} checked={pick === r.id} onChange={() => setPick(r.id)} data-link-pay-option={r.id} />
+                <span className="flex-1 min-w-0">
+                  <span className="font-medium text-gray-900">{r.name}</span>
+                  <span className="text-xs text-gray-500"> · {r.team || 'no team'} · {r.pay_rate != null ? `${money(r.pay_rate)}/hr` : 'no rate'}</span>
+                  {r.state === 'stale_link' && <span className="block text-[11px] text-amber-700">Linked to an account that is gone or deactivated</span>}
+                </span>
+                {sugg.has(r.id) && <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 rounded px-1.5 py-0.5 shrink-0">{sugg.get(r.id)}</span>}
+              </label>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-600">Every Pay Tracking row is already linked to somebody.</p>
+        )}
+        {err && <p className="text-xs text-red-600">{err}</p>}
+        <div className="flex flex-wrap items-center gap-2 justify-end">
+          <button type="button" onClick={add} disabled={busy} data-link-pay-add
+            className="mr-auto text-xs text-gray-600 hover:text-gray-900 underline disabled:opacity-40">Not there — add them to Pay Tracking</button>
+          <button type="button" onClick={() => setOpen(false)} disabled={busy} className="px-3 py-1.5 text-sm rounded-lg border border-gray-200">Cancel</button>
+          <button type="button" onClick={link} disabled={busy || !pick} data-link-pay-save
+            className="px-3 py-1.5 text-sm rounded-lg bg-powder-600 text-white disabled:opacity-40">Link</button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -379,7 +453,11 @@ export default function HoursTab() {
   // while nothing has been paid.
   const endContractor = async (p) => {
     if (!window.confirm(`Take ${p.name} off the list? Their hours and pay history are kept.`)) return;
-    await apiFetch(`/pay/employees/${p.user_id}`, { method: 'PUT', body: JSON.stringify({ active: 0 }) });
+    // An object, not JSON.stringify(...): apiFetch serializes the body itself,
+    // and a pre-stringified one reached the server as a bare string, so it saw
+    // nothing to change, refused with a 400, and the button looked dead (D-150).
+    try { await apiPut(`/pay/employees/${p.user_id}`, { active: 0 }); }
+    catch (e) { window.alert(e.message || 'Could not take them off the list.'); return; }
     refresh();
   };
 
@@ -434,7 +512,7 @@ export default function HoursTab() {
         <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2" data-unlinked-note>
           <span className="font-semibold">{unlinked.length} {unlinked.length === 1 ? 'person has' : 'people have'} no Pay Tracking record</span>
           {' '}— {unlinked.map(p => p.name).join(', ')}. Their hours are tracked; their cost cannot be, because nothing says what
-          they are paid. Link the account on Pay Tracking → Roster and the rate appears here.
+          they are paid. Press Link… beside their name to connect their Pay Tracking row, and the rate appears here.
         </p>
       )}
 
@@ -524,6 +602,7 @@ export default function HoursTab() {
                   {(() => { const r = rateLabel(p); return (
                     <span className={`text-[11px] tabular-nums ${r.tone}`} title={r.title} data-rate={p.user_id}>{r.text}</span>
                   ); })()}
+                  {!p.is_contractor && !p.rate_linked && <LinkPayButton person={p} rows={data?.pay_rows_unlinked} onDone={refresh} />}
                 </td>
                 {p.weeks.map(w => (
                   <td key={w.week_start} colSpan={5} className="px-3 py-1.5 border-l border-gray-200">
@@ -604,6 +683,7 @@ export default function HoursTab() {
               {(() => { const r = rateLabel(p); return (
                 <span className={`text-[11px] tabular-nums ${r.tone}`} title={r.title}>· {r.text}</span>
               ); })()}
+              {!p.is_contractor && !p.rate_linked && <LinkPayButton person={p} rows={data?.pay_rows_unlinked} onDone={refresh} />}
               {p.period.overtime > 0 && (
                 <span className="ml-auto text-[11px] font-semibold text-amber-600">{hrs(p.period.overtime)} OT</span>
               )}

@@ -161,7 +161,11 @@ router.get('/employees', (req, res) => {
   if (!requireAdmin(req, res)) return;
   const db = getDb();
   const rows = withLinkedNames(db, db.prepare('SELECT * FROM pay_employees ORDER BY active DESC, team, name').all());
-  res.json(rows.map(decorate));
+  // Evaluations in and not yet decided — shown beside the status so "Due"
+  // reads as "the reviews are in, the decision is yours", not as nobody acted.
+  const waiting = new Map(db.prepare(`SELECT employee_id, COUNT(*) AS n FROM pay_reviews
+    WHERE status = 'open' GROUP BY employee_id`).all().map(r => [r.employee_id, r.n]));
+  res.json(rows.map(decorate).map(r => ({ ...r, review: { ...r.review, awaiting_decision: waiting.get(r.id) || 0 } })));
 });
 
 router.get('/employees/:id', (req, res) => {
@@ -459,8 +463,14 @@ router.delete('/assignments/:id', (req, res) => {
 });
 
 // Submit an evaluation. Stores the scores, notes and the band the score landed
-// in, and stamps last_reviewed_at — one act, so the clock and the record can't
-// disagree. The reviewer's identity comes from the session, never the body.
+// in. The reviewer's identity comes from the session, never the body.
+//
+// IT DOES NOT TOUCH THE REVIEW CLOCK (D-150). It used to stamp
+// last_reviewed_at, so the Days column reset and the status read OK the moment
+// a supervisor pressed Submit — while the office still had a decision to make
+// and nothing had been paid. The clock resets on the DECISION: applying a rate
+// (POST /employees/:id/rate) or holding flat with a reason (/reviews/resolve).
+// Until then the person stays Due and the review waits on the 'decide' list.
 router.post('/employees/:id/reviews', (req, res) => {
   if (!requireEvaluator(req, res)) return;
   const db = getDb();
@@ -515,7 +525,6 @@ router.post('/employees/:id/reviews', (req, res) => {
       id, emp.id, req.user.id || null, req.user.name, when,
       draft.scores, total, draft.recommendation, draft.notes, draft.attendance_flag);
     for (const r of mine) supersedeReview(db, r, req.user.name, `Replaced by ${req.user.name}'s later review (${when})`);
-    db.prepare("UPDATE pay_employees SET last_reviewed_at = ?, updated_at = datetime('now') WHERE id = ?").run(when, emp.id);
     // Doing the evaluation is what closes the ask — the assignment is not a
     // separate thing to remember to tick off.
     db.prepare(`UPDATE pay_review_assignments SET status = 'completed', review_id = ?, completed_at = datetime('now')
@@ -552,6 +561,9 @@ router.post('/employees/:id/reviews/resolve', (req, res) => {
   if (resolution.length < 3) return res.status(400).json({ error: 'Say why — the reviews close with this as the outcome.' });
   const n = db.prepare(`UPDATE pay_reviews SET status = 'resolved', resolved_by = ?, resolved_at = datetime('now'), resolution = ?
     WHERE employee_id = ? AND status = 'open'`).run(req.user.name, resolution, emp.id).changes;
+  // Holding flat IS the decision, so this is where the clock resets — not the
+  // submit (D-150). Only when there was something to decide.
+  if (n) db.prepare("UPDATE pay_employees SET last_reviewed_at = ?, updated_at = datetime('now') WHERE id = ?").run(today(), emp.id);
   logAudit(req.user, 'update', 'pay_review', emp.id, { resolved: n, resolution }, null, null, emp.name);
   res.json({ resolved: n });
 });
@@ -876,6 +888,48 @@ function supersedeReview(db, r, by, why) {
  * is deleted, no score is changed, a second reviewer is never touched, and
  * every person it touched is audited with the counts.
  */
+/**
+ * Undo the clock resets that SUBMITTING an evaluation used to make (D-150).
+ *
+ * For somebody with an evaluation still waiting on a decision, last_reviewed_at
+ * equal to that evaluation's own date was written by the submit, not by a
+ * decision. It is put back to the latest date that WAS a decision or a
+ * deliberate statement — a held-flat resolution, or a review date set by hand
+ * (Details edit or the date-only stamp, both in the audit log) — or cleared, so
+ * the clock runs from the last raise or the hire date as it did before.
+ * A stamp a decision explains (a raise or resolution on or after it) is left.
+ * Once per database; audited per person.
+ */
+export function repairUndecidedReviewStamps(db) {
+  const KEY = 'pay_review_clock_repair_v1';
+  try {
+    if (db.prepare('SELECT 1 FROM app_settings WHERE key = ?').get(KEY)) return { repaired: 0, skipped: true };
+  } catch { return { repaired: 0 }; }
+  const out = [];
+  const emps = db.prepare('SELECT id, name, last_reviewed_at, last_increase_at FROM pay_employees WHERE last_reviewed_at IS NOT NULL').all();
+  for (const e of emps) {
+    const stamp = String(e.last_reviewed_at).slice(0, 10);
+    const open = db.prepare(`SELECT 1 FROM pay_reviews WHERE employee_id = ? AND status = 'open' AND review_date = ? LIMIT 1`).get(e.id, stamp);
+    if (!open) continue;
+    const resolved = db.prepare(`SELECT date(resolved_at) AS d FROM pay_reviews
+      WHERE employee_id = ? AND status = 'resolved' AND resolved_at IS NOT NULL`).all(e.id).map(r => r.d).filter(Boolean);
+    const handSet = db.prepare(`SELECT details FROM audit_log WHERE entity_type = 'pay_employee' AND entity_id = ?`).all(e.id)
+      .map(r => { try { return JSON.parse(r.details || '{}').last_reviewed_at; } catch { return null; } })
+      .filter(v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v)).map(v => v.slice(0, 10));
+    const decisions = [...resolved, ...handSet];
+    if (e.last_increase_at && String(e.last_increase_at).slice(0, 10) >= stamp) continue;
+    if (decisions.some(d => d >= stamp)) continue;
+    const restored = decisions.sort().pop() || null;
+    db.prepare("UPDATE pay_employees SET last_reviewed_at = ?, updated_at = datetime('now') WHERE id = ?").run(restored, e.id);
+    logAudit('system', 'update', 'pay_employee', e.id,
+      { last_reviewed_at: { from: stamp, to: restored }, reason: 'Review clock reset by a submitted evaluation, not a decision (D-150)' },
+      null, null, e.name);
+    out.push({ name: e.name, from: stamp, to: restored });
+  }
+  db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)").run(KEY, new Date().toISOString());
+  return { repaired: out.length, people: out };
+}
+
 export function supersedeRepeatReviews(db) {
   const groups = db.prepare(`SELECT employee_id, COALESCE(reviewer_id, 'name:' || reviewer_name) AS who, COUNT(*) AS n
     FROM pay_reviews WHERE status = 'open' GROUP BY employee_id, who HAVING COUNT(*) > 1`).all();

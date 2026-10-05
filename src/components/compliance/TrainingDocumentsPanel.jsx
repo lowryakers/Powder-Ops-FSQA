@@ -30,11 +30,11 @@ function CourseFromDocument({ doc, positions, onDone, onCancel }) {
     try {
       await apiFetch(`/training/documents/${doc.id}/course`, {
         method: 'POST',
-        body: JSON.stringify({
+        body: {
           required_departments: depts,
           required_positions: pos,
           retrain_months: months ? Number(months) : null,
-        }),
+        },
       });
       onDone();
     } catch (e) { setErr(e.message || 'Could not create the course.'); }
@@ -112,7 +112,7 @@ export default function TrainingDocumentsPanel({ onCoursesChanged }) {
 
   const link = async () => {
     setLinking(true);
-    try { await apiFetch('/training/documents/link', { method: 'POST', body: JSON.stringify({}) }); refresh(); onCoursesChanged?.(); }
+    try { await apiFetch('/training/documents/link', { method: 'POST', body: {} }); refresh(); onCoursesChanged?.(); }
     catch (e) { window.alert(e.message); }
     finally { setLinking(false); }
   };

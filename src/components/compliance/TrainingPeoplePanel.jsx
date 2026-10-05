@@ -54,7 +54,7 @@ function PersonDetail({ userId, onClose, onChanged }) {
     setBusy(courseId);
     try {
       if (rule === null) await apiFetch(`/training/courses/${courseId}/requirements/${userId}`, { method: 'DELETE' });
-      else await apiFetch(`/training/courses/${courseId}/requirements`, { method: 'POST', body: JSON.stringify({ user_id: userId, rule }) });
+      else await apiFetch(`/training/courses/${courseId}/requirements`, { method: 'POST', body: { user_id: userId, rule } });
       refresh(); onChanged?.();
     } catch (e) { window.alert(e.message); }
     finally { setBusy(null); }

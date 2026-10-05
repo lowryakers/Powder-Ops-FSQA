@@ -6323,3 +6323,31 @@ box sized to its window, scrollbar on screen with the page at the top (box fits,
 table is wholly below the fold), dragging the copy scrolls the table, one page scroll brings the whole box into view
 and the copy steps aside, header pinned while rows scroll, nothing capped at 390px and no sideways pan.
 `verify:pogrid` now measures with the page at the top (20). **Control — `main`'s client: `verify:pogrid` fails 1 (the box ends at 1,039px in an 800px window — the report exactly) and `verify:frozenscroll` fails 13 of 14.**
+
+## D-150 — Hours: "remove" removes, a missing pay record is linked where it is seen; the review clock moves on the decision (2026-10-05)
+Three reports from Lowry, one release.
+- **"Remove" on a contractor did nothing.** `endContractor` passed `JSON.stringify({active: 0})` into `apiFetch`,
+  which serializes the body itself — the server received a bare JSON string, every field read `undefined`, it
+  answered `400 Nothing to update`, and the handler had no catch. **Three more screens had the same call**:
+  Training → By person's required/exempt buttons and Training → Documents' "link" and "open a course". All four now
+  pass objects, and **`apiFetch` no longer re-encodes a string** (a string is taken as already serialized), so the
+  next one cannot fail this way. `verify:hourspaylink` asserts no `apiFetch` call in `src/` passes `JSON.stringify`.
+- **"No pay record" for Romina, Osvaldo and Diana.** The Hours tab reads the rate through the account link on the pay
+  row (`pay_employees.user_id`, D-099) — deliberately, because a second name-matcher could disagree with the first.
+  A row nobody linked (Romina's pay row carries her other surname) or a row linked to an account that is gone
+  (`stale_link` — Pay Tracking's own reconcile list skips these, because they carry a `user_id`) is therefore
+  unreachable. **The link is made where the gap is seen**: "Link…" beside "No pay record" opens the unlinked pay rows,
+  suggestions first (same name, then same first name), **nothing linked until somebody picks**; it calls the Roster
+  tab's own `POST /pay/employees/:id/link`. Nobody on the list ⇒ "add them to Pay Tracking" opens a row with no rate
+  (`POST /pay/sync add`), entered there on purpose, never guessed. The rate stays Pay Tracking's.
+- **The Days column reset when an evaluation was SUBMITTED.** `POST /employees/:id/reviews` stamped
+  `last_reviewed_at`, so the person read OK with 0 days while the office still had the decision to make. **The submit
+  no longer touches the clock**; the decision does — applying a rate (already stamped both columns) or holding flat
+  (`/reviews/resolve` now stamps `last_reviewed_at` when it resolved something). Until then the person stays **Due**,
+  the roster carries `review.awaiting_decision` and the chip says "decide"; the office's queue already lists them
+  once, as `decide`, never `assign` too (asserted). **`repairUndecidedReviewStamps`** (boot, once,
+  `pay_review_clock_repair_v1`) puts back stamps an undecided evaluation wrote: the latest held-flat resolution or
+  review date set by hand (from the audit log), else cleared so the clock runs from the last raise. A stamp a later
+  raise or resolution explains is left. Audited per person, named in the boot log.
+- `verify:hourspaylink` (28, live + browser at 1400; in `verify:all`). **Control — `main` — fails 15**, including the
+  submit reading `status: ok, days: 0` and the contractor still on the list after remove.
