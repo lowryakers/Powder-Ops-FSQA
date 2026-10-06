@@ -1,5 +1,6 @@
 import { useState, Fragment } from 'react';
 import { useApiGet, apiPut } from '../../hooks/useApi';
+import { DispositionChip, DispositionForm, DispositionReadback } from '../common/ProductDisposition.jsx';
 import { useTableSort } from '../../lib/useTableSort';
 import SortHeader from '../common/SortHeader.jsx';
 
@@ -68,7 +69,7 @@ function StatusCards({ status }) {
   );
 }
 
-export default function ScaleVerificationTab() {
+export default function ScaleVerificationTab({ canDecide = false, onDispositionChanged }) {
   const { user } = useAuth();
   const [from, setFrom] = useState(daysAgoStr(30));
   const [to, setTo] = useState(localDateStr());
@@ -76,6 +77,7 @@ export default function ScaleVerificationTab() {
   const [resultFilter, setResultFilter] = useState('');
   const [verifying, setVerifying] = useState(null);
   const [qr, setQr] = useState(false);
+  const [disposingId, setDisposingId] = useState(null);
   const expand = useRowExpand();
 
   const query = `/scale-verification?from=${from}&to=${to}${formCode ? `&form_code=${formCode}` : ''}${resultFilter ? `&result=${resultFilter}` : ''}`;
@@ -95,6 +97,19 @@ export default function ScaleVerificationTab() {
     } catch (e) {
       if (!e?.cancelled) window.alert(e.message || 'Could not counter-sign this check.');
     } finally { setVerifying(null); }
+  };
+
+  // SQF 11.2.3.4: a failed check owes a decision about the product weighed on
+  // that scale since its last passing check. Same component as calibrations.
+  const dispositionBlock = (r) => {
+    if (!r.disposition_state || r.disposition_state === 'not_required') return null;
+    if (r.disposition_state === 'recorded') return <DispositionReadback row={r} />;
+    if (!canDecide) return null;
+    return disposingId === r.id
+      ? <DispositionForm source="scale" row={r}
+          onSaved={() => { setDisposingId(null); refresh(); onDispositionChanged?.(); }} onCancel={() => setDisposingId(null)} />
+      : <button type="button" onClick={() => setDisposingId(r.id)} data-disposition-open={r.id}
+          className="px-2.5 py-1 bg-white border border-amber-300 text-amber-900 rounded-md text-xs font-semibold">Record disposition</button>;
   };
 
   // Newest first — a daily-check log is read from today backwards.
@@ -187,6 +202,9 @@ export default function ScaleVerificationTab() {
                 <p className="text-[11px] text-gray-400 mt-1">
                   {r.verified_by ? `QA: ${r.verified_by}` : 'Awaiting QA'}
                 </p>
+                {r.disposition_state && r.disposition_state !== 'not_required' && (
+                  <div className="mt-2 space-y-2"><DispositionChip row={r} />{dispositionBlock(r)}</div>
+                )}
                 {canVerify && !r.verified_by && (
                   <button onClick={() => verify(r)} disabled={verifying === r.id}
                     className="mt-2 px-3 py-1.5 bg-powder-600 text-white text-xs font-semibold rounded-lg disabled:opacity-50">
@@ -236,6 +254,7 @@ export default function ScaleVerificationTab() {
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${r.result === 'fail' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
                           {r.result}
                         </span>
+                        <div className="mt-1"><DispositionChip row={r} /></div>
                       </td>
                       <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
                         {r.verified_by ? `${r.verified_by} · ${fmt(r.verified_at)}` : <span className="text-amber-600">Pending</span>}
@@ -284,6 +303,7 @@ export default function ScaleVerificationTab() {
                               </tbody>
                             </table>
                           </div>
+                          {dispositionBlock(r) && <div className="mt-3">{dispositionBlock(r)}</div>}
                         </DetailFields>
                       </DetailRow>
                     )}

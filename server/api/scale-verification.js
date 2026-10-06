@@ -12,6 +12,7 @@ import { hasExplicitEdit } from '../module-access.js';
 import { scaleCheckStatus } from '../scale-checks.js';
 import { SCALE_FORMS, SCALE_PROCEDURE, procedureFor, getScaleForm, gradeReadings } from '../scale-forms.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
+import { stampOnFile, withDisposition } from '../product-disposition.js';
 
 const router = Router();
 const MODULE = 'calibration';
@@ -22,7 +23,7 @@ const canVerify = (u) => u?.role === 'admin' || u?.role === 'supervisor'
   || ['qa', 'quality'].includes((u?.department || '').toLowerCase())
   || hasExplicitEdit(u, MODULE);
 
-const shape = (r) => ({
+const shape = (r) => withDisposition('scale', {
   ...r,
   readings: (() => { try { return JSON.parse(r.readings || '[]'); } catch { return []; } })(),
 });
@@ -67,7 +68,9 @@ export function recordScaleVerification(db, body, { actor, source }) {
     JSON.stringify(readings), result, (body.notes || '').trim() || null, source || 'kiosk'
   );
 
-  const record = db.prepare('SELECT * FROM scale_verifications WHERE id = ?').get(id);
+  // A failed check owes a product disposition (SQF 11.2.3.4). The person at the
+  // scale is not the one to decide it, so it files as 'pending' for QA.
+  const record = stampOnFile(db, 'scale', id, null, actor);
   logAudit(actor || performedBy, 'create', 'scale_verification', id,
     { form_code: form.code, room, result, source },
     null, record, `${form.short} · ${room || 'no room'} · ${result.toUpperCase()}`);

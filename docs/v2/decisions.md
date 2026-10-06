@@ -6421,3 +6421,38 @@ screen back.
   drops v8 on activate.
 - `verify:stalechunk` (14, live + browser with a real service worker; in `verify:all`). **Control — `main` — fails
   5**, the decisive one rendering "ReadyDoc was updated" after a reload, exactly as reported.
+
+## D-154 — An out-of-calibration finding owes a product disposition; a crisis test records its product impact (2026-10-06)
+**Asked** (Lowry, after the 29–30 Sep SQF audit 4771693): build the two fields ReadyDoc did not have for minors
+**11.2.3.4** ("disposition of product measured by an out-of-calibration device was not documented") and **2.6.4.2**
+("the annual crisis test did not document the impact on product and materials").
+- **11.2.3.4 — WHEN ONE IS OWED IS PART OF THE RULE** (`shared/product-disposition.js`, pure, both sides): a
+  calibration that **fails** or is **adjusted to pass** (it was found out of tolerance), and a daily scale check that
+  **fails**. A calibration that passes as found owes nothing even when late — the device was shown in tolerance.
+- **Five answers**: not used on product · assessed, no effect · retested and released · placed on hold (hold or
+  deviation number required) · rejected or reworked (record required). Every answer needs a sentence on what was
+  assessed. `server/product-disposition.js` is the one writer: the calibration form, the in-app scale check and
+  the kiosk all stamp through `stampOnFile`, and the decision goes through `recordDisposition`.
+- **FILING IS NEVER REFUSED for want of one.** Refusing the record would lose the evidence that the device was off.
+  It files as `pending`, QA's bell says so (`product-disposition`), and the strip on Calibration Management lists it
+  until somebody decides. A disposition offered at filing is checked before anything is written.
+- **`affected_since` is frozen on the record**: the last good check before it, which is where the doubt about
+  product opens. The form shows that window.
+- **Nothing is backfilled.** Failures filed before this read `not_recorded`, are listed apart as history
+  (collapsed), and never ring the bell. The audit asked about them, so they can be answered; they are not a pile that
+  appeared at deploy.
+- **The decision is QA's — admin, supervisor, or QA/quality department — and NOT the Calibration edit grant.** The
+  first cut included the grant (copied from scale-check verify); a warehouse account holding it to record
+  calibrations could then decide product disposition. Caught by the verify; the `canSetLabTests` rule. A recorded
+  decision is closed; an admin may correct it, audited as `disposition_corrected`.
+- **2.6.4.2 — held BESIDE Form 501-02 V1, not on it** (`shared/crisis-impact.js`), the D-052 arrangement: the
+  headcount form is transcribed verbatim and has no such section; the screen says "not on Form 501-02 V1" until
+  Document Control revises it. Affected yes/no, what was checked, and — when yes — what was affected and what was
+  done with it. QA, supervisors or admins write it; an operator filing the headcount cannot slip one in (refused,
+  not dropped).
+- **AN ADDENDUM SAYS IT IS ONE.** The assessment is dated when written; one written more than a day after the event
+  reads "Addendum · written <date>". The April 2026 drill's assessment can be added now without back-dating it.
+- The readiness review's Safety section names the latest evacuation without an impact; QA's bell counts those in
+  the last year (`evac-impact`).
+- `verify:outofcal` (55, live + browser at 1280 and 390; in `verify:all`). **Control — `main` — fails 6 and cannot
+  continue**: there is no open-findings list to read.

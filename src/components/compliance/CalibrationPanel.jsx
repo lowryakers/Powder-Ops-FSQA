@@ -18,6 +18,7 @@ import { useTableSort } from '../../lib/useTableSort';
 import SortHeader from '../common/SortHeader.jsx';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 import FrozenScroll from '../common/FrozenScroll';
+import { DispositionChip, DispositionFields, DispositionForm, DispositionReadback, OpenDispositions } from '../common/ProductDisposition.jsx';
 
 // Columns as data for both tables on this module. Entries with no key are the
 // expand chevron and the actions cell — neither is a value to order by.
@@ -201,6 +202,11 @@ function CalibrateForm({ instrument, onSave, onCancel }) {
   });
   const [certFile, setCertFile] = useState(null);
   const [saving, setSaving] = useState(false);
+  // SQF 11.2.3.4: a device found out of tolerance owes a decision about the
+  // product measured on it. Optional here — whoever calibrates may not be the
+  // one to decide — and a record filed without it reads as owed until QA does.
+  const [disp, setDisp] = useState({ disposition: '', notes: '', ref: '' });
+  const owesDisposition = form.result === 'fail' || form.result === 'adjusted_pass';
   // The form renders below the instrument table, which is long enough that on a
   // normal screen it opens off-screen — clicking Calibrate looked like nothing
   // happened. Bring it into view and put the cursor in the first field.
@@ -214,7 +220,9 @@ function CalibrateForm({ instrument, onSave, onCancel }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
-    try { await onSave({ ...form, instrument_id: instrument.id }, certFile); } catch (saveErr) {
+    const body = { ...form, instrument_id: instrument.id };
+    if (owesDisposition && disp.disposition) body.product_disposition = disp;
+    try { await onSave(body, certFile); } catch (saveErr) {
       // A refused save must SAY so. This was try/finally with NO catch, so a
       // 403 or a validation 400 cleared the spinner and left the modal sitting
       // there — indistinguishable from a dead button, which is how a
@@ -267,6 +275,16 @@ function CalibrateForm({ instrument, onSave, onCancel }) {
         <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
           className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" rows={2} />
       </div>
+      {owesDisposition && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2" data-calibrate-disposition>
+          <p className="text-sm font-semibold text-amber-900">Product disposition (SQF 11.2.3.4)</p>
+          <p className="text-xs text-amber-800">
+            This device was out of tolerance. Record what happened to the product measured on it since its last good calibration.
+            Leave it blank if QA has not decided yet; the record files and is listed as owing a disposition until they do.
+          </p>
+          <DispositionFields value={disp} onChange={setDisp} idPrefix="cal-disp" />
+        </div>
+      )}
       <div>
         <label className="block text-xs font-medium text-gray-700 mb-1">Calibration Certificate (PDF/photo, optional)</label>
         <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={e => setCertFile(e.target.files?.[0] || null)}
@@ -289,6 +307,9 @@ export default function CalibrationPanel() {
   const { data: instruments, loading, refresh } = useApiGet('/calibration/instruments');
   const { data: summary } = useApiGet('/calibration/summary');
   const { data: records, refresh: refreshRecords } = useApiGet('/calibration/records');
+  const { data: dispositions, refresh: refreshDispositions } = useApiGet('/calibration/dispositions');
+  const [disposingId, setDisposingId] = useState(null);
+  const dispositionChanged = () => { refreshDispositions(); refreshRecords(); };
   const { data: ccps } = useApiGet('/haccp');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -314,10 +335,23 @@ export default function CalibrationPanel() {
     </label>
   ) : null;
   const resultPill = (r) => (
-    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${r.result === 'pass' ? 'bg-green-100 text-green-800' : r.result === 'fail' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>
-      {r.result}
+    <span className="inline-flex flex-wrap items-center gap-1">
+      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${r.result === 'pass' ? 'bg-green-100 text-green-800' : r.result === 'fail' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>
+        {r.result}
+      </span>
+      <DispositionChip row={r} />
     </span>
   );
+  // The decision on one record, from its expanded row or card.
+  const dispositionBlock = (r) => {
+    if (!r.disposition_state || r.disposition_state === 'not_required') return null;
+    if (r.disposition_state === 'recorded') return <DispositionReadback row={r} />;
+    if (!dispositions?.can_decide) return null;
+    return disposingId === r.id
+      ? <DispositionForm source="calibration" row={r} onSaved={() => { setDisposingId(null); dispositionChanged(); }} onCancel={() => setDisposingId(null)} />
+      : <button type="button" onClick={() => setDisposingId(r.id)} data-disposition-open={r.id}
+          className="px-2.5 py-1 bg-white border border-amber-300 text-amber-900 rounded-md text-xs font-semibold">Record disposition</button>;
+  };
   const [search, setSearch] = useState('');
   const [deptFilter, setDeptFilter] = useState('all');
 
@@ -343,6 +377,7 @@ export default function CalibrationPanel() {
     setCalibrating(null);
     refresh();
     refreshRecords();
+    refreshDispositions();
   };
 
   // Certificates attach per record; download carries the auth header.
@@ -442,11 +477,13 @@ export default function CalibrationPanel() {
         </div>
       )}
 
+      <OpenDispositions data={dispositions} onChanged={dispositionChanged} />
+
       <ModuleTabs value={tab} onChange={setTab}
         tabs={calTabs.map(t => (t.id === 'instruments'
           ? { ...t, badge: (instruments || []).length } : t))} />
 
-      {tab === 'scale-verification' && <ScaleVerificationTab />}
+      {tab === 'scale-verification' && <ScaleVerificationTab canDecide={!!dispositions?.can_decide} onDispositionChanged={refreshDispositions} />}
 
       {(showForm && !editing) && <InstrumentForm ccps={ccps} onSave={handleCreate} onCancel={() => setShowForm(false)} />}
       {editing && <InstrumentForm initial={editing} ccps={ccps} onSave={handleUpdate} onCancel={() => setEditing(null)} />}
@@ -612,7 +649,7 @@ export default function CalibrationPanel() {
                 { label: 'Next due', value: r.next_due },
                 { label: 'Notes', value: r.notes, wide: true },
               ]}
-              actions={certControl(r)} />
+              actions={<>{certControl(r)}{dispositionBlock(r) && <div className="w-full">{dispositionBlock(r)}</div>}</>} />
           ))}
         </RecordCards>
       )}
@@ -657,7 +694,9 @@ export default function CalibrationPanel() {
                       { label: 'Next due', value: r.next_due },
                       { label: 'Certificate', value: r.certificate_file ? 'On file' : '' },
                       { label: 'Notes', value: r.notes, wide: true },
-                    ]} />
+                    ]}>
+                      {dispositionBlock(r)}
+                    </DetailFields>
                   </DetailRow>
                 )}
                 </Fragment>

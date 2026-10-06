@@ -8,6 +8,8 @@ import { useModuleTabs } from '../../lib/useModuleTabs.js';
 import { formatDate } from '../../lib/datetime.js';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 import FrozenScroll from '../common/FrozenScroll';
+import { checkImpact, EXPOSED, IMPACT_SOURCE } from '../../../shared/crisis-impact.js';
+import { formatDateTime } from '../../lib/datetime.js';
 
 /**
  * Safety: the three controlled safety forms in one place.
@@ -171,7 +173,111 @@ function EvacuationForm({ form, initial, onClose, onSaved }) {
   );
 }
 
-function Evacuations({ form, user }) {
+/**
+ * The product and material impact of one evacuation (SQF 2.6.4.2, D-154).
+ * Held beside Form 501-02 V1, not on it, and labelled that way. Written by QA,
+ * a supervisor or an admin; dated when it is written, so one added after the
+ * event reads as an addendum.
+ */
+function ImpactForm({ evac, onSaved, onCancel }) {
+  const prev = evac.impact || {};
+  const [v, setV] = useState({
+    product_exposed: prev.product_exposed || '', summary: prev.summary || '',
+    affected: prev.affected || '', disposition: prev.disposition || '', actions: prev.actions || '',
+  });
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    const errs = checkImpact(v);
+    if (errs.length) { setError(errs.join(' ')); return; }
+    setSaving(true); setError('');
+    try { await apiPost(`/safety/evacuations/${evac.id}/impact`, v); onSaved(); }
+    catch (e) { setError(e.message || 'Could not save the impact assessment.'); }
+    finally { setSaving(false); }
+  };
+  const id = (k) => `impact-${evac.id}-${k}`;
+  return (
+    <div className="mt-3 bg-amber-50/60 border border-amber-200 rounded-lg p-3 space-y-2" data-impact-form={evac.id}>
+      <p className="text-sm font-semibold text-gray-900">Product and material impact</p>
+      <p className="text-[11px] text-gray-500">{IMPACT_SOURCE}. Dated today when saved{evac.event_date ? ` — the evacuation was ${formatDate(evac.event_date)}` : ''}.</p>
+      <div className="flex flex-col sm:flex-row gap-1.5">
+        {Object.entries(EXPOSED).map(([k, label]) => (
+          <label key={k} htmlFor={id(k)} className={`flex items-start gap-2 px-2.5 py-2 rounded-lg border text-sm cursor-pointer bg-white ${v.product_exposed === k ? 'border-powder-500' : 'border-gray-200'}`}>
+            <input type="radio" id={id(k)} name={id('exposed')} checked={v.product_exposed === k}
+              onChange={() => setV({ ...v, product_exposed: k })} className="mt-0.5" />
+            <span>{label}</span>
+          </label>
+        ))}
+      </div>
+      <div>
+        <label htmlFor={id('summary')} className={labelCls}>What was checked and found</label>
+        <textarea id={id('summary')} rows={2} className={inputCls} value={v.summary}
+          placeholder="Lines running, open product, doors left open, materials in the dock"
+          onChange={e => setV({ ...v, summary: e.target.value })} />
+      </div>
+      {v.product_exposed === 'yes' && (
+        <>
+          <div>
+            <label htmlFor={id('affected')} className={labelCls}>Product, lots or materials affected</label>
+            <input id={id('affected')} className={inputCls} value={v.affected} onChange={e => setV({ ...v, affected: e.target.value })} />
+          </div>
+          <div>
+            <label htmlFor={id('disposition')} className={labelCls}>What was done with them (give the record number)</label>
+            <input id={id('disposition')} className={inputCls} value={v.disposition} onChange={e => setV({ ...v, disposition: e.target.value })} />
+          </div>
+        </>
+      )}
+      <div>
+        <label htmlFor={id('actions')} className={labelCls}>Lessons or corrective actions (optional)</label>
+        <textarea id={id('actions')} rows={2} className={inputCls} value={v.actions} onChange={e => setV({ ...v, actions: e.target.value })} />
+      </div>
+      {error && <p className="text-sm text-red-700" role="alert">{error}</p>}
+      <div className="flex gap-2">
+        <button type="button" onClick={save} disabled={saving} data-impact-save
+          className="px-3 py-1.5 bg-powder-600 text-white rounded-lg text-sm font-medium disabled:opacity-50">{saving ? 'Saving…' : 'Save impact assessment'}</button>
+        <button type="button" onClick={onCancel} className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-sm">Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+function ImpactBlock({ evac, canAssess, onSaved }) {
+  const [open, setOpen] = useState(false);
+  const i = evac.impact;
+  if (open) return <ImpactForm evac={evac} onSaved={() => { setOpen(false); onSaved(); }} onCancel={() => setOpen(false)} />;
+  if (!i) {
+    return (
+      <div className="mt-2 flex flex-wrap items-center gap-2" data-impact-state="missing">
+        <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-900 inline-flex items-center gap-1">
+          <AlertTriangle size={11} /> No product and material impact recorded
+        </span>
+        {canAssess && (
+          <button type="button" onClick={() => setOpen(true)} data-impact-open={evac.id}
+            className="px-2.5 py-1 bg-white border border-amber-300 text-amber-900 rounded-md text-xs font-semibold">Record impact</button>
+        )}
+      </div>
+    );
+  }
+  return (
+    <div className="mt-2 border-t border-gray-100 pt-2 text-xs space-y-0.5" data-impact-state={evac.impact_state}>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[10px] uppercase tracking-wider font-semibold text-gray-500">Product and material impact</span>
+        {evac.impact_state === 'addendum' && (
+          <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 text-[10px] font-semibold">Addendum · written {formatDate(evac.impact_at)}</span>
+        )}
+        {canAssess && <button type="button" onClick={() => setOpen(true)} className="text-[11px] text-powder-700 underline">Correct</button>}
+      </div>
+      <div className="font-medium text-gray-900">{EXPOSED[i.product_exposed]}</div>
+      <div className="text-gray-700 whitespace-pre-line">{i.summary}</div>
+      {i.affected && <div className="text-gray-700"><b>Affected:</b> {i.affected}</div>}
+      {i.disposition && <div className="text-gray-700"><b>Done:</b> {i.disposition}</div>}
+      {i.actions && <div className="text-gray-700"><b>Actions:</b> {i.actions}</div>}
+      <div className="text-gray-500">{evac.impact_by} · {formatDateTime(evac.impact_at)}</div>
+    </div>
+  );
+}
+
+function Evacuations({ form, impact, user }) {
   const { data: rows, refresh } = useApiGet('/safety/evacuations');
   const [editing, setEditing] = useState(null); // null | {} | record
   const isAdmin = user?.role === 'admin';
@@ -238,6 +344,7 @@ function Evacuations({ form, user }) {
             ))}
           </div>
           {r.notes && <p className="text-xs text-gray-500 mt-1.5 whitespace-pre-line">{r.notes}</p>}
+          <ImpactBlock evac={r} canAssess={!!impact?.can_assess} onSaved={refresh} />
         </div>
       ))}
     </div>
@@ -403,7 +510,7 @@ export default function SafetyPanel({ user }) {
       </div>
       <ModuleTabs tabs={tabs} value={tab} onChange={setTab} />
       {tab === 'contacts' && <CrisisContacts form={forms?.crisis} />}
-      {tab === 'evacuations' && <Evacuations form={forms?.evacuation} user={user} />}
+      {tab === 'evacuations' && <Evacuations form={forms?.evacuation} impact={forms?.impact} user={user} />}
       {tab === 'first-aid' && <FirstAidLog form={forms?.first_aid} user={user} />}
     </div>
   );

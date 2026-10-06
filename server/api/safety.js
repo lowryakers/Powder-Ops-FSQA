@@ -16,14 +16,23 @@ import { withCurrentNames } from '../person-links.js';
 import {
   SAFETY_FORMS, EVAC_REVISION, EVAC_WORK_AREAS, EVAC_REASONS, FIRST_AID_REVISION,
 } from '../safety-forms.js';
+import { checkImpact, cleanImpact, impactState, EXPOSED, IMPACT_SOURCE } from '../../shared/crisis-impact.js';
 
 const router = Router();
+
+// Assessing what an evacuation did to product is QA's call (SQF 2.6.4.2), not
+// whoever held the clipboard.
+const canAssess = (u) => u?.role === 'admin' || u?.role === 'supervisor'
+  || ['qa', 'quality'].includes((u?.department || '').toLowerCase());
 
 const canCorrect = (u) => u?.role === 'admin' || u?.role === 'supervisor'
   || ['qa', 'quality', 'office', 'hr'].includes((u?.department || '').toLowerCase());
 
 // The three forms, verbatim. Everything the panel renders comes from here.
-router.get('/forms', (_req, res) => res.json(SAFETY_FORMS));
+router.get('/forms', (req, res) => res.json({
+  ...SAFETY_FORMS,
+  impact: { source: IMPACT_SOURCE, exposed: EXPOSED, can_assess: canAssess(req.user) },
+}));
 
 // ── Evacuation headcounts ───────────────────────────────────────────────────
 
@@ -71,6 +80,8 @@ const shapeEvac = (r) => {
     total_accounted: areas.reduce((s, a) => s + (a.accounted || 0), 0),
     // The one number that matters at an evacuation site.
     unaccounted: areas.reduce((s, a) => s + Math.max(0, (a.total || 0) - (a.accounted || 0)), 0),
+    impact: parseJson(r.impact, null),
+    impact_state: impactState(r),
   };
 };
 
@@ -83,8 +94,15 @@ router.get('/evacuations', (req, res) => {
 
 router.post('/evacuations', (req, res) => {
   const db = getDb();
-  const { event_date, event_time, is_drill, areas, notes, completed_by } = req.body || {};
+  const { event_date, event_time, is_drill, areas, notes, completed_by, impact } = req.body || {};
   if (!event_date) return res.status(400).json({ error: 'The evacuation needs its date.' });
+  // An impact assessment offered with the sheet is checked first and is QA's
+  // to give; refused out loud rather than dropped, or it looks saved.
+  if (impact) {
+    if (!canAssess(req.user)) return res.status(403).json({ error: 'The product and material impact is recorded by QA, a supervisor or an admin. File the headcount and they will add it.' });
+    const errs = checkImpact(impact);
+    if (errs.length) return res.status(400).json({ error: errs.join(' '), errors: errs });
+  }
   const id = uuid();
   // A blank sheet starts with the form's own work areas so the person at the
   // evacuation site fills rows in rather than remembering which teams exist.
@@ -94,6 +112,10 @@ router.post('/evacuations', (req, res) => {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     id, EVAC_REVISION, event_date, event_time || null, is_drill === false || is_drill === 0 ? 0 : 1,
     JSON.stringify(rows), notes || null, completed_by || req.user.name, req.user.name);
+  if (impact) {
+    db.prepare("UPDATE evacuation_headcounts SET impact = ?, impact_by = ?, impact_at = datetime('now') WHERE id = ?")
+      .run(JSON.stringify(cleanImpact(impact)), req.user.name, id);
+  }
   const row = db.prepare('SELECT * FROM evacuation_headcounts WHERE id = ?').get(id);
   logAudit(req.user, 'evacuation_filed', 'evacuation_headcount', id,
     { event_date, is_drill: !!(is_drill ?? true) }, null, row, `Evacuation ${event_date}`);
@@ -121,6 +143,25 @@ router.put('/evacuations/:id', (req, res) => {
   const updated = db.prepare('SELECT * FROM evacuation_headcounts WHERE id = ?').get(row.id);
   logAudit(req.user, 'evacuation_updated', 'evacuation_headcount', row.id, {}, row, updated,
     `Evacuation ${updated.event_date}`);
+  res.json(shapeEvac(updated));
+});
+
+// Record (or correct) the product and material impact of one evacuation. Dated
+// when it is written, never when the evacuation happened — one written later
+// reads as an addendum (shared/crisis-impact.js).
+router.post('/evacuations/:id/impact', (req, res) => {
+  if (!canAssess(req.user)) return res.status(403).json({ error: 'The product and material impact is recorded by QA, a supervisor or an admin.' });
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM evacuation_headcounts WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  const errs = checkImpact(req.body);
+  if (errs.length) return res.status(400).json({ error: errs.join(' '), errors: errs });
+  db.prepare("UPDATE evacuation_headcounts SET impact = ?, impact_by = ?, impact_at = datetime('now'), updated_at = datetime('now') WHERE id = ?")
+    .run(JSON.stringify(cleanImpact(req.body)), req.user.name, row.id);
+  const updated = db.prepare('SELECT * FROM evacuation_headcounts WHERE id = ?').get(row.id);
+  logAudit(req.user, row.impact ? 'evacuation_impact_corrected' : 'evacuation_impact_recorded', 'evacuation_headcount', row.id,
+    { product_exposed: req.body.product_exposed, addendum: impactState(updated) === 'addendum' }, row, updated,
+    `Evacuation ${row.event_date}`);
   res.json(shapeEvac(updated));
 });
 

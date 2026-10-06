@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { openSuggestions } from './office.js';
 import { scaleChecksDue, scaleChecksOverdueNow } from '../scale-checks.js';
+import { openDispositions } from '../product-disposition.js';
 import { payActions } from './pay.js';
 import AdmZip from 'adm-zip';
 import { equipmentSetupGaps, EQUIPMENT_OWNERS, attentionRows, isDrillable } from '../attention-sources.js';
@@ -641,6 +642,26 @@ router.get('/notifications', (req, res) => {
   }
   if (dueSoonWOs > 0) items.push({ id: 'pm-due-soon', tab: 'pm', severity: 'info', count: dueSoonWOs, label: `${dueSoonWOs} PM work order${dueSoonWOs > 1 ? 's' : ''} due within 7 days` });
   if (clearancePending > 0) items.push({ id: 'clearance', tab: 'pm', severity: 'warning', count: clearancePending, label: `${clearancePending} hygiene clearance${clearancePending > 1 ? 's' : ''} awaiting QA sign-off` });
+  // A device found out of calibration with no decision about the product
+  // measured on it (SQF 11.2.3.4). Only records filed since the rule count —
+  // the history is listed on the Calibration screen, never on the bell.
+  if (isApprover) {
+    try {
+      const pend = openDispositions(db).pending.length;
+      if (pend > 0) items.push({ id: 'product-disposition', tab: 'calibration', severity: 'warning', count: pend,
+        label: `${pend} out-of-calibration finding${pend > 1 ? 's' : ''} with no product disposition recorded` });
+    } catch { /* table optional */ }
+  }
+  // An evacuation in the last year with no product and material impact
+  // recorded (SQF 2.6.4.2, D-154).
+  if (isApprover) {
+    try {
+      const noImpact = db.prepare(`SELECT COUNT(*) c FROM evacuation_headcounts
+        WHERE impact_at IS NULL AND event_date >= date('now','-365 days')`).get().c;
+      if (noImpact > 0) items.push({ id: 'evac-impact', tab: 'safety', severity: 'warning', count: noImpact,
+        label: `${noImpact} evacuation${noImpact > 1 ? 's' : ''} in the last year with no product and material impact recorded` });
+    } catch { /* table optional */ }
+  }
   if (calOverdue > 0) items.push({ id: 'cal-overdue', tab: 'calibration', severity: 'critical', count: calOverdue, label: `${calOverdue} calibration${calOverdue > 1 ? 's' : ''} overdue` });
   // A daily scale check that was NOT run. Every other read of
   // scale_verifications here is after the fact — a failed reading, one waiting

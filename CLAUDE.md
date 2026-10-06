@@ -2497,6 +2497,27 @@ NOT done — the bell, Flash and QA Review all read `scale_verifications` after 
 - `verify:scaledue` (39, live + browser at 390px on both layouts). **The control is the state the plant is
   in** — UTC today, no strip — and fails **5** before the script can continue.
 
+## An out-of-calibration finding owes a product disposition (D-154, SQF 11.2.3.4)
+`shared/product-disposition.js` (the rule, PURE), `server/product-disposition.js` (the one writer:
+`stampOnFile`, `recordDisposition`, `openDispositions`), `GET /calibration/dispositions`,
+`POST /calibration/dispositions/:source/:id` (`calibration` | `scale`), `common/ProductDisposition.jsx`.
+- **Owed by**: a calibration that fails or is adjusted to pass; a daily scale check that fails. A pass as found owes
+  nothing, even late. **Filing is never refused** — it files `pending`, QA's bell (`product-disposition`) and the
+  strip on Calibration Management carry it until decided.
+- `disposition` is NULL (nothing owed / filed before D-154) · `pending` · a key. **Nothing is backfilled**: older
+  failures read `not_recorded`, listed apart as history, never on the bell. `affected_since` (last good check before
+  it) is frozen on the record.
+- **QA decides — not the Calibration edit grant** (a warehouse account holding it could otherwise hold or release
+  product). Closed once recorded; an admin corrects (`disposition_corrected`).
+- `verify:outofcal` (55; control fails 6). The same verify covers the crisis-test impact below.
+
+## A crisis test records its product and material impact (D-154, SQF 2.6.4.2)
+`shared/crisis-impact.js`, `evacuation_headcounts.impact` / `impact_by` / `impact_at`,
+`POST /safety/evacuations/:id/impact`, `ImpactBlock` on Safety → Evacuations. **Held beside Form 501-02 V1, not on
+it** — labelled so until Document Control revises the form. QA / supervisor / admin write it; dated when written,
+and one written more than a day after the event reads **Addendum** (never back-dated). Readiness review Safety
+item + QA bell `evac-impact`.
+
 ## Scale Verification (Forms 417-01 … 417-05)
 Daily three-point scale checks, one form per scale/area. `server/scale-forms.js` holds the five definitions
 (nominal + tolerance per point) — **not user-editable on purpose**: changing a tolerance is a document

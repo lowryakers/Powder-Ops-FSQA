@@ -350,10 +350,20 @@ export function readinessReview(db) {
 
   // ── Safety ────────────────────────────────────────────────────────────────
   add('Safety', () => {
-    const lastDrill = one('SELECT event_date FROM evacuation_headcounts ORDER BY event_date DESC LIMIT 1');
-    return [item(lastDrill ? `Last evacuation on file ${lastDrill.event_date}` : 'No evacuation drill on file',
+    const lastDrill = one('SELECT event_date, impact_at FROM evacuation_headcounts ORDER BY event_date DESC LIMIT 1');
+    const items = [item(lastDrill ? `Last evacuation on file ${lastDrill.event_date}` : 'No evacuation drill on file',
       lastDrill ? 'good' : 'warning',
       lastDrill ? null : '"When was your last drill?" currently has no answer in the system.', 'safety')];
+    // SQF 2.6.4.2 (D-154): the annual crisis test records its impact on
+    // product and materials. The 2026 audit found it missing.
+    if (lastDrill) {
+      items.push(item(lastDrill.impact_at
+        ? 'Product and material impact recorded for the last evacuation'
+        : `The ${lastDrill.event_date} evacuation has no product and material impact recorded`,
+      lastDrill.impact_at ? 'good' : 'warning',
+      lastDrill.impact_at ? null : 'SQF 2.6.4.2: the crisis test must record its impact on product and materials. Add it on the Safety screen.', 'safety'));
+    }
+    return items;
   });
 
   // ── Equipment ─────────────────────────────────────────────────────────────

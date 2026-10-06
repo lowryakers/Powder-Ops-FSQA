@@ -3792,6 +3792,28 @@ function runMigrations() {
   addColumnIfMissing('calibration_records', 'certificate_file', 'TEXT');
   addColumnIfMissing('calibration_records', 'certificate_original_name', 'TEXT');
 
+  // What happened to product measured on a device found out of calibration
+  // (SQF 11.2.3.4, D-154). `disposition` is NULL (nothing owed, or filed
+  // before this existed), 'pending', or a key from shared/product-disposition.js.
+  // `affected_since` is the last good check before this one, frozen with the
+  // record — the window the decision is about.
+  for (const t of ['calibration_records', 'scale_verifications']) {
+    addColumnIfMissing(t, 'disposition', 'TEXT');
+    addColumnIfMissing(t, 'disposition_notes', 'TEXT');
+    addColumnIfMissing(t, 'disposition_ref', 'TEXT');
+    addColumnIfMissing(t, 'disposition_by', 'TEXT');
+    addColumnIfMissing(t, 'disposition_at', 'TEXT');
+    addColumnIfMissing(t, 'affected_since', 'TEXT');
+  }
+
+  // The product and material impact of an evacuation or crisis test (SQF
+  // 2.6.4.2, D-154). Not on Form 501-02 V1 — held beside it until Document
+  // Control adds it to the form. `impact` is JSON; who and when are columns so
+  // an addendum written after the event says so.
+  addColumnIfMissing('evacuation_headcounts', 'impact', 'TEXT');
+  addColumnIfMissing('evacuation_headcounts', 'impact_by', 'TEXT');
+  addColumnIfMissing('evacuation_headcounts', 'impact_at', 'TEXT');
+
   // Digital COA sign-off: who signed, when, and a snapshot of the signature
   // image at signing time (so later changes to a user's saved signature never
   // alter an already-issued certificate).

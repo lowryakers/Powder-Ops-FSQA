@@ -5,6 +5,9 @@ import path from 'path';
 import { mkdirSync, existsSync, createReadStream, statSync, unlinkSync } from 'fs';
 import { getDb, logAudit, dataDir } from '../db.js';
 import { periodically } from '../housekeeping.js';
+import {
+  DISPOSITIONS, canDecide, filingErrors, stampOnFile, withDisposition, recordDisposition, openDispositions,
+} from '../product-disposition.js';
 
 // Beside the DB (the persistent volume in production) — NOT the app dir,
 // which is wiped on every deploy.
@@ -189,7 +192,7 @@ router.get('/records', (req, res) => {
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 500, 1), 5000);
   sql += ' ORDER BY cr.calibrated_at DESC LIMIT ?';
   params.push(limit);
-  res.json(db.prepare(sql).all(...params));
+  res.json(db.prepare(sql).all(...params).map(r => withDisposition('calibration', r)));
 });
 
 // Calibration certificate (PDF/scan) attached to a record. Re-uploading
@@ -227,6 +230,10 @@ router.post('/records', (req, res) => {
   if (!instrument_id || !calibrated_by || !result) {
     return res.status(400).json({ error: 'instrument_id, calibrated_by, and result are required' });
   }
+  // A disposition offered with the record is checked before anything is
+  // written; one left out files the record as 'pending' (never refused).
+  const dispErrors = filingErrors(req.body?.product_disposition);
+  if (dispErrors.length) return res.status(400).json({ error: dispErrors.join(' '), errors: dispErrors });
 
   db.prepare(`
     INSERT INTO calibration_records (id, instrument_id, calibrated_by, result, reading_before, reading_after, standard_used, standard_cert_number, certificate_number, next_due, notes)
@@ -243,9 +250,24 @@ router.post('/records', (req, res) => {
       .run(instrument_id);
   }
 
-  const created = db.prepare('SELECT * FROM calibration_records WHERE id = ?').get(id);
-  logAudit(calibrated_by, 'calibrate', 'calibration_record', id, { instrument_id, result }, null, created);
-  res.status(201).json(created);
+  const created = stampOnFile(db, 'calibration', id, req.body?.product_disposition, req.user);
+  logAudit(req.user || calibrated_by, 'calibrate', 'calibration_record', id,
+    { instrument_id, result, disposition: created.disposition || null }, null, created);
+  res.status(201).json(withDisposition('calibration', created));
+});
+
+// --- Product disposition after an out-of-calibration finding (SQF 11.2.3.4) ---
+
+// What still owes a decision, across calibrations and daily scale checks.
+router.get('/dispositions', (req, res) => {
+  res.json({ ...openDispositions(getDb()), dispositions: DISPOSITIONS, can_decide: canDecide(req.user) });
+});
+
+// Record what happened to the product. `source` is calibration | scale.
+router.post('/dispositions/:source/:id', (req, res) => {
+  const { error, errors, status, record } = recordDisposition(getDb(), req.params.source, req.params.id, req.body, req.user);
+  if (error) return res.status(status).json({ error, errors });
+  res.json(record);
 });
 
 // --- Summary / Dashboard ---
