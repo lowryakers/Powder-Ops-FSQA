@@ -69,7 +69,7 @@ await fill('Date of birth *', '1998-03-09');
 await m.locator('[data-gender]').selectOption('F');
 await m.locator('[data-ssn]').fill('321-54-9876');
 await fill('Home address *', '12 Center St');
-await fill('City *', 'Provo'); await fill('State *', 'UT'); await fill('ZIP *', '84601');
+await fill('City *', 'Provo'); await m.locator('select[name="state"]').selectOption('UT'); await fill('ZIP *', '84601'); // state is a list since D-155
 await m.getByRole('button', { name: /Save & continue/ }).click();
 await m.waitForTimeout(1200);
 t('saved and moved to the emergency contact', /Emergency contact/.test(await m.locator('body').innerText()), (await m.locator('body').innerText()).slice(0, 200));

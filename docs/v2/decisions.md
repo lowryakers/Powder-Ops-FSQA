@@ -6456,3 +6456,31 @@ screen back.
   the last year (`evac-impact`).
 - `verify:outofcal` (55, live + browser at 1280 and 390; in `verify:all`). **Control — `main` — fails 6 and cannot
   continue**: there is no open-findings list to read.
+
+## D-155 — The link saves what is in the box; the office can fill in or correct a packet (2026-10-06)
+**Reported** (Lowry): a new hire's onboarding link kept refusing to finish because the state was missing, she
+said she had entered it, and the office packet showed it missing too. **And the office had no way to fill it in.**
+- **Reproduced in a phone-sized browser.** Typed by hand, the state saves. Written the way a phone's address
+  AutoFill writes it — the box's value set with no input event — the box reads "UT" and the save sends a blank,
+  because the wizard sends React's copy of the form and React never heard about the value. Both reports are
+  that one defect: she saw her state, the record had none.
+- **The save reads the boxes.** `onScreen()` in `OnboardingWelcomePage.jsx` takes every named field on screen
+  and uses its value wherever the form's own copy is blank. A value somebody cleared is blank in both places,
+  so nothing is resurrected. The personal and emergency fields carry `name` + `autoComplete` tokens
+  (`address-level1`, `postal-code`, …) so AutoFill matches the right box.
+- **State is a list** (`shared/us-states.js`, the 50 states, DC and the territories) and **`normalizeState`
+  on every save** files "Utah" / "utah" / " Ut " as UT. A value that is not a US state is **kept as typed, never
+  refused** — an address abroad must not stop somebody finishing. A stored value off the list stays selectable.
+- **The office can edit the hire's answers** — "Edit details" on the packet, "Fill it in here" beside the
+  missing line, missing boxes marked. Only CHANGED fields are sent. `PUT /onboarding/:id` already accepted every
+  field; the screen was the gap (the D-110 shape).
+- **A change to what the HIRE entered is recorded as the office's** (`onboarding_records.office_edits`: who, when,
+  reason, each field from → to; secrets as last-4 only), shown on the packet row and printed on the packet PDF
+  under "Changed by the office". Job facts the office owns (position, start date, pay, worker type, starter
+  review) are not logged as corrections. Re-saving the same values records nothing.
+- **Once any form is signed, a correction needs a reason** (400 `reason_required`, nothing written) — the
+  signed W-4 / I-9 / W-9 stands as signed and the packet says which values were supplied afterwards. The audit
+  carries field names only, never values. The hire's link never sees the correction log.
+- `verify:onboardingedit` (34, live + browser at 390 and 1280; in `verify:all`). **Control — `main` — fails 4
+  and cannot continue.** `verify:onboardingui` picks the state from the list now (57/57); `verify:onboarding`
+  105/105 unchanged.

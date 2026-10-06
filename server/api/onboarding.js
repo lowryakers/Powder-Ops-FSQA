@@ -28,6 +28,7 @@ import { resolve, byNames, adam, settle } from '../readybot-recipients.js';
 // used to receive packets with no SSN, because nothing asked for one. A packet
 // that cannot be keyed into payroll is a packet somebody has to chase.
 
+import { normalizeState } from '../../shared/us-states.js';
 import { Router } from 'express';
 import { randomUUID as uuid, randomBytes, createHash } from 'crypto';
 import { readFileSync } from 'fs';
@@ -177,6 +178,7 @@ function shape(db, r) {
     i9_signature: signatureOf(r.i9_signature),
     w9_signature: signatureOf(r.w9_signature),
     i9_section2: parseJson(r.i9_section2, null),
+    office_edits: parseJson(r.office_edits, []) || [],
     files: filesFor(db, r.id),
     missing: missingToFinish(db, r),
     sensitive_collection: cryptoEnabled(),
@@ -198,6 +200,9 @@ function applyFields(db, rec, body, allowed) {
   const patch = {};
   for (const f of allowed) if (body[f] !== undefined) patch[f] = body[f] === '' ? null : String(body[f]).slice(0, 300);
   for (const f of BOOL_FIELDS) if (body[f] !== undefined) patch[f] = body[f] ? 1 : 0;
+  // ONE spelling of the state (D-155): a phone's AutoFill writes "Utah" where
+  // the box asks for UT. Unrecognised text is kept as typed, never refused.
+  if (patch.state) patch.state = normalizeState(patch.state) || null;
   if (patch.pay_method && !PAY_METHODS.includes(patch.pay_method)) return { error: 'Powder Ops pays by direct deposit only.' };
   if (patch.gender && !GENDERS.includes(patch.gender)) return { error: 'Unknown gender code.' };
   if (patch.worker_type && !ONBOARDING_WORKER_TYPES.includes(patch.worker_type)) return { error: 'Worker type must be employee or contractor.' };
@@ -472,16 +477,72 @@ router.post('/:id/files', uploadFiles, async (req, res) => {
   } finally { cleanupTemp(files); }
 });
 
+// The office editing the HIRE'S answers (D-155). Job facts are the office's own
+// and are not recorded here; these are, because they belong to the person and
+// feed the forms they sign. The sensitive four are named, never valued.
+export const HIRE_FIELDS = [...PORTAL_FIELDS.filter(f => f !== 'language'), ...BOOL_FIELDS];
+const SECRET_FIELDS = { ssn: 'ssn_last4', ein: 'ein_last4', dd_routing: null, dd_account: 'dd_account_last4' };
+const FIELD_LABEL = (f) => ({
+  first_name: 'first name', middle_name: 'middle name', last_name: 'last name', preferred_name: 'preferred name',
+  address1: 'home address', address2: 'address line 2', dob: 'date of birth', zip: 'ZIP', ssn: 'Social Security number',
+  ein: 'EIN', dd_routing: 'routing number', dd_account: 'account number', dd_bank_name: 'bank name',
+  dd_account_type: 'checking or savings', emergency_name: 'emergency contact', emergency_phone: 'emergency phone',
+  emergency_relationship: 'emergency relationship',
+}[f] || f.replace(/_/g, ' '));
+
+/** What an office save would change on the hire's own answers. */
+function officeChanges(rec, body) {
+  const out = [];
+  for (const f of HIRE_FIELDS) {
+    if (body[f] === undefined) continue;
+    const isBool = BOOL_FIELDS.includes(f);
+    let to = isBool ? (body[f] ? 1 : 0) : (body[f] === '' || body[f] === null ? null : String(body[f]).slice(0, 300));
+    if (f === 'state' && to) to = normalizeState(to) || null;
+    const from = isBool ? (rec[f] ? 1 : 0) : (rec[f] ?? null);
+    if (String(from ?? '') !== String(to ?? '')) out.push({ field: f, label: FIELD_LABEL(f), from, to });
+  }
+  for (const [f, l4] of Object.entries(SECRET_FIELDS)) {
+    const v = String(body[f] ?? '').trim();
+    if (!v) continue;
+    out.push({ field: f, label: FIELD_LABEL(f), from: l4 && rec[l4] ? `••••${rec[l4]}` : null, to: `••••${last4(v)}`, secret: true });
+  }
+  return out;
+}
+const anySigned = (rec) => !!(signatureOf(rec.w4_signature) || signatureOf(rec.i9_signature) || signatureOf(rec.w9_signature));
+
 router.put('/:id', (req, res) => {
   if (!canManage(req.user)) return res.status(403).json({ error: 'Onboarding needs the Onboarding module.' });
   const db = getDb();
   const rec = db.prepare('SELECT * FROM onboarding_records WHERE id = ?').get(req.params.id);
   if (!rec) return res.status(404).json({ error: 'Not found' });
   if (['completed', 'cancelled'].includes(rec.status)) return res.status(409).json({ error: `This onboarding is ${rec.status}.` });
-  const out = applyFields(db, rec, req.body || {}, ADMIN_FIELDS);
+  const body = req.body || {};
+  // A CHANGE TO WHAT THE HIRE ANSWERED IS RECORDED AS THE OFFICE'S, and once a
+  // form is signed it needs a reason: the signed W-4 / I-9 / W-9 stands as
+  // signed, and the packet says which values the office supplied afterwards.
+  const changes = officeChanges(rec, body);
+  const reason = String(body.office_reason || '').trim();
+  if (changes.length && anySigned(rec) && reason.length < 3) {
+    return res.status(400).json({
+      error: 'A form on this packet is already signed. Say why you are changing what the new hire entered — it is printed on the packet with your name.',
+      reason_required: true,
+    });
+  }
+  const out = applyFields(db, rec, body, ADMIN_FIELDS);
   if (out.error) return res.status(400).json({ error: out.error });
+  if (changes.length) {
+    const log = parseJson(rec.office_edits, []) || [];
+    log.push({ at: new Date().toISOString(), by: req.user?.name || 'office', reason: reason || null,
+      fields: changes.map(({ field, label, from, to }) => ({ field, label, from, to })) });
+    db.prepare("UPDATE onboarding_records SET office_edits = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(JSON.stringify(log), rec.id);
+  }
   const next = db.prepare('SELECT * FROM onboarding_records WHERE id = ?').get(rec.id);
-  logAudit(req.user, 'update', 'onboarding', rec.id, { fields: Object.keys(out.patch || {}) }, null, null, nameOf(rec));
+  // The audit carries field names only — never a value, so a secret typed by
+  // the office is not copied into the log.
+  logAudit(req.user, 'update', 'onboarding', rec.id,
+    { fields: Object.keys(out.patch || {}).filter(k => !/_enc$/.test(k)), office_edit: changes.map(c => c.field), reason: reason || undefined },
+    null, null, nameOf(rec));
   res.json(shape(db, next));
 });
 
@@ -900,6 +961,14 @@ router.get('/:id/packet.pdf', (req, res) => {
       H('Attached files');
       if (!r.files.length) doc.text('None.');
       for (const f of r.files) L({ id_document: 'ID document', voided_check: 'Voided check', other: 'Other' }[f.kind] || f.kind, `${f.filename} · ${f.uploaded_by} · ${f.uploaded_at}`);
+      // What the office filled in or corrected on the hire's behalf (D-155).
+      if ((r.office_edits || []).length) {
+        H('Changed by the office');
+        for (const e of r.office_edits) {
+          doc.text(`${e.by} · ${String(e.at).slice(0, 16).replace('T', ' ')} UTC${e.reason ? ` · ${e.reason}` : ''}`);
+          for (const f of e.fields) doc.text(`   ${f.label}: was ${f.from ?? '(blank)'}, now ${f.to ?? '(blank)'}`);
+        }
+      }
       if (r.missing.length) { H('Still missing'); for (const m of r.missing) doc.text(`• ${m.label}`); }
       doc.moveDown(1).fontSize(8).fillColor('#555').text('Signatures were captured electronically in ReadyDoc: the signer typed their legal name under the form\'s own certification, and the time, network address and device were recorded. Full taxpayer and account numbers are held encrypted and are not printed.');
       doc.end();
@@ -937,6 +1006,14 @@ router.get('/:id/packet.pdf', (req, res) => {
     H('Attached files');
     if (!r.files.length) doc.text('None.');
     for (const f of r.files) L({ id_document: 'ID document', voided_check: 'Voided check', other: 'Other' }[f.kind] || f.kind, `${f.filename} · ${f.uploaded_by} · ${f.uploaded_at}`);
+    // What the office filled in or corrected on the hire's behalf (D-155).
+    if ((r.office_edits || []).length) {
+      H('Changed by the office');
+      for (const e of r.office_edits) {
+        doc.text(`${e.by} · ${String(e.at).slice(0, 16).replace('T', ' ')} UTC${e.reason ? ` · ${e.reason}` : ''}`);
+        for (const f of e.fields) doc.text(`   ${f.label}: was ${f.from ?? '(blank)'}, now ${f.to ?? '(blank)'}`);
+      }
+    }
     if (r.missing.length) { H('Still missing'); for (const m of r.missing) doc.text(`• ${m.label}`); }
     doc.moveDown(1).fontSize(8).fillColor('#555').text('Signatures were captured electronically in ReadyDoc: the signer typed their legal name under the form\'s own attestation, and the time, network address and device were recorded. Employer signatures are password-verified at the moment of signing. Full SSN and account numbers are held encrypted and are not printed.');
     doc.end();
@@ -957,7 +1034,7 @@ function byToken(db, token) {
 const portalShape = (db, rec) => {
   const s = shape(db, rec);
   // The employer's examination is not the employee's to read on the link.
-  delete s.i9_section2; delete s.notes; delete s.adp_response;
+  delete s.i9_section2; delete s.notes; delete s.adp_response; delete s.office_edits;
   // Where ReadyDoc actually lives, so the finish screen can offer to install
   // it. `readyDocOrigin()`, never `appBaseUrl()`: the launcher host answers a
   // page request with the workspace picker, and a PWA installs only from the

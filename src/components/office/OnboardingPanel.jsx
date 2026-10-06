@@ -10,6 +10,7 @@ import { downloadFile } from '../../lib/downloadFile.js';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import { useModuleTabs } from '../../lib/useModuleTabs.js';
 import EmployeeDocumentsTab from './EmployeeDocumentsTab.jsx';
+import { US_STATES } from '../../../shared/us-states.js';
 
 /**
  * Office side of new-hire onboarding: start one, hand out the magic link,
@@ -438,6 +439,156 @@ function Reveal({ r }) {
   );
 }
 
+// THE OFFICE CAN FILL IN OR CORRECT WHAT THE HIRE ENTERED (D-155). A link that
+// will not save one field should not strand a packet, and a packet missing a
+// state should not need the new hire back in the building. Every change to the
+// hire's own answers is recorded on the packet with the office's name; once a
+// form is signed the server asks for a reason too, and the signed form stands
+// as signed. Only CHANGED fields are sent, so a save never rewrites what it
+// did not touch.
+const EDIT_GROUPS = (r) => [
+  ['About them', [
+    ['first_name', 'First name'], ['middle_name', 'Middle name'], ['last_name', 'Last name'], ['preferred_name', 'Preferred name'],
+    ['phone', 'Phone', 'tel'], ['email', 'Email', 'email'], ['dob', 'Date of birth', 'date'],
+    ['gender', 'Gender', 'select', [['', '—'], ['F', 'Female'], ['M', 'Male']]],
+  ]],
+  ['Home address', [
+    ['address1', 'Street address'], ['address2', 'Apt / unit'], ['city', 'City'],
+    ['state', 'State', 'state'], ['zip', 'ZIP'],
+  ]],
+  ['Emergency contact', [
+    ['emergency_name', 'Name'], ['emergency_phone', 'Phone', 'tel'], ['emergency_relationship', 'Relationship'],
+  ]],
+  ['Direct deposit', [
+    ['dd_bank_name', 'Bank name'],
+    ['dd_account_type', 'Account type', 'select', [['', '—'], ['checking', 'Checking'], ['savings', 'Savings']]],
+    ...(r.sensitive_collection ? [['dd_routing', 'Routing number (replaces what is on file)', 'secret'], ['dd_account', 'Account number (replaces what is on file)', 'secret']] : []),
+  ]],
+  ...(r.is_contractor ? [['Form W-9', [
+    ['w9_business_name', 'Business name (if different)'],
+    ['w9_tax_classification', 'Tax classification', 'select', [['', '—'], ...Object.entries(W9_CLASS)]],
+    ['w9_llc_classification', 'LLC classification', 'select', [['', '—'], ['C', 'C'], ['S', 'S'], ['P', 'P']]],
+    ['w9_tin_type', 'TIN type', 'select', [['', '—'], ['ssn', 'SSN'], ['ein', 'EIN']]],
+    ...(r.sensitive_collection ? [['ssn', 'SSN (replaces what is on file)', 'secret'], ['ein', 'EIN (replaces what is on file)', 'secret']] : []),
+    ['w9_backup_withholding', 'Subject to backup withholding', 'bool'],
+  ]]] : [
+    ['Form W-4', [
+      ...(r.sensitive_collection ? [['ssn', 'SSN (replaces what is on file)', 'secret']] : []),
+      ['w4_filing_status', 'Filing status', 'select', [['', '—'], ...Object.entries(FILING)]],
+      ['w4_multiple_jobs', 'Step 2: multiple jobs', 'bool'], ['w4_exempt', 'Claims exempt', 'bool'],
+      ['w4_qualifying_children', 'Children under 17'], ['w4_other_dependents', 'Other dependents'],
+      ['w4_dependents_amount', 'Step 3 total ($)'], ['w4_other_income', 'Step 4a other income ($)'],
+      ['w4_deductions', 'Step 4b deductions ($)'], ['w4_extra_withholding', 'Step 4c extra withholding ($)'],
+    ]],
+    ['Form I-9 · Section 1', [
+      ['i9_citizenship', 'Citizenship / status', 'select', [['', '—'], ...Object.entries(CITIZEN)]],
+      ['i9_other_last_names', 'Other last names used'], ['i9_uscis_number', 'A-Number / USCIS #'],
+      ['i9_i94_number', 'I-94 #'], ['i9_passport_number', 'Passport #'], ['i9_passport_country', 'Passport country'],
+      ['i9_work_until', 'Authorized to work until', 'date'],
+    ]],
+  ]),
+];
+
+function EditDetails({ r, onSaved, onCancel }) {
+  const groups = EDIT_GROUPS(r);
+  const start = () => Object.fromEntries(groups.flatMap(([, fs]) => fs).map(([k, , type]) =>
+    [k, type === 'secret' ? '' : type === 'bool' ? !!r[k] : (r[k] ?? '')]));
+  const [v, setV] = useState(start);
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const signed = !!(r.w4_signature || r.i9_signature || r.w9_signature);
+  const changed = () => Object.fromEntries(Object.entries(v).filter(([k, val]) => {
+    const def = groups.flatMap(([, fs]) => fs).find(([f]) => f === k);
+    if (def?.[2] === 'secret') return String(val).trim() !== '';
+    if (def?.[2] === 'bool') return !!val !== !!r[k];
+    return String(val ?? '') !== String(r[k] ?? '');
+  }));
+  const save = async () => {
+    const body = changed();
+    if (!Object.keys(body).length) { onCancel(); return; }
+    if (signed && reason.trim().length < 3) { setError('Say why you are changing what they entered — it is printed on the packet with your name.'); return; }
+    setBusy(true); setError('');
+    try { onSaved(await apiPut(`/onboarding/${r.id}`, { ...body, office_reason: reason.trim() || undefined })); }
+    catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+  const field = ([k, l, type, opts]) => {
+    const id = `ob-edit-${r.id}-${k}`;
+    const missing = (r.missing || []).some(m => m.field === k);
+    const cls = `${input}${missing && !String(v[k] ?? '').trim() ? ' border-amber-500 bg-amber-50' : ''}`;
+    if (type === 'bool') {
+      return (
+        <label key={k} htmlFor={id} className="flex items-center gap-2 text-xs text-gray-700 self-end pb-2">
+          <input id={id} type="checkbox" checked={!!v[k]} onChange={e => setV(s => ({ ...s, [k]: e.target.checked }))} /> {l}
+        </label>
+      );
+    }
+    return (
+      <label key={k} htmlFor={id} className="block">
+        <span className="block text-[11px] font-medium text-gray-600 mb-0.5">{l}{missing && <span className="text-amber-700"> · missing</span>}</span>
+        {type === 'select' ? (
+          <select id={id} className={cls} value={v[k] ?? ''} onChange={e => setV(s => ({ ...s, [k]: e.target.value }))}>
+            {opts.map(([ov, ol]) => <option key={ov} value={ov}>{ol}</option>)}
+          </select>
+        ) : type === 'state' ? (
+          <select id={id} className={cls} value={v[k] ?? ''} onChange={e => setV(s => ({ ...s, [k]: e.target.value }))} data-edit-state>
+            <option value="">—</option>
+            {v[k] && !US_STATES.some(([c]) => c === v[k]) && <option value={v[k]}>{v[k]}</option>}
+            {US_STATES.map(([c, n]) => <option key={c} value={c}>{c} — {n}</option>)}
+          </select>
+        ) : (
+          <input id={id} className={cls} value={v[k] ?? ''} autoComplete="off"
+            type={type === 'date' ? 'date' : type === 'email' ? 'email' : type === 'tel' ? 'tel' : 'text'}
+            inputMode={type === 'secret' ? 'numeric' : undefined}
+            placeholder={type === 'secret' ? 'leave blank to keep what is on file' : undefined}
+            onChange={e => setV(s => ({ ...s, [k]: e.target.value }))} />
+        )}
+      </label>
+    );
+  };
+  return (
+    <div className="border border-powder-200 bg-powder-50/40 rounded-xl p-3 space-y-3" data-edit-details>
+      <p className="text-xs text-gray-600">Fill in or correct what the new hire entered. Each change is recorded on the packet with your name.
+        {signed && ' A form is already signed, so a reason is required and the signed form stays as it was signed.'}</p>
+      {groups.map(([title, fs]) => (
+        <div key={title}>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">{title}</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">{fs.map(field)}</div>
+        </div>
+      ))}
+      {signed && (
+        <label htmlFor={`ob-edit-${r.id}-reason`} className="block">
+          <span className="block text-[11px] font-medium text-gray-600 mb-0.5">Reason for the change *</span>
+          <input id={`ob-edit-${r.id}-reason`} className={input} value={reason} onChange={e => setReason(e.target.value)}
+            placeholder="e.g. Her phone would not save the state; she gave it to me by phone" data-edit-reason />
+        </label>
+      )}
+      {error && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-2" role="alert">{error}</p>}
+      <div className="flex gap-2">
+        <button type="button" onClick={save} disabled={busy} data-edit-save
+          className="px-3 py-1.5 bg-powder-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50">{busy ? 'Saving…' : 'Save changes'}</button>
+        <button type="button" onClick={onCancel} className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs">Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+function OfficeEdits({ r }) {
+  if (!(r.office_edits || []).length) return null;
+  return (
+    <div className="text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded-lg p-2.5 space-y-1" data-office-edits>
+      <p className="font-bold uppercase tracking-wider text-[10px] text-gray-500">Changed by the office</p>
+      {r.office_edits.map((e, i) => (
+        <div key={i}>
+          <p><b>{e.by}</b> · {formatDateTime(e.at)}{e.reason ? ` · ${e.reason}` : ''}</p>
+          <ul className="pl-4 list-disc">{e.fields.map(f => <li key={f.field}>{f.label}: {f.from ?? '(blank)'} → {f.to ?? '(blank)'}</li>)}</ul>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Row({ r, attestations, storageEnabled, onAction }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState('');
@@ -445,6 +596,7 @@ function Row({ r, attestations, storageEnabled, onAction }) {
   // On for an employee, OFF for a contractor. The default is the decision most
   // of the time, and for a contractor the safe default is no account at all.
   const [makeAccount, setMakeAccount] = useState(!r.is_contractor);
+  const [editing, setEditing] = useState(false);
   const [s, cls] = STATUS[r.status] || [r.status, 'bg-gray-100 text-gray-600'];
   const act = async (name, fn) => {
     setBusy(name); setError('');
@@ -552,9 +704,18 @@ function Row({ r, attestations, storageEnabled, onAction }) {
           {r.missing?.length > 0 && !['completed', 'cancelled'].includes(r.status) && (
             <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg p-2 flex items-start gap-1.5" data-missing>
               <AlertTriangle size={13} className="shrink-0 mt-0.5" />
-              <span>Still missing before they can finish: {r.missing.map(m => m.label).join(', ')}.</span>
+              <span>Still missing before they can finish: {r.missing.map(m => m.label).join(', ')}.
+                {!editing && <> <button type="button" className="underline font-semibold" onClick={() => setEditing(true)} data-fill-in>Fill it in here</button></>}</span>
             </p>
           )}
+          <OfficeEdits r={r} />
+          {!['completed', 'cancelled'].includes(r.status) && (editing
+            ? <EditDetails r={r} onCancel={() => setEditing(false)} onSaved={(rec) => { setEditing(false); onAction('refresh', rec); }} />
+            : (
+              <button type="button" onClick={() => setEditing(true)} data-edit-open
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs font-medium hover:bg-gray-50">
+                Edit details</button>
+            ))}
 
           <Files r={r} storageEnabled={storageEnabled} onChanged={() => onAction('refresh')} />
           {!r.is_contractor && <Section2 key={r.i9_section2 ? 'signed' : 'open'} r={r} attestation={attestations?.i9_s2} onChanged={() => onAction('refresh')} />}

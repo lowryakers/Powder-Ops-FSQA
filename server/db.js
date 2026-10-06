@@ -2917,6 +2917,10 @@ function runMigrations() {
     // in front of them. Carried onto the roster at completion; Pay Tracking
     // derives the date from the hire date and never stores it twice.
     ['review_occasion', 'TEXT'],
+    // WHAT THE OFFICE CHANGED ON THE HIRE'S BEHALF (D-155) — JSON array of
+    // {at, by, reason, fields:[{field, label, from, to}]}. Printed on the
+    // packet, so a value the office filled in never reads as the hire's entry.
+    ['office_edits', 'TEXT'],
   ]) addColumnIfMissing('onboarding_records', col, def);
 
   db.exec(`

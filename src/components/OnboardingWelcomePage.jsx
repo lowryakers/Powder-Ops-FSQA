@@ -2,6 +2,7 @@ import InstallReadyDoc from './common/InstallReadyDoc.jsx';
 import { useState, useEffect } from 'react';
 import PhotoPicker from './common/PhotoPicker.jsx';
 import { LANGS, translator } from '../i18n/onboardingStrings.js';
+import { US_STATES } from '../../shared/us-states.js';
 
 /**
  * The new hire's first screen — /welcome/<token>, public, phone-first.
@@ -167,10 +168,30 @@ export default function OnboardingWelcomePage({ token }) {
     setForm(f => ({ ...f, ssn: '', dd_routing: '', dd_account: '' }));
   };
 
+  // WHAT IS IN THE BOX IS WHAT GETS SAVED (D-155). A phone's address AutoFill
+  // can fill a box without firing the event React listens for, so the page
+  // showed "UT" while the form it sent carried a blank state — the hire was
+  // told the state was missing on every finish and the office saw it missing.
+  // So the save reads every named field on screen and takes the box's value
+  // wherever the form's own copy is blank. A value somebody cleared is blank in
+  // both places, so nothing is resurrected.
+  const onScreen = () => {
+    const out = {};
+    document.querySelectorAll('[data-onboarding-wizard] input[name], [data-onboarding-wizard] select[name], [data-onboarding-wizard] textarea[name]')
+      .forEach(el => {
+        if (el.type === 'checkbox' || el.type === 'radio' || el.type === 'file') return;
+        const v = String(el.value || '').trim();
+        if (v && !String(form[el.name] ?? '').trim()) out[el.name] = v;
+      });
+    return out;
+  };
+
   const saveAnd = async (nextStep, extra = {}) => {
     setBusy(true); setError('');
     try {
-      const payload = { ...form, ...extra, language: lang, progress: { [STEPS[step]]: true } };
+      const fromBoxes = onScreen();
+      if (Object.keys(fromBoxes).length) setForm(f => ({ ...f, ...fromBoxes }));
+      const payload = { ...form, ...fromBoxes, ...extra, language: lang, progress: { [STEPS[step]]: true } };
       adopt(await api('PUT', `/${token}`, payload));
       setStep(nextStep);
       window.scrollTo(0, 0);
@@ -217,9 +238,14 @@ export default function OnboardingWelcomePage({ token }) {
   const at = (n) => STEPS.indexOf(n);
   const stepMissing = (s) => (rec.missing || []).filter(m => m.step === s);
   const goTo = (s) => { setStep(STEPS.indexOf(s)); window.scrollTo(0, 0); };
+  // A field the server says is still missing is marked where it is typed, so
+  // "go back to that page" lands on a box that says which one.
+  const need = (f) => (stepMissing('personal').some(m => m.field === f) && !String(form[f] ?? '').trim()
+    ? ' border-amber-500 bg-amber-50' : '');
 
   return (
     <Shell lang={lang} onLang={setLang}>
+      <div data-onboarding-wizard>
       {/* progress */}
       <div className="flex gap-1 mb-5">
         {STEPS.slice(0, -1).map((s, i) => (
@@ -259,15 +285,15 @@ export default function OnboardingWelcomePage({ token }) {
             <p className="text-gray-700">{t('personal.legalFix')}</p>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field l={t('personal.first')}><input className={input} value={form.first_name || ''} onChange={set('first_name')} /></Field>
-            <Field l={t('personal.last')}><input className={input} value={form.last_name || ''} onChange={set('last_name')} /></Field>
-            <Field l={t('personal.middle')}><input className={input} value={form.middle_name || ''} onChange={set('middle_name')} /></Field>
-            <Field l={t('personal.preferred')}><input className={input} value={form.preferred_name || ''} onChange={set('preferred_name')} /></Field>
-            <Field l={t('personal.phone')}><input type="tel" className={input} value={form.phone || ''} onChange={set('phone')} /></Field>
-            <Field l={t('personal.email')}><input type="email" className={input} value={form.email || ''} onChange={set('email')} /></Field>
-            <Field l={t('personal.dob')}><input type="date" className={input} value={form.dob || ''} onChange={set('dob')} /></Field>
+            <Field l={t('personal.first')}><input className={input + need('first_name')} value={form.first_name || ''} onChange={set('first_name')} name="first_name" autoComplete="given-name" /></Field>
+            <Field l={t('personal.last')}><input className={input + need('last_name')} value={form.last_name || ''} onChange={set('last_name')} name="last_name" autoComplete="family-name" /></Field>
+            <Field l={t('personal.middle')}><input className={input} value={form.middle_name || ''} onChange={set('middle_name')} name="middle_name" autoComplete="additional-name" /></Field>
+            <Field l={t('personal.preferred')}><input className={input} value={form.preferred_name || ''} onChange={set('preferred_name')} name="preferred_name" autoComplete="nickname" /></Field>
+            <Field l={t('personal.phone')}><input type="tel" className={input + need('phone')} value={form.phone || ''} onChange={set('phone')} name="phone" autoComplete="tel" /></Field>
+            <Field l={t('personal.email')}><input type="email" className={input} value={form.email || ''} onChange={set('email')} name="email" autoComplete="email" /></Field>
+            <Field l={t('personal.dob')}><input type="date" className={input + need('dob')} value={form.dob || ''} onChange={set('dob')} name="dob" autoComplete="bday" /></Field>
             <Field l={t('personal.gender')} hint={t('personal.genderHint')}>
-              <select className={input} value={form.gender || ''} onChange={set('gender')} data-gender>
+              <select className={input + need('gender')} name="gender" value={form.gender || ''} onChange={set('gender')} data-gender>
                 <option value="">{t('personal.choose')}</option>
                 <option value="F">{t('personal.female')}</option>
                 <option value="M">{t('personal.male')}</option>
@@ -280,12 +306,21 @@ export default function OnboardingWelcomePage({ token }) {
               </Field>
             )}
           </div>
-          <Field l={t('personal.address1')}><input className={input} value={form.address1 || ''} onChange={set('address1')} /></Field>
-          <Field l={t('personal.address2')}><input className={input} value={form.address2 || ''} onChange={set('address2')} /></Field>
+          <Field l={t('personal.address1')}><input className={input + need('address1')} value={form.address1 || ''} onChange={set('address1')} name="address1" autoComplete="address-line1" /></Field>
+          <Field l={t('personal.address2')}><input className={input} value={form.address2 || ''} onChange={set('address2')} name="address2" autoComplete="address-line2" /></Field>
           <div className="grid grid-cols-3 gap-3">
-            <Field l={t('personal.city')}><input className={input} value={form.city || ''} onChange={set('city')} /></Field>
-            <Field l={t('personal.state')}><input className={input} value={form.state || ''} onChange={set('state')} maxLength={2} placeholder="UT" /></Field>
-            <Field l={t('personal.zip')}><input inputMode="numeric" className={input} value={form.zip || ''} onChange={set('zip')} /></Field>
+            <Field l={t('personal.city')}><input className={input + need('city')} value={form.city || ''} onChange={set('city')} name="city" autoComplete="address-level2" /></Field>
+            <Field l={t('personal.state')}>
+              {/* A LIST, NOT A TWO-CHARACTER BOX (D-155). AutoFill matches the
+                  option and fires a change; a value from before this that is not
+                  on the list is kept as an option, never silently replaced. */}
+              <select className={input + need('state')} name="state" autoComplete="address-level1" value={form.state || ''} onChange={set('state')} data-state>
+                <option value="">{t('personal.choose')}</option>
+                {form.state && !US_STATES.some(([c]) => c === form.state) && <option value={form.state}>{form.state}</option>}
+                {US_STATES.map(([code, nm]) => <option key={code} value={code}>{code} — {nm}</option>)}
+              </select>
+            </Field>
+            <Field l={t('personal.zip')}><input inputMode="numeric" className={input + need('zip')} value={form.zip || ''} onChange={set('zip')} name="zip" autoComplete="postal-code" /></Field>
           </div>
           {!rec.sensitive_collection && (
             <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
@@ -299,10 +334,10 @@ export default function OnboardingWelcomePage({ token }) {
       {name === 'emergency' && (
         <div className="space-y-3">
           <h2 className="text-lg font-bold text-gray-900">{t('emergency.title')}</h2>
-          <Field l={t('emergency.name')}><input className={input} value={form.emergency_name || ''} onChange={set('emergency_name')} /></Field>
+          <Field l={t('emergency.name')}><input className={input} value={form.emergency_name || ''} onChange={set('emergency_name')} name="emergency_name" autoComplete="off" /></Field>
           <div className="grid grid-cols-2 gap-3">
-            <Field l={t('emergency.phone')}><input type="tel" className={input} value={form.emergency_phone || ''} onChange={set('emergency_phone')} /></Field>
-            <Field l={t('emergency.relationship')}><input className={input} value={form.emergency_relationship || ''} onChange={set('emergency_relationship')} /></Field>
+            <Field l={t('emergency.phone')}><input type="tel" className={input} value={form.emergency_phone || ''} onChange={set('emergency_phone')} name="emergency_phone" autoComplete="off" /></Field>
+            <Field l={t('emergency.relationship')}><input className={input} value={form.emergency_relationship || ''} onChange={set('emergency_relationship')} name="emergency_relationship" autoComplete="off" /></Field>
           </div>
           <Nav onBack={() => setStep(at('personal'))} onNext={() => saveAnd(at('deposit'))} busy={busy} />
         </div>
@@ -565,6 +600,7 @@ export default function OnboardingWelcomePage({ token }) {
       )}
 
       {error && name !== 'i9' && <p className="mt-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-2.5">{error}</p>}
+      </div>
     </Shell>
   );
 

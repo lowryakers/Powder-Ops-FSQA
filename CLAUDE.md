@@ -1786,6 +1786,18 @@ that has to be fed to stay useful. Office nav group, module id `candidates`.
   v2 guide as far as it could be read; the first live send is the test, and ADP's refusal text is returned
   verbatim. Runbook artifact + `docs/adp-run-onboarding.md` describe the API Central route.
 
+## The link saves what is in the box; the office can fill in or correct a packet (D-155)
+A phone's address AutoFill can set a box with no input event, so the wizard showed "UT" and saved a blank.
+`onScreen()` in `OnboardingWelcomePage.jsx` reads every named field at save time and uses the box's value where
+the form's copy is blank — **give every wizard field a `name` and an `autoComplete` token**. State is a list
+(`shared/us-states.js`), and `normalizeState` files "Utah" as UT on every save; unknown text is kept as typed.
+- **"Edit details" / "Fill it in here" on the office packet** (`EditDetails` in `OnboardingPanel.jsx`) sends
+  only changed fields to `PUT /onboarding/:id`. A change to the HIRE's answers is appended to
+  `onboarding_records.office_edits` (who, when, reason, field from → to; secrets last-4 only), shown on the row
+  and printed on the packet PDF as "Changed by the office". **Once any form is signed a reason is required**
+  (400 `reason_required`); the signed form stands as signed. Job facts are not logged as corrections; the
+  link never sees the log. `verify:onboardingedit` (34; control fails 4).
+
 ## People: a tag is a category you can call from; a file is a résumé that dies with the person
 `candidates.tags` (JSON array) + `candidate_files` (R2 via the shared media path), both in
 `server/api/candidates.js` behind the same office/HR-only mount gate — a résumé is more personal than a
