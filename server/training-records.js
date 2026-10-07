@@ -183,7 +183,7 @@ export function scoreResults(results, passingScore) {
  * words still works, and an option whose words are themselves a number
  * ("2") is matched as words before it is read as a position.
  */
-const optionList = (v) => {
+export const optionList = (v) => {
   if (Array.isArray(v)) return v;
   try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch { return []; }
 };
@@ -191,7 +191,7 @@ const norm = (v) => String(v ?? '').trim().toLowerCase();
 const isIndex = (v, n) => /^\d+$/.test(v) && Number(v) < n;
 
 /** Which option a value names: its words (English or the plant's Spanish) first, then a position. */
-function optionIndexOf(value, options, optionsEs) {
+export function optionIndexOf(value, options, optionsEs) {
   const v = norm(value);
   if (!v) return null;
   let i = options.findIndex((o) => norm(o) === v);

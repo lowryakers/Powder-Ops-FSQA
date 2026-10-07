@@ -4,7 +4,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import { GraduationCap, Plus, Upload, Search, X, ExternalLink, Edit2, Paperclip, AlertTriangle, Clock, CheckCircle, Sparkles, Trash2, FileQuestion, Users, Video, FileText, Loader2 } from 'lucide-react';
 import { DEPARTMENT_VALUES } from '../../constants/departments';
-import TrainingAttemptsPanel, { AttemptReview } from './TrainingAttempts.jsx';
+import TrainingAttemptsPanel, { AttemptReview, QuestionMissesPanel } from './TrainingAttempts.jsx';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import TrainingPeoplePanel from './TrainingPeoplePanel.jsx';
 import TrainingDocumentsPanel from './TrainingDocumentsPanel.jsx';
@@ -1649,6 +1649,9 @@ export default function TrainingPanel() {
     // Each attempt question by question (D-144): the reviewer could see a
     // score and nothing behind it.
     { id: 'attempts', label: 'Test answers' },
+    // The same answers turned ninety degrees (D-159): one row per question, so a
+    // key everybody "gets wrong" is visible without opening attempts one by one.
+    { id: 'misses', label: 'Most missed' },
     ...(practicalCourses.length ? [{ id: 'certifications', label: 'Operator certification' }] : []),
   ], [practicalCourses]);
 
@@ -1806,6 +1809,7 @@ export default function TrainingPanel() {
       {view === 'people' && <TrainingPeoplePanel />}
 
       {view === 'attempts' && <TrainingAttemptsPanel />}
+      {view === 'misses' && <QuestionMissesPanel />}
       <AttemptReview attemptId={reviewAttempt} onClose={() => setReviewAttempt(null)} />
 
       {view === 'documents' && <TrainingDocumentsPanel onCoursesChanged={refreshAll} />}

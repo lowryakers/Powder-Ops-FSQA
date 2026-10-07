@@ -6573,3 +6573,25 @@ is one attempt** (the D-137 rule — a queued submit replayed, or a second tap).
   they had failed. The re-grade filed only the first pass as the completion.
 - `verify:testgrading` (32 → **50**, live + browser + reboots). **Control — the D-157 commit — fails 17.**
   `verify:trainingtest` reads 66% for two of three.
+
+## D-159 — Most-missed questions, per course, with the wrong-key pattern flagged (2026-10-07)
+Asked after D-157 — a wrong answer key marks everybody wrong on the same question, and the only way to see it
+was to open attempts one by one. **Training → Most missed** (`QuestionMissesPanel`), `GET /training/question-misses`
+(`?course_id=`, `?include_old=1`), `server/training-misses.js`.
+- **One row per QUESTION, counted once per PERSON** — each person's latest attempt at that test version. Eleven
+  retakes by one person (the shape D-157's fault produced) must not read as eleven people missing a question; the
+  attempt total is shown beside it as information.
+- **Graded by the one grader**: every stored answer is put through `questionResult` against the questions of the
+  version that was taken — never a frozen `expected`, which before D-157 held a position, not words.
+- **FLAGS, NEVER CHANGES A KEY.** `key_check` = at least 3 people, at least half missed it, and at least 60% of
+  those who missed it chose the SAME other answer (`KEY_CHECK`). That is the pattern a wrong key makes; a hard
+  question's wrong answers scatter and are not flagged. The course owner decides in the test editor — a key the
+  app rewrote on a vote would be a fabricated answer to a safety question.
+- **Versions are kept apart.** Fixing a key makes a new version; the current view then starts clean, and
+  "Include earlier versions" shows the old one, marked.
+- **Found on the way: two places chose the "latest"/"first" attempt by `taken_at, id`.** `taken_at` is to the
+  second and `id` is a random uuid, so attempts filed in the same second were ordered at random — this view picked
+  a stale attempt as somebody's latest, and the D-157 re-grade could pick a later pass as the "first". Both order
+  by `rowid` (insertion order) now.
+- Pull, not push (`docs/v2/reachability.md`). `verify:questionmisses` (30, live + browser at 1280 and 390; in
+  `verify:all`). **Control — the code before this change — fails at the first check and cannot continue.**

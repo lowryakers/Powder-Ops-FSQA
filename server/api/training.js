@@ -19,6 +19,7 @@ import { trainingSnapshot, cellFor, personTraining, trainingRoster } from '../tr
 import { documentCoverage, applyCourseLinks, TRAINABLE_TYPES, TYPE_LABEL } from '../training-documents.js';
 import { evaluationFor, missingToSign, gradeEvaluation, normalizeAnswers, EVALUATION_REVISION, TRUCK_TYPES, RESULTS } from '../practical-evaluations.js';
 import { certificationFor, certificationRoster } from '../training-certification.js';
+import { questionMisses } from '../training-misses.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
 import { renderCertificate } from '../certificate-pdf.js';
 
@@ -748,6 +749,15 @@ router.get('/attempts', (req, res) => {
     FROM training_test_attempts a LEFT JOIN training_courses c ON c.id = a.course_id
     WHERE ${where} ORDER BY a.taken_at DESC LIMIT ?`).all(...params, limit);
   res.json(rows.map(r => ({ ...r, passed: !!r.passed, frozen: !!r.frozen })));
+});
+
+// Which questions people get wrong, per course (D-159) — counted by person,
+// graded by the one grader, and flagging (never changing) a key that looks wrong.
+router.get('/question-misses', (req, res) => {
+  res.json(questionMisses(getDb(), {
+    course_id: req.query.course_id || null,
+    include_old: req.query.include_old === '1',
+  }));
 });
 
 router.get('/attempts/:id', (req, res) => {

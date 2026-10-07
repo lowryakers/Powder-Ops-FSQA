@@ -117,6 +117,7 @@
     "verify:reminderlink": "VERIFY_ONLY=verify-reminder-link.mjs node scripts/verify-all.mjs",
     "verify:trainingtest": "node scripts/verify-training-test.mjs",
     "verify:testgrading": "node scripts/verify-test-grading.mjs",
+    "verify:questionmisses": "node scripts/verify-question-misses.mjs",
     "verify:productionruns": "node scripts/verify-production-runs.mjs",
     "verify:apdropvendor": "node scripts/verify-ap-drop-vendor.mjs",
     "verify:checklistoverlap": "node scripts/verify-checklist-overlap.mjs",

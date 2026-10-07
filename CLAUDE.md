@@ -3758,6 +3758,12 @@ naming a test attempt needs a PASSED attempt by the assignee. The course form an
 pass mark. The test is graded against the `test_id` it was served. Spanish labels fall back per option. Short
 answers match whole words. Dates are `plantDateOf()`. Identical resubmission within 2 min = one attempt.
 
+## Most-missed questions (D-159, `server/training-misses.js`, Training → Most missed)
+One row per question, counted once per PERSON (latest attempt at that version), graded through `questionResult`.
+`key_check` flags the wrong-key pattern (≥3 people, ≥50% missed, ≥60% of misses chose the same answer) and
+NEVER rewrites a key. **Order attempts by `rowid`, not `taken_at, id`** — `taken_at` is to the second and `id` is
+a random uuid. `verify:questionmisses` (30).
+
 ## A forklift certification is TWO halves and a certificate (D-098)
 `server/practical-evaluations.js` (the form, PURE), `training_practical_evaluations` (db.js),
 `server/training-certification.js` (the DERIVED answer), `server/certificate-pdf.js`, the routes on

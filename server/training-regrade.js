@@ -34,7 +34,7 @@ export function regradeFiledAttempts(db) {
     FROM training_test_attempts a
     LEFT JOIN training_tests t ON t.id = a.test_id
     LEFT JOIN training_courses c ON c.id = a.course_id
-    ORDER BY a.taken_at, a.id`).all();
+    ORDER BY a.taken_at, a.rowid`).all();
   const qStmt = db.prepare('SELECT * FROM training_questions WHERE test_id = ? ORDER BY position');
   const out = { checked: attempts.length, regraded: 0, now_passed: 0, records_filed: 0, tasks_closed: 0, lowered_skipped: 0, people: [] };
   const filedFor = new Set();

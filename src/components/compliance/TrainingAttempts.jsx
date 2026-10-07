@@ -88,3 +88,109 @@ export default function TrainingAttemptsPanel() {
     </div>
   );
 }
+
+// Most-missed questions, per course (D-159). One row per QUESTION, counted once
+// per person — their latest attempt — so somebody who retook a test eleven
+// times counts once. A question most people miss, where most of them chose the
+// same other answer, is flagged to check the key: that is the pattern a wrong
+// key makes. The app flags it; the course owner decides, in the test editor.
+export function QuestionMissesPanel() {
+  const [q, setQ] = useState('');
+  const [old, setOld] = useState(false);
+  const [open, setOpen] = useState({});
+  const { data, loading, error } = useApiGet(`/training/question-misses${old ? '?include_old=1' : ''}`, [old]);
+  const needle = q.trim().toLowerCase();
+  const courses = (data?.courses || []).filter(c => !needle
+    || String(c.course_title || '').toLowerCase().includes(needle)
+    || String(c.course_code || '').toLowerCase().includes(needle));
+  const toggle = (k) => setOpen(o => ({ ...o, [k]: !o[k] }));
+  return (
+    <div className="space-y-3" data-question-misses>
+      <p className="text-sm text-gray-600 max-w-3xl">
+        Every question on every test, with how many people got it wrong. Each person counts once, on their latest
+        attempt. When most people miss a question <em>and</em> most of them chose the same other answer, it is
+        flagged: that usually means the answer key is wrong, not the people. Check it in Courses → Edit test.
+      </p>
+      {data && (
+        <p className="text-sm font-medium text-gray-800" data-key-check-total={data.key_checks}>
+          {data.key_checks
+            ? `${data.key_checks} question${data.key_checks === 1 ? '' : 's'} to check the answer key on`
+            : 'No question looks like a wrong answer key.'}
+        </p>
+      )}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative w-full max-w-xs">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search course…"
+            className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm" />
+        </div>
+        <label className="flex items-center gap-2 text-sm text-gray-700">
+          <input type="checkbox" checked={old} onChange={e => setOld(e.target.checked)} data-misses-old />
+          Include earlier versions of a test
+        </label>
+      </div>
+      {error && <p className="text-sm text-red-700">{error.message || String(error)}</p>}
+      {loading && !data && <p className="text-sm text-gray-400">Loading…</p>}
+      {data && !courses.length && <p className="text-sm text-gray-400">No tests taken yet.</p>}
+      {courses.map(c => {
+        const missed = c.questions.filter(x => x.missed > 0);
+        const clean = c.questions.length - missed.length;
+        return (
+          <div key={c.test_id} className="bg-white rounded-xl border border-gray-200" data-misses-course={c.course_code || c.course_title}>
+            <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <h3 className="font-semibold text-gray-900">{c.course_code ? `${c.course_code} · ` : ''}{c.course_title}</h3>
+              {!c.is_current && <span className="text-xs text-gray-500">earlier version (V{c.version})</span>}
+              <span className="text-xs text-gray-500">
+                {c.people} {c.people === 1 ? 'person' : 'people'} · {c.attempts} attempt{c.attempts === 1 ? '' : 's'} · {c.passed_people} passed · pass mark {c.passing_score}%
+              </span>
+              {c.key_checks > 0 && (
+                <span className="ml-auto text-xs font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+                  Check the key on {c.key_checks} question{c.key_checks === 1 ? '' : 's'}
+                </span>
+              )}
+            </div>
+            <ul className="divide-y divide-gray-100">
+              {missed.map(x => {
+                const k = `${c.test_id}:${x.question_id}`;
+                return (
+                  <li key={x.question_id} className="px-4 py-3 space-y-1.5" data-miss-q={x.number} data-miss-rate={x.miss_rate} data-key-check={x.key_check ? '1' : '0'}>
+                    <p className="text-sm text-gray-900"><span className="font-medium">Q{x.number}.</span> {x.prompt}</p>
+                    <div className="flex items-center gap-2">
+                      <div className="h-2 flex-1 max-w-xs bg-gray-100 rounded-full overflow-hidden">
+                        <div className={`h-full ${x.key_check ? 'bg-red-500' : x.miss_rate >= 50 ? 'bg-amber-500' : 'bg-gray-400'}`} style={{ width: `${x.miss_rate}%` }} />
+                      </div>
+                      <span className="text-xs text-gray-700 tabular-nums" data-miss-count>{x.missed} of {x.people} missed it ({x.miss_rate}%)</span>
+                    </div>
+                    <p className="text-xs text-gray-700">Answer key: <span className="font-medium" data-miss-expected>{x.expected ?? '—'}</span></p>
+                    {x.top_wrong && (
+                      <p className="text-xs text-gray-700">Most common wrong answer: <span className="font-medium" data-miss-top>{x.top_wrong.answer}</span> ({x.top_wrong.people} {x.top_wrong.people === 1 ? 'person' : 'people'})</p>
+                    )}
+                    {x.key_check && (
+                      <p className="text-xs text-red-800 bg-red-50 border border-red-200 rounded-lg px-2 py-1">
+                        Most people missed this, and most of them chose “{x.top_wrong.answer}”. Check whether the answer key is right before anyone retakes it.
+                      </p>
+                    )}
+                    <button type="button" onClick={() => toggle(k)} className="text-xs text-powder-700 hover:underline" data-miss-more>
+                      {open[k] ? 'Hide who and what' : 'Show who and what'}
+                    </button>
+                    {open[k] && (
+                      <div className="text-xs text-gray-700 space-y-1" data-miss-detail>
+                        <p>Wrong answers: {x.wrong_answers.map(w => `${w.answer} (${w.people})`).join(' · ')}</p>
+                        <p>Missed by: {x.missed_by.join(', ')}{x.missed > x.missed_by.length ? ` and ${x.missed - x.missed_by.length} more` : ''}</p>
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+              {clean > 0 && (
+                <li className="px-4 py-2 text-xs text-gray-500">
+                  {clean} question{clean === 1 ? '' : 's'} nobody missed.
+                </li>
+              )}
+            </ul>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
