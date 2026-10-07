@@ -70,7 +70,7 @@ export default function TrainingTest({ workOrderId, lang: initialLang = 'en', on
     }
     setBusy(true); setError('');
     try {
-      const r = await apiPost(`/pm/work-orders/${workOrderId}/training-test`, { answers });
+      const r = await apiPost(`/pm/work-orders/${workOrderId}/training-test`, { answers, test_id: test.test_id });
       setResult(r);
       if (r.passed) onDone?.(r);
     } catch (e) { setError(e.message); }
@@ -150,7 +150,15 @@ function TestBody({ test, i, setI, answers, setAnswers, lang, setLang, mt, setMt
   // where there is one, and a machine-translated safety question is not the
   // question anybody signed.
   const prompt = (lang === 'es' && q.prompt_es) ? q.prompt_es : (machine?.prompt || q.prompt);
-  const options = (lang === 'es' && q.options_es?.length) ? q.options_es : (machine?.options?.length === (q.options || []).length ? machine.options : q.options);
+  // ONE BUTTON PER ENGLISH OPTION, ALWAYS (D-158). The Spanish list used to
+  // replace the English one whenever it had any entries, so a translation
+  // shorter than the question — an option added after it was translated —
+  // dropped the last options from the Spanish screen, right answer included,
+  // and a blank translation drew an empty button. Each label now falls back
+  // on its own: the plant's Spanish, then the machine's, then the English.
+  const machineOpts = machine?.options?.length === (q.options || []).length ? machine.options : null;
+  const options = (q.options || []).map((o, oi) => (lang === 'es'
+    && (String(q.options_es?.[oi] || '').trim() || String(machineOpts?.[oi] || '').trim())) || o);
   const answered = test.questions.filter(x => answers[x.id] !== undefined && answers[x.id] !== '').length;
 
   return (
@@ -187,7 +195,7 @@ function TestBody({ test, i, setI, answers, setAnswers, lang, setLang, mt, setMt
             // The VALUE is the English option — the answer key is in English,
             // and grading a Spanish reading against it would fail everybody
             // who reads the translation. Only the label changes language.
-            const value = q.options?.[oi] ?? opt;
+            const value = q.options[oi];
             const on = String(answers[q.id] ?? '') === String(value);
             return (
               <button type="button" key={oi} data-test-option={oi}

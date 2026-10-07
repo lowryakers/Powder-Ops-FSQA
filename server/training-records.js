@@ -10,6 +10,7 @@
 // records raise CARs through.
 
 import { v4 as uuid } from 'uuid';
+import { plantDateOf } from './plant-clock.js';
 
 export const addMonths = (isoDate, months) => {
   if (!isoDate || !months) return null;
@@ -56,7 +57,14 @@ export function courseTrainingRevision(db, courseId) {
 /** File one completion. Returns the stored row. */
 export function insertCompletion(db, body) {
   const id = uuid();
-  const completion = body.completion_date || (body.status === 'completed' ? (body.training_date || new Date().toISOString().slice(0, 10)) : null);
+  // A RESULT BELOW THE PASS MARK IS NOT A COMPLETION (D-158). It is filed —
+  // somebody sat the test and that is a fact — but as `failed`: no completion
+  // date, no retraining clock, and it never supersedes a completion already on
+  // file. Filed as `completed` it read "trained" on the matrix and pushed the
+  // person's real pass out of the way.
+  const failed = body.passed === false || body.passed === 0;
+  if (failed) body = { ...body, status: 'failed', completion_date: null };
+  const completion = failed ? null : (body.completion_date || (body.status === 'completed' ? (body.training_date || plantDateOf()) : null));
   const next_due = dueDateFor(db, body.course_id, completion);
   // Stamp the document revision this completion was trained against.
   const sopRevision = body.sop_revision || courseTrainingRevision(db, body.course_id);
@@ -67,11 +75,11 @@ export function insertCompletion(db, body) {
     id, body.employee_name, body.employee_id || null, body.employee_user_id || null,
     body.training_topic || body.course_title || '', body.course_id || null, body.sop_id || null,
     body.trainer || null, body.method || null,
-    body.training_date || new Date().toISOString().slice(0, 10), completion,
-    body.status || (completion ? 'completed' : 'scheduled'),
+    body.training_date || plantDateOf(), completion,
+    failed ? 'failed' : (body.status || (completion ? 'completed' : 'scheduled')),
     body.passed === undefined ? null : (body.passed ? 1 : 0), body.score ?? null, next_due,
     body.certificate_url || null, body.document_url || null, body.gdrive_url || null, body.test_attempt_id || null, body.notes || null, sopRevision);
-  if (body.status === 'completed' || completion) supersedeOlder(db, body.employee_name, body.course_id, id, body.employee_user_id || null);
+  if (!failed && (body.status === 'completed' || completion)) supersedeOlder(db, body.employee_name, body.course_id, id, body.employee_user_id || null);
   return db.prepare('SELECT * FROM training_records WHERE id = ?').get(id);
 }
 
@@ -88,19 +96,36 @@ export function insertCompletion(db, body) {
  * operator who passes the forklift test and closes the app has been trained,
  * and a record that depends on a second act is one that goes missing.
  */
-export function gradeTestAttempt(db, { course_id, employee_name, employee_user_id = null, answers }) {
+export function gradeTestAttempt(db, { course_id, employee_name, employee_user_id = null, answers, test_id = null }) {
   const course = db.prepare('SELECT * FROM training_courses WHERE id = ?').get(course_id);
   if (!course) return { error: 'Course not found' };
-  const test = db.prepare('SELECT * FROM training_tests WHERE course_id = ? AND is_current = 1').get(course_id);
+  // GRADED AGAINST THE VERSION THAT WAS ON SCREEN (D-158). Editing a test makes
+  // a new version with new question ids; somebody halfway through the old one
+  // submitted answers keyed to questions the current version does not have,
+  // and scored 0. A version of THIS course is honoured; anything else falls
+  // back to the current one.
+  const test = (test_id && db.prepare('SELECT * FROM training_tests WHERE id = ? AND course_id = ?').get(test_id, course_id))
+    || db.prepare('SELECT * FROM training_tests WHERE course_id = ? AND is_current = 1').get(course_id);
   if (!test) return { error: 'No test for this course' };
 
   const questions = db.prepare('SELECT * FROM training_questions WHERE test_id = ? ORDER BY position').all(test.id);
   const results = questions.map((q, i) => questionResult(q, answers?.[q.id], i));
-  const earned = results.reduce((n, r) => n + (r.correct ? r.points : 0), 0);
-  const total = results.reduce((n, r) => n + r.points, 0);
-  const score = total ? Math.round((earned / total) * 100) : 0;
-  const passing = test.passing_score ?? 80;
-  const passed = score >= passing;
+  const { score, passed, passing } = scoreResults(results, test.passing_score);
+
+  // THE SAME SUBMISSION TWICE IS ONE ATTEMPT (D-158, the D-137 rule). A
+  // submit made on a dropped connection is queued and replayed, and a second
+  // tap can beat the button disabling — identical answers to the same test
+  // from the same person within two minutes return the attempt already filed.
+  const answersJson = JSON.stringify(Object.fromEntries(Object.entries(answers || {}).sort(([a], [b]) => (a < b ? -1 : 1))));
+  const repeat = db.prepare(`SELECT * FROM training_test_attempts WHERE test_id = ? AND answers = ?
+      AND ((? IS NOT NULL AND employee_user_id = ?) OR LOWER(employee_name) = LOWER(?))
+      AND taken_at >= datetime('now', '-2 minutes') ORDER BY taken_at DESC LIMIT 1`)
+    .get(test.id, answersJson, employee_user_id, employee_user_id, employee_name);
+  if (repeat) {
+    const record = repeat.record_id ? db.prepare('SELECT * FROM training_records WHERE id = ?').get(repeat.record_id) : null;
+    return { attempt_id: repeat.id, score: repeat.score, passed: !!repeat.passed, passing_score: passing, record, course,
+      missed: results.filter(r => !r.correct).map(r => r.number), results, duplicate: true };
+  }
 
   // THE PER-QUESTION OUTCOME IS FROZEN WITH THE ATTEMPT (D-144), the expected
   // answer included — so a reviewer reads what this person got right and
@@ -108,14 +133,16 @@ export function gradeTestAttempt(db, { course_id, employee_name, employee_user_i
   // has since re-written. The `atp_limit` rule.
   const attemptId = uuid();
   db.prepare('INSERT INTO training_test_attempts (id, test_id, course_id, employee_name, employee_user_id, answers, score, passed, results) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(attemptId, test.id, course_id, employee_name, employee_user_id || null, JSON.stringify(answers || {}), score, passed ? 1 : 0, JSON.stringify(results));
+    .run(attemptId, test.id, course_id, employee_name, employee_user_id || null, answersJson, score, passed ? 1 : 0, JSON.stringify(results));
 
   let record = null;
   if (passed) {
     record = insertCompletion(db, {
       employee_name, employee_user_id, course_id, course_title: course.title,
       method: 'online_test', status: 'completed', passed: true, score,
-      completion_date: new Date().toISOString().slice(0, 10), test_attempt_id: attemptId,
+      // THE PLANT'S DAY, not UTC's (D-158): a test passed after 6pm Mountain
+      // was dated tomorrow, and its retraining clock ran a day short.
+      completion_date: plantDateOf(), test_attempt_id: attemptId,
     });
     db.prepare('UPDATE training_test_attempts SET record_id = ? WHERE id = ?').run(record.id, attemptId);
   }
@@ -126,9 +153,25 @@ export function gradeTestAttempt(db, { course_id, employee_name, employee_user_i
 }
 
 /**
+ * The score and the verdict from graded questions — the ONE rule.
+ *
+ * THE SCORE IS ROUNDED DOWN, NEVER UP (D-158). It was rounded to the nearest
+ * whole percent and THEN compared with the pass mark, so 11 of 13 (84.6%)
+ * "scored 85%" and passed an 85% test. The score shown is what was earned.
+ */
+export function scoreResults(results, passingScore) {
+  const earned = results.reduce((n, r) => n + (r.correct ? r.points : 0), 0);
+  const total = results.reduce((n, r) => n + r.points, 0);
+  const passing = passingScore ?? 80;
+  // A hair of tolerance so 4/5 is 80, not 79.99999.
+  const score = total ? Math.floor((earned / total) * 100 + 1e-9) : 0;
+  return { score, passed: total > 0 && score >= passing, passing, earned, total };
+}
+
+/**
  * One question graded: the given answer against the key. ONE rule, used by the
  * grader and by the review of an attempt filed before results were frozen.
- * Short answer is a keyword match: correct when the expected text appears.
+ * Short answer is a keyword match (`keywordMatch`, whole words).
  *
  * A MULTIPLE-CHOICE KEY IS THE OPTION'S POSITION (D-157) — `"2"` — in the
  * seeds, the course editor and the AI generator alike, while the test screen
@@ -158,6 +201,20 @@ function optionIndexOf(value, options, optionsEs) {
   return isIndex(v, options.length) ? Number(v) : null;
 }
 
+/**
+ * A short answer is right when the key's WORDS appear in it, in order (D-158).
+ * It was a substring test, so a key of "no" was found inside "I don't know"
+ * and "know", and "hand-washing" did not match "hand washing". Case, accents
+ * and punctuation are ignored; a word is only ever matched whole.
+ */
+const words = (v) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+export function keywordMatch(given, key) {
+  const k = words(key);
+  if (!k) return false;
+  return ` ${words(given)} `.includes(` ${k} `);
+}
+
 export function questionResult(q, given, index) {
   const correctRaw = String(q.correct_answer ?? '').trim();
   const correct = correctRaw.toLowerCase();
@@ -175,7 +232,7 @@ export function questionResult(q, given, index) {
       ok = keyIdx !== null && gotIdx !== null ? gotIdx === keyIdx : g.toLowerCase() === correct;
     }
   } else if (g !== '') {
-    ok = q.type === 'short_answer' ? (!!correct && g.toLowerCase().includes(correct)) : g.toLowerCase() === correct;
+    ok = q.type === 'short_answer' ? keywordMatch(g, correctRaw) : g.toLowerCase() === correct;
   }
   return {
     // The number the trainee saw: questions are served in position order and

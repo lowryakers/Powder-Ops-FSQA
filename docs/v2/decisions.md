@@ -6536,3 +6536,40 @@ Reported by Daniela: she took ALG-101 tapping every right answer and was told 33
 - `verify:testgrading` (32, live + browser at 390 and 1280 + two reboots; in `verify:all`). **Control — `main` —
   fails 24**, the first reading `score 33, missed [1,3]` on the seeded ALG-101: Daniela's screen exactly.
   `verify:trainingtest` (21), `verify:trainingassign` (94), `verify:forkliftcert` (61) unchanged and green.
+
+## D-158 — Seven more faults in training tests and records, found looking for D-157's relatives (2026-10-07)
+Asked after D-157: "are the fails actually fails, and are there other similar bugs?" The fails left on Test answers
+are real — graded from the answers each person gave against the version they took. Seven more faults, each the
+same family: one fact read two ways, or a rule one door applied and another did not.
+1. **A result below the pass mark was filed as a COMPLETION.** A paper score, a group sign-off with a score, or a
+   record edit filed `status = 'completed', passed = 0`. The matrix (`training-status.js`) read it as trained — the
+   forklift certification already excluded it, so two readers disagreed — and filing it **superseded the person's
+   real pass**. `insertCompletion` files a fail as `failed` (no completion date, no retraining clock, supersedes
+   nothing); the record PUT does the same; the matrix also requires `COALESCE(passed,1) = 1`.
+   `repairFailedCompletions` (boot, idempotent) turns each such row into `failed` and makes the latest real pass
+   current again. No pass is invented: nobody with no passing record is made to read trained.
+2. **A paper score under the pass mark closed the training task.** `missingForCheck` now refuses it in words; the
+   task stays open until a pass — the rule the in-app test already followed.
+3. **Any test-attempt id closed the task.** Naming a failed attempt, somebody else's, or a made-up string satisfied
+   the check AND skipped the self-score refusal. The completion now requires a PASSED attempt by the assignee at
+   this course, and does not file a second record for one that already filed its own.
+4. **Two pass marks.** The course form and the test editor each kept one; the grader read only the test's, so
+   changing it on the course form changed the screen and nothing graded. Each now writes both;
+   `alignPassMarks` (boot) brings a course into line with its test — the number every attempt was graded against.
+5. **Rounded up into a pass.** The score was rounded to the nearest percent before the comparison: 11 of 13
+   (84.6%) "scored 85%" and passed an 85% test. `scoreResults()` is the one rule and rounds DOWN (2 of 3 is 66%).
+   The D-157 re-grade treats a one-point difference with the same verdict as unchanged, and never lowers a score.
+6. **A test edited mid-attempt scored 0.** An edit is a new version with new question ids; answers keyed to the old
+   ones were graded against the new. The test screen sends the `test_id` it was served and is graded against it.
+7. **A Spanish translation shorter than the question hid options.** `options_es` replaced the English list whenever
+   it had entries, so an option added after translating — right answer included — was not on the Spanish screen,
+   and a blank translation drew an empty button. Every English option is a button; each label falls back alone.
+Also: **short answers match whole words** (a key of "no" was found inside "I don't know"; "hand-washing" did not
+match "hand washing"); **a pass is dated the PLANT's day** (UTC dated a pass after 6pm Mountain tomorrow — the
+D-117 defect), as is every check record filed from a task; and **the same submission twice within two minutes
+is one attempt** (the D-137 rule — a queued submit replayed, or a second tap).
+- **Not the D-137 pay-review duplicates.** The long runs of attempts by one person on Test answers (eleven X-Ray
+  attempts in 27 minutes) have different answers and different times: retakes, because D-157's fault told them
+  they had failed. The re-grade filed only the first pass as the completion.
+- `verify:testgrading` (32 → **50**, live + browser + reboots). **Control — the D-157 commit — fails 17.**
+  `verify:trainingtest` reads 66% for two of three.

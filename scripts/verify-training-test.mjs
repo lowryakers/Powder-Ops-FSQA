@@ -71,7 +71,7 @@ console.log('\n── the score is worked out, and the trainee is told what to l
 const test = await J(await JO('GET', `/pm/work-orders/${mine.id}/training-test`));
 const [q1, q2, q3] = test.questions;
 const first = await J(await JO('POST', `/pm/work-orders/${mine.id}/training-test`, { answers: { [q1.id]: 'After a break', [q2.id]: 'The bin', [q3.id]: 'Nobody' } }));
-t('two of three right is 67%, not passed', first?.score === 67 && first?.passed === false, JSON.stringify(first));
+t('two of three right is 66% (rounded down, D-158), not passed', first?.score === 66 && first?.passed === false, JSON.stringify(first));
 t('the result names question 3 to look at again — by number, never the answer', JSON.stringify(first?.missed) === '[3]' && !JSON.stringify(first).includes('"QA"'));
 
 console.log('\n── the reviewer sees each question ──');

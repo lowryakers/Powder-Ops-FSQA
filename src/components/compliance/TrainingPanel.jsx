@@ -1506,7 +1506,7 @@ function TestEditor({ course, aiEnabled, onClose, onSaved }) {
   useEffect(() => {
     let stale = false;
     apiFetch(`/training/courses/${course.id}/test?authoring=1`)
-      .then(t => { if (!stale) { setTitle(t.title || `${course.title} Test`); setPassing(t.passing_score || 80); setQuestions(withKeys(t.questions || [])); } })
+      .then(t => { if (!stale) { setTitle(t.title || `${course.title} Test`); setPassing(t.passing_score ?? 80); setQuestions(withKeys(t.questions || [])); } })
       .catch(() => { /* no test yet */ })
       .finally(() => { if (!stale) setLoading(false); });
     return () => { stale = true; };

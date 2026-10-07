@@ -26,7 +26,7 @@ function addMonths(dateStr, months) {
 export function trainingSnapshot(db, { today = new Date().toISOString().slice(0, 10) } = {}) {
   const users = db.prepare("SELECT id, name, role, department FROM users WHERE is_active = 1 AND COALESCE(is_external, 0) = 0 ORDER BY name").all();
   const courses = db.prepare('SELECT * FROM training_courses WHERE active = 1 ORDER BY category, title').all();
-  const records = db.prepare("SELECT * FROM training_records WHERE superseded = 0 AND status = 'completed'").all();
+  const records = db.prepare("SELECT * FROM training_records WHERE superseded = 0 AND status = 'completed' AND COALESCE(passed, 1) = 1").all();
   const ctx = audienceContext(db);
 
   // The revision each linked document is currently at for training purposes.

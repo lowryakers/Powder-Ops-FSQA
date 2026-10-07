@@ -8,6 +8,7 @@
 // in the shared spec and one branch here; pm.js does not change.
 
 import { v4 as uuid } from 'uuid';
+import { plantDateOf } from './plant-clock.js';
 import {
   checkKindFor, empZoneFor, EMP_ZONES, GMP_WALK_ITEMS, GMP_WALK_REVISION, BANNED_LISTS,
   MANAGEMENT_REVIEW_ITEMS, MANAGEMENT_REVIEW_REVISION, MANAGEMENT_REVIEW_CLAUSE,
@@ -114,7 +115,9 @@ export function attachCheckForms(db, rows) {
  */
 export function fileCheckRecord(db, { form, check, wo, by, when, notes }) {
   const c = normalizeCheck(form, check);
-  const day = (when || new Date().toISOString()).slice(0, 10);
+  // The plant's day (D-158): `when` is a UTC instant unless it was back-dated
+  // to a bare day, and slicing an instant filed every evening check tomorrow.
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(String(when || '')) ? when : plantDateOf(when || new Date());
   if (form.kind === 'training') {
     // THE RECORD IS FILED FOR THE PERSON THE TASK WAS ASSIGNED TO, not
     // whoever pressed Complete. A supervisor closing out a task on the floor
@@ -123,6 +126,13 @@ export function fileCheckRecord(db, { form, check, wo, by, when, notes }) {
     // identity while the name is a label (D-074).
     const trainee = wo.assigned_to || by;
     const traineeId = wo.assigned_to_id || null;
+    // A passed in-app attempt already filed its record when it was graded;
+    // naming it here must not file a second one (D-158).
+    if (c.test_attempt_id) {
+      const at = db.prepare('SELECT record_id, score FROM training_test_attempts WHERE id = ?').get(c.test_attempt_id);
+      if (at?.record_id) return { kind: 'training', ids: [at.record_id], course: form.code || form.title, trainee, next_due: null };
+      if (at && c.score === null) c.score = at.score;
+    }
     const passed = c.score === null ? null : c.score >= (form.passing_score ?? 80);
     const rec = insertCompletion(db, {
       employee_name: trainee, employee_user_id: traineeId,

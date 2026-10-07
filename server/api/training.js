@@ -94,6 +94,12 @@ router.put('/courses/:id', (req, res) => {
     b.passing_score ?? existing.passing_score,
     b.active !== undefined ? (b.active ? 1 : 0) : existing.active,
     b.retrain_on_doc_change !== undefined ? (b.retrain_on_doc_change ? 1 : 0) : existing.retrain_on_doc_change, req.params.id);
+  // ONE PASS MARK (D-158). The course form and the test editor each kept one,
+  // and the grader read only the test's — so changing it on the course form
+  // changed the number on screen and nothing that was graded.
+  if (b.passing_score !== undefined && b.passing_score !== null) {
+    db.prepare('UPDATE training_tests SET passing_score = ? WHERE course_id = ? AND is_current = 1').run(b.passing_score, req.params.id);
+  }
   logAudit(req.user, 'training_course_updated', 'training_course', req.params.id, { title: b.title || existing.title }, null, null, b.title || existing.title);
   res.json(db.prepare('SELECT * FROM training_courses WHERE id = ?').get(req.params.id));
 });
@@ -421,18 +427,22 @@ router.put('/:id', (req, res) => {
   const b = req.body;
   const course_id = b.course_id !== undefined ? b.course_id : existing.course_id;
   const completion = b.completion_date !== undefined ? b.completion_date : existing.completion_date;
-  const next_due = dueDateFor(db, course_id, completion) ?? existing.next_due_date;
+  // A record whose result did not pass is `failed`, never `completed` (D-158):
+  // an edit cannot turn a fail into a line the matrix reads as trained.
+  const passedVal = b.passed !== undefined ? (b.passed ? 1 : 0) : existing.passed;
+  const status = (b.status || existing.status) === 'completed' && passedVal === 0 ? 'failed' : (b.status || existing.status);
+  const next_due = status === 'failed' ? null : (dueDateFor(db, course_id, completion) ?? existing.next_due_date);
   db.prepare(`UPDATE training_records SET employee_name=?, employee_id=?, employee_user_id=?, training_topic=?, course_id=?, sop_id=?,
     trainer=?, method=?, training_date=?, completion_date=?, status=?, passed=?, score=?, next_due_date=?,
     certificate_url=?, document_url=?, gdrive_url=?, notes=?, updated_at=datetime('now') WHERE id=?`).run(
     b.employee_name || existing.employee_name, b.employee_id ?? existing.employee_id, b.employee_user_id ?? existing.employee_user_id,
     b.training_topic ?? existing.training_topic, course_id, b.sop_id ?? existing.sop_id,
     b.trainer ?? existing.trainer, b.method ?? existing.method,
-    b.training_date || existing.training_date, completion, b.status || existing.status,
-    b.passed !== undefined ? (b.passed ? 1 : 0) : existing.passed, b.score ?? existing.score, next_due,
+    b.training_date || existing.training_date, completion, status,
+    passedVal, b.score ?? existing.score, next_due,
     b.certificate_url ?? existing.certificate_url, b.document_url ?? existing.document_url,
     b.gdrive_url ?? existing.gdrive_url, b.notes ?? existing.notes, req.params.id);
-  if ((b.status || existing.status) === 'completed') supersedeOlder(db, b.employee_name || existing.employee_name, course_id, req.params.id, b.employee_user_id ?? existing.employee_user_id ?? null);
+  if (status === 'completed') supersedeOlder(db, b.employee_name || existing.employee_name, course_id, req.params.id, b.employee_user_id ?? existing.employee_user_id ?? null);
   logAudit(req.user, 'training_updated', 'training', req.params.id, { employee_name: b.employee_name || existing.employee_name }, null, null, b.employee_name || existing.employee_name);
   res.json(db.prepare('SELECT * FROM training_records WHERE id = ?').get(req.params.id));
 });
@@ -689,7 +699,7 @@ router.put('/courses/:id/test', (req, res) => {
       .run(testId, req.params.id, version, title || `${course.title} Test`, passing_score ?? course.passing_score, sopRevision);
     const insQ = db.prepare('INSERT INTO training_questions (id, test_id, position, type, prompt, prompt_es, options, options_es, correct_answer, points) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     questions.forEach((q, i) => insQ.run(uuid(), testId, i, q.type || 'multiple_choice', q.prompt, q.prompt_es || null, JSON.stringify(q.options || []), JSON.stringify(q.options_es || []), String(q.correct_answer ?? ''), q.points ?? 1));
-    db.prepare("UPDATE training_courses SET has_test = 1, updated_at = datetime('now') WHERE id = ?").run(req.params.id);
+    db.prepare("UPDATE training_courses SET has_test = 1, passing_score = ?, updated_at = datetime('now') WHERE id = ?").run(passing_score ?? course.passing_score, req.params.id);
   });
   tx();
   logAudit(req.user, 'training_test_updated', 'training_course', req.params.id, { version }, null, null, course.title);

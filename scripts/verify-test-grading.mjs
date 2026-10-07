@@ -85,7 +85,7 @@ await D('POST', '/training/assign', { course_id: ALG.id, people: [{ user_id: 'tg
 wo = woFor(ALG.id, 'tg-op');
 const wrong = { ...words, [algQs[2].id]: algQs[2].options.find((o, i) => i !== Number(algQs[2].correct_answer)) };
 r = await J(await c('POST', `/pm/work-orders/${wo.id}/training-test`, { answers: wrong }, op.token));
-t('one wrong option is still wrong: 67%, not passed, question 3 named', r?.score === 67 && r?.passed === false && JSON.stringify(r?.missed) === '[3]', JSON.stringify(r));
+t('one wrong option is still wrong: 66% (rounded down), not passed, question 3 named', r?.score === 66 && r?.passed === false && JSON.stringify(r?.missed) === '[3]', JSON.stringify(r));
 const byPos = Object.fromEntries(algQs.map((x) => [x.id, x.type === 'multiple_choice' ? x.correct_answer : words[x.id]]));
 r = await J(await c('POST', `/pm/work-orders/${wo.id}/training-test`, { answers: byPos }, op.token));
 t('a caller that sends the option\'s POSITION is graded the same way', r?.score === 100 && r?.passed === true, JSON.stringify(r));
@@ -106,8 +106,84 @@ t('…and the plant\'s Spanish words for the right option count as the right opt
 r = await J(await c('POST', `/pm/work-orders/${wo.id}/training-test`, { answers: { [madeQs[0].id]: 'The bin', [madeQs[1].id]: '1' } }, op.token));
 t('the option reading "1" — the third, which the key names — passes', r?.passed === true, JSON.stringify(r));
 
+console.log('\n── D-158: the other faults in the same place ──');
+// The pass mark is decided on what was earned, never on a rounded-up score.
+const c13 = await J(await D('POST', '/training/courses', { code: 'TG-113', title: 'Thirteen Questions', has_test: true, passing_score: 85 }));
+await D('PUT', `/training/courses/${c13.id}/test`, { passing_score: 85, questions: Array.from({ length: 13 }, (_, i) => (
+  { type: 'multiple_choice', prompt: `Q${i + 1}`, options: ['right', 'wrong'], correct_answer: '0' })) });
+await D('POST', '/training/assign', { course_id: c13.id, people: [{ user_id: 'tg-op', name: 'Oscar Testtaker' }] });
+wo = woFor(c13.id, 'tg-op');
+const q13 = (await J(await c('GET', `/pm/work-orders/${wo.id}/training-test`, null, op.token))).questions;
+r = await J(await c('POST', `/pm/work-orders/${wo.id}/training-test`, { answers: Object.fromEntries(q13.map((x, i) => [x.id, i < 11 ? 'right' : 'wrong'])) }, op.token));
+t('11 of 13 is 84%, under an 85% pass mark — not rounded up into a pass', r?.score === 84 && r?.passed === false, JSON.stringify(r));
+
+// The same submission twice is one attempt.
+const before13 = q('SELECT COUNT(*) n FROM training_test_attempts WHERE course_id = ?', c13.id)[0].n;
+const again = await J(await c('POST', `/pm/work-orders/${wo.id}/training-test`, { answers: Object.fromEntries(q13.map((x, i) => [x.id, i < 11 ? 'right' : 'wrong'])) }, op.token));
+t('the same answers submitted again a moment later return the attempt already filed', again?.attempt_id === r.attempt_id
+  && q('SELECT COUNT(*) n FROM training_test_attempts WHERE course_id = ?', c13.id)[0].n === before13);
+
+// Short answer: whole words, not letters inside other words.
+const csa = await J(await D('POST', '/training/courses', { code: 'TG-SA', title: 'Short Answers', has_test: true, passing_score: 100 }));
+await D('PUT', `/training/courses/${csa.id}/test`, { passing_score: 100, questions: [
+  { type: 'short_answer', prompt: 'May a ring be worn on the line?', correct_answer: 'no' },
+  { type: 'short_answer', prompt: 'What comes before gloves?', correct_answer: 'hand washing' },
+] });
+await D('POST', '/training/assign', { course_id: csa.id, people: [{ user_id: 'tg-op', name: 'Oscar Testtaker' }] });
+wo = woFor(csa.id, 'tg-op');
+const qsa = (await J(await c('GET', `/pm/work-orders/${wo.id}/training-test`, null, op.token))).questions;
+r = await J(await c('POST', `/pm/work-orders/${wo.id}/training-test`, { answers: { [qsa[0].id]: "I don't know", [qsa[1].id]: 'Hand-washing, every time' } }, op.token));
+t('a short answer of "I don\'t know" is NOT the keyword "no"; "Hand-washing" IS "hand washing"', JSON.stringify(r?.missed) === '[1]', JSON.stringify(r));
+
+// A test edited while somebody is half way through is graded against what they saw.
+const cv = await J(await D('POST', '/training/courses', { code: 'TG-VER', title: 'Versioned', has_test: true, passing_score: 80 }));
+await D('PUT', `/training/courses/${cv.id}/test`, { passing_score: 80, questions: [{ type: 'multiple_choice', prompt: 'Old?', options: ['yes', 'no'], correct_answer: '0' }] });
+await D('POST', '/training/assign', { course_id: cv.id, people: [{ user_id: 'tg-op', name: 'Oscar Testtaker' }] });
+wo = woFor(cv.id, 'tg-op');
+const served = await J(await c('GET', `/pm/work-orders/${wo.id}/training-test`, null, op.token));
+await D('PUT', `/training/courses/${cv.id}/test`, { passing_score: 80, questions: [{ type: 'multiple_choice', prompt: 'New?', options: ['a', 'b'], correct_answer: '1' }] });
+r = await J(await c('POST', `/pm/work-orders/${wo.id}/training-test`, { answers: { [served.questions[0].id]: 'yes' }, test_id: served.test_id }, op.token));
+t('a test re-written mid-attempt grades the version that was on screen — not 0%', r?.score === 100 && r?.passed === true, JSON.stringify(r));
+
+// One pass mark: the course form moves the test's, and the test editor moves the course's.
+await D('PUT', `/training/courses/${cv.id}`, { passing_score: 60 });
+t('changing the pass mark on the course form changes what the test is graded against',
+  q('SELECT passing_score p FROM training_tests WHERE course_id = ? AND is_current = 1', cv.id)[0].p === 60);
+await D('PUT', `/training/courses/${cv.id}/test`, { passing_score: 70, questions: [{ type: 'multiple_choice', prompt: 'New?', options: ['a', 'b'], correct_answer: '1' }] });
+t('…and the test editor\'s pass mark is the course\'s', q('SELECT passing_score p FROM training_courses WHERE id = ?', cv.id)[0].p === 70);
+
+// A paper score under the pass mark does not close the training.
+await D('POST', '/training/assign', { course_id: ALG.id, people: [{ user_id: 'tg-op2', name: 'Paula Phonetest' }] });
+const paperWo = woFor(ALG.id, 'tg-op2');
+let res = await D('POST', `/pm/work-orders/${paperWo.id}/complete-and-recur`, { check: { score: 50 } });
+let body = await J(res);
+t('a supervisor recording a 50% paper test is told it is under the pass mark, and the task stays open',
+  res.status === 400 && /pass mark/.test(body?.error || '') && woFor(ALG.id, 'tg-op2').status === 'open', `${res.status} ${body?.error}`);
+// A completion naming somebody else's attempt, a failed one, or a made-up one is refused.
+const failedAttempt = q("SELECT id FROM training_test_attempts WHERE employee_user_id = 'tg-op' AND passed = 0 LIMIT 1")[0].id;
+res = await c('POST', `/pm/work-orders/${paperWo.id}/complete-and-recur`, { check: { test_attempt_id: 'made-up' } }, op2.token);
+t('naming a made-up test attempt does not close the training', res.status === 400 && woFor(ALG.id, 'tg-op2').status === 'open', String(res.status));
+res = await c('POST', `/pm/work-orders/${paperWo.id}/complete-and-recur`, { check: { test_attempt_id: failedAttempt } }, op2.token);
+t('…nor naming somebody else\'s failed one', res.status === 400 && woFor(ALG.id, 'tg-op2').status === 'open', String(res.status));
+
+// A fail recorded on the Training Records screen is not a completion and does not displace a pass.
+res = await D('POST', '/training', { employee_name: 'Oscar Testtaker', employee_user_id: 'tg-op', course_id: ALG.id, status: 'completed', passed: false, score: 40, completion_date: '2026-10-06' });
+const failRec = await J(res);
+t('a 40% filed by hand is filed as FAILED, with no retraining date', failRec?.status === 'failed' && !failRec?.next_due_date, JSON.stringify({ s: failRec?.status, d: failRec?.next_due_date }));
+const oscarPass = q("SELECT superseded FROM training_records WHERE employee_user_id = 'tg-op' AND course_id = ? AND status = 'completed'", ALG.id);
+t('…and Oscar\'s earlier pass is still the current record', oscarPass.length >= 1 && oscarPass.some((x) => x.superseded === 0));
+const person = await J(await D('GET', '/training/people/tg-op'));
+const alg = (person?.courses || person?.rows || []).find((x) => x.course_id === ALG.id);
+t('his training reads current on the person view, not undone by the fail', alg?.state === 'current', JSON.stringify(alg || person).slice(0, 200));
+
 console.log('\n── on the phone: tap the right answers on the seeded fire-safety test ──');
 await D('POST', '/training/assign', { course_id: SAF.id, people: [{ user_id: 'tg-op2', name: 'Paula Phonetest' }] });
+const ces = await J(await D('POST', '/training/courses', { code: 'TG-ES', title: 'Spanish Short', has_test: true, passing_score: 100 }));
+await D('PUT', `/training/courses/${ces.id}/test`, { passing_score: 100, questions: [
+  { type: 'multiple_choice', prompt: 'A spill of allergen powder?', prompt_es: '¿Un derrame de polvo alérgeno?',
+    options: ['Into the bin', 'Sweep it back', 'Report it'], options_es: ['Al bote', 'Barrerlo de vuelta'], correct_answer: '2' },
+] });
+await D('POST', '/training/assign', { course_id: ces.id, people: [{ user_id: 'tg-op2', name: 'Paula Phonetest' }] });
 const safWo = woFor(SAF.id, 'tg-op2');
 { const d1 = new Database(DBP); d1.prepare("UPDATE work_orders SET due_date = date('now') WHERE id = ?").run(safWo.id); d1.close(); }
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
@@ -132,6 +208,26 @@ try {
   t(`tapping all ${safQs.length} right answers reads PASSED`, res === 'passed', `${res} · missed ${missed} · ${await page.locator('[data-test-result]').innerText()}`);
   t('…with no question to look at again', !missed, String(missed));
   t('…and the task is closed', woFor(SAF.id, 'tg-op2').status === 'completed');
+
+  // A Spanish translation with fewer options than the question still offers every option.
+  {
+    const ces = q("SELECT id FROM training_courses WHERE code = 'TG-ES'")[0];
+    const esWo = woFor(ces.id, 'tg-op2');
+    const d3 = new Database(DBP); d3.prepare("UPDATE work_orders SET due_date = date('now') WHERE id = ?").run(esWo.id); d3.close();
+    await page.goto(`${URL}/?tab=operator`);
+    await page.locator('[data-complete-task]').first().waitFor({ timeout: 15000 });
+    const esCard = page.locator('div', { has: page.locator('text=Spanish Short') }).filter({ has: page.locator('[data-complete-task]') }).last();
+    await esCard.locator('[data-complete-task]').first().click();
+    await page.locator('[data-take-test]:visible').first().click();
+    await page.locator('[data-training-test]').waitFor();
+    await page.locator('[data-test-lang-btn="es"]').click();
+    const labels = await page.locator('[data-test-option]').allInnerTexts();
+    t('in Spanish, all three options are offered though only two were translated', labels.length === 3 && labels[0] === 'Al bote' && labels[2] === 'Report it', JSON.stringify(labels));
+    await page.locator('[data-test-option="2"]').click();
+    await page.locator('[data-test-submit]').click();
+    await page.locator('[data-test-result]').waitFor();
+    t('…and the third — the right answer, untranslated — passes', await page.locator('[data-test-result]').getAttribute('data-test-result') === 'passed');
+  }
 
   const p2 = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   await p2.goto(`${URL}/manifest.webmanifest`);
@@ -173,6 +269,15 @@ plant('tg-a3', 'tg-fail', 'Felix Wrongly', wrongAll, '2026-10-02 17:00:00');
 plant('tg-a4', 'tg-had', 'Hana Alreadydone', words, '2026-10-02 18:00:00');
 d2.prepare(`INSERT INTO training_records (id, employee_name, employee_user_id, training_topic, course_id, method, training_date, completion_date, status, passed, superseded)
   VALUES ('tg-rec-had', 'Hana Alreadydone', 'tg-had', ?, ?, 'classroom', '2026-10-04', '2026-10-04', 'completed', 1, 0)`).run(ALG.title, ALG.id);
+// D-158: a fail filed as a completion that pushed a real pass aside, and a
+// course whose pass mark disagrees with its test.
+mk2('tg-fx', 'Fiona Displaced');
+const FD = q("SELECT id, title FROM training_courses WHERE code = 'FD-101'")[0];
+d2.prepare(`INSERT INTO training_records (id, employee_name, employee_user_id, training_topic, course_id, method, training_date, completion_date, status, passed, score, superseded, created_at)
+  VALUES ('tg-fx-pass', 'Fiona Displaced', 'tg-fx', ?, ?, 'online_test', '2026-09-01', '2026-09-01', 'completed', 1, 100, 1, '2026-09-01 10:00:00')`).run(FD.title, FD.id);
+d2.prepare(`INSERT INTO training_records (id, employee_name, employee_user_id, training_topic, course_id, method, training_date, completion_date, status, passed, score, superseded, next_due_date, created_at)
+  VALUES ('tg-fx-fail', 'Fiona Displaced', 'tg-fx', ?, ?, 'paper', '2026-09-20', '2026-09-20', 'completed', 0, 40, 0, '2027-09-20', '2026-09-20 10:00:00')`).run(FD.title, FD.id);
+d2.prepare('UPDATE training_courses SET passing_score = 60 WHERE id = ?').run(FD.id);
 const recordsBefore = d2.prepare('SELECT COUNT(*) n FROM training_records').get().n;
 d2.close();
 
@@ -209,8 +314,15 @@ t('a person who already has a later completion gets no second one', q("SELECT CO
 t('nothing else was filed', q('SELECT COUNT(*) n FROM training_records')[0].n === recordsBefore + 1);
 t('each re-grade is audited with the score it had and the one it has', q("SELECT COUNT(*) n FROM audit_log WHERE action = 'regrade' AND details LIKE '%score_was%'")[0].n === 3);
 
+const fx = (id) => q('SELECT * FROM training_records WHERE id = ?', id)[0];
+t('a fail filed as a completion is now FAILED, with no retraining date', fx('tg-fx-fail').status === 'failed' && !fx('tg-fx-fail').next_due_date);
+t('…and the real pass it pushed aside is current again', fx('tg-fx-pass').superseded === 0);
+t('the course\'s pass mark is brought in line with the test it is graded against', q('SELECT passing_score p FROM training_courses WHERE id = ?', FD.id)[0].p === 80);
+t('the boot log names both repairs', /\[training-repair\] 1 result\(s\) below the pass mark/.test(one.log()) && /pass mark brought in line with its test: FD-101: 60% → 80%/.test(one.log()),
+  one.log().split('\n').filter((l) => /training-repair/.test(l)).join(' | ') || 'no line');
+
 const two = await reboot(BOOT2);
-t('a second boot changes nothing', two.ready && !/attempt\(s\) re-graded/.test(two.log()) && q('SELECT COUNT(*) n FROM training_records')[0].n === recordsBefore + 1,
+t('a second boot changes nothing', two.ready && !/attempt\(s\) re-graded|training-repair/.test(two.log()) && q('SELECT COUNT(*) n FROM training_records')[0].n === recordsBefore + 1,
   two.log().split('\n').filter((l) => /training-regrade/.test(l)).join(' | '));
 two.proc.kill('SIGKILL');
 

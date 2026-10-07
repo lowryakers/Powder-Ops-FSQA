@@ -205,6 +205,12 @@ export function missingForCheck(form, check) {
     if (form.has_test) {
       const scored = String(c.score ?? '').trim() !== '' && Number.isFinite(Number(c.score));
       if (!c.test_attempt_id && !scored) out.push({ key: 'score', label: 'The test result (take it here, or record the score)' });
+      // A SCORE UNDER THE PASS MARK DOES NOT COMPLETE THE TRAINING (D-158) —
+      // the same rule the in-app test follows, where the task stays open until
+      // a pass. It used to close the task and file the fail as "completed".
+      else if (!c.test_attempt_id && scored && Number(c.score) < Number(form.passing_score ?? 80)) {
+        out.push({ key: 'score', label: `A passing score — ${Number(c.score)}% is under the ${form.passing_score ?? 80}% pass mark, so the training stays open until it is passed` });
+      }
     } else if (!String(c.trainer || '').trim()) {
       out.push({ key: 'trainer', label: 'Who delivered the training' });
     }

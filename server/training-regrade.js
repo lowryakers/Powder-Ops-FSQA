@@ -23,7 +23,7 @@
 // that would LOWER a score is reported and never applied — a filed outcome is
 // only ever corrected in the direction the fault pushed it.
 
-import { questionResult, insertCompletion } from './training-records.js';
+import { questionResult, insertCompletion, scoreResults } from './training-records.js';
 import { plantDateOf } from './plant-clock.js';
 import { logAudit } from './db.js';
 
@@ -45,12 +45,12 @@ export function regradeFiledAttempts(db) {
     const questions = qStmt.all(a.test_id);
     if (!questions.length) continue;
     const results = questions.map((q, i) => questionResult(q, answers[q.id], i));
-    const earned = results.reduce((n, r) => n + (r.correct ? r.points : 0), 0);
-    const total = results.reduce((n, r) => n + r.points, 0);
-    const score = total ? Math.round((earned / total) * 100) : 0;
-    const passed = score >= (a.passing_score ?? 80);
-    if (score === a.score && (passed ? 1 : 0) === a.passed) continue;
-    if (score < (a.score ?? 0)) {
+    const { score, passed } = scoreResults(results, a.passing_score);
+    // D-158 rounds the score down where it used to round to the nearest, so a
+    // stored 67 now computes as 66 from the same answers. That is not a
+    // re-grade: the same verdict within a point is left exactly as filed.
+    if ((passed ? 1 : 0) === a.passed && Math.abs(score - (a.score ?? 0)) <= 1) continue;
+    if (score < (a.score ?? 0) || (a.passed && !passed)) {
       out.lowered_skipped++;
       console.warn(`[training-regrade] attempt ${a.id} would drop ${a.score}% → ${score}%; left as filed`);
       continue;
@@ -103,4 +103,64 @@ export function regradeFiledAttempts(db) {
     })();
   }
   return out;
+}
+
+/**
+ * A result below the pass mark filed as `completed` (D-158).
+ *
+ * The paper-score path, group sign-off with a score and a record edit all
+ * filed a fail as `completed` with `passed = 0`. The matrix read that as
+ * trained, and filing it superseded the person's real pass. Each is turned
+ * into what it is — `failed`, no retraining clock — and where it had pushed a
+ * genuine pass aside, the latest pass for that person and course is current
+ * again. Nothing is deleted and no pass is invented: a person with no passing
+ * record simply reads as not trained, which is the truth. Idempotent.
+ */
+export function repairFailedCompletions(db) {
+  const bad = db.prepare("SELECT * FROM training_records WHERE status = 'completed' AND passed = 0").all();
+  const out = { failed: bad.length, reinstated: 0, people: [] };
+  for (const r of bad) {
+    db.transaction(() => {
+      db.prepare("UPDATE training_records SET status = 'failed', next_due_date = NULL, updated_at = datetime('now') WHERE id = ?").run(r.id);
+      logAudit('system', 'update', 'training_record', r.id,
+        { for: r.employee_name, course: r.training_topic, score: r.score, reason: 'A result below the pass mark is not a completion (D-158)' },
+        { status: 'completed' }, { status: 'failed' }, r.training_topic);
+      if (!r.course_id) return;
+      const person = `(LOWER(employee_name) = LOWER(?) OR (? IS NOT NULL AND employee_user_id = ?))`;
+      const args = [r.course_id, r.employee_name, r.employee_user_id, r.employee_user_id];
+      const current = db.prepare(`SELECT 1 FROM training_records WHERE course_id = ? AND ${person}
+        AND superseded = 0 AND status = 'completed' AND COALESCE(passed, 1) = 1`).get(...args);
+      if (current) return;
+      const pass = db.prepare(`SELECT * FROM training_records WHERE course_id = ? AND ${person}
+        AND status = 'completed' AND COALESCE(passed, 1) = 1
+        ORDER BY COALESCE(completion_date, training_date) DESC, created_at DESC LIMIT 1`).get(...args);
+      if (!pass) return;
+      db.prepare("UPDATE training_records SET superseded = 0, updated_at = datetime('now') WHERE id = ?").run(pass.id);
+      out.reinstated++;
+      out.people.push(`${pass.employee_name} — ${pass.training_topic} (${pass.completion_date})`);
+      logAudit('system', 'reinstate', 'training_record', pass.id,
+        { for: pass.employee_name, course: pass.training_topic, displaced_by: r.id, reason: 'Superseded by a failed result filed as a completion (D-158)' },
+        null, null, pass.training_topic);
+    })();
+  }
+  return out;
+}
+
+/**
+ * One pass mark per course (D-158). The course form and the test editor each
+ * kept one and the grader read only the test's. Where they disagree, the
+ * TEST's number wins — it is the one every attempt on file was graded
+ * against — and the course is brought into line. Reported by name.
+ */
+export function alignPassMarks(db) {
+  const rows = db.prepare(`SELECT c.id, c.code, c.title, c.passing_score AS course_mark, t.passing_score AS test_mark
+    FROM training_courses c JOIN training_tests t ON t.course_id = c.id AND t.is_current = 1
+    WHERE t.passing_score IS NOT NULL AND (c.passing_score IS NULL OR c.passing_score != t.passing_score)`).all();
+  for (const r of rows) {
+    db.prepare("UPDATE training_courses SET passing_score = ?, updated_at = datetime('now') WHERE id = ?").run(r.test_mark, r.id);
+    logAudit('system', 'update', 'training_course', r.id,
+      { pass_mark_was: r.course_mark, pass_mark: r.test_mark, reason: 'The course form showed a pass mark the test was not graded against (D-158)' },
+      { passing_score: r.course_mark }, { passing_score: r.test_mark }, r.title);
+  }
+  return rows.map(r => `${r.code || r.title}: ${r.course_mark}% → ${r.test_mark}%`);
 }

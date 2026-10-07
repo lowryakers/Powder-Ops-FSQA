@@ -3750,6 +3750,14 @@ verify's test keys as positions, the way the app writes them**; keys written as 
 version taken; a new pass files its completion dated the test day (first passing attempt only, never over a later
 completion) and closes the training task as of then. Never lowers a score. `verify:testgrading` (32; control fails 24).
 
+## A fail is never a completion, and there is one pass mark (D-158)
+`insertCompletion` files a result below the pass mark as `failed` (no clock, supersedes nothing); the matrix reads
+only passing completions; `repairFailedCompletions` + `alignPassMarks` (boot) fix rows on file. `scoreResults()` is
+the one score rule and rounds DOWN. A typed score under the pass mark is refused by `missingForCheck`; a completion
+naming a test attempt needs a PASSED attempt by the assignee. The course form and the test editor write the same
+pass mark. The test is graded against the `test_id` it was served. Spanish labels fall back per option. Short
+answers match whole words. Dates are `plantDateOf()`. Identical resubmission within 2 min = one attempt.
+
 ## A forklift certification is TWO halves and a certificate (D-098)
 `server/practical-evaluations.js` (the form, PURE), `training_practical_evaluations` (db.js),
 `server/training-certification.js` (the DERIVED answer), `server/certificate-pdf.js`, the routes on

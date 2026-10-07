@@ -134,7 +134,7 @@ import { generationSweep } from './server/pm-generation.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
 import { seedProductionEntries, seedEodTemplates } from './server/production-seed.js';
 import { seedTrainingCourses, seedWorkInstructionCourses } from './server/training-seed.js';
-import { regradeFiledAttempts } from './server/training-regrade.js';
+import { regradeFiledAttempts, repairFailedCompletions, alignPassMarks } from './server/training-regrade.js';
 import { seedReferenceLibrary } from './server/reference-seed.js';
 import { seedCertifications } from './server/cert-seed.js';
 import { importPaperInternalAudits } from './server/internal-audit-import.js';
@@ -1293,6 +1293,14 @@ try {
   if (r.regraded) console.log(`[training-regrade] ${r.regraded} attempt(s) re-graded, ${r.now_passed} now passed, ${r.records_filed} completion(s) filed, ${r.tasks_closed} task(s) closed${r.people.length ? ': ' + r.people.join('; ') : ''}`);
   if (r.lowered_skipped) console.warn(`[training-regrade] ${r.lowered_skipped} attempt(s) would score LOWER and were left as filed`);
 } catch (e) { console.warn('[training-regrade] skipped:', e.message); }
+// A fail filed as a completion, and a course pass mark the test was not graded
+// against (D-158). Both idempotent; both name what they changed.
+try {
+  const f = repairFailedCompletions(db);
+  if (f.failed) console.log(`[training-repair] ${f.failed} result(s) below the pass mark were filed as completions — now 'failed'; ${f.reinstated} earlier pass(es) current again${f.people.length ? ': ' + f.people.join('; ') : ''}`);
+  const m = alignPassMarks(db);
+  if (m.length) console.log(`[training-repair] course pass mark brought in line with its test: ${m.join('; ')}`);
+} catch (e) { console.warn('[training-repair] skipped:', e.message); }
 
 // Seed the standard training course catalog + starter tests, then the plant's
 // own Work Instruction courses. The second call must come after the first and

@@ -1215,7 +1215,23 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
     // a typed score is a self-reported result beside a graded one — refused.
     // The test route closes the task by itself on a pass; a typed score is for
     // somebody else recording a test taken on paper FOR the trainee.
-    if (checkForm.kind === 'training' && checkForm.has_test && !String(req.body.check?.test_attempt_id || '').trim()) {
+    // A TEST ATTEMPT NAMED ON A COMPLETION MUST BE A PASS, BY THIS PERSON, OF
+    // THIS COURSE (D-158). Naming any attempt id — a failed one, somebody
+    // else's, or a made-up string — used to satisfy the check and close the
+    // training task, which skipped both the test and the self-score refusal.
+    const attemptId = String(req.body.check?.test_attempt_id || '').trim();
+    if (checkForm.kind === 'training' && attemptId) {
+      const at = db.prepare('SELECT * FROM training_test_attempts WHERE id = ?').get(attemptId);
+      const same = at && at.course_id === existing.training_course_id
+        && ((existing.assigned_to_id && at.employee_user_id === existing.assigned_to_id)
+          || (existing.assigned_to && String(at.employee_name || '').toLowerCase() === existing.assigned_to.toLowerCase()));
+      if (!same || !at.passed) {
+        return res.status(400).json({ error: !same
+          ? 'That test attempt is not this person\'s attempt at this course.'
+          : `That attempt scored ${at.score}% and did not pass — the training stays open until a test is passed.` });
+      }
+    }
+    if (checkForm.kind === 'training' && checkForm.has_test && !attemptId) {
       const u = req.user || {};
       const own = (existing.assigned_to_id && existing.assigned_to_id === u.id)
         || (existing.assigned_to && u.name && existing.assigned_to.toLowerCase() === String(u.name).toLowerCase());
@@ -1678,7 +1694,7 @@ router.get('/work-orders/:id/training-test', (req, res) => {
       options: safeParse(q.options) || [], options_es: safeParse(q.options_es) || [],
     }));
   res.json({
-    course: { id: wo.training_course_id, ...course }, title: test.title,
+    course: { id: wo.training_course_id, ...course }, title: test.title, test_id: test.id,
     passing_score: test.passing_score ?? 80, for: wo.assigned_to, questions,
   });
 });
@@ -1697,6 +1713,8 @@ router.post('/work-orders/:id/training-test', (req, res) => {
     employee_name: wo.assigned_to,
     employee_user_id: wo.assigned_to_id || null,
     answers: req.body?.answers,
+    // The version that was on screen (D-158), not whichever is current now.
+    test_id: req.body?.test_id || null,
   });
   if (out.error) return res.status(404).json({ error: out.error });
 
