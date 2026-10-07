@@ -134,6 +134,7 @@ import { generationSweep } from './server/pm-generation.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
 import { seedProductionEntries, seedEodTemplates } from './server/production-seed.js';
 import { seedTrainingCourses, seedWorkInstructionCourses } from './server/training-seed.js';
+import { regradeFiledAttempts } from './server/training-regrade.js';
 import { seedReferenceLibrary } from './server/reference-seed.js';
 import { seedCertifications } from './server/cert-seed.js';
 import { importPaperInternalAudits } from './server/internal-audit-import.js';
@@ -1282,6 +1283,16 @@ try {
 // has decided which version to serve.
 runControlledSync(db).catch(err =>
   console.error('[controlled] sync failed (non-fatal):', err.message));
+
+// Test attempts graded wrong before D-157 (multiple choice compared the option
+// position with the option's words): re-graded from the answers given. A pass
+// files its completion dated the day of the test and closes the task it
+// answered. Idempotent — an attempt that already agrees is left alone.
+try {
+  const r = regradeFiledAttempts(db);
+  if (r.regraded) console.log(`[training-regrade] ${r.regraded} attempt(s) re-graded, ${r.now_passed} now passed, ${r.records_filed} completion(s) filed, ${r.tasks_closed} task(s) closed${r.people.length ? ': ' + r.people.join('; ') : ''}`);
+  if (r.lowered_skipped) console.warn(`[training-regrade] ${r.lowered_skipped} attempt(s) would score LOWER and were left as filed`);
+} catch (e) { console.warn('[training-regrade] skipped:', e.message); }
 
 // Seed the standard training course catalog + starter tests, then the plant's
 // own Work Instruction courses. The second call must come after the first and

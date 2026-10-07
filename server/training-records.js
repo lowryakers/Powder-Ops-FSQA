@@ -129,20 +129,59 @@ export function gradeTestAttempt(db, { course_id, employee_name, employee_user_i
  * One question graded: the given answer against the key. ONE rule, used by the
  * grader and by the review of an attempt filed before results were frozen.
  * Short answer is a keyword match: correct when the expected text appears.
+ *
+ * A MULTIPLE-CHOICE KEY IS THE OPTION'S POSITION (D-157) — `"2"` — in the
+ * seeds, the course editor and the AI generator alike, while the test screen
+ * sends the WORDS of the option that was tapped (the English words, whatever
+ * language the label was shown in). Comparing the two strings marked every
+ * multiple-choice answer wrong, so every test read "not passed". Both sides
+ * are resolved to an option POSITION here and compared as positions: a
+ * caller sending the position still works, a key written as the option's
+ * words still works, and an option whose words are themselves a number
+ * ("2") is matched as words before it is read as a position.
  */
+const optionList = (v) => {
+  if (Array.isArray(v)) return v;
+  try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch { return []; }
+};
+const norm = (v) => String(v ?? '').trim().toLowerCase();
+const isIndex = (v, n) => /^\d+$/.test(v) && Number(v) < n;
+
+/** Which option a value names: its words (English or the plant's Spanish) first, then a position. */
+function optionIndexOf(value, options, optionsEs) {
+  const v = norm(value);
+  if (!v) return null;
+  let i = options.findIndex((o) => norm(o) === v);
+  if (i >= 0) return i;
+  i = optionsEs.findIndex((o) => norm(o) === v);
+  if (i >= 0) return i;
+  return isIndex(v, options.length) ? Number(v) : null;
+}
+
 export function questionResult(q, given, index) {
   const correctRaw = String(q.correct_answer ?? '').trim();
   const correct = correctRaw.toLowerCase();
   const g = given === undefined || given === null ? '' : String(given).trim();
+  const options = optionList(q.options);
+  const optionsEs = optionList(q.options_es);
   let ok = false;
-  if (g !== '') {
+  let expected = correctRaw || null;
+  if (q.type === 'multiple_choice' && options.length) {
+    // The key: a position when it is one, otherwise the words of an option.
+    const keyIdx = isIndex(correct, options.length) ? Number(correct) : optionIndexOf(correctRaw, options, optionsEs);
+    if (keyIdx !== null) expected = String(options[keyIdx] ?? correctRaw);
+    if (g !== '') {
+      const gotIdx = optionIndexOf(g, options, optionsEs);
+      ok = keyIdx !== null && gotIdx !== null ? gotIdx === keyIdx : g.toLowerCase() === correct;
+    }
+  } else if (g !== '') {
     ok = q.type === 'short_answer' ? (!!correct && g.toLowerCase().includes(correct)) : g.toLowerCase() === correct;
   }
   return {
     // The number the trainee saw: questions are served in position order and
     // shown as "3 of 20", so it is the index, not the stored position.
     question_id: q.id, number: index + 1,
-    prompt: q.prompt, type: q.type, given: g || null, expected: correctRaw || null,
+    prompt: q.prompt, type: q.type, given: g || null, expected,
     correct: ok, points: Number(q.points) || 0,
   };
 }

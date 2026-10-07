@@ -6508,3 +6508,31 @@ instead of jumping inside the installed app.
   outside link with the same `?c=` shape staying outside; in `verify:all`). **Control — `main` — fails 10**, the
   decisive one `opened http://127.0.0.1:5075/` — the reported symptom. The landing failed intermittently (1 in 3)
   before `holdJump`; 5 consecutive runs green after.
+
+## D-157 — A multiple-choice answer is graded by which option it is, and the attempts already filed are re-graded (2026-10-07)
+Reported by Daniela: she took ALG-101 tapping every right answer and was told 33%, "questions to look at again:
+1, 3" — and every row under Training → Test answers read "not passed".
+- **Cause: the key and the answer were written in two different shapes.** A multiple-choice key is the option's
+  POSITION (`"2"`) — in the seeds, the course editor and the AI generator alike. The test screen
+  (`TrainingTest.jsx`, since the in-task test shipped) sends the option's WORDS, the English ones, so a Spanish
+  reader is graded against the English key. `questionResult` compared the two strings, so **every multiple-choice
+  answer was wrong** and only true/false could ever score; ALG-101 is MC · T/F · MC, hence 33% and 1, 3.
+- **Why no verify caught it: the earlier verifies wrote their keys as WORDS** (`correct_answer: 'After a break'`),
+  the one shape nothing in the app writes — or sent positions straight to the API, which the screen never does.
+  Both passed over the fault. `verify:testgrading` takes the real seeded tests the way the screen sends them.
+- **Fixed in the ONE grader** (`questionResult`, server/training-records.js): both sides resolve to an option
+  POSITION and are compared as positions. An answer is matched as the option's words (English, or the plant's
+  `options_es`) first and read as a position only if no option has those words — so an option that reads "2" is
+  that option, not the third one. A key written as words still works. `expected` now reports the option's words.
+- **The attempts already on file are re-graded, not retaken** (`server/training-regrade.js`, every boot,
+  idempotent by construction). Nothing is invented: each attempt keeps the answers the person actually gave, and
+  they are graded again against the questions of the test VERSION that was taken (an edit makes a new version and
+  keeps the old questions). An attempt that now passes files what the day would have filed — the completion
+  **dated the day of the test**, the training task it answered **closed as of that moment** — both saying they
+  came from a re-grade. **One completion per person per course, from the first passing attempt**: later ones were
+  retakes the fault sent them back for. None where a completion on or after that day is already on file. A
+  re-grade that would LOWER a score is reported and never applied. Each change is audited (`regrade`) with the
+  score it had and the one it has; the boot log names the people.
+- `verify:testgrading` (32, live + browser at 390 and 1280 + two reboots; in `verify:all`). **Control — `main` —
+  fails 24**, the first reading `score 33, missed [1,3]` on the seeded ALG-101: Daniela's screen exactly.
+  `verify:trainingtest` (21), `verify:trainingassign` (94), `verify:forkliftcert` (61) unchanged and green.

@@ -3741,6 +3741,15 @@ NUMBERS, never answers. `assignTraining` reads back the account the trigger reso
 "no task list"). Org Chart: each unplaced person is a button into Add Position. `verify:trainingtest` (21;
 control fails 4 then stops).
 
+## A multiple-choice answer is graded by WHICH option it is (D-157)
+The key is the option's POSITION (`"2"`: seeds, course editor, AI generator); the test screen sends the option's
+English WORDS. `questionResult` (server/training-records.js) resolves both to a position — words first (English or
+`options_es`), a position only if no option has those words — so every MC answer stopped reading wrong. **Write a
+verify's test keys as positions, the way the app writes them**; keys written as words hid this for weeks.
+`server/training-regrade.js` (every boot, idempotent) re-grades filed attempts from their own answers against the
+version taken; a new pass files its completion dated the test day (first passing attempt only, never over a later
+completion) and closes the training task as of then. Never lowers a score. `verify:testgrading` (32; control fails 24).
+
 ## A forklift certification is TWO halves and a certificate (D-098)
 `server/practical-evaluations.js` (the form, PURE), `training_practical_evaluations` (db.js),
 `server/training-certification.js` (the DERIVED answer), `server/certificate-pdf.js`, the routes on
