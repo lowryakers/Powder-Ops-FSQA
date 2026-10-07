@@ -6484,3 +6484,27 @@ said she had entered it, and the office packet showed it missing too. **And the 
 - `verify:onboardingedit` (34, live + browser at 390 and 1280; in `verify:all`). **Control — `main` — fails 4
   and cannot continue.** `verify:onboardingui` picks the state from the list now (57/57); `verify:onboarding`
   105/105 unchanged.
+
+## D-156 — A link back into ReadyDoc opens in the app it is read in, on whichever address that is (2026-10-07)
+Reported: a "remind me" reminder arrives in ReadyBot on time, and tapping **Open the message** opens the browser
+instead of jumping inside the installed app.
+- **Cause: one server, several addresses, and a renderer that knew only one of them.** The reminder link is built
+  from `READYDOC_ORIGIN` (app.powder-ops.com since D-140). The same server also answers on Railway's own domain —
+  where every home-screen install made before D-140 lives — and on the launcher host. `parseAppLink` in
+  `CommsView.jsx` treated a link as in-app only when its origin equalled `window.location.origin`, so in an app
+  on any other address it drew an outside `<a target=_blank>`, and the phone opened a browser.
+- **The server names its addresses; the client never guesses a pattern.** `appOrigins()` in `server/links.js`
+  (READYDOC_ORIGIN, the Railway default origin, APP_BASE_URL, RAILWAY_PUBLIC_DOMAIN when set) rides on
+  `/comms/status` as `app_origins`. `src/lib/appOrigins.js` remembers it in localStorage so a cold start knows it
+  before the first render; a link drawn before it arrived is **decided again at the click**. A shared-hosting
+  suffix (`*.up.railway.app`) is everybody's, never ours, and is not matched. Every ReadyBot `?c=` / `?tab=` link
+  is covered, not just reminders.
+- **Found on the way, and pre-existing: a jump to a message could be undone by the scroll before it.** Opening a
+  channel scrolls to the bottom; that scroll's event arrives a frame later, after the jump has unpinned, and
+  re-pinned — so the next content resize pulled the reader back to the latest. The same jump serves push
+  notifications. `holdJump()`: for 1.5 s after a jump a scroll may unpin but never re-pin; Jump to latest clears it.
+- `verify:reminderlink` (18, live: a real reminder through the real minute loop, read in a browser on `localhost`
+  while the link names `127.0.0.1` — same server, two addresses; at 390 and 1280, incl. the cold start and an
+  outside link with the same `?c=` shape staying outside; in `verify:all`). **Control — `main` — fails 10**, the
+  decisive one `opened http://127.0.0.1:5075/` — the reported symptom. The landing failed intermittently (1 in 3)
+  before `holdJump`; 5 consecutive runs green after.

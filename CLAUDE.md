@@ -5927,6 +5927,15 @@ status accepted at create, and every due/overdue count excludes out_of_service. 
 check still counts an out-of-service instrument on an active CCP on purpose** — that's a genuine gap,
 not noise. Recording a calibration flips the instrument back to active (existing behavior).
 
+## A link back into ReadyDoc opens in the app, on whichever address it runs on (D-156)
+The server answers on app.powder-ops.com, Railway's own domain (pre-D-140 home-screen installs) and the launcher
+host. **Never test an in-app link against `window.location.origin` alone** — use `isAppOrigin()`
+(`src/lib/appOrigins.js`), fed by `appOrigins()` in `server/links.js` via `app_origins` on `/comms/status` and
+remembered in localStorage; a link drawn before the list arrived is re-decided at the click (`inAppOnClick`).
+No hosting-suffix patterns. **`holdJump()`** in CommsView: after jumping to a message, a scroll may unpin but not
+re-pin for 1.5 s — the late scroll event from opening the channel used to drag the reader back to the bottom.
+`verify:reminderlink` (18; control fails 10).
+
 ## A dropdown inside a card or a scroller must not be a child of it (`MenuPortal`)
 The message 3-dot menu was an absolutely-positioned child of the message row, so **any** ancestor with
 overflow clipped it. In the Threads inbox there are two — the card (`overflow-hidden`, for its rounded

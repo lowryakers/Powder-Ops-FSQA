@@ -15,7 +15,7 @@ import { isClientChannel, CLIENT_PREFIX } from '../../shared/client-channels.js'
 import { importSlackExport, previewSlackExport } from '../slack-import.js';
 import { requireRole } from '../middleware/auth.js';
 import { getType } from '../qms-config.js';
-import { readyDocOrigin } from '../links.js';
+import { readyDocOrigin, appOrigins } from '../links.js';
 
 const router = Router();
 
@@ -88,7 +88,7 @@ const zipUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 
 
 // Feature flags for the client (uploads / semantic / ask require optional config).
 router.get('/status', (_req, res) => {
-  res.json({ storage: storageEnabled(), semantic: voyageEnabled(), ask: aiEnabled() && voyageEnabled(), translate: aiEnabled(), push: pushEnabled() });
+  res.json({ storage: storageEnabled(), semantic: voyageEnabled(), ask: aiEnabled() && voyageEnabled(), translate: aiEnabled(), push: pushEnabled(), app_origins: appOrigins() });
 });
 
 // ── Web push subscriptions (Phase 5d) ─────────────────────────────────────────

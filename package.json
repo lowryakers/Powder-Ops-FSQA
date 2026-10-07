@@ -114,6 +114,7 @@
     "verify:stalechunk": "node scripts/verify-stale-chunk.mjs",
     "verify:outofcal": "node scripts/verify-out-of-calibration.mjs",
     "verify:onboardingedit": "node scripts/verify-onboarding-edit.mjs",
+    "verify:reminderlink": "VERIFY_ONLY=verify-reminder-link.mjs node scripts/verify-all.mjs",
     "verify:trainingtest": "node scripts/verify-training-test.mjs",
     "verify:productionruns": "node scripts/verify-production-runs.mjs",
     "verify:apdropvendor": "node scripts/verify-ap-drop-vendor.mjs",

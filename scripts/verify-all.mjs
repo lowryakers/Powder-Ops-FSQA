@@ -121,6 +121,8 @@ const RUNS = [
   ['verify-stale-chunk.mjs', 5070, {}, false],
   ['verify-out-of-calibration.mjs', 5072, {}, false],
   ['verify-onboarding-edit.mjs', 5074, {}, false],
+  // Same server on two addresses: the link names 127.0.0.1, the browser reads localhost (D-156).
+  ['verify-reminder-link.mjs', 5075, { READYDOC_ORIGIN: 'http://127.0.0.1:5075' }, false],
   ['verify-training-test.mjs', 5058, {}, false],
   ['verify-production-runs.mjs', 5059, {}, false],
   ['verify-ap-drop-vendor.mjs', 5062, {}, false],

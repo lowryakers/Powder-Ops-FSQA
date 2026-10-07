@@ -24,6 +24,7 @@ import ActivityView from './ActivityView.jsx';
 import { replaceShortcodes, PICKER_GROUPS, EMOJI_INDEX } from '../../utils/emoji.js';
 import { looksLikeTask, suggestTitle, mentionedUsers, teamForChannel } from '../../lib/taskIntent.js';
 import { isClientChannel } from '../../../shared/client-channels.js';
+import { isAppOrigin, rememberAppOrigins } from '../../lib/appOrigins.js';
 
 // VAPID public key (base64url) → Uint8Array for PushManager.subscribe.
 // The reverse trip: a live subscription reports its applicationServerKey as an
@@ -55,17 +56,31 @@ const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // Links that point back into ReadyDoc — reminder DMs from ReadyBot, module
 // cross-links — should navigate INSIDE the app rather than reloading the site.
 // Recognizes ?c=<channel>[&m=<message>] (jump to a conversation) and
-// ?tab=<module> (open a module), on our own origin only.
+// ?tab=<module> (open a module), on ANY address this app answers on — not just
+// the one this window happens to be on (D-156): the link names the branded
+// origin, and an app installed on the Railway domain is still this app.
 function parseAppLink(href) {
   let u;
   try { u = new URL(href, window.location.origin); } catch { return null; }
-  if (u.origin !== window.location.origin) return null;
+  if (!isAppOrigin(u.origin)) return null;
   const channelId = u.searchParams.get('c');
   const messageId = u.searchParams.get('m');
   const tab = u.searchParams.get('tab');
   if (channelId) return { kind: 'channel', channelId, messageId, label: messageId ? 'Open the message' : 'Open the conversation' };
   if (tab) return { kind: 'tab', tab, label: 'Open in ReadyDoc' };
   return null;
+}
+// A link rendered before the app's addresses were known (a cold start with
+// nothing remembered) is decided again at the click, so it still opens in the
+// app rather than in the browser.
+function inAppOnClick(href) {
+  return (e) => {
+    const link = parseAppLink(href);
+    if (!link) return;
+    e.preventDefault();
+    e.stopPropagation();
+    openAppLink(link);
+  };
 }
 function openAppLink(link) {
   if (link.kind === 'channel') {
@@ -157,6 +172,7 @@ function renderInline(s, users, me, keyBase = '') {
         );
       } else {
         out.push(<a key={key()} href={href} target="_blank" rel="noopener noreferrer"
+          onClick={inAppOnClick(href)}
           className="text-powder-700 underline hover:text-powder-800">{label}</a>);
       }
       last = m.index + tok.length;
@@ -182,7 +198,7 @@ function renderInline(s, users, me, keyBase = '') {
         last = m.index + m[0].length;
         continue;
       }
-      out.push(<a key={key()} href={tok} target="_blank" rel="noopener noreferrer" className="text-powder-700 underline break-all hover:text-powder-800">{tok}</a>);
+      out.push(<a key={key()} href={tok} target="_blank" rel="noopener noreferrer" onClick={inAppOnClick(tok)} className="text-powder-700 underline break-all hover:text-powder-800">{tok}</a>);
       if (trail) out.push(trail);
       last = m.index + m[0].length;
       continue;
@@ -2337,6 +2353,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   const { data: channels, refresh: refreshChannels } = useApiGet('/comms/channels');
   const { data: users } = useApiGet('/users');
   const { data: commsStatus } = useApiGet('/comms/status');
+  useEffect(() => { rememberAppOrigins(commsStatus?.app_origins); }, [commsStatus]);
   // An outside account: a client coordinating production with us. The server
   // is the authority (`users.is_external`); this only decides what is OFFERED.
   const isExternal = !!user?.is_external;
@@ -2799,6 +2816,14 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   // channels kept opening on old messages. Scrolling up unpins (reading
   // history); scrolling back near the bottom re-pins.
   const pinnedRef = useRef(true);
+  // A JUMP TO A SPOT MUST NOT BE UNDONE BY THE SCROLL THAT PRECEDED IT (D-156).
+  // Opening a channel scrolls to the bottom; that scroll's event is delivered a
+  // frame later, AFTER the jump has unpinned, and re-pinned the view — so the
+  // next content resize (an image, a highlight) pulled a reader who tapped
+  // "Open the message" or a notification back down to the latest. For a
+  // moment after a jump, a scroll may unpin but never re-pin.
+  const jumpHoldRef = useRef(0);
+  const holdJump = () => { pinnedRef.current = false; jumpHoldRef.current = Date.now() + 1500; };
   useEffect(() => {
     // When this channel is opening at its New divider, the pin must start OFF
     // — the ResizeObserver below pins on every content resize while it's on,
@@ -2825,6 +2850,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
       return;
     }
     setShowJump(true);
+    holdJump();
     requestAnimationFrame(() => {
       document.querySelector(`[data-mid="${first.id}"]`)?.scrollIntoView({ block: 'start' });
     });
@@ -2847,10 +2873,11 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   const onMessagesScroll = () => {
     const el = scrollRef.current; if (!el) return;
     const fromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    pinnedRef.current = fromBottom < 120;
+    pinnedRef.current = fromBottom < 120 && Date.now() >= jumpHoldRef.current;
     setShowJump(fromBottom > 240);
   };
   const jumpToLatest = () => {
+    jumpHoldRef.current = 0;
     pinnedRef.current = true;
     const el = scrollRef.current; if (el) el.scrollTop = el.scrollHeight;
     setShowJump(false);
@@ -3208,7 +3235,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     const inList = messages.find(x => x.id === mid);
     const finish = (targetId) => {
       pendingMsgRef.current = null;
-      pinnedRef.current = false; // we're navigating to a specific spot, not the bottom
+      holdJump(); // we're navigating to a specific spot, not the bottom
       setHighlightId(targetId);
       requestAnimationFrame(() => {
         document.querySelector(`[data-mid="${targetId}"]`)?.scrollIntoView({ block: 'center' });

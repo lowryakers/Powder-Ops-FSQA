@@ -48,12 +48,43 @@ export function normalizeOrigin(raw, fallback) {
   return withScheme.replace(/\/+$/, '');
 }
 
+// Railway's own domain for this service: the default origin, and where the
+// home-screen installs made before D-140 still live.
+export const RAILWAY_DEFAULT_ORIGIN = 'https://powderops-fsqa.up.railway.app';
+
 export function appBaseUrl() {
   return normalizeOrigin(process.env.APP_BASE_URL, 'https://start.powder-ops.com');
 }
 
 export function readyDocOrigin() {
-  return normalizeOrigin(process.env.READYDOC_ORIGIN, 'https://powderops-fsqa.up.railway.app');
+  return normalizeOrigin(process.env.READYDOC_ORIGIN, RAILWAY_DEFAULT_ORIGIN);
+}
+
+/**
+ * EVERY ADDRESS THIS APP ANSWERS ON (D-156).
+ *
+ * The same server is reachable on the branded origin, on Railway's own domain
+ * (where every home-screen install made before D-140 still lives), and on the
+ * launcher host, which forwards any deep link into the app. A link a ReadyBot
+ * message carries names ONE of them; the phone reading it may be on another.
+ * Comparing the link to `window.location.origin` alone therefore sent an
+ * "Open the message" from app.powder-ops.com out to the browser from an app
+ * installed on the Railway domain. The client asks this list instead.
+ *
+ * Only addresses this deployment is configured with, never a pattern: a shared
+ * hosting suffix (`*.up.railway.app`) is everybody's, not ours.
+ */
+export function appOrigins() {
+  const out = [readyDocOrigin(), RAILWAY_DEFAULT_ORIGIN, appBaseUrl()];
+  if (process.env.RAILWAY_PUBLIC_DOMAIN) out.push(normalizeOrigin(process.env.RAILWAY_PUBLIC_DOMAIN));
+  const seen = new Set();
+  return out.filter(o => {
+    let origin;
+    try { origin = new URL(o).origin; } catch { return false; }
+    if (seen.has(origin)) return false;
+    seen.add(origin);
+    return true;
+  }).map(o => new URL(o).origin);
 }
 
 /**
