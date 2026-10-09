@@ -402,6 +402,18 @@ limit), `authenticateToken` in `middleware/auth.js`, `server/middleware/no-token
 - A token's message: membership holds, there is no `@channel`/`@here`/`@everyone`, and it cannot create a
   channel. A token's NFP is always a draft. `check:botapi` (57; control fails 18).
 
+## The bots' MCP server and the post-deploy smoke test (D-163)
+`packages/readydoc-mcp` (stdio, `bin.mjs` + `src/routes.mjs` + `src/client.mjs`) and `scripts/smoke-bot-api.mjs`
+(`npm run smoke:botapi`).
+- **Local stdio only, and the REST surface only.** The package never imports server code; Railway is untouched.
+- **`src/routes.mjs` is a COPY of `BOT_ROUTES`.** A route added to the surface needs a tool there too, or
+  `check:botmcp` fails. No tool name may match `/approve|decide|release|sign|send/`.
+- **A writing tool sends only its declared `body` fields.**
+- **The smoke test revokes in `finally` and writes nothing else.** Its approve attempts use ids that do not
+  exist (the guard refuses on the path).
+- `check:botmcp` (32). CI runs `npm ci --prefix packages/readydoc-mcp` and sets `BOTMCP_REQUIRE_STDIO=1`.
+  Locally, the stdio half skips until the SDK is installed.
+
 ## Revoking access reaches the sessions it already opened (D-072)
 `revokeSessions(db, userId, { keepToken, devices })` in `api/sessions.js` is the ONE helper; Settings
 deactivation, `end-access`, the auditor-pass revoke and the pass reactivation path all call it. It deletes the

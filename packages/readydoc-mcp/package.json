@@ -1,0 +1,18 @@
+{
+  "name": "readydoc-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for ReadyDoc's bot API: read the catalog, panels, artwork, procurement, messages, AP Drop and partner reconciliation, file draft panels and post messages. Never approves anything.",
+  "type": "module",
+  "private": true,
+  "bin": { "readydoc-mcp": "bin.mjs" },
+  "main": "bin.mjs",
+  "files": ["bin.mjs", "src/", "README.md"],
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node bin.mjs",
+    "test": "node --test test/tools.test.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.0"
+  }
+}

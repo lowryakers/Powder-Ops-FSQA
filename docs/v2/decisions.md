@@ -6712,3 +6712,50 @@ drift from the screens within a month. The surface is a list instead.
   server code fails 18.** Those failures are no paging headers, `storage_key` reaching a token, `@everyone`
   posting, and no whoami. The forced-draft assertions pass on the control too, because D-161's guard already
   holds.
+
+## D-163 — The bots reach ReadyDoc through a local stdio MCP server, and a smoke test proves a deploy (2026-10-09)
+Pack 3 of 3 after D-161 and D-162.
+- **`packages/readydoc-mcp` runs on the bot's own machine over stdio**, not as a hosted service. It only calls the
+  D-162 REST surface over HTTPS with an `rdk_` token, so ReadyDoc's Railway service is unchanged and there is no
+  second service to deploy, secure or keep alive.
+  - Its only dependency is `@modelcontextprotocol/sdk`, and it imports nothing from the server.
+  - `READYDOC_URL` and `READYDOC_TOKEN` are required. It exits 1 naming them when either is missing, and
+    refuses a token that is not `rdk_`.
+- **One tool per `BOT_ROUTES` entry, 20 in all.** The table is a COPY in `src/routes.mjs`, because the package
+  must not couple to the server at runtime. `check:botmcp` asserts the two name exactly the same method + path
+  pairs, once each, so the copy cannot drift silently.
+- **No tool name matches `/approve|decide|release|sign|send/`.** This is tested in the package and in the repo
+  check. The server refuses such an act to a token anyway (D-161). This rule is about never OFFERING the act to a
+  model.
+- **A writing tool sends only the fields it declares.** `create_nfp_draft` cannot carry `status`, `source` or an
+  approver, whatever a model invents. It is the third lock behind the approve guard and the handler's forced
+  draft.
+- **HTTP errors become instructions:**
+  - 401 → mint a new token;
+  - `approve_requires_human_session` → needs a human in ReadyDoc;
+  - `token_scope` → the server's own reason;
+  - other 403 → the account lacks the module;
+  - 404 → not found or not visible;
+  - 429 → retry after N seconds.
+- **`scripts/smoke-bot-api.mjs` is the post-deploy check, run by hand** (`npm run smoke:botapi`). Inputs come
+  from env only: an admin session and a named bot account. It runs these steps:
+  1. mints a temporary read token;
+  2. checks whoami and products answer 200;
+  3. tries an NFP decide and an artwork approve on ids that do not exist, and expects 403
+     `approve_requires_human_session`, because the guard refuses on the path first;
+  4. revokes the token;
+  5. checks the revoked token gets 401.
+
+  **It revokes in `finally`.** It writes no panel and no message.
+- `check:botmcp` (32; in `npm run check` and in CI with the SDK installed) covers:
+  - the package's 9 unit tests against a mocked fetch;
+  - parity with `BOT_ROUTES`;
+  - the smoke test end to end against a fresh server, plus a bot without the module, an admin as the bot,
+    and a connection dropped mid-run;
+  - the real MCP server over stdio.
+
+  Controls:
+  - planting an `approve_nfp` tool fails 4;
+  - removing the `finally` revoke fails the dropped-connection case, the only path where it is the sole cleanup.
+- **Not done here, deliberately:** minting the real bot tokens and wiring each bot's client config. Lowry does
+  that in Settings using the checklist in `docs/bot-api.md` → "After a deploy".
