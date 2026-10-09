@@ -390,6 +390,18 @@ limit), `authenticateToken` in `middleware/auth.js`, `server/middleware/no-token
 - `logAudit` adds `via_token` when `req.user.via_token` is set; every token call also writes `api_token_call`.
 - Rate limit is in memory, per process. `req.auth.kind` is `'token'` or `'session'` on every authenticated request.
 
+## The bots' REST surface: existing routes, listed, paged and filtered (D-162)
+`server/bot-api.js` (`BOT_ROUTES`, `pageOf`/`pageList`, `stripForbidden`, `isBroadcastMention`), `server/api/bot.js`
+(`GET /api/bot/whoami`), `docs/bot-api.md`.
+- **No `/api/v1`.** A route joins the surface by being added to `BOT_ROUTES` AND documented under a heading
+  like `` ### `GET /api/…` ``. `check:botapi` fails if the two disagree.
+- **Paging is for token callers, or a session that passes `limit`/`offset`.** The cap is 200; totals go in
+  `X-Total-Count`, and the body shape never changes. Wrap a new list route's array in `pageList(req, res, rows)`.
+- **`authenticateToken` wraps `res.json` with `stripForbidden`.** Add a new secret-ish column name to
+  `FORBIDDEN_KEYS` (or give it a `_hash` / `_secret` suffix) rather than filtering it in a handler.
+- A token's message: membership holds, there is no `@channel`/`@here`/`@everyone`, and it cannot create a
+  channel. A token's NFP is always a draft. `check:botapi` (57; control fails 18).
+
 ## Revoking access reaches the sessions it already opened (D-072)
 `revokeSessions(db, userId, { keepToken, devices })` in `api/sessions.js` is the ONE helper; Settings
 deactivation, `end-access`, the auditor-pass revoke and the pass reactivation path all call it. It deletes the

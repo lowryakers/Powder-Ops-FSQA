@@ -65,6 +65,7 @@ import visitorRoutes, { kioskRouter as visitorKioskRoutes, seedVisitorAgreements
 import candidateRoutes from './server/api/candidates.js';
 import kioskTokenRoutes from './server/api/kiosk-tokens.js';
 import apiTokenRoutes from './server/api/api-tokens.js';
+import botRoutes from './server/api/bot.js';
 import { tokenApproveGuard } from './server/middleware/no-token-approve.js';
 import { KIOSKS } from './server/kiosk-tokens.js';
 import { seedCandidates } from './server/candidates-seed.js';
@@ -1983,6 +1984,7 @@ app.use('/api/users', userRoutes);
 // the auditor pass.
 app.use('/api/kiosk-tokens', kioskTokenRoutes);
 app.use('/api/api-tokens', apiTokenRoutes);
+app.use('/api/bot', botRoutes);
 app.use('/api/submit', submitRoutes);
 app.use('/api/sms', smsInboundRoutes);
 app.use('/api/dannys-list', requireModuleWrite('dannys-list'), dannyRoutes);

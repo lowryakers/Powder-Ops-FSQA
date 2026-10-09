@@ -6,6 +6,7 @@ import {
   isApiToken, verifyToken, touchToken, takeRateSlot, rateLimits, tokenWriteAllowed,
 } from '../api-tokens.js';
 import { approveRouteFor, refuseTokenApprove } from './no-token-approve.js';
+import { stripForbidden } from '../bot-api.js';
 
 const SESSION_QUERY = `
   SELECT u.id, u.name, u.role, u.department, u.module_access, u.is_active, u.is_external, u.password_changed_at
@@ -303,6 +304,11 @@ function authenticateToken(token, req, res, next) {
 
   req.user = user;
   req.auth = { kind: 'token', tokenId: t.id, prefix: t.prefix, label: t.label, scopes: t.scopes };
+  // Nothing a token caller is sent carries a hash, a secret, a setup code or a
+  // file's bytes (D-162) — filtered once here, so a handler that returns
+  // SELECT * cannot leak one to a bot.
+  const json = res.json.bind(res);
+  res.json = (body) => json(stripForbidden(body));
   touchToken(t.id, req.ip);
 
   const path = (req.baseUrl || '') + req.path;

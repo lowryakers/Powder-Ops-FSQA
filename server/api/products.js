@@ -11,6 +11,7 @@
 //     function is the contract: renaming a column here breaks proofing there,
 //     silently, because its parser skips headers it does not recognise.
 import { Router } from 'express';
+import { pageList } from '../bot-api.js';
 import { randomUUID as uuid } from 'crypto';
 import { checkProofToken, refuseProofToken } from '../proof-token.js';
 import { provenanceOf, provenanceMissing, provenanceStale } from '../../shared/panel-provenance.js';
@@ -161,7 +162,7 @@ router.get('/', (_req, res) => {
   const db = getDb();
   const rows = hydrate(db.prepare(`${SELECT} ORDER BY p.sku`).all(), db);
   const specs = db.prepare('SELECT * FROM packaging_specs ORDER BY spec_id').all();
-  res.json({ products: rows, specs, readinessSteps: READINESS.map((s) => ({ key: s.key, label: s.label })) });
+  res.json({ products: pageList(_req, res, rows), specs, readinessSteps: READINESS.map((s) => ({ key: s.key, label: s.label })) });
 });
 
 /**

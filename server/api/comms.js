@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { pageList, isBroadcastMention } from '../bot-api.js';
 import { createReadStream } from 'fs';
 import multer from 'multer';
 import { v4 as uuid } from 'uuid';
@@ -647,7 +648,7 @@ router.get('/channels', (req, res) => {
       last_read_at: c.last_read_at || null,
     };
   });
-  res.json(out);
+  res.json(pageList(req, res, out));
 });
 
 router.post('/channels', (req, res) => {
@@ -1518,6 +1519,11 @@ router.post('/channels/:id/messages', async (req, res) => {
   const body = (req.body?.body || '').trim();
   const attachmentIds = Array.isArray(req.body?.attachment_ids) ? req.body.attachment_ids : [];
   if (!body && attachmentIds.length === 0) return res.status(400).json({ error: 'A message or an attachment is required' });
+  // A bot may name a person; it never rings the whole room (D-162). The
+  // message is the bot account's own — req.user is the token's account.
+  if (req.auth?.kind === 'token' && isBroadcastMention(body)) {
+    return res.status(403).json({ error: 'token_scope', message: 'A bot token cannot use @channel, @here or @everyone. Mention the people it is for.' });
+  }
   const id = uuid();
   // Millisecond-precision created_at (not the second-precision datetime('now')
   // column default) so unread ordering is exact — a message that arrives in the

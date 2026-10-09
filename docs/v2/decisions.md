@@ -6678,3 +6678,37 @@ from the person, and nothing stops it pressing Approve.
   the guard). **Control — default-deny switched off — fails 7, and the 64 approve refusals still hold**, which
   is the point of the second guard.
 - Not done here: the MCP server and route docs (packs 2–3). Socket.io stays session-only.
+
+## D-162 — The bots' REST surface is the existing routes, documented, paged and filtered for a token (2026-10-09)
+Pack 2 of 3 after D-161. **No `/api/v1` copy**: the handlers already answer JSON, and a parallel copy would
+drift from the screens within a month. The surface is a list instead.
+- **`BOT_ROUTES` in `server/bot-api.js` is the contract.** It has twenty routes across products, NFP, artwork,
+  procurement, comms, AP Drop, Partner Reconciliation, and `/api/bot/whoami`. `docs/bot-api.md` documents each
+  one. `check:botapi` fails if the list and the docs disagree in either direction, or if a listed route is not
+  in the source.
+- **Pagination is for TOKEN callers, and for sessions only when they ask.** `pageOf` / `pageList` take
+  `limit` (default and cap 200) and `offset`. Totals go in the headers `X-Total-Count`, `X-Limit` and
+  `X-Offset`. **The body keeps its shape**, so no screen changes; nine list routes are wired.
+- **One filter at the door, not one per handler.** `authenticateToken` wraps `res.json` with `stripForbidden`.
+  For a token caller it removes these keys at any depth:
+  - password hashes, PINs and setup codes;
+  - tokens and secrets;
+  - storage keys, extracted text, signature images and inline file data;
+  - SSNs and bank numbers;
+  - any key ending in `_hash`, `_secret`, `_encrypted`, `_enc` or `_cipher`.
+
+  A handler added next month that returns `SELECT *` cannot leak to a bot. A session still gets the screen's
+  shape; the control in the check asserts both.
+- **An NFP filed with a token is a draft whatever the body says.** The handler ignores `source: 'paper'` for a
+  token. That is a second lock behind D-161's approve guard, which already refuses the paper case.
+- **A token's message is the bot account's, inside its own channels, and never a broadcast.** Membership is
+  the existing `requireChannel`. `@channel` / `@here` / `@everyone` from a token is `403 token_scope`; the same
+  account signed in can still use them. Creating a channel was already outside `WRITE_DRAFT_ALLOW`.
+- **`GET /api/bot/whoami`** returns the account, its module grants, the token's scopes, prefix, label and
+  expiry, the rate limits, the page cap and the route list. It is the bot's self-check and pack 3's smoke test.
+- The docs carry a blank bots → accounts table for Lowry to fill in, and the `module_access` each route needs.
+  Access is documented, never widened.
+- `check:botapi` (57, pure + its own server on a fresh database; in `npm run check`). **Control: `main`'s
+  server code fails 18.** Those failures are no paging headers, `storage_key` reaching a token, `@everyone`
+  posting, and no whoami. The forced-draft assertions pass on the control too, because D-161's guard already
+  holds.

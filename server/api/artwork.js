@@ -17,6 +17,7 @@
 // and for the same reason: the old one is history, and history that can be
 // edited is not evidence.
 import { Router } from 'express';
+import { pageList } from '../bot-api.js';
 import { refuseTokenApprove } from '../middleware/no-token-approve.js';
 import { v4 as uuid } from 'uuid';
 import { requireProofToken, checkProofToken, refuseProofToken } from '../proof-token.js';
@@ -122,7 +123,7 @@ router.get('/', (req, res) => {
 
   // Named `packs`, not `current`: React's compiler treats a `.current` field
   // access as a ref and refuses to memoize the consuming component.
-  res.json({ packs: hydrate(db, rows), missing, storage: storageEnabled() });
+  res.json({ packs: pageList(req, res, hydrate(db, rows)), missing, storage: storageEnabled() });
 });
 
 /** Every version for one SKU, newest first. */

@@ -5,7 +5,8 @@
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 
-export function scanRoutes(root = process.cwd()) {
+export function scanRoutes(root = process.cwd(), { includeGet = false } = {}) {
+  const verbs = includeGet ? 'get|post|put|patch|delete' : 'post|put|patch|delete';
   const server = readFileSync(join(root, 'server.js'), 'utf8');
   // import X, { a as b, c } from './server/api/file.js'
   const binding = new Map(); // local name -> { file, exported }
@@ -39,13 +40,13 @@ export function scanRoutes(root = process.cwd()) {
       const re = src.match(new RegExp(`export\\s*\\{[^}]*\\b([A-Za-z_$][\\w$]*)\\s+as\\s+${b.exported}\\b`));
       varName = direct ? b.exported : (re?.[1] || b.exported);
     }
-    const rx = new RegExp(`\\b${varName}\\.(post|put|patch|delete)\\(\\s*['"\`]([^'"\`]+)['"\`]`, 'g');
+    const rx = new RegExp(`\\b${varName}\\.(${verbs})\\(\\s*['"\`]([^'"\`]+)['"\`]`, 'g');
     for (const r of src.matchAll(rx)) {
       const sub = r[2] === '/' ? '' : r[2];
       routes.push({ method: r[1].toUpperCase(), path: prefix + sub, file: `server/api/${b.file}`, mount: prefix });
     }
   }
-  for (const m of server.matchAll(/app\.(post|put|patch|delete)\(\s*'(\/api[^']*)'/g)) {
+  for (const m of server.matchAll(new RegExp(`app\\.(${verbs})\\(\\s*'(\\/api[^']*)'`, 'g'))) {
     routes.push({ method: m[1].toUpperCase(), path: m[2], file: 'server.js', mount: m[2] });
   }
   return routes;

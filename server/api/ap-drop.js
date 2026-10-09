@@ -34,6 +34,7 @@
 // `ap-drop` edit grant (the finance flag), or an office/admin supervisor, the
 // reimbursements `canSettle` shape. Everyone else sees their own drops.
 import { Router } from 'express';
+import { pageOf, pageList } from '../bot-api.js';
 import multer from 'multer';
 import { createHash } from 'crypto';
 import { v4 as uuid } from 'uuid';
@@ -488,6 +489,12 @@ router.get('/', (req, res) => {
       OR LOWER(COALESCE(extracted_text,'')) LIKE LOWER(?))`;
     const like = `%${String(q.q).trim()}%`;
     params.push(like, like, like, like, like, like);
+  }
+  // A paged caller (a bot token, or anyone passing offset) gets limit/offset with
+  // the true total in X-Total-Count (D-162); the screen keeps its 500/2000 cap.
+  if (pageOf(req)) {
+    sql += ' ORDER BY created_at DESC';
+    return res.json(pageList(req, res, db.prepare(sql).all(...params).map(r => shape(r, req.user))));
   }
   const limit = Math.min(Math.max(parseInt(q.limit, 10) || 500, 1), 2000);
   sql += ' ORDER BY created_at DESC LIMIT ?';
