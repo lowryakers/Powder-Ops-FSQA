@@ -103,7 +103,7 @@ const SECTIONS = [
       {
         id: 'api-tokens',
         label: 'Bot API tokens',
-        description: 'Let a bot use ReadyDoc as one account — never to approve',
+        description: 'Let a bot use ReadyDoc as one account — never to approve, delete or administer',
         keywords: 'api token bot jarvis automation connector bearer key integration agent',
         icon: KeyRound,
         visible: isAdmin,

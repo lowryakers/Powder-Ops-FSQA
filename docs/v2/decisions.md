@@ -6759,3 +6759,71 @@ Pack 3 of 3 after D-161 and D-162.
   - removing the `finally` revoke fails the dropped-connection case, the only path where it is the sole cleanup.
 - **Not done here, deliberately:** minting the real bot tokens and wiring each bot's client config. Lowry does
   that in Settings using the checklist in `docs/bot-api.md` → "After a deploy".
+
+## D-164 — A bot token may write wherever its account may, on a reviewed list; deleting, deciding and administering stay person-only (2026-10-09)
+
+**Asked:** Lowry, 9 Oct, via Jarvis: "'write drafts' is too narrow: a write scope that allows any create or edit
+the account's role already permits; approve/sign/verify/release/settle/admin/token admin/deletes stay
+person-only." Pack 4 of 4, after D-161 (tokens), D-162 (surface) and D-163 (MCP + smoke).
+
+**Decided:**
+- **Scopes are `read` + `write`.** `write-drafts` is accepted as INPUT (old clients keep working) and read back as
+  `write`; it is on `FORBIDDEN_SCOPES` with `delete`, `settle`, `verify`, `token-admin` and `user-admin`, so none
+  of them can come back as a scope.
+- **THE PACK ASKED FOR A DENY-LIST WITH ALLOW-BY-ROLE AS THE DEFAULT, AND SAID TO SWITCH TO DEFAULT-DENY IF MORE
+  THAN THREE DESTRUCTIVE ROUTES SLIPPED PAST THE PATTERNS. They did.** Walked against `main` on 9 Oct: of 642
+  non-GET routes, 480 match no deny pattern, and among them are six `bulk-delete` routes, the pre-launch
+  `cleanup/close`, `onboarding/:id/end-access`, the pay raise (`pay/employees/:id/rate`), four `reject` routes,
+  `policies/:id/retire`, `documents/:id/reinstate` and `banking/reconciliations/:id/reopen`. Two procurement
+  edit routes are built in a loop (`updateRoute`) that no source scan can see, and one of them writes
+  `qc_approved`. So writes are **default-deny**: a token may write only to `WRITE_AREAS` (`server/bot-api.js`,
+  43 routes over products, artwork, supply orders, AP Drop, partner reconciliation, NFP drafts and messages),
+  and only after the account's own module access and the handler's checks agree. A deny-list that misses one is
+  a door nobody notices; an allow-list that misses one is a bot that says so within the hour.
+- **`TOKEN_DENY` sits beside `APPROVE_ROUTES` in `no-token-approve.js`, which is now the one file for
+  "person-only".** Categories: `delete` (every DELETE, plus write segments delete / bulk-delete / remove / void /
+  archive / purge / trash / discard / cancel / withdraw / deactivate / revoke / dispute / retire), `decision`
+  (reject / dismiss / resolve / reopen / close / reinstate / restore / waive, the readiness confirm step, an AP
+  Drop move to anything but triage, artwork to rejected / superseded), `user_admin` (every write under
+  `/users`, onboarding end-access, `/org`, `/comms/admin`), `token_admin` (`/api-tokens` and `/kiosk-tokens` on
+  EVERY method, auditor passes, partner portal links). **Absolute**: role and scope do not matter. It wins over
+  `WRITE_AREAS`, so it still holds if an allow entry is written too wide. Refusal: `403 token_denied` with the
+  category; audit `api_token_write_blocked`. The approve class keeps `approve_requires_human_session`.
+- **The ambiguous routes, decided:**
+  - `products/:sku/confirm/:step`: **denied** — all four tickable steps are a person attesting to work in
+    another system.
+  - `ap-drop/:id/status`: **allowed for triage only** (`new`, `triaged`, `matched`, `needs_info`,
+    `duplicate_suspect`); paid, closed, in QuickBooks, in a payment run and not finance are decisions.
+  - `artwork/checks/:id/dismiss`: **denied** — it works like a verify.
+  - `partners/:id` (partner terms): **allowed**; the route already limits it to office/admin accounts.
+    Flagged for Lowry.
+  - Bulk writes (products bulk-edit and import commit, PO bulk, scenario apply, partner document import):
+    **allowed, own bucket**, `API_TOKEN_BULK_RPM`, 5 a minute.
+  - **Left off WRITE_AREAS though the pack listed them:** SKU rename (rewrites a join key in four tables, "a
+    deliberate act" by design), `drafts/realign`, the flavour-code register (append-only, printed on film),
+    the film-check, completeness blocks, and AP Drop `receivable-other` (a terminal hand-set status). Each is
+    one line to add if Lowry wants it.
+- **Drafts stay drafts while a token touches them**: an NFP or a partner document is editable by token only
+  while `draft` (and a partner document only while unsettled); a token's NFP always files as a draft.
+- **Migration, not re-mint**: `db.js` moves stored `"write-drafts"` to `"write"` once (idempotent by its WHERE),
+  writes `api_token_scope_migrated` per token with its label and prefix, and logs the list at boot.
+- MCP: eight write tools (`update_product`, `attach_artwork_file`, `create_supply_order`,
+  `update_supply_order`, `upload_ap_drop`, `add_ap_drop_note`, `add_partner_document`,
+  `update_partner_document`). File tools read a local `file_path` and upload multipart. The name rule widened to
+  `/approve|decide|release|sign|send|verify|settle|delete|remove|void|archive|revoke|admin|token/`;
+  `token_denied` reads as "needs a person in ReadyDoc (<category>)".
+- Smoke test: mints read + write, and adds a DELETE on a non-existent PO and `GET /api/api-tokens`, both expected
+  `token_denied`. Still writes nothing.
+
+**Verified:**
+- `check:apitokens` 127: scopes; the approve scan (kept as it was); new scans (93 DELETE routes, 21
+  delete-named writes and 21 admin routes, each denied); the bucket scan (191 denied · 43 WRITE_AREAS · 28
+  public · 380 default-denied, no overlap, no dead allow entry); a pass/fail pair per write area; read tokens
+  refused per area; every deny category with the record unchanged while a session reaches the handler; the
+  bulk bucket; the migration across two reboots.
+- `check:botapi` 62, `check:botmcp` 37 (13 unit tests), `verify:apitokensui` 13 (browser at 1280 and 390).
+- **Controls:**
+  - switching `TOKEN_DENY` off fails 18, including a token moving an AP Drop to *paid*;
+  - allow-by-role (the pack's original default) fails 3, including a token editing an NFP already sent for
+    approval;
+  - the old Settings screen fails the browser check at its first assertion.

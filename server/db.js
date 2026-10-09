@@ -1794,7 +1794,7 @@ function initSchema() {
     -- exactly once, revocable. token_prefix is the first eight characters so
     -- a row can be told apart on the screen without ever showing the secret.
     -- scopes is a JSON array drawn from server/api-tokens.js SCOPES — read and
-    -- write-drafts, and nothing that approves anything.
+    -- write (D-164; write-drafts before it), and nothing that approves anything.
     CREATE TABLE IF NOT EXISTS api_tokens (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -2436,6 +2436,29 @@ function initSchema() {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+
+  // ── write-drafts → write (D-164) ──────────────────────────────────────────
+  // The token scope `write-drafts` became `write`. Tokens minted under the old
+  // name keep working (the reader maps it too), but the stored value is moved
+  // once so Settings and the audit say what the token can actually do now — and
+  // each one moved is logged, so the office can see which tokens widened and
+  // revoke any meant for drafts only. Idempotent: the WHERE finds nothing twice.
+  {
+    const moved = db.prepare(`SELECT id, label, token_prefix, scopes FROM api_tokens WHERE scopes LIKE '%"write-drafts"%'`).all();
+    if (moved.length) {
+      const upd = db.prepare(`UPDATE api_tokens SET scopes = REPLACE(scopes, '"write-drafts"', '"write"') WHERE id = ?`);
+      const aud = db.prepare(`INSERT INTO audit_log (actor, action, entity_type, entity_id, entity_label, details)
+        VALUES ('system', 'api_token_scope_migrated', 'api_token', ?, ?, ?)`);
+      db.transaction(() => {
+        for (const t of moved) {
+          upd.run(t.id);
+          const after = db.prepare('SELECT scopes FROM api_tokens WHERE id = ?').get(t.id).scopes;
+          aud.run(t.id, t.label, JSON.stringify({ from: t.scopes, to: after, prefix: t.token_prefix, decision: 'D-164' }));
+        }
+      })();
+      console.log(`[api-tokens] ${moved.length} token(s) moved from write-drafts to write: ${moved.map(t => `${t.label} (${t.token_prefix})`).join(', ')}`);
+    }
+  }
 
   // ── A production run: the boundary PC #1 fires on (D-146, OBL-22) ─────────
   // Protocol 003 V4 PC #1 is "a pre-operational clean at the beginning of every

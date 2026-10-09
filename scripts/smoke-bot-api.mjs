@@ -6,16 +6,20 @@
 //   SMOKE_BOT_USER="<name or id of a non-admin bot account>" \
 //   node scripts/smoke-bot-api.mjs
 //
-// It mints a temporary READ token for the smoke bot account, proves the token
-// reads, proves an approve-class act is refused with approve_requires_human_
-// session, revokes the token, and proves the revoked token is refused with 401.
+// It mints a temporary READ + WRITE token for the smoke bot account, proves the
+// token reads, proves an approve-class act is refused with approve_requires_
+// human_session, proves a delete and a token listing are refused with
+// token_denied (D-164), revokes the token, and proves the revoked token is
+// refused with 401.
 // The token is ALWAYS revoked in `finally`, whatever failed. Nothing else is
 // written: no NFP draft, no message — production data is untouched apart from
 // the token row itself and its audit entries, which are the record of the run.
 //
-// The approve attempts name ids that do not exist on purpose: the guard refuses
-// on the PATH before any handler looks the record up, so the check proves the
-// refusal without there being anything a mistake could approve.
+// The approve and delete attempts name ids that do not exist on purpose: the
+// guard refuses on the PATH before any handler looks the record up, so the
+// check proves the refusal without there being anything a mistake could
+// approve or delete. A write token is minted so the refusals are the person-only
+// rule speaking, not the read-only scope.
 
 const env = process.env;
 const missing = ['READYDOC_URL', 'READYDOC_ADMIN_TOKEN', 'SMOKE_BOT_USER'].filter(k => !String(env[k] || '').trim());
@@ -51,10 +55,10 @@ try {
   if (!bot) throw new Error(`no account "${BOT}"`);
   record('smoke bot account found', bot.role !== 'admin' && !!bot.is_active, `${bot.name} (${bot.role})`);
 
-  const made = await call('POST', '/api/api-tokens', ADMIN, { user_id: bot.id, label: `smoke ${new Date().toISOString().slice(0, 16)}`, scopes: ['read'] });
+  const made = await call('POST', '/api/api-tokens', ADMIN, { user_id: bot.id, label: `smoke ${new Date().toISOString().slice(0, 16)}`, scopes: ['read', 'write'] });
   tokenId = made.body?.token?.id || null;
   const tok = made.body?.plaintext;
-  record('temporary read token minted', made.status === 201 && !!tok, `${made.status} ${made.body?.token?.token_prefix || made.body?.error || ''}`);
+  record('temporary read + write token minted', made.status === 201 && !!tok && JSON.stringify(made.body?.token?.scopes) === '["read","write"]', `${made.status} ${made.body?.token?.token_prefix || made.body?.error || ''}`);
   if (!tok) throw new Error('no token to test with');
 
   const who = await call('GET', '/api/bot/whoami', tok);
@@ -66,6 +70,11 @@ try {
   record('POST /api/nfp/:id/decide → 403 approve_requires_human_session', decide.status === 403 && decide.body?.error === 'approve_requires_human_session', `${decide.status} ${decide.body?.error || ''}`);
   const art = await call('POST', '/api/artwork/versions/smoke-no-such-version/status', tok, { status: 'approved' });
   record('artwork approve → 403 approve_requires_human_session', art.status === 403 && art.body?.error === 'approve_requires_human_session', `${art.status} ${art.body?.error || ''}`);
+
+  const del = await call('DELETE', '/api/procurement/pos/smoke-no-such-po', tok);
+  record('DELETE /api/procurement/pos/:id → 403 token_denied (delete)', del.status === 403 && del.body?.error === 'token_denied' && del.body?.category === 'delete', `${del.status} ${del.body?.error || ''} ${del.body?.category || ''}`);
+  const list = await call('GET', '/api/api-tokens', tok);
+  record('GET /api/api-tokens → 403 token_denied (token_admin)', list.status === 403 && list.body?.error === 'token_denied' && list.body?.category === 'token_admin', `${list.status} ${list.body?.error || ''} ${list.body?.category || ''}`);
 
   const rev = await call('POST', `/api/api-tokens/${tokenId}/revoke`, ADMIN);
   revoked = rev.status === 200 && !!rev.body?.revoked_at;
