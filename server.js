@@ -64,6 +64,8 @@ import auditorPassRoutes, { publicRouter as auditorPassPublicRoutes } from './se
 import visitorRoutes, { kioskRouter as visitorKioskRoutes, seedVisitorAgreements } from './server/api/visitors.js';
 import candidateRoutes from './server/api/candidates.js';
 import kioskTokenRoutes from './server/api/kiosk-tokens.js';
+import apiTokenRoutes from './server/api/api-tokens.js';
+import { tokenApproveGuard } from './server/middleware/no-token-approve.js';
 import { KIOSKS } from './server/kiosk-tokens.js';
 import { seedCandidates } from './server/candidates-seed.js';
 import reimbursementRoutes from './server/api/reimbursements.js';
@@ -1937,6 +1939,10 @@ app.use('/api', (req, res, next) => {
   if (isPublicPath(req)) return next();
   authenticate(req, res, next);
 });
+// NOTHING A BOT TOKEN HOLDS APPROVES, SIGNS OR RELEASES (D-161). authenticate()
+// already refuses it; this is the same list mounted once, globally, so it holds
+// for every router below whether or not that router remembers the rule.
+app.use('/api', tokenApproveGuard);
 
 // --- API Routes ---
 // requireModuleWrite makes the Settings View level real on the server: users
@@ -1976,6 +1982,7 @@ app.use('/api/users', userRoutes);
 // requireModuleWrite — it is not a module, it is a credential, same class as
 // the auditor pass.
 app.use('/api/kiosk-tokens', kioskTokenRoutes);
+app.use('/api/api-tokens', apiTokenRoutes);
 app.use('/api/submit', submitRoutes);
 app.use('/api/sms', smsInboundRoutes);
 app.use('/api/dannys-list', requireModuleWrite('dannys-list'), dannyRoutes);

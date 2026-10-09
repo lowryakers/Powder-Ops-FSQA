@@ -17,6 +17,7 @@
 // and for the same reason: the old one is history, and history that can be
 // edited is not evidence.
 import { Router } from 'express';
+import { refuseTokenApprove } from '../middleware/no-token-approve.js';
 import { v4 as uuid } from 'uuid';
 import { requireProofToken, checkProofToken, refuseProofToken } from '../proof-token.js';
 import fs from 'fs';
@@ -317,6 +318,11 @@ router.post('/versions/:id/status', (req, res) => {
   const v = db.prepare('SELECT * FROM artwork_versions WHERE id = ?').get(req.params.id);
   if (!v) return res.status(404).json({ error: 'Not found' });
   const next = req.body?.status;
+  // Approving or releasing artwork is a person's act (D-161) — a bot token is
+  // refused here as well as at the global guard.
+  if (['approved', 'print_ready', 'released'].includes(next) && req.auth?.kind === 'token') {
+    return refuseTokenApprove(req, res, null);
+  }
   if (!FLOW[v.status]?.includes(next)) {
     return res.status(400).json({ error: `Cannot go from ${v.status.replace(/_/g, ' ')} to ${String(next).replace(/_/g, ' ')}.` });
   }

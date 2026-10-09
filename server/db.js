@@ -1789,6 +1789,29 @@ function initSchema() {
       use_count INTEGER NOT NULL DEFAULT 0
     );
 
+    -- A token a BOT holds to call the API as one named, non-admin account
+    -- (D-161). Same shape as the kiosk keys: SHA-256 stored, clear text shown
+    -- exactly once, revocable. token_prefix is the first eight characters so
+    -- a row can be told apart on the screen without ever showing the secret.
+    -- scopes is a JSON array drawn from server/api-tokens.js SCOPES — read and
+    -- write-drafts, and nothing that approves anything.
+    CREATE TABLE IF NOT EXISTS api_tokens (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      label TEXT NOT NULL,
+      token_prefix TEXT NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      scopes TEXT NOT NULL DEFAULT '["read"]',
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_used_at TEXT,
+      last_used_ip TEXT,
+      expires_at TEXT,
+      revoked_at TEXT,
+      revoked_by TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(user_id, revoked_at);
+
     CREATE TABLE IF NOT EXISTS auditor_passes (
       id TEXT PRIMARY KEY,
       token_hash TEXT NOT NULL UNIQUE,
@@ -6407,6 +6430,12 @@ export function logAudit(actor, action, entityType, entityId, details, previousS
     actorId = actor.id || null;
     actorRole = actor.role || null;
     actorDept = actor.department || null;
+    // A call made with a bot's API token (D-161) is attributed to the token's
+    // account AND names the token, in every handler's own audit entry, without
+    // each handler having to remember — the actor object carries it.
+    if (actor.via_token) {
+      details = { ...(details && typeof details === 'object' ? details : (details == null ? {} : { value: details })), via_token: actor.via_token };
+    }
   } else {
     actorName = actor || 'system';
   }

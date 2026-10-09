@@ -377,6 +377,19 @@ invite anyone, and DM any plant account whose id they had read off their own cha
   auto-join, this closes adding them by hand.
 - Refusals are **404, never 403**. `verify:clientinvite` (66, live + browser at 390px; control fails 11).
 
+## Bots use an API token tied to one non-admin account, and a token never approves (D-161)
+`api_tokens` (db.js), `server/api-tokens.js` (`SCOPES`, `createToken`, `verifyToken`, `WRITE_DRAFT_ALLOW`, rate
+limit), `authenticateToken` in `middleware/auth.js`, `server/middleware/no-token-approve.js` (`APPROVE_SEGMENTS`,
+`APPROVE_ROUTES`, `tokenApproveGuard`, `rejectTokenAuth`), `/api/api-tokens` + Settings → **Bot API tokens**.
+- **A token is its account**: `Authorization: Bearer rdk_…` builds the same `req.user` a session would; module
+  grants decide reads. Admin accounts can never hold one; promotion/deactivation/revoke/expiry ⇒ 401.
+- **Scopes `read` + `write-drafts` ONLY. Writes default-deny** — add a route to `WRITE_DRAFT_ALLOW` only if it
+  makes a DRAFT or a message. **Never add an approve/admin scope** (`check:apitokens` fails).
+- **A new route that approves, signs, verifies, releases or settles** is covered automatically when its path says
+  so; if it does not, add it to `APPROVE_ROUTES` — `check:apitokens` scans every router and fails otherwise.
+- `logAudit` adds `via_token` when `req.user.via_token` is set; every token call also writes `api_token_call`.
+- Rate limit is in memory, per process. `req.auth.kind` is `'token'` or `'session'` on every authenticated request.
+
 ## Revoking access reaches the sessions it already opened (D-072)
 `revokeSessions(db, userId, { keepToken, devices })` in `api/sessions.js` is the ONE helper; Settings
 deactivation, `end-access`, the auditor-pass revoke and the pass reactivation path all call it. It deletes the
