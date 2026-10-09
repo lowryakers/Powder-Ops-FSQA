@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { pageList } from '../bot-api.js';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 
@@ -124,7 +125,7 @@ router.get('/demand', (req, res) => {
   const rows = scenario
     ? db.prepare('SELECT * FROM procurement_demand WHERE scenario_id = ? ORDER BY product_name').all(scenario)
     : db.prepare('SELECT * FROM procurement_demand WHERE scenario_id IS NULL ORDER BY product_name').all();
-  res.json(rows);
+  res.json(pageList(req, res, rows));
 });
 
 router.put('/demand/:id', (req, res) => {
@@ -282,7 +283,7 @@ router.get('/pos', (req, res) => {
       && !['received', 'cancelled'].includes(r.status)),
   }));
   if (quarter) rows = rows.filter(r => r.quarter === quarter);
-  res.json(rows);
+  res.json(pageList(req, res, rows));
 });
 
 router.post('/pos', (req, res) => {

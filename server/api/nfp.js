@@ -21,6 +21,7 @@
 // organoleptic record. What was approved in March has to still read as what was
 // approved in March, because artwork was printed from it.
 import { Router } from 'express';
+import { pageList } from '../bot-api.js';
 import { rejectTokenAuth } from '../middleware/no-token-approve.js';
 import { v4 as uuid } from 'uuid';
 import { randomBytes, createHash } from 'crypto';
@@ -299,7 +300,7 @@ router.get('/', (_req, res) => {
       AND NOT EXISTS (SELECT 1 FROM nfp_versions n WHERE n.sku = p.sku AND n.status IN ('draft','sent','approved'))
     ORDER BY p.category, p.flavor`).all();
 
-  res.json({ versions: hydrate(db, rows), missing, storage: storageEnabled() });
+  res.json({ versions: pageList(_req, res, hydrate(db, rows)), missing, storage: storageEnabled() });
 });
 
 /** Every panel filed against one SKU, newest first. */
@@ -351,7 +352,9 @@ router.post('/', (req, res) => {
   const prov = provenancePatch(b.provenance);
   if (prov.error) return res.status(400).json({ error: prov.error });
 
-  const paper = b.source === 'paper';
+  // A bot token always files a DRAFT (D-162) — whatever the body says. The
+  // approve guard refuses a paper panel outright; this is the second lock.
+  const paper = req.auth?.kind !== 'token' && b.source === 'paper';
   const approvedBy = (b.approved_by || '').trim();
   const approvedAt = (b.approved_at || '').trim();
   if (paper && (!approvedBy || !/^\d{4}-\d{2}-\d{2}$/.test(approvedAt))) {

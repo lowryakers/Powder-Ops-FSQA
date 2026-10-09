@@ -10,6 +10,7 @@
 // dispute it, and what happens when someone pays.
 
 import { Router } from 'express';
+import { pageList } from '../bot-api.js';
 import { randomUUID as uuid, createHash, randomBytes } from 'crypto';
 import { readFileSync } from 'fs';
 import { getDb, logAudit } from '../db.js';
@@ -58,9 +59,9 @@ const CATEGORIES = ['manufacturing', 'materials', 'freight', 'other'];
 
 /* ── Partners ─────────────────────────────────────────────────────────────── */
 
-router.get('/', (_req, res) => {
+router.get('/', (req, res) => {
   const db = getDb();
-  res.json(db.prepare('SELECT * FROM partner_accounts WHERE is_active = 1 ORDER BY name').all());
+  res.json(pageList(req, res, db.prepare('SELECT * FROM partner_accounts WHERE is_active = 1 ORDER BY name').all()));
 });
 
 router.put('/:id', (req, res) => {
@@ -808,11 +809,11 @@ router.get('/:id/credits', (req, res) => {
   const rows = db.prepare('SELECT * FROM partner_credits WHERE partner_id = ? ORDER BY created_at DESC').all(req.params.id);
   const used = db.prepare('SELECT credit_id, COALESCE(SUM(amount),0) t FROM partner_credit_applications GROUP BY credit_id').all();
   const byId = new Map(used.map(u => [u.credit_id, round2(u.t)]));
-  res.json(rows.map(c => ({
+  res.json(pageList(req, res, rows.map(c => ({
     ...c,
     applied_to_date: byId.get(c.id) || 0,
     remaining_balance: round2(Number(c.amount) - (byId.get(c.id) || 0)),
-  })));
+  }))));
 });
 
 // The draws behind the balance. A running total nobody can open is a number
