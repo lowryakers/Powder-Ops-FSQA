@@ -3,9 +3,9 @@ import { carriesProofToken } from '../proof-token.js';
 import { passwordExpired } from '../password-policy.js';
 import { parseModuleAccess } from '../module-access.js';
 import {
-  isApiToken, verifyToken, touchToken, takeRateSlot, rateLimits, tokenWriteAllowed,
+  isApiToken, verifyToken, touchToken, takeRateSlot, rateLimits, rateKindOf, tokenWriteAllowed,
 } from '../api-tokens.js';
-import { approveRouteFor, refuseTokenApprove } from './no-token-approve.js';
+import { approveRouteFor, refuseTokenApprove, tokenDenyFor, refuseTokenDenied } from './no-token-approve.js';
 import { stripForbidden } from '../bot-api.js';
 
 const SESSION_QUERY = `
@@ -276,9 +276,14 @@ export function authenticate(req, res, next) {
 //   1. one audit row per call (actor = the account, details name the token),
 //      registered first so a refusal below is logged too;
 //   2. the per-token rate limit (429 + Retry-After);
-//   3. the approve guard — nothing that approves, signs or releases;
-//   4. default-deny writes — a non-GET must be on WRITE_DRAFT_ALLOW and the
-//      token must hold `write-drafts`.
+//   3. the person-only guards — APPROVE_ROUTES (approve, sign, verify, release,
+//      settle → 403 approve_requires_human_session) and TOKEN_DENY (delete,
+//      decide, user/role admin, token admin → 403 token_denied + category),
+//      checked on EVERY method so a bot cannot even list tokens;
+//   4. default-deny writes — a non-GET needs the `write` scope (else 403
+//      token_scope, "read-only") and must be on WRITE_AREAS in bot-api.js
+//      (else 403 token_denied, not_open_to_tokens). The account's own module
+//      access and the handler's checks still decide after that (D-164).
 // No X-View-As (a token is never an admin), and no password-expiry lockout —
 // the token is not a password; revoking it is the control.
 function authenticateToken(token, req, res, next) {
@@ -320,26 +325,28 @@ function authenticateToken(token, req, res, next) {
   });
 
   const isWrite = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
-  const wait = takeRateSlot(t.id, isWrite);
+  const kind = rateKindOf(req);
+  const wait = takeRateSlot(t.id, kind);
   if (wait != null) {
     res.set('Retry-After', String(wait));
     const lim = rateLimits();
+    const what = { read: 'requests', write: 'writes', bulk: 'bulk writes' }[kind];
     return res.status(429).json({
       error: 'rate_limited',
-      message: `This token is limited to ${isWrite ? lim.write : lim.read} ${isWrite ? 'writes' : 'requests'} a minute. Try again in ${wait}s.`,
+      message: `This token is limited to ${lim[kind]} ${what} a minute. Try again in ${wait}s.`,
     });
   }
 
   const approve = approveRouteFor(req);
   if (approve) return refuseTokenApprove(req, res, approve);
+  const deny = tokenDenyFor(req);
+  if (deny) return refuseTokenDenied(req, res, deny);
 
+  if (isWrite && !t.scopes.includes('write')) {
+    return res.status(403).json({ error: 'token_scope', message: 'This token is read-only.' });
+  }
   if (isWrite && !tokenWriteAllowed(req, t.scopes)) {
-    return res.status(403).json({
-      error: 'token_scope',
-      message: t.scopes.includes('write-drafts')
-        ? 'This token may only create or edit drafts and post messages. Everything else needs a person signed in.'
-        : 'This token is read-only.',
-    });
+    return refuseTokenDenied(req, res, null);
   }
 
   next();

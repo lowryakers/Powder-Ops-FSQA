@@ -8,7 +8,7 @@ import CopyButton from '../common/CopyButton.jsx';
 //
 // A bot that drove ReadyDoc through a browser held somebody's password. A token
 // is tied to ONE named, non-admin account instead, can only do what that
-// account can, can never approve, sign or release anything, and every call it
+// account can, can never approve, sign, release, delete or administer anything, and every call it
 // makes is in the audit log under that account's name. The screen says all of
 // that in words, because a key that does more than people think it does is how
 // a control gets misused.
@@ -21,13 +21,14 @@ const STATE = {
   account_is_admin: { label: 'Account is now an admin — refused', tone: 'bg-red-100 text-red-800' },
 };
 const SCOPE_COPY = {
-  read: 'Read — whatever the account can see',
-  'write-drafts': 'Write drafts — file a draft nutrition panel, edit a draft, post a message',
+  read: 'Read — see products, panels, artwork, orders, AP Drop and partner balances this account can see.',
+  write: 'Write — create and edit anything this account is allowed to: product records, artwork and files, supply orders, AP Drop uploads, partner reconciliation documents, draft nutrition panels, messages. Never more than the account itself can do.',
 };
+const NEVER = 'Never allowed with any token: approving, signing, verifying, releasing or settling anything; deleting or voiding anything; changing users, roles or permissions; managing tokens. Those always need a person signed in.';
 
 export default function ApiTokensSection() {
   const { data, refresh } = useApiGet('/api-tokens');
-  const [form, setForm] = useState({ user_id: '', label: '', drafts: false, expires_at: '' });
+  const [form, setForm] = useState({ user_id: '', label: '', write: false, expires_at: '' });
   const [issued, setIssued] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -40,11 +41,11 @@ export default function ApiTokensSection() {
     try {
       const r = await apiPost('/api-tokens', {
         user_id: form.user_id, label: form.label,
-        scopes: form.drafts ? ['read', 'write-drafts'] : ['read'],
+        scopes: form.write ? ['read', 'write'] : ['read'],
         expires_at: form.expires_at || null,
       });
       setIssued(r);
-      setForm({ user_id: '', label: '', drafts: false, expires_at: '' });
+      setForm({ user_id: '', label: '', write: false, expires_at: '' });
       refresh();
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
@@ -62,8 +63,8 @@ export default function ApiTokensSection() {
         <ShieldCheck size={18} className="shrink-0 mt-0.5" />
         <div className="space-y-1">
           <div>A token lets a bot use ReadyDoc <strong>as one account</strong> — it sees and does only what that account can, and every call is in the audit log under that account's name.</div>
-          <div><strong>A token can never approve, sign, verify, release or settle anything.</strong> Those need a person signed in. It cannot belong to an admin.</div>
-          {data?.limits && <div className="text-xs text-indigo-700">Limited to {data.limits.read} requests and {data.limits.write} writes a minute per token.</div>}
+          <div><strong>A token can never approve, sign, verify, release or settle anything, delete anything, or change users, permissions or tokens.</strong> Those need a person signed in. It cannot belong to an admin.</div>
+          {data?.limits && <div className="text-xs text-indigo-700">Limited to {data.limits.read} requests, {data.limits.write} writes and {data.limits.bulk} bulk writes a minute per token.</div>}
         </div>
       </div>
 
@@ -85,7 +86,8 @@ export default function ApiTokensSection() {
           <div className="space-y-1 text-sm">
             <span className="block text-xs text-gray-500">What it may do</span>
             <label className="flex items-start gap-2 text-gray-500"><input type="checkbox" checked disabled className="mt-1" /> {SCOPE_COPY.read}</label>
-            <label className="flex items-start gap-2"><input type="checkbox" checked={form.drafts} onChange={e => setForm({ ...form, drafts: e.target.checked })} className="mt-1" data-api-token-drafts /> {SCOPE_COPY['write-drafts']}</label>
+            <label className="flex items-start gap-2"><input type="checkbox" checked={form.write} onChange={e => setForm({ ...form, write: e.target.checked })} className="mt-1" data-api-token-write /> {SCOPE_COPY.write}</label>
+            <p className="text-xs text-gray-600 pt-1" data-api-token-never>{NEVER}</p>
           </div>
         </div>
         <button type="button" onClick={create} disabled={busy || !form.user_id || form.label.trim().length < 3}

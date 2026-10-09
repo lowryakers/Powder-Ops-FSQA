@@ -32,9 +32,11 @@ const server = BOT_ROUTES.map(r => key(r.method, r.path));
 const tools = ROUTES.map(r => key(r.method, r.path));
 t(`one tool for each of the ${server.length} BOT_ROUTES`, server.every(k => tools.filter(x => x === k).length === 1), server.filter(k => !tools.includes(k)).join('; '));
 t('no tool for a route BOT_ROUTES does not list', tools.every(k => server.includes(k)), tools.filter(k => !server.includes(k)).join('; '));
-t('no tool name suggests approve / decide / release / sign / send', ROUTES.every(r => !FORBIDDEN_TOOL_NAME.test(r.tool)), ROUTES.filter(r => FORBIDDEN_TOOL_NAME.test(r.tool)).map(r => r.tool).join(', '));
+t('no tool name suggests approve / decide / release / sign / send / verify / settle / delete / remove / void / archive / revoke / admin / token', ROUTES.every(r => !FORBIDDEN_TOOL_NAME.test(r.tool)), ROUTES.filter(r => FORBIDDEN_TOOL_NAME.test(r.tool)).map(r => r.tool).join(', '));
 const writes = BOT_ROUTES.filter(r => r.method !== 'GET').map(r => key(r.method, r.path));
-t('every writing tool is a route the server lists as write-drafts', ROUTES.filter(r => r.method !== 'GET').every(r => writes.includes(key(r.method, r.path))));
+t('every writing tool is a route the server lists as write', ROUTES.filter(r => r.method !== 'GET').every(r => writes.includes(key(r.method, r.path)))
+  && BOT_ROUTES.filter(r => r.method !== 'GET').every(r => r.scope === 'write'));
+t('the name rule covers every person-only verb', ['approve', 'decide', 'release', 'sign', 'send', 'verify', 'settle', 'delete', 'remove', 'void', 'archive', 'revoke', 'admin', 'token'].every(w => FORBIDDEN_TOOL_NAME.test(`x_${w}`)));
 const pkg = JSON.parse(readFileSync(join(PKG, 'package.json'), 'utf8'));
 t('the package depends only on the MCP SDK', Object.keys(pkg.dependencies || {}).join() === '@modelcontextprotocol/sdk');
 const srcText = ['bin.mjs', 'src/client.mjs', 'src/routes.mjs'].map(f => readFileSync(join(PKG, f), 'utf8')).join('\n');
@@ -81,7 +83,7 @@ const tokensFor = (uid) => db.prepare('SELECT revoked_at FROM api_tokens WHERE u
 
 let s = runSmoke('Smoke Bot');
 t('smoke-bot-api.mjs passes end to end (exit 0)', s.status === 0, (s.stdout + s.stderr).split('\n').filter(l => /FAIL|Error/.test(l)).join(' | ').slice(0, 400));
-for (const step of ['whoami → 200', 'products → 200', 'decide → 403 approve_requires_human_session', 'artwork approve → 403', 'token revoked', 'revoked token → 401']) {
+for (const step of ['read + write token minted', 'whoami → 200', 'products → 200', 'decide → 403 approve_requires_human_session', 'artwork approve → 403', 'DELETE /api/procurement/pos/:id → 403 token_denied', 'GET /api/api-tokens → 403 token_denied', 'token revoked', 'revoked token → 401']) {
   t(`…prints PASS for "${step}"`, new RegExp(`PASS .*${step.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '.*')}`).test(s.stdout));
 }
 t('…and leaves no live token behind', tokensFor('bm-bot').length === 1 && tokensFor('bm-bot').every(r => r.revoked_at));
@@ -89,6 +91,8 @@ t('…and wrote no NFP draft and no message', db.prepare('SELECT COUNT(*) n FROM
   && db.prepare("SELECT COUNT(*) n FROM chat_messages WHERE user_id = 'bm-bot'").get().n === 0);
 const blocked = db.prepare("SELECT COUNT(*) n FROM audit_log WHERE action = 'api_token_approve_blocked' AND actor_id = 'bm-bot'").get().n;
 t('…and both approve attempts are in the audit log as blocked', blocked === 2, `blocked=${blocked}`);
+const wblocked = db.prepare("SELECT details FROM audit_log WHERE action = 'api_token_write_blocked' AND actor_id = 'bm-bot'").all().map(r => JSON.parse(r.details).category).sort();
+t('…and the delete and the token listing are in the audit log as api_token_write_blocked', JSON.stringify(wblocked) === '["delete","token_admin"]', JSON.stringify(wblocked));
 
 s = runSmoke('Bare Bot');
 t('a bot account with no products module FAILS the smoke test (exit 1)', s.status === 1 && /FAIL\s+GET \/api\/products/.test(s.stdout));

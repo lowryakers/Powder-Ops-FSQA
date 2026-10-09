@@ -2,9 +2,10 @@ import { Router } from 'express';
 import { getDb } from '../db.js';
 import { requireRole } from '../middleware/auth.js';
 import {
-  SCOPES, createToken, listTokens, revokeToken, ScopeError, rateLimits, WRITE_DRAFT_ALLOW,
+  SCOPES, createToken, listTokens, revokeToken, ScopeError, rateLimits,
 } from '../api-tokens.js';
-import { APPROVE_ROUTES, APPROVE_SEGMENTS } from '../middleware/no-token-approve.js';
+import { APPROVE_ROUTES, APPROVE_SEGMENTS, TOKEN_DENY } from '../middleware/no-token-approve.js';
+import { WRITE_AREAS } from '../bot-api.js';
 
 // Managing the bots' API tokens (D-161). Admin-only throughout, and only from a
 // SESSION — a token can never mint or revoke a token (requireRole passes a
@@ -26,7 +27,8 @@ router.get('/', (_req, res) => {
     accounts,
     scopes: SCOPES,
     limits: rateLimits(),
-    write_draft_allow: WRITE_DRAFT_ALLOW.map(r => r.label),
+    write_areas: WRITE_AREAS.map(r => ({ area: r.area, label: r.label, bulk: !!r.bulk })),
+    token_deny: TOKEN_DENY.map(r => ({ category: r.category, label: r.label })),
     approve_guard: { segments: APPROVE_SEGMENTS, routes: APPROVE_ROUTES.map(r => r.label) },
   });
 });

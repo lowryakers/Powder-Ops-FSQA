@@ -78,6 +78,7 @@
     "verify:sessions": "node scripts/verify-session-revoke.mjs",
     "verify:apdrop": "node scripts/verify-ap-drop.mjs",
     "verify:apdropui": "node scripts/verify-ap-drop-ui.mjs",
+    "verify:apitokensui": "node scripts/verify-api-tokens-ui.mjs",
     "verify:commsedit": "node scripts/verify-comms-edit.mjs",
     "verify:commspendingjump": "node scripts/verify-comms-pending-jump.mjs",
     "verify:trainingassign": "node scripts/verify-training-assign.mjs",

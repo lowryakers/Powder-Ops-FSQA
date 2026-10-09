@@ -1,6 +1,8 @@
 import { randomBytes, createHash, timingSafeEqual } from 'crypto';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from './db.js';
+import { writeAreaFor, writeAreaAllows } from './bot-api.js';
+import { approveRouteFor, tokenDenyFor } from './middleware/no-token-approve.js';
 
 // API tokens for the bots (D-161).
 //
@@ -15,18 +17,24 @@ import { getDb, logAudit } from './db.js';
 //    key, auditor pass and partner portal shape. Lose it and you mint another.
 //  * A token never WIDENS access. It authenticates as its user, so that user's
 //    module_access decides every read; a token only ever narrows (scopes).
-//  * SCOPES ARE AN ALLOW-LIST OF TWO: `read` (always on) and `write-drafts`.
-//    There is no approve scope and no admin scope, and normalizeScopes refuses
-//    any name that is not in SCOPES — `check:apitokens` asserts that adding
-//    'approve' or 'admin' to this list fails the build.
+//  * SCOPES ARE AN ALLOW-LIST OF TWO: `read` (always on) and `write` (D-164 —
+//    it replaced `write-drafts`, which is still accepted as INPUT and read back
+//    as `write`). There is no approve, delete or admin scope, and normalizeScopes
+//    refuses any name that is not in SCOPES — `check:apitokens` asserts that
+//    adding one of FORBIDDEN_SCOPES to this list fails the build.
 //  * An admin account can never hold one. Bots are non-admin accounts; a token
 //    for an admin would be an admin password nobody types.
 
 export const TOKEN_PREFIX = 'rdk_';
-export const SCOPES = Object.freeze(['read', 'write-drafts']);
+export const SCOPES = Object.freeze(['read', 'write']);
 // Names that must never become scopes. The check fails if SCOPES ever
 // contains one of these — that is a decision for a human session, always.
-export const FORBIDDEN_SCOPES = Object.freeze(['approve', 'admin', 'sign', 'release', 'write']);
+// 'write-drafts' is here so it can never come back as a second write scope; it
+// is accepted only as legacy input and mapped to 'write' (LEGACY_SCOPES).
+export const FORBIDDEN_SCOPES = Object.freeze([
+  'approve', 'admin', 'sign', 'release', 'write-drafts', 'delete', 'settle', 'verify', 'token-admin', 'user-admin',
+]);
+const LEGACY_SCOPES = Object.freeze({ 'write-drafts': 'write' });
 
 const TOKEN_RE = /^rdk_[A-Za-z0-9_-]{43}$/;
 export const hashToken = (t) => createHash('sha256').update(String(t)).digest('hex');
@@ -37,8 +45,9 @@ export function normalizeScopes(input) {
   const list = Array.isArray(input) ? input : (input == null ? [] : [input]);
   const out = new Set(['read']);
   for (const raw of list) {
-    const s = String(raw || '').trim();
-    if (!s) continue;
+    const s0 = String(raw || '').trim();
+    if (!s0) continue;
+    const s = LEGACY_SCOPES[s0] || s0;
     if (!SCOPES.includes(s)) throw new ScopeError(`"${s}" is not a scope. A token may hold ${SCOPES.join(' and ')} only.`);
     out.add(s);
   }
@@ -48,7 +57,12 @@ export function normalizeScopes(input) {
 export class ScopeError extends Error {}
 
 function parseScopes(raw) {
-  try { const a = JSON.parse(raw || '[]'); return Array.isArray(a) ? a.filter(s => SCOPES.includes(s)) : ['read']; }
+  try {
+    const a = JSON.parse(raw || '[]');
+    if (!Array.isArray(a)) return ['read'];
+    const got = new Set(a.map(s => LEGACY_SCOPES[s] || s));
+    return SCOPES.filter(s => got.has(s));
+  }
   catch { return ['read']; }
 }
 
@@ -156,11 +170,22 @@ const windows = new Map(); // `${tokenId}:${kind}` -> timestamps[]
 const RATE_WINDOW_MS = 60_000;
 export function rateLimits() {
   const n = (v, d) => { const x = Number(v); return Number.isFinite(x) && x > 0 ? Math.floor(x) : d; };
-  return { read: n(process.env.API_TOKEN_RPM, 120), write: n(process.env.API_TOKEN_WRITE_RPM, 20) };
+  return {
+    read: n(process.env.API_TOKEN_RPM, 120),
+    write: n(process.env.API_TOKEN_WRITE_RPM, 20),
+    // A bulk write (bulk-edit, an import commit, applying a scenario) changes
+    // many rows in one call; its own, lower bucket (D-164).
+    bulk: n(process.env.API_TOKEN_BULK_RPM, 5),
+  };
 }
-/** null when allowed; otherwise the seconds until a slot frees. */
-export function takeRateSlot(tokenId, isWrite, now = Date.now()) {
-  const kind = isWrite ? 'write' : 'read';
+/** 'read' | 'write' | 'bulk' — which bucket a request draws on. */
+export function rateKindOf(req) {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return 'read';
+  return writeAreaFor(req)?.bulk ? 'bulk' : 'write';
+}
+/** null when allowed; otherwise the seconds until a slot frees. `kind` may be a boolean (legacy: isWrite). */
+export function takeRateSlot(tokenId, kindOrIsWrite, now = Date.now()) {
+  const kind = typeof kindOrIsWrite === 'string' ? kindOrIsWrite : (kindOrIsWrite ? 'write' : 'read');
   const limit = rateLimits()[kind];
   const key = `${tokenId}:${kind}`;
   const hits = (windows.get(key) || []).filter(t => now - t < RATE_WINDOW_MS);
@@ -173,38 +198,21 @@ export function takeRateSlot(tokenId, isWrite, now = Date.now()) {
   return null;
 }
 
-// ── What a write-drafts token may write ─────────────────────────────────────
+// ── What a `write` token may write (D-164) ──────────────────────────────────
 //
-// DEFAULT-DENY. A token's non-GET request is refused unless it carries
-// `write-drafts` AND matches one of these, exactly. Paths are relative to /api,
-// the same convention as PUBLIC_ROUTES. Every entry produces a DRAFT or a
-// message — nothing here changes the state of a controlled record.
-//
-// The two /artwork/ingest entries are listed for completeness: that route is a
-// PUBLIC path guarded by the proofing token, so an rdk_ bearer never reaches
-// this gate there. They are here so the list reads as the whole answer.
-const draftNfp = (db, id) => db.prepare('SELECT status FROM nfp_versions WHERE id = ?').get(id)?.status === 'draft';
-export const WRITE_DRAFT_ALLOW = Object.freeze([
-  { method: 'POST', re: /^\/nfp\/?$/, label: 'POST /api/nfp — file a draft nutrition panel',
-    when: (req) => req.body?.source !== 'paper' },
-  { method: 'PUT', re: /^\/nfp\/([^/]+)$/, label: 'PUT /api/nfp/:id — while the panel is a draft',
-    when: (req, m, db) => draftNfp(db, m[1]) },
-  { method: 'PUT', re: /^\/nfp\/([^/]+)\/panel$/, label: 'PUT /api/nfp/:id/panel — while the panel is a draft',
-    when: (req, m, db) => draftNfp(db, m[1]) },
-  { method: 'POST', re: /^\/comms\/channels\/[^/]+\/messages$/, label: 'POST /api/comms/channels/:id/messages — post a message' },
-  { method: 'POST', re: /^\/artwork\/ingest\/?$/, label: 'POST /api/artwork/ingest (public, proof token)' },
-  { method: 'POST', re: /^\/artwork\/ingest\/[^/]+\/files$/, label: 'POST /api/artwork/ingest/:id/files (public, proof token)' },
-]);
-
+// DEFAULT-DENY, in this order — each a separate statement of the rule:
+//   a) no `write` scope → read-only;
+//   b) TOKEN_DENY or APPROVE_ROUTES (no-token-approve.js) → refused, whatever
+//      the role and whatever the scope;
+//   c) on WRITE_AREAS (bot-api.js), with its `when` holding (a nutrition panel
+//      or a partner document only while it is a draft) → allowed;
+//   d) anything else → refused.
+// Allowed here means the request reaches the route as its account; the
+// account's module access and the handler's own checks still decide.
 export function tokenWriteAllowed(req, scopes, db = getDb()) {
-  if (!scopes.includes('write-drafts')) return false;
-  for (const r of WRITE_DRAFT_ALLOW) {
-    if (r.method !== req.method) continue;
-    const m = req.path.match(r.re);
-    if (!m) continue;
-    try { return r.when ? !!r.when(req, m, db) : true; } catch { return false; }
-  }
-  return false;
+  if (!scopes.includes('write')) return false;
+  if (approveRouteFor(req) || tokenDenyFor(req)) return false;
+  return writeAreaAllows(req, db);
 }
 
 /** For a handler that logs its own audit entry: the token behind the call, if any. */

@@ -383,8 +383,9 @@ limit), `authenticateToken` in `middleware/auth.js`, `server/middleware/no-token
 `APPROVE_ROUTES`, `tokenApproveGuard`, `rejectTokenAuth`), `/api/api-tokens` + Settings → **Bot API tokens**.
 - **A token is its account**: `Authorization: Bearer rdk_…` builds the same `req.user` a session would; module
   grants decide reads. Admin accounts can never hold one; promotion/deactivation/revoke/expiry ⇒ 401.
-- **Scopes `read` + `write-drafts` ONLY. Writes default-deny** — add a route to `WRITE_DRAFT_ALLOW` only if it
-  makes a DRAFT or a message. **Never add an approve/admin scope** (`check:apitokens` fails).
+- **Scopes `read` + `write` ONLY (D-164; `write-drafts` is legacy input, read as `write`). Writes default-deny** —
+  a token writes only to `WRITE_AREAS` in `server/bot-api.js`, and its account's own access still decides. **Never
+  add an approve/delete/admin scope** (`check:apitokens` fails).
 - **A new route that approves, signs, verifies, releases or settles** is covered automatically when its path says
   so; if it does not, add it to `APPROVE_ROUTES` — `check:apitokens` scans every router and fails otherwise.
 - `logAudit` adds `via_token` when `req.user.via_token` is set; every token call also writes `api_token_call`.
@@ -413,6 +414,23 @@ limit), `authenticateToken` in `middleware/auth.js`, `server/middleware/no-token
   exist (the guard refuses on the path).
 - `check:botmcp` (32). CI runs `npm ci --prefix packages/readydoc-mcp` and sets `BOTMCP_REQUIRE_STDIO=1`.
   Locally, the stdio half skips until the SDK is installed.
+
+## A `write` token: a reviewed list of writes, and a file of things only a person does (D-164)
+`WRITE_AREAS` + `writeAreaFor` / `writeAreaAllows` (`server/bot-api.js`), `TOKEN_DENY` + `tokenDenyFor` /
+`refuseTokenDenied` + `DELETE_SEGMENTS` / `DECISION_SEGMENTS` (`server/middleware/no-token-approve.js`),
+`rateKindOf` + the bulk bucket (`server/api-tokens.js`), the scope migration in `db.js`.
+- **Default-deny, on purpose.** The pack asked for allow-by-role with a deny-list; 480 of 642 write routes match no
+  pattern and more than three of those are destructive (bulk-delete, cleanup close, a pay raise, end-access…), so
+  the pack's own fallback applied. **A new write route a bot needs goes on `WRITE_AREAS`**, which
+  `check:apitokens` checks for dead entries and for overlaps with a deny rule.
+- **`no-token-approve.js` is the one file for "person-only"**: approve class → `approve_requires_human_session`;
+  `TOKEN_DENY` (delete, decision, user_admin, token_admin, on every method) → `403 token_denied` + `category`,
+  audited `api_token_write_blocked`. **A new route that deletes, decides or administers is covered when its path
+  says so; otherwise add it to `TOKEN_DENY`.**
+- Drafts only while draft: NFP and partner documents (`when` on the entry). AP Drop status: triage moves only;
+  artwork status: draft / in_review only.
+- `token_scope` now means only "read-only". Bulk writes: `API_TOKEN_BULK_RPM` (default 5).
+- `check:apitokens` (127; control with TOKEN_DENY off fails 18, allow-by-role fails 3), `verify:apitokensui` (13).
 
 ## Revoking access reaches the sessions it already opened (D-072)
 `revokeSessions(db, userId, { keepToken, devices })` in `api/sessions.js` is the ONE helper; Settings

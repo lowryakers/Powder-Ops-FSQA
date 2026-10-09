@@ -17,7 +17,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import Database from 'better-sqlite3';
-import { BOT_ROUTES, PAGE_MAX, isForbiddenKey } from '../server/bot-api.js';
+import { BOT_ROUTES, PAGE_MAX, isForbiddenKey, writeAreaFor } from '../server/bot-api.js';
 import { scanRoutes, concretePath } from './lib/route-scan.mjs';
 
 let pass = 0, fail = 0;
@@ -32,12 +32,17 @@ const undocumented = [...listed].filter(k => !documented.has(k));
 const unlisted = [...documented].filter(k => !listed.has(k));
 t(`every one of ${listed.size} BOT_ROUTES is documented`, undocumented.length === 0, undocumented.join('; '));
 t('nothing is documented that BOT_ROUTES does not list', unlisted.length === 0, unlisted.join('; '));
-for (const section of ['401', 'token_scope', 'approve_requires_human_session', '404', '429', 'X-Total-Count', 'module_access']) {
+for (const section of ['401', 'token_scope', 'token_denied', 'approve_requires_human_session', '404', '429', 'X-Total-Count', 'module_access', '## Never via token', '## What `write` may write']) {
   t(`the docs explain ${section}`, doc.includes(section));
 }
 const scanned = new Set(scanRoutes(process.cwd(), { includeGet: true }).map(r => key(r.method, r.path.replace(/\/$/, '') || r.path)));
 const missingInCode = BOT_ROUTES.filter(r => !scanned.has(key(r.method, r.path)));
 t('every BOT_ROUTES entry exists in the server source', missingInCode.length === 0, missingInCode.map(r => key(r.method, r.path)).join('; '));
+const writeRoutes = BOT_ROUTES.filter(r => r.method !== 'GET');
+t('every writing BOT_ROUTES entry has scope write and is on WRITE_AREAS',
+  writeRoutes.length >= 10 && writeRoutes.every(r => r.scope === 'write' && writeAreaFor({ method: r.method, path: r.path.replace(/^\/api/, '').replace(/:([A-Za-z_]+)/g, 'x0') })),
+  writeRoutes.filter(r => !writeAreaFor({ method: r.method, path: r.path.replace(/^\/api/, '').replace(/:([A-Za-z_]+)/g, 'x0') })).map(r => key(r.method, r.path)).join('; '));
+t('no BOT_ROUTES entry still says write-drafts', !BOT_ROUTES.some(r => r.scope === 'write-drafts'));
 
 // ── live ──────────────────────────────────────────────────────────────────────
 const PORT = Number(process.env.BOTAPI_CHECK_PORT || 5083);
@@ -74,7 +79,7 @@ const signIn = async (name, id) => {
 const admin = await signIn('Surface Admin', 'ba-admin');
 const botSession = await signIn('Catalog Bot', 'ba-bot');
 const readTok = (await call('POST', '/api/api-tokens', { user_id: 'ba-bot', label: 'Catalog reader', scopes: ['read'] }, admin)).body?.plaintext;
-const draftTok = (await call('POST', '/api/api-tokens', { user_id: 'ba-bot', label: 'Catalog drafter', scopes: ['read', 'write-drafts'] }, admin)).body?.plaintext;
+const draftTok = (await call('POST', '/api/api-tokens', { user_id: 'ba-bot', label: 'Catalog writer', scopes: ['read', 'write'] }, admin)).body?.plaintext;
 t('sessions and two tokens', !!admin && !!botSession && !!readTok && !!draftTok);
 
 // Fixtures, through the doors a person would use where one exists.
@@ -93,7 +98,7 @@ t('fixtures: a product, an artwork version, a partner, a channel the bot is in',
 console.log('\n── posting as the bot ──');
 let r = await call('POST', `/api/comms/channels/${channel.id}/messages`, { body: 'Proof run finished for the pouch.' }, draftTok);
 const msg = r.body;
-t('a write-drafts token posts a message (201)', r.status === 201, JSON.stringify(r.body).slice(0, 120));
+t('a write token posts a message (201)', r.status === 201, JSON.stringify(r.body).slice(0, 120));
 t('…attributed to the bot account', msg?.user_id === 'ba-bot' && db.prepare('SELECT user_id FROM chat_messages WHERE id = ?').get(msg?.id)?.user_id === 'ba-bot');
 r = await call('POST', `/api/comms/channels/${channel.id}/messages`, { body: 'Heads up @everyone' }, draftTok);
 t('@everyone from a token → 403 token_scope', r.status === 403 && r.body?.error === 'token_scope');
@@ -102,7 +107,7 @@ t('…while the same account signed in can still use it', r.status === 201);
 r = await call('POST', `/api/comms/channels/${otherChannel}/messages`, { body: 'hello' }, draftTok);
 t('a channel the bot is not in → 404 (membership holds)', r.status === 404);
 r = await call('POST', '/api/comms/channels', { name: 'bot-made', kind: 'public' }, draftTok);
-t('a token cannot create a channel', r.status === 403 && r.body?.error === 'token_scope');
+t('a token cannot create a channel (not on WRITE_AREAS)', r.status === 403 && r.body?.error === 'token_denied' && r.body?.category === 'not_open_to_tokens', JSON.stringify(r.body));
 r = await call('POST', `/api/comms/channels/${channel.id}/messages`, { body: 'read only' }, readTok);
 t('a read token cannot post', r.status === 403 && r.body?.error === 'token_scope');
 
@@ -154,7 +159,7 @@ t(`a limit above ${PAGE_MAX} is capped`, Number(big.headers.get('x-limit')) === 
 console.log('\n── whoami ──');
 r = await call('GET', '/api/bot/whoami', null, draftTok);
 t('whoami names the account, scopes, prefix, limits', r.status === 200 && r.body?.user?.id === 'ba-bot' && r.body?.auth === 'token'
-  && JSON.stringify(r.body.scopes) === '["read","write-drafts"]' && r.body.tokenPrefix === draftTok.slice(0, 8)
+  && JSON.stringify(r.body.scopes) === '["read","write"]' && r.body.tokenPrefix === draftTok.slice(0, 8)
   && r.body.rate_limits?.read > 0 && 'expires_at' in r.body, JSON.stringify(r.body).slice(0, 200));
 t('…and lists the documented routes', r.body?.routes?.length === BOT_ROUTES.length);
 

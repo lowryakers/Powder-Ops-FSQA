@@ -129,6 +129,7 @@ const RUNS = [
   ['verify-production-runs.mjs', 5059, {}, false],
   ['verify-ap-drop-vendor.mjs', 5062, {}, false],
   ['verify-ap-drop-report.mjs', 5079, {}, false],
+  ['verify-api-tokens-ui.mjs', 5092, {}, false],
 ];
 
 // VERIFY_ONLY=verify-auth.mjs,verify-swab-stock.mjs runs just the entries that

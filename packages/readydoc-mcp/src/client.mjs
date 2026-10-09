@@ -1,7 +1,13 @@
 // The HTTP half: turn a tool call into one request to ReadyDoc's REST surface,
 // and turn ReadyDoc's answer into something a model can act on. Pure apart from
 // the injected fetch, so the test drives it with a mock.
+import { readFile as fsReadFile } from 'node:fs/promises';
+import { basename, extname } from 'node:path';
 import { ROUTES } from './routes.mjs';
+
+const MIME = { '.pdf': 'application/pdf', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+  '.heic': 'image/heic', '.webp': 'image/webp', '.gif': 'image/gif', '.svg': 'image/svg+xml',
+  '.ai': 'application/postscript', '.eps': 'application/postscript', '.tif': 'image/tiff', '.tiff': 'image/tiff' };
 
 export class ConfigError extends Error {}
 
@@ -34,6 +40,9 @@ export function explain(status, body, headers) {
   if (status === 403 && code === 'approve_requires_human_session') {
     return new ReadyDocError('This needs a human in ReadyDoc: approving, deciding, signing or releasing is never done by a bot. Ask a person to do it in the app.', { status, code });
   }
+  if (status === 403 && code === 'token_denied') {
+    return new ReadyDocError(`This needs a person in ReadyDoc (${body?.category || 'not open to tokens'}): ${body?.message || 'a bot token can never do it'}`, { status, code });
+  }
   if (status === 403 && code === 'token_scope') {
     return new ReadyDocError(`This token may not do that: ${body?.message || 'it is outside the token scope'}.`, { status, code });
   }
@@ -50,7 +59,7 @@ export function explain(status, body, headers) {
   return new ReadyDocError(`ReadyDoc answered ${status}${detail ? `: ${detail}` : ''}.`, { status, code });
 }
 
-export function makeClient({ url, token, fetch: f = globalThis.fetch }) {
+export function makeClient({ url, token, fetch: f = globalThis.fetch, readFile = fsReadFile }) {
   async function call(route, args = {}) {
     let path = route.path;
     for (const m of route.path.matchAll(/:([A-Za-z_]+)/g)) {
@@ -68,8 +77,21 @@ export function makeClient({ url, token, fetch: f = globalThis.fetch }) {
       // `source` or `approved_by` to a draft by inventing an argument.
       const body = {};
       for (const k of route.body || []) if (args[k] !== undefined) body[k] = args[k];
-      init.headers['Content-Type'] = 'application/json';
-      init.body = JSON.stringify(body);
+      const filePath = route.file ? args[route.file.arg] : undefined;
+      if (route.file?.required && !filePath) throw new ReadyDocError(`${route.file.arg} is required.`);
+      if (filePath) {
+        let bytes;
+        try { bytes = await readFile(String(filePath)); }
+        catch (err) { throw new ReadyDocError(`Could not read ${filePath}: ${err.message}`); }
+        const form = new FormData();
+        for (const [k, v] of Object.entries(body)) if (v !== null) form.append(k, String(v));
+        const name = basename(String(filePath));
+        form.append(route.file.field, new Blob([bytes], { type: MIME[extname(name).toLowerCase()] || 'application/octet-stream' }), name);
+        init.body = form; // fetch sets the multipart boundary itself
+      } else {
+        init.headers['Content-Type'] = 'application/json';
+        init.body = JSON.stringify(body);
+      }
     }
     let res;
     try { res = await f(target, init); }
