@@ -108,6 +108,40 @@ The `write-drafts` scope allows only the writes below. Everything else is refuse
 - `PUT /api/nfp/:id` and `PUT /api/nfp/:id/panel`: only while the panel is still a draft.
 - `POST /api/comms/channels/:id/messages`: posts a message.
 
+## Using it from an MCP client
+
+`packages/readydoc-mcp` is a stdio MCP server with one tool per route on this page. It never approves anything (D-163). Install, configure and connect it as described in its [README](../packages/readydoc-mcp/README.md):
+
+- Set `READYDOC_URL` and `READYDOC_TOKEN`.
+- Point the client at `node packages/readydoc-mcp/bin.mjs`.
+
+## After a deploy
+
+Run this checklist once after a release that touches the bot surface, and once after first setup. It takes about five minutes.
+
+1. **Create one non-admin account per bot** in Settings → Users, with only the modules in the table above.
+2. **Mint one token per bot** in Settings → Bot API tokens.
+   - Use `read`, plus `write-drafts` only for the bots that file panel drafts or post messages.
+   - Put each token in that bot's secret store.
+3. **Run the smoke test** against the live app:
+
+   ```sh
+   READYDOC_URL=https://app.powder-ops.com \
+   READYDOC_ADMIN_TOKEN=<your own admin session token> \
+   SMOKE_BOT_USER="<a bot account's name or id>" \
+   node scripts/smoke-bot-api.mjs
+   ```
+
+   It runs these steps and prints a PASS/FAIL table:
+   - mints a temporary **read** token for that account;
+   - checks `GET /api/bot/whoami` and `GET /api/products` answer **200**;
+   - tries `POST /api/nfp/:id/decide` and an artwork approve, and expects **403 `approve_requires_human_session`**;
+   - revokes the token and checks it is refused with **401**.
+
+   The token is always revoked, even when a step fails. The script writes no panel and no message, so it is safe on production. The approve attempts name ids that do not exist, because the guard refuses on the path before any record is looked up.
+4. **If `GET /api/products` fails**, the smoke account lacks the `products` module. Grant it, then run the test again.
+5. **Check each bot from its own client:** its `whoami` tool should name the right account and scopes.
+
 ---
 
 ## Self-check

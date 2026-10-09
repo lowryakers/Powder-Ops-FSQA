@@ -56,3 +56,11 @@ jobs:
       # never claimed, or if the register cites one that no longer exists.
       - name: Nothing found is lost
         run: npm run check:obligations
+
+      # The bots' MCP server (D-163): its tools must name exactly the routes on
+      # the bot surface and never an approval; the real server is started over
+      # stdio and the post-deploy smoke test runs end to end against a fresh one.
+      - name: Bot MCP server + smoke test
+        run: |
+          npm ci --prefix packages/readydoc-mcp
+          BOTMCP_REQUIRE_STDIO=1 npm run check:botmcp
