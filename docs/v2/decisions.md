@@ -6595,3 +6595,54 @@ was to open attempts one by one. **Training → Most missed** (`QuestionMissesPa
   by `rowid` (insertion order) now.
 - Pull, not push (`docs/v2/reachability.md`). `verify:questionmisses` (30, live + browser at 1280 and 390; in
   `verify:all`). **Control — the code before this change — fails at the first check and cannot continue.**
+
+## D-160 — AP Drop hands receivables to Partner Recon, asks the direction, and flags near-duplicates (2026-10-09)
+AP Drop routed M4's "they owe us" invoices to Partner Reconciliation correctly (a receivable draft), but the drop
+row stayed on the AP-only track (new → in_qbo → in_payment_run → paid). So a receivable sat in AP Outstanding
+looking like a bill we owe. Four related gaps came with it, all from real drops:
+- **I136**: vendor read "USA"; due 26 May on an invoice issued 24 Sep.
+- **Jake's 23 Sep pair**: $7,464.34 and $7,464.49 on PO-01231, four minutes apart. Only the first was on the ledger, and both were Outstanding.
+
+Six changes, each local:
+1. **`to_partner_ar` is a terminal status**, set by routing only and never offered as a hand pick (400).
+   - It is set when the ledger document — created or linked, read by its OWN direction — is a receivable.
+   - It is idempotent: it writes nothing a second time.
+   - It never moves a status a person set (paid / closed / not_finance) or a duplicate flag still waiting on a look.
+   - It writes one `status_changed {auto:true}` event and one audit row, `ap_drop.to_partner_ar`.
+   - **No sync back**: a ledger document later flipped to payable leaves the drop where it is. The ledger is where that correction lives.
+   - Neither new status is `in_qbo`/`in_payment_run`, the only ones the Controller's payment tooling reads. Nothing in this repo selects those two statuses.
+2. **An unclear direction is asked, never assumed.** `detectPartner` returns `direction: null, unclear: true` where it said payable.
+   - Routing parks the drop as needs_info **"Receivable or payable? (M4 Dynamics)"** with a `needs_direction` event and no ledger document.
+   - `route-partner` refuses a missing direction with 400 and `needs_direction`. That includes the "M4 partner?" yes, which used to default to payable too. Both prompts now show **They owe us / We owe them**.
+3. **A due date before the issue date is not a due date.**
+   - The reader drops a printed one, with a parse note.
+   - `applyParse` drops one earlier than a typed invoice date.
+   - A due date a person typed stays on the drop. The ledger copy takes `dueDateFor(issued, terms_days)` and records `due_date_corrected {parsed, used, terms_days}`.
+4. **Near-duplicates are flagged before routing.** The rule:
+   - same partner (routed, or detected with high confidence) OR same vendor name;
+   - the same reference after the kind word, case and spaces are dropped (`PO PO-01231` = `PO-01231`, never a prefix match);
+   - within $1.00, inside 24 h, and different bytes.
+
+   A match becomes `duplicate_suspect` linked to the earlier row, with reason "Near-duplicate of <id8>: same ref, $X vs $Y, n min apart". It is not routed and nothing is deleted. The office confirms it with route-partner (→ triaged), or closes it.
+5. **The vendor parser splits `OUR_COMPANY` from the partner.**
+   - `OUR_COMPANY` is powder ops / prodough / pro dough. M4 is no longer skipped: on M4's invoice M4 is the letterhead.
+   - Our own name is returned when it is the letterhead (first eight lines), flagged `ours: true` (`fields.vendor_ours`). That lets vendor = us + bill-to = M4 route as a receivable.
+   - Nothing at or below Bill To / Ship To is ever the vendor. The country refusal stays.
+   - `OUR_NAMES` had no other importer. partners.js and partner-doc-backfill.js keep their own `['Powder Ops',…]` arrays, which are unchanged.
+6. **"Not AP: this is a receivable"** (`receivable_other`): terminal, reason required, office only, audited `ap_drop.receivable_other`, refused on a drop that is on a partner ledger. No AR module, no ledger write.
+
+The CHECK on `ap_drops.status` is widened by the work_orders rebuild shape, once, with foreign keys off. `ap_drop_events` cascades on delete, so a DROP with them on would have emptied the activity log; asserted against a pre-D-160 table.
+
+`scripts/report-ap-drop-stuck-receivables.mjs` (`npm run report:apdrop-ar`) is **read-only**: it lists Outstanding drops that are receivables on the ledger, and near-duplicate pairs over all time. The office closes old rows by hand; nothing is backfilled.
+
+The Controller's `ap_drop.created` audit rows are unchanged: one per drop, same keys, asserted.
+
+Verified:
+- `check:apdrop` 37
+- `check:aproute` 15
+- `verify:apdrop` 110
+- `verify:apdropui` 30
+- `verify:apdropvendor` 6
+- `verify:apdropreport` 17
+
+**Control — the code before this change** fails parse 6, route 3 and `verify:apdrop` 27, and the UI and report verifies do not finish.

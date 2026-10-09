@@ -113,6 +113,34 @@ t('the queue row shows the new status and the blocker', true);
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => !document.querySelector('[data-ap-drawer]'));
 }
+// D-160: a partner document that says nothing about direction asks, with two
+// buttons; answering "they owe us" files a receivable and the drop leaves AP.
+{
+  const buf = await new Promise(res => { const doc = new PDFDocument(); const c = []; doc.on('data', x => c.push(x)); doc.on('end', () => res(Buffer.concat(c)));
+    ['INVOICE', 'Invoice No: X-77', 'Amount Due $300.00'].forEach(l => doc.text(l)); doc.end(); });
+  const fd = new FormData(); fd.append('files', new Blob([buf], { type: 'application/pdf' }), 'm4-scan-0917.pdf');
+  const r = await fetch(`${URL}/api/ap-drop`, { method: 'POST', headers: { Authorization: `Bearer ${office.token}` }, body: fd });
+  const dq = (await r.json()).drops?.[0];
+  t('an M4 scan with no direction drops and is parked with the question', dq?.status === 'needs_info' && /^Receivable or payable\?/.test(dq?.status_reason || ''));
+  t('the status filter offers "Receivables → Partner Recon"', await page.$eval('[data-ap-status-filter]', el => [...el.options].some(o => o.value === 'to_partner_ar' && /Receivables → Partner Recon/.test(o.textContent))));
+  await page.reload();
+  await page.waitForSelector(`[data-ap-row="${dq.id}"]`, { timeout: 20000 });
+  await page.click(`[data-ap-row="${dq.id}"]`);
+  await page.waitForSelector('[data-ap-partner="direction"]', { timeout: 20000 });
+  const q = await page.textContent('[data-ap-partner="direction"]');
+  t('the drawer asks "Receivable or payable?" with two buttons', /Receivable or payable\?/.test(q) && /They owe us \(receivable\)/.test(q) && /We owe them \(payable\)/.test(q), q.slice(0, 200));
+  await page.click('[data-ap-route-dir="receivable"]');
+  await page.waitForSelector('[data-ap-partner="routed"]', { timeout: 20000 });
+  t('"They owe us" puts it on the ledger as a receivable', /receivable \(they owe it\)/.test(await page.textContent('[data-ap-partner="routed"]')));
+  await page.waitForFunction(() => /Receivable → Partner Recon/.test(document.querySelector('[data-ap-drawer]')?.textContent || ''));
+  t('the drawer shows the new status, "Receivable → Partner Recon"', true);
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => !document.querySelector('[data-ap-drawer]'));
+  t('it is gone from Outstanding', !(await page.$(`[data-ap-row="${dq.id}"]`)));
+  await page.selectOption('[data-ap-status-filter]', 'to_partner_ar');
+  await page.waitForSelector(`[data-ap-row="${dq.id}"]`, { timeout: 20000 });
+  t('the Receivables filter lists it with its label', /Receivable → Partner Recon/.test(await page.textContent(`[data-ap-row="${dq.id}"]`)));
+}
 await page.selectOption('[data-ap-status-filter]', 'paid');
 await page.waitForSelector('[data-ap-empty]');
 t('an empty filter reads the empty-state line', /Drop it here or forward it to ap@powder-ops\.com/.test(await page.textContent('[data-ap-empty]')));

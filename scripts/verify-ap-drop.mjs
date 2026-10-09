@@ -200,14 +200,133 @@ t('…with no partner document filed', !dLow?.partner_document_id && db.prepare(
 r = await call('POST', `/ap-drop/${dLow.id}/route-partner`, {}, op);
 t('an operator cannot answer the question (403)', r.status === 403);
 r = await call('POST', `/ap-drop/${dLow.id}/route-partner`, {}, office);
+t('saying yes WITHOUT a direction is refused — nothing assumes payable (D-160)', r.status === 400 && r.body?.needs_direction === true, JSON.stringify(r.body).slice(0, 160));
+r = await call('POST', `/ap-drop/${dLow.id}/route-partner`, { direction: 'payable' }, office);
 t('the office saying yes files the draft and moves the drop to triaged', r.status === 200 && r.body?.routed === true && r.body?.created === true && r.body?.drop?.status === 'triaged' && !!r.body?.drop?.partner_document_id, JSON.stringify(r.body).slice(0, 200));
 pdoc = db.prepare('SELECT * FROM partner_documents WHERE id = ?').get(r.body?.document_id);
 t('…as a draft, marked as routed by the office', pdoc?.status === 'draft' && pdoc?.doc_number === 'ACME-91' && (await call('GET', `/ap-drop/${dLow.id}`, null, admin)).body?.partner_route?.forced === true);
-r = await call('POST', `/ap-drop/${dLow.id}/route-partner`, {}, office);
+r = await call('POST', `/ap-drop/${dLow.id}/route-partner`, { direction: 'payable' }, office);
 t('routing it twice is refused (409)', r.status === 409);
 // The queue and the vendor filter still reconcile with everything above.
 r = await call('GET', '/ap-drop?status=all', null, admin);
 t('"all" now shows every drop including the routed ones', r.body.length === 9, String(r.body?.length));
+
+
+// ── D-160: receivables leave AP, the direction is asked, terms beat a bad due
+// date, a near-duplicate is flagged, our own letterhead is the vendor ────────
+console.log('\n── D-160 ──');
+const audits = (id, ev) => db.prepare("SELECT COUNT(*) c FROM audit_log WHERE entity_type = 'ap_drop' AND entity_id = ? AND details LIKE ?").get(id, `%${ev}%`).c;
+const events = (id, kind) => db.prepare('SELECT COUNT(*) c FROM ap_drop_events WHERE drop_id = ? AND kind = ?').get(id, kind).c;
+const outstandingIds = async () => (await call('GET', '/ap-drop', null, admin)).body.map(x => x.id);
+const m4terms = db.prepare("SELECT terms_days FROM partner_accounts WHERE id = ?").get(m4.id).terms_days;
+const plusDays = (iso, n) => { const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+
+// 1. Our own invoice to M4: a receivable, handed to Partner Recon, gone from AP.
+const ourInv = ['Powder Ops LLC', '1150 W 2700 S', 'USA', 'INVOICE', 'Invoice No: I-7001', 'Invoice Date: 09/24/2026', 'Bill To: M4 Dynamics', 'Amount Due $2,100.00'];
+r = await drop(office, await pdf(ourInv), 'i-7001.pdf');
+const dAr = r.body?.drops?.[0];
+t('1 our own invoice reads the Powder Ops letterhead as the vendor, flagged ours', dAr?.vendor_name === 'Powder Ops LLC' && dAr?.parsed?.fields?.vendor_ours === true, dAr?.vendor_name);
+let ardoc = db.prepare('SELECT * FROM partner_documents WHERE id = ?').get(dAr?.partner_document_id);
+t('1 it is a DRAFT RECEIVABLE on the M4 ledger', ardoc?.direction === 'receivable' && ardoc?.status === 'draft' && ardoc?.doc_number === 'I-7001', JSON.stringify(ardoc && { d: ardoc.direction, s: ardoc.status }));
+t('1 the drop moved to to_partner_ar, terminal, with the ledger number in the reason', dAr?.status === 'to_partner_ar' && /^Receivable — on M4 Dynamics ledger as I-7001/.test(dAr?.status_reason || '') && dAr?.outstanding === false && !!dAr?.closed_at, JSON.stringify({ s: dAr?.status, r: dAr?.status_reason }));
+t('1 one auto status_changed event and ONE audit row (ap_drop.to_partner_ar)', events(dAr.id, 'status_changed') === 1 && audits(dAr.id, 'ap_drop.to_partner_ar') === 1);
+t('1 it is not in AP Outstanding', !(await outstandingIds()).includes(dAr.id));
+r = await call('GET', '/ap-drop?status=to_partner_ar', null, admin);
+t('1 the "Receivables → Partner Recon" filter lists it', r.body.some(x => x.id === dAr.id));
+r = await call('POST', `/ap-drop/${dAr.id}/reparse`, null, admin);
+t('1 routing again (a re-read) writes no second event or audit', r.status === 200 && events(dAr.id, 'status_changed') === 1 && audits(dAr.id, 'ap_drop.to_partner_ar') === 1 && r.body?.drop?.status === 'to_partner_ar');
+r = await call('POST', `/ap-drop/${dAr.id}/status`, { status: 'to_partner_ar', reason: 'by hand' }, admin);
+t('1 to_partner_ar cannot be picked by hand (only routing sets it)', r.status === 400);
+// Linking the document already there gives the same result.
+r = await drop(office, await pdf([...ourInv, 'Thank you']), 'i-7001-resent.pdf');
+const dAr2 = r.body?.drops?.[0];
+t('1 the same invoice resent (different bytes) LINKS the ledger document and also leaves AP', dAr2?.partner_document_id === ardoc.id && dAr2?.status === 'to_partner_ar' && db.prepare("SELECT COUNT(*) c FROM partner_documents WHERE doc_number = 'I-7001'").get().c === 1, JSON.stringify({ s: dAr2?.status, p: dAr2?.partner_document_id }));
+// A human terminal status is left alone.
+db.prepare("UPDATE ap_drops SET status = 'closed', partner_document_id = NULL WHERE id = ?").run(dAr2.id);
+r = await call('POST', `/ap-drop/${dAr2.id}/reparse`, null, admin);
+t('1 a drop a person closed is not moved by routing', r.body?.drop?.status === 'closed', r.body?.drop?.status);
+
+// 2. Unclear direction: asked, never filed as payable.
+r = await drop(op, await pdf(['INVOICE', 'Invoice No: X-55', 'Amount Due $300.00']), 'm4-scan-0917.pdf');
+const dQ = r.body?.drops?.[0];
+t('2 a partner document with no direction parks as needs_info "Receivable or payable? (M4 Dynamics)"', dQ?.status === 'needs_info' && /^Receivable or payable\? \(M4 Dynamics\)/.test(dQ?.status_reason || ''), JSON.stringify({ s: dQ?.status, r: dQ?.status_reason }));
+t('2 …with no partner document and a needs_direction event', !dQ?.partner_document_id && db.prepare("SELECT COUNT(*) c FROM partner_documents WHERE doc_number = 'X-55'").get().c === 0 && events(dQ.id, 'needs_direction') === 1);
+r = await call('POST', `/ap-drop/${dQ.id}/route-partner`, {}, office);
+t('2 route-partner without a direction → 400', r.status === 400 && r.body?.needs_direction === true);
+r = await call('POST', `/ap-drop/${dQ.id}/route-partner`, { direction: 'sideways' }, office);
+t('2 a direction that is neither → 400', r.status === 400);
+r = await call('POST', `/ap-drop/${dQ.id}/route-partner`, { direction: 'receivable' }, office);
+const qdoc = db.prepare('SELECT * FROM partner_documents WHERE id = ?').get(r.body?.document_id);
+t('2 with "receivable" → a receivable draft and the drop leaves AP (to_partner_ar)', r.status === 200 && qdoc?.direction === 'receivable' && r.body?.drop?.status === 'to_partner_ar', JSON.stringify({ st: r.status, d: qdoc?.direction, s: r.body?.drop?.status }));
+
+// 3. I136: a due date before the issue date. Typed by a person, so it is kept
+// on the drop; the ledger copy takes M4's terms, and says so.
+const i136 = ['Powder Ops LLC', '1150 W 2700 S', 'USA', 'INVOICE', 'Invoice No: I136', 'Invoice Date: 09/24/2026', 'Due Date: 05/26/2026', 'Bill To: M4 Dynamics', 'Amount Due $1,051.92'];
+r = await drop(office, await pdf(i136), 'I136.pdf', { due_date: '2026-05-26' });
+const dI = r.body?.drops?.[0];
+const idoc = db.prepare('SELECT * FROM partner_documents WHERE id = ?').get(dI?.partner_document_id);
+t('3 I136: the vendor is Powder Ops, never "USA"', dI?.vendor_name === 'Powder Ops LLC', dI?.vendor_name);
+t('3 I136: the typed due date stays on the drop', dI?.due_date === '2026-05-26');
+t(`3 I136: the ledger due date is issue + ${m4terms} days`, idoc?.issued_date === '2026-09-24' && idoc?.due_date === plusDays('2026-09-24', m4terms), JSON.stringify({ i: idoc?.issued_date, d: idoc?.due_date }));
+const dc = db.prepare("SELECT detail FROM ap_drop_events WHERE drop_id = ? AND kind = 'due_date_corrected'").get(dI.id);
+t('3 I136: a due_date_corrected event names parsed, used and the terms', !!dc && JSON.parse(dc.detail).parsed === '2026-05-26' && JSON.parse(dc.detail).used === idoc?.due_date && JSON.parse(dc.detail).terms_days === m4terms);
+r = await drop(office, await pdf(['Powder Ops LLC', 'INVOICE', 'Invoice No: I137', 'Invoice Date: 09/24/2026', 'Due Date: 05/26/2026', 'Bill To: M4 Dynamics', 'Amount Due $90.00']), 'I137.pdf');
+const dI2 = r.body?.drops?.[0];
+t('3 a PRINTED due date before the issue date is not applied to the drop, with a parse note', dI2?.due_date == null && /before the invoice date/.test((dI2?.parsed?.notes || []).join()), JSON.stringify({ d: dI2?.due_date, n: dI2?.parsed?.notes }));
+
+// 4. Jake's pair: $7,464.34 then $7,464.49 on PO-01231, four minutes apart.
+const jake = (amt, head = 'M4 Dynamic') => pdf([head, 'INVOICE', 'Invoice No: M4-3301', 'Invoice Date: 09/23/2026', 'Bill To: Powder Ops LLC', `Amount Due $${amt}`]);
+r = await drop(office, await jake('7,464.34'), 'po-01231.pdf', { po_or_co_ref: 'PO-01231' });
+const j1 = r.body?.drops?.[0];
+db.prepare("UPDATE ap_drops SET created_at = datetime('now', '-4 minutes') WHERE id = ?").run(j1.id);
+r = await drop(office, await jake('7,464.49', 'M4 Dynamics Inc'), 'po-01231 (1).pdf', { po_or_co_ref: 'PO 01231'.replace(' ', '-') });
+const j2 = r.body?.drops?.[0];
+t('4 the first of Jake\'s pair is routed as usual', !!j1?.partner_document_id);
+t('4 the second is duplicate_suspect, linked to the first, reason names both amounts and the gap', j2?.status === 'duplicate_suspect' && j2?.duplicate_of === j1.id
+  && new RegExp(`^Near-duplicate of ${j1.id.slice(0, 8)}: same ref, \\$7464\\.34 vs \\$7464\\.49, 4 min apart`).test(j2?.status_reason || ''), JSON.stringify({ s: j2?.status, r: j2?.status_reason }));
+t('4 matched on the PARTNER (the vendor lines differ: "M4 Dynamic" vs "M4 Dynamics Inc")', j1?.vendor_name !== j2?.vendor_name);
+t('4 the second is NOT routed — one document on the ledger', !j2?.partner_document_id && db.prepare("SELECT COUNT(*) c FROM partner_documents WHERE doc_number = 'M4-3301'").get().c === 1 && events(j2.id, 'near_duplicate') === 1);
+// Controls: none of these is flagged.
+const acme = (amt, inv) => pdf(['Acme Films Co', 'INVOICE', `Invoice No: ${inv}`, 'Bill To: Powder Ops LLC', `Amount Due $${amt}`]);
+const pair = async (a1, a2, ref1, ref2, hoursApart = 0) => {
+  const x = (await drop(office, await acme(a1, `A-${ref1}-1`), `a-${ref1}-1.pdf`, { po_or_co_ref: ref1 })).body.drops[0];
+  if (hoursApart) db.prepare('UPDATE ap_drops SET created_at = datetime(\'now\', ?) WHERE id = ?').run(`-${hoursApart} hours`, x.id);
+  const y = (await drop(office, await acme(a2, `A-${ref2}-2`), `a-${ref2}-2.pdf`, { po_or_co_ref: ref2 })).body.drops[0];
+  return [x, y];
+};
+let [x, y] = await pair('100.00', '100.80', 'PO-02000', 'po 02000'.replace(' ', '-'));
+t('4 same vendor, same ref (case-insensitive), 80¢ apart → flagged', y.status === 'duplicate_suspect' && y.duplicate_of === x.id, y.status);
+[x, y] = await pair('100.00', '102.00', 'PO-02001', 'PO-02001');
+t('4 control: $2 apart → not flagged', y.status === 'new', y.status);
+[x, y] = await pair('200.00', '200.10', 'PO-02002', 'PO-02002', 25);
+t('4 control: 25 hours apart → not flagged', y.status === 'new', y.status);
+[x, y] = await pair('300.00', '300.00', 'PO-02003', 'PO-020031');
+t('4 control: a different ref (one a prefix of the other) → not flagged', y.status === 'new', y.status);
+t('4 nothing is deleted: both of Jake\'s rows and files are still there', db.prepare('SELECT COUNT(*) c FROM ap_drops WHERE id IN (?, ?)').get(j1.id, j2.id).c === 2);
+r = await call('POST', `/ap-drop/${j2.id}/route-partner`, { direction: 'payable' }, office);
+t('4 the office can still confirm the second (route-partner) — a deliberate act', r.status === 200 && r.body?.drop?.status === 'triaged', JSON.stringify(r.body).slice(0, 120));
+
+// 5. A payable is unchanged end to end: still on the AP track.
+r = await call('GET', `/ap-drop/${dM4.id}`, null, admin);
+t('5 an M4 bill to us stays payable, status new, in Outstanding', r.body?.status === 'new' && r.body?.partner_document?.direction === 'payable' && (await outstandingIds()).includes(dM4.id));
+r = await call('POST', `/ap-drop/${dM4.id}/status`, { status: 'in_qbo', reason: 'Bill 2210' }, admin);
+t('5 …and moves to in_qbo as before', r.body?.status === 'in_qbo');
+
+// 6. "Not AP: this is a receivable" for a customer who is not a partner.
+r = await call('POST', `/ap-drop/${x.id}/receivable-other`, {}, office);
+t('6 receivable_other needs a reason (400)', r.status === 400);
+r = await call('POST', `/ap-drop/${x.id}/receivable-other`, { reason: 'x' }, op);
+t('6 an operator cannot (not theirs: 404)', r.status === 404 || r.status === 403);
+r = await call('POST', `/ap-drop/${x.id}/receivable-other`, { reason: 'Gym client owes us for samples' }, office);
+t('6 with a reason: terminal, out of Outstanding, one audit row', r.status === 200 && r.body?.status === 'receivable_other' && r.body?.outstanding === false && audits(x.id, 'ap_drop.receivable_other') === 1 && !(await outstandingIds()).includes(x.id));
+r = await call('POST', `/ap-drop/${dM4.id}/receivable-other`, { reason: 'not really' }, office);
+t('6 refused on a drop that is on the partner ledger (409)', r.status === 409);
+
+// 7. The Controller's contract: one ap_drop.created per drop, shape unchanged.
+const created = db.prepare("SELECT action, details FROM audit_log WHERE entity_type = 'ap_drop' AND details LIKE '%ap_drop.created%'").all();
+const nDrops = db.prepare('SELECT COUNT(*) c FROM ap_drops').get().c;
+t('7 one ap_drop.created audit row per drop, action create', created.length === nDrops && created.every(a => a.action === 'create'), `${created.length} vs ${nDrops}`);
+t('7 …with exactly the keys it always had', created.every(a => JSON.stringify(Object.keys(JSON.parse(a.details)).sort()) === JSON.stringify(['duplicate_of', 'event', 'filename', 'sha256', 'size', 'status'])), created[0]?.details);
 
 db.close();
 console.log(`\n${pass}/${pass + fail} assertions passed`); process.exit(fail ? 1 : 0);

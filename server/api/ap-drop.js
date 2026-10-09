@@ -48,10 +48,24 @@ import { moduleLevel } from '../module-access.js';
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024, files: 10 } });
 
-export const STATUSES = ['new', 'triaged', 'matched', 'in_qbo', 'in_payment_run', 'paid', 'closed', 'needs_info', 'duplicate_suspect', 'not_finance'];
-export const TERMINAL = new Set(['paid', 'closed', 'not_finance']);
+// `to_partner_ar` and `receivable_other` (D-160) are money owed TO us. A drop
+// is the AP queue's, and a receivable sitting in Outstanding reads as a bill we
+// owe — so both are terminal: the first is set by routing when the ledger copy
+// is a receivable, the second by the office for a non-partner customer.
+// Neither is ever in_qbo / in_payment_run, the only statuses the Controller's
+// payment tooling reads.
+export const STATUSES = ['new', 'triaged', 'matched', 'in_qbo', 'in_payment_run', 'paid', 'closed', 'needs_info', 'duplicate_suspect', 'not_finance', 'to_partner_ar', 'receivable_other'];
+export const TERMINAL = new Set(['paid', 'closed', 'not_finance', 'to_partner_ar', 'receivable_other']);
 // A status that takes the row out of the ordinary flow has to say why.
-const NEEDS_REASON = new Set(['needs_info', 'not_finance', 'duplicate_suspect']);
+const NEEDS_REASON = new Set(['needs_info', 'not_finance', 'duplicate_suspect', 'receivable_other']);
+// Set by routing, never picked from the status list: it asserts a ledger
+// document exists, and only routing knows that.
+const ROUTING_ONLY = new Set(['to_partner_ar']);
+// A near-duplicate (D-160): same party, same reference, within a dollar,
+// inside a day — a second upload of one invoice with a re-typed total.
+const NEAR_DUP_HOURS = 24;
+const NEAR_DUP_DOLLARS = 1.0;
+const DIRECTION_QUESTION = 'Receivable or payable?';
 const EDITABLE = ['vendor_name', 'invoice_number', 'invoice_date', 'due_date', 'amount', 'currency', 'po_or_co_ref', 'bill_to', 'notes', 'qbo_bill_id', 'payment_run_id', 'external_ref'];
 const DUPLICATE_WINDOW_DAYS = 30;
 // How long the upload waits on the reader before answering. The row is already
@@ -112,7 +126,17 @@ function applyParse(db, id, parsed) {
   put('vendor_name', f.vendor);
   put('invoice_number', f.invoice_number);
   put('invoice_date', f.invoice_date);
-  put('due_date', f.due_date);
+  // A due date printed BEFORE the invoice date is a misread or a stale field
+  // (I136: due 26 May on a 24 Sep invoice). Left blank, with a note on the
+  // parse; the ledger copy takes the partner's terms instead (D-160). A due
+  // date a person typed is never touched — `put` only fills blanks.
+  // The reader already drops one before the PRINTED date; this catches one
+  // before a date a person typed.
+  const issued = row.invoice_date || f.invoice_date;
+  if (f.due_date && issued && f.due_date < issued) {
+    parsed.notes = [...(parsed.notes || []), `Due date ${f.due_date} is before the invoice date ${issued}; not applied.`];
+    parsed.due_date_ignored = { parsed: f.due_date, issued };
+  } else put('due_date', f.due_date);
   put('amount', f.total);
   put('currency', f.currency);
   put('po_or_co_ref', f.order_refs?.length ? f.order_refs.join(', ') : null);
@@ -130,9 +154,12 @@ async function readAndApply(id, buffer, contentType, filename) {
   const tx = db.transaction(() => {
     db.prepare('UPDATE ap_drops SET extracted_text = ? WHERE id = ?').run(text || '', id);
     applyParse(db, id, parsed);
-    event(db, id, null, 'parsed', { status: parsed.status, fields_read: Object.entries(parsed.fields || {}).filter(([, v]) => v != null && v !== '' && !(Array.isArray(v) && !v.length)).map(([k]) => k), reason: parsed.reason });
+    event(db, id, null, 'parsed', { status: parsed.status, fields_read: Object.entries(parsed.fields || {}).filter(([, v]) => v != null && v !== '' && !(Array.isArray(v) && !v.length)).map(([k]) => k), reason: parsed.reason, notes: parsed.notes || undefined });
   });
   tx();
+  // A near-duplicate is flagged BEFORE routing, and is not routed: two
+  // uploads of one invoice must not become two documents on the ledger.
+  try { if (flagNearDuplicate(db, id)) return parsed; } catch (err) { console.warn('[ap-drop] near-duplicate check failed:', err.message); }
   // Routing runs AFTER the read so it sees the vendor and bill-to lines, and
   // is its own try: a ledger hiccup must never turn a read drop into a failed
   // one. It runs on the reparse path too, and is a no-op once routed.
@@ -174,6 +201,95 @@ function existingPartnerDoc(db, row, partnerId) {
   return null;
 }
 
+// ── Near-duplicates (D-160) ─────────────────────────────────────────────────
+//
+// Same bytes is caught at upload. This is the other case: Jake's 23 Sep pair,
+// $7,464.34 and $7,464.49 on PO-01231 four minutes apart — one invoice saved
+// twice, so the bytes differ. Same party (detected partner, or the same vendor
+// name), the SAME reference once case and spaces are ignored (never a prefix
+// match), within a dollar, inside a day. Flagged and linked to the earlier
+// row, never deleted, never routed; the office confirms (route-partner) or
+// closes it.
+// A reference the reader filed is "PO PO-01231" (kind + value); one a person
+// typed is "PO-01231". The leading kind word goes, then case and spaces —
+// equality after that, never a prefix match.
+export const normRef = (v) => String(v || '').trim().replace(/^(?:po|co)\s+/i, '').toLowerCase().replace(/\s+/g, '');
+
+function partnerIdOf(db, row, partners) {
+  try { const r = row.partner_route ? JSON.parse(row.partner_route) : null; if (r?.partner?.id) return r.partner.id; } catch { /* fall through */ }
+  const det = detectPartner({
+    partners,
+    fields: { vendor_name: row.vendor_name, bill_to: row.bill_to, po_or_co_ref: row.po_or_co_ref, notes: row.notes, filename: row.filename },
+    typed: typedOn(db, row.id),
+    text: row.extracted_text || '',
+  });
+  return det.confidence === 'high' ? det.partner?.id || null : null;
+}
+
+export function findNearDuplicate(db, row, { partners = activePartners(db) } = {}) {
+  const ref = normRef(row.po_or_co_ref);
+  if (!ref || row.amount == null) return null;
+  const candidates = db.prepare(`SELECT * FROM ap_drops WHERE id != ? AND content_sha256 != ?
+      AND created_at >= datetime(?, ?) AND created_at <= ? AND amount IS NOT NULL AND ABS(amount - ?) <= ?
+    ORDER BY created_at ASC, rowid ASC`)
+    .all(row.id, row.content_sha256, row.created_at, `-${NEAR_DUP_HOURS} hours`, row.created_at, Number(row.amount), NEAR_DUP_DOLLARS + 0.0001);
+  const vendor = String(row.vendor_name || '').trim().toLowerCase();
+  let mine;
+  for (const c of candidates) {
+    if (normRef(c.po_or_co_ref) !== ref) continue;
+    const sameVendor = vendor && String(c.vendor_name || '').trim().toLowerCase() === vendor;
+    if (!sameVendor) {
+      if (mine === undefined) mine = partnerIdOf(db, row, partners);
+      if (!mine || partnerIdOf(db, c, partners) !== mine) continue;
+    }
+    return c;
+  }
+  return null;
+}
+
+function flagNearDuplicate(db, id) {
+  const row = loadDrop(db, id);
+  if (!row || row.status !== 'new' || row.duplicate_of || row.partner_document_id) return false;
+  const prior = findNearDuplicate(db, row);
+  if (!prior) return false;
+  const mins = Math.round((Date.parse(row.created_at.replace(' ', 'T') + 'Z') - Date.parse(prior.created_at.replace(' ', 'T') + 'Z')) / 60000);
+  const fmt = (n) => `$${Number(n).toFixed(2)}`;
+  const reason = `Near-duplicate of ${prior.id.slice(0, 8)}: same ref, ${fmt(prior.amount)} vs ${fmt(row.amount)}, ${mins} min apart`;
+  db.transaction(() => {
+    db.prepare("UPDATE ap_drops SET status = 'duplicate_suspect', status_reason = ?, duplicate_of = ?, updated_at = datetime('now') WHERE id = ?").run(reason, prior.id, id);
+    event(db, id, null, 'near_duplicate', { duplicate_of: prior.id, ref: row.po_or_co_ref, amount: row.amount, prior_amount: prior.amount, minutes_apart: mins });
+  })();
+  logAudit('system:ap-drop', 'ap_drop_status', 'ap_drop', id,
+    { event: 'ap_drop.near_duplicate', from: 'new', to: 'duplicate_suspect', duplicate_of: prior.id, reason }, null, null, row.filename);
+  return true;
+}
+
+// ── A receivable leaves AP (D-160) ──────────────────────────────────────────
+//
+// Once the ledger holds the document as a RECEIVABLE, the AP queue has nothing
+// left to do with it: the money is owed to us and is settled on Partner
+// Reconciliation. Idempotent (already moved ⇒ nothing written), and a status a
+// person set — paid, closed, not finance — or a duplicate flag still waiting on
+// a look is left alone. If somebody later flips the ledger document to payable
+// on Partner Recon the drop stays here as it is; there is no sync back, by
+// decision — the ledger is where that correction lives.
+function moveReceivableOff(db, id, { user = null, partner, doc, forced = false }) {
+  const row = loadDrop(db, id);
+  if (!row || !doc || doc.direction !== 'receivable') return false;
+  if (row.status === 'to_partner_ar' || TERMINAL.has(row.status)) return false;
+  if (row.status === 'duplicate_suspect' && !forced) return false;
+  const reason = `Receivable — on ${partner.name} ledger as ${doc.doc_number || doc.id.slice(0, 8)}`;
+  db.transaction(() => {
+    db.prepare("UPDATE ap_drops SET status = 'to_partner_ar', status_reason = ?, closed_at = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(reason, new Date().toISOString(), id);
+    event(db, id, user, 'status_changed', { from: row.status, to: 'to_partner_ar', reason, auto: true });
+  })();
+  logAudit(user || 'system:ap-drop', 'ap_drop_status', 'ap_drop', id,
+    { event: 'ap_drop.to_partner_ar', from: row.status, to: 'to_partner_ar', reason, partner_document_id: doc.id, auto: true },
+    { status: row.status }, { status: 'to_partner_ar' }, row.filename);
+  return true;
+}
+
 /**
  * Decide whether the drop is a partner's document and, when it is, put a DRAFT
  * of it on the partner ledger with the same file. Idempotent: a drop already
@@ -195,7 +311,10 @@ export async function routeToPartner(db, id, { buffer = null, user = null, force
   if (force) {
     partner = (force.partner_id && partners.find(p => p.id === force.partner_id)) || det.partner || partners[0] || null;
     if (!partner) return { routed: false, reason: 'no partner to route to' };
-    direction = ['receivable', 'payable'].includes(force.direction) ? force.direction : (det.direction || 'payable');
+    // The office answering "yes, it is theirs" has not said which way the
+    // money goes. Never assumed (D-160): without a direction it is refused.
+    direction = ['receivable', 'payable'].includes(force.direction) ? force.direction : (det.direction || null);
+    if (!direction) return { routed: false, needs_direction: true, reason: 'say whether it is a receivable (they owe us) or a payable (we owe them)' };
     confidence = 'high';
   }
   const verdict = { ...det, partner: partner ? { id: partner.id, name: partner.name } : null, confidence, direction, forced: !!force, decided_at: new Date().toISOString() };
@@ -213,9 +332,21 @@ export async function routeToPartner(db, id, { buffer = null, user = null, force
     return { routed: false, reason: 'uncertain', partner: partner.name };
   }
 
+  // High confidence on WHO, but nothing says which way: ask (D-160). Parked
+  // the same way the low-confidence question is, once.
+  if (!direction) {
+    db.prepare('UPDATE ap_drops SET partner_route = ? WHERE id = ?').run(JSON.stringify(verdict), id);
+    if (row.status === 'new') {
+      const reason = `${DIRECTION_QUESTION} (${partner.name}) ${det.reason}`.trim();
+      db.prepare("UPDATE ap_drops SET status = 'needs_info', status_reason = ?, updated_at = datetime('now') WHERE id = ?").run(reason, id);
+      event(db, id, null, 'needs_direction', { partner: partner.name, matched_on: det.matched_on, matched_text: det.matched_text });
+    }
+    return { routed: false, reason: 'direction unclear', needs_direction: true, partner: partner.name };
+  }
+
   // High confidence: link what is already on the ledger, or file a draft.
   const existing = existingPartnerDoc(db, row, partner.id);
-  let docId, created = false, how = existing?.how || null;
+  let docId, created = false, how = existing?.how || null, dueCorrected = null;
   if (existing) {
     docId = existing.doc.id;
   } else {
@@ -230,28 +361,39 @@ export async function routeToPartner(db, id, { buffer = null, user = null, force
     const key = `partners/${partner.id}/${docId}-${safe}`;
     await putObject(key, buf, row.content_type || 'application/octet-stream');
     const issued = row.invoice_date || today();
-    const due = row.due_date || dueDateFor(issued, partner.terms_days);
+    // A due date before the issue date is not a due date (I136): the partner's
+    // terms decide the ledger copy's, and the drop keeps what it was given.
+    let due = row.due_date || dueDateFor(issued, partner.terms_days);
+    if (row.due_date && row.due_date < issued) {
+      due = dueDateFor(issued, partner.terms_days);
+      dueCorrected = { parsed: row.due_date, used: due, terms_days: partner.terms_days };
+    }
     const description = [`Routed from AP Drop (${row.submitter || 'unknown'}, ${row.created_at.slice(0, 10)})`, row.notes ? `Note: ${row.notes}` : null].filter(Boolean).join(' — ').slice(0, 1000);
     db.prepare(`INSERT INTO partner_documents
       (id, partner_id, direction, doc_type, doc_number, reference, description, issued_date, terms_days, due_date, amount, status,
        storage_key, filename, content_type, size, extracted_text, source, created_by)
       VALUES (?,?,?,'invoice',?,?,?,?,?,?,?,'draft',?,?,?,?,?,'ap-drop',?)`)
-      .run(docId, partner.id, direction || 'payable', row.invoice_number ? String(row.invoice_number).slice(0, 80) : null,
+      .run(docId, partner.id, direction, row.invoice_number ? String(row.invoice_number).slice(0, 80) : null,
         row.po_or_co_ref ? String(row.po_or_co_ref).slice(0, 120) : null, description, issued, partner.terms_days, due,
         row.amount != null ? Number(row.amount) : 0, key, (row.filename || 'file').slice(0, 255), row.content_type || null, row.size || null,
         row.extracted_text ? String(row.extracted_text).slice(0, 400000) : null, row.submitter || user?.name || 'AP Drop');
     created = true;
     logAudit(user || 'system:ap-drop', 'create', 'partner_document', docId,
-      { routed_from_drop: id, direction: direction || 'payable', amount: row.amount, doc_number: row.invoice_number, filename: row.filename, matched_on: det.matched_on, forced: !!force },
+      { routed_from_drop: id, direction, amount: row.amount, doc_number: row.invoice_number, filename: row.filename, matched_on: det.matched_on, forced: !!force },
       null, null, partner.name);
   }
   db.prepare("UPDATE ap_drops SET partner_document_id = ?, partner_route = ?, updated_at = datetime('now') WHERE id = ?")
     .run(docId, JSON.stringify(verdict), id);
-  event(db, id, user, 'routed_partner', { partner: partner.name, document_id: docId, created, linked_how: how, direction: direction || 'payable', matched_on: det.matched_on, matched_text: det.matched_text, forced: !!force });
+  event(db, id, user, 'routed_partner', { partner: partner.name, document_id: docId, created, linked_how: how, direction, matched_on: det.matched_on, matched_text: det.matched_text, forced: !!force });
+  if (dueCorrected) event(db, id, user, 'due_date_corrected', dueCorrected);
   logAudit(user || 'system:ap-drop', 'ap_drop_routed', 'ap_drop', id,
-    { event: 'ap_drop.routed', partner: partner.name, partner_document_id: docId, created, linked_how: how, direction: direction || 'payable', matched_on: det.matched_on, forced: !!force },
+    { event: 'ap_drop.routed', partner: partner.name, partner_document_id: docId, created, linked_how: how, direction, matched_on: det.matched_on, forced: !!force },
     null, null, row.filename);
-  return { routed: true, created, document_id: docId, partner: partner.name, direction: direction || 'payable' };
+  // The ledger document's OWN direction decides — a link to a hand-keyed
+  // document says what is actually on the ledger.
+  const doc = db.prepare('SELECT id, doc_number, direction FROM partner_documents WHERE id = ?').get(docId);
+  const cleared = moveReceivableOff(db, id, { user, partner, doc, forced: !!force });
+  return { routed: true, created, document_id: docId, partner: partner.name, direction: doc?.direction || direction, to_partner_ar: cleared };
 }
 
 // ── Drop ────────────────────────────────────────────────────────────────────
@@ -419,6 +561,7 @@ router.post('/:id/status', (req, res) => {
   const status = String(req.body?.status || '');
   const reason = String(req.body?.reason || '').trim();
   if (!STATUSES.includes(status)) return res.status(400).json({ error: `Unknown status "${status}".` });
+  if (ROUTING_ONLY.has(status)) return res.status(400).json({ error: 'A drop moves to Partner Recon by being routed there as a receivable, not by picking the status.' });
   if (NEEDS_REASON.has(status) && reason.length < 3) return res.status(400).json({ error: `Say why it is ${status.replace(/_/g, ' ')} — the reason shows on the queue.` });
   if (status === row.status && !reason) return res.json(shape(row, req.user));
   const db = getDb();
@@ -448,15 +591,40 @@ router.post('/:id/route-partner', async (req, res) => {
   if (!canWorkQueue(req.user)) return res.status(403).json({ error: 'Only the office can route a drop to the partner ledger.' });
   if (row.partner_document_id) return res.status(409).json({ error: 'This drop is already on the partner ledger.' });
   const db = getDb();
-  const r = await routeToPartner(db, row.id, { user: req.user, force: { partner_id: req.body?.partner_id || null, direction: req.body?.direction || null } });
-  if (!r.routed) return res.status(400).json({ error: `Could not route it: ${r.reason}.` });
-  // A drop parked as "M4 partner?" is answered by routing it; a row the office
-  // routed by hand from `new` moves on to triaged, since somebody just looked at it.
-  if (['needs_info', 'new'].includes(row.status)) {
+  const dir = req.body?.direction;
+  if (dir != null && dir !== '' && !['receivable', 'payable'].includes(dir)) return res.status(400).json({ error: 'Direction is "receivable" or "payable".' });
+  const r = await routeToPartner(db, row.id, { user: req.user, force: { partner_id: req.body?.partner_id || null, direction: dir || null } });
+  if (!r.routed) return res.status(400).json({ error: `Could not route it: ${r.reason}.`, needs_direction: !!r.needs_direction });
+  // A drop parked as "M4 partner?" / "Receivable or payable?" is answered by
+  // routing it, and a confirmed near-duplicate likewise; a row the office
+  // routed by hand from `new` moves on to triaged, since somebody just looked
+  // at it. A receivable has already left AP (to_partner_ar) and is left there.
+  const now = loadDrop(db, row.id);
+  if (['needs_info', 'new', 'duplicate_suspect'].includes(now.status)) {
     db.prepare("UPDATE ap_drops SET status = 'triaged', status_reason = NULL, updated_at = datetime('now') WHERE id = ?").run(row.id);
-    event(db, row.id, req.user, 'status_changed', { from: row.status, to: 'triaged', reason: `routed to ${r.partner}` });
+    event(db, row.id, req.user, 'status_changed', { from: now.status, to: 'triaged', reason: `routed to ${r.partner}` });
   }
   res.json({ ...r, drop: shape(loadDrop(db, row.id), req.user) });
+});
+
+// D-160: "Not AP — this is a receivable" for a customer who is not a
+// reconciliation partner. Terminal, with a reason; no AR module, no ledger.
+router.post('/:id/receivable-other', (req, res) => {
+  const row = loadFor(req, res); if (!row) return;
+  if (!canWorkQueue(req.user)) return res.status(403).json({ error: 'Only the office can take a drop off the AP queue.' });
+  if (row.partner_document_id) return res.status(409).json({ error: 'This drop is on the partner ledger; that is where it is worked.' });
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 3) return res.status(400).json({ error: 'Say who owes it and why it is not a bill — the reason stays on the record.' });
+  if (row.status === 'receivable_other') return res.json(shape(row, req.user));
+  const db = getDb();
+  db.transaction(() => {
+    db.prepare("UPDATE ap_drops SET status = 'receivable_other', status_reason = ?, closed_at = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(reason, new Date().toISOString(), row.id);
+    event(db, row.id, req.user, 'status_changed', { from: row.status, to: 'receivable_other', reason });
+  })();
+  logAudit(req.user, 'ap_drop_status', 'ap_drop', row.id, { event: 'ap_drop.receivable_other', from: row.status, to: 'receivable_other', reason },
+    { status: row.status }, { status: 'receivable_other' }, row.filename);
+  res.json(shape(loadDrop(db, row.id), req.user));
 });
 
 // Re-run the reader over the stored file — fills BLANK fields only.

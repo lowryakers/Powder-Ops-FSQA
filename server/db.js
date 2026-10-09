@@ -5259,7 +5259,7 @@ function runMigrations() {
         po_or_co_ref       TEXT,
         bill_to            TEXT,
         notes              TEXT,
-        status             TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','triaged','matched','in_qbo','in_payment_run','paid','closed','needs_info','duplicate_suspect','not_finance')),
+        status             TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','triaged','matched','in_qbo','in_payment_run','paid','closed','needs_info','duplicate_suspect','not_finance','to_partner_ar','receivable_other')),
         status_reason      TEXT,
         duplicate_of       TEXT,
         qbo_bill_id        TEXT,
@@ -5288,6 +5288,31 @@ function runMigrations() {
     // decided. Here, after the CREATE, not in runMigrations — the ordering trap.
     addColumnIfMissing('ap_drops', 'partner_document_id', 'TEXT');
     addColumnIfMissing('ap_drops', 'partner_route', 'TEXT');
+    // D-160: two terminal statuses for a drop that is money owed TO us — a
+    // receivable handed to the partner ledger (`to_partner_ar`) and one for a
+    // customer who is not a partner (`receivable_other`). The CHECK is widened
+    // by the work_orders rebuild shape, once, on a database whose table
+    // predates them. Foreign keys are off for the swap so ap_drop_events
+    // (ON DELETE CASCADE) is not emptied by the DROP.
+    const apSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='ap_drops'").get()?.sql || '';
+    if (apSql && !apSql.includes('to_partner_ar')) {
+      const newSql = apSql
+        .replace(/CREATE TABLE\s+"?ap_drops"?/i, 'CREATE TABLE ap_drops_new')
+        .replace("'duplicate_suspect','not_finance')", "'duplicate_suspect','not_finance','to_partner_ar','receivable_other')");
+      const indexes = db.prepare("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='ap_drops' AND sql IS NOT NULL").all().map(r => r.sql);
+      const cols = db.prepare('PRAGMA table_info(ap_drops)').all().map(c => c.name).join(', ');
+      db.pragma('foreign_keys = OFF');
+      try {
+        db.transaction(() => {
+          db.exec(newSql);
+          db.exec(`INSERT INTO ap_drops_new (${cols}) SELECT ${cols} FROM ap_drops`);
+          db.exec('DROP TABLE ap_drops');
+          db.exec('ALTER TABLE ap_drops_new RENAME TO ap_drops');
+          for (const ix of indexes) db.exec(ix);
+        })();
+        console.log('[migrate] ap_drops.status now accepts to_partner_ar and receivable_other (D-160)');
+      } finally { db.pragma('foreign_keys = ON'); }
+    }
   } catch (e) {
     console.warn('[db] ap_drops unavailable:', e.message);
   }

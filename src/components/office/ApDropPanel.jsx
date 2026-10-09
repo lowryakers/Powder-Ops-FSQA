@@ -28,13 +28,18 @@ const STATUS_LABEL = {
   new: 'New', triaged: 'Triaged', matched: 'Matched to PO/CO', in_qbo: 'In QuickBooks',
   in_payment_run: 'In payment run', paid: 'Paid', closed: 'Closed',
   needs_info: 'Needs info', duplicate_suspect: 'Possible duplicate', not_finance: 'Not finance',
+  to_partner_ar: 'Receivable → Partner Recon', receivable_other: 'Receivable (not AP)',
 };
+// Set by routing only — never offered in the status picker (D-160).
+const ROUTING_ONLY = new Set(['to_partner_ar']);
+const DIRECTION_QUESTION = 'Receivable or payable?';
 const STATUS_TONE = {
   new: 'bg-blue-50 text-blue-700 border-blue-200', triaged: 'bg-gray-100 text-gray-700 border-gray-200',
   matched: 'bg-indigo-50 text-indigo-700 border-indigo-200', in_qbo: 'bg-purple-50 text-purple-700 border-purple-200',
   in_payment_run: 'bg-teal-50 text-teal-700 border-teal-200', paid: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   closed: 'bg-gray-100 text-gray-500 border-gray-200', needs_info: 'bg-amber-50 text-amber-800 border-amber-200',
   duplicate_suspect: 'bg-orange-50 text-orange-800 border-orange-200', not_finance: 'bg-gray-100 text-gray-500 border-gray-200 line-through',
+  to_partner_ar: 'bg-emerald-50 text-emerald-700 border-emerald-200', receivable_other: 'bg-emerald-50 text-emerald-700 border-emerald-200',
 };
 const PARSE_LABEL = { pending: 'reading…', ok: 'read', partial: 'partly read', failed: 'could not read' };
 const money = (v, cur) => (v == null ? '—' : `${cur && cur !== 'USD' ? cur + ' ' : '$'}${Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
@@ -236,7 +241,8 @@ function Queue({ meta, canWork, onOpen, bump, compact }) {
         <select value={f.status} onChange={e => setF({ ...f, status: e.target.value })} className={sel} data-ap-status-filter>
           <option value="outstanding">Outstanding</option>
           <option value="all">Everything</option>
-          {(meta?.statuses || []).map(s => <option key={s} value={s}>{STATUS_LABEL[s] || s}{meta?.counts?.[s] ? ` (${meta.counts[s]})` : ''}</option>)}
+          <option value="to_partner_ar">Receivables → Partner Recon{meta?.counts?.to_partner_ar ? ` (${meta.counts.to_partner_ar})` : ''}</option>
+          {(meta?.statuses || []).filter(s => s !== 'to_partner_ar').map(s => <option key={s} value={s}>{STATUS_LABEL[s] || s}{meta?.counts?.[s] ? ` (${meta.counts[s]})` : ''}</option>)}
         </select>
         {canWork && (
           <select value={f.vendor} onChange={e => setF({ ...f, vendor: e.target.value })} className={sel}>
@@ -401,10 +407,25 @@ function DrawerBody({ d, canWork, compact, refresh, onChanged, onPreview }) {
     setBusy(true); setErr('');
     try { await apiFetch(`/ap-drop/${id}/reparse`, { method: 'POST' }); refresh(); onChanged(); } catch (ex) { setErr(ex.message); } finally { setBusy(false); }
   };
-  const routePartner = async () => {
+  // Which way the money goes is the office's answer, never assumed (D-160).
+  const routePartner = async (direction) => {
     setBusy(true); setErr('');
-    try { await apiPost(`/ap-drop/${id}/route-partner`, {}); refresh(); onChanged(); } catch (ex) { setErr(ex.message); } finally { setBusy(false); }
+    try { await apiPost(`/ap-drop/${id}/route-partner`, { direction }); refresh(); onChanged(); } catch (ex) { setErr(ex.message); } finally { setBusy(false); }
   };
+  const [arReason, setArReason] = useState('');
+  const markReceivableOther = async () => {
+    setBusy(true); setErr('');
+    try { await apiPost(`/ap-drop/${id}/receivable-other`, { reason: arReason }); setArReason(''); refresh(); onChanged(); } catch (ex) { setErr(ex.message); } finally { setBusy(false); }
+  };
+  const askDirection = !d.partner_document && d.status === 'needs_info' && String(d.status_reason || '').startsWith(DIRECTION_QUESTION);
+  const directionButtons = (tone) => (
+    <div className="mt-2 flex flex-wrap items-center gap-2" data-ap-direction>
+      <button type="button" onClick={() => routePartner('receivable')} disabled={busy} data-ap-route-dir="receivable"
+        className={`px-3 py-1.5 rounded-lg text-white text-xs font-medium disabled:opacity-50 ${tone === 'amber' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}>They owe us (receivable)</button>
+      <button type="button" onClick={() => routePartner('payable')} disabled={busy} data-ap-route-dir="payable"
+        className="px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-800 text-xs font-medium hover:bg-gray-50 disabled:opacity-50">We owe them (payable)</button>
+    </div>
+  );
   const openLedger = () => window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab: 'partner-reconciliation' } }));
   const route = d.partner_route;
 
@@ -440,16 +461,24 @@ function DrawerBody({ d, canWork, compact, refresh, onChanged, onPreview }) {
                 </div>
               </div>
             )}
+            {askDirection && (
+              <div className="p-3 rounded-lg bg-indigo-50 border border-indigo-200 text-sm text-indigo-900 flex items-start gap-2" data-ap-partner="direction">
+                <Handshake size={16} className="shrink-0 mt-0.5" />
+                <div className="min-w-0 flex-1">
+                  <div><strong>{DIRECTION_QUESTION}</strong> This is a {route?.partner?.name || 'partner'} document, but nothing on it says who issued it. Pick one and it goes on the ledger as a draft.</div>
+                  {canWork ? directionButtons() : <div className="text-xs text-indigo-700 mt-1">The office will decide.</div>}
+                </div>
+              </div>
+            )}
             {!d.partner_document && route?.confidence === 'low' && (
               <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-900 flex items-start gap-2" data-ap-partner="uncertain">
                 <Handshake size={16} className="shrink-0 mt-0.5" />
                 <div className="min-w-0 flex-1">
                   <div><strong>{route.partner?.name || 'Partner'} partner?</strong> {route.reason}</div>
                   {canWork ? (
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <button type="button" onClick={routePartner} disabled={busy} data-ap-route-yes
-                        className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-medium hover:bg-amber-700 disabled:opacity-50">Yes — put it on the {route.partner?.name || 'partner'} ledger as a draft</button>
-                      <span className="text-xs text-amber-800">Not theirs? Move the status on below.</span>
+                    <div data-ap-route-yes>
+                      <div className="text-xs text-amber-800 mt-1">If it is theirs, say which way the money goes and it goes on the {route.partner?.name || 'partner'} ledger as a draft. Not theirs? Move the status on below.</div>
+                      {directionButtons('amber')}
                     </div>
                   ) : <div className="text-xs text-amber-800 mt-1">The office will decide.</div>}
                 </div>
@@ -538,13 +567,20 @@ function DrawerBody({ d, canWork, compact, refresh, onChanged, onPreview }) {
                 <h3 className="text-sm font-semibold text-gray-800 mb-2">Status</h3>
                 <div className="flex flex-wrap gap-2 items-center">
                   <select value={status} onChange={e => setStatus(e.target.value)} className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm bg-white" data-ap-status>
-                    {Object.keys(STATUS_LABEL).map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+                    {Object.keys(STATUS_LABEL).filter(s => !ROUTING_ONLY.has(s) || s === d.status).map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
                   </select>
                   <input value={reason} onChange={e => setReason(e.target.value)} placeholder={needsReason ? 'Why — required, shows on the queue' : 'Reason (optional)'}
                     className="flex-1 min-w-[200px] px-2 py-1.5 border border-gray-300 rounded-lg text-sm" data-ap-reason />
                   <button type="button" onClick={move} disabled={busy || (status === d.status && !reason)} className="px-3 py-1.5 rounded-lg bg-powder-600 text-white text-sm disabled:opacity-50" data-ap-move>Apply</button>
                 </div>
                 {d.status_reason && <div className="text-xs text-gray-600 mt-2">Current reason: {d.status_reason}</div>}
+                {!d.partner_document && !['to_partner_ar', 'receivable_other', 'paid', 'closed', 'not_finance'].includes(d.status) && (
+                  <div className="mt-3 pt-3 border-t border-gray-200 flex flex-wrap gap-2 items-center" data-ap-receivable-other>
+                    <span className="text-xs text-gray-700">Not a bill? A customer owes us this:</span>
+                    <input value={arReason} onChange={e => setArReason(e.target.value)} placeholder="Who owes it — required" className="flex-1 min-w-[180px] px-2 py-1.5 border border-gray-300 rounded-lg text-sm" data-ap-ar-reason />
+                    <button type="button" onClick={markReceivableOther} disabled={busy || arReason.trim().length < 3} className="px-3 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-800 text-sm disabled:opacity-50" data-ap-ar-other>Not AP: this is a receivable</button>
+                  </div>
+                )}
                 <div className="text-[11px] text-gray-400 mt-2">new → triaged → matched → in QuickBooks → in payment run → paid / closed. Nothing here creates a QuickBooks bill or pays anyone — the Controller does that outside ReadyDoc and links the bill id back.</div>
               </section>
             )}
@@ -582,6 +618,10 @@ function describeEvent(e) {
     case 'duplicate_dropped': return 'dropped the same file again (linked)';
     case 'routed_partner': return `${dt.forced ? 'routed' : '— reader routed'} it to the ${dt.partner} ledger as a ${dt.direction} draft${dt.created ? '' : ` (linked the document already there — ${dt.linked_how})`}${dt.matched_text ? `; matched "${dt.matched_text}"` : ''}`;
     case 'partner_uncertain': return `— reader asked: ${dt.partner} partner? ${dt.reason || ''}`;
+    case 'needs_direction': return `— reader asked: ${dt.partner} document, receivable or payable?`;
+    case 'near_duplicate': return `— reader flagged a near-duplicate of ${String(dt.duplicate_of || '').slice(0, 8)} (same reference, ${dt.minutes_apart} min apart)`;
+    case 'due_date_corrected': return `— the printed due date ${dt.parsed} is before the invoice date; the ledger copy uses ${dt.terms_days}-day terms (${dt.used})`;
+    case 'vendor_cleared': return `— cleared the vendor "${dt.was}" (not a company)`;
     default: return e.kind;
   }
 }
