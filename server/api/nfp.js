@@ -21,6 +21,7 @@
 // organoleptic record. What was approved in March has to still read as what was
 // approved in March, because artwork was printed from it.
 import { Router } from 'express';
+import { rejectTokenAuth } from '../middleware/no-token-approve.js';
 import { v4 as uuid } from 'uuid';
 import { randomBytes, createHash } from 'crypto';
 import fs from 'fs';
@@ -904,7 +905,7 @@ async function tellIssuer(db, v, decision, by, comments) {
 }
 
 /** Approve or reject from inside the app, for a panel signed off in person. */
-router.post('/:id/decide', async (req, res) => {
+router.post('/:id/decide', rejectTokenAuth, async (req, res) => {
   if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage nutrition panels.' });
   const db = getDb();
   const v = db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(req.params.id);

@@ -6646,3 +6646,35 @@ Verified:
 - `verify:apdropreport` 17
 
 **Control — the code before this change** fails parse 6, route 3 and `verify:apdrop` 27, and the UI and report verifies do not finish.
+
+## D-161 — Bots get API tokens tied to one non-admin account, and a token can never approve (2026-10-09)
+Asked: make ReadyDoc work like a connector for the bots, so they never need a browser. A bot driving the site
+through a browser holds a person's password and clicks where a person would — the audit log cannot tell it
+from the person, and nothing stops it pressing Approve.
+- **`api_tokens`**: one row per token, tied to ONE active, NON-ADMIN account (refused in words for an admin;
+  a token whose account is later promoted, deactivated, revoked or expired gets 401). SHA-256 + an 8-character
+  prefix stored; the clear text (`rdk_` + 32 random bytes base64url) is returned exactly once.
+- **A token authenticates AS its account** (`authenticate()` → `authenticateToken`): same `req.user`, so the
+  account's module grants decide every read and a token never widens access. No X-View-As, no password-expiry
+  lockout (revoking is the control), external-account rules unchanged. `req.auth = {kind:'token'|'session'}`.
+- **Scopes are an allow-list of two — `read` (always) and `write-drafts`.** There is no approve or admin scope
+  and `check:apitokens` fails if one is added. **Writes are DEFAULT-DENY**: a token's non-GET must hold
+  `write-drafts` AND match `WRITE_DRAFT_ALLOW` — a draft NFP (never `source: 'paper'`, which files an approved
+  panel), edits to a panel only while it is `draft`, and posting a message. Everything else is `403 token_scope`.
+- **The approve guard is a second, independent statement of the rule** (`server/middleware/no-token-approve.js`):
+  any non-GET whose path has an approval segment (approve, decide, sign, signature, verify, release, settle,
+  sensory, scale-verification, …) plus explicit entries for approve-class acts whose path does not say so (NFP
+  send / batch send, a paper NFP, the artwork status move to approved/print_ready, a flavor approval texted,
+  a settlement's proof). Checked in `authenticate()`, mounted once globally, and inline at NFP decide and the
+  artwork status move. `403 approve_requires_human_session`, audited `api_token_approve_blocked`.
+- **Audit**: one `api_token_call` row per token call (actor = the account, details name the token, method,
+  path, status), and `logAudit` adds `via_token` to every handler's own entry when the actor came in on a token.
+- **Rate limit**: per token, sliding minute, 120 reads / 20 writes (`API_TOKEN_RPM`, `API_TOKEN_WRITE_RPM`),
+  429 + Retry-After. In memory and per process — right for one Railway instance.
+- **Admin only**: `/api/api-tokens` (list without hash, create, revoke) and Settings → **Bot API tokens**.
+- `check:apitokens` (46, pure + its own server on a fresh database; in `npm run check`). The route coverage half
+  reads every router from source, so a route named like an approval added later fails CI until it is guarded.
+  It drives all 64 approve routes with a token (refused) and a session for the same account (never refused by
+  the guard). **Control — default-deny switched off — fails 7, and the 64 approve refusals still hold**, which
+  is the point of the second guard.
+- Not done here: the MCP server and route docs (packs 2–3). Socket.io stays session-only.

@@ -1,7 +1,11 @@
-import { getDb } from '../db.js';
+import { getDb, logAudit } from '../db.js';
 import { carriesProofToken } from '../proof-token.js';
 import { passwordExpired } from '../password-policy.js';
 import { parseModuleAccess } from '../module-access.js';
+import {
+  isApiToken, verifyToken, touchToken, takeRateSlot, rateLimits, tokenWriteAllowed,
+} from '../api-tokens.js';
+import { approveRouteFor, refuseTokenApprove } from './no-token-approve.js';
 
 const SESSION_QUERY = `
   SELECT u.id, u.name, u.role, u.department, u.module_access, u.is_active, u.is_external, u.password_changed_at
@@ -206,6 +210,10 @@ export function authenticate(req, res, next) {
     return res.status(401).json({ error: 'Authentication required' });
   }
 
+  // A bot's API token (D-161) is its own door with its own rules; a session
+  // token never reaches that branch and nothing below changes for people.
+  if (isApiToken(token)) return authenticateToken(token, req, res, next);
+
   const user = lookupSession(token);
   if (!user) {
     return res.status(401).json({ error: 'Authentication required' });
@@ -231,6 +239,7 @@ export function authenticate(req, res, next) {
   }
 
   req.user = user;
+  req.auth = { kind: 'session' };
 
   // Admin "View as" preview: an admin's READ requests can be scoped to another
   // user so lists (e.g. comms channels) show what that person sees. Reads only
@@ -252,6 +261,79 @@ export function authenticate(req, res, next) {
       req.impersonated = true;
       req.realAdmin = user;
     }
+  }
+
+  next();
+}
+
+// ── The bot door (D-161) ─────────────────────────────────────────────────────
+//
+// A token authenticates AS its account — same req.user shape lookupSession
+// builds, so every module grant, every handler check and every external-account
+// rule applies exactly as it would to that person. On top of that, and only
+// for tokens, in this order:
+//   1. one audit row per call (actor = the account, details name the token),
+//      registered first so a refusal below is logged too;
+//   2. the per-token rate limit (429 + Retry-After);
+//   3. the approve guard — nothing that approves, signs or releases;
+//   4. default-deny writes — a non-GET must be on WRITE_DRAFT_ALLOW and the
+//      token must hold `write-drafts`.
+// No X-View-As (a token is never an admin), and no password-expiry lockout —
+// the token is not a password; revoking it is the control.
+function authenticateToken(token, req, res, next) {
+  const found = verifyToken(token);
+  if (!found) return res.status(401).json({ error: 'Authentication required' });
+  const { token: t, user: row } = found;
+
+  const user = {
+    id: row.user_id,
+    name: row.name,
+    role: row.role,
+    department: row.department,
+    module_access: parseModuleAccess(row.module_access),
+    is_active: row.is_active,
+    is_external: !!row.is_external,
+    // Carried so every handler's own logAudit names the token (db.js).
+    via_token: { id: t.id, prefix: t.prefix },
+  };
+
+  if (user.is_external && !EXTERNAL_ALLOWED.some(re => re.test(req.path))) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+
+  req.user = user;
+  req.auth = { kind: 'token', tokenId: t.id, prefix: t.prefix, label: t.label, scopes: t.scopes };
+  touchToken(t.id, req.ip);
+
+  const path = (req.baseUrl || '') + req.path;
+  res.on('finish', () => {
+    try {
+      logAudit(user, 'api_token_call', 'api_token', t.id,
+        { tokenId: t.id, prefix: t.prefix, method: req.method, path, status: res.statusCode }, null, null, t.label);
+    } catch { /* the call already happened; a failed log line must not throw here */ }
+  });
+
+  const isWrite = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
+  const wait = takeRateSlot(t.id, isWrite);
+  if (wait != null) {
+    res.set('Retry-After', String(wait));
+    const lim = rateLimits();
+    return res.status(429).json({
+      error: 'rate_limited',
+      message: `This token is limited to ${isWrite ? lim.write : lim.read} ${isWrite ? 'writes' : 'requests'} a minute. Try again in ${wait}s.`,
+    });
+  }
+
+  const approve = approveRouteFor(req);
+  if (approve) return refuseTokenApprove(req, res, approve);
+
+  if (isWrite && !tokenWriteAllowed(req, t.scopes)) {
+    return res.status(403).json({
+      error: 'token_scope',
+      message: t.scopes.includes('write-drafts')
+        ? 'This token may only create or edit drafts and post messages. Everything else needs a person signed in.'
+        : 'This token is read-only.',
+    });
   }
 
   next();

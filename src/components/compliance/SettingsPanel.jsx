@@ -1,10 +1,11 @@
 import { useAuth } from '../../hooks/useAuth';
-import { QrCode, Users, Sliders, Database, Sparkles, Link2, Plug, Bot } from 'lucide-react';
+import { QrCode, Users, Sliders, Database, Sparkles, Link2, Plug, Bot, KeyRound } from 'lucide-react';
 import SettingsShell from '../settings/SettingsShell.jsx';
 import UsersSection from '../settings/UsersSection.jsx';
 import DataBackupSection from '../settings/DataBackupSection.jsx';
 import ShareableLinksSection from '../settings/ShareableLinksSection.jsx';
 import KioskKeysSection from '../settings/KioskKeysSection.jsx';
+import ApiTokensSection from '../settings/ApiTokensSection.jsx';
 import LogBuilderPanel from '../settings/LogBuilderPanel.jsx';
 import CleanupReviewPanel from '../settings/CleanupReviewPanel.jsx';
 import IntegrationsSection from '../settings/IntegrationsSection.jsx';
@@ -98,6 +99,15 @@ const SECTIONS = [
         keywords: 'qr code kiosk token key poster public scan knife scale visitor lobby security',
         icon: QrCode,
         Component: KioskKeysSection,
+      },
+      {
+        id: 'api-tokens',
+        label: 'Bot API tokens',
+        description: 'Let a bot use ReadyDoc as one account — never to approve',
+        keywords: 'api token bot jarvis automation connector bearer key integration agent',
+        icon: KeyRound,
+        visible: isAdmin,
+        Component: ApiTokensSection,
       },
       {
         id: 'links',
