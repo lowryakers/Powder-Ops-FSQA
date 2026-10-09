@@ -15,9 +15,16 @@
 //    queue can say "partial" and mean exactly which fields are missing.
 import { findTotal, findInvoiceDate, findDateIn } from './invoice-figures.js';
 
-// Our own names, so the vendor guess never returns the bill-to party. Add a
-// trading name here rather than special-casing a caller.
-export const OUR_NAMES = /\b(?:powder\s*ops|prodough|pro\s*dough|m4\s*dynamics?)\b/i;
+// Our own company names (D-160). A partner's name (M4 Dynamics) is NOT here:
+// on an M4 invoice M4 is the letterhead, and skipping it handed the vendor to
+// whatever came next — "USA" on I136. Our own name is returned too when it is
+// the letterhead, flagged `ours: true`, because on our own invoice WE are the
+// issuer and the routing rule needs to see it. Add a trading name here rather
+// than special-casing a caller.
+export const OUR_COMPANY = /\b(?:powder\s*ops|prodough|pro\s*dough)\b/i;
+// How far down the page our own name still counts as the letterhead.
+const LETTERHEAD_LINES = 8;
+const BILL_TO_LINE = /\b(?:bill(?:ed)?\s+to|sold\s+to|ship\s+to|invoice\s+to)\b/i;
 
 const INVOICE_NO = [
   /\binvoice\s*(?:no\.?|number|num\.?|#|id)?\s*[:#]?\s*([A-Z0-9][A-Z0-9/-]{2,})/i,
@@ -88,24 +95,31 @@ export function findOrderRefs(text) {
 }
 
 /**
- * The vendor: the first line that reads like a company name and is not us.
+ * The vendor: the first line that reads like a company name ABOVE the bill-to.
  *
  * Deliberately weak. A letterhead is the top of the page, so the first
  * "namey" line is usually right and is offered AS A SUGGESTION with its line;
- * anything with a money figure, a date or a label in it is skipped, and our
- * own names are never the vendor (they are the bill-to party).
+ * anything with a money figure, a date or a label in it is skipped. Nothing at
+ * or below "Bill To" / "Ship To" is ever the vendor — that is the addressee.
+ * Our own name is returned only in the letterhead zone (the first eight lines)
+ * and carries `ours: true`; further down it is skipped as before.
  */
 export function findVendor(text) {
-  for (const raw of lines(text).slice(0, 25)) {
+  const ls = lines(text).slice(0, 25);
+  for (let i = 0; i < ls.length; i++) {
+    const raw = ls[i];
+    if (BILL_TO_LINE.test(raw)) break;
     if (notAVendor(raw)) continue;
     // Markdown emphasis an OCR pass adds (`# Acme`, `**Acme**`) is not part of
     // the name; the evidence keeps the line as it was read.
     const line = raw.replace(/^#+\s*/, '').replace(/\*\*|__/g, '').trim();
     if (line.length < 3 || line.length > 60) continue;
-    if (OUR_NAMES.test(line)) continue;
     if (/\d{3,}|\$|:|\b(?:invoice|bill\s+to|ship\s+to|remit|date|due|total|page|www\.|@)\b/i.test(line)) continue;
     if (!/[A-Za-z]{3,}/.test(line)) continue;
-    return { value: line.replace(/\s{2,}/g, ' '), evidence: raw };
+    const ours = OUR_COMPANY.test(line);
+    if (ours && i >= LETTERHEAD_LINES) continue;
+    const value = line.replace(/\s{2,}/g, ' ');
+    return ours ? { value, evidence: raw, ours: true } : { value, evidence: raw };
   }
   return null;
 }
@@ -183,15 +197,23 @@ export function parseFinanceDocument(text) {
   // just the first line — and calling that a partial parse would put a
   // thank-you note in the queue with a vendor on it.
   const anyFact = total || no || date || due || refs.length;
+  // A due date printed BEFORE the invoice date is a misread or a stale field
+  // (I136: due 26 May on a 24 Sep invoice). Not offered; the note says why
+  // (D-160). The ledger copy takes the partner's terms instead.
+  const notes = [];
+  const dueBeforeIssue = due && date?.date && due.value < date.date;
+  if (dueBeforeIssue) notes.push(`Due date ${due.value} is before the invoice date ${date.date}; not applied.`);
   const fields = {
     vendor: anyFact ? (vendor?.value ?? null) : null,
     invoice_number: no?.value ?? null,
     invoice_date: date?.date ?? null,
-    due_date: due?.value ?? null,
+    due_date: dueBeforeIssue ? null : (due?.value ?? null),
     total: total?.amount ?? null,
     currency: findCurrency(t),
     order_refs: refs.map(r => `${r.kind} ${r.value}`),
     bill_to: billTo?.value ?? null,
+    // D-160: the letterhead is OURS — our own invoice, money owed to us.
+    vendor_ours: anyFact && vendor?.ours ? true : null,
   };
   const evidence = {
     vendor: anyFact ? (vendor?.evidence ?? null) : null,
@@ -202,5 +224,5 @@ export function parseFinanceDocument(text) {
     order_refs: refs.map(r => r.evidence),
     bill_to: billTo?.evidence ?? null,
   };
-  return { status: parseStatus(fields), fields, evidence, reason: null };
+  return { status: parseStatus(fields), fields, evidence, reason: null, ...(notes.length ? { notes, due_date_ignored: { parsed: due.value, issued: date.date } } : {}) };
 }

@@ -120,6 +120,8 @@
     "verify:questionmisses": "node scripts/verify-question-misses.mjs",
     "verify:productionruns": "node scripts/verify-production-runs.mjs",
     "verify:apdropvendor": "node scripts/verify-ap-drop-vendor.mjs",
+    "report:apdrop-ar": "node scripts/report-ap-drop-stuck-receivables.mjs",
+    "verify:apdropreport": "node scripts/verify-ap-drop-report.mjs",
     "verify:checklistoverlap": "node scripts/verify-checklist-overlap.mjs",
     "verify:payreviews": "node scripts/verify-pay-reviews.mjs",
     "verify:artworkfilm": "node scripts/verify-artwork-film.mjs",

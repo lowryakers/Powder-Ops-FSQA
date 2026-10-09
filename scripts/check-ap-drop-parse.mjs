@@ -39,7 +39,12 @@ t('a vendor and a total without a number is partial', r.status === 'partial' && 
 t('"Invoice Date" is never taken as the invoice number', findInvoiceNumber('Invoice Date 08/28/2026') === null);
 t('a bare "Amount Due" line is not a due date', findDueDate('Amount Due $873.44') === null);
 t('"Net 30" is not a date', findDueDate('Terms: Net 30 due on receipt') === null);
-t('our own name is never the vendor', findVendor('Powder Ops LLC\nAcme Widgets Inc') .value === 'Acme Widgets Inc');
+// D-160: our own name AS THE LETTERHEAD is returned, flagged ours — on our
+// own invoice we are the issuer. Below Bill To nothing is ever the vendor.
+t('our own letterhead is the vendor, flagged ours', findVendor('Powder Ops LLC\nAcme Widgets Inc')?.value === 'Powder Ops LLC' && findVendor('Powder Ops LLC\nAcme Widgets Inc')?.ours === true);
+t('nothing at or below "Bill To" is ever the vendor', findVendor('INVOICE 7781\nBill To:\nAcme Widgets Inc\nPowder Ops LLC') === null);
+t('our name deep in the page (past the letterhead) is still skipped', findVendor('INVOICE\n1\n2\n3\n4\n5\n6\n7\nPowder Ops LLC\nAcme Widgets Inc')?.value === 'Acme Widgets Inc');
+t('the partner (M4) is no longer skipped: its letterhead is the vendor, not ours', findVendor('M4 Dynamic\n88 Formulation Drive\nBill To: Powder Ops')?.value === 'M4 Dynamic' && !findVendor('M4 Dynamic')?.ours);
 t('a CO reference is read and typed', findOrderRefs('Ref CO# 88231 and PO 4471')[0].kind === 'CO' && findOrderRefs('Ref CO# 88231 and PO 4471')[1].value === '4471');
 t('duplicate references collapse', findOrderRefs('PO 4471\nPO 4471 again').length === 1);
 r = parseFinanceDocument('Credit Memo No: CM-77\nAcme\nTotal -$50.00');
@@ -63,5 +68,26 @@ t('an ordinary company name passes', !notAVendor('Mountain Flavor Supply') && !n
 
 t('a markdown header row is never the bill-to (D-148)', findBillTo('| BILL TO | SHIP TO |\n| Powder Ops | Powder Ops |') === null);
 t('an ordinary Bill To still reads', findBillTo('Bill To: Powder Ops LLC')?.value === 'Powder Ops LLC');
+
+// I136 (D-160): our own invoice to M4. The vendor read "USA" before D-147 and
+// blank after it; it is the Powder Ops letterhead, and the due date printed
+// before the invoice date is not offered.
+const I136 = `Powder Ops LLC
+1150 W 2700 S
+Salt Lake City, UT
+USA
+INVOICE
+Invoice No: I136
+Invoice Date: 09/24/2026
+Due Date: 05/26/2026
+Bill To: M4 Dynamics
+PO-01231
+Amount Due $1,051.92`;
+r = parseFinanceDocument(I136);
+t('I136: the vendor is the Powder Ops letterhead, flagged ours, never "USA"', r.fields.vendor === 'Powder Ops LLC' && r.fields.vendor_ours === true, JSON.stringify(r.fields.vendor));
+t('I136: a due date before the issue date is not applied, and says why', r.fields.due_date === null && r.fields.invoice_date === '2026-09-24' && /before the invoice date/.test((r.notes || []).join()), JSON.stringify({ due: r.fields.due_date, notes: r.notes }));
+t('I136: bill-to M4 and the amount are read', /M4/.test(r.fields.bill_to || '') && r.fields.total === 1051.92);
+r = parseFinanceDocument(INVOICE);
+t('regression: a third-party invoice is unchanged (vendor, due date, not ours)', r.fields.vendor === 'Mountain Flavor Supply' && r.fields.due_date === '2026-09-27' && r.fields.vendor_ours === null && !r.notes);
 
 console.log(`\n${pass}/${pass + fail} assertions passed`); process.exit(fail ? 1 : 0);

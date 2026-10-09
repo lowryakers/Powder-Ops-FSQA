@@ -40,13 +40,31 @@ ok('the submitter typing M4 in the note is enough on its own', () => {
   const r = detectPartner({ partners, fields: { vendor_name: null }, typed: { notes: 'This one is for the M4 recon' }, text: '' });
   assert.equal(r.confidence, 'high'); assert.deepEqual(r.matched_on, ['typed_notes']);
 });
-ok('the filename counts (a photo named m4-inv-771.jpg with no readable text)', () => {
+ok('the filename counts (a photo named m4-inv-771.jpg with no readable text) — and, with nothing readable, the direction is ASKED, not payable (D-160)', () => {
   const r = detectPartner({ partners, fields: { filename: 'm4-inv-771.jpg' }, text: '' });
-  assert.equal(r.confidence, 'high'); assert.equal(r.direction, 'payable'); assert.match(r.direction_reason, /filed as payable/);
+  assert.equal(r.confidence, 'high'); assert.equal(r.direction, null); assert.equal(r.unclear, true); assert.match(r.direction_reason, /Receivable or payable\?/);
 });
 ok('vendor AND bill-to both M4 (a credit memo) falls back to the text reader', () => {
   const r = detectPartner({ partners, fields: { vendor_name: 'M4 Dynamics', bill_to: 'M4 Dynamics' }, text: 'Powder Ops LLC\nCREDIT MEMO\nBill To: M4 Dynamics' });
   assert.equal(r.confidence, 'high'); assert.equal(r.direction, 'receivable');
+});
+
+console.log('\nDirection (D-160)');
+ok('(a) vendor blank + bill-to M4 → receivable', () => {
+  const r = detectPartner({ partners, fields: { vendor_name: null, bill_to: 'M4 Dynamics' }, text: 'INVOICE I136\nBill To: M4 Dynamics\nAmount Due $1,051.92' });
+  assert.equal(r.direction, 'receivable'); assert.equal(r.unclear, false);
+});
+ok('(b) vendor Powder Ops (ours) + bill-to M4 → receivable', () => {
+  const r = detectPartner({ partners, fields: { vendor_name: 'Powder Ops LLC', bill_to: 'M4 Dynamics' }, text: 'Powder Ops LLC\nINVOICE\nBill To: M4 Dynamics' });
+  assert.equal(r.direction, 'receivable');
+});
+ok('(c) vendor M4 + bill-to us → payable', () => {
+  const r = detectPartner({ partners, fields: { vendor_name: 'M4 Dynamic', bill_to: 'Powder Ops LLC' }, text: 'M4 Dynamic\nINVOICE\nBill To: Powder Ops LLC' });
+  assert.equal(r.direction, 'payable');
+});
+ok('(d) nothing readable → direction null and unclear, NOT payable', () => {
+  const r = detectPartner({ partners, fields: { filename: 'scan-0917.pdf' }, typed: { notes: 'M4 thing' }, text: '' });
+  assert.equal(r.confidence, 'high'); assert.equal(r.direction, null); assert.equal(r.unclear, true);
 });
 
 console.log('\nLow confidence — a mention');

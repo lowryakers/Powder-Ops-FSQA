@@ -243,6 +243,19 @@ an Accounting tab, so it survives the AP/AR pages being slimmed. `ap@powder-ops.
   `parsed_json.fields.vendor`; a typed vendor is never touched. `verify:apdropvendor` runs on **5062** — 5060/5061
   are SIP ports Node's fetch refuses ("server did not come up").
 
+### A receivable leaves AP; the direction is asked; near-duplicates are flagged (D-160)
+- **`to_partner_ar` is terminal and set ONLY by `routeToPartner`** when the ledger document (its own direction) is a receivable.
+  - Idempotent. It never overrides paid / closed / not_finance or an unconfirmed `duplicate_suspect`.
+  - There is no sync back from the ledger.
+  - `receivable_other` is the office's hand-set twin for a non-partner customer (reason required).
+- **No silent payable default anywhere.** `detectPartner` returns `direction: null, unclear: true`, and the drop parks as "Receivable or payable? (<partner>)". `route-partner` 400s (`needs_direction`) without a direction.
+- **A due date before the issue date is never applied.** The ledger copy uses partner terms (`due_date_corrected` event). A typed due date stays on the drop.
+- **Near-duplicates: `findNearDuplicate`** (same partner or vendor, `normRef` equal, ≤ $1, ≤ 24 h, different sha). Flagged before routing and never routed or deleted.
+- **`OUR_COMPANY` is ours only; M4 is not skipped.** Our letterhead returns `ours: true`. Nothing at or below Bill To is the vendor.
+- `ap_drops.status` CHECK was widened by a rebuild with foreign keys OFF; `ap_drop_events` cascades.
+- `npm run report:apdrop-ar` is read-only.
+- `verify:apdropreport` (17) proves the report writes nothing and the migration keeps every event.
+
 ## A private channel for a client, and everything that follows from its name (D-080)
 `shared/client-channels.js` (`isClientChannel`, `WIP_DEFINITION`, the guide text — imported by BOTH
 `src/lib/taskIntent.js` and `server/api/comms.js`), `server/client-channel-seed.js`, runbook in

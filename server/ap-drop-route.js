@@ -20,9 +20,9 @@
 // Direction follows the same rule the partner importer uses: whoever is billed
 // owes. Vendor = partner ⇒ payable (they billed us); bill-to = partner ⇒
 // receivable (we billed them). When neither field says, the body text is asked
-// (detectDirection); failing that, payable — an AP Drop is inbound bills by
-// default, and the draft's direction is editable on the ledger before it can
-// ever count.
+// (detectDirection); failing that, NOBODY GUESSES (D-160) — `direction: null,
+// unclear: true`, and the office is asked "Receivable or payable?". The old
+// payable default filed our own invoices to M4 as bills we owe.
 import { detectDirection } from './invoice-parse.js';
 
 const NAME_NOISE = /\b(inc|llc|l\.l\.c|ltd|co|corp|company|dynamics)\b\.?/gi;
@@ -90,10 +90,12 @@ export function detectPartner({ partners = [], fields = {}, typed = {}, text = '
         if (billToIsPartner && !vendorIsPartner) return { direction: 'receivable', reason: `The document bills ${partner.name}, so they owe it.` };
         const d = detectDirection(text, { usNames, partnerNames: pats.map(p => p.text) });
         if (d.direction) return { direction: d.direction, reason: d.reason };
-        return { direction: 'payable', reason: 'Could not tell who issued it from the fields or the text; filed as payable (an inbound bill) — correct it on the ledger if this is ours.' };
+        // D-160: no silent payable default. A receivable filed as payable sits
+        // in AP Outstanding as a bill we owe; the office is asked instead.
+        return { direction: null, unclear: true, reason: 'Receivable or payable? Neither the fields nor the text say who issued it.' };
       })();
       return {
-        partner, confidence: 'high', matched_on: on, matched_text: matchedText, direction: dir.direction, direction_reason: dir.reason,
+        partner, confidence: 'high', matched_on: on, matched_text: matchedText, direction: dir.direction, direction_reason: dir.reason, unclear: !!dir.unclear,
         reason: `${matchedText} appears in ${on.map(labelOf).join(', ')}.`,
       };
     }
