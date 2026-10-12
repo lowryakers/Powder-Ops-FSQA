@@ -146,3 +146,66 @@ test('token_denied is worded as a person-only act with its category', async () =
   assert.equal(r.isError, true);
   assert.match(text(r), /needs a person in ReadyDoc \(delete\)/);
 });
+
+test('post_channel_message with file_path uploads first, then posts with the attachment ids', async () => {
+  const f = mockFetch((url) => url.endsWith('/attachments')
+    ? { status: 201, body: [{ id: 'a1', filename: 'PO-4471.pdf' }] }
+    : { status: 201, body: { id: 'm1', attachments: [{ id: 'a1', download_url: '/api/comms/attachments/a1/download' }] } });
+  const reads = [];
+  const readFile = async (p) => { reads.push(p); return Buffer.from('%PDF-1.4 fixture'); };
+  const r = await tools(f, readFile).post_channel_message.handler({ channel_id: 'po', body: 'PO 4471 attached.', file_path: '/tmp/PO-4471.pdf' });
+  assert.equal(r.isError, undefined, text(r));
+  assert.equal(f.calls.length, 2);
+  assert.equal(f.calls[0].url, 'https://app.example/api/comms/channels/po/attachments');
+  assert.ok(f.calls[0].body instanceof FormData);
+  assert.equal(f.calls[0].body.get('files').name, 'PO-4471.pdf');
+  assert.equal(f.calls[0].body.get('files').type, 'application/pdf');
+  assert.equal(f.calls[0].body.get('body'), null, 'the upload carries only the file');
+  assert.equal(f.calls[1].url, 'https://app.example/api/comms/channels/po/messages');
+  assert.deepEqual(f.calls[1].body, { body: 'PO 4471 attached.', attachment_ids: ['a1'] });
+  assert.equal(JSON.parse(text(r)).data.attachments[0].download_url, '/api/comms/attachments/a1/download');
+  assert.deepEqual(reads, ['/tmp/PO-4471.pdf']);
+});
+
+test('post_channel_message: several files, no body; and the old call is unchanged', async () => {
+  const f = mockFetch((url) => url.endsWith('/attachments') ? { status: 201, body: [{ id: 'a1' }, { id: 'a2' }] } : { status: 201, body: { id: 'm1' } });
+  const readFile = async () => Buffer.from('x');
+  const r = await tools(f, readFile).post_channel_message.handler({ channel_id: 'po', file_paths: ['/tmp/a.csv', '/tmp/b.xlsx'] });
+  assert.equal(r.isError, undefined, text(r));
+  assert.deepEqual(f.calls[0].body.getAll('files').map(x => [x.name, x.type]),
+    [['a.csv', 'text/csv'], ['b.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']]);
+  assert.deepEqual(f.calls[1].body, { attachment_ids: ['a1', 'a2'] });
+  const plain = mockFetch(() => ({ status: 201, body: { id: 'm2' } }));
+  await tools(plain).post_channel_message.handler({ channel_id: 'po', body: 'No file.' });
+  assert.equal(plain.calls.length, 1);
+  assert.deepEqual(plain.calls[0].body, { body: 'No file.' }, 'no file: one JSON request exactly as before');
+});
+
+test('post_channel_message refuses a disallowed type, too many files, or nothing to post — before any request', async () => {
+  const f = mockFetch(() => ({ status: 201, body: [] }));
+  const readFile = async () => Buffer.from('x');
+  let r = await tools(f, readFile).post_channel_message.handler({ channel_id: 'po', body: 'x', file_path: '/tmp/page.html' });
+  assert.equal(r.isError, true); assert.match(text(r), /page\.html.*pdf, png, jpg, jpeg, csv, xlsx, docx/);
+  r = await tools(f, readFile).post_channel_message.handler({ channel_id: 'po', file_paths: Array.from({ length: 11 }, (_, i) => `/tmp/${i}.pdf`) });
+  assert.equal(r.isError, true); assert.match(text(r), /At most 10/);
+  r = await tools(f, readFile).post_channel_message.handler({ channel_id: 'po' });
+  assert.equal(r.isError, true); assert.match(text(r), /body or file_path or file_paths/);
+  assert.equal(f.calls.length, 0, 'nothing was sent');
+});
+
+test('a failed upload posts nothing, and upload_channel_attachments uploads alone', async () => {
+  const f = mockFetch(() => ({ status: 415, body: { error: 'unsupported_type', message: 'fake.pdf: the contents are not a .pdf file.' } }));
+  const readFile = async () => Buffer.from('<html>');
+  const r = await tools(f, readFile).post_channel_message.handler({ channel_id: 'po', body: 'x', file_path: '/tmp/fake.pdf' });
+  assert.equal(r.isError, true);
+  assert.match(text(r), /not a \.pdf/);
+  assert.equal(f.calls.length, 1, 'the message was never posted');
+  const u = mockFetch(() => ({ status: 201, body: [{ id: 'a9' }] }));
+  const up = await tools(u, readFile).upload_channel_attachments.handler({ channel_id: 'po', file_path: '/tmp/x.png' });
+  assert.equal(up.isError, undefined, text(up));
+  assert.equal(u.calls.length, 1);
+  assert.equal(u.calls[0].url, 'https://app.example/api/comms/channels/po/attachments');
+  assert.equal(u.calls[0].body.get('files').type, 'image/png');
+  const none = await tools(u, readFile).upload_channel_attachments.handler({ channel_id: 'po' });
+  assert.equal(none.isError, true); assert.match(text(none), /file_path or file_paths is required/);
+});

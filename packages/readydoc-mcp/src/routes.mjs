@@ -14,7 +14,10 @@
 //
 // A tool with `file` uploads one local file (read from `file_path` on the
 // machine this server runs on) as multipart form data, the declared `body`
-// fields alongside it.
+// fields alongside it; `many` names an array argument for several files and
+// `allow` the extensions it may send. A tool with `upload` (post_channel_message)
+// first uploads its files to that path, then sends the returned ids as `ids`
+// with the JSON body — two requests, one tool.
 
 const page = {
   limit: { type: 'integer', minimum: 1, maximum: 200, description: 'Rows per page (at most 200).' },
@@ -32,6 +35,11 @@ const PO_FIELDS = ['po_number', 'vendor', 'part_no', 'description', 'qty', 'uom'
   'expected_date', 'received_date', 'status', 'urgent', 'notes', 'quarter'];
 const PARTNER_DOC_FIELDS = ['direction', 'doc_type', 'doc_number', 'reference', 'description', 'issued_date',
   'terms_days', 'due_date', 'amount', 'category'];
+// What a bot token may attach to a chat message — the server's
+// TOKEN_CHAT_ATTACHMENT_TYPES (server/bot-api.js), checked here first so a
+// refused file is named before anything is uploaded. The server still decides.
+export const CHAT_ATTACHMENT_EXTENSIONS = Object.freeze(['.pdf', '.png', '.jpg', '.jpeg', '.csv', '.xlsx', '.docx']);
+const CHAT_FILES = { arg: 'file_path', many: 'file_paths', max: 10, field: 'files', allow: CHAT_ATTACHMENT_EXTENSIONS };
 const anyProps = (keys, extra = {}) => Object.fromEntries(keys.map(k => [k, extra[k] || { type: ['string', 'number', 'boolean', 'null'], description: k.replace(/_/g, ' ') }]));
 
 export const ROUTES = Object.freeze([
@@ -121,10 +129,27 @@ export const ROUTES = Object.freeze([
     description: 'A message and its thread replies.',
     properties: { message_id: str('The parent message id.') }, required: ['message_id'] },
   { tool: 'post_channel_message', method: 'POST', path: '/api/comms/channels/:channel_id/messages',
-    description: 'Post a message in a channel the account is a member of, as the bot account. No @channel/@here/@everyone. Needs a write token.',
+    description: 'Post a message in a channel or DM the account is a member of, as the bot account. No @channel/@here/@everyone. '
+      + 'To attach files give file_path (or file_paths, up to 10): they are uploaded first and linked to the message; body is then optional. '
+      + 'Needs a write token; account must be a channel member; pdf/png/jpg/csv/xlsx/docx only.',
     body: ['body', 'parent_id'],
-    properties: { channel_id: str('The channel id.'), body: str('The message text.'), parent_id: str('Reply in this thread.') },
-    required: ['channel_id', 'body'] },
+    upload: { path: '/api/comms/channels/:channel_id/attachments', ...CHAT_FILES, ids: 'attachment_ids' },
+    properties: {
+      channel_id: str('The channel id.'), body: str('The message text. Optional when a file is attached.'), parent_id: str('Reply in this thread.'),
+      file_path: filePath('file to attach (pdf, png, jpg, csv, xlsx or docx)'),
+      file_paths: { type: 'array', items: { type: 'string' }, maxItems: 10, description: 'Up to 10 files to attach (pdf, png, jpg, csv, xlsx or docx), paths on this machine.' },
+    },
+    required: ['channel_id'], oneOf: [['body'], ['file_path'], ['file_paths']] },
+  { tool: 'upload_channel_attachments', method: 'POST', path: '/api/comms/channels/:channel_id/attachments',
+    description: 'Upload files to a channel or DM without posting yet; returns their ids for post_channel_message attachment_ids. '
+      + 'Prefer post_channel_message with file_path, which does both. Needs a write token; account must be a channel member; pdf/png/jpg/csv/xlsx/docx only.',
+    file: { ...CHAT_FILES, required: true },
+    properties: {
+      channel_id: str('The channel id.'),
+      file_path: filePath('file (pdf, png, jpg, csv, xlsx or docx)'),
+      file_paths: { type: 'array', items: { type: 'string' }, maxItems: 10, description: 'Up to 10 files, paths on this machine.' },
+    },
+    required: ['channel_id'] },
 
   { tool: 'list_ap_drops', method: 'GET', path: '/api/ap-drop', paged: true,
     description: 'AP Drop intake rows (finance PDFs) the account may see. Paged.',

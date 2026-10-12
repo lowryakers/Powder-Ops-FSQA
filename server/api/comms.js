@@ -1,6 +1,7 @@
 import { Router } from 'express';
-import { pageList, isBroadcastMention } from '../bot-api.js';
-import { createReadStream } from 'fs';
+import { pageList, isBroadcastMention, tokenAttachmentRefusal } from '../bot-api.js';
+import { auditActorDetails } from '../api-tokens.js';
+import { createReadStream, openSync, readSync, closeSync } from 'fs';
 import multer from 'multer';
 import { v4 as uuid } from 'uuid';
 import { deriveUsername } from '../usernames.js';
@@ -277,11 +278,28 @@ function requireChannel(req, res) {
   // "View as" previews never open direct messages — an admin previewing a
   // user's workspace sees their channels, not their private conversations.
   if (!channel || (req.impersonated && channel.kind === 'dm') ||
-      !canAccess(db, channel, req.user.id, req.user.role === 'admin')) {
+      !canAccess(db, channel, req.user.id, req.user.role === 'admin') ||
+      // A bot token reaches only the channels and DMs its account is IN (D-166).
+      // The admin bypass above is for administering channels, which a token
+      // never does — an admin account cannot hold a token, and this holds even
+      // if one ever did.
+      (req.auth?.kind === 'token' && !isMember(db, channel.id, req.user.id))) {
     res.status(404).json({ error: 'Channel not found' });
     return null;
   }
   return channel;
+}
+
+/** The first bytes of an uploaded temp file, for the token type check. */
+function fileHead(path, n = 4096) {
+  let fd;
+  try {
+    fd = openSync(path, 'r');
+    const buf = Buffer.alloc(n);
+    const read = readSync(fd, buf, 0, n, 0);
+    return buf.subarray(0, read);
+  } catch { return Buffer.alloc(0); }
+  finally { if (fd !== undefined) try { closeSync(fd); } catch { /* ignore */ } }
 }
 
 // What a person is called in chat: the short first + last form, same as their
@@ -1598,6 +1616,15 @@ router.post('/channels/:id/attachments', uploadFiles, async (req, res) => {
     if (!files.length) return res.status(400).json({ error: 'No files uploaded' });
     const tooBig = rejectOversize(files);
     if (tooBig) return res.status(413).json({ error: tooBig });
+    const viaToken = req.auth?.kind === 'token';
+    if (viaToken) {
+      // Every file is checked before any is stored: a batch with one refused
+      // file stores nothing, so the bot is never left with half an upload.
+      for (const f of files) {
+        const why = tokenAttachmentRefusal({ filename: f.originalname, mimetype: f.mimetype, head: fileHead(f.path) });
+        if (why) return res.status(415).json({ error: 'unsupported_type', message: why });
+      }
+    }
     const out = [];
     for (const f of files) {
       const id = uuid();
@@ -1606,6 +1633,12 @@ router.post('/channels/:id/attachments', uploadFiles, async (req, res) => {
       await putStream(key, createReadStream(f.path), f.mimetype);
       db.prepare('INSERT INTO chat_attachments (id, message_id, channel_id, user_id, filename, content_type, size, storage_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
         .run(id, null, channel.id, req.user.id, (f.originalname || 'file').slice(0, 255), f.mimetype || null, f.size || null, key);
+      if (viaToken) {
+        logAudit(req.user, 'create', 'chat_attachment', id, auditActorDetails(req, {
+          event: 'chat_attachment.uploaded', channel_id: channel.id, attachment_id: id,
+          filename: (f.originalname || 'file').slice(0, 255), content_type: f.mimetype || null, size: f.size || null,
+        }), null, null, (f.originalname || 'file').slice(0, 255));
+      }
       out.push({
         id, filename: f.originalname, content_type: f.mimetype, size: f.size,
         is_image: (f.mimetype || '').startsWith('image/'),

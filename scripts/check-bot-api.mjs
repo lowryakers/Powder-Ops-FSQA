@@ -17,7 +17,8 @@ import { mkdtempSync, readFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import Database from 'better-sqlite3';
-import { BOT_ROUTES, PAGE_MAX, isForbiddenKey, writeAreaFor } from '../server/bot-api.js';
+import { BOT_ROUTES, PAGE_MAX, isForbiddenKey, writeAreaFor, TOKEN_CHAT_ATTACHMENT_TYPES, tokenAttachmentRefusal } from '../server/bot-api.js';
+import { rateKindOf } from '../server/api-tokens.js';
 import { scanRoutes, concretePath } from './lib/route-scan.mjs';
 
 let pass = 0, fail = 0;
@@ -43,6 +44,27 @@ t('every writing BOT_ROUTES entry has scope write and is on WRITE_AREAS',
   writeRoutes.length >= 10 && writeRoutes.every(r => r.scope === 'write' && writeAreaFor({ method: r.method, path: r.path.replace(/^\/api/, '').replace(/:([A-Za-z_]+)/g, 'x0') })),
   writeRoutes.filter(r => !writeAreaFor({ method: r.method, path: r.path.replace(/^\/api/, '').replace(/:([A-Za-z_]+)/g, 'x0') })).map(r => key(r.method, r.path)).join('; '));
 t('no BOT_ROUTES entry still says write-drafts', !BOT_ROUTES.some(r => r.scope === 'write-drafts'));
+
+console.log('\n── chat attachments by token (D-166) ──');
+const attachReq = { method: 'POST', path: '/comms/channels/x0/attachments' };
+t('POST /comms/channels/:id/attachments is on WRITE_AREAS, as one entry, in the messages area',
+  writeAreaFor(attachReq)?.area === 'messages' && BOT_ROUTES.filter(r => r.path === '/api/comms/channels/:id/attachments').length === 1);
+t('…and counts against the WRITE bucket, not bulk or read', rateKindOf(attachReq) === 'write');
+t('…but no other method on it, and no DELETE of an attachment, is open', !writeAreaFor({ method: 'PUT', path: '/comms/channels/x0/attachments' })
+  && !writeAreaFor({ method: 'DELETE', path: '/comms/attachments/x0' }) && !writeAreaFor({ method: 'DELETE', path: '/comms/messages/x0' }));
+t('TOKEN_CHAT_ATTACHMENT_TYPES is exactly pdf, png, jpg, jpeg, csv, xlsx, docx',
+  JSON.stringify(Object.keys(TOKEN_CHAT_ATTACHMENT_TYPES).sort()) === JSON.stringify(['csv', 'docx', 'jpeg', 'jpg', 'pdf', 'png', 'xlsx']));
+const PDF = Buffer.from('%PDF-1.7\n'), PNG = Buffer.from('89504e470d0a1a0a00', 'hex'), JPG = Buffer.from('ffd8ffe000', 'hex'), ZIP = Buffer.from('504b030400', 'hex');
+const ok = (filename, mimetype, head) => tokenAttachmentRefusal({ filename, mimetype, head }) === null;
+t('accepts each allowed type with matching type and bytes', ok('a.pdf', 'application/pdf', PDF) && ok('a.PNG', 'image/png', PNG) && ok('a.jpg', 'image/jpeg', JPG)
+  && ok('a.jpeg', 'image/jpeg', JPG) && ok('a.csv', 'text/csv', Buffer.from('a,b\n')) && ok('a.csv', 'application/vnd.ms-excel', Buffer.from('a,b'))
+  && ok('a.csv', 'text/plain; charset=utf-8', Buffer.from('a,b'))
+  && ok('a.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ZIP) && ok('a.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', ZIP));
+t('refuses an extension off the list (exe, html, svg, zip, mp4, none)', ['a.exe', 'a.html', 'a.svg', 'a.zip', 'a.mp4', 'README'].every(n => !ok(n, 'application/pdf', PDF)));
+t('refuses a mismatched declared type (.png as text/html, .pdf as octet-stream)', !ok('a.png', 'text/html', PNG) && !ok('a.pdf', 'application/octet-stream', PDF));
+t('refuses bytes that are not what the extension says', !ok('a.pdf', 'application/pdf', Buffer.from('<html>')) && !ok('a.png', 'image/png', JPG)
+  && !ok('a.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', PDF) && !ok('a.csv', 'text/csv', Buffer.from([0x61, 0, 0x62])) && !ok('a.pdf', 'application/pdf', Buffer.alloc(0)));
+t('"constructor" or "__proto__" as an extension is not an allowed type', !ok('a.constructor', 'application/pdf', PDF) && !ok('a.__proto__', 'application/pdf', PDF));
 
 // ── live ──────────────────────────────────────────────────────────────────────
 const PORT = Number(process.env.BOTAPI_CHECK_PORT || 5083);
