@@ -61,7 +61,7 @@ There is one tool per route in `docs/bot-api.md`:
 | Nutrition panels | `list_nfp`, `get_nfp`, `create_nfp_draft` (write; always a draft) |
 | Artwork | `list_artwork`, `get_artwork_for_sku`, `get_artwork_version`, `attach_artwork_file` (write) |
 | Procurement | `list_supply_orders`, `procurement_summary`, `list_procurement_demand`, `create_supply_order`, `update_supply_order` (write) |
-| Messages | `list_channels`, `read_channel_messages`, `read_thread`, `post_channel_message` (write) |
+| Messages | `list_channels`, `read_channel_messages`, `read_thread`, `post_channel_message` (write), `upload_channel_attachments` (write) |
 | AP Drop | `list_ap_drops`, `upload_ap_drop`, `add_ap_drop_note` (write) |
 | Partner reconciliation | `list_partners`, `get_partner_reconciliation`, `list_partner_credits`, `add_partner_document`, `update_partner_document` (write) |
 
@@ -70,6 +70,27 @@ Responses come back as JSON text. A paged list also returns `page: { total, limi
 Every writing tool sends only the fields it declares. A model cannot add `status`, `source` or an approver to a draft by inventing an argument.
 
 `attach_artwork_file`, `upload_ap_drop` and `add_partner_document` take a `file_path`: a file on the machine this server runs on. It is read there and uploaded as the request's file.
+
+### Attaching files to a chat message
+
+`post_channel_message` takes an optional `file_path`, or `file_paths` (up to 10). When it gets one, the tool makes two requests:
+
+1. It uploads the files to `POST /api/comms/channels/:channel_id/attachments`.
+2. It posts the message with the returned ids as `attachment_ids`.
+
+With a file attached, `body` is optional. Without a file the tool sends one JSON request, exactly as before. If the upload is refused, nothing is posted.
+
+- **Write token only.** A read-only token gets a scope error.
+- **Members only.** The bot's account must be a member of the channel or DM. A channel it is not in reads as not found, even for an admin-role account.
+- **Allowed types:** pdf, png, jpg/jpeg, csv, xlsx and docx. The tool checks the extension before reading the file. The server checks again: it compares the declared type and the file's first bytes against the extension, and answers 415 for anything else.
+- **Size:** at most 25 MB per file, the same limit a person has.
+- **Rate:** each upload counts against the token's write rate limit.
+
+`upload_channel_attachments` only uploads and returns the ids, for a client that wants to post the message separately.
+
+```json
+{ "channel_id": "eb09…", "body": "PO 4471 attached.", "file_path": "/home/alex/po/PO-4471.pdf" }
+```
 
 ## Errors
 

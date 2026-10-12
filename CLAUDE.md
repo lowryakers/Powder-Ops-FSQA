@@ -435,6 +435,20 @@ limit), `authenticateToken` in `middleware/auth.js`, `server/middleware/no-token
   **A checkbox beside long text in a flex row needs `h-4 w-4 shrink-0`** — the Write box shrank to 2.84px and could not be ticked.
 - `check:apitokens` (127; control with TOKEN_DENY off fails 18, allow-by-role fails 3), `verify:apitokensui` (13).
 
+## A `write` token attaches chat files, members only, six types (D-166)
+- `POST /comms/channels/:id/attachments` is on `WRITE_AREAS` (area `messages`) and `BOT_ROUTES`.
+- **A token passes `requireChannel` only as a MEMBER.** The admin bypass is for administration, and a token
+  never administers. A non-member gets 404.
+- Token uploads are checked against `TOKEN_CHAT_ATTACHMENT_TYPES` + `tokenAttachmentRefusal` (`server/bot-api.js`):
+  - allowed: pdf, png, jpg, csv, xlsx, docx;
+  - the extension, the declared type and the first bytes must all agree, or the answer is 415;
+  - a batch with one refused file stores nothing;
+  - person uploads are untouched.
+- Same size limits as a person. Each token upload is audited as `chat_attachment` with `via_token`.
+- MCP: `post_channel_message` takes `file_path` / `file_paths` (uploads, then posts); there is also an
+  `upload_channel_attachments` tool.
+- `verify:tokenattach` (58; control fails 32).
+
 ## Revoking access reaches the sessions it already opened (D-072)
 `revokeSessions(db, userId, { keepToken, devices })` in `api/sessions.js` is the ONE helper; Settings
 deactivation, `end-access`, the auditor-pass revoke and the pass reactivation path all call it. It deletes the

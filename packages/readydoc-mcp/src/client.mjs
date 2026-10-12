@@ -7,7 +7,9 @@ import { ROUTES } from './routes.mjs';
 
 const MIME = { '.pdf': 'application/pdf', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
   '.heic': 'image/heic', '.webp': 'image/webp', '.gif': 'image/gif', '.svg': 'image/svg+xml',
-  '.ai': 'application/postscript', '.eps': 'application/postscript', '.tif': 'image/tiff', '.tiff': 'image/tiff' };
+  '.ai': 'application/postscript', '.eps': 'application/postscript', '.tif': 'image/tiff', '.tiff': 'image/tiff',
+  '.csv': 'text/csv', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
 
 export class ConfigError extends Error {}
 
@@ -60,45 +62,83 @@ export function explain(status, body, headers) {
 }
 
 export function makeClient({ url, token, fetch: f = globalThis.fetch, readFile = fsReadFile }) {
-  async function call(route, args = {}) {
-    let path = route.path;
-    for (const m of route.path.matchAll(/:([A-Za-z_]+)/g)) {
+  const fillPath = (template, args) => {
+    let path = template;
+    for (const m of template.matchAll(/:([A-Za-z_]+)/g)) {
       const v = args[m[1]];
       if (v === undefined || v === null || String(v) === '') throw new ReadyDocError(`${m[1]} is required.`);
       path = path.replace(`:${m[1]}`, encodeURIComponent(String(v)));
     }
+    return path;
+  };
+  // The local files a tool was given: `arg` (one path) and/or `many` (a list).
+  const filesFor = (spec, args) => {
+    if (!spec) return [];
+    const list = [];
+    if (args[spec.arg]) list.push(String(args[spec.arg]));
+    if (spec.many && args[spec.many] !== undefined) {
+      if (!Array.isArray(args[spec.many])) throw new ReadyDocError(`${spec.many} must be a list of paths.`);
+      for (const p of args[spec.many]) if (p) list.push(String(p));
+    }
+    if (spec.max && list.length > spec.max) throw new ReadyDocError(`At most ${spec.max} files in one call.`);
+    if (spec.allow) {
+      const bad = list.filter(p => !spec.allow.includes(extname(p).toLowerCase()));
+      if (bad.length) throw new ReadyDocError(`Not sent: ${bad.map(p => basename(p)).join(', ')}. A bot may attach only ${spec.allow.map(e => e.slice(1)).join(', ')} files.`);
+    }
+    return list;
+  };
+  const multipart = async (spec, paths, fields = {}) => {
+    const form = new FormData();
+    for (const [k, v] of Object.entries(fields)) if (v !== null) form.append(k, String(v));
+    for (const p of paths) {
+      let bytes;
+      try { bytes = await readFile(p); }
+      catch (err) { throw new ReadyDocError(`Could not read ${p}: ${err.message}`); }
+      const name = basename(p);
+      form.append(spec.field, new Blob([bytes], { type: MIME[extname(name).toLowerCase()] || 'application/octet-stream' }), name);
+    }
+    return form; // fetch sets the multipart boundary itself
+  };
+  async function send(method, path, init) {
+    let res;
+    try { res = await f(`${url}${path}`, { method, ...init, headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', ...(init.headers || {}) } }); }
+    catch (err) { throw new ReadyDocError(`Could not reach ReadyDoc at ${url}: ${err.message}`); }
+    let body = null;
+    try { body = await res.json(); } catch { /* an empty or non-JSON body */ }
+    if (!res.ok) throw explain(res.status, body, res.headers);
+    return { res, body };
+  }
+
+  async function call(route, args = {}) {
+    const path = fillPath(route.path, args);
     const qs = new URLSearchParams();
     for (const k of route.query || []) if (args[k] !== undefined && args[k] !== null && args[k] !== '') qs.set(k, String(args[k]));
     const q = qs.toString();
-    const target = `${url}${path}${q ? `?${q}` : ''}`;
-    const init = { method: route.method, headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } };
+    const init = {};
     if (route.method !== 'GET') {
       // Only the fields this tool declares are sent. A model cannot add `status`,
       // `source` or `approved_by` to a draft by inventing an argument.
       const body = {};
       for (const k of route.body || []) if (args[k] !== undefined) body[k] = args[k];
-      const filePath = route.file ? args[route.file.arg] : undefined;
-      if (route.file?.required && !filePath) throw new ReadyDocError(`${route.file.arg} is required.`);
-      if (filePath) {
-        let bytes;
-        try { bytes = await readFile(String(filePath)); }
-        catch (err) { throw new ReadyDocError(`Could not read ${filePath}: ${err.message}`); }
-        const form = new FormData();
-        for (const [k, v] of Object.entries(body)) if (v !== null) form.append(k, String(v));
-        const name = basename(String(filePath));
-        form.append(route.file.field, new Blob([bytes], { type: MIME[extname(name).toLowerCase()] || 'application/octet-stream' }), name);
-        init.body = form; // fetch sets the multipart boundary itself
+      if (route.oneOf && !route.oneOf.some(keys => keys.every(k => args[k] !== undefined && args[k] !== '' && !(Array.isArray(args[k]) && !args[k].length)))) {
+        throw new ReadyDocError(`Give ${route.oneOf.map(k => k.join(' + ')).join(' or ')}.`);
+      }
+      const files = filesFor(route.file, args);
+      const toUpload = filesFor(route.upload, args); // checked before anything is sent
+      if (route.file?.required && !files.length) throw new ReadyDocError(`${route.file.arg}${route.file.many ? ` or ${route.file.many}` : ''} is required.`);
+      if (toUpload.length) {
+        // Upload first; the message then names what was uploaded.
+        const up = await send('POST', fillPath(route.upload.path, args), { body: await multipart(route.upload, toUpload) });
+        body[route.upload.ids] = (Array.isArray(up.body) ? up.body : []).map(a => a.id);
+      }
+      if (files.length) {
+        init.body = await multipart(route.file, files, body);
       } else {
-        init.headers['Content-Type'] = 'application/json';
+        init.headers = { 'Content-Type': 'application/json' };
         init.body = JSON.stringify(body);
       }
     }
-    let res;
-    try { res = await f(target, init); }
-    catch (err) { throw new ReadyDocError(`Could not reach ReadyDoc at ${url}: ${err.message}`); }
-    let body = null;
-    try { body = await res.json(); } catch { /* an empty or non-JSON body */ }
-    if (!res.ok) throw explain(res.status, body, res.headers);
+    const { res, body } = await send(route.method, `${path}${q ? `?${q}` : ''}`, init);
     const total = res.headers?.get?.('x-total-count');
     if (total !== null && total !== undefined) {
       return { data: body, page: { total: Number(total), limit: Number(res.headers.get('x-limit')), offset: Number(res.headers.get('x-offset')) } };

@@ -114,7 +114,7 @@ A `write` token may write **only** to the routes below (`WRITE_AREAS` in `server
 | AP Drop | `POST /api/ap-drop` (upload), `PUT /api/ap-drop/:id`, `POST /api/ap-drop/:id/notes`, `POST /api/ap-drop/:id/reparse`, `POST /api/ap-drop/:id/route-partner` (files a draft on the ledger), `POST /api/ap-drop/:id/status` to `new`, `triaged`, `matched`, `needs_info` or `duplicate_suspect` only |
 | Partner reconciliation | `POST /api/partners/:id/documents`, `…/documents/scan`, `POST /api/partners/:id/credits`, `PUT /api/partners/:id` (office/admin accounts only); while the document is a **draft**: `PUT /api/partners/documents/:docId`, `…/category`, `…/file`, `…/read-lines`; bulk: `POST /api/partners/:id/documents/import` |
 | Nutrition panels | `POST /api/nfp` (always lands as a draft); while the panel is a **draft**: `PUT /api/nfp/:id`, `PUT /api/nfp/:id/panel` |
-| Messages | `POST /api/comms/channels/:id/messages` |
+| Messages | `POST /api/comms/channels/:id/messages`, `POST /api/comms/channels/:id/attachments` (pdf, png, jpg, csv, xlsx, docx only) |
 
 ## Never via token
 
@@ -421,7 +421,8 @@ Run this checklist once after a release that touches the bot surface, and once a
 
 - **Scope:** `write`.
 - **Grant:** membership of the channel.
-- **Body:** `{ body, parent_id? }`. Set `parent_id` to reply in a thread.
+- **Body:** `{ body?, parent_id?, attachment_ids? }`. Set `parent_id` to reply in a thread. A message needs `body`, `attachment_ids`, or both.
+- **Attachments.** `attachment_ids` are ids returned by `POST /api/comms/channels/:id/attachments` for **this** channel, uploaded by **this** account and not yet on a message. Any other id is ignored. Each attachment in the reply carries `download_url`.
 - **Returns:** **201** with the message.
 - **Attribution.** The message is the bot account's: `user_id` and `user_name` are that account, never a person's. The audit entry carries the token prefix.
 - **Membership.** A channel the account is not in is **404**. An admin-post channel refuses a non-admin account.
@@ -432,6 +433,25 @@ Run this checklist once after a release that touches the bot surface, and once a
 { "id": "5354…", "channel_id": "eb09…", "user_id": "…", "user_name": "Catalog Bot",
   "body": "Proof run finished for the pouch.", "created_at": "2026-10-09 22:05:43.603" }
 ```
+
+### `POST /api/comms/channels/:id/attachments`
+
+- **Scope:** `write`.
+- **Grant:** membership of the channel or DM. An admin-role account gets no bypass here: a channel the account is not in is **404**.
+- **Body:** multipart form data, field `files`, at most 10 files.
+- **Types (token only).** pdf, png, jpg/jpeg, csv, xlsx, docx. The extension, the declared type and the first bytes must agree, so a `.pdf` whose body is HTML is refused. Allowed types: `TOKEN_CHAT_ATTACHMENT_TYPES` in `server/bot-api.js`. A person's own uploads are not restricted.
+- **Size.** The same limits as a person: 25 MB for each file.
+- **Returns:** **201** with `[{ id, filename, content_type, size, is_image, is_video }]`. The files sit unattached until a message names them in `attachment_ids`.
+- **Audit.** Each file writes a `chat_attachment` / `create` entry as the account. The entry carries `via_token`, the channel, the attachment id, the filename, the type and the size.
+- **Rate.** Counts against the `write` bucket.
+- **Errors:** **415** `unsupported_type` (nothing from that request is stored); **413** over the size limit; **400** with no file; **503** when file storage is not configured; **403** `token_scope` for a read-only token.
+
+Attaching a file to a post takes two calls:
+
+1. `POST /api/comms/channels/:id/attachments` with the file. Keep the returned ids.
+2. `POST /api/comms/channels/:id/messages` with `{ "body": "PO 4471 attached.", "attachment_ids": ["…"] }`.
+
+Removing or editing an attachment or a message stays person-only: every `DELETE` is `token_denied`.
 
 ## AP Drop
 

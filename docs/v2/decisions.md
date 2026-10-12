@@ -6867,3 +6867,56 @@ only because its text is shorter. The server had accepted `write` since D-164; n
   live read token and the row reads "read, write" with no new token issued.
 - **Control:** the shipped component fails at its first new assertion, measuring the box at **2.84 px** wide.
 
+
+## D-166 — A `write` token may attach files to chat, in the channels its account is in (12 Oct 2026)
+
+**Asked:** the purchasing bot posts a PO to #new_purchase-order and could not attach the PDF. The upload
+answered 403 `token_denied` / `not_open_to_tokens`.
+
+**Cause:** `POST /api/comms/channels/:id/attachments` was not on `WRITE_AREAS`. The message route was, so
+`attachment_ids` existed with nothing a token could put in it.
+
+**Decided / done:**
+- **One new `WRITE_AREAS` entry** in the `messages` area, plus a `BOT_ROUTES` entry with scope `write`. No
+  other write was opened. Editing and deleting messages and attachments stay person-only: every DELETE is
+  `token_denied`, and the message PUT is not on the list.
+- **A token reaches only channels and DMs its account is a member of.** The check is in `requireChannel`,
+  so it covers every comms route a token can call, reads included. `requireChannel` lets an admin into any
+  channel because that is how channels are administered, and a token never administers. Admin accounts
+  cannot hold a token (D-161; promotion makes the token 401). The check holds even if one ever did. A
+  non-member gets 404, as a person does. Sessions are unchanged.
+- **Allowed types for a token upload: `TOKEN_CHAT_ATTACHMENT_TYPES` in `server/bot-api.js`.** pdf, png,
+  jpg/jpeg, csv, xlsx, docx. Three things must agree:
+  - the extension;
+  - the declared type (a CSV may also come as `application/vnd.ms-excel` or `text/plain`);
+  - the first bytes (`%PDF-`, the PNG signature, `FF D8 FF`, a zip header for xlsx/docx, and no NUL byte
+    in a CSV).
+  Anything else is **415 `unsupported_type`**. A batch with one refused file stores nothing. A bot moves
+  documents; an .html or .svg posted as the bot account would be a page that runs in whoever opens it. **A
+  person's uploads are not restricted**, and the composer is unchanged.
+- **Same size limits as a person** (`mediaUpload` + `rejectOversize`: 25 MB per non-video file, 10 files per
+  request), with the same 413 wording. There is deliberately no second limit.
+- **Each token upload is audited** as `chat_attachment` / `create` through `auditActorDetails`. The entry
+  carries `via_token`, the channel, the attachment id, the filename, the type and the size. Person uploads
+  were not audited before and still are not; that is a separate question.
+- **Uploads spend the `write` bucket** (`rateKindOf` → `write`; the entry is not `bulk`).
+- **MCP.** `post_channel_message` takes `file_path` or `file_paths` (up to 10). It uploads first, then posts
+  with `attachment_ids`; `body` is optional when a file is given. Extensions are checked before any request,
+  and a refused upload posts nothing. A new `upload_channel_attachments` tool covers the route by itself,
+  because the package keeps one tool per `BOT_ROUTES` entry.
+
+**Verified:**
+- `verify:tokenattach` (58, live, S3 stand-in; in `verify:all`). It covers:
+  - a member uploads, links and gets `download_url`; the row is the bot's own, and another account's upload
+    cannot be linked;
+  - every allowed type works; a read token gets 403 with nothing stored; a non-member gets 404; a DM works;
+  - ten refusals return 415, and a mixed batch stores nothing;
+  - 413 matches a person's refusal; the 10-file cap holds;
+  - the audit row is complete; the write bucket returns 429 while reads still answer;
+  - DELETE message, DELETE channel, message edit, channel create, six approve routes, user admin and token
+    admin are all still refused;
+  - a person may still attach an .svg, and an admin session still reaches any channel.
+- `check:botapi` 71 (nine new pure checks on the area, the bucket and the type rule), `check:apitokens` 147,
+  `check:botmcp` 37, and package unit tests 17 (four new).
+- **Control:** without the `WRITE_AREAS` entry (the plant's state), 32 of the 58 fail, starting with
+  `not_open_to_tokens`.
