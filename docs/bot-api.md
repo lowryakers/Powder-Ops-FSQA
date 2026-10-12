@@ -18,6 +18,7 @@ An admin mints one in **Settings → API tokens** (D-161).
 - **Account.** Every token belongs to one named, **non-admin** account. The bot acts as that account, so the account's `module_access` decides what the bot can read. A token never widens that account's access.
 - **Scopes.** `read` is always on. `write` is optional (it replaced `write-drafts`, which is still accepted when minting and is read as `write`). There is no approve, delete or admin scope, and some acts are never open to a token at all — see **Never via token**.
 - **Storage.** The token is shown once and stored only as a hash. If it is lost, mint a new one.
+- **Changing what a token may do.** An admin can tick or untick Write on a live token with **Edit scopes** in Settings → Bot API tokens. The bot keeps the same token; only its scopes change, and the change is audited as `api_token_scopes_changed`. A revoked or expired token, or one whose account was deactivated or made an admin, cannot be edited: mint a new one. A bot can never change its own scopes (`token_denied`, `token_admin`).
 - **Audit.** Every call the bot makes is written to the audit log as `api_token_call`, under the account's name, with the token's prefix.
 
 Send the token as a bearer header:

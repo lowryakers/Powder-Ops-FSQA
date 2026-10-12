@@ -296,7 +296,7 @@ function ModuleAccessEditor({ value, onChange, disabled, additive = false, role 
           {optInDefs.map(m => (
             <label key={m.id} className="flex items-start gap-2 text-xs text-gray-700 cursor-pointer">
               <input type="checkbox" checked={!!(map && map[m.id])} onChange={() => toggleOptIn(m.id)} disabled={disabled}
-                className="mt-0.5 rounded border-gray-300 text-powder-600" />
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-powder-600" />
               <span>
                 <span className="font-medium">{m.label}</span>
                 {m.note && <span className="block text-gray-500">{m.note}</span>}
@@ -826,7 +826,7 @@ function UserForm({ initial, onSave, onCancel, canViewPin }) {
               somebody's mobile must never quietly open that door. */}
           <label className="flex items-start gap-2 p-3 rounded-lg border border-gray-200 bg-gray-50">
             <input type="checkbox" checked={!!form.sms_access} disabled={!String(form.phone || '').trim()}
-              onChange={e => setForm({ ...form, sms_access: e.target.checked ? 1 : 0 })} className="mt-0.5" />
+              onChange={e => setForm({ ...form, sms_access: e.target.checked ? 1 : 0 })} className="mt-0.5 h-4 w-4 shrink-0" />
             <span className="text-xs text-gray-700">
               <span className="font-medium">This person has agreed to receive ReadyDoc texts</span>
               {/* THE WORDING IS THE CONSENT RECORD, not a label.
