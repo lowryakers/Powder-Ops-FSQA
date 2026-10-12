@@ -430,6 +430,9 @@ limit), `authenticateToken` in `middleware/auth.js`, `server/middleware/no-token
 - Drafts only while draft: NFP and partner documents (`when` on the entry). AP Drop status: triage moves only;
   artwork status: draft / in_review only.
 - `token_scope` now means only "read-only". Bulk writes: `API_TOKEN_BULK_RPM` (default 5).
+- **Scopes change on a LIVE token without re-minting (D-165)**: `updateScopes()` + `POST /api-tokens/:id/scopes` (admin
+  session, `normalizeScopes`, not-live refused, hash untouched, audit `api_token_scopes_changed`); **Edit scopes** on the row.
+  **A checkbox beside long text in a flex row needs `h-4 w-4 shrink-0`** — the Write box shrank to 2.84px and could not be ticked.
 - `check:apitokens` (127; control with TOKEN_DENY off fails 18, allow-by-role fails 3), `verify:apitokensui` (13).
 
 ## Revoking access reaches the sessions it already opened (D-072)

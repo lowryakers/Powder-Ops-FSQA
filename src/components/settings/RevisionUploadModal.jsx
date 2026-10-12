@@ -97,7 +97,7 @@ function FileResult({ file, onApplied }) {
         <ul className="space-y-1.5">
           {file.changes.map(c => (
             <li key={c.field} className="flex items-start gap-2 text-xs">
-              <input type="checkbox" checked={picked.has(c.field)} onChange={() => toggle(c.field)} disabled={done} className="mt-0.5" />
+              <input type="checkbox" checked={picked.has(c.field)} onChange={() => toggle(c.field)} disabled={done} className="mt-0.5 h-4 w-4 shrink-0" />
               <span className="min-w-0">
                 <span className="font-medium text-gray-800">{c.label}</span>
                 <span className="block text-gray-500 break-words">

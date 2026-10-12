@@ -115,6 +115,32 @@ function stateOf(r) {
   return 'live';
 }
 
+/**
+ * Change a live token's scopes (D-165). The clear text and the hash never
+ * change — the bot keeps the token it holds and what it may do moves. The same
+ * normalizeScopes as minting decides, so only read / write exist, read is always
+ * kept and a forbidden name is refused. Refused for a token that is not live:
+ * widening a revoked or expired token is a dead token with a misleading row,
+ * and one on an inactive or admin account is refused at the door anyway.
+ */
+export function updateScopes(db, id, scopes, actor) {
+  const t = getToken(db, id);
+  if (!t) return null;
+  if (t.state !== 'live') {
+    const why = { revoked: 'it has been revoked', expired: 'it has expired',
+      account_inactive: "its account is deactivated", account_is_admin: 'its account is now an admin' }[t.state] || 'it is not live';
+    throw new ScopeError(`This token's scopes cannot be changed: ${why}. Mint a new one instead.`);
+  }
+  const after = normalizeScopes(scopes);
+  const before = t.scopes;
+  if (JSON.stringify(after) === JSON.stringify(before)) return t;
+  db.prepare('UPDATE api_tokens SET scopes = ? WHERE id = ?').run(JSON.stringify(after), id);
+  logAudit(actor, 'api_token_scopes_changed', 'api_token', id,
+    { tokenId: id, prefix: t.token_prefix, label: t.label, for: t.user_name, before, after, actor: actor?.name || 'system' },
+    { scopes: before }, { scopes: after }, t.label);
+  return getToken(db, id);
+}
+
 export function revokeToken(db, id, actor) {
   const t = getToken(db, id);
   if (!t) return null;

@@ -6827,3 +6827,43 @@ person-only." Pack 4 of 4, after D-161 (tokens), D-162 (surface) and D-163 (MCP 
   - allow-by-role (the pack's original default) fails 3, including a token editing an NFP already sent for
     approval;
   - the old Settings screen fails the browser check at its first assertion.
+
+## D-165 — The Write box could not be ticked, and a token's scopes can be changed without re-minting (2026-10-12)
+
+**Reported:** Lowry, 12 Oct: "it doesn't allow me to tic". In the screenshot, Write was a tiny dot beside long text.
+
+**Cause, measured:** the Write checkbox in Settings → Bot API tokens was a flex child of
+`label.flex.items-start.gap-2` with no size and no `shrink-0`. D-164's longer Write wording squeezed it to
+**2.84 × 13 px**, which reads as a bullet and is almost impossible to hit. Read had the same markup and survived
+only because its text is shorter. The server had accepted `write` since D-164; nothing else was wrong.
+
+**Decided / done:**
+- Every scope box uses one class string, `mt-1 h-4 w-4 shrink-0 cursor-pointer`. The `<label>` stays, so
+  clicking the words toggles it too. The boxes carry `id` / `htmlFor` and `aria-describedby` pointing at the
+  never-allowed note. Write stays unticked by default and is offered for every eligible account: active,
+  non-admin, not a guest. Admin accounts are still refused a token.
+- The same squeeze could happen in three more Settings checkboxes with long labels, so they get the same fix:
+  - the document revision field picker (`RevisionUploadModal`);
+  - the opt-in module rows in the access editor;
+  - the "texting in" grant (`UsersSection`).
+- **Edit scopes on a live token.** `updateScopes()` in `server/api-tokens.js`, `POST /api/api-tokens/:id/scopes`:
+  - Admin session only, like minting. A token is refused by TOKEN_DENY with `token_denied` / `token_admin`.
+  - The same `normalizeScopes` as minting, so only read / write exist, read is always kept and a forbidden
+    name is refused.
+  - Refused for a token that is not live (revoked, expired, account inactive, account now admin). The refusal
+    says which and to mint a new one.
+  - The clear text and the hash never change. The bot keeps its token.
+  - Audited as `api_token_scopes_changed` with before, after, label, prefix and actor.
+  - UI: **Edit scopes** on each live row opens the same full-size Write box, with Save and Cancel.
+- Nothing person-only moved. There is no new scope and every TOKEN_DENY / APPROVE_ROUTES category stands.
+
+**Verified:**
+- `check:apitokens` 147, with 20 new checks: create with read+write / read / none, approve and admin refused,
+  and edit read→write and write→read. After the edit, whoami and a real write follow the new scopes. The
+  audit row is written and the hash is unchanged. Delete and approve are refused as scopes. A token calling
+  the edit gets `token_admin`. Revoked and promoted tokens are refused, and an unknown id is a 404.
+- `verify:apitokensui` 27, in a browser at 1280 and 390: the Write box is a real, unticked, enabled checkbox
+  at least 14 px wide. Clicking the box and clicking its words both toggle it. Edit scopes ticks Write on a
+  live read token and the row reads "read, write" with no new token issued.
+- **Control:** the shipped component fails at its first new assertion, measuring the box at **2.84 px** wide.
+

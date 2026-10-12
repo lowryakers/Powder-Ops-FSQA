@@ -184,6 +184,8 @@ const AREAS_VIEW = { products: 'view', artwork: 'view', procurement: 'view', 'pa
 mk('wa', 'Writer A', 'supervisor', 'office', AREAS_EDIT);
 mk('wb', 'Writer B', 'operator', 'warehouse', AREAS_VIEW);
 mk('wx', 'Guest Writer', 'operator', 'office', null);
+mk('sc-bot', 'Scope Bot', 'supervisor', 'office', AREAS_EDIT);
+mk('sc-promo', 'Promoted Bot', 'operator', 'office', AREAS_VIEW);
 db.prepare("UPDATE users SET is_external = 1, external_org = 'M4 Dynamic' WHERE id = 'wx'").run();
 const sku = db.prepare('SELECT sku FROM products ORDER BY sku LIMIT 1').get()?.sku;
 
@@ -442,6 +444,57 @@ t('…and is refused once that account is promoted to admin', (await call('GET',
 db.prepare("UPDATE users SET role = 'operator', is_active = 0 WHERE id = 'tk-other'").run();
 t('…and while the account is deactivated', (await call('GET', '/users/me', null, otherTok)).status === 401);
 t('a made-up rdk_ token gets 401', (await call('GET', '/products', null, 'rdk_' + 'A'.repeat(43))).status === 401);
+
+console.log('\n── minting scopes, and editing them on a live token (D-165) ──');
+r = await call('POST', '/api-tokens', { user_id: 'sc-bot', label: 'Scopes both', scopes: ['read', 'write'] }, admin);
+t('create with ["read","write"] stores both', r.status === 201 && JSON.stringify(r.body?.token?.scopes) === '["read","write"]', JSON.stringify(r.body?.token?.scopes));
+r = await call('POST', '/api-tokens', { user_id: 'sc-bot', label: 'Scopes read', scopes: ['read'] }, admin);
+t('create with ["read"] stores read', r.status === 201 && JSON.stringify(r.body?.token?.scopes) === '["read"]');
+r = await call('POST', '/api-tokens', { user_id: 'sc-bot', label: 'Scopes none' }, admin);
+const scTok = r.body?.plaintext, scId = r.body?.token?.id;
+t('create with no scopes stores read', r.status === 201 && JSON.stringify(r.body?.token?.scopes) === '["read"]');
+for (const bad of ['approve', 'admin']) {
+  r = await call('POST', '/api-tokens', { user_id: 'sc-bot', label: `Scopes ${bad}`, scopes: [bad] }, admin);
+  t(`create with ["${bad}"] is refused`, r.status === 400, JSON.stringify(r.body));
+}
+const hashBefore = db.prepare('SELECT token_hash FROM api_tokens WHERE id = ?').get(scId).token_hash;
+r = await call('POST', `/api-tokens/${scId}/scopes`, { scopes: ['read', 'write'] }, admin);
+t('edit scopes read → read + write', r.status === 200 && JSON.stringify(r.body?.scopes) === '["read","write"]', JSON.stringify(r.body).slice(0, 160));
+t('…the hash is unchanged (the bot keeps its token)', db.prepare('SELECT token_hash FROM api_tokens WHERE id = ?').get(scId).token_hash === hashBefore);
+r = await call('GET', '/bot/whoami', null, scTok);
+t('…and whoami for the same token now says write', r.status === 200 && JSON.stringify(r.body?.scopes) === '["read","write"]', JSON.stringify(r.body?.scopes));
+r = await call('POST', '/procurement/pos', { vendor: 'Scope Vendor' }, scTok);
+t('…and the same token can now write', r.status === 201, `${r.status} ${JSON.stringify(r.body).slice(0, 120)}`);
+const chg = db.prepare("SELECT details FROM audit_log WHERE action = 'api_token_scopes_changed' AND entity_id = ?").all(scId).map(x => JSON.parse(x.details));
+t('…audited as api_token_scopes_changed with before, after, label, prefix and actor',
+  chg.length === 1 && JSON.stringify(chg[0].before) === '["read"]' && JSON.stringify(chg[0].after) === '["read","write"]'
+  && chg[0].label === 'Scopes none' && /^rdk_/.test(chg[0].prefix) && chg[0].actor === 'Token Admin', JSON.stringify(chg));
+r = await call('POST', `/api-tokens/${scId}/scopes`, { scopes: ['read'] }, admin);
+t('edit scopes write → read', r.status === 200 && JSON.stringify(r.body?.scopes) === '["read"]');
+r = await call('POST', '/procurement/pos', { vendor: 'Scope Vendor 2' }, scTok);
+t('…and the token is read-only again (token_scope)', r.status === 403 && r.body?.error === 'token_scope');
+for (const bad of ['delete', 'approve']) {
+  r = await call('POST', `/api-tokens/${scId}/scopes`, { scopes: ['read', bad] }, admin);
+  t(`edit scopes with "${bad}" is refused`, r.status === 400, JSON.stringify(r.body));
+}
+t('…and a refused edit leaves the scopes alone', db.prepare('SELECT scopes FROM api_tokens WHERE id = ?').get(scId).scopes === '["read"]');
+r = await call('POST', `/api-tokens/${scId}/scopes`, { scopes: ['read', 'write'] }, scTok);
+t('a token calling edit-scopes → 403 token_denied (token_admin)', r.status === 403 && r.body?.error === 'token_denied' && r.body?.category === 'token_admin', JSON.stringify(r.body));
+r = await call('POST', `/api-tokens/${scId}/scopes`, { scopes: ['read', 'write'] }, botSession);
+t('a non-admin session cannot edit scopes', r.status === 403);
+r = await call('POST', '/api-tokens', { user_id: 'sc-bot', label: 'Scopes to revoke', scopes: ['read'] }, admin);
+const revId = r.body?.token?.id;
+await call('POST', `/api-tokens/${revId}/revoke`, {}, admin);
+r = await call('POST', `/api-tokens/${revId}/scopes`, { scopes: ['read', 'write'] }, admin);
+t('editing a revoked token is refused, in words', r.status === 400 && /revoked/.test(r.body?.error || ''), JSON.stringify(r.body));
+r = await call('POST', '/api-tokens', { user_id: 'sc-promo', label: 'Scopes promoted', scopes: ['read'] }, admin);
+const promoId = r.body?.token?.id;
+db.prepare("UPDATE users SET role = 'admin' WHERE id = 'sc-promo'").run();
+r = await call('POST', `/api-tokens/${promoId}/scopes`, { scopes: ['read', 'write'] }, admin);
+t('editing a token whose account became an admin is refused', r.status === 400 && /admin/.test(r.body?.error || ''), JSON.stringify(r.body));
+db.prepare("UPDATE users SET role = 'operator' WHERE id = 'sc-promo'").run();
+r = await call('POST', '/api-tokens/no-such-token/scopes', { scopes: ['read'] }, admin);
+t('an unknown token → 404', r.status === 404);
 
 console.log('\n── rate limit ──');
 r = await call('POST', '/api-tokens', { user_id: 'tk-bot', label: 'Busy bot', scopes: ['read'] }, admin);

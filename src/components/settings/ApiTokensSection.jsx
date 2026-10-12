@@ -24,6 +24,10 @@ const SCOPE_COPY = {
   read: 'Read — see products, panels, artwork, orders, AP Drop and partner balances this account can see.',
   write: 'Write — create and edit anything this account is allowed to: product records, artwork and files, supply orders, AP Drop uploads, partner reconciliation documents, draft nutrition panels, messages. Never more than the account itself can do.',
 };
+// A checkbox in a flex row beside long text is squeezed to a dot unless it is
+// sized and told not to shrink — which is how "Write" read as a bullet nobody
+// could tick (D-165). Every scope box here uses this one class string.
+const CHECKBOX = 'mt-1 h-4 w-4 shrink-0 cursor-pointer';
 const NEVER = 'Never allowed with any token: approving, signing, verifying, releasing or settling anything; deleting or voiding anything; changing users, roles or permissions; managing tokens. Those always need a person signed in.';
 
 export default function ApiTokensSection() {
@@ -32,6 +36,7 @@ export default function ApiTokensSection() {
   const [issued, setIssued] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [editing, setEditing] = useState(null); // { id, write }
 
   const accounts = data?.accounts || [];
   const tokens = data?.tokens || [];
@@ -54,6 +59,15 @@ export default function ApiTokensSection() {
     if (!window.confirm(`Revoke "${t.label}"? The bot holding it stops working immediately.`)) return;
     setError('');
     try { await apiPost(`/api-tokens/${t.id}/revoke`, {}); refresh(); } catch (e) { setError(e.message); }
+  };
+
+  const saveScopes = async () => {
+    setError('');
+    try {
+      await apiPost(`/api-tokens/${editing.id}/scopes`, { scopes: editing.write ? ['read', 'write'] : ['read'] });
+      setEditing(null);
+      refresh();
+    } catch (e) { setError(e.message); }
   };
 
   const input = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm';
@@ -85,9 +99,14 @@ export default function ApiTokensSection() {
           </label>
           <div className="space-y-1 text-sm">
             <span className="block text-xs text-gray-500">What it may do</span>
-            <label className="flex items-start gap-2 text-gray-500"><input type="checkbox" checked disabled className="mt-1" /> {SCOPE_COPY.read}</label>
-            <label className="flex items-start gap-2"><input type="checkbox" checked={form.write} onChange={e => setForm({ ...form, write: e.target.checked })} className="mt-1" data-api-token-write /> {SCOPE_COPY.write}</label>
-            <p className="text-xs text-gray-600 pt-1" data-api-token-never>{NEVER}</p>
+            <label htmlFor="api-token-scope-read" className="flex items-start gap-2 text-gray-500">
+              <input id="api-token-scope-read" type="checkbox" checked disabled className={CHECKBOX} aria-describedby="api-token-never" /> <span>{SCOPE_COPY.read}</span>
+            </label>
+            <label htmlFor="api-token-scope-write" className="flex items-start gap-2 cursor-pointer">
+              <input id="api-token-scope-write" type="checkbox" checked={form.write} onChange={e => setForm({ ...form, write: e.target.checked })}
+                className={CHECKBOX} aria-describedby="api-token-never" data-api-token-write /> <span>{SCOPE_COPY.write}</span>
+            </label>
+            <p id="api-token-never" className="text-xs text-gray-600 pt-1" data-api-token-never>{NEVER}</p>
           </div>
         </div>
         <button type="button" onClick={create} disabled={busy || !form.user_id || form.label.trim().length < 3}
@@ -121,12 +140,34 @@ export default function ApiTokensSection() {
                   <strong className="text-gray-900">{t.label}</strong>
                   <code className="text-xs text-gray-500">{t.token_prefix}…</code>
                   <span className={`px-2 py-0.5 rounded-full text-xs ${st.tone}`} data-api-token-state>{st.label}</span>
+                  {t.state === 'live' && editing?.id !== t.id && (
+                    <button type="button" onClick={() => setEditing({ id: t.id, write: t.scopes.includes('write') })}
+                      className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded border border-gray-300 text-gray-700 text-xs hover:bg-gray-50" data-api-token-edit-scopes>
+                      Edit scopes
+                    </button>
+                  )}
                   {t.state === 'live' && (
-                    <button type="button" onClick={() => revoke(t)} className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded border border-red-200 text-red-700 text-xs hover:bg-red-50" data-api-token-revoke>
+                    <button type="button" onClick={() => revoke(t)} className={`${editing?.id === t.id ? 'ml-auto ' : ''}inline-flex items-center gap-1 px-2 py-1 rounded border border-red-200 text-red-700 text-xs hover:bg-red-50`} data-api-token-revoke>
                       <Ban size={12} /> Revoke
                     </button>
                   )}
                 </div>
+                {editing?.id === t.id && (
+                  <div className="mt-2 p-3 rounded-lg bg-gray-50 border border-gray-200 space-y-2 text-sm" data-api-token-scope-editor>
+                    <label className="flex items-start gap-2 text-gray-500">
+                      <input type="checkbox" checked disabled className={CHECKBOX} /> <span>{SCOPE_COPY.read}</span>
+                    </label>
+                    <label htmlFor={`api-token-edit-write-${t.id}`} className="flex items-start gap-2 cursor-pointer">
+                      <input id={`api-token-edit-write-${t.id}`} type="checkbox" checked={editing.write} onChange={e => setEditing({ ...editing, write: e.target.checked })}
+                        className={CHECKBOX} aria-describedby="api-token-never" data-api-token-edit-write /> <span>{SCOPE_COPY.write}</span>
+                    </label>
+                    <div className="text-xs text-gray-600">The bot keeps the same token; only what it may do changes.</div>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={saveScopes} className="px-3 py-1.5 rounded-lg bg-powder-600 text-white text-xs" data-api-token-save-scopes>Save</button>
+                      <button type="button" onClick={() => setEditing(null)} className="px-3 py-1.5 rounded-lg border border-gray-300 text-xs">Cancel</button>
+                    </div>
+                  </div>
+                )}
                 <div className="mt-1 text-xs text-gray-600 grid gap-0.5 sm:grid-cols-2">
                   <div>Acts as <strong>{t.user_name || 'deleted account'}</strong></div>
                   <div>Scopes: {t.scopes.join(', ')}</div>

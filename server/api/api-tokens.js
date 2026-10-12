@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { getDb } from '../db.js';
 import { requireRole } from '../middleware/auth.js';
 import {
-  SCOPES, createToken, listTokens, revokeToken, ScopeError, rateLimits,
+  SCOPES, createToken, listTokens, revokeToken, updateScopes, ScopeError, rateLimits,
 } from '../api-tokens.js';
 import { APPROVE_ROUTES, APPROVE_SEGMENTS, TOKEN_DENY } from '../middleware/no-token-approve.js';
 import { WRITE_AREAS } from '../bot-api.js';
@@ -42,6 +42,20 @@ router.post('/', (req, res) => {
     }, req.user);
     // The ONLY response that ever carries the clear text.
     res.status(201).json({ token, plaintext });
+  } catch (err) {
+    if (err instanceof ScopeError) return res.status(400).json({ error: err.message });
+    throw err;
+  }
+});
+
+// Edit a live token's scopes (D-165). Admin session only, like minting; a token
+// never reaches this (TOKEN_DENY refuses /api-tokens on every method, and the
+// router-level guard above is the second statement of it).
+router.post('/:id/scopes', (req, res) => {
+  try {
+    const t = updateScopes(getDb(), req.params.id, req.body?.scopes, req.user);
+    if (!t) return res.status(404).json({ error: 'Not found' });
+    res.json(t);
   } catch (err) {
     if (err instanceof ScopeError) return res.status(400).json({ error: err.message });
     throw err;
