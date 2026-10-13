@@ -10,6 +10,7 @@ import {
   AlertTriangle, Check, X, TrendingUp, Users, Clock, DollarSign, RefreshCw, FileText,
   Plus, Trash2, Pencil, ClipboardCheck,
 } from 'lucide-react';
+import { openFile } from '../../lib/openFile';
 
 // Pay Tracking.
 //
@@ -108,8 +109,8 @@ function Evaluation({ people, canApply, isAdmin = false, onClose, onRecorded, tr
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Could not build the PDF.');
       const url = URL.createObjectURL(await res.blob());
-      window.open(url, '_blank', 'noopener');
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      openFile({ url, name: 'evaluation.pdf' });
+      setTimeout(() => URL.revokeObjectURL(url), 10 * 60000);
     } catch (e) {
       setError(e.message);
     } finally { setBusy(false); }

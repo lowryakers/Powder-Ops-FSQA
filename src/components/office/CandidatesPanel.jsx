@@ -5,6 +5,7 @@ import { Search, Plus, X, Phone, Mail, UserPlus, Trash2, Pencil, StickyNote, Upl
 import { formatDate } from '../../lib/datetime.js';
 import { CustomFields, CustomFieldValues } from '../common/CustomFields.jsx';
 import ImportPanel from '../common/ImportPanel.jsx';
+import { openFile } from '../../lib/openFile';
 
 // People we would like to work with, when the timing is right.
 //
@@ -98,7 +99,7 @@ function Files({ c, storageEnabled, onChanged }) {
   const open = async (f) => {
     try {
       const { url } = await apiFetch(`/candidates/files/${f.id}/url`);
-      if (url) window.open(url, '_blank');
+      if (url) openFile({ url, name: f.filename });
     } catch (err) { setError(err.message); }
   };
   const remove = async (f) => {

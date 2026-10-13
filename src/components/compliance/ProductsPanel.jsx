@@ -24,6 +24,7 @@ import {
   FileText, Plus, Trash2, Palette,
   ListChecks, Layers,
 } from 'lucide-react';
+import { openFile } from '../../lib/openFile';
 
 /**
  * Brand colours, and the one place they can be corrected.
@@ -343,7 +344,7 @@ function BarcodeImage({ sku, gtin, canEdit, has, stale, forGtin, onChanged }) {
     try {
       const r = await apiFetch(`/products/${encodeURIComponent(sku)}/barcode`);
       setMeta(r);
-      window.open(r.url, '_blank', 'noopener');
+      openFile({ url: r.url, name: r.filename });
     } catch (err) { setError(err.message); }
   };
 

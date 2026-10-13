@@ -336,7 +336,7 @@ export default function AttachmentViewer({ atts, index, onNav, onClose, helpers,
             <div className="text-sm font-medium text-gray-900 text-center break-all">{a.filename}</div>
             <div className="text-xs text-gray-400">{fmtSize(a.size)}</div>
             <div className="text-[11px] text-gray-500 text-center">Opens in your phone's own viewer, where you can pinch to zoom.</div>
-            <a href={a.url} target="_blank" rel="noreferrer"
+            <a href={a.url} target="_blank" rel="noreferrer" data-new-tab
               className="mt-1 inline-flex items-center gap-1.5 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">
               <ExternalLink size={15} /> Open
             </a>
@@ -344,7 +344,7 @@ export default function AttachmentViewer({ atts, index, onNav, onClose, helpers,
         ) : isPdf(a) && a.url ? (
           <div className="relative w-[98vw] h-[86vh] max-w-6xl">
             <iframe src={pdfViewerUrl(a.url)} title={a.filename} className="w-full h-full bg-white rounded-lg" />
-            <a href={a.url} target="_blank" rel="noreferrer"
+            <a href={a.url} target="_blank" rel="noreferrer" data-new-tab
               className="absolute bottom-2 left-1/2 -translate-x-1/2 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gray-900/85 text-white text-xs font-medium shadow-lg hover:bg-gray-900">
               <ExternalLink size={13} /> Open full size
             </a>
@@ -389,7 +389,7 @@ export default function AttachmentViewer({ atts, index, onNav, onClose, helpers,
           <Download size={20} /><span className="text-[11px]">Download</span>
         </button>
         {a.url && (
-          <a href={a.url} target="_blank" rel="noreferrer" data-action="open"
+          <a href={a.url} target="_blank" rel="noreferrer" data-new-tab data-action="open"
             className="flex flex-col items-center gap-0.5 min-w-[4.5rem] px-2 py-1.5 rounded-lg text-white/90 hover:bg-white/15 active:bg-white/25">
             <ExternalLink size={20} /><span className="text-[11px]">Open</span>
           </a>

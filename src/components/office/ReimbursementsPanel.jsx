@@ -11,6 +11,7 @@ import {
   AlertTriangle, Search, ExternalLink,
 } from 'lucide-react';
 import FrozenScroll from '../common/FrozenScroll';
+import { openFile } from '../../lib/openFile';
 
 // Getting somebody their own money back.
 //
@@ -169,7 +170,7 @@ function Receipts({ row, onChanged }) {
   const open = async (r) => {
     try {
       const { url } = await apiFetch(`/reimbursements/receipts/${r.id}/file`);
-      if (url) window.open(url, '_blank');
+      if (url) openFile({ url, name: r.filename });
     } catch (e) { window.alert(e.message); }
   };
   const add = async (e) => {

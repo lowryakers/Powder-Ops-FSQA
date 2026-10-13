@@ -10,6 +10,7 @@ import { canEditModule } from '../../utils/permissions';
 import { usePageTranslation } from '../../lib/usePageTranslation.js';
 import LangToggle from '../LangToggle.jsx';
 import { Plus, Trash2, Send, FileText, Image as ImageIcon, ArrowUp, ArrowDown, Eye, X, Newspaper, BookOpen } from 'lucide-react';
+import { openFile } from '../../lib/openFile';
 
 // The newsletter, in two halves.
 //
@@ -289,7 +290,7 @@ function IssueEditor({ issue, canEdit, onChanged, onClose, tr = (x) => x, lang =
     // Presigned-free: the endpoint streams the PDF for whoever can view it.
     fetch(`/api/newsletter/issues/${draft.id}/pdf?lang=${lang}`, { headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` } })
       .then(r => r.blob())
-      .then(b => window.open(URL.createObjectURL(b), '_blank', 'noopener'))
+      .then(b => openFile({ url: URL.createObjectURL(b), name: `newsletter-${lang}.pdf` }))
       .catch(() => setError('Could not open the PDF.'));
   };
 

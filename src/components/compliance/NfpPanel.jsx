@@ -7,6 +7,7 @@ import {
   FileText, Link2, Upload, CheckCircle2, XCircle, Clock, Copy, Check,
   AlertTriangle, Trash2, Plus, Send, Table2,
 } from 'lucide-react';
+import { openFile } from '../../lib/openFile';
 
 /**
  * Nutrition panels: file one, send it for approval, record the decision.
@@ -641,7 +642,7 @@ function VersionCard({ v, canEdit, onChanged, storage = true }) {
         <ul className="space-y-1">
           {v.files.map((f) => (
             <li key={f.id}>
-              <button onClick={() => apiFetch(`/nfp/files/${f.id}`).then((d) => window.open(d.url, '_blank'))}
+              <button onClick={() => apiFetch(`/nfp/files/${f.id}`).then((d) => openFile({ url: d.url, name: f.filename }))}
                 className="text-xs text-powder-700 hover:underline inline-flex items-center gap-1">
                 <FileText size={12} /> {f.filename}
               </button>
