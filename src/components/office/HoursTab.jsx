@@ -193,6 +193,11 @@ function AddContractorModal({ onClose, onAdded }) {
   );
 }
 
+// One week's six columns. Written out, never built (Tailwind only generates a
+// class it can find as a literal). Each column keeps room for "40:00" — the
+// boxes were clipping to "0:0(" in the five-column version.
+const WEEK_GRID = 'grid grid-cols-[repeat(6,minmax(3.75rem,1fr))] gap-1';
+
 // Hours are typed and shown as h:mm (39:56) and stored as decimal — see
 // lib/hoursFormat. It has to be a text box, not type="number": a number input
 // rejects the colon outright and a phone keyboard would never offer one.
@@ -215,6 +220,32 @@ function HourInput({ value, onCommit, tone = '', className = 'w-16' }) {
       onBlur={commit}
       onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
       className={`${className} px-1.5 py-1 border border-gray-200 rounded text-sm text-right tabular-nums ${tone}`} />
+  );
+}
+
+/**
+ * The target for ONE week (D-167). Payroll is weekly, so the figure the week is
+ * measured against sits inside the week. It shows the person's usual target
+ * until somebody changes it; a changed week is outlined in amber and carries a
+ * reset. Typing the usual figure back in clears the week's own value rather
+ * than storing a copy of it, so a later change to the usual target still
+ * reaches that week.
+ */
+function WeekTarget({ week, usual, onSet, className = 'w-full' }) {
+  const set = week.target_set;
+  return (
+    <span className="relative block" data-week-target={week.week_start}>
+      <HourInput value={week.target} className={className}
+        tone={set ? 'border-amber-300! bg-amber-50 text-amber-800 font-semibold' : 'text-gray-400'}
+        onCommit={v => onSet(Math.abs(v - (Number(usual) || 0)) < 0.0001 ? null : v)} />
+      {set && (
+        <button type="button" onClick={() => onSet(null)} data-week-target-reset={week.week_start}
+          title={`This week only. Reset to the usual ${hrs(usual)}`}
+          className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-white border border-amber-300 text-amber-600 text-[10px] leading-none hover:bg-amber-100">
+          ×
+        </button>
+      )}
+    </span>
   );
 }
 
@@ -296,15 +327,15 @@ function TotalsRow({ label, count, totals = {}, kind }) {
 function exportCsv(data) {
   const weeks = data?.weeks || [];
   const q = (v) => (v == null ? '' : `"${String(v).replace(/"/g, '""')}"`);
-  const head = ['Name', 'Department', 'Worker type', 'Rate', 'Target/wk'];
-  for (const w of weeks) head.push(`Worked ${w}`, `PTO ${w}`, `Holiday ${w}`, `Unpaid ${w}`, `Non-working ${w}`, `Overtime ${w}`, `Cost ${w}`);
+  const head = ['Name', 'Department', 'Worker type', 'Rate', 'Usual target/wk'];
+  for (const w of weeks) head.push(`Target ${w}`, `Worked ${w}`, `PTO ${w}`, `Holiday ${w}`, `Unpaid ${w}`, `Non-working ${w}`, `Overtime ${w}`, `Cost ${w}`);
   head.push('Period worked', 'Period PTO', 'Period holiday', 'Period unpaid', 'Period non-working',
     'Period overtime', 'Period paid hours', 'Straight cost', 'Overtime premium', 'Period cost');
   const lines = [head.map(q).join(',')];
   for (const p of data?.people || []) {
     const row = [p.name, p.department || p.contractor_company || '', p.is_contractor ? 'contractor' : 'employee',
       p.rate ?? '', p.target ?? ''];
-    for (const w of p.weeks) row.push(w.worked, w.pto, w.holiday, w.unpaid, w.non_working, w.overtime, w.cost ?? '');
+    for (const w of p.weeks) row.push(w.target ?? '', w.worked, w.pto, w.holiday, w.unpaid, w.non_working, w.overtime, w.cost ?? '');
     const d = p.period;
     row.push(d.worked, d.pto, d.holiday, d.unpaid, d.non_working, d.overtime, d.total,
       d.straight_cost ?? '', d.ot_premium ?? '', d.cost ?? '');
@@ -478,7 +509,9 @@ export default function HoursTab() {
   const t = data?.totals || {};
   const hasContractors = (byType.contractor?.people || 0) > 0;
   const standardWeek = data?.standard_week ?? 40;
-  const offTarget = people.filter(p => !p.is_contractor && p.target != null && p.target !== standardWeek);
+  // Off the ordinary week either by their usual target or by one week's own.
+  const offTarget = people.filter(p => !p.is_contractor && p.target != null
+    && (p.target !== standardWeek || p.weeks.some(w => w.target != null && w.target !== standardWeek)));
   // Somebody with no Pay Tracking row at all has no rate here and never will
   // until the two are linked — so the empty cell is named, with where it is
   // fixed, rather than left reading as the rate column being broken.
@@ -520,7 +553,7 @@ export default function HoursTab() {
         <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2" data-ot-basis-note>
           Overtime — and the premium inside the cost — is hours past each person&apos;s own weekly target, not past
           {' '}{standardWeek}. {offTarget.length === 1 ? `${offTarget[0].name} carries` : `${offTarget.length} people carry`}
-          {' '}a different target{offTarget.length === 1 ? ` (${hrs(offTarget[0].target)})` : ''}, so their overtime here is not the same
+          {' '}a different target, for the period or for one week{offTarget.length === 1 && offTarget[0].target !== standardWeek ? ` (${hrs(offTarget[0].target)})` : ''}, so their overtime here is not the same
           statement as a statutory over-{standardWeek} week.
         </p>
       )}
@@ -550,18 +583,18 @@ export default function HoursTab() {
               {/* Say how it's sorted — the names show first-name-first, so an
                   A–Z-by-surname list otherwise reads as no order at all. */}
               <th className="px-3 py-2">Employee <span className="text-gray-400 normal-case font-normal">· by last name</span></th>
-              <th className="px-3 py-2">Target/wk</th>
               <th className="px-3 py-2">Rate</th>
               {(data?.weeks || []).map(w => (
-                <th key={w} colSpan={5} className="px-3 py-2 text-center border-l border-gray-200">Week of {weekLabel(w)}</th>
+                <th key={w} colSpan={6} className="px-3 py-2 text-center border-l border-gray-200">Week of {weekLabel(w)}</th>
               ))}
               <th className="px-3 py-2 text-right border-l border-gray-200">Period total</th>
             </tr>
             <tr className="text-left text-[10px] font-medium text-gray-400">
-              <th className="px-3 pb-2" /><th className="px-3 pb-2" /><th className="px-3 pb-2" />
+              <th className="px-3 pb-2" /><th className="px-3 pb-2" />
               {(data?.weeks || []).map(w => (
-                <th key={w} colSpan={5} className="px-3 pb-2 border-l border-gray-200">
-                  <div className="grid grid-cols-5 gap-1 text-center">
+                <th key={w} colSpan={6} className="px-3 pb-2 border-l border-gray-200">
+                  <div className={`${WEEK_GRID} text-center`}>
+                    <span title="The hours this week is measured against">Target</span>
                     <span>Worked</span><span>PTO</span><span>Holiday</span><span>Unpaid</span><span>Non-work</span>
                   </div>
                 </th>
@@ -572,7 +605,7 @@ export default function HoursTab() {
           <tbody>
             {rows.map(p => (p.__divider ? (
               <tr key="contractor-divider" className="border-t-2 border-gray-300 bg-gray-50">
-                <td colSpan={14} className="px-3 py-1.5">
+                <td colSpan={16} className="px-3 py-1.5">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-600">Contractors &amp; temporary workers</span>
                     <span className="text-[11px] text-gray-400">No weekly target — their paid hours are the hours worked.</span>
@@ -592,11 +625,13 @@ export default function HoursTab() {
                       ? (p.contractor_company || 'contractor')
                       : (p.department || '').replace('_', ' ')}
                   </span>
-                </td>
-                <td className="px-3 py-1.5">
-                  {p.is_contractor
-                    ? <span className="text-[11px] text-gray-300" title="A contractor has no weekly target">—</span>
-                    : <HourInput value={p.target} onCommit={v => saveTarget(p.user_id, v)} tone="text-gray-500" />}
+                  {!p.is_contractor && (
+                    <label className="mt-0.5 flex items-center gap-1 text-[10px] text-gray-400" data-usual-target={p.user_id}
+                      title="Their usual weekly target. Each week starts from it; change one week in that week's Target box.">
+                      usual/wk
+                      <HourInput value={p.target} onCommit={v => saveTarget(p.user_id, v)} className="w-14" tone="text-gray-500 text-xs! py-0.5!" />
+                    </label>
+                  )}
                 </td>
                 <td className="px-3 py-1.5">
                   {(() => { const r = rateLabel(p); return (
@@ -605,12 +640,15 @@ export default function HoursTab() {
                   {!p.is_contractor && !p.rate_linked && <LinkPayButton person={p} rows={data?.pay_rows_unlinked} onDone={refresh} />}
                 </td>
                 {p.weeks.map(w => (
-                  <td key={w.week_start} colSpan={5} className="px-3 py-1.5 border-l border-gray-200">
-                    <div className="grid grid-cols-5 gap-1 items-center">
-                      <HourInput value={w.worked} onCommit={v => save(p.user_id, w.week_start, { worked: v })} />
-                      <HourInput value={w.pto} onCommit={v => save(p.user_id, w.week_start, { pto: v })} />
-                      <HourInput value={w.holiday} onCommit={v => save(p.user_id, w.week_start, { holiday: v })} />
-                      <HourInput value={w.unpaid} onCommit={v => save(p.user_id, w.week_start, { unpaid: v })} />
+                  <td key={w.week_start} colSpan={6} className="px-3 py-1.5 border-l border-gray-200">
+                    <div className={`${WEEK_GRID} items-center`}>
+                      {p.is_contractor
+                        ? <span className="text-center text-[11px] text-gray-300" title="A contractor has no weekly target">—</span>
+                        : <WeekTarget week={w} usual={p.target} onSet={v => save(p.user_id, w.week_start, { target: v })} />}
+                      <HourInput value={w.worked} className="w-full" onCommit={v => save(p.user_id, w.week_start, { worked: v })} />
+                      <HourInput value={w.pto} className="w-full" onCommit={v => save(p.user_id, w.week_start, { pto: v })} />
+                      <HourInput value={w.holiday} className="w-full" onCommit={v => save(p.user_id, w.week_start, { holiday: v })} />
+                      <HourInput value={w.unpaid} className="w-full" onCommit={v => save(p.user_id, w.week_start, { unpaid: v })} />
                       <button
                         onClick={() => save(p.user_id, w.week_start, { auto_fill: !w.auto_fill })}
                         title={w.auto_fill ? 'Auto-filling to target — click to stop' : 'Not auto-filling — click to fill to target'}
@@ -645,7 +683,7 @@ export default function HoursTab() {
               </tr>
             )))}
             {(data?.people || []).length === 0 && (
-              <tr><td colSpan={14} className="px-4 py-8 text-center text-gray-400">
+              <tr><td colSpan={16} className="px-4 py-8 text-center text-gray-400">
                 <Users size={18} className="inline mr-1" /> No active people in Settings yet.
               </td></tr>
             )}
@@ -676,7 +714,7 @@ export default function HoursTab() {
             </div>
 
             <div className="mt-2 flex items-center gap-2">
-              <span className="text-[11px] text-gray-500">Target / week</span>
+              <span className="text-[11px] text-gray-500">Usual target / week</span>
               {p.is_contractor
                 ? <span className="text-[11px] text-gray-300">—</span>
                 : <HourInput value={p.target} onCommit={v => saveTarget(p.user_id, v)} tone="text-gray-500" />}
@@ -700,6 +738,13 @@ export default function HoursTab() {
                     {w.non_working > 0 ? `${hrs(w.non_working)} non-working` : (w.auto_fill ? 'auto-fill on' : 'auto-fill off')}
                   </button>
                 </div>
+                {!p.is_contractor && (
+                  <label className="mb-1.5 flex items-center gap-2">
+                    <span className="text-[10px] text-gray-400">Target this week</span>
+                    <WeekTarget week={w} usual={p.target} className="w-20"
+                      onSet={v => save(p.user_id, w.week_start, { target: v })} />
+                  </label>
+                )}
                 <div className="grid grid-cols-4 gap-2">
                   {[
                     ['Worked', 'worked'], ['PTO', 'pto'], ['Holiday', 'holiday'], ['Unpaid', 'unpaid'],
