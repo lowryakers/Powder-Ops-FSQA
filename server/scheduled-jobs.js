@@ -180,6 +180,17 @@ export async function runDue(db, deps, now = new Date()) {
     } catch (e) { console.warn('[jobs] employee document nudges failed:', e.message); }
   }
 
+  // Policies sent to read and acknowledge (D-169) — same cadence, each row on
+  // its own clock (policy_acknowledgements.last_nudge_at), one message per person.
+  const lastPolicyNudge = getFlag(db, 'last_policy_ack_nudge_at');
+  if (deps.policyAckNudges && (!lastPolicyNudge || (now - new Date(lastPolicyNudge)) >= 2 * 86400000)) {
+    try {
+      const sent = await deps.policyAckNudges(db);
+      setFlag(db, 'last_policy_ack_nudge_at', now.toISOString());
+      if (sent.sent) console.log(`[jobs] policy acknowledgement nudges: ${sent.sent} people, ${sent.pending} outstanding`);
+    } catch (e) { console.warn('[jobs] policy acknowledgement nudges failed:', e.message); }
+  }
+
   // Training handed to somebody and not done. Same cadence and the same
   // reasoning: the assignment IS a work order, and a work order due in a
   // fortnight sits in a collapsed "Upcoming" header behind the day's work.

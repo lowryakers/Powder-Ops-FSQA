@@ -129,6 +129,15 @@ export function readybotAudiences(db) {
         + 'So does whoever sent it. The people listed are who ELSE is told when one is signed or declined.',
     },
     {
+      key: 'policy_acknowledgements',
+      label: 'A policy to read and acknowledge',
+      what: 'The person a published policy was sent to, asked to read it and acknowledge it with their password.',
+      when: 'On send (one message per person, however many policies), then every other day while it is waiting.',
+      setting: null, source: 'rule',
+      recipients: [],
+      note: 'Goes only to the people it was sent to. The office follows progress on the policy itself, not by message.',
+    },
+    {
       key: 'onboarding_finished',
       label: 'Onboarding packet finished',
       what: 'A new hire has completed their packet and it is ready for review.',

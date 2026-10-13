@@ -81,6 +81,7 @@
     "verify:apitokensui": "node scripts/verify-api-tokens-ui.mjs",
     "verify:weektarget": "VERIFY_ONLY=verify-hours-week-target.mjs node scripts/verify-all.mjs",
     "verify:inappfiles": "VERIFY_ONLY=verify-in-app-files.mjs node scripts/verify-all.mjs",
+    "verify:policyacks": "VERIFY_ONLY=verify-policy-acks.mjs node scripts/verify-all.mjs",
     "verify:tokenattach": "VERIFY_ONLY=verify-token-attachments.mjs node scripts/verify-all.mjs",
     "verify:commsedit": "node scripts/verify-comms-edit.mjs",
     "verify:commspendingjump": "node scripts/verify-comms-pending-jump.mjs",

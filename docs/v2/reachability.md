@@ -28,6 +28,7 @@ to go and look.
 | Training assigned (D-105) | Do the course | The assignee | Their task list, if they hold one | DM + push naming where to look; chased every other day; the assign screen names who will not see it | reached |
 | Pay review actions (D-057, D-097) | Decide / chase / assign | The office | Pay Tracking strip | Bell + DM every third day | reached |
 | Employee documents (D-077) | Sign it | The employee | A card wherever they are | DM on send, every other day unsigned | reached |
+| **Policy to acknowledge (D-169)** | Read it, acknowledge with your password | The employee it was sent to | The same "Documents to sign" card, wherever they are | DM + push on send (one per person), chased every other day; the office follows progress on the policy, not by DM | reached |
 | Supplier disposition / questionnaire chase | Decide; chase the form | Quality; Purchasing | Suppliers register | DM every third day, two numbers stated separately | reached |
 | Supply standing lists (D-106) | Tick what is low | The office | Supply Orders → Standing lists | DM on the day due, chased every third day | reached |
 | Cleanup Review pile (D-084) | Close pre-launch work | Admin | Settings → Cleanup Review | Biweekly digest | reached |
