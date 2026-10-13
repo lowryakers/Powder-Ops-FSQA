@@ -308,7 +308,7 @@ function authenticateToken(token, req, res, next) {
   }
 
   req.user = user;
-  req.auth = { kind: 'token', tokenId: t.id, prefix: t.prefix, label: t.label, scopes: t.scopes };
+  req.auth = { kind: 'token', tokenId: t.id, prefix: t.prefix, label: t.label, scopes: t.scopes, grants: t.grants || [] };
   // Nothing a token caller is sent carries a hash, a secret, a setup code or a
   // file's bytes (D-162) — filtered once here, so a handler that returns
   // SELECT * cannot leak one to a bot.

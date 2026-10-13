@@ -114,6 +114,7 @@ A `write` token may write **only** to the routes below (`WRITE_AREAS` in `server
 | AP Drop | `POST /api/ap-drop` (upload), `PUT /api/ap-drop/:id`, `POST /api/ap-drop/:id/notes`, `POST /api/ap-drop/:id/reparse`, `POST /api/ap-drop/:id/route-partner` (files a draft on the ledger), `POST /api/ap-drop/:id/status` to `new`, `triaged`, `matched`, `needs_info` or `duplicate_suspect` only |
 | Partner reconciliation | `POST /api/partners/:id/documents`, `…/documents/scan`, `POST /api/partners/:id/credits`, `PUT /api/partners/:id` (office/admin accounts only); while the document is a **draft**: `PUT /api/partners/documents/:docId`, `…/category`, `…/file`, `…/read-lines`; bulk: `POST /api/partners/:id/documents/import` |
 | Nutrition panels | `POST /api/nfp` (always lands as a draft); while the panel is a **draft**: `PUT /api/nfp/:id`, `PUT /api/nfp/:id/panel` |
+| Nutrition panel PDF and values — **`nfp-panel` grant only** | `PUT /api/nfp/:id/panel-file`, `PUT /api/nfp/:id/panel-values` (a DRAFT only, every values write with `source_ref`) |
 | Messages | `POST /api/comms/channels/:id/messages`, `POST /api/comms/channels/:id/attachments` (pdf, png, jpg, csv, xlsx, docx only), `POST /api/comms/messages/:id/reactions`, `DELETE /api/comms/messages/:id/reactions/:emoji` (the bot's own reaction only) |
 
 ## Never via token
@@ -124,7 +125,7 @@ These are refused to every token, whatever its scope and whatever its account's 
 |---|---|---|
 | Approve | approving, deciding, signing, verifying, releasing, finalizing, settling; sending a panel or a batch for approval; filing a paper (already approved) panel; artwork to approved / print-ready | `approve_requires_human_session` |
 | `delete` | every `DELETE` except taking back the bot's own reaction, and any write whose path names deleting, voiding, archiving, purging, cancelling, withdrawing, deactivating, revoking, retiring or disputing | `token_denied` |
-| `decision` | rejecting, dismissing, resolving, reopening, closing, reinstating, restoring, waiving; confirming a product readiness step; moving an AP Drop to paid / closed / in QuickBooks / in a payment run / not finance / receivable-other; artwork to rejected or superseded | `token_denied` |
+| `decision` | rejecting, dismissing, resolving, reopening, closing, reinstating, restoring, waiving, acknowledging; confirming a product readiness step; moving an AP Drop to paid / closed / in QuickBooks / in a payment run / not finance / receivable-other; artwork to rejected or superseded | `token_denied` |
 | `user_admin` | every write under `/api/users` (accounts, roles, module access, passwords, signatures), onboarding end-access, `/api/org` and `/api/comms/admin` writes | `token_denied` |
 | `token_admin` | `/api/api-tokens` and `/api/kiosk-tokens` (reads included), auditor passes, partner portal links | `token_denied` |
 
@@ -277,6 +278,46 @@ Run this checklist once after a release that touches the bot surface, and once a
 ```json
 { "id": "4dd0…", "sku": "42224277651538", "version": "BOTAPI-V1", "status": "draft", "approved_at": null }
 ```
+
+### `GET /api/nfp/:id/panel-values`
+
+- **Scope:** `read`.
+- **Grant:** `products: view`.
+- **Returns:** the panel's values (in the field names below), `source_ref` with who wrote it and when, the panel PDF on file, the reconciliation checks, the warnings still waiting for a person's acknowledgement (`reconcile_unresolved`), every acknowledgement given, and `diff_vs_approved`. That diff lists only the fields that differ from the product's current approved panel.
+- **Checks** (`reconcile`), each `ok`, `warn` or `not_checked`. A check with a missing input is not checked; it is never a pass.
+  - `fill_weight`: serving size in grams × servings per container must be within ±5% of the product's fill weight in Products. A serving written as a range is checked at its midpoint.
+  - `calories`: 4 × total carbohydrate + 4 × protein + 9 × total fat must be within ±20% of calories.
+
+### `PUT /api/nfp/:id/panel-file`
+
+- **Scope:** `write`, and the token must hold the **`nfp-panel` grant**. An admin gives it to one token in Settings → Bot API tokens. Every other token gets `token_denied` / `not_open_to_tokens`.
+- **Grant:** `products: edit`, and the account must be a supervisor or in QA.
+- **Body:** multipart form data, field `file`: one PDF, 25 MB at most. The extension, the declared type and the first bytes must all say PDF, or the answer is **415**.
+- **Effect:** uploads the panel PDF, or **replaces** the one already on the version. The old file is removed only after the new one is stored.
+- **Draft only.** A token may write only to a DRAFT version. Any other state is **403** `not_draft`, and an approved version is never rewritten.
+- **Audit:** `nfp_panel_file_uploaded` or `nfp_panel_file_replaced`, with the filename, size, SHA-256 and the file it replaced, under the bot's account with `via_token`.
+
+### `PUT /api/nfp/:id/panel-values`
+
+- **Scope:** `write`, plus the **`nfp-panel` grant**, as above.
+- **Grant:** `products: edit`, and the account must be a supervisor or in QA.
+- **Body:** `{ "values": { … }, "source_ref": "…" }`.
+  - `source_ref` is **required**: the file name or document id the values were taken from. It is stored on the version. Without it the answer is **400** `source_ref_required`.
+  - The fields are `serving_size`, `servings_per_container`, `calories`, `total_fat`, `saturated_fat`, `trans_fat`, `cholesterol`, `sodium`, `total_carbohydrate`, `dietary_fiber`, `total_sugars`, `added_sugars`, `protein`, `vitamin_d`, `calcium`, `iron`, `potassium`, `ingredients` and `allergen_statement`. Any other name is **400** `unknown_fields`.
+  - Values merge: send only what changes. A blank clears a field. `"<1"` stays as written.
+- **Serving size keeps its grams.** When the product's approved panel writes its serving size with a gram weight, a new value with no grams is refused: **400** `serving_size_grams`. For example "1 bottle (34-37g)" must not become "1 bottle".
+- **Draft only:** **403** `not_draft` for any other state.
+- **Returns:** the same body as the GET, plus `changed: [{ field, from, to }]`. A write that changes nothing changes nothing.
+- **Reconciliation:** both checks run on every write and their result is stored with it. A failed check is a **warning** on the draft. The panel cannot be approved, and no approval link can be sent, until a person acknowledges each warning in ReadyDoc. A token cannot acknowledge.
+- **Audit:** `nfp_panel_values_updated`, carrying the bot account, the fields changed, each old and new value, and the source reference.
+
+```json
+{ "values": { "serving_size": "1 bottle (34-37g)", "servings_per_container": 20, "calories": 130,
+  "total_carbohydrate": 3, "protein": 25, "total_fat": 2 },
+  "source_ref": "WHY-BTL-BLM_NFP_v3.pdf" }
+```
+
+A token can never approve a panel, send it for approval, acknowledge a warning or change its state: `POST /api/nfp/:id/decide` and `…/send` are `approve_requires_human_session`, and `…/warnings/:key/acknowledge` is `token_denied` (decision).
 
 ## Artwork
 

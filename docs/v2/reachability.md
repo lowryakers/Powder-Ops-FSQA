@@ -46,6 +46,7 @@ to go and look.
 | Sensory spec approval (D-050) | Approve a product's draft spec | A QA lead | Organoleptic log strip | Banner; the first test DMs QA to taste | reached through the tasting DM |
 | "Used up" restock suggestions | Add to orders | The office | Supply Orders strip | Was: banner only. **Now a bell line `supply-suggestions` for admins, counted by item from the strip's own `openSuggestions()`** | **fixed D-124** |
 | Spec-sheet completeness (D-128) | Fill the named fields, or block the SKU with a reason and an owner | Whoever owns the product data (Lowry, Matt, Shaun) | Products → Completeness | None — a derived punch list, read where the product data is kept. A block names its owner in words, not an account, so nobody is messaged | reported, not wired: a block's owner is not told |
+| Nutrition panel reconciliation warnings (D-171) | Acknowledge each warning, or correct the values | A supervisor or QA in Products | The draft card (product drawer and the Nutrition panels board) | None pushed. The panel cannot be approved, and no approval link can be sent, until each warning is acknowledged; the refusal names them at the button | reported at the point of approval, which is where the actor is; no DM |
 | Obligations register (`docs/v2/obligations.json`) | Close the 23 open obligations | Whoever runs V2 | The repository | `npm run check:obligations` | not an app mechanism — its reader reads the repo. Left as is |
 
 ## The two rules this pass adds

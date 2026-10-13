@@ -3576,6 +3576,30 @@ function runMigrations() {
   addColumnIfMissing('nfp_versions', 'fill_check', 'TEXT');
   addColumnIfMissing('nfp_versions', 'fill_ack_by', 'TEXT');
   addColumnIfMissing('nfp_versions', 'fill_ack_at', 'TEXT');
+  // D-171: where a panel's numbers were taken from (a file name or a document id),
+  // required on every values write from the values route, and the warnings a
+  // person acknowledged one at a time. The table keeps every acknowledgement;
+  // one covers exactly the numbers (fingerprint) it was given against.
+  addColumnIfMissing('nfp_versions', 'panel_source_ref', 'TEXT');
+  addColumnIfMissing('nfp_versions', 'panel_source_by', 'TEXT');
+  addColumnIfMissing('nfp_versions', 'panel_source_at', 'TEXT');
+  addColumnIfMissing('nfp_versions', 'reconcile_snapshot', 'TEXT');
+  db.exec(`CREATE TABLE IF NOT EXISTS nfp_warning_acks (
+    id TEXT PRIMARY KEY,
+    version_id TEXT NOT NULL REFERENCES nfp_versions(id) ON DELETE CASCADE,
+    check_key TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    message TEXT,
+    note TEXT,
+    acknowledged_by TEXT NOT NULL,
+    acknowledged_by_id TEXT,
+    acknowledged_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_nfp_warning_acks_version ON nfp_warning_acks(version_id)');
+  // D-171: a token's GRANTS — named extra write areas beyond `write`, set by an
+  // admin per token. One exists: 'nfp-panel' (the Product Manager bot's panel
+  // PDF and values). A grant is not a scope: it never approves anything.
+  addColumnIfMissing('api_tokens', 'grants', "TEXT NOT NULL DEFAULT '[]'");
   // A SKU the spec sheet cannot finish yet for a reason somebody owns (D-128):
   // "formula not final — Danny". Excluded from the incomplete count, still listed.
   db.exec(`CREATE TABLE IF NOT EXISTS product_completeness_blocks (

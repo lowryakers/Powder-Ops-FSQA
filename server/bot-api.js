@@ -15,6 +15,9 @@ export const BOT_ROUTES = Object.freeze([
   { method: 'GET', path: '/api/nfp', module: 'products', scope: 'read', paged: true },
   { method: 'GET', path: '/api/nfp/sku/:sku', module: 'products', scope: 'read' },
   { method: 'POST', path: '/api/nfp', module: 'products (edit)', scope: 'write' },
+  { method: 'GET', path: '/api/nfp/:id/panel-values', module: 'products', scope: 'read' },
+  { method: 'PUT', path: '/api/nfp/:id/panel-file', module: 'products (edit)', scope: 'write' },
+  { method: 'PUT', path: '/api/nfp/:id/panel-values', module: 'products (edit)', scope: 'write' },
   { method: 'PUT', path: '/api/products/:sku', module: 'products (edit)', scope: 'write' },
   { method: 'GET', path: '/api/artwork', module: 'artwork', scope: 'read', paged: true },
   { method: 'GET', path: '/api/artwork/sku/:sku', module: 'artwork', scope: 'read' },
@@ -123,6 +126,11 @@ export const WRITE_AREAS = Object.freeze([
     when: (req, m, db) => draftNfp(db, m[1]) },
   { area: 'nfp-draft', method: 'PUT', re: /^\/nfp\/([^/]+)\/panel$/, label: 'PUT /api/nfp/:id/panel (while draft)',
     when: (req, m, db) => draftNfp(db, m[1]) },
+  // The Product Manager bot's panel work (D-171) — only a token holding the
+  // `nfp-panel` GRANT. No `when`: the handler refuses a non-draft with its own
+  // 403 that says why, rather than a bare not_open_to_tokens.
+  { area: 'nfp-panel', grant: 'nfp-panel', method: 'PUT', re: /^\/nfp\/[^/]+\/panel-file$/, label: 'PUT /api/nfp/:id/panel-file — the panel PDF (draft only; nfp-panel grant)' },
+  { area: 'nfp-panel', grant: 'nfp-panel', method: 'PUT', re: /^\/nfp\/[^/]+\/panel-values$/, label: 'PUT /api/nfp/:id/panel-values — panel values + source (draft only; nfp-panel grant)' },
   // messages
   { area: 'messages', method: 'POST', re: /^\/comms\/channels\/[^/]+\/messages$/, label: 'POST /api/comms/channels/:id/messages' },
   { area: 'messages', method: 'POST', re: /^\/comms\/channels\/[^/]+\/attachments$/, label: 'POST /api/comms/channels/:id/attachments' },
@@ -144,6 +152,8 @@ export function writeAreaFor(req) {
 export function writeAreaAllows(req, db) {
   const r = writeAreaFor(req);
   if (!r) return false;
+  // A GRANTED area opens only for a token holding that grant (D-171).
+  if (r.grant && !(req.auth?.grants || []).includes(r.grant)) return false;
   if (!r.when) return true;
   try { return !!r.when(req, req.path.match(r.re), db); } catch { return false; }
 }

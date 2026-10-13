@@ -388,6 +388,88 @@ function Provenance({ v, canEdit, onChanged }) {
   );
 }
 
+/**
+ * The review block on an OPEN panel (D-171): where the values came from, the
+ * two reconciliation checks with a per-warning Acknowledge, and only the fields
+ * that differ from the product's approved panel. The server computes all of it;
+ * this renders what it is sent.
+ */
+function ReconcileReview({ v, canEdit, onChanged }) {
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+  const open = ['draft', 'sent', 'rejected'].includes(v.status);
+  if (!open) return null;
+  const checks = v.reconcile || [];
+  const unresolved = new Set((v.reconcile_unresolved || []).map((c) => c.key));
+  const diff = v.diff_vs_approved;
+  const fmt = (x) => (x === null || x === undefined || x === '' ? '—' : String(x));
+  const ack = async (key) => {
+    setBusy(key); setError('');
+    try { await apiFetch(`/nfp/${v.id}/warnings/${key}/acknowledge`, { method: 'POST', body: {} }); onChanged(); }
+    catch (e) { setError(e.message); }
+    setBusy('');
+  };
+  return (
+    <div className="rounded border border-gray-200 bg-gray-50/60 p-2 space-y-2 text-xs" data-nfp-review>
+      <p className="text-gray-700" data-nfp-source>
+        <span className="font-medium">Source of the values:</span>{' '}
+        {v.source_ref ? <>{v.source_ref}{v.source_by ? ` · ${v.source_by}` : ''}{v.source_at ? ` · ${v.source_at}` : ''}</> : <span className="italic text-gray-500">not recorded</span>}
+      </p>
+      <ul className="space-y-1" data-nfp-checks>
+        {checks.map((c) => {
+          const acked = (v.reconcile_acks || []).filter((a) => a.check_key === c.key && a.fingerprint === c.fingerprint);
+          const tone = c.status === 'warn' ? (unresolved.has(c.key) ? 'border-red-200 bg-red-50 text-red-900' : 'border-amber-200 bg-amber-50 text-amber-900')
+            : c.status === 'ok' ? 'border-green-200 bg-green-50 text-green-900' : 'border-gray-200 bg-white text-gray-600';
+          return (
+            <li key={c.key} className={`rounded border p-1.5 ${tone}`} data-nfp-check={c.key} data-status={c.status}>
+              <div className="flex items-start gap-2">
+                <span className="font-medium shrink-0">{c.label}</span>
+                <span className="flex-1">{c.message}</span>
+                {c.status === 'warn' && unresolved.has(c.key) && canEdit && (
+                  <button type="button" onClick={() => ack(c.key)} disabled={busy === c.key}
+                    className="shrink-0 px-2 py-0.5 rounded border border-red-300 bg-white text-red-800 font-medium disabled:opacity-50" data-nfp-ack={c.key}>
+                    {busy === c.key ? 'Saving…' : 'Acknowledge'}
+                  </button>
+                )}
+              </div>
+              {acked.map((a) => (
+                <p key={a.id} className="mt-0.5 text-[11px]" data-nfp-acked={c.key}>Acknowledged by {a.acknowledged_by} · {a.acknowledged_at}</p>
+              ))}
+            </li>
+          );
+        })}
+      </ul>
+      {unresolved.size > 0 && (
+        <p className="text-red-800" data-nfp-unresolved>This panel cannot be approved until each warning above is acknowledged by a person.</p>
+      )}
+      {diff && (
+        <div data-nfp-diff>
+          <p className="font-medium text-gray-700">
+            {diff.approved_version ? `Changes from the approved panel ${diff.approved_version}` : 'No approved panel yet — every value is new'}
+          </p>
+          {diff.changes.length === 0 ? (
+            <p className="text-gray-500" data-nfp-diff-none>No values differ from the approved panel.</p>
+          ) : (
+            <table className="w-full mt-1 text-left">
+              <thead><tr className="text-gray-500"><th className="font-normal pr-2">Field</th><th className="font-normal pr-2">Approved</th><th className="font-normal">This draft</th></tr></thead>
+              <tbody>
+                {diff.changes.map((d) => (
+                  <tr key={d.field} data-nfp-diff-row={d.field} className="align-top border-t border-gray-200">
+                    <td className="pr-2 py-0.5">{d.label}</td>
+                    <td className="pr-2 py-0.5 text-gray-500 line-through decoration-gray-300">{fmt(d.approved)}</td>
+                    <td className="py-0.5 font-medium text-gray-900">{fmt(d.draft)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+      {error && <p className="text-red-700">{error}</p>}
+    </div>
+  );
+}
+
 function StatusChip({ status }) {
   const s = STATUS[status] || STATUS.draft;
   return (
@@ -607,7 +689,7 @@ function VersionCard({ v, canEdit, onChanged, storage = true }) {
   });
 
   return (
-    <div className={`rounded-lg border p-3 space-y-2 ${v.status === 'approved' ? 'border-green-200 bg-green-50/40' : 'border-gray-200'}`}>
+    <div data-nfp-version={v.version} className={`rounded-lg border p-3 space-y-2 ${v.status === 'approved' ? 'border-green-200 bg-green-50/40' : 'border-gray-200'}`}>
       <div className="flex items-start justify-between gap-2 flex-wrap">
         <div>
           <p className="font-semibold text-gray-900 text-sm">
@@ -658,6 +740,8 @@ function VersionCard({ v, canEdit, onChanged, storage = true }) {
       )}
 
       <PanelValues v={v} canEdit={canEdit} onChanged={onChanged} />
+
+      <ReconcileReview v={v} canEdit={canEdit} onChanged={onChanged} />
 
       {/* Shown on the card itself, not only inside the approve form: the
           person who can fix it is usually not the person approving. */}

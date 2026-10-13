@@ -36,6 +36,34 @@ export const FORBIDDEN_SCOPES = Object.freeze([
 ]);
 const LEGACY_SCOPES = Object.freeze({ 'write-drafts': 'write' });
 
+// GRANTS (D-171): named extra write areas an admin gives ONE token, on top of
+// `write`. A grant opens only the WRITE_AREAS entries that name it, and never
+// lifts TOKEN_DENY or the approve guard. One grant exists:
+//   nfp-panel — upload the panel PDF and write panel values on a DRAFT
+//   nutrition panel, with a source reference. The Product Manager bot's.
+export const TOKEN_GRANTS = Object.freeze({
+  'nfp-panel': 'Nutrition panels — upload the panel PDF and write panel values on a DRAFT panel, each write naming its source. Never approves.',
+});
+
+export function normalizeGrants(input) {
+  const list = Array.isArray(input) ? input : (input == null ? [] : [input]);
+  const out = new Set();
+  for (const raw of list) {
+    const g = String(raw || '').trim();
+    if (!g) continue;
+    if (!TOKEN_GRANTS[g]) throw new ScopeError(`"${g}" is not a grant. Grants are: ${Object.keys(TOKEN_GRANTS).join(', ')}.`);
+    out.add(g);
+  }
+  return Object.keys(TOKEN_GRANTS).filter(g => out.has(g));
+}
+
+function parseGrants(raw) {
+  try {
+    const a = JSON.parse(raw || '[]');
+    return Array.isArray(a) ? Object.keys(TOKEN_GRANTS).filter(g => a.includes(g)) : [];
+  } catch { return []; }
+}
+
 const TOKEN_RE = /^rdk_[A-Za-z0-9_-]{43}$/;
 export const hashToken = (t) => createHash('sha256').update(String(t)).digest('hex');
 export const isApiToken = (t) => typeof t === 'string' && t.startsWith(TOKEN_PREFIX);
@@ -97,10 +125,10 @@ export function createToken(db, { userId, label, scopes, expiresAt = null }, act
 }
 
 export function getToken(db, id) {
-  const r = db.prepare(`SELECT t.id, t.user_id, t.label, t.token_prefix, t.scopes, t.created_by, t.created_at,
+  const r = db.prepare(`SELECT t.id, t.user_id, t.label, t.token_prefix, t.scopes, t.grants, t.created_by, t.created_at,
       t.last_used_at, t.last_used_ip, t.expires_at, t.revoked_at, t.revoked_by, u.name AS user_name, u.role AS user_role, u.is_active AS user_active
     FROM api_tokens t LEFT JOIN users u ON u.id = t.user_id WHERE t.id = ?`).get(id);
-  return r ? { ...r, scopes: parseScopes(r.scopes), user_active: !!r.user_active, state: stateOf(r) } : null;
+  return r ? { ...r, scopes: parseScopes(r.scopes), grants: parseGrants(r.grants), user_active: !!r.user_active, state: stateOf(r) } : null;
 }
 
 export function listTokens(db = getDb()) {
@@ -141,6 +169,28 @@ export function updateScopes(db, id, scopes, actor) {
   return getToken(db, id);
 }
 
+/**
+ * Change a live token's grants (D-171). Admin session only, the same refusals
+ * as a scope change. A grant needs `write`: without it the token cannot write
+ * at all, so a grant on a read-only token is refused rather than stored inert.
+ */
+export function updateGrants(db, id, grants, actor) {
+  const t = getToken(db, id);
+  if (!t) return null;
+  if (t.state !== 'live') throw new ScopeError("This token's grants cannot be changed: it is not live. Mint a new one instead.");
+  const after = normalizeGrants(grants);
+  if (after.length && !t.scopes.includes('write')) {
+    throw new ScopeError('Give the token the Write scope first — a grant is an extra place a writing token may write.');
+  }
+  const before = t.grants;
+  if (JSON.stringify(after) === JSON.stringify(before)) return t;
+  db.prepare('UPDATE api_tokens SET grants = ? WHERE id = ?').run(JSON.stringify(after), id);
+  logAudit(actor, 'api_token_grants_changed', 'api_token', id,
+    { tokenId: id, prefix: t.token_prefix, label: t.label, for: t.user_name, before, after, actor: actor?.name || 'system' },
+    { grants: before }, { grants: after }, t.label);
+  return getToken(db, id);
+}
+
 export function revokeToken(db, id, actor) {
   const t = getToken(db, id);
   if (!t) return null;
@@ -170,7 +220,7 @@ export function verifyToken(plaintext, db = getDb()) {
   if (row.expires_at && row.expires_at <= new Date().toISOString()) return null;
   if (!row.is_active || row.role === 'admin') return null;
   return {
-    token: { id: row.id, prefix: row.token_prefix, label: row.label, scopes: parseScopes(row.scopes) },
+    token: { id: row.id, prefix: row.token_prefix, label: row.label, scopes: parseScopes(row.scopes), grants: parseGrants(row.grants) },
     user: row,
   };
 }

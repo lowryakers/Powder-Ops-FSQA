@@ -457,6 +457,29 @@ limit), `authenticateToken` in `middleware/auth.js`, `server/middleware/no-token
   whose DELETE can undo nothing but the caller's own mark; `check:apitokens` pins it to exactly one route.
 - MCP tools `add_reaction` / `undo_reaction`. `verify:tokenreact` (24; control fails 9).
 
+## The PM bot writes NFP PDFs and values on drafts, with a source; warnings wait for a person (D-171)
+`shared/panel-reconcile.js` (PURE: `PANEL_VALUE_FIELDS`, `servingGrams`, `gramRuleError`, `reconcile`,
+`unresolvedWarnings`, `panelDiff`). Routes `PUT /nfp/:id/panel-file`, `GET|PUT /nfp/:id/panel-values` and
+`POST /nfp/:id/warnings/:key/acknowledge`. Storage: `nfp_warning_acks` and `api_tokens.grants`. Screens:
+`ReconcileReview` on the draft card and the grant checkbox in Settings → Bot API tokens.
+- **A token GRANT is an extra write area for ONE token** (`TOKEN_GRANTS`, only `nfp-panel`).
+  - A `WRITE_AREAS` entry with `grant` opens only for a token holding it.
+  - Scopes stay read + write. A grant needs write and never lifts `TOKEN_DENY` or the approve guard.
+- **A token writes only to a DRAFT** (`403 not_draft` otherwise). Every values write needs `source_ref`, which is
+  stored on the version and audited along with each field's old and new value.
+- **The serving size keeps its grams** when the approved panel has them (`400 serving_size_grams`).
+- **Two checks run on every panel write and are read live:**
+  - fill weight: serving grams (range midpoint) × servings within ±5% of `fill_weight_g`;
+  - calories: 4/4/9 within ±20%.
+  - A missing input is not checked.
+- **Each warning is acknowledged by a person, individually, against a fingerprint of its numbers.**
+  - A changed value raises it again.
+  - `decide()` refuses approval while any warning is unacknowledged (`409 needs_reconcile_ack`), on all three doors.
+  - Link sends refuse too. `acknowledge` is a token-denied decision segment.
+- **`diff_vs_approved`** on every open version lists only the fields that differ from the approved panel.
+- **The grant is given in Settings, never by a deploy.** Tick it on the PM token.
+- `verify:nfpbotpanel` (50, S3 stand-in + browser; the control fails at the first upload).
+
 ## Revoking access reaches the sessions it already opened (D-072)
 `revokeSessions(db, userId, { keepToken, devices })` in `api/sessions.js` is the ONE helper; Settings
 deactivation, `end-access`, the auditor-pass revoke and the pass reactivation path all call it. It deletes the

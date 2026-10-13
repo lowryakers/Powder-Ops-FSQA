@@ -7105,3 +7105,57 @@ leaves the person's ✅ on the same message alone; message delete and edit stay 
 audited as `api_token_call`. `check:apitokens` 152, `check:botapi` 71, `check:botmcp` 37,
 `verify:tokenattach` 58 and `verify:clientchannel` 67 pass.
 **Control:** without the change, 9 of 24 fail, the first being the add refused 403 `not_open_to_tokens`.
+
+## D-171 — The Product Manager bot writes nutrition panel PDFs and values on drafts, with a source, and a warning waits for a person (13 Oct 2026)
+**Asked:** widen the Product Manager bot token (it could only `POST /api/nfp`) to upload or replace the panel PDF and
+write panel values on a DRAFT version, read them back, and name a source reference on every values write. Bot tokens
+write only to drafts and never approve. Every bot write is audited with the source. The serving size keeps its grams.
+Two reconciliation checks run on every write; a failed check is a warning that blocks approval until a person
+acknowledges it. The draft shows a field-by-field diff against the approved version. Other tokens are unchanged.
+
+**Decided:**
+- **A GRANT, not a scope.** Scopes stay `read` + `write` (D-164, and `check:apitokens` forbids more). A token now
+  carries `grants`, a list of named extra write areas an admin gives ONE token in Settings → Bot API tokens (Edit
+  scopes). One grant exists, `nfp-panel`. A `WRITE_AREAS` entry may name a grant; `writeAreaAllows` opens it only for
+  a token holding it. A grant needs `write`, never lifts `TOKEN_DENY` or the approve guard, and is audited
+  (`api_token_grants_changed`). This session minted, edited and revoked no real token: **an admin ticks the grant on
+  the PM token after the deploy**, and until then the PM bot has exactly what it had.
+- **Routes:** `PUT /api/nfp/:id/panel-file` (one PDF, 25 MB; name, type and first bytes must agree; replaces the
+  panel file, the old object removed only after the new one is stored); `GET|PUT /api/nfp/:id/panel-values` in the
+  nineteen field names asked for, mapped to the existing `panel_json` columns. Values merge. `source_ref` is required
+  and stored on the version (`panel_source_ref` / `_by` / `_at`). Unknown fields are refused by name.
+- **Draft only for a token:** anything else is `403 not_draft` with the reason. A person keeps the existing rules.
+  Approve / send / revoke stay person-only through the approve guard and `TOKEN_DENY`; **`acknowledge` joins
+  `DECISION_SEGMENTS`**, so a token cannot acknowledge a warning on any route.
+- **Gram rule:** a serving size with no grams is refused (`400 serving_size_grams`) when the product's approved
+  panel writes its serving size with grams. A single gram figure fills `serving_size_g`; a range leaves it null and
+  keeps its numbers in the description.
+- **Reconciliation (`shared/panel-reconcile.js`, pure):** fill weight = serving grams (range midpoint) × servings
+  within ±5% of `products.fill_weight_g`; calories = 4·carb + 4·protein + 9·fat within ±20% of declared, a `<1`
+  counting as anything from 0 to 1. A missing input is `not_checked`, never a pass or a warning. They run on every
+  panel write (the values route and the editor's `PUT /:id/panel`), the outcome is stored with the write
+  (`reconcile_snapshot`), and the card and the gate read them LIVE.
+- **Acknowledged one at a time, by a person, against the numbers.** `POST /api/nfp/:id/warnings/:key/acknowledge`
+  (rejectTokenAuth) writes `nfp_warning_acks` (who, when, the message, a fingerprint of the inputs) and an audit entry.
+  An acknowledgement covers that fingerprint only: change a value, or the product's fill weight, and the warning is
+  back. **The gate is in `decide()`** (all three approval doors, `409 needs_reconcile_ack`), and the single and batch
+  link sends refuse too: the approver on a link has no account and cannot acknowledge.
+- **Review view:** every open version carries `diff_vs_approved` (only the fields that differ from the product's
+  current approved panel), the source, the checks and the acknowledgements; `ReconcileReview` renders them on the
+  draft card with an Acknowledge button per warning.
+- MCP: `get_panel_values`, `upload_panel_pdf`, `write_panel_values`. Docs: `docs/bot-api.md`.
+
+**Verified:** `verify:nfpbotpanel` (50, live + browser at 1280, S3 stand-in) covers:
+- The PM token's draft → PDF → replace → values with source → GET → audit path, plus the 415, 413, 400 and gram
+  refusals.
+- 403 on an approved version and on approve or acknowledge.
+- The other token keeping its old scope exactly.
+- Both warnings, the 409 on approve and on send, one acknowledgement not clearing the other, and a changed value
+  re-raising a warning.
+- The diff naming only the changed field.
+- The card's review block and Acknowledge button.
+
+Also passing: `check:apitokens` 152, `check:botapi` 72, `check:botmcp` 37, and 13 related verifies (NFP panel and UI,
+provenance, readiness, stage, artwork, SKU rename, product tabs, proof token, token UI, attachments, reactions).
+**Control:** with the two `nfp-panel` write areas removed (the state before), the first PDF upload is 403
+`not_open_to_tokens` and the run fails from there.
