@@ -7080,3 +7080,28 @@ showing it to them.
   - With the password gate removed, the first acknowledgement goes through with no password.
   - With the employee router unmounted (no way to acknowledge, which is the state before this), 19 of 42
     checks fail before the browser half.
+
+## D-170 — A bot token reacts with an emoji, its own reaction only, in channels it is in (13 Oct 2026)
+**Asked:** let bot accounts (API tokens with write access) add and remove emoji reactions on messages in
+channels they are members of. Reactions only: no deleting messages, no editing anybody else's.
+
+**Decided:**
+- `POST /api/comms/messages/:id/reactions` and `DELETE /api/comms/messages/:id/reactions/:emoji` join
+  `WRITE_AREAS` (area `messages`) and `BOT_ROUTES`. The handlers were already right: they write and delete
+  only the caller's own row (`user_id = req.user.id`), so a token can never touch a person's reaction.
+- **Membership is the gate.** `ownedMessage()` refuses a token on a message in a channel its account is not
+  in (404, the same answer as no such message), mirroring D-166's `requireChannel` rule.
+- **The one DELETE a token may make.** `TOKEN_DENY` refused every DELETE. Taking back a reaction is a
+  DELETE but removes nothing anybody else wrote, so it is listed by name in `TOKEN_DELETE_EXEMPT`
+  (`server/middleware/no-token-approve.js`) and nowhere else. `check:apitokens` asserts the exempt list
+  holds exactly that one route, that it is on `WRITE_AREAS`, and that every other DELETE is still denied.
+  Deleting the message stays `token_denied` (delete); editing a message stays `not_open_to_tokens`.
+- MCP: `add_reaction` and `undo_reaction` (a tool name may not contain "remove").
+- `docs/bot-api.md` documents both routes.
+
+**Verified:** `verify:tokenreact` (24, live). A write token adds ✅ in a channel it belongs to; the same
+token is refused (404, nothing stored) in one it does not; a read token is refused; taking back its ✅
+leaves the person's ✅ on the same message alone; message delete and edit stay refused; both calls are
+audited as `api_token_call`. `check:apitokens` 152, `check:botapi` 71, `check:botmcp` 37,
+`verify:tokenattach` 58 and `verify:clientchannel` 67 pass.
+**Control:** without the change, 9 of 24 fail, the first being the add refused 403 `not_open_to_tokens`.

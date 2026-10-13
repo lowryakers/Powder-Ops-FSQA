@@ -30,6 +30,8 @@ export const BOT_ROUTES = Object.freeze([
   { method: 'GET', path: '/api/comms/messages/:id/thread', module: null, scope: 'read' },
   { method: 'POST', path: '/api/comms/channels/:id/messages', module: null, scope: 'write' },
   { method: 'POST', path: '/api/comms/channels/:id/attachments', module: null, scope: 'write' },
+  { method: 'POST', path: '/api/comms/messages/:id/reactions', module: null, scope: 'write' },
+  { method: 'DELETE', path: '/api/comms/messages/:id/reactions/:emoji', module: null, scope: 'write' },
   { method: 'GET', path: '/api/ap-drop', module: null, scope: 'read', paged: true },
   { method: 'POST', path: '/api/ap-drop', module: null, scope: 'write' },
   { method: 'POST', path: '/api/ap-drop/:id/notes', module: null, scope: 'write' },
@@ -124,6 +126,10 @@ export const WRITE_AREAS = Object.freeze([
   // messages
   { area: 'messages', method: 'POST', re: /^\/comms\/channels\/[^/]+\/messages$/, label: 'POST /api/comms/channels/:id/messages' },
   { area: 'messages', method: 'POST', re: /^\/comms\/channels\/[^/]+\/attachments$/, label: 'POST /api/comms/channels/:id/attachments' },
+  // Reactions (D-170): the token's own reaction, on a message in a channel it is
+  // a member of. The handler only ever touches the caller's own row.
+  { area: 'messages', method: 'POST', re: /^\/comms\/messages\/[^/]+\/reactions$/, label: 'POST /api/comms/messages/:id/reactions' },
+  { area: 'messages', method: 'DELETE', re: /^\/comms\/messages\/[^/]+\/reactions\/[^/]+$/, label: 'DELETE /api/comms/messages/:id/reactions/:emoji' },
 ]);
 
 /** The WRITE_AREAS entry this request's method + path names, before any `when`. */

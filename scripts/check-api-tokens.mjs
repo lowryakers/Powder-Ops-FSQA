@@ -23,7 +23,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import Database from 'better-sqlite3';
 import { SCOPES, FORBIDDEN_SCOPES, normalizeScopes, rateKindOf } from '../server/api-tokens.js';
-import { approveRouteFor, APPROVE_SEGMENTS, tokenDenyFor, DELETE_SEGMENTS } from '../server/middleware/no-token-approve.js';
+import { approveRouteFor, APPROVE_SEGMENTS, tokenDenyFor, DELETE_SEGMENTS, TOKEN_DELETE_EXEMPT } from '../server/middleware/no-token-approve.js';
 import { WRITE_AREAS, writeAreaFor } from '../server/bot-api.js';
 import { isPublicPath } from '../server/middleware/auth.js';
 import { scanRoutes, concretePath, namesApproval } from './lib/route-scan.mjs';
@@ -81,8 +81,19 @@ const deleteRoutes = reachable.filter(r => r.method === 'DELETE');
 const delNamed = reachable.filter(r => r.method !== 'DELETE' && r.path.split('/').some(seg => DELETE_SEGMENTS.includes(seg.toLowerCase())));
 const adminRoutes = reachable.filter(r => /^\/api\/(users|kiosk-tokens|api-tokens)(\/|$)/.test(r.path));
 const deniedAs = (r, cat) => tokenDenyFor(fakeReq(r.method, concretePath(r.path)))?.category === cat;
-const missDel = deleteRoutes.filter(r => !deniedAs(r, 'delete'));
-t(`all ${deleteRoutes.length} DELETE routes are in TOKEN_DENY (delete)`, deleteRoutes.length > 50 && missDel.length === 0, missDel.map(r => `${r.file}:${r.method} ${r.path}`).join('; '));
+const exemptDel = deleteRoutes.filter(r => TOKEN_DELETE_EXEMPT.some(e => e.re.test(concretePath(r.path).replace(/^\/api/, ''))));
+const missDel = deleteRoutes.filter(r => !exemptDel.includes(r) && !deniedAs(r, 'delete'));
+t(`all ${deleteRoutes.length - exemptDel.length} DELETE routes but the exempt one are in TOKEN_DENY (delete)`, deleteRoutes.length > 50 && missDel.length === 0, missDel.map(r => `${r.file}:${r.method} ${r.path}`).join('; '));
+// D-170: the only DELETE a token may make is taking back its own reaction.
+t('TOKEN_DELETE_EXEMPT holds exactly one entry, and it matches exactly one mounted route: removing a reaction',
+  TOKEN_DELETE_EXEMPT.length === 1 && exemptDel.length === 1 && exemptDel[0].path === '/api/comms/messages/:id/reactions/:emoji',
+  exemptDel.map(r => r.path).join('; '));
+t('…and that route is on WRITE_AREAS (messages), so it is reachable and nothing else is',
+  writeAreaFor(fakeReq('DELETE', '/api/comms/messages/m1/reactions/%E2%9C%85'))?.area === 'messages'
+  && !tokenDenyFor(fakeReq('DELETE', '/api/comms/messages/m1/reactions/%E2%9C%85')));
+t('deleting the MESSAGE itself stays denied (delete)', tokenDenyFor(fakeReq('DELETE', '/api/comms/messages/m1'))?.category === 'delete');
+t('editing a message is not open to a token (not on WRITE_AREAS)', !writeAreaFor(fakeReq('PUT', '/api/comms/messages/m1')));
+t('adding a reaction is on WRITE_AREAS (messages)', writeAreaFor(fakeReq('POST', '/api/comms/messages/m1/reactions'))?.area === 'messages');
 const missNamed = delNamed.filter(r => !deniedAs(r, 'delete'));
 t(`all ${delNamed.length} delete-named writes (void, archive, revoke, bulk-delete…) are in TOKEN_DENY (delete)`, delNamed.length > 10 && missNamed.length === 0, missNamed.map(r => `${r.file}:${r.method} ${r.path}`).join('; '));
 const missAdmin = adminRoutes.filter(r => !tokenDenyFor(fakeReq(r.method, concretePath(r.path))));

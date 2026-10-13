@@ -114,7 +114,7 @@ A `write` token may write **only** to the routes below (`WRITE_AREAS` in `server
 | AP Drop | `POST /api/ap-drop` (upload), `PUT /api/ap-drop/:id`, `POST /api/ap-drop/:id/notes`, `POST /api/ap-drop/:id/reparse`, `POST /api/ap-drop/:id/route-partner` (files a draft on the ledger), `POST /api/ap-drop/:id/status` to `new`, `triaged`, `matched`, `needs_info` or `duplicate_suspect` only |
 | Partner reconciliation | `POST /api/partners/:id/documents`, `…/documents/scan`, `POST /api/partners/:id/credits`, `PUT /api/partners/:id` (office/admin accounts only); while the document is a **draft**: `PUT /api/partners/documents/:docId`, `…/category`, `…/file`, `…/read-lines`; bulk: `POST /api/partners/:id/documents/import` |
 | Nutrition panels | `POST /api/nfp` (always lands as a draft); while the panel is a **draft**: `PUT /api/nfp/:id`, `PUT /api/nfp/:id/panel` |
-| Messages | `POST /api/comms/channels/:id/messages`, `POST /api/comms/channels/:id/attachments` (pdf, png, jpg, csv, xlsx, docx only) |
+| Messages | `POST /api/comms/channels/:id/messages`, `POST /api/comms/channels/:id/attachments` (pdf, png, jpg, csv, xlsx, docx only), `POST /api/comms/messages/:id/reactions`, `DELETE /api/comms/messages/:id/reactions/:emoji` (the bot's own reaction only) |
 
 ## Never via token
 
@@ -123,7 +123,7 @@ These are refused to every token, whatever its scope and whatever its account's 
 | Category | What | Error |
 |---|---|---|
 | Approve | approving, deciding, signing, verifying, releasing, finalizing, settling; sending a panel or a batch for approval; filing a paper (already approved) panel; artwork to approved / print-ready | `approve_requires_human_session` |
-| `delete` | every `DELETE`, and any write whose path names deleting, voiding, archiving, purging, cancelling, withdrawing, deactivating, revoking, retiring or disputing | `token_denied` |
+| `delete` | every `DELETE` except taking back the bot's own reaction, and any write whose path names deleting, voiding, archiving, purging, cancelling, withdrawing, deactivating, revoking, retiring or disputing | `token_denied` |
 | `decision` | rejecting, dismissing, resolving, reopening, closing, reinstating, restoring, waiving; confirming a product readiness step; moving an AP Drop to paid / closed / in QuickBooks / in a payment run / not finance / receivable-other; artwork to rejected or superseded | `token_denied` |
 | `user_admin` | every write under `/api/users` (accounts, roles, module access, passwords, signatures), onboarding end-access, `/api/org` and `/api/comms/admin` writes | `token_denied` |
 | `token_admin` | `/api/api-tokens` and `/api/kiosk-tokens` (reads included), auditor passes, partner portal links | `token_denied` |
@@ -451,7 +451,31 @@ Attaching a file to a post takes two calls:
 1. `POST /api/comms/channels/:id/attachments` with the file. Keep the returned ids.
 2. `POST /api/comms/channels/:id/messages` with `{ "body": "PO 4471 attached.", "attachment_ids": ["…"] }`.
 
-Removing or editing an attachment or a message stays person-only: every `DELETE` is `token_denied`.
+Removing or editing an attachment or a message stays person-only: every `DELETE` but removing the bot's own reaction is `token_denied`.
+
+### `POST /api/comms/messages/:id/reactions`
+
+- **Scope:** `write`.
+- **Grant:** membership of the channel or DM the message is in. A message in a channel the account is not in is **404**, the same answer as a message that does not exist.
+- **Body:** `{ "emoji": "✅" }`. The emoji is required.
+- **Effect:** adds the bot account's own reaction. Adding the same emoji twice changes nothing. It never touches anybody else's reaction, and it never edits or removes the message.
+- **Returns:** **200** with the message as `GET /api/comms/channels/:id/messages` serializes it, including `reactions: [{ emoji, count, users }]`. Everyone reading the channel sees the change live.
+- **Rate.** Counts against the `write` bucket.
+- **Errors:** **400** with no emoji; **404** not a member or no such message; **403** `token_scope` for a read-only token.
+
+```json
+{ "emoji": "✅" }
+```
+
+### `DELETE /api/comms/messages/:id/reactions/:emoji`
+
+- **Scope:** `write`.
+- **Grant:** membership of the channel or DM the message is in; otherwise **404**.
+- **Path:** the emoji, URL-encoded (`✅` is `%E2%9C%85`).
+- **Effect:** removes the bot account's **own** reaction with that emoji, and nothing else. Removing a reaction the bot never added changes nothing. This is the only `DELETE` a token may make (`TOKEN_DELETE_EXEMPT` in `server/middleware/no-token-approve.js`): it can only undo the bot's own mark.
+- **Returns:** **200** with the serialized message.
+- **Errors:** **404** not a member or no such message; **403** `token_scope` for a read-only token.
+
 
 ## AP Drop
 
