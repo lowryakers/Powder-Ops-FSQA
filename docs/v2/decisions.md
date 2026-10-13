@@ -6920,3 +6920,39 @@ answered 403 `token_denied` / `not_open_to_tokens`.
   `check:botmcp` 37, and package unit tests 17 (four new).
 - **Control:** without the `WRITE_AREAS` entry (the plant's state), 32 of the 58 fail, starting with
   `not_open_to_tokens`.
+
+## D-167 — Each week on the Hours tab carries its own target (13 Oct 2026)
+
+**Asked:** "Can we have the Target/wk column within each week? Payroll is all tracked weekly, but the view
+only shows one column at the start."
+
+**Why it mattered:** the target is what each week's paid non-working time and overtime are measured
+against. With one figure per person, a short week (a closure, a holiday counted as hours) could only be
+handled by changing the person's usual target, and that change then hit every week in the period.
+
+**Decided / done:**
+- **`employee_hours.target`** holds a week's own target. **NULL follows the person's usual target**
+  (`users.weekly_hours_target`, 40 when unset), so nothing already filed moves. The non-working balance,
+  overtime and cost all read the week's figure. `GET /office/hours` returns `target` and `target_set` on
+  each week.
+- **The usual target stays** as a small "usual/wk" box beside the name, and each week starts from it. A
+  week's Target box is outlined in amber when it differs, with a reset. Typing the usual figure back in
+  clears the week's own value rather than storing a copy, so a later change to the usual target still
+  reaches that week.
+- **A target alone is not an entry.** The non-working balance fills only weeks with hours entered.
+  Setting a week's target creates a row, so `employee_hours.hours_entered` is 0 until an hours field is
+  written; otherwise setting 24 on an empty week would have paid 24 hours nobody recorded. Existing rows
+  default to 1.
+- A contractor is refused a target (400): they have no weekly target, by design. 0–168 hours only. Each
+  change is audited with the previous value.
+- The CSV carries `Target <week>` per week; the leading column is now `Usual target/wk`. The overtime-basis
+  note also fires when only one week differs from 40.
+- The week cells are a written-out grid (`WEEK_GRID`) with room for `40:00`. In the five-column version
+  the boxes clipped to `0:0(`.
+
+**Verified:**
+- `verify:weektarget` (31, live + browser at 1600 and 390; in `verify:all`).
+- `verify:hoursroster` 27, `verify:hoursrates` 37, `verify:hourspaylink` 28 and `verify:payroster` 64 still
+  pass.
+- **Control:** the old server code fails 18, including a target set on an empty week paying 40:00 of
+  non-working time.

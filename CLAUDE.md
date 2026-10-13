@@ -4621,6 +4621,16 @@ most of it.
 - Verified inside `verify:payroster` (64, live + browser at 1440px); **the control collapses the split and
   fails 4**, the first being the employee total reading a contractor's 32 hours.
 
+## Each week on the Hours tab carries its own target (D-167)
+- **`employee_hours.target`**: NULL follows the person's usual target (`users.weekly_hours_target`).
+  The non-working balance, overtime and cost read the week's own figure.
+- The usual target sits beside the name. Each week's Target box is amber when it differs, with a reset.
+  Typing the usual figure back in clears the week's value rather than storing a copy.
+- **`hours_entered = 0` marks a row created only by setting a target.** Such a row is not an entry and
+  does not auto-fill the week. Any hours field sets it to 1.
+- A contractor is refused a target (400). Each change is audited with the previous value.
+- `verify:weektarget` (31; the control fails 18).
+
 ## Temp & Humidity excursions alert Adam (`server/env-limits.js`)
 Completing the daily Temp & Humidity check (Form 110-04) with an out-of-range reading DMs Adam through
 ReadyBot and pushes to his phone, hooked onto `complete-and-recur` in pm.js — the one path where an operator

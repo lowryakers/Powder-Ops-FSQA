@@ -5545,6 +5545,15 @@ function runMigrations() {
         excluded_at   TEXT NOT NULL DEFAULT (datetime('now'))
       );
     `);
+    // A WEEK'S OWN TARGET (D-167). Payroll is weekly, and a short week — a plant
+    // closure, a holiday the office counts as hours rather than as Holiday — has
+    // a different target from the usual one. NULL follows the person's usual
+    // target (users.weekly_hours_target), so nothing already filed moves.
+    // `hours_entered` = 0 marks a row that exists ONLY because a week's target
+    // was set: it must not count as "hours were entered" and auto-fill the week
+    // to target with paid non-working time nobody recorded.
+    addColumnIfMissing('employee_hours', 'target', 'REAL');
+    addColumnIfMissing('employee_hours', 'hours_entered', 'INTEGER NOT NULL DEFAULT 1');
   } catch (e) {
     console.warn('[db] employee_hours unavailable:', e.message);
   }

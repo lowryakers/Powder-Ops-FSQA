@@ -1362,17 +1362,25 @@ router.get('/hours', (req, res) => {
       const r = byUser[u.id]?.[w];
       const worked = r?.worked || 0, pto = r?.pto || 0, holiday = r?.holiday || 0, unpaid = r?.unpaid || 0;
       const autoFill = r ? !!r.auto_fill : true;
+      // THE WEEK'S TARGET (D-167): the week's own figure when the office set
+      // one, otherwise the person's usual target. A contractor has neither —
+      // a week target is never applied to one.
+      const weekTarget = u.target == null ? null
+        : (r?.target != null ? r.target : u.target);
+      // A row that exists only because the week's target was set is NOT an
+      // entry: an untouched week shouldn't invent 40 hours of anything.
+      const hasEntry = !!r && r.hours_entered !== 0;
       // Paid-but-not-worked: the balance up to target, only once there's an
-      // entry — an untouched week shouldn't invent 40 hours of anything.
-      // No target (a contractor) means nothing to balance up to: their paid
-      // hours are the hours worked, and there is no overtime line to compute.
-      const nonWorking = (r && autoFill && u.target != null)
-        ? Math.max(0, u.target - worked - pto - holiday - unpaid) : 0;
+      // entry. No target (a contractor) means nothing to balance up to: their
+      // paid hours are the hours worked, and there is no overtime to compute.
+      const nonWorking = (hasEntry && autoFill && weekTarget != null)
+        ? Math.max(0, weekTarget - worked - pto - holiday - unpaid) : 0;
       return {
         week_start: w, worked, pto, holiday, unpaid, auto_fill: autoFill,
-        has_entry: !!r, note: r?.note || null,
+        has_entry: hasEntry, note: r?.note || null,
+        target: weekTarget, target_set: u.target != null && r?.target != null,
         non_working: Math.round(nonWorking * 100) / 100,
-        overtime: u.target == null ? 0 : Math.round(Math.max(0, worked - u.target) * 100) / 100,
+        overtime: weekTarget == null ? 0 : Math.round(Math.max(0, worked - weekTarget) * 100) / 100,
         total: Math.round((worked + pto + holiday + nonWorking) * 100) / 100,
       };
     }).map(w => ({ ...w, ...weekCost(rate, w) }));
@@ -1525,6 +1533,25 @@ router.put('/hours', (req, res) => {
 
   const existing = db.prepare('SELECT * FROM employee_hours WHERE user_id = ? AND week_start = ?').get(user_id, week_start);
   const n = (v, fallback) => (v === undefined ? fallback : Math.max(0, Number(v) || 0));
+  // THE WEEK'S TARGET (D-167). Absent = leave it; blank or null = follow the
+  // usual target again. A contractor carries no target, so one is refused
+  // rather than stored and ignored.
+  const isContractor = !db.prepare('SELECT 1 FROM users WHERE id = ?').get(user_id);
+  let target = existing?.target ?? null;
+  if (req.body.target !== undefined) {
+    if (isContractor) return res.status(400).json({ error: 'A contractor has no weekly target — their paid hours are the hours worked.' });
+    if (req.body.target === null || req.body.target === '') target = null;
+    else {
+      const t = Number(req.body.target);
+      if (!Number.isFinite(t) || t < 0 || t > 168) return res.status(400).json({ error: 'A weekly target is between 0 and 168 hours.' });
+      target = Math.round(t * 100) / 100;
+    }
+  }
+  // Only a change to the hours themselves makes this an entry; setting a
+  // week's target alone must not start auto-filling it.
+  const HOUR_FIELDS = ['worked', 'pto', 'holiday', 'unpaid', 'auto_fill', 'note'];
+  const touchesHours = HOUR_FIELDS.some(k => req.body[k] !== undefined);
+  const hoursEntered = touchesHours ? 1 : (existing ? existing.hours_entered : 0);
   const next = {
     worked: n(req.body.worked, existing?.worked || 0),
     pto: n(req.body.pto, existing?.pto || 0),
@@ -1536,12 +1563,16 @@ router.put('/hours', (req, res) => {
 
   if (existing) {
     db.prepare(`UPDATE employee_hours SET worked = ?, pto = ?, holiday = ?, unpaid = ?, auto_fill = ?,
-      note = ?, updated_by = ?, updated_at = datetime('now') WHERE id = ?`)
-      .run(next.worked, next.pto, next.holiday, next.unpaid, next.auto_fill, next.note, req.user.name, existing.id);
+      note = ?, target = ?, hours_entered = ?, updated_by = ?, updated_at = datetime('now') WHERE id = ?`)
+      .run(next.worked, next.pto, next.holiday, next.unpaid, next.auto_fill, next.note, target, hoursEntered, req.user.name, existing.id);
   } else {
-    db.prepare(`INSERT INTO employee_hours (id, user_id, week_start, worked, pto, holiday, unpaid, auto_fill, note, updated_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(uuid(), user_id, week_start, next.worked, next.pto, next.holiday, next.unpaid, next.auto_fill, next.note, req.user.name);
+    db.prepare(`INSERT INTO employee_hours (id, user_id, week_start, worked, pto, holiday, unpaid, auto_fill, note, target, hours_entered, updated_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(uuid(), user_id, week_start, next.worked, next.pto, next.holiday, next.unpaid, next.auto_fill, next.note, target, hoursEntered, req.user.name);
+  }
+  if (req.body.target !== undefined && (existing?.target ?? null) !== target) {
+    logAudit(req.user, 'update', 'employee_hours', `${user_id}:${week_start}`,
+      { week_target: target, was: existing?.target ?? null }, null, null, person.name);
   }
   res.json(db.prepare('SELECT * FROM employee_hours WHERE user_id = ? AND week_start = ?').get(user_id, week_start));
 });
