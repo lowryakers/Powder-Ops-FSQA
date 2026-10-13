@@ -6,6 +6,7 @@ import {
   Image as ImageIcon, Search, X, AlertTriangle, CheckCircle2, XCircle,
   FileText, Upload, ExternalLink, ShieldAlert,
 } from 'lucide-react';
+import { openFile } from '../../lib/openFile';
 
 /**
  * Artwork — what is on the pack, which revision it is, and whether it checks out.
@@ -257,7 +258,7 @@ function VersionDetail({ sku, onClose, onChanged }) {
                       onClick={async () => {
                         try {
                           const { url } = await apiFetch(`/artwork/files/${f.id}`);
-                          window.open(url, '_blank', 'noopener');
+                          openFile({ url, name: f.filename });
                         } catch (e) { setError(e.message); }
                       }}
                       className="inline-flex items-center gap-1.5 text-xs border border-gray-200 rounded px-2 py-1 hover:bg-gray-50">

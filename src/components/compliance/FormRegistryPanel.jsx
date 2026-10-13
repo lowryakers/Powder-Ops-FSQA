@@ -17,6 +17,7 @@ import { useTableSort } from '../../lib/useTableSort';
 import SortHeader from '../common/SortHeader.jsx';
 import RuleTip from '../common/RuleTip.jsx';
 import FrozenScroll from '../common/FrozenScroll';
+import { openFile } from '../../lib/openFile';
 
 const WHERE = {
   readydoc: { label: 'In ReadyDoc', cls: 'bg-green-100 text-green-800' },
@@ -313,7 +314,7 @@ function FileCell({ form, canEdit, storageOn, onChanged }) {
   const open = async () => {
     try {
       const { url } = await apiFetch(`/forms/${form.id}/file`);
-      if (url) window.open(url, '_blank');
+      if (url) openFile({ url, name: form.filename });
     } catch (e) { window.alert(e.message); }
   };
   const upload = async (e) => {

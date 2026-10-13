@@ -6,6 +6,7 @@ import {
 import { formatDateTime } from '../../lib/datetime.js';
 import { Item, ItemNotes } from './ReceivingChecklist.jsx';
 import PhotoPicker from '../common/PhotoPicker.jsx';
+import { openFile } from '../../lib/openFile';
 
 /**
  * The Shipping Truck Inspection — FORM 204-01's outbound twin, on the dock
@@ -39,7 +40,7 @@ function Photos({ inspection, shipmentNo, locked, storageEnabled, onChanged }) {
   const open = async (p) => {
     try {
       const { url } = await apiFetch(`/shipping/photos/${p.id}/url`);
-      if (url) window.open(url, '_blank');
+      if (url) openFile({ url, name: p.filename });
     } catch (err) { setError(err.message); }
   };
   const remove = async (p) => {

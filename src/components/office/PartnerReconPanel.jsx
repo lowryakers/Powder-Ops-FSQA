@@ -9,6 +9,7 @@ import {
   ArrowUpRight, ArrowDownLeft, Ban, Trash2, Copy, ExternalLink, History, Upload, CheckCircle2, Bell,
 } from 'lucide-react';
 import FrozenScroll from '../common/FrozenScroll';
+import { openFile } from '../../lib/openFile';
 
 // X − Y = Z.
 //
@@ -282,7 +283,7 @@ function PaymentProof({ settlement, canSettle, onDone }) {
   const open = async () => {
     try {
       const { url } = await apiFetch(`/partners/settlements/${settlement.id}/proof`);
-      if (url) window.open(url, '_blank');
+      if (url) openFile({ url, name: settlement.proof_filename });
     } catch (e) { window.alert(e.message); }
   };
   if (settlement.proof_filename) {
@@ -1198,7 +1199,7 @@ export default function PartnerReconPanel({ user }) {
                               <button onClick={async () => {
                                 try {
                                   const { url } = await apiFetch(`/partners/documents/${d.id}/file`);
-                                  if (url) window.open(url, '_blank');
+                                  if (url) openFile({ url, name: d.filename });
                                 } catch (e) { window.alert(e.message); }
                               }} className="inline-flex items-center gap-1 text-xs text-powder-600 hover:underline">
                                 <ExternalLink size={11} /> {d.filename}{d.has_text ? ' · searchable' : ''}

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useApiGet, apiUpload, apiFetch, apiPut, apiDelete } from '../../hooks/useApi';
 import { FolderOpen, Upload, AlertTriangle, ExternalLink, Trash2, Clock, X, Settings2 } from 'lucide-react';
+import { openFile } from '../../lib/openFile';
 
 /**
  * The shelf — the reference documents this work runs on.
@@ -98,7 +99,7 @@ function History({ slotKey, canEdit, onChanged }) {
   const open = async (d) => {
     if (d.link_url && !d.has_file) { window.open(d.link_url, '_blank', 'noopener'); return; }
     const r = await apiFetch(`/products/shelf/documents/${d.id}/file`);
-    window.open(r.url, '_blank', 'noopener');
+    openFile({ url: r.url, name: r.filename || d.filename });
   };
   const remove = async (d) => {
     if (!window.confirm(`Remove "${d.title}"?`)) return;

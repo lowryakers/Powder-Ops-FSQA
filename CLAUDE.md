@@ -2955,6 +2955,17 @@ remembering a specific morning. Default is today, so nothing changes for the nor
 - Seed the date from **`localDateStr()`, never `toISOString()`** — the latter is UTC and renders as
   yesterday all evening west of Greenwich. `daysAgoStr(30)` gives the `min` bound.
 
+## A stored file opens inside ReadyDoc, from every screen (D-168, `src/lib/openFile.js`)
+`common/FileViewerHost.jsx` is mounted once, beside `<App/>` in `main.jsx`.
+- **To open a file, call `openFile({ url, name })`, never `window.open(url, '_blank')`.**
+- An `<a target="_blank">` is caught app-wide in the capture phase.
+- A PDF or an image at a framable address opens in the app: this site, a `blob:`, or a presigned url
+  (`X-Amz-Signature`). Everything else still opens a tab.
+- Ctrl/Shift/middle-click, `download` and `data-new-tab` are left alone. Put `data-new-tab` on any
+  deliberate "open in a tab" link.
+- On a phone a PDF is a card with Open, never a frame.
+- `verify:inappfiles` (20; the control fails 14).
+
 ## The "small double pane" PDF view (`src/lib/pdfUrl.js`)
 An `<iframe>` pointed at a PDF gets the browser's own viewer, and **Chrome opens its THUMBNAIL PANE by
 default at moderate widths** — so in Split Screen (~900px) the sidebar ate a third of the pane and the

@@ -6956,3 +6956,49 @@ handled by changing the person's usual target, and that change then hit every we
   pass.
 - **Control:** the old server code fails 18, including a target set on an empty week paying 40:00 of
   non-working time.
+
+## D-168 — A stored PDF opens inside ReadyDoc, from every screen (13 Oct 2026)
+
+Reported: "PDFs are still opening in a browser tab rather than within ReadyDoc. Didn't we fix that?" The
+earlier fix was real but narrow. `pdfViewerUrl()` and the in-app viewer (`FilePreview`) covered five
+embedded frames and the comms viewer. About twenty other screens still opened stored files with
+`window.open(url, '_blank')` or a plain `<a target="_blank">`, so whether a PDF opened in the app depended
+on which screen it was clicked from. Among them: People, Onboarding, Reimbursements, the ledgers, Partner
+Reconciliation and its portal, NFP, Artwork, the product shelf and barcode, Forms, Shipping photos, the
+newsletter and the pay evaluation PDF.
+
+**One door.** The viewer is mounted once, beside `<App/>` in `main.jsx` (`common/FileViewerHost.jsx`), so
+public pages get it too.
+- Code that fetches a url calls `openFile({ url, name })` (`src/lib/openFile.js`). Sixteen `window.open`
+  call sites now do.
+- An ordinary `<a target="_blank">` is caught in the capture phase, so a link written the usual way opens
+  in the app without each screen having to remember to route it.
+
+**What opens in the app:** a PDF or an image (decided from the name, then the url's path) at an address
+that will frame. That means this site, a `blob:`, or a url this server signed (`X-Amz-Signature`).
+Everything else still opens a tab: a vendor's web page, a PDF on somebody else's site that may refuse to
+be framed, a Word file. A blank frame is worse than a new tab. **No hosting-suffix patterns.**
+
+**The way out stays:**
+- Ctrl, Cmd, Shift or middle-click opens a tab.
+- A link carrying `download` or `data-new-tab` is left alone. The viewers' own "open in a tab" links carry
+  `data-new-tab`.
+- The viewer's header has "Open in browser tab".
+
+**On a phone a PDF is a card with Open**, which hands it to the phone's own viewer. This is the
+AttachmentViewer rule: a phone cannot pinch a framed PDF, and Android shows none. The tap is a fresh
+gesture, so a url fetched asynchronously is never popup-blocked.
+
+`FilePreview` reads its file kind from `fileKind()`, the same function the click handler uses, and sits at
+`z-[100]` so a file opened from inside a modal is not hidden behind it.
+
+**Left alone:** print windows (Kiosk QR, the BP&G inventory sheet, the Auditor View print), the comms
+pop-out window, and the download and share fallbacks.
+
+**Verified:** `verify:inappfiles` (20, live + browser at 1280 and 390, with the S3 stand-in; in `verify:all`).
+- A résumé on People opens in the app, framing the signed url with the viewer hints, and no tab opens.
+- An `<a target="_blank">` to `/forms/…pdf` opens in the app.
+- Ctrl-click, an off-site PDF, a `.docx` and the viewer's own button each still open a tab.
+- At 390 the PDF is a card, not a frame, and Open hands the signed url over.
+- **Control:** without the host mounted (the state the plant was in), 14 checks fail. The first is the
+  reported symptom: the résumé opened a new tab.

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Scale, AlertTriangle, Upload, FileText, Check, ExternalLink, History,
 } from 'lucide-react';
+import { openFile } from '../../lib/openFile';
 
 // What M4 sees. A public page, no login — the token in the URL is the whole
 // credential, so the page is deliberately narrow: read the same ledger and the
@@ -58,7 +59,7 @@ function DocList({ title, rows, tone, token, onDispute }) {
                 <button onClick={async () => {
                   try {
                     const { url } = await call(`/${token}/documents/${r.id}/file`);
-                    if (url) window.open(url, '_blank');
+                    if (url) openFile({ url, name: r.filename });
                   } catch (e) { window.alert(e.message); }
                 }} className="inline-flex items-center gap-1 text-[11px] text-powder-600 hover:underline">
                   <ExternalLink size={10} /> {r.filename}
@@ -403,7 +404,7 @@ export default function PartnerPortalPage({ token }) {
                           try {
                             const r = await fetch(`/api/partner-portal/${token}/settlements/${s.id}/proof`);
                             const j = await r.json();
-                            if (j.url) window.open(j.url, '_blank'); else window.alert(j.error || 'Not available.');
+                            if (j.url) openFile({ url: j.url, name: s.proof_filename }); else window.alert(j.error || 'Not available.');
                           } catch { window.alert('Could not open the file.'); }
                         }} className="ml-2 text-[11px] text-indigo-700 underline">proof of payment</button>
                       )}

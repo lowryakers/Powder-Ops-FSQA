@@ -1,18 +1,22 @@
 import { useEffect } from 'react';
 import { pdfViewerUrl } from '../lib/pdfUrl';
+import { fileKind } from '../lib/openFile';
+import { useCompactLayout } from '../lib/useCompactLayout';
 import { X, Download, ExternalLink, ChevronLeft, ChevronRight, FileText } from 'lucide-react';
 
 // Shared in-app file preview overlay: PDFs and images render inline (dimmed
 // backdrop, Esc/backdrop to close), everything else offers a download. Pass
 // several items to page through them with the arrows / arrow keys.
-// item: { url, name } — kind is inferred from the name/url extension.
-const IMG_RE = /\.(png|jpe?g|gif|webp|bmp|svg)(\?|$)/i;
-const PDF_RE = /\.pdf(\?|$)/i;
+// item: { url, name } — kind is inferred from the name, then the url's path
+// (fileKind in lib/openFile.js, the one definition the click handler uses too).
+// Mounted once app-wide by common/FileViewerHost (D-168); a screen may still
+// mount its own for a list it pages through.
 
 export default function FilePreview({ items, index = 0, onClose, onNav }) {
   const list = Array.isArray(items) ? items : [items];
   const item = list[Math.max(0, Math.min(index, list.length - 1))];
   const many = list.length > 1;
+  const compact = useCompactLayout();
   const nav = (d) => { if (many && onNav) onNav((index + d + list.length) % list.length); };
 
   useEffect(() => {
@@ -27,14 +31,15 @@ export default function FilePreview({ items, index = 0, onClose, onNav }) {
   }, [index, list.length]);
 
   if (!item || !item.url) return null;
-  // Test the name and the url SEPARATELY — concatenating them put a space
+  // The name and the url are tested SEPARATELY — concatenating them put a space
   // after the name's extension, so "cert.pdf" + a blob: url matched nothing
   // and every blob-fetched PDF fell through to the download card.
-  const isImage = IMG_RE.test(item.name || '') || IMG_RE.test(item.url);
-  const isPdf = PDF_RE.test(item.name || '') || PDF_RE.test(item.url);
+  const kind = fileKind(item.url, item.name);
+  const isImage = kind === 'image';
+  const isPdf = kind === 'pdf';
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-[80] flex flex-col" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/70 z-[100] flex flex-col" data-file-preview onClick={onClose}>
       <div className="flex items-center gap-2 px-4 py-2.5 text-white" onClick={e => e.stopPropagation()}>
         <FileText size={16} className="shrink-0 text-white/70" />
         <span className="text-sm font-medium truncate flex-1">{item.name || 'File'}</span>
@@ -42,7 +47,7 @@ export default function FilePreview({ items, index = 0, onClose, onNav }) {
         <a href={item.url} download={item.name || true} className="p-2 hover:bg-white/10 rounded-lg" data-tip="Download" onClick={e => e.stopPropagation()}>
           <Download size={17} />
         </a>
-        <a href={item.url} target="_blank" rel="noreferrer" className="p-2 hover:bg-white/10 rounded-lg" data-tip="Open in browser tab" onClick={e => e.stopPropagation()}>
+        <a href={item.url} target="_blank" rel="noreferrer" data-new-tab className="p-2 hover:bg-white/10 rounded-lg" data-tip="Open in browser tab" onClick={e => e.stopPropagation()}>
           <ExternalLink size={17} />
         </a>
         <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-lg"><X size={18} /></button>
@@ -52,8 +57,23 @@ export default function FilePreview({ items, index = 0, onClose, onNav }) {
           <div className="w-full h-full flex items-center justify-center" onClick={onClose}>
             <img src={item.url} alt={item.name || ''} className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" onClick={e => e.stopPropagation()} />
           </div>
+        ) : isPdf && compact ? (
+          // A phone cannot pinch a framed PDF (and Android shows none at all),
+          // so on the compact layout it is handed to the phone's own viewer —
+          // the AttachmentViewer rule. The tap is a fresh gesture, so an
+          // async caller's popup is never blocked.
+          <div className="w-full h-full flex items-center justify-center">
+            <div className="bg-white rounded-xl p-6 text-center max-w-xs" data-pdf-card>
+              <FileText size={40} className="mx-auto text-powder-600 mb-3" />
+              <p className="text-sm font-medium text-gray-800 break-all mb-1">{item.name || 'File'}</p>
+              <p className="text-xs text-gray-500 mb-4">Opens in your phone's own viewer, where you can pinch to zoom.</p>
+              <a href={item.url} target="_blank" rel="noreferrer" data-new-tab className="inline-flex items-center gap-1.5 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700">
+                <ExternalLink size={15} /> Open
+              </a>
+            </div>
+          </div>
         ) : isPdf ? (
-          <iframe src={pdfViewerUrl(item.url)} title={item.name || 'PDF'} className="w-full h-full bg-white rounded-lg" />
+          <iframe src={pdfViewerUrl(item.url)} title={item.name || 'PDF'} className="w-full h-full bg-white rounded-lg" data-file-frame />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
             <div className="bg-white rounded-xl p-6 text-center max-w-xs">

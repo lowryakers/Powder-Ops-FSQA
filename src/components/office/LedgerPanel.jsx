@@ -9,6 +9,7 @@ import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import FrozenScroll from '../common/FrozenScroll';
+import { openFile } from '../../lib/openFile';
 
 // Accounts Payable / Accounts Receivable, one component driven by a ledger
 // config — the two sides are the same job with the money pointing the other
@@ -171,7 +172,7 @@ function FilesTab({ cfg, canEdit, tr }) {
 
   const open = async (f) => {
     const { url } = await apiFetch(`/finance/${cfg.key}/files/${f.id}/url`);
-    window.open(url, '_blank', 'noopener');
+    openFile({ url, name: f.filename });
   };
   const remove = async (f) => {
     if (!confirm(`Delete ${f.filename}?`)) return;

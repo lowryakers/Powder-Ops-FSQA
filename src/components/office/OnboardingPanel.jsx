@@ -11,6 +11,7 @@ import ModuleTabs from '../common/ModuleTabs.jsx';
 import { useModuleTabs } from '../../lib/useModuleTabs.js';
 import EmployeeDocumentsTab from './EmployeeDocumentsTab.jsx';
 import { US_STATES } from '../../../shared/us-states.js';
+import { openFile } from '../../lib/openFile';
 
 /**
  * Office side of new-hire onboarding: start one, hand out the magic link,
@@ -120,7 +121,7 @@ function Files({ r, storageEnabled, onChanged }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const open = async (f) => {
-    try { const { url } = await apiFetch(`/onboarding/files/${f.id}/url`); if (url) window.open(url, '_blank'); }
+    try { const { url } = await apiFetch(`/onboarding/files/${f.id}/url`); if (url) openFile({ url, name: f.filename }); }
     catch (e) { setError(e.message); }
   };
   const remove = async (f) => {
