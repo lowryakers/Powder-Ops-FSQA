@@ -7002,3 +7002,81 @@ pop-out window, and the download and share fallbacks.
 - At 390 the PDF is a card, not a frame, and Open hands the signed url over.
 - **Control:** without the host mounted (the state the plant was in), 14 checks fail. The first is the
   reported symptom: the résumé opened a new tab.
+
+## D-169 — A policy is sent to people to read and acknowledge, with their password (13 Oct 2026)
+
+Asked: "With policies, can we send/assign them to employees (individually, in groups, or bulk) like we do
+with training tests, where the employees can sign/acknowledge the policy doc?" Until now the handbook told
+people what the rules were, and nothing recorded that anybody had read them.
+
+**What it is:**
+- The office sends one or more **published** policies to people from the Policies screen. It can pick:
+  - **Everyone**;
+  - one or more **departments**;
+  - one or more **roles**;
+  - **people by name**, or any mix of these.
+- Each person acknowledges in the app:
+  - their own name;
+  - a statement naming the policy and its version;
+  - their **password**, through the same `gateSignature` every other signature here uses (403
+    `signature_required`, never 401).
+- Tables and files: `policy_acknowledgements` (db.js), `server/policy-acks.js` (the rules),
+  `server/api/policy-acks.js` (the employee's side), and the send, remind and withdraw routes on
+  `api/policies.js`.
+- Screens: `PolicyAcks.jsx` (send screen, progress list, row chip) and `common/PolicyAcknowledge.jsx` (the
+  employee's screen).
+
+**Why it is its own table and not an employee document (D-077).**
+- An employee document is a PDF form, with fields, a drawn signature and a signed copy generated from it. Its
+  office door is the Onboarding grant in office/HR.
+- A policy is often text with no file at all. What is being recorded is "I read version N", not a completed
+  form.
+- **The employee still has ONE place for it.** Policies to acknowledge are listed on the same "Documents to
+  sign" card as a W-4. `SignDocumentHost` renders the policy host too, so every layout that could sign a
+  document can acknowledge a policy without a second mount.
+
+**THE ACKNOWLEDGEMENT NAMES THE VERSION.**
+- `contentSha()` hashes what the person was shown: the version label, the body and the stored file key. It is
+  frozen on the row as `ack_sha256`, with `ack_version`.
+- Revise the policy and the old acknowledgement reads **"acknowledged an earlier version"**. It never reads as
+  current and is never rewritten. That person can then be sent the new version.
+- Sending again skips anyone already waiting, and anyone who has acknowledged *this* version. The result says
+  so by name.
+
+**The audience is resolved on the server from one rule:**
+- Active employees only. A client guest (`is_external`), an auditor pass and ReadyBot are never reached, not
+  even by "everyone".
+- An id named that is not an employee is **refused by name**, never silently dropped.
+- The send screen's count is a preview of that rule. The server decides.
+
+**The person reads it even when it is not ticked "employees can read".** Sending it to them is the act of
+showing it to them.
+- `api/policy-acks.js` is mounted **without** `requireModuleWrite` (the employee-documents arrangement), and
+  serves a policy only to the person it was sent to.
+- Anyone else gets **404, not 403**: a 403 would confirm that someone else was sent it.
+
+**Other rules:**
+- **Only a published policy can be sent.**
+- **Retiring a policy withdraws what was still waiting on it.** Acknowledgements already given stay as the
+  record.
+- Withdrawing one needs a reason. An acknowledgement already given is a record and cannot be withdrawn (409).
+
+**Reaching the person:**
+- On send, ReadyBot sends a DM + push, **one message per person however many policies went to them**.
+- Rows still waiting after two days are chased every other day, each on its own clock
+  (`last_nudge_at`).
+- The office follows progress on the policy itself: "N of M acknowledged" on the row, and the list in the
+  policy view with remind and withdraw. **There is no message per acknowledgement**: forty DMs saying
+  "acknowledged" is noise.
+- The ReadyBot audience entry is actor-only (`policy_acknowledgements`).
+
+**Guards that came for free:**
+- The acknowledge route ends in `/sign`, so `no-token-approve.js` refuses it to a bot token, and `offline.js`
+  never queues it.
+
+**Verified:** `verify:policyacks` (49, live + browser at 1280 and 390, in `verify:all`).
+- `verify:readybot` 51, `verify:edocs` 62, `verify:edocsui` 25 and `check:apitokens` 147 still pass.
+- **Controls:**
+  - With the password gate removed, the first acknowledgement goes through with no password.
+  - With the employee router unmounted (no way to acknowledge, which is the state before this), 19 of 42
+    checks fail before the browser half.

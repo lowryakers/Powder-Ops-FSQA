@@ -5,9 +5,10 @@ import RichText from '../common/RichText.jsx';
 import FormatBar from '../common/FormatBar.jsx';
 import {
   BookText, Plus, Search, Upload, Eye, EyeOff, X, Sparkles, FileText,
-  Trash2, Archive, CheckCircle, AlertTriangle, Pencil,
+  Trash2, Archive, CheckCircle, AlertTriangle, Pencil, Send,
 } from 'lucide-react';
 import { formatDate } from '../../lib/datetime.js';
+import { SendAckModal, AckList, AckChip } from './PolicyAcks.jsx';
 
 /**
  * Company policies — the handbook, not the controlled-document registry.
@@ -312,6 +313,8 @@ function PolicyView({ id, onClose, canManage, onChanged, onEdit }) {
   const { data: p, refresh } = useApiGet(`/policies/${id}`, [id]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [sending, setSending] = useState(false);
+  const [ackKey, setAckKey] = useState(0);
   if (!p) return null;
 
   const act = async (fn) => {
@@ -373,6 +376,12 @@ function PolicyView({ id, onClose, canManage, onChanged, onEdit }) {
                 </button>
               )}
               {p.status === 'published' && (
+                <button onClick={() => setSending(true)} data-policy-send-ack
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-powder-600 text-white text-xs font-semibold hover:bg-powder-700">
+                  <Send size={13} /> Send to read and acknowledge
+                </button>
+              )}
+              {p.status === 'published' && (
                 <button onClick={() => act(() => apiPost(`/policies/${p.id}/retire`, {}))} disabled={busy}
                   className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50">
                   <Archive size={13} /> Retire
@@ -390,8 +399,17 @@ function PolicyView({ id, onClose, canManage, onChanged, onEdit }) {
               )}
             </div>
           )}
+          {canManage && (
+            <div className="pt-3 border-t border-gray-100">
+              <AckList policyId={p.id} refreshKey={ackKey} />
+            </div>
+          )}
         </div>
       </div>
+      {sending && (
+        <SendAckModal initialPolicyIds={[p.id]} onClose={() => setSending(false)}
+          onSent={() => { setAckKey(k => k + 1); onChanged?.(); }} />
+      )}
     </div>
   );
 }
@@ -420,6 +438,7 @@ export default function PoliciesPanel() {
   const [editing, setEditing] = useState(null);
   const [viewing, setViewing] = useState(null);
   const [importing, setImporting] = useState(false);
+  const [sendingAcks, setSendingAcks] = useState(false);
 
   const rows = list || [];
 
@@ -432,6 +451,10 @@ export default function PoliciesPanel() {
         </div>
         {canManage && (
           <div className="flex items-center gap-2 flex-wrap">
+            <button onClick={() => setSendingAcks(true)} data-policies-send-ack
+              className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">
+              <Send size={15} /> Send to acknowledge
+            </button>
             <button onClick={() => setImporting(true)}
               className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">
               <Upload size={15} /> Import files
@@ -491,6 +514,7 @@ export default function PoliciesPanel() {
                 {canManage && (p.visible_to_staff
                   ? <span className="inline-flex items-center gap-1 text-[11px] text-green-700"><Eye size={11} /> staff</span>
                   : <span className="inline-flex items-center gap-1 text-[11px] text-gray-400"><EyeOff size={11} /> management</span>)}
+                {canManage && <AckChip acks={p.acks} />}
                 {p.has_file && (
                   <span className="inline-flex items-center gap-1 text-[11px] text-gray-500 ml-auto">
                     <FileText size={11} /> {p.searchable ? 'document searchable' : 'document attached'}
@@ -526,6 +550,9 @@ export default function PoliciesPanel() {
       )}
       {importing && (
         <PolicyImportModal onClose={() => setImporting(false)} onDone={refresh} />
+      )}
+      {sendingAcks && (
+        <SendAckModal onClose={() => setSendingAcks(false)} onSent={refresh} />
       )}
     </div>
   );

@@ -18,6 +18,8 @@ import flashRoutes, { sendFlashReport } from './server/api/flash.js';
 import { sendCleanupDigest, cleanupDigest, CLEANUP_BUSY_THRESHOLD } from './server/cleanup-digest.js';
 import { sendEodMissedDigest, eodMissedDigest, EOD_BUSY_THRESHOLD } from './server/eod-chase.js';
 import policyRoutes from './server/api/policies.js';
+import policyAckRoutes from './server/api/policy-acks.js';
+import { policyAckNudges } from './server/policy-acks.js';
 import newsletterRoutes from './server/api/newsletter.js';
 import { seedProcurement } from './server/procurement-seed.js';
 import { seedFinanceFromMonday } from './server/finance-seed.js';
@@ -2057,6 +2059,10 @@ app.use('/api/ap-drop', apDropRoutes);
 // modules at all, and the router decides per route who is the employee and who
 // is the office (see server/api/employee-documents.js).
 app.use('/api/employee-documents', employeeDocumentRoutes);
+// A policy sent to somebody to read and acknowledge (D-169). Same arrangement:
+// the person asked is often an operator with no Policies grant, and the router
+// serves a policy only to the person it was sent to.
+app.use('/api/policy-acks', policyAckRoutes);
 app.use('/api/activity', activityRoutes);
 app.use('/api/org', requireModuleWrite('org-chart'), orgRoutes);
 app.use('/api/disposals', requireModuleWrite('disposals'), disposalRoutes);
@@ -2223,7 +2229,7 @@ server.listen(PORT, '0.0.0.0', () => {
   backfillInvoiceText().catch(e => console.warn('[invoices] backfill error:', e.message));
   backfillFinanceFileText().catch(e => console.warn('[finance] backfill error:', e.message));
   // Recurring jobs: Friday auto-backup to R2, Monday expiry digest to #quality.
-  startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges, qaActionNudges, employeeDocumentNudges, trainingNudges, supplyCycleNudge, partnerReminderNudges, recordBackfillNudge, supplierReviewNudge, sendFlashReport, sendCleanupDigest, cleanupDigest, CLEANUP_BUSY_THRESHOLD, sendEodMissedDigest, eodMissedDigest, EOD_BUSY_THRESHOLD });
+  startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges, qaActionNudges, employeeDocumentNudges, policyAckNudges: (d) => policyAckNudges(d, { botDm, postMessageAs, pushToUser }), trainingNudges, supplyCycleNudge, partnerReminderNudges, recordBackfillNudge, supplierReviewNudge, sendFlashReport, sendCleanupDigest, cleanupDigest, CLEANUP_BUSY_THRESHOLD, sendEodMissedDigest, eodMissedDigest, EOD_BUSY_THRESHOLD });
   startReminderLoop(db);
   // Generate any due document-review tasks on startup (idempotent; also runs on
   // every operator-tasks fetch).

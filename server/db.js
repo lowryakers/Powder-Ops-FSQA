@@ -5759,6 +5759,36 @@ function runMigrations() {
       );
       CREATE INDEX IF NOT EXISTS idx_policies_status ON policies(status, visible_to_staff);
 
+      -- A policy SENT to a person to read and acknowledge (D-169). One row per
+      -- person per send; the acknowledgement records WHICH version they agreed to
+      -- (content_sha256 of the version, body and file at that moment), so a policy
+      -- revised afterwards reads as "acknowledged an earlier version", never as current.
+      CREATE TABLE IF NOT EXISTS policy_acknowledgements (
+        id               TEXT PRIMARY KEY,
+        policy_id        TEXT NOT NULL,
+        user_id          TEXT NOT NULL,
+        status           TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','acknowledged','cancelled')),
+        due_date         TEXT,
+        note             TEXT,
+        sent_version     TEXT,
+        sent_sha256      TEXT,
+        sent_by          TEXT, sent_by_id TEXT,
+        sent_at          TEXT NOT NULL DEFAULT (datetime('now')),
+        opened_at        TEXT,
+        last_nudge_at    TEXT,
+        acknowledged_at  TEXT,
+        signature        TEXT,
+        ack_version      TEXT,
+        ack_sha256       TEXT,
+        ack_filename     TEXT,
+        cancelled_reason TEXT, cancelled_at TEXT, cancelled_by TEXT,
+        FOREIGN KEY (policy_id) REFERENCES policies(id),
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_policy_acks_user ON policy_acknowledgements(user_id, status);
+      CREATE INDEX IF NOT EXISTS idx_policy_acks_policy ON policy_acknowledgements(policy_id, status);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_policy_acks_one_open ON policy_acknowledgements(policy_id, user_id) WHERE status = 'pending';
+
       -- ── Danny's List ──────────────────────────────────────────────────
       -- The request log for the one person the whole org routes through, who
       -- works exclusively by text message and will never open ReadyDoc. The

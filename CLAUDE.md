@@ -6159,6 +6159,29 @@ it by role).
 - Verified: 20 assertions covering both visibility gates, the 404-not-403 rule, search scoping, the
   empty-publish and delete-published refusals, and extracted text never leaving the server.
 
+## A policy is sent to read and acknowledge, with a password (D-169, `server/policy-acks.js`)
+`policy_acknowledgements`, `api/policy-acks.js` (the employee's side, mounted WITHOUT `requireModuleWrite`),
+and the send / remind / withdraw routes on `api/policies.js`. Screens: `PolicyAcks.jsx` and
+`common/PolicyAcknowledge.jsx`.
+- **Who it can go to:**
+  - Only a **published** policy can be sent.
+  - The audience is resolved server-side: everyone, departments, roles and named people.
+  - Active employees only. Never a guest, an auditor or ReadyBot, and a named non-employee is refused by name.
+- **Acknowledging:** the person's own name, the statement (policy + version) and their password
+  (`gateSignature`). Done once.
+- **The acknowledgement names the version** (`contentSha` = version + body + file key).
+  - Revise the policy and an old acknowledgement reads **"earlier version"**, never current.
+  - Re-sending skips anyone waiting or already on this version.
+- **Where the employee sees it:** the "Documents to sign" card, beside employee documents. `SignDocumentHost`
+  renders `PolicyAckHost`, and the link is `/?ack=<id>`.
+- **Who can open it:** the person sent it, even when the policy is not staff-visible. Anyone else gets 404.
+- **Withdrawing:** retiring a policy withdraws what was waiting. Withdrawing one needs a reason; a given
+  acknowledgement is never withdrawn.
+- **Messages:** DM per person per send. A chase every other day, each row on its own clock. No DM to the
+  office per acknowledgement; progress is on the policy.
+- `verify:policyacks` (49). Controls: without the password gate it acknowledges with none; unmounted, 19 of 42
+  fail.
+
 ## The starter review is decided on the packet, and the link finishes the job (D-097)
 `onboarding_records.review_occasion` + `pay_employees.review_occasion`, a `starter` kind in `payActions`, and
 `common/InstallReadyDoc.jsx` + the public `/install` page. Two asks, one defect: **a fact or an instruction

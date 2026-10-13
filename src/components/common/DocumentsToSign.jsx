@@ -9,7 +9,9 @@ import { pdfViewerUrl } from '../../lib/pdfUrl';
 import { useCompactLayout } from '../../lib/useCompactLayout.js';
 import { formatDate, formatDateTime } from '../../lib/datetime.js';
 import { SignaturePad } from './SignatureCanvas.jsx';
-import { FileSignature, X, ExternalLink, Download, CheckCircle2, AlertTriangle, RotateCcw } from 'lucide-react';
+import { FileSignature, X, ExternalLink, Download, CheckCircle2, AlertTriangle, RotateCcw, BookText } from 'lucide-react';
+import { PolicyAckHost } from './PolicyAcknowledge.jsx';
+import { openPolicyAck } from '../../lib/policyAck.js';
 
 /**
  * A document the office sent this person to sign — the card that stays put
@@ -27,14 +29,25 @@ const openSignDocument = (id) => window.dispatchEvent(new CustomEvent(OPEN_EVENT
 
 export default function DocumentsToSignCard({ variant = 'sidebar', deps = [] }) {
   const { data, refresh } = useApiGet('/employee-documents/mine', deps);
-  useEffect(() => onDataChanged(refresh), [refresh]);
+  // Policies sent to read and acknowledge (D-169) are listed here too: one
+  // person, one place for what is waiting on their signature.
+  const { data: acks, refresh: refreshAcks } = useApiGet('/policy-acks/mine', deps);
+  useEffect(() => onDataChanged(() => { refresh(); refreshAcks(); }), [refresh, refreshAcks]);
   const pending = data?.pending || [];
-  if (!pending.length) return null;
+  const policies = acks?.pending || [];
+  const total = pending.length + policies.length;
+  if (!total) return null;
   const sidebar = variant === 'sidebar';
+  const heading = !pending.length
+    ? `${policies.length} ${policies.length === 1 ? 'policy' : 'policies'} to acknowledge`
+    : !policies.length
+      ? `${pending.length} document${pending.length === 1 ? '' : 's'} to sign`
+      : `${total} to sign or acknowledge`;
   return (
-    <div className={sidebar ? 'border-t border-powder-200 bg-powder-50 px-3 py-2' : 'bg-powder-50 border border-powder-200 rounded-xl px-4 py-3'} data-documents-to-sign={pending.length}>
+    <div className={sidebar ? 'border-t border-powder-200 bg-powder-50 px-3 py-2' : 'bg-powder-50 border border-powder-200 rounded-xl px-4 py-3'}
+      data-documents-to-sign={pending.length} data-policies-to-acknowledge={policies.length}>
       <p className={`${sidebar ? 'text-[10px] px-1 mb-1' : 'text-xs mb-2'} font-bold uppercase tracking-wider text-powder-700 flex items-center gap-1.5`}>
-        <FileSignature size={sidebar ? 11 : 13} /> {pending.length} document{pending.length === 1 ? '' : 's'} to sign
+        <FileSignature size={sidebar ? 11 : 13} /> {heading}
       </p>
       <div className={`space-y-1 ${sidebar ? 'max-h-40 overflow-y-auto' : ''}`}>
         {pending.map(d => (
@@ -43,6 +56,17 @@ export default function DocumentsToSignCard({ variant = 'sidebar', deps = [] }) 
             <span className={`block truncate ${sidebar ? 'text-xs' : 'text-sm'} font-medium text-gray-800`}>{d.title}</span>
             <span className="block text-[10px] text-gray-500 truncate">
               from {d.sent_by || 'the office'}{d.due_date ? ` · ${d.overdue ? 'was due' : 'by'} ${formatDate(d.due_date)}` : ''}
+            </span>
+          </button>
+        ))}
+        {policies.map(d => (
+          <button key={d.id} type="button" onClick={() => openPolicyAck(d.id)} data-policy-ack-open-card={d.id}
+            className={`w-full text-left rounded-lg bg-white border px-2.5 py-1.5 hover:border-powder-400 ${d.overdue ? 'border-red-300' : 'border-powder-200'}`}>
+            <span className={`flex items-center gap-1 truncate ${sidebar ? 'text-xs' : 'text-sm'} font-medium text-gray-800`}>
+              <BookText size={sidebar ? 11 : 13} className="text-powder-600 shrink-0" /><span className="truncate">{d.title}</span>
+            </span>
+            <span className="block text-[10px] text-gray-500 truncate">
+              policy to acknowledge · from {d.sent_by || 'the office'}{d.due_date ? ` · ${d.overdue ? 'was due' : 'by'} ${formatDate(d.due_date)}` : ''}
             </span>
           </button>
         ))}
@@ -64,9 +88,15 @@ export function SignDocumentHost() {
     return () => window.removeEventListener(OPEN_EVENT, on);
   }, []);
   const close = useCallback(() => { setId(null); notifyDataChanged(); }, []);
-  if (!id) return null;
   // Keyed on the id so a second document opened from the card starts clean.
-  return <SignDocumentModal key={id} id={id} onClose={close} />;
+  // The policy host rides along, so every layout that can sign a document can
+  // also acknowledge a policy without a second mount to remember.
+  return (
+    <>
+      {id && <SignDocumentModal key={id} id={id} onClose={close} />}
+      <PolicyAckHost />
+    </>
+  );
 }
 
 const input = 'w-full px-2.5 py-2 border border-gray-300 rounded-lg text-sm';

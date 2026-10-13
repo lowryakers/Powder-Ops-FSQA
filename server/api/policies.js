@@ -8,6 +8,9 @@ import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage } from '..
 import { extractInvoiceText } from '../invoice-text.js';
 import { hasExplicitEdit } from '../module-access.js';
 import { titleFromFilename, revisionFromFilename } from '../filename-meta.js';
+import { botDm, postMessageAs } from './comms.js';
+import { pushToUser } from '../push.js';
+import { eligiblePeople, sendAcknowledgements, tellPeople, ackCounts, ackState } from '../policy-acks.js';
 
 /**
  * Company policies — the handbook side of the plant (PTO, grievance, conduct).
@@ -93,7 +96,8 @@ router.get('/', (req, res) => {
   sql += " ORDER BY (status = 'retired'), category, title LIMIT 500";
 
   const rows = db.prepare(sql).all(...params);
-  res.json(rows.map(r => ({ ...publicFields(r), ...(q ? { snippet: snippetFor(r, q) } : {}) })));
+  const acks = manage ? ackCounts(db, rows) : new Map();
+  res.json(rows.map(r => ({ ...publicFields(r), ...(q ? { snippet: snippetFor(r, q) } : {}), ...(manage ? { acks: acks.get(r.id) || null } : {}) })));
 });
 
 router.get('/categories', (req, res) => {
@@ -104,6 +108,92 @@ router.get('/categories', (req, res) => {
     ${manage ? '' : "AND status = 'published' AND visible_to_staff = 1"}
     GROUP BY category ORDER BY category`).all();
   res.json(rows);
+});
+
+// ── Sending a policy to read and acknowledge (D-169) ─────────────────────────
+// The office's half. The employee's half — reading it and acknowledging with
+// their password — is api/policy-acks.js, mounted without the module guard.
+const COMMS = { botDm, postMessageAs, pushToUser };
+
+// Who a policy can go to, and the groups the picker offers. Departments and
+// roles are read off the people, so a group with nobody in it is not offered.
+router.get('/acknowledgements/people', (req, res) => {
+  if (!requireManage(req, res)) return;
+  const people = eligiblePeople(getDb());
+  const count = (key) => Object.entries(people.reduce((m, p) => {
+    const k = String(p[key] || '').trim(); if (k) m[k] = (m[k] || 0) + 1; return m;
+  }, {})).map(([value, n]) => ({ value, count: n })).sort((x, y) => x.value.localeCompare(y.value));
+  res.json({ people, departments: count('department'), roles: count('role') });
+});
+
+router.post('/acknowledgements/send', async (req, res) => {
+  if (!requireManage(req, res)) return;
+  const db = getDb();
+  const b = req.body || {};
+  const out = sendAcknowledgements(db, req.user, {
+    policy_ids: Array.isArray(b.policy_ids) ? b.policy_ids : (b.policy_id ? [b.policy_id] : []),
+    due_date: b.due_date || null, note: b.note || null,
+    everyone: !!b.everyone,
+    departments: Array.isArray(b.departments) ? b.departments : [],
+    roles: Array.isArray(b.roles) ? b.roles : [],
+    user_ids: Array.isArray(b.user_ids) ? b.user_ids : [],
+  });
+  if (out.error) return res.status(out.status || 400).json(out);
+  const { tell, ...body } = out;
+  res.status(201).json(body);
+  // After the response: the rows are written, and a comms outage must not
+  // read as a send that failed.
+  tellPeople(db, tell, { sentBy: req.user?.name, due: out.due_date, note: out.note }, COMMS).catch(() => {});
+});
+
+router.post('/acknowledgements/:ackId/remind', async (req, res) => {
+  if (!requireManage(req, res)) return;
+  const db = getDb();
+  const r = db.prepare(`SELECT a.*, p.title, p.version FROM policy_acknowledgements a JOIN policies p ON p.id = a.policy_id WHERE a.id = ?`).get(req.params.ackId);
+  if (!r) return res.status(404).json({ error: 'Not found' });
+  if (r.status !== 'pending') return res.status(409).json({ error: `This was already ${r.status}.` });
+  const sent = await tellPeople(db, [{ person: { id: r.user_id }, items: [{ id: r.id, title: r.title, version: r.version }] }],
+    { reminder: true, due: r.due_date }, COMMS);
+  db.prepare("UPDATE policy_acknowledgements SET last_nudge_at = datetime('now') WHERE id = ?").run(r.id);
+  logAudit(req.user, 'update', 'policy_acknowledgement', r.id, { reminded: true }, null, null, r.title);
+  res.json({ ok: true, sent });
+});
+
+router.post('/acknowledgements/:ackId/cancel', (req, res) => {
+  if (!requireManage(req, res)) return;
+  const db = getDb();
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 3) return res.status(400).json({ error: 'Say why it is being withdrawn.' });
+  const r = db.prepare('SELECT * FROM policy_acknowledgements WHERE id = ?').get(req.params.ackId);
+  if (!r) return res.status(404).json({ error: 'Not found' });
+  if (r.status !== 'pending') return res.status(409).json({ error: `This was already ${r.status} — an acknowledgement is a record and is not withdrawn.` });
+  db.prepare("UPDATE policy_acknowledgements SET status = 'cancelled', cancelled_reason = ?, cancelled_at = datetime('now'), cancelled_by = ? WHERE id = ?")
+    .run(reason, req.user?.name || null, r.id);
+  logAudit(req.user, 'cancel', 'policy_acknowledgement', r.id, { reason }, r, null, null);
+  res.json({ ok: true });
+});
+
+// Who it went to and where each person is — the acknowledgement record.
+router.get('/:id/acknowledgements', (req, res) => {
+  if (!requireManage(req, res)) return;
+  const db = getDb();
+  const p = db.prepare('SELECT * FROM policies WHERE id = ?').get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'Not found' });
+  const rows = db.prepare(`SELECT a.*, u.name, u.department FROM policy_acknowledgements a JOIN users u ON u.id = a.user_id
+    WHERE a.policy_id = ? ORDER BY CASE a.status WHEN 'pending' THEN 0 WHEN 'acknowledged' THEN 1 ELSE 2 END, u.name`).all(p.id);
+  const shaped = rows.map(r => ({
+    id: r.id, user_id: r.user_id, name: r.name, department: r.department, status: r.status, state: ackState(r, p),
+    due_date: r.due_date, sent_by: r.sent_by, sent_at: r.sent_at, opened_at: r.opened_at, last_nudge_at: r.last_nudge_at,
+    acknowledged_at: r.acknowledged_at, ack_version: r.ack_version,
+    signature: r.signature ? JSON.parse(r.signature) : null,
+    cancelled_reason: r.cancelled_reason, cancelled_at: r.cancelled_at, cancelled_by: r.cancelled_by,
+  }));
+  // Every figure is the length of the rows under it.
+  const of = (s) => shaped.filter(r => r.state === s).length;
+  res.json({
+    policy_id: p.id, version: p.version || null, rows: shaped,
+    counts: { acknowledged: of('acknowledged'), pending: of('pending'), overdue: of('overdue'), earlier_version: of('earlier_version'), cancelled: of('cancelled') },
+  });
 });
 
 router.get('/:id', async (req, res) => {
@@ -188,7 +278,11 @@ router.post('/:id/retire', (req, res) => {
   if (!p) return res.status(404).json({ error: 'Not found' });
   db.prepare("UPDATE policies SET status='retired', visible_to_staff=0, updated_by=?, updated_at=datetime('now') WHERE id=?")
     .run(req.user?.name || null, p.id);
-  logAudit(req.user, 'update', 'policy', p.id, { retired: true }, p, null, p.title);
+  // Nobody is asked to agree to a rule that no longer applies; what was already
+  // acknowledged stays, as the record that it was.
+  const withdrawn = db.prepare(`UPDATE policy_acknowledgements SET status = 'cancelled', cancelled_reason = 'The policy was retired',
+    cancelled_at = datetime('now'), cancelled_by = ? WHERE policy_id = ? AND status = 'pending'`).run(req.user?.name || null, p.id).changes;
+  logAudit(req.user, 'update', 'policy', p.id, { retired: true, acknowledgements_withdrawn: withdrawn }, p, null, p.title);
   res.json(publicFields(db.prepare('SELECT * FROM policies WHERE id = ?').get(p.id)));
 });
 

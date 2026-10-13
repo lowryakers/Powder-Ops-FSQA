@@ -57,6 +57,7 @@ const RUNS = [
   ['verify-hours-rates.mjs', 5006, {}, false],
   ['verify-hours-week-target.mjs', 5094, {}, false],
   ['verify-in-app-files.mjs', 5095, {}, true],
+  ['verify-policy-acks.mjs', 5096, {}, false],
   ['verify-bpg-items.mjs', 5010, {}, false],
   ['verify-recall-flow.mjs', 5022, {}, false],
   ['verify-training-people.mjs', 5012, {}, false],
