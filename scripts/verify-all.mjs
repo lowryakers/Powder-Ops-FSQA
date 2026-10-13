@@ -134,6 +134,7 @@ const RUNS = [
   ['verify-ap-drop-report.mjs', 5079, {}, false],
   ['verify-api-tokens-ui.mjs', 5092, {}, false],
   ['verify-token-attachments.mjs', 5093, { API_TOKEN_WRITE_RPM: '40' }, true],
+  ['verify-token-reactions.mjs', 5097, {}, false],
 ];
 
 // VERIFY_ONLY=verify-auth.mjs,verify-swab-stock.mjs runs just the entries that

@@ -151,6 +151,14 @@ export const ROUTES = Object.freeze([
     },
     required: ['channel_id'] },
 
+  { tool: 'add_reaction', method: 'POST', path: '/api/comms/messages/:message_id/reactions',
+    description: "Add the bot account's own emoji reaction (e.g. ✅) to a message in a channel or DM the account is a member of. "
+      + 'Never touches anybody else\'s reaction or the message itself. Needs a write token.',
+    body: ['emoji'], properties: { message_id: str('The message id.'), emoji: str('The emoji, e.g. ✅.') }, required: ['message_id', 'emoji'] },
+  { tool: 'undo_reaction', method: 'DELETE', path: '/api/comms/messages/:message_id/reactions/:emoji',
+    description: "Take back the bot account's own reaction with this emoji on a message in a channel it is a member of. Only its own; nothing else. Needs a write token.",
+    properties: { message_id: str('The message id.'), emoji: str('The emoji to take back, e.g. ✅.') }, required: ['message_id', 'emoji'] },
+
   { tool: 'list_ap_drops', method: 'GET', path: '/api/ap-drop', paged: true,
     description: 'AP Drop intake rows (finance PDFs) the account may see. Paged.',
     query: ['limit', 'offset', 'status', 'vendor', 'q'],

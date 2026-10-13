@@ -449,6 +449,14 @@ limit), `authenticateToken` in `middleware/auth.js`, `server/middleware/no-token
   `upload_channel_attachments` tool.
 - `verify:tokenattach` (58; control fails 32).
 
+## A `write` token reacts with an emoji: its own reaction, members only (D-170)
+- `POST /comms/messages/:id/reactions` and `DELETE /comms/messages/:id/reactions/:emoji` are on `WRITE_AREAS` (area
+  `messages`) and `BOT_ROUTES`. The handlers touch only the caller's own row.
+- **A token reaches a message only as a channel MEMBER** (`ownedMessage`, 404 otherwise).
+- **`TOKEN_DELETE_EXEMPT` is the one DELETE a token may make**, taking back its own reaction. Add to it only a path
+  whose DELETE can undo nothing but the caller's own mark; `check:apitokens` pins it to exactly one route.
+- MCP tools `add_reaction` / `undo_reaction`. `verify:tokenreact` (24; control fails 9).
+
 ## Revoking access reaches the sessions it already opened (D-072)
 `revokeSessions(db, userId, { keepToken, devices })` in `api/sessions.js` is the ONE helper; Settings
 deactivation, `end-access`, the auditor-pass revoke and the pass reactivation path all call it. It deletes the

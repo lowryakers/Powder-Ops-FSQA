@@ -1657,6 +1657,10 @@ function ownedMessage(req, res) {
   if (!m) { res.status(404).json({ error: 'Message not found' }); return null; }
   const channel = getChannel(db, m.channel_id);
   if (!canAccess(db, channel, req.user.id)) { res.status(404).json({ error: 'Message not found' }); return null; }
+  // A bot token reaches only messages in channels its account is IN (D-166,
+  // D-170). canAccess already says so for a non-admin; this holds even if an
+  // admin account ever held a token.
+  if (req.auth?.kind === 'token' && !isMember(db, channel.id, req.user.id)) { res.status(404).json({ error: 'Message not found' }); return null; }
   return { m, channel };
 }
 

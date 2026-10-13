@@ -128,8 +128,19 @@ export const ARTWORK_TOKEN_STATUSES = Object.freeze(['draft', 'in_review']);
 
 const nonGet = (req) => !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
 
+// The ONE DELETE a token may make (D-170): taking back its OWN reaction on a
+// message in a channel it is a member of. It removes nothing anybody else wrote
+// — the handler deletes only the caller's row (user_id = the token's account)
+// — so it is not the "delete" this list exists to refuse. Keep this list to
+// paths whose DELETE can only ever undo the caller's own mark; check:apitokens
+// asserts it holds exactly this one and that it is on WRITE_AREAS.
+export const TOKEN_DELETE_EXEMPT = Object.freeze([
+  { re: /^\/comms\/messages\/[^/]+\/reactions\/[^/]+$/, label: 'DELETE /api/comms/messages/:id/reactions/:emoji — remove its own reaction' },
+]);
+const deleteExempt = (req) => req.method === 'DELETE' && TOKEN_DELETE_EXEMPT.some(e => e.re.test(req.path));
+
 export const TOKEN_DENY = Object.freeze([
-  { category: 'delete', test: (req) => req.method === 'DELETE', label: 'every DELETE' },
+  { category: 'delete', test: (req) => req.method === 'DELETE' && !deleteExempt(req), label: 'every DELETE but TOKEN_DELETE_EXEMPT (removing its own reaction)' },
   { category: 'delete', test: (req) => nonGet(req) && segmentsOf(req.path).some(s => DELETE_SET.has(s)),
     label: 'any non-GET route with a segment in DELETE_SEGMENTS' },
   { category: 'decision', test: (req) => nonGet(req) && segmentsOf(req.path).some(s => DECISION_SET.has(s)),
