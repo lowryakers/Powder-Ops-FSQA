@@ -35,6 +35,9 @@ import { pushToUser } from '../push.js';
 import { stampReadiness } from './products.js';
 import { checkDailyValues } from '../../shared/nutrition-dv.js';
 import {
+  PANEL_VALUE_FIELDS, valuesOf, servingGrams, gramRuleError, reconcile, unresolvedWarnings, panelDiff,
+} from '../../shared/panel-reconcile.js';
+import {
   provenanceOf, provenanceMissing, fillWeightCheck, fillCheckSentence, provenanceStale, PROVENANCE_LABEL,
 } from '../../shared/panel-provenance.js';
 
@@ -170,6 +173,45 @@ const readJson = (s) => { try { return s ? JSON.parse(s) : null; } catch { retur
 const panelOf = (v) => readJson(v.panel_json);
 const hasValues = (panel) => !!panel && Object.values(panel).some((x) => x !== null && x !== '');
 
+// ── Reconciliation, acknowledgements and the approved panel (D-171) ──────────
+
+const isToken = (req) => req.auth?.kind === 'token';
+
+/** The product's current APPROVED panel — what a draft is diffed against. */
+const approvedFor = (db, sku) => db.prepare(
+  "SELECT * FROM nfp_versions WHERE sku = ? AND status = 'approved' ORDER BY approved_at DESC, updated_at DESC LIMIT 1").get(sku);
+
+const acksFor = (db, id) => db.prepare(
+  'SELECT * FROM nfp_warning_acks WHERE version_id = ? ORDER BY acknowledged_at, rowid').all(id);
+
+/**
+ * The two reconciliation checks, LIVE — against the panel as it stands and the
+ * product's fill weight as it stands — and which warnings nobody has
+ * acknowledged. The gate and the card both read this; the copy stored at write
+ * time (`reconcile_snapshot`) is the record of what the write saw.
+ */
+function reconcileFor(db, v, product = catalogueFill(db, v.sku)) {
+  const checks = reconcile(panelOf(v) || {}, { fillWeightG: product?.fill_weight_g });
+  const acks = acksFor(db, v.id);
+  return { checks, acks, unresolved: unresolvedWarnings(checks, acks) };
+}
+
+/**
+ * A bot token writes only to a DRAFT. Anything else — an approved panel above
+ * all — is 403 with the reason, so the bot can relay it. A person keeps the
+ * existing rules (open panels editable, decided ones 409).
+ */
+function tokenDraftOnly(req, res, v) {
+  if (!isToken(req) || v.status === 'draft') return true;
+  res.status(403).json({
+    error: 'not_draft',
+    message: `A bot token writes only to a DRAFT panel. ${v.sku} panel ${v.version} is ${v.status}`
+      + (['approved', 'superseded'].includes(v.status)
+        ? ' — a decided panel is never rewritten; file the next version as a draft.' : '.'),
+  });
+  return false;
+}
+
 // ── Shaping ──────────────────────────────────────────────────────────────────
 
 function filesFor(db, ids) {
@@ -194,6 +236,8 @@ function hydrate(db, versions) {
   const files = filesFor(db, versions.map((v) => v.id));
   const products = new Map();
   for (const v of versions) if (!products.has(v.sku)) products.set(v.sku, catalogueFill(db, v.sku));
+  const approved = new Map();
+  for (const v of versions) if (!approved.has(v.sku)) approved.set(v.sku, approvedFor(db, v.sku) || null);
   return versions.map((v) => {
     const { token_hash, panel_json, front_callouts, dv_warnings, approved_provenance, fill_check, ...rest } = v;
     const panel = readJson(panel_json);
@@ -228,8 +272,34 @@ function hydrate(db, versions) {
       link_live: !!token_hash,
       has_panel: (files.get(v.id) || []).length > 0 || !!v.drive_url,
       has_values: hasValues(panel),
+      ...reviewOf(db, v, panel, product, approved.get(v.sku)),
     };
   });
+}
+
+/**
+ * What a reviewer of an OPEN panel needs beside the numbers (D-171): the two
+ * reconciliation checks, which warnings still want a person's acknowledgement,
+ * every acknowledgement given, where the values came from, and a field-by-field
+ * diff against the product's current approved panel — only the fields that
+ * differ.
+ */
+function reviewOf(db, v, panel, product, approved) {
+  const open = ['draft', 'sent', 'rejected'].includes(v.status);
+  const { checks, acks, unresolved } = reconcileFor(db, { ...v, panel_json: JSON.stringify(panel || {}) }, product);
+  const isApprovedRow = approved && approved.id === v.id;
+  return {
+    reconcile: checks,
+    reconcile_unresolved: open ? unresolved : [],
+    reconcile_acks: acks.map(({ acknowledged_by_id: _id, ...a }) => a),
+    source_ref: v.panel_source_ref || null,
+    source_by: v.panel_source_by || null,
+    source_at: v.panel_source_at || null,
+    diff_vs_approved: open && !isApprovedRow
+      ? { approved_id: approved?.id || null, approved_version: approved?.version || null,
+          changes: panelDiff(panel || {}, approved ? (panelOf(approved) || {}) : {}) }
+      : null,
+  };
 }
 
 /** Everything an approver has to be able to see before saying yes. */
@@ -442,6 +512,8 @@ router.post('/batch/send', (req, res) => {
     if (!hasFile && !v.drive_url) bad.push(`${v.sku} ${v.version} has no panel to look at`);
     const pm = provenanceMissing(provenanceOf(v));
     if (pm.length) bad.push(`${v.sku} ${v.version} has no ${pm.map(k => PROVENANCE_LABEL[k].toLowerCase()).join(', ')}`);
+    const un = reconcileFor(db, v).unresolved;
+    if (un.length) bad.push(`${v.sku} ${v.version} has ${un.length} warning${un.length === 1 ? '' : 's'} to acknowledge (${un.map(c => c.label).join(', ')})`);
   }
   if (bad.length) return res.status(409).json({ error: `Cannot send: ${bad.join('; ')}.`, problems: bad });
 
@@ -538,6 +610,212 @@ router.post('/:id/files', nfpUpload, async (req, res) => {
   }
 });
 
+/* ── The panel PDF, its values and their source (D-171) ───────────────────────
+ *
+ * Built for the Product Manager bot (a token holding the `nfp-panel` GRANT) and
+ * open to a person who manages panels too. A token writes only to a DRAFT and
+ * every values write names the file or document the numbers came from.
+ */
+
+const PDF_MAX_BYTES = 25 * 1024 * 1024;
+const panelPdfUpload = mediaUpload({ files: 1, maxBytes: PDF_MAX_BYTES }).single('file');
+
+/** Upload or REPLACE the panel PDF on an undecided panel. PDF only, 25 MB. */
+router.put('/:id/panel-file', (req, res) => {
+  panelPdfUpload(req, res, async (upErr) => {
+    const file = req.file;
+    try {
+      if (upErr) {
+        const tooBig = upErr.code === 'LIMIT_FILE_SIZE';
+        return res.status(tooBig ? 413 : 400).json({
+          error: tooBig ? 'too_large' : 'bad_upload',
+          message: tooBig ? 'The panel PDF must be 25 MB or smaller.' : uploadErrorMessage(upErr, PDF_MAX_BYTES),
+        });
+      }
+      if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage nutrition panels.' });
+      const db = getDb();
+      const v = db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(req.params.id);
+      if (!v) return res.status(404).json({ error: 'Not found' });
+      if (!tokenDraftOnly(req, res, v)) return;
+      if (['approved', 'superseded'].includes(v.status)) {
+        return res.status(409).json({ error: 'This panel is already decided. File the next version instead.' });
+      }
+      if (!file) return res.status(400).json({ error: 'no_file', message: 'Send the PDF in the "file" field.' });
+      // PDF ONLY: the name, the declared type and the first bytes must all say so.
+      const head = Buffer.alloc(5);
+      const fd = fs.openSync(file.path, 'r');
+      try { fs.readSync(fd, head, 0, 5, 0); } finally { fs.closeSync(fd); }
+      const isPdf = /\.pdf$/i.test(file.originalname || '') && /pdf/i.test(file.mimetype || '')
+        && head.toString('latin1') === '%PDF-';
+      if (!isPdf) {
+        return res.status(415).json({ error: 'unsupported_type', message: 'The panel file must be a PDF (.pdf, application/pdf, starting %PDF-).' });
+      }
+      if ((file.size || 0) > PDF_MAX_BYTES) {
+        return res.status(413).json({ error: 'too_large', message: 'The panel PDF must be 25 MB or smaller.' });
+      }
+      if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured — set the R2 variables.' });
+
+      const filename = (file.originalname || 'panel.pdf').slice(0, 255);
+      const sha256 = createHash('sha256').update(fs.readFileSync(file.path)).digest('hex');
+      const key = `nfp/${v.sku}/${v.id}-panel-${Date.now()}-${filename.replace(/[^\w.-]+/g, '_')}`;
+      await putStream(key, fs.createReadStream(file.path), 'application/pdf');
+      const old = db.prepare("SELECT * FROM nfp_files WHERE version_id = ? AND kind = 'panel'").all(v.id);
+      db.transaction(() => {
+        db.prepare("DELETE FROM nfp_files WHERE version_id = ? AND kind = 'panel'").run(v.id);
+        db.prepare(`INSERT INTO nfp_files (id, version_id, kind, filename, content_type, size, storage_key, uploaded_by)
+          VALUES (?, ?, 'panel', ?, 'application/pdf', ?, ?, ?)`).run(uuid(), v.id, filename, file.size || null, key, req.user.name);
+        db.prepare("UPDATE nfp_versions SET updated_at = datetime('now') WHERE id = ?").run(v.id);
+      })();
+      // The replaced objects go only after the new row is in — a failed upload
+      // must never leave a draft with no panel at all.
+      for (const o of old) if (o.storage_key !== key) deleteObject(o.storage_key);
+      logAudit(req.user, old.length ? 'nfp_panel_file_replaced' : 'nfp_panel_file_uploaded', 'nfp', v.id,
+        { sku: v.sku, version: v.version, filename, size: file.size || null, sha256,
+          replaced: old.map(o => o.filename) },
+        old.length ? { files: old.map(o => o.filename) } : null, { files: [filename] }, `${v.sku} NFP ${v.version}`);
+      res.json(hydrate(db, [db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(v.id)])[0]);
+    } catch (err) {
+      res.status(500).json({ error: uploadErrorMessage(err, PDF_MAX_BYTES) });
+    } finally {
+      if (file) cleanupTemp([file]);
+    }
+  });
+});
+
+/** The panel's values as the values route speaks them, with the review beside them. */
+function panelValuesView(db, v) {
+  const h = hydrate(db, [v])[0];
+  return {
+    id: v.id, sku: v.sku, version: v.version, status: v.status, panel_rev: v.panel_rev || 0,
+    values: valuesOf(h.panel || {}),
+    source_ref: h.source_ref, source_by: h.source_by, source_at: h.source_at,
+    files: (h.files || []).filter(f => f.kind === 'panel').map(f => ({ id: f.id, filename: f.filename, size: f.size, uploaded_by: f.uploaded_by })),
+    reconcile: h.reconcile,
+    reconcile_unresolved: h.reconcile_unresolved,
+    reconcile_acks: h.reconcile_acks,
+    diff_vs_approved: h.diff_vs_approved,
+  };
+}
+
+router.get('/:id/panel-values', (req, res) => {
+  const db = getDb();
+  const v = db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(req.params.id);
+  if (!v) return res.status(404).json({ error: 'Not found' });
+  res.json(panelValuesView(db, v));
+});
+
+/**
+ * Write panel values with the SOURCE they were taken from. Values merge (a
+ * write naming three fields leaves the rest alone); a blank clears one. The
+ * serving size keeps its gram weight. The reconciliation checks run on the
+ * result and their outcome is stored with the write.
+ */
+router.put('/:id/panel-values', (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage nutrition panels.' });
+  const db = getDb();
+  const v = db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(req.params.id);
+  if (!v) return res.status(404).json({ error: 'Not found' });
+  if (!tokenDraftOnly(req, res, v)) return;
+  if (['approved', 'superseded'].includes(v.status)) {
+    return res.status(409).json({ error: 'An approved panel is never rewritten. File the next version.' });
+  }
+  const b = req.body || {};
+  const sourceRef = String(b.source_ref ?? '').trim();
+  if (sourceRef.length < 3) {
+    return res.status(400).json({ error: 'source_ref_required',
+      message: 'Every values write names its source: the file name or document id the values were taken from (source_ref).' });
+  }
+  const raw = b.values;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !Object.keys(raw).length) {
+    return res.status(400).json({ error: 'no_values', message: 'Send the panel values to write in "values".' });
+  }
+  const unknown = Object.keys(raw).filter(k => !(k in PANEL_VALUE_FIELDS));
+  if (unknown.length) {
+    return res.status(400).json({ error: 'unknown_fields',
+      message: `Not panel fields: ${unknown.join(', ')}. Allowed: ${Object.keys(PANEL_VALUE_FIELDS).join(', ')}.` });
+  }
+  // Rename to the stored columns, then clean exactly as the panel editor does
+  // ("<1" stays a string, a plain number becomes a number, a blank is null).
+  const asColumns = {};
+  for (const [field, val] of Object.entries(raw)) asColumns[PANEL_VALUE_FIELDS[field]] = val;
+  const patch = cleanValues(asColumns, Object.values(PANEL_VALUE_FIELDS));
+
+  if ('serving_size' in raw) {
+    const approved = approvedFor(db, v.sku);
+    const approvedDesc = approved ? (panelOf(approved)?.serving_size_desc ?? approved.serving_size) : null;
+    const gramErr = gramRuleError(patch.serving_size_desc, approvedDesc);
+    if (gramErr) return res.status(400).json({ error: 'serving_size_grams', message: gramErr });
+    // The gram weight rides with the description when it is ONE figure; a range
+    // keeps its numbers in the description and stores no single gram value.
+    const g = servingGrams(patch.serving_size_desc);
+    patch.serving_size_g = g && g.low === g.high ? g.mid : null;
+  }
+
+  const before = panelOf(v) || {};
+  const panel = { ...before, ...patch };
+  const beforeValues = valuesOf(before);
+  const afterValues = valuesOf(panel);
+  const changes = Object.keys(PANEL_VALUE_FIELDS)
+    .filter(f => JSON.stringify(beforeValues[f] ?? null) !== JSON.stringify(afterValues[f] ?? null))
+    .map(f => ({ field: f, from: beforeValues[f] ?? null, to: afterValues[f] ?? null }));
+  if (!changes.length) return res.json({ ...panelValuesView(db, v), changed: [] });
+
+  const checks = reconcile(panel, { fillWeightG: catalogueFill(db, v.sku)?.fill_weight_g });
+  db.transaction(() => {
+    db.prepare(`UPDATE nfp_versions SET panel_json = ?, panel_rev = panel_rev + 1, panel_values_by = ?,
+      panel_values_at = datetime('now'), panel_source_ref = ?, panel_source_by = ?, panel_source_at = datetime('now'),
+      reconcile_snapshot = ?, updated_at = datetime('now') WHERE id = ?`)
+      .run(JSON.stringify(panel), req.user.name, sourceRef.slice(0, 300), req.user.name, JSON.stringify(checks), v.id);
+    // The summary the approver reads mirrors the panel, as the editor's route does.
+    if (panel.serving_size_desc !== undefined && panel.serving_size_desc !== null) {
+      db.prepare('UPDATE nfp_versions SET serving_size = ? WHERE id = ?').run(String(panel.serving_size_desc), v.id);
+    }
+    if (panel.servings_per_container !== undefined && panel.servings_per_container !== null) {
+      db.prepare('UPDATE nfp_versions SET servings_per_container = ? WHERE id = ?').run(String(panel.servings_per_container), v.id);
+    }
+  })();
+  logAudit(req.user, 'nfp_panel_values_updated', 'nfp', v.id,
+    { sku: v.sku, version: v.version, panel_rev: (v.panel_rev || 0) + 1, source_ref: sourceRef.slice(0, 300),
+      changed: changes.map(c => c.field), changes, via: 'panel-values',
+      warnings: checks.filter(c => c.status === 'warn').map(c => c.key) },
+    { values: beforeValues }, { values: afterValues }, `${v.sku} NFP ${v.version}`);
+  const after = db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(v.id);
+  res.json({ ...panelValuesView(db, after), changed: changes });
+});
+
+/**
+ * A PERSON acknowledges ONE reconciliation warning. Never a token (the guard
+ * refuses `acknowledge` as a decision, and rejectTokenAuth says it again).
+ * The acknowledgement is of the numbers the warning was raised on — change a
+ * value and the warning is back.
+ */
+router.post('/:id/warnings/:key/acknowledge', rejectTokenAuth, (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage nutrition panels.' });
+  const db = getDb();
+  const v = db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(req.params.id);
+  if (!v) return res.status(404).json({ error: 'Not found' });
+  if (!['draft', 'sent', 'rejected'].includes(v.status)) {
+    return res.status(409).json({ error: 'This panel has already been decided.' });
+  }
+  const { checks, acks } = reconcileFor(db, v);
+  const check = checks.find(c => c.key === req.params.key);
+  if (!check || check.status !== 'warn') {
+    return res.status(409).json({ error: 'There is no open warning of that kind on this panel.' });
+  }
+  const existing = acks.find(a => a.check_key === check.key && a.fingerprint === check.fingerprint);
+  if (existing) return res.json({ ok: true, already: true, acknowledgement: existing });
+  const note = String(req.body?.note || '').trim().slice(0, 500) || null;
+  const id = uuid();
+  db.prepare(`INSERT INTO nfp_warning_acks (id, version_id, check_key, fingerprint, message, note, acknowledged_by, acknowledged_by_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(id, v.id, check.key, check.fingerprint, check.message, note, req.user.name, req.user.id);
+  const ack = db.prepare('SELECT * FROM nfp_warning_acks WHERE id = ?').get(id);
+  logAudit(req.user, 'nfp_warning_acknowledged', 'nfp', v.id,
+    { sku: v.sku, version: v.version, check: check.key, message: check.message, note, at: ack.acknowledged_at },
+    null, null, `${v.sku} NFP ${v.version}`);
+  res.status(201).json({ ok: true, acknowledgement: ack,
+    version: hydrate(db, [db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(v.id)])[0] });
+});
+
 /** Correct a panel that has not been decided yet. */
 const EDITABLE = ['serving_size', 'servings_per_container', 'formula_rev', 'drive_url', 'change_summary'];
 
@@ -608,6 +886,10 @@ router.put('/:id/panel', (req, res) => {
       panel_rev = panel_rev + 1, panel_values_by = ?, panel_values_at = datetime('now'),
       updated_at = datetime('now') WHERE id = ?`)
       .run(panelJson, calloutJson, req.user.name, v.id);
+    // The reconciliation checks run on every panel write (D-171), and the
+    // outcome is stored with it; the card and the gate read them live.
+    db.prepare('UPDATE nfp_versions SET reconcile_snapshot = ? WHERE id = ?')
+      .run(JSON.stringify(reconcile(panel, { fillWeightG: catalogueFill(db, v.sku)?.fill_weight_g })), v.id);
     // The serving size and servings per container are asked for in two places —
     // the panel, and the summary the approver reads on the link. MIRRORED from
     // the panel, written nowhere else, so the two cannot tell the approver
@@ -693,6 +975,10 @@ router.post('/:id/send', (req, res) => {
       needs_provenance: provMissing,
     });
   }
+  // The approver on the link cannot acknowledge a warning — that is a person in
+  // ReadyDoc — so a link they could only be refused on is not sent (D-171).
+  const rc = reconcileFor(db, v);
+  if (rc.unresolved.length) return res.status(409).json(reconcileRefusal(rc.unresolved));
 
   const token = randomBytes(24).toString('base64url');
   const sentTo = (req.body?.sent_to || '').trim() || null;
@@ -811,8 +1097,26 @@ export class ProvenanceMissing extends Error {
   }
 }
 
+/** A reconciliation warning nobody has acknowledged one by one (D-171). */
+export class ReconcileUnacknowledged extends Error {
+  constructor(unresolved) {
+    super('A reconciliation warning has not been acknowledged.');
+    this.name = 'ReconcileUnacknowledged';
+    this.unresolved = unresolved;
+  }
+}
+
+function reconcileRefusal(unresolved) {
+  return {
+    error: `This panel cannot be approved until a person acknowledges each warning in ReadyDoc: `
+      + `${unresolved.map(c => `${c.label} — ${c.message}`).join(' ')}`,
+    needs_reconcile_ack: unresolved,
+  };
+}
+
 /** The 409 every approval door answers with. One shape, three doors. */
 export function refusalBody(err) {
+  if (err instanceof ReconcileUnacknowledged) return reconcileRefusal(err.unresolved);
   if (err instanceof ProvenanceMissing) {
     return {
       error: `This panel cannot be approved until it says what it was computed from: `
@@ -854,6 +1158,10 @@ function decide(db, v, { decision, by, comments, via, dvAck, fillAck }) {
   if (approving) {
     const missing = provenanceMissing(provenance);
     if (missing.length) throw new ProvenanceMissing(missing);
+    // Each reconciliation warning needs a person's own acknowledgement first —
+    // not a tick at the button, and never from the signed link (D-171).
+    const { unresolved } = reconcileFor(db, v);
+    if (unresolved.length) throw new ReconcileUnacknowledged(unresolved);
   }
   const warnings = approving ? checkDailyValues(panelOf(v) || {}) : [];
   const fill = approving ? fillWeightCheck(provenance.bom_fill_weight_g, catalogueFill(db, v.sku)?.fill_weight_g) : null;

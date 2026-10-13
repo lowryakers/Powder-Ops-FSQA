@@ -58,7 +58,7 @@ There is one tool per route in `docs/bot-api.md`:
 |---|---|
 | Self-check | `whoami` |
 | Products | `list_products`, `get_product`, `update_product` (write) |
-| Nutrition panels | `list_nfp`, `get_nfp`, `create_nfp_draft` (write; always a draft) |
+| Nutrition panels | `list_nfp`, `get_nfp`, `create_nfp_draft` (write; always a draft), `get_panel_values`, `upload_panel_pdf` and `write_panel_values` (the last two need a token holding the `nfp-panel` grant; draft only; every values write names its `source_ref`) |
 | Artwork | `list_artwork`, `get_artwork_for_sku`, `get_artwork_version`, `attach_artwork_file` (write) |
 | Procurement | `list_supply_orders`, `procurement_summary`, `list_procurement_demand`, `create_supply_order`, `update_supply_order` (write) |
 | Messages | `list_channels`, `read_channel_messages`, `read_thread`, `post_channel_message` (write), `upload_channel_attachments` (write) |

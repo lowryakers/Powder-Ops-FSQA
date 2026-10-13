@@ -107,6 +107,7 @@ t('sessions and two tokens', !!admin && !!botSession && !!readTok && !!draftTok)
 // Fixtures, through the doors a person would use where one exists.
 const sku = db.prepare('SELECT sku FROM products ORDER BY sku LIMIT 1').get()?.sku;
 const art = (await call('POST', '/api/artwork', { sku, component: 'pouch', change_summary: 'fixture' }, admin)).body;
+const nfpFixture = (await call('POST', '/api/nfp', { sku, version: 'BA-FIXTURE' }, admin)).body;
 let partner = db.prepare('SELECT id FROM partner_accounts WHERE is_active = 1 LIMIT 1').get();
 if (!partner) { db.prepare("INSERT INTO partner_accounts (id, name, code, terms_days, is_active) VALUES ('ba-p', 'Fixture Partner', 'FP', 30, 1)").run(); partner = { id: 'ba-p' }; }
 const channel = db.prepare("SELECT id FROM chat_channels WHERE kind = 'public' AND archived = 0 ORDER BY is_default DESC LIMIT 1").get();
@@ -143,7 +144,7 @@ t('a paper panel from a token is refused', r.status === 403 && r.body?.error ===
 console.log('\n── every documented GET answers a read token, and leaks nothing ──');
 const fill = (p) => p.replace(':sku', encodeURIComponent(sku)).replace('/artwork/versions/:id', `/artwork/versions/${art.id}`)
   .replace('/partners/:id', `/partners/${partner.id}`).replace('/channels/:id', `/channels/${channel.id}`)
-  .replace('/messages/:id', `/messages/${msg?.id}`);
+  .replace('/messages/:id', `/messages/${msg?.id}`).replace('/nfp/:id', `/nfp/${nfpFixture?.id}`);
 const leaks = (v, path = '$', out = []) => {
   if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) { if (isForbiddenKey(k)) out.push(`${path}.${k}`); leaks(x, `${path}.${k}`, out); }
   return out;

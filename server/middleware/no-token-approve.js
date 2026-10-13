@@ -116,7 +116,7 @@ export const DELETE_SEGMENTS = Object.freeze([
   'cancel', 'withdraw', 'deactivate', 'revoke', 'dispute', 'retire', 'retire-option',
 ]);
 export const DECISION_SEGMENTS = Object.freeze([
-  'reject', 'dismiss', 'resolve', 'reopen', 'close', 'reinstate', 'restore', 'waive',
+  'reject', 'dismiss', 'resolve', 'reopen', 'close', 'reinstate', 'restore', 'waive', 'acknowledge',
 ]);
 const DELETE_SET = new Set(DELETE_SEGMENTS);
 const DECISION_SET = new Set(DECISION_SEGMENTS);

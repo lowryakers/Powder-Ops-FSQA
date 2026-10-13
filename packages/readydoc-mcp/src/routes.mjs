@@ -74,6 +74,28 @@ export const ROUTES = Object.freeze([
       drive_url: str('Link to the panel file.'), change_summary: str('What changed from the last version.'),
     }, required: ['sku', 'version'] },
 
+  // D-171: the Product Manager bot's panel work. The two writes need a token
+  // holding the `nfp-panel` grant; any other token is refused by the server.
+  { tool: 'get_panel_values', method: 'GET', path: '/api/nfp/:id/panel-values',
+    description: "A nutrition panel version's values, the source they were taken from, the reconciliation checks (fill weight, calories 4/4/9) with any warning still to be acknowledged, and the fields that differ from the product's approved panel.",
+    properties: { id: str('The panel version id.') }, required: ['id'] },
+  { tool: 'upload_panel_pdf', method: 'PUT', path: '/api/nfp/:id/panel-file',
+    description: 'Upload or replace the panel PDF on a DRAFT nutrition panel version. PDF only, 25 MB at most. Needs a write token with the nutrition-panel grant.',
+    file: { arg: 'file_path', field: 'file', required: true, allow: ['.pdf'] },
+    properties: { id: str('The panel version id.'), file_path: filePath('panel PDF') }, required: ['id', 'file_path'] },
+  { tool: 'write_panel_values', method: 'PUT', path: '/api/nfp/:id/panel-values',
+    description: 'Write values on a DRAFT nutrition panel version. Send only the fields to set (a blank clears one) and source_ref, the file name or document id they were taken from — required on every write. The serving size keeps its gram weight. Needs a write token with the nutrition-panel grant; never approves.',
+    body: ['values', 'source_ref'],
+    properties: {
+      id: str('The panel version id.'),
+      source_ref: str('The file name or document id the values were taken from.'),
+      values: { type: 'object', additionalProperties: false, description: 'Panel values to write.',
+        properties: Object.fromEntries(['serving_size', 'servings_per_container', 'calories', 'total_fat', 'saturated_fat',
+          'trans_fat', 'cholesterol', 'sodium', 'total_carbohydrate', 'dietary_fiber', 'total_sugars', 'added_sugars',
+          'protein', 'vitamin_d', 'calcium', 'iron', 'potassium', 'ingredients', 'allergen_statement']
+          .map(k => [k, { type: ['string', 'number', 'null'], description: k.replace(/_/g, ' ') }])) },
+    }, required: ['id', 'values', 'source_ref'] },
+
   { tool: 'list_artwork', method: 'GET', path: '/api/artwork', paged: true,
     description: 'The current artwork version of each pack, and products with none. Paged on packs.',
     query: ['limit', 'offset', 'status'], properties: { ...page, status: str('Only this artwork status.') }, required: [] },

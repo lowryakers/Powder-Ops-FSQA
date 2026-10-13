@@ -36,7 +36,8 @@ export default function ApiTokensSection() {
   const [issued, setIssued] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [editing, setEditing] = useState(null); // { id, write }
+  const [editing, setEditing] = useState(null); // { id, write, grants: [] }
+  const grantCatalog = data?.grants || [];
 
   const accounts = data?.accounts || [];
   const tokens = data?.tokens || [];
@@ -64,7 +65,11 @@ export default function ApiTokensSection() {
   const saveScopes = async () => {
     setError('');
     try {
+      // A grant needs Write (D-171): add Write before a grant, drop grants before Write.
+      const grants = editing.write ? editing.grants : [];
+      if (!editing.write) await apiPost(`/api-tokens/${editing.id}/grants`, { grants });
       await apiPost(`/api-tokens/${editing.id}/scopes`, { scopes: editing.write ? ['read', 'write'] : ['read'] });
+      if (editing.write) await apiPost(`/api-tokens/${editing.id}/grants`, { grants });
       setEditing(null);
       refresh();
     } catch (e) { setError(e.message); }
@@ -141,7 +146,7 @@ export default function ApiTokensSection() {
                   <code className="text-xs text-gray-500">{t.token_prefix}…</code>
                   <span className={`px-2 py-0.5 rounded-full text-xs ${st.tone}`} data-api-token-state>{st.label}</span>
                   {t.state === 'live' && editing?.id !== t.id && (
-                    <button type="button" onClick={() => setEditing({ id: t.id, write: t.scopes.includes('write') })}
+                    <button type="button" onClick={() => setEditing({ id: t.id, write: t.scopes.includes('write'), grants: t.grants || [] })}
                       className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded border border-gray-300 text-gray-700 text-xs hover:bg-gray-50" data-api-token-edit-scopes>
                       Edit scopes
                     </button>
@@ -161,7 +166,16 @@ export default function ApiTokensSection() {
                       <input id={`api-token-edit-write-${t.id}`} type="checkbox" checked={editing.write} onChange={e => setEditing({ ...editing, write: e.target.checked })}
                         className={CHECKBOX} aria-describedby="api-token-never" data-api-token-edit-write /> <span>{SCOPE_COPY.write}</span>
                     </label>
-                    <div className="text-xs text-gray-600">The bot keeps the same token; only what it may do changes.</div>
+                    {grantCatalog.map(g => (
+                      <label key={g.key} htmlFor={`api-token-grant-${g.key}-${t.id}`} className={`flex items-start gap-2 ${editing.write ? 'cursor-pointer' : 'text-gray-400'}`}>
+                        <input id={`api-token-grant-${g.key}-${t.id}`} type="checkbox" disabled={!editing.write}
+                          checked={editing.write && editing.grants.includes(g.key)}
+                          onChange={e => setEditing({ ...editing, grants: e.target.checked ? [...editing.grants, g.key] : editing.grants.filter(x => x !== g.key) })}
+                          className={CHECKBOX} data-api-token-grant={g.key} />
+                        <span><strong>Grant:</strong> {g.description}</span>
+                      </label>
+                    ))}
+                    <div className="text-xs text-gray-600">The bot keeps the same token; only what it may do changes. A grant is for one bot — give it only to the token that needs it.</div>
                     <div className="flex gap-2">
                       <button type="button" onClick={saveScopes} className="px-3 py-1.5 rounded-lg bg-powder-600 text-white text-xs" data-api-token-save-scopes>Save</button>
                       <button type="button" onClick={() => setEditing(null)} className="px-3 py-1.5 rounded-lg border border-gray-300 text-xs">Cancel</button>
@@ -170,7 +184,7 @@ export default function ApiTokensSection() {
                 )}
                 <div className="mt-1 text-xs text-gray-600 grid gap-0.5 sm:grid-cols-2">
                   <div>Acts as <strong>{t.user_name || 'deleted account'}</strong></div>
-                  <div>Scopes: {t.scopes.join(', ')}</div>
+                  <div>Scopes: {t.scopes.join(', ')}{t.grants?.length ? ` · grants: ${t.grants.join(', ')}` : ''}</div>
                   <div data-api-token-last-used>Last used: {t.last_used_at ? `${formatDateTime(t.last_used_at)}${t.last_used_ip ? ` from ${t.last_used_ip}` : ''}` : 'never'}</div>
                   <div>Created {formatDateTime(t.created_at)} by {t.created_by}{t.expires_at ? ` · expires ${formatDateTime(t.expires_at)}` : ''}</div>
                   {t.revoked_at && <div>Revoked {formatDateTime(t.revoked_at)} by {t.revoked_by}</div>}

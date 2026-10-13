@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { getDb } from '../db.js';
 import { requireRole } from '../middleware/auth.js';
 import {
-  SCOPES, createToken, listTokens, revokeToken, updateScopes, ScopeError, rateLimits,
+  SCOPES, TOKEN_GRANTS, createToken, listTokens, revokeToken, updateScopes, updateGrants, ScopeError, rateLimits,
 } from '../api-tokens.js';
 import { APPROVE_ROUTES, APPROVE_SEGMENTS, TOKEN_DENY } from '../middleware/no-token-approve.js';
 import { WRITE_AREAS } from '../bot-api.js';
@@ -26,8 +26,9 @@ router.get('/', (_req, res) => {
     tokens: listTokens(db),
     accounts,
     scopes: SCOPES,
+    grants: Object.entries(TOKEN_GRANTS).map(([key, description]) => ({ key, description })),
     limits: rateLimits(),
-    write_areas: WRITE_AREAS.map(r => ({ area: r.area, label: r.label, bulk: !!r.bulk })),
+    write_areas: WRITE_AREAS.map(r => ({ area: r.area, label: r.label, bulk: !!r.bulk, grant: r.grant || null })),
     token_deny: TOKEN_DENY.map(r => ({ category: r.category, label: r.label })),
     approve_guard: { segments: APPROVE_SEGMENTS, routes: APPROVE_ROUTES.map(r => r.label) },
   });
@@ -54,6 +55,19 @@ router.post('/', (req, res) => {
 router.post('/:id/scopes', (req, res) => {
   try {
     const t = updateScopes(getDb(), req.params.id, req.body?.scopes, req.user);
+    if (!t) return res.status(404).json({ error: 'Not found' });
+    res.json(t);
+  } catch (err) {
+    if (err instanceof ScopeError) return res.status(400).json({ error: err.message });
+    throw err;
+  }
+});
+
+// Give or take a GRANT (D-171) — an extra write area for one token. Admin
+// session only, the same door as scopes.
+router.post('/:id/grants', (req, res) => {
+  try {
+    const t = updateGrants(getDb(), req.params.id, req.body?.grants, req.user);
     if (!t) return res.status(404).json({ error: 'Not found' });
     res.json(t);
   } catch (err) {
