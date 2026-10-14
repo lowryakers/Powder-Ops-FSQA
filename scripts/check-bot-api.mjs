@@ -135,9 +135,11 @@ r = await call('POST', `/api/comms/channels/${channel.id}/messages`, { body: 're
 t('a read token cannot post', r.status === 403 && r.body?.error === 'token_scope');
 
 console.log('\n── NFP via token is always a draft ──');
-r = await call('POST', '/api/nfp', { sku, version: 'BOTAPI-V1', status: 'approved' }, draftTok);
+// A second SKU: BA-FIXTURE is already open on the first, and one open draft per SKU is the rule (D-173).
+const sku2 = db.prepare('SELECT sku FROM products WHERE sku != ? ORDER BY sku LIMIT 1').get(sku)?.sku;
+r = await call('POST', '/api/nfp', { sku: sku2, version: 'BOTAPI-V1', status: 'approved' }, draftTok);
 t('POST /api/nfp with status "approved" files a DRAFT', r.status === 201 && r.body?.status === 'draft' && !r.body?.approved_at, JSON.stringify(r.body).slice(0, 160));
-t('…and nothing on the product moved', !db.prepare('SELECT nfp_approved_at FROM products WHERE sku = ?').get(sku)?.nfp_approved_at);
+t('…and nothing on the product moved', !db.prepare('SELECT nfp_approved_at FROM products WHERE sku = ?').get(sku2)?.nfp_approved_at);
 r = await call('POST', '/api/nfp', { sku, version: 'BOTAPI-PAPER', source: 'paper', approved_by: 'Bot', approved_at: '2026-01-01' }, draftTok);
 t('a paper panel from a token is refused', r.status === 403 && r.body?.error === 'approve_requires_human_session');
 

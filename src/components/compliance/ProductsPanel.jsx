@@ -16,6 +16,7 @@ import ProductStagePanel from './ProductStagePanel.jsx';
 import PackagingSpecsPanel from './PackagingSpecsPanel.jsx';
 import { getParam } from '../../lib/deepLink.js';
 import NfpBoard, { NfpForSku } from './NfpPanel.jsx';
+import NfpReviewQueue from './NfpReviewQueue.jsx';
 import { hexDigits, pmsValid, hexValid, colorIssues, isBlankSlot } from '../../../shared/product-colors.js';
 import { FIELD_RULES, NA_FIELDS, fieldState, PACKAGING_DERIVED, isRollFed } from '../../../shared/product-fields.js';
 import {
@@ -572,6 +573,9 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
       fill_weight_g: p.fill_weight_g ?? '',
       // The CURRENT formula: what a panel's provenance is checked against (D-128).
       mrp_formula_id: p.mrp_formula_id || '', formula_rev: p.formula_rev || '',
+      family: p.family || '',
+      formula_source_system: p.formula_source_system || '', formula_fill_per_unit_g: p.formula_fill_per_unit_g ?? '',
+      formula_synced_at: p.formula_synced_at ? String(p.formula_synced_at).slice(0, 10) : '',
       shopify_sku: p.shopify_sku || '',
       // Blank is a real answer here — "nobody has said yet" — so it is an
       // option in the select rather than an absence.
@@ -650,6 +654,7 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
                     </select>
                   </Field>
                   <Field k="legacy_sku" label="Legacy SKU" form={form} set={set} p={p} onNa={onNa} hint="Set by a rename, never cleared; a two-year-old PO must still resolve." />
+                  <Field k="family" label="Product family" form={form} set={set} p={p} hint='Optional. Groups the stick, pouch and bottle of one flavor together in the review queue, e.g. "ProDough Apple Pie Whey". Blank falls back to line · base flavor.' />
                 </Block>
                 <Block id="formula" title="Formula link" note="The formula lives in Keychain. These three say which one this product is made to today (D-128).">
                   <Field k="mrp_formula_id" label="Formula ref (current)" form={form} set={set} p={p} />
@@ -660,6 +665,17 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
                       artwork (D-093). */}
                   <Field k="fill_weight_g" label="Fill weight (g)" form={form} set={set} p={p}
                     hint="From the production formula, confirmed by weighing a sealed bag. Not the net weight printed on the pack — that is what this checks." />
+                  <Field k="formula_source_system" label="Formula source" form={form} set={set} p={p} hint="Where the formula pointer above came from (D-173). MRPEasy today, Keychain next; manual = typed by a person.">
+                    <select value={form.formula_source_system} onChange={set('formula_source_system')} data-formula-source className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
+                      <option value="">— not recorded —</option>
+                      <option value="mrpeasy">MRPEasy</option>
+                      <option value="keychain">Keychain</option>
+                      <option value="genesis">Genesis R&amp;D</option>
+                      <option value="manual">Entered by hand</option>
+                    </select>
+                  </Field>
+                  <Field k="formula_fill_per_unit_g" label="Formula fill per unit (g)" form={form} set={set} p={p} hint="The formula's own per-unit fill, unrounded." />
+                  <Field k="formula_synced_at" label="Formula last synced" form={form} set={set} p={p} type="date" />
                 </Block>
                 <Block id="packaging" title="Packaging spec" note="Material, print, trim and wind direction are the packaging spec's and are not typed here. Three facts are the product's own:">
                   <Field k="spec_id" label="Packaging spec" form={form} set={set} p={p}
@@ -751,6 +767,13 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
                     <div><dt className="text-xs text-gray-500">Formula ref</dt><dd data-value="mrp_formula_id">{p.mrp_formula_id || <span className="text-amber-700 text-xs">empty</span>}</dd></div>
                     <div><dt className="text-xs text-gray-500">Formula version</dt><dd data-value="formula_rev">{p.formula_rev || <span className="text-amber-700 text-xs">empty</span>}</dd></div>
                     <div><dt className="text-xs text-gray-500">Fill weight</dt><dd data-value="fill_weight_g">{p.fill_weight_g ? `${p.fill_weight_g} g` : <span className="text-amber-700 text-xs">empty</span>}</dd></div>
+                    {/* The source beside each number (D-173): where the pointer came from and when. */}
+                    <div className="col-span-3 text-[11px] text-gray-500" data-value="formula_source">
+                      Source: {p.formula_source_system ? ({ mrpeasy: 'MRPEasy', keychain: 'Keychain', manual: 'entered by hand', genesis: 'Genesis R&D' }[p.formula_source_system] || p.formula_source_system) : <span className="text-amber-700">not recorded</span>}
+                      {p.formula_fill_per_unit_g != null && ` · formula fill per unit ${p.formula_fill_per_unit_g} g`}
+                      {p.formula_synced_at && ` · synced ${String(p.formula_synced_at).slice(0, 10)}`}
+                      {p.family && ` · family: ${p.family}`}
+                    </div>
                     {/* Which date the pack may print, and what it rests on —
                         DERIVED from the shelf-life basis in force for this SKU
                         (Retention Samples → Stability), never typed here (D-133). */}
@@ -918,7 +941,9 @@ export default function ProductsPanel() {
 
   // Panels somebody still has to act on — drafts, links out, and ones sent back.
   const awaitingNfp = (nfp?.versions || [])
-    .filter((v) => ['draft', 'sent', 'rejected'].includes(v.status)).length;
+    .filter((v) => ['draft', 'ready_for_review', 'sent', 'rejected'].includes(v.status)).length;
+  // What a person has to decide on: the queue's own count (D-173).
+  const readyForReview = (nfp?.versions || []).filter((v) => v.status === 'ready_for_review').length;
 
   const badGtin = products.filter((p) => p.gtin && !p.gtin_valid).length;
   const refreshAll = () => { refresh(); refreshCompleteness(); };
@@ -946,6 +971,9 @@ export default function ProductsPanel() {
         // question that holds artwork up.
         { id: 'nfp', label: 'Nutrition panels', icon: FileText,
           badge: awaitingNfp || undefined, badgeTone: awaitingNfp ? 'alert' : undefined },
+        // One queue for what a person has to approve (D-173).
+        { id: 'review', label: 'Review queue', icon: ListChecks,
+          badge: readyForReview || undefined, badgeTone: readyForReview ? 'alert' : undefined },
         // The punch list lives beside the catalogue rather than in a document,
         // so it is counted live and shrinks as the data is fixed.
         { id: 'health', label: 'Data health', icon: Stethoscope,
@@ -986,6 +1014,8 @@ export default function ProductsPanel() {
 
       {view === 'nfp' && <NfpBoard data={nfp} onOpenSku={(s) => { setView('list'); setOpen(s); }}
         canManage={canEdit} onChanged={refreshNfp} />}
+      {view === 'review' && <NfpReviewQueue canManage={canEdit} onOpenSku={(s) => { setView('list'); setOpen(s); }}
+        onChanged={() => { refreshNfp(); refreshAll(); }} />}
       {view === 'health' && <ProductDataHealth data={health} />}
 
       {view === 'list' && (<>

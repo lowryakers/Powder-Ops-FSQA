@@ -35,7 +35,8 @@ import { pushToUser } from '../push.js';
 import { stampReadiness } from './products.js';
 import { checkDailyValues } from '../../shared/nutrition-dv.js';
 import {
-  PANEL_VALUE_FIELDS, valuesOf, servingGrams, gramRuleError, reconcile, unresolvedWarnings, panelDiff,
+  PANEL_VALUE_FIELDS, FIELD_LABEL, valuesOf, gramRuleError, reconcile, unresolvedWarnings, panelDiff,
+  parseServingSize, servingLabel, normalizeServingGrams, gramsSpan, missingRequired,
 } from '../../shared/panel-reconcile.js';
 import {
   provenanceOf, provenanceMissing, fillWeightCheck, fillCheckSentence, provenanceStale, PROVENANCE_LABEL,
@@ -44,6 +45,14 @@ import {
 const router = Router();
 
 const nfpUpload = mediaUpload({ files: 5 }).array('files', 5);
+
+// The states a panel can still be worked in. `ready_for_review` (D-173) sits
+// between draft and approved: complete, waiting on a person's decision, and
+// still open to correction — a bot may keep it current until it is approved.
+const OPEN_STATUSES = ['draft', 'ready_for_review', 'sent', 'rejected'];
+const isOpen = (v) => OPEN_STATUSES.includes(v.status);
+// What a bot token may write to: a draft, or one it has marked ready (D-173).
+const TOKEN_WRITABLE = ['draft', 'ready_for_review'];
 
 // Same ladder as the catalogue: a wrong panel is a relabel, not a typo.
 const canManage = (u) => u && (u.role === 'admin' || u.role === 'supervisor' || u.department === 'qa');
@@ -71,7 +80,7 @@ const hashToken = (t) => createHash('sha256').update(String(t)).digest('hex');
  * reprint look like fresh data to the proofer.
  */
 const PANEL_FIELDS = [
-  'serving_size_desc', 'serving_size_g', 'servings_per_container', 'calories',
+  'serving_size_desc', 'serving_size_g', 'serving_household', 'serving_grams', 'servings_per_container', 'calories',
   'total_fat_g', 'total_fat_dv', 'saturated_fat_g', 'saturated_fat_dv', 'trans_fat_g',
   'cholesterol_mg', 'cholesterol_dv', 'sodium_mg', 'sodium_dv',
   'total_carbohydrate_g', 'total_carbohydrate_dv', 'dietary_fiber_g', 'dietary_fiber_dv',
@@ -119,7 +128,7 @@ function cleanCallouts(raw) {
 
 const PROVENANCE_COLUMNS = {
   source_system: 'provenance_source', formula_ref: 'formula_ref', formula_version: 'formula_rev',
-  bom_fill_weight_g: 'bom_fill_weight_g', generated_at: 'provenance_generated_at',
+  bom_fill_weight_g: 'bom_fill_weight_g', fill_per_serving_g: 'bom_fill_per_serving_g', generated_at: 'provenance_generated_at',
   generated_by: 'provenance_generated_by', notes: 'provenance_notes',
 };
 
@@ -131,9 +140,9 @@ function provenancePatch(raw) {
     if (!(key in raw)) continue;
     const val = raw[key];
     if (val === null || val === undefined || String(val).trim() === '') { columns[col] = null; continue; }
-    if (key === 'bom_fill_weight_g') {
+    if (key === 'bom_fill_weight_g' || key === 'fill_per_serving_g') {
       const n = Number(val);
-      if (!Number.isFinite(n) || n <= 0) return { error: 'The BOM fill weight is grams — a number above zero.' };
+      if (!Number.isFinite(n) || n <= 0) return { error: `The ${key === 'fill_per_serving_g' ? 'formula fill per serving' : 'BOM fill weight'} is grams — a number above zero.` };
       columns[col] = n; continue;
     }
     if (key === 'generated_at' && !/^\d{4}-\d{2}-\d{2}$/.test(String(val).trim())) {
@@ -144,7 +153,54 @@ function provenancePatch(raw) {
   return { columns };
 }
 
-const catalogueFill = (db, sku) => db.prepare('SELECT fill_weight_g, mrp_formula_id, formula_rev FROM products WHERE sku = ?').get(sku) || null;
+const catalogueFill = (db, sku) => db.prepare(
+  'SELECT fill_weight_g, mrp_formula_id, formula_rev, pack, family, category, base_flavor, flavor, formula_source_system, formula_fill_per_unit_g, formula_synced_at FROM products WHERE sku = ?').get(sku) || null;
+
+/** The reconciliation inputs for one version: the SKU's fill, the formula's per-serving fill, the pack (D-173). */
+const reconcileOpts = (v, product) => ({
+  fillWeightG: product?.fill_weight_g, perServingG: v?.bom_fill_per_serving_g, pack: product?.pack || null,
+});
+
+/**
+ * Apply a serving-size write to a panel (D-173). The serving is two facts —
+ * `serving_household` + `serving_grams` — and the printed `serving_size_desc`
+ * is generated from them; a write of the label alone is parsed back into the
+ * two. GRAMS ARE REQUIRED: a serving with none is refused, never stored.
+ * Returns `{ panel }` or `{ error, message }`.
+ */
+function applyServing(panel, patch, approvedDesc) {
+  const touches = ['serving_household', 'serving_grams', 'serving_size_desc'].some((k) => k in patch);
+  if (!touches) return { panel: { ...panel, ...patch } };
+  const next = { ...panel, ...patch };
+  let household = 'serving_household' in patch ? patch.serving_household : panel.serving_household;
+  let grams = 'serving_grams' in patch ? patch.serving_grams : panel.serving_grams;
+  // A label written on its own carries both halves — and the legacy shape
+  // (a description beside `serving_size_g`) is read the same way, so a
+  // caller that never heard of the split is not refused for it.
+  const blank = (x) => x === null || x === undefined || String(x).trim() === '';
+  if ('serving_size_desc' in patch && !('serving_grams' in patch) && !('serving_household' in patch)) {
+    const parsed = parseServingSize(patch.serving_size_desc);
+    household = parsed.household;
+    // Only a gram figure sent IN THE SAME WRITE stands in — never the panel's
+    // old one, or a label rewritten without its grams would keep them silently.
+    grams = parsed.grams ?? ('serving_size_g' in patch ? normalizeServingGrams(patch.serving_size_g) : null);
+  } else if (blank(grams) && 'serving_size_g' in patch) {
+    grams = normalizeServingGrams(patch.serving_size_g);
+  }
+  const g = normalizeServingGrams(grams);
+  if (!g) {
+    const typed = 'serving_size_desc' in patch ? patch.serving_size_desc : [household, grams].filter(Boolean).join(' ');
+    return { error: 'serving_size_grams',
+      message: gramRuleError(typed || 'blank', approvedDesc)
+        || `A serving size needs its gram weight — "${typed || ''}" has none. Write the grams (e.g. 35, or a range 34-37) beside the household measure.` };
+  }
+  next.serving_household = household === null || household === undefined || String(household).trim() === '' ? null : String(household).trim();
+  next.serving_grams = g;
+  next.serving_size_desc = servingLabel(next.serving_household, g);
+  const span = gramsSpan(g);
+  next.serving_size_g = span && span.low === span.high ? span.mid : null;
+  return { panel: next };
+}
 
 /**
  * Take the values as the panel writes them.
@@ -191,7 +247,7 @@ const acksFor = (db, id) => db.prepare(
  * time (`reconcile_snapshot`) is the record of what the write saw.
  */
 function reconcileFor(db, v, product = catalogueFill(db, v.sku)) {
-  const checks = reconcile(panelOf(v) || {}, { fillWeightG: product?.fill_weight_g });
+  const checks = reconcile(panelOf(v) || {}, reconcileOpts(v, product));
   const acks = acksFor(db, v.id);
   return { checks, acks, unresolved: unresolvedWarnings(checks, acks) };
 }
@@ -202,7 +258,7 @@ function reconcileFor(db, v, product = catalogueFill(db, v.sku)) {
  * existing rules (open panels editable, decided ones 409).
  */
 function tokenDraftOnly(req, res, v) {
-  if (!isToken(req) || v.status === 'draft') return true;
+  if (!isToken(req) || TOKEN_WRITABLE.includes(v.status)) return true;
   res.status(403).json({
     error: 'not_draft',
     message: `A bot token writes only to a DRAFT panel. ${v.sku} panel ${v.version} is ${v.status}`
@@ -232,6 +288,9 @@ function filesFor(db, ids) {
  * was handed over once when the link was issued. `link_live` is the only thing
  * a screen actually needs to know about it.
  */
+/** A product's family for grouping: its `family`, else `category · base_flavor`. */
+const familyKeyOf = (p) => p ? (p.family || [p.category, p.base_flavor].filter(Boolean).join(' · ') || p.sku || '') : '';
+
 function hydrate(db, versions) {
   const files = filesFor(db, versions.map((v) => v.id));
   const products = new Map();
@@ -272,7 +331,15 @@ function hydrate(db, versions) {
       link_live: !!token_hash,
       has_panel: (files.get(v.id) || []).length > 0 || !!v.drive_url,
       has_values: hasValues(panel),
-      ...reviewOf(db, v, panel, product, approved.get(v.sku)),
+      // Which group the queue files this under: the product family when set,
+      // else line · base flavor — so a stick, a pouch and a bottle of one
+      // flavor sit together (D-173).
+      family: product?.family || null,
+      family_key: familyKeyOf(product),
+      flavor: v.flavor ?? product?.flavor ?? null,
+      category: v.category ?? product?.category ?? null,
+      pack: v.pack ?? product?.pack ?? null,
+      ...reviewOf(db, { ...v, _file_count: (files.get(v.id) || []).length }, panel, product, approved.get(v.sku)),
     };
   });
 }
@@ -285,10 +352,15 @@ function hydrate(db, versions) {
  * differ.
  */
 function reviewOf(db, v, panel, product, approved) {
-  const open = ['draft', 'sent', 'rejected'].includes(v.status);
+  const open = isOpen(v);
   const { checks, acks, unresolved } = reconcileFor(db, { ...v, panel_json: JSON.stringify(panel || {}) }, product);
   const isApprovedRow = approved && approved.id === v.id;
+  const flags = open ? flagsFor(v, panel, product, unresolved) : [];
   return {
+    // Everything that would stop an approval, or that a reviewer should see
+    // before giving one (D-173). An empty list is what bulk approve accepts.
+    flags,
+    review_ready: flags.length === 0,
     reconcile: checks,
     reconcile_unresolved: open ? unresolved : [],
     reconcile_acks: acks.map(({ acknowledged_by_id: _id, ...a }) => a),
@@ -300,6 +372,40 @@ function reviewOf(db, v, panel, product, approved) {
           changes: panelDiff(panel || {}, approved ? (panelOf(approved) || {}) : {}) }
       : null,
   };
+}
+
+/**
+ * The flags on an open panel (D-173): each one names what a reviewer has to
+ * look at, and `blocking` says whether approval is refused on it. One list,
+ * read by the card, the queue and the bulk approve — a second derivation is a
+ * queue that offers an approval the gate then refuses.
+ */
+function flagsFor(v, panel, product, unresolved) {
+  const out = [];
+  const missing = missingRequired(panel || {});
+  const gramsMissing = missing.includes('serving_grams');
+  if (gramsMissing) out.push({ key: 'serving_grams_missing', label: 'Serving size has no grams', blocking: true });
+  const rest = missing.filter((f) => f !== 'serving_grams');
+  if (rest.length) {
+    out.push({ key: 'missing_values', label: `Missing values: ${rest.map((f) => FIELD_LABEL[f] || f).join(', ')}`,
+      blocking: true, fields: rest });
+  }
+  for (const c of unresolved || []) {
+    out.push({ key: `reconcile_${c.key}`, label: `${c.label}: ${c.message}`, blocking: true, check: c.key });
+  }
+  const prov = provenanceOf(v);
+  const provMissing = provenanceMissing(prov);
+  if (provMissing.length) {
+    out.push({ key: 'provenance_missing', label: `Provenance missing: ${provMissing.map((k) => PROVENANCE_LABEL[k]).join(', ')}`,
+      blocking: true, fields: provMissing });
+  }
+  const dv = panel ? checkDailyValues(panel) : [];
+  if (dv.length) out.push({ key: 'dv_mismatch', label: `${dv.length} %DV figure${dv.length === 1 ? '' : 's'} disagree with the amount`, blocking: false, needs_ack: 'dv_ack' });
+  const fc = fillWeightCheck(prov.bom_fill_weight_g, product?.fill_weight_g);
+  if (fc.status === 'mismatch') out.push({ key: 'fill_mismatch', label: fillCheckSentence(fc), blocking: false, needs_ack: 'fill_ack' });
+  const hasFile = !!v.drive_url || (v._file_count || 0) > 0;
+  if (!hasFile) out.push({ key: 'no_file', label: 'No panel file or Drive link', blocking: false });
+  return out;
 }
 
 /** Everything an approver has to be able to see before saying yes. */
@@ -360,17 +466,110 @@ router.get('/', (_req, res) => {
   const rows = db.prepare(`
     SELECT n.*, p.flavor, p.category, p.pack
     FROM nfp_versions n JOIN products p ON p.sku = n.sku
-    ORDER BY CASE n.status WHEN 'sent' THEN 0 WHEN 'draft' THEN 1 WHEN 'rejected' THEN 2
+    ORDER BY CASE n.status WHEN 'ready_for_review' THEN 0 WHEN 'sent' THEN 0 WHEN 'draft' THEN 1 WHEN 'rejected' THEN 2
                            WHEN 'approved' THEN 3 ELSE 4 END,
              n.updated_at DESC`).all();
 
   const missing = db.prepare(`
     SELECT p.sku, p.flavor, p.category, p.pack FROM products p
     WHERE p.status != 'discontinued' AND p.nfp_approved_at IS NULL
-      AND NOT EXISTS (SELECT 1 FROM nfp_versions n WHERE n.sku = p.sku AND n.status IN ('draft','sent','approved'))
+      AND NOT EXISTS (SELECT 1 FROM nfp_versions n WHERE n.sku = p.sku AND n.status IN ('draft','ready_for_review','sent','approved'))
     ORDER BY p.category, p.flavor`).all();
 
   res.json({ versions: pageList(_req, res, hydrate(db, rows)), missing, storage: storageEnabled() });
+});
+
+/* ── The review queue (D-173) ─────────────────────────────────────────────────
+ *
+ * DECLARED BEFORE THE `/:id` ROUTES — `/review-queue` is a perfectly good id.
+ *
+ * One screen: every panel marked ready for review, grouped by product family
+ * then SKU, each with only the fields that changed from the approved panel,
+ * where its values came from, and its flags. A separate bucket names the
+ * products with no approved panel at all. The open-draft count says how much
+ * is still being worked on. Every figure is `.length` of the rows returned.
+ */
+function reviewQueue(db) {
+  const ready = hydrate(db, db.prepare(`SELECT n.*, p.flavor, p.category, p.pack FROM nfp_versions n JOIN products p ON p.sku = n.sku
+    WHERE n.status = 'ready_for_review' ORDER BY n.ready_at, n.updated_at`).all());
+  const groups = new Map();
+  for (const v of ready) {
+    const key = v.family_key || v.sku;
+    if (!groups.has(key)) groups.set(key, { family: key, rows: [] });
+    groups.get(key).rows.push({
+      id: v.id, sku: v.sku, version: v.version, flavor: v.flavor, pack: v.pack, category: v.category,
+      ready_at: v.ready_at, ready_by: v.ready_by, panel_rev: v.panel_rev,
+      source_ref: v.source_ref, source_by: v.source_by, source_at: v.source_at,
+      provenance: v.provenance,
+      changes: v.diff_vs_approved?.changes || [],
+      approved_version: v.diff_vs_approved?.approved_version || null,
+      flags: v.flags, review_ready: v.review_ready,
+      files: (v.files || []).map((f) => ({ id: f.id, filename: f.filename, kind: f.kind })),
+      drive_url: v.drive_url || null,
+    });
+  }
+  const groupList = [...groups.values()].sort((a, b) => a.family.localeCompare(b.family));
+  for (const g of groupList) g.rows.sort((a, b) => a.sku.localeCompare(b.sku));
+  const missing = db.prepare(`
+    SELECT p.sku, p.flavor, p.category, p.pack, p.family, p.base_flavor,
+      (SELECT n.id FROM nfp_versions n WHERE n.sku = p.sku AND n.status IN ('draft','ready_for_review','sent','rejected') ORDER BY n.updated_at DESC LIMIT 1) AS open_id,
+      (SELECT n.status FROM nfp_versions n WHERE n.sku = p.sku AND n.status IN ('draft','ready_for_review','sent','rejected') ORDER BY n.updated_at DESC LIMIT 1) AS open_status
+    FROM products p
+    WHERE p.status != 'discontinued'
+      AND NOT EXISTS (SELECT 1 FROM nfp_versions n WHERE n.sku = p.sku AND n.status = 'approved')
+    ORDER BY p.category, p.base_flavor, p.sku`).all().map((p) => ({ ...p, family_key: familyKeyOf(p) }));
+  const openDrafts = db.prepare(`SELECT n.sku, n.id, n.version, n.status, n.updated_at FROM nfp_versions n
+    WHERE n.status IN ('draft','rejected','sent') ORDER BY n.updated_at DESC`).all();
+  return {
+    groups: groupList,
+    counts: {
+      ready: ready.length,
+      unflagged: ready.filter((v) => v.review_ready).length,
+      flagged: ready.filter((v) => !v.review_ready).length,
+      missing_panel: missing.length,
+      open_drafts: openDrafts.length,
+    },
+    missing_panel: missing,
+    open_drafts: openDrafts,
+  };
+}
+
+router.get('/review-queue', (_req, res) => {
+  res.json(reviewQueue(getDb()));
+});
+
+/**
+ * Bulk approve: ONLY rows with zero flags, only from ready_for_review, only a
+ * person. Each goes through `decide()` — the same record a one-at-a-time
+ * approval writes — and anything the gate refuses is reported, never forced.
+ */
+router.post('/review-queue/approve', rejectTokenAuth, (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage nutrition panels.' });
+  const db = getDb();
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [];
+  if (!ids.length) return res.status(400).json({ error: 'Send the ids of the panels to approve.' });
+  const by = (req.body?.approved_by || '').trim() || req.user.name;
+  const approved = [], skipped = [];
+  for (const id of ids) {
+    const v = db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(id);
+    if (!v) { skipped.push({ id, reason: 'not found' }); continue; }
+    if (v.status !== 'ready_for_review') { skipped.push({ id, sku: v.sku, version: v.version, reason: `is ${v.status}, not ready for review` }); continue; }
+    const h = hydrate(db, [v])[0];
+    if (!h.review_ready) { skipped.push({ id, sku: v.sku, version: v.version, reason: 'has flags', flags: h.flags }); continue; }
+    try {
+      const stranded = decide(db, v, { decision: 'approved', by, comments: req.body?.comments || '', via: 'in_app', dvAck: false, fillAck: false });
+      logAudit(req.user, 'nfp_approved', 'nfp', v.id,
+        { sku: v.sku, version: v.version, by, via: 'in_app', bulk: true, provenance: provenanceOf(v) },
+        null, null, `${v.sku} NFP ${v.version}`);
+      approved.push({ id, sku: v.sku, version: v.version, stranded_artwork: stranded });
+    } catch (err) {
+      const body = refusalBody(err);
+      if (!body) throw err;
+      skipped.push({ id, sku: v.sku, version: v.version, reason: body.error });
+    }
+  }
+  logAudit(req.user, 'nfp_bulk_approved', 'nfp', 'queue', { approved: approved.map((a) => a.id), skipped }, null, null, 'NFP review queue');
+  res.json({ approved, skipped, queue: reviewQueue(db) });
 });
 
 /** Every panel filed against one SKU, newest first. */
@@ -417,6 +616,16 @@ router.post('/', (req, res) => {
   if (!product) return res.status(400).json({ error: `${sku} is not in the catalog.` });
   if (db.prepare('SELECT 1 FROM nfp_versions WHERE sku = ? AND version = ?').get(sku, version)) {
     return res.status(409).json({ error: `${sku} already has a panel ${version}. Panels are never rewritten — file the next version.` });
+  }
+  // ONE OPEN DRAFT PER SKU (D-173). A second draft is a second place for the
+  // same facts; a bot updates the one that is open. The refusal names it so
+  // the caller can. A paper filing is an approval, not a draft, and is let by.
+  const openDraft = req.auth?.kind === 'token' || b.source !== 'paper'
+    ? db.prepare(`SELECT id, version, status FROM nfp_versions WHERE sku = ? AND status IN ('draft','ready_for_review','sent','rejected')
+        ORDER BY updated_at DESC LIMIT 1`).get(sku) : null;
+  if (openDraft) {
+    return res.status(409).json({ error: 'open_draft_exists', open_draft: openDraft,
+      message: `${sku} already has an open panel ${openDraft.version} (${openDraft.status}). Update that one — one open draft per SKU.` });
   }
 
   const prov = provenancePatch(b.provenance);
@@ -504,7 +713,7 @@ router.post('/batch/send', (req, res) => {
   // only to be refused for the next.
   const bad = [];
   for (const v of versions) {
-    if (!['draft', 'sent', 'rejected'].includes(v.status)) {
+    if (!isOpen(v)) {
       bad.push(`${v.sku} ${v.version} has already been decided`);
       continue;
     }
@@ -740,19 +949,12 @@ router.put('/:id/panel-values', (req, res) => {
   for (const [field, val] of Object.entries(raw)) asColumns[PANEL_VALUE_FIELDS[field]] = val;
   const patch = cleanValues(asColumns, Object.values(PANEL_VALUE_FIELDS));
 
-  if ('serving_size' in raw) {
-    const approved = approvedFor(db, v.sku);
-    const approvedDesc = approved ? (panelOf(approved)?.serving_size_desc ?? approved.serving_size) : null;
-    const gramErr = gramRuleError(patch.serving_size_desc, approvedDesc);
-    if (gramErr) return res.status(400).json({ error: 'serving_size_grams', message: gramErr });
-    // The gram weight rides with the description when it is ONE figure; a range
-    // keeps its numbers in the description and stores no single gram value.
-    const g = servingGrams(patch.serving_size_desc);
-    patch.serving_size_g = g && g.low === g.high ? g.mid : null;
-  }
 
   const before = panelOf(v) || {};
-  const panel = { ...before, ...patch };
+  const approvedForServing = approvedFor(db, v.sku);
+  const served = applyServing(before, patch, approvedForServing ? (panelOf(approvedForServing)?.serving_size_desc ?? approvedForServing.serving_size) : null);
+  if (served.error) return res.status(400).json({ error: served.error, message: served.message });
+  const panel = served.panel;
   const beforeValues = valuesOf(before);
   const afterValues = valuesOf(panel);
   const changes = Object.keys(PANEL_VALUE_FIELDS)
@@ -760,7 +962,7 @@ router.put('/:id/panel-values', (req, res) => {
     .map(f => ({ field: f, from: beforeValues[f] ?? null, to: afterValues[f] ?? null }));
   if (!changes.length) return res.json({ ...panelValuesView(db, v), changed: [] });
 
-  const checks = reconcile(panel, { fillWeightG: catalogueFill(db, v.sku)?.fill_weight_g });
+  const checks = reconcile(panel, reconcileOpts(v, catalogueFill(db, v.sku)));
   db.transaction(() => {
     db.prepare(`UPDATE nfp_versions SET panel_json = ?, panel_rev = panel_rev + 1, panel_values_by = ?,
       panel_values_at = datetime('now'), panel_source_ref = ?, panel_source_by = ?, panel_source_at = datetime('now'),
@@ -794,7 +996,7 @@ router.post('/:id/warnings/:key/acknowledge', rejectTokenAuth, (req, res) => {
   const db = getDb();
   const v = db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(req.params.id);
   if (!v) return res.status(404).json({ error: 'Not found' });
-  if (!['draft', 'sent', 'rejected'].includes(v.status)) {
+  if (!isOpen(v)) {
     return res.status(409).json({ error: 'This panel has already been decided.' });
   }
   const { checks, acks } = reconcileFor(db, v);
@@ -814,6 +1016,47 @@ router.post('/:id/warnings/:key/acknowledge', rejectTokenAuth, (req, res) => {
     null, null, `${v.sku} NFP ${v.version}`);
   res.status(201).json({ ok: true, acknowledgement: ack,
     version: hydrate(db, [db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(v.id)])[0] });
+});
+
+/**
+ * Mark a draft READY FOR REVIEW (D-173). A bot or a person, when the draft is
+ * complete; the flags come back so the caller can see what the reviewer will.
+ * Refused on a decided panel; a sent-back or rejected panel can be re-marked.
+ */
+router.post('/:id/ready', (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage nutrition panels.' });
+  const db = getDb();
+  const v = db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(req.params.id);
+  if (!v) return res.status(404).json({ error: 'Not found' });
+  if (!['draft', 'rejected'].includes(v.status)) {
+    return res.status(409).json({ error: 'not_a_draft', message: `${v.sku} panel ${v.version} is ${v.status}; only a draft (or one sent back) can be marked ready.` });
+  }
+  db.prepare(`UPDATE nfp_versions SET status = 'ready_for_review', ready_at = datetime('now'), ready_by = ?, updated_at = datetime('now') WHERE id = ?`)
+    .run(req.user.name, v.id);
+  const h = hydrate(db, [db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(v.id)])[0];
+  logAudit(req.user, 'nfp_ready_for_review', 'nfp', v.id,
+    { sku: v.sku, version: v.version, flags: h.flags.map((f) => f.key) }, { status: v.status }, { status: 'ready_for_review' }, `${v.sku} NFP ${v.version}`);
+  res.json(h);
+});
+
+/**
+ * Send a panel BACK to draft with a note — a person's act, never a token's.
+ * The note is the instruction the next write answers; it is required.
+ */
+router.post('/:id/send-back', rejectTokenAuth, (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage nutrition panels.' });
+  const db = getDb();
+  const v = db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(req.params.id);
+  if (!v) return res.status(404).json({ error: 'Not found' });
+  if (!['ready_for_review', 'sent'].includes(v.status)) {
+    return res.status(409).json({ error: 'not_in_review', message: `${v.sku} panel ${v.version} is ${v.status}.` });
+  }
+  const note = String(req.body?.note || '').trim();
+  if (note.length < 3) return res.status(400).json({ error: 'note_required', message: 'Say what needs changing — that note is what gets fixed.' });
+  db.prepare(`UPDATE nfp_versions SET status = 'draft', sent_back_at = datetime('now'), sent_back_by = ?, sent_back_note = ?,
+    token_hash = NULL, updated_at = datetime('now') WHERE id = ?`).run(req.user.name, note.slice(0, 1000), v.id);
+  logAudit(req.user, 'nfp_sent_back', 'nfp', v.id, { sku: v.sku, version: v.version, note }, { status: v.status }, { status: 'draft' }, `${v.sku} NFP ${v.version}`);
+  res.json(hydrate(db, [db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(v.id)])[0]);
 });
 
 /** Correct a panel that has not been decided yet. */
@@ -870,7 +1113,9 @@ router.put('/:id/panel', (req, res) => {
 
   const before = panelOf(v) || {};
   const beforeCallouts = readJson(v.front_callouts) || {};
-  const panel = { ...before, ...(panelPatch || {}) };
+  const servedEdit = applyServing(before, panelPatch || {}, null);
+  if (servedEdit.error) return res.status(400).json({ error: servedEdit.error, message: servedEdit.message });
+  const panel = servedEdit.panel;
   const callouts = { ...beforeCallouts, ...(calloutPatch?.set || {}) };
   for (const k of calloutPatch?.unset || []) delete callouts[k];
   const panelJson = JSON.stringify(panel);
@@ -889,7 +1134,7 @@ router.put('/:id/panel', (req, res) => {
     // The reconciliation checks run on every panel write (D-171), and the
     // outcome is stored with it; the card and the gate read them live.
     db.prepare('UPDATE nfp_versions SET reconcile_snapshot = ? WHERE id = ?')
-      .run(JSON.stringify(reconcile(panel, { fillWeightG: catalogueFill(db, v.sku)?.fill_weight_g })), v.id);
+      .run(JSON.stringify(reconcile(panel, reconcileOpts(v, catalogueFill(db, v.sku)))), v.id);
     // The serving size and servings per container are asked for in two places —
     // the panel, and the summary the approver reads on the link. MIRRORED from
     // the panel, written nowhere else, so the two cannot tell the approver
@@ -958,7 +1203,7 @@ router.post('/:id/send', (req, res) => {
   const db = getDb();
   const v = db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(req.params.id);
   if (!v) return res.status(404).json({ error: 'Not found' });
-  if (!['draft', 'sent', 'rejected'].includes(v.status)) {
+  if (!isOpen(v)) {
     return res.status(409).json({ error: 'This panel has already been decided.' });
   }
   const hasFile = db.prepare('SELECT COUNT(*) n FROM nfp_files WHERE version_id = ?').get(v.id).n > 0;
@@ -1106,6 +1351,10 @@ export class ReconcileUnacknowledged extends Error {
   }
 }
 
+class PanelIncomplete extends Error {
+  constructor(missing) { super('panel incomplete'); this.missing = missing; }
+}
+
 function reconcileRefusal(unresolved) {
   return {
     error: `This panel cannot be approved until a person acknowledges each warning in ReadyDoc: `
@@ -1117,6 +1366,13 @@ function reconcileRefusal(unresolved) {
 /** The 409 every approval door answers with. One shape, three doors. */
 export function refusalBody(err) {
   if (err instanceof ReconcileUnacknowledged) return reconcileRefusal(err.unresolved);
+  if (err instanceof PanelIncomplete) {
+    return {
+      error: `This panel cannot be approved until its values are in: `
+        + `${err.missing.map((k) => FIELD_LABEL[k] || k).join(', ')}.`,
+      needs_values: err.missing,
+    };
+  }
   if (err instanceof ProvenanceMissing) {
     return {
       error: `This panel cannot be approved until it says what it was computed from: `
@@ -1156,6 +1412,11 @@ function decide(db, v, { decision, by, comments, via, dvAck, fillAck }) {
   const approving = decision === 'approved';
   const provenance = provenanceOf(v);
   if (approving) {
+    // A panel is approved with its numbers on it (D-173): the lines every
+    // panel prints, the serving grams and the ingredients. The paper door is
+    // not gated — it records a decision already taken.
+    const incomplete = missingRequired(panelOf(v) || {});
+    if (incomplete.length) throw new PanelIncomplete(incomplete);
     const missing = provenanceMissing(provenance);
     if (missing.length) throw new ProvenanceMissing(missing);
     // Each reconciliation warning needs a person's own acknowledgement first —
@@ -1221,7 +1482,7 @@ router.post('/:id/decide', rejectTokenAuth, async (req, res) => {
   const db = getDb();
   const v = db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(req.params.id);
   if (!v) return res.status(404).json({ error: 'Not found' });
-  if (!['draft', 'sent', 'rejected'].includes(v.status)) {
+  if (!isOpen(v)) {
     return res.status(409).json({ error: 'This panel has already been decided.' });
   }
   const decision = req.body?.decision === 'approved' ? 'approved'

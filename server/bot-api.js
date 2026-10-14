@@ -18,6 +18,9 @@ export const BOT_ROUTES = Object.freeze([
   { method: 'GET', path: '/api/nfp/:id/panel-values', module: 'products', scope: 'read' },
   { method: 'PUT', path: '/api/nfp/:id/panel-file', module: 'products (edit)', scope: 'write' },
   { method: 'PUT', path: '/api/nfp/:id/panel-values', module: 'products (edit)', scope: 'write' },
+  { method: 'PUT', path: '/api/nfp/:id/provenance', module: 'products (edit)', scope: 'write' },
+  { method: 'POST', path: '/api/nfp/:id/ready', module: 'products (edit)', scope: 'write' },
+  { method: 'GET', path: '/api/nfp/review-queue', module: 'products', scope: 'read' },
   { method: 'PUT', path: '/api/products/:sku', module: 'products (edit)', scope: 'write' },
   { method: 'GET', path: '/api/artwork', module: 'artwork', scope: 'read', paged: true },
   { method: 'GET', path: '/api/artwork/sku/:sku', module: 'artwork', scope: 'read' },
@@ -65,7 +68,9 @@ export const BOT_ROUTES = Object.freeze([
 // Paths are relative to /api. `bulk: true` routes count against their own
 // lower rate bucket (API_TOKEN_BULK_RPM, default 5 a minute). `when(req, m, db)`
 // narrows a route further and refuses when it throws.
-const draftNfp = (db, id) => db.prepare('SELECT status FROM nfp_versions WHERE id = ?').get(id)?.status === 'draft';
+// A draft, or one the bot has marked ready for review (D-173) — still open to
+// correction until a person approves it.
+const draftNfp = (db, id) => ['draft', 'ready_for_review'].includes(db.prepare('SELECT status FROM nfp_versions WHERE id = ?').get(id)?.status);
 const draftPartnerDoc = (db, id) => {
   const d = db.prepare('SELECT status, settlement_id FROM partner_documents WHERE id = ?').get(id);
   return !d || (d.status === 'draft' && !d.settlement_id); // missing → the handler 404s
@@ -126,6 +131,10 @@ export const WRITE_AREAS = Object.freeze([
     when: (req, m, db) => draftNfp(db, m[1]) },
   { area: 'nfp-draft', method: 'PUT', re: /^\/nfp\/([^/]+)\/panel$/, label: 'PUT /api/nfp/:id/panel (while draft)',
     when: (req, m, db) => draftNfp(db, m[1]) },
+  // D-173: the formula/BOM the draft was computed from, and marking it ready.
+  { area: 'nfp-draft', method: 'PUT', re: /^\/nfp\/([^/]+)\/provenance$/, label: 'PUT /api/nfp/:id/provenance (while draft)',
+    when: (req, m, db) => draftNfp(db, m[1]) },
+  { area: 'nfp-draft', method: 'POST', re: /^\/nfp\/([^/]+)\/ready$/, label: 'POST /api/nfp/:id/ready — mark a draft ready for review' },
   // The Product Manager bot's panel work (D-171) — only a token holding the
   // `nfp-panel` GRANT. No `when`: the handler refuses a non-draft with its own
   // 403 that says why, rather than a bare not_open_to_tokens.
