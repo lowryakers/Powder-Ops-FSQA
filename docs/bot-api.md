@@ -274,6 +274,7 @@ Run this checklist once after a release that touches the bot surface, and once a
 - **Other errors:**
   - 400: the SKU is not in the catalog, or the version is missing.
   - 409: that SKU already has this version. Panels are never rewritten.
+  - 409 `open_draft_exists`: the SKU already has an open panel (draft, ready for review, sent or sent back). One open draft per SKU — update that one; `open_draft` names it.
 
 ```json
 { "id": "4dd0…", "sku": "42224277651538", "version": "BOTAPI-V1", "status": "draft", "approved_at": null }
@@ -303,9 +304,9 @@ Run this checklist once after a release that touches the bot surface, and once a
 - **Grant:** `products: edit`, and the account must be a supervisor or in QA.
 - **Body:** `{ "values": { … }, "source_ref": "…" }`.
   - `source_ref` is **required**: the file name or document id the values were taken from. It is stored on the version. Without it the answer is **400** `source_ref_required`.
-  - The fields are `serving_size`, `servings_per_container`, `calories`, `total_fat`, `saturated_fat`, `trans_fat`, `cholesterol`, `sodium`, `total_carbohydrate`, `dietary_fiber`, `total_sugars`, `added_sugars`, `protein`, `vitamin_d`, `calcium`, `iron`, `potassium`, `ingredients` and `allergen_statement`. Any other name is **400** `unknown_fields`.
+  - The fields are `serving_size`, `serving_household`, `serving_grams`, `servings_per_container`, `calories`, `total_fat`, `saturated_fat`, `trans_fat`, `cholesterol`, `sodium`, `total_carbohydrate`, `dietary_fiber`, `total_sugars`, `added_sugars`, `protein`, `vitamin_d`, `calcium`, `iron`, `potassium`, `ingredients` and `allergen_statement`. Any other name is **400** `unknown_fields`.
   - Values merge: send only what changes. A blank clears a field. `"<1"` stays as written.
-- **Serving size keeps its grams.** When the product's approved panel writes its serving size with a gram weight, a new value with no grams is refused: **400** `serving_size_grams`. For example "1 bottle (34-37g)" must not become "1 bottle".
+- **Serving size is two facts.** Write `serving_household` ("1 Scoop") and `serving_grams` ("35", or a range "34-37"); `serving_size` (the printed label) is generated from them, and writing `serving_size` alone is parsed back into the two. **Grams are required**: a serving with none is refused, **400** `serving_size_grams`. For example "1 bottle (34-37g)" must not become "1 bottle".
 - **Draft only:** **403** `not_draft` for any other state.
 - **Returns:** the same body as the GET, plus `changed: [{ field, from, to }]`. A write that changes nothing changes nothing.
 - **Reconciliation:** both checks run on every write and their result is stored with it. A failed check is a **warning** on the draft. The panel cannot be approved, and no approval link can be sent, until a person acknowledges each warning in ReadyDoc. A token cannot acknowledge.
@@ -317,7 +318,29 @@ Run this checklist once after a release that touches the bot surface, and once a
   "source_ref": "WHY-BTL-BLM_NFP_v3.pdf" }
 ```
 
-A token can never approve a panel, send it for approval, acknowledge a warning or change its state: `POST /api/nfp/:id/decide` and `…/send` are `approve_requires_human_session`, and `…/warnings/:key/acknowledge` is `token_denied` (decision).
+### `PUT /api/nfp/:id/provenance`
+
+- **Scope:** `write`.
+- **Grant:** `products: edit`, and the account must be a supervisor or in QA.
+- **Body:** `{ formula_ref?, formula_version?, bom_fill_weight_g?, fill_per_serving_g?, source_system?, generated_at?, generated_by?, notes? }` — what the panel was computed FROM. `fill_per_serving_g` is the formula's own per-serving fill, the unrounded figure the fill check multiplies by servings; without it the check falls back to the label grams and says so.
+- **Draft only** (draft or ready for review): a decided panel keeps the provenance it was approved against.
+- **Returns:** the panel.
+
+### `POST /api/nfp/:id/ready`
+
+- **Scope:** `write`.
+- **Grant:** `products: edit`, and the account must be a supervisor or in QA.
+- **Effect:** moves a draft (or a panel sent back) to **ready for review**, the state the review queue lists. The token may keep writing to it until a person approves it.
+- **Returns:** the panel with its `flags` — what a reviewer will see. A flag with `blocking: true` means approval is refused on it; an empty list is what bulk approve accepts. Flags: `serving_grams_missing`, `missing_values`, `reconcile_*`, `provenance_missing`, `dv_mismatch`, `fill_mismatch`, `no_file`.
+- **Errors:** 409 `not_a_draft` on any other state.
+
+### `GET /api/nfp/review-queue`
+
+- **Scope:** `read`.
+- **Grant:** `products`.
+- **Returns:** `groups` — every panel ready for review grouped by product family (the product's `family`, else `line · base flavor`) then SKU, each row with only the fields that changed from the approved panel (`changes`), the source of its values, its provenance and its flags; `missing_panel` — products with no approved panel; `open_drafts`; and `counts`.
+
+A token can never approve a panel, send it for approval, send it back, acknowledge a warning or change its state: `POST /api/nfp/:id/decide` and `…/send` are `approve_requires_human_session`, and `…/warnings/:key/acknowledge` is `token_denied` (decision).
 
 ## Artwork
 

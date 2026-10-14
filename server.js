@@ -124,6 +124,7 @@ import { seedProducts } from './server/products-seed.js';
 import { repairPaddedGtins } from './server/gtin-repair.js';
 import { repairProductColors } from './server/product-color-repair.js';
 import { adoptFilmBasis } from './server/readiness-film-adopt.js';
+import { migrateServingSizes } from './server/nfp-serving-migrate.js';
 import { seedFillWeights } from './server/fill-weight-seed.js';
 import { seedFlavorCodes, seedBottleSpec, repairBaseFlavors } from './server/flavor-code-seed.js';
 import { seedProductShelf } from './server/product-shelf.js';
@@ -1256,6 +1257,8 @@ try {
   try { repairProductColors(db); } catch (e) { console.warn('[seed] Could not correct brand colours:', e.message); }
   // After every catalogue repair: the film baseline for released artwork (D-136).
   try { adoptFilmBasis(db); } catch (e) { console.warn('[seed] Could not record the artwork film baseline:', e.message); }
+  // Serving sizes split into household measure + grams, idempotent (D-173).
+  try { migrateServingSizes(db); } catch (e) { console.warn('[seed] Could not split serving sizes:', e.message); }
   // AFTER seedProducts, always: the flavour codes are DERIVED from the product
   // rows, so on a fresh database there is nothing to read until the catalogue
   // is in. Same ordering trap as seedGenericSpecifications, which filed zero

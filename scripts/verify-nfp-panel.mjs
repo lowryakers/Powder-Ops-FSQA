@@ -40,6 +40,15 @@ const products = (() => {
   db.close(); return rows;
 })();
 const P = products[0], P2 = products[1];
+// D-173: the fill check compares serving grams × servings to the SKU's fill
+// (or the pack standard when none is recorded). These panels are 1 × 35 g,
+// so the fixture products carry a 35 g fill — the checks here are about %DV.
+{
+  const db = new Database(process.env.DBPATH);
+  db.prepare('UPDATE products SET fill_weight_g = 35 WHERE sku IN (?, ?)').run(P.sku, P2.sku);
+  db.close();
+  P.fill_weight_g = 35; P2.fill_weight_g = 35;
+}
 // Approval needs to know what the panel was computed from (D-128). The fill
 // weight is the Catalogue's own, so these checks stay about the %DV gate.
 const prov = (p) => ({ formula_ref: 'F-TEST', formula_version: 'v1', bom_fill_weight_g: p.fill_weight_g || 30 });
@@ -87,8 +96,9 @@ r = await put(`/nfp/${v1.id}/panel`, { panel: GOOD, front_callouts: { protein_g:
 let saved = await J(r);
 t('the values save', r.status === 200, String(r.status));
 t('and the revision moves to 1', saved?.panel_rev === 1, String(saved?.panel_rev));
-t('the serving size is MIRRORED onto the summary the approver reads',
-  saved?.serving_size === '1 Bottle', saved?.serving_size);
+// D-173: the printed label is GENERATED from the household measure and the grams.
+t('the serving size is MIRRORED onto the summary the approver reads, as the generated label',
+  saved?.serving_size === '1 Bottle (35g)' && saved?.panel?.serving_household === '1 Bottle' && saved?.panel?.serving_grams === '35', saved?.serving_size);
 
 r = await panelFor(`gtin=${P.gtin}`);
 b = await J(r);
@@ -185,7 +195,9 @@ const v2 = await J(r);
 // Calcium 150 mg is 11.5% of the 1300 mg DV. The MINERAL increment rule rounds
 // that to 10; the macronutrient rule would say 12 and flag a panel that is
 // correct. Almost every panel on this line carries a figure like it.
-r = await put(`/nfp/${v2.id}/panel`, { panel: { calcium_mg: 150, calcium_dv: 10, iron_mg: 0.3, iron_dv: 0, sodium_mg: 260, sodium_dv: 11 } });
+// The rest of the panel is the complete GOOD set: approval needs every
+// required value (D-173), and this check is about the calcium rounding.
+r = await put(`/nfp/${v2.id}/panel`, { panel: { ...GOOD, calcium_mg: 150, calcium_dv: 10, iron_mg: 0.3, iron_dv: 0, sodium_mg: 260, sodium_dv: 11 } });
 saved = await J(r);
 t('CALCIUM 150 mg DECLARED AT 10% RAISES NOTHING', (saved?.dv_check || []).length === 0,
   JSON.stringify(saved?.dv_check));

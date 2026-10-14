@@ -29,8 +29,13 @@
 
 export const PROVENANCE_REQUIRED = ['formula_ref', 'formula_version', 'bom_fill_weight_g'];
 
+/** Where a formula lives (D-173). MRPEasy today, Keychain next; `manual` is a person's typed figure. */
+export const FORMULA_SOURCES = Object.freeze(['mrpeasy', 'keychain', 'manual', 'genesis']);
+export const FORMULA_SOURCE_LABEL = Object.freeze({ mrpeasy: 'MRPEasy', keychain: 'Keychain', manual: 'Entered by hand', genesis: 'Genesis R&D' });
+
 export const PROVENANCE_LABEL = {
   source_system: 'Source system',
+  fill_per_serving_g: 'Formula fill per serving (g)',
   formula_ref: 'Formula ref',
   formula_version: 'Formula version',
   bom_fill_weight_g: 'BOM fill weight (g)',
@@ -52,6 +57,9 @@ export function provenanceOf(v) {
     formula_ref: blank(v?.formula_ref) ? null : String(v.formula_ref),
     formula_version: blank(v?.formula_rev) ? null : String(v.formula_rev),
     bom_fill_weight_g: num(v?.bom_fill_weight_g),
+    // The formula's own per-serving fill — the unrounded figure the fill check
+    // multiplies by servings (D-173). Null reads as "use the label grams".
+    fill_per_serving_g: num(v?.bom_fill_per_serving_g),
     generated_at: blank(v?.provenance_generated_at) ? null : String(v.provenance_generated_at),
     generated_by: blank(v?.provenance_generated_by) ? null : String(v.provenance_generated_by),
     notes: blank(v?.provenance_notes) ? '' : String(v.provenance_notes),

@@ -136,6 +136,7 @@ const RUNS = [
   ['verify-token-attachments.mjs', 5093, { API_TOKEN_WRITE_RPM: '40' }, true],
   ['verify-token-reactions.mjs', 5097, {}, false],
   ['verify-nfp-bot-panel.mjs', 5098, {}, true],
+  ['verify-nfp-review-queue.mjs', 5099, { API_TOKEN_WRITE_RPM: '100' }, false],
 ];
 
 // VERIFY_ONLY=verify-auth.mjs,verify-swab-stock.mjs runs just the entries that

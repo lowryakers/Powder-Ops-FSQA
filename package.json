@@ -85,6 +85,7 @@
     "verify:tokenattach": "VERIFY_ONLY=verify-token-attachments.mjs node scripts/verify-all.mjs",
     "verify:tokenreact": "VERIFY_ONLY=verify-token-reactions.mjs node scripts/verify-all.mjs",
     "verify:nfpbotpanel": "VERIFY_ONLY=verify-nfp-bot-panel.mjs node scripts/verify-all.mjs",
+    "verify:nfpqueue": "VERIFY_ONLY=verify-nfp-review-queue.mjs node scripts/verify-all.mjs",
     "verify:commsedit": "node scripts/verify-comms-edit.mjs",
     "verify:commspendingjump": "node scripts/verify-comms-pending-jump.mjs",
     "verify:trainingassign": "node scripts/verify-training-assign.mjs",

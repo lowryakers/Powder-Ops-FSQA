@@ -3,6 +3,7 @@ import { useApiGet, apiFetch, apiUpload } from '../../hooks/useApi';
 import ProductFileImport from './ProductFileImport.jsx';
 import { computeDv, checkDailyValues } from '../../../shared/nutrition-dv.js';
 import { provenancePhrase, fillCheckSentence, PROVENANCE_LABEL } from '../../../shared/panel-provenance.js';
+import { servingLabel } from '../../../shared/panel-reconcile.js';
 import {
   FileText, Link2, Upload, CheckCircle2, XCircle, Clock, Copy, Check,
   AlertTriangle, Trash2, Plus, Send, Table2,
@@ -27,6 +28,7 @@ import { openFile } from '../../lib/openFile';
 
 const STATUS = {
   draft: { label: 'Draft', cls: 'bg-gray-100 text-gray-700', Icon: FileText },
+  ready_for_review: { label: 'Ready for review', cls: 'bg-powder-100 text-powder-800', Icon: Clock },
   sent: { label: 'Waiting on approver', cls: 'bg-amber-100 text-amber-800', Icon: Clock },
   approved: { label: 'Approved', cls: 'bg-green-100 text-green-800', Icon: CheckCircle2 },
   rejected: { label: 'Sent back', cls: 'bg-red-100 text-red-800', Icon: XCircle },
@@ -58,9 +60,12 @@ const PANEL_ROWS = [
   { key: 'potassium_mg', dv: 'potassium_dv', nutrient: 'potassium', label: 'Potassium', unit: 'mg' },
 ];
 
+// The serving size is TWO facts (D-173): the household measure and the grams
+// (a number, or a range "34-37"). The printed label is generated from them and
+// never typed; a serving saved without grams is refused.
 const HEAD_ROWS = [
-  { key: 'serving_size_desc', label: 'Serving size', placeholder: '1 Bottle' },
-  { key: 'serving_size_g', label: 'Serving (g)' },
+  { key: 'serving_household', label: 'Serving (household measure)', placeholder: '1 Scoop' },
+  { key: 'serving_grams', label: 'Serving (g) *', placeholder: '35 or 34-37' },
   { key: 'servings_per_container', label: 'Servings / container' },
   { key: 'calories', label: 'Calories' },
 ];
@@ -172,10 +177,13 @@ function PanelValues({ v, canEdit, onChanged }) {
               <label key={r.key} className="block">
                 <span className="text-[11px] text-gray-500">{r.label}</span>
                 <input type="text" disabled={locked} value={val(panel, r.key)} onChange={set(r.key)}
-                  placeholder={r.placeholder || ''} className={cell} />
+                  placeholder={r.placeholder || ''} data-panel-head={r.key} className={cell} />
               </label>
             ))}
           </div>
+          <p className="text-[11px] text-gray-500" data-serving-label>
+            Printed serving size: <span className="font-medium text-gray-800">{servingLabel(panel.serving_household, panel.serving_grams) || (panel.serving_size_desc ? `${panel.serving_size_desc} — no grams readable; write them in the box` : '—')}</span>
+          </p>
 
           <table className="w-full text-xs">
             <thead>
@@ -288,6 +296,7 @@ const PROV_FIELDS = [
   { key: 'formula_ref', placeholder: 'F-00002', required: true },
   { key: 'formula_version', placeholder: 'v2.0', required: true },
   { key: 'bom_fill_weight_g', placeholder: '88.0', required: true },
+  { key: 'fill_per_serving_g', placeholder: '34.86' },
   { key: 'source_system', placeholder: 'Genesis R&D' },
   { key: 'generated_by', placeholder: 'Matt Schramm' },
   { key: 'generated_at', type: 'date' },
@@ -300,7 +309,7 @@ const PROV_FIELDS = [
  * never edited here: a correction is the next version.
  */
 function Provenance({ v, canEdit, onChanged }) {
-  const open = ['draft', 'sent', 'rejected'].includes(v.status);
+  const open = ['draft', 'ready_for_review', 'sent', 'rejected'].includes(v.status);
   const frozen = v.approved_provenance;
   const block = frozen || v.provenance || {};
   const phrase = provenancePhrase(block);
@@ -397,7 +406,7 @@ function Provenance({ v, canEdit, onChanged }) {
 function ReconcileReview({ v, canEdit, onChanged }) {
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
-  const open = ['draft', 'sent', 'rejected'].includes(v.status);
+  const open = ['draft', 'ready_for_review', 'sent', 'rejected'].includes(v.status);
   if (!open) return null;
   const checks = v.reconcile || [];
   const unresolved = new Set((v.reconcile_unresolved || []).map((c) => c.key));
@@ -641,7 +650,7 @@ function VersionCard({ v, canEdit, onChanged, storage = true }) {
   const [fillBlock, setFillBlock] = useState(null);
   const [fillAck, setFillAck] = useState(false);
 
-  const open = ['draft', 'sent', 'rejected'].includes(v.status);
+  const open = ['draft', 'ready_for_review', 'sent', 'rejected'].includes(v.status);
 
   const act = async (what, fn) => {
     setBusy(what); setError('');
@@ -718,6 +727,20 @@ function VersionCard({ v, canEdit, onChanged, storage = true }) {
       )}
       {v.rejected_reason && (
         <p className="text-xs text-red-800 bg-red-50 border border-red-200 rounded p-2">{v.rejected_reason}</p>
+      )}
+      {v.status === 'draft' && v.sent_back_note && (
+        <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded p-2" data-nfp-sent-back>
+          Sent back by <strong>{v.sent_back_by}</strong>{v.sent_back_at ? ` on ${v.sent_back_at.slice(0, 10)}` : ''}: {v.sent_back_note}
+        </p>
+      )}
+      {open && (v.flags || []).length > 0 && (
+        <ul className="text-[11px] space-y-0.5" data-nfp-flags>
+          {v.flags.map((f) => (
+            <li key={f.key} data-nfp-flag={f.key} className={f.blocking ? 'text-red-800' : 'text-amber-800'}>
+              {f.blocking ? '⛔' : '⚠'} {f.label}
+            </li>
+          ))}
+        </ul>
       )}
 
       {v.files?.length > 0 && (
@@ -848,6 +871,13 @@ function VersionCard({ v, canEdit, onChanged, storage = true }) {
               {v.link_live && (
                 <button onClick={() => act('revoke', async () => { await apiFetch(`/nfp/${v.id}/revoke`, { method: 'POST' }); onChanged(); })}
                   className="px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs">Turn link off</button>
+              )}
+              {['draft', 'rejected'].includes(v.status) && (
+                <button data-nfp-ready onClick={() => act('ready', async () => { await apiFetch(`/nfp/${v.id}/ready`, { method: 'POST', body: {} }); onChanged(); })}
+                  disabled={busy === 'ready'}
+                  className="px-2.5 py-1.5 border border-powder-300 text-powder-800 rounded-lg text-xs font-medium disabled:opacity-50">
+                  {busy === 'ready' ? 'Saving…' : 'Ready for review'}
+                </button>
               )}
               <button onClick={() => setDeciding('approved')}
                 className="px-2.5 py-1.5 border border-green-300 text-green-800 rounded-lg text-xs font-medium">
@@ -1004,7 +1034,7 @@ export default function NfpBoard({ data, onOpenSku, canManage, onChanged }) {
   if (!data) return <p className="text-sm text-gray-400">Loading…</p>;
 
   const versions = data.versions || [];
-  const open = versions.filter((v) => ['draft', 'sent', 'rejected'].includes(v.status));
+  const open = versions.filter((v) => ['draft', 'ready_for_review', 'sent', 'rejected'].includes(v.status));
   const approved = versions.filter((v) => v.status === 'approved');
   const missing = data.missing || [];
 

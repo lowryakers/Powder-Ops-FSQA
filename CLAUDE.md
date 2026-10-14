@@ -480,6 +480,27 @@ limit), `authenticateToken` in `middleware/auth.js`, `server/middleware/no-token
 - **The grant is given in Settings, never by a deploy.** Tick it on the PM token.
 - `verify:nfpbotpanel` (50, S3 stand-in + browser; the control fails at the first upload).
 
+## The nutrition-panel review queue, and what a panel must carry before it is approved (D-173)
+`GET /nfp/review-queue` + `POST /nfp/review-queue/approve` (bulk), `POST /nfp/:id/ready`, `POST /nfp/:id/send-back`,
+`flagsFor()` in `api/nfp.js`, `NfpReviewQueue.jsx` (Products → **Review queue**), `server/nfp-serving-migrate.js`,
+`FILL_TOLERANCE_BY_PACK` / `POUCH_STANDARD_FILL_G` / `REQUIRED_PANEL_FIELDS` / `parseServingSize` / `servingLabel`
+in `shared/panel-reconcile.js`, `products.family` / `formula_source_system` / `formula_fill_per_unit_g` /
+`formula_synced_at`, `nfp_versions.bom_fill_per_serving_g`.
+- **`ready_for_review` sits between draft and approved.** A bot or a person marks a draft ready; the queue lists
+  those; a bot keeps writing to one until a person approves it. `OPEN_STATUSES` / `TOKEN_WRITABLE` in nfp.js are
+  the two lists — add a state there, not in a route.
+- **`flagsFor()` is the ONE list of what a reviewer must look at.** Bulk approve accepts zero flags only, through
+  `decide()`. A second derivation on the screen is a queue offering an approval the gate refuses.
+- **APPROVAL IS REFUSED WITH A REQUIRED VALUE EMPTY** (`409 needs_values`). A file-only panel can no longer be
+  approved; the paper door is not gated. The extraction (D-174) is what fills them.
+- **The serving size is two facts** (`serving_household` + `serving_grams`); the label is GENERATED. Grams are
+  required on every write, both doors. The panel's old grams never stand in for a label rewritten without them.
+- **The fill check uses the formula's per-serving fill** (`bom_fill_per_serving_g`), the label grams only as a
+  fallback, and the message names which. A PLG pouch with no fill is checked against 660 g. Warning only.
+- **One open draft per SKU** (`409 open_draft_exists`, naming it). A paper filing is let by.
+- **Formula source on the product** is written through `PUT /products/:sku`; no integration writes it.
+- `verify:nfpqueue` (79). Fixtures in the other NFP verifies carry a complete panel and a fill weight now.
+
 ## Revoking access reaches the sessions it already opened (D-072)
 `revokeSessions(db, userId, { keepToken, devices })` in `api/sessions.js` is the ONE helper; Settings
 deactivation, `end-access`, the auditor-pass revoke and the pass reactivation path all call it. It deletes the

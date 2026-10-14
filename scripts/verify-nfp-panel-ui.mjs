@@ -37,12 +37,27 @@ const row = (() => {
   db.close(); return p;
 })();
 const sku = row?.sku;
+// D-173: the fill check reads the SKU's fill (or the pack standard when blank).
+// The fixture panel is 1 serving at this weight, so record it on the product.
+if (row && !row.fill_weight_g) {
+  const db = new Database(process.env.DBPATH);
+  db.prepare('UPDATE products SET fill_weight_g = 30 WHERE sku = ?').run(sku);
+  db.close(); row.fill_weight_g = 30;
+}
 const api = (p, body, method = 'POST') => fetch(`${URL}/api${p}`,
   { method, headers: { ...H, Authorization: `Bearer ${auth.token}` }, body: JSON.stringify(body) });
 // Approval needs to know what the panel was computed from (D-128).
 const version = await (await api('/nfp', { sku, version: 'V1', drive_url: 'https://drive.example/v1',
   provenance: { formula_ref: 'F-TEST', formula_version: 'v1', bom_fill_weight_g: row?.fill_weight_g || 30 } })).json();
 t('a panel to work on', !!version?.id, sku);
+// D-173: approval needs every required value. The browser types the three the
+// check is about; the rest are filed first so the approval at the end lands.
+await api(`/nfp/${version.id}/panel`, { panel: {
+  serving_household: '1 Bottle', serving_grams: String(row?.fill_weight_g || 30), servings_per_container: 1, calories: 120,
+  total_fat_g: 0.5, saturated_fat_g: 0, trans_fat_g: 0, cholesterol_mg: '<5', sodium_mg: 100,
+  total_carbohydrate_g: 4, dietary_fiber_g: 0, total_sugars_g: 2, added_sugars_g: 0, protein_g: 25,
+  ingredients: 'Whey Protein Isolate', allergen_statement: 'Contains: Milk',
+} }, 'PUT');
 
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
 
@@ -102,8 +117,9 @@ if (found) {
   const saved = await (await fetch(`${URL}/api/nfp/sku/${encodeURIComponent(sku)}`,
     { headers: { Authorization: `Bearer ${auth.token}` } })).json();
   const v = saved?.versions?.[0];
-  t('saving files the values and moves the revision to 1',
-    v?.panel_rev === 1 && v?.panel?.sodium_mg === 570 && v?.panel?.dietary_fiber_g === '<1',
+  // Revision 2: the fixture prefill above was revision 1 (D-173).
+  t('saving files the values and moves the revision to 2',
+    v?.panel_rev === 2 && v?.panel?.sodium_mg === 570 && v?.panel?.dietary_fiber_g === '<1',
     JSON.stringify([v?.panel_rev, v?.panel?.sodium_mg, v?.panel?.dietary_fiber_g]));
 }
 await page.close();

@@ -3596,6 +3596,55 @@ function runMigrations() {
     acknowledged_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`);
   db.exec('CREATE INDEX IF NOT EXISTS idx_nfp_warning_acks_version ON nfp_warning_acks(version_id)');
+
+  // ── Ready for review (D-173) ───────────────────────────────────────────────
+  // A fifth open state between draft and approved: a bot or a person moves a
+  // draft there when it is complete, and the review queue lists exactly those.
+  // The CHECK is widened by the ap_drops rebuild shape (D-160), once, with
+  // foreign keys off so nfp_files / nfp_batch_items / nfp_warning_acks
+  // (ON DELETE CASCADE) survive the DROP.
+  try {
+    const nfpSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='nfp_versions'").get()?.sql || '';
+    if (nfpSql && !nfpSql.includes('ready_for_review')) {
+      const newSql = nfpSql
+        .replace(/CREATE TABLE\s+"?nfp_versions"?/i, 'CREATE TABLE nfp_versions_new')
+        .replace("'draft','sent','approved','rejected','superseded'", "'draft','ready_for_review','sent','approved','rejected','superseded'");
+      if (!newSql.includes('ready_for_review')) throw new Error('nfp_versions status CHECK not found in the stored SQL');
+      const indexes = db.prepare("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='nfp_versions' AND sql IS NOT NULL").all().map(r => r.sql);
+      const cols = db.prepare('PRAGMA table_info(nfp_versions)').all().map(c => c.name).join(', ');
+      db.pragma('foreign_keys = OFF');
+      try {
+        db.transaction(() => {
+          db.exec(newSql);
+          db.exec(`INSERT INTO nfp_versions_new (${cols}) SELECT ${cols} FROM nfp_versions`);
+          db.exec('DROP TABLE nfp_versions');
+          db.exec('ALTER TABLE nfp_versions_new RENAME TO nfp_versions');
+          for (const ix of indexes) db.exec(ix);
+        })();
+        console.log('[migrate] nfp_versions.status now accepts ready_for_review (D-173)');
+      } finally { db.pragma('foreign_keys = ON'); }
+    }
+  } catch (e) {
+    console.warn('[db] nfp_versions status widen failed:', e.message);
+  }
+  // Who moved it to review and when; who sent it back and the note they wrote.
+  addColumnIfMissing('nfp_versions', 'ready_at', 'TEXT');
+  addColumnIfMissing('nfp_versions', 'ready_by', 'TEXT');
+  addColumnIfMissing('nfp_versions', 'sent_back_at', 'TEXT');
+  addColumnIfMissing('nfp_versions', 'sent_back_by', 'TEXT');
+  addColumnIfMissing('nfp_versions', 'sent_back_note', 'TEXT');
+  // The formula's own per-serving fill — what the fill check multiplies by
+  // servings (D-173); the label grams are rounded and stand in only when this
+  // is blank.
+  addColumnIfMissing('nfp_versions', 'bom_fill_per_serving_g', 'REAL');
+  // The SKU's formula/BOM pointer, with its source and when it was last synced
+  // (D-173). mrp_formula_id / formula_rev / fill_weight_g already exist; these
+  // say WHERE each came from. No integration writes them yet — a bot does,
+  // through the catalogue route, and a Keychain sync has a column to stamp.
+  addColumnIfMissing('products', 'family', 'TEXT');
+  addColumnIfMissing('products', 'formula_source_system', 'TEXT');
+  addColumnIfMissing('products', 'formula_fill_per_unit_g', 'REAL');
+  addColumnIfMissing('products', 'formula_synced_at', 'TEXT');
   // D-171: a token's GRANTS — named extra write areas beyond `write`, set by an
   // admin per token. One exists: 'nfp-panel' (the Product Manager bot's panel
   // PDF and values). A grant is not a scope: it never approves anything.

@@ -30,6 +30,11 @@ export const CALORIE_TOLERANCE = 0.20;
  */
 export const PANEL_VALUE_FIELDS = Object.freeze({
   serving_size: 'serving_size_desc',
+  // D-173: the serving size is TWO facts — a household measure ("1 Scoop") and
+  // the grams ("35", or a range "34-37"). `serving_size` above is the printed
+  // label, GENERATED from the two; writing it parses it back into them.
+  serving_household: 'serving_household',
+  serving_grams: 'serving_grams',
   servings_per_container: 'servings_per_container',
   calories: 'calories',
   total_fat: 'total_fat_g',
@@ -51,7 +56,8 @@ export const PANEL_VALUE_FIELDS = Object.freeze({
 });
 
 export const FIELD_LABEL = Object.freeze({
-  serving_size: 'Serving size', servings_per_container: 'Servings per container', calories: 'Calories',
+  serving_size: 'Serving size', serving_household: 'Serving (household measure)', serving_grams: 'Serving (g)',
+  servings_per_container: 'Servings per container', calories: 'Calories',
   total_fat: 'Total fat', saturated_fat: 'Saturated fat', trans_fat: 'Trans fat', cholesterol: 'Cholesterol',
   sodium: 'Sodium', total_carbohydrate: 'Total carbohydrate', dietary_fiber: 'Dietary fiber',
   total_sugars: 'Total sugars', added_sugars: 'Added sugars', protein: 'Protein', vitamin_d: 'Vitamin D',
@@ -64,6 +70,15 @@ export function valuesOf(panel) {
   const out = {};
   for (const [field, col] of Object.entries(PANEL_VALUE_FIELDS)) {
     out[field] = panel && panel[col] !== undefined ? panel[col] : null;
+  }
+  // A panel filed before the split (D-173) carries only the label and maybe
+  // `serving_size_g`; read its two halves out of those so an old approved
+  // panel diffs cleanly against a new draft rather than showing a change of
+  // shape as a change of fact.
+  if (panel && (out.serving_household === null || out.serving_household === '') && (out.serving_grams === null || out.serving_grams === '')) {
+    const parsed = parseServingSize(panel.serving_size_desc);
+    const g = parsed.grams ?? normalizeServingGrams(panel.serving_size_g);
+    if (parsed.household || g) { out.serving_household = parsed.household; out.serving_grams = g; }
   }
   return out;
 }
@@ -88,6 +103,77 @@ export function servingGrams(desc) {
   if (!Number.isFinite(low) || !Number.isFinite(high)) return null;
   const [a, b] = low <= high ? [low, high] : [high, low];
   return { low: a, high: b, mid: (a + b) / 2 };
+}
+
+/** The grams half of a structured serving size: "35", "34.8" or a range "34-37". */
+export const SERVING_GRAMS_RE = /^\s*(\d+(?:\.\d+)?)\s*(?:(?:-|–|to)\s*(\d+(?:\.\d+)?))?\s*g?\s*$/i;
+
+/** Normalise a grams text: "35 g" → "35", "34 – 37" → "34-37". Null when it is not one. */
+export function normalizeServingGrams(text) {
+  if (text === null || text === undefined) return null;
+  if (typeof text === 'number') return Number.isFinite(text) && text > 0 ? String(text) : null;
+  const m = String(text).match(SERVING_GRAMS_RE);
+  if (!m) return null;
+  const a = Number(m[1]);
+  const b = m[2] !== undefined ? Number(m[2]) : null;
+  if (!(a > 0) || (b !== null && !(b > 0))) return null;
+  if (b === null || b === a) return String(a);
+  return a < b ? `${a}-${b}` : `${b}-${a}`;
+}
+
+/** A normalised grams text as a span, the `servingGrams` shape. */
+export function gramsSpan(text) {
+  const g = normalizeServingGrams(text);
+  if (!g) return null;
+  const [a, b] = g.split('-').map(Number);
+  const high = b === undefined ? a : b;
+  return { low: a, high, mid: (a + high) / 2 };
+}
+
+/**
+ * Split a printed serving size into its two facts (D-173).
+ * "1 Scoop (35g)" → { household: "1 Scoop", grams: "35" }
+ * "1 bottle (34-37g)" → { household: "1 bottle", grams: "34-37" }
+ * "35 g" → { household: null, grams: "35" }
+ * "1 bottle" → { household: "1 bottle", grams: null } — the gap the queue shows.
+ */
+export function parseServingSize(desc) {
+  if (desc === null || desc === undefined || String(desc).trim() === '') return { household: null, grams: null };
+  const s = String(desc).trim();
+  const g = servingGrams(s);
+  if (!g) return { household: s, grams: null };
+  const re = /\(?\s*(\d+(?:\.\d+)?)\s*(?:(?:-|–|to)\s*(\d+(?:\.\d+)?)\s*)?g(?:rams?)?(?![a-z])\s*\)?/i;
+  const household = s.replace(re, '').replace(/\s{2,}/g, ' ').replace(/^[\s,;:-]+|[\s,;:-]+$/g, '').trim();
+  const grams = g.low === g.high ? String(g.low) : `${g.low}-${g.high}`;
+  return { household: household || null, grams };
+}
+
+/** The printed label, generated from the two facts. "1 Scoop (35g)"; "35 g" with no household measure. */
+export function servingLabel(household, grams) {
+  const g = normalizeServingGrams(grams);
+  const h = household === null || household === undefined ? '' : String(household).trim();
+  if (!g) return h || null;
+  return h ? `${h} (${g}g)` : `${g} g`;
+}
+
+/**
+ * What a panel has to carry before it can be approved (D-173). The lines
+ * 21 CFR 101.9 prints on every panel, the serving grams, and the ingredients.
+ * `allergen_statement` is deliberately not here: a product with no allergen
+ * has none to declare.
+ */
+export const REQUIRED_PANEL_FIELDS = Object.freeze([
+  'serving_grams', 'servings_per_container', 'calories', 'total_fat', 'saturated_fat', 'trans_fat',
+  'cholesterol', 'sodium', 'total_carbohydrate', 'dietary_fiber', 'total_sugars', 'added_sugars', 'protein',
+  'ingredients',
+]);
+
+const isBlank = (x) => x === null || x === undefined || String(x).trim() === '';
+
+/** The required fields a panel (stored shape) does not carry. Empty = complete. */
+export function missingRequired(panel) {
+  const v = valuesOf(panel || {});
+  return REQUIRED_PANEL_FIELDS.filter((f) => isBlank(v[f]));
 }
 
 /**
@@ -118,30 +204,53 @@ export function amountSpan(v) {
 const pct = (x) => `${(x * 100).toFixed(1)}%`;
 const r1 = (x) => Math.round(x * 10) / 10;
 
-/** Fill weight: serving grams × servings vs the product's fill weight, ±5%. */
-export function fillCheck(panel, fillWeightG) {
-  const grams = servingGrams(panel?.serving_size_desc ?? panel?.serving_size_g);
+/**
+ * Fill tolerance by pack (D-173). Stick packs are compared to the SKU's own
+ * fill (they vary — Apple Pie is 34.8 g); a large pouch with no fill recorded
+ * is compared to the standard pouch fill. Warning only, never a block.
+ */
+export const FILL_TOLERANCE_BY_PACK = Object.freeze({ STK: 0.05, PLG: 0.05, PSM: 0.05, BTL: 0.05, CUP: 0.05, BOX: 0.05 });
+export const POUCH_STANDARD_FILL_G = Object.freeze({ PLG: 660 });
+
+/**
+ * Fill weight: the FORMULA's per-serving fill × servings against the SKU's fill
+ * weight (D-173). The formula figure is what the line actually fills; the label
+ * grams are rounded and only stand in when no formula figure is recorded —
+ * and the message says which was used. ±5% per pack type.
+ */
+export function fillCheck(panel, fillWeightG, { perServingG = null, pack = null } = {}) {
+  const label = gramsSpan(panel?.serving_grams) || servingGrams(panel?.serving_size_desc ?? panel?.serving_size_g);
+  const formula = Number(perServingG);
+  const perServing = formula > 0 ? { low: formula, high: formula, mid: formula, basis: 'formula' }
+    : label ? { ...label, basis: 'label' } : null;
   const servings = amountSpan(panel?.servings_per_container);
-  const fill = Number(fillWeightG);
-  if (!grams || !servings || servings[0] !== servings[1] || !(fill > 0)) {
+  let fill = Number(fillWeightG);
+  let fillBasis = 'sku';
+  if (!(fill > 0) && pack && POUCH_STANDARD_FILL_G[pack]) { fill = POUCH_STANDARD_FILL_G[pack]; fillBasis = 'pack_standard'; }
+  const tolerance = FILL_TOLERANCE_BY_PACK[pack] ?? FILL_TOLERANCE;
+  if (!perServing || !servings || servings[0] !== servings[1] || !(fill > 0)) {
     const missing = [];
-    if (!grams) missing.push('serving size in grams');
+    if (!perServing) missing.push('serving size in grams');
     if (!servings || servings[0] !== servings[1]) missing.push('servings per container');
     if (!(fill > 0)) missing.push('fill weight in Products');
     return { key: 'fill_weight', label: 'Fill weight', status: 'not_checked',
       message: `Not checked — no ${missing.join(', ')}.` };
   }
-  const total = grams.mid * servings[0];
+  const total = perServing.mid * servings[0];
   const off = (total - fill) / fill;
-  const ok = Math.abs(off) <= FILL_TOLERANCE + 1e-9;
-  const servingText = grams.low === grams.high ? `${grams.mid} g` : `${grams.low}–${grams.high} g (midpoint ${grams.mid} g)`;
+  const ok = Math.abs(off) <= tolerance + 1e-9;
+  const servingText = perServing.basis === 'formula'
+    ? `formula per-serving fill ${perServing.mid} g`
+    : perServing.low === perServing.high ? `label serving ${perServing.mid} g` : `label serving ${perServing.low}–${perServing.high} g (midpoint ${perServing.mid} g)`;
+  const fillText = fillBasis === 'pack_standard' ? `the standard ${pack} fill of ${fill} g` : `a fill weight of ${fill} g`;
   return {
     key: 'fill_weight', label: 'Fill weight', status: ok ? 'ok' : 'warn',
-    serving_g: grams.mid, servings: servings[0], computed_g: r1(total), fill_weight_g: fill,
+    serving_g: perServing.mid, serving_basis: perServing.basis, servings: servings[0], computed_g: r1(total),
+    fill_weight_g: fill, fill_basis: fillBasis, tolerance,
     off: Math.round(off * 1000) / 1000,
-    message: `${servingText} × ${servings[0]} servings = ${r1(total)} g against a fill weight of ${fill} g `
-      + `(${off >= 0 ? '+' : ''}${pct(off)}; allowed ±${pct(FILL_TOLERANCE)}).`,
-    fingerprint: JSON.stringify(['fill', grams.mid, servings[0], fill]),
+    message: `${servingText} × ${servings[0]} servings = ${r1(total)} g against ${fillText} `
+      + `(${off >= 0 ? '+' : ''}${pct(off)}; allowed ±${pct(tolerance)}).`,
+    fingerprint: JSON.stringify(['fill', perServing.mid, servings[0], fill]),
   };
 }
 
@@ -187,8 +296,8 @@ export function calorieCheck(panel) {
 }
 
 /** Both checks, in a fixed order. */
-export function reconcile(panel, { fillWeightG } = {}) {
-  return [fillCheck(panel || {}, fillWeightG), calorieCheck(panel || {})];
+export function reconcile(panel, { fillWeightG, perServingG, pack } = {}) {
+  return [fillCheck(panel || {}, fillWeightG, { perServingG, pack }), calorieCheck(panel || {})];
 }
 
 /**
@@ -209,9 +318,13 @@ const same = (a, b) => {
 /** Only the fields that differ between a draft panel and the approved one. */
 export function panelDiff(draftPanel, approvedPanel) {
   const out = [];
-  for (const [field, col] of Object.entries(PANEL_VALUE_FIELDS)) {
-    const d = draftPanel?.[col] ?? null;
-    const a = approvedPanel?.[col] ?? null;
+  // Through valuesOf, so a pre-split approved panel's serving halves are read
+  // out of its label rather than reported as a change (D-173).
+  const dv = valuesOf(draftPanel || {});
+  const av = valuesOf(approvedPanel || {});
+  for (const field of Object.keys(PANEL_VALUE_FIELDS)) {
+    const d = dv[field] ?? null;
+    const a = av[field] ?? null;
     if (!same(d, a)) out.push({ field, label: FIELD_LABEL[field], approved: a, draft: d });
   }
   return out;

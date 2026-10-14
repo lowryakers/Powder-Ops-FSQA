@@ -7185,3 +7185,64 @@ hits the window instead. The checks now confirm that the field is the element un
 **Verified:** `verify:policyacks` 54 (now including a full acknowledgement by tap at 390px) and
 `verify:edocsui` 27. **Control:** with the prompt back at `z-[80]`, the "prompt is on top" assertion fails
 and the run stops at the first real click.
+
+## D-173 — Nutrition panels: one review queue, a ready-for-review state, a serving size in two facts, and the formula's own fill (14 Oct 2026)
+
+**Asked:** simplify the Product module's review and stop data mistakes reaching an approved panel. Bots (the
+Product Manager token) keep product and panel data current on drafts; Lowry reviews one queue and approves.
+Nothing reaches an approved version without a person. This entry is the first half (items 3–8 of the brief and
+the guardrails); extraction from the file, file hashes and the backfill of the approved panels are D-174.
+
+**What changed, and why each is shaped the way it is:**
+- **`ready_for_review` is a fifth open state** between draft and approved (`nfp_versions.status` CHECK widened by
+  the D-160 rebuild shape, foreign keys off so the cascading tables survive the swap). A bot or a person marks a
+  draft ready (`POST /nfp/:id/ready`, audited `nfp_ready_for_review`); the queue lists exactly those. **A bot may
+  keep writing to a panel that is ready** — values, file, provenance — because "complete" is the bot's claim and
+  the reviewer's send-back is the correction loop, not a second draft. A bot can never approve, send back or bulk
+  approve (`rejectTokenAuth` on all three; asserted).
+- **The queue (`GET /nfp/review-queue`, Products → Review queue)** groups by product family then SKU; each row
+  carries only the fields that differ from the approved panel (`panelDiff`), where the values came from
+  (`source_ref`), the formula with its source, and its **flags**. `flagsFor()` is the ONE derivation of what a
+  reviewer must look at — missing values, serving grams missing, an unacknowledged reconciliation warning,
+  provenance missing, a %DV mismatch, a fill mismatch, no file — and `blocking` says whether approval is refused
+  on it. The card, the queue and the bulk approve all read it; a second copy is a queue that offers an approval
+  the gate refuses. **Bulk approve takes only rows with zero flags**, from `ready_for_review`, through the same
+  `decide()` a single approval uses, and reports what it skipped and why. A separate **Missing panel** bucket
+  names products with no approved panel, with whether a draft is open. The open-draft count is on the screen.
+- **A version cannot be approved while a required value is empty** (`REQUIRED_PANEL_FIELDS`: the lines every
+  panel prints, the serving grams, the ingredients; `409 needs_values` naming them). The paper door is not
+  gated — it records a decision already taken. **This is a real change for the plant**: a file-only panel can no
+  longer be approved; the values have to be on it. D-174's extraction is what makes that cheap.
+- **The serving size is TWO facts** — `serving_household` ("1 Scoop") and `serving_grams` ("35", or a range
+  "34-37") — and the printed `serving_size_desc` is GENERATED from them, never typed. Writing the label alone is
+  parsed back into the two. **Grams are required on every write** (`400 serving_size_grams`), on both doors (the
+  bot's values route and the panel editor). A gram figure sent in the same write as `serving_size_g` (the legacy
+  shape) stands in; the panel's OLD grams never do, or a label rewritten without them would keep them silently.
+  `migrateServingSizes` (boot, idempotent by construction — a row carrying `serving_grams` is never touched)
+  splits what it can read and leaves the rest as filed, flagged `serving_grams_missing` until a person fixes it.
+  `valuesOf` reads the two halves out of a pre-split label, so an old approved panel diffs cleanly.
+- **The fill check multiplies the FORMULA's per-serving fill by servings** (`nfp_versions.bom_fill_per_serving_g`,
+  provenance `fill_per_serving_g`), falling back to the label grams only when there is none — and the message
+  says which it used. Apple Pie at 34.86 g × 1 against a 34.8 g fill is fine; the rounded 35 g label was never
+  the right input. **Tolerance is per pack** (`FILL_TOLERANCE_BY_PACK`, all 5% today), sticks against the SKU's
+  own fill, and **a large pouch with no fill recorded is checked against the standard 660 g**
+  (`POUCH_STANDARD_FILL_G`). Warning only; it blocks nothing on the write.
+- **The formula/BOM pointer on the SKU carries its source**: `products.formula_source_system` (mrpeasy /
+  keychain / manual / genesis), `formula_fill_per_unit_g`, `formula_synced_at`, beside the existing
+  `mrp_formula_id` / `formula_rev` / `fill_weight_g`. Written through `PUT /products/:sku` — a bot already has
+  that route — and shown beside the numbers in the drawer. **No integration writes them**: MRPEasy has no API
+  for us, and a Keychain sync has a column to stamp when it exists.
+- **`products.family` is optional** and only groups: the queue keys on it, else `category · base_flavor`. No
+  shared-value inheritance.
+- **One open draft per SKU.** `POST /nfp` is `409 open_draft_exists` naming the open one (draft, ready, sent or
+  sent back) for a person and a bot alike; a paper filing is an approval, not a draft, and is let by.
+- **Send back** (`POST /nfp/:id/send-back`) is a person's act, needs a note (`400 note_required`), returns the
+  panel to draft carrying `sent_back_note` / `_by` / `_at`, and drops any live link.
+
+**Verified:** `verify:nfpqueue` (79 — live + browser at 1280). The existing NFP verifies were updated for the
+rules that changed: fixtures carry a complete panel and a fill weight, and the mirrored serving size is the
+generated label. `verify:nfppanel` 49, `verify:nfppanelui` 19, `verify:nfpbotpanel` 51, `verify:provenance` 53,
+`verify:productstage` 50, `verify:artworkfilm` 40, `verify:skurename` 37; `check:apitokens` 152, `check:botapi`
+73, `check:botmcp` 37. **Control:** `main` before this change (the migration stubbed): the script cannot get past
+its fixture — `products.family` does not exist — and `/nfp/review-queue` is answered by the `/:id` route as a
+panel called "review-queue".

@@ -54,7 +54,8 @@ t('admin session', !!admin);
 const sku = db.prepare("SELECT sku FROM products WHERE status != 'discontinued' ORDER BY sku LIMIT 1").get()?.sku;
 db.prepare('UPDATE products SET fill_weight_g = 710 WHERE sku = ?').run(sku);
 const APPROVED = { serving_size_desc: '1 bottle (34-37g)', servings_per_container: 20, calories: 130,
-  total_fat_g: 2, total_carbohydrate_g: 3, protein_g: 25, sodium_mg: 200, ingredients: 'Whey protein isolate, cocoa.',
+  total_fat_g: 2, saturated_fat_g: 0.5, trans_fat_g: 0, cholesterol_mg: 10, dietary_fiber_g: 0, total_sugars_g: 1, added_sugars_g: 0,
+  total_carbohydrate_g: 3, protein_g: 25, sodium_mg: 200, ingredients: 'Whey protein isolate, cocoa.',
   allergen_statement: 'Contains milk.' };
 let r = await json('POST', '/nfp', { sku, version: 'NB-V1', source: 'paper', approved_by: 'Maria Servin', approved_at: '2026-09-01' }, admin);
 const v1 = r.body?.id;
@@ -87,8 +88,11 @@ t('a .pdf whose bytes are not a PDF is refused (415)', r.status === 415, String(
 r = await pdfUpload(v2, 'huge.pdf', 'application/pdf', Buffer.concat([PDF('big'), Buffer.alloc(25 * 1024 * 1024 + 10)]), PM);
 t('over 25 MB is refused (413)', r.status === 413, `${r.status} ${JSON.stringify(r.body)}`);
 
+// Every required value (D-173): approval is refused on a panel missing one.
 const VALUES = { serving_size: '1 bottle (34-37g)', servings_per_container: 20, calories: 130, total_fat: 2,
+  saturated_fat: 0.5, trans_fat: 0, cholesterol: 10, dietary_fiber: 0, total_sugars: 1, added_sugars: 0,
   total_carbohydrate: 3, protein: 25, sodium: 210, ingredients: 'Whey protein isolate, cocoa.', allergen_statement: 'Contains milk.' };
+const sku2 = db.prepare("SELECT sku FROM products WHERE status != 'discontinued' AND sku != ? ORDER BY sku LIMIT 1").get(sku)?.sku;
 r = await json('PUT', `/nfp/${v2}/panel-values`, { values: VALUES }, PM);
 t('a values write with no source is refused (400 source_ref_required)', r.status === 400 && r.body?.error === 'source_ref_required', JSON.stringify(r.body));
 r = await json('PUT', `/nfp/${v2}/panel-values`, { values: { colour: 'red' }, source_ref: 'x.pdf' }, PM);
@@ -126,7 +130,10 @@ t('…nor upload the PDF (403)', r.status === 403, String(r.status));
 r = await json('PUT', `/nfp/${v2}/panel`, { panel: { net_weight_g: 710 } }, OTHER);
 t('…and keeps exactly the scope it had: PUT /nfp/:id/panel on a draft still works', r.status === 200, `${r.status} ${JSON.stringify(r.body).slice(0, 100)}`);
 r = await json('POST', '/nfp', { sku, version: 'NB-OTHER' }, OTHER);
-t('…and POST /nfp still works', r.status === 201, String(r.status));
+t('ONE OPEN DRAFT PER SKU: a second draft on a SKU with one open is 409 open_draft_exists, naming it (D-173)',
+  r.status === 409 && r.body?.error === 'open_draft_exists' && r.body?.open_draft?.version === 'NB-V2', `${r.status} ${JSON.stringify(r.body).slice(0, 160)}`);
+r = await json('POST', '/nfp', { sku: sku2, version: 'NB-OTHER' }, OTHER);
+t('…and POST /nfp still works on a SKU with nothing open', r.status === 201, String(r.status));
 
 console.log('\n── the fill-weight warning blocks approval until a person acknowledges it ──');
 r = await json('PUT', `/nfp/${v2}/panel-values`, { values: { servings_per_container: 30 }, source_ref: 'WHY-BTL-BLM_NFP_v2b.pdf' }, PM);

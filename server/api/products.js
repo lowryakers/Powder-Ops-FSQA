@@ -1405,7 +1405,13 @@ const WRITABLE = [
   // ordinary edit form.
   'amazon_channel', 'amazon_sku', 'amazon_asin',
   'drive_url', 'notes', 'fill_weight_g',
+  // D-173: the product family (optional, for grouping), and the formula/BOM
+  // pointer's source and sync date — where mrp_formula_id / formula_rev /
+  // the per-unit fill came from. No integration writes these; a bot does,
+  // through this route, and a Keychain sync has somewhere to stamp.
+  'family', 'formula_source_system', 'formula_fill_per_unit_g', 'formula_synced_at',
 ];
+const FORMULA_SOURCE_SYSTEMS = ['mrpeasy', 'keychain', 'manual', 'genesis'];
 
 /**
  * `artwork_status` and `artwork_version` are NOT in WRITABLE either (D-131).
@@ -1454,6 +1460,18 @@ function buildPatch(db, existing, b) {
     patch.gtin_valid = gtinValid(patch.gtin) ? 1 : 0;
     const clash = patch.gtin && db.prepare('SELECT sku FROM products WHERE gtin = ? AND sku != ?').get(patch.gtin, existing.sku);
     if (clash) return { status: 409, error: `${patch.gtin} is already on ${clash.sku}.` };
+  }
+  if (patch.formula_source_system != null && !FORMULA_SOURCE_SYSTEMS.includes(String(patch.formula_source_system).toLowerCase())) {
+    return { status: 400, field: 'formula_source_system', error: `Formula source is one of ${FORMULA_SOURCE_SYSTEMS.join(', ')}.` };
+  }
+  if (patch.formula_source_system != null) patch.formula_source_system = String(patch.formula_source_system).toLowerCase();
+  if (patch.formula_fill_per_unit_g != null) {
+    const n = Number(patch.formula_fill_per_unit_g);
+    if (!Number.isFinite(n) || n <= 0) return { status: 400, field: 'formula_fill_per_unit_g', error: 'The formula fill per unit is grams — a number above zero.' };
+    patch.formula_fill_per_unit_g = n;
+  }
+  if (patch.formula_synced_at != null && !/^\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?$/.test(String(patch.formula_synced_at))) {
+    return { status: 400, field: 'formula_synced_at', error: 'The formula sync date is a date (YYYY-MM-DD).' };
   }
   // Three states and no fourth. A value the readiness step cannot read would
   // silently take the product off Amazon's punch list.
