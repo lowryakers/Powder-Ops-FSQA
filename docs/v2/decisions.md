@@ -7279,3 +7279,48 @@ answers the upload without `uploaded.extraction`, and every assertion after it f
 
 **Not done.** Extraction of an image with no AI configured; a vision read of a scanned PDF is untested against a
 real scan. `fill_per_serving_g` per SKU still has to be typed (D-173).
+
+## D-175 — The plant's paid holidays are rules on the schedule, with one notice the Monday of the week before (14 Oct 2026)
+
+**Asked:** the paid holidays (New Year's Day, Independence Day, Thanksgiving, the Friday after, Christmas
+Eve, Christmas Day, New Year's Eve), and the Monday holidays (Memorial Day, Labor Day) on which
+production shifts to Tuesday–Friday, should be on the production schedule where employees see them
+with more notice. **The plant's answers, recorded verbatim in `shared/plant-holidays.js`:** a weekend
+holiday is observed on the Friday before; Friday holidays still show (the non-production teams work
+Fridays); Memorial and Labor Day are the shift weeks; a paid holiday is 8 hours; one alert, not two.
+
+**Decided:**
+- **The holidays are RULES, not typed dates** — a fixed date, or "fourth Thursday of November". A
+  year's dates are derived on every read. `plant_holiday_overrides` holds the plant's correction to
+  ONE year of one rule (observe it on another day, don't observe it, or switch the shift off/on), with
+  a reason, admin only, audited; "back to the rule" deletes it. Nothing adds a new holiday from the app
+  — the list is the plant's decision and lives in the shared module.
+- **Any paid holiday observed on a Monday shifts the week to Tuesday–Friday by default** (Christmas Day
+  2028, New Year's Day 2029), the same logic the plant already uses for Memorial and Labor Day. No other
+  holiday was added; I recommended none.
+- **Weekend rule:** step back to the Friday, then further past a day another holiday holds; an eve is
+  never observed after its day (Christmas 2027: Eve Thu 23, Christmas Fri 24). Deliberately NOT the
+  federal Sunday→Monday rule: a Monday off costs this plant a production day. An observed date can cross
+  the year (New Year's Day 2028 is observed Fri 31 Dec 2027), which is why every range query reads a year
+  either side.
+- **One module, every reader**: the grid, the "coming up" strip, the Notify message and the announcement
+  all print `weekCalendar()` / `weekSummaryLines()` (EN and ES). The strip holds no rule of its own.
+- **On the grid: reported, never gated.** A holiday's column is tinted and named; a shift week's Friday
+  says "Production day"; the cell editor warns on a closed day and still saves. A run left on a closed
+  day is named in a banner; when Friday is open, one click carries it there through the existing
+  bulk-move (audited like any move). Nothing moves by itself.
+- **Where people see it:** the strip sits on the Operator View — the one screen every employee has
+  (D-124) — and on the schedule, 60 days ahead. The Notify message gets a "Holiday this week" block.
+- **One notice:** ReadyBot in #announcements, plus a push to every active employee (never a guest, an
+  auditor or ReadyBot), on the **Monday of the week before** the holiday week, from 6am plant time — 7
+  days ahead of a Monday holiday, 10 ahead of Thanksgiving, and while next week's schedule is being
+  planned. Idempotent on `plant_holiday_notices` (claimed before posting); a missed Monday catches up;
+  a week that has started is late news and is skipped.
+
+**Not done here (part 4 of the recommendation):** Hours pre-filling 8 holiday hours (`HOLIDAY_HOURS`
+is exported for it), the EOD missed-report chase, the scale-check bell and daily PM cards treating a
+closed day as closed. Each is a reader of `weekCalendar()` when it is wired.
+
+Verified: `check:holidays` (29, pure, in `npm run check`), `verify:holidays` (53, live + browser at 1440
+and 390px, in `verify:all`). **The control removes the `/api/plant-calendar` mount — the state before —
+and fails from the first calendar assertion.**

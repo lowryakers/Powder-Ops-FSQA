@@ -55,6 +55,8 @@ import internalAuditRoutes from './server/api/internal-audits.js';
 import docReviewRoutes from './server/api/doc-review.js';
 import formRoutes from './server/api/forms.js';
 import facilityRoutes from './server/api/facility.js';
+import plantCalendarRoutes from './server/api/plant-calendar.js';
+import { sendHolidayNotices } from './server/plant-calendar.js';
 import supplierRoutes, { questionnaireLinkRouter } from './server/api/suppliers.js';
 import retentionRoutes from './server/api/retention.js';
 import stabilityRoutes from './server/api/stability.js';
@@ -2015,6 +2017,9 @@ app.use('/api/change-register', changeRegisterRoutes);
 app.use('/api/forms', formRoutes);
 // Read-only: the map shows facts from records the caller can already see.
 app.use('/api/facility', facilityRoutes);
+// Paid holidays (D-175): read by every employee, corrected by an admin — the
+// router decides per route.
+app.use('/api/plant-calendar', plantCalendarRoutes);
 app.use('/api/retention', requireModuleWrite('retention-samples'), retentionRoutes);
 // Stability studies live beside the retention library their pulls come from.
 app.use('/api/stability', requireModuleWrite('retention-samples'), stabilityRoutes);
@@ -2232,7 +2237,7 @@ server.listen(PORT, '0.0.0.0', () => {
   backfillInvoiceText().catch(e => console.warn('[invoices] backfill error:', e.message));
   backfillFinanceFileText().catch(e => console.warn('[finance] backfill error:', e.message));
   // Recurring jobs: Friday auto-backup to R2, Monday expiry digest to #quality.
-  startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges, qaActionNudges, employeeDocumentNudges, policyAckNudges: (d) => policyAckNudges(d, { botDm, postMessageAs, pushToUser }), trainingNudges, supplyCycleNudge, partnerReminderNudges, recordBackfillNudge, supplierReviewNudge, sendFlashReport, sendCleanupDigest, cleanupDigest, CLEANUP_BUSY_THRESHOLD, sendEodMissedDigest, eodMissedDigest, EOD_BUSY_THRESHOLD });
+  startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges, qaActionNudges, employeeDocumentNudges, policyAckNudges: (d) => policyAckNudges(d, { botDm, postMessageAs, pushToUser }), trainingNudges, supplyCycleNudge, partnerReminderNudges, recordBackfillNudge, supplierReviewNudge, sendFlashReport, sendCleanupDigest, cleanupDigest, CLEANUP_BUSY_THRESHOLD, sendEodMissedDigest, eodMissedDigest, EOD_BUSY_THRESHOLD, sendHolidayNotices });
   startReminderLoop(db);
   // Generate any due document-review tasks on startup (idempotent; also runs on
   // every operator-tasks fetch).

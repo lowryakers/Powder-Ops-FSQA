@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useRef, useEffect, forwardRef, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
+import PlantHolidaysStrip from '../common/PlantHolidaysStrip';
 import { ChevronLeft, ChevronRight, Calendar, Share2, Plus, X, ChevronDown, Check, Copy, GripVertical, FileText, Camera, Download, Bell, Clock, Columns2, CheckCircle2, CheckSquare, Square, ArrowRight } from 'lucide-react';
 import DiscussLink from '../DiscussLink.jsx';
 import { useDragPager } from '../../lib/useDragPager';
@@ -299,7 +300,7 @@ function CleaningCell({ value, weekStart, dayIndex, room, userName, onSaved, rea
   );
 }
 
-function CellModal({ cell, weekStart, nextWeekStart, nextWeekLabel, dayIndex, room, roomType, slot, userName, onClose, onSaved, onSetupDownstream }) {
+function CellModal({ cell, weekStart, nextWeekStart, nextWeekLabel, dayIndex, room, roomType, slot, userName, onClose, onSaved, onSetupDownstream, holiday = null }) {
   const [form, setForm] = useState({
     team: cell?.team || (roomType === 'batching' ? 'Batching' : ''),
     mo_number: cell?.mo_number || '',
@@ -413,6 +414,13 @@ function CellModal({ cell, weekStart, nextWeekStart, nextWeekLabel, dayIndex, ro
             <X size={18} className="text-gray-500" />
           </button>
         </div>
+        {/* A warning, never a refusal (D-175): the plant can still choose to run. */}
+        {holiday && (
+          <p data-cell-holiday className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-900">
+            <span className="font-semibold">{holiday.name}</span> is a paid holiday — the plant is closed this day.
+            Anything scheduled here will show on a closed day.
+          </p>
+        )}
 
         <form onSubmit={handleSave} className="space-y-3">
           <div>
@@ -903,7 +911,25 @@ function DownstreamModal({ product, batchDay, weekStart, userName, nextSlotFor, 
 
 // Mobile view of the week's schedule: one swipeable day at a time as cards,
 // grouped by section → room. Much easier to read on a phone than the wide grid.
-function MobileDayCards({ monday, assignmentMap, canEdit, onEditCell, initialDay, entryFor }) {
+// What a day is this week, in one line (D-175): a paid holiday, or the Friday a
+// shift week runs production on. Nothing for an ordinary day.
+function DayHolidayNote({ day }) {
+  if (!day) return null;
+  if (day.closed) return (
+    <p data-day-holiday className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">
+      <span className="font-semibold">{day.holiday.name}</span> — paid holiday, plant closed
+      {day.holiday.moved && <span className="text-rose-700"> (observed; the holiday falls on {day.holiday.natural_date})</span>}
+    </p>
+  );
+  if (day.production && !day.usual_production) return (
+    <p data-day-shift className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+      Production day this week — Monday is a holiday, so production runs Tuesday–Friday.
+    </p>
+  );
+  return null;
+}
+
+function MobileDayCards({ monday, assignmentMap, canEdit, onEditCell, initialDay, entryFor, cal = null }) {
   const [day, setDay] = useState(initialDay);
   const go = (dir) => setDay(d => Math.min(4, Math.max(0, d + dir)));
   // Follow-the-finger day paging (same feel as the sidebar drawer).
@@ -937,6 +963,7 @@ function MobileDayCards({ monday, assignmentMap, canEdit, onEditCell, initialDay
       {/* The day's content is the draggable track — it tracks your finger and
           slides out when the swipe commits. */}
       <div ref={trackRef} className="will-change-transform">
+      <DayHolidayNote day={cal?.days?.[day]} />
       {sections.length === 0 && <p className="text-center text-sm text-gray-400 py-10">Nothing scheduled for {DAYS[day]}.</p>}
       <div className="space-y-4">
         {sections.map(({ section, rooms }) => (
@@ -1104,6 +1131,11 @@ export default function ProductionSchedule({ user }) {
   }, []);
 
   const { data, loading, error, refresh } = useApiGet(`/production/schedule?week_start=${weekStart}`, [weekStart]);
+  // The plant calendar for this week (D-175): which days are paid holidays and
+  // whether production shifts to Tuesday–Friday. Derived on the server from the
+  // shared rules; the grid only draws it.
+  const { data: cal } = useApiGet(`/plant-calendar/week?week_start=${weekStart}`, [weekStart]);
+  const dayCal = (i) => cal?.days?.[i] || null;
 
   // Each cell can hold multiple entries (slots), e.g. several Kitting products on one day
   const assignmentMap = useMemo(() => {
@@ -1284,6 +1316,29 @@ export default function ProductionSchedule({ user }) {
     }
   }, [selectedIds, weekStart, nextWeekStart, user, refresh, exitSelectMode]);
 
+  // Runs sitting on a closed day this week (D-175) — reported, never moved by
+  // themselves. In a shift week the Friday is open, so one click carries the
+  // Monday's runs there through the same bulk-move every other move uses.
+  const closedRuns = useMemo(() => (data?.assignments || []).filter(a =>
+    a.room_type !== 'cleaning' && (a.team || a.mo_number || a.product_name) && cal?.days?.[a.day_of_week]?.closed),
+  [data, cal]);
+  const fridayOpen = !!cal?.days?.[4]?.production;
+  const [movingClosed, setMovingClosed] = useState(false);
+  const moveClosedToFriday = useCallback(async () => {
+    if (!closedRuns.length) return;
+    setMovingClosed(true);
+    try {
+      await apiPost('/production/schedule/bulk-move', {
+        ids: closedRuns.map(a => a.id), day_of_week: 4, week_start: weekStart, updated_by: user?.name || '',
+      });
+      refresh();
+    } catch (err) {
+      console.error('Move to Friday failed:', err);
+    } finally {
+      setMovingClosed(false);
+    }
+  }, [closedRuns, weekStart, user, refresh]);
+
   // Drop-target props shared by filled and empty cells
   const dropProps = (dayIndex, room, roomType) => {
     if (!canEdit || selectMode) return {};
@@ -1310,6 +1365,8 @@ export default function ProductionSchedule({ user }) {
     const entries = (assignmentMap[key] || []).filter(a => a.team || a.mo_number || a.product_name);
     const isDropTarget = canEdit && draggingId && dragOverKey === key;
     const dropHighlight = isDropTarget ? 'ring-2 ring-inset ring-blue-400 bg-blue-50' : '';
+    // A paid holiday tints its whole column (D-175); a run left there still shows.
+    const closed = !!dayCal(dayIndex)?.closed;
 
     if (entries.length > 0) {
       const nextSlot = Math.max(...entries.map(a => a.slot || 0)) + 1;
@@ -1317,7 +1374,7 @@ export default function ProductionSchedule({ user }) {
       // production rooms running Filling, etc.
       const canAddLine = canEdit && !selectMode;
       return (
-        <td key={dayIndex} className={`border border-gray-200 px-2 py-1.5 ${cellTint} ${dropHighlight}`} {...dropProps(dayIndex, room, roomType)}>
+        <td key={dayIndex} data-closed-cell={closed ? '1' : undefined} className={`border border-gray-200 px-2 py-1.5 ${closed ? 'bg-rose-50/70' : cellTint} ${dropHighlight}`} {...dropProps(dayIndex, room, roomType)}>
           <div className="space-y-1">
             {entries.map((a, idx) => {
               const color = TEAM_COLORS[a.team] || '#64748b';
@@ -1412,7 +1469,8 @@ export default function ProductionSchedule({ user }) {
     return (
       <td
         key={dayIndex}
-        className={`border border-gray-200 px-2 py-3 ${canEdit && !selectMode ? 'cursor-pointer hover:bg-gray-50' : ''} transition-colors text-center ${dropHighlight}`}
+        data-closed-cell={closed ? '1' : undefined}
+        className={`border border-gray-200 px-2 py-3 ${closed ? 'bg-rose-50/70' : ''} ${canEdit && !selectMode ? 'cursor-pointer hover:bg-gray-50' : ''} transition-colors text-center ${dropHighlight}`}
         onClick={canEdit && !selectMode ? () => setEditCell({ dayIndex, room, roomType, slot: 0, data: null }) : undefined}
         {...dropProps(dayIndex, room, roomType)}
       >
@@ -1423,6 +1481,22 @@ export default function ProductionSchedule({ user }) {
 
   return (
     <div className="space-y-4">
+      <PlantHolidaysStrip days={60} />
+      {closedRuns.length > 0 && (
+        <div data-closed-runs className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-rose-200 bg-white px-4 py-3 text-sm text-rose-900">
+          <span>
+            <span className="font-semibold">{closedRuns.length}</span> run{closedRuns.length === 1 ? ' is' : 's are'} scheduled
+            on a paid holiday:{' '}
+            {[...new Set(closedRuns.map(a => a.day_of_week))].map(d => `${DAYS[d]} (${cal.days[d].holiday.name})`).join(', ')}.
+          </span>
+          {canEdit && fridayOpen && (
+            <button data-move-to-friday onClick={moveClosedToFriday} disabled={movingClosed}
+              className="shrink-0 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-50">
+              {movingClosed ? 'Moving…' : `Move ${closedRuns.length === 1 ? 'it' : 'them'} to Friday`}
+            </button>
+          )}
+        </div>
+      )}
       {unplaced.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-900">
           <span className="font-semibold">{unplaced.length}</span> item{unplaced.length === 1 ? ' is' : 's are'} scheduled
@@ -1563,7 +1637,7 @@ export default function ProductionSchedule({ user }) {
       {/* Mobile: swipeable one-day card view */}
       {!loading && !error && (
         <MobileDayCards monday={monday} assignmentMap={assignmentMap} canEdit={canEdit} onEditCell={setEditCell}
-          initialDay={mobileInitialDay} entryFor={entryFor} />
+          initialDay={mobileInitialDay} entryFor={entryFor} cal={cal} />
       )}
 
       {/* Mobile: progress list under the day cards when the toggle is on. */}
@@ -1586,7 +1660,8 @@ export default function ProductionSchedule({ user }) {
                     Room
                   </th>
                   {DAYS.map((day, i) => (
-                    <th key={day} className="sticky top-0 z-20 bg-gray-50 border border-gray-200 px-3 py-2 text-center text-xs font-semibold text-gray-600">
+                    <th key={day} data-day-head={i} data-closed={dayCal(i)?.closed ? '1' : undefined}
+                      className={`sticky top-0 z-20 border border-gray-200 px-3 py-2 text-center text-xs font-semibold ${dayCal(i)?.closed ? 'bg-rose-50 text-rose-900' : 'bg-gray-50 text-gray-600'}`}>
                       <div className="flex items-center justify-center gap-1">
                         <span>{DAY_SHORT[i]}</span>
                         {canEdit && (
@@ -1600,6 +1675,16 @@ export default function ProductionSchedule({ user }) {
                         )}
                       </div>
                       <div className="text-[10px] font-normal text-gray-400">{dayDate(monday, i)}</div>
+                      {dayCal(i)?.closed && (
+                        <div data-holiday-name className="mt-0.5 text-[10px] font-semibold leading-tight text-rose-700" title="Paid holiday — plant closed">
+                          {dayCal(i).holiday.name}
+                        </div>
+                      )}
+                      {dayCal(i)?.production && !dayCal(i)?.usual_production && (
+                        <div data-shift-day className="mt-0.5 text-[10px] font-semibold leading-tight text-emerald-700" title="Monday is a holiday; production runs Tuesday–Friday">
+                          Production day
+                        </div>
+                      )}
                     </th>
                   ))}
                 </tr>
@@ -1699,6 +1784,7 @@ export default function ProductionSchedule({ user }) {
           onClose={() => setEditCell(null)}
           onSaved={refresh}
           onSetupDownstream={(p) => setDownstreamFor(p)}
+          holiday={dayCal(editCell.dayIndex)?.holiday || null}
         />
       )}
 

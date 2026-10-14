@@ -342,6 +342,15 @@ export async function runDue(db, deps, now = new Date()) {
     } catch (e) { console.warn('[jobs] PM digest failed:', e.message); }
   }
 
+  // Paid holidays (D-175): ONE notice per holiday week, on the Monday of the
+  // week before. Idempotent on plant_holiday_notices, so every tick may ask.
+  if (deps.sendHolidayNotices) {
+    try {
+      const r = await deps.sendHolidayNotices(db, deps, now);
+      if (r.sent) console.log(`[jobs] holiday notice sent for ${r.sent} week(s)`);
+    } catch (e) { console.warn('[jobs] holiday notice failed:', e.message); }
+  }
+
 }
 
 /* ── Weekly PM digest per team ────────────────────────────────────────────── */

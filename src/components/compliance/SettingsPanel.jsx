@@ -1,5 +1,5 @@
 import { useAuth } from '../../hooks/useAuth';
-import { QrCode, Users, Sliders, Database, Sparkles, Link2, Plug, Bot, KeyRound } from 'lucide-react';
+import { QrCode, Users, Sliders, Database, Sparkles, Link2, Plug, Bot, KeyRound, CalendarHeart } from 'lucide-react';
 import SettingsShell from '../settings/SettingsShell.jsx';
 import UsersSection from '../settings/UsersSection.jsx';
 import DataBackupSection from '../settings/DataBackupSection.jsx';
@@ -10,6 +10,7 @@ import LogBuilderPanel from '../settings/LogBuilderPanel.jsx';
 import CleanupReviewPanel from '../settings/CleanupReviewPanel.jsx';
 import IntegrationsSection from '../settings/IntegrationsSection.jsx';
 import NotificationsSection from '../settings/NotificationsSection.jsx';
+import PlantHolidaysSection from '../settings/PlantHolidaysSection.jsx';
 
 // Settings is a REGISTRY, not a page.
 //
@@ -69,6 +70,15 @@ const SECTIONS = [
         icon: Bot,
         visible: isAdmin,
         Component: NotificationsSection,
+      },
+      {
+        id: 'plant-holidays',
+        label: 'Plant holidays',
+        description: 'The paid holidays, and when production moves to Tuesday–Friday',
+        keywords: 'holiday paid closed calendar thanksgiving christmas memorial labor day shift week friday production schedule',
+        icon: CalendarHeart,
+        visible: isAdmin,
+        Component: PlantHolidaysSection,
       },
       {
         id: 'log-structure',
