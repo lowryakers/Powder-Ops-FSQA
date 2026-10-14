@@ -1535,6 +1535,23 @@ live cause is data the sweep will show. **The PM seed silently dropped 369 of 58
 disagree on asset numbers, every truck included); a fresh database now WARNS with the machine names.
 `verify:pmgeneration` (21; control fails 13).
 
+## Paid holidays are rules on the schedule; one notice the Monday before (D-175)
+`shared/plant-holidays.js` (PURE: `HOLIDAY_RULES`, `holidayInstances`, `holidaysBetween`, `weekCalendar`, `weekSummaryLines`,
+`noticeDateFor`, `HOLIDAY_HOURS = 8`), `server/plant-calendar.js` (`upcoming`, `setOverride`, `sendHolidayNotices`),
+`/api/plant-calendar` (read: every employee; PUT/DELETE `/:key/:year`: admin, reason required, audited),
+`plant_holiday_overrides` + `plant_holiday_notices`, `common/PlantHolidaysStrip.jsx`, Settings → **Plant holidays**.
+- **Rules, never typed dates.** A correction is ONE year of one rule (move / don't observe / shift on-off). The list itself is the plant's.
+- **Weekend ⇒ the Friday before** (not federal Monday), stepping past a day another holiday holds; an eve never after its day.
+  An observed date can cross the year — **query a year either side** (`holidaysBetween` does).
+- **A Monday holiday makes a Tuesday–Friday week** by default. Production days are Mon–Thu (`PRODUCTION_DAYS`).
+- **Grid: reported, never gated** — tinted column, "Production day" Friday, a warning in the cell editor, a banner naming runs on a
+  closed day with **Move to Friday** (bulk-move) when Friday is open.
+- Strip on the **Operator View** (everyone has it) and the schedule, 60 days. Notify message gets "Holiday this week".
+- **One notice**: ReadyBot in #announcements + push to every active employee, Monday of the week before, ≥6am plant time; claimed in
+  `plant_holiday_notices` first; a missed Monday catches up; a started week is skipped.
+- Not yet: Hours pre-fill (8h), EOD chase / scale bell / daily PMs skipping a closed day.
+- `check:holidays` (29), `verify:holidays` (53; control fails from the first calendar assertion).
+
 ## A paused schedule says what it left behind (D-012 → D-055)
 Pausing a PM schedule cascades nothing: the tasks it already raised stay open or missed, nobody completes
 them because the work is recorded elsewhere, and the floor sees the retirement as never having happened —

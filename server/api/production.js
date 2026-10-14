@@ -10,6 +10,8 @@ import { readyDocOrigin } from '../links.js';
 import { roomLabel } from '../../shared/rooms.js';
 import { CLEAN_LEVEL_VALUES } from '../../shared/clean-levels.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
+import { weekFor } from '../plant-calendar.js';
+import { weekSummaryLines } from '../../shared/plant-holidays.js';
 import { mmrGateMode, mmrGateCheck, mmrRef, mmrCoverage, MMR_GATE_MODES, MMR_GATE_KEY } from '../mmr-gate.js';
 
 // Production teams whose schedule gets published to a matching comms channel.
@@ -63,12 +65,19 @@ function schedDayLabel(weekStart, d) {
  *   - a run with no MO or product still prints its room rather than a bare dot
  * Bot bold is `*text*` — the chat renderer is not markdown.
  */
-function teamScheduleMessage(team, rows, weekStart, kind) {
+// A holiday week says so at the top of every published message (D-175) — the
+// same words the strip and the announcement print, from the shared module.
+function holidayBlock(cal) {
+  if (!cal?.changed) return [];
+  return ['\uD83D\uDCC5 *Holiday this week*', ...weekSummaryLines(cal).map(l => `  ${l}`), ''];
+}
+
+function teamScheduleMessage(team, rows, weekStart, kind, cal = null) {
   const head = `\uD83D\uDCCB *${team} \u2014 week of ${fmtWeekLabel(weekStart)}*${kind === 'new' ? '' : ' (updated)'}`;
-  if (!rows.length) return `${head}\nNothing scheduled this week.`;
+  if (!rows.length) return [head, '', ...holidayBlock(cal), 'Nothing scheduled this week.'].join('\n');
   const byDay = {};
   for (const a of rows) (byDay[a.day_of_week] ||= []).push(a);
-  const lines = [head, ''];
+  const lines = [head, '', ...holidayBlock(cal)];
   for (let d = 0; d < 5; d++) {
     if (!byDay[d]) continue;
     lines.push(`*${schedDayLabel(weekStart, d)}*`);
@@ -88,9 +97,9 @@ function teamScheduleMessage(team, rows, weekStart, kind) {
   return lines.join('\n').trimEnd();
 }
 
-function combinedScheduleMessage(assignments, weekStart, kind, changedTeams) {
+function combinedScheduleMessage(assignments, weekStart, kind, changedTeams, cal = null) {
   const head = `\uD83D\uDCCB *Production schedule ${kind === 'new' ? 'published' : 'updated'} \u2014 week of ${fmtWeekLabel(weekStart)}*`;
-  const lines = [head, ''];
+  const lines = [head, '', ...holidayBlock(cal)];
   // One line per team rather than a run-on "Batching: 4 - Kitting: 0 - ...",
   // and a team with nothing scheduled says so in words rather than as a 0.
   for (const { team } of SCHEDULE_TEAM_CHANNELS) {
@@ -1830,6 +1839,7 @@ router.post('/schedule/notify', requireRole('admin'), async (req, res) => {
   try {
     if (weekStart && req.user?.id) {
       const assignments = db.prepare('SELECT * FROM production_schedule WHERE week_start = ?').all(weekStart);
+      const cal = (() => { try { return weekFor(db, weekStart); } catch { return null; } })();
       const changedTeams = [];
       for (const { team, channel } of SCHEDULE_TEAM_CHANNELS) {
         const rows = schedRowsForTeam(assignments, team);
@@ -1841,13 +1851,13 @@ router.post('/schedule/notify', requireRole('admin'), async (req, res) => {
         if (!rows.length && !prev) continue;    // never had anything → nothing to announce
         changedTeams.push(team);
         const ch = getChannelByName(db, channel);
-        if (ch) { await postMessageAs(db, ch, req.user, teamScheduleMessage(team, rows, weekStart, kind)); posted.push(team); }
+        if (ch) { await postMessageAs(db, ch, req.user, teamScheduleMessage(team, rows, weekStart, kind, cal)); posted.push(team); }
       }
       // Combined summary goes to the admin-configured channel for the Schedule
       // module (Messages → module links); default #production_schedule.
       const summaryName = getModuleLinks(db)['production-schedule'] ?? 'production_schedule';
       const prod = summaryName ? getChannelByName(db, summaryName) : null;
-      if (prod) await postMessageAs(db, prod, req.user, combinedScheduleMessage(assignments, weekStart, kind, changedTeams));
+      if (prod) await postMessageAs(db, prod, req.user, combinedScheduleMessage(assignments, weekStart, kind, changedTeams, cal));
     }
   } catch (e) {
     console.warn('[schedule] channel publish failed:', e.message);

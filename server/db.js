@@ -954,6 +954,28 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_production_schedule_week ON production_schedule(week_start);
     CREATE INDEX IF NOT EXISTS idx_production_schedule_room ON production_schedule(room);
 
+    -- The plant's paid holidays are RULES in shared/plant-holidays.js (D-175);
+    -- this holds the plant's correction to ONE year of one rule: observe it on
+    -- another day, don't observe it, or turn a Monday's Tue–Fri shift off/on.
+    CREATE TABLE IF NOT EXISTS plant_holiday_overrides (
+      holiday_key TEXT NOT NULL,
+      year INTEGER NOT NULL,
+      observed_on TEXT,
+      cancelled INTEGER NOT NULL DEFAULT 0,
+      shift_week INTEGER,
+      reason TEXT NOT NULL,
+      set_by TEXT,
+      set_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (holiday_key, year)
+    );
+    -- One row per holiday WEEK announced, so a restart never posts twice.
+    CREATE TABLE IF NOT EXISTS plant_holiday_notices (
+      week_start TEXT PRIMARY KEY,
+      sent_at TEXT NOT NULL DEFAULT (datetime('now')),
+      message_id TEXT,
+      pushed INTEGER NOT NULL DEFAULT 0
+    );
+
     -- QA-dismissed "missed end-of-day report" callouts (reviewed & cleared).
     CREATE TABLE IF NOT EXISTS production_missed_dismissals (
       id TEXT PRIMARY KEY,

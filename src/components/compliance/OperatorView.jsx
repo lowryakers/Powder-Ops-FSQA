@@ -5,6 +5,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, CalendarDays, ChevronRight, CircleDot, Filter, Search, Flag, Paperclip, Thermometer, Droplets, Lightbulb, FlaskConical, ClipboardCheck, SquareCheck, Square, Pencil, Plus, Trash2, MinusCircle, CircleCheck, AlertOctagon, ListChecks, Scale } from 'lucide-react';
 import { localDateStr, daysAgoStr } from '../../utils/dates';
 import FileUpload from '../FileUpload';
+import PlantHolidaysStrip from '../common/PlantHolidaysStrip';
 import { createTranslator, formatDueLabelI18n } from '../../i18n/operatorStrings';
 import { canSeeQaReview } from '../../utils/permissions';
 import { formatDateTime, formatDate } from '../../lib/datetime.js';
@@ -1259,6 +1260,9 @@ export default function OperatorView() {
           </button>
         </div>
       </div>
+
+      {/* Paid holidays in the next 60 days (D-175) — everybody has this screen. */}
+      <PlantHolidaysStrip days={60} lang={lang} />
 
       {/* View as (admin): switches the WHOLE app — nav, shortcuts, permissions —
           to that person's view. The floating amber bar (App) shows Exit. */}
