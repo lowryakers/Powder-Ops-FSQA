@@ -121,13 +121,25 @@ t('Sign is held while the signature is missing', await m.locator('[data-sign-sub
 }
 await m.locator('[data-sign-name]').fill('Doc Operator');
 await m.locator('[data-sign-attest]').check();
+{
+  const box = await m.locator('[data-sign-attest]').boundingBox();
+  t('ON A PHONE the statement box is big enough to tap (≥ 24px)', box && box.width >= 23.5 && box.height >= 23.5, JSON.stringify(box));
+}
 t('the statement they are signing under is on the screen, not behind a link', /electronic signature/i.test(await m.locator('[data-sign-modal]').innerText()));
 t('Sign is offered once everything is there', !(await m.locator('[data-sign-submit]').isDisabled()));
 await m.locator('[data-sign-submit]').click();
-await m.waitForSelector('input[type=password]', { timeout: 15000 });
+await m.waitForSelector('[data-signature-prompt] input[type=password]', { timeout: 15000 });
 t('IT ASKS FOR THE PASSWORD BEFORE ANYTHING IS SIGNED', await m.locator('[data-sign-done]').count() === 0);
-await m.fill('input[type=password]', 'DocOper2026!');
-await m.keyboard.press('Enter');
+t('THE PASSWORD PROMPT IS ON TOP of the signing window, not behind it (D-172)', await m.locator('[data-signature-prompt] input[type=password]').evaluate((el) => {
+  const r = el.getBoundingClientRect();
+  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  return !!hit && (hit === el || el.contains(hit));
+}));
+// Real clicks: fill() + Enter reached a prompt hidden behind the sheet through
+// its focus, which is how this passed while the plant was stuck on "Saving…".
+await m.locator('[data-signature-prompt] input[type=password]').click({ timeout: 5000 });
+await m.keyboard.type('DocOper2026!');
+await m.locator('[data-signature-prompt] button[type=submit]').click({ timeout: 5000 });
 await m.waitForSelector('[data-sign-done]', { timeout: 20000 });
 t('it signs, and says so', /Signed/.test(await m.locator('[data-sign-done]').innerText()));
 await m.locator('[data-sign-close]').click();

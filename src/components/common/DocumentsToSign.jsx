@@ -105,8 +105,8 @@ function Field({ f, value, onChange }) {
   const label = <span className="block text-xs font-medium text-gray-700 mb-1">{f.label}{f.required && <span className="text-red-600"> *</span>}</span>;
   if (f.type === 'checkbox') {
     return (
-      <label className="flex items-start gap-2 text-sm text-gray-800 py-1" data-sign-field={f.name}>
-        <input type="checkbox" className="mt-0.5" checked={!!value} onChange={e => onChange(e.target.checked)} />
+      <label className="flex items-start gap-3 text-sm text-gray-800 py-2 cursor-pointer" data-sign-field={f.name}>
+        <input type="checkbox" className="mt-0.5 h-6 w-6 shrink-0 accent-powder-600 cursor-pointer" checked={!!value} onChange={e => onChange(e.target.checked)} />
         <span>{f.label}</span>
       </label>
     );
@@ -284,8 +284,8 @@ export function SignDocumentModal({ id, onClose }) {
                   <label className="block text-xs font-medium text-gray-700 mb-1">Type your full name as it is on your account</label>
                   <input className={input} value={name} onChange={e => setName(e.target.value)} placeholder={doc.signer_name || ''} autoComplete="off" data-sign-name />
                 </div>
-                <label className="flex items-start gap-2 text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-                  <input type="checkbox" className="mt-1" checked={attest} onChange={e => setAttest(e.target.checked)} data-sign-attest />
+                <label className="flex items-start gap-3 text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-lg px-3 py-3 cursor-pointer">
+                  <input type="checkbox" className="mt-0.5 h-6 w-6 shrink-0 accent-powder-600 cursor-pointer" checked={attest} onChange={e => setAttest(e.target.checked)} data-sign-attest />
                   <span>{doc.attestation}</span>
                 </label>
                 {missing.length > 0 && (
