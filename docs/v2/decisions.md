@@ -7246,3 +7246,36 @@ generated label. `verify:nfppanel` 49, `verify:nfppanelui` 19, `verify:nfpbotpan
 73, `check:botmcp` 37. **Control:** `main` before this change (the migration stubbed): the script cannot get past
 its fixture — `products.family` does not exist — and `/nfp/review-queue` is answered by the `/:id` route as a
 panel called "review-queue".
+
+## D-174 — The nutrition-panel file is read, hashed, renamed and reconciled with the draft; approved panels are read into proposals a person confirms (14 Oct 2026)
+
+**Context.** Pack 2 of the Product-module improvements (the `CODE-SESSION-PROMPT.md` brief): the panel file was a
+file plus a name. Nothing read it, nothing said whether the file on a draft was the one approved, and 127 approved
+versions carry a file and few values. D-173 made the values required for approval; this is what fills them.
+
+**Decided.**
+1. **A panel file is hashed, renamed and read on upload** (`PUT /nfp/:id/panel-file`, `POST /nfp/:id/files` with
+   `kind=panel`). Stored as `<SKU>_<version>_<YYYY-MM-DD>.<ext>`, the designer's name kept beside it, SHA-256 on the
+   row. PDF, PNG or JPG. The order is store, insert, then read — a failed reader leaves `extract_status = failed`,
+   never a lost file.
+2. **The reader fills blanks only.** Every blank panel field on the draft takes the file's value, stamped
+   `extracted from file` per field (`panel_sources`). A typed value is never overwritten.
+3. **A disagreement is a mismatch, derived on every read, blocking.** `decide()` refuses on it on every door, bulk
+   approve skips the row, the queue shows it. A person resolves each field (`file` or `stored`); the resolution is
+   fingerprinted on the two values, so a change to either reopens it. A token cannot resolve (`resolve` is a
+   decision segment).
+4. **The file's standing against the approved panel's file is reported, never gated:** same file · file changed,
+   same name (extraction re-runs) · new file · values changed, file not updated.
+5. **The backfill reads approved panels' files into `nfp_proposed_values`**, one row per version, admin-run in
+   batches. Confirming fills only blank fields on the approved panel and leaves every disagreement alone; dismissing
+   needs a note. The approval, its date and the product mirror are untouched. This is the one door that writes a
+   value onto an approved panel, it writes only into blanks, only by a person, and it is audited (`nfp_proposed_confirmed`).
+6. **No AI is required.** A PDF's text layer is read with pdfjs; vision runs only when AI is configured, and an
+   image uploaded without it reads `skipped` with the reason rather than failing the upload.
+
+**Verified.** `verify:nfpextract` (63, in `verify:all`; S3 stand-in, pdfkit panel, browser at 1280). The related
+NFP verifies, `check:apitokens`, `check:botapi` and `check:botmcp` all green. **Control:** the code on `main`
+answers the upload without `uploaded.extraction`, and every assertion after it fails.
+
+**Not done.** Extraction of an image with no AI configured; a vision read of a scanned PDF is untested against a
+real scan. `fill_per_serving_g` per SKU still has to be typed (D-173).

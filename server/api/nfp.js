@@ -27,7 +27,12 @@ import { v4 as uuid } from 'uuid';
 import { randomBytes, createHash } from 'crypto';
 import fs from 'fs';
 import { getDb, logAudit } from '../db.js';
-import { storageEnabled, putStream, presignGet, deleteObject } from '../storage.js';
+import { storageEnabled, putStream, presignGet, deleteObject, getObjectBuffer } from '../storage.js';
+import {
+  EXTRACTED_SOURCE, panelFileType, sha256Of, storedPanelName, extractFromFile, applyExtractionToDraft,
+  mismatchesFor, fileStatusFor, FILE_LABEL, storedValues,
+} from '../nfp-extract.js';
+import { extractMismatches } from '../../shared/panel-extract.js';
 import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { readyDocOrigin } from '../links.js';
 import { botDm, postMessageAs } from './comms.js';
@@ -281,6 +286,35 @@ function filesFor(db, ids) {
   return out;
 }
 
+/** The panel file on a version — the newest row of kind 'panel'. */
+const panelFileOf = (files) => (files || []).filter((f) => f.kind === 'panel').sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0] || null;
+const approvedPanelFile = (db, versionId) => versionId
+  ? db.prepare("SELECT * FROM nfp_files WHERE version_id = ? AND kind = 'panel' ORDER BY created_at DESC LIMIT 1").get(versionId) || null
+  : null;
+
+/**
+ * What the file says beside what the draft says (D-174): the reader's status,
+ * the per-field sources, the file relative to the approved one, and the
+ * fields where the two disagree, less the ones a person has resolved.
+ */
+function extractionOf(v, files, approvedFile) {
+  const pf = panelFileOf(files);
+  // The approved panel is not compared with itself.
+  if (approvedFile && approvedFile.version_id === v.id) approvedFile = null;
+  const extracted = readJson(pf?.extracted_json);
+  return {
+    panel_sources: readJson(v.panel_sources) || {},
+    extraction: pf ? {
+      status: pf.extract_status || null, at: pf.extracted_at || null,
+      via: extracted?.via || null, note: extracted?.note || null,
+      unread: extracted?.unread || [], evidence: extracted?.evidence || {},
+      values: extracted?.values || {},
+    } : null,
+    file_status: fileStatusFor(v, pf, approvedFile),
+    extract_mismatches: isOpen(v) ? mismatchesFor(v, pf) : [],
+  };
+}
+
 /**
  * Shape a version for the client.
  *
@@ -297,14 +331,18 @@ function hydrate(db, versions) {
   for (const v of versions) if (!products.has(v.sku)) products.set(v.sku, catalogueFill(db, v.sku));
   const approved = new Map();
   for (const v of versions) if (!approved.has(v.sku)) approved.set(v.sku, approvedFor(db, v.sku) || null);
+  const approvedFiles = new Map();
+  for (const [sku, a] of approved) approvedFiles.set(sku, a ? approvedPanelFile(db, a.id) : null);
   return versions.map((v) => {
-    const { token_hash, panel_json, front_callouts, dv_warnings, approved_provenance, fill_check, ...rest } = v;
+    const { token_hash, panel_json, front_callouts, dv_warnings, approved_provenance, fill_check, panel_sources: _ps, extract_resolutions: _er, ...rest } = v;
     const panel = readJson(panel_json);
     const provenance = provenanceOf(v);
     const missingProv = provenanceMissing(provenance);
     const product = products.get(v.sku);
+    const ext = extractionOf(v, files.get(v.id) || [], approvedFiles.get(v.sku));
     return {
       ...rest,
+      ...ext,
       // Derived, never backfilled: a panel with nothing recorded reads as
       // `source_system: 'unknown'` and `provenance_missing: true` until a person
       // fills it — the honest state, and what drives the re-approval work.
@@ -339,7 +377,7 @@ function hydrate(db, versions) {
       flavor: v.flavor ?? product?.flavor ?? null,
       category: v.category ?? product?.category ?? null,
       pack: v.pack ?? product?.pack ?? null,
-      ...reviewOf(db, { ...v, _file_count: (files.get(v.id) || []).length }, panel, product, approved.get(v.sku)),
+      ...reviewOf(db, { ...v, _file_count: (files.get(v.id) || []).length, _ext: ext }, panel, product, approved.get(v.sku)),
     };
   });
 }
@@ -405,6 +443,23 @@ function flagsFor(v, panel, product, unresolved) {
   if (fc.status === 'mismatch') out.push({ key: 'fill_mismatch', label: fillCheckSentence(fc), blocking: false, needs_ack: 'fill_ack' });
   const hasFile = !!v.drive_url || (v._file_count || 0) > 0;
   if (!hasFile) out.push({ key: 'no_file', label: 'No panel file or Drive link', blocking: false });
+  // The file and the stored value disagree and nobody has said which is right
+  // (D-174). Blocking: an approval over an unread disagreement is an approval
+  // of whichever one the reader happened to see.
+  const open = (v._ext?.extract_mismatches || []).filter((m) => !m.resolved);
+  if (open.length) {
+    out.push({ key: 'extract_mismatch', blocking: true, fields: open.map((m) => m.field),
+      label: `File disagrees with the stored value: ${open.map((m) => FIELD_LABEL[m.field] || m.field).join(', ')}` });
+  }
+  for (const l of v._ext?.file_status?.labels || []) {
+    if (l === 'file_changed_same_name' || l === 'values_changed_file_not_updated') {
+      out.push({ key: l, label: FILE_LABEL[l], blocking: false });
+    }
+  }
+  if (v._ext?.extraction && ['failed', 'empty'].includes(v._ext.extraction.status)) {
+    out.push({ key: 'extract_' + v._ext.extraction.status, blocking: false,
+      label: v._ext.extraction.status === 'failed' ? 'The panel file could not be read' : 'No panel values were read from the file' });
+  }
   return out;
 }
 
@@ -520,6 +575,7 @@ function reviewQueue(db) {
     ORDER BY p.category, p.base_flavor, p.sku`).all().map((p) => ({ ...p, family_key: familyKeyOf(p) }));
   const openDrafts = db.prepare(`SELECT n.sku, n.id, n.version, n.status, n.updated_at FROM nfp_versions n
     WHERE n.status IN ('draft','rejected','sent') ORDER BY n.updated_at DESC`).all();
+  const proposed = pendingProposed(db);
   return {
     groups: groupList,
     counts: {
@@ -528,9 +584,12 @@ function reviewQueue(db) {
       flagged: ready.filter((v) => !v.review_ready).length,
       missing_panel: missing.length,
       open_drafts: openDrafts.length,
+      proposed: proposed.length,
+      backfill_remaining: backfillCandidates(db).length,
     },
     missing_panel: missing,
     open_drafts: openDrafts,
+    proposed,
   };
 }
 
@@ -570,6 +629,143 @@ router.post('/review-queue/approve', rejectTokenAuth, (req, res) => {
   }
   logAudit(req.user, 'nfp_bulk_approved', 'nfp', 'queue', { approved: approved.map((a) => a.id), skipped }, null, null, 'NFP review queue');
   res.json({ approved, skipped, queue: reviewQueue(db) });
+});
+
+/* ── The backfill: what the APPROVED panels' files say (D-174) ───────────────
+ *
+ * The approved versions were filed as a file plus a name; the reader runs over
+ * each one ONCE and holds what it found in `nfp_proposed_values`, beside the
+ * version and never on it. A person confirms — which fills ONLY the fields the
+ * approved panel left blank — or dismisses with a note. An approved value is
+ * never overwritten by this door, and the approval itself is not reopened.
+ */
+
+/** Approved versions with a panel file that the backfill has not read yet. */
+function backfillCandidates(db) {
+  return db.prepare(`SELECT n.*, f.id AS file_id, f.storage_key, f.filename, f.original_filename, f.content_type, f.sha256
+    FROM nfp_versions n JOIN nfp_files f ON f.version_id = n.id AND f.kind = 'panel'
+    WHERE n.status = 'approved' AND NOT EXISTS (SELECT 1 FROM nfp_proposed_values pv WHERE pv.version_id = n.id)
+    GROUP BY n.id ORDER BY n.approved_at, n.sku`).all();
+}
+
+/** A proposal beside its version: what it would fill, and where it disagrees. */
+function proposedView(db, pv) {
+  const v = db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(pv.version_id);
+  const values = readJson(pv.values_json) || {};
+  const stored = storedValues(panelOf(v) || {});
+  const fills = Object.entries(values)
+    .filter(([f, val]) => val !== null && val !== '' && (stored[f] === null || stored[f] === undefined || stored[f] === ''))
+    .map(([field, value]) => ({ field, label: FIELD_LABEL[field] || field, value }));
+  const conflicts = extractMismatches(stored, values).map((m) => ({ ...m, label: FIELD_LABEL[m.field] || m.field }));
+  return {
+    id: pv.id, version_id: pv.version_id, sku: v?.sku, version: v?.version, approved_at: v?.approved_at,
+    status: pv.status, extract_status: pv.extract_status, file_sha256: pv.file_sha256, created_at: pv.created_at,
+    decided_by: pv.decided_by, decided_at: pv.decided_at, note: pv.note,
+    evidence: readJson(pv.evidence_json) || {},
+    values, fills, conflicts,
+    nothing_read: !Object.keys(values).length,
+  };
+}
+
+const pendingProposed = (db) => db.prepare("SELECT * FROM nfp_proposed_values WHERE status = 'pending' ORDER BY created_at").all()
+  .map((pv) => proposedView(db, pv));
+
+/**
+ * Run the reader over a batch of approved panels' files. Admin, a person; each
+ * run takes `limit` (default 25) so a long backlog is worked in passes.
+ * Idempotent: a version with a proposal row is never read again from here.
+ */
+router.post('/backfill-extract', rejectTokenAuth, async (req, res) => {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admins run the backfill.' });
+  if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured — set the R2 variables.' });
+  const db = getDb();
+  const limit = Math.min(Math.max(Number(req.body?.limit) || 25, 1), 200);
+  const batch = backfillCandidates(db).slice(0, limit);
+  const done = [];
+  for (const c of batch) {
+    const buffer = await getObjectBuffer(c.storage_key);
+    const row = { id: c.file_id, original_filename: c.original_filename, filename: c.filename };
+    let extraction;
+    let sha = c.sha256;
+    if (!buffer) {
+      extraction = { status: 'failed', note: 'The stored file could not be read back from storage.', values: {}, evidence: {}, unread: [] };
+      db.prepare("UPDATE nfp_files SET extract_status = 'failed', extracted_json = ?, extracted_at = datetime('now') WHERE id = ?")
+        .run(JSON.stringify({ status: 'failed', note: extraction.note }), c.file_id);
+    } else {
+      sha = sha256Of(buffer);
+      db.prepare('UPDATE nfp_files SET sha256 = COALESCE(sha256, ?), original_filename = COALESCE(original_filename, filename) WHERE id = ?').run(sha, c.file_id);
+      extraction = await readAndRecord(db, row, buffer, c.content_type || '');
+    }
+    db.prepare(`INSERT INTO nfp_proposed_values (id, version_id, file_id, file_sha256, values_json, evidence_json, extract_status)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`).run(uuid(), c.id, c.file_id, sha || null, JSON.stringify(extraction.values || {}),
+      JSON.stringify(extraction.evidence || {}), extraction.status);
+    done.push({ sku: c.sku, version: c.version, extract_status: extraction.status, fields: Object.keys(extraction.values || {}).length });
+  }
+  logAudit(req.user, 'nfp_backfill_extract', 'nfp', 'backfill', { read: done.length, results: done }, null, null, 'NFP backfill');
+  res.json({ read: done, remaining: backfillCandidates(db).length, pending: pendingProposed(db).length });
+});
+
+router.get('/proposed', (_req, res) => {
+  const db = getDb();
+  res.json({ proposed: pendingProposed(db), remaining: backfillCandidates(db).length });
+});
+
+/**
+ * Confirm a proposal: the blank fields on the approved panel take the file's
+ * values, each stamped "extracted from file". A field that already carries a
+ * value is NEVER written here, whatever the file says — a disagreement on an
+ * approved panel is a correction, which is the next version.
+ */
+router.post('/proposed/:id/confirm', rejectTokenAuth, (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage nutrition panels.' });
+  const db = getDb();
+  const pv = db.prepare('SELECT * FROM nfp_proposed_values WHERE id = ?').get(req.params.id);
+  if (!pv) return res.status(404).json({ error: 'Not found' });
+  if (pv.status !== 'pending') return res.status(409).json({ error: `Already ${pv.status}.` });
+  const view = proposedView(db, pv);
+  const v = db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(pv.version_id);
+  const panel = panelOf(v) || {};
+  const sources = readJson(v.panel_sources) || {};
+  const now = new Date().toISOString();
+  const before = {};
+  db.transaction(() => {
+    for (const f of view.fills) {
+      const col = PANEL_VALUE_FIELDS[f.field] || f.field;
+      before[f.field] = panel[col] ?? null;
+      panel[col] = f.value;
+      sources[f.field] = { source: EXTRACTED_SOURCE, ref: view.evidence?.[f.field] || null, by: req.user.name, at: now, backfill: true };
+    }
+    if (view.fills.some((f) => f.field === 'serving_grams' || f.field === 'serving_household')) {
+      panel.serving_size_desc = panel.serving_size_desc || servingLabel(panel.serving_household, panel.serving_grams);
+    }
+    if (view.fills.length) {
+      db.prepare(`UPDATE nfp_versions SET panel_json = ?, panel_sources = ?, panel_rev = panel_rev + 1,
+        panel_source_ref = COALESCE(panel_source_ref, ?), panel_source_by = COALESCE(panel_source_by, ?), panel_source_at = COALESCE(panel_source_at, datetime('now')),
+        updated_at = datetime('now') WHERE id = ?`)
+        .run(JSON.stringify(panel), JSON.stringify(sources), `${EXTRACTED_SOURCE} (backfill)`, req.user.name, v.id);
+    }
+    db.prepare("UPDATE nfp_proposed_values SET status = 'confirmed', decided_by = ?, decided_at = ?, note = ? WHERE id = ?")
+      .run(req.user.name, now, (req.body?.note || '').trim() || null, pv.id);
+  })();
+  logAudit(req.user, 'nfp_proposed_confirmed', 'nfp', v.id,
+    { sku: v.sku, version: v.version, filled: view.fills.map((f) => f.field), left_alone: view.conflicts.map((c) => c.field), proposal: pv.id },
+    before, Object.fromEntries(view.fills.map((f) => [f.field, f.value])), `${v.sku} NFP ${v.version}`);
+  res.json({ confirmed: proposedView(db, db.prepare('SELECT * FROM nfp_proposed_values WHERE id = ?').get(pv.id)), filled: view.fills.length });
+});
+
+router.post('/proposed/:id/dismiss', rejectTokenAuth, (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage nutrition panels.' });
+  const db = getDb();
+  const pv = db.prepare('SELECT * FROM nfp_proposed_values WHERE id = ?').get(req.params.id);
+  if (!pv) return res.status(404).json({ error: 'Not found' });
+  if (pv.status !== 'pending') return res.status(409).json({ error: `Already ${pv.status}.` });
+  const note = (req.body?.note || '').trim();
+  if (note.length < 3) return res.status(400).json({ error: 'note_required', message: 'Say why the file\'s values are not being taken.' });
+  db.prepare("UPDATE nfp_proposed_values SET status = 'dismissed', decided_by = ?, decided_at = ?, note = ? WHERE id = ?")
+    .run(req.user.name, new Date().toISOString(), note, pv.id);
+  const v = db.prepare('SELECT sku, version FROM nfp_versions WHERE id = ?').get(pv.version_id);
+  logAudit(req.user, 'nfp_proposed_dismissed', 'nfp', pv.version_id, { sku: v?.sku, version: v?.version, note, proposal: pv.id }, null, null, `${v?.sku} NFP ${v?.version}`);
+  res.json({ dismissed: proposedView(db, db.prepare('SELECT * FROM nfp_proposed_values WHERE id = ?').get(pv.id)) });
 });
 
 /** Every panel filed against one SKU, newest first. */
@@ -784,6 +980,52 @@ router.post('/batch/:id/revoke', (req, res) => {
 });
 
 /** Attach the panel file. Streamed from disk, so a big PDF is not buffered. */
+/**
+ * Store a PANEL file and read it (D-174), in this order: hash, store under
+ * `<SKU>_<version>_<date>.<ext>`, insert the row — THEN run the reader. A
+ * reader that fails leaves a row reading `extract_status = failed`; the file
+ * is never lost to it. On an OPEN version the values read fill the blanks on
+ * the draft with source "extracted from file"; a typed field is never
+ * touched. Returns `{ row, filled, extraction }`. The caller audits.
+ */
+async function storePanelFile(db, v, file, who, { replace = false } = {}) {
+  const buffer = fs.readFileSync(file.path);
+  const type = panelFileType(file.originalname, file.mimetype, buffer.slice(0, 8));
+  if (!type) return { error: { status: 415, body: { error: 'unsupported_type',
+    message: 'The panel file must be a PDF, PNG or JPG — the extension, the declared type and the first bytes must agree.' } } };
+  const sha256 = sha256Of(buffer);
+  const original = (file.originalname || `panel.${type.ext}`).slice(0, 255);
+  const stored = storedPanelName(v.sku, v.version, type.ext);
+  const key = `nfp/${v.sku}/${v.id}-panel-${Date.now()}-${stored}`;
+  await putStream(key, fs.createReadStream(file.path), type.content);
+  const old = replace ? db.prepare("SELECT * FROM nfp_files WHERE version_id = ? AND kind = 'panel'").all(v.id) : [];
+  const id = uuid();
+  db.transaction(() => {
+    if (replace) db.prepare("DELETE FROM nfp_files WHERE version_id = ? AND kind = 'panel'").run(v.id);
+    db.prepare(`INSERT INTO nfp_files (id, version_id, kind, filename, original_filename, content_type, size, storage_key, uploaded_by, sha256)
+      VALUES (?, ?, 'panel', ?, ?, ?, ?, ?, ?, ?)`).run(id, v.id, stored, original, type.content, file.size || buffer.length, key, who, sha256);
+    db.prepare("UPDATE nfp_versions SET updated_at = datetime('now') WHERE id = ?").run(v.id);
+  })();
+  for (const o of old) if (o.storage_key !== key) deleteObject(o.storage_key);
+  const row = db.prepare('SELECT * FROM nfp_files WHERE id = ?').get(id);
+  const extraction = await readAndRecord(db, row, buffer, type.content);
+  let filled = [];
+  if (extraction.status === 'ok' && isOpen(v)) {
+    const fresh = db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(v.id);
+    filled = applyExtractionToDraft(db, fresh, row, extraction, who);
+  }
+  return { row, old, filled, extraction, sha256, stored, original };
+}
+
+/** Run the reader over a stored panel file and record what it found on the row. */
+async function readAndRecord(db, row, buffer, contentType) {
+  const extraction = await extractFromFile(buffer, contentType);
+  const { text, ...rest } = extraction;
+  db.prepare(`UPDATE nfp_files SET extracted_text = ?, extracted_json = ?, extract_status = ?, extracted_at = datetime('now') WHERE id = ?`)
+    .run(text || null, JSON.stringify(rest), extraction.status, row.id);
+  return extraction;
+}
+
 router.post('/:id/files', nfpUpload, async (req, res) => {
   if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage nutrition panels.' });
   const db = getDb();
@@ -801,17 +1043,30 @@ router.post('/:id/files', nfpUpload, async (req, res) => {
 
   try {
     const kind = ['panel', 'preview', 'backup', 'other'].includes(req.body?.kind) ? req.body.kind : 'panel';
+    const read = [];
     for (const f of files) {
+      if (kind === 'panel') {
+        // The panel itself is hashed, renamed and read (D-174).
+        const out = await storePanelFile(db, v, f, req.user.name);
+        if (out.error) return res.status(out.error.status).json(out.error.body);
+        read.push({ file: out.original, stored_as: out.stored, sha256: out.sha256, extraction: out.extraction.status, filled: out.filled });
+        logAudit(req.user, 'nfp_panel_file_uploaded', 'nfp', v.id,
+          { sku: v.sku, version: v.version, filename: out.original, stored_as: out.stored, sha256: out.sha256,
+            extract_status: out.extraction.status, filled: out.filled, source: EXTRACTED_SOURCE },
+          null, { files: [out.stored] }, `${v.sku} NFP ${v.version}`);
+        continue;
+      }
       const filename = (f.originalname || 'nfp').slice(0, 255);
       const key = `nfp/${v.sku}/${v.id}-${kind}-${filename.replace(/[^\w.-]+/g, '_')}`;
       await putStream(key, fs.createReadStream(f.path), f.mimetype || null);
       db.prepare(`INSERT INTO nfp_files
-        (id, version_id, kind, filename, content_type, size, storage_key, uploaded_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
-        uuid(), v.id, kind, filename, f.mimetype || null, f.size || null, key, req.user.name);
+        (id, version_id, kind, filename, original_filename, content_type, size, storage_key, uploaded_by, sha256)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        uuid(), v.id, kind, filename, filename, f.mimetype || null, f.size || null, key, req.user.name, sha256Of(fs.readFileSync(f.path)));
     }
     db.prepare("UPDATE nfp_versions SET updated_at = datetime('now') WHERE id = ?").run(v.id);
-    res.status(201).json(hydrate(db, [db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(v.id)])[0]);
+    const h = hydrate(db, [db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(v.id)])[0];
+    res.status(201).json(read.length ? { ...h, uploaded: read } : h);
   } catch (err) {
     res.status(500).json({ error: uploadErrorMessage(err) });
   } finally {
@@ -829,7 +1084,7 @@ router.post('/:id/files', nfpUpload, async (req, res) => {
 const PDF_MAX_BYTES = 25 * 1024 * 1024;
 const panelPdfUpload = mediaUpload({ files: 1, maxBytes: PDF_MAX_BYTES }).single('file');
 
-/** Upload or REPLACE the panel PDF on an undecided panel. PDF only, 25 MB. */
+/** Upload or REPLACE the panel file on an undecided panel. PDF, PNG or JPG, 25 MB. */
 router.put('/:id/panel-file', (req, res) => {
   panelPdfUpload(req, res, async (upErr) => {
     const file = req.file;
@@ -838,7 +1093,7 @@ router.put('/:id/panel-file', (req, res) => {
         const tooBig = upErr.code === 'LIMIT_FILE_SIZE';
         return res.status(tooBig ? 413 : 400).json({
           error: tooBig ? 'too_large' : 'bad_upload',
-          message: tooBig ? 'The panel PDF must be 25 MB or smaller.' : uploadErrorMessage(upErr, PDF_MAX_BYTES),
+          message: tooBig ? 'The panel file must be 25 MB or smaller.' : uploadErrorMessage(upErr, PDF_MAX_BYTES),
         });
       }
       if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage nutrition panels.' });
@@ -849,46 +1104,77 @@ router.put('/:id/panel-file', (req, res) => {
       if (['approved', 'superseded'].includes(v.status)) {
         return res.status(409).json({ error: 'This panel is already decided. File the next version instead.' });
       }
-      if (!file) return res.status(400).json({ error: 'no_file', message: 'Send the PDF in the "file" field.' });
-      // PDF ONLY: the name, the declared type and the first bytes must all say so.
-      const head = Buffer.alloc(5);
-      const fd = fs.openSync(file.path, 'r');
-      try { fs.readSync(fd, head, 0, 5, 0); } finally { fs.closeSync(fd); }
-      const isPdf = /\.pdf$/i.test(file.originalname || '') && /pdf/i.test(file.mimetype || '')
-        && head.toString('latin1') === '%PDF-';
-      if (!isPdf) {
-        return res.status(415).json({ error: 'unsupported_type', message: 'The panel file must be a PDF (.pdf, application/pdf, starting %PDF-).' });
-      }
+      if (!file) return res.status(400).json({ error: 'no_file', message: 'Send the file in the "file" field.' });
       if ((file.size || 0) > PDF_MAX_BYTES) {
-        return res.status(413).json({ error: 'too_large', message: 'The panel PDF must be 25 MB or smaller.' });
+        return res.status(413).json({ error: 'too_large', message: 'The panel file must be 25 MB or smaller.' });
       }
       if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured — set the R2 variables.' });
 
-      const filename = (file.originalname || 'panel.pdf').slice(0, 255);
-      const sha256 = createHash('sha256').update(fs.readFileSync(file.path)).digest('hex');
-      const key = `nfp/${v.sku}/${v.id}-panel-${Date.now()}-${filename.replace(/[^\w.-]+/g, '_')}`;
-      await putStream(key, fs.createReadStream(file.path), 'application/pdf');
-      const old = db.prepare("SELECT * FROM nfp_files WHERE version_id = ? AND kind = 'panel'").all(v.id);
-      db.transaction(() => {
-        db.prepare("DELETE FROM nfp_files WHERE version_id = ? AND kind = 'panel'").run(v.id);
-        db.prepare(`INSERT INTO nfp_files (id, version_id, kind, filename, content_type, size, storage_key, uploaded_by)
-          VALUES (?, ?, 'panel', ?, 'application/pdf', ?, ?, ?)`).run(uuid(), v.id, filename, file.size || null, key, req.user.name);
-        db.prepare("UPDATE nfp_versions SET updated_at = datetime('now') WHERE id = ?").run(v.id);
-      })();
-      // The replaced objects go only after the new row is in — a failed upload
-      // must never leave a draft with no panel at all.
-      for (const o of old) if (o.storage_key !== key) deleteObject(o.storage_key);
-      logAudit(req.user, old.length ? 'nfp_panel_file_replaced' : 'nfp_panel_file_uploaded', 'nfp', v.id,
-        { sku: v.sku, version: v.version, filename, size: file.size || null, sha256,
-          replaced: old.map(o => o.filename) },
-        old.length ? { files: old.map(o => o.filename) } : null, { files: [filename] }, `${v.sku} NFP ${v.version}`);
-      res.json(hydrate(db, [db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(v.id)])[0]);
+      const out = await storePanelFile(db, v, file, req.user.name, { replace: true });
+      if (out.error) return res.status(out.error.status).json(out.error.body);
+      logAudit(req.user, out.old.length ? 'nfp_panel_file_replaced' : 'nfp_panel_file_uploaded', 'nfp', v.id,
+        { sku: v.sku, version: v.version, filename: out.original, stored_as: out.stored, size: file.size || null, sha256: out.sha256,
+          replaced: out.old.map((o) => o.original_filename || o.filename), same_bytes_as_replaced: out.old.some((o) => o.sha256 === out.sha256),
+          extract_status: out.extraction.status, filled: out.filled, source: EXTRACTED_SOURCE },
+        out.old.length ? { files: out.old.map((o) => o.filename) } : null, { files: [out.stored] }, `${v.sku} NFP ${v.version}`);
+      const h = hydrate(db, [db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(v.id)])[0];
+      res.json({ ...h, uploaded: { file: out.original, stored_as: out.stored, sha256: out.sha256, extraction: out.extraction.status, filled: out.filled } });
     } catch (err) {
       res.status(500).json({ error: uploadErrorMessage(err, PDF_MAX_BYTES) });
     } finally {
       if (file) cleanupTemp([file]);
     }
   });
+});
+
+/**
+ * A person says which is right where the file and the stored value disagree
+ * (D-174): `file` writes the file's value onto the draft as "extracted from
+ * file"; `stored` keeps what was typed. Either way the answer is recorded
+ * against exactly those two values — if either moves, the question comes back.
+ * A DECISION, so never a token (the `resolve` segment is token-denied, and the
+ * guard here says so again).
+ */
+router.post('/:id/mismatches/:field/resolve', rejectTokenAuth, (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage nutrition panels.' });
+  const db = getDb();
+  const v = db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(req.params.id);
+  if (!v) return res.status(404).json({ error: 'Not found' });
+  if (!isOpen(v)) return res.status(409).json({ error: 'This panel is already decided.' });
+  const choice = String(req.body?.choice || '');
+  if (!['file', 'stored'].includes(choice)) return res.status(400).json({ error: 'choice_required', message: 'Send choice: "file" or "stored".' });
+  const files = db.prepare("SELECT * FROM nfp_files WHERE version_id = ? AND kind = 'panel'").all(v.id);
+  const m = mismatchesFor(v, panelFileOf(files)).find((x) => x.field === req.params.field && !x.resolved);
+  if (!m) return res.status(404).json({ error: 'no_mismatch', message: `The file and the stored value agree on ${req.params.field}, or the field is not on the file.` });
+  const now = new Date().toISOString();
+  const resolutions = readJson(v.extract_resolutions) || {};
+  resolutions[m.field] = { choice, fingerprint: m.fingerprint, by: req.user.name, at: now, file: m.file, stored: m.stored };
+  const panel = panelOf(v) || {};
+  const sources = readJson(v.panel_sources) || {};
+  const col = PANEL_VALUE_FIELDS[m.field] || m.field;
+  const before = panel[col];
+  db.transaction(() => {
+    if (choice === 'file') {
+      panel[col] = m.file;
+      sources[m.field] = { source: EXTRACTED_SOURCE, ref: panelFileOf(files)?.original_filename, by: req.user.name, at: now, resolved: true };
+      if (m.field === 'serving_grams' || m.field === 'serving_household') {
+        panel.serving_size_desc = servingLabel(panel.serving_household, panel.serving_grams);
+        db.prepare('UPDATE nfp_versions SET serving_size = ? WHERE id = ?').run(panel.serving_size_desc, v.id);
+      }
+      if (m.field === 'servings_per_container') db.prepare('UPDATE nfp_versions SET servings_per_container = ? WHERE id = ?').run(String(m.file), v.id);
+      db.prepare(`UPDATE nfp_versions SET panel_json = ?, panel_sources = ?, panel_rev = panel_rev + 1, panel_values_by = ?, panel_values_at = datetime('now'),
+        extract_resolutions = ?, updated_at = datetime('now') WHERE id = ?`)
+        .run(JSON.stringify(panel), JSON.stringify(sources), req.user.name, JSON.stringify(resolutions), v.id);
+    } else {
+      sources[m.field] = { ...(sources[m.field] || { source: 'typed' }), kept_over_file: panelFileOf(files)?.original_filename, by: req.user.name, at: now };
+      db.prepare(`UPDATE nfp_versions SET panel_sources = ?, extract_resolutions = ?, updated_at = datetime('now') WHERE id = ?`)
+        .run(JSON.stringify(sources), JSON.stringify(resolutions), v.id);
+    }
+  })();
+  logAudit(req.user, 'nfp_mismatch_resolved', 'nfp', v.id,
+    { sku: v.sku, version: v.version, field: m.field, choice, file: m.file, stored: m.stored },
+    { [m.field]: before }, { [m.field]: choice === 'file' ? m.file : before }, `${v.sku} NFP ${v.version}`);
+  res.json(hydrate(db, [db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(v.id)])[0]);
 });
 
 /** The panel's values as the values route speaks them, with the review beside them. */
@@ -1355,6 +1641,15 @@ class PanelIncomplete extends Error {
   constructor(missing) { super('panel incomplete'); this.missing = missing; }
 }
 
+/** The file and the stored value disagree on a field nobody has resolved (D-174). */
+export class ExtractUnresolved extends Error {
+  constructor(mismatches) {
+    super('The panel file disagrees with the stored values.');
+    this.name = 'ExtractUnresolved';
+    this.mismatches = mismatches;
+  }
+}
+
 function reconcileRefusal(unresolved) {
   return {
     error: `This panel cannot be approved until a person acknowledges each warning in ReadyDoc: `
@@ -1366,6 +1661,14 @@ function reconcileRefusal(unresolved) {
 /** The 409 every approval door answers with. One shape, three doors. */
 export function refusalBody(err) {
   if (err instanceof ReconcileUnacknowledged) return reconcileRefusal(err.unresolved);
+  if (err instanceof ExtractUnresolved) {
+    return {
+      error: `This panel cannot be approved while the file and the stored values disagree: `
+        + `${err.mismatches.map((m) => `${FIELD_LABEL[m.field] || m.field} (file ${m.file}, stored ${m.stored})`).join('; ')}. `
+        + 'Resolve each one in ReadyDoc first.',
+      needs_extract_resolution: err.mismatches,
+    };
+  }
   if (err instanceof PanelIncomplete) {
     return {
       error: `This panel cannot be approved until its values are in: `
@@ -1423,6 +1726,11 @@ function decide(db, v, { decision, by, comments, via, dvAck, fillAck }) {
     // not a tick at the button, and never from the signed link (D-171).
     const { unresolved } = reconcileFor(db, v);
     if (unresolved.length) throw new ReconcileUnacknowledged(unresolved);
+    // Where the panel file says one thing and the draft another, a person has
+    // to have chosen (D-174) — the link cannot, and bulk approve must not.
+    const files = db.prepare("SELECT * FROM nfp_files WHERE version_id = ? AND kind = 'panel'").all(v.id);
+    const openMismatches = mismatchesFor(v, panelFileOf(files)).filter((m) => !m.resolved);
+    if (openMismatches.length) throw new ExtractUnresolved(openMismatches);
   }
   const warnings = approving ? checkDailyValues(panelOf(v) || {}) : [];
   const fill = approving ? fillWeightCheck(provenance.bom_fill_weight_g, catalogueFill(db, v.sku)?.fill_weight_g) : null;

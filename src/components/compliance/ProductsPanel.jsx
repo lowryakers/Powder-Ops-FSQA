@@ -1014,7 +1014,7 @@ export default function ProductsPanel() {
 
       {view === 'nfp' && <NfpBoard data={nfp} onOpenSku={(s) => { setView('list'); setOpen(s); }}
         canManage={canEdit} onChanged={refreshNfp} />}
-      {view === 'review' && <NfpReviewQueue canManage={canEdit} onOpenSku={(s) => { setView('list'); setOpen(s); }}
+      {view === 'review' && <NfpReviewQueue canManage={canEdit} isAdmin={user?.role === 'admin'} onOpenSku={(s) => { setView('list'); setOpen(s); }}
         onChanged={() => { refreshNfp(); refreshAll(); }} />}
       {view === 'health' && <ProductDataHealth data={health} />}
 

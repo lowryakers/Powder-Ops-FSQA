@@ -131,12 +131,72 @@ function Row({ row, selected, onSelect, onChanged, onOpenSku }) {
   );
 }
 
-export default function NfpReviewQueue({ canManage, onOpenSku, onChanged }) {
+/** The backfill bucket (D-174): what an approved panel's file says, waiting on a person. */
+function ProposedRow({ p, canManage, onDone }) {
+  const [note, setNote] = useState('');
+  const [dismissing, setDismissing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const act = async (path, body) => {
+    setBusy(true); setError('');
+    try { await apiFetch(path, { method: 'POST', body }); onDone(); } catch (e) { setError(e.message); }
+    setBusy(false);
+  };
+  return (
+    <li className="px-3 py-2 border-b border-gray-100 last:border-0 space-y-1" data-queue-proposed-row={p.sku}>
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <code className="font-medium text-gray-900">{p.sku}</code>
+        <span className="text-gray-600">{p.version}</span>
+        {p.nothing_read ? (
+          <span className="text-amber-800" data-queue-proposed-empty>nothing read from the file{p.extract_status && p.extract_status !== 'ok' ? ` (${p.extract_status})` : ''}</span>
+        ) : (
+          <span className="text-gray-700">
+            <span data-queue-proposed-fills>{p.fills.length}</span> blank field{p.fills.length === 1 ? '' : 's'} the file can fill
+            {p.conflicts.length > 0 && <> · <span className="text-amber-800" data-queue-proposed-conflicts>{p.conflicts.length} where the file disagrees (left alone)</span></>}
+          </span>
+        )}
+        {canManage && !dismissing && (
+          <span className="ml-auto inline-flex gap-1">
+            <button type="button" disabled={busy} data-queue-proposed-confirm onClick={() => act(`/nfp/proposed/${p.id}/confirm`, {})}
+              className="px-2 py-0.5 rounded bg-powder-600 text-white hover:bg-powder-700 disabled:opacity-50">
+              {p.fills.length ? `Confirm — fill ${p.fills.length}` : 'Confirm — nothing to fill'}
+            </button>
+            <button type="button" disabled={busy} data-queue-proposed-dismiss-open onClick={() => setDismissing(true)}
+              className="px-2 py-0.5 rounded border border-gray-300 text-gray-700 hover:bg-gray-50">Dismiss…</button>
+          </span>
+        )}
+      </div>
+      {p.fills.length > 0 && (
+        <ul className="text-[11px] text-gray-600 flex flex-wrap gap-x-3">
+          {p.fills.map((f) => <li key={f.field} data-queue-proposed-fill={f.field}>{f.label}: <strong>{String(f.value)}</strong></li>)}
+        </ul>
+      )}
+      {p.conflicts.length > 0 && (
+        <ul className="text-[11px] text-amber-800 flex flex-wrap gap-x-3">
+          {p.conflicts.map((c) => <li key={c.field} data-queue-proposed-conflict={c.field}>{c.label}: file {String(c.file)} · approved {String(c.stored)}</li>)}
+        </ul>
+      )}
+      {dismissing && (
+        <div className="flex gap-1 items-center">
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why the file's values are not taken"
+            data-queue-proposed-note className="text-xs border border-gray-300 rounded px-2 py-1 flex-1" />
+          <button type="button" disabled={busy || note.trim().length < 3} data-queue-proposed-dismiss onClick={() => act(`/nfp/proposed/${p.id}/dismiss`, { note })}
+            className="text-xs px-2 py-1 rounded bg-gray-800 text-white disabled:opacity-50">Dismiss</button>
+          <button type="button" onClick={() => setDismissing(false)} className="text-xs text-gray-500">Cancel</button>
+        </div>
+      )}
+      {error && <p className="text-xs text-red-700">{error}</p>}
+    </li>
+  );
+}
+
+export default function NfpReviewQueue({ canManage, isAdmin, onOpenSku, onChanged }) {
   const { data, refresh } = useApiGet('/nfp/review-queue');
   const [selected, setSelected] = useState(() => new Set());
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
+  const [backfill, setBackfill] = useState(null);
   if (!data) return <p className="text-sm text-gray-400">Loading…</p>;
 
   const changed = () => { refresh(); onChanged?.(); };
@@ -145,6 +205,12 @@ export default function NfpReviewQueue({ canManage, onOpenSku, onChanged }) {
   const readyIds = groups.flatMap((g) => g.rows.filter((r) => r.review_ready).map((r) => r.id));
   const onSelect = (id, on) => setSelected((prev) => { const n = new Set(prev); if (on) n.add(id); else n.delete(id); return n; });
   const selectAll = () => setSelected(new Set(readyIds));
+  const runBackfill = async () => {
+    setBusy(true); setError(''); setBackfill(null);
+    try { const r = await apiFetch('/nfp/backfill-extract', { method: 'POST', body: { limit: 25 } }); setBackfill(r); changed(); }
+    catch (e) { setError(e.message); }
+    setBusy(false);
+  };
   const bulk = async () => {
     setBusy(true); setError(''); setResult(null);
     try {
@@ -168,6 +234,7 @@ export default function NfpReviewQueue({ canManage, onOpenSku, onChanged }) {
         <span className="px-2 py-1 rounded bg-amber-50 text-amber-800" data-queue-count="flagged">{counts.flagged ?? 0} flagged</span>
         <span className="px-2 py-1 rounded bg-gray-100 text-gray-700" data-queue-count="open_drafts">{counts.open_drafts ?? 0} open drafts still being worked</span>
         <span className="px-2 py-1 rounded bg-red-50 text-red-800" data-queue-count="missing_panel">{counts.missing_panel ?? 0} with no approved panel</span>
+        <span className="px-2 py-1 rounded bg-blue-50 text-blue-800" data-queue-count="proposed">{counts.proposed ?? 0} approved panels to confirm from their file</span>
       </div>
 
       {canManage && readyIds.length > 0 && (
@@ -199,6 +266,31 @@ export default function NfpReviewQueue({ canManage, onOpenSku, onChanged }) {
           ))}
         </div>
       ))}
+
+      <div data-queue-proposed>
+        <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5 mb-1">
+          <FileText size={15} className="text-blue-600" /> Approved panels to confirm from their file ({data.proposed?.length || 0})
+        </h4>
+        <p className="text-xs text-gray-600 mb-1.5">
+          What the reader found in each approved panel's file. Confirming fills only the fields the approved panel left blank; a
+          value already on the panel is never overwritten, and a disagreement is listed, not applied — a correction is the next version.
+          {counts.backfill_remaining > 0 && <> <span data-queue-backfill-remaining>{counts.backfill_remaining}</span> approved panel file{counts.backfill_remaining === 1 ? '' : 's'} not read yet.</>}
+        </p>
+        {isAdmin && counts.backfill_remaining > 0 && (
+          <button type="button" disabled={busy} data-queue-backfill onClick={runBackfill}
+            className="text-xs px-2.5 py-1 rounded border border-powder-300 text-powder-800 hover:bg-powder-50 mb-2 disabled:opacity-50">
+            Read the next {Math.min(25, counts.backfill_remaining)} approved panel files
+          </button>
+        )}
+        {backfill && <p className="text-xs text-gray-700 mb-1.5" data-queue-backfill-result>Read {backfill.read.length}; {backfill.remaining} left to read; {backfill.pending} waiting to confirm.</p>}
+        {(data.proposed || []).length === 0 ? (
+          <p className="text-sm text-gray-500" data-queue-proposed-empty-list>Nothing waiting to be confirmed.</p>
+        ) : (
+          <ul className="border border-gray-200 rounded-lg overflow-hidden max-h-96 overflow-y-auto">
+            {data.proposed.map((p) => <ProposedRow key={p.id} p={p} canManage={canManage} onDone={changed} />)}
+          </ul>
+        )}
+      </div>
 
       <div>
         <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5 mb-1">

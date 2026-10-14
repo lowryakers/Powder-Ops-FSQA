@@ -3,7 +3,7 @@ import { useApiGet, apiFetch, apiUpload } from '../../hooks/useApi';
 import ProductFileImport from './ProductFileImport.jsx';
 import { computeDv, checkDailyValues } from '../../../shared/nutrition-dv.js';
 import { provenancePhrase, fillCheckSentence, PROVENANCE_LABEL } from '../../../shared/panel-provenance.js';
-import { servingLabel } from '../../../shared/panel-reconcile.js';
+import { servingLabel, PANEL_VALUE_FIELDS, FIELD_LABEL } from '../../../shared/panel-reconcile.js';
 import {
   FileText, Link2, Upload, CheckCircle2, XCircle, Clock, Copy, Check,
   AlertTriangle, Trash2, Plus, Send, Table2,
@@ -154,6 +154,11 @@ function PanelValues({ v, canEdit, onChanged }) {
   };
 
   const filled = PANEL_ROWS.concat(HEAD_ROWS).filter((r) => val(v.panel, r.key) !== '').length;
+  // Which fields the file reader filled (D-174): the source rides beside the value.
+  const fromFile = (col) => {
+    const field = Object.keys(PANEL_VALUE_FIELDS).find((k) => PANEL_VALUE_FIELDS[k] === col) || col;
+    return v.panel_sources?.[field]?.source === 'extracted from file';
+  };
 
   return (
     <div data-panel-values className="rounded border border-gray-200">
@@ -175,7 +180,7 @@ function PanelValues({ v, canEdit, onChanged }) {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
             {HEAD_ROWS.map((r) => (
               <label key={r.key} className="block">
-                <span className="text-[11px] text-gray-500">{r.label}</span>
+                <span className="text-[11px] text-gray-500">{r.label}{fromFile(r.key) && <span className="ml-1 text-powder-600" data-panel-source={r.key} title="extracted from file">· from file</span>}</span>
                 <input type="text" disabled={locked} value={val(panel, r.key)} onChange={set(r.key)}
                   placeholder={r.placeholder || ''} data-panel-head={r.key} className={cell} />
               </label>
@@ -202,6 +207,7 @@ function PanelValues({ v, canEdit, onChanged }) {
                   <tr key={r.key}>
                     <td className={`py-0.5 pr-2 ${r.indent ? 'pl-3 text-gray-600' : 'text-gray-800 font-medium'}`}>
                       {r.label} <span className="text-gray-400">({r.unit})</span>
+                      {fromFile(r.key) && <span className="ml-1 text-[10px] text-powder-600" data-panel-source={r.key} title="extracted from file">from file</span>}
                     </td>
                     <td className="py-0.5 pr-1">
                       <input type="text" data-panel-amount={r.key} disabled={locked}
@@ -634,6 +640,80 @@ function NewPanelForm({ sku, formulaRev, onDone, onCancel, storage = true }) {
   );
 }
 
+/**
+ * What the panel FILE says (D-174): the reader's status, the file's standing
+ * against the approved one, and every field where the file and the stored
+ * value disagree — each with two buttons, because the person decides.
+ */
+const FILE_LABEL = {
+  same_file: 'Same file as the approved panel',
+  file_changed_same_name: 'File changed, same name as the approved panel',
+  new_file: 'New file',
+  values_changed_file_not_updated: 'Values changed, file not updated',
+};
+function ExtractionBlock({ v, canEdit, onChanged }) {
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+  const ext = v.extraction;
+  const fs = v.file_status;
+  const open = ['draft', 'ready_for_review', 'sent', 'rejected'].includes(v.status);
+  const mismatches = (v.extract_mismatches || []);
+  const unresolved = mismatches.filter((m) => !m.resolved);
+  if (!ext && !fs) return null;
+  const resolve = (field, choice) => async () => {
+    setBusy(field + choice); setError('');
+    try { await apiFetch(`/nfp/${v.id}/mismatches/${encodeURIComponent(field)}/resolve`, { method: 'POST', body: { choice } }); onChanged(); }
+    catch (e) { setError(e.message); }
+    setBusy('');
+  };
+  const extracted = Object.keys(ext?.values || {}).length;
+  const status = ext?.status === 'ok' ? `${extracted} value${extracted === 1 ? '' : 's'} read from the file${ext.via === 'vision' ? ' (image read)' : ''}`
+    : ext?.status === 'failed' ? `The file could not be read${ext.note ? ` — ${ext.note}` : ''}`
+      : ext?.status === 'empty' ? `No panel values were read${ext.note ? ` — ${ext.note}` : ''}`
+        : ext?.status === 'skipped' ? (ext.note || 'The file was not read') : null;
+  return (
+    <div className="rounded border border-gray-200 px-2.5 py-2 space-y-1.5 text-xs" data-nfp-extraction data-extract-status={ext?.status || ''}>
+      {status && <p className={ext.status === 'ok' ? 'text-gray-700' : 'text-amber-800'}>{status}</p>}
+      {fs && (
+        <p className="text-[11px] text-gray-600 space-x-2" data-nfp-file-status>
+          {(fs.labels || []).length === 0 && <span>Panel file on this version{fs.sha256 ? ` · sha ${fs.sha256.slice(0, 10)}…` : ''}</span>}
+          {(fs.labels || []).map((l) => (
+            <span key={l} data-nfp-file-label={l}
+              className={l === 'same_file' ? 'text-gray-600' : 'text-amber-800 font-medium'}>{FILE_LABEL[l] || l}</span>
+          ))}
+        </p>
+      )}
+      {open && mismatches.length > 0 && (
+        <div data-nfp-mismatches>
+          <p className="font-medium text-gray-800">
+            {unresolved.length ? `${unresolved.length} field${unresolved.length === 1 ? '' : 's'} where the file and the stored value disagree` : 'Every disagreement with the file is resolved'}
+          </p>
+          <ul className="space-y-1 mt-1">
+            {mismatches.map((m) => (
+              <li key={m.field} data-nfp-mismatch={m.field} data-nfp-mismatch-resolved={m.resolved ? m.resolved.choice : ''}
+                className="flex flex-wrap items-center gap-2">
+                <span className="text-gray-800 font-medium w-32 shrink-0">{FIELD_LABEL[m.field] || m.field}</span>
+                <span className="text-gray-600">file <strong>{String(m.file)}</strong> · stored <strong>{String(m.stored)}</strong></span>
+                {m.resolved ? (
+                  <span className="text-green-800">kept {m.resolved.choice === 'file' ? 'the file' : 'the stored value'} — {m.resolved.by}</span>
+                ) : canEdit ? (
+                  <span className="inline-flex gap-1">
+                    <button type="button" data-nfp-use-file={m.field} disabled={!!busy} onClick={resolve(m.field, 'file')}
+                      className="px-2 py-0.5 rounded border border-powder-300 text-powder-800 hover:bg-powder-50">Use the file</button>
+                    <button type="button" data-nfp-keep-stored={m.field} disabled={!!busy} onClick={resolve(m.field, 'stored')}
+                      className="px-2 py-0.5 rounded border border-gray-300 text-gray-700 hover:bg-gray-50">Keep the stored value</button>
+                  </span>
+                ) : <span className="text-amber-800">unresolved</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {error && <p className="text-red-700">{error}</p>}
+    </div>
+  );
+}
+
 function VersionCard({ v, canEdit, onChanged, storage = true }) {
   const [link, setLink] = useState('');
   const [sentTo, setSentTo] = useState(v.sent_to || '');
@@ -743,13 +823,16 @@ function VersionCard({ v, canEdit, onChanged, storage = true }) {
         </ul>
       )}
 
+      <ExtractionBlock v={v} canEdit={canEdit && open} onChanged={onChanged} />
+
       {v.files?.length > 0 && (
         <ul className="space-y-1">
           {v.files.map((f) => (
             <li key={f.id}>
               <button onClick={() => apiFetch(`/nfp/files/${f.id}`).then((d) => openFile({ url: d.url, name: f.filename }))}
-                className="text-xs text-powder-700 hover:underline inline-flex items-center gap-1">
+                className="text-xs text-powder-700 hover:underline inline-flex items-center gap-1" data-nfp-file={f.kind}>
                 <FileText size={12} /> {f.filename}
+                {f.original_filename && f.original_filename !== f.filename && <span className="text-gray-400 no-underline">(was {f.original_filename})</span>}
               </button>
             </li>
           ))}

@@ -293,10 +293,13 @@ Run this checklist once after a release that touches the bot surface, and once a
 
 - **Scope:** `write`, and the token must hold the **`nfp-panel` grant**. An admin gives it to one token in Settings → Bot API tokens. Every other token gets `token_denied` / `not_open_to_tokens`.
 - **Grant:** `products: edit`, and the account must be a supervisor or in QA.
-- **Body:** multipart form data, field `file`: one PDF, 25 MB at most. The extension, the declared type and the first bytes must all say PDF, or the answer is **415**.
-- **Effect:** uploads the panel PDF, or **replaces** the one already on the version. The old file is removed only after the new one is stored.
+- **Body:** multipart form data, field `file`: one PDF, PNG or JPG, 25 MB at most. The extension, the declared type and the first bytes must all agree, or the answer is **415**.
+- **Effect:** uploads the panel file, or **replaces** the one already on the version. The old file is removed only after the new one is stored.
+- **The file is hashed, renamed and READ (D-174).** It is stored as `<SKU>_<version>_<YYYY-MM-DD>.<ext>` with the name you sent kept as `original_filename` and its SHA-256 on the row. Then the reader runs: a PDF's text layer, or (when AI is configured) a transcription of the image. Every panel field the draft has BLANK takes the file's value with source `extracted from file`; **a value already on the draft is never overwritten** — it becomes a *mismatch* (`extract_mismatches` on the version), a blocking flag that only a person can resolve. The answer carries `uploaded: { file, stored_as, sha256, extraction, filled }` where `extraction` is `ok` / `empty` / `failed` / `skipped` (an image with no AI configured).
+- **What the version then reports:** `extraction` (status, how it was read, the fields it could not read), `panel_sources` (per field: `extracted from file`, or who typed it), `file_status` (the SHA-256 and, against the approved panel's file, `same_file` / `file_changed_same_name` / `new_file` / `values_changed_file_not_updated`).
 - **Draft only.** A token may write only to a DRAFT version. Any other state is **403** `not_draft`, and an approved version is never rewritten.
-- **Audit:** `nfp_panel_file_uploaded` or `nfp_panel_file_replaced`, with the filename, size, SHA-256 and the file it replaced, under the bot's account with `via_token`.
+- **Audit:** `nfp_panel_file_uploaded` or `nfp_panel_file_replaced`, with the original name, the stored name, size, SHA-256, the file it replaced, what the reader filled, under the bot's account with `via_token`.
+- **Not for a token:** `POST /api/nfp/:id/mismatches/:field/resolve` (a person says `file` or `stored`), `POST /api/nfp/backfill-extract` and the `/api/nfp/proposed/*` confirm / dismiss routes — those are decisions.
 
 ### `PUT /api/nfp/:id/panel-values`
 
