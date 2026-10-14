@@ -3645,6 +3645,44 @@ function runMigrations() {
   addColumnIfMissing('products', 'formula_source_system', 'TEXT');
   addColumnIfMissing('products', 'formula_fill_per_unit_g', 'REAL');
   addColumnIfMissing('products', 'formula_synced_at', 'TEXT');
+
+  // ── What the panel FILE says (D-174) ────────────────────────────────────────
+  // Every panel file carries its SHA-256 and the name the designer gave it;
+  // the stored name is <SKU>_<version>_<date>.<ext>, because designers reuse
+  // file names and a hash is the only thing that says whether the bytes moved.
+  // The text read out of the file and the values parsed from it live on the
+  // file row, so "what did the file say" is answerable after the draft moves.
+  addColumnIfMissing('nfp_files', 'sha256', 'TEXT');
+  addColumnIfMissing('nfp_files', 'original_filename', 'TEXT');
+  addColumnIfMissing('nfp_files', 'extracted_text', 'TEXT');
+  addColumnIfMissing('nfp_files', 'extracted_json', 'TEXT');
+  // ok | empty (no text and no vision) | failed | skipped
+  addColumnIfMissing('nfp_files', 'extract_status', 'TEXT');
+  addColumnIfMissing('nfp_files', 'extracted_at', 'TEXT');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_nfp_files_sha ON nfp_files(sha256)');
+  // Per-field source on the draft: {field: {source, ref, by, at}} — "extracted
+  // from file" beside a value the reader took from the PDF, "bot" or a name
+  // beside one that was typed. And the per-field answers a person gave where
+  // the file and the stored value disagreed.
+  addColumnIfMissing('nfp_versions', 'panel_sources', 'TEXT');
+  addColumnIfMissing('nfp_versions', 'extract_resolutions', 'TEXT');
+  // The backfill: values read out of an APPROVED version's file, held beside
+  // it — never written onto it — until a person confirms or dismisses them.
+  db.exec(`CREATE TABLE IF NOT EXISTS nfp_proposed_values (
+    id TEXT PRIMARY KEY,
+    version_id TEXT NOT NULL REFERENCES nfp_versions(id) ON DELETE CASCADE,
+    file_id TEXT,
+    file_sha256 TEXT,
+    values_json TEXT NOT NULL,
+    evidence_json TEXT,
+    extract_status TEXT,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','confirmed','dismissed')),
+    decided_by TEXT,
+    decided_at TEXT,
+    note TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (version_id)
+  )`);
   // D-171: a token's GRANTS — named extra write areas beyond `write`, set by an
   // admin per token. One exists: 'nfp-panel' (the Product Manager bot's panel
   // PDF and values). A grant is not a scope: it never approves anything.

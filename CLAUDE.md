@@ -501,6 +501,40 @@ in `shared/panel-reconcile.js`, `products.family` / `formula_source_system` / `f
 - **Formula source on the product** is written through `PUT /products/:sku`; no integration writes it.
 - `verify:nfpqueue` (79). Fixtures in the other NFP verifies carry a complete panel and a fill weight now.
 
+## The panel FILE is read, hashed, renamed and reconciled with the draft (D-174)
+`shared/panel-extract.js` (PURE: `extractPanel`, `extractMismatches`), `server/nfp-extract.js` (`panelFileType`,
+`storedPanelName`, `readPanelText`, `extractFromFile`, `applyExtractionToDraft`, `mismatchesFor`, `fileStatusFor`,
+`storedValues`), `readPanelImage` in `ai.js`, `storePanelFile` / `readAndRecord` / `extractionOf` / `backfillCandidates`
+/ `proposedView` in `api/nfp.js`; `nfp_files.sha256` / `original_filename` / `extracted_text` / `extracted_json` /
+`extract_status`; `nfp_versions.panel_sources` / `extract_resolutions`; `nfp_proposed_values`. Routes:
+`POST /nfp/:id/mismatches/:field/resolve`, `POST /nfp/backfill-extract`, `GET /nfp/proposed`,
+`POST /nfp/proposed/:id/confirm|dismiss`. Screens: `ExtractionBlock` on the version card, the per-field "from file"
+mark in the panel editor, the **Approved panels to confirm** bucket on the Review queue.
+- **THE FILE IS THE RECORD: hash, store, insert the row, THEN read.** A reader that fails leaves `extract_status =
+  failed` on a file that is still there. Stored as `<SKU>_<version>_<YYYY-MM-DD>.<ext>`; the designer's name is
+  `original_filename`, because designers reuse names and the SHA-256 is what says whether the bytes moved.
+- **THE READER FILLS BLANKS ONLY, NEVER A TYPED FIELD** (the AP Drop rule), each filled field stamped `extracted
+  from file` in `panel_sources`. A typed value the file disagrees with is a MISMATCH, derived on every read, a
+  BLOCKING flag, refused by `decide()` (`409 needs_extract_resolution`) on every door and skipped by bulk approve.
+  **A person resolves it, per field, `file` or `stored`; a token is 403** (`resolve` is a decision segment). The
+  answer is recorded against a fingerprint of the two values, so moving either brings the question back.
+- **PDF, PNG or JPG** (extension, declared type and magic must agree, else 415). A PDF's text layer first; an image,
+  or a PDF with none, goes to vision only when AI is configured — otherwise `skipped` with the reason, and the
+  upload still succeeds.
+- **`file_status` labels, against the approved panel's file:** `same_file` · `file_changed_same_name` (extraction
+  re-ran) · `new_file` · `values_changed_file_not_updated` (the draft's values moved after the upload and the file
+  is still the approved one's bytes). The last two are non-blocking flags. The approved row is never compared with
+  itself.
+- **`%DV` columns are compared under their own names** (`storedValues`): `valuesOf` carries only the value fields,
+  and the first cut therefore proposed every `_dv` as a blank to fill on a panel that had them.
+- **THE BACKFILL NEVER WRITES ONTO AN APPROVED PANEL BY ITSELF.** `POST /nfp/backfill-extract` (admin, batches of
+  `limit`) reads each approved panel's file ONCE into `nfp_proposed_values` (idempotent on the version). Confirming
+  fills ONLY the fields the approved panel left blank; a disagreement is listed and left alone — a correction is
+  the next version. Dismissing needs a note. The approval date, status and mirror are untouched. Audited.
+- `verify:nfpextract` (63, live through the S3 stand-in + browser at 1280, a pdfkit panel with a real text layer).
+  **Control:** `main` before this — the upload answers with no `uploaded.extraction` and nothing after it holds.
+  `verify:nfpbotpanel`'s "a non-PDF is refused" now sends a `.txt`: a PNG is a panel file.
+
 ## Revoking access reaches the sessions it already opened (D-072)
 `revokeSessions(db, userId, { keepToken, devices })` in `api/sessions.js` is the ONE helper; Settings
 deactivation, `end-access`, the auditor-pass revoke and the pass reactivation path all call it. It deletes the

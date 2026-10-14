@@ -159,6 +159,29 @@ export async function readSheetNames(buffer, mediaType) {
   } catch { return null; }
 }
 
+/**
+ * Transcribe a Nutrition Facts panel from an image, or from a PDF with no text
+ * layer (D-174). Plain text, every line as printed, nothing interpreted — the
+ * pure parser in shared/panel-extract.js does the reading, so a transcription
+ * and a text layer go through the same rules. Null when AI is not configured.
+ */
+export async function readPanelImage(buffer, mediaType) {
+  const c = getClient();
+  if (!c) return null;
+  const isPdf = /pdf/i.test(mediaType || '');
+  const block = isPdf
+    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: buffer.toString('base64') } }
+    : { type: 'image', source: { type: 'base64', media_type: mediaType, data: buffer.toString('base64') } };
+  const res = await c.messages.create({
+    model: MODEL,
+    max_tokens: 3000,
+    system: 'You transcribe the Nutrition Facts panel on a food label. Output plain text only, one printed line per line, in the printed order: the serving size line, servings per container, Calories, every nutrient line with its amount and % Daily Value exactly as printed (keep "<1g" as written), then the INGREDIENTS: line and the CONTAINS: line. Do not add, convert, round or comment. If there is no Nutrition Facts panel, output NO PANEL.',
+    messages: [{ role: 'user', content: [block, { type: 'text', text: 'Transcribe the Nutrition Facts panel.' }] }],
+  });
+  const text = (res.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+  return text && !/^NO PANEL/i.test(text) ? text : null;
+}
+
 export async function translateToSpanish(items) {
   const c = getClient();
   if (!c) throw new Error('AI is not configured');
