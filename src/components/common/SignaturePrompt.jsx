@@ -38,7 +38,10 @@ export default function SignaturePrompt() {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-[80] flex items-center justify-center p-4"
+    // Above every modal that signs (the z-[90] sign/acknowledge sheets, the z-[100]
+    // file viewer): a prompt drawn beneath the sheet that asked for it is invisible
+    // and the request it is holding never resolves (D-172).
+    <div className="fixed inset-0 bg-black/40 z-[120] flex items-center justify-center p-4" data-signature-prompt
       onClick={() => finish(null)}>
       <form onClick={(e) => e.stopPropagation()}
         onSubmit={(e) => { e.preventDefault(); if (password) finish(password); }}

@@ -127,8 +127,8 @@ export function PolicyAckModal({ id, onClose }) {
                   <label className="block text-xs font-medium text-gray-700 mb-1">Type your full name as it is on your account</label>
                   <input className={input} value={name} onChange={e => setName(e.target.value)} placeholder={doc.signer_name || ''} autoComplete="off" data-policy-ack-name />
                 </div>
-                <label className="flex items-start gap-2 text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-                  <input type="checkbox" className="mt-1" checked={attest} onChange={e => setAttest(e.target.checked)} data-policy-ack-attest />
+                <label className="flex items-start gap-3 text-sm text-gray-800 bg-gray-50 border border-gray-200 rounded-lg px-3 py-3 cursor-pointer">
+                  <input type="checkbox" className="mt-0.5 h-6 w-6 shrink-0 accent-powder-600 cursor-pointer" checked={attest} onChange={e => setAttest(e.target.checked)} data-policy-ack-attest />
                   <span>{doc.attestation}</span>
                 </label>
                 {missing.length > 0 && (

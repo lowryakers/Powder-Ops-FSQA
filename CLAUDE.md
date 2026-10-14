@@ -6212,6 +6212,10 @@ and the send / remind / withdraw routes on `api/policies.js`. Screens: `PolicyAc
   office per acknowledgement; progress is on the policy.
 - `verify:policyacks` (49). Controls: without the password gate it acknowledges with none; unmounted, 19 of 42
   fail.
+- **The password prompt is `z-[120]` (D-172).** At `z-[80]` it opened BEHIND the z-90 sign/acknowledge windows,
+  and the button sat on "Saving…". A modal that signs must sit below 120. A browser verify of a signature must
+  CLICK the prompt (and check `elementFromPoint`), never `fill()` + Enter — focus reaches a covered field.
+  The statement checkboxes are `h-6 w-6 shrink-0`, so they can be tapped on a phone.
 
 ## The starter review is decided on the packet, and the link finishes the job (D-097)
 `onboarding_records.review_occasion` + `pay_employees.review_occasion`, a `starter` kind in `payActions`, and

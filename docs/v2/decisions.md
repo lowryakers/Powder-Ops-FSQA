@@ -7159,3 +7159,29 @@ Also passing: `check:apitokens` 152, `check:botapi` 72, `check:botmcp` 37, and 1
 provenance, readiness, stage, artwork, SKU rename, product tabs, proof token, token UI, attachments, reactions).
 **Control:** with the two `nfp-panel` write areas removed (the state before), the first PDF upload is 403
 `not_open_to_tokens` and the run fails from there.
+
+## D-172 — The password prompt is drawn above the window that asked for it (14 Oct 2026)
+
+**Reported:** acknowledging a policy got as far as "Saving…" and stopped, on a phone and on a desktop. The
+password box only appeared after clicking outside the window. Separately, the "I have read this" box was too
+small to tick on a phone.
+
+**Cause:** `SignaturePrompt` was at `z-[80]`. The policy acknowledgement window and the employee-document
+signing window are both at `z-[90]`. So the prompt opened *behind* the window that asked for it, and
+`withSignature` waited for a password nobody could see. The server was right throughout: 403
+`signature_required`, then nothing.
+
+**Why the verifies passed:** both browser checks used `fill()` and Enter. The prompt focuses its own input
+when it opens, so typed keys reached a field that was covered by the window. A person clicks the field and
+hits the window instead. The checks now confirm that the field is the element under its own centre
+(`elementFromPoint`), then click the field and the Sign button for real.
+
+**Decision:**
+- The prompt is at `z-[120]`, above every modal that can ask for a signature, including the file viewer
+  (`z-[100]`). A signature prompt is never correctly behind anything.
+- The statement checkbox on both signing windows is 24px (`h-6 w-6 shrink-0`) and the whole row is the tap
+  target. The employee-document form's own checkbox fields are the same size.
+
+**Verified:** `verify:policyacks` 54 (now including a full acknowledgement by tap at 390px) and
+`verify:edocsui` 27. **Control:** with the prompt back at `z-[80]`, the "prompt is on top" assertion fails
+and the run stops at the first real click.

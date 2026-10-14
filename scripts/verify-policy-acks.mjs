@@ -154,8 +154,14 @@ console.log('\n── in a real browser ──');
 const { chromium } = await import('playwright-core');
 const URL = `http://localhost:${PORT}`;
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+// Is the element the thing a finger on its centre actually touches?
+const onTop = (page, sel) => page.locator(sel).first().evaluate((el) => {
+  const r = el.getBoundingClientRect();
+  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  return !!hit && (hit === el || el.contains(hit));
+});
 async function as(tok, user, viewport) {
-  const page = await browser.newPage({ viewport });
+  const page = await browser.newPage({ viewport, hasTouch: viewport.width < 600 });
   page.on('pageerror', e => { console.log('  [pageerror]', e.message); fail++; });
   await page.goto(`${URL}/manifest.webmanifest`);
   await page.evaluate(([tk, u]) => { localStorage.setItem('auth_token', tk); localStorage.setItem('auth_user', JSON.stringify(u)); }, [tok, user]);
@@ -177,10 +183,15 @@ async function as(tok, user, viewport) {
     await m.locator('[data-policy-ack-name]').fill('Wanda Warehouse');
     await m.locator('[data-policy-ack-attest]').check();
     await m.locator('[data-policy-ack-submit]').click();
-    await page.waitForSelector('input[type=password]', { timeout: 15000 });
+    await page.waitForSelector('[data-signature-prompt] input[type=password]', { timeout: 15000 });
     t('IT ASKS FOR THE PASSWORD BEFORE ANYTHING IS RECORDED', await page.locator('[data-policy-ack-done]').count() === 0);
-    await page.fill('input[type=password]', 'WandaPW2026!');
-    await page.keyboard.press('Enter');
+    t('THE PASSWORD PROMPT IS ON TOP of the acknowledgement window (D-172)', await onTop(page, '[data-signature-prompt] input[type=password]'));
+    // A real click, as a person does — fill() + Enter reached a prompt hidden
+    // behind the sheet through the focus it was given, which is how this passed
+    // while the plant was stuck on "Saving…".
+    await page.locator('[data-signature-prompt] input[type=password]').click({ timeout: 5000 });
+    await page.keyboard.type('WandaPW2026!');
+    await page.locator('[data-signature-prompt] button[type=submit]').click({ timeout: 5000 });
     const done = await page.waitForSelector('[data-policy-ack-done]', { timeout: 15000 }).then(() => true).catch(() => false);
     t('it is acknowledged, and says which version', done && /version 3/.test(await page.locator('[data-policy-ack-done]').innerText()));
     await page.locator('[data-policy-ack-close]').click();
@@ -229,6 +240,20 @@ async function as(tok, user, viewport) {
     await page.locator('[data-policy-ack-modal]').waitFor({ timeout: 10000 });
     t('the policy opens full width', await page.locator('[data-policy-ack-body]').isVisible());
     t('no sideways scroll at 390', !(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)));
+    const box = await page.locator('[data-policy-ack-attest]').boundingBox();
+    t('ON A PHONE the "I have read this" box is big enough to tap (≥ 24px)', box && box.width >= 23.5 && box.height >= 23.5, JSON.stringify(box));
+    await page.locator('[data-policy-ack-name]').fill('Wes Warehouse');
+    // Tap the statement's words, not the box — the whole row is the target.
+    await page.locator('[data-policy-ack-attest]').locator('xpath=..').locator('span').first().tap();
+    t('…and tapping the statement ticks it', await page.locator('[data-policy-ack-attest]').isChecked());
+    await page.locator('[data-policy-ack-submit]').tap();
+    await page.waitForSelector('[data-signature-prompt] input[type=password]', { timeout: 15000 });
+    t('ON A PHONE the password prompt is on top too', await onTop(page, '[data-signature-prompt] input[type=password]'));
+    await page.locator('[data-signature-prompt] input[type=password]').tap({ timeout: 5000 });
+    await page.keyboard.type('WesPW2026!');
+    await page.locator('[data-signature-prompt] button[type=submit]').tap({ timeout: 5000 });
+    const done = await page.waitForSelector('[data-policy-ack-done]', { timeout: 15000 }).then(() => true).catch(() => false);
+    t('…and he is acknowledged from the phone', done);
   }
   await page.close();
 }
