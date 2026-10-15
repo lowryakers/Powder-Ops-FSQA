@@ -12,7 +12,7 @@ import ProductCompleteness from './ProductCompleteness.jsx';
 import ProductGrid from './ProductGrid.jsx';
 import ProductPipeline from './ProductPipeline.jsx';
 import NewProductFlow from './NewProductFlow.jsx';
-import ProductStagePanel from './ProductStagePanel.jsx';
+import ProductStagePanel, { PackagingPos } from './ProductStagePanel.jsx';
 import PackagingSpecsPanel from './PackagingSpecsPanel.jsx';
 import { getParam } from '../../lib/deepLink.js';
 import NfpBoard, { NfpForSku } from './NfpPanel.jsx';
@@ -23,7 +23,7 @@ import {
   Package, Search, X, AlertTriangle, CheckCircle2, Circle, Pencil, Stethoscope, Tag,
   Barcode, Upload, ExternalLink, RefreshCw, FolderOpen,
   FileText, Plus, Trash2, Palette,
-  ListChecks, Layers,
+  ListChecks, Layers, ChevronDown,
 } from 'lucide-react';
 import { openFile } from '../../lib/openFile';
 
@@ -204,25 +204,31 @@ const STATUS_STYLE = {
 const pretty = (s) => (s || '').replace(/_/g, ' ');
 
 /**
- * What this product still owes — and what stopped being true.
+ * The readiness steps, each shown ONCE, in the section of the drawer where
+ * its fact lives (D-178). The drawer used to print the whole checklist in an
+ * amber block at the top AND each step again inside its section, and the stage
+ * gates a third time above both — the same nine facts, three ways.
  *
- * THE CHECKLIST IS THE CONTROL, which is the whole simplification. The three
- * steps that record work done elsewhere (a formula approved in the MRP, a
- * listing in Shopify, a sync to ShipHero) are ticked right here. They used to
- * be free-text boxes further down the form holding "Yes" and a number this
- * product's own SKU already carried: slower to fill in, impossible to un-set,
- * and recording neither who said so nor when.
+ * THE CHECKLIST IS STILL THE CONTROL. The three steps that record work done
+ * elsewhere (an approved formula, a Shopify listing, a ShipHero sync — and the
+ * Amazon listing where it applies) are real checkboxes here; everything else is
+ * evidence-driven and never clickable, or the record would say a panel was
+ * approved because somebody ticked it.
  *
- * THREE STATES, NOT TWO. A step whose inputs have since moved is neither done
- * nor untouched — it is amber, it names what changed, and it does not count
- * towards the total. Correcting a GTIN used to leave eight green ticks over a
- * pack that must not print.
+ * THREE STATES, NOT TWO. A stale step is amber, names what changed, and is not
+ * done. A done step is one quiet line; only an open one carries its reason.
  */
-function ReadinessChecklist({ readiness, sku, canEdit, onChanged }) {
+const STEP_SECTION = {
+  sku: 'identity', gtin: 'identity', formula: 'formula', nfp: 'panel',
+  spec: 'packaging', colors: 'packaging', artwork: 'packaging',
+  shopify: 'channels', shiphero: 'channels', amazon: 'channels',
+};
+
+function StepChecks({ steps, keys, sku, canEdit, onChanged }) {
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
-  const { steps, missing, stale } = readiness;
-
+  const list = keys.map((k) => (steps || []).find((x) => x.key === k)).filter(Boolean);
+  if (!list.length) return null;
   const toggle = async (step, on) => {
     setBusy(step.key); setError('');
     try {
@@ -231,58 +237,67 @@ function ReadinessChecklist({ readiness, sku, canEdit, onChanged }) {
     } catch (e) { setError(e.message); }
     setBusy('');
   };
-
   return (
-    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-      <p className="text-sm font-semibold text-amber-900 flex items-center gap-1.5">
-        <AlertTriangle size={15} /> {missing.length} still outstanding
+    <ul className="space-y-1" data-step-checks>
+      {list.map((s) => {
+        const stale = s.state === 'stale';
+        const done = s.state === 'done';
+        return (
+          <li key={s.key} data-step-line={s.key} data-step-state={s.state} className="flex items-start gap-2 text-sm"
+            title={done && s.reason ? s.reason : undefined}>
+            {s.tick && canEdit ? (
+              <input type="checkbox" checked={done} disabled={busy === s.key}
+                onChange={(e) => toggle(s, e.target.checked)} aria-label={s.label} data-step-tick={s.key}
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-powder-600 shrink-0 cursor-pointer" />
+            ) : stale ? <RefreshCw size={15} className="text-amber-600 shrink-0 mt-0.5" />
+              : done ? <CheckCircle2 size={15} className="text-green-600 shrink-0 mt-0.5" />
+                : <Circle size={15} className="text-gray-300 shrink-0 mt-0.5" />}
+            <div className="min-w-0 flex-1">
+              <span className={done ? 'text-gray-600' : stale ? 'text-amber-900 font-medium' : 'text-gray-900 font-medium'}>{s.label}</span>
+              {done && s.tick && s.by && (
+                <span className="ml-1.5 text-xs text-gray-400">{s.by}{s.at ? ` · ${s.at.slice(0, 10)}` : ''}</span>
+              )}
+              {stale && (
+                <span className="block text-xs text-amber-800">
+                  {s.changed_labels.join(' and ')} changed{s.tick ? ' — confirm again' : ''}{s.redo ? `. ${s.redo}` : ''}
+                </span>
+              )}
+              {/* EVERY OPEN LINE SAYS WHY — what is missing. A done line keeps
+                  its reason on hover: the record that makes it done (D-131). */}
+              {!done && s.reason && <span className="block text-xs text-gray-500" data-readiness-reason={s.key}>{s.reason}</span>}
+            </div>
+          </li>
+        );
+      })}
+      {error && <li className="text-xs text-red-700">{error}</li>}
+    </ul>
+  );
+}
+
+/** One row naming what is still open, each a button to the section that has it. */
+function NeedsAttention({ readiness, onGo }) {
+  const open = (readiness?.steps || []).filter((s) => s.state !== 'done');
+  if (!open.length) {
+    return (
+      <p className="text-sm text-green-800 flex items-center gap-1.5" data-needs-attention="0">
+        <CheckCircle2 size={15} /> Nothing outstanding
       </p>
-      {stale.length > 0 && (
-        <p className="mt-1 text-xs text-amber-800">
-          {stale.length === 1 ? '1 step needs' : `${stale.length} steps need`} re-checking — something they
-          were signed off against has changed since.
-        </p>
-      )}
-      {error && <p className="mt-1 text-xs text-red-700">{error}</p>}
-      <ul className="mt-2 space-y-1">
-        {steps.map((s) => {
-          const stale_ = s.state === 'stale';
-          return (
-            <li key={s.key} className="text-sm">
-              <div className="flex items-start gap-2">
-                {/* A tickable step is a real checkbox; everything else is
-                    evidence-driven and must never be clickable, or the record
-                    would say a panel was approved because somebody ticked it. */}
-                {s.tick && canEdit ? (
-                  <input type="checkbox" checked={s.state === 'done'} disabled={busy === s.key}
-                    onChange={(e) => toggle(s, e.target.checked)}
-                    aria-label={s.label}
-                    className="mt-0.5 h-3.5 w-3.5 rounded border-gray-300 text-powder-600 shrink-0 cursor-pointer" />
-                ) : stale_ ? <RefreshCw size={14} className="text-amber-600 shrink-0 mt-0.5" />
-                  : s.state === 'done' ? <CheckCircle2 size={14} className="text-green-600 shrink-0 mt-0.5" />
-                    : <Circle size={14} className="text-gray-300 shrink-0 mt-0.5" />}
-                <div className="min-w-0">
-                  <span className={s.state === 'done' ? 'text-gray-500 line-through'
-                    : stale_ ? 'text-amber-900 font-medium' : 'text-gray-900'}>{s.label}</span>
-                  {stale_ && (
-                    <span className="ml-1.5 text-xs text-amber-800">
-                      · {s.changed_labels.join(' and ')} changed{s.tick ? ' — confirm again' : ''}
-                    </span>
-                  )}
-                  {stale_ && s.redo && <div className="text-xs text-amber-700">{s.redo}</div>}
-                  {/* EVERY LINE SAYS WHY — the record that makes it done, or what is
-                      missing. A tick with no reason is the Artwork status dropdown
-                      all over again (D-131). */}
-                  {s.reason && <div className="text-[11px] text-gray-500" data-readiness-reason={s.key}>{s.reason}</div>}
-                  {s.state === 'done' && s.tick && s.by && (
-                    <span className="ml-1.5 text-xs text-gray-400">{s.by}{s.at ? ` · ${s.at.slice(0, 10)}` : ''}</span>
-                  )}
-                </div>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+    );
+  }
+  return (
+    <div data-needs-attention={open.length}>
+      <p className="text-xs font-semibold text-gray-700 mb-1.5">{open.length} still outstanding</p>
+      <div className="flex flex-wrap gap-1.5">
+        {open.map((s) => (
+          <button key={s.key} type="button" onClick={() => onGo(STEP_SECTION[s.key])} data-attention={s.key}
+            className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium ${s.state === 'stale'
+              ? 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100'
+              : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'}`}>
+            {s.state === 'stale' ? <RefreshCw size={11} /> : <Circle size={11} className="text-gray-400" />}
+            {s.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -431,14 +446,17 @@ function Field({ k, label, hint, form, set, p, onNa, type = 'text', children }) 
   );
 }
 
-/** A read-only line whose value is derived, saying which column it was read from. */
+/**
+ * A read-only line whose value is derived. The column it was read from is the
+ * attribute and the hover text — printed under every value it was a second
+ * line of grey monospace on every field (D-178).
+ */
 function Derived({ label, value, source, na }) {
   return (
-    <div data-derived={source} className="flex flex-col">
+    <div data-derived={source} className="flex flex-col" title={`From ${source}`}>
       <dt className="text-xs text-gray-500">{label}</dt>
       <dd className="text-gray-900 break-words">
         {na ? <span className="text-gray-400 italic">{na}</span> : (value ?? '') !== '' ? value : <span className="text-gray-300">—</span>}
-        <span className="block text-[10px] text-gray-400 font-mono">{source}</span>
       </dd>
     </div>
   );
@@ -501,18 +519,34 @@ function FilmCheck({ sku, steps, canEdit, onDone, onOpenSpec, specId }) {
   );
 }
 
-/** One readiness line with its reason — the record that makes it done, or what is missing. */
-function StepLine({ steps, k }) {
-  const st = (steps || []).find((x) => x.key === k);
-  if (!st) return null;
+/**
+ * A section of the drawer that folds. Its body stays in the page when folded
+ * (hidden, not removed), so a deep link can still find the gate it names and
+ * the section opens itself when that happens. A folded section says in its
+ * header what is in it, or what it still owes.
+ */
+function Section({ id, title, icon: Icon, summary, open, onToggle, anchor, block, steps, keys, children }) {
+  const owed = (keys || []).map((k) => (steps || []).find((x) => x.key === k)).filter((x) => x && x.state !== 'done');
+  const stale = owed.some((x) => x.state === 'stale');
   return (
-    <div data-step-line={k} className="flex items-start gap-1.5 text-sm">
-      {st.state === 'done' ? <CheckCircle2 size={14} className="text-green-600 mt-0.5 shrink-0" />
-        : st.state === 'stale' ? <RefreshCw size={14} className="text-amber-600 mt-0.5 shrink-0" />
-          : <Circle size={14} className="text-gray-300 mt-0.5 shrink-0" />}
-      <span><span className="text-gray-900">{st.label}</span>
-        {st.reason && <span className="block text-[11px] text-gray-500">{st.reason}</span>}</span>
-    </div>
+    <section data-section={id} data-block={block ? id : undefined} data-gate-anchor={anchor} data-open={open ? '1' : '0'}
+      className="border border-gray-200 rounded-lg scroll-mt-28">
+      <button type="button" onClick={onToggle} aria-expanded={open} data-section-toggle={id}
+        className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-gray-50 rounded-lg">
+        {Icon && <Icon size={15} className="text-gray-400 shrink-0" />}
+        <span className="text-sm font-semibold text-gray-900">{title}</span>
+        {!open && summary && <span className="min-w-0 truncate text-xs text-gray-500">{summary}</span>}
+        <span className="ml-auto flex items-center gap-1.5 shrink-0">
+          {keys?.length > 0 && (owed.length === 0
+            ? <CheckCircle2 size={15} className="text-green-600" aria-label="Nothing outstanding" />
+            : <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${stale ? 'bg-amber-100 text-amber-900' : 'bg-gray-100 text-gray-700'}`}>
+                {owed.length} open
+              </span>)}
+          <ChevronDown size={15} className={`text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+        </span>
+      </button>
+      <div className={open ? 'px-3 pb-3 space-y-3' : 'hidden'}>{children}</div>
+    </section>
   );
 }
 
@@ -611,29 +645,66 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
   const rollFed = p ? (p.spec_format ? isRollFed(p.spec_format) : true) : true;
   const naText = p && !rollFed ? `not applicable — a ${String(p.spec_format).toLowerCase()} is not roll-fed film` : null;
 
+  // A section starts open when it still owes something, or holds the gate the
+  // drawer was opened on; a section with everything done starts folded to one
+  // line. Somebody opening it, or a chip in "still outstanding", overrides.
+  const [openMap, setOpenMap] = useState({});
+  const steps = p?.readiness?.steps || [];
+  const owes = (keys) => keys.some((k) => { const x = steps.find((y) => y.key === k); return x && x.state !== 'done'; });
+  const SECTION_KEYS = {
+    identity: ['sku', 'gtin'], formula: ['formula'], panel: ['nfp'],
+    packaging: ['spec', 'colors', 'artwork'], channels: ['shopify', 'shiphero', 'amazon'], pos: [], siblings: [],
+  };
+  const SECTION_ANCHOR = { identity: 'sku gtin', formula: 'formula fill', panel: 'panel', packaging: 'artwork', channels: 'shopify shiphero', pos: 'po' };
+  const isOpen = (id) => {
+    if (openMap[id] !== undefined) return openMap[id];
+    if (focus && (SECTION_ANCHOR[id] || '').split(' ').includes(focus)) return true;
+    if (id === 'pos') return p?.stage?.next?.key === 'po';
+    if (id === 'siblings') return false;
+    // The barcode image is identity's; a stale one is a relabel waiting to happen.
+    if (id === 'identity' && (p?.barcode_stale || (p?.gtin && !p?.gtin_valid))) return true;
+    return owes(SECTION_KEYS[id] || []);
+  };
+  const toggle = (id) => setOpenMap((m) => ({ ...m, [id]: !isOpen(id) }));
+  const goTo = (id) => {
+    setOpenMap((m) => ({ ...m, [id]: true }));
+    requestAnimationFrame(() => drawerRef.current?.querySelector(`[data-section="${id}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
+  };
+  const changed = () => { refresh(); onSaved?.(); };
+  const sec = (id) => ({ id, open: isOpen(id), onToggle: () => toggle(id), anchor: SECTION_ANCHOR[id], steps, keys: SECTION_KEYS[id] });
+  const sourceName = { mrpeasy: 'MRPEasy', keychain: 'Keychain', manual: 'entered by hand', genesis: 'Genesis R&D' };
+
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex justify-end" onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()}
-        className="bg-white w-full max-w-xl h-full overflow-y-auto p-5 space-y-4 shadow-xl" data-product-drawer ref={drawerRef}>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-xs uppercase tracking-wide text-gray-500">
-              {p ? `${p.category} · ${PACK_LABEL[p.pack] || p.pack}` : ''}
-            </p>
-            <h3 className="text-lg font-bold text-gray-900">{p?.flavor || sku}</h3>
-            <code className="text-sm text-gray-600">{sku}</code>
+        className="bg-white w-full max-w-xl h-full overflow-y-auto shadow-xl" data-product-drawer ref={drawerRef}>
+        <header className="sticky top-0 z-10 bg-white/95 backdrop-blur border-b border-gray-200 px-5 py-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs uppercase tracking-wide text-gray-500 truncate">
+                {p ? `${p.category} · ${PACK_LABEL[p.pack] || p.pack}` : ''}
+              </p>
+              <h3 className="text-lg font-bold text-gray-900 leading-tight">{p?.flavor || sku}</h3>
+              <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                <code className="text-sm text-gray-600">{sku}</code>
+                {p && <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium capitalize ${STATUS_STYLE[p.status] || 'bg-gray-100 text-gray-700'}`} data-drawer-status>{pretty(p.status)}</span>}
+              </div>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              {p && canEdit && !editing && (
+                <button onClick={startEdit} data-drawer-edit
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50">
+                  <Pencil size={14} /> Edit
+                </button>
+              )}
+              <button onClick={onClose} aria-label="Close" className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100"><X size={20} /></button>
+            </div>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-700"><X size={20} /></button>
-        </div>
+        </header>
 
+        <div className="p-5 space-y-3">
         {!p ? <p className="text-sm text-gray-500">Loading…</p> : (
           <>
-            <ProductStagePanel p={p} sku={sku} canEdit={canEdit} onChanged={() => { refresh(); onSaved?.(); }} />
-            {p.readiness.missing.length > 0 && (
-              <ReadinessChecklist readiness={p.readiness} sku={sku} canEdit={canEdit}
-                onChanged={() => { refresh(); onSaved?.(); }} />
-            )}
-
             {!p.gtin_valid && p.gtin && (
               <p className="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg p-3">
                 <strong>{p.gtin}</strong> fails its GS1 check digit. Do not send this to a printer.
@@ -748,85 +819,97 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
               </div>
             ) : (
               <>
-                <Block id="identity" anchor="sku gtin" title="Identity">
+                <ProductStagePanel p={p} sku={sku} canEdit={canEdit} onChanged={changed} />
+                <NeedsAttention readiness={p.readiness} onGo={goTo} />
+
+                <Section {...sec('identity')} block title="Identity" icon={Tag}
+                  summary={[p.gtin && `GTIN ${p.gtin}`, p.base_flavor].filter(Boolean).join(' · ')}>
+                  <StepChecks steps={steps} keys={SECTION_KEYS.identity} sku={sku} canEdit={canEdit} onChanged={changed} />
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                     {[
-                      ['SKU', <code key="s">{p.sku}</code>], ['GTIN', p.gtin], ['Product name', p.flavor], ['Base flavor', p.base_flavor],
-                      ['Pack format', PACK_LABEL[p.pack] || p.pack], ['Line', p.category], ['Status', pretty(p.status)],
+                      ['GTIN', p.gtin], ['Base flavor', p.base_flavor],
+                      ['Pack format', PACK_LABEL[p.pack] || p.pack], ['Line', p.category],
                       ['Legacy SKU', fieldState(p, 'legacy_sku') === 'na' ? 'NA' : p.legacy_sku],
                       ['Protein', fieldState(p, 'protein_type') === 'na' ? 'NA' : p.protein_type],
                       ['Pack count', fieldState(p, 'pack_count') === 'na' ? 'NA' : p.pack_count],
+                      ['Family', p.family],
                     ].filter(([, v]) => v !== null && v !== undefined && v !== '').map(([label, v]) => (
                       <div key={label}><dt className="text-xs text-gray-500">{label}</dt><dd className="text-gray-900 break-words">{v}</dd></div>
                     ))}
                   </dl>
-                  <StepLine steps={p.readiness?.steps} k="sku" /><StepLine steps={p.readiness?.steps} k="gtin" />
-                </Block>
-                <Block id="formula" anchor="formula fill" title="Formula link" note="The formula lives in Keychain; this is the pointer the panel's provenance is checked against.">
+                  <BarcodeImage sku={sku} gtin={p.gtin} canEdit={canEdit}
+                    has={p.has_barcode_image} stale={p.barcode_stale} forGtin={p.barcode_gtin} onChanged={changed} />
+                </Section>
+
+                <Section {...sec('formula')} block title="Formula" icon={Layers}
+                  summary={[p.mrp_formula_id, p.formula_rev && `v${p.formula_rev}`, p.fill_weight_g && `${p.fill_weight_g} g`].filter(Boolean).join(' · ') || 'nothing linked'}>
+                  <StepChecks steps={steps} keys={SECTION_KEYS.formula} sku={sku} canEdit={canEdit} onChanged={changed} />
                   <dl className="grid grid-cols-3 gap-x-4 gap-y-2 text-sm">
                     <div><dt className="text-xs text-gray-500">Formula ref</dt><dd data-value="mrp_formula_id">{p.mrp_formula_id || <span className="text-amber-700 text-xs">empty</span>}</dd></div>
-                    <div><dt className="text-xs text-gray-500">Formula version</dt><dd data-value="formula_rev">{p.formula_rev || <span className="text-amber-700 text-xs">empty</span>}</dd></div>
+                    <div><dt className="text-xs text-gray-500">Version</dt><dd data-value="formula_rev">{p.formula_rev || <span className="text-amber-700 text-xs">empty</span>}</dd></div>
                     <div><dt className="text-xs text-gray-500">Fill weight</dt><dd data-value="fill_weight_g">{p.fill_weight_g ? `${p.fill_weight_g} g` : <span className="text-amber-700 text-xs">empty</span>}</dd></div>
-                    {/* The source beside each number (D-173): where the pointer came from and when. */}
-                    <div className="col-span-3 text-[11px] text-gray-500" data-value="formula_source">
-                      Source: {p.formula_source_system ? ({ mrpeasy: 'MRPEasy', keychain: 'Keychain', manual: 'entered by hand', genesis: 'Genesis R&D' }[p.formula_source_system] || p.formula_source_system) : <span className="text-amber-700">not recorded</span>}
-                      {p.formula_fill_per_unit_g != null && ` · formula fill per unit ${p.formula_fill_per_unit_g} g`}
+                    {/* The source beside the numbers (D-173). */}
+                    <div className="col-span-3 text-xs text-gray-500" data-value="formula_source">
+                      From {p.formula_source_system ? (sourceName[p.formula_source_system] || p.formula_source_system) : <span className="text-amber-700">source not recorded</span>}
+                      {p.formula_fill_per_unit_g != null && ` · ${p.formula_fill_per_unit_g} g per unit`}
                       {p.formula_synced_at && ` · synced ${String(p.formula_synced_at).slice(0, 10)}`}
-                      {p.family && ` · family: ${p.family}`}
                     </div>
-                    {/* Which date the pack may print, and what it rests on —
-                        DERIVED from the shelf-life basis in force for this SKU
-                        (Retention Samples → Stability), never typed here (D-133). */}
-                    <div className="col-span-3">
-                      <dt className="text-xs text-gray-500">Date type · shelf-life basis</dt>
+                    {/* DERIVED from the shelf-life basis in force (Retention Samples → Stability), never typed here (D-133). */}
+                    <div className="col-span-3" title="Derived from stability_justifications.basis_kind">
+                      <dt className="text-xs text-gray-500">Date on pack</dt>
                       <dd data-value="shelf_life" data-date-type={p.shelf_life?.date_type} data-basis-recorded={p.shelf_life?.recorded ? '1' : '0'}>
                         {p.shelf_life?.recorded
-                          ? <>{p.shelf_life.date_type_label}{p.shelf_life.basis_label ? ` — ${p.shelf_life.basis_label}` : ''}{p.shelf_life.kind_missing ? <span className="text-amber-700 text-xs"> — kind not recorded on the justification</span> : ''}{p.shelf_life.shelf_life_months ? ` · ${p.shelf_life.shelf_life_months} months` : ''}{p.shelf_life.decided_on ? ` · ${p.shelf_life.decided_on}` : ''}</>
-                          : <>Best by <span className="text-amber-700 text-xs">— no shelf-life basis recorded; record one under Retention Samples → Stability</span></>}
-                        <span className="block text-[10px] text-gray-400 font-mono">derived: stability_justifications.basis_kind</span>
+                          ? <>{p.shelf_life.date_type_label}{p.shelf_life.basis_label ? ` — ${p.shelf_life.basis_label}` : ''}{p.shelf_life.kind_missing ? <span className="text-amber-700 text-xs"> — kind not recorded on the justification</span> : ''}{p.shelf_life.shelf_life_months ? ` · ${p.shelf_life.shelf_life_months} months` : ''}</>
+                          : <>Best by <span className="block text-amber-700 text-xs">no shelf-life basis recorded — add one under Retention Samples → Stability</span></>}
                       </dd>
                     </div>
                   </dl>
-                  <StepLine steps={p.readiness?.steps} k="formula" /><StepLine steps={p.readiness?.steps} k="nfp" />
-                </Block>
-                <Block id="packaging" anchor="artwork" title="Packaging spec" note={`Derived from ${p.spec_id ? `packaging spec ${p.spec_id}` : 'the packaging spec (none assigned)'} and the color slots; each value names the column it was read from. Nothing here is typed on the product except the eye mark and the die line.`}>
+                </Section>
+
+                <Section {...sec('panel')} title="Nutrition panel" icon={FileText}
+                  summary={p.nfp_version ? `V${p.nfp_version} approved${p.nfp_approved_at ? ` ${String(p.nfp_approved_at).slice(0, 10)}` : ''}` : 'none approved'}>
+                  <StepChecks steps={steps} keys={SECTION_KEYS.panel} sku={sku} canEdit={canEdit} onChanged={changed} />
+                  {/* The panel workflow lives beside the product; the refresh carries
+                      back up so the stage moves the moment a panel is approved. */}
+                  <NfpForSku sku={sku} formulaRev={p.formula_rev} canEdit={canEdit} heading={false} onChanged={changed} />
+                </Section>
+
+                <Section {...sec('packaging')} block title="Packaging & artwork" icon={Package}
+                  summary={[p.spec_id, p.artwork_version ? `artwork V${p.artwork_version}` : null].filter(Boolean).join(' · ') || 'no spec assigned'}>
+                  <StepChecks steps={steps} keys={SECTION_KEYS.packaging} sku={sku} canEdit={canEdit} onChanged={changed} />
+                  <FilmCheck sku={sku} steps={steps} canEdit={canEdit} specId={p.spec_id} onOpenSpec={onOpenSpec} onDone={changed} />
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm" data-packaging-derived>
                     <Derived label="Spec" source="products.spec_id"
                       value={p.spec_id ? (
                         <button type="button" onClick={() => onOpenSpec?.(p.spec_id)} data-drawer-spec-link={p.spec_id}
                           className="text-left text-powder-700 hover:underline">
-                          {p.spec_id}{p.spec_name ? ` — ${p.spec_name}` : ''}
-                          <span className="block text-[11px] text-powder-600">Edit the spec →</span>
+                          {p.spec_id}{p.spec_name ? ` — ${p.spec_name}` : ''} →
                         </button>
                       ) : null} />
                     <Derived label="Format" value={p.spec_format} source="packaging_specs.format" />
                     {PACKAGING_DERIVED.map(([k, label, source]) => (
                       <Derived key={k} label={label} value={p[k]} source={source}
-                        na={k === 'wind_direction' && !rollFed ? naText : null} />
+                        na={k === 'wind_direction' && !rollFed ? 'n/a by format' : null} />
                     ))}
-                    <Derived label="Eye mark color" value={fieldState(p, 'eyemark_color') === 'na' ? 'NA' : p.eyemark_color} source="products.eyemark_color (typed)" na={!rollFed && !p.eyemark_color ? naText : null} />
+                    <Derived label="Eye mark color" value={fieldState(p, 'eyemark_color') === 'na' ? 'NA' : p.eyemark_color} source="products.eyemark_color (typed)" na={!rollFed && !p.eyemark_color ? 'n/a by format' : null} />
                     <Derived label="Die line required" value={p.dieline_required ? 'yes' : 'no'} source="products.dieline_required (typed)" />
-                    <Derived label="PMS spot colors" value={(p.colors || []).filter((c) => c.pms).map((c) => c.pms).join(' | ')} source="product_colors.pms, slots in order" />
-                    <Derived label="Hex spot colors" value={(p.colors || []).filter((c) => c.hex).map((c) => c.hex).join(' | ')} source="product_colors.hex, slots in order" />
+                    {/* The colours ARE the PMS/hex columns the proofer reads — one
+                        place shows them and corrects them. */}
+                    <div className="col-span-2" data-derived="product_colors.pms, slots in order" title="From product_colors, slots in order">
+                      <ColorEditor sku={sku} colors={p.colors} canEdit={canEdit} onSaved={changed} />
+                    </div>
                   </dl>
-                  <StepLine steps={p.readiness?.steps} k="spec" /><StepLine steps={p.readiness?.steps} k="colors" /><StepLine steps={p.readiness?.steps} k="artwork" />
-                  <FilmCheck sku={sku} steps={p.readiness?.steps} canEdit={canEdit} specId={p.spec_id} onOpenSpec={onOpenSpec}
-                    onDone={() => { refresh(); onSaved?.(); }} />
-                  <ColorEditor sku={sku} colors={p.colors} canEdit={canEdit}
-                    onSaved={() => { refresh(); onSaved?.(); }} />
-                  <BarcodeImage sku={sku} gtin={p.gtin} canEdit={canEdit}
-                    has={p.has_barcode_image} stale={p.barcode_stale} forGtin={p.barcode_gtin}
-                    onChanged={() => { refresh(); onSaved?.(); }} />
-                </Block>
-                <Block id="channels" anchor="shopify shiphero" title="Channels">
+                  <p className="text-xs text-gray-500">Film facts belong to the spec and are edited there, for every product on it.</p>
+                </Section>
+
+                <Section {...sec('channels')} block title="Channels" icon={ExternalLink}
+                  summary={p.amazon_channel === 'listed' ? 'Shopify · ShipHero · Amazon' : 'Shopify · ShipHero'}>
+                  <StepChecks steps={steps} keys={SECTION_KEYS.channels} sku={sku} canEdit={canEdit} onChanged={changed} />
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                     {[
-                      ['Status', pretty(p.status)],
-                      // Only worth showing when Shopify calls it something else —
-                      // for most of the catalogue it is this product's own SKU.
+                      // Only worth showing when Shopify calls it something else.
                       ['Shopify SKU', fieldState(p, 'shopify_sku') === 'na' ? 'NA' : p.shopify_sku && p.shopify_sku !== p.sku ? p.shopify_sku : null],
-                      // "Not decided yet" is shown rather than hidden: a blank
-                      // here is the fact that nobody has said.
+                      // "Not decided yet" is shown: a blank here is the fact that nobody has said.
                       ['Amazon', p.amazon_channel === 'listed'
                         ? `Listed${p.amazon_sku && p.amazon_sku !== p.sku ? ` — seller SKU ${p.amazon_sku}` : ''}${p.amazon_asin ? ` · ${p.amazon_asin}` : ''}`
                         : p.amazon_channel === 'not_sold' ? 'Not sold on Amazon' : 'Not decided yet'],
@@ -835,44 +918,31 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
                       <div key={label}><dt className="text-xs text-gray-500">{label}</dt><dd className="text-gray-900 break-words">{v}</dd></div>
                     ))}
                   </dl>
-                  <StepLine steps={p.readiness?.steps} k="shopify" /><StepLine steps={p.readiness?.steps} k="shiphero" /><StepLine steps={p.readiness?.steps} k="amazon" />
                   {p.notes && <p className="text-sm text-gray-700 whitespace-pre-line">{p.notes}</p>}
-                </Block>
+                </Section>
 
-                {/* The panel workflow lives here, beside the product, because
-                    that is where someone already is when they need it. The
-                    refresh carries back up so the readiness bar moves the
-                    moment a panel is approved. */}
-                <div className="pt-2 border-t border-gray-100" data-gate-anchor="panel">
-                  <NfpForSku sku={sku} formulaRev={p.formula_rev} canEdit={canEdit}
-                    onChanged={() => { refresh(); onSaved?.(); }} />
-                </div>
+                <Section {...sec('pos')} title="Packaging POs" icon={FolderOpen}
+                  summary={(p.packaging_pos || []).length ? `${p.packaging_pos.length} recorded` : 'none recorded'}>
+                  <PackagingPos p={p} sku={sku} canEdit={canEdit} onChanged={changed} />
+                </Section>
 
                 {p.siblings?.length > 0 && (
-                  <div>
-                    <p className="text-xs font-medium text-gray-600 mb-1">
-                      Same flavor, other SKUs — a change here probably touches these
-                    </p>
+                  <Section {...sec('siblings')} title="Same flavor, other SKUs" icon={ListChecks}
+                    summary={`${p.siblings.length} — a change here probably touches these`}>
                     <ul className="space-y-1">
-                      {p.siblings.map((s) => (
-                        <li key={s.sku} className="text-sm text-gray-700">
-                          <code className="text-gray-900">{s.sku}</code> — {s.flavor}
+                      {p.siblings.map((sb) => (
+                        <li key={sb.sku} className="text-sm text-gray-700">
+                          <code className="text-gray-900">{sb.sku}</code> — {sb.flavor}
                         </li>
                       ))}
                     </ul>
-                  </div>
-                )}
-
-                {canEdit && (
-                  <button onClick={startEdit} data-drawer-edit
-                    className="inline-flex items-center gap-1.5 px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50">
-                    <Pencil size={14} /> Edit
-                  </button>
+                  </Section>
                 )}
               </>
             )}
           </>
         )}
+        </div>
       </div>
     </div>
   );

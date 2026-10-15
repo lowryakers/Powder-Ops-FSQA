@@ -1125,6 +1125,14 @@ product from `hydrate()`, `packaging_po_records` + `POST /products/:sku/packagin
 - **The grid's Stage column replaced the gap count** (rule e); `data-comp-gaps` no longer exists.
 - `verify:productstage` (50, live + browser; control fails 23). The Pipeline renders "Loading…" until the catalog is in — zeros first read as "nothing needs work".
 
+## The product drawer shows each fact once (D-178)
+`ProductsPanel.jsx` `Detail` + `Section` / `StepChecks` / `NeedsAttention`, `ProductStagePanel.jsx` (gates as a bar)
++ `PackagingPos`. Sticky header (status, Edit); the nine gates are a segmented bar, their reasons behind "How the flow
+works"; "N still outstanding" is one row of chips that open their section; **each readiness step is rendered ONCE,
+in its section (`STEP_SECTION`)** — never add a second checklist block. A section with nothing owed starts folded to a
+summary line; a folded body is hidden, not unmounted (deep links and `data-gate-anchor` still work). Only the four
+D-131 sections carry `data-block`. `verify:productdrawer` (24).
+
 ## Packaging specs are edited on Products → Packaging specs (D-135)
 `shared/packaging-spec.js` (`SPEC_FIELDS`, `validateSpecField`, `buildSpecPatch`, `masterHeaderFor`),
 `GET|POST /products/specs`, `PUT /products/specs/:specId`, `PackagingSpecsPanel.jsx` (`?view=specs&spec=…`).
