@@ -7324,3 +7324,42 @@ closed day as closed. Each is a reader of `weekCalendar()` when it is wired.
 Verified: `check:holidays` (29, pure, in `npm run check`), `verify:holidays` (53, live + browser at 1440
 and 390px, in `verify:all`). **The control removes the `/api/plant-calendar` mount — the state before —
 and fails from the first calendar assertion.**
+
+## D-176 — A paid holiday is quiet; the holiday card opens the full list; the card names its week (15 Oct 2026)
+
+**Asked:** clicking the "Paid holidays coming up" card should show a simple list of every paid holiday the
+plant observes; the scale-check reminder, daily reminders and the like should not fire on a paid holiday;
+the card's "Production days this week" should name the week instead. Pre-filled holiday hours: **not
+wanted** (D-175's part 4 half is dropped, not deferred).
+
+**Decided:**
+- **ONE QUESTION, ONE ANSWER: `holidayOn(db, date)` / `isClosedDay` / `nextWorkday` in
+  `server/plant-calendar.js`.** Every reader that stands down asks it, never the rules, so a correction in
+  Settings moves all of them at once. Cached a minute; an override clears the cache.
+- **Tasks:** `nextWeekday` in `api/pm.js` skips paid holidays as well as weekends, so the generator never
+  dates a card on a closed day (a daily card completed the Wednesday before Thanksgiving is due Monday).
+  **A card already dated on a holiday moves to the next open day** in the housekeeping sweep, before the
+  missed sweep, audited `holiday_rescheduled` with the holiday's name; a started card is left alone.
+- **Scale checks:** `scaleChecksDue` is empty on a holiday (the Operator View strip and the bell read it),
+  `scaleChecksOverdueNow` is false, and `scaleCheckStatus` carries `holiday` so the screen can say why.
+  What was filed is still shown.
+- **ReadyBot:** on a paid holiday no chase or digest goes out — pay, QA-correction, employee-document,
+  policy, training, supply-list, supplier and backfill nudges, the daily Flash, the cleanup and
+  missed-report digests. Elapsed-time nudges go on the first tick after. **The Monday digests (expiry, PM
+  week, weekly Flash) move to the first open weekday of the week** — Labor Day's go on the Tuesday. The
+  backup, the red-alert check, the partner month-end reminders and the holiday notice still run.
+- **Missed EOD reports:** a run left on a holiday is not a missing report (the plant was closed). The Flash
+  report's "filed no production entry yesterday" does not fire when yesterday was a holiday.
+- **The card is the way into the list:** clicking it opens every observed paid holiday for a year (year
+  arrows), with the observed date, "falls on …" for a moved one and the Tuesday–Friday weeks marked. On the
+  schedule the card never disappears — with nothing in 60 days it shrinks to "Next paid holiday: …"; on
+  the Operator View it still hides when nothing is coming up.
+- **The production line names its week**: "Production days the week of Nov 23: Monday, Tuesday,
+  Wednesday." — read weeks ahead, where "this week" is wrong. The Notify message keeps its "Holiday this
+  week" heading, which is accurate there.
+- `HOUSEKEEPING_MS` may be set by a verify (0) to watch a sweep run; unset it is five minutes.
+
+Verified: `check:holidays` (36, adds the scheduler and Flash gates), `verify:holidayquiet` (26, live +
+browser at 1280 and 390px). **The control is `main` before this and fails from the first assertion.**
+Neighbours re-run green: `verify:holidays`, `verify:scaledue`, `verify:eodchase`, `verify:cleanupdigest`,
+`verify:pmpause`, `verify:pmgeneration`, `verify:schedowner`.

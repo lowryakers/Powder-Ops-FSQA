@@ -1549,8 +1549,19 @@ disagree on asset numbers, every truck included); a fresh database now WARNS wit
 - Strip on the **Operator View** (everyone has it) and the schedule, 60 days. Notify message gets "Holiday this week".
 - **One notice**: ReadyBot in #announcements + push to every active employee, Monday of the week before, ≥6am plant time; claimed in
   `plant_holiday_notices` first; a missed Monday catches up; a started week is skipped.
-- Not yet: Hours pre-fill (8h), EOD chase / scale bell / daily PMs skipping a closed day.
-- `check:holidays` (29), `verify:holidays` (53; control fails from the first calendar assertion).
+- `check:holidays` (36), `verify:holidays` (53; control fails from the first calendar assertion).
+
+### A paid holiday is quiet; the card opens the list (D-176)
+- **`holidayOn` / `isClosedDay` / `nextWorkday` (`server/plant-calendar.js`) are the ONE answer** — never read the rules
+  to decide whether a day is closed. Pre-filled holiday hours were declined.
+- `nextWeekday` in `api/pm.js` skips holidays; a card already dated on one is moved to the next open day by the
+  housekeeping sweep (audited `holiday_rescheduled`), never marked missed. `scaleChecksDue` is `[]` on a holiday.
+- `runDue`: `closedToday` gates every ReadyBot chase/digest; Monday digests run on `openWeekday` (first open weekday).
+  Backup, red alert, partner month-end and the holiday notice still run. `missedReports` and the Flash "no entry
+  yesterday" skip holiday dates.
+- The strip is a button opening `HolidayList` (every observed holiday, by year); `alwaysShow` on the schedule keeps it as
+  "Next paid holiday" when nothing is within 60 days. The summary line names its week, never "this week".
+- `HOUSEKEEPING_MS=0` lets a verify watch a sweep. `verify:holidayquiet` (26; control fails from the first).
 
 ## A paused schedule says what it left behind (D-012 → D-055)
 Pausing a PM schedule cascades nothing: the tasks it already raised stay open or missed, nobody completes

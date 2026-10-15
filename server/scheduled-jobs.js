@@ -12,6 +12,7 @@
 
 import { readyDocOrigin } from './links.js';
 import { plantWallClock } from './plant-clock.js';
+import { holidayOn } from './plant-calendar.js';
 
 export function startScheduledJobs(db, deps) {
   const tick = () => {
@@ -43,6 +44,13 @@ export async function runDue(db, deps, now = new Date()) {
   const wall = plantWallClock(now);
   const week = isoWeek(wall);
   const day = wall.getDay(); // 0 Sun … 5 Fri
+  // A PAID HOLIDAY IS QUIET (D-176): nobody is at work to act on a chase, so
+  // ReadyBot's reminders and digests wait for the next open day. Elapsed-time
+  // nudges fire on the first tick after; the Monday digests move to the first
+  // open weekday of the week. The backup, the red-alert check, the partner
+  // month-end reminders and the holiday notice itself still run.
+  const closedToday = !!holidayOn(db, ymdLocal(wall));
+  const openWeekday = day >= 1 && day <= 5 && !closedToday;
 
   // Weekly backup: due Friday; a boot on Sat/Sun still catches the missed run.
   if (day >= 5 || day === 0) {
@@ -69,7 +77,7 @@ export async function runDue(db, deps, now = new Date()) {
   }
 
   // Monday expiry digest (certifications + calibration).
-  if (day === 1 && getFlag(db, 'last_expiry_digest_week') !== week) {
+  if (openWeekday && getFlag(db, 'last_expiry_digest_week') !== week) {
     try {
       const soon = (dateStr) => {
         if (!dateStr) return null;
@@ -134,7 +142,7 @@ export async function runDue(db, deps, now = new Date()) {
   // a reminder people mute is worse than none — and it re-sends while things
   // stay open, which is the state it exists to interrupt.
   const lastPayNudge = getFlag(db, 'last_pay_review_nudge_at');
-  if (deps.payReviewNudges && (!lastPayNudge || (now - new Date(lastPayNudge)) >= 3 * 86400000)) {
+  if (deps.payReviewNudges && !closedToday && (!lastPayNudge || (now - new Date(lastPayNudge)) >= 3 * 86400000)) {
     try {
       const sent = await deps.payReviewNudges(db);
       setFlag(db, 'last_pay_review_nudge_at', now.toISOString());
@@ -156,7 +164,7 @@ export async function runDue(db, deps, now = new Date()) {
   // job only has to run often enough not to be the bottleneck — hourly, with the
   // per-entry clock deciding who actually hears anything.
   const lastQaAction = getFlag(db, 'last_qa_action_nudge_at');
-  if (deps.qaActionNudges && (!lastQaAction || (now - new Date(lastQaAction)) >= 3600000)) {
+  if (deps.qaActionNudges && !closedToday && (!lastQaAction || (now - new Date(lastQaAction)) >= 3600000)) {
     try {
       const sent = await deps.qaActionNudges(db);
       setFlag(db, 'last_qa_action_nudge_at', now.toISOString());
@@ -172,7 +180,7 @@ export async function runDue(db, deps, now = new Date()) {
   // under "Documents to sign" for whoever happens to open ReadyDoc, and the
   // office finds out at the payroll deadline.
   const lastDocNudge = getFlag(db, 'last_employee_doc_nudge_at');
-  if (deps.employeeDocumentNudges && (!lastDocNudge || (now - new Date(lastDocNudge)) >= 2 * 86400000)) {
+  if (deps.employeeDocumentNudges && !closedToday && (!lastDocNudge || (now - new Date(lastDocNudge)) >= 2 * 86400000)) {
     try {
       const sent = await deps.employeeDocumentNudges(db);
       setFlag(db, 'last_employee_doc_nudge_at', now.toISOString());
@@ -183,7 +191,7 @@ export async function runDue(db, deps, now = new Date()) {
   // Policies sent to read and acknowledge (D-169) — same cadence, each row on
   // its own clock (policy_acknowledgements.last_nudge_at), one message per person.
   const lastPolicyNudge = getFlag(db, 'last_policy_ack_nudge_at');
-  if (deps.policyAckNudges && (!lastPolicyNudge || (now - new Date(lastPolicyNudge)) >= 2 * 86400000)) {
+  if (deps.policyAckNudges && !closedToday && (!lastPolicyNudge || (now - new Date(lastPolicyNudge)) >= 2 * 86400000)) {
     try {
       const sent = await deps.policyAckNudges(db);
       setFlag(db, 'last_policy_ack_nudge_at', now.toISOString());
@@ -197,7 +205,7 @@ export async function runDue(db, deps, now = new Date()) {
   // The clock is on each task (work_orders.last_nudge_at), not on this flag,
   // so a course assigned this morning is not read as already chased.
   const lastTraining = getFlag(db, 'last_training_nudge_at');
-  if (deps.trainingNudges && (!lastTraining || (now - new Date(lastTraining)) >= 2 * 86400000)) {
+  if (deps.trainingNudges && !closedToday && (!lastTraining || (now - new Date(lastTraining)) >= 2 * 86400000)) {
     try {
       const sent = await deps.trainingNudges(db);
       setFlag(db, 'last_training_nudge_at', now.toISOString());
@@ -210,7 +218,7 @@ export async function runDue(db, deps, now = new Date()) {
   // three lists on different days must not share one timer. Closing it, either
   // way, is what stops it.
   const lastSupply = getFlag(db, 'last_supply_cycle_nudge_at');
-  if (deps.supplyCycleNudge && (!lastSupply || (now - new Date(lastSupply)) >= 86400000)) {
+  if (deps.supplyCycleNudge && !closedToday && (!lastSupply || (now - new Date(lastSupply)) >= 86400000)) {
     try {
       const r = await deps.supplyCycleNudge(db);
       setFlag(db, 'last_supply_cycle_nudge_at', now.toISOString());
@@ -227,7 +235,7 @@ export async function runDue(db, deps, now = new Date()) {
   // reminder people mute is worse than none — and it re-sends while the pile
   // stays open, which is the state it exists to interrupt.
   const lastSupplier = getFlag(db, 'last_supplier_review_nudge_at');
-  if (deps.supplierReviewNudge && (!lastSupplier || (now - new Date(lastSupplier)) >= 3 * 86400000)) {
+  if (deps.supplierReviewNudge && !closedToday && (!lastSupplier || (now - new Date(lastSupplier)) >= 3 * 86400000)) {
     try {
       const r = await deps.supplierReviewNudge(db, deps);
       setFlag(db, 'last_supplier_review_nudge_at', now.toISOString());
@@ -236,7 +244,7 @@ export async function runDue(db, deps, now = new Date()) {
   }
 
   const lastBackfill = getFlag(db, 'last_record_backfill_nudge_at');
-  if (deps.recordBackfillNudge && (!lastBackfill || (now - new Date(lastBackfill)) >= 3 * 86400000)) {
+  if (deps.recordBackfillNudge && !closedToday && (!lastBackfill || (now - new Date(lastBackfill)) >= 3 * 86400000)) {
     try {
       const r = await deps.recordBackfillNudge(db);
       setFlag(db, 'last_record_backfill_nudge_at', now.toISOString());
@@ -272,8 +280,8 @@ export async function runDue(db, deps, now = new Date()) {
     const due = [];
     // Not before 6am, and not at the weekend for the daily — a report nobody
     // is at work to read is one they scroll past on Monday.
-    if (hour >= 6 && day >= 1 && day <= 5 && getFlag(db, 'last_flash_daily') !== todayStr) due.push(['daily', 'last_flash_daily', todayStr]);
-    if (hour >= 6 && day === 1 && getFlag(db, 'last_flash_weekly') !== week) due.push(['weekly', 'last_flash_weekly', week]);
+    if (hour >= 6 && openWeekday && getFlag(db, 'last_flash_daily') !== todayStr) due.push(['daily', 'last_flash_daily', todayStr]);
+    if (hour >= 6 && openWeekday && getFlag(db, 'last_flash_weekly') !== week) due.push(['weekly', 'last_flash_weekly', week]);
     const month = todayStr.slice(0, 7);
     if (hour >= 6 && lastOfMonth && getFlag(db, 'last_flash_monthly') !== month) due.push(['monthly', 'last_flash_monthly', month]);
 
@@ -296,7 +304,7 @@ export async function runDue(db, deps, now = new Date()) {
   // and the threshold is what tells those apart without anybody deciding. Silent
   // at zero, because a digest that arrives saying nothing is one people learn to
   // delete unread — and then they delete the one that mattered.
-  if (deps.sendCleanupDigest && wall.getHours() >= 6 && day >= 1 && day <= 5) {
+  if (deps.sendCleanupDigest && wall.getHours() >= 6 && openWeekday) {
     const lastCleanup = getFlag(db, 'last_cleanup_digest_at');
     const elapsed = lastCleanup ? now - new Date(lastCleanup) : Infinity;
     const pile = (() => { try { return deps.cleanupDigest(db).tasks; } catch { return 0; } })();
@@ -319,7 +327,7 @@ export async function runDue(db, deps, now = new Date()) {
   // message stops being read. The "not sent in seven days" test rather than
   // "is it Monday" means a missed Monday goes out on the Tuesday instead of
   // going quiet for a week.
-  if (deps.sendEodMissedDigest && wall.getHours() >= 6 && day >= 1 && day <= 5) {
+  if (deps.sendEodMissedDigest && wall.getHours() >= 6 && openWeekday) {
     const lastEod = getFlag(db, 'last_eod_missed_digest_at');
     const elapsed = lastEod ? now - new Date(lastEod) : Infinity;
     const gaps = (() => { try { return deps.eodMissedDigest(db, now).total; } catch { return 0; } })();
@@ -335,7 +343,7 @@ export async function runDue(db, deps, now = new Date()) {
 
   // Monday PM digest: each team's recurring work for the week, posted into the
   // team's own channel — where people already look — like the schedule publish.
-  if (day === 1 && getFlag(db, 'last_pm_digest_week') !== week) {
+  if (openWeekday && getFlag(db, 'last_pm_digest_week') !== week) {
     try {
       await postPmWeekDigest(db, deps, wall);
       setFlag(db, 'last_pm_digest_week', week);

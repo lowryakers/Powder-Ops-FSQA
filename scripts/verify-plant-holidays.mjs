@@ -52,7 +52,7 @@ const up = await J(r);
 t('AN OPERATOR READS what is coming up — a holiday is plant-wide news', r.status === 200 && up?.weeks?.length >= 1, String(r.status));
 const tw = up?.weeks?.find(w => w.week_start === '2026-11-23');
 t('Thanksgiving week is in the next 60 days with its effect in words',
-  !!tw && tw.summary.at(-1) === 'Production days this week: Monday, Tuesday, Wednesday.', JSON.stringify(tw?.summary));
+  !!tw && tw.summary.at(-1) === 'Production days the week of Nov 23: Monday, Tuesday, Wednesday.', JSON.stringify(tw?.summary));
 t('…and in Spanish', /Acción de Gracias/.test((tw?.summary_es || []).join(' ')));
 t('…and the Monday its notice goes out', tw?.notice_on === '2026-11-16');
 r = await get('/plant-calendar/week?week_start=2027-05-31');
@@ -112,7 +112,7 @@ t('not before its Monday (the Friday before)', n.sent === 0);
 n = await sendHolidayNotices(db, deps, new Date('2026-11-16T15:00:00Z'));
 t('ON THE MONDAY OF THE WEEK BEFORE: one notice, Thanksgiving week', n.sent === 1 && posts.length === 1 && /Thanksgiving Day/.test(posts[0].body), JSON.stringify(n));
 t('…by ReadyBot, in #announcements', posts[0]?.author === 'ReadyBot' && posts[0]?.ch === 'announcements');
-t('…in English and Spanish', /Production days this week/.test(posts[0]?.body || '') && /Día festivo pagado/.test(posts[0]?.body || ''));
+t('…in English and Spanish', /Production days the week of Nov 23/.test(posts[0]?.body || '') && /Día festivo pagado/.test(posts[0]?.body || ''));
 const active = db.prepare("SELECT COUNT(*) c FROM users WHERE is_active = 1 AND COALESCE(is_external,0) = 0 AND role != 'auditor' AND name != 'ReadyBot'").get().c;
 t('…pushed once to every active employee', pushes.length === active && pushes.every(p => /Paid holiday/.test(p.payload.title)), `${pushes.length} of ${active}`);
 t('…the push opens the Operator View, which everybody has', pushes[0]?.payload.url === '/?tab=operator');
@@ -137,7 +137,7 @@ await page.evaluate(([tk, u]) => { localStorage.setItem('auth_token', tk); local
 await page.goto(`${URL}/?tab=production-schedule`);
 const strip = page.locator('[data-holidays-strip]').first();
 t('the schedule opens with "Paid holidays coming up"', await strip.waitFor({ timeout: 20000 }).then(() => true).catch(() => false));
-t('…naming Thanksgiving and what it does to production', /Thanksgiving Day/.test(await strip.innerText()) && /Production days this week: Monday, Tuesday, Wednesday/.test(await strip.innerText()));
+t('…naming Thanksgiving and what it does to production', /Thanksgiving Day/.test(await strip.innerText()) && /Production days the week of Nov 23: Monday, Tuesday, Wednesday/.test(await strip.innerText()));
 
 // Navigate from this week to the week of Nov 23.
 const monday = (() => { const d = new Date(); const w = (d.getDay() + 6) % 7; d.setDate(d.getDate() - w); d.setHours(0, 0, 0, 0); return d; })();

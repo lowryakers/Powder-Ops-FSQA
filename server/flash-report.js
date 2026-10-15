@@ -27,6 +27,7 @@
 //    should be checkable without standing up a server, same as
 //    `partner-recon.js` and `coa-submission.js`.
 
+import { holidayOn } from './plant-calendar.js';
 const DAY = 86400000;
 const iso = (d) => d.toISOString().slice(0, 10);
 const daysAgo = (n, from = new Date()) => iso(new Date(from.getTime() - n * DAY));
@@ -52,6 +53,8 @@ const EXCEPTION_CHECKS = [
     // record, and it is invisible until somebody goes looking. This is the
     // single most valuable line in the report.
     run(db, { yesterday, windowStart }) {
+      // Nobody files on a paid holiday (D-176) — the plant was closed.
+      if (holidayOn(db, yesterday)) return [];
       const teams = db.prepare(`SELECT team, COUNT(*) c FROM production_entries
         WHERE date >= ? AND date < ? GROUP BY team`).all(windowStart, yesterday);
       const filedYesterday = new Set(db.prepare('SELECT DISTINCT team FROM production_entries WHERE date = ?')

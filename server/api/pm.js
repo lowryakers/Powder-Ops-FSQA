@@ -28,6 +28,7 @@ import { personMatch, resolveUserId, withCurrentNames } from '../person-links.js
 import { gradeTestAttempt } from '../training-records.js';
 import { closeScheduleWork, pauseReason } from '../pm-pause.js';
 import { generationSweep } from '../pm-generation.js';
+import { isClosedDay, nextWorkday, holidayOn } from '../plant-calendar.js';
 
 // The daily chemical dilution check is a TASK and a RECORD, and it files both.
 //
@@ -245,9 +246,18 @@ function safeParse(val, fallback = []) {
   try { return JSON.parse(val || JSON.stringify(fallback)); } catch { return fallback; }
 }
 
+// THE NEXT DAY THE PLANT IS OPEN (D-176): never a weekend, and never a paid
+// holiday — a card due on Thanksgiving is a card that goes missed on Friday
+// for work nobody was there to do. The holiday answer is plant-calendar.js's.
+const ymdLocal = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 function nextWeekday(date) {
   const d = new Date(date);
-  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+  const db = (() => { try { return getDb(); } catch { return null; } })();
+  for (let i = 0; i < 21; i++) {
+    const closed = d.getDay() === 0 || d.getDay() === 6 || (db && isClosedDay(db, ymdLocal(d)));
+    if (!closed) break;
+    d.setDate(d.getDate() + 1);
+  }
   return d;
 }
 
@@ -419,6 +429,25 @@ export function collapseDuplicateWorkOrders(db) {
 
 function markMissedWorkOrders(db) {
   const today = new Date().toISOString().split('T')[0];
+
+  // A CARD DUE ON A PAID HOLIDAY MOVES TO THE NEXT OPEN DAY instead of going
+  // missed (D-176). Cards raised before the calendar existed, or before a
+  // holiday was moved in Settings, can still carry a closed day's date; the
+  // plant was not there, so nothing was owed. Audited, never silent; a card
+  // somebody has started is left alone.
+  try {
+    const onClosed = db.prepare(`SELECT id, title, due_date FROM work_orders
+      WHERE status IN ('open','overdue') AND started_at IS NULL AND due_date IS NOT NULL
+        AND due_date >= date('now', '-21 days')`).all()
+      .filter(w => holidayOn(db, w.due_date));
+    for (const w of onClosed) {
+      const to = nextWorkday(db, w.due_date);
+      if (to === w.due_date) continue;
+      db.prepare(`UPDATE work_orders SET due_date = ?, status = 'open', updated_at = datetime('now') WHERE id = ?`).run(to, w.id);
+      logAudit('system', 'holiday_rescheduled', 'work_order', w.id,
+        { from: w.due_date, to, holiday: holidayOn(db, w.due_date)?.name }, null, null, w.title);
+    }
+  } catch (e) { console.warn('[pm] holiday reschedule skipped:', e.message); }
 
   // Mark past-due open WOs as missed
   db.prepare(`

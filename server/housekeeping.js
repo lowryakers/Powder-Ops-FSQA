@@ -16,7 +16,10 @@
 // interval is how two sweeps start disagreeing about how often "periodically"
 // is, and the whole point of this file is that there is one answer.
 
-const HOUSEKEEPING_MS = 5 * 60 * 1000;
+// HOUSEKEEPING_MS is overridable only so a live verify can watch a sweep run
+// on demand; unset (production) it is five minutes.
+const HOUSEKEEPING_MS = process.env.HOUSEKEEPING_MS != null && process.env.HOUSEKEEPING_MS !== ''
+  ? Number(process.env.HOUSEKEEPING_MS) : 5 * 60 * 1000;
 const lastRunAt = new Map();
 
 /** Run `fn(db)` at most once per HOUSEKEEPING_MS for the given key. */

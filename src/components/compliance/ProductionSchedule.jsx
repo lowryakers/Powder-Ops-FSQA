@@ -1481,7 +1481,7 @@ export default function ProductionSchedule({ user }) {
 
   return (
     <div className="space-y-4">
-      <PlantHolidaysStrip days={60} />
+      <PlantHolidaysStrip days={60} alwaysShow />
       {closedRuns.length > 0 && (
         <div data-closed-runs className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-rose-200 bg-white px-4 py-3 text-sm text-rose-900">
           <span>

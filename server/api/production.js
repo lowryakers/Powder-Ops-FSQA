@@ -10,7 +10,7 @@ import { readyDocOrigin } from '../links.js';
 import { roomLabel } from '../../shared/rooms.js';
 import { CLEAN_LEVEL_VALUES } from '../../shared/clean-levels.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
-import { weekFor } from '../plant-calendar.js';
+import { weekFor, holidayOn } from '../plant-calendar.js';
 import { weekSummaryLines } from '../../shared/plant-holidays.js';
 import { mmrGateMode, mmrGateCheck, mmrRef, mmrCoverage, MMR_GATE_MODES, MMR_GATE_KEY } from '../mmr-gate.js';
 
@@ -601,6 +601,9 @@ export function missedReports(db, { from, to, includeToday = false, includeDismi
     WHERE s.room_type = 'production'
   `).all().filter(r =>
     r.sched_date && r.sched_date <= cutoff && (!from || r.sched_date >= from) && (!to || r.sched_date <= to)
+    // A run left on a paid holiday was not run (D-176): the plant was closed,
+    // so no report is owed. One that was run and filed is matched as usual.
+    && !holidayOn(db, r.sched_date)
   );
 
   // EVERY MO A REPORT COVERS, not only its first (D-125). A Batching entry
