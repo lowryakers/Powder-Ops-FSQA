@@ -37,6 +37,7 @@ const strings = {
   section_due_today: { en: 'Due Today', es: 'Para Hoy' },
   section_this_week: { en: 'This Week', es: 'Esta Semana' },
   section_upcoming: { en: 'Upcoming', es: 'Próximas' },
+  section_training: { en: 'Your training', es: 'Tu capacitación' },
 
   // Due date labels
   d_overdue: { en: 'd overdue', es: 'd atrasada' },

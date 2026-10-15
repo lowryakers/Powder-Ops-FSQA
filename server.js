@@ -76,7 +76,7 @@ import { KIOSKS } from './server/kiosk-tokens.js';
 import { seedCandidates } from './server/candidates-seed.js';
 import reimbursementRoutes from './server/api/reimbursements.js';
 import bankingRoutes from './server/api/banking.js';
-import apDropRoutes, { repairHeaderVendors } from './server/api/ap-drop.js';
+import apDropRoutes, { repairHeaderVendors, grantApDropToDroppers } from './server/api/ap-drop.js';
 import employeeDocumentRoutes, { employeeDocumentNudges } from './server/api/employee-documents.js';
 import { trainingNudges } from './server/training-notify.js';
 import activityRoutes from './server/api/activity.js';
@@ -1382,6 +1382,12 @@ try {
   try {
     for (const c of repairHeaderVendors(db)) console.log(`[migrate] AP Drop ${c.id}: vendor "${c.was}" was a table header, not a vendor — cleared for a person to name`);
   } catch (e) { console.warn('[migrate] AP Drop vendor repair:', e.message); }
+  // Accounting follows the AP Drop grant now (D-184); whoever has dropped a
+  // document keeps it, as a grant Settings shows. Once per database.
+  try {
+    const g = grantApDropToDroppers(db);
+    if (g.length) console.log(`[migrate] AP Drop grant (view) given to ${g.length} who have filed a drop: ${g.join(', ')}`);
+  } catch (e) { console.warn('[migrate] AP Drop grants:', e.message); }
   // Collapse duplicate tasks the old generator guards let through (one-time).
   cleanupDuplicateTasks(db);
   // Purge cached "translations" identical to the original message (one-time).
