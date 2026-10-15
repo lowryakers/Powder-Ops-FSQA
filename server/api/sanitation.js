@@ -651,13 +651,17 @@ const withoutFormSwabs = (form) => (form ? { ...form, atp: [], allergen: [] } : 
 // that hasn't happened), and anything more than a day back needs a reason. Both
 // dates are stored, so the record reads "cleaned the 30th, entered the 4th"
 // rather than pretending it was filed on the day.
-router.post('/', (req, res) => {
-  const db = getDb();
+// THE ONE WRITER OF A NEW SANITATION RECORD (D-186). The form posts here, and the
+// swab log files its room visits through the same function, so a record filed
+// from either door is graded, escalated and closes re-clean work identically.
+// Returns { status, error } on a refusal, { status: 201, body } when filed.
+export function createSanitationRecord(db, user, input) {
+  const req = { body: input || {}, user };
   const id = uuid();
   const { type, equipment_id, performed_by, chemicals_used, concentration, contact_time_minutes, rinse_verified, result, atp_reading, notes, chemical_id, performed_at, late_entry_reason } = req.body;
 
   if (!req.body?.area || !type || !performed_by || !result) {
-    return res.status(400).json({ error: 'area, type, performed_by, and result are required' });
+    return { status: 400, error: 'area, type, performed_by, and result are required' };
   }
 
   // Normalized on the SERVER, not only in the picker. The picker already sends
@@ -673,14 +677,14 @@ router.post('/', (req, res) => {
     // shift rather than midnight, so the 72-hour clock isn't unfairly early.
     const raw = /^\d{4}-\d{2}-\d{2}$/.test(performed_at) ? `${performed_at} 12:00:00` : String(performed_at);
     const parsed = new Date(raw.replace(' ', 'T'));
-    if (Number.isNaN(parsed.getTime())) return res.status(400).json({ error: 'That date could not be read.' });
+    if (Number.isNaN(parsed.getTime())) return { status: 400, error: 'That date could not be read.' };
     if (parsed.getTime() > Date.now() + 60000) {
-      return res.status(400).json({ error: 'A clean cannot be recorded for a future date.' });
+      return { status: 400, error: 'A clean cannot be recorded for a future date.' };
     }
     const daysBack = (Date.now() - parsed.getTime()) / 86400000;
     if (daysBack > 1) {
       if (!String(late_entry_reason || '').trim()) {
-        return res.status(400).json({ error: 'Recording a clean from a previous day needs a reason — say why it is being entered now.' });
+        return { status: 400, error: 'Recording a clean from a previous day needs a reason — say why it is being entered now.' };
       }
       late = 1;
     }
@@ -691,9 +695,9 @@ router.post('/', (req, res) => {
   // grade can FAIL a record and never PASS one — a clean has reasons to fail
   // that no swab sees. A blank reading grades to null and changes nothing.
   const pre = resolvePreop(req.body.preop_form, type, area, null);
-  if (pre.error) return res.status(400).json({ error: pre.error });
+  if (pre.error) return { status: 400, error: pre.error };
   const sw = normalizeSwabs(req.body.swabs);
-  if (sw.errors.length) return res.status(400).json({ error: sw.errors.join(' ') });
+  if (sw.errors.length) return { status: 400, error: sw.errors.join(' ') };
   const graded = sw.rows ? gradeSwabs(sw.rows) : null;
   if (graded) pre.form = withoutFormSwabs(pre.form);
   const { grade, decided, allergen_failed } = gradeClean(result, atp_reading, pre.form, graded);
@@ -744,9 +748,15 @@ router.post('/', (req, res) => {
       entered_late: !!late, performed_at: created.performed_at, reclean_tasks_closed: closed,
       swabs: graded ? graded.length : null },
     null, created);
-  res.status(201).json(escalation
+  return { status: 201, body: escalation
     ? { ...created, atp_stage: escalation.stage, atp_message: escalation.message, reclean_work_order_id: recleanWorkOrderId }
-    : created);
+    : created };
+}
+
+router.post('/', (req, res) => {
+  const out = createSanitationRecord(getDb(), req.user, req.body);
+  if (out.status !== 201) return res.status(out.status).json({ error: out.error });
+  res.status(201).json(out.body);
 });
 
 // Logging a passed clean closes the task the 72-hour rule raised for that room.

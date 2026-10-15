@@ -7633,3 +7633,25 @@ because training has no frequency.
   on screen.
 - **Not proven: that this was Jorge's cause.** The other live possibilities — the task completed or cancelled, or
   assigned to a second account — are answered by Training → By person for him.
+
+## D-186 — The swab log: swabs written as taken, filed as records later; Form 117.21 is archived (15 Oct 2026)
+Diana (via Daniela): she swabs many rooms in one round and logs them afterwards, so she needs to type the time;
+Form 117.21 V5 is archived (not in the registry; its content is on the BPR/MMR); and "would it make sense to set it
+up like My Day … add results quickly in one place, reconcile later, have them all logged at one time? Ultimate
+simplicity. As few clicks as possible … as close to her spreadsheet view as we can."
+- **Yes — the My Day shape, for swabs.** `swab_log_entries` + `server/swab-log.js` + `SwabLog.jsx` at the top of
+  Sanitation. One line per swab — date, time (typed; defaults to the plant's now), room, surface, swab #, ATP,
+  allergen tick, kit lot — **saved the moment Enter is pressed**. Room, date, time and lot carry to the next line and
+  a numeric swab # counts up, so a round is a column of short lines. Lines stay editable inline until filed (the
+  allergen kit read later is entered then). Each person sees only their own.
+- **"File" groups the lines into room visits** — same day, same room, within 90 minutes, a failing swab closes the
+  visit (`planVisits`; `VISIT_GAP_MINUTES` shared with the sheet import, D-182) — and files each visit **through
+  `createSanitationRecord`**, extracted from `POST /sanitation` so there is ONE writer. Grading against PC #1, the
+  two-fail escalation, closing re-clean tasks and the run prompt happen exactly as for the form; the log grades
+  nothing itself (its chip only previews). Type `pre_op`, filer = the person, `performed_at` = the typed plant time;
+  a visit more than a day old carries an honest late-entry reason written for her. A line with no room or nothing
+  measured is left on the log, named; the rest file. A filed line is closed (409) — corrected on its record.
+- **Form 117.21 V5 is archived**: `PREOP_FORM.archived`, `preopOffered()` — a NEW Sanitation record is not offered
+  it; a record already filed with it still shows, reads back and corrects it. The server still reads old answers.
+- `verify:swablog` (40, API + browser at 1280 and 390). Control: without the mount the first call answers
+  `Record not found` (the `/:id` route reads "swab-log" as an id). `verify:preop` now asserts the archive (46).
