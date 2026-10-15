@@ -2458,7 +2458,9 @@ The form is `SwabTable` and the record view is `SwabList` (`SanitationSwabs.jsx`
   - runs once, and **never on a fresh database**;
   - files records entered late, with no allergen results invented.
 - The end-of-day reading box is for the floor's own swabs; QA's swab lives on QA's record.
-- `verify:sanswabs` (39).
+- **A seed that grades against a controlled limit must run AFTER `runControlledSync`** (D-183). The import
+  graded against the parked 30; `restampSwabSheet` re-grades it once, after the sync.
+- `verify:sanswabs` (40).
 
 ## The end-of-day ATP swab carries its reading (D-179)
 `cleaning_events[].atp_reading` + `atp_limit` + `atp_pass`, stamped by `atpOnEvent()` inside `normalizeCleaningEvents`

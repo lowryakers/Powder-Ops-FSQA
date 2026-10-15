@@ -7582,3 +7582,19 @@ Verified:
 - `verify:preop` was updated: the form's swab lines are the table's rows.
 - Passing: `verify:swabstock` (44 + 13), `verify:atp` (63), `verify:sanareas`, `verify:productionruns`,
   `verify:eodatp`, `verify:atplimit`.
+
+## D-183 — The swab-sheet import was stamped with the parked limit; re-graded against the limit in force (15 Oct 2026)
+
+Found live, on the first deploy of D-182: the imported records read "/ 30" while the move from 35 to 30 was
+still parked in Controlled Changes. The import runs among the boot seeds, and `controlled.js` applies the
+APPROVED limit only at the end of boot (it must run last). So the import graded against the code's number. No
+verdict changed: no reading on the sheet falls between 30 and 35, and only swab 675 (39 RLU) fails under
+either limit. But the stamped limit is a statement about the record.
+
+**Fixed:** `restampSwabSheet()` runs once, chained after `runControlledSync`. It re-grades every imported swab
+against the limit in force, then updates the record's mirror and result. It is guarded in
+`app_settings.swab_sheet_limit_restamped_v1`. **The lesson for any seed that grades:** anything that grades
+against a controlled limit must run after the sync, or it grades against an unapproved number.
+
+`verify:sanswabs` now plants the live state (35 approved, 30 parked) before the import boot and asserts 35 on
+every imported swab. 40 checks; the control without the re-grade fails with "675 limit=30", the symptom seen live.
