@@ -143,6 +143,8 @@ const RUNS = [
   ['verify-onboarding-bank.mjs', 5103, { ONBOARDING_ENC_KEY: '' }, false],
   ['verify-eod-atp.mjs', 5105, {}, false],
   ['verify-product-drawer.mjs', 5104, {}, false],
+  ['verify-atp-limit.mjs', 5106, {}, false],
+  ['verify-qa-clearance.mjs', 5107, {}, false],
 ];
 
 // VERIFY_ONLY=verify-auth.mjs,verify-swab-stock.mjs runs just the entries that

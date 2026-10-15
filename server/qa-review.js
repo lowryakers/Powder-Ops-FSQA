@@ -39,6 +39,7 @@ import { verifySanitationRecord } from './api/sanitation.js';
 import { signOffProductionEntry } from './api/production.js';
 import { verifyScaleCheck } from './api/scale-verification.js';
 import { signQmsApproval, BULK_APPROVE } from './api/qms.js';
+import { recordClearance, canClearHygiene, clearanceNeedsLook } from './api/pm.js';
 import { getType } from './qms-config.js';
 import { hasExplicitEdit } from './module-access.js';
 // The signing predicates live in qa-signing.js so the modules' OWN Verify
@@ -221,6 +222,57 @@ export const SOURCES = [
     sign: (db, user, id) => {
       const { error, status } = verifyScaleCheck(db, user, id);
       return error ? { error, status } : { ok: true };
+    },
+  },
+  // HYGIENE CLEARANCE (D-180). Food-contact work waiting on QA before the
+  // machine runs again. It sat only on the Task Center's Clearance tab, so QA
+  // Review read 6 while 18 clearances waited. The count is the Task Center's
+  // count, row for row; a job with something wrong on it is LISTED but must be
+  // opened (clearanceNeedsLook), and signing here records the method as a QA
+  // Review sign-off rather than claiming an inspection method nobody chose.
+  {
+    key: 'hygiene-clearance',
+    label: 'Hygiene clearances',
+    form: null,
+    module: 'pm',
+    view: 'clearance',
+    noun: 'clearance',
+    plural: 'clearances',
+    count: (db) => db.prepare(
+      "SELECT COUNT(*) c FROM work_orders WHERE clearance_required = 1 AND clearance_status = 'pending'").get().c,
+    pending: (db, limit = LIMIT) => db.prepare(
+      `SELECT wo.*, e.name AS equipment_name, e.asset_id, ps.frequency_type
+       FROM work_orders wo
+       LEFT JOIN equipment e ON wo.equipment_id = e.id
+       LEFT JOIN pm_schedules ps ON wo.pm_schedule_id = ps.id
+       WHERE wo.clearance_required = 1 AND wo.clearance_status = 'pending'
+       ORDER BY wo.completed_at ASC LIMIT ?`).all(limit).map(r => {
+      const list = (raw) => { try { const v = JSON.parse(raw || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };
+      const steps = list(r.procedure_steps);
+      const ticks = list(r.step_results);
+      const real = steps.filter(x => !(typeof x === 'string' && x.endsWith(':')));
+      const done = steps.filter((x, i) => !(typeof x === 'string' && x.endsWith(':'))
+        && (ticks[i] === true || ticks[i] === 'done' || ticks[i] === 'pass')).length;
+      return {
+        id: r.id,
+        title: r.title,
+        subtitle: [r.equipment_name && `${r.equipment_name}${r.asset_id ? ` #${r.asset_id}` : ''}`, r.frequency_type].filter(Boolean).join(' · '),
+        by: r.completed_by,
+        date: (r.completed_at || '').slice(0, 10),
+        result: null,
+        extra: [real.length ? `${done} of ${real.length} steps ticked` : 'No procedure steps',
+          r.lubricant_used && `lubricant ${r.lubricant_used}${r.lubricant_is_food_grade === 1 ? ' (food-grade)' : ''}`,
+          r.notes].filter(Boolean).join(' · '),
+        blocked: clearanceNeedsLook(r),
+      };
+    }),
+    canSign: canClearHygiene,
+    sign: (db, user, id) => {
+      const wo = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(id);
+      const look = wo && clearanceNeedsLook(wo);
+      if (look) return { error: `${wo.title}: ${look} Open it in the Task Center to clear or fail it.`, status: 409 };
+      const out = recordClearance(db, user, id, { status: 'cleared', method: 'QA Review sign-off', notes: 'Cleared from QA Review' });
+      return out.error ? { error: out.error, status: out.status } : { ok: true };
     },
   },
   signOutSource({ key: 'sign-out-equipment', type: 'maintenance_sign_out',

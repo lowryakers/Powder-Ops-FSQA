@@ -72,7 +72,7 @@ t('the Pre-Op task is on the cleaner\'s Operator View, asking for the ATP swab',
 res = await c('POST', `/pm/work-orders/${run4.prompt_work_order_id}/complete-and-recur`, { readings: { atp_reading: '12' }, result: 'pass' }, cln.token);
 t('completing it works', res.status === 200, `${res.status} ${JSON.stringify(await J(res)).slice(0, 160)}`);
 const filed = q("SELECT * FROM sanitation_records WHERE area = '4' AND type = 'pre_op' ORDER BY rowid DESC LIMIT 1")[0];
-t('…and files Room 4\'s Pre-Op record under the room token, graded against 35', filed?.result === 'pass' && filed?.atp_reading == 12 && filed?.atp_limit === 35);
+t('…and files Room 4\'s Pre-Op record under the room token, graded against 30', filed?.result === 'pass' && filed?.atp_reading == 12 && filed?.atp_limit === 30);
 shift("UPDATE sanitation_records SET performed_at = datetime('now','-20 minutes') WHERE id = ?", filed.id);
 r = await J(await S('GET', '/production/runs'));
 t('the run now reads "Pre-Op filed after the start" — late, and on record', r?.runs?.find((x) => x.id === run4.id)?.preop?.state === 'after');
@@ -131,7 +131,7 @@ try {
   await p2.goto(`${URL}/?tab=sanitation`);
   await p2.locator('[data-atp-cell]:visible').first().waitFor({ timeout: 15000 });
   const cells = await p2.locator('[data-atp-cell]:visible').evaluateAll((els) => els.map((e) => `${e.getAttribute('data-atp-cell')}:${e.textContent}`));
-  t('Sanitation: the over-limit swab reads "80 / 35" in red, the clean ones within', cells.includes('over:80 / 35') && cells.some((x) => x.startsWith('within:12 / 35')), JSON.stringify(cells));
+  t('Sanitation: the over-limit swab reads "80 / 30" in red, the clean ones within', cells.includes('over:80 / 30') && cells.some((x) => x.startsWith('within:12 / 30')), JSON.stringify(cells));
 } catch (e) { t('the Runs tab rendered', false, e.message); }
 finally { await browser.close(); }
 

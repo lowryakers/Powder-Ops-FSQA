@@ -2447,6 +2447,21 @@ gap; a reading sets `atp_swab` (the swab shelf counts the tick). `common/AtpRead
 renders only while the swab is ticked. **Reported, not gated**: an over-limit EOD reading is red and raises no D-036
 re-clean task. `verify:eodatp` (24; control fails 8+).
 
+## PC #1 is 30 RLU in code, parked for Document Control; clearances are in QA Review (D-180)
+- **`ATP_LIMIT.max` = 30 (Protocol 003 V5)** and `controlled.js` PARKS it. A database that approved 35 grades
+  against 35 until Document Control approves; a fresh one starts at 30. The wording is `atpStatement()`, built
+  from the number in force. **`AtpLimitHint` reads `GET /api/atp-limit`** and holds no number of its own. A verify
+  of the limit asserts what a FRESH database grades against (30). The SOP number behind 30 ("606" vs SOP 608)
+  is DCR item 4 in `docs/v2/queued/dcr-protocol-003.md`. `verify:atplimit` (16, with a reboot).
+- **`hygiene-clearance` is a QA Review source** (the Task Center's query; `view: 'clearance'` opens that list).
+  `recordClearance()` in api/pm.js is the ONE writer for the card and the queue:
+  - QA department only;
+  - never by the person who completed the work, and never twice;
+  - the clearer is `req.user`, never a name sent in the body.
+- `clearanceNeedsLook()` covers an issue flagged, a step left unticked, or a lubricant not marked food-grade.
+  Those rows are listed but must be opened: the server returns 409 and the row has no Sign button. A source row
+  may carry `blocked`. `verify:qaclearance` (24; control fails 22).
+
 ## A production run opens and closes, and its start asks for the Pre-Op (D-146, OBL-42)
 `production_runs` + `server/production-runs.js` (`startRun`, `closeRun`, `preopFor`, `closeRunPromptsFor`),
 `GET|POST /production/runs`, `POST /production/runs/:id/close`, **Production Log → Runs** (`ProductionRuns.jsx`,

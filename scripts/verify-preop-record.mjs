@@ -103,14 +103,14 @@ let cleanId;
   const f = JSON.parse(rec?.preop_form || 'null');
   t('THE ANSWERS ARE ON THE RECORD', f?.product_name === 'Alkify Stick Pack' && f?.checks?.glass_plastic === 'na' && f?.allergen?.[0]?.swab_no === 'A-88', JSON.stringify(f).slice(0, 200));
   t('THE REVISION TRAVELS WITH IT (the atp_limit rule)', f?.revision === 'V5');
-  t('swab 1\'s reading is the record\'s own graded reading, not a second copy', rec?.atp_reading === 20 && rec?.atp_limit === 35 && f?.atp?.[0]?.reading === undefined, JSON.stringify({ atp: rec?.atp_reading, lim: rec?.atp_limit, f0: f?.atp?.[0] }));
+  t('swab 1\'s reading is the record\'s own graded reading, not a second copy', rec?.atp_reading === 20 && rec?.atp_limit === 30 && f?.atp?.[0]?.reading === undefined, JSON.stringify({ atp: rec?.atp_reading, lim: rec?.atp_limit, f0: f?.atp?.[0] }));
   t('two clean swabs and a passing allergen swab leave the filer\'s pass alone', rec?.result === 'pass');
 }
 {
   const r = await file({ area: '3', atp_reading: 20, preop_form: { ...FORM, atp: [FORM.atp[0], { ...FORM.atp[1], reading: 61 }] } });
   const rec = read((await r.json()).id);
   t('ATP SWAB 2 OVER THE LIMIT FAILS THE CLEAN — graded like swab 1', rec?.result === 'fail', `result=${rec?.result}`);
-  t('…and the limit is stamped even though swab 1 passed', rec?.atp_limit === 35);
+  t('…and the limit is stamped even though swab 1 passed', rec?.atp_limit === 30);
 }
 {
   const r = await file({ area: '3', preop_form: { ...FORM, atp: [{}, {}], allergen: [{ location: 'Hopper', swab_no: 'A-89', result: 'no_pass' }] } });
@@ -182,7 +182,7 @@ try {
       const rec = db.prepare("SELECT * FROM sanitation_records WHERE preop_form LIKE '%M4-HMR PRO Blend Mocha%'").get();
       const f = JSON.parse(rec?.preop_form || 'null');
       t('SAVED FROM THE SCREEN: the answers and the graded reading land on the record',
-        !!rec && rec.atp_reading === 18 && rec.atp_limit === 35 && f?.checks?.knives === 'yes' && f?.allergen?.[0]?.result === 'pass', JSON.stringify({ atp: rec?.atp_reading, f }).slice(0, 220));
+        !!rec && rec.atp_reading === 18 && rec.atp_limit === 30 && f?.checks?.knives === 'yes' && f?.allergen?.[0]?.result === 'pass', JSON.stringify({ atp: rec?.atp_reading, f }).slice(0, 220));
       await page.locator('tbody td', { hasText: /^Room 3$/ }).first().click().catch(() => {});
       await page.waitForTimeout(800);
       t('THE RECORD READS THE FORM BACK', await page.locator('[data-preop-answers]').filter({ hasText: 'Form 117.21' }).count() > 0);

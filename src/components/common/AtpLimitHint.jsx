@@ -1,36 +1,63 @@
 // The ATP limit, shown as it is typed.
 //
-// PC #1's critical limit is 35 RLU and the server enforces it — an over-limit
-// reading is stored as a failure whatever the filer chose. THIS COMPONENT DOES
-// NOT ENFORCE ANYTHING; it tells somebody what is about to happen while they
-// can still act on it, which is the difference between a refusal that explains
-// itself and one that just says no.
+// PC #1's critical limit is enforced by the server — an over-limit reading is
+// stored as a failure whatever the filer chose. THIS COMPONENT DOES NOT ENFORCE
+// ANYTHING; it tells somebody what is about to happen while they can still act
+// on it, which is the difference between a refusal that explains itself and
+// one that just says no.
 //
-// The rule lives in `server/atp-limits.js` and is the only place that decides.
-// The limit is duplicated here for display alone, and deliberately labelled as
-// coming from Protocol 003 so a reader can see where it came from — if the
-// document moves and this string does not, the app still grades correctly and
-// only the hint is stale.
+// THE NUMBER IS READ FROM THE SERVER (D-180), never written here. It used to be
+// a constant, which was harmless while the limit never moved; the limit moving
+// from 35 to 30 is parked until Document Control approves it, so a constant
+// would have told the floor 30 while every reading was graded against 35.
+// `GET /api/atp-limit` answers with the limit IN FORCE. Fetched once per page.
+import { useEffect, useState } from 'react';
+import { apiFetch } from '../../hooks/useApi';
 
-const LIMIT = 35;
+let cached = null;
+let pending = null;
+function loadLimit() {
+  if (cached) return Promise.resolve(cached);
+  if (!pending) {
+    pending = apiFetch('/atp-limit')
+      .then((r) => { cached = r; return r; })
+      .catch(() => { pending = null; return null; });
+  }
+  return pending;
+}
+
+/** The ATP limit in force, or null until it has loaded. */
+function useAtpLimit() {
+  const [limit, setLimit] = useState(cached);
+  useEffect(() => {
+    if (limit) return undefined;
+    let live = true;
+    loadLimit().then((r) => { if (live && r) setLimit(r); });
+    return () => { live = false; };
+  }, [limit]);
+  return limit;
+}
 
 export default function AtpLimitHint({ value, lang = 'en' }) {
+  const limit = useAtpLimit();
   const n = value === '' || value === null || value === undefined ? null : Number(value);
-  if (n === null || !Number.isFinite(n)) return null;
+  if (n === null || !Number.isFinite(n) || !limit) return null;
+  const LIMIT = limit.max;
   const over = n > LIMIT;
+  const src = `${limit.document} ${limit.revision}, ${limit.control}`;
 
   const t = lang === 'es'
     ? {
       ok: `Dentro del límite (≤ ${LIMIT} RLU)`,
       over: `Sobre el límite de ${LIMIT} RLU`,
       why: 'Se guardará como FALLA. Vuelva a limpiar y tome otra muestra — una sola lectura alta puede ser la muestra, no la línea.',
-      src: 'Protocolo 003 V4, PC #1',
+      src: src.replace('Protocol', 'Protocolo'),
     }
     : {
       ok: `Within limit (≤ ${LIMIT} RLU)`,
       over: `Over the ${LIMIT} RLU limit`,
       why: 'This will be stored as a FAIL. Re-clean and swab again — a single high reading can be the swab rather than the line.',
-      src: 'Protocol 003 V4, PC #1',
+      src,
     };
 
   return (

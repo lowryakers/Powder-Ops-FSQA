@@ -7448,3 +7448,56 @@ tick, so even a swab taken and ticked left no number to grade against PC #1's 35
 Verified: `verify:eodatp` (24, live + browser at 1280/390). **The control is `main` before this and fails 8+**
 — the reading is dropped on save. `verify:swabstock` (44 + 13), `verify:mmrgate` (81), `verify:eodchase` (54),
 `verify:productionmirror` (16), `verify:productionruns` (25) re-run green.
+
+## D-180 — PC #1's ATP limit moves to 30 RLU, parked for Document Control; hygiene clearances join QA Review (15 Oct 2026)
+
+**ATP limit.** Quality answered the question D-179's post asked: the plant works to **30 RLU** (the surface ATP
+procedure's §6.5, "≤ 30 clean, > 30 re-clean"). Protocol 003 V4 prints 35, and that is what the app graded
+against.
+
+**Decided:**
+- **`ATP_LIMIT.max` = 30, revision `V5`**, in `server/atp-limits.js`. It is a controlled acceptance criterion
+  (D-020), so `controlled.js` **parks** the change on every database that approved 35. The app goes on
+  grading against 35 until Document Control approves, which raises a DCR. Approving is the moment Protocol
+  003 V5 takes effect. A fresh database starts at 30.
+- **The wording is built from the number** (`atpStatement()`); it is not a stored string. While the change
+  is parked, `apply()` restores the approved max and revision, and a stored "No more than 30 RLU" would have
+  sat beside a grade of 35.
+- **The hint reads the limit IN FORCE from the server** (`GET /api/atp-limit`, no module grant, read-only).
+  `AtpLimitHint` held its own `35`; a constant changed to 30 would have told the floor 30 while every reading
+  was graded against 35.
+- **`preventive-controls.js` still transcribes V4's "No more than 35 RLU"** — it is the document's text, and it
+  changes when V5's text is in hand (OBL-33's wording check).
+- **The SOP number needs confirming.** Daniela cited "SOP 606 §6.5"; the register's SOP 606 is Raw Material
+  Label and Component Specifications, and the ATP procedure is SOP 608 V4. This is DCR item 4 in
+  `docs/v2/queued/dcr-protocol-003.md`.
+
+**Hygiene clearances.** Task Center → Clearance read 18 food-contact jobs waiting on QA while QA Review showed
+none: the registry had no source for them. This is the D-083/D-121 defect again: a pile visible only on the
+screen of the person who is not the one looking.
+- **`hygiene-clearance` is a QA Review source.** It uses the Task Center's own query, so the two counts are equal
+  row for row. `view: 'clearance'` makes "Open" land on the Clearance list (`?view=clearance` in `PMPanel`).
+- **One writer, `recordClearance()`** (api/pm.js), is used by the card and the queue. Its rules:
+  - QA department only (the route's existing rule; an admin outside QA sees the pile but cannot sign);
+  - never the person who completed the work;
+  - never twice;
+  - **the clearer is the signed-in person** — the card had sent `cleared_by` in the body and the server stored
+    whatever name arrived.
+- **A job with something wrong on it is listed and must be OPENED** (`clearanceNeedsLook`):
+  - an issue flagged;
+  - a step unticked;
+  - a lubricant not marked food-grade.
+
+  The row has no checkbox and no Sign button, and the server refuses it (409) if it is sent anyway. Clearing
+  is a decision about whether the machine runs; a routine one can be signed from a list, and these cannot.
+- **A clearance signed in QA Review records its method as `QA Review sign-off`**, never an inspection method
+  nobody chose. Batch signing goes through the QA Review password gate.
+- The batch audit entry read `source.id`, which is undefined; it now reads `source.key`.
+
+Verified:
+- `verify:atplimit` (16, live + reboot). It covers a fresh database at 30, a database that approved 35 parking
+  the move and grading 32 as a pass, and an approval taking effect without a restart while the old record still
+  says 35.
+- `verify:qaclearance` (24, live + browser). Its control (the code before this) has no source and fails at once.
+- `verify:eodatp`, `verify:preop`, `verify:productionruns` and `verify:atp` now assert 30 on a fresh database
+  and pass.

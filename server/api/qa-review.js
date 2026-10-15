@@ -40,6 +40,7 @@ router.get('/', (req, res) => {
       label: s.label,
       form: s.form,
       module: s.module,
+      view: s.view || null,
       noun: s.noun,
       plural: s.plural,
       count,
@@ -89,8 +90,8 @@ router.post('/sign', (req, res) => {
   // already writes. It is what answers "was this batch actually authenticated"
   // — the records themselves carry only who and when.
   if (signed.length) {
-    logAudit(req.user, 'sign', 'qa_review_batch', source.id,
-      { ...signatureEvidence(), source: source.id, signed: signed.length, failed: failed.length });
+    logAudit(req.user, 'sign', 'qa_review_batch', source.key,
+      { ...signatureEvidence(), source: source.key, signed: signed.length, failed: failed.length });
   }
   res.json({ signed, failed, remaining: safeCount(source, db) });
 });
