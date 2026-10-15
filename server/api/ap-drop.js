@@ -672,3 +672,35 @@ export function repairHeaderVendors(db) {
 }
 
 export default router;
+
+// D-184: Accounting is reached by the AP Drop grant now, not by having any
+// module at all. Somebody who has actually dropped a document keeps the door —
+// as a grant they can see in Settings — so nobody who uses it loses it. Once
+// per database; an account with no module map (nothing assigned) or one that
+// is no longer active is left alone, and a grant somebody removes stays removed.
+export function grantApDropToDroppers(db) {
+  const flag = db.prepare("SELECT value FROM app_settings WHERE key = 'ap_drop_grants_v1'").get();
+  if (flag) return [];
+  const granted = [];
+  db.transaction(() => {
+    const users = db.prepare(`SELECT DISTINCT u.id, u.name, u.role, u.module_access FROM ap_drops d
+      JOIN users u ON u.id = d.created_by_user_id
+      WHERE u.is_active = 1 AND u.role NOT IN ('admin', 'auditor') AND COALESCE(u.is_external, 0) = 0`).all();
+    for (const u of users) {
+      const ma = (() => { try { return u.module_access ? JSON.parse(u.module_access) : null; } catch { return null; } })();
+      if (!ma) continue;
+      if (Array.isArray(ma)) {
+        if (ma.includes('ap-drop')) continue;
+        db.prepare('UPDATE users SET module_access = ? WHERE id = ?').run(JSON.stringify([...ma, 'ap-drop']), u.id);
+      } else {
+        if (ma['ap-drop']) continue;
+        db.prepare('UPDATE users SET module_access = ? WHERE id = ?').run(JSON.stringify({ ...ma, 'ap-drop': 'view' }), u.id);
+      }
+      logAudit('system', 'permission_change', 'user', u.id,
+        { module: 'ap-drop', level: 'view', reason: 'D-184: has filed an AP Drop; Accounting now follows the AP Drop grant' }, null, null, u.name);
+      granted.push(u.name);
+    }
+    db.prepare("INSERT INTO app_settings (key, value) VALUES ('ap_drop_grants_v1', ?)").run(new Date().toISOString());
+  })();
+  return granted;
+}

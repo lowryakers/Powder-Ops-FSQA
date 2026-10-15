@@ -391,6 +391,14 @@ limit), `authenticateToken` in `middleware/auth.js`, `server/middleware/no-token
 - `logAudit` adds `via_token` when `req.user.via_token` is set; every token call also writes `api_token_call`.
 - Rate limit is in memory, per process. `req.auth.kind` is `'token'` or `'session'` on every authenticated request.
 
+## Accounting follows the AP Drop grant (D-184); training is pinned on the Operator View (D-185)
+- **`canSeeApDrop(u)`** (`src/utils/permissions.js`) decides the Accounting nav entry and the AP Drop hub tab: the
+  `ap-drop` grant (view/edit), an office/admin supervisor, or an admin — never "any module assigned". People who
+  had filed a drop got `ap-drop: view` once (`grantApDropToDroppers`, `ap_drop_grants_v1`). The server's intake
+  stays open. `verify:accountingaccess` (12; control fails 2).
+- **Open training tasks (`training_course_id`) render in "Your training", first and always open**, outside the date
+  buckets and the frequency filter. `verify:trainingpinned` (8; control fails 6).
+
 ## The bots' REST surface: existing routes, listed, paged and filtered (D-162)
 `server/bot-api.js` (`BOT_ROUTES`, `pageOf`/`pageList`, `stripForbidden`, `isBroadcastMention`), `server/api/bot.js`
 (`GET /api/bot/whoami`), `docs/bot-api.md`.

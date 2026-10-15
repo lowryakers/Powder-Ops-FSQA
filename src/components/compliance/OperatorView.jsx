@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { completeWorkOrder } from '../../lib/completeWorkOrder';
 import { useAuth } from '../../hooks/useAuth';
-import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, CalendarDays, ChevronRight, CircleDot, Filter, Search, Flag, Paperclip, Thermometer, Droplets, Lightbulb, FlaskConical, ClipboardCheck, SquareCheck, Square, Pencil, Plus, Trash2, MinusCircle, CircleCheck, AlertOctagon, ListChecks, Scale } from 'lucide-react';
+import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, CalendarDays, ChevronRight, CircleDot, Filter, Search, Flag, Paperclip, Thermometer, Droplets, Lightbulb, FlaskConical, ClipboardCheck, SquareCheck, Square, Pencil, Plus, Trash2, MinusCircle, CircleCheck, AlertOctagon, ListChecks, Scale, GraduationCap } from 'lucide-react';
 import { localDateStr, daysAgoStr } from '../../utils/dates';
 import FileUpload from '../FileUpload';
 import PlantHolidaysStrip from '../common/PlantHolidaysStrip';
@@ -1171,14 +1171,22 @@ export default function OperatorView() {
     refresh();
   };
 
-  const filtered = useMemo(() => {
+  const matchesSearch = useCallback((t) => {
     const q = search.toLowerCase().trim();
-    return (tasks || []).filter(t => {
-      if (freqFilter !== 'all' && t.frequency_type !== freqFilter) return false;
-      if (q && ![t.title, t.equipment_name, t.location, t.assigned_to].some(v => v && v.toLowerCase().includes(q))) return false;
-      return true;
-    });
-  }, [tasks, freqFilter, search]);
+    return !q || [t.title, t.equipment_name, t.location, t.assigned_to].some(v => v && v.toLowerCase().includes(q));
+  }, [search]);
+  // TRAINING IS PINNED, NOT DATED (D-185). An assignment is due fourteen days
+  // out, so it landed under "Later" — which collapses once the day's work runs
+  // past five tasks — and a frequency filter (training has none) hid it
+  // outright. Jorge's course was on his list and behind a closed header. Every
+  // open training task sits in its own section, first and always open.
+  const training = useMemo(() => (tasks || []).filter(t => t.training_course_id && matchesSearch(t))
+    .sort((a, b) => String(a.due_date).localeCompare(String(b.due_date))), [tasks, matchesSearch]);
+  const filtered = useMemo(() => (tasks || []).filter(t => {
+    if (t.training_course_id) return false;
+    if (freqFilter !== 'all' && t.frequency_type !== freqFilter) return false;
+    return matchesSearch(t);
+  }), [tasks, freqFilter, matchesSearch]);
 
   const { overdue, today, thisWeek, upcoming } = useMemo(() => {
     const now = new Date();
@@ -1402,14 +1410,24 @@ export default function OperatorView() {
         </div>
       )}
 
+      {training.length > 0 && (
+        <div data-training-section>
+          <SectionHeader icon={GraduationCap} title={t('section_training')} count={training.length} color="bg-indigo-600" defaultOpen={true}>
+            {training.map(tk => (
+              <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onTestPassed={refresh} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} viewDept={viewDept === "all" ? null : viewDept} t={t} lang={lang} tc={tc} />
+            ))}
+          </SectionHeader>
+        </div>
+      )}
+
       {/* Task sections */}
-      {filtered.length === 0 ? (
+      {filtered.length === 0 ? (training.length > 0 ? null : (
         <div className="text-center py-16">
           <CheckCircle size={48} className="mx-auto text-green-400 mb-3" />
           <p className="text-lg font-semibold text-gray-700">{t('all_caught_up')}</p>
           <p className="text-gray-500 text-sm">{t('no_prefix')} {freqFilter !== 'all' ? t(freqFilter) + ' ' : ''}{t('no_tasks_pending')}</p>
         </div>
-      ) : (
+      )) : (
         /* key remounts sections when the bucket filter changes so a filtered
            section always opens expanded */
         <div className="space-y-2" key={bucketFilter}>
@@ -1424,7 +1442,7 @@ export default function OperatorView() {
           {today.length > 0 && (!bucketFilter || bucketFilter === 'today') && (
             <SectionHeader icon={CircleDot} title={t('section_due_today')} count={today.length} color="bg-powder-600" defaultOpen={true}>
               {today.map(tk => (
-                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} viewDept={viewDept === "all" ? null : viewDept} t={t} lang={lang} tc={tc} />
+                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onTestPassed={refresh} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} viewDept={viewDept === "all" ? null : viewDept} t={t} lang={lang} tc={tc} />
               ))}
             </SectionHeader>
           )}
@@ -1432,7 +1450,7 @@ export default function OperatorView() {
           {thisWeek.length > 0 && (!bucketFilter || bucketFilter === 'thisWeek') && (
             <SectionHeader icon={CalendarDays} title={t('section_this_week')} count={thisWeek.length} color="bg-gray-500" defaultOpen={bucketFilter === 'thisWeek' || overdue.length + today.length < 10}>
               {thisWeek.map(tk => (
-                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} viewDept={viewDept === "all" ? null : viewDept} t={t} lang={lang} tc={tc} />
+                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onTestPassed={refresh} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} viewDept={viewDept === "all" ? null : viewDept} t={t} lang={lang} tc={tc} />
               ))}
             </SectionHeader>
           )}
@@ -1440,7 +1458,7 @@ export default function OperatorView() {
           {upcoming.length > 0 && (!bucketFilter || bucketFilter === 'upcoming') && (
             <SectionHeader icon={Clock} title={t('section_upcoming')} count={upcoming.length} color="bg-gray-400" defaultOpen={bucketFilter === 'upcoming' || overdue.length + today.length + thisWeek.length < 5}>
               {upcoming.map(tk => (
-                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} viewDept={viewDept === "all" ? null : viewDept} t={t} lang={lang} tc={tc} />
+                <TaskCard key={tk.id} task={tk} onComplete={handleComplete} onTestPassed={refresh} onFlagIssue={handleFlagIssue} onSkipNA={handleSkipNA} onAssign={handleAssign} onUpdateItems={handleUpdateItems} technicians={technicians || []} userName={userName} isAdmin={isAdmin} batchMode={batchMode} batchSelected={batchSelected.has(tk.id)} onBatchToggle={toggleBatchItem} viewDept={viewDept === "all" ? null : viewDept} t={t} lang={lang} tc={tc} />
               ))}
             </SectionHeader>
           )}

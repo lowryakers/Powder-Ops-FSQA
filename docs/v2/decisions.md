@@ -7598,3 +7598,38 @@ against a controlled limit must run after the sync, or it grades against an unap
 
 `verify:sanswabs` now plants the live state (35 approved, 30 parked) before the import boot and asserts 35 on
 every imported swab. 40 checks; the control without the re-grade fails with "675 limit=30", the symptom seen live.
+
+## D-184 — Accounting is reached by the AP Drop grant, not by having any module (15 Oct 2026)
+**Supersedes the visibility half of D-073 / D-078.** Lowry, viewing as Jorge Tamez: "he has access to the
+Accounting module — I don't see that reflected in settings on his profile, so I don't know how he got it, who
+else has it." The rule was "AP Drop is open to anyone set up in Settings", and AP Drop puts Accounting in the
+sidebar — so **every account with any module assigned had Accounting**, and Settings could not say why. It also
+cost the floor its standalone operator layout: an account with Operator View and nothing else was no longer
+"operator only" once Accounting joined it.
+- **`canSeeApDrop(u)` (`src/utils/permissions.js`) is the one rule** for the nav entry and the hub tab: the AP
+  Drop grant at view or edit, an office/admin supervisor (the people the server's `canWorkQueue` already lets work
+  the queue), or an admin. Never an auditor.
+- **Whoever has actually filed a drop keeps it**, as a visible grant: `grantApDropToDroppers` (boot, once,
+  `app_settings.ap_drop_grants_v1`) adds `ap-drop: view` to each active non-admin who has a row in `ap_drops`,
+  audited as `permission_change`. A grant removed afterwards stays removed.
+- **The server's intake is unchanged** — POST `/api/ap-drop` still takes a document from any signed-in employee
+  (and from the `ap@` door and a bot token). Taking a PDF off somebody is harmless; showing every operator a
+  finance module was the defect.
+- `verify:accountingaccess` (12, two boots + browser). Control (the old rule) fails 2: the floor account lands on
+  AP Drop and has Accounting in its sidebar.
+
+## D-185 — Assigned training is pinned at the top of the Operator View (15 Oct 2026)
+"Training not showing up for Jorge Tamez — it was assigned to him." **The server returned it** (`assigned_to_id`
+set, `task_group` NULL, the personal-assignment clause in `/pm/operator-tasks` matches). The screen hid it: an
+assignment is due fourteen days out, so it sorted into "Later", which `SectionHeader` collapses once the day's work
+runs past five tasks — D-105's third cause, recorded and never fixed — and a frequency filter dropped it outright
+because training has no frequency.
+- Every open task carrying `training_course_id` is in its own section, **"Your training" / "Tu capacitación"**,
+  first and always open, sorted by due date, out of the date buckets and the stat tiles, untouched by the
+  frequency filter (search still applies).
+- `onTestPassed` was wired only on the Overdue bucket's cards; every card has it now, so passing a test refreshes
+  the list wherever the card sits.
+- `verify:trainingpinned` (8, at 390 and 1280). The control is the code before this and fails 6 — the card is not
+  on screen.
+- **Not proven: that this was Jorge's cause.** The other live possibilities — the task completed or cancelled, or
+  assigned to a second account — are answered by Training → By person for him.

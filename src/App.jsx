@@ -10,7 +10,7 @@ import { setAppBadge } from './lib/appBadge';
 import { onDataChanged } from './lib/dataChanged';
 import { useEdgeSwipe } from './lib/useEdgeSwipe';
 import { useInstallPrompt, installEnvironment } from './lib/useInstallPrompt.js';
-import { visibleModuleIds, canViewModule, hasExplicitGrant, canSeeQaReview } from './utils/permissions';
+import { visibleModuleIds, canViewModule, hasExplicitGrant, canSeeQaReview, canSeeApDrop } from './utils/permissions';
 import { deptLabel } from './constants/departments';
 import LoginScreen from './components/LoginScreen.jsx';
 import AuditorLogin from './components/AuditorLogin.jsx';
@@ -262,7 +262,7 @@ const NAV_GROUPS = [
       { id: 'accounting', label: 'Accounting', icon: Landmark,
         anyOf: ['ap-drop', 'partner-reconciliation', 'reimbursements'],
         visible: (u) => !!u && (u.role === 'admin'
-          || (u.role !== 'auditor' && u.module_access != null)
+          || canSeeApDrop(u)
           || canViewModule(u, 'partner-reconciliation') || canViewModule(u, 'reimbursements')),
         keywords: 'invoice bill drop upload vendor credit memo remittance ap@powder-ops.com finance queue outstanding M4 owed reconcile settlement net partner expense reimbursement receipt personal card' },
       { id: 'procurement', label: 'Procurement & Demand', icon: PackageSearch, keywords: 'purchase orders PO BOM parts demand planning samples pricing' },
@@ -1030,12 +1030,12 @@ const HUB_TABS = {
   // (its own nav entry) and stop there. The panels and routers still exist in
   // the tree so this is a hide, not a delete — put a tab back here to revive one.
   accounting: [
-    // FIRST, so clicking Accounting lands on the intake — it is the screen
-    // people open daily, and the one anybody can use. Its own rule, not the
-    // module grant: dropping is open to anyone set up in Settings, never to an
-    // auditor, never to an account with no modules at all.
+    // FIRST, so clicking Accounting lands on the intake. Since D-184 it is
+    // reached by the AP Drop grant in Settings (or an office supervisor's
+    // role), never by having any module at all — that rule put Accounting on
+    // every floor account and hid where it came from.
     { id: 'ap-drop', label: 'AP Drop', render: (u) => <ApDropPanel user={u} />,
-      visible: (u) => !!u && u.role !== 'auditor' && (u.role === 'admin' || u.module_access != null) },
+      visible: canSeeApDrop },
     { id: 'partner-reconciliation', label: 'Partner Reconciliation', render: (u) => <PartnerReconPanel user={u} /> },
     { id: 'reimbursements', label: 'Reimbursements', render: (u) => <ReimbursementsPanel user={u} /> },
   ],

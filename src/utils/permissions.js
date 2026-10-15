@@ -114,3 +114,19 @@ export const canSeeQaReview = (u) => u?.role === 'admin'
 export const canFilmInspect = (u) => u?.role === 'admin'
   || ['qa', 'quality'].includes(String(u?.department || '').toLowerCase())
   || hasExplicitGrant(u, 'qa-inspections');
+
+// WHO SEES AP DROP, AND THEREFORE ACCOUNTING (D-184). It used to be "anyone
+// with any module assigned", which put Accounting on every floor account and
+// nowhere in Settings — an admin looking at Jorge's profile could not see how
+// he had it. Now it is the AP Drop grant (view or edit) or an office/admin
+// supervisor, the same people the server's canWorkQueue lets work the queue.
+// Never an auditor.
+export function canSeeApDrop(u) {
+  if (!u || u.role === 'auditor') return false;
+  if (u.role === 'admin') return true;
+  if (u.role === 'supervisor' && ['office', 'admin'].includes(String(u.department || '').toLowerCase())) return true;
+  const ma = u.module_access;
+  if (!ma) return false;
+  if (Array.isArray(ma)) return ma.includes('ap-drop');
+  return ma['ap-drop'] === 'view' || ma['ap-drop'] === 'edit';
+}
