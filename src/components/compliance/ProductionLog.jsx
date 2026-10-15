@@ -19,6 +19,7 @@ import { withSignature } from '../../lib/signature';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 import { withCurrent } from '../../lib/managedList.js';
 import FrozenScroll from '../common/FrozenScroll';
+import { AtpReadingInput, AtpReadingChip } from '../common/AtpReadingInput.jsx';
 
 // The same rooms the schedule offers, so a shift can be reported in the room it
 // was scheduled in. This list used to be built by hand here and had drifted:
@@ -241,7 +242,7 @@ function CleaningEventsField({ events, setEvents, moOptions, defaultRoom = '', r
                   call for — a stale tick nobody can see is worse than none. */}
               <select value={c.level} className={cls}
                 onChange={e => setEvent(i, swabsExpected(e.target.value) === 'none'
-                  ? { level: e.target.value, atp_swab: false, allergen_swab: false }
+                  ? { level: e.target.value, atp_swab: false, allergen_swab: false, atp_reading: '' }
                   : { level: e.target.value })}>
                 {CLEAN_LEVELS.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
               </select>
@@ -293,11 +294,14 @@ function CleaningEventsField({ events, setEvents, moOptions, defaultRoom = '', r
               ) : (
                 <>
                   <label className="flex items-center gap-1.5 text-xs text-gray-700">
-                    <input type="checkbox" checked={!!c.atp_swab} onChange={e => setEvent(i, { atp_swab: e.target.checked })} /> ATP swab taken
+                    <input type="checkbox" checked={!!c.atp_swab} onChange={e => setEvent(i, e.target.checked ? { atp_swab: true } : { atp_swab: false, atp_reading: '' })} /> ATP swab taken
                   </label>
                   <label className="flex items-center gap-1.5 text-xs text-gray-700">
                     <input type="checkbox" checked={!!c.allergen_swab} onChange={e => setEvent(i, { allergen_swab: e.target.checked })} /> Allergen swab taken
                   </label>
+                  {c.atp_swab && (
+                    <AtpReadingInput value={c.atp_reading} onChange={v => setEvent(i, { atp_reading: v, atp_swab: true })} />
+                  )}
                 </>
               )}
               {moOptions?.length > 0 && (
@@ -341,6 +345,8 @@ function CleaningSummary({ events }) {
             {c.scope?.length ? <span> · {c.scope.join(', ')}</span> : null}
             {c.sifter_no && <span className="text-gray-500"> · Sifter {c.sifter_no}</span>}
             {swabs.length ? <span className="text-gray-500"> · {swabs.join(' + ')} swab</span> : null}
+            <AtpReadingChip event={c} />
+            {c.atp_swab && (c.atp_reading == null || c.atp_reading === '') && <span className="text-amber-700"> · no ATP reading recorded</span>}
             {noSwabByLevel ? <span className="text-gray-500"> · no swab on this level</span> : null}
             {(c.start_time || c.end_time) && <span className="text-gray-500"> · {c.start_time || '?'}–{c.end_time || '?'}</span>}
             {c.mo_number && <span className="text-gray-500"> · for {c.mo_number}</span>}
@@ -1044,6 +1050,7 @@ function AmendModal({ entry, onClose, onSaved }) {
   const normCleans = (cs) => JSON.stringify((cs || []).map(c => ({
     level: c.level || '', scope: [...(c.scope || [])].sort(), sifter_no: String(c.sifter_no || '').trim(),
     atp_swab: !!c.atp_swab, allergen_swab: !!c.allergen_swab,
+    atp_reading: c.atp_reading === '' || c.atp_reading == null ? '' : String(Number(c.atp_reading)),
     start_time: String(c.start_time || ''), end_time: String(c.end_time || ''),
     mo_number: String(c.mo_number || '').trim(), note: String(c.note || '').trim(),
   })).filter(c => c.level || c.scope.length || c.sifter_no));

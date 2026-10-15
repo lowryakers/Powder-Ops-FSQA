@@ -7421,3 +7421,30 @@ sideways scroll on a phone. **The control is `main` before this and cannot open 
 existing checks re-run green: `verify:productgrid` (100), `verify:productstage` (50), `verify:artworkfilm` (40),
 `verify:colorsui` (21), `verify:mmrgate` (81), `verify:packagingspecs` (47), `verify:nfpqueue` (79),
 `verify:nfppanelui` (19).
+
+## D-179 — The end-of-day report's ATP swab carries its reading (15 Oct 2026)
+
+**Asked:** "we still don't have an actual ATP on file"; the swab counts have not moved off the seed; "make the
+production log ATP swab capture the reading too".
+
+**Found:** the Sanitation shelf read **ATP 126 counted · 1 used since, allergen 80 · 0 used** six weeks after the
+opening count. The counts are derived from the logs (`swab-stock.js`), so they are not stuck — the logs are
+nearly empty: one ATP swab ticked, no allergen swab, and no `sanitation_records.atp_reading` anywhere. The
+Production Log's cleaning event — where the Batching room cleans are actually recorded — had only a yes/no
+tick, so even a swab taken and ticked left no number to grade against PC #1's 35 RLU.
+
+**Decided:**
+- **`cleaning_events[].atp_reading`**, graded on the server by the same `gradeAtp()` as the Sanitation record,
+  with **`atp_limit`** (the limit graded against) and **`atp_pass`** stamped beside it. Blank is a gap, never a
+  fail; a non-number is not stored; a reading sets `atp_swab` (the swab shelf reads the tick). One normalizer,
+  so the entry form, an amend and the running day log ("My Day") all take it.
+- The box appears only once **ATP swab taken** is ticked (`common/AtpReadingInput.jsx`, with `AtpLimitHint`);
+  unticking clears it; a level that takes no swab clears it. The log shows `ATP 12 / 35 RLU`, red with
+  "over limit" above it, and **"no ATP reading recorded"** beside a ticked swab with no number.
+- **Reported, not gated** — an over-limit reading on the report is shown red and does NOT raise the D-036
+  re-clean task (that chain stays on the Sanitation file path). The operator re-cleans, re-swabs, and records
+  the second clean. Whether an over-limit EOD reading should raise the task is the plant's call.
+
+Verified: `verify:eodatp` (24, live + browser at 1280/390). **The control is `main` before this and fails 8+**
+— the reading is dropped on save. `verify:swabstock` (44 + 13), `verify:mmrgate` (81), `verify:eodchase` (54),
+`verify:productionmirror` (16), `verify:productionruns` (25) re-run green.
