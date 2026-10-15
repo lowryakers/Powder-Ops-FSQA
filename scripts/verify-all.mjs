@@ -140,6 +140,7 @@ const RUNS = [
   ['verify-nfp-extract.mjs', 5100, { API_TOKEN_WRITE_RPM: '100' }, true],
   ['verify-plant-holidays.mjs', 5101, {}, false],
   ['verify-holiday-quiet.mjs', 5102, { HOUSEKEEPING_MS: '0' }, false],
+  ['verify-onboarding-bank.mjs', 5103, { ONBOARDING_ENC_KEY: '' }, false],
 ];
 
 // VERIFY_ONLY=verify-auth.mjs,verify-swab-stock.mjs runs just the entries that

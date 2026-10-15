@@ -931,7 +931,7 @@ router.get('/:id/packet.pdf', (req, res) => {
     H('Pay method');
     L('Method', rec.pay_method === 'check' ? 'Paper check' : 'Direct deposit');
     if (rec.pay_method !== 'check') {
-      L('Bank', rec.dd_bank_name); L('Account', r.has_bank ? `${rec.dd_account_type || ''} ••••${rec.dd_account_last4 || ''}` : 'not collected — see voided check');
+      L('Bank', rec.dd_bank_name); L('Account', r.has_bank ? `${rec.dd_account_type || ''} ••••${rec.dd_account_last4 || ''}` : `${rec.dd_account_type ? `${rec.dd_account_type} · ` : ''}numbers not collected — see voided check`);
     }
     // A CONTRACTOR'S PACKET PRINTS THE W-9 AND NOTHING ELSE. Printing empty W-4
     // and I-9 sections for somebody who correctly never filled them in reads as

@@ -60,7 +60,7 @@ const en = {
   'personal.city': 'City *',
   'personal.state': 'State *',
   'personal.zip': 'ZIP *',
-  'personal.officeCollects': 'The office will collect your Social Security number and banking details with you directly.',
+  'personal.officeCollects': 'The office will collect your Social Security number and bank account numbers with you directly.',
 
   'emergency.title': 'Emergency contact',
   'emergency.name': 'Name',
@@ -146,7 +146,7 @@ const es = {
   'personal.city': 'Ciudad *',
   'personal.state': 'Estado *',
   'personal.zip': 'Código postal *',
-  'personal.officeCollects': 'La oficina te pedirá tu número de Seguro Social y los datos del banco en persona.',
+  'personal.officeCollects': 'La oficina te pedirá tu número de Seguro Social y los números de tu cuenta bancaria en persona.',
 
   'emergency.title': 'Contacto de emergencia',
   'emergency.name': 'Nombre',

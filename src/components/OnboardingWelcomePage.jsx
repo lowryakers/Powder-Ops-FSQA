@@ -350,7 +350,7 @@ export default function OnboardingWelcomePage({ token }) {
           {(
             rec.sensitive_collection ? (
               <>
-                <Field l={t('deposit.bank')}><input className={input} value={form.dd_bank_name || ''} onChange={set('dd_bank_name')} /></Field>
+                <Field l={t('deposit.bank')}><input className={input} value={form.dd_bank_name || ''} onChange={set('dd_bank_name')} name="dd_bank_name" autoComplete="off" data-bank-name /></Field>
                 <div className="grid grid-cols-2 gap-3">
                   <Field l={`${t('deposit.routing')}${rec.has_bank ? t('deposit.routingOnFile') : ''}`}>
                     <input inputMode="numeric" className={input} value={form.dd_routing || ''} onChange={set('dd_routing')} autoComplete="off"
@@ -370,8 +370,21 @@ export default function OnboardingWelcomePage({ token }) {
                   hint={t('deposit.voidedHint')} onChanged={adopt} />
               </>
             ) : (
-              <Photos token={token} rec={rec} kind="voided_check" t={t} title={t('deposit.voidedTitleReq')}
-                hint={t('deposit.voidedHintReq')} onChanged={adopt} />
+              <>
+                {/* THE BANK'S NAME IS NOT A SECRET (D-177). Without the encryption
+                    key the numbers come off the voided check, but the name and
+                    account type are ordinary answers and are always asked. */}
+                <Field l={t('deposit.bank')}><input className={input} value={form.dd_bank_name || ''} onChange={set('dd_bank_name')} name="dd_bank_name" autoComplete="off" data-bank-name /></Field>
+                <Field l={t('deposit.accountType')}>
+                  <select className={input} value={form.dd_account_type || ''} onChange={set('dd_account_type')} name="dd_account_type" data-account-type>
+                    <option value="">{t('personal.choose')}</option>
+                    <option value="checking">{t('deposit.checking')}</option>
+                    <option value="savings">{t('deposit.savings')}</option>
+                  </select>
+                </Field>
+                <Photos token={token} rec={rec} kind="voided_check" t={t} title={t('deposit.voidedTitleReq')}
+                  hint={t('deposit.voidedHintReq')} onChanged={adopt} />
+              </>
             )
           )}
           {lang !== 'en' && (
