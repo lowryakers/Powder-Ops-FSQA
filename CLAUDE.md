@@ -1997,6 +1997,11 @@ the form's copy is blank — **give every wizard field a `name` and an `autoComp
   (400 `reason_required`); the signed form stands as signed. Job facts are not logged as corrections; the
   link never sees the log. `verify:onboardingedit` (34; control fails 4).
 
+### The bank's name is asked with or without the key (D-177)
+`deposit` step of `OnboardingWelcomePage.jsx`: bank name + account type render in BOTH modes; only the routing/account
+NUMBERS need `ONBOARDING_ENC_KEY`. ZIP was already asked; the office row now prints it and the bank.
+`verify:onboardingbank` (13, no key; control fails 6).
+
 ## People: a tag is a category you can call from; a file is a résumé that dies with the person
 `candidates.tags` (JSON array) + `candidate_files` (R2 via the shared media path), both in
 `server/api/candidates.js` behind the same office/HR-only mount gate — a résumé is more personal than a

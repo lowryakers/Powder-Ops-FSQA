@@ -7363,3 +7363,23 @@ Verified: `check:holidays` (36, adds the scheduler and Flash gates), `verify:hol
 browser at 1280 and 390px). **The control is `main` before this and fails from the first assertion.**
 Neighbours re-run green: `verify:holidays`, `verify:scaledue`, `verify:eodchase`, `verify:cleanupdigest`,
 `verify:pmpause`, `verify:pmgeneration`, `verify:schedowner`.
+
+## D-177 — The new hire is asked for their bank's name whether or not bank numbers are stored (15 Oct 2026)
+
+**Asked:** a box for ZIP code and bank name in the onboarding information new hires fill out.
+
+**Found:** the ZIP box already existed on "About you" (required, saved, on the packet PDF) — but the office's
+packet row printed the address without it. **The bank-name box existed only when `ONBOARDING_ENC_KEY` is
+set**: without the key the direct-deposit step asks for a voided-check photo and nothing else, so the bank's
+name — not a secret, and what the office keys into payroll — was never asked.
+
+**Decided:** the bank name and the account type (checking / savings) are asked on the direct-deposit step
+in both modes; only the routing and account NUMBERS stay behind the key. The office row reads
+"Direct deposit · Zions Bank (checking) · from the voided check" and the address carries the ZIP; the packet
+PDF names the account type beside "numbers not collected — see voided check". Neither field is required to
+finish — the voided check still carries the numbers. The "About you" note now says the office collects the
+SSN and the bank account NUMBERS, not "banking details".
+
+Verified: `verify:onboardingbank` (13, live + browser at 390 and 1280, run without the key). **The control is
+`main` before this and fails 6**, the decisive one saving `dd_bank_name: null`. `verify:onboarding` (105),
+`verify:onboardingui` (57) and `verify:onboardingedit` (34) re-run green.

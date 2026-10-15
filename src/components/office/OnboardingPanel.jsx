@@ -643,11 +643,11 @@ function Row({ r, attestations, storageEnabled, onAction }) {
           )}
           <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1 text-xs text-gray-700">
             <span><b>Phone:</b> {r.phone || '—'}</span><span><b>Email:</b> {r.email || '—'}</span>
-            <span><b>Address:</b> {[r.address1, r.city, r.state].filter(Boolean).join(', ') || '—'}</span>
+            <span><b>Address:</b> {[r.address1, r.city, [r.state, r.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ') || '—'}</span>
             <span><b>DOB:</b> {r.dob || '—'}</span>
             <span><b>SSN:</b> {r.has_ssn ? `••••${r.ssn_last4 || ''}` : 'not provided'}</span>
             <span><b>Pay:</b> {r.pay_method === 'check' ? 'Paper check' : r.pay_method === 'direct_deposit'
-              ? (r.has_bank ? `Direct deposit · ${r.dd_bank_name || ''} ••••${r.dd_account_last4 || ''} (${r.dd_account_type || '?'})` : 'Direct deposit · from the voided check') : '—'}</span>
+              ? (r.has_bank ? `Direct deposit · ${r.dd_bank_name || ''} ••••${r.dd_account_last4 || ''} (${r.dd_account_type || '?'})` : `Direct deposit · ${r.dd_bank_name ? `${r.dd_bank_name}${r.dd_account_type ? ` (${r.dd_account_type})` : ''} · ` : ''}from the voided check`) : '—'}</span>
             <span><b>Emergency:</b> {r.emergency_name ? `${r.emergency_name} (${r.emergency_relationship || '?'}) ${r.emergency_phone || ''}` : '—'}</span>
             {r.adp_submitted_at && <span><b>ADP:</b> submitted {formatDateTime(r.adp_submitted_at)}</span>}
           </div>
