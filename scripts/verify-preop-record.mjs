@@ -6,7 +6,8 @@
 //      stored with its revision, every swab can fail the clean and none can
 //      pass it, refused where it does not belong, left alone by an edit that
 //      does not mention it.
-//   3. The form shows it where the clean is filed (real browser, 1280 + 390).
+//   3. Since D-186 the form is ARCHIVED: a new record is not offered it, and a
+//      record filed with it still reads it back (real browser, 1280 + 390).
 import Database from 'better-sqlite3';
 import { spawn } from 'child_process';
 
@@ -164,19 +165,13 @@ try {
     // D-182: every record's swabs are rows in one Swabs table, not an ATP box.
     t(`${width}px: …and has the Swabs table`, await page.locator('[data-swab-table]').count() === 1);
     await area.selectOption('3');
-    await page.waitForSelector('[data-preop-form]', { timeout: 5000 }).catch(() => {});
-    t(`${width}px: ROOM 3 PRE-OP SHOWS FORM 117.21 V5`, /Form 117\.21 V5/.test(await page.locator('[data-preop-form] legend').innerText().catch(() => '')));
-    t(`${width}px: ONE PLACE FOR A SWAB — the form's lines are the Swabs table's rows (D-182)`,
-      await page.locator('[data-preop-atp-reading="1"]').count() === 0 && await page.locator('[data-preop-swabs-in-table]').count() === 1
-      && await page.locator('[data-swab-table]').count() === 1);
-    t(`${width}px: every verification question is asked, in the form's words`,
-      await page.locator('[data-preop-check]').count() === 5 && await page.getByText('Visual inspection of all knives (no snap off blades allowed)').count() === 1);
-    t(`${width}px: no "QA sign-off" for the cleaner to tick`, await page.locator('[data-preop-form]').getByText(/QA sign-off/).count() === 0);
+    await page.waitForTimeout(400);
+    // Form 117.21 V5 is archived (D-186): a NEW record is not offered it.
+    t(`${width}px: FORM 117.21 IS ARCHIVED — a new Room 3 pre-op does not offer it`, await page.locator('[data-preop-form]').count() === 0);
+    t(`${width}px: the swabs still go in the one Swabs table`, await page.locator('[data-swab-table]').count() === 1);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
     t(`${width}px: the page does not pan sideways`, !overflow);
     if (width === 1280) {
-      await page.locator('#preop-product_name').fill('M4-HMR PRO Blend Mocha');
-      await page.locator('[data-preop-check="knives"]').getByRole('radio', { name: 'Yes', exact: true }).click();
       await page.locator('[data-swab-row="1"] [data-swab-surface]').fill('Table');
       await page.locator('[data-swab-row="1"] [data-swab-atp]').fill('18');
       await page.locator('[data-swab-row="1"] [data-swab-allergen]').check();
@@ -184,14 +179,15 @@ try {
       await form.locator('label:has-text("Performed By") + input').fill('Pia Operator');
       await form.getByRole('button', { name: /Save Record/ }).click();
       await page.waitForTimeout(2000);
-      const rec = db.prepare("SELECT * FROM sanitation_records WHERE preop_form LIKE '%M4-HMR PRO Blend Mocha%'").get();
-      const f = JSON.parse(rec?.preop_form || 'null');
-      t('SAVED FROM THE SCREEN: the answers and the graded reading land on the record',
-        !!rec && rec.atp_reading === 18 && rec.atp_limit === 30 && f?.checks?.knives === 'yes'
-        && db.prepare("SELECT allergen_result r FROM sanitation_swabs WHERE record_id = ?").get(rec?.id)?.r === 'pass', JSON.stringify({ atp: rec?.atp_reading, f }).slice(0, 220));
-      await page.locator('tbody td', { hasText: /^Room 3$/ }).first().click().catch(() => {});
+      const rec = db.prepare("SELECT * FROM sanitation_records WHERE area = '3' AND atp_reading = 18 ORDER BY rowid DESC").get();
+      t('SAVED FROM THE SCREEN: the graded reading lands on the record, with no Form 117.21 answers',
+        !!rec && rec.atp_limit === 30 && rec.preop_form === null
+        && db.prepare("SELECT allergen_result r FROM sanitation_swabs WHERE record_id = ?").get(rec?.id)?.r === 'pass', JSON.stringify({ atp: rec?.atp_reading, form: rec?.preop_form }));
+      // A record filed with the form before it was archived still reads it back.
+      await page.reload();
+      await page.locator('tbody tr', { hasText: 'Pia Operator' }).filter({ hasText: /Room 3/ }).last().click().catch(() => {});
       await page.waitForTimeout(800);
-      t('THE RECORD READS THE FORM BACK', await page.locator('[data-preop-answers]').filter({ hasText: 'Form 117.21' }).count() > 0);
+      t('A RECORD FILED WITH FORM 117.21 STILL READS IT BACK', await page.locator('[data-preop-answers]').filter({ hasText: 'Form 117.21' }).count() > 0);
     }
     await page.close();
   }

@@ -34,6 +34,7 @@ import scaleVerificationRoutes from './server/api/scale-verification.js';
 import qaReviewRoutes from './server/api/qa-review.js';
 import cleanupRoutes from './server/api/cleanup.js';
 import sanitationRoutes from './server/api/sanitation.js';
+import swabLogRoutes from './server/swab-log.js';
 import bpgRoutes from './server/api/bpg.js';
 import auditRoutes from './server/api/audit.js';
 import integrationsRoutes from './server/api/integrations.js';
@@ -1990,6 +1991,8 @@ app.use('/api/calibration', requireModuleWrite('calibration'), calibrationRoutes
 app.use('/api/scale-verification', requireModuleWrite('calibration'), scaleVerificationRoutes);
 // Both the Sanitation log and QA Inspections read and write this mount — they
 // are two lists over one table, so an edit grant on either module opens it.
+// The swab log (D-186) — declared first, or /api/sanitation/:id reads "swab-log" as a record id.
+app.use('/api/sanitation/swab-log', requireModuleWrite('sanitation', 'qa-inspections'), swabLogRoutes);
 app.use('/api/sanitation', requireModuleWrite('sanitation', 'qa-inspections'), sanitationRoutes);
 // The brittle plastic & glass zone register — the inventories behind FORM
 // 431-01 and whether each zone's inspection is reaching anybody. NOT behind

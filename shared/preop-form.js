@@ -36,7 +36,17 @@ export const PREOP_FORM = {
   code: 'Form 117.21',
   revision: 'V5',
   title: 'Production Line Cleaning Log',
+  // ARCHIVED (D-186). Document Control has withdrawn Form 117.21 V5; its checks
+  // live on the batch production record (BPR/MMR) now. A NEW record is not
+  // offered it; a record already filed with it keeps reading and correcting it.
+  archived: true,
 };
+
+/** Is the form offered on this record? Never on a new one while archived. */
+export function preopOffered(type, area, storedForm) {
+  if (!preopApplies(type, area)) return false;
+  return !PREOP_FORM.archived || !!storedForm;
+}
 
 export const PREOP_SETUP = [
   { key: 'product_name', label: 'Product name' },

@@ -112,6 +112,9 @@ export function plantLocalToUtc(date, time) {
   return new Date(guess + (guess - wall)).toISOString().slice(0, 19).replace('T', ' ');
 }
 
+// One room visit: swabs within this many minutes of the last (the swab log uses it too, D-186).
+export const VISIT_GAP_MINUTES = 90;
+
 const minutes = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
 
 /** The sheet's rows grouped into room visits. PURE. */
@@ -131,7 +134,7 @@ export function planSwabSheet(rows = SWAB_SHEET_ROWS) {
         `sheet row ${line}${room && area == null ? `, room written "${room}"` : !room ? ', no room written' : ''}`]
         .filter(Boolean).join('; '),
     };
-    if (cur && !failed && minutes(time) - cur.last <= 90) {
+    if (cur && !failed && minutes(time) - cur.last <= VISIT_GAP_MINUTES) {
       cur.swabs.push(swab); cur.last = minutes(time);
     } else {
       const v = { date, time, area: area || 'Production', room_as_written: room, swabs: [swab], last: minutes(time) };

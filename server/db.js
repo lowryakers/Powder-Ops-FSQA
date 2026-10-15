@@ -3816,6 +3816,31 @@ function runMigrations() {
   );
   CREATE INDEX IF NOT EXISTS idx_sanitation_swabs_record ON sanitation_swabs(record_id);`);
 
+  // The swab log (D-186): QA's swabs as they are taken, one line each, saved the
+  // moment they are entered and filed later as Sanitation records — one per room
+  // visit — through the record's own writer. A filed line keeps its record_id.
+  db.exec(`CREATE TABLE IF NOT EXISTS swab_log_entries (
+    id TEXT PRIMARY KEY,
+    person_id TEXT,
+    person TEXT NOT NULL,
+    swabbed_on TEXT NOT NULL,
+    swabbed_time TEXT NOT NULL,
+    room TEXT,
+    surface TEXT,
+    swab_no TEXT,
+    atp_reading REAL,
+    allergen_swab INTEGER NOT NULL DEFAULT 0,
+    allergen_result TEXT CHECK (allergen_result IS NULL OR allergen_result IN ('pass','fail')),
+    allergen_lot TEXT,
+    note TEXT,
+    record_id TEXT REFERENCES sanitation_records(id) ON DELETE SET NULL,
+    filed_at TEXT,
+    filed_by TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_swab_log_person ON swab_log_entries(person_id, filed_at);`);
+
   // Chemical location tracking
   addColumnIfMissing('approved_chemicals', 'location_for_use', 'TEXT');
   addColumnIfMissing('approved_chemicals', 'sds_url', 'TEXT');

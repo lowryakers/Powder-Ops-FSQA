@@ -2,6 +2,7 @@ import { useState, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import RecordBackfillStrip from '../common/RecordBackfillStrip.jsx';
 import SwabStock from './SwabStock.jsx';
+import SwabLog from './SwabLog.jsx';
 import { useAuth } from '../../hooks/useAuth';
 import { Plus, CheckCircle, Eye, X, Check, XCircle, AlertTriangle, ClipboardList, Settings2, Search } from 'lucide-react';
 import { useCappedList } from '../../lib/useCappedList';
@@ -20,7 +21,7 @@ import { withSignature } from '../../lib/signature';
 import { withCurrent } from '../../lib/managedList.js';
 import { PreopFields, PreopAnswers } from './PreopChecklist.jsx';
 import { preopToState } from '../../lib/preopState.js';
-import { preopApplies, parsePreopForm } from '../../../shared/preop-form.js';
+import { preopOffered, parsePreopForm } from '../../../shared/preop-form.js';
 import FrozenScroll from '../common/FrozenScroll';
 import { SwabTable, SwabList } from './SanitationSwabs.jsx';
 import { swabsForSave, swabsForEdit, blankSwab } from '../../lib/swabRows.js';
@@ -375,7 +376,8 @@ function RecordForm({ equipment, chemicals, initial, onSave, onCancel }) {
   const [swabs, setSwabs] = useState(() => (initial
     ? swabsForEdit(initial.swabs?.length ? initial.swabs : legacySwabs(initial, parsePreopForm(initial.preop_form)))
     : [blankSwab()]));
-  const hasPreop = preopApplies(form.type, form.area);
+  // Form 117.21 is archived (D-186): only a record already filed with it shows it.
+  const hasPreop = preopOffered(form.type, form.area, initial?.preop_form);
   const todayStr = new Date().toISOString().split('T')[0];
   // "Earlier" starts the day before, because same-day is just filing at the
   // end of a shift and needs no explanation. A correction never re-asks — the
@@ -880,6 +882,9 @@ export default function SanitationPanel() {
             ? ' · showing the most recent only — narrow the dates to see further back' : ''}
         </p>
       </div>
+
+      {/* QA's swabs, written as they are taken and filed as records later (D-186). */}
+      <SwabLog onFiled={refresh} />
 
       <AreaNormalizeStrip onDone={refresh} />
 

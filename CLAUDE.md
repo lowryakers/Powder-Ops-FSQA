@@ -2470,6 +2470,13 @@ The form is `SwabTable` and the record view is `SwabList` (`SanitationSwabs.jsx`
   graded against the parked 30; `restampSwabSheet` re-grades it once, after the sync.
 - `verify:sanswabs` (40).
 
+## The swab log: QA's swabs written as taken, filed later (D-186)
+`swab_log_entries`, `server/swab-log.js` (mounted at `/api/sanitation/swab-log` AHEAD of `/api/sanitation`, or `/:id`
+eats it), `SwabLog.jsx` at the top of Sanitation. Lines save on Enter, stay editable until filed, are the person's
+own. **File groups by room visit (`planVisits`) and calls `createSanitationRecord` — the one writer `POST /sanitation`
+also uses.** A filed line is closed (409). **Form 117.21 V5 is archived** (`PREOP_FORM.archived`, `preopOffered`):
+new records are not offered it; old ones still read it. `verify:swablog` (40).
+
 ## The end-of-day ATP swab carries its reading (D-179)
 `cleaning_events[].atp_reading` + `atp_limit` + `atp_pass`, stamped by `atpOnEvent()` inside `normalizeCleaningEvents`
 (api/production.js) with the same `gradeAtp()` as Sanitation — entry, amend and My Day all pass through it. Blank is a
