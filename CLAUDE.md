@@ -2743,6 +2743,16 @@ NOT done — the bell, Flash and QA Review all read `scale_verifications` after 
 - `verify:scaledue` (39, live + browser at 390px on both layouts). **The control is the state the plant is
   in** — UTC today, no strip — and fails **5** before the script can continue.
 
+## A daily scale check is owed only by a team on today (D-181)
+`teamsOperating()` in `server/scale-checks.js` decides which teams are on today. Any one of these counts:
+- a production cell on the schedule (a cleaning-only cell does not);
+- a run started today;
+- a production entry filed today.
+
+Each form carries `operating` and `due`, and `scaleChecksDue` reads `due`, so the strip, the bell and the cards
+agree. **A blank schedule asks nobody** and the tab says so. A verify that needs a scale check due must put the
+team on today's schedule (`scripts/lib/schedule-today.mjs`). `verify:scaleschedule` (19).
+
 ## An out-of-calibration finding owes a product disposition (D-154, SQF 11.2.3.4)
 `shared/product-disposition.js` (the rule, PURE), `server/product-disposition.js` (the one writer:
 `stampOnFile`, `recordDisposition`, `openDispositions`), `GET /calibration/dispositions`,

@@ -7501,3 +7501,30 @@ Verified:
 - `verify:qaclearance` (24, live + browser). Its control (the code before this) has no source and fails at once.
 - `verify:eodatp`, `verify:preop`, `verify:productionruns` and `verify:atp` now assert 30 on a fresh database
   and pass.
+
+## D-181 — A daily scale check is owed only by a team that is on today (15 Oct 2026)
+
+Asked: "connect Calibration Management closer to the schedule, so verifications aren't showing a need when a
+specific team isn't here." SOP 417's own note says the check is performed "daily when operating in a production
+room". The cards, the Operator View strip and the bell asked all five scales every weekday, so a day Kitting was
+not in read as a missed check.
+
+**Decided:**
+- **`teamsOperating(db, date)` in `server/scale-checks.js`** says which teams are on today, from any of:
+  1. a production cell on the production schedule (a cleaning-only cell is not a run, the missed-report rule);
+  2. a production run started today (D-146);
+  3. a production entry filed for today.
+
+  The last two catch a team on the floor that nobody put on the schedule.
+- Each form carries **`operating`** (`schedule` / `run` / `entry` / null) and **`due`** (not filed today, not a
+  holiday, and its team is operating). `scaleChecksDue` reads `due`, so the Operator View strip and the bell
+  follow with no change of their own. A form with no team mapping is always asked.
+- **A day with nothing on the schedule asks nobody**, and the Calibration tab says so in words ("Nothing is on
+  today's production schedule…"). **This is the trade-off:** the checks now follow the schedule, so a schedule
+  that is not kept up asks for nothing. A run started or a report filed still makes the check owed.
+- The cards: due = amber, naming why ("on today's schedule"); not on today = grey, "Filling not on today — no
+  check owed"; done = green or red as before. Nothing is stored; it is derived on every read.
+- The annual instrument calibrations (Instruments tab) are not schedule-driven and are untouched.
+
+Verified: `verify:scaleschedule` (19, live + browser). `verify:scaledue`, `verify:holidayquiet` and
+`verify:scalepmretire` now put the team on today's schedule (`scripts/lib/schedule-today.mjs`) and pass.
