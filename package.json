@@ -19,6 +19,7 @@
     "verify:holidays": "VERIFY_ONLY=verify-plant-holidays.mjs node scripts/verify-all.mjs",
     "verify:holidayquiet": "VERIFY_ONLY=verify-holiday-quiet.mjs node scripts/verify-all.mjs",
     "verify:onboardingbank": "VERIFY_ONLY=verify-onboarding-bank.mjs node scripts/verify-all.mjs",
+    "verify:eodatp": "VERIFY_ONLY=verify-eod-atp.mjs node scripts/verify-all.mjs",
     "verify:productdrawer": "VERIFY_ONLY=verify-product-drawer.mjs node scripts/verify-all.mjs",
     "check:boot": "node scripts/check-fresh-boot.mjs",
     "check:endpoints": "node scripts/check-endpoints.mjs",

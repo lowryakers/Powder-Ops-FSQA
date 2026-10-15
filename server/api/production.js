@@ -9,6 +9,7 @@ import { pushToUser } from '../push.js';
 import { readyDocOrigin } from '../links.js';
 import { roomLabel } from '../../shared/rooms.js';
 import { CLEAN_LEVEL_VALUES } from '../../shared/clean-levels.js';
+import { gradeAtp } from '../atp-limits.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
 import { weekFor, holidayOn } from '../plant-calendar.js';
 import { weekSummaryLines } from '../../shared/plant-holidays.js';
@@ -209,6 +210,21 @@ function normalizeMoLines(raw) {
 // A shift's cleans. Each is a real event with a time window, so two cleans in
 // one shift — the morning strip-down and a changeover wipe — are two rows
 // rather than one blurred answer.
+// The ATP swab on a cleaning event carries its READING now (D-179), not only a
+// tick. A tick says a swab was taken; PC #1's critical limit is a number, and a
+// tick cannot be graded against it. Same rules as the Sanitation record
+// (server/atp-limits.js): blank is a gap, never a failure; the limit the reading
+// was graded against is stamped beside it, so the event goes on saying 35 after
+// Document Control moves the number; a reading means a swab was taken, so it
+// sets the tick (the swab-stock count reads the tick).
+function atpOnEvent(c) {
+  const raw = c?.atp_reading;
+  const n = raw === '' || raw === null || raw === undefined ? null : Number(raw);
+  const grade = n !== null && Number.isFinite(n) && n >= 0 ? gradeAtp(n) : null;
+  if (!grade) return { atp_swab: !!c?.atp_swab, atp_reading: null, atp_limit: null, atp_pass: null };
+  return { atp_swab: true, atp_reading: grade.value, atp_limit: grade.limit, atp_pass: grade.pass };
+}
+
 export function normalizeCleaningEvents(raw) {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -225,7 +241,7 @@ export function normalizeCleaningEvents(raw) {
       // Which room was cleaned. Same reason as the MO line: cleaning Room 1 and
       // cleaning the Batching 2 blender are two events in two places.
       room: text(c?.room, 60),
-      atp_swab: !!c?.atp_swab,
+      ...atpOnEvent(c),
       allergen_swab: !!c?.allergen_swab,
       start_time: clock(c?.start_time),
       end_time: clock(c?.end_time),

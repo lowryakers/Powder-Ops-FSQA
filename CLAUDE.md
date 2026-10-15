@@ -2440,6 +2440,13 @@ on the Sanitation record form, and `server/preop-retire.js` (once per database, 
 - **Open for Document Control:** the task chip says FORM 108-03 V2, the transcription Form 117.21 V5.
 - `verify:preop` (50, live + reboots + browser at 1280/390; control fails 19).
 
+## The end-of-day ATP swab carries its reading (D-179)
+`cleaning_events[].atp_reading` + `atp_limit` + `atp_pass`, stamped by `atpOnEvent()` inside `normalizeCleaningEvents`
+(api/production.js) with the same `gradeAtp()` as Sanitation — entry, amend and My Day all pass through it. Blank is a
+gap; a reading sets `atp_swab` (the swab shelf counts the tick). `common/AtpReadingInput.jsx` (box + `AtpReadingChip`)
+renders only while the swab is ticked. **Reported, not gated**: an over-limit EOD reading is red and raises no D-036
+re-clean task. `verify:eodatp` (24; control fails 8+).
+
 ## A production run opens and closes, and its start asks for the Pre-Op (D-146, OBL-42)
 `production_runs` + `server/production-runs.js` (`startRun`, `closeRun`, `preopFor`, `closeRunPromptsFor`),
 `GET|POST /production/runs`, `POST /production/runs/:id/close`, **Production Log → Runs** (`ProductionRuns.jsx`,

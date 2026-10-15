@@ -141,6 +141,7 @@ const RUNS = [
   ['verify-plant-holidays.mjs', 5101, {}, false],
   ['verify-holiday-quiet.mjs', 5102, { HOUSEKEEPING_MS: '0' }, false],
   ['verify-onboarding-bank.mjs', 5103, { ONBOARDING_ENC_KEY: '' }, false],
+  ['verify-eod-atp.mjs', 5105, {}, false],
   ['verify-product-drawer.mjs', 5104, {}, false],
 ];
 

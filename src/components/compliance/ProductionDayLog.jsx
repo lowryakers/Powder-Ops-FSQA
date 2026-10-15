@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { PRODUCTION_TEAMS as TEAMS, CLEAN_SCOPE } from '../../constants/productionLines';
 import { CLEAN_LEVELS, swabsExpected } from '../../../shared/clean-levels.js';
+import { AtpReadingInput } from '../common/AtpReadingInput.jsx';
 
 // The running day — what Bernardo was keeping in his phone.
 //
@@ -96,7 +97,7 @@ function ItemSheet({ kind, initial, moOptions, rooms = [], defaultRoom = '', onC
                     set('level', e.target.value);
                     // A level that takes no swab must not carry a tick made
                     // under the previous one.
-                    if (swabsExpected(e.target.value) === 'none') { set('atp_swab', false); set('allergen_swab', false); }
+                    if (swabsExpected(e.target.value) === 'none') { set('atp_swab', false); set('allergen_swab', false); set('atp_reading', ''); }
                   }}>
                   {CLEAN_LEVELS.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
                 </select>
@@ -127,11 +128,12 @@ function ItemSheet({ kind, initial, moOptions, rooms = [], defaultRoom = '', onC
                 <span className="text-xs text-gray-500 italic">No swab on this level.</span>
               ) : (<>
                 <label className="flex items-center gap-1.5 text-xs text-gray-700">
-                  <input type="checkbox" checked={!!d.atp_swab} onChange={e => set('atp_swab', e.target.checked)} /> ATP swab
+                  <input type="checkbox" checked={!!d.atp_swab} onChange={e => { set('atp_swab', e.target.checked); if (!e.target.checked) set('atp_reading', ''); }} /> ATP swab
                 </label>
                 <label className="flex items-center gap-1.5 text-xs text-gray-700">
                   <input type="checkbox" checked={!!d.allergen_swab} onChange={e => set('allergen_swab', e.target.checked)} /> Allergen swab
                 </label>
+                {d.atp_swab && <AtpReadingInput value={d.atp_reading} onChange={v => { set('atp_reading', v); set('atp_swab', true); }} />}
               </>)}
             </div>
           </>)}
@@ -248,7 +250,7 @@ function ItemRow({ item, onEdit, onRemove }) {
   const body = item.kind === 'note' ? d.note
     : item.kind === 'clean'
       ? [d.level, d.room, d.scope?.join(', '), d.sifter_no && `Sifter ${d.sifter_no}`,
-        [d.atp_swab && 'ATP', d.allergen_swab && 'Allergen'].filter(Boolean).join(' + ')
+        [d.atp_swab && (d.atp_reading != null && d.atp_reading !== '' ? `ATP ${d.atp_reading} RLU${d.atp_pass === false ? ' (over limit)' : ''}` : 'ATP'), d.allergen_swab && 'Allergen'].filter(Boolean).join(' + ')
           || (swabsExpected(d.level) === 'none' ? 'no swab on this level' : null),
         d.mo_number && `for ${d.mo_number}`].filter(Boolean).join(' · ')
       : [d.mo_number, d.room, d.lot_number && `Lot ${d.lot_number}`, d.product_name,
