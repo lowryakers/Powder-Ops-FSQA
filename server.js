@@ -56,6 +56,7 @@ import docReviewRoutes from './server/api/doc-review.js';
 import formRoutes from './server/api/forms.js';
 import facilityRoutes from './server/api/facility.js';
 import plantCalendarRoutes from './server/api/plant-calendar.js';
+import { atpLimitInForce } from './server/atp-limits.js';
 import { sendHolidayNotices } from './server/plant-calendar.js';
 import supplierRoutes, { questionnaireLinkRouter } from './server/api/suppliers.js';
 import retentionRoutes from './server/api/retention.js';
@@ -2020,6 +2021,10 @@ app.use('/api/facility', facilityRoutes);
 // Paid holidays (D-175): read by every employee, corrected by an admin — the
 // router decides per route.
 app.use('/api/plant-calendar', plantCalendarRoutes);
+// The ATP limit IN FORCE (D-180) — what the hint beside every reading box shows.
+// Read-only, no module grant: whoever can type a reading must see the number it
+// is graded against, and while a change is parked that is the APPROVED one.
+app.get('/api/atp-limit', (req, res) => res.json(atpLimitInForce()));
 app.use('/api/retention', requireModuleWrite('retention-samples'), retentionRoutes);
 // Stability studies live beside the retention library their pulls come from.
 app.use('/api/stability', requireModuleWrite('retention-samples'), stabilityRoutes);

@@ -82,11 +82,14 @@ export default function QAReviewPanel() {
     if (next.has(id)) next.delete(id); else next.add(id);
     return next;
   });
-  const allShownSelected = view.items.length > 0 && view.items.every(i => selected.has(i.id));
+  // A row the server marks `blocked` has to be opened, not signed from a list
+  // (a hygiene clearance with an issue flagged, D-180) — never ticked in bulk.
+  const signable = view.items.filter(i => !i.blocked);
+  const allShownSelected = signable.length > 0 && signable.every(i => selected.has(i.id));
   const toggleAllShown = () => setSelected(prev => {
     const next = new Set(prev);
-    if (allShownSelected) view.items.forEach(i => next.delete(i.id));
-    else view.items.forEach(i => next.add(i.id));
+    if (allShownSelected) signable.forEach(i => next.delete(i.id));
+    else signable.forEach(i => next.add(i.id));
     return next;
   });
 
@@ -116,7 +119,7 @@ export default function QAReviewPanel() {
   };
 
   const openModule = () => {
-    if (current?.module) window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab: current.module } }));
+    if (current?.module) window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab: current.module, ...(current.view ? { view: current.view } : {}) } }));
   };
 
   const total = data?.total || 0;
@@ -177,7 +180,7 @@ export default function QAReviewPanel() {
               <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 bg-gray-50 flex-wrap">
                 <label className="flex items-center gap-2 text-sm text-gray-600">
                   <input type="checkbox" checked={allShownSelected} onChange={toggleAllShown}
-                    disabled={!current.can_sign || !view.items.length}
+                    disabled={!current.can_sign || !signable.length}
                     className="rounded border-gray-300 w-4 h-4" />
                   Select all shown
                 </label>
@@ -201,9 +204,9 @@ export default function QAReviewPanel() {
               ) : (
                 <ul className="divide-y divide-gray-100">
                   {view.items.map(r => (
-                    <li key={r.id} className="flex items-start gap-3 px-3 py-2.5">
+                    <li key={r.id} className="flex items-start gap-3 px-3 py-2.5" data-review-row={r.id} data-review-blocked={r.blocked ? '1' : '0'}>
                       <input type="checkbox" checked={selected.has(r.id)} onChange={() => pick(r.id)}
-                        disabled={!current.can_sign}
+                        disabled={!current.can_sign || !!r.blocked}
                         className="mt-1 rounded border-gray-300 w-4 h-4 shrink-0" />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -214,10 +217,15 @@ export default function QAReviewPanel() {
                           {[r.subtitle, r.by, fmtDate(r.date)].filter(Boolean).join(' · ')}
                         </p>
                         {r.extra && <p className="text-xs text-gray-400 mt-0.5 truncate">{r.extra}</p>}
+                        {r.blocked && (
+                          <p className="text-xs text-amber-700 mt-0.5" data-review-blocked-reason>
+                            {r.blocked} Open it to decide — <button type="button" onClick={openModule} className="underline">open</button>
+                          </p>
+                        )}
                       </div>
                       <AgeChip date={r.date} />
-                      {current.can_sign && (
-                        <button onClick={() => sign([r.id])} disabled={busy}
+                      {current.can_sign && !r.blocked && (
+                        <button onClick={() => sign([r.id])} disabled={busy} data-review-sign={r.id}
                           className="shrink-0 px-2.5 py-1 bg-powder-600 text-white text-xs font-semibold rounded-md disabled:opacity-50">
                           Sign
                         </button>

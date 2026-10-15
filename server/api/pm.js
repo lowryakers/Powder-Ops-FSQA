@@ -1815,27 +1815,55 @@ router.post('/work-orders/:id/snooze', (req, res) => {
 
 // --- Hygiene Clearance ---
 
-router.put('/work-orders/:id/clearance', requireDepartment('qa'), (req, res) => {
-  const db = getDb();
-  const wo = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(req.params.id);
-  if (!wo) return res.status(404).json({ error: 'Work order not found' });
-  if (!wo.clearance_required) return res.status(400).json({ error: 'This work order does not require clearance' });
+// ONE WRITER FOR A CLEARANCE (D-180). The Task Center's Clearance card and
+// QA Review both clear through this, so a clearance is the same record
+// whichever door QA used. The clearer is the SIGNED-IN person, never a name
+// sent in the body — the card used to send `cleared_by` and the server stored
+// whatever arrived.
+export const canClearHygiene = (user) => (user?.department || '') === 'qa';
 
-  const { status, cleared_by, notes, method } = req.body;
-  if (!status || !cleared_by) return res.status(400).json({ error: 'status and cleared_by required' });
-  if (!['cleared', 'failed'].includes(status)) return res.status(400).json({ error: 'status must be "cleared" or "failed"' });
-
-  if (cleared_by === wo.completed_by) {
-    return res.status(403).json({ error: 'Clearance must be performed by someone other than the person who completed the work' });
+export function recordClearance(db, user, id, { status = 'cleared', method, notes } = {}) {
+  if (!canClearHygiene(user)) return { error: 'Only the QA department can give a hygiene clearance.', status: 403 };
+  const wo = db.prepare('SELECT * FROM work_orders WHERE id = ?').get(id);
+  if (!wo) return { error: 'Work order not found', status: 404 };
+  if (!wo.clearance_required) return { error: 'This work order does not require clearance', status: 400 };
+  if (wo.clearance_status && wo.clearance_status !== 'pending') {
+    return { error: `Already ${wo.clearance_status} by ${wo.clearance_by || 'someone'}.`, status: 409 };
   }
-
+  if (!['cleared', 'failed'].includes(status)) return { error: 'status must be "cleared" or "failed"', status: 400 };
+  if (user.name === wo.completed_by) {
+    return { error: 'Clearance must be performed by someone other than the person who completed the work', status: 403 };
+  }
   db.prepare(`
     UPDATE work_orders SET clearance_status=?, clearance_by=?, clearance_at=datetime('now'),
     clearance_notes=?, clearance_method=?, updated_at=datetime('now') WHERE id=?
-  `).run(status, cleared_by, notes || null, method || null, req.params.id);
-
-  logAudit(req.user, `clearance_${status}`, 'work_order', req.params.id,
+  `).run(status, user.name, notes || null, method || null, id);
+  logAudit(user, `clearance_${status}`, 'work_order', id,
     `Method: ${method || 'visual'}, Notes: ${notes || 'none'}`);
+  return { ok: true };
+}
+
+/**
+ * Whether a pending clearance can be signed from a LIST (QA Review), or has to
+ * be opened. Something went wrong on the job — an issue flagged, a step left
+ * unticked, a lubricant not marked food-grade — is a decision about whether
+ * the machine may run, and belongs on the card that shows the work.
+ */
+export function clearanceNeedsLook(wo) {
+  if (wo.issue_flagged === 1) return 'An issue was flagged on this job.';
+  const { total, outstanding } = missingStepTicks(wo.procedure_steps, (() => {
+    try { return JSON.parse(wo.step_results || '[]'); } catch { return []; }
+  })());
+  if (total > 0 && outstanding.length) return `${outstanding.length} of ${total} steps not ticked.`;
+  if (wo.lubricant_used && wo.lubricant_is_food_grade !== 1) return 'Lubricant not marked food-grade.';
+  return null;
+}
+
+router.put('/work-orders/:id/clearance', requireDepartment('qa'), (req, res) => {
+  const { status, notes, method } = req.body || {};
+  if (!status) return res.status(400).json({ error: 'status required' });
+  const out = recordClearance(getDb(), req.user, req.params.id, { status, notes, method });
+  if (out.error) return res.status(out.status || 400).json({ error: out.error });
   res.json({ success: true });
 });
 

@@ -17,6 +17,7 @@ import CheckFields from '../common/CheckFields.jsx';
 import AtpSwabField from '../common/AtpSwabField.jsx';
 import TrainingTest from '../common/TrainingTest.jsx';
 import { missingForCheck } from '../../../shared/check-forms.js';
+import { getParam } from '../../lib/deepLink.js';
 
 const FREQ_TABS = [
   { value: 'all', label: 'All' },
@@ -1155,7 +1156,8 @@ export default function PMPanel() {
   const [showWOForm, setShowWOForm] = useState(false);
   const [completing, setCompleting] = useState(null);
   const [flagging, setFlagging] = useState(null);
-  const [view, setView] = useState('incomplete');
+  // ?view=clearance — QA Review's "Open hygiene clearances" lands here (D-180).
+  const [view, setView] = useState(() => (getParam('view') === 'clearance' ? 'clearance' : 'incomplete'));
   const [archiveData, setArchiveData] = useState(null);
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [dateFrom, setDateFrom] = useState('');

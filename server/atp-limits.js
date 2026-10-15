@@ -49,23 +49,40 @@
 // reports. The unit is part of the criterion, not decoration — see the note in
 // `controlled.js` about kg vs lb on Form 417-01.
 
+// 30, NOT 35 (D-180, 15 Oct 2026). Quality confirmed the plant's limit is
+// 30 RLU — the surface ATP SOP's "≤ 30 is clean, > 30 re-clean" — while
+// Protocol 003 V4 still prints 35. The plan is what changes (V5), so this file
+// states the V5 number and `controlled.js` PARKS it: an existing database goes
+// on grading against the approved 35 until Document Control approves, and the
+// approval is the moment V5 takes effect. A fresh database starts at 30.
 export const ATP_LIMIT = {
   /** Maximum acceptable reading. At or below this is a pass. */
-  max: 35,
+  max: 30,
   unit: 'RLU',
   /** The document revision that owns the number, printed on refusals. */
   document: 'Protocol 003',
-  revision: 'V4',
+  revision: 'V5',
   control: 'PC #1',
   hazard: 'Pathogens',
-  /** The plan's own wording, kept verbatim. */
-  statement: 'No more than 35 RLU',
   correctiveAction: 'Re-clean line.',
 };
 
+/**
+ * The plan's wording, built from the number IN FORCE. It is not a stored
+ * string: while a change is parked, `apply()` puts back the approved max and
+ * revision, and a stored "No more than 30 RLU" would sit beside a grade of 35.
+ */
+export const atpStatement = () => `No more than ${ATP_LIMIT.max} ${ATP_LIMIT.unit}`;
+
 /** Where the limit came from, for a message a person has to act on. */
 export const atpSource = () =>
-  `${ATP_LIMIT.document} ${ATP_LIMIT.revision}, ${ATP_LIMIT.control} — "${ATP_LIMIT.statement}"`;
+  `${ATP_LIMIT.document} ${ATP_LIMIT.revision}, ${ATP_LIMIT.control} — "${atpStatement()}"`;
+
+/** The limit in force, for a screen that shows it (the hint decides nothing). */
+export const atpLimitInForce = () => ({
+  max: ATP_LIMIT.max, unit: ATP_LIMIT.unit, document: ATP_LIMIT.document,
+  revision: ATP_LIMIT.revision, control: ATP_LIMIT.control, statement: atpStatement(),
+});
 
 /**
  * Grade one ATP reading against the plan's critical limit.

@@ -1,7 +1,7 @@
 // verify:eodatp — the end-of-day report's ATP swab carries its READING (D-179).
 //
 // A tick said a swab was taken; PC #1's limit is a number. Asserts, live:
-//   1. a reading on a cleaning event is stored, graded against 35 RLU, and the
+//   1. a reading on a cleaning event is stored, graded against the limit in force (30 RLU on a fresh database), and the
 //      limit is stamped beside it; over the limit reads as a failure;
 //   2. a reading sets the swab tick (so the swab shelf counts it), a blank
 //      reading is a gap, never a failure, and nonsense is not stored;
@@ -52,7 +52,7 @@ t('an entry with four cleans was filed', !!entry?.id, JSON.stringify(entry).slic
 const stored = (() => { const db = new Database(process.env.DBPATH); const r = db.prepare('SELECT cleaning_events FROM production_entries WHERE id = ?').get(entry?.id); db.close(); return JSON.parse(r?.cleaning_events || '[]'); })();
 const [a, b, c, d] = stored;
 t('A READING OF 12 IS STORED as a number', a?.atp_reading === 12, JSON.stringify(a));
-t('…with the limit it was graded against (35) beside it', a?.atp_limit === 35);
+t('…with the limit it was graded against (30) beside it', a?.atp_limit === 30);
 t('…and it passes', a?.atp_pass === true);
 t('60 IS OVER THE LIMIT and reads as a failure', b?.atp_reading === 60 && b?.atp_pass === false, JSON.stringify(b));
 t('a reading sets the swab tick even when the box was not ticked', b?.atp_swab === true);
@@ -94,8 +94,8 @@ const row = page.locator('tr', { hasText: 'MO-ATP-1' }).first();
 await row.click().catch(() => {});
 await page.waitForSelector('[data-atp-reading-chip]', { timeout: 8000 }).catch(() => {});
 const chips = await page.locator('[data-atp-reading-chip]').allInnerTexts();
-t('THE LOG SHOWS THE READINGS against the limit', chips.some(x => /ATP 14 \/ 35 RLU/.test(x)), JSON.stringify(chips));
-t('…the over-limit one marked in red', chips.some(x => /ATP 60 \/ 35 RLU · over limit/.test(x)) && await page.locator('[data-atp-reading-chip="fail"]').count() >= 1);
+t('THE LOG SHOWS THE READINGS against the limit', chips.some(x => /ATP 14 \/ 30 RLU/.test(x)), JSON.stringify(chips));
+t('…the over-limit one marked in red', chips.some(x => /ATP 60 \/ 30 RLU · over limit/.test(x)) && await page.locator('[data-atp-reading-chip="fail"]').count() >= 1);
 t('…and a ticked swab with no reading says so', await page.locator('text=no ATP reading recorded').count() >= 1);
 
 await page.getByRole('tab', { name: /Entry Form/ }).click();
@@ -110,7 +110,8 @@ await page.getByLabel('ATP swab taken').first().check();
 await page.waitForTimeout(200);
 t('TICKING "ATP swab taken" OPENS THE READING BOX', await page.locator('[data-atp-reading-input]').count() === 1);
 await page.locator('[data-atp-reading-input]').fill('60');
-t('…and 60 is shown as over the 35 RLU limit as it is typed', /Over the 35 RLU limit/.test(await page.locator('[data-atp-reading-field]').innerText()));
+await page.waitForFunction(() => /limit/i.test(document.querySelector('[data-atp-reading-field]')?.innerText || ''), null, { timeout: 8000 }).catch(() => {});
+t('…and 60 is shown as over the 30 RLU limit as it is typed', /Over the 30 RLU limit/.test(await page.locator('[data-atp-reading-field]').innerText()));
 await page.locator('[data-atp-reading-input]').fill('20');
 t('…and 20 as within it', /Within limit/.test(await page.locator('[data-atp-reading-field]').innerText()));
 await page.getByLabel('ATP swab taken').first().uncheck();

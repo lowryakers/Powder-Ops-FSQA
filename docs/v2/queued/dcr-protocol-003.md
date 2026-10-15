@@ -93,6 +93,29 @@ should state the limit on the leg that carries it, or the number has no monitori
 
 ---
 
+## Item 4 — PC #1's critical limit: 30 RLU, not 35 (added 15 October 2026, D-180)
+
+**Protocol 003 V4, Preventive Control Chart, PC #1, Critical Limits:**
+> "No more than 35 RLU"
+
+**The surface ATP procedure, §6.5** (cited by Document Control as "SOP 606"; the register's SOP 606 is
+*Raw Material Label and Component Specifications* and the ATP procedure is **SOP 608 Surface ATP Swab
+Testing, V4** — please confirm which number §6.5 is in):
+> RLU ≤ 30 is clean; RLU > 30 requires a re-clean.
+
+**Why it matters.** The plan and the procedure state the same critical limit two ways, and a reading of 31–35
+RLU is a pass under one and a re-clean under the other. Quality confirmed on 15 October 2026 that the limit the
+plant works to is **30 RLU**.
+
+**Recommendation.** Issue Protocol 003 **V5** with PC #1's critical limit reading "No more than 30 RLU".
+
+**What ReadyDoc has done.** The new number is in the code and **parked in Controlled Changes** (*ATP critical
+limit — Preventive Control #1*). Until it is approved there, every reading is still graded against the approved
+35. Approving it is the moment V5 takes effect in the app; no restart is needed. Every record already filed
+keeps the limit it was graded against, so a reading graded under 35 goes on saying 35.
+
+---
+
 ## Not part of this DCR, listed so it is not lost
 
 - **The plan's signature block is unsigned** on all three lines (SQF Practitioner, PCQI, Plant
