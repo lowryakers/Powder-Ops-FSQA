@@ -28,6 +28,7 @@ const ROLES = [
 import { OPT_IN_MODULES, OPT_IN_SET } from '../../../shared/opt-in-modules.js';
 import { isFullAccess, fullAccessMap, noAccessMap, expandedMap, accessSummary, optInEntries as optInOnly } from '../../../shared/module-access.js';
 import FrozenScroll from '../common/FrozenScroll';
+import { navAccessFor } from '../../lib/navAccess';
 
 const MODULE_GROUPS = [
   {
@@ -713,6 +714,128 @@ function QuickTabsEditor({ value, onChange }) {
   );
 }
 
+// ── What a person can open, and why (D-187) ──────────────────────────────────
+// The sidebar shows modules for several reasons and only one of them is a tick
+// in Settings. This lists EVERY module the person's sidebar shows — the same
+// rule, read through navAccessFor — and says where each comes from, so access
+// that no checkbox grants (a department rule, every supervisor, the default)
+// is still visible here, and "how did he get that" has an answer on screen.
+const parseMap = (val) => {
+  if (val == null) return null;
+  if (typeof val === 'string') { try { return JSON.parse(val); } catch { return null; } }
+  return val;
+};
+const asPerson = (u) => ({ ...u, module_access: parseMap(u.module_access) });
+const SOURCE_STYLE = {
+  settings: 'bg-powder-50 text-powder-800 border-powder-200',
+  default: 'bg-gray-50 text-gray-700 border-gray-200',
+  role: 'bg-indigo-50 text-indigo-800 border-indigo-200',
+  rule: 'bg-amber-50 text-amber-900 border-amber-300',
+};
+
+function WhatTheyCanOpen({ person }) {
+  const [open, setOpen] = useState(false);
+  const rows = navAccessFor(asPerson(person));
+  const byRule = rows.filter(r => r.source === 'rule');
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white" data-what-they-open>
+      <button type="button" onClick={() => setOpen(o => !o)} className="w-full flex items-center gap-2 px-3 py-2 text-left">
+        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <span className="text-xs font-semibold text-gray-800">What {person.name ? person.name.split(' ')[0] : 'they'} can open ({rows.length})</span>
+        {byRule.length > 0 && (
+          <span className="text-[11px] font-medium text-amber-800" data-access-by-rule={byRule.length}>
+            {byRule.length} not from a tick here: {byRule.map(r => r.label).join(', ')}
+          </span>
+        )}
+      </button>
+      {open && (
+        <ul className="px-3 pb-3 space-y-1">
+          {rows.map(r => (
+            <li key={r.id} className={`flex flex-wrap items-center gap-x-2 px-2 py-1 rounded border text-xs ${SOURCE_STYLE[r.source]}`} data-open-module={r.id} data-open-source={r.source}>
+              <span className="font-medium">{r.label}</span>
+              <span className="opacity-80">— {r.reason}</span>
+            </li>
+          ))}
+          <li className="text-[11px] text-gray-500 pt-1">Updates as you change the role, department or ticks above; saved when you press Save.</li>
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// Who can open a module, and why — the "who else has it" question.
+function WhoCanOpenModal({ users, onClose }) {
+  const people = (users || []).filter(u => u.is_active && !u.is_external && u.role !== 'auditor');
+  const access = people.map(u => ({ u, rows: navAccessFor(asPerson(u)) }));
+  const modules = [...new Map(access.flatMap(a => a.rows).map(r => [r.id, r])).values()].sort((a, b) => a.label.localeCompare(b.label));
+  const [mod, setMod] = useState(modules.find(m => m.id === 'dannys-list')?.id || modules[0]?.id || '');
+  const holders = access.map(a => ({ u: a.u, row: a.rows.find(r => r.id === mod) })).filter(x => x.row);
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" data-who-can-open>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-4 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-base font-semibold text-gray-900">Who can open…</h3>
+          <button type="button" onClick={onClose} className="p-1 text-gray-400 hover:text-gray-700" aria-label="Close"><X size={18} /></button>
+        </div>
+        <select value={mod} onChange={e => setMod(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" data-who-module>
+          {modules.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+        </select>
+        <p className="text-xs text-gray-500" data-who-count>{holders.length} of {people.length} active people</p>
+        <ul className="space-y-1">
+          {holders.map(({ u, row }) => (
+            <li key={u.id} className={`flex flex-wrap gap-x-2 px-2 py-1 rounded border text-sm ${SOURCE_STYLE[row.source]}`} data-who-holder={u.name}>
+              <span className="font-medium">{u.name}</span>
+              <span className="text-xs opacity-80">{u.role} · {deptLabel(u.department)} — {row.reason}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+// Accounts the old Bulk Permissions bug gave every module (D-187).
+function AccessReviewStrip({ onChanged }) {
+  const { data, refresh } = useApiGet('/users/access-review');
+  const [busy, setBusy] = useState('');
+  if (!data || (!data.accounts.length && !data.private_removed.length)) return null;
+  const act = async (id, fn) => { setBusy(id); try { await fn(); refresh(); onChanged?.(); } finally { setBusy(''); } };
+  return (
+    <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 space-y-2" data-access-review>
+      {data.private_removed.length > 0 && (
+        <p className="text-xs text-amber-900" data-private-removed>
+          <strong>Danny&apos;s List was taken off {data.private_removed.length} account{data.private_removed.length === 1 ? '' : 's'}</strong> that
+          Bulk Permissions had given it by mistake: {data.private_removed.map(p => p.name).join(', ')}. If one of them should have it, tick it on their record.
+        </p>
+      )}
+      {data.accounts.length > 0 && (
+        <>
+          <p className="text-sm font-semibold text-amber-900">{data.accounts.length} account{data.accounts.length === 1 ? '' : 's'} can open nearly every module</p>
+          <p className="text-xs text-amber-900">Bulk Permissions used to give every module to an account that had nothing set. Restore each to what was last set on it by hand, or keep it if that is intended.</p>
+          <ul className="space-y-1">
+            {data.accounts.map(a => (
+              <li key={a.id} className="flex flex-wrap items-center gap-2 bg-white rounded-lg border border-amber-200 px-2 py-1.5 text-sm" data-review-account={a.name}>
+                <span className="font-medium">{a.name}</span>
+                <span className="text-xs text-gray-500">{a.role} · {deptLabel(a.department)} · {a.modules} modules</span>
+                <span className="ml-auto flex gap-1.5">
+                  <button type="button" disabled={busy === a.id} data-review-restore
+                    onClick={() => act(a.id, () => apiPut(`/users/${a.id}`, { module_access: a.restore ? a.restore.module_access : null }))}
+                    className="px-2 py-1 rounded bg-amber-600 text-white text-xs font-medium hover:bg-amber-700 disabled:opacity-50"
+                    title={a.restore ? `Set by ${a.restore.by} on ${String(a.restore.at).slice(0, 10)}` : 'Nothing was set by hand — Operator View only'}>
+                    {a.restore ? `Restore (${Object.keys(a.restore.module_access || {}).length} modules, ${String(a.restore.at).slice(0, 10)})` : 'Reset to Operator View only'}
+                  </button>
+                  <button type="button" disabled={busy === a.id} onClick={() => act(a.id, () => apiPost(`/users/access-review/${a.id}/dismiss`, {}))}
+                    className="px-2 py-1 rounded border border-gray-300 text-xs text-gray-700 hover:bg-gray-50" data-review-keep>Intended</button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
 function UserForm({ initial, onSave, onCancel, canViewPin }) {
   const parseModuleAccess = (val) => {
     if (val == null) return null;
@@ -865,6 +988,7 @@ function UserForm({ initial, onSave, onCancel, canViewPin }) {
         onChange={(val) => setForm({ ...form, module_access: val })}
       />
       <TemplateTools current={form.module_access} onApply={(map) => setForm({ ...form, module_access: map })} />
+      <WhatTheyCanOpen person={form} />
       {isAdmin && (
         <p className="text-[11px] text-gray-400 italic -mt-1">Admins default to full access — uncheck "Full access" to hide specific modules from this admin. Settings always stays enabled.</p>
       )}
@@ -1385,6 +1509,7 @@ export default function UsersSection({ user: currentUser }) {
   const [editing, setEditing] = useState(null);
   const [bulkAdd, setBulkAdd] = useState(false);
   const [bulkAccess, setBulkAccess] = useState(false);
+  const [whoCan, setWhoCan] = useState(false);
 
   const handleCreate = async (form) => {
     await apiPost('/users', form);
@@ -1450,6 +1575,10 @@ export default function UsersSection({ user: currentUser }) {
           className="flex items-center gap-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200">
           <Users size={15} /> Bulk Add
         </button>
+        <button onClick={() => setWhoCan(true)} data-who-open-btn
+          className="flex items-center gap-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200">
+          <Shield size={15} /> Who can open…
+        </button>
         {/* `ml-auto` pushes this to the right on a wide header; on a phone the
             row wraps and that left it stranded on a line of its own. */}
         <button onClick={() => { setShowForm(true); setEditing(null); }}
@@ -1457,6 +1586,9 @@ export default function UsersSection({ user: currentUser }) {
           <Plus size={16} /> Add User
         </button>
       </div>
+
+      <AccessReviewStrip onChanged={refresh} />
+      {whoCan && <WhoCanOpenModal users={users} onClose={() => setWhoCan(false)} />}
 
       {(showForm && !editing) && <UserForm onSave={handleCreate} onCancel={() => setShowForm(false)} />}
 

@@ -11,6 +11,9 @@ import { onDataChanged } from './lib/dataChanged';
 import { useEdgeSwipe } from './lib/useEdgeSwipe';
 import { useInstallPrompt, installEnvironment } from './lib/useInstallPrompt.js';
 import { visibleModuleIds, canViewModule, hasExplicitGrant, canSeeQaReview, canSeeApDrop } from './utils/permissions';
+import { registerNavAccess } from './lib/navAccess';
+import { OPT_IN_SET } from '../shared/opt-in-modules.js';
+import { defaultModuleIds } from '../shared/default-modules.js';
 import { deptLabel } from './constants/departments';
 import LoginScreen from './components/LoginScreen.jsx';
 import AuditorLogin from './components/AuditorLogin.jsx';
@@ -322,7 +325,9 @@ function KioskAppRedirect({ form }) {
   useEffect(() => { window.location.replace(`/?form=${form}`); }, [form]);
   return null;
 }
-const canSeeCheckedOut = (u) => isRicardo(u) || hasExplicitGrant(u, 'currently-out');
+// An explicit grant only (D-187). It also matched any account NAMED Ricardo —
+// access no Settings screen could show; that became a grant once, at boot.
+const canSeeCheckedOut = (u) => hasExplicitGrant(u, 'currently-out');
 // The Sign In/Out hub: visible to anyone who can reach any of its tabs. Ricardo
 // has only the Out-now grant and must still land here — it's his floor check.
 const canSeeSignOut = (u) => canViewModule(u, 'maintenance-signout')
@@ -441,22 +446,9 @@ function Sidebar({ activeTab, setActiveTab, user, onClose, badges, badgeDetail, 
 
       <div className="flex-1 py-2 space-y-0.5">
         {NAV_GROUPS.map((group) => {
-          const visibleItems = group.items.filter(i => {
-            if (i.id === 'settings') return false; // lives in the top-right gear icon
-            if (i.id === 'sign-out') return canSeeSignOut(user);
-            if (i.id === 'office-requests') return canSeeOfficeRequests(user);
-            if (i.id === 'qa-review') return canSeeQaReview(user);
-            // A nav item can decide for itself when module access isn't the
-            // right question — Controlled Changes is Document Control's by
-            // department, not by a module grant.
-            if (i.visible) return i.visible(user);
-            if (i.adminOnly && user.role !== 'admin') return false;
-            if (i.roles && !i.roles.includes(user.role)) return false;
-            if (i.aiOnly && !aiOn) return false;
-            // Hub items combine several modules — visible if the user can see any.
-            if (i.anyOf) return i.anyOf.some(id => canViewModule(user, id));
-            return canViewModule(user, i.id);
-          });
+          // Settings lives in the top-right gear icon; every other item is
+          // decided by navItemVisible — the one rule (D-187).
+          const visibleItems = group.items.filter(i => i.id !== 'settings' && navItemVisible(i, user, aiOn));
           if (visibleItems.length === 0) return null;
           const isOpen = openGroups[group.label];
           const hasActive = visibleItems.some(i => i.id === activeTab);
@@ -813,31 +805,64 @@ function AccountMenu({ user, onChangePassword, onLogout, onViewAs, onInstallHelp
 function accessibleNavItems(user, aiOn) {
   const flat = [];
   for (const g of NAV_GROUPS) {
-    for (const i of g.items) {
-      if (i.id === 'sign-out') {
-        if (canSeeSignOut(user)) flat.push({ ...i, group: g.label });
-        continue;
-      }
-      if (i.id === 'office-requests') {
-        if (canSeeOfficeRequests(user)) flat.push({ ...i, group: g.label });
-        continue;
-      }
-      if (i.adminOnly && user.role !== 'admin') continue;
-      if (i.roles && !i.roles.includes(user.role)) continue;
-      if (i.aiOnly && !aiOn) continue;
-      // An item carrying its own `visible` predicate decides for itself, the
-      // same way the sidebar does. Without this the two filters disagreed:
-      // Doc Control Review, Controlled Changes, Log Builder and the Form
-      // Registry all showed in the sidebar for Document Control and then could
-      // not be found by searching for them.
-      if (i.visible) { if (i.visible(user)) flat.push({ ...i, group: g.label }); continue; }
-      // Hub entries (anyOf) are visible when any of their sub-modules is.
-      if (i.anyOf ? !i.anyOf.some(id => canViewModule(user, id)) : !canViewModule(user, i.id)) continue;
-      flat.push({ ...i, group: g.label });
-    }
+    for (const i of g.items) if (navItemVisible(i, user, aiOn)) flat.push({ ...i, group: g.label });
   }
   return flat;
 }
+
+// ONE RULE FOR WHETHER A NAV ITEM SHOWS (D-187). The sidebar, the search
+// palette and the quick tabs each had their own copy and they disagreed (QA
+// Review was special-cased in the sidebar and not the palette). The Settings
+// "What they can open" list reads this too, so Settings can never be missing
+// something the sidebar shows.
+function navItemVisible(i, user, aiOn) {
+  if (!user) return false;
+  if (i.id === 'sign-out') return canSeeSignOut(user);
+  if (i.id === 'office-requests') return canSeeOfficeRequests(user);
+  if (i.id === 'qa-review') return canSeeQaReview(user);
+  if (i.adminOnly && user.role !== 'admin') return false;
+  if (i.roles && !i.roles.includes(user.role)) return false;
+  if (i.aiOnly && !aiOn) return false;
+  // An item carrying its own `visible` predicate decides for itself.
+  if (i.visible) return i.visible(user);
+  if (i.anyOf) return i.anyOf.some(id => canViewModule(user, id));
+  return canViewModule(user, i.id);
+}
+
+// WHAT A PERSON CAN OPEN, AND WHY (D-187). Every visible nav item with the
+// reason it is there: set in Settings, every employee's default, admin, or a
+// rule (role / department). A rule-based item says which rule, so access that
+// Settings cannot tick is still SHOWN in Settings.
+const RULE_WHY = {
+  'sign-out': 'Comes with Sign In/Out, Knives or Out now',
+  'office-requests': 'Every supervisor',
+  'qa-review': 'QA / Quality department',
+  'doc-review': 'Document Control, or a QA / Document Control supervisor',
+  'controlled-changes': 'Document Control department',
+  'change-register': 'Document Control / QA department, or any supervisor',
+  'log-builder': 'Document Control department',
+  accounting: 'Office / admin supervisor (AP Drop queue)',
+};
+function accessReasons(user) {
+  const ma = user?.module_access;
+  const inMap = (id) => (Array.isArray(ma) ? ma.includes(id) : !!ma && (ma[id] === 'view' || ma[id] === 'edit'));
+  const levelOf = (id) => (Array.isArray(ma) ? 'edit' : ma?.[id]);
+  const dflt = new Set(defaultModuleIds(user));
+  return accessibleNavItems(user, true).filter(i => i.id !== 'settings' || user.role === 'admin').map((i) => {
+    const ids = i.anyOf || [i.id];
+    const set = ids.filter(inMap);
+    let source; let reason;
+    if (set.length) {
+      source = 'settings';
+      reason = OPT_IN_SET.has(i.id) ? 'Private module, ticked on their record' : `Set in Settings (${[...new Set(set.map(levelOf))].join(' / ')})`;
+    } else if (user.role === 'admin' && !RULE_WHY[i.id]) { source = 'role'; reason = 'Admin'; }
+    else if (ids.some(id => dflt.has(id))) { source = 'default'; reason = 'Every employee'; }
+    else if (i.adminOnly) { source = 'role'; reason = 'Admin'; }
+    else { source = 'rule'; reason = RULE_WHY[i.id] || 'A rule in the app (role or department)'; }
+    return { id: i.id, label: i.label, group: i.group, source, reason };
+  });
+}
+registerNavAccess(accessReasons);
 
 // Global "jump to a module" command palette. With ~30 modules, hunting through
 // the sidebar is the main navigation friction; this lets anyone type a name (or

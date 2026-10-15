@@ -7655,3 +7655,29 @@ simplicity. As few clicks as possible … as close to her spreadsheet view as we
   it; a record already filed with it still shows, reads back and corrects it. The server still reads old answers.
 - `verify:swablog` (40, API + browser at 1280 and 390). Control: without the mount the first call answers
   `Record not found` (the `/:id` route reads "swab-log" as an id). `verify:preop` now asserts the archive (46).
+
+## D-187 — Nobody can open a module Settings does not show (15 Oct 2026)
+"Victor is also seeing Danny's List, and it isn't in Settings … this can't happen … find all similar bugs."
+**Root cause, reproduced:** `POST /users/bulk-access` (Bulk Permissions, merge mode) turned a BLANK map into
+"every module at Edit" before applying its patch — written when blank meant unrestricted, wrong since 13 Aug when
+blank came to mean "nothing but the defaults". So one bulk tick of Operator View gave every blank account **all 61
+modules at Edit — Danny's List, Pay Tracking, Banking, Accounting included** — and the audit kept only a count.
+The control (the old `users.js`) shows exactly that map on a blank account.
+- **Bulk now patches what is there**: blank stays blank plus the patch; a private (opt-in) module is never set in bulk
+  (`private_ignored` says so); replace mode keeps a private grant it was not asked about; **each account's change is
+  audited with its before and after**.
+- **Repair, once** (`repairBulkPrivateGrants`, `bulk_access_repair_v1`): the private modules come off any non-admin
+  whose map covers nearly every module — the only shape that path wrote; the editor never puts a private module into
+  full access. Named in the boot log and on Settings → Users, audited per account.
+- **Review, derived** (`GET /users/access-review`, the amber strip on Settings → Users): every non-admin holding
+  nearly every module, with the map last set on them by hand (from the audit trail) — **Restore** in one click, or
+  **Intended**. The app does not take ordinary modules off people by itself; that is the admin's call per person.
+- **The rest of the class: access that comes from a rule, not a tick.** Accounting (fixed in D-184), Requests (every
+  supervisor), QA Review (QA department), Doc Control Review / Controlled Changes / Change Register / Log Builder
+  (department or role), the default Operator View, admin. These stay rules, but **Settings now shows them**: each
+  person's record has "What they can open", every module with its reason, and "Who can open…" answers "who else has
+  it" for any module. Both read `navItemVisible` — **the one rule the sidebar, the search palette and the quick tabs
+  now share** (they were three copies, and the palette had already dropped QA Review's rule).
+- **A NAME was an access rule**: Out now showed for any account named "Ricardo…". It is a grant now
+  (`grantOutNowByName`, once), so it shows in Settings.
+- `verify:accesssources` (25, two boots + browser). Control (old `users.js`) fails 7.

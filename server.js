@@ -35,6 +35,7 @@ import qaReviewRoutes from './server/api/qa-review.js';
 import cleanupRoutes from './server/api/cleanup.js';
 import sanitationRoutes from './server/api/sanitation.js';
 import swabLogRoutes from './server/swab-log.js';
+import { repairBulkPrivateGrants, grantOutNowByName } from './server/access-review.js';
 import bpgRoutes from './server/api/bpg.js';
 import auditRoutes from './server/api/audit.js';
 import integrationsRoutes from './server/api/integrations.js';
@@ -1389,6 +1390,16 @@ try {
     const g = grantApDropToDroppers(db);
     if (g.length) console.log(`[migrate] AP Drop grant (view) given to ${g.length} who have filed a drop: ${g.join(', ')}`);
   } catch (e) { console.warn('[migrate] AP Drop grants:', e.message); }
+  // Bulk Permissions wrote every module, private ones included, onto blank
+  // accounts (D-187). The private grants come off, once; Settings lists the rest.
+  try {
+    const fx = repairBulkPrivateGrants(db);
+    if (fx.length) console.log(`[migrate] Private modules removed from ${fx.length} account(s) the bulk-permissions bug had given them: ${fx.map(f => `${f.name} (${f.removed.join(', ')})`).join('; ')}`);
+  } catch (e) { console.warn('[migrate] bulk access repair:', e.message); }
+  try {
+    const g = grantOutNowByName(db);
+    if (g.length) console.log(`[migrate] "Out now" name rule became a grant for: ${g.join(', ')}`);
+  } catch (e) { console.warn('[migrate] Out now grant:', e.message); }
   // Collapse duplicate tasks the old generator guards let through (one-time).
   cleanupDuplicateTasks(db);
   // Purge cached "translations" identical to the original message (one-time).

@@ -150,6 +150,7 @@ const RUNS = [
   ['verify-accounting-access.mjs', 5110, {}, false],
   ['verify-training-pinned.mjs', 5111, {}, false],
   ['verify-swab-log.mjs', 5112, {}, false],
+  ['verify-access-sources.mjs', 5113, {}, false],
 ];
 
 // VERIFY_ONLY=verify-auth.mjs,verify-swab-stock.mjs runs just the entries that
