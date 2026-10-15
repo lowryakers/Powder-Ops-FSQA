@@ -72,10 +72,29 @@ export function setReorderPoint(db, type, value) {
 export function swabsUsedSince(db, since) {
   const out = { atp: 0, allergen: 0 };
   const from = since || '0000-01-01';
+  // THE SWAB ROWS ARE COUNTED, ONE EACH (D-182) — a visit that swabbed four
+  // surfaces used four swabs. A record with rows is never also counted by its
+  // reading (that is the rows' mirror); a record filed before the rows existed
+  // is counted the old way, one swab for its reading.
   try {
-    out.atp += db.prepare(`SELECT COUNT(*) c FROM sanitation_records
-      WHERE atp_reading IS NOT NULL AND TRIM(atp_reading) != '' AND performed_at > ?`).get(from).c;
-  } catch { /* column optional */ }
+    const r = db.prepare(`SELECT
+        SUM(CASE WHEN s.atp_reading IS NOT NULL THEN 1 ELSE 0 END) atp,
+        SUM(CASE WHEN s.allergen_swab = 1 THEN 1 ELSE 0 END) allergen
+      FROM sanitation_swabs s JOIN sanitation_records r ON r.id = s.record_id
+      WHERE r.performed_at > ?`).get(from);
+    out.atp += r?.atp || 0;
+    out.allergen += r?.allergen || 0;
+  } catch { /* table optional on an older database */ }
+  try {
+    out.atp += db.prepare(`SELECT COUNT(*) c FROM sanitation_records sr
+      WHERE sr.atp_reading IS NOT NULL AND TRIM(sr.atp_reading) != '' AND sr.performed_at > ?
+        AND NOT EXISTS (SELECT 1 FROM sanitation_swabs s WHERE s.record_id = sr.id)`).get(from).c;
+  } catch {
+    try {
+      out.atp += db.prepare(`SELECT COUNT(*) c FROM sanitation_records
+        WHERE atp_reading IS NOT NULL AND TRIM(atp_reading) != '' AND performed_at > ?`).get(from).c;
+    } catch { /* column optional */ }
+  }
   try {
     // The cleaning events are JSON on the entry, so this is a scan of the rows
     // in range rather than a query the database can index. Bounded by the date.

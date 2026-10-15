@@ -1,5 +1,4 @@
 import { useState, Fragment } from 'react';
-import AtpLimitHint from '../common/AtpLimitHint.jsx';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import RecordBackfillStrip from '../common/RecordBackfillStrip.jsx';
 import SwabStock from './SwabStock.jsx';
@@ -23,6 +22,9 @@ import { PreopFields, PreopAnswers } from './PreopChecklist.jsx';
 import { preopToState } from '../../lib/preopState.js';
 import { preopApplies, parsePreopForm } from '../../../shared/preop-form.js';
 import FrozenScroll from '../common/FrozenScroll';
+import { SwabTable, SwabList } from './SanitationSwabs.jsx';
+import { swabsForSave, swabsForEdit, blankSwab } from '../../lib/swabRows.js';
+import { legacySwabs } from '../../../shared/swab-rows.js';
 
 // Reason dialog for dismiss / N-A / not-in-use on a 72h re-clean flag.
 const RECLEAN_ACTION_META = {
@@ -266,8 +268,8 @@ function SanitationDetail({ record, onClose, onEdit, onRevoke }) {
               <p className="text-sm font-semibold text-gray-900">{record.contact_time_minutes != null ? record.contact_time_minutes : '—'}</p>
             </div>
             <div>
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">ATP Reading (RLU)</p>
-              <p className="text-sm font-semibold text-gray-900">{record.atp_reading != null ? record.atp_reading : '—'}</p>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{record.swabs?.length ? 'ATP (worst swab)' : 'ATP Reading (RLU)'}</p>
+              <p className="text-sm font-semibold text-gray-900">{record.atp_reading != null ? `${record.atp_reading}${record.atp_limit != null ? ` / ${record.atp_limit}` : ''} RLU` : '—'}</p>
             </div>
             <div>
               <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Result</p>
@@ -318,7 +320,8 @@ function SanitationDetail({ record, onClose, onEdit, onRevoke }) {
             )}
           </div>
 
-          <PreopAnswers form={parsePreopForm(record.preop_form)} atpReading={record.atp_reading} />
+          <SwabList swabs={record.swabs} />
+          <PreopAnswers form={parsePreopForm(record.preop_form)} atpReading={record.atp_reading} hideSwabs={record.swabs?.length > 0} />
 
           {record.notes && (
             <div>
@@ -366,6 +369,12 @@ function RecordForm({ equipment, chemicals, initial, onSave, onCancel }) {
   // Form 117.21 rides on a pre-op clean of a production room (D-125). Kept in
   // its own state so switching the area away and back does not lose answers.
   const [preop, setPreop] = useState(() => preopToState(parsePreopForm(initial?.preop_form)));
+  // THE SWABS ARE ROWS (D-182). A record filed before them opens with its old
+  // reading and Form 117.21 lines converted to rows — the same values — so
+  // saving the correction moves it onto the rows; a new record starts with one.
+  const [swabs, setSwabs] = useState(() => (initial
+    ? swabsForEdit(initial.swabs?.length ? initial.swabs : legacySwabs(initial, parsePreopForm(initial.preop_form)))
+    : [blankSwab()]));
   const hasPreop = preopApplies(form.type, form.area);
   const todayStr = new Date().toISOString().split('T')[0];
   // "Earlier" starts the day before, because same-day is just filing at the
@@ -416,6 +425,10 @@ function RecordForm({ equipment, chemicals, initial, onSave, onCancel }) {
     // what is stored and says so if it no longer fits, rather than this form
     // quietly erasing answers because the area changed.
     if (hasPreop) payload.preop_form = preop;
+    // The rows own the reading; the server writes the record's ATP figure as
+    // the worst of them, so the single figure is not sent.
+    delete payload.atp_reading;
+    payload.swabs = swabsForSave(swabs);
     try { await onSave(payload); } catch (saveErr) {
       // A refused save must SAY so. This was try/finally with NO catch, so a
       // 403 or a validation 400 cleared the spinner and left the modal sitting
@@ -532,16 +545,6 @@ function RecordForm({ equipment, chemicals, initial, onSave, onCancel }) {
           <input type="number" step="any" value={form.contact_time_minutes} onChange={e => setForm({ ...form, contact_time_minutes: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
         </div>
-        {/* On a production pre-op the reading is ATP swab 1 of Form 117.21 and
-            is entered in that section below — one box, not two. */}
-        {!hasPreop && (
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">ATP Reading (RLU)</label>
-            <input type="number" step="0.1" value={form.atp_reading} onChange={e => setForm({ ...form, atp_reading: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-            <AtpLimitHint value={form.atp_reading} />
-          </div>
-        )}
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Result *</label>
           <select value={form.result} onChange={e => setForm({ ...form, result: e.target.value })}
@@ -553,9 +556,10 @@ function RecordForm({ equipment, chemicals, initial, onSave, onCancel }) {
         </div>
       </div>
       {hasPreop && (
-        <PreopFields value={preop} onChange={setPreop}
+        <PreopFields value={preop} onChange={setPreop} hideSwabs
           atpReading={form.atp_reading} onAtpReading={v => setForm(f => ({ ...f, atp_reading: v }))} />
       )}
+      <SwabTable rows={swabs} onChange={setSwabs} />
       <label className="flex items-center gap-2">
         <input type="checkbox" checked={form.rinse_verified} onChange={e => setForm({ ...form, rinse_verified: e.target.checked })} />
         {/* The FILER is answering a step of their own clean, not counter-signing

@@ -2440,6 +2440,26 @@ on the Sanitation record form, and `server/preop-retire.js` (once per database, 
 - **Open for Document Control:** the task chip says FORM 108-03 V2, the transcription Form 117.21 V5.
 - `verify:preop` (50, live + reboots + browser at 1280/390; control fails 19).
 
+## Every swab on a Sanitation record is a row (D-182, `server/sanitation-swabs.js`)
+`sanitation_swabs`, one row per swab. Each row carries:
+- the swab #, the surface and the ATP reading, graded against its own `atp_limit`;
+- the allergen swab, its result (pass, fail, or blank for not read yet) and the kit lot.
+
+The form is `SwabTable` and the record view is `SwabList` (`SanitationSwabs.jsx`).
+- **The rows own the reading.** `atp_reading` / `atp_limit` on the record are the worst swab's mirror,
+  written only by the record's own write.
+  - PUT with a bare `atp_reading` on a record with rows is `400 SWABS_OWN_READING`.
+  - Any failing swab fails the record, and so does an allergen fail.
+- **Form 117.21's ATP and allergen lines are emptied on a record with rows** — the table holds them.
+- A pre-D-182 record has no rows and is read the old way; `shared/swab-rows.js` `legacySwabs` converts it
+  on correction.
+- **The swab shelf counts rows**; a record with rows is never also counted by its mirror.
+- **QA's swab sheet** (`server/swab-sheet-seed.js`, 39 swabs → 27 visits, 1–15 Oct):
+  - runs once, and **never on a fresh database**;
+  - files records entered late, with no allergen results invented.
+- The end-of-day reading box is for the floor's own swabs; QA's swab lives on QA's record.
+- `verify:sanswabs` (39).
+
 ## The end-of-day ATP swab carries its reading (D-179)
 `cleaning_events[].atp_reading` + `atp_limit` + `atp_pass`, stamped by `atpOnEvent()` inside `normalizeCleaningEvents`
 (api/production.js) with the same `gradeAtp()` as Sanitation — entry, amend and My Day all pass through it. Blank is a

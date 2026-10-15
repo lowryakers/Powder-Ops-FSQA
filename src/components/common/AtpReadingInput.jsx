@@ -16,6 +16,11 @@ export function AtpReadingInput({ value, onChange }) {
         onChange={e => onChange(e.target.value)} placeholder="e.g. 12" data-atp-reading-input
         className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
       <AtpLimitHint value={value} />
+      {/* ONE SWAB, ONE PLACE (D-182). When QA swabs this area the reading is on
+          QA's Sanitation record; typing it here too counts the swab twice. */}
+      <p className="text-[11px] text-gray-500 mt-1" data-atp-own-swab-note>
+        Only a swab your team took. If QA swabbed it, QA records it on their Sanitation record — don&apos;t copy it here.
+      </p>
     </div>
   );
 }

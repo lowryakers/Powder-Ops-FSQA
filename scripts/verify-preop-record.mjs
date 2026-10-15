@@ -161,11 +161,14 @@ try {
     const area = form.locator('select').first();
     await area.selectOption('Restrooms');
     t(`${width}px: a restroom pre-op shows no Form 117.21`, await page.locator('[data-preop-form]').count() === 0);
-    t(`${width}px: …and keeps its ordinary ATP box`, await form.getByText('ATP Reading (RLU)').count() === 1);
+    // D-182: every record's swabs are rows in one Swabs table, not an ATP box.
+    t(`${width}px: …and has the Swabs table`, await page.locator('[data-swab-table]').count() === 1);
     await area.selectOption('3');
     await page.waitForSelector('[data-preop-form]', { timeout: 5000 }).catch(() => {});
     t(`${width}px: ROOM 3 PRE-OP SHOWS FORM 117.21 V5`, /Form 117\.21 V5/.test(await page.locator('[data-preop-form] legend').innerText().catch(() => '')));
-    t(`${width}px: ONE ATP BOX, NOT TWO — the reading lives in the ATP section`, await form.getByText('ATP Reading (RLU)').count() === 0 && await page.locator('[data-preop-atp-reading="1"]').count() === 1);
+    t(`${width}px: ONE PLACE FOR A SWAB — the form's lines are the Swabs table's rows (D-182)`,
+      await page.locator('[data-preop-atp-reading="1"]').count() === 0 && await page.locator('[data-preop-swabs-in-table]').count() === 1
+      && await page.locator('[data-swab-table]').count() === 1);
     t(`${width}px: every verification question is asked, in the form's words`,
       await page.locator('[data-preop-check]').count() === 5 && await page.getByText('Visual inspection of all knives (no snap off blades allowed)').count() === 1);
     t(`${width}px: no "QA sign-off" for the cleaner to tick`, await page.locator('[data-preop-form]').getByText(/QA sign-off/).count() === 0);
@@ -174,15 +177,18 @@ try {
     if (width === 1280) {
       await page.locator('#preop-product_name').fill('M4-HMR PRO Blend Mocha');
       await page.locator('[data-preop-check="knives"]').getByRole('radio', { name: 'Yes', exact: true }).click();
-      await page.locator('[data-preop-atp-reading="1"]').fill('18');
-      await page.locator('[data-preop-allergen="1"]').getByRole('radio', { name: 'Pass', exact: true }).click();
+      await page.locator('[data-swab-row="1"] [data-swab-surface]').fill('Table');
+      await page.locator('[data-swab-row="1"] [data-swab-atp]').fill('18');
+      await page.locator('[data-swab-row="1"] [data-swab-allergen]').check();
+      await page.locator('[data-swab-row="1"] [data-swab-allergen-result]').selectOption('pass');
       await form.locator('label:has-text("Performed By") + input').fill('Pia Operator');
       await form.getByRole('button', { name: /Save Record/ }).click();
       await page.waitForTimeout(2000);
       const rec = db.prepare("SELECT * FROM sanitation_records WHERE preop_form LIKE '%M4-HMR PRO Blend Mocha%'").get();
       const f = JSON.parse(rec?.preop_form || 'null');
       t('SAVED FROM THE SCREEN: the answers and the graded reading land on the record',
-        !!rec && rec.atp_reading === 18 && rec.atp_limit === 30 && f?.checks?.knives === 'yes' && f?.allergen?.[0]?.result === 'pass', JSON.stringify({ atp: rec?.atp_reading, f }).slice(0, 220));
+        !!rec && rec.atp_reading === 18 && rec.atp_limit === 30 && f?.checks?.knives === 'yes'
+        && db.prepare("SELECT allergen_result r FROM sanitation_swabs WHERE record_id = ?").get(rec?.id)?.r === 'pass', JSON.stringify({ atp: rec?.atp_reading, f }).slice(0, 220));
       await page.locator('tbody td', { hasText: /^Room 3$/ }).first().click().catch(() => {});
       await page.waitForTimeout(800);
       t('THE RECORD READS THE FORM BACK', await page.locator('[data-preop-answers]').filter({ hasText: 'Form 117.21' }).count() > 0);

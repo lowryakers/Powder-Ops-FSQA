@@ -37,7 +37,9 @@ function Heading({ children }) {
   return <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide pt-1">{children}</p>;
 }
 
-export function PreopFields({ value, onChange, atpReading, onAtpReading }) {
+// `hideSwabs`: the record's swab table holds the form's ATP and allergen lines
+// (D-182), so they are not drawn here a second time.
+export function PreopFields({ value, onChange, atpReading, onAtpReading, hideSwabs = false }) {
   const set = (patch) => onChange({ ...value, ...patch });
   const setLine = (key, i, patch) => set({ [key]: value[key].map((l, j) => (j === i ? { ...l, ...patch } : l)) });
   const toggleAllergen = (a) => set({
@@ -103,6 +105,9 @@ export function PreopFields({ value, onChange, atpReading, onAtpReading }) {
         </div>
       </div>
 
+      {hideSwabs ? (
+        <p className="text-xs text-gray-500" data-preop-swabs-in-table>The ATP and allergen tests are entered in the Swabs table below — one row per swab.</p>
+      ) : (<>
       <Heading>ATP Test</Heading>
       <div className="space-y-2">
         {value.atp.map((l, i) => (
@@ -135,6 +140,7 @@ export function PreopFields({ value, onChange, atpReading, onAtpReading }) {
           </div>
         ))}
       </div>
+      </>)}
     </fieldset>
   );
 }
@@ -142,7 +148,7 @@ export function PreopFields({ value, onChange, atpReading, onAtpReading }) {
 const optLabel = (opts, v) => opts.find(o => o.value === v)?.label || v;
 const shown = (v) => (v == null || v === '' ? <span className="text-gray-400">—</span> : v);
 
-export function PreopAnswers({ form, atpReading }) {
+export function PreopAnswers({ form, atpReading, hideSwabs = false }) {
   if (!form) return null;
   return (
     <div className="bg-white rounded-lg border border-blue-200 p-3 space-y-3" data-preop-answers>
@@ -170,7 +176,7 @@ export function PreopAnswers({ form, atpReading }) {
           <span className="font-medium text-gray-900 shrink-0">{shown([form.asset_tag, form.condition].filter(Boolean).join(' · '))}</span>
         </li>
       </ul>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+      {!hideSwabs && <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
         <div>
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">ATP Test</p>
           {(form.atp || []).map((l, i) => (
@@ -187,7 +193,7 @@ export function PreopAnswers({ form, atpReading }) {
             </p>
           ))}
         </div>
-      </div>
+      </div>}
     </div>
   );
 }
