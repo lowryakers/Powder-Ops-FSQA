@@ -11,6 +11,44 @@ export function loadOverrides(db) {
   try { return db.prepare('SELECT * FROM plant_holiday_overrides').all(); } catch { return []; }
 }
 
+// THE ONE ANSWER TO "IS THE PLANT CLOSED ON THIS DAY?" (D-176). Every reader
+// that must stand down on a paid holiday — the task generator, the scale-check
+// strip, ReadyBot's reminders, the missed-report chase — asks this, never the
+// rules directly, so a correction in Settings moves all of them at once.
+// Cached per database for a minute; a correction clears the cache.
+let closedCache = null;
+function closedDates(db) {
+  const now = Date.now();
+  if (closedCache && closedCache.db === db && now - closedCache.at < 60000) return closedCache.map;
+  const ov = loadOverrides(db);
+  const y = new Date().getUTCFullYear();
+  const map = new Map(holidayInstances(y - 2, y + 3, ov).filter(h => !h.cancelled).map(h => [h.date, h]));
+  closedCache = { db, at: now, map };
+  return map;
+}
+export function clearClosedCache() { closedCache = null; }
+
+/** The paid holiday observed on a 'YYYY-MM-DD' date, or null. */
+export function holidayOn(db, dateStr) {
+  if (!db || !isDate(String(dateStr || '').slice(0, 10))) return null;
+  try { return closedDates(db).get(String(dateStr).slice(0, 10)) || null; } catch { return null; }
+}
+
+/** A weekend or a paid holiday — a day nothing is owed. */
+export function isClosedDay(db, dateStr) {
+  const d = String(dateStr || '').slice(0, 10);
+  if (!isDate(d)) return false;
+  const w = new Date(d + 'T00:00:00Z').getUTCDay();
+  return w === 0 || w === 6 || !!holidayOn(db, d);
+}
+
+/** The first day on or after `dateStr` the plant is open. */
+export function nextWorkday(db, dateStr) {
+  let d = String(dateStr).slice(0, 10);
+  for (let i = 0; i < 14 && isClosedDay(db, d); i++) d = addDays(d, 1);
+  return d;
+}
+
 export function yearCalendar(db, year) {
   return holidayInstances(year, year, loadOverrides(db));
 }
@@ -55,6 +93,7 @@ export function setOverride(db, { key, year, observed_on, cancelled, shift_week,
               ON CONFLICT(holiday_key, year) DO UPDATE SET observed_on = excluded.observed_on, cancelled = excluded.cancelled,
                 shift_week = excluded.shift_week, reason = excluded.reason, set_by = excluded.set_by, set_at = excluded.set_at`)
     .run(key, year, observed_on || null, cancelled ? 1 : 0, shift, String(reason).trim(), by || null);
+  clearClosedCache();
   const after = db.prepare('SELECT * FROM plant_holiday_overrides WHERE holiday_key = ? AND year = ?').get(key, year);
   return { before, after };
 }
@@ -62,6 +101,7 @@ export function setOverride(db, { key, year, observed_on, cancelled, shift_week,
 export function clearOverride(db, key, year) {
   const before = db.prepare('SELECT * FROM plant_holiday_overrides WHERE holiday_key = ? AND year = ?').get(key, year) || null;
   db.prepare('DELETE FROM plant_holiday_overrides WHERE holiday_key = ? AND year = ?').run(key, year);
+  clearClosedCache();
   return { before };
 }
 

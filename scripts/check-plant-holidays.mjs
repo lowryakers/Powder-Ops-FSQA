@@ -36,12 +36,12 @@ t('Christmas Day 2028 falls on a Monday and shifts that week by the same rule', 
 const mem = weekCalendar('2027-05-31');
 t('Memorial Day week: Monday closed, Tuesday–Friday production',
   mem.shift_week && mem.days[0].closed && !mem.days[0].production && [1, 2, 3, 4].every(i => mem.days[i].production));
-t('…and says so in words', weekSummaryLines(mem).at(-1) === 'Production runs Tuesday–Friday this week.');
-t('…in Spanish too', weekSummaryLines(mem, 'es').at(-1) === 'Esta semana la producción es de martes a viernes.');
+t('…and says so in words', weekSummaryLines(mem).at(-1) === 'Production runs Tuesday–Friday the week of May 31.');
+t('…in Spanish too', weekSummaryLines(mem, 'es').at(-1) === 'Producción de martes a viernes la semana del 31 may.');
 const tg = weekCalendar('2026-11-23');
 t('Thanksgiving week: Thursday and Friday closed, production Monday–Wednesday',
   !tg.shift_week && tg.days[3].closed && tg.days[4].closed && [0, 1, 2].every(i => tg.days[i].production) && tg.lost_days.join() === '3');
-t('…"Production days this week: Monday, Tuesday, Wednesday."', weekSummaryLines(tg).at(-1) === 'Production days this week: Monday, Tuesday, Wednesday.');
+t('…named, never "this week": "Production days the week of Nov 23: Monday, Tuesday, Wednesday."', weekSummaryLines(tg).at(-1) === 'Production days the week of Nov 23: Monday, Tuesday, Wednesday.');
 const plain = weekCalendar('2026-10-12');
 t('an ordinary week changes nothing: production Monday–Thursday, Friday off production',
   !plain.changed && [0, 1, 2, 3].every(i => plain.days[i].production) && !plain.days[4].production && weekSummaryLines(plain).length === 0);
@@ -61,6 +61,54 @@ t('moving a holiday onto a Monday makes that week a shift week', weekCalendar('2
 console.log('\n── one notice, the Monday of the week before ──');
 t('Thanksgiving week 2026 (Nov 23) is announced Monday Nov 16', noticeDateFor('2026-11-23') === '2026-11-16');
 t('Memorial Day week 2027 (May 31) is announced Monday May 24 — seven days ahead', noticeDateFor('2027-05-31') === '2027-05-24');
+
+console.log('\n── a paid holiday is quiet (D-176) ──');
+const { default: Database } = await import('better-sqlite3');
+const { runDue } = await import('../server/scheduled-jobs.js');
+const { exceptions } = await import('../server/flash-report.js');
+function quietDb() {
+  const db = new Database(':memory:');
+  db.exec("CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)");
+  return db;
+}
+async function tick(iso) {
+  const db = quietDb(); const calls = [];
+  const rec = (name) => async () => { calls.push(name); return { sent: 0, total: 1 }; };
+  const deps = {
+    storageEnabled: () => false, getChannelByName: () => null, postMessageAs: async () => {}, getBotUser: () => null,
+    sendFlashReport: async (_db, period) => { calls.push('flash-' + period); return { sent: 0 }; },
+    sendCleanupDigest: rec('cleanup'), cleanupDigest: () => ({ tasks: 30 }),
+    sendEodMissedDigest: rec('eod'), eodMissedDigest: () => ({ total: 3 }),
+    trainingNudges: rec('training'), payReviewNudges: rec('pay'), qaActionNudges: rec('qa'),
+    employeeDocumentNudges: rec('docs'), policyAckNudges: rec('policy'),
+    computeCritical: () => ({ readiness: { score: 100 }, categories: {} }),
+  };
+  const q = console.log, w = console.warn; console.log = () => {}; console.warn = () => {};
+  try { await runDue(db, deps, new Date(iso)); } finally { console.log = q; console.warn = w; }
+  calls.flags = Object.fromEntries(db.prepare('SELECT key, value FROM app_settings').all().map(r => [r.key, r.value]));
+  return calls;
+}
+const thanks = await tick('2026-11-26T15:00:00Z'); // Thu 08:00 MST, Thanksgiving
+t('ON THANKSGIVING READYBOT SENDS NO REMINDER: no training, pay, QA, document or policy chase',
+  !['training', 'pay', 'qa', 'docs', 'policy'].some(k => thanks.includes(k)), JSON.stringify(thanks));
+t('…no daily Flash report, no cleanup or missed-report digest', !thanks.some(c => c === 'flash-daily' || c === 'cleanup' || c === 'eod'), JSON.stringify(thanks));
+const wed = await tick('2026-11-25T15:00:00Z');
+t('the open day before, they all go', ['training', 'pay', 'qa', 'docs', 'policy', 'cleanup', 'eod', 'flash-daily'].every(k => wed.includes(k)), JSON.stringify(wed));
+const laborMon = await tick('2026-09-07T15:00:00Z'); // Labor Day
+t('LABOR DAY (a Monday) posts no Monday digest', !laborMon.flags.last_expiry_digest_week && !laborMon.flags.last_pm_digest_week && !laborMon.includes('flash-weekly'),
+  JSON.stringify(laborMon.flags));
+const laborTue = await tick('2026-09-08T15:00:00Z');
+t('…they go on the Tuesday, the first open day of that week (expiry digest + weekly Flash; the PM digest shares the gate)', !!laborTue.flags.last_expiry_digest_week && laborTue.includes('flash-weekly'),
+  JSON.stringify(laborTue.flags));
+
+const fdb = quietDb();
+fdb.exec('CREATE TABLE production_entries (date TEXT, team TEXT)');
+const ins = fdb.prepare('INSERT INTO production_entries (date, team) VALUES (?, ?)');
+for (let i = 1; i <= 12; i++) ins.run(`2026-08-${String(i + 10).padStart(2, '0')}`, 'Batching');
+const afterLabor = exceptions(fdb, new Date('2026-09-08T18:00:00Z'));
+t('THE FLASH REPORT DOES NOT CALL A HOLIDAY A MISSING ENTRY (yesterday was Labor Day)', !afterLabor.some(e => e.id === 'no_entry_Batching'), JSON.stringify(afterLabor));
+const afterTue = exceptions(fdb, new Date('2026-09-09T18:00:00Z'));
+t('…and still does on an ordinary day', afterTue.some(e => e.id === 'no_entry_Batching'));
 
 console.log(`\n${pass}/${pass + fail} checks passed`);
 process.exit(fail ? 1 : 0);

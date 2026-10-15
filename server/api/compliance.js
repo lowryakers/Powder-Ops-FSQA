@@ -672,7 +672,7 @@ router.get('/notifications', (req, res) => {
   if (isApprover) {
     try {
       const due = scaleChecksDue(db);
-      if (due.length > 0 && scaleChecksOverdueNow()) {
+      if (due.length > 0 && scaleChecksOverdueNow(new Date(), db)) {
         items.push({ id: 'scale-not-checked', tab: 'calibration', severity: 'warning', count: due.length,
           label: `${due.length} daily scale check${due.length > 1 ? 's' : ''} not run today (${due.map(d => d.short).join(', ')})` });
       }

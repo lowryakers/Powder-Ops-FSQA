@@ -207,12 +207,15 @@ export function weekSummaryLines(week, lang = 'en') {
   const lines = week.holidays.map(h => es
     ? `${dayDateEs(h.date)} — ${h.name_es}${h.moved ? ` (se observa; cae en ${dayDateEs(h.natural_date)})` : ''} · día festivo pagado, cerrado`
     : `${dayDate(h.date)} — ${h.name}${h.moved ? ` (observed; falls on ${dayDate(h.natural_date)})` : ''} · paid holiday, closed`);
-  if (week.shift_week) lines.push(es ? 'Esta semana la producción es de martes a viernes.' : 'Production runs Tuesday–Friday this week.');
+  // THE WEEK IS NAMED, never "this week" (D-176): the line is read weeks
+  // ahead on the strip and in the announcement, where "this week" is wrong.
+  const of = es ? `la semana del ${dayDateEs(week.week_start).replace(/^\S+ /, '')}` : `the week of ${shortDate(week.week_start)}`;
+  if (week.shift_week) lines.push(es ? `Producción de martes a viernes ${of}.` : `Production runs Tuesday–Friday ${of}.`);
   else if (week.lost_days.length) {
     const left = week.days.filter(d => d.production).map(d => (es ? DAY_NAMES_ES : DAY_NAMES)[d.day_of_week]);
     lines.push(left.length
-      ? (es ? `Días de producción esta semana: ${left.join(', ')}.` : `Production days this week: ${left.join(', ')}.`)
-      : (es ? 'No hay producción esta semana.' : 'No production this week.'));
+      ? (es ? `Días de producción ${of}: ${left.join(', ')}.` : `Production days ${of}: ${left.join(', ')}.`)
+      : (es ? `No hay producción ${of}.` : `No production ${of}.`));
   }
   return lines;
 }

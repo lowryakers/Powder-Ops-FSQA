@@ -25,6 +25,7 @@
  */
 import { SCALE_FORMS } from './scale-forms.js';
 import { plantDateOf, plantHour, plantWeekday } from './plant-clock.js';
+import { holidayOn } from './plant-calendar.js';
 
 /**
  * A form's `area` is the plant's word on the paper; a task group is what
@@ -63,8 +64,12 @@ export function scaleCheckStatus(db, { now = new Date() } = {}) {
     WHERE performed_at >= datetime('now', '-3 days') ORDER BY performed_at DESC`).all();
   const latestStmt = db.prepare(`SELECT * FROM scale_verifications WHERE form_code = ?
     ORDER BY performed_at DESC LIMIT 1`);
+  // A PAID HOLIDAY OWES NO DAILY CHECK (D-176) — the plant is closed. The
+  // status still reports what was filed; only "due" stands down.
+  const holiday = holidayOn(db, today);
   return {
     date: today,
+    holiday: holiday ? { name: holiday.name, name_es: holiday.name_es } : null,
     forms: SCALE_FORMS.map(f => {
       const todayRow = recent.find(r => r.form_code === f.code && plantDateOf(r.performed_at) === today) || null;
       const latest = latestStmt.get(f.code) || null;
@@ -82,12 +87,15 @@ export function scaleCheckStatus(db, { now = new Date() } = {}) {
  * null means everyone's — the admin browsing "All Teams".
  */
 export function scaleChecksDue(db, { group = null, now = new Date() } = {}) {
-  return scaleCheckStatus(db, { now }).forms
+  const status = scaleCheckStatus(db, { now });
+  if (status.holiday) return [];
+  return status.forms
     .filter(f => !f.today)
     .filter(f => !group || f.team === group);
 }
 
 /** Whether the bell should say so yet: a weekday, past the grace hour. */
-export function scaleChecksOverdueNow(now = new Date()) {
+export function scaleChecksOverdueNow(now = new Date(), db = null) {
+  if (db && holidayOn(db, plantDateOf(now))) return false;
   return plantWeekday(now) && plantHour(now) >= SCALE_CHECK_GRACE_HOUR;
 }

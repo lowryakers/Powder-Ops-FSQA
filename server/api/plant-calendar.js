@@ -5,8 +5,8 @@
 // (the /api/forms arrangement) — the router decides per route.
 import { Router } from 'express';
 import { getDb, logAudit } from '../db.js';
-import { yearCalendar, weekFor, upcoming, setOverride, clearOverride } from '../plant-calendar.js';
-import { HOLIDAY_RULES, HOLIDAY_HOURS, isDate } from '../../shared/plant-holidays.js';
+import { yearCalendar, weekFor, upcoming, setOverride, clearOverride, loadOverrides } from '../plant-calendar.js';
+import { HOLIDAY_RULES, HOLIDAY_HOURS, isDate, holidaysBetween, addDays } from '../../shared/plant-holidays.js';
 import { plantDateOf } from '../plant-clock.js';
 
 const router = Router();
@@ -21,7 +21,11 @@ router.get('/', (req, res) => {
 router.get('/upcoming', (req, res) => {
   const days = Math.min(Math.max(Number(req.query.days) || 60, 1), 400);
   const today = isDate(req.query.today) ? req.query.today : plantDateOf();
-  res.json({ today, weeks: upcoming(getDb(), { today, days }) });
+  const db = getDb();
+  // The next one even when it is outside the window, so the schedule's card
+  // always has something to say and stays the way into the full list.
+  const next = holidaysBetween(today, addDays(today, 400), loadOverrides(db))[0] || null;
+  res.json({ today, weeks: upcoming(db, { today, days }), next });
 });
 
 router.get('/week', (req, res) => {
