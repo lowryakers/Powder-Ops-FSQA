@@ -5,7 +5,8 @@ import crypto from 'crypto';
 import { requireRole, clearFileCookie } from '../middleware/auth.js';
 import { passwordDaysLeft, passwordExpired } from '../password-policy.js';
 import { issueSession, revokeSessions } from './sessions.js';
-import { ALL_MODULE_IDS } from '../module-access.js';
+import { OPT_IN_SET } from '../../shared/opt-in-modules.js';
+import { accessReview, dismissReview } from '../access-review.js';
 import { uniqueUsername, validateUsername, deriveUsername } from '../usernames.js';
 import { smsEnabled, sendOptIn, sendSms } from '../sms.js';
 import { issueInvite, revokeInvites, inviteState, inviteBlockedReason, inviteMessage, tenDigits, INVITE_DAYS }
@@ -253,6 +254,14 @@ router.get('/duplicates', requireRole('admin'), (req, res) => {
 });
 
 // Must precede /:id or "access-templates" would be parsed as a user id.
+// Accounts holding nearly every module, with the map last set on them by hand (D-187).
+router.get('/access-review', requireRole('admin'), (_req, res) => res.json(accessReview(getDb())));
+router.post('/access-review/:id/dismiss', requireRole('admin'), (req, res) => {
+  dismissReview(getDb(), req.params.id);
+  logAudit(req.user, 'update', 'user', req.params.id, { access_review: 'intended' }, null, null);
+  res.json({ ok: true });
+});
+
 router.get('/access-templates', requireRole('admin'), (_req, res) => {
   const db = getDb();
   const row = db.prepare("SELECT value FROM app_settings WHERE key = 'access_templates'").get();
@@ -337,44 +346,63 @@ router.post('/bulk', requireRole('admin'), (req, res) => {
 
 // Apply a module-access map to several users at once (admins are left untouched).
 // mode 'merge' (default): only the modules present in the patch change — each
-// user's other module settings are preserved. A user with unrestricted access
-// (null) is materialized to an explicit all-edit map first so the patch can't
-// silently expand or shrink anything else. Patch level 'none' removes access.
-// mode 'replace': the old behavior — the map overwrites each user's access
-// entirely (module_access null = reset to full access).
+// user's other module settings are preserved. Patch level 'none' removes access.
+// mode 'replace': the map overwrites each user's access entirely.
+//
+// A BLANK MAP IS AN EMPTY ACCOUNT, NOT FULL ACCESS (D-187). This used to turn
+// a NULL map into "every module at Edit" before applying the patch — a rule
+// written when NULL meant unrestricted, and wrong since 13 Aug, when NULL came
+// to mean "nothing but the defaults". Ticking Operator View for the roster in
+// one pass therefore handed every blank account every module, Danny's List
+// included, and the audit recorded only a count.
+// PRIVATE MODULES ARE NEVER SET IN BULK: one person's queue is granted to a
+// named person on their own record. Each account's change is audited with its
+// before and after, so "how did he get this" has an answer.
 router.post('/bulk-access', requireRole('admin'), (req, res) => {
   const db = getDb();
   const { user_ids, module_access, mode } = req.body;
   if (!Array.isArray(user_ids) || !user_ids.length) return res.status(400).json({ error: 'user_ids is required' });
   const merge = mode !== 'replace';
+  const strip = (m) => Object.fromEntries(Object.entries(m || {}).filter(([k]) => !OPT_IN_SET.has(k)));
+  const privateAsked = Object.keys(module_access || {}).filter((k) => OPT_IN_SET.has(k));
   const upd = db.prepare("UPDATE users SET module_access = ?, updated_at = datetime('now') WHERE id = ? AND role != 'admin'");
   let updated = 0;
+  const audits = [];
   const tx = db.transaction(() => {
     for (const id of user_ids) {
-      let str;
+      const row = db.prepare("SELECT id, name, module_access FROM users WHERE id = ? AND role != 'admin'").get(id);
+      if (!row) continue;
+      let base;
+      try { base = row.module_access ? JSON.parse(row.module_access) : null; } catch { base = null; }
+      if (Array.isArray(base)) base = Object.fromEntries(base.map(m => [m, 'edit'])); // legacy list
+      const keepPrivate = Object.fromEntries(Object.entries(base || {}).filter(([k]) => OPT_IN_SET.has(k)));
+      let next;
       if (!merge) {
-        str = module_access ? JSON.stringify(module_access) : null;
+        const m = strip(module_access);
+        next = Object.keys(m).length || Object.keys(keepPrivate).length ? { ...m, ...keepPrivate } : null;
       } else {
-        const patch = module_access || {};
+        const patch = strip(module_access);
         if (!Object.keys(patch).length) continue; // nothing to change
-        const row = db.prepare("SELECT module_access FROM users WHERE id = ? AND role != 'admin'").get(id);
-        if (!row) continue;
-        let base;
-        try { base = row.module_access ? JSON.parse(row.module_access) : null; } catch { base = null; }
-        if (Array.isArray(base)) base = Object.fromEntries(base.map(m => [m, 'edit'])); // legacy list
-        if (base == null) base = Object.fromEntries(ALL_MODULE_IDS.map(m => [m, 'edit'])); // unrestricted → explicit
+        next = { ...(base || {}) };
         for (const [mid, lvl] of Object.entries(patch)) {
-          if (lvl === 'none' || lvl == null) delete base[mid];
-          else base[mid] = lvl === 'edit' ? 'edit' : 'view';
+          if (lvl === 'none' || lvl == null) delete next[mid];
+          else next[mid] = lvl === 'edit' ? 'edit' : 'view';
         }
-        str = JSON.stringify(base);
+        if (!Object.keys(next).length) next = null;
       }
+      const str = next ? JSON.stringify(next) : null;
+      if (str === (row.module_access || null)) continue;
       updated += upd.run(str, id).changes;
+      audits.push({ id, name: row.name, before: row.module_access || null, after: str });
     }
   });
   tx();
-  logAudit(req.user, 'permission_change', 'user', null, { bulk: true, mode: merge ? 'merge' : 'replace', count: updated }, null, null);
-  res.json({ updated });
+  for (const a of audits) {
+    logAudit(req.user, 'permission_change', 'user', a.id, { bulk: true, mode: merge ? 'merge' : 'replace', module_access: { changed: true } },
+      { module_access: a.before }, { module_access: a.after }, a.name);
+  }
+  logAudit(req.user, 'permission_change', 'user', null, { bulk: true, mode: merge ? 'merge' : 'replace', count: updated, private_ignored: privateAsked }, null, null);
+  res.json({ updated, private_ignored: privateAsked });
 });
 
 // ── Access templates ─────────────────────────────────────────────────────────

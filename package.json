@@ -26,6 +26,7 @@
     "verify:accountingaccess": "VERIFY_ONLY=verify-accounting-access.mjs node scripts/verify-all.mjs",
     "verify:trainingpinned": "VERIFY_ONLY=verify-training-pinned.mjs node scripts/verify-all.mjs",
     "verify:swablog": "VERIFY_ONLY=verify-swab-log.mjs node scripts/verify-all.mjs",
+    "verify:accesssources": "VERIFY_ONLY=verify-access-sources.mjs node scripts/verify-all.mjs",
     "verify:eodatp": "VERIFY_ONLY=verify-eod-atp.mjs node scripts/verify-all.mjs",
     "verify:productdrawer": "VERIFY_ONLY=verify-product-drawer.mjs node scripts/verify-all.mjs",
     "check:boot": "node scripts/check-fresh-boot.mjs",

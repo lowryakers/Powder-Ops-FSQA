@@ -399,6 +399,16 @@ limit), `authenticateToken` in `middleware/auth.js`, `server/middleware/no-token
 - **Open training tasks (`training_course_id`) render in "Your training", first and always open**, outside the date
   buckets and the frequency filter. `verify:trainingpinned` (8; control fails 6).
 
+## Nobody opens a module Settings does not show (D-187)
+- **Bulk Permissions patches what is there.** A blank map stays blank + the patch (it used to become every module
+  at Edit, private ones included); private modules are never set in bulk; each account is audited before/after.
+- **`navItemVisible(item, user, aiOn)` in App.jsx is the ONE rule** for sidebar, palette and quick tabs, and
+  `accessReasons` (registered through `src/lib/navAccess.js`) feeds Settings: "What they can open" on each record and
+  "Who can open…". **A new nav item that shows by role or department gets a `RULE_WHY` line**, or Settings says
+  only "a rule in the app". **Never key access on a name.**
+- `GET /users/access-review` lists non-admins holding nearly every module with the last hand-set map to restore.
+  `verify:accesssources` (25; control fails 7).
+
 ## The bots' REST surface: existing routes, listed, paged and filtered (D-162)
 `server/bot-api.js` (`BOT_ROUTES`, `pageOf`/`pageList`, `stripForbidden`, `isBroadcastMention`), `server/api/bot.js`
 (`GET /api/bot/whoami`), `docs/bot-api.md`.
