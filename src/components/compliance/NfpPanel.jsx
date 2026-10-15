@@ -983,7 +983,7 @@ function VersionCard({ v, canEdit, onChanged, storage = true }) {
 }
 
 /** The workflow, mounted in the product drawer. */
-export function NfpForSku({ sku, formulaRev, canEdit, onChanged }) {
+export function NfpForSku({ sku, formulaRev, canEdit, onChanged, heading = true }) {
   const { data, refresh } = useApiGet(`/nfp/sku/${encodeURIComponent(sku)}`, [sku]);
   const [adding, setAdding] = useState(false);
   const versions = data?.versions || [];
@@ -992,10 +992,12 @@ export function NfpForSku({ sku, formulaRev, canEdit, onChanged }) {
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
-          <FileText size={15} className="text-powder-600" /> Nutrition panel
-        </h4>
+      <div className={`flex items-center gap-2 ${heading ? 'justify-between' : 'justify-end'}`}>
+        {heading && (
+          <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+            <FileText size={15} className="text-powder-600" /> Nutrition panel
+          </h4>
+        )}
         {canEdit && !adding && (
           <button onClick={() => setAdding(true)}
             className="inline-flex items-center gap-1 px-2.5 py-1 border border-gray-300 rounded-lg text-xs font-medium hover:bg-gray-50">

@@ -7383,3 +7383,41 @@ SSN and the bank account NUMBERS, not "banking details".
 Verified: `verify:onboardingbank` (13, live + browser at 390 and 1280, run without the key). **The control is
 `main` before this and fails 6**, the decisive one saving `dd_bank_name: null`. `verify:onboarding` (105),
 `verify:onboardingui` (57) and `verify:onboardingedit` (34) re-run green.
+
+## D-178 — The product drawer shows each fact once: a stage bar, one row of what is open, folding sections (15 Oct 2026)
+
+**Asked:** the SKU drawer on Products "is messy … a lot of information that is easy to overlook". Keep what
+is needed; make it as simple as possible to review and approve.
+
+**Found:** the same facts, printed three times before the first field. The nine stage gates were listed with
+two lines of explanation each (D-134); under them the whole readiness checklist sat in an amber block with
+every reason; then each section printed its readiness steps AGAIN with the same reasons (D-131). SKU, GS1,
+formula, Shopify, ShipHero and artwork appeared in all three. Every derived packaging value carried a second
+line of grey monospace naming its column. The one thing that mattered — what is next, and who does it — was
+one line in the middle of that.
+
+**Decided — presentation only; no rule, no field and no write path moved:**
+- **Header (sticky):** line · pack, name, SKU, status chip, Edit and close. Edit no longer lives at the bottom.
+- **The gates are a bar**: nine segments coloured done / next / held / to do, the name and owner on hover, one
+  line "Next: <gate> · <owner>". The nine with their reasons are behind "How the flow works".
+- **"N still outstanding" is one row of chips**, one per open readiness step; a chip opens the section that
+  owns it.
+- **Each readiness step is shown ONCE, in its section** (Identity: SKU, GS1 · Formula: approved formula ·
+  Nutrition panel: NFP · Packaging & artwork: spec, colors, artwork · Channels: Shopify, ShipHero, Amazon).
+  The tickable steps are checkboxes there. A done step is one quiet line (its reason on hover); an open or
+  stale one says why.
+- **Sections fold.** One with nothing outstanding starts folded to a line saying what is in it (GTIN, formula
+  ref and fill, spec and artwork version…); one that owes something, or holds the gate the drawer was opened on,
+  starts open. A folded body stays in the page, hidden, so deep links still find their gate.
+- The derived column names moved to the hover; the colour editor IS the PMS/hex line (it was printed twice);
+  the barcode image moved beside the GTIN; Packaging POs are their own folded section with the form behind
+  "+ Record a PO"; "Same flavor, other SKUs" folds.
+- The edit form is unchanged — still the four blocks of D-131, in order.
+
+Verified: `verify:productdrawer` (24, live + browser at 1280 and 390): nine segments with the list folded, every
+readiness step on the page exactly once, the chip row counts the open steps and a chip opens its section, a
+section with nothing outstanding starts folded, ticking Shopify in Channels records it and puts it back, no
+sideways scroll on a phone. **The control is `main` before this and cannot open a section.** The drawer's
+existing checks re-run green: `verify:productgrid` (100), `verify:productstage` (50), `verify:artworkfilm` (40),
+`verify:colorsui` (21), `verify:mmrgate` (81), `verify:packagingspecs` (47), `verify:nfpqueue` (79),
+`verify:nfppanelui` (19).
