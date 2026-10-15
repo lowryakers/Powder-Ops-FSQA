@@ -132,7 +132,7 @@ import { seedFillWeights } from './server/fill-weight-seed.js';
 import { seedFlavorCodes, seedBottleSpec, repairBaseFlavors } from './server/flavor-code-seed.js';
 import { seedProductShelf } from './server/product-shelf.js';
 import { seedSwabCounts } from './server/swab-stock.js';
-import { seedSwabSheet } from './server/swab-sheet-seed.js';
+import { seedSwabSheet, restampSwabSheet } from './server/swab-sheet-seed.js';
 import { seedPreventiveControls } from './server/preventive-controls.js';
 import officeRoutes, { backfillInvoiceText, supplyCycleNudge } from './server/api/office.js';
 import { seedDilutionSchedules } from './server/dilution-seed.js';
@@ -1300,7 +1300,15 @@ try {
 // Deliberately last: nothing else should observe a definition before the gate
 // has decided which version to serve.
 runControlledSync(db).catch(err =>
-  console.error('[controlled] sync failed (non-fatal):', err.message));
+  console.error('[controlled] sync failed (non-fatal):', err.message))
+  // The swab sheet's limits, re-graded against the limit the sync just decided
+  // is in force (D-182) — the import ran before it.
+  .then(() => {
+    try {
+      const out = restampSwabSheet(db);
+      if (out.changed) console.log(`[swab-sheet] re-graded ${out.changed} swabs against the limit in force`);
+    } catch (e) { console.error('[swab-sheet] re-grade failed (non-fatal):', e.message); }
+  });
 
 // Test attempts graded wrong before D-157 (multiple choice compared the option
 // position with the option's words): re-graded from the answers given. A pass

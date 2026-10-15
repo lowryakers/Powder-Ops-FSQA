@@ -128,6 +128,10 @@ t('A FRESH DATABASE IS NEVER GIVEN THE SHEET', /skipped_fresh/.test(flag?.value 
 {
   const db = new Database(DBP);
   db.prepare("DELETE FROM app_settings WHERE key = 'swab_sheet_imported_v1'").run(); // as a database that predates D-182
+  // …and, like the live one, still has 35 approved with the move to 30 parked.
+  db.prepare(`UPDATE controlled_definitions SET approved_snapshot = ?, approved_hash = 'pre-d180', status = 'approved',
+    pending_hash = NULL, pending_snapshot = NULL WHERE key = 'atp:pc-1'`)
+    .run(JSON.stringify({ max: 35, unit: 'RLU', document: 'Protocol 003', revision: 'V4' }));
   db.close();
 }
 async function boot() {
@@ -147,6 +151,9 @@ t('…every one entered late, by Diana, as a Pre-Op', imported.every((x) => x.en
 const sw675 = q1("SELECT s.*, r.result, r.id rid FROM sanitation_swabs s JOIN sanitation_records r ON r.id = s.record_id WHERE s.swab_no = '675'");
 const sw676 = q1("SELECT s.*, r.result, r.id rid FROM sanitation_swabs s JOIN sanitation_records r ON r.id = s.record_id WHERE s.swab_no = '676'");
 t('THE 39 RLU SIFTER (swab 675) FAILS its record', sw675?.atp_reading === 39 && sw675?.atp_pass === 0 && sw675?.result === 'fail');
+t('THE SHEET IS GRADED AGAINST THE LIMIT IN FORCE (35 while 30 is parked), not the code\'s number',
+  sw675?.atp_limit === 35 && qa("SELECT DISTINCT s.atp_limit l FROM sanitation_swabs s JOIN sanitation_records r ON r.id = s.record_id WHERE r.late_entry_reason LIKE '%Swab Tracebility%' AND s.atp_reading IS NOT NULL").every((x) => x.l === 35)
+  && imported.every((x) => x.atp_limit == null || x.atp_limit === 35), `675 limit=${sw675?.atp_limit}`);
 t('…and its 5 RLU re-swab (676) is its own, passing visit', sw676?.result === 'pass' && sw676?.rid !== sw675?.rid);
 t('the sheet\'s first swab is stamped at its plant time (7:57 MDT = 13:57 UTC)', q1("SELECT r.performed_at p FROM sanitation_swabs s JOIN sanitation_records r ON r.id = s.record_id WHERE s.swab_no = '653'")?.p === '2026-10-01 13:57:00');
 t('Bat 2 is Batching 2, Kitting is room 15, QA is the QA Room', q1("SELECT r.area a FROM sanitation_swabs s JOIN sanitation_records r ON r.id = s.record_id WHERE s.swab_no = '657'")?.a === 'Batching 2'

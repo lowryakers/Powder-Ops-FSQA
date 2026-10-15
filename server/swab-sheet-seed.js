@@ -178,3 +178,45 @@ export function seedSwabSheet(db) {
   } catch { /* the flag records it either way */ }
   return { records, swabs };
 }
+
+/**
+ * THE IMPORT GRADED AGAINST THE WRONG LIMIT, AND THIS PUTS IT RIGHT (D-182, found live).
+ *
+ * The import runs among the boot seeds, and `controlled.js` applies the APPROVED
+ * limit only at the end of boot — so on a database where the move to 30 RLU was
+ * still parked, the sheet's swabs were stamped "graded against 30" while the app
+ * was grading against the approved 35. No verdict changed (no reading on the
+ * sheet falls between 30 and 35), but a stamped limit is a statement about the
+ * record. Run once, AFTER the controlled sync: every imported swab is re-graded
+ * against the limit in force, and its record's mirror and result follow.
+ */
+export const SWAB_SHEET_RESTAMP_FLAG = 'swab_sheet_limit_restamped_v1';
+export function restampSwabSheet(db) {
+  const imported = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(SWAB_SHEET_FLAG)?.value || '';
+  if (!imported.startsWith('imported')) return { skipped: 'nothing imported' };
+  if (db.prepare('SELECT 1 FROM app_settings WHERE key = ?').get(SWAB_SHEET_RESTAMP_FLAG)) return { skipped: 'done' };
+  let changed = 0;
+  db.transaction(() => {
+    const recs = db.prepare('SELECT * FROM sanitation_records WHERE late_entry_reason = ?').all(SWAB_SHEET_REASON);
+    for (const r of recs) {
+      const rows = db.prepare('SELECT * FROM sanitation_swabs WHERE record_id = ? ORDER BY line').all(r.id);
+      const graded = gradeSwabs(rows.map((x) => ({ ...x, allergen_swab: !!x.allergen_swab })));
+      graded.forEach((g, i) => {
+        if (g.atp_limit !== rows[i].atp_limit || g.atp_pass !== rows[i].atp_pass) {
+          db.prepare('UPDATE sanitation_swabs SET atp_limit = ?, atp_pass = ? WHERE id = ?').run(g.atp_limit, g.atp_pass, rows[i].id);
+          changed++;
+        }
+      });
+      const grade = mirrorGrade(graded);
+      db.prepare('UPDATE sanitation_records SET atp_reading = ?, atp_limit = ?, result = ? WHERE id = ?')
+        .run(grade ? grade.value : null, grade ? grade.limit : null, applyGrade('pass', grade).result, r.id);
+    }
+    db.prepare(`INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`)
+      .run(SWAB_SHEET_RESTAMP_FLAG, `re-graded ${recs.length} records, ${changed} swabs changed`);
+  })();
+  if (changed) {
+    try { logAudit('system', 'update', 'sanitation_record', 'swab-sheet', { restamped_swabs: changed, decision: 'D-182' }, null, null, 'Swab sheet limit'); } catch { /* flag records it */ }
+  }
+  return { changed };
+}
