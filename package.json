@@ -22,6 +22,7 @@
     "verify:atplimit": "VERIFY_ONLY=verify-atp-limit.mjs node scripts/verify-all.mjs",
     "verify:qaclearance": "VERIFY_ONLY=verify-qa-clearance.mjs node scripts/verify-all.mjs",
     "verify:scaleschedule": "VERIFY_ONLY=verify-scale-schedule.mjs node scripts/verify-all.mjs",
+    "verify:sanswabs": "VERIFY_ONLY=verify-sanitation-swabs.mjs node scripts/verify-all.mjs",
     "verify:eodatp": "VERIFY_ONLY=verify-eod-atp.mjs node scripts/verify-all.mjs",
     "verify:productdrawer": "VERIFY_ONLY=verify-product-drawer.mjs node scripts/verify-all.mjs",
     "check:boot": "node scripts/check-fresh-boot.mjs",

@@ -3795,6 +3795,26 @@ function runMigrations() {
   // Form 117.21 V5's answers on a production pre-op clean (D-125,
   // shared/preop-form.js) — JSON, carrying the revision it was asked under.
   addColumnIfMissing('sanitation_records', 'preop_form', 'TEXT');
+  // Every swab on a record, one row each (D-182, server/sanitation-swabs.js).
+  // The rows own the reading; `sanitation_records.atp_reading` mirrors the
+  // worst of them. Cascades with the record.
+  db.exec(`CREATE TABLE IF NOT EXISTS sanitation_swabs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    record_id TEXT NOT NULL REFERENCES sanitation_records(id) ON DELETE CASCADE,
+    line INTEGER NOT NULL DEFAULT 0,
+    swab_no TEXT,
+    surface TEXT,
+    atp_reading REAL,
+    atp_limit REAL,
+    atp_pass INTEGER,
+    allergen_swab INTEGER NOT NULL DEFAULT 0,
+    allergen_result TEXT CHECK (allergen_result IS NULL OR allergen_result IN ('pass','fail')),
+    allergen_lot TEXT,
+    allergen_present TEXT,
+    note TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_sanitation_swabs_record ON sanitation_swabs(record_id);`);
 
   // Chemical location tracking
   addColumnIfMissing('approved_chemicals', 'location_for_use', 'TEXT');

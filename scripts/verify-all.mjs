@@ -146,6 +146,7 @@ const RUNS = [
   ['verify-atp-limit.mjs', 5106, {}, false],
   ['verify-qa-clearance.mjs', 5107, {}, false],
   ['verify-scale-schedule.mjs', 5108, {}, false],
+  ['verify-sanitation-swabs.mjs', 5109, {}, false],
 ];
 
 // VERIFY_ONLY=verify-auth.mjs,verify-swab-stock.mjs runs just the entries that

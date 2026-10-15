@@ -7528,3 +7528,57 @@ not in read as a missed check.
 
 Verified: `verify:scaleschedule` (19, live + browser). `verify:scaledue`, `verify:holidayquiet` and
 `verify:scalepmretire` now put the team on today's schedule (`scripts/lib/schedule-today.mjs`) and pass.
+
+## D-182 — Every swab on a Sanitation record is a row; the rows own the reading; QA's swab sheet is filed (15 Oct 2026)
+
+QA had kept ATP and allergen swabs in a Google Sheet ("Swab Tracebility") since 1 October. The Sanitation
+record could hold one ATP reading, a room visit swabs three or four surfaces, and Diana reported that it
+"didn't work or submit the information correctly". That is why no reading was on file and the swab counts
+had not moved from the opening count.
+
+**Decided:**
+- **`sanitation_swabs`** holds one row per swab: swab #, surface, ATP reading with its own limit and pass,
+  allergen swab, allergen result (`pass`/`fail`/blank = not read yet), kit lot, allergen in the product, and a
+  note. `server/sanitation-swabs.js` is the one reader and writer (`normalizeSwabs`, `gradeSwabs`,
+  `mirrorGrade`, `writeSwabs`, `withSwabs`).
+- **THE ROWS OWN THE READING.** `sanitation_records.atp_reading` / `atp_limit` are a MIRROR of the worst swab
+  (the failing one, otherwise the highest), written in the same transaction, the `mo_lines` line-0 rule.
+  The escalation, the 72-hour rule, the list, the exports and QA Review read the record and keep working.
+  - A record with rows refuses a bare `atp_reading` (`400 SWABS_OWN_READING`).
+  - Any failing swab fails the record; an allergen swab read as a fail fails it too; a passing swab
+    never upgrades a fail somebody chose.
+  - D-036's two-failures rule reads the mirror, so it works per visit.
+- **Form 117.21's two ATP lines and two allergen lines ARE swab rows.** On a record with rows they are
+  emptied and the checklist says the swabs are in the table. One place a swab lives, not two.
+- **A record filed before this has no rows and is read the old way.** `shared/swab-rows.js`
+  `legacySwabs` turns its reading and Form 117.21 lines into rows when it is corrected. Nothing is
+  backfilled.
+- **The swab shelf counts rows.** A visit that swabbed four surfaces used four swabs. A record with rows is
+  never also counted by its mirror; a pre-D-182 record counts once. Allergen swabs are now counted from QA's
+  records too (they were counted only from end-of-day ticks).
+- **The end-of-day reading box says it is for the floor's own swabs only.** When QA swabs an area, the swab
+  is on QA's record; typing it on the report too would count it twice. This is a note, not a link —
+  joining the two records is not built.
+
+**The import** (`server/swab-sheet-seed.js`):
+- **Source.** The sheet's 39 rows (1–15 Oct) are TRANSCRIBED from the copy Daniela forwarded, in the
+  screenshot she sent. The Drive connector could not open the file.
+- **Grouping.** Rows are grouped into **27 room visits**: same day and room, within 90 minutes. A new visit
+  starts after a failing swab, so the 39 RLU sifter on 7 Oct (swab 675, a fail) and its 5 RLU re-swab seven
+  minutes later (676) are two records, as D-036 reads them.
+- **How each record is filed:** `pre_op`, by Diana Carolina, **entered late** with the reason, at the plant
+  time of its first swab.
+- **Room mapping.** Rooms are mapped Bat 2 → Batching 2, Kitting → 15, QA → QA Room. A mixer swab with no
+  room files under Production with the sheet's wording kept.
+- **Gaps left blank, not guessed.** Allergen swab RESULTS are not on the sheet and are left blank. Row 21's
+  cut-off text is kept as received.
+- **When it runs.** Once, guarded in `app_settings.swab_sheet_imported_v1`, and **never on a fresh
+  database**: a database with no controlled definition recorded yet is new, and is marked skipped. No
+  escalation is raised; the re-clean already happened. The 27 records appear in QA Review's Cleaning
+  records for counter-signature like any other.
+
+Verified:
+- `verify:sanswabs` (39, live + reboots + browser at 1280/390).
+- `verify:preop` was updated: the form's swab lines are the table's rows.
+- Passing: `verify:swabstock` (44 + 13), `verify:atp` (63), `verify:sanareas`, `verify:productionruns`,
+  `verify:eodatp`, `verify:atplimit`.

@@ -132,6 +132,7 @@ import { seedFillWeights } from './server/fill-weight-seed.js';
 import { seedFlavorCodes, seedBottleSpec, repairBaseFlavors } from './server/flavor-code-seed.js';
 import { seedProductShelf } from './server/product-shelf.js';
 import { seedSwabCounts } from './server/swab-stock.js';
+import { seedSwabSheet } from './server/swab-sheet-seed.js';
 import { seedPreventiveControls } from './server/preventive-controls.js';
 import officeRoutes, { backfillInvoiceText, supplyCycleNudge } from './server/api/office.js';
 import { seedDilutionSchedules } from './server/dilution-seed.js';
@@ -1277,6 +1278,12 @@ try {
   // The swab shelf's opening count. Insert-only per swab type, so a count
   // somebody actually did is never overwritten by a redeploy.
   seedSwabCounts(db);
+  // QA's swab sheet (1–15 Oct 2026) filed as Sanitation records with swab rows,
+  // once, on a database that predates D-182 — never on a fresh one.
+  try {
+    const out = seedSwabSheet(db);
+    if (out.records) console.log(`[swab-sheet] filed ${out.records} records, ${out.swabs} swabs from the swab sheet`);
+  } catch (e) { console.error('[swab-sheet] import failed (non-fatal):', e.message); }
 
   // Sticks + Hand Fill → Filling. Runs after every seed, because the historical
   // production seed still speaks the pre-merge team names on a fresh database.

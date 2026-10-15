@@ -14,6 +14,7 @@ import { planQaRecordBackfill, runQaRecordBackfill } from '../qa-record-backfill
 import { gateSignature, signatureEvidence } from '../signature.js';
 import { SWAB_TYPES, SWABS_PER_BOX, swabState, reorderPoint, setReorderPoint } from '../swab-stock.js';
 import { PREOP_FORM, preopApplies, normalizePreopForm, parsePreopForm, allergenFailures } from '../../shared/preop-form.js';
+import { normalizeSwabs, gradeSwabs, mirrorGrade, allergenFails, writeSwabs, withSwabs } from '../sanitation-swabs.js';
 
 const router = Router();
 
@@ -61,7 +62,7 @@ router.get('/', (req, res) => {
   // The server says what this user may do to each record; the client renders
   // what it's told (the qms.js rule). A verified record is closed to everyone
   // but an admin — the way back is revoking the verification.
-  res.json(db.prepare(sql).all(...params).map(r => ({
+  res.json(withSwabs(db, db.prepare(sql).all(...params)).map(r => ({
     ...r,
     ...recordEditPolicy(req.user, { filedBy: r.performed_by, signedBy: r.verified_by }),
     can_revoke_verification: !!r.verified_by && mayRevokeSignature(req.user, r.verified_by),
@@ -585,7 +586,7 @@ router.get('/:id', (req, res) => {
   const record = db.prepare(`SELECT sr.*, e.name as equipment_name
     FROM sanitation_records sr LEFT JOIN equipment e ON sr.equipment_id = e.id WHERE sr.id = ?`).get(req.params.id);
   if (!record) return res.status(404).json({ error: 'Record not found' });
-  res.json(record);
+  res.json(withSwabs(db, [record])[0]);
 });
 
 // FORM 117.21 ON THE RECORD (D-125, shared/preop-form.js). `raw` undefined means
@@ -611,19 +612,34 @@ function resolvePreop(raw, type, area, stored) {
 // graded against the same limit, and two allergen swabs whose "no pass" fails
 // the clean too. The grade returned is the failing one when there is one — it
 // is what the escalation and the stamped limit have to describe.
-function gradeClean(result, atpReading, form) {
-  const graded = [gradeAtp(atpReading), gradeAtp(form?.atp?.[1]?.reading)].filter(Boolean);
-  const grade = graded.find(g => !g.pass) || graded[0] || null;
+function gradeClean(result, atpReading, form, graded = null) {
+  // THE SWAB ROWS, when the record has them (D-182), are the whole answer: every
+  // row is graded, the worst one is what the escalation and the mirror describe,
+  // and an allergen row read as a fail fails the clean. A record without rows is
+  // read the old way — its own reading plus Form 117.21's second line.
+  const grade = graded
+    ? mirrorGrade(graded)
+    : (() => {
+      const g = [gradeAtp(atpReading), gradeAtp(form?.atp?.[1]?.reading)].filter(Boolean);
+      return g.find(x => !x.pass) || g[0] || null;
+    })();
   let decided = applyGrade(result, grade);
-  const allergen = allergenFailures(form);
+  const allergen = graded
+    ? allergenFails(graded).map((r) => ({ line: r.swab_no ? `#${r.swab_no}` : (r.surface || 'swab') }))
+    : allergenFailures(form);
   if (allergen.length && decided.result !== 'fail') {
     decided = {
       result: 'fail', overridden: true,
-      reason: `Allergen swab ${allergen.map(s => s.line).join(' and ')} marked no pass (${PREOP_FORM.code}).`,
+      reason: `Allergen swab ${allergen.map(s => s.line).join(' and ')} ${graded ? 'read as a fail' : `marked no pass (${PREOP_FORM.code})`}.`,
     };
   }
   return { grade, decided, allergen_failed: allergen.length };
 }
+
+// Form 117.21's swab lines live in the swab rows once a record has them — one
+// place for a swab, not two. The rest of the form (setup, checks, allergens
+// present, condition) is untouched.
+const withoutFormSwabs = (form) => (form ? { ...form, atp: [], allergen: [] } : form);
 
 
 // Filing a clean, including one done days ago.
@@ -676,7 +692,13 @@ router.post('/', (req, res) => {
   // that no swab sees. A blank reading grades to null and changes nothing.
   const pre = resolvePreop(req.body.preop_form, type, area, null);
   if (pre.error) return res.status(400).json({ error: pre.error });
-  const { grade, decided, allergen_failed } = gradeClean(result, atp_reading, pre.form);
+  const sw = normalizeSwabs(req.body.swabs);
+  if (sw.errors.length) return res.status(400).json({ error: sw.errors.join(' ') });
+  const graded = sw.rows ? gradeSwabs(sw.rows) : null;
+  if (graded) pre.form = withoutFormSwabs(pre.form);
+  const { grade, decided, allergen_failed } = gradeClean(result, atp_reading, pre.form, graded);
+  // With rows, the record's reading is their mirror and nothing else.
+  const storedReading = graded ? (grade ? grade.value : null) : (atp_reading ?? null);
   // Was the previous GRADED reading for this area also a failure? A pass in
   // between resets it, which is the right reading of "we swabbed again and it
   // came back clean".
@@ -685,15 +707,18 @@ router.post('/', (req, res) => {
      ORDER BY COALESCE(performed_at, entered_at) DESC, rowid DESC LIMIT 1`).get(area)?.result === 'fail');
   const escalation = atpEscalation(grade, priorGradedFail);
 
-  db.prepare(`
-    INSERT INTO sanitation_records (id, area, type, equipment_id, performed_by, chemicals_used, concentration, contact_time_minutes, rinse_verified, result, atp_reading, atp_limit, notes, chemical_id, record_group, performed_at, entered_at, entered_late, late_entry_reason, preop_form)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), datetime('now'), ?, ?, ?)
-  `).run(id, area, type, equipment_id || null, performed_by, chemicals_used || null,
-    concentration || null, contact_time_minutes ?? null, rinse_verified ? 1 : 0,
-    decided.result, atp_reading ?? null, grade?.limit ?? null, notes || null, chemical_id || null, recordGroupFor(area),
-    when, late, late ? String(late_entry_reason).trim() : null, pre.form ? JSON.stringify(pre.form) : null);
+  db.transaction(() => {
+    db.prepare(`
+      INSERT INTO sanitation_records (id, area, type, equipment_id, performed_by, chemicals_used, concentration, contact_time_minutes, rinse_verified, result, atp_reading, atp_limit, notes, chemical_id, record_group, performed_at, entered_at, entered_late, late_entry_reason, preop_form)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), datetime('now'), ?, ?, ?)
+    `).run(id, area, type, equipment_id || null, performed_by, chemicals_used || null,
+      concentration || null, contact_time_minutes ?? null, rinse_verified ? 1 : 0,
+      decided.result, storedReading, grade?.limit ?? null, notes || null, chemical_id || null, recordGroupFor(area),
+      when, late, late ? String(late_entry_reason).trim() : null, pre.form ? JSON.stringify(pre.form) : null);
+    if (graded) writeSwabs(db, id, graded);
+  })();
 
-  const created = db.prepare('SELECT * FROM sanitation_records WHERE id = ?').get(id);
+  const created = withSwabs(db, [db.prepare('SELECT * FROM sanitation_records WHERE id = ?').get(id)])[0];
   // Reads `decided.result`, not `result`: an over-limit swab must not close the
   // re-clean task the failure should have raised.
   const closed = decided.result === 'pass' ? closeRecleanTasksFor(db, area, req.user?.name || performed_by, created) : 0;
@@ -716,7 +741,8 @@ router.post('/', (req, res) => {
     { area, type, result: decided.result, atp_overridden: decided.overridden,
       override_reason: decided.reason || null, allergen_failed, preop_form: !!pre.form,
       atp_stage: escalation?.stage || null, reclean_work_order_id: recleanWorkOrderId,
-      entered_late: !!late, performed_at: created.performed_at, reclean_tasks_closed: closed },
+      entered_late: !!late, performed_at: created.performed_at, reclean_tasks_closed: closed,
+      swabs: graded ? graded.length : null },
     null, created);
   res.status(201).json(escalation
     ? { ...created, atp_stage: escalation.stage, atp_message: escalation.message, reclean_work_order_id: recleanWorkOrderId }
@@ -951,11 +977,26 @@ router.put('/:id', (req, res) => {
   // sidestepped by filing blank and editing the reading in afterwards.
   // Deliberately no escalation here: raising a task from an EDIT would let one
   // failure raise a second work order every time somebody fixed a typo.
-  const editReading = b.atp_reading === undefined ? before.atp_reading : (b.atp_reading ?? null);
   const editPre = resolvePreop(b.preop_form, pick('type', before.type), area, before.preop_form);
   if (editPre.error) return res.status(400).json({ error: editPre.error });
-  const { grade: editGrade, decided: editDecided } = gradeClean(pick('result', before.result), editReading, editPre.form);
+  // THE ROWS OWN THE READING (D-182). A record that has swab rows takes its
+  // reading from them; a bare `atp_reading` sent at it would be a second owner,
+  // so it is refused by name rather than dropped.
+  const sw = normalizeSwabs(b.swabs);
+  if (sw.errors.length) return res.status(400).json({ error: sw.errors.join(' ') });
+  const storedRows = db.prepare('SELECT * FROM sanitation_swabs WHERE record_id = ? ORDER BY line').all(before.id);
+  if (!sw.rows && storedRows.length && b.atp_reading !== undefined && Number(b.atp_reading) !== Number(before.atp_reading)) {
+    return res.status(400).json({ error: 'This record\'s reading comes from its swab rows — correct the swab, not the reading.', code: 'SWABS_OWN_READING' });
+  }
+  const rows = sw.rows || (storedRows.length ? storedRows.map((r) => ({ ...r, allergen_swab: !!r.allergen_swab })) : null);
+  const editGraded = rows ? gradeSwabs(rows) : null;
+  if (editGraded && editPre.form) editPre.form = withoutFormSwabs(editPre.form);
+  const legacyReading = b.atp_reading === undefined ? before.atp_reading : (b.atp_reading ?? null);
+  const { grade: editGrade, decided: editDecided } = gradeClean(pick('result', before.result), legacyReading, editPre.form, editGraded);
+  const editReading = editGraded ? (editGrade ? editGrade.value : null) : legacyReading;
 
+  db.transaction(() => {
+  if (sw.rows) writeSwabs(db, before.id, editGraded);
   db.prepare(`UPDATE sanitation_records SET area = ?, type = ?, equipment_id = ?, performed_by = ?,
       chemicals_used = ?, concentration = ?, contact_time_minutes = ?, rinse_verified = ?, result = ?,
       atp_reading = ?, atp_limit = ?, notes = ?, chemical_id = ?, record_group = ?, performed_at = ?,
@@ -975,8 +1016,9 @@ router.put('/:id', (req, res) => {
       // and QA Inspections lists is a consequence of what it IS, not a field.
       recordGroupFor(area), when, late ? 1 : 0, lateReason || null,
       editPre.form ? JSON.stringify(editPre.form) : null, before.id);
+  })();
 
-  const after = db.prepare('SELECT * FROM sanitation_records WHERE id = ?').get(before.id);
+  const after = withSwabs(db, [db.prepare('SELECT * FROM sanitation_records WHERE id = ?').get(before.id)])[0];
   logAudit(req.user, 'update', 'sanitation_record', before.id, null, before, after, area);
   res.json({
     ...after,
