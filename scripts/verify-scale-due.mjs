@@ -54,6 +54,12 @@ const mkUser = (id, name, role, dept, code, access) => db.prepare(`INSERT OR REP
 mkUser('sd-admin', 'Scale Admin', 'admin', 'quality', 'SC-SDA', null);
 mkUser('sd-batch', 'Batch Super', 'supervisor', 'batching', 'SC-SDB', '{"operator":"view","form-scale":"edit"}');
 db.prepare("DELETE FROM scale_verifications").run(); // a fresh database seeds none; asserted below
+// A check is owed only by a team on today (D-181) — so all three are on today's
+// schedule here, and the schedule-following rule has its own verify.
+{
+  const { scheduleToday } = await import('./lib/schedule-today.mjs');
+  for (const [room, team] of [['Batching 1', 'Batching'], ['4', 'Filling'], ['15', 'Kitting']]) scheduleToday(db, room, team);
+}
 db.close();
 
 const signIn = async (name, id, code, pw) => {

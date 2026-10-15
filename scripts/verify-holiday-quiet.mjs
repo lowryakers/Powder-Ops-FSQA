@@ -24,6 +24,8 @@ const get = (p) => req(p);
 
 const { default: Database } = await import('better-sqlite3');
 const db = new Database(process.env.DBPATH || process.env.DB_PATH);
+// A scale check is owed only by a team on today (D-181): put Batching on.
+{ const { scheduleToday } = await import('./lib/schedule-today.mjs'); scheduleToday(db, 'Batching 1', 'Batching'); }
 db.prepare(`INSERT OR REPLACE INTO users (id,name,username,role,department,is_active,setup_code,setup_code_expires_at)
   VALUES ('hq-admin','Quiet Admin','Quiet Admin','admin','office',1,'SC-HQ',datetime('now','+7 day'))`).run();
 await post('/users/login', { name: 'Quiet Admin' });

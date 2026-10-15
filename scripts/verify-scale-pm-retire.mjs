@@ -28,6 +28,8 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const day = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
 
 const db = new Database(DBP);
+// A scale check is owed only by a team on today (D-181): put Batching on.
+{ const { scheduleToday } = await import('./lib/schedule-today.mjs'); scheduleToday(db, 'Batching 1', 'Batching'); }
 const mkUser = (id, name, role, dept, modules) => db.prepare(`INSERT OR REPLACE INTO users
   (id,name,username,role,department,is_active,setup_code,setup_code_expires_at,module_access)
   VALUES (?,?,?,?,?,1,?,datetime('now','+7 day'),?)`).run(id, name, name, role, dept, `SC-${id}`, modules ? JSON.stringify(modules) : null);

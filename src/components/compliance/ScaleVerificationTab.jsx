@@ -40,31 +40,51 @@ import FrozenScroll from '../common/FrozenScroll';
 // the UTC clock as if it were local. formatDateTime does the conversion.
 const fmt = (ts) => formatDateTime(ts);
 
+// A check is owed only by a team that is operating today — on the schedule,
+// running, or reporting (D-181, server/scale-checks.js). A team that is not on
+// today reads grey and says so, never amber "Not checked today".
+const WHY = { schedule: 'on today\'s schedule', run: 'a run was started today', entry: 'reported production today' };
+
 function StatusCards({ status }) {
   if (!status?.forms) return null;
   return (
+    <div className="space-y-2">
+    {status.holiday ? (
+      <p className="text-xs text-gray-600" data-scale-day-note="holiday">Paid holiday ({status.holiday.name}) — no checks owed today.</p>
+    ) : status.schedule_blank ? (
+      <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5" data-scale-day-note="blank">
+        Nothing is on today's production schedule, so no check is asked for unless a team starts a run or files a report.
+        If people are working today, put their runs on the schedule.
+      </p>
+    ) : null}
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
       {status.forms.map(f => {
         const t = f.today;
-        const tone = !t ? 'border-amber-200 bg-amber-50'
+        const idle = !t && !f.due;
+        const tone = idle ? 'border-gray-200 bg-gray-50'
+          : !t ? 'border-amber-200 bg-amber-50'
           : t.result === 'fail' ? 'border-red-200 bg-red-50'
             : 'border-green-200 bg-green-50';
         return (
-          <div key={f.code} className={`rounded-xl border px-3 py-2.5 ${tone}`}>
+          <div key={f.code} className={`rounded-xl border px-3 py-2.5 ${tone}`} data-scale-card={f.code} data-scale-state={t ? 'done' : f.due ? 'due' : 'not_due'}>
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm font-semibold text-gray-900">{f.short}</span>
-              {!t ? <Clock size={15} className="text-amber-600 shrink-0" />
+              {idle ? <Clock size={15} className="text-gray-400 shrink-0" />
+                : !t ? <Clock size={15} className="text-amber-600 shrink-0" />
                 : t.result === 'fail' ? <XCircle size={15} className="text-red-600 shrink-0" />
                   : <CheckCircle2 size={15} className="text-green-600 shrink-0" />}
             </div>
             <p className="text-xs text-gray-600 mt-0.5">
-              {!t
-                ? (f.latest ? `Not checked today · last ${fmt(f.latest.performed_at)}` : 'Never checked')
+              {idle
+                ? `${status.holiday ? 'Holiday' : `${f.area} not on today`} — no check owed${f.latest ? ` · last ${fmt(f.latest.performed_at)}` : ''}`
+                : !t
+                ? `${f.latest ? `Not checked today · last ${fmt(f.latest.performed_at)}` : 'Never checked'}${WHY[f.operating] ? ` · ${WHY[f.operating]}` : ''}`
                 : `${t.result === 'fail' ? 'FAILED' : 'Passed'} · ${t.performed_by}${t.room ? ` · Room ${t.room}` : ''}`}
             </p>
           </div>
         );
       })}
+    </div>
     </div>
   );
 }
