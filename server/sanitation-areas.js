@@ -19,12 +19,12 @@
 
 import { areaLabel } from '../shared/rooms.js';
 
-// Rooms, from ROOM_GROUPS in src/constants/productionLines.js. Room 8 is
-// deliberately ABSENT: it is retired (Batching 3 is what runs there), so it is
-// never offered on a new record. Records already filed against it keep it and
-// still render as "Room 8" — retired, not deleted, the same rule the managed
-// lists follow.
-const ROOMS = ['1', '1.2', '2', '3', '4', '4.1', '4.2', '5', '6', '7', '15', 'Batching 1', 'Batching 2', 'Batching 3'];
+// Rooms, from ROOM_GROUPS in src/constants/productionLines.js. ROOM 8 IS BACK
+// (D-188): the Production Log un-retired it when FORM 431-01 V5 was read (it is
+// the second-busiest room on the floor), and this list was never told — so a
+// room the floor runs every week could not be picked on a clean or a swab, and
+// the 72-hour rule never looked at it. The two lists must hold the same rooms.
+const ROOMS = ['1', '1.2', '2', '3', '4', '4.1', '4.2', '5', '6', '7', '8', '15', 'Batching 1', 'Batching 2', 'Batching 3'];
 
 // The non-production zones that have their own cleaning form and PM schedule
 // (see cleaning-seed.js). `applicable: false` means the 72-hour production
@@ -196,4 +196,20 @@ export function pickerDrift(db, recordRows = null) {
   const offered = new Set(options.map(o => o.value));
   const missing = SANITATION_AREAS.filter(a => !offered.has(a.value)).map(a => a.value);
   return { strays, missing };
+}
+
+// D-188: the managed list adds new options at the END and never revives a
+// retired one, so Room 8 would arrive after Room 15 — or not at all, if a
+// stray "8" was retired. Once per database: make the option live and sort it
+// beside Room 7. A person who later retires it in Settings keeps it retired.
+export function placeRoom8(db) {
+  const FLAG = 'sanitation_room8_v1';
+  if (db.prepare('SELECT 1 FROM app_settings WHERE key = ?').get(FLAG)) return false;
+  const seven = db.prepare("SELECT sort_order FROM app_list_options WHERE list_key = 'sanitation_areas' AND value = '7'").get();
+  const eight = db.prepare("SELECT id FROM app_list_options WHERE list_key = 'sanitation_areas' AND value = '8'").get();
+  if (!seven || !eight) return false; // the list seeds first; try again next boot
+  db.prepare('UPDATE app_list_options SET is_active = 1, sort_order = ?, label = ? WHERE id = ?')
+    .run(seven.sort_order, areaLabel('8'), eight.id);
+  db.prepare('INSERT INTO app_settings (key, value) VALUES (?, ?)').run(FLAG, new Date().toISOString());
+  return true;
 }

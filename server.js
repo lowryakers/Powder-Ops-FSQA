@@ -106,6 +106,7 @@ import productionRoutes, { qaActionNudges } from './server/api/production.js';
 import structureRoutes from './server/api/structure.js';
 import logBuilderRoutes from './server/api/log-builder.js';
 import { seedStructureLists } from './server/structure-seed.js';
+import { placeRoom8 } from './server/sanitation-areas.js';
 import { seedSupplyLists } from './server/supply-list-seed.js';
 import { seedQualitySchedules } from './server/api/quality-schedules.js';
 import { settleFiledReviews } from './server/check-records.js';
@@ -1217,6 +1218,8 @@ try {
   seedProductionEntries(db);
   seedEodTemplates(db);
   seedStructureLists(db);
+  // Room 8 back on the Sanitation area list, beside Room 7 (D-188).
+  try { if (placeRoom8(db)) console.log('[migrate] Room 8 is back on the Sanitation area list'); } catch (e) { console.warn('[migrate] Room 8:', e.message); }
   // The three standing supply lists Marnee named — AFTER seedStructureLists,
   // which is where `supply_tags` comes from and what their groups are
   // canonicalised against.
