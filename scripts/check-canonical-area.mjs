@@ -23,7 +23,7 @@ t('the seed spelling is what canonicalArea would produce', canonicalArea('Restro
 // — and the suffix rule anchored the bracket to the end, so the plant's own
 // dominant spelling was refused while the tidier one folded.
 t('"Room 7 (72 hr) cleanning" — the plant\'s spelling — folds to Room 7', canonicalArea('Room 7 (72 hr) cleanning') === '7', canonicalArea('Room 7 (72 hr) cleanning'));
-t('"Room 8 (72 hr) cleaning" folds to the retired Room 8, not nothing', canonicalArea('Room 8 (72 hr) cleaning') === '8');
+t('"Room 8 (72 hr) cleaning" folds to Room 8, not nothing', canonicalArea('Room 8 (72 hr) cleaning') === '8');
 t('"Room 7 (72 HR cleaning)" still folds — nothing regressed', canonicalArea('Room 7 (72 HR cleaning)') === '7');
 t('"Batching room 2 (72 Hr cleanning)" still folds', canonicalArea('Batching room 2 (72 Hr cleanning)') === 'Batching 2');
 t('only the cleaning word is allowed after the bracket — "Room 7 (72 hr) storage" is still refused', canonicalArea('Room 7 (72 hr) storage') === null);

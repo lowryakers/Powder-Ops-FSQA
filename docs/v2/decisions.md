@@ -7681,3 +7681,14 @@ The control (the old `users.js`) shows exactly that map on a blank account.
 - **A NAME was an access rule**: Out now showed for any account named "Ricardo…". It is a grant now
   (`grantOutNowByName`, once), so it shows in Settings.
 - `verify:accesssources` (25, two boots + browser). Control (old `users.js`) fails 7.
+
+## D-188 — Room 8 is on the Sanitation area list again (16 Oct 2026)
+"We need to add a room 8 to the swab log drop down." The Production Log un-retired Room 8 when FORM 431-01 V5 was
+read (rooms 1–8; 81 filed entries name it), but `ROOMS` in `server/sanitation-areas.js` — the list the Sanitation
+form, the swab log and the 72-hour rule read — still said it was retired. Two lists of rooms disagreeing: a room
+the floor runs every week could not be picked on a clean or a swab, and the 72-hour rule never looked at it.
+- `'8'` is in `ROOMS`, beside `'7'`. `canonicalArea('Room 8 …')` already folded to `'8'`; it now folds to a live room.
+- **`placeRoom8()` (boot, once, `sanitation_room8_v1`)**: the managed list adds new options at the end and never
+  revives a retired one, so the option is made live and sorted beside Room 7. A later retire in Settings sticks.
+- `verify:swablog` (42) asserts Room 8 is offered right after Room 7 at 1280 and 390. Control (no `'8'`) fails 2,
+  with the dropdown exactly as in the screenshot.

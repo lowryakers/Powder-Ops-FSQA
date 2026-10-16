@@ -96,6 +96,8 @@ for (const width of [1280, 390]) {
   await page.goto(`${URL}/?tab=sanitation`);
   await page.waitForSelector('[data-swab-entry]', { timeout: 20000 }).catch(() => {});
   t(`${width}px: the swab log is at the top of Sanitation`, await page.isVisible('[data-swab-entry]'));
+  const roomOpts = await page.$$eval('[data-swab-room] option', (os) => os.map((o) => o.textContent.trim()));
+  t(`${width}px: ROOM 8 IS OFFERED, right after Room 7 (D-188)`, roomOpts.indexOf('Room 8') === roomOpts.indexOf('Room 7') + 1, roomOpts.join(', '));
   await page.selectOption('[data-swab-room]', '3');
   await page.fill('[data-swab-surface-in]', 'Table');
   await page.fill('[data-swab-no-in]', width === 1280 ? '700' : '800');

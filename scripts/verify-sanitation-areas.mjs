@@ -130,7 +130,7 @@ const STRAYS = ['Room 7 (72 hr) cleanning', 'Room 8 (72 hr) cleanning', 'Sanitiz
   const r7 = strays.find(x => x.value === 'Room 7 (72 hr) cleanning');
   t('"Room 7 (72 hr) cleanning" FOLDS to Room 7 — the plant’s spelling, refused before', r7?.folds_to === '7', JSON.stringify(r7));
   t('…and the preview counts the two records filed under it', r7?.records === 2, `${r7?.records}`);
-  t('"Room 8 (72 hr) cleanning" folds to the retired Room 8', strays.find(x => x.value === 'Room 8 (72 hr) cleanning')?.folds_to === '8');
+  t('"Room 8 (72 hr) cleanning" folds to Room 8', strays.find(x => x.value === 'Room 8 (72 hr) cleanning')?.folds_to === '8');
   t('"Simple Green" and "Sanitizer Dilution" do NOT fold — a chemical is not a room and the app will not guess',
     ['Simple Green', 'Simple green', 'Sanitizer Dilution'].every(v => strays.find(x => x.value === v)?.folds_to === null));
   t('the RECORD changes include the two Room 7 rows', plan.changes.some(c => c.from === 'Room 7 (72 hr) cleanning' && c.to === '7' && c.records === 2));
