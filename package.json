@@ -103,6 +103,7 @@
     "verify:nfpqueue": "VERIFY_ONLY=verify-nfp-review-queue.mjs node scripts/verify-all.mjs",
     "verify:commsedit": "node scripts/verify-comms-edit.mjs",
     "verify:commspendingjump": "node scripts/verify-comms-pending-jump.mjs",
+    "verify:unreadlanding": "node scripts/verify-unread-landing.mjs",
     "verify:trainingassign": "node scripts/verify-training-assign.mjs",
     "verify:supplylists": "node scripts/verify-supply-lists.mjs",
     "verify:starterreview": "node scripts/verify-starter-review.mjs",

@@ -734,7 +734,7 @@ router.post('/channels/:id/members', (req, res) => {
   // Stamped read AS OF NOW, not left NULL. A bare NULL last_read_at reads as
   // "never read anything" — channelUnread() then counts every message the
   // channel has ever held, from before this person had access, as unread.
-  // Added to a busy channel, that is easily past OPEN_AT_FIRST_UNREAD_MIN and
+  // Added to a busy channel, that is easily more than a screen of unread and
   // lands them at message one of a conversation they were never part of. The
   // self-service join (POST /channels/:id/join) and the lazy read-marker
   // backfills already stamp `now`; this door was the one left bare.
@@ -976,25 +976,57 @@ router.delete('/channels/:id/members/:userId', (req, res) => {
   res.json({ removed: info.changes });
 });
 
-// Mark a channel read up to now.
+// Mark a channel read — up to now, or up to the newest message the reader has
+// actually SEEN (D-189). `up_to` is that message's created_at; the pointer only
+// ever moves FORWARD (a late or stale call must not un-read anything), never
+// past now. A deliberate mark-unread stands until a read reaches the newest
+// top-level message — reading part of the way down is not "I've caught up".
+// Without `up_to` the old behaviour holds: everything read as of now.
+export function clampReadMark(now, upTo, current) {
+  let target = now;
+  if (typeof upTo === 'string' && /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(upTo)) target = upTo < now ? upTo : now;
+  if (current && current >= target) return null; // forward only
+  return target;
+}
 router.post('/channels/:id/read', (req, res) => {
   const channel = requireChannel(req, res); if (!channel) return;
   const db = getDb();
   // SQLite datetime format (not ISO) so it compares correctly against
   // chat_messages.created_at in the unread query. See /read-all.
   const now = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS t").get().t;
-  // Reading the channel is what stands a deliberate mark-unread down.
-  const info = db.prepare("UPDATE chat_channel_members SET last_read_at = ?, deliberate_unread = 0 WHERE channel_id = ? AND user_id = ?").run(now, channel.id, req.user.id);
-  // Public channels the user hasn't joined have no membership row — create one lazily so reads track.
-  if (info.changes === 0 && channel.kind === 'public') {
-    db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role, last_read_at) VALUES (?, ?, ?, ?, ?)')
-      .run(uuid(), channel.id, req.user.id, 'member', now);
+  const upTo = req.body?.up_to;
+  const row = db.prepare('SELECT last_read_at, deliberate_unread FROM chat_channel_members WHERE channel_id = ? AND user_id = ?').get(channel.id, req.user.id);
+  const newest = db.prepare('SELECT MAX(created_at) AS t FROM chat_messages WHERE channel_id = ? AND parent_id IS NULL AND deleted_at IS NULL').get(channel.id)?.t || null;
+  if (!row) {
+    // Public channels the user hasn't joined have no membership row — create one lazily so reads track.
+    if (channel.kind === 'public') {
+      const target = clampReadMark(now, upTo, null);
+      db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role, last_read_at) VALUES (?, ?, ?, ?, ?)')
+        .run(uuid(), channel.id, req.user.id, 'member', target);
+      emitToUser(req.user.id, 'read:changed', { channel_id: channel.id, last_read_at: target, caught_up: !newest || target >= newest });
+      return res.json({ ok: true, last_read_at: target });
+    }
+    return res.json({ ok: true, last_read_at: null });
   }
-  // NOTE: no cross-device "dismiss" push here. Web push requires every push to
+  const target = clampReadMark(now, upTo, row.last_read_at);
+  const caughtUp = !newest || (target || row.last_read_at || '') >= newest;
+  // Reading the channel to its end is what stands a deliberate mark-unread down.
+  const clearDeliberate = upTo === undefined || caughtUp;
+  if (target) {
+    db.prepare(`UPDATE chat_channel_members SET last_read_at = ?, deliberate_unread = CASE WHEN ? THEN 0 ELSE deliberate_unread END
+                WHERE channel_id = ? AND user_id = ?`).run(target, clearDeliberate ? 1 : 0, channel.id, req.user.id);
+  } else if (clearDeliberate && row.deliberate_unread) {
+    db.prepare('UPDATE chat_channel_members SET deliberate_unread = 0 WHERE channel_id = ? AND user_id = ?').run(channel.id, req.user.id);
+  }
+  // NOTE: no cross-device "dismiss" PUSH here. Web push requires every push to
   // surface a notification; a silent one makes Android show a generic fallback
-  // ("phantom") notification instead. The client clears this channel's
-  // notifications locally on whichever device the channel is viewed on.
-  res.json({ ok: true });
+  // ("phantom") notification instead. The reader's OTHER open sessions hear it
+  // over the socket instead (read:changed) and clear their own badges and
+  // notifications; a phone that is closed catches up when it next opens.
+  if (target || clearDeliberate) {
+    emitToUser(req.user.id, 'read:changed', { channel_id: channel.id, last_read_at: target || row.last_read_at, caught_up: caughtUp });
+  }
+  res.json({ ok: true, last_read_at: target || row.last_read_at, caught_up: caughtUp });
 });
 
 // Mark a specific message (and everything after it) as unread again. Sets the
@@ -1170,6 +1202,20 @@ router.get('/channels/:id/messages', async (req, res) => {
     const rows = db.prepare('SELECT * FROM chat_messages WHERE channel_id = ? AND parent_id IS NULL AND created_at >= ? ORDER BY created_at ASC LIMIT ?')
       .all(channel.id, req.query.date, limit);
     return res.json(await Promise.all(rows.map(m => serialize(db, m))));
+  }
+  // Open at the first unread when it is older than the latest page (D-189):
+  // a few messages of context before the reader's marker, then everything
+  // after it up to `limit`, oldest first. The client can tell the window does
+  // not reach the latest when it gets `limit` rows after the marker.
+  if (typeof req.query.after === 'string' && req.query.after.length) {
+    const after = req.query.after;
+    const limit = Math.min(parseInt(req.query.limit) || 300, 400);
+    const ctx = db.prepare('SELECT * FROM chat_messages WHERE channel_id = ? AND parent_id IS NULL AND created_at <= ? ORDER BY created_at DESC LIMIT 10')
+      .all(channel.id, after).reverse();
+    const rows = db.prepare('SELECT * FROM chat_messages WHERE channel_id = ? AND parent_id IS NULL AND created_at > ? ORDER BY created_at ASC LIMIT ?')
+      .all(channel.id, after, limit);
+    res.set('X-Window-Complete', rows.length < limit ? '1' : '0');
+    return res.json(await Promise.all([...ctx, ...rows].map(m => serialize(db, m))));
   }
   const limit = Math.min(parseInt(req.query.limit) || 50, 200);
   const before = req.query.before;
@@ -1506,10 +1552,16 @@ router.post('/threads/:parentId/read', (req, res) => {
   // is second-precision, and a reply landing in the same second as the read
   // compares GREATER than the marker, so the thread never fully cleared.
   const tnow = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS t").get().t;
-  db.prepare(`INSERT INTO chat_thread_reads (user_id, parent_id, last_read_at, deliberate_unread) VALUES (?, ?, ?, 0)
-              ON CONFLICT(user_id, parent_id) DO UPDATE SET last_read_at = excluded.last_read_at, deliberate_unread = 0`)
-    .run(req.user.id, parent.id, tnow);
-  res.json({ ok: true });
+  // Forward only, and as far as the reader has seen when they say (D-189).
+  const cur = db.prepare('SELECT last_read_at FROM chat_thread_reads WHERE user_id = ? AND parent_id = ?').get(req.user.id, parent.id);
+  const target = clampReadMark(tnow, req.body?.up_to, cur?.last_read_at || null);
+  if (target) {
+    db.prepare(`INSERT INTO chat_thread_reads (user_id, parent_id, last_read_at, deliberate_unread) VALUES (?, ?, ?, 0)
+                ON CONFLICT(user_id, parent_id) DO UPDATE SET last_read_at = excluded.last_read_at, deliberate_unread = 0`)
+      .run(req.user.id, parent.id, target);
+    emitToUser(req.user.id, 'read:changed', { channel_id: channel.id, parent_id: parent.id, last_read_at: target });
+  }
+  res.json({ ok: true, last_read_at: target || cur?.last_read_at || null });
 });
 
 // A message's thread: the parent plus all its replies in order. Access is
@@ -1556,7 +1608,17 @@ router.post('/channels/:id/messages', async (req, res) => {
   db.prepare("UPDATE chat_channels SET updated_at = datetime('now') WHERE id = ?").run(channel.id);
   // deliberate_unread = 0 guard: replying must not silently wipe a mark-unread
   // the sender set — the bookmark survives until they actually read the channel.
-  db.prepare("UPDATE chat_channel_members SET last_read_at = ? WHERE channel_id = ? AND user_id = ? AND deliberate_unread = 0").run(now, channel.id, req.user.id);
+  // A THREAD REPLY READS THE THREAD, NOT THE CHANNEL (D-189): moving the
+  // channel marker here marked every unread top-level message above the
+  // thread read for somebody who had only answered an old thread.
+  if (req.body?.parent_id) {
+    db.prepare(`INSERT INTO chat_thread_reads (user_id, parent_id, last_read_at, deliberate_unread) VALUES (?, ?, ?, 0)
+                ON CONFLICT(user_id, parent_id) DO UPDATE SET last_read_at = excluded.last_read_at
+                WHERE chat_thread_reads.deliberate_unread = 0 AND chat_thread_reads.last_read_at < excluded.last_read_at`)
+      .run(req.user.id, req.body.parent_id, now);
+  } else {
+    db.prepare("UPDATE chat_channel_members SET last_read_at = ? WHERE channel_id = ? AND user_id = ? AND deliberate_unread = 0").run(now, channel.id, req.user.id);
+  }
   const message = await serialize(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(id));
   emitToChannel(channel.id, 'message:new', message);
   emitChannelsChanged(db, channel);
