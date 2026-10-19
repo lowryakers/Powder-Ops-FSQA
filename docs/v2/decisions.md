@@ -7692,3 +7692,34 @@ the floor runs every week could not be picked on a clean or a swab, and the 72-h
   revives a retired one, so the option is made live and sorted beside Room 7. A later retire in Settings sticks.
 - `verify:swablog` (42) asserts Room 8 is offered right after Room 7 at 1280 and 390. Control (no `'8'`) fails 2,
   with the dropdown exactly as in the screenshot.
+
+## D-189 — A channel opens where the unread starts only when it will not fit; read means seen (19 Oct 2026)
+Lowry: open at the first missed message, with Jump to latest, **only when several were missed**; with one or a few,
+open at the latest and show no button, "because I'm already at the latest". Two outside reviews agreed with the
+code reading; both missed the defect that broke it most often.
+- **THE CACHED COPY DECIDED THE LANDING.** Switching back to a channel shows its saved messages instantly, and the
+  socket only delivers the OPEN channel's messages — so a channel visited earlier this session held nothing posted
+  since. The landing ran on that copy, found no unread, pinned to the bottom and was spent before the fresh fetch
+  arrived. **The landing now waits for the fresh fetch of that channel (`freshFor`) and never decides on the cache.**
+- **Measured, not counted.** `OPEN_AT_FIRST_UNREAD_MIN = 5` is gone. One unread always opens at the latest; for two
+  or more, after layout, it opens at the first unread only if the unread part is taller than the pane
+  (`UNREAD_ANCHOR_MIN_VIEWPORTS = 1`). Unmeasurable after one retry ⇒ the old count of 5. Five one-liners no longer
+  anchor; four long posts do.
+- **Jump to latest is derived from the scroll position, never switched on.** It was forced on by the landing and
+  only a scroll event switched it off, so on content that could not scroll it stuck. One distance (`PIN_PX`, 120)
+  decides both "pinned" and "show the button", so there is no gap where you are neither.
+- **Read = seen.** `POST /channels/:id/read` takes `up_to` (the newest message actually on screen), moves the marker
+  **forward only** and never past now; without it, everything as of now, as before. Opening at the first unread of
+  forty no longer marks forty read. Nothing is marked while the tab is **hidden** (visibility, not focus — in Split
+  Screen the panel beside your work is in view without focus), while the landing is undecided, or in a channel you
+  just marked unread. A deliberate mark-unread stands until a read reaches the newest message.
+- **A thread reply reads the thread, not the channel.** Posting a reply moved the channel marker, marking every
+  unread top-level message above it read. Replies now stamp `chat_thread_reads` only (forward only).
+- **Read on one device is heard on the others**: `read:changed` to the reader's own socket room on a channel or
+  thread read; open sessions refresh badges and clear that channel's notifications. Never a push (phantom Android
+  notifications).
+- **More unread than a page**: `GET /channels/:id/messages?after=<marker>` returns ten messages of context and up to
+  300 after; a window that stops short says so and Jump to latest loads the real tail. The thread panel marks read
+  only once its replies have loaded, only while visible, and up to the newest reply loaded.
+- `verify:unreadlanding` (26, live + browser at 1280 and 390). Control (`main` plus the test's data attributes)
+  fails 10 and then cannot continue — the first being `up_to` ignored and the reply reading the channel.

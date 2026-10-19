@@ -1387,10 +1387,23 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
   // arriving while you're reading doesn't linger as unread until you close and
   // reopen — the same "mark read while it's on screen, not just on open" rule
   // the channel follows.
+  // ONLY once the replies have loaded and only while the tab is visible (D-189):
+  // it used to fire on mount, before there was anything on screen, and in a
+  // hidden tab. Marked up to the newest reply loaded, never "now".
   const replyCount = thread?.replies?.length ?? 0;
+  const lastReplyAt = thread?.replies?.length ? thread.replies[thread.replies.length - 1].created_at : null;
+  const loaded = !!thread;
   useEffect(() => {
-    apiPost(`/comms/threads/${parent.id}/read`, {}).then(() => onThreadRead?.()).catch(() => {});
-  }, [parent.id, replyCount, onThreadRead]);
+    if (!loaded) return;
+    const mark = () => {
+      if (document.visibilityState !== 'visible') return;
+      apiPost(`/comms/threads/${parent.id}/read`, lastReplyAt ? { up_to: lastReplyAt } : {}).then(() => onThreadRead?.()).catch(() => {});
+    };
+    mark();
+    const onVis = () => { if (document.visibilityState === 'visible') mark(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [parent.id, loaded, replyCount, lastReplyAt, onThreadRead]);
   // Live-refresh when a reply to this parent arrives.
   useEffect(() => {
     const s = socketRef?.current; if (!s) return;
@@ -1851,7 +1864,7 @@ function MenuRow({ icon: Icon, label, danger, act, onAction }) {
 // Slack's red "unread starts here" line.
 function NewDivider() {
   return (
-    <div className="flex items-center gap-2 px-4 my-1">
+    <div data-new-divider="" className="flex items-center gap-2 px-4 my-1">
       <div className="flex-1 h-px bg-red-400" />
       <span className="text-[10px] font-bold text-red-500 uppercase tracking-wide">New</span>
     </div>
@@ -2349,6 +2362,20 @@ const Message = memo(function Message({ m, me, onReact, onUnreact, onEdit, onDel
   );
 });
 
+// WHERE A CHANNEL OPENS (D-189). With unread to read, the channel opens at the
+// FIRST unread only when the unread part will not fit on one screen — measured,
+// not counted: four long posts can overflow, eight one-liners do not. If it
+// fits, it opens at the latest with the "New" divider in view and no Jump to
+// latest, because you are already at the latest. A single unread always opens
+// at the latest. If the pane cannot be measured, the old count rule decides.
+const UNREAD_ANCHOR_MIN_VIEWPORTS = 1;
+const UNREAD_ANCHOR_FALLBACK_COUNT = 5;
+// ONE distance decides both "pinned to the latest" and "show Jump to latest",
+// so nobody is ever neither pinned nor offered the button.
+const PIN_PX = 120;
+// More unread than the newest page holds: fetch from the reader's marker.
+const UNREAD_PAGE = 40;
+
 export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen, onLogout, openChannelName, openChannelId, openMessageId, openNonce, backLabel, onBackToModule, homePref, onSetHome, bottomNavPadding = false }) {
   const { data: channels, refresh: refreshChannels } = useApiGet('/comms/channels');
   const { data: users } = useApiGet('/users');
@@ -2380,12 +2407,15 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   const [newMarkerTs, setNewMarkerTs] = useState(null);
   // Jump-to-date: when set, the message list shows a window starting at that day.
   const [dateView, setDateView] = useState(null);
-  // A channel with THIS many unread opens at the START of them (the "New"
-  // divider) instead of the bottom — you need to read forward from where you
-  // left off, not scroll up hunting for it. Below the threshold the divider is
-  // already on screen at the bottom, so opening at the latest costs nothing.
-  const OPEN_AT_FIRST_UNREAD_MIN = 5;
-  const landOnNewRef = useRef(null); // channel id that should open at its New divider
+  // Where to land is decided ONCE per open, on the FRESH messages (D-189) —
+  // see UNREAD_ANCHOR_MIN_VIEWPORTS. landOnNewRef: the channel still to decide
+  // for; landPendingRef: read-marking waits until that decision is made.
+  const landOnNewRef = useRef(null);
+  const landPendingRef = useRef(null);
+  const openInfoRef = useRef(null);       // { id, marker, unread } captured at open
+  const markedUnreadRef = useRef(null);   // a channel just marked unread: mark nothing until reopened
+  const windowPartialRef = useRef(false); // the loaded window starts at the marker and stops short of the latest
+  const [freshFor, setFreshFor] = useState(null); // the channel whose messages came from the server, not the cache
   // Declared HERE because openChannel below writes all three — state a
   // function closes over must be declared before the function is.
   const [chanFilter, setChanFilter] = useState(''); // sidebar quick-filter (type to filter, ↑/↓ + Enter)
@@ -2420,7 +2450,11 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   const openChannel = (id) => {
     const ch = (channels || []).find(c => c.id === id);
     setNewMarkerTs(ch && ch.unread > 0 ? (ch.last_read_at || '0') : null);
-    landOnNewRef.current = (ch && ch.unread >= OPEN_AT_FIRST_UNREAD_MIN) ? id : null;
+    const decide = !!ch && ch.unread >= 2;
+    landOnNewRef.current = decide ? id : null;
+    landPendingRef.current = decide ? id : null;
+    openInfoRef.current = ch ? { id, marker: ch.last_read_at || '0', unread: ch.unread || 0 } : null;
+    markedUnreadRef.current = null;
     setDateView(null);
     setActiveId(id); setMobileThread(true); setChanFilter(''); setThreadsOpen(false); setActivityOpen(false);
     rememberChannel(id); rememberView('channel');
@@ -2689,9 +2723,17 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   const loadMessages = useCallback(async (id) => {
     if (!id) return;
     try {
-      const msgs = await apiFetch(`/comms/channels/${id}/messages`);
-      msgCacheRef.current.set(id, msgs);
-      if (activeIdRef.current === id) setMessages(msgs);
+      // A backlog bigger than the newest page: start the window at the
+      // reader's marker, or the first unread is not on the page at all.
+      const info = openInfoRef.current;
+      const after = info && info.id === id && landOnNewRef.current === id && info.unread > UNREAD_PAGE ? info.marker : null;
+      const msgs = await apiFetch(`/comms/channels/${id}/messages${after ? `?after=${encodeURIComponent(after)}` : ''}`);
+      if (activeIdRef.current !== id) { if (!after) msgCacheRef.current.set(id, msgs); return; }
+      windowPartialRef.current = !!after && msgs.filter(m => m.created_at > after).length >= 300;
+      if (!windowPartialRef.current) msgCacheRef.current.set(id, msgs);
+      setMessages(msgs);
+      // The landing decision waits for THIS, never the cached copy.
+      setFreshFor(id);
       // NOTE: loading messages does NOT mark the channel read. See the effect
       // below — a channel is only read once its conversation is on screen.
     } catch { /* channel may be inaccessible */ }
@@ -2699,6 +2741,11 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
 
   useEffect(() => {
     activeIdRef.current = activeId;
+    // The cached copy may SHOW while the server answers, but it decides
+    // nothing: the socket only delivers the open channel's messages, so a
+    // channel visited earlier is missing everything posted since (D-189).
+    setFreshFor(null);
+    windowPartialRef.current = false;
     setMessages(activeId ? (msgCacheRef.current.get(activeId) || []) : []);
     setTypers([]); setPending([]);
     loadMessages(activeId);
@@ -2707,7 +2754,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   // Socket events mutate `messages` in place — keep the cache carrying what
   // the screen shows, so switching away and back doesn't rewind the channel.
   useEffect(() => {
-    if (activeId && messages.length) msgCacheRef.current.set(activeId, messages);
+    if (activeId && messages.length && !windowPartialRef.current) msgCacheRef.current.set(activeId, messages);
   }, [messages, activeId]);
 
   // A channel is marked read when its conversation is ACTUALLY ON SCREEN — not
@@ -2721,11 +2768,68 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   // once you've navigated into it.
   const conversationOnScreen = !!activeId && !threadsOpen && !activityOpen
     && (!isCompactLayout || mobileThread);
+  //
+  // AND ONLY AS FAR AS YOU HAVE SEEN (D-189). Opening at the first unread of
+  // forty used to stamp all forty read before a word of them was on screen.
+  // markSeen() sends the created_at of the newest message actually in view;
+  // the server only ever moves the marker forward. Nothing is marked while
+  // the tab is hidden (visibility, not focus: in Split Screen the panel beside
+  // your work is in view without having focus), while the landing is still
+  // being decided, or in a channel you have just marked unread.
+  const conversationOnScreenRef = useRef(false);
+  const messagesRef = useRef([]);
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
+  const seenSentRef = useRef({ id: null, at: '' });
+  const seenTimerRef = useRef(null);
+  const markSeen = useCallback(() => {
+    const id = activeIdRef.current;
+    if (!id || !conversationOnScreenRef.current || document.visibilityState !== 'visible') return;
+    if (landPendingRef.current === id || markedUnreadRef.current === id) return;
+    const el = scrollRef.current; if (!el) return;
+    const list = messagesRef.current; if (!list.length) return;
+    const paneBottom = el.getBoundingClientRect().bottom;
+    let seen = null;
+    for (let i = list.length - 1; i >= 0; i--) {
+      const node = el.querySelector(`[data-mid="${list[i].id}"]`);
+      if (!node) continue;
+      const r = node.getBoundingClientRect();
+      if (r.top <= paneBottom - Math.min(r.height, 40)) { seen = list[i]; break; }
+    }
+    if (!seen) return;
+    const sent = seenSentRef.current;
+    if (sent.id === id && sent.at >= seen.created_at) return;
+    seenSentRef.current = { id, at: seen.created_at };
+    apiPost(`/comms/channels/${id}/read`, { up_to: seen.created_at }).catch(() => {});
+    if (seen === list[list.length - 1] && !windowPartialRef.current) clearChannelNotifications(id);
+  }, []);
+  const scheduleSeen = useCallback(() => {
+    if (seenTimerRef.current) return;
+    seenTimerRef.current = setTimeout(() => { seenTimerRef.current = null; markSeen(); }, 350);
+  }, [markSeen]);
+  useEffect(() => { seenSentRef.current = { id: null, at: '' }; }, [activeId]);
   useEffect(() => {
-    if (!conversationOnScreen) return;
-    apiPost(`/comms/channels/${activeId}/read`, {}).then(refreshChannels).catch(() => {});
-    clearChannelNotifications(activeId);
-  }, [conversationOnScreen, activeId, refreshChannels]);
+    conversationOnScreenRef.current = conversationOnScreen;
+    if (conversationOnScreen) scheduleSeen();
+  }, [conversationOnScreen, activeId, scheduleSeen]);
+  useEffect(() => {
+    const onVis = () => { if (document.visibilityState === 'visible') scheduleSeen(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => { document.removeEventListener('visibilitychange', onVis); clearTimeout(seenTimerRef.current); };
+  }, [scheduleSeen]);
+  // A read anywhere — this tab, another tab, the phone — reaches every open
+  // session of this person over the socket (D-189). Never a push: a silent
+  // push is the phantom Android notification.
+  const readRefreshRef = useRef(null);
+  useEffect(() => {
+    const s = getSocket();
+    const onRead = (p) => {
+      if (p?.caught_up && p.channel_id) clearChannelNotifications(p.channel_id);
+      clearTimeout(readRefreshRef.current);
+      readRefreshRef.current = setTimeout(() => { refreshChannels(); refreshThreadUnread?.(); refreshActivityUnread?.(); }, 250);
+    };
+    s.on('read:changed', onRead);
+    return () => { s.off('read:changed', onRead); clearTimeout(readRefreshRef.current); };
+  }, [refreshChannels, refreshThreadUnread, refreshActivityUnread]);
 
   // Restore this conversation's draft (typed text was saved as you navigated away).
   useEffect(() => { setBody(readDrafts()[activeId]?.text || ''); }, [activeId]);
@@ -2779,7 +2883,9 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
         setMessages(ms => ms.map(x => x.id === m.parent_id ? { ...x, reply_count: (x.reply_count || 0) + 1 } : x));
         return;
       }
-      setMessages(ms => ms.some(x => x.id === m.id) ? ms : [...ms, m]);
+      // A window that stops short of the latest has a gap at its foot;
+      // Jump to latest reloads the real tail.
+      if (!windowPartialRef.current) setMessages(ms => ms.some(x => x.id === m.id) ? ms : [...ms, m]);
       setTypers(t => t.filter(x => x.user_id !== m.user_id));
     };
     const onUpdate = (m) => { if (m.channel_id === activeId) setMessages(ms => ms.map(x => x.id === m.id ? m : x)); };
@@ -2788,7 +2894,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
       if (t.channel_id !== activeId || t.user_id === user.id) return;
       setTypers(prev => [...prev.filter(x => x.user_id !== t.user_id), { ...t, at: Date.now() }]);
     };
-    const onConnect = () => { s.emit('channel:join', activeId); loadMessages(activeId); refreshChannels(); };
+    const onConnect = () => { s.emit('channel:join', activeId); if (!windowPartialRef.current) loadMessages(activeId); refreshChannels(); };
 
     s.on('message:new', onNew);
     s.on('message:update', onUpdate);
@@ -2829,76 +2935,104 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     // — the ResizeObserver below pins on every content resize while it's on,
     // and the fetched messages landing would yank the view back to the bottom
     // out from under the divider.
-    pinnedRef.current = landOnNewRef.current !== activeId;
+    // Opens pinned to the latest; the landing decision below may unpin it
+    // once the fresh messages are in.
+    pinnedRef.current = true;
     justOpenedRef.current = true; setShowJump(false);
   }, [activeId]);
 
-  // Land at the START of the missed messages when there are several. The New
-  // divider marks where the reader left off; opening a channel carrying a
-  // real backlog at the bottom makes them scroll UP hunting for it, reading
-  // in reverse. Runs once per open (the ref is cleared on first landing). A
-  // push-notification deep link outranks it — queueMessage() clears the ref,
-  // because that tap named an exact message.
+  // Jump to latest is DERIVED from where the view is, never switched on by
+  // the landing: forcing it on left it stuck whenever the content could not
+  // scroll (no scroll event ever came to switch it off).
+  const updateJump = useCallback(() => {
+    const el = scrollRef.current; if (!el) return;
+    const fromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setShowJump(fromBottom > PIN_PX || windowPartialRef.current);
+  }, []);
+
+  // Land at the START of the missed messages only when they will not fit on
+  // one screen (D-189). Decided once per open, on the FRESH messages, after
+  // layout. A push-notification deep link outranks it — queueMessage() clears
+  // the ref, because that tap named an exact message.
   useEffect(() => {
-    if (landOnNewRef.current !== activeId || !messages.length) return;
-    const first = newMarkerTs !== null && messages.find(m => m.created_at > newMarkerTs);
+    if (landOnNewRef.current !== activeId || freshFor !== activeId) return;
     landOnNewRef.current = null;
-    if (!first) {
-      // The backlog is older than the loaded window — the bottom is honest.
+    const channelId = activeId;
+    const unread = newMarkerTs === null ? [] : messages.filter(m => m.created_at > newMarkerTs && m.user_id !== user.id);
+    const first = unread[0];
+    const finish = () => {
+      if (landPendingRef.current === channelId) landPendingRef.current = null;
+      updateJump(); scheduleSeen();
+    };
+    const settle = () => {
       pinnedRef.current = true;
-      if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-      return;
-    }
-    setShowJump(true);
-    holdJump();
-    requestAnimationFrame(() => {
-      document.querySelector(`[data-mid="${first.id}"]`)?.scrollIntoView({ block: 'start' });
-    });
+      const el = scrollRef.current; if (el) el.scrollTop = el.scrollHeight;
+      finish();
+    };
+    const anchor = (node) => {
+      const el = scrollRef.current;
+      if (!el || !node) { settle(); return; }
+      holdJump();
+      el.scrollTop = Math.max(0, el.scrollTop + node.getBoundingClientRect().top - el.getBoundingClientRect().top - 40);
+      finish();
+    };
+    if (!first || unread.length < 2) { settle(); return; }
+    let tries = 0;
+    const decide = () => {
+      if (activeIdRef.current !== channelId) return;
+      const el = scrollRef.current;
+      const node = document.querySelector(`[data-mid="${first.id}"]`);
+      const content = el?.firstElementChild;
+      if (!el || !node || !content || el.clientHeight === 0) {
+        if (tries++ < 1) { setTimeout(decide, 300); return; }
+        if (unread.length >= UNREAD_ANCHOR_FALLBACK_COUNT) anchor(node); else settle();
+        return;
+      }
+      const span = content.getBoundingClientRect().bottom - node.getBoundingClientRect().top;
+      if (span > el.clientHeight * UNREAD_ANCHOR_MIN_VIEWPORTS) anchor(node); else settle();
+    };
+    requestAnimationFrame(() => requestAnimationFrame(decide));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, activeId, newMarkerTs]);
+  }, [freshFor, messages, activeId, newMarkerTs]);
   useEffect(() => {
     const el = scrollRef.current; if (!el) return;
     const content = el.firstElementChild;
-    const pin = () => { if (pinnedRef.current && scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; };
+    const pin = () => {
+      if (pinnedRef.current && scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      updateJump();
+    };
     pin();
     const ro = new ResizeObserver(pin);
     if (content) ro.observe(content);
     ro.observe(el); // container resizes (keyboard opening on mobile) re-pin too
     return () => ro.disconnect();
-  }, [activeId]);
+  }, [activeId, updateJump]);
   useEffect(() => {
     const el = scrollRef.current; if (!el) return;
-    if (pinnedRef.current) { el.scrollTop = el.scrollHeight; setShowJump(false); }
-  }, [messages]);
+    if (pinnedRef.current) el.scrollTop = el.scrollHeight;
+    updateJump();
+    // A message that lands while you are at the latest is a message you saw.
+    scheduleSeen();
+  }, [messages, updateJump, scheduleSeen]);
   const onMessagesScroll = () => {
     const el = scrollRef.current; if (!el) return;
     const fromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    pinnedRef.current = fromBottom < 120 && Date.now() >= jumpHoldRef.current;
-    setShowJump(fromBottom > 240);
+    pinnedRef.current = fromBottom <= PIN_PX && Date.now() >= jumpHoldRef.current;
+    updateJump();
+    scheduleSeen();
   };
   const jumpToLatest = () => {
     jumpHoldRef.current = 0;
     pinnedRef.current = true;
+    if (windowPartialRef.current) {
+      // The window began at your marker and stops short: load the real tail.
+      windowPartialRef.current = false;
+      loadMessages(activeId);
+    }
     const el = scrollRef.current; if (el) el.scrollTop = el.scrollHeight;
     setShowJump(false);
   };
 
-  // Re-mark read when a new message LANDS while you're looking at the channel.
-  // The on-screen effect above only fires on ENTER — a socket message arriving
-  // in the open channel changes neither activeId nor conversationOnScreen, so
-  // the badge kept counting messages you were actively watching until you left
-  // and came back. Only when pinned to the live bottom: if you've scrolled up
-  // reading history, a new arrival at the foot isn't "seen" yet. Keyed on the
-  // newest id so it fires once per message; it does NOT refreshChannels itself
-  // — the server marks read, and this same message's channels:changed refresh
-  // carries the zero, so there's no extra round trip on the hot path.
-  const lastMsgId = messages.length ? messages[messages.length - 1].id : null;
-  useEffect(() => {
-    if (!conversationOnScreen || !lastMsgId || !pinnedRef.current) return;
-    apiPost(`/comms/channels/${activeId}/read`, {}).catch(() => {});
-    clearChannelNotifications(activeId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lastMsgId, conversationOnScreen]);
   // Jump to a specific day: load the window starting there and land at its top.
   const jumpToDate = async (d) => {
     if (!activeId || !d) return;
@@ -3211,6 +3345,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     // A deep link names an exact message — it outranks the open-at-first-unread
     // landing, which would otherwise scroll away from it.
     landOnNewRef.current = null;
+    landPendingRef.current = null;
     setPendingTick(t => t + 1);
   }, []);
   useEffect(() => { queueMessage(openMessageId); }, [openMessageId, openNonce, queueMessage]);
@@ -3369,6 +3504,9 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   // Staying in it would just re-mark it read the moment the screen settled,
   // which is exactly the behaviour that lost people's unread before.
   const markUnread = useCallback(async (m) => {
+    // Nothing in this channel is marked read again until it is reopened —
+    // on a wide screen the conversation stays on screen after this.
+    markedUnreadRef.current = activeIdRef.current;
     try { await apiPost(`/comms/messages/${m.id}/unread`, {}); } catch { /* ignore */ }
     backToList();
     refreshChannels();
@@ -3913,7 +4051,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
                 )}
               </div>
               <PinnedStrip pinned={pinnedMsgs} users={users} me={user} onUnpin={(p) => pinMsg(p, false)} />
-              <div ref={scrollRef} onScroll={onMessagesScroll} className="relative flex-1 overflow-y-auto py-2"
+              <div ref={scrollRef} onScroll={onMessagesScroll} data-msg-scroll="" className="relative flex-1 overflow-y-auto py-2"
                 onDragEnter={onDragEnterMsgs} onDragOver={onDragOverMsgs} onDragLeave={onDragLeaveMsgs} onDrop={onDropMsgs}>
                 {dropHover && (
                   <div className="sticky top-0 z-30 mx-3 pointer-events-none">
@@ -3951,7 +4089,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
                 </div>
               ) : showJump && (
                 <div className="relative">
-                  <button onClick={jumpToLatest}
+                  <button onClick={jumpToLatest} data-jump-latest=""
                     className="absolute bottom-2 right-4 z-10 flex items-center gap-1 px-3 py-1.5 bg-powder-600 text-white text-xs font-semibold rounded-full shadow-lg hover:bg-powder-700">
                     <ChevronDown size={14} /> Jump to latest
                   </button>
