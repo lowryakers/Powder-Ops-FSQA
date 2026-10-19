@@ -1253,9 +1253,9 @@ abbreviation on a pouch than on a stick and nothing ever joined them.
   and it is explicitly not the product's SKU — the existing 118 keep their codes. **66 of 118 resolve today**;
   the rest name what is blocking them rather than showing a blank, because this column is the punch list for
   the Shopify / ShipHero pass.
-- **`LINE_CODES` covers all ten lines.** WHY / BEF / PLT were the standard's own; DNT, PNC, CPK, CRP, OAT,
+- **`LINE_CODES` covers all twelve lines.** WHY / BEF / PLT were the standard's own; DNT, PNC, CPK, CRP, OAT,
   DRC and GFF were proposed when the column was extended, each mirroring the legacy prefix with the leading
-  "P" dropped (PDM→DNT, PCCM→CPK, GFFB→GFF). **A line code is a different kind of thing from a flavour
+  "P" dropped (PDM→DNT, PCCM→CPK, GFFB→GFF); HYD and PRE were added for the ProDough stick supplements (D-191). **A line code is a different kind of thing from a flavour
   code**: a flavour code is read off film already printing, so there is evidence and a wrong one is a wrong
   pack; no SKU exists in the new format yet, so a line code is a free choice right up until the first is
   minted. `CPK` deliberately avoids `CUP`, which is the oatmeal cup's PACK code.
