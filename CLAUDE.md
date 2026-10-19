@@ -1263,6 +1263,9 @@ abbreviation on a pouch than on a stick and nothing ever joined them.
   recorded in `DECIDED` with the reasoning. Filing those settled the other side of each pair automatically —
   Chocolate Mousse takes CM and Vanilla Cone takes VC with no further input, which is the issued-codes
   feedback working.
+- **R-0313 (D-191): line codes `HYD` (Hydration) and `PRE` (Pre-Workout)**, and eight new flavour codes for the
+  ProDough stick supplements (RKP CNL CUL WMH PNO BRZ WML TPC — "Tropical" is not Tropical Paradise/TRP), filed once
+  by `server/flavor-code-r0313.js`, skipping any flavour or code already on the register. `check:skuformat` (21).
 - **Every flavour now has a code and all 118 rows resolve.** The plant settled seven collisions in two
   passes: SLC / VCR / CFM, then CS for Cinnamon Swirl, CSP for Cinnamon Spice, VAN for Vanilla (its `V` was
   one letter, which the format refuses) and TRP for Tropical Paradise.

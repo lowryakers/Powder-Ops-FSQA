@@ -133,6 +133,7 @@ import { adoptFilmBasis } from './server/readiness-film-adopt.js';
 import { migrateServingSizes } from './server/nfp-serving-migrate.js';
 import { seedFillWeights } from './server/fill-weight-seed.js';
 import { seedFlavorCodes, seedBottleSpec, repairBaseFlavors } from './server/flavor-code-seed.js';
+import { seedR0313FlavorCodes } from './server/flavor-code-r0313.js';
 import { seedProductShelf } from './server/product-shelf.js';
 import { seedSwabCounts } from './server/swab-stock.js';
 import { seedSwabSheet, restampSwabSheet } from './server/swab-sheet-seed.js';
@@ -1277,6 +1278,8 @@ try {
   // holding a product name there cannot resolve.
   repairBaseFlavors(db);
   seedFlavorCodes(db);
+  // R-0313: the ProDough stick supplements' eight new flavour codes, once.
+  seedR0313FlavorCodes(db);
   // The reference-document slots. Insert-only per key, so a cadence somebody
   // changed or a slot they retired survives every redeploy.
   seedProductShelf(db);

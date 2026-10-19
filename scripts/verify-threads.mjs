@@ -160,6 +160,44 @@ t('Unfollow from the drawer', await pg.getAttribute('[data-thread-follow]', 'dat
   && !(await call('GET', '/comms/threads', null, A)).body.some((x) => x.parent.id === longParent.id));
 const pan = await pg.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
 t('nothing pans sideways', !pan);
+
+console.log('\n── the thread panel on a phone (390px) ──');
+const phoneParent = await post(B, 'Room 4 changeover notes — phone check');
+db.prepare('INSERT OR REPLACE INTO chat_thread_reads (user_id, parent_id, last_read_at, deliberate_unread) VALUES (?, ?, ?, 0)').run('th-d', phoneParent.id, nowTs());
+await post(Dd, 'on it', { parent_id: phoneParent.id });
+for (let i = 0; i < 12; i++) await post(B, `phone note ${i} — ` + 'swapped the auger, cleaned the hopper and checked the seal before the next run. '.repeat(3), { parent_id: phoneParent.id });
+const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+phone.on('pageerror', (e) => { console.log('  [pageerror]', e.message); fail++; });
+await phone.goto(`${URL}/manifest.webmanifest`);
+await phone.evaluate(([tok, u]) => { localStorage.setItem('auth_token', tok); localStorage.setItem('auth_user', JSON.stringify(u)); }, [Dd.token, Dd.user]);
+await phone.goto(`${URL}/chat`);
+await phone.getByText('th-floor', { exact: true }).first().click({ timeout: 15000 });
+await phone.waitForSelector('[data-thread-new="12"]', { timeout: 10000 }).catch(() => {});
+t('390px: the reply chip says "12 new"', await phone.locator('[data-thread-new="12"]').count() === 1);
+await phone.locator('[data-thread-new="12"]').first().click();
+await phone.waitForSelector('[data-thread-scroll] [data-reply-id]', { timeout: 10000 }).catch(() => {});
+await phone.waitForTimeout(1200);
+const pland = await phone.evaluate(() => {
+  const el = document.querySelector('[data-thread-scroll]');
+  const node = [...el.querySelectorAll('[data-reply-id]')].find((n) => n.textContent.includes('phone note 0'));
+  const r = (sel) => { const e = document.querySelector(sel); if (!e) return null; const b = e.getBoundingClientRect(); return { left: b.left, right: b.right, top: b.top, bottom: b.bottom }; };
+  return { top: node ? node.getBoundingClientRect().top - el.getBoundingClientRect().top : null, jump: !!document.querySelector('[data-thread-jump]'),
+    divider: !!el.querySelector('[data-new-divider]'), follow: r('[data-thread-follow]'), reply: r('textarea[placeholder="Reply…"]'),
+    also: r('[data-also-to-channel]'), vw: window.innerWidth, vh: window.innerHeight,
+    pan: document.documentElement.scrollWidth > window.innerWidth + 1 };
+});
+t('390px: a long thread opens at its first unread reply, with the New line', pland.top !== null && pland.top >= -5 && pland.top < 200 && pland.divider, JSON.stringify(pland));
+t('390px: Jump to latest is offered', pland.jump);
+t('390px: Following is in the header, on screen', !!pland.follow && pland.follow.right <= pland.vw && pland.follow.top >= 0, JSON.stringify(pland.follow));
+t('390px: the reply box and "Also send to" are on screen', !!pland.reply && pland.reply.bottom <= pland.vh && pland.reply.right <= pland.vw && !!pland.also && pland.also.left >= 0, JSON.stringify({ r: pland.reply, a: pland.also }));
+t('390px: nothing pans sideways', !pland.pan);
+const dMarker = () => db.prepare('SELECT last_read_at FROM chat_thread_reads WHERE user_id = ? AND parent_id = ?').get('th-d', phoneParent.id)?.last_read_at;
+const dNewest = db.prepare('SELECT MAX(created_at) t FROM chat_messages WHERE parent_id = ?').get(phoneParent.id).t;
+t('390px: opening reads only what is on screen', dMarker() < dNewest);
+await phone.tap('[data-thread-jump]');
+await phone.waitForTimeout(1200);
+t('390px: Jump to latest reads it to the end and goes away', dMarker() === dNewest && !(await phone.$('[data-thread-jump]')));
+await phone.close();
 await browser.close();
 db.close();
 console.log(`\n${pass} passed, ${fail} failed`);

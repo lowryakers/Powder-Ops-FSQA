@@ -55,6 +55,10 @@ export const LINE_CODES = {
   'Oatmeal Cup': 'OAT',
   'Daily Recharge': 'DRC',
   'Gluten Free Flour': 'GFF',
+  // ProDough stick supplements (R-0313, Lowry 2026-10-19). New lines, so the
+  // codes are a choice, not read off film; agreed before the first SKU is minted.
+  'Hydration': 'HYD',
+  'Pre-Workout': 'PRE',
 };
 
 // The old name, kept because the bottling work reads it that way.

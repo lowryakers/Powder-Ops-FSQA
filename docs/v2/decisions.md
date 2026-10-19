@@ -7746,3 +7746,21 @@ Paste 2 of Lowry's review ("like Slack unless something is better or simpler").
   list count, stays in the thread, and an edit or delete reaches both because there is one row. Its channel push
   skips everyone the thread push already told.
 - `verify:threads` (36, live + browser at 1280). Control (`main`) fails 7, then stops at the follow endpoint.
+
+## D-191 — ProDough stick supplements: HYD / PRE line codes and eight new flavour codes (R-0313, 19 Oct 2026)
+Approved by Lowry 2026-10-19 (R-0313). PR #43 added `'Hydration': 'HYD'` and `'Pre-Workout': 'PRE'` to
+`LINE_CODES`; this entry records the review and the flavour codes that go with it.
+- **Checked before merging:** HYD and PRE are unique among the line codes, clash with no pack code
+  (STK/PLG/PSM/BTL/BOX/CUP) and no flavour code or legacy code on the register, and match `SKU_PART`.
+  `preferredSku` reads `product_line || category`, so a product categorised "Hydration" or "Pre-Workout" on a
+  stick resolves to `HYD-STK-…` / `PRE-STK-…`. `check:skuformat` (21, pure, in `npm run check`) asserts
+  `HYD-STK-RKP` and `PRE-STK-TPC`; the control (main without PR #43) fails 5.
+- **The eight flavour codes are filed by `server/flavor-code-r0313.js`, once per database**
+  (`app_settings.flavor_codes_r0313_v1`), after `seedFlavorCodes`: Rocket Pop RKP · Coconut Lime CNL ·
+  Cucumber Lime CUL · Watermelon Hibiscus WMH · Pineapple Orange PNO · Blue Raspberry BRZ · Watermelon WML ·
+  Tropical TPC, `source = 'new'`, note "ProDough stick supplements, R-0313, 2026-10-19".
+- **Insert-only per row: a flavour already on the register, or a code already meaning something, is skipped
+  and named in the boot log, never overwritten** — a code is printed on film, so a clash is a person's
+  question. "Tropical" is its own flavour; Tropical Paradise keeps TRP. No product row is touched.
+- Proven on a fresh database (65 → 73 active, second boot files nothing) and on a planted clash (6 filed, the
+  two clashing rows skipped and left as they were).
