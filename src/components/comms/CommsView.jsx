@@ -1227,6 +1227,14 @@ function clearChannelNotifications(channelId) {
   }).catch(() => { /* no SW / not supported */ });
 }
 
+// A thread's reply notifications carry their own tag (D-190).
+function clearThreadNotifications(parentId) {
+  if (!parentId || !('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.ready.then(async (reg) => {
+    for (const n of await reg.getNotifications()) if (n.tag === `thread-${parentId}`) n.close();
+  }).catch(() => { /* no SW / not supported */ });
+}
+
 // Voice note — tap the mic, talk, tap ✓. The floor is gloved half the day, so
 // talking beats typing. Records via MediaRecorder and hands the finished file
 // to the composer's normal upload path, where it becomes a pending attachment
@@ -1306,6 +1314,20 @@ function VoiceNoteButton({ disabled, onReady }) {
     </button>
   );
 }
+
+// WHERE A CHANNEL OPENS (D-189). With unread to read, the channel opens at the
+// FIRST unread only when the unread part will not fit on one screen — measured,
+// not counted: four long posts can overflow, eight one-liners do not. If it
+// fits, it opens at the latest with the "New" divider in view and no Jump to
+// latest, because you are already at the latest. A single unread always opens
+// at the latest. If the pane cannot be measured, the old count rule decides.
+const UNREAD_ANCHOR_MIN_VIEWPORTS = 1;
+const UNREAD_ANCHOR_FALLBACK_COUNT = 5;
+// ONE distance decides both "pinned to the latest" and "show Jump to latest",
+// so nobody is ever neither pinned nor offered the button.
+const PIN_PX = 120;
+// More unread than the newest page holds: fetch from the reader's marker.
+const UNREAD_PAGE = 40;
 
 function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTranslate, viewerLang, onTranslate, onClose, onChanged, socketRef, storageOn, onThreadRead }) {
   const [thread, setThread] = useState(null);
@@ -1387,23 +1409,92 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
   // arriving while you're reading doesn't linger as unread until you close and
   // reopen — the same "mark read while it's on screen, not just on open" rule
   // the channel follows.
-  // ONLY once the replies have loaded and only while the tab is visible (D-189):
-  // it used to fire on mount, before there was anything on screen, and in a
-  // hidden tab. Marked up to the newest reply loaded, never "now".
-  const replyCount = thread?.replies?.length ?? 0;
-  const lastReplyAt = thread?.replies?.length ? thread.replies[thread.replies.length - 1].created_at : null;
-  const loaded = !!thread;
+  // A THREAD OPENS LIKE A CHANNEL (D-190). Its "New" line is where you left
+  // off, captured on the first load and kept while you read. With more unread
+  // replies than fit, it opens at the first of them with Jump to latest;
+  // otherwise at the newest. Read is marked only once the replies have loaded,
+  // only while the tab is visible, and only as far as the replies on screen
+  // (D-189) — it used to fire on mount, in a hidden tab, as of now.
+  const threadScrollRef = useRef(null);
+  const [threadMarker, setThreadMarker] = useState(undefined); // undefined = not captured yet
+  const threadLandedRef = useRef(false);
+  const threadPinnedRef = useRef(true);
+  const [threadJump, setThreadJump] = useState(false);
+  const seenUpToRef = useRef('');
+  useEffect(() => { setThreadMarker(undefined); threadLandedRef.current = false; threadPinnedRef.current = true; seenUpToRef.current = ''; }, [parent.id]);
+  useEffect(() => { if (thread && threadMarker === undefined) setThreadMarker(thread.read_marker || null); }, [thread, threadMarker]);
+  const markThreadSeen = useCallback(() => {
+    const el = threadScrollRef.current;
+    if (!el || !thread || !threadLandedRef.current || document.visibilityState !== 'visible') return;
+    const reps = thread.replies || [];
+    const paneBottom = el.getBoundingClientRect().bottom;
+    let seen = null;
+    for (let i = reps.length - 1; i >= 0; i--) {
+      const node = el.querySelector(`[data-reply-id="${reps[i].id}"]`);
+      if (!node) continue;
+      const r = node.getBoundingClientRect();
+      if (r.top <= paneBottom - Math.min(r.height, 40)) { seen = reps[i]; break; }
+    }
+    const upTo = seen ? seen.created_at : null;
+    if (reps.length && (!upTo || upTo <= seenUpToRef.current)) return;
+    if (!reps.length && seenUpToRef.current) return;
+    seenUpToRef.current = upTo || 'opened';
+    apiPost(`/comms/threads/${parent.id}/read`, upTo ? { up_to: upTo } : {}).then(() => onThreadRead?.()).catch(() => {});
+  }, [thread, parent.id, onThreadRead]);
+  const updateThreadJump = useCallback(() => {
+    const el = threadScrollRef.current; if (!el) return;
+    setThreadJump(el.scrollHeight - el.scrollTop - el.clientHeight > PIN_PX);
+  }, []);
   useEffect(() => {
-    if (!loaded) return;
-    const mark = () => {
-      if (document.visibilityState !== 'visible') return;
-      apiPost(`/comms/threads/${parent.id}/read`, lastReplyAt ? { up_to: lastReplyAt } : {}).then(() => onThreadRead?.()).catch(() => {});
-    };
-    mark();
-    const onVis = () => { if (document.visibilityState === 'visible') mark(); };
+    const el = threadScrollRef.current;
+    if (!el || !thread || threadMarker === undefined) return;
+    if (!threadLandedRef.current) {
+      threadLandedRef.current = true;
+      const unread = (thread.replies || []).filter(r => threadMarker === null ? false : r.created_at > threadMarker && r.user_id !== me.id);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const node = unread[0] && el.querySelector(`[data-reply-id="${unread[0].id}"]`);
+        const content = el.firstElementChild;
+        const span = node && content ? content.getBoundingClientRect().bottom - node.getBoundingClientRect().top : 0;
+        if (unread.length >= 2 && node && span > el.clientHeight * UNREAD_ANCHOR_MIN_VIEWPORTS) {
+          threadPinnedRef.current = false;
+          el.scrollTop = Math.max(0, el.scrollTop + node.getBoundingClientRect().top - el.getBoundingClientRect().top - 40);
+        } else {
+          el.scrollTop = el.scrollHeight;
+        }
+        updateThreadJump(); markThreadSeen();
+      }));
+      return;
+    }
+    if (threadPinnedRef.current) el.scrollTop = el.scrollHeight;
+    updateThreadJump(); markThreadSeen();
+  }, [thread, threadMarker, me.id, updateThreadJump, markThreadSeen]);
+  useEffect(() => {
+    const onVis = () => { if (document.visibilityState === 'visible') markThreadSeen(); };
     document.addEventListener('visibilitychange', onVis);
     return () => document.removeEventListener('visibilitychange', onVis);
-  }, [parent.id, loaded, replyCount, lastReplyAt, onThreadRead]);
+  }, [markThreadSeen]);
+  const onThreadScroll = () => {
+    const el = threadScrollRef.current; if (!el) return;
+    threadPinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= PIN_PX;
+    updateThreadJump(); markThreadSeen();
+  };
+  const threadJumpToLatest = () => {
+    const el = threadScrollRef.current; if (!el) return;
+    threadPinnedRef.current = true; el.scrollTop = el.scrollHeight; updateThreadJump(); markThreadSeen();
+  };
+  // Follow / Unfollow (D-190): unfollowing keeps the thread readable; it takes
+  // it off Threads and stops its reply notifications.
+  const [followBusy, setFollowBusy] = useState(false);
+  const toggleFollow = async () => {
+    if (!thread) return;
+    setFollowBusy(true);
+    try {
+      const r = await apiPost(`/comms/threads/${parent.id}/follow`, { state: thread.following ? 'muted' : 'following' });
+      setThread(t => t ? { ...t, following: r.following, follow_explicit: r.follow_explicit } : t);
+      onThreadRead?.();
+    } catch { /* ignore */ } finally { setFollowBusy(false); }
+  };
+  const [alsoToChannel, setAlsoToChannel] = useState(false);
   // Live-refresh when a reply to this parent arrives.
   useEffect(() => {
     const s = socketRef?.current; if (!s) return;
@@ -1416,7 +1507,6 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
     s.on('message:update', onUpdate);
     return () => { s.off('message:new', onNew); s.off('message:update', onUpdate); };
   }, [parent.id, load, socketRef]);
-  useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [thread]);
 
   const react = async (m, emoji) => { await apiPost(`/comms/messages/${m.id}/reactions`, { emoji }); load(); };
   const unreact = async (m, emoji) => { await apiFetch(`/comms/messages/${m.id}/reactions/${encodeURIComponent(emoji)}`, { method: 'DELETE' }); load(); };
@@ -1437,8 +1527,9 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
     if (!text && !attachment_ids.length) return;
     setSending(true);
     try {
-      await apiPost(`/comms/channels/${parent.channel_id}/messages`, { body: text, parent_id: parent.id, attachment_ids });
-      setBody(''); writeDraft(`thread:${parent.id}`, ''); setPending([]); await load(); onChanged?.();
+      await apiPost(`/comms/channels/${parent.channel_id}/messages`, { body: text, parent_id: parent.id, attachment_ids, also_to_channel: alsoToChannel });
+      threadPinnedRef.current = true;
+      setBody(''); writeDraft(`thread:${parent.id}`, ''); setPending([]); setAlsoToChannel(false); await load(); onChanged?.();
     } finally { setSending(false); }
   };
 
@@ -1451,9 +1542,20 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
             <div className="text-sm font-semibold text-gray-900">Thread</div>
             <div className="text-[11px] text-gray-400 truncate">{channelName}</div>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+          <div className="flex items-center gap-2 shrink-0">
+            {thread && (
+              <button onClick={toggleFollow} disabled={followBusy} data-thread-follow={thread.following ? 'following' : 'not'}
+                title={thread.following ? 'Stop notifications for replies and take this off Threads' : 'Get notified about replies and list this in Threads'}
+                className={`px-2.5 py-1 rounded-full text-xs font-medium border ${thread.following ? 'border-powder-200 bg-powder-50 text-powder-700 hover:bg-powder-100' : 'border-gray-300 text-gray-600 hover:bg-gray-50'} disabled:opacity-50`}>
+                {thread.following ? 'Following' : 'Follow thread'}
+              </button>
+            )}
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600" aria-label="Close thread"><X size={18} /></button>
+          </div>
         </div>
-        <div className="flex-1 overflow-y-auto py-2">
+        <div className="relative flex-1 min-h-0 flex flex-col">
+        <div ref={threadScrollRef} onScroll={onThreadScroll} data-thread-scroll="" className="flex-1 overflow-y-auto py-2">
+          <div>
           {thread && <Message m={thread.parent} me={me} onReact={react} onUnreact={unreact} onEdit={edit} onDelete={del}
             onMarkUnread={markThreadUnread}
             canTranslate={canTranslate} viewerLang={viewerLang} onTranslate={onTranslate} mentionUsers={mentionUsers} />}
@@ -1463,10 +1565,27 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
               <div className="flex-1 h-px bg-gray-100" />
             </div>
           )}
-          {replies.map(r => <Message key={r.id} m={r} me={me} onReact={react} onUnreact={unreact} onEdit={edit} onDelete={del}
-            onMarkUnread={markThreadUnread}
-            canTranslate={canTranslate} viewerLang={viewerLang} onTranslate={onTranslate} mentionUsers={mentionUsers} />)}
+          {replies.map((r, i) => {
+            const firstNew = threadMarker && r.created_at > threadMarker && r.user_id !== me.id
+              && !replies.slice(0, i).some(x => x.created_at > threadMarker && x.user_id !== me.id);
+            return (
+              <div key={r.id} data-reply-id={r.id}>
+                {firstNew && <NewDivider />}
+                <Message m={r} me={me} onReact={react} onUnreact={unreact} onEdit={edit} onDelete={del}
+                  onMarkUnread={markThreadUnread}
+                  canTranslate={canTranslate} viewerLang={viewerLang} onTranslate={onTranslate} mentionUsers={mentionUsers} />
+              </div>
+            );
+          })}
           <div ref={endRef} />
+          </div>
+        </div>
+        {threadJump && (
+          <button onClick={threadJumpToLatest} data-thread-jump=""
+            className="absolute bottom-2 right-4 z-10 flex items-center gap-1 px-3 py-1.5 bg-powder-600 text-white text-xs font-semibold rounded-full shadow-lg hover:bg-powder-700">
+            <ChevronDown size={14} /> Jump to latest
+          </button>
+        )}
         </div>
         <div className="border-t border-gray-200 p-3 shrink-0 relative">
           <MentionDropdown matches={mMatches} hi={mHi} onHover={setMHi} onPick={insertReplyMention} />
@@ -1484,6 +1603,11 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
           )}
           <div className="mb-1"><FormatBar getEl={() => replyRef.current} value={body}
             onChange={v => { setBody(v); writeDraft(`thread:${parent.id}`, v); }} /></div>
+          <label className="flex items-center gap-2 mb-1.5 text-xs text-gray-600 cursor-pointer select-none w-fit">
+            <input type="checkbox" checked={alsoToChannel} onChange={e => setAlsoToChannel(e.target.checked)} data-also-to-channel=""
+              className="h-4 w-4 shrink-0 rounded border-gray-300 text-powder-600" />
+            Also send to {channelName}
+          </label>
           <div className="flex items-end gap-2">
             {storageOn && (
               <>
@@ -1645,6 +1769,11 @@ function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, view
             <Check size={11} /> Replied
           </span>
         )}
+        {/* Unfollow (D-190): off this list, no reply notifications; the thread
+            stays readable, and being @mentioned in it again follows it again. */}
+        <button onClick={async () => { try { await apiPost(`/comms/threads/${thread.parent.id}/follow`, { state: 'muted' }); } catch { /* ignore */ } refresh?.(); }}
+          data-inbox-unfollow="" title="Stop notifications and take this off Threads"
+          className={`${unread > 0 ? '' : 'ml-auto '}text-[11px] text-gray-400 hover:text-red-600`}>Unfollow</button>
         {unread > 0 ? (
           <>
             <span className="px-1.5 py-0.5 rounded-full bg-powder-600 text-white text-[10px] font-bold">{unread} new</span>
@@ -1655,7 +1784,7 @@ function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, view
           </>
         ) : (
           <button onClick={() => setExpanded(x => !x)}
-            className="ml-auto flex items-center gap-0.5 text-[11px] text-gray-400 hover:text-gray-600">
+            className="flex items-center gap-0.5 text-[11px] text-gray-400 hover:text-gray-600">
             {expanded ? <>Collapse <ChevronUp size={12} /></> : <>Expand <ChevronDown size={12} /></>}
           </button>
         )}
@@ -2261,6 +2390,14 @@ const Message = memo(function Message({ m, me, onReact, onUnreact, onEdit, onDel
         ) : (
           m.body && (
             <div>
+              {m.parent_id && m.also_in_channel && (onReply ? (
+                <button onClick={() => onReply({ id: m.parent_id, channel_id: m.channel_id })} data-also-label=""
+                  className="block text-left text-[11px] text-gray-500 hover:text-powder-700 mb-0.5 max-w-full truncate">
+                  replied to a thread{m.parent_preview?.body ? `: ${m.parent_preview.user_name} — ${m.parent_preview.body}` : ''}
+                </button>
+              ) : (
+                <div className="text-[11px] text-gray-400 mb-0.5">Also sent to the channel</div>
+              ))}
               {/* renderBody returns block elements (paragraphs + lists), so this
                   is a div, not a p — a p can't legally contain a ul/ol. */}
               <div className="text-sm text-gray-800 break-words space-y-0.5">{renderBody(displayBody, mentionUsers, me)}</div>
@@ -2299,6 +2436,12 @@ const Message = memo(function Message({ m, me, onReact, onUnreact, onEdit, onDel
             <MessageSquare size={12} className="text-powder-600" />
             <span className="font-medium text-powder-700">{m.reply_count} {m.reply_count === 1 ? 'reply' : 'replies'}</span>
             {m.reply_names?.length > 0 && <span className="text-gray-400">· {m.reply_names.join(', ')}</span>}
+            {/* Unread replies in a thread you follow (D-190). */}
+            {m.thread_unread > 0 && (
+              <span data-thread-new={m.thread_unread} className="inline-flex items-center gap-1 font-semibold text-red-600">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500" />{m.thread_unread} new
+              </span>
+            )}
           </button>
         )}
       </div>
@@ -2362,19 +2505,6 @@ const Message = memo(function Message({ m, me, onReact, onUnreact, onEdit, onDel
   );
 });
 
-// WHERE A CHANNEL OPENS (D-189). With unread to read, the channel opens at the
-// FIRST unread only when the unread part will not fit on one screen — measured,
-// not counted: four long posts can overflow, eight one-liners do not. If it
-// fits, it opens at the latest with the "New" divider in view and no Jump to
-// latest, because you are already at the latest. A single unread always opens
-// at the latest. If the pane cannot be measured, the old count rule decides.
-const UNREAD_ANCHOR_MIN_VIEWPORTS = 1;
-const UNREAD_ANCHOR_FALLBACK_COUNT = 5;
-// ONE distance decides both "pinned to the latest" and "show Jump to latest",
-// so nobody is ever neither pinned nor offered the button.
-const PIN_PX = 120;
-// More unread than the newest page holds: fetch from the reader's marker.
-const UNREAD_PAGE = 40;
 
 export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen, onLogout, openChannelName, openChannelId, openMessageId, openNonce, backLabel, onBackToModule, homePref, onSetHome, bottomNavPadding = false }) {
   const { data: channels, refresh: refreshChannels } = useApiGet('/comms/channels');
@@ -2824,6 +2954,15 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     const s = getSocket();
     const onRead = (p) => {
       if (p?.caught_up && p.channel_id) clearChannelNotifications(p.channel_id);
+      if (p?.parent_id) {
+        // A thread read (or followed / unfollowed) anywhere clears its chip here.
+        if (p.last_read_at) clearThreadNotifications(p.parent_id);
+        setMessages(ms => ms.map(x => x.id !== p.parent_id ? x : {
+          ...x,
+          thread_following: typeof p.following === 'boolean' ? p.following : x.thread_following,
+          thread_unread: p.last_read_at || p.following === false ? 0 : x.thread_unread,
+        }));
+      }
       clearTimeout(readRefreshRef.current);
       readRefreshRef.current = setTimeout(() => { refreshChannels(); refreshThreadUnread?.(); refreshActivityUnread?.(); }, 250);
     };
@@ -2880,7 +3019,14 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
       if (m.channel_id !== activeId) return;
       // A threaded reply: bump the parent's reply count in the main list.
       if (m.parent_id) {
-        setMessages(ms => ms.map(x => x.id === m.parent_id ? { ...x, reply_count: (x.reply_count || 0) + 1 } : x));
+        setMessages(ms => {
+          const next = ms.map(x => x.id === m.parent_id ? {
+            ...x, reply_count: (x.reply_count || 0) + 1,
+            thread_unread: (x.thread_unread || 0) + (x.thread_following && m.user_id !== user.id ? 1 : 0),
+          } : x);
+          // Sent to the channel as well (D-190): it is channel news too.
+          return m.also_in_channel && !windowPartialRef.current && !next.some(x => x.id === m.id) ? [...next, m] : next;
+        });
         return;
       }
       // A window that stops short of the latest has a gap at its foot;
