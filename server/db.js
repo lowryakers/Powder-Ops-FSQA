@@ -4605,6 +4605,18 @@ function runMigrations() {
   // failure one layer up: the people it is written for arrive later.
   addColumnIfMissing('chat_messages', 'pinned_at', 'TEXT');
   addColumnIfMissing('chat_messages', 'pinned_by', 'TEXT');
+  // D-190: a thread reply that ALSO goes to the channel is one row, read in both places.
+  addColumnIfMissing('chat_messages', 'also_in_channel', 'INTEGER NOT NULL DEFAULT 0');
+  // D-190: following a thread is derived (you started it, replied, were named);
+  // a row here OVERRIDES that — 'following' adds a thread you never touched,
+  // 'muted' takes one off your Threads list and stops its reply notifications.
+  db.exec(`CREATE TABLE IF NOT EXISTS chat_thread_follows (
+    user_id TEXT NOT NULL,
+    parent_id TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('following', 'muted')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, parent_id)
+  )`);
   db.exec('CREATE INDEX IF NOT EXISTS idx_chat_messages_pinned ON chat_messages(channel_id, pinned_at)');
 
   addColumnIfMissing('chat_push_subscriptions', 'vapid_key', 'TEXT');

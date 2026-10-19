@@ -392,7 +392,7 @@ function channelUnread(db, channelId, userId) {
   const own = m?.deliberate_unread ? 1 : 0;
   return db.prepare(
     `SELECT COUNT(*) n FROM chat_messages WHERE channel_id = ? AND deleted_at IS NULL AND (user_id != ? OR ? = 1)
-     AND parent_id IS NULL AND (? IS NULL OR created_at > ?)`
+     AND (parent_id IS NULL OR also_in_channel = 1) AND (? IS NULL OR created_at > ?)`
   ).get(channelId, userId, own, lr, lr).n;
 }
 
@@ -474,6 +474,91 @@ function threadUnread(db, parentId, userId) {
                 THEN ($thread IS NULL OR m.created_at > $thread)
                 ELSE ($effective IS NULL OR m.created_at > $effective) END`
   ).get({ parent: parentId, me: userId, thread, effective, own: deliberate }).n;
+}
+
+// ── Following a thread (D-190) ───────────────────────────────────────────────
+// You follow a thread you started, replied to, or were @mentioned in — derived,
+// as it always was. A chat_thread_follows row overrides that: 'following' adds a
+// thread you never touched, 'muted' (shown as "Unfollow") takes one off your
+// Threads list and stops its reply notifications. ONE fragment, used by the
+// Threads inbox, its badge, Activity and the reply notifications, so they can
+// never disagree about who follows what. `p` is the parent's alias; needs $me.
+const FOLLOWS = (p) => `(
+  NOT EXISTS (SELECT 1 FROM chat_thread_follows tfm WHERE tfm.parent_id = ${p}.id AND tfm.user_id = $me AND tfm.state = 'muted')
+  AND (
+    EXISTS (SELECT 1 FROM chat_thread_follows tff WHERE tff.parent_id = ${p}.id AND tff.user_id = $me AND tff.state = 'following')
+    OR ${p}.user_id = $me
+    OR EXISTS (SELECT 1 FROM chat_messages rr WHERE rr.parent_id = ${p}.id AND rr.user_id = $me)
+    OR EXISTS (SELECT 1 FROM chat_mentions mn WHERE mn.message_id = ${p}.id AND mn.user_id = $me)
+    OR EXISTS (SELECT 1 FROM chat_mentions mr JOIN chat_messages rm ON rm.id = mr.message_id
+               WHERE rm.parent_id = ${p}.id AND rm.deleted_at IS NULL AND mr.user_id = $me)
+  ))`;
+
+export function followState(db, parentId, userId) {
+  const row = db.prepare('SELECT state FROM chat_thread_follows WHERE parent_id = ? AND user_id = ?').get(parentId, userId);
+  const following = !!db.prepare(`SELECT 1 FROM chat_messages p WHERE p.id = $parent AND ${FOLLOWS('p')}`).get({ parent: parentId, me: userId });
+  return { following, explicit: row?.state || null };
+}
+
+// Everyone who follows a thread, for its reply notifications.
+function threadFollowers(db, parentId) {
+  const ids = new Set();
+  const p = db.prepare('SELECT user_id FROM chat_messages WHERE id = ?').get(parentId);
+  if (p) ids.add(p.user_id);
+  for (const r of db.prepare('SELECT DISTINCT user_id FROM chat_messages WHERE parent_id = ? AND deleted_at IS NULL').all(parentId)) ids.add(r.user_id);
+  for (const r of db.prepare(`SELECT DISTINCT mn.user_id FROM chat_mentions mn JOIN chat_messages m ON m.id = mn.message_id
+                              WHERE (m.id = ? OR m.parent_id = ?) AND m.deleted_at IS NULL`).all(parentId, parentId)) ids.add(r.user_id);
+  for (const r of db.prepare("SELECT user_id, state FROM chat_thread_follows WHERE parent_id = ?").all(parentId)) {
+    if (r.state === 'following') ids.add(r.user_id); else ids.delete(r.user_id);
+  }
+  return [...ids];
+}
+
+// A reply notifies the thread's FOLLOWERS (D-190) — not the whole channel, and
+// measured against the THREAD's unread, not the channel's. It used to go through
+// notifyChannelMessage, which bailed whenever the channel had no unread top-level
+// post (replies never count there), so a plain reply notified almost nobody, and
+// when it did, it reached people who had never touched the thread with a "N new"
+// count about something else. Coalesced per person per thread, like a channel.
+// Who a reply notifies: the thread's followers who can see the channel, minus
+// the author and anyone already told (a mention). Exported for the verify — it
+// is the rule, and push being off in a test must not hide it.
+export function threadReplyRecipients(db, channel, parentId, authorId, excludeUserIds = []) {
+  if (channel.kind === 'dm') return [];
+  const exclude = new Set([authorId, ...excludeUserIds]);
+  return threadFollowers(db, parentId).filter((uid) => !exclude.has(uid)
+    && !!db.prepare('SELECT 1 FROM users WHERE id = ? AND is_active = 1').get(uid)
+    && canAccess(db, channel, uid, false));
+}
+function notifyThreadReply(db, channel, parentId, body, author, excludeUserIds = [], messageId = null) {
+  if (!pushEnabled() || !body || channel.kind === 'dm') return [];
+  const label = channel.kind === 'public' ? `#${channel.name}` : (channel.name || 'a channel');
+  const url = messageId ? `/?c=${channel.id}&m=${messageId}` : `/?c=${channel.id}`;
+  const sent = [];
+  const sendFor = (uid) => {
+    const n = threadUnread(db, parentId, uid);
+    if (n === 0) return;
+    const from = shortNameOf(author);
+    const summary = n > 1 ? `${n} new · ${from}: ${body.slice(0, 80)}` : `${from}: ${body.slice(0, 120)}`;
+    pushToUser(uid, { title: `Thread in ${label}`, body: summary, tag: `thread-${parentId}`, renotify: true, url }).catch(() => {});
+  };
+  const now = Date.now();
+  for (const uid of threadReplyRecipients(db, channel, parentId, author.id, excludeUserIds)) {
+    sent.push(uid);
+    const key = `${uid}:thread:${parentId}`;
+    const since = now - (lastChannelPushAt.get(key) || 0);
+    if (since >= PUSH_COALESCE_MS) { lastChannelPushAt.set(key, now); sendFor(uid); }
+    else if (!pendingTrailing.has(key)) {
+      const handle = setTimeout(() => {
+        pendingTrailing.delete(key);
+        lastChannelPushAt.set(key, Date.now());
+        try { sendFor(uid); } catch { /* best effort */ }
+      }, PUSH_COALESCE_MS - since);
+      handle.unref?.();
+      pendingTrailing.set(key, handle);
+    }
+  }
+  return sent;
 }
 
 // Push a normal channel message to every member (except the author and anyone
@@ -623,7 +708,7 @@ router.get('/channels', (req, res) => {
     // carve-out that lets a mark-unread count the caller's own messages.
     const unread = !c.membership_id ? 0 : db.prepare(
       `SELECT COUNT(*) n FROM chat_messages WHERE channel_id = ? AND deleted_at IS NULL AND (user_id != ? OR ? = 1)
-       AND parent_id IS NULL AND (? IS NULL OR created_at > ?)`
+       AND (parent_id IS NULL OR also_in_channel = 1) AND (? IS NULL OR created_at > ?)`
     ).get(c.id, me, c.deliberate_unread ? 1 : 0, c.last_read_at, c.last_read_at).n;
     // Unread @mentions of me in this channel (drives a distinct badge).
     //
@@ -1163,8 +1248,28 @@ function flattenMessage(db, m) {
     pinned_at: m.pinned_at || null, pinned_by: m.pinned_by ? userName(db, m.pinned_by) : null,
     reactions: Object.entries(grouped).map(([emoji, users]) => ({ emoji, count: users.length, users })),
     reply_count: thread.c, last_reply_at: thread.last, reply_names: repliers,
+    // A reply also sent to the channel shows there with what it answered.
+    also_in_channel: !!m.also_in_channel,
+    parent_preview: m.parent_id && m.also_in_channel ? parentPreview(db, m.parent_id) : null,
     attachments: [],
   };
+}
+function parentPreview(db, parentId) {
+  const p = db.prepare('SELECT id, user_id, body, deleted_at FROM chat_messages WHERE id = ?').get(parentId);
+  if (!p) return null;
+  return { id: p.id, user_name: userName(db, p.user_id), body: p.deleted_at ? null : String(p.body || '').slice(0, 140) };
+}
+// The VIEWER's view of each thread on a channel page: do they follow it, and
+// how many of its replies are unread for them — the "N new" on the reply chip
+// (D-190). Only for threads they follow; a thread they unfollowed shows no dot.
+function withThreadState(db, msgs, me) {
+  for (const m of msgs) {
+    if (m.parent_id || !m.reply_count) continue;
+    const f = followState(db, m.id, me);
+    m.thread_following = f.following;
+    m.thread_unread = f.following ? threadUnread(db, m.id, me) : 0;
+  }
+  return msgs;
 }
 
 // Attachments carry a short-lived presigned download URL — only ever produced
@@ -1199,9 +1304,9 @@ router.get('/channels/:id/messages', async (req, res) => {
   // client can land the reader at the top of it.
   if (/^\d{4}-\d{2}-\d{2}$/.test(req.query.date || '')) {
     const limit = Math.min(parseInt(req.query.limit) || 200, 400);
-    const rows = db.prepare('SELECT * FROM chat_messages WHERE channel_id = ? AND parent_id IS NULL AND created_at >= ? ORDER BY created_at ASC LIMIT ?')
+    const rows = db.prepare('SELECT * FROM chat_messages WHERE channel_id = ? AND (parent_id IS NULL OR also_in_channel = 1) AND created_at >= ? ORDER BY created_at ASC LIMIT ?')
       .all(channel.id, req.query.date, limit);
-    return res.json(await Promise.all(rows.map(m => serialize(db, m))));
+    return res.json(withThreadState(db, await Promise.all(rows.map(m => serialize(db, m))), req.user.id));
   }
   // Open at the first unread when it is older than the latest page (D-189):
   // a few messages of context before the reader's marker, then everything
@@ -1210,22 +1315,22 @@ router.get('/channels/:id/messages', async (req, res) => {
   if (typeof req.query.after === 'string' && req.query.after.length) {
     const after = req.query.after;
     const limit = Math.min(parseInt(req.query.limit) || 300, 400);
-    const ctx = db.prepare('SELECT * FROM chat_messages WHERE channel_id = ? AND parent_id IS NULL AND created_at <= ? ORDER BY created_at DESC LIMIT 10')
+    const ctx = db.prepare('SELECT * FROM chat_messages WHERE channel_id = ? AND (parent_id IS NULL OR also_in_channel = 1) AND created_at <= ? ORDER BY created_at DESC LIMIT 10')
       .all(channel.id, after).reverse();
-    const rows = db.prepare('SELECT * FROM chat_messages WHERE channel_id = ? AND parent_id IS NULL AND created_at > ? ORDER BY created_at ASC LIMIT ?')
+    const rows = db.prepare('SELECT * FROM chat_messages WHERE channel_id = ? AND (parent_id IS NULL OR also_in_channel = 1) AND created_at > ? ORDER BY created_at ASC LIMIT ?')
       .all(channel.id, after, limit);
     res.set('X-Window-Complete', rows.length < limit ? '1' : '0');
-    return res.json(await Promise.all([...ctx, ...rows].map(m => serialize(db, m))));
+    return res.json(withThreadState(db, await Promise.all([...ctx, ...rows].map(m => serialize(db, m))), req.user.id));
   }
   const limit = Math.min(parseInt(req.query.limit) || 50, 200);
   const before = req.query.before;
-  let sql = 'SELECT * FROM chat_messages WHERE channel_id = ? AND parent_id IS NULL';
+  let sql = 'SELECT * FROM chat_messages WHERE channel_id = ? AND (parent_id IS NULL OR also_in_channel = 1)';
   const params = [channel.id];
   if (before) { sql += ' AND created_at < ?'; params.push(before); }
   sql += ' ORDER BY created_at DESC LIMIT ?';
   params.push(limit);
   const rows = db.prepare(sql).all(...params).reverse();
-  res.json(await Promise.all(rows.map(m => serialize(db, m))));
+  res.json(withThreadState(db, await Promise.all(rows.map(m => serialize(db, m))), req.user.id));
 });
 
 // The caller's Threads inbox: every thread they started or replied to (or were
@@ -1239,20 +1344,12 @@ router.get('/threads', async (req, res) => {
     FROM chat_messages p
     JOIN chat_messages r ON r.parent_id = p.id AND r.deleted_at IS NULL
     WHERE p.parent_id IS NULL AND p.deleted_at IS NULL
-      AND (
-        p.user_id = ?
-        OR EXISTS (SELECT 1 FROM chat_messages rr WHERE rr.parent_id = p.id AND rr.user_id = ?)
-        OR EXISTS (SELECT 1 FROM chat_mentions mn WHERE mn.message_id = p.id AND mn.user_id = ?)
-        -- …or a REPLY named you. Being @mentioned deep in a thread is the
-        -- clearest possible signal that it involves you, and it was the one
-        -- case this list missed: the mention check only looked at the parent,
-        -- so the thread never appeared in your inbox at all.
-        OR EXISTS (SELECT 1 FROM chat_mentions mr JOIN chat_messages rm ON rm.id = mr.message_id
-                   WHERE rm.parent_id = p.id AND rm.deleted_at IS NULL AND mr.user_id = ?)
-      )
+      -- Followed: started, replied, named in the parent OR a reply, or followed
+      -- by hand — and not unfollowed (FOLLOWS, D-190).
+      AND ${FOLLOWS('p')}
     GROUP BY p.id
     ORDER BY last_reply DESC
-    LIMIT 40`).all(me, me, me, me);
+    LIMIT 40`).all({ me });
 
   const out = [];
   for (const row of rows) {
@@ -1332,9 +1429,7 @@ router.get('/activity', (req, res) => {
     parts.push(`SELECT m.id, m.created_at, 'thread' AS kind FROM chat_messages m
                 JOIN chat_messages p ON p.id = m.parent_id
                 WHERE m.parent_id IS NOT NULL AND m.deleted_at IS NULL AND m.user_id != $me
-                  AND (p.user_id = $me
-                    OR EXISTS (SELECT 1 FROM chat_messages rr WHERE rr.parent_id = p.id AND rr.user_id = $me)
-                    OR EXISTS (SELECT 1 FROM chat_mentions m2 WHERE m2.message_id = p.id AND m2.user_id = $me))`);
+                  AND ${FOLLOWS('p')}`);
   }
   if (!parts.length) return res.json({ items: [], has_more: false });
 
@@ -1406,9 +1501,7 @@ router.get('/activity/unread', (req, res) => {
     SELECT m.id, m.channel_id, m.parent_id, m.created_at, 'thread' FROM chat_messages m
       JOIN chat_messages p ON p.id = m.parent_id
       WHERE m.parent_id IS NOT NULL AND m.deleted_at IS NULL AND m.user_id != $me
-        AND (p.user_id = $me
-          OR EXISTS (SELECT 1 FROM chat_messages rr WHERE rr.parent_id = p.id AND rr.user_id = $me)
-          OR EXISTS (SELECT 1 FROM chat_mentions m2 WHERE m2.message_id = p.id AND m2.user_id = $me))
+        AND ${FOLLOWS('p')}
   `).all({ me });
 
   const best = new Map();
@@ -1462,9 +1555,7 @@ router.post('/activity/read', (req, res) => {
     SELECT m.channel_id, m.parent_id FROM chat_messages m
       JOIN chat_messages p ON p.id = m.parent_id
       WHERE m.parent_id IS NOT NULL AND m.deleted_at IS NULL AND m.user_id != $me
-        AND (p.user_id = $me
-          OR EXISTS (SELECT 1 FROM chat_messages rr WHERE rr.parent_id = p.id AND rr.user_id = $me)
-          OR EXISTS (SELECT 1 FROM chat_mentions m2 WHERE m2.message_id = p.id AND m2.user_id = $me))
+        AND ${FOLLOWS('p')}
   `).all({ me });
 
   const markThread = db.prepare(`INSERT INTO chat_thread_reads (user_id, parent_id, last_read_at, deliberate_unread) VALUES (?, ?, ?, 0)
@@ -1518,17 +1609,7 @@ router.get('/threads/unread', (req, res) => {
     SELECT DISTINCT p.id, p.channel_id FROM chat_messages p
     JOIN chat_messages r ON r.parent_id = p.id AND r.deleted_at IS NULL
     WHERE p.parent_id IS NULL AND p.deleted_at IS NULL
-      AND (
-        p.user_id = ?
-        OR EXISTS (SELECT 1 FROM chat_messages rr WHERE rr.parent_id = p.id AND rr.user_id = ?)
-        OR EXISTS (SELECT 1 FROM chat_mentions mn WHERE mn.message_id = p.id AND mn.user_id = ?)
-        -- …or a REPLY named you. Being @mentioned deep in a thread is the
-        -- clearest possible signal that it involves you, and it was the one
-        -- case this list missed: the mention check only looked at the parent,
-        -- so the thread never appeared in your inbox at all.
-        OR EXISTS (SELECT 1 FROM chat_mentions mr JOIN chat_messages rm ON rm.id = mr.message_id
-                   WHERE rm.parent_id = p.id AND rm.deleted_at IS NULL AND mr.user_id = ?)
-      )`).all(me, me, me, me);
+      AND ${FOLLOWS('p')}`).all({ me });
   let total = 0, threads = 0;
   for (const p of parents) {
     const channel = getChannel(db, p.channel_id);
@@ -1573,10 +1654,35 @@ router.get('/messages/:id/thread', async (req, res) => {
   const channel = getChannel(db, parent.channel_id);
   if (!channel || !canAccess(db, channel, req.user.id, req.user.role === 'admin')) return res.status(404).json({ error: 'Not found' });
   const replies = db.prepare('SELECT * FROM chat_messages WHERE parent_id = ? ORDER BY created_at ASC').all(parent.id);
+  const f = followState(db, parent.id, req.user.id);
   res.json({
     parent: await serialize(db, parent),
     replies: await Promise.all(replies.map(m => serialize(db, m))),
+    // Where the reader left off in this thread (the "New" line), and whether
+    // they follow it (D-190).
+    read_marker: threadMarkers(db, parent.id, req.user.id).effective,
+    following: f.following, follow_explicit: f.explicit,
   });
+});
+
+// Follow or unfollow a thread (D-190). state: 'following' | 'muted' | null
+// (null = back to automatic). Unfollowing leaves the thread readable; it only
+// takes it off your Threads list and stops reply notifications. An @mention
+// still reaches you, and being mentioned again follows it again.
+router.post('/threads/:parentId/follow', (req, res) => {
+  const db = getDb();
+  const parent = db.prepare('SELECT * FROM chat_messages WHERE id = ? AND parent_id IS NULL').get(req.params.parentId);
+  if (!parent) return res.status(404).json({ error: 'Thread not found' });
+  const channel = getChannel(db, parent.channel_id);
+  if (!channel || !canAccess(db, channel, req.user.id, req.user.role === 'admin')) return res.status(404).json({ error: 'Thread not found' });
+  const state = req.body?.state ?? null;
+  if (state !== null && state !== 'following' && state !== 'muted') return res.status(400).json({ error: "state must be 'following', 'muted' or null" });
+  if (state === null) db.prepare('DELETE FROM chat_thread_follows WHERE user_id = ? AND parent_id = ?').run(req.user.id, parent.id);
+  else db.prepare(`INSERT INTO chat_thread_follows (user_id, parent_id, state, updated_at) VALUES (?, ?, ?, datetime('now'))
+                   ON CONFLICT(user_id, parent_id) DO UPDATE SET state = excluded.state, updated_at = excluded.updated_at`).run(req.user.id, parent.id, state);
+  const f = followState(db, parent.id, req.user.id);
+  emitToUser(req.user.id, 'read:changed', { channel_id: channel.id, parent_id: parent.id, following: f.following });
+  res.json({ following: f.following, follow_explicit: f.explicit });
 });
 
 router.post('/channels/:id/messages', async (req, res) => {
@@ -1600,8 +1706,10 @@ router.post('/channels/:id/messages', async (req, res) => {
   // same second as a read is still correctly newer. Reuse the same value as the
   // sender's read marker so they never see their own message as unread.
   const now = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS t").get().t;
-  db.prepare('INSERT INTO chat_messages (id, channel_id, user_id, body, parent_id, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(id, channel.id, req.user.id, body || null, req.body?.parent_id || null, now);
+  // "Also send to #channel" (D-190): ONE row, read in the thread and the channel.
+  const alsoInChannel = req.body?.parent_id && req.body?.also_to_channel ? 1 : 0;
+  db.prepare('INSERT INTO chat_messages (id, channel_id, user_id, body, parent_id, created_at, also_in_channel) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(id, channel.id, req.user.id, body || null, req.body?.parent_id || null, now, alsoInChannel);
   // Link only the caller's own still-unattached uploads for this channel.
   const link = db.prepare('UPDATE chat_attachments SET message_id = ? WHERE id = ? AND channel_id = ? AND user_id = ? AND message_id IS NULL');
   for (const aid of attachmentIds) link.run(id, aid, channel.id, req.user.id);
@@ -1616,7 +1724,8 @@ router.post('/channels/:id/messages', async (req, res) => {
                 ON CONFLICT(user_id, parent_id) DO UPDATE SET last_read_at = excluded.last_read_at
                 WHERE chat_thread_reads.deliberate_unread = 0 AND chat_thread_reads.last_read_at < excluded.last_read_at`)
       .run(req.user.id, req.body.parent_id, now);
-  } else {
+  }
+  if (!req.body?.parent_id || alsoInChannel) {
     db.prepare("UPDATE chat_channel_members SET last_read_at = ? WHERE channel_id = ? AND user_id = ? AND deliberate_unread = 0").run(now, channel.id, req.user.id);
   }
   const message = await serialize(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(id));
@@ -1627,6 +1736,16 @@ router.post('/channels/:id/messages', async (req, res) => {
   if (channel.kind === 'dm' && body) {
     const recips = db.prepare('SELECT user_id FROM chat_channel_members WHERE channel_id = ? AND user_id != ?').all(channel.id, req.user.id);
     for (const r of recips) pushToUser(r.user_id, { title: `Message from ${shortNameOf(req.user)}`, body: body.slice(0, 140), tag: `dm-${channel.id}`, renotify: true, url: `/?c=${channel.id}&m=${id}` }).catch(() => {});
+  } else if (body && req.body?.parent_id) {
+    // Being @mentioned in a reply follows the thread again, even one you
+    // unfollowed — Slack's rule; the mention itself has already been pushed.
+    const refollow = db.prepare(`INSERT INTO chat_thread_follows (user_id, parent_id, state, updated_at) VALUES (?, ?, 'following', datetime('now'))
+      ON CONFLICT(user_id, parent_id) DO UPDATE SET state = 'following', updated_at = excluded.updated_at`);
+    for (const uid of mentionedIds) refollow.run(uid, req.body.parent_id);
+    // A reply notifies the thread's followers (D-190). Sent to the channel as
+    // well, it is channel news too — for everyone not already told.
+    const told = notifyThreadReply(db, channel, req.body.parent_id, body, req.user, mentionedIds, id);
+    if (alsoInChannel) notifyChannelMessage(db, channel, body, req.user, [...mentionedIds, ...told], id);
   } else if (body) {
     // Every other channel message: grouped, summarized, debounced push to members
     // who weren't already @mentioned (they got a higher-priority alert above).

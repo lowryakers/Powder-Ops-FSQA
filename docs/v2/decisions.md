@@ -7723,3 +7723,26 @@ code reading; both missed the defect that broke it most often.
   only once its replies have loaded, only while visible, and up to the newest reply loaded.
 - `verify:unreadlanding` (26, live + browser at 1280 and 390). Control (`main` plus the test's data attributes)
   fails 10 and then cannot continue — the first being `up_to` ignored and the reply reading the channel.
+
+## D-190 — Threads work like Slack's: followers are told, a thread can be unfollowed, "N new" on the chip (19 Oct 2026)
+Paste 2 of Lowry's review ("like Slack unless something is better or simpler").
+- **A reply notified the wrong people, or nobody.** It went through the channel notifier, which bailed whenever the
+  channel had no unread top-level post — and replies never count there — so a plain reply usually notified nobody,
+  and when it did, it reached channel members who had never touched the thread with a "N new" count about something
+  else. **A reply now notifies the thread's followers** (`threadReplyRecipients`), measured on THAT thread's unread,
+  tagged `thread-<parent>`, coalesced per person per thread. A person @mentioned is left to the mention push.
+- **Following is derived and can be overridden.** Started / replied / named in the parent or a reply — as before —
+  and `chat_thread_follows` adds `following` (a thread you never touched) or `muted` (shown as **Unfollow**: off
+  Threads, no reply notifications, still readable). **Being @mentioned in a reply follows it again** — Slack's rule;
+  the mention itself is always pushed. `FOLLOWS(p)` is the one SQL definition the inbox, its badge, Activity and
+  the notifications share.
+- **The reply chip says "N new"** for a thread you follow (`thread_unread` on the channel page), cleared live by
+  `read:changed` from any session.
+- **The thread drawer opens like a channel (D-189):** at its first unread reply with the New line and Jump to latest
+  when the unread replies do not fit, otherwise at the newest; read only as far as the replies on screen, only
+  while visible. Follow / Following in its header; Unfollow on the Threads inbox card.
+- **"Also send to #channel" is one row** (`chat_messages.also_in_channel`), not a copy: it shows in the feed as
+  "replied to a thread: …" (opens the thread), counts as channel unread in `channelUnread` and in the `/channels`
+  list count, stays in the thread, and an edit or delete reaches both because there is one row. Its channel push
+  skips everyone the thread push already told.
+- `verify:threads` (36, live + browser at 1280). Control (`main`) fails 7, then stops at the follow endpoint.

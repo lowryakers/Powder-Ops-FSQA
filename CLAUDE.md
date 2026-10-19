@@ -2140,7 +2140,16 @@ channel-list query in `/channels` — they're separate queries, keep them in ste
 instead via `chat_thread_reads` + `threadUnread()`. `GET /threads` returns `unread` + `last_read_at` per
 thread (drives the "N new" badge and the NEW divider), `GET /threads/unread` feeds the sidebar badge, and
 `POST /threads/:parentId/read` clears one — fired by opening the ThreadPanel, by Mark read / Mark all read,
-and by replying. Unread threads sort first. **`threadUnread()` falls back to the channel's `last_read_at`
+and by replying. Unread threads sort first. **Following, notifications, the chip, landing and "Also send to channel" (D-190).** `FOLLOWS(p)` in comms.js is the ONE
+definition of "follows this thread" (started / replied / named in parent or reply / followed by hand, minus unfollowed) —
+the Threads inbox, its badge, Activity and the reply notifications all use it. `chat_thread_follows` overrides the
+derivation (`following` | `muted`, shown as Follow / Unfollow); an @mention in a reply re-follows. **A reply notifies
+the thread's followers (`threadReplyRecipients`), measured on `threadUnread`, tag `thread-<parent>` — never
+`notifyChannelMessage`.** The channel page carries `thread_following` / `thread_unread` per parent ("N new" on the chip).
+The drawer opens at its first unread reply when they do not fit (the D-189 rule) and marks read only what is on screen.
+**"Also send to channel" is ONE row** (`chat_messages.also_in_channel`): in the feed, in `channelUnread` AND the
+`/channels` count (keep both in step), still in the thread. `verify:threads` (36).
+**`threadUnread()` falls back to the channel's `last_read_at`
 when there's no per-thread read row** — otherwise a thread you'd never opened counted its entire history
 (hundreds of replies on imported threads), the "phantom huge number" bug. So once you've caught up on the
 channel, old thread replies don't linger as unread; only replies since count.
