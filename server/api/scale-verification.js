@@ -1,3 +1,4 @@
+import { cautionWithDocument, outOfServiceScales } from '../instrument-incidents.js';
 // Scale Verification log — the in-app home for Forms 417-01 … 417-05.
 //
 // Submissions arrive from the kiosk (public, /api/submit/scale-verification)
@@ -84,10 +85,15 @@ export function recordScaleVerification(db, body, { actor, source }) {
 // Each form carries its OWN assembled procedure: the placement steps differ
 // between the corner sheet and the revised centre-line one, so the client
 // renders what it is given rather than deciding which wording applies.
-router.get('/forms', (_req, res) => res.json({
-  forms: SCALE_FORMS.map(f => ({ ...f, procedure: procedureFor(f) })),
-  procedure: SCALE_PROCEDURE,
-}));
+router.get('/forms', (_req, res) => {
+  const db = getDb();
+  res.json({
+    forms: SCALE_FORMS.map(f => ({ ...f, procedure: procedureFor(f) })),
+    procedure: SCALE_PROCEDURE,
+    caution: cautionWithDocument(db),
+    out_of_service: outOfServiceScales(db),
+  });
+});
 
 // GET / — the log.
 router.get('/', (req, res) => {

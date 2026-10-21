@@ -4034,6 +4034,53 @@ function runMigrations() {
     addColumnIfMissing(t, 'affected_since', 'TEXT');
   }
 
+  // A scale reported dropped or damaged (D-194). An EVENT, not a measurement:
+  // it takes the instrument out of service, owes a product disposition through
+  // the same writer as a failed check, and closes only when QA authorizes the
+  // return to use against a passing check dated after it. `instrument_id` is
+  // nullable — the floor may not know which instrument row it was, and the
+  // report must not be refused for that; `scale_label` holds what they said.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS instrument_incidents (
+      id TEXT PRIMARY KEY,
+      instrument_id TEXT,
+      scale_label TEXT,
+      room TEXT,
+      form_code TEXT,
+      kind TEXT NOT NULL,
+      result TEXT NOT NULL DEFAULT 'incident',
+      occurred_at TEXT NOT NULL,
+      reported_at TEXT NOT NULL DEFAULT (datetime('now')),
+      reported_by TEXT NOT NULL,
+      reported_by_id TEXT,
+      source TEXT NOT NULL DEFAULT 'app',
+      description TEXT,
+      lots_since TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      returned_at TEXT,
+      returned_by TEXT,
+      return_inspection TEXT,
+      return_check_kind TEXT,
+      return_check_id TEXT,
+      notified_to TEXT,
+      affected_since TEXT,
+      disposition TEXT,
+      disposition_notes TEXT,
+      disposition_ref TEXT,
+      disposition_by TEXT,
+      disposition_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_instrument_incidents_open ON instrument_incidents(status, instrument_id);
+  `);
+  // Carol's "record affected lots, quantities, evaluation results" (D-194), and
+  // the hold that came before a final answer, on all three sources.
+  for (const t of ['calibration_records', 'scale_verifications', 'instrument_incidents']) {
+    addColumnIfMissing(t, 'disposition_lots', 'TEXT');
+    addColumnIfMissing(t, 'disposition_quantity', 'TEXT');
+    addColumnIfMissing(t, 'disposition_evaluation', 'TEXT');
+    addColumnIfMissing(t, 'disposition_history', 'TEXT');
+  }
+
   // The product and material impact of an evacuation or crisis test (SQF
   // 2.6.4.2, D-154). Not on Form 501-02 V1 — held beside it until Document
   // Control adds it to the form. `impact` is JSON; who and when are columns so

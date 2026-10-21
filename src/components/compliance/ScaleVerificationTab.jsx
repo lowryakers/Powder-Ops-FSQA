@@ -23,6 +23,7 @@ const SCALE_COLUMNS = [
 import { useAuth } from '../../hooks/useAuth';
 import { CheckCircle2, XCircle, AlertTriangle, Clock, QrCode } from 'lucide-react';
 import ScaleProcedureCard from '../common/ScaleProcedureCard.jsx';
+import { OutOfServiceBanner } from '../common/ScaleIncident.jsx';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import KioskQrModal from '../kiosk/KioskQrModal.jsx';
@@ -151,12 +152,14 @@ export default function ScaleVerificationTab({ canDecide = false, onDispositionC
         </button>
       </div>
 
+      <OutOfServiceBanner scales={formList?.out_of_service} />
+
       <StatusCards status={status} />
 
       {/* Reference copy. The check itself is run at the scale from the kiosk,
           where this card is open by default; here it's collapsed so the log
           stays the point of the screen. */}
-      <ScaleProcedureCard procedure={formList?.procedure} form={formList?.forms?.find(f => f.code === formCode)} defaultOpen={false} />
+      <ScaleProcedureCard procedure={formList?.procedure} caution={formList?.caution} form={formList?.forms?.find(f => f.code === formCode)} defaultOpen={false} />
 
       {(fails > 0 || unverified > 0) && (
         <div className="flex flex-wrap gap-2">

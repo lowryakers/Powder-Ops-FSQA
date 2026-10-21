@@ -90,20 +90,35 @@ r = await Q('POST', `/calibration/dispositions/calibration/${failRec.id}`, { dis
 t('an answer with nothing said about the product is refused', r.status === 400 && /assessed/i.test((await J(r))?.error || ''));
 r = await Q('POST', `/calibration/dispositions/calibration/${failRec.id}`, { disposition: 'on_hold', notes: 'Lots 101700-101702 held' });
 t('"placed on hold" without the hold number is refused, naming it', r.status === 400 && /On Hold or deviation number/.test((await J(r))?.error || ''));
-r = await Q('POST', `/calibration/dispositions/calibration/${failRec.id}`, { disposition: 'on_hold', notes: 'Lots 101700-101702 held', ref: 'OH-009' });
+r = await Q('POST', `/calibration/dispositions/calibration/${failRec.id}`, { disposition: 'on_hold', notes: 'Held pending reweigh', ref: 'OH-009' });
+t('D-194: "placed on hold" without the affected lots is refused, naming them', r.status === 400 && /affected lots/i.test((await J(r))?.error || ''));
+r = await Q('POST', `/calibration/dispositions/calibration/${failRec.id}`, { disposition: 'on_hold', notes: 'Held pending reweigh', ref: 'OH-009', lots: '101700-101702', quantity: '3 pallets' });
 rec = await J(r);
-t('QA records it: placed on hold, OH-009', r.status === 200 && rec.disposition_state === 'recorded' && rec.disposition_label === 'Affected product placed on hold' && rec.disposition_ref === 'OH-009');
+t('QA records it: placed on hold, OH-009, lots and quantity kept', r.status === 200 && rec.disposition_label === 'Affected product placed on hold'
+  && rec.disposition_ref === 'OH-009' && rec.disposition_lots === '101700-101702' && rec.disposition_quantity === '3 pallets');
+t('D-194: ON HOLD IS NOT AN ANSWER — the finding stays open as "held"', rec.disposition_state === 'held');
 t('…signed by the person who decided, with a date', rec.disposition_by === 'Qala Lead' && !!rec.disposition_at);
-t('it leaves the open list and the bell', !(await J(await Q('GET', '/calibration/dispositions'))).pending.some(x => x.id === failRec.id)
-  && (await bell(Q, 'product-disposition')) === bell0);
+let open1 = await J(await Q('GET', '/calibration/dispositions'));
+t('it leaves "needs a disposition" and is listed as held', !open1.pending.some(x => x.id === failRec.id) && open1.held.some(x => x.id === failRec.id && x.disposition_ref === 'OH-009'));
+t('the bell moves it from "no disposition" to "product on hold"', (await bell(Q, 'product-disposition')) === bell0 && (await bell(Q, 'product-held')) >= 1);
+r = await Q('POST', `/calibration/dispositions/calibration/${failRec.id}`, { disposition: 'on_hold', notes: 'again', ref: 'OH-010', lots: 'x' });
+t('a held finding cannot be "put on hold" again', r.status === 400 && /already on hold/i.test((await J(r))?.error || ''));
+r = await Q('POST', `/calibration/dispositions/calibration/${failRec.id}`, { disposition: 'retested_released', notes: 'Reweighed', lots: '101700-101702' });
+t('a release without the evaluation result is refused', r.status === 400 && /evaluation/i.test((await J(r))?.error || ''));
+r = await Q('POST', `/calibration/dispositions/calibration/${failRec.id}`, { disposition: 'retested_released', notes: 'Reweighed and released',
+  lots: '101700-101702', evaluation: 'Reweighed 40 units on verified scale #85: all within label claim' });
+rec = await J(r);
+t('QA records the release: the finding closes', r.status === 200 && rec.disposition_state === 'recorded' && rec.disposition === 'retested_released');
+t('…and the hold before it is kept in the history', rec.disposition_history?.[0]?.disposition === 'on_hold' && rec.disposition_history?.[0]?.ref === 'OH-009');
+t('…and it leaves the held list and the bell', !(await J(await Q('GET', '/calibration/dispositions'))).held.some(x => x.id === failRec.id));
 r = await Q('POST', `/calibration/dispositions/calibration/${failRec.id}`, { disposition: 'no_impact', notes: 'second thoughts' });
 t('a recorded decision is not rewritten by QA (409)', r.status === 409);
-r = await A('POST', `/calibration/dispositions/calibration/${failRec.id}`, { disposition: 'rejected', notes: 'Lots destroyed after retest', ref: 'DSP-12' });
+r = await A('POST', `/calibration/dispositions/calibration/${failRec.id}`, { disposition: 'rejected', notes: 'Lots destroyed after retest', ref: 'DSP-12', lots: '101700-101702', evaluation: 'Retest out of spec' });
 t('an admin can correct it', r.status === 200 && (await J(r)).disposition === 'rejected');
 const actions = (() => { const d = new Database(process.env.DBPATH, { readonly: true });
   try { return d.prepare('SELECT action FROM audit_log WHERE entity_type = ? AND entity_id = ?').all('calibration_record', failRec.id).map(x => x.action); }
   finally { d.close(); } })();
-t('both acts are in the audit trail', JSON.stringify(actions).includes('product_disposition') && JSON.stringify(actions).includes('disposition_corrected'), JSON.stringify(actions));
+t('every act is in the audit trail — hold, release, correction', ['product_disposition', 'hold_released', 'disposition_corrected'].every(a => JSON.stringify(actions).includes(a)), JSON.stringify(actions));
 const passRec = (await J(await Q('GET', '/calibration/records?instrument_id=oc-inst'))).find(x => x.result === 'pass' && x.id !== 'oc-good');
 r = await Q('POST', `/calibration/dispositions/calibration/${passRec.id}`, { disposition: 'not_used', notes: 'n/a' });
 t('a passing record refuses a disposition — there is nothing to dispose of', r.status === 400);
@@ -133,7 +148,8 @@ const scRow = (await J(await Q('GET', `/scale-verification?form_code=${f.code}`)
 t('a FAILED check from the kiosk files as owed', r.status < 300 && scRow?.disposition === 'pending', JSON.stringify({ status: r.status, d: scRow?.disposition }));
 t('…its window opens at the passing check before it', !!scRow?.affected_since);
 t('…and it is in the same open list as the calibrations', (await J(await Q('GET', '/calibration/dispositions'))).pending.some(x => x.id === scId && x.source === 'scale'));
-r = await Q('POST', `/calibration/dispositions/scale/${scId}`, { disposition: 'retested_released', notes: 'Lots 101710, 101711 reweighed on #85, in spec' });
+r = await Q('POST', `/calibration/dispositions/scale/${scId}`, { disposition: 'retested_released', notes: 'Reweighed on #85',
+  lots: '101710, 101711', evaluation: 'Reweighed on #85, in spec' });
 t('QA records it through the same door', r.status === 200);
 t('the scale log reads it back', (await J(await Q('GET', `/scale-verification?form_code=${f.code}`))).find(x => x.id === scId)?.disposition_label === 'Affected product retested and released');
 
