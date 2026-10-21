@@ -1304,11 +1304,9 @@ const money = (n) => Math.round(n * 100) / 100;
  * with the hours it sits beside, and whoever is looking cannot tell which of
  * the two is wrong — the activity-metrics rule, applied to money.
  *
- * Note what that inherits: `overtime` here is hours over THIS PERSON'S weekly
- * target, which is 40 for everybody unless the office set otherwise, and is
- * not the same statement as the statutory over-40 week. The screen says so
- * whenever somebody on the list carries a different target; inventing a second
- * overtime definition down here, visible only in the money, would be worse.
+ * `overtime` is hours over 40 in the week's worked-and-paid hours (D-193), the
+ * same figure the column shows; inventing a second overtime definition down
+ * here, visible only in the money, would be worse.
  *
  * No rate means no cost — null, never zero. A zero would state that the hours
  * were free, when the truth is that nobody has said what they cost.
@@ -1360,28 +1358,47 @@ router.get('/hours', (req, res) => {
     const rate = pay ? pay.rate : null;
     const weekRows = weeks.map(w => {
       const r = byUser[u.id]?.[w];
-      const worked = r?.worked || 0, pto = r?.pto || 0, holiday = r?.holiday || 0, unpaid = r?.unpaid || 0;
+      const worked = r?.worked || 0, pto = r?.pto || 0, holiday = r?.holiday || 0;
       const autoFill = r ? !!r.auto_fill : true;
-      // THE WEEK'S TARGET (D-167): the week's own figure when the office set
-      // one, otherwise the person's usual target. A contractor has neither —
-      // a week target is never applied to one.
+      // THE WEEKLY TOTAL (D-193, was "target" in D-167): the week's own figure
+      // when the office set one, otherwise the person's usual total. It is the
+      // hours the person is PAID for that week — the number Marnee keys in,
+      // because ADP's worked figure does not separate unpaid time. A contractor
+      // has none: their paid hours are the hours worked.
       const weekTarget = u.target == null ? null
         : (r?.target != null ? r.target : u.target);
-      // A row that exists only because the week's target was set is NOT an
+      // A row that exists only because the week's total was set is NOT an
       // entry: an untouched week shouldn't invent 40 hours of anything.
       const hasEntry = !!r && r.hours_entered !== 0;
-      // Paid-but-not-worked: the balance up to target, only once there's an
-      // entry. No target (a contractor) means nothing to balance up to: their
-      // paid hours are the hours worked, and there is no overtime to compute.
-      const nonWorking = (hasEntry && autoFill && weekTarget != null)
-        ? Math.max(0, weekTarget - worked - pto - holiday - unpaid) : 0;
+      const round = (n) => Math.round(n * 100) / 100;
+      let unpaid, nonWorking, overtime;
+      if (weekTarget == null) {
+        // Contractor: unpaid is whatever was typed, no balance, no overtime.
+        unpaid = r?.unpaid || 0; nonWorking = 0; overtime = 0;
+      } else {
+        // UNPAID IS DERIVED, never typed: the hours ADP recorded beyond the
+        // weekly total. PAID NON-WORKING is the other direction — the balance
+        // up to the total when fewer hours were recorded (the auto-fill toggle
+        // still turns it off). PTO and holiday are recorded hours too.
+        const recorded = worked + pto + holiday;
+        unpaid = hasEntry ? Math.max(0, recorded - weekTarget) : 0;
+        nonWorking = (hasEntry && autoFill) ? Math.max(0, weekTarget - recorded) : 0;
+        // OVERTIME is hours over 40 in the weekly total — over the ordinary
+        // week, NOT over the person's own usual total. PTO and holiday are paid
+        // but not worked and never count toward it, nor does paid non-working:
+        // what counts is the worked part of the total (worked minus unpaid).
+        overtime = hasEntry ? Math.max(0, (worked - unpaid) - STANDARD_WEEK_HOURS) : 0;
+      }
       return {
-        week_start: w, worked, pto, holiday, unpaid, auto_fill: autoFill,
+        week_start: w, worked, pto, holiday, unpaid: round(unpaid), auto_fill: autoFill,
+        unpaid_derived: weekTarget != null,
         has_entry: hasEntry, note: r?.note || null,
         target: weekTarget, target_set: u.target != null && r?.target != null,
-        non_working: Math.round(nonWorking * 100) / 100,
-        overtime: weekTarget == null ? 0 : Math.round(Math.max(0, worked - weekTarget) * 100) / 100,
-        total: Math.round((worked + pto + holiday + nonWorking) * 100) / 100,
+        non_working: round(nonWorking),
+        overtime: round(overtime),
+        // What is paid: the recorded hours less the unpaid ones, plus the
+        // balance — which is the weekly total itself whenever auto-fill is on.
+        total: round(worked + pto + holiday - unpaid + nonWorking),
       };
     }).map(w => ({ ...w, ...weekCost(rate, w) }));
     const sum = (k) => Math.round(weekRows.reduce((n, w) => n + w[k], 0) * 100) / 100;
@@ -1539,13 +1556,18 @@ router.put('/hours', (req, res) => {
   const isContractor = !db.prepare('SELECT 1 FROM users WHERE id = ?').get(user_id);
   let target = existing?.target ?? null;
   if (req.body.target !== undefined) {
-    if (isContractor) return res.status(400).json({ error: 'A contractor has no weekly target — their paid hours are the hours worked.' });
+    if (isContractor) return res.status(400).json({ error: 'A contractor has no weekly total — their paid hours are the hours worked.' });
     if (req.body.target === null || req.body.target === '') target = null;
     else {
       const t = Number(req.body.target);
-      if (!Number.isFinite(t) || t < 0 || t > 168) return res.status(400).json({ error: 'A weekly target is between 0 and 168 hours.' });
+      if (!Number.isFinite(t) || t < 0 || t > 168) return res.status(400).json({ error: 'A weekly total is between 0 and 168 hours.' });
       target = Math.round(t * 100) / 100;
     }
+  }
+  // UNPAID IS DERIVED for an employee (D-193): worked + PTO + holiday beyond
+  // the weekly total. A typed figure would be a second answer to one question.
+  if (!isContractor && req.body.unpaid !== undefined) {
+    return res.status(400).json({ error: 'Unpaid hours are worked out from the weekly total — change the Weekly total instead.' });
   }
   // Only a change to the hours themselves makes this an entry; setting a
   // week's target alone must not start auto-filling it.

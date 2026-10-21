@@ -584,9 +584,8 @@ CSV of the period. Nothing new is stored and no door widens — `GET /office/hou
   unpaid) at the rate, plus the premium on the SAME `overtime` the column shows. **The premium is HALF the
   rate** — the OT hour is already inside `worked` and therefore inside `total`, so 1.5× here pays twice.
   48h at $20 on a 40h target is $1,040.
-- **The overtime it inherits is over each person's OWN target, not over 40, and the screen says so** — only
-  when somebody on the list carries a different target, so it is quiet when moot. A second overtime
-  definition visible only in the money would be worse.
+- **Overtime is over 40 for everybody since D-193** (it was over each person's own target, with a note on
+  screen; the note is gone). A second overtime definition visible only in the money would be worse.
 - **NO RATE IS NO COST — null, never zero**, and the total names how many of the list it covers ("2 of 11
   people have a rate"). A blank rate on a linked row is **Salaried** (the word the Pay Tracking roster
   already uses); **no pay row at all is a different gap**, and those people are NAMED with a pointer to Pay
@@ -4853,7 +4852,14 @@ most of it.
 - Verified inside `verify:payroster` (64, live + browser at 1440px); **the control collapses the split and
   fails 4**, the first being the employee total reading a contractor's 32 hours.
 
-## Each week on the Hours tab carries its own target (D-167)
+## The Hours tab's Weekly total is what the week is paid at (D-193); each week carries its own (D-167)
+- **The column formerly called Target is "Weekly total"** — the paid hours Marnee keys in, because ADP's
+  worked figure does not separate unpaid time. Keys/columns are still `target` (API, `employee_hours.target`).
+- **Unpaid is DERIVED for an employee**: `max(0, worked + PTO + holiday − weekly total)`, shown read-only
+  (`UnpaidCell`, `data-unpaid`); a typed `unpaid` on PUT is 400. A contractor's is still typed. Paid
+  non-working is the other direction (short of the total, auto-fill on). Paid = the weekly total.
+- **Overtime = max(0, (worked − unpaid) − 40)** — over 40, not the person's own total; PTO, holiday and paid
+  non-working never count. A week where worked > the total and nobody raised the total reads as UNPAID.
 - **`employee_hours.target`**: NULL follows the person's usual target (`users.weekly_hours_target`).
   The non-working balance, overtime and cost read the week's own figure.
 - The usual target sits beside the name. Each week's Target box is amber when it differs, with a reset.

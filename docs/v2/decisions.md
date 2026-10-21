@@ -7778,3 +7778,20 @@ unread threads the second began screens below the first.
   thread is read only by its Mark read button, or Mark all read.
 - `verify:threadsinbox` (29). Control: `main` before this — the click on a card finds nothing to open and the
   run stops.
+
+## D-193 — Hours: "Target" becomes "Weekly total"; unpaid is derived from it; overtime is over 40 (21 Oct 2026)
+Asked: rename Target to Weekly total, overtime is any hours above 40 in that column, and Unpaid fills itself
+as the difference between Worked and the weekly total — "this is the column Marnee adjusts when she puts in
+how many hours they actually worked, since ADP does not separate the Unpaid hours".
+- **The weekly total is the week's paid hours.** Worked + PTO + holiday beyond it is unpaid (derived, read-only;
+  a typed unpaid for an employee is refused). Short of it is paid non-working, as before. Paid = the total.
+- **PTO and holiday are counted beside Worked in the difference** — with none of either it is exactly the
+  difference asked for; without them a holiday week would read as paid twice.
+- **Overtime is the worked part of the total over 40** — `(worked − unpaid) − 40`. In an ordinary week that is
+  "the weekly total over 40"; PTO and holiday are paid but not worked and stay out of overtime. It no longer
+  follows the person's own usual total, so the "measured against each person's own target" note is removed.
+- **Consequence the office must know:** the weekly total starts at the person's usual figure (40). A week with
+  48 worked that nobody raised reads 8 unpaid and no overtime until the total is set to 48.
+- Unpaid figures typed before this are no longer read for employees (the derivation replaces them); contractors
+  keep theirs. `verify:weektarget` (34) and `verify:hoursrates` (37) carry the new rules; control (old code)
+  fails 5 and stops at the read-only Unpaid cell.
