@@ -249,6 +249,10 @@ router.post('/records', (req, res) => {
   // written; one left out files the record as 'pending' (never refused).
   const dispErrors = filingErrors(req.body?.product_disposition);
   if (dispErrors.length) return res.status(400).json({ error: dispErrors.join(' '), errors: dispErrors });
+  // A product decision given WITH the record is signed like one given later
+  // (D-195). A record filed without one is not asked for anything.
+  if (req.body?.product_disposition?.disposition
+    && !gateSignature(req, res, { action: 'product_disposition' })) return;
 
   db.prepare(`
     INSERT INTO calibration_records (id, instrument_id, calibrated_by, result, reading_before, reading_after, standard_used, standard_cert_number, certificate_number, next_due, notes)
@@ -276,7 +280,8 @@ router.post('/records', (req, res) => {
 
   const created = stampOnFile(db, 'calibration', id, req.body?.product_disposition, req.user);
   logAudit(req.user || calibrated_by, 'calibrate', 'calibration_record', id,
-    { instrument_id, result, disposition: created.disposition || null }, null, created);
+    { instrument_id, result, disposition: created.disposition || null,
+      ...(req.body?.product_disposition?.disposition ? { signature_verified: true } : {}) }, null, created);
   res.status(201).json(withDisposition('calibration', created));
 });
 
@@ -289,7 +294,11 @@ router.get('/dispositions', (req, res) => {
 
 // Record what happened to the product. `source` is calibration | scale | incident.
 router.post('/dispositions/:source/:id', (req, res) => {
-  const { error, errors, status, record } = recordDisposition(getDb(), req.params.source, req.params.id, req.body, req.user);
+  // Signed with the person's password (D-195) — a hold, a release or a
+  // rejection is a decision about product, the same weight as a QA signature.
+  const { error, errors, status, record, gated } = recordDisposition(getDb(), req.params.source, req.params.id, req.body, req.user,
+    { gate: () => gateSignature(req, res, { action: 'product_disposition' }) });
+  if (gated) return;
   if (error) return res.status(status).json({ error, errors });
   res.json(record);
 });

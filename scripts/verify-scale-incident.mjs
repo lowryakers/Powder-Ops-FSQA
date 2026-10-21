@@ -61,6 +61,7 @@ const op = await login('si-op', 'Fill Operator', 'SC-sio');
 const A = (m, p, b) => c(m, p, b, adm?.token);
 const Q = (m, p, b) => c(m, p, b, qa?.token);
 const O = (m, p, b) => c(m, p, b, op?.token);
+const QS = (m, p, b) => Q(m, p, b && { ...b, signature_password: 'Passw0rd!!' });
 t('admin, QA lead and an operator sign in', !!(adm?.token && qa?.token && op?.token));
 const bell = async (call, id) => ((await J(await call('GET', '/compliance/notifications')))?.items || []).find(i => i.id === id)?.count || 0;
 const instStatus = (id) => { const d = new Database(process.env.DBPATH, { readonly: true }); const s = d.prepare('SELECT status FROM calibration_instruments WHERE id = ?').get(id)?.status; d.close(); return s; };
@@ -128,7 +129,16 @@ t('a second return is refused (409)', r.status === 409);
 console.log('\n── the product: hold, then release ──');
 r = await Q('POST', `/calibration/dispositions/incident/${inc.id}`, { disposition: 'on_hold', notes: 'Held MO99001', ref: 'OH-77' });
 t('placing product on hold needs the affected lots', r.status === 400 && /lots/i.test((await J(r))?.error || ''));
-r = await Q('POST', `/calibration/dispositions/incident/${inc.id}`, { disposition: 'on_hold', notes: 'Held MO99001', ref: 'OH-77', lots: '109001', quantity: '400 units' });
+t('D-195: an incomplete decision is refused BEFORE any password is asked (400, not 403)', r.status === 400);
+const holdBody = { disposition: 'on_hold', notes: 'Held MO99001', ref: 'OH-77', lots: '109001', quantity: '400 units' };
+r = await Q('POST', `/calibration/dispositions/incident/${inc.id}`, holdBody);
+body = await J(r);
+t('D-195: a complete decision with no password is asked for one (403 signature_required, never 401)', r.status === 403 && body?.signature_required === true);
+r = await Q('POST', `/calibration/dispositions/incident/${inc.id}`, { ...holdBody, signature_password: 'wrong-password' });
+t('D-195: a wrong password is refused', r.status === 403 && (await J(r))?.signature_required === true);
+t('…and neither refusal wrote anything — the finding still owes a decision',
+  (await J(await Q('GET', '/calibration/dispositions'))).pending.some(x => x.id === inc.id));
+r = await QS('POST', `/calibration/dispositions/incident/${inc.id}`, holdBody);
 body = await J(r);
 t('QA places it on hold; the finding stays OPEN as held', r.status === 200 && body?.disposition_state === 'held' && body?.disposition_lots === '109001');
 t('the bell shows product on hold', (await bell(Q, 'product-held')) >= 1);
@@ -136,7 +146,7 @@ r = await O('POST', `/calibration/dispositions/incident/${inc.id}`, { dispositio
 t('an operator cannot release product (403)', r.status === 403);
 r = await Q('POST', `/calibration/dispositions/incident/${inc.id}`, { disposition: 'retested_released', notes: 'Reweighed', lots: '109001' });
 t('a release without the evaluation result is refused', r.status === 400 && /evaluation/i.test((await J(r))?.error || ''));
-r = await Q('POST', `/calibration/dispositions/incident/${inc.id}`, { disposition: 'retested_released', notes: 'Reweighed and released',
+r = await QS('POST', `/calibration/dispositions/incident/${inc.id}`, { disposition: 'retested_released', notes: 'Reweighed and released',
   lots: '109001', quantity: '400 units', evaluation: 'Reweighed 50 units on verified scale #186: all within label claim' });
 body = await J(r);
 t('QA releases it; the finding closes with the hold kept in its history', r.status === 200 && body?.disposition_state === 'recorded'
@@ -148,6 +158,12 @@ const acts = d2.prepare("SELECT action FROM audit_log WHERE entity_id = ? ORDER 
 d2.close();
 t('the audit trail holds the report, the return, the hold and the release',
   ['create', 'returned_to_use', 'product_disposition', 'hold_released'].every(a => acts.includes(a)), JSON.stringify(acts));
+const d3 = new Database(process.env.DBPATH, { readonly: true });
+const decided = d3.prepare("SELECT details FROM audit_log WHERE entity_id = ? AND action IN ('product_disposition','hold_released')").all(inc.id);
+const leaked = d3.prepare("SELECT COUNT(*) n FROM audit_log WHERE details LIKE '%Passw0rd!!%' OR details LIKE '%wrong-password%'").get().n;
+d3.close();
+t('D-195: both decisions are recorded as signed with a password', decided.length === 2 && decided.every(x => /"signature_verified":true/.test(x.details || '')), JSON.stringify(decided));
+t('D-195: the password itself is never written to the audit log', leaked === 0);
 
 console.log('\n── from the kiosk ──');
 r = await fetch(`${B}/submit/scale-incident`, { method: 'POST', headers: { 'Content-Type': 'application/json' },

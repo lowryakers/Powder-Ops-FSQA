@@ -7826,3 +7826,21 @@ Control, reported, not decided here).
   is read from `sop_documents` by title** (`cautionWithDocument`), so a renumbering needs no deploy.
 - `verify:scaleincident` (60, live + browser at 1280/390); `verify:outofcal` (63) carries the held rule.
   Control: `main` fails at the first assertion.
+
+## D-195 — A product decision is signed with the person's password (single-spine move 01, 21 Oct 2026)
+A scale's return to use already needed a password (D-194); the decision about the PRODUCT — hold, release,
+reject, no effect, not used — did not, though it is the heavier act. It now goes through `gateSignature`,
+the same one signature service every QA signature uses.
+- **One prompt, asked LAST.** The decision is checked first (`recordDisposition(..., { gate })` runs the gate
+  only after every validation passes), so nobody types a password and is then told a field is missing. A
+  refused request writes nothing. 403 `signature_required`, never 401.
+- **Plain on screen.** The button reads *Sign and record*, a line under it says the password will be asked,
+  and the prompt names the decision in one line (`signDecision` in `src/lib/signDecision.js`):
+  *"Affected product placed on hold · lots 101700. Enter the password you sign in with."* Cancelling is a
+  choice and shows nothing.
+- **Both doors**: the disposition form, and a decision given on the Record Calibration form (asked only when
+  a decision is included — a calibration filed without one asks for nothing). The admin correction path is
+  the same route and is signed too.
+- Audited `signature_verified: true`; the password is never stored (asserted against the audit log).
+- Token callers are refused on all three routes (`APPROVE_ROUTES`), and the D-194 return-to-use route too.
+- `verify:scaleincident` (66), `verify:outofcal` (66). Control: the old server fails 7 across the two.
