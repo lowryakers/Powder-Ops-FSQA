@@ -153,6 +153,7 @@ const RUNS = [
   ['verify-access-sources.mjs', 5113, {}, false],
   ['verify-unread-landing.mjs', 5114, {}, false],
   ['verify-threads.mjs', 5115, {}, false],
+  ['verify-threads-inbox.mjs', 5116, {}, false],
 ];
 
 // VERIFY_ONLY=verify-auth.mjs,verify-swab-stock.mjs runs just the entries that

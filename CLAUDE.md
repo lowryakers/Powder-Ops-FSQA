@@ -2165,10 +2165,8 @@ mention count and in `activityMarker()`, so the feed and the badges can't disagr
 `chat_thread_reads` for the caller's mention threads, or "Mark all read" could never clear one.
 **"Threads that involve me" includes being mentioned in a REPLY, not just the parent** — the inbox query
 checked `chat_mentions` on the parent only, so a thread where someone @'d you three replies deep never
-appeared in your Threads list at all. In the inbox, **read threads dim (opacity-75) and collapse to a
-one-line summary** (parent preview + "N replies · last from X", Expand to reopen) while unread stay open with
-the ring + "N new"; a thread you've replied to shows a muted "Replied" chip — so the list is scannable for
-what still needs you.
+appeared in your Threads list at all. In the inbox **every thread is a collapsed card that opens in
+the drawer** (D-192); a thread you've replied to shows a muted "Replied" chip.
 
 ## FORM 602-01 V2: the organoleptic test is a check against the product's specification (D-050)
 The plant's own form has **no 1–5 anywhere**: APPEARANCE · ODOR · TASTE · COLOR · TEXTURE, each with a
@@ -5803,21 +5801,17 @@ three months later.
   `verify:reimbursements` (8, in `verify:all`) files a claim exactly the way the phone does; the control
   without the fix fails 5 of them.
 
-## Threads clear themselves when you actually read them (`src/lib/useSeenAfterDwell.js`)
-"Mark read" used to be the only way to clear a thread, so the honest case — you scrolled to it, read the
-replies, decided it needed nothing from you — left it unread forever and the badge stopped meaning anything.
-`useSeenAfterDwell(ref, {ms, enabled, onSeen})` fires once when an element has genuinely been *looked at*:
-enough of it on screen (IntersectionObserver `threshold`), **the tab visible** (leaving the app open on a
-second monitor must not clear your morning), and **continuously** for `ms` — the timer restarts on every
-exit, because half a second here and half a second there is still not reading.
-- Wired to `ThreadInboxCard` at 4s, and only while the card is **expanded** — a collapsed one-line summary
-  scrolling past is not reading the thread.
-- **It marks read on the server but deliberately does NOT refresh the list.** The ring, the "N new" badge and
-  the NEW divider stay put while you're still looking; a card that rearranges itself out from under the
-  sentence you're reading is worse than one that lingers, and the inbox will be in its read state next load.
-  `onMarkRead` still updates the sidebar count, which is the number people watch.
-- `seenRef` is synced in an effect, not during render — a ref written while rendering is a side effect and
-  the lint rule is right about it.
+## The Threads inbox is a list to choose from; a thread is read in the drawer (D-192)
+Every `ThreadInboxCard` is ONE collapsed card: channel, "N new", the starter's words (two lines), the latest
+reply and its time. Unread first. **Clicking opens `ThreadPanel`** (rendered by `ThreadsView` itself, with
+`socketRef` passed down), which lands at the first unread reply (D-190) and has the full reply box. Unread
+cards used to expand in place with every reply, so a reader scrolled the whole of one thread to reach the next.
+- **Nothing on the list marks a thread read except its Mark read button.** The 4-second dwell rule
+  (`useSeenAfterDwell`) is gone with the inline cards — a card scrolling past is not reading the thread; the
+  drawer marks only the replies on screen (D-189). The list refreshes when the drawer closes, never under it.
+- The inbox has no inline reply composer any more: one reply box, the drawer's.
+- `data-inbox-card` / `data-inbox-unread` / `data-inbox-open` / `data-inbox-markread`, `data-nav-threads`.
+  `verify:threadsinbox` (29, 1280 + 390; control stops at the first card click).
 
 ## Split Screen / chat popout: back must stay inside Messages
 The `/chat` route is either the ~420px docked panel (an iframe) or a 460px popout. It used to be given

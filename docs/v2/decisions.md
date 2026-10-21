@@ -7764,3 +7764,17 @@ Approved by Lowry 2026-10-19 (R-0313). PR #43 added `'Hydration': 'HYD'` and `'P
   question. "Tropical" is its own flavour; Tropical Paradise keeps TRP. No product row is touched.
 - Proven on a fresh database (65 → 73 active, second boot files nothing) and on a planted clash (6 filed, the
   two clashing rows skipped and left as they were).
+
+## D-192 — The Threads inbox is collapsed cards; a thread opens in the drawer (21 Oct 2026)
+Asked: "I want to be able to quickly see all the threads that have new messages, then click into the one I
+want to act on." Unread cards rendered expanded with every reply and an inline reply box, so with three
+unread threads the second began screens below the first.
+- **Every card is collapsed**: channel, "N new", the starter's words, the latest reply and its time, unread
+  first. Three unread threads fit on one screen at 1280 and at 390 whatever their length.
+- **A click opens the thread drawer** (`ThreadPanel`, D-190), which lands at the first unread reply with Jump
+  to latest and has the reply box. One reply box for a thread, not two that drift.
+- **The dwell-to-read rule is retired** (`useSeenAfterDwell` deleted). It existed because reading happened on
+  the list; reading happens in the drawer now, which marks only what is on screen (D-189). On the list a
+  thread is read only by its Mark read button, or Mark all read.
+- `verify:threadsinbox` (29). Control: `main` before this — the click on a card finds nothing to open and the
+  run stops.
