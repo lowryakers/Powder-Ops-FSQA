@@ -1,5 +1,5 @@
 import { flushSync } from 'react-dom';
-import { useState, useEffect, useCallback, useRef, useMemo, Fragment, memo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { getSocket } from '../../lib/socket';
@@ -8,7 +8,7 @@ import { notifyDataChanged } from '../../lib/dataChanged';
 import { canDeleteMessage, canEditMessage } from '../../../shared/comms-permissions.js';
 import ChangePasswordModal from '../common/ChangePasswordModal.jsx';
 import InstallHelp from '../InstallHelp.jsx';
-import { Share2, Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink, Columns2, Clock, Film, ChevronUp, Forward, Mic, Camera, CornerUpLeft, Pin, PinOff, KeyRound, Smartphone } from 'lucide-react';
+import { Share2, Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink, Columns2, Clock, Film, Forward, Mic, Camera, CornerUpLeft, CornerDownRight, Pin, PinOff, KeyRound, Smartphone } from 'lucide-react';
 import CommsSettings from './CommsSettings.jsx';
 import { shareFile as shareAttachment, canNativeShare } from '../../lib/shareFile.js';
 import NotificationStatus from './NotificationStatus.jsx';
@@ -16,7 +16,6 @@ import AttachmentViewer from './AttachmentViewer.jsx';
 import { copyImage, canCopyImage } from '../../lib/copyImage.js';
 import { useSwipeBack } from '../../lib/useSwipeBack';
 import { useCompactLayout } from '../../lib/useCompactLayout.js';
-import { useSeenAfterDwell } from '../../lib/useSeenAfterDwell.js';
 import FormatBar from '../common/FormatBar.jsx';
 import MarkupOverlay from '../common/MarkupOverlay.jsx';
 import { useFormatKeys } from '../../lib/useFormatKeys.js';
@@ -1652,233 +1651,66 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
   );
 }
 
-// One thread in the Threads inbox: channel label, parent, replies, reply box.
-function ThreadInboxCard({ thread, me, refresh, mentionUsers, canTranslate, viewerLang, onTranslate, onOpenChannel, onMarkRead, onMarkUnread, storageOn }) {
-  const [body, setBody] = useState('');
-  const compact = useCompactLayout();
-  const cardReplyRef = useRef(null);
-  const cardKeys = useFormatKeys({ getEl: () => cardReplyRef.current, value: body, onChange: setBody });
-  // @mention autocomplete — the inbox reply is a real reply into a real
-  // channel, so it needs the same picker the channel composer and the thread
-  // drawer have. Without it people typed a name by hand, the spelling didn't
-  // match, and nobody was notified.
-  const [mQuery, setMQuery] = useState(null);
-  const [mHi, setMHi] = useState(0);
-  const mMatches = useMemo(() => filterMentionPool(mentionUsers, mQuery, me.id), [mentionUsers, mQuery, me.id]);
-  const insertCardMention = (name) => {
-    const ta = cardReplyRef.current;
-    const caret = ta ? ta.selectionStart : body.length;
-    const before = body.slice(0, caret).replace(/@([^\s@]*)$/, '@' + name + ' ');
-    const after = body.slice(caret);
-    // SYNCHRONOUSLY — see useFormatKeys. Deferring the caret to a
-    // requestAnimationFrame means anything typed inside that frame lands at the
-    // OLD caret and is then jumped over, so picking an @mention and carrying
-    // straight on typing scattered the next few characters back into the name.
-    // Only fast typists ever saw it, which is the worst kind of bug to be told
-    // about. flushSync lands the value in the DOM before this returns, so
-    // setSelectionRange has something real to aim at.
-    flushSync(() => { setBody(before + after); setMQuery(null); });
-    if (ta) { ta.focus(); ta.setSelectionRange(before.length, before.length); }
-  };
-  const react = async (m, e) => { await apiPost(`/comms/messages/${m.id}/reactions`, { emoji: e }); refresh(); };
-  const unreact = async (m, e) => { await apiFetch(`/comms/messages/${m.id}/reactions/${encodeURIComponent(e)}`, { method: 'DELETE' }); refresh(); };
-  const del = async (m) => { await apiFetch(`/comms/messages/${m.id}`, { method: 'DELETE' }); refresh(); };
-  const edit = async (m, text) => { await apiPut(`/comms/messages/${m.id}`, { body: text }); refresh(); };
-  // A REPLY FROM THE INBOX IS A REPLY. This composer had no paperclip, no
-  // camera and no paste handler, so "here's the photo" was a sentence you
-  // could only finish by leaving, opening the channel and finding the thread
-  // again — while the thread drawer, which posts to the same endpoint, could
-  // attach all along.
-  const [pending, setPending] = useState([]);
-  const [uploading, setUploading] = useState(false);
-  const cardFileRef = useRef(null);
-  const cardCameraRef = useRef(null);
-  const uploadFiles = async (files) => {
-    if (!files.length || !storageOn) return;
-    setUploading(true);
-    try {
-      const fd = new FormData();
-      for (const f of files) fd.append('files', f);
-      const uploaded = await apiUpload(`/comms/channels/${thread.channel_id}/attachments`, fd, 'POST');
-      setPending(p => [...p, ...uploaded]);
-    } catch (err) { alert(err.message || 'Upload failed'); }
-    finally { setUploading(false); }
-  };
-  const onPickFiles = (e) => { const files = Array.from(e.target.files || []); e.target.value = ''; uploadFiles(files); };
-  const onCardPaste = (e) => {
-    const files = Array.from(e.clipboardData?.files || []);
-    if (files.length && storageOn) { e.preventDefault(); uploadFiles(files); }
-  };
-  const send = async () => {
-    const t = body.trim();
-    const attachment_ids = pending.map(p => p.id);
-    if (!t && !attachment_ids.length) return;
-    await apiPost(`/comms/channels/${thread.channel_id}/messages`, { body: t, parent_id: thread.parent.id, attachment_ids });
-    setBody(''); setPending([]); setMQuery(null); onMarkRead?.(thread.parent.id); refresh();
-  };
+// One thread in the Threads inbox, ALWAYS COLLAPSED (D-192): channel, who
+// started it and what they said, who replied last and what they said, and
+// "N new". The inbox is for choosing which thread to act on — a card that
+// expands in place made a reader scroll through every unread thread to reach
+// the next one. Clicking opens the thread drawer, which lands at the first
+// unread reply and carries the full reply box. Nothing here marks a thread
+// read except the explicit button: a card scrolling past is not reading it.
+function ThreadInboxCard({ thread, me, refresh, onOpen, onOpenChannel, onMarkRead }) {
   const Icon = thread.channel_kind === 'dm' ? MessageSquare : thread.channel_kind === 'private' ? Lock : Hash;
   const unread = thread.unread || 0;
-  const cardRef = useRef(null);
-  // "Acted on" = you've replied in this thread. Shown as a chip so a read
-  // thread you've already answered is distinct from one you only skimmed.
   const acted = thread.replies.some(r => r.user_id === me.id);
-  // Read threads collapse to a one-line summary so they recede as you scroll;
-  // unread ones stay open. Either can be toggled.
-  const [expanded, setExpanded] = useState(unread > 0);
-  // The line the reader left off at. Captured once per mount so it stays put
-  // while they read, rather than jumping as the card marks itself read.
-  const [marker] = useState(() => (unread > 0 ? thread.last_read_at || '0' : null));
-  const isNew = (m) => marker !== null && String(m.created_at) > marker && m.user_id !== me.id;
   const lastReply = thread.replies[thread.replies.length - 1];
-
-  // Sitting and reading a thread clears it. "Mark read" used to be the ONLY
-  // way, so the honest case — you read it, it needed nothing from you, you
-  // moved on — left it unread forever and the badge stopped meaning anything.
-  //
-  // It marks read on the SERVER but deliberately does not refresh this list:
-  // the ring, the "N new" badge and the NEW divider stay put while you are
-  // still looking at the thread. A card that rearranges itself out from under
-  // the sentence you are reading is worse than one that lingers, and the next
-  // time the inbox loads it will be in its read state anyway. `onMarkRead`
-  // still updates the sidebar count, which is the number people watch.
-  //
-  // Collapsed cards are excluded — a one-line summary scrolling past is not
-  // reading the thread.
-  useSeenAfterDwell(cardRef, {
-    enabled: unread > 0 && expanded,
-    ms: 4000,
-    onSeen: () => onMarkRead?.(thread.parent.id),
-  });
-
+  const snippet = (m) => (m?.body || '').replace(/\s+/g, ' ').trim() || (m?.attachments?.length ? '(attachment)' : '');
   return (
-    // NO overflow-hidden: it was there to clip the header's fill to the rounded
-    // corner, and it also clipped every floating thing a message renders — the
-    // hover pill, the emoji picker, the 3-dot menu. The corners are rounded on
-    // the first and last children instead, which costs nothing and lets those
-    // escape the card.
-    <div ref={cardRef} className={`border rounded-xl m-3 transition-opacity ${
-      unread > 0 ? 'border-powder-300 ring-1 ring-powder-100 bg-white'
-                 : 'border-gray-200 bg-gray-50/60 opacity-75 hover:opacity-100'}`}>
-      <div className="flex items-center gap-1.5 px-4 py-2 border-b border-gray-100 bg-gray-50 rounded-t-xl">
-        <button onClick={() => onOpenChannel(thread.channel_id)}
-          className={`flex items-center gap-1.5 text-sm hover:underline min-w-0 ${unread > 0 ? 'font-semibold text-gray-800' : 'font-medium text-gray-500'}`}>
-          <Icon size={14} className="text-gray-400 shrink-0" /> <span className="truncate">{thread.channel_name}</span>
+    <div data-inbox-card={thread.parent.id} data-inbox-unread={unread}
+      className={`border rounded-xl mx-3 my-2 transition-colors ${
+        unread > 0 ? 'border-powder-300 ring-1 ring-powder-100 bg-white' : 'border-gray-200 bg-gray-50/60'}`}>
+      <div className="flex items-center gap-1.5 px-3 pt-2">
+        <button onClick={() => onOpenChannel(thread.channel_id)} title="Open the channel"
+          className={`flex items-center gap-1 text-xs hover:underline min-w-0 ${unread > 0 ? 'font-semibold text-gray-700' : 'font-medium text-gray-500'}`}>
+          <Icon size={12} className="text-gray-400 shrink-0" /> <span className="truncate">{thread.channel_name}</span>
         </button>
+        {unread > 0 && <span className="px-1.5 py-0.5 rounded-full bg-powder-600 text-white text-[10px] font-bold shrink-0">{unread} new</span>}
         {acted && !unread && (
-          <span className="flex items-center gap-0.5 text-[10px] text-gray-400" data-tip="You replied in this thread">
-            <Check size={11} /> Replied
-          </span>
+          <span className="flex items-center gap-0.5 text-[10px] text-gray-400 shrink-0" title="You replied in this thread"><Check size={11} /> Replied</span>
         )}
-        {/* Unfollow (D-190): off this list, no reply notifications; the thread
-            stays readable, and being @mentioned in it again follows it again. */}
-        <button onClick={async () => { try { await apiPost(`/comms/threads/${thread.parent.id}/follow`, { state: 'muted' }); } catch { /* ignore */ } refresh?.(); }}
-          data-inbox-unfollow="" title="Stop notifications and take this off Threads"
-          className={`${unread > 0 ? '' : 'ml-auto '}text-[11px] text-gray-400 hover:text-red-600`}>Unfollow</button>
-        {unread > 0 ? (
-          <>
-            <span className="px-1.5 py-0.5 rounded-full bg-powder-600 text-white text-[10px] font-bold">{unread} new</span>
-            <button onClick={() => onMarkRead?.(thread.parent.id)}
-              className="ml-auto flex items-center gap-1 text-[11px] text-gray-500 hover:text-powder-600">
-              <Check size={12} /> Mark read
-            </button>
-          </>
-        ) : (
-          <button onClick={() => setExpanded(x => !x)}
-            className="flex items-center gap-0.5 text-[11px] text-gray-400 hover:text-gray-600">
-            {expanded ? <>Collapse <ChevronUp size={12} /></> : <>Expand <ChevronDown size={12} /></>}
-          </button>
-        )}
-      </div>
-      {!expanded ? (
-        // Collapsed read thread: just enough to recognize it and reopen it.
-        <button onClick={() => setExpanded(true)} className="w-full text-left px-4 py-2 hover:bg-white rounded-b-xl">
-          <p className="text-xs text-gray-500 line-clamp-1">{thread.parent.body || '(attachment)'}</p>
-          <p className="text-[11px] text-gray-400 mt-0.5">
-            {thread.replies.length} {thread.replies.length === 1 ? 'reply' : 'replies'}
-            {lastReply ? ` · last from ${lastReply.user_name}` : ''}
-          </p>
-        </button>
-      ) : (
-      <div className="py-1">
-        <Message m={thread.parent} me={me} onReact={react} onUnreact={unreact} onEdit={edit} onDelete={del}
-          onMarkUnread={onMarkUnread}
-          canTranslate={canTranslate} viewerLang={viewerLang} onTranslate={onTranslate} mentionUsers={mentionUsers} />
-        <div className="px-4 py-0.5 text-[11px] font-medium text-gray-400">{thread.replies.length} {thread.replies.length === 1 ? 'reply' : 'replies'}</div>
-        {thread.replies.map((r, i) => (
-          <Fragment key={r.id}>
-            {/* One "new replies" line, at the first reply the reader hasn't seen. */}
-            {isNew(r) && !thread.replies.slice(0, i).some(isNew) && (
-              <div className="flex items-center gap-2 px-4 py-1">
-                <span className="h-px flex-1 bg-red-300" />
-                <span className="text-[10px] font-bold uppercase text-red-500">New</span>
-              </div>
-            )}
-            <Message m={r} me={me} onReact={react} onUnreact={unreact} onEdit={edit} onDelete={del}
-              onMarkUnread={onMarkUnread}
-              canTranslate={canTranslate} viewerLang={viewerLang} onTranslate={onTranslate} mentionUsers={mentionUsers} />
-          </Fragment>
-        ))}
-      </div>
-      )}
-      {expanded && (
-      <div className="relative p-2 border-t border-gray-100 rounded-b-xl">
-        <MentionDropdown matches={mMatches} hi={mHi} onHover={setMHi} onPick={insertCardMention} />
-        {pending.length > 0 && (
-          <div className="flex flex-wrap gap-1 mb-1">
-            {pending.map(p => (
-              <span key={p.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-100 text-[11px] text-gray-700">
-                {isAudio(p) ? <Mic size={11} className="text-powder-600" /> : p.is_video ? <Film size={11} className="text-powder-600" /> : p.is_image ? <Paperclip size={11} className="text-powder-600" /> : <FileText size={11} className="text-powder-600" />}
-                <span className="max-w-[10rem] truncate">{p.filename}</span>
-                <button type="button" onClick={() => setPending(x => x.filter(a => a.id !== p.id))}
-                  className="text-gray-400 hover:text-red-600"><X size={11} /></button>
-              </span>
-            ))}
-          </div>
-        )}
-        <div className="mb-1"><FormatBar getEl={() => cardReplyRef.current} value={body} onChange={setBody} /></div>
-        <div className="flex items-end gap-2">
-          {storageOn && (
-            <>
-              <input ref={cardFileRef} type="file" multiple className="hidden" onChange={onPickFiles} />
-              <button type="button" onClick={() => cardFileRef.current?.click()} disabled={uploading}
-                className="p-2 text-gray-400 hover:text-powder-600 hover:bg-gray-100 rounded-xl disabled:opacity-40" title="Attach files"><Paperclip size={15} /></button>
-              {/* Camera-first on a phone, the same one-tap capture the channel
-                  composer has. Never put capture on the paperclip — on iOS it
-                  forces the camera and blocks picking an existing file. */}
-              {compact && (
-                <>
-                  <input ref={cardCameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onPickFiles} />
-                  <button type="button" onClick={() => cardCameraRef.current?.click()} disabled={uploading}
-                    className="p-2 text-gray-400 hover:text-powder-600 hover:bg-gray-100 rounded-xl disabled:opacity-40" title="Take a photo"><Camera size={15} /></button>
-                </>
-              )}
-              <VoiceNoteButton disabled={uploading} onReady={(f) => uploadFiles([f])} />
-            </>
+        <div className="ml-auto flex items-center gap-2 shrink-0">
+          {unread > 0 && (
+            <button onClick={() => onMarkRead?.(thread.parent.id, true)} data-inbox-markread=""
+              className="flex items-center gap-0.5 text-[11px] text-gray-500 hover:text-powder-600"><Check size={12} /> Mark read</button>
           )}
-          <textarea ref={cardReplyRef} value={body} rows={1} onInput={e => sizeTextarea(e.target, 160)}
-            onPaste={onCardPaste}
-            onChange={e => { setBody(e.target.value); setMQuery(detectMentionQuery(e)); setMHi(0); }}
-            onKeyDown={e => {
-              // While the @ menu is open: arrows move, Enter/Tab picks, Esc closes.
-              if (mMatches.length) {
-                if (e.key === 'ArrowDown') { e.preventDefault(); setMHi(h => Math.min(h + 1, mMatches.length - 1)); return; }
-                if (e.key === 'ArrowUp') { e.preventDefault(); setMHi(h => Math.max(h - 1, 0)); return; }
-                if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); insertCardMention(chatName(mMatches[mHi] || mMatches[0])); return; }
-              }
-              if (e.key === 'Escape' && mQuery !== null) { setMQuery(null); return; }
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); return; }
-              if (cardKeys(e)) return;
-            }}
-            placeholder="Reply…" className="flex-1 px-3 py-1.5 border border-gray-300 rounded-xl text-sm resize-none max-h-40 overflow-y-auto" />
-          <button onClick={send} disabled={!body.trim() && !pending.length} className="p-2 bg-powder-600 text-white rounded-xl hover:bg-powder-700 disabled:opacity-40"><Send size={15} /></button>
+          {/* Unfollow (D-190): off this list, no reply notifications; the thread
+              stays readable, and being @mentioned in it again follows it again. */}
+          <button onClick={async () => { try { await apiPost(`/comms/threads/${thread.parent.id}/follow`, { state: 'muted' }); } catch { /* ignore */ } refresh?.(); }}
+            data-inbox-unfollow="" title="Stop notifications and take this off Threads"
+            className="text-[11px] text-gray-400 hover:text-red-600">Unfollow</button>
         </div>
       </div>
-      )}
+      <button onClick={() => onOpen(thread)} data-inbox-open=""
+        className="w-full text-left px-3 pt-1 pb-2 rounded-b-xl hover:bg-gray-50">
+        <p className={`text-sm line-clamp-2 ${unread > 0 ? 'text-gray-900' : 'text-gray-600'}`}>
+          <span className="font-semibold">{thread.parent.user_name}</span>{' '}{snippet(thread.parent) || '(attachment)'}
+        </p>
+        {lastReply && (
+          <p className="mt-1 flex items-baseline gap-1.5 text-xs text-gray-500 min-w-0">
+            <CornerDownRight size={11} className="shrink-0 text-gray-400 self-center" />
+            <span className={`shrink-0 ${unread > 0 ? 'font-semibold text-gray-700' : 'font-medium'}`}>{lastReply.user_name}</span>
+            <span className="truncate">{snippet(lastReply)}</span>
+          </p>
+        )}
+        <p className="mt-0.5 text-[11px] text-gray-400">
+          {thread.replies.length} {thread.replies.length === 1 ? 'reply' : 'replies'}
+          {lastReply ? ` · ${fmtTime(lastReply.created_at)}` : ''}
+        </p>
+      </button>
     </div>
   );
 }
 
-function ThreadsView({ me, mentionUsers, canTranslate, viewerLang, onTranslate, onOpenChannel, onCloseMobile, onRead, refreshKey, backButton, storageOn }) {
+function ThreadsView({ me, mentionUsers, canTranslate, viewerLang, onTranslate, onOpenChannel, onCloseMobile, onRead, refreshKey, backButton, storageOn, socketRef }) {
   const { data: threads, loading, refresh } = useApiGet('/comms/threads', [refreshKey]);
   // Unread first, then most recently active — the point of the view is what
   // still needs an answer, not a chronological archive.
@@ -1888,18 +1720,17 @@ function ThreadsView({ me, mentionUsers, canTranslate, viewerLang, onTranslate, 
   }), [threads]);
   const unreadCount = list.filter(t => t.unread > 0).length;
 
-  // Reading a thread here clears it, the same as opening a channel does.
+  // Mark read from the card: the explicit act, so the list refreshes at once.
   const markRead = useCallback(async (parentId) => {
     try { await apiPost(`/comms/threads/${parentId}/read`, {}); onRead?.(); } catch { /* ignore */ }
-  }, [onRead]);
-
-  // "I'll come back to this" from inside the inbox. Marking any message in a
-  // thread rewinds that THREAD's marker (the server decides that from the
-  // message), so the card comes back with its "N new" badge on the next load.
-  const markUnread = useCallback(async (m) => {
-    try { await apiPost(`/comms/messages/${m.id}/unread`, { thread: true }); onRead?.(); } catch { /* ignore */ }
     refresh();
   }, [onRead, refresh]);
+
+  // The thread being acted on opens in the same drawer a channel uses (D-192):
+  // it lands at the first unread reply, marks read only what is on screen,
+  // and has the full reply box. The list refreshes on close, not while the
+  // drawer marks read, so the cards do not reshuffle behind it.
+  const [open, setOpen] = useState(null);
 
   return (
     <>
@@ -1921,10 +1752,14 @@ function ThreadsView({ me, mentionUsers, canTranslate, viewerLang, onTranslate, 
       <div className="flex-1 overflow-y-auto">
         {loading ? <p className="text-center text-sm text-gray-400 py-8">Loading threads…</p>
           : list.length === 0 ? <p className="text-center text-sm text-gray-400 py-8">No threads yet. Reply to a message to start one.</p>
-          : list.map(t => <ThreadInboxCard key={t.parent.id} thread={t} me={me} refresh={refresh} mentionUsers={mentionUsers} storageOn={storageOn}
-              canTranslate={canTranslate} viewerLang={viewerLang} onTranslate={onTranslate} onOpenChannel={onOpenChannel}
-              onMarkRead={markRead} onMarkUnread={markUnread} />)}
+          : list.map(t => <ThreadInboxCard key={t.parent.id} thread={t} me={me} refresh={refresh}
+              onOpen={setOpen} onOpenChannel={onOpenChannel} onMarkRead={markRead} />)}
       </div>
+      {open && <ThreadPanel parent={open.parent} me={me} onThreadRead={onRead}
+        channelName={open.channel_kind === 'dm' ? open.channel_name : '#' + open.channel_name}
+        mentionUsers={mentionUsers} canTranslate={canTranslate} viewerLang={viewerLang} onTranslate={onTranslate}
+        socketRef={socketRef} storageOn={storageOn}
+        onClose={() => { setOpen(null); refresh(); }} onChanged={refresh} />}
     </>
   );
 }
@@ -3881,7 +3716,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
             )}
           </button>
           {/* Threads inbox shortcut (like Slack) */}
-          <button onClick={() => { recordNav({ view: 'threads' }); setThreadsOpen(true); setActivityOpen(false); setMobileThread(false); clearSearch(); rememberView('threads'); }}
+          <button data-nav-threads="" onClick={() => { recordNav({ view: 'threads' }); setThreadsOpen(true); setActivityOpen(false); setMobileThread(false); clearSearch(); rememberView('threads'); }}
             className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm ${threadsOpen ? 'bg-powder-600 text-white font-medium' : `hover:bg-gray-100 ${threadUnread?.total ? 'text-gray-900 font-bold' : 'text-gray-700 font-medium'}`}`}>
             <MessageSquare size={15} className="opacity-80" /> Threads
             {/* Replies no longer inflate the channel's count, so this badge is
@@ -4040,7 +3875,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
           ) : threadsOpen ? (
             <ThreadsView me={user} mentionUsers={users} canTranslate={translateOn} viewerLang={viewerLang}
               onTranslate={translateMessage} onOpenChannel={openChannel} onCloseMobile={() => setThreadsOpen(false)}
-              onRead={refreshThreadUnread} refreshKey={threadTick} backButton={backButton} storageOn={storageOn} />
+              onRead={refreshThreadUnread} refreshKey={threadTick} backButton={backButton} storageOn={storageOn} socketRef={socketRef} />
           ) : (searchResults !== null || answer !== null || (searching && searchMode === 'ask')) ? (
             <>
               <div className="flex items-center gap-2 px-4 h-12 border-b border-gray-200 shrink-0">
