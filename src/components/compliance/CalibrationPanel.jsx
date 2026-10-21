@@ -19,6 +19,7 @@ import SortHeader from '../common/SortHeader.jsx';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 import FrozenScroll from '../common/FrozenScroll';
 import { DispositionChip, DispositionFields, DispositionForm, DispositionReadback, OpenDispositions } from '../common/ProductDisposition.jsx';
+import { signDecision } from '../../lib/signDecision.js';
 import { CautionBox, IncidentReportForm, OpenIncidents } from '../common/ScaleIncident.jsx';
 
 // Columns as data for both tables on this module. Entries with no key are the
@@ -82,7 +83,7 @@ function InstrumentForm({ initial, ccps, onSave, onCancel }) {
       // 403 or a validation 400 cleared the spinner and left the modal sitting
       // there — indistinguishable from a dead button, which is how a
       // deliberate rule reads as a broken screen.
-      window.alert(saveErr.message);
+      if (!saveErr?.cancelled) window.alert(saveErr.message);
     } finally { setSaving(false); }
   };
 
@@ -375,7 +376,10 @@ export default function CalibrationPanel() {
   };
 
   const handleCalibrate = async (form, certFile) => {
-    const rec = await apiPost('/calibration/records', form);
+    // A product decision given with the record is signed (D-195); without one, nothing is asked.
+    const rec = form.product_disposition?.disposition
+      ? await signDecision((extra) => apiPost('/calibration/records', { ...form, ...extra }), form.product_disposition)
+      : await apiPost('/calibration/records', form);
     if (certFile && rec?.id) {
       const fd = new FormData();
       fd.append('file', certFile);

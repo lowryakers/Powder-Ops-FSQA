@@ -8,6 +8,7 @@
 import { useState } from 'react';
 import { AlertTriangle, CheckCircle, ClipboardCheck } from 'lucide-react';
 import { apiPost } from '../../hooks/useApi';
+import { signDecision } from '../../lib/signDecision.js';
 import { formatDate, formatDateTime } from '../../lib/datetime.js';
 import { DISPOSITIONS, checkDisposition, FINAL_AFTER_HOLD } from '../../../shared/product-disposition.js';
 
@@ -98,9 +99,12 @@ export function DispositionForm({ source, row, onSaved, onCancel }) {
     if (errs.length) { setError(errs.join(' ')); return; }
     setSaving(true); setError('');
     try {
-      await apiPost(`/calibration/dispositions/${source}/${row.id}`, value);
+      await signDecision((extra) => apiPost(`/calibration/dispositions/${source}/${row.id}`, { ...value, ...extra }), value);
       onSaved?.();
-    } catch (e) { setError(e.message || 'Could not save the disposition.'); }
+    } catch (e) {
+      // Cancelling the password is a choice, not a failure.
+      if (!e?.cancelled) setError(e.message || 'Could not save the disposition.');
+    }
     finally { setSaving(false); }
   };
   return (
@@ -119,10 +123,11 @@ export function DispositionForm({ source, row, onSaved, onCancel }) {
       <div className="flex gap-2">
         <button type="button" onClick={save} disabled={saving}
           className="px-3 py-1.5 bg-powder-600 text-white rounded-lg text-sm font-medium disabled:opacity-50" data-disposition-save>
-          {saving ? 'Saving…' : 'Record disposition'}
+          {saving ? 'Saving…' : 'Sign and record'}
         </button>
         {onCancel && <button type="button" onClick={onCancel} className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-sm">Cancel</button>}
       </div>
+      <p className="text-[11px] text-gray-500" data-disposition-sign-note="">You&apos;ll be asked for your password — it records that you made this decision.</p>
     </div>
   );
 }

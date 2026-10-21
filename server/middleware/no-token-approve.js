@@ -47,6 +47,11 @@ export const APPROVE_ROUTES = Object.freeze([
   { method: 'POST', re: /^\/artwork\/versions\/[^/]+\/status$/, label: 'POST /api/artwork/versions/:id/status to approved / print_ready',
     when: (req) => ARTWORK_APPROVE_STATUSES.has(String(req.body?.status || '')) },
   { method: 'POST', re: /^\/partners\/settlements\/[^/]+\/proof$/, label: 'POST /api/partners/settlements/:id/proof — evidence of a settlement' },
+  // A product decision and a scale's return to use are password-signed by a person (D-194, D-195).
+  { method: 'POST', re: /^\/calibration\/dispositions\/[^/]+\/[^/]+$/, label: 'POST /api/calibration/dispositions/:source/:id — a signed product decision' },
+  { method: 'POST', re: /^\/calibration\/incidents\/[^/]+\/return$/, label: 'POST /api/calibration/incidents/:id/return — QA returns a scale to use' },
+  { method: 'POST', re: /^\/calibration\/records$/, label: 'POST /api/calibration/records carrying a product decision',
+    when: (req) => !!req.body?.product_disposition?.disposition },
 ]);
 
 const segmentsOf = (path) => String(path || '').split('/').filter(Boolean).map(s => s.toLowerCase());

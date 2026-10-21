@@ -110,7 +110,7 @@ export function stampOnFile(db, source, id, body, actor) {
  * Record (or, for an admin, correct) what happened to the product.
  * Returns { error, status } or { record }.
  */
-export function recordDisposition(db, source, id, body, user) {
+export function recordDisposition(db, source, id, body, user, { gate } = {}) {
   const src = SOURCES[source];
   if (!src) return { error: 'Unknown record type.', status: 404 };
   if (!canDecide(user)) return { error: 'Recording a product disposition is for QA, supervisors or admins.', status: 403 };
@@ -127,6 +127,10 @@ export function recordDisposition(db, source, id, body, user) {
   // the hold that came before it is kept in the history, not overwritten.
   const errors = checkDisposition(body, { held: state === 'held' });
   if (errors.length) return { error: errors.join(' '), errors, status: 400 };
+  // THE PASSWORD IS ASKED LAST (D-195): only once the decision is complete and
+  // allowed, so nobody types a password and is then told a field is missing.
+  // `gate` answers the response itself when it refuses.
+  if (gate && !gate()) return { gated: true };
 
   const since = row.affected_since || affectedSinceFor(db, source, row);
   const history = (() => { try { return JSON.parse(row.disposition_history || '[]'); } catch { return []; } })();
@@ -142,7 +146,8 @@ export function recordDisposition(db, source, id, body, user) {
   const updated = db.prepare(`SELECT * FROM ${src.table} WHERE id = ?`).get(id);
   const action = state === 'recorded' ? 'disposition_corrected' : state === 'held' ? 'hold_released' : 'product_disposition';
   logAudit(user, action, src.entity, id,
-    { disposition: body.disposition, ref: updated.disposition_ref, lots: updated.disposition_lots, was: state }, row, updated);
+    { disposition: body.disposition, ref: updated.disposition_ref, lots: updated.disposition_lots, was: state,
+      ...(gate ? { signature_verified: true } : {}) }, row, updated);
   return { record: withDisposition(source, updated) };
 }
 

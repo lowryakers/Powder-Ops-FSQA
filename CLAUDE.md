@@ -2841,7 +2841,11 @@ team on today's schedule (`scripts/lib/schedule-today.mjs`). `verify:scaleschedu
   Lots required on hold/release/reject, the evaluation on release/reject.
 - **The caution names whatever SOP the registry calls "Equipment Calibration"** (SOP 415 V2 live); never put the
   number in code. Its wording is controlled (`procedure:scale-caution`).
-- `verify:scaleincident` (60).
+- **Every product decision is signed with the password (D-195)** — `recordDisposition(..., { gate })` runs
+  `gateSignature` AFTER validation (asked last, never for an incomplete decision); the client is
+  `signDecision()` (`src/lib/signDecision.js`). Records POST asks only when it carries a decision. The three
+  routes are in `APPROVE_ROUTES`.
+- `verify:scaleincident` (66), `verify:outofcal` (66).
 
 ## A crisis test records its product and material impact (D-154, SQF 2.6.4.2)
 `shared/crisis-impact.js`, `evacuation_headcounts.impact` / `impact_by` / `impact_at`,
