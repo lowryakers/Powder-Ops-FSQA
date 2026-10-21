@@ -59,9 +59,11 @@ t('the office signed in', !!tok);
 
 const h0 = await J(await get('/office/hours'));
 const W = h0.weeks[0];
-const hour = (uid, worked, extra = {}) => db.prepare(`INSERT INTO employee_hours (id,user_id,week_start,worked,pto,holiday,unpaid,auto_fill)
-  VALUES (?,?,?,?,?,?,?,?)`).run(`eh-${uid}`, uid, W, worked, extra.pto || 0, extra.holiday || 0, extra.unpaid || 0, extra.auto_fill ?? 1);
-hour('rt-hourly', 48);           // eight hours of overtime on a 40-hour target
+const hour = (uid, worked, extra = {}) => db.prepare(`INSERT INTO employee_hours (id,user_id,week_start,worked,pto,holiday,unpaid,auto_fill,target)
+  VALUES (?,?,?,?,?,?,?,?,?)`).run(`eh-${uid}`, uid, W, worked, extra.pto || 0, extra.holiday || 0, extra.unpaid || 0, extra.auto_fill ?? 1, extra.target ?? null);
+// D-193: the weekly total is what the week is paid at, so 48 paid hours are a
+// weekly total of 48 — eight of them over 40.
+hour('rt-hourly', 48, { target: 48 });
 hour('rt-salaried', 40);
 hour('rt-unlinked', 40);
 hour('rt-short', 30);            // under a 32-hour target: two hours paid non-working
@@ -81,7 +83,7 @@ t('NO PAY ROW AT ALL IS A DIFFERENT GAP and is reported as one, because it is cl
 console.log('\n── the cost is the hours on the screen, at that rate ──');
 const hp = P('Hourly Person');
 const wk = hp.weeks.find(w => w.week_start === W);
-t('48 hours at $20 with a 40-hour target is $1,040 — 40 straight and 8 at time and a half',
+t('a 48-hour weekly total at $20 is $1,040 — 40 straight and 8 at time and a half',
   near(wk.cost, 1040), JSON.stringify({ cost: wk.cost, straight: wk.straight_cost, prem: wk.ot_premium }));
 t('THE PREMIUM IS HALF THE RATE, because the overtime hour itself is already inside `worked` and therefore already inside the paid-hours total — counting it at 1.5x here would pay for it twice',
   near(wk.straight_cost, 960) && near(wk.ot_premium, 80));
@@ -96,15 +98,16 @@ t('PAID NON-WORKING IS PAID FOR — 30 worked against a 32-hour target is 32 pai
   near(swk.total, 32) && near(swk.cost, 320), JSON.stringify({ total: swk.total, cost: swk.cost }));
 
 console.log('\n── unpaid hours are not paid for ──');
-db.prepare('UPDATE employee_hours SET unpaid = 8, auto_fill = 0 WHERE id = ?').run('eh-rt-unlinked');
+// D-193: 48 recorded against a 40-hour weekly total — the 8 beyond it are unpaid.
+db.prepare('UPDATE employee_hours SET worked = 48 WHERE id = ?').run('eh-rt-unlinked');
 db.prepare('UPDATE pay_employees SET user_id = ? WHERE id = ?').run('rt-unlinked', 'pe-salaried');  // temporarily: give them a rate
 db.prepare('UPDATE pay_employees SET pay_rate = 10 WHERE id = ?').run('pe-salaried');
 const hu = await J(await get('/office/hours'));
 const up = (hu.people || []).find(p => p.name === 'Unlinked Person');
-t('unpaid time is outside the paid-hours total, so it is outside the cost', near(up.period.cost, 400), JSON.stringify(up.period));
+t('unpaid time is outside the paid-hours total, so it is outside the cost', near(up.period.cost, 400) && near(up.period.unpaid, 8) && up.period.overtime === 0, JSON.stringify(up.period));
 // Put it back the way it was for everything below.
 db.prepare('UPDATE pay_employees SET user_id = ?, pay_rate = NULL WHERE id = ?').run('rt-salaried', 'pe-salaried');
-db.prepare('UPDATE employee_hours SET unpaid = 0, auto_fill = 1 WHERE id = ?').run('eh-rt-unlinked');
+db.prepare('UPDATE employee_hours SET worked = 40 WHERE id = ?').run('eh-rt-unlinked');
 
 console.log('\n── no rate is no cost, never a free hour ──');
 const h2 = await J(await get('/office/hours'));
@@ -189,9 +192,10 @@ if (onTab) {
     /of \d+ people have a rate/.test(basis), basis);
   t('the overtime premium is broken out rather than buried in one number', /overtime premium/.test(basis), basis);
 
-  t('A TARGET THAT IS NOT THE ORDINARY WEEK IS SAID OUT LOUD — the premium inside the cost is measured against each person’s own target, and where that differs the money needs it stated rather than inferred',
-    await page.locator('[data-ot-basis-note]').count() > 0,
-    (await page.locator('body').innerText()).slice(0, 120).replace(/\n/g, ' '));
+  // D-193: overtime is over 40 for everybody now, so the old "measured against
+  // each person's own target" note has nothing left to say.
+  t('overtime is over 40 for everyone, so no own-target note is shown',
+    await page.locator('[data-ot-basis-note]').count() === 0);
 
   // THE FILE IS BUILT FROM THE PAYLOAD ON THE SCREEN, not from a second
   // endpoint, so an export cannot disagree with the page it came from — which

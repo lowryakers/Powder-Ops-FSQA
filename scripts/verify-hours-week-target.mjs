@@ -69,10 +69,16 @@ t('the period total is the sum of the two weeks as measured (32 + 40)', P(h, 'Al
 
 await put('/office/hours', { user_id: 'wt-a', week_start: W2, worked: 45, target: 44 });
 h = await J(await get('/office/hours'));
-t('OVERTIME IS PAST THE WEEK\'S OWN TARGET: 45 worked on a 44 week is 1:00', wk(h, 'Alpha Weekly', W2)?.overtime === 1,
+// D-193: the weekly total is what is paid; recorded beyond it is unpaid, and
+// overtime is the paid worked hours over 40 — not over the person's own total.
+t('UNPAID IS DERIVED: 45 recorded against a 44 weekly total is 1:00 unpaid', wk(h, 'Alpha Weekly', W2)?.unpaid === 1,
+  JSON.stringify(wk(h, 'Alpha Weekly', W2)));
+t('OVERTIME IS OVER 40 IN THE WEEKLY TOTAL: a 44 week is 4:00', wk(h, 'Alpha Weekly', W2)?.overtime === 4,
   String(wk(h, 'Alpha Weekly', W2)?.overtime));
-t('…and the cost follows that overtime (45h × $20 + 1h × $10 premium)', wk(h, 'Alpha Weekly', W2)?.cost === 910,
-  String(wk(h, 'Alpha Weekly', W2)?.cost));
+t('…paid hours are the weekly total, and the cost follows (44h × $20 + 4h × $10 premium)',
+  wk(h, 'Alpha Weekly', W2)?.total === 44 && wk(h, 'Alpha Weekly', W2)?.cost === 920, String(wk(h, 'Alpha Weekly', W2)?.cost));
+r = await put('/office/hours', { user_id: 'wt-a', week_start: W2, unpaid: 3 });
+t('a typed unpaid figure for an employee is refused — it is worked out from the weekly total', r.status === 400, String(r.status));
 
 console.log('\n── a target alone is not an entry ──');
 r = await put('/office/hours', { user_id: 'wt-b', week_start: W1, target: 24 });
@@ -124,12 +130,14 @@ t('the Hours grid renders', onTab);
 if (onTab) {
   const heads = await table.locator('thead').innerText();
   t('THERE IS NO LONE Target/wk COLUMN AT THE START', !/Target\/wk/i.test(heads), heads.slice(0, 120));
-  t('each week has its own Target column', (heads.match(/Target/g) || []).length === 2, heads.replace(/\s+/g, ' ').slice(0, 200));
+  t('each week has its own Weekly total column (D-193 renamed it from Target)', (heads.match(/Weekly total/g) || []).length === 2 && !/Target/.test(heads), heads.replace(/\s+/g, ' ').slice(0, 200));
   const row = table.locator('tr', { hasText: 'Alpha Weekly' });
   const w1 = row.locator(`[data-week-target="${W1}"] input`);
   t('week 1 shows its own 32:00', (await w1.inputValue()) === '32:00', await w1.inputValue());
   t('…and a reset, because it differs from the usual', await row.locator(`[data-week-target-reset="${W1}"]`).count() === 1);
   t('week 2 shows its own 44:00', (await row.locator(`[data-week-target="${W2}"] input`).inputValue()) === '44:00');
+  t('UNPAID IS SHOWN, NOT TYPED: week 2 reads 1:00 and has no input box',
+    (await row.locator(`[data-unpaid="${W2}"]`).innerText()).trim() === '1:00' && (await row.locator(`[data-unpaid="${W2}"] input`).count()) === 0);
   t('the usual target sits beside the name', (await row.locator('[data-usual-target="wt-a"] input').inputValue()) === '40:00');
 
   // Type a week's target, as the office would.
@@ -159,7 +167,7 @@ if (onTab) {
     const fs = await import('node:fs/promises');
     const text = await fs.readFile(await download.path(), 'utf8');
     const head = text.split('\n')[0];
-    t('the CSV carries a target per week', head.includes(`"Target ${W1}"`) && head.includes(`"Target ${W2}"`), head.slice(0, 160));
+    t('the CSV carries a weekly total per week', head.includes(`"Weekly total ${W1}"`) && head.includes(`"Weekly total ${W2}"`), head.slice(0, 160));
     t('…with the figures on screen', /"Alpha Weekly"[^\n]*"40","30"[^\n]*"44","45"/.test(text),
       text.split('\n').find(l => l.startsWith('"Alpha Weekly"')));
   } else t('the CSV downloads', false);
