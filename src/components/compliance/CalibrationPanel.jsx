@@ -19,6 +19,7 @@ import SortHeader from '../common/SortHeader.jsx';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 import FrozenScroll from '../common/FrozenScroll';
 import { DispositionChip, DispositionFields, DispositionForm, DispositionReadback, OpenDispositions } from '../common/ProductDisposition.jsx';
+import { CautionBox, IncidentReportForm, OpenIncidents } from '../common/ScaleIncident.jsx';
 
 // Columns as data for both tables on this module. Entries with no key are the
 // expand chevron and the actions cell — neither is a value to order by.
@@ -193,7 +194,7 @@ function InstrumentForm({ initial, ccps, onSave, onCancel }) {
   );
 }
 
-function CalibrateForm({ instrument, onSave, onCancel }) {
+function CalibrateForm({ instrument, caution, onSave, onCancel }) {
   const nextYear = new Date();
   nextYear.setFullYear(nextYear.getFullYear() + 1);
   const [form, setForm] = useState({
@@ -234,6 +235,7 @@ function CalibrateForm({ instrument, onSave, onCancel }) {
   return (
     <form ref={formRef} onSubmit={handleSubmit} className="bg-blue-50 rounded-xl border border-blue-200 p-4 mt-3 space-y-3">
       <p className="text-sm font-semibold text-blue-800">Record Calibration: {instrument.name}</p>
+      <CautionBox caution={caution} compact />
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Calibrated By *</label>
@@ -308,6 +310,11 @@ export default function CalibrationPanel() {
   const { data: summary } = useApiGet('/calibration/summary');
   const { data: records, refresh: refreshRecords } = useApiGet('/calibration/records');
   const { data: dispositions, refresh: refreshDispositions } = useApiGet('/calibration/dispositions');
+  // Dropped / damaged scales (D-194): the open reports, the caution, the list
+  // a report can name.
+  const { data: incidents, refresh: refreshIncidents } = useApiGet('/calibration/incidents');
+  const [reporting, setReporting] = useState(false);
+  const incidentChanged = () => { refreshIncidents(); refreshDispositions(); refresh(); };
   const [disposingId, setDisposingId] = useState(null);
   const dispositionChanged = () => { refreshDispositions(); refreshRecords(); };
   const { data: ccps } = useApiGet('/haccp');
@@ -378,6 +385,7 @@ export default function CalibrationPanel() {
     refresh();
     refreshRecords();
     refreshDispositions();
+    refreshIncidents();
   };
 
   // Certificates attach per record; download carries the auth header.
@@ -477,6 +485,17 @@ export default function CalibrationPanel() {
         </div>
       )}
 
+      <OpenIncidents data={incidents} onChanged={incidentChanged} onReport={() => setReporting(true)} />
+      {reporting && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4 overflow-y-auto" onClick={() => setReporting(false)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-4 my-8" onClick={e => e.stopPropagation()} data-incident-modal="">
+            <p className="text-base font-bold text-gray-900 mb-2">Report a dropped or damaged scale</p>
+            <IncidentReportForm scales={incidents?.scales || []} caution={incidents?.caution} defaultName={user?.name || ''}
+              submit={(body) => apiPost('/calibration/incidents', body)}
+              onDone={() => { setReporting(false); incidentChanged(); }} onCancel={() => setReporting(false)} />
+          </div>
+        </div>
+      )}
       <OpenDispositions data={dispositions} onChanged={dispositionChanged} />
 
       <ModuleTabs value={tab} onChange={setTab}
@@ -631,7 +650,7 @@ export default function CalibrationPanel() {
           </FrozenScroll>
 
           {calibrating && (
-            <CalibrateForm instrument={calibrating} onSave={handleCalibrate} onCancel={() => setCalibrating(null)} />
+            <CalibrateForm instrument={calibrating} caution={incidents?.caution} onSave={handleCalibrate} onCancel={() => setCalibrating(null)} />
           )}
         </>
       )}

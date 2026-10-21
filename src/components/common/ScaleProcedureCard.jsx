@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ListOrdered, ChevronDown, ChevronUp, AlertCircle, FileText } from 'lucide-react';
 import ScalePlacementDiagram from './ScalePlacementDiagram.jsx';
+import { CautionBox } from './ScaleIncident.jsx';
 
 // The Scale Calibration Verification procedure, shown on the form you're filling in.
 //
@@ -15,7 +16,7 @@ import ScalePlacementDiagram from './ScalePlacementDiagram.jsx';
 // are shown inside the steps rather than left abstract, because "the minimum
 // weight" is a lookup and "25 kg" is an instruction.
 
-export default function ScaleProcedureCard({ procedure, form, defaultOpen = true }) {
+export default function ScaleProcedureCard({ procedure, form, caution, lang = 'en', defaultOpen = true }) {
   const [open, setOpen] = useState(defaultOpen);
   // This form's own wording wins; the shared object is only a fallback.
   const proc = form?.procedure || procedure;
@@ -33,6 +34,10 @@ export default function ScaleProcedureCard({ procedure, form, defaultOpen = true
   };
 
   return (
+    <div className="space-y-2">
+    {/* The SOP's caution (D-194) sits OUTSIDE the fold: one sentence, and the
+        one that matters most when a scale has just been knocked. */}
+    <CautionBox caution={caution} lang={lang} compact />
     <div className="border border-gray-200 rounded-xl bg-white overflow-hidden">
       <button type="button" onClick={() => setOpen(!open)}
         className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-gray-50">
@@ -98,6 +103,7 @@ export default function ScaleProcedureCard({ procedure, form, defaultOpen = true
           )}
         </div>
       )}
+    </div>
     </div>
   );
 }

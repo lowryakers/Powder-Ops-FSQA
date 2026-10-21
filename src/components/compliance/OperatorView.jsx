@@ -17,6 +17,7 @@ import CheckFields from '../common/CheckFields.jsx';
 import AtpSwabField from '../common/AtpSwabField.jsx';
 import TrainingTest from '../common/TrainingTest.jsx';
 import { missingForCheck } from '../../../shared/check-forms.js';
+import { OutOfServiceBanner } from '../common/ScaleIncident.jsx';
 
 function detectTaskType(task) {
   const t = (task.title || '').toLowerCase();
@@ -1000,6 +1001,8 @@ export default function OperatorView() {
   // a check that is already in.
   useEffect(() => onDataChanged(() => { refreshChecks(); }), [refreshChecks]);
   const scaleDue = Array.isArray(checks?.scale_checks) ? checks.scale_checks : [];
+  // Scales out of service after a drop (D-194): "do not use", on the floor's own screen.
+  const scalesOut = Array.isArray(checks?.out_of_service) ? checks.out_of_service : [];
   const { data: technicians } = useApiGet('/users/technicians');
   // Roster for the View-as picker (admins only).
   const { data: rosterUsers } = useApiGet(authIsAdmin ? '/users' : '/users/technicians');
@@ -1332,6 +1335,7 @@ export default function OperatorView() {
           this strip is the one place the floor is told one is due. Tapping
           opens the Scale Verification form already on that scale; the card
           leaves when the record exists, nothing else. */}
+      {scalesOut.length > 0 && <div className="mb-3"><OutOfServiceBanner scales={scalesOut} /></div>}
       {scaleDue.length > 0 && (
         <div data-scale-due className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2">
           <h4 className="text-xs font-bold text-amber-900 uppercase tracking-wide flex items-center gap-1">

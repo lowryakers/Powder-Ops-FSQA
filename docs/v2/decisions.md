@@ -7795,3 +7795,34 @@ how many hours they actually worked, since ADP does not separate the Unpaid hour
 - Unpaid figures typed before this are no longer read for employees (the derivation replaces them); contractors
   keep theirs. `verify:weektarget` (34) and `verify:hoursrates` (37) carry the new rules; control (old code)
   fails 5 and stops at the read-only Unpaid cell.
+
+## D-194 — A dropped scale: out of service, QA returns it, on hold stays open (SQF 11.2.3.4, 21 Oct 2026)
+Daniela and Carol's corrective action for the SQF 11.2.3.4 minor (due 30 Oct) adds a caution to the Equipment
+Calibration SOP and five product-control steps for a scale that is dropped or knocked. Daniela is adding it to
+the SOP; **in ReadyDoc's registry that SOP is SOP 415 V2, Equipment Calibration** (the seeded DCR log calls
+calibration SOP 417 and the mock-recall code stamps SOP 415 as Recall — a numbering question for Document
+Control, reported, not decided here).
+- **One report, two doors** (`server/instrument-incidents.js`, `fileIncident`): the Calibration screen and the
+  public scale kiosk (`POST /api/submit/scale-incident`). It is filed with the time it HAPPENED (never in the
+  future), takes the instrument out of service, and opens a product disposition (source `incident`) with
+  `affected_since` frozen at the last passing calibration OR daily check before it, whichever is later. It
+  tells Production/QA (Adam and Maria, QA department fallback) by ReadyBot and push, and lists the production
+  entries in that room since the window opened as *possibly* affected — never as "the affected lots".
+- **Only QA returns it to use** (`authorizeReturn`, `POST /calibration/incidents/:id/return`): `canDecide`,
+  `gateSignature` (403, never 401), an inspection note, and a passing calibration or verification dated after
+  the incident. While an incident is open the instrument edit form cannot change the status (409).
+- **A failed calibration no longer sets any instrument active** — `POST /calibration/records` did that on every
+  record, fail included. A fail sets out of service; a pass sets active only when no incident is open.
+- **"Placed on hold" is not an answer** (state `held`): the finding stays on the bell (`product-held`) until a
+  release, rework or rejection is recorded; the hold is kept in `disposition_history`, audited `hold_released`.
+  Applies to every source (calibration, scale, incident).
+- **The decision carries the lots, the quantity and the evaluation result** — the procedure's "record affected
+  lots, quantities, evaluation results". Lots are required on hold / release / reject; the evaluation on
+  release / reject.
+- **The daily check says the scale is out**: kiosk, Operator View and the Scale Verification tab
+  (`OutOfServiceBanner`). The check is per form, not per scale, so it names the out-of-service scales.
+- **The caution is on every calibration screen** (`shared/scale-incident.js`, EN/ES) and is registered with
+  `controlled.js` (`procedure:scale-caution`), so a wording change parks for Document Control. **The SOP number
+  is read from `sop_documents` by title** (`cautionWithDocument`), so a renumbering needs no deploy.
+- `verify:scaleincident` (60, live + browser at 1280/390); `verify:outofcal` (63) carries the held rule.
+  Control: `main` fails at the first assertion.

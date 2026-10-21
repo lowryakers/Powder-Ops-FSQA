@@ -647,9 +647,14 @@ router.get('/notifications', (req, res) => {
   // the history is listed on the Calibration screen, never on the bell.
   if (isApprover) {
     try {
-      const pend = openDispositions(db).pending.length;
+      const open = openDispositions(db);
+      const pend = open.pending.length;
       if (pend > 0) items.push({ id: 'product-disposition', tab: 'calibration', severity: 'warning', count: pend,
-        label: `${pend} out-of-calibration finding${pend > 1 ? 's' : ''} with no product disposition recorded` });
+        label: `${pend} out-of-calibration finding${pend > 1 ? 's' : ''} or dropped scale${pend > 1 ? 's' : ''} with no product disposition recorded` });
+      // Product on hold stays on the bell until its release is recorded (D-194).
+      const held = open.held.length;
+      if (held > 0) items.push({ id: 'product-held', tab: 'calibration', severity: 'warning', count: held,
+        label: `${held} finding${held > 1 ? 's' : ''} with product on hold, waiting for its release to be recorded` });
     } catch { /* table optional */ }
   }
   // An evacuation in the last year with no product and material impact

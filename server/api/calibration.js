@@ -8,6 +8,12 @@ import { periodically } from '../housekeeping.js';
 import {
   DISPOSITIONS, canDecide, filingErrors, stampOnFile, withDisposition, recordDisposition, openDispositions,
 } from '../product-disposition.js';
+import { gateSignature } from '../signature.js';
+import {
+  fileIncident, authorizeReturn, linkIncident, listIncidents, openIncidentFor, outOfServiceScales, scalesForKiosk,
+  cautionWithDocument,
+} from '../instrument-incidents.js';
+import { INCIDENT_KINDS } from '../../shared/scale-incident.js';
 
 // Beside the DB (the persistent volume in production) — NOT the app dir,
 // which is wiped on every deploy.
@@ -115,6 +121,15 @@ router.put('/instruments/:id', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM calibration_instruments WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Instrument not found' });
+
+  // THE OPEN INCIDENT OWNS THE STATUS (D-194). A scale reported dropped stays
+  // out of service until QA authorizes its return; setting it active from the
+  // edit form would be a second, unsigned way back.
+  if (req.body.status !== undefined && req.body.status !== existing.status && openIncidentFor(db, existing.id)) {
+    return res.status(409).json({
+      error: 'This scale has an open dropped/damaged report. It returns to use when QA/QC authorizes it from that report, after inspection and a passing check.',
+    });
+  }
 
   const fields = ['name', 'type', 'serial_number', 'manufacturer', 'model', 'location', 'room', 'asset_number', 'max_capacity', 'equipment_id', 'calibration_frequency', 'tolerance', 'unit_of_measure', 'status', 'is_critical_control', 'haccp_ccp_id', 'department', 'notes'];
   const vals = fields.map(f => {
@@ -242,12 +257,21 @@ router.post('/records', (req, res) => {
     reading_after || null, standard_used || null, standard_cert_number || null,
     certificate_number || null, next_due || null, notes || null);
 
+  // A FAILED CALIBRATION DOES NOT PUT AN INSTRUMENT BACK IN SERVICE (D-194).
+  // This used to set status = 'active' on every record, fail included — a scale
+  // that failed went straight back onto the floor. A pass or an adjusted pass
+  // returns it to active only when no dropped/damaged report is open: that
+  // return is QA's to authorize, not a side effect of the calibration.
+  const inst = db.prepare('SELECT status FROM calibration_instruments WHERE id = ?').get(instrument_id);
+  let nextStatus = inst?.status || 'active';
+  if (result === 'fail') nextStatus = nextStatus === 'retired' ? 'retired' : 'out_of_service';
+  else if (!openIncidentFor(db, instrument_id) && nextStatus !== 'retired') nextStatus = 'active';
   if (next_due) {
-    db.prepare("UPDATE calibration_instruments SET last_calibrated = datetime('now'), next_due = ?, status = 'active', updated_at = datetime('now') WHERE id = ?")
-      .run(next_due, instrument_id);
+    db.prepare("UPDATE calibration_instruments SET last_calibrated = datetime('now'), next_due = ?, status = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(next_due, nextStatus, instrument_id);
   } else {
-    db.prepare("UPDATE calibration_instruments SET last_calibrated = datetime('now'), status = 'active', updated_at = datetime('now') WHERE id = ?")
-      .run(instrument_id);
+    db.prepare("UPDATE calibration_instruments SET last_calibrated = datetime('now'), status = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(nextStatus, instrument_id);
   }
 
   const created = stampOnFile(db, 'calibration', id, req.body?.product_disposition, req.user);
@@ -263,11 +287,49 @@ router.get('/dispositions', (req, res) => {
   res.json({ ...openDispositions(getDb()), dispositions: DISPOSITIONS, can_decide: canDecide(req.user) });
 });
 
-// Record what happened to the product. `source` is calibration | scale.
+// Record what happened to the product. `source` is calibration | scale | incident.
 router.post('/dispositions/:source/:id', (req, res) => {
   const { error, errors, status, record } = recordDisposition(getDb(), req.params.source, req.params.id, req.body, req.user);
   if (error) return res.status(status).json({ error, errors });
   res.json(record);
+});
+
+// --- A scale dropped or damaged (D-194) ---
+
+router.get('/incidents', (req, res) => {
+  const db = getDb();
+  const status = ['open', 'closed', 'all'].includes(req.query.status) ? req.query.status : 'open';
+  res.json({
+    incidents: listIncidents(db, { status }),
+    out_of_service: outOfServiceScales(db),
+    scales: scalesForKiosk(db),
+    caution: cautionWithDocument(db),
+    kinds: INCIDENT_KINDS,
+    can_decide: canDecide(req.user),
+  });
+});
+
+// Anybody with the module may REPORT one — the person who saw it drop is the
+// one who should. Deciding and returning to use are QA's.
+router.post('/incidents', (req, res) => {
+  const { error, errors, status, incident } = fileIncident(getDb(), req.body, { actor: req.user, source: 'app' });
+  if (error) return res.status(status).json({ error, errors });
+  res.status(201).json(incident);
+});
+
+router.post('/incidents/:id/link', (req, res) => {
+  const { error, status, incident } = linkIncident(getDb(), req.params.id, req.body?.instrument_id, req.user);
+  if (error) return res.status(status).json({ error });
+  res.json(incident);
+});
+
+// QA/QC authorizes the scale back into use — a signature, so the password.
+router.post('/incidents/:id/return', (req, res) => {
+  if (!canDecide(req.user)) return res.status(403).json({ error: 'Returning a scale to use is QA/QC\'s authorization.' });
+  if (!gateSignature(req, res, { action: 'scale_return_to_use' })) return;
+  const { error, blockers, status, incident } = authorizeReturn(getDb(), req.params.id, req.body || {}, req.user);
+  if (error) return res.status(status).json({ error, blockers });
+  res.json(incident);
 });
 
 // --- Summary / Dashboard ---

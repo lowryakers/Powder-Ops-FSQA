@@ -5,6 +5,7 @@ import { getType, CHEMICAL_USE_SPECS } from '../qms-config.js';
 import { getChannelByName, postMessageAs, getBotUser } from './comms.js';
 import { SCALE_FORMS, SCALE_PROCEDURE, procedureFor } from '../scale-forms.js';
 import { recordScaleVerification } from './scale-verification.js';
+import { cautionWithDocument, outOfServiceScales, scalesForKiosk, fileIncident } from '../instrument-incidents.js';
 import { activeChemicalNames, syncFlavorOrganoleptic } from './qms.js';
 import { openSignOuts, syncKnifeStatus, toolIdOf } from '../knife-state.js';
 import { readyDocOrigin } from '../links.js';
@@ -492,7 +493,23 @@ router.get('/scale-forms', requireKioskToken('scale'), (_req, res) => {
   } catch { rooms = []; }
   // The kiosk is a public path, so the procedure travels with the forms — the
   // person on the floor needs the directions beside the boxes.
-  res.json({ forms: SCALE_FORMS.map(f => ({ ...f, procedure: procedureFor(f) })), rooms, procedure: SCALE_PROCEDURE });
+  res.json({
+    forms: SCALE_FORMS.map(f => ({ ...f, procedure: procedureFor(f) })), rooms, procedure: SCALE_PROCEDURE,
+    // D-194: the caution on every form, the scales out of service, and the
+    // scales a report can name (id, name, asset, room — nothing more).
+    caution: cautionWithDocument(db),
+    out_of_service: outOfServiceScales(db),
+    scales: scalesForKiosk(db),
+  });
+});
+
+// A scale dropped or damaged, reported from the floor (D-194). The person who
+// saw it is who should report it; QA decides everything after. Same writer as
+// the Calibration screen, so the two reports are one record.
+router.post('/scale-incident', requireKioskToken('scale'), (req, res) => {
+  const { error, errors, status, incident } = fileIncident(getDb(), req.body || {}, { actor: null, source: 'kiosk' });
+  if (error) return res.status(status).json({ error, errors });
+  res.status(201).json({ ok: true, incident: { id: incident.id, scale_label: incident.scale_label, occurred_at: incident.occurred_at } });
 });
 
 router.post('/scale-verification', requireKioskToken('scale'), (req, res) => {

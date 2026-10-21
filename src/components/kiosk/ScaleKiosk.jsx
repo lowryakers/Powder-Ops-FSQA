@@ -5,6 +5,7 @@ import ScaleProcedureCard from '../common/ScaleProcedureCard.jsx';
 import { useKioskLang } from './useKioskLang.js';
 import KioskLangToggle from './KioskLangToggle.jsx';
 import { kioskHeaders } from '../../lib/kioskToken.js';
+import { IncidentReportForm, OutOfServiceBanner } from '../common/ScaleIncident.jsx';
 
 // Scale Calibration Verification — Forms 417-01 … 417-05.
 //
@@ -40,12 +41,20 @@ export default function ScaleKiosk({ defaultName = '', defaultFormCode = null })
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
+  // D-194: the SOP's caution, the scales out of service, and a report for a
+  // scale that has just been dropped — the person who saw it is who reports it.
+  const [caution, setCaution] = useState(null);
+  const [outOfService, setOutOfService] = useState([]);
+  const [scales, setScales] = useState([]);
+  const [reporting, setReporting] = useState(false);
+  const [reported, setReported] = useState(null);
 
   useEffect(() => {
     fetch('/api/submit/scale-forms', { headers: kioskHeaders('scale') }).then(r => r.json())
       .then(d => {
         const list = d.forms || [];
         setForms(list); setRooms(d.rooms || []); setProcedure(d.procedure || null);
+        setCaution(d.caution || null); setOutOfService(d.out_of_service || []); setScales(d.scales || []);
         const pre = defaultFormCode ? list.find(f => f.code === defaultFormCode) : null;
         if (pre) { setForm(pre); setValues(['', '', '']); }
       })
@@ -90,6 +99,64 @@ export default function ScaleKiosk({ defaultName = '', defaultFormCode = null })
     setMeta(m => ({ ...EMPTY, performed_by: m.performed_by, room: keepForm ? m.room : '' }));
     if (!keepForm) setForm(null);
   };
+
+  const reportIncident = async (body) => {
+    const res = await fetch('/api/submit/scale-incident', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...kioskHeaders('scale') },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Something went wrong');
+    notifyDataChanged();
+    return data.incident;
+  };
+
+  /* ── A dropped or damaged scale ──────────────────────────────────────── */
+  if (reported) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4" data-incident-filed="">
+        <div className="text-center max-w-sm">
+          <AlertTriangle size={64} className="mx-auto text-red-500 mb-4" />
+          <h1 className="text-2xl font-bold text-gray-900 mb-1">{lang === 'es' ? 'Báscula fuera de servicio' : 'Scale taken out of service'}</h1>
+          <p className="text-gray-600 mb-3">{reported.scale_label || ''}</p>
+          <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-4">
+            {lang === 'es'
+              ? 'Etiquétela “FUERA DE SERVICIO”. No la use. QA/QC fue notificado y decide qué pasa con el producto pesado en ella.'
+              : 'Label it “OUT OF SERVICE.” Do not use it. QA/QC has been told and will decide what happens to product weighed on it.'}
+          </p>
+          <button onClick={() => { setReported(null); setReporting(false); }}
+            className="px-6 py-3 bg-powder-600 text-white rounded-xl font-bold hover:bg-powder-700">{lang === 'es' ? 'Listo' : 'Done'}</button>
+        </div>
+      </div>
+    );
+  }
+  if (reporting) {
+    return (
+      <div className="min-h-screen bg-gray-50 px-4 py-8">
+        <div className="max-w-lg mx-auto">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <button onClick={() => setReporting(false)} className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
+              <ChevronLeft size={15} /> {lang === 'es' ? 'Volver' : 'Back'}
+            </button>
+            <KioskLangToggle lang={lang} onToggle={toggle} />
+          </div>
+          <h1 className="text-xl font-bold text-gray-900 mb-3">{lang === 'es' ? 'Reportar una báscula caída o dañada' : 'Report a dropped or damaged scale'}</h1>
+          <div className="bg-white rounded-2xl border border-gray-200 p-4">
+            <IncidentReportForm scales={scales} caution={caution} defaultName={meta.performed_by || defaultName}
+              submit={reportIncident} onDone={(inc) => setReported(inc || {})} onCancel={() => setReporting(false)} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const reportButton = (
+    <button type="button" onClick={() => setReporting(true)} data-kiosk-report-incident=""
+      className="w-full mt-4 py-3 rounded-xl border-2 border-red-300 bg-white text-red-700 font-bold hover:bg-red-50">
+      {lang === 'es' ? '¿Se cayó o golpeó una báscula? Repórtelo aquí' : 'Scale dropped or knocked? Report it here'}
+    </button>
+  );
 
   /* ── Confirmation ────────────────────────────────────────────────────── */
   if (result) {
@@ -152,6 +219,7 @@ export default function ScaleKiosk({ defaultName = '', defaultFormCode = null })
             <h1 className="text-2xl font-bold text-gray-900">{t('k_scale_title')}</h1>
             <p className="text-sm text-gray-500 mt-1">{t('k_which_scale')}</p>
           </div>
+          <div className="mb-4"><OutOfServiceBanner scales={outOfService} /></div>
           <div className="space-y-2">
             {forms.map(f => (
               <button key={f.code} onClick={() => { setForm(f); setValues(['', '', '']); }}
@@ -164,6 +232,7 @@ export default function ScaleKiosk({ defaultName = '', defaultFormCode = null })
             ))}
             {forms.length === 0 && <p className="text-center text-sm text-gray-400 py-8">{t('k_loading_forms')}</p>}
           </div>
+          {reportButton}
         </div>
       </div>
     );
@@ -189,8 +258,9 @@ export default function ScaleKiosk({ defaultName = '', defaultFormCode = null })
           <p className="text-sm text-gray-500 mt-1">Form {form.code} {form.revision} — three-point check</p>
         </div>
 
-        <div className="mb-4">
-          <ScaleProcedureCard procedure={procedure} form={form} />
+        <div className="mb-4 space-y-3">
+          <OutOfServiceBanner scales={outOfService} />
+          <ScaleProcedureCard procedure={procedure} form={form} caution={caution} lang={lang} />
         </div>
 
         <form onSubmit={submit} className="bg-white rounded-2xl border border-gray-200 p-6 space-y-5 shadow-sm">
@@ -275,6 +345,7 @@ export default function ScaleKiosk({ defaultName = '', defaultFormCode = null })
             {saving ? t('k_submitting') : t('k_submit_verification')}
           </button>
         </form>
+        {reportButton}
       </div>
     </div>
   );

@@ -24,6 +24,7 @@ import { v4 as uuid } from 'uuid';
 import { QMS_TYPES } from './qms-config.js';
 import { SCALE_FORMS } from './scale-forms.js';
 import { atpControlledEntry } from './atp-limits.js';
+import { SCALE_CAUTION } from '../shared/scale-incident.js';
 import { checklistSnapshot, checklistBaseline, applyChecklistSnapshot, CHECKLIST_FORM_CODE, CHECKLIST_TITLE } from './receiving-checklist.js';
 
 // Stable hash of a definition: keys sorted, so a reordered object literal in
@@ -118,8 +119,25 @@ function checklistEntries() {
   }];
 }
 
+// The scale caution and the dropped-scale product-control steps (D-194): the
+// Equipment Calibration SOP's words, printed on every scale form. A change to
+// them here parks for Document Control like a tolerance does.
+function cautionEntries() {
+  return [{
+    scope: 'procedure',
+    key: 'procedure:scale-caution',
+    label: 'Scale caution and dropped-scale product control (Equipment Calibration SOP)',
+    current: () => ({ text: SCALE_CAUTION.text, text_es: SCALE_CAUTION.text_es, product_control: SCALE_CAUTION.product_control }),
+    apply: (snap) => {
+      if (typeof snap?.text === 'string' && snap.text) SCALE_CAUTION.text = snap.text;
+      if (typeof snap?.text_es === 'string' && snap.text_es) SCALE_CAUTION.text_es = snap.text_es;
+      if (Array.isArray(snap?.product_control) && snap.product_control.length) SCALE_CAUTION.product_control = snap.product_control;
+    },
+  }];
+}
+
 export function registry() {
-  return [...qmsEntries(), ...scaleEntries(), atpControlledEntry(), ...checklistEntries()];
+  return [...qmsEntries(), ...scaleEntries(), atpControlledEntry(), ...checklistEntries(), ...cautionEntries()];
 }
 
 // ── Boot: baseline, detect, gate ────────────────────────────────────────────

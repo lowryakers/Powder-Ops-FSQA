@@ -22,6 +22,7 @@ import { recordGroupFor, recordAreaForTask } from '../qa-records.js';
 import { checkFormFor, attachCheckForms, fileCheckRecord, missingForCheck } from '../check-records.js';
 import { attachSwabPlans } from '../clean-swabs.js';
 import { scaleChecksDue } from '../scale-checks.js';
+import { outOfServiceScales } from '../instrument-incidents.js';
 import { canonicalArea } from '../sanitation-areas.js';
 import { planStepSplit } from '../../shared/pm-step-split.js';
 import { personMatch, resolveUserId, withCurrentNames } from '../person-links.js';
@@ -2134,7 +2135,12 @@ router.get('/operator-checks', (req, res) => {
   const db = getDb();
   const canViewAll = req.user?.role === 'admin';
   const group = canViewAll ? req.query.group : (req.user?.department || 'warehouse');
-  res.json({ scale_checks: scaleChecksDue(db, { group: group && group !== 'all' ? group : null }) });
+  // Scales out of service (D-194) travel with the checks: the floor must see
+  // "do not use" on the screen it opens to run the check, not on Calibration.
+  res.json({
+    scale_checks: scaleChecksDue(db, { group: group && group !== 'all' ? group : null }),
+    out_of_service: outOfServiceScales(db),
+  });
 });
 
 router.get('/operator-tasks', (req, res) => {

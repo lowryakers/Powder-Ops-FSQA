@@ -2825,8 +2825,23 @@ team on today's schedule (`scripts/lib/schedule-today.mjs`). `verify:scaleschedu
   failures read `not_recorded`, listed apart as history, never on the bell. `affected_since` (last good check before
   it) is frozen on the record.
 - **QA decides — not the Calibration edit grant** (a warehouse account holding it could otherwise hold or release
-  product). Closed once recorded; an admin corrects (`disposition_corrected`).
+  product). Closed once recorded; an admin corrects (`disposition_corrected`). **On hold is not closed (D-194).**
 - `verify:outofcal` (55; control fails 6). The same verify covers the crisis-test impact below.
+
+## A dropped scale goes out of service; only QA returns it; "on hold" stays open (D-194)
+`shared/scale-incident.js` (`SCALE_CAUTION`, `INCIDENT_KINDS`, `checkIncident`, `returnBlockers`),
+`server/instrument-incidents.js` (`fileIncident`, `authorizeReturn`, `linkIncident`, `outOfServiceScales`,
+`cautionWithDocument`), `instrument_incidents`, `/calibration/incidents[/:id/link|return]`, the kiosk's
+`POST /api/submit/scale-incident`, `common/ScaleIncident.jsx`.
+- **The incident owns the instrument's status while open**: filing sets out of service; the edit form 409s; only
+  `authorizeReturn` (QA, password, inspection note, a passing check dated AFTER the incident) sets it active.
+- **A failed calibration never sets an instrument active** (it did, on every record). A pass does only with no
+  open incident.
+- **`on_hold` is state `held`, not recorded** — open until `FINAL_AFTER_HOLD`; history in `disposition_history`.
+  Lots required on hold/release/reject, the evaluation on release/reject.
+- **The caution names whatever SOP the registry calls "Equipment Calibration"** (SOP 415 V2 live); never put the
+  number in code. Its wording is controlled (`procedure:scale-caution`).
+- `verify:scaleincident` (60).
 
 ## A crisis test records its product and material impact (D-154, SQF 2.6.4.2)
 `shared/crisis-impact.js`, `evacuation_headcounts.impact` / `impact_by` / `impact_at`,
