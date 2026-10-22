@@ -1,6 +1,6 @@
 import { useState, useMemo, Fragment, useRef} from 'react';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
-import { useApiGet, apiPost, apiDelete, apiUpload } from '../../hooks/useApi';
+import { useApiGet, apiPost, apiPut, apiDelete, apiUpload } from '../../hooks/useApi';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow } from '../common/RowDetail';
 import { useCappedList } from '../../lib/useCappedList';
@@ -132,6 +132,7 @@ export default function SuppliersPanel({ user }) {
           <h2 className="text-lg font-semibold">Supplier Qualification</h2>
           <p className="text-xs text-slate-500 dark:text-slate-400">SOP 404 V4 · FORM 404-1, 404-2</p>
         </div>
+        {user?.role === 'admin' && <BannedGateControl />}
       </header>
 
       <ModuleTabs tabs={tabs} value={tab} onChange={setTab} />
@@ -452,19 +453,8 @@ function SupplierDetail({ id, user, onDecide, onRemoved }) {
         ) : <p className="text-sm text-slate-400">None recorded.</p>}
       </section>
 
-      <section>
-        <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Materials</h4>
-        {materials.length ? (
-          <ul className="space-y-0.5 text-sm">
-            {materials.map(m => (
-              <li key={m.id}>
-                {m.item_description}
-                {m.manufacturer_name && <span className="text-slate-500"> — made by {m.manufacturer_name}</span>}
-              </li>
-            ))}
-          </ul>
-        ) : <p className="text-sm text-slate-400">None recorded yet.</p>}
-      </section>
+      <MaterialChecks supplierId={id} materials={data.material_checks || materials} banned={data.banned}
+        canDecide={data.can_decide} onChanged={refresh} />
 
       <section className="md:col-span-2">
         <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Qualification periods</h4>
@@ -481,6 +471,11 @@ function SupplierDetail({ id, user, onDecide, onRemoved }) {
                   : <span className="text-xs text-slate-400">No disposition — evidence on file, decision not made</span>}
                 {qr.next_review_due && (
                   <span className="text-xs text-slate-500">review due {formatDate(qr.next_review_due)}</span>
+                )}
+                {qr.banned_check_gaps && (
+                  <span data-qual-banned-gaps className="text-xs text-amber-700 dark:text-amber-400">
+                    approved with {JSON.parse(qr.banned_check_gaps).length} banned-list gap(s) open
+                  </span>
                 )}
               </li>
             ))}
@@ -570,6 +565,97 @@ function SupplierDetail({ id, user, onDecide, onRemoved }) {
         ) : <p className="text-sm text-slate-400">None.</p>}
       </section>
     </div>
+  );
+}
+
+// ── The banned-list check, per material (D-202, CAR 4990682-3 (a)) ──────────
+// The editions are the latest annual review's, read by the server and frozen
+// on the check; nothing here is typed except the answer and a note.
+const BANNED_CHIP = {
+  current: ['Checked — not listed', 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300'],
+  stale: ['Check again — lists updated', 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300'],
+  none: ['Not checked', 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'],
+  listed: ['ON A BANNED LIST', 'bg-rose-100 text-rose-800 dark:bg-rose-950/50 dark:text-rose-300'],
+};
+
+function MaterialChecks({ supplierId, materials, banned, canDecide, onChanged }) {
+  const [busy, setBusy] = useState(null);
+  const [error, setError] = useState(null);
+  const review = banned?.review;
+  const record = async (m, result) => {
+    let notes = '';
+    if (result === 'listed') {
+      notes = window.prompt(`Which list, and which substance, for "${m.item_description}"?`) || '';
+      if (!notes.trim()) return;
+    }
+    setBusy(m.id); setError(null);
+    try { await apiPost(`/suppliers/${supplierId}/materials/${m.id}/banned-check`, { result, notes }); onChanged?.(); }
+    catch (e) { setError(e.message || 'Could not record the check'); }
+    finally { setBusy(null); }
+  };
+  return (
+    <section data-material-checks>
+      <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Materials · banned-list check</h4>
+      <p className="mb-1 text-xs text-slate-500" data-banned-review>
+        {review
+          ? <>Checked against the lists as recorded in the annual review of {formatDate(review.reviewed_on)}.</>
+          : <>No annual banned-list review is on file, so there are no list editions to check against yet.</>}
+      </p>
+      {materials.length ? (
+        <ul className="space-y-1.5 text-sm">
+          {materials.map(m => {
+            const [label, cls] = BANNED_CHIP[m.banned_state] || BANNED_CHIP.none;
+            return (
+              <li key={m.id} data-material={m.id} className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <span className="min-w-0">
+                  {m.item_description}
+                  {m.manufacturer_name && <span className="text-slate-500"> — made by {m.manufacturer_name}</span>}
+                </span>
+                {m.banned_state && (
+                  <span data-banned-state={m.banned_state} className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${cls}`}
+                    title={m.banned_check ? `${m.banned_check.checked_by}, ${formatDate(m.banned_check.checked_at)}${m.banned_check.notes ? ` — ${m.banned_check.notes}` : ''}` : undefined}>
+                    {label}
+                  </span>
+                )}
+                {canDecide && review && m.banned_state !== 'current' && (
+                  <span className="flex gap-1">
+                    <button type="button" disabled={busy === m.id} data-banned-clear={m.id}
+                      onClick={(e) => { stopRowClick(e); record(m, 'not_listed'); }}
+                      className="rounded border border-emerald-300 px-2 py-0.5 text-xs text-emerald-700 hover:bg-emerald-50 disabled:opacity-40 dark:border-emerald-800 dark:text-emerald-300">
+                      Not on any list
+                    </button>
+                    <button type="button" disabled={busy === m.id} data-banned-listed={m.id}
+                      onClick={(e) => { stopRowClick(e); record(m, 'listed'); }}
+                      className="rounded border border-rose-300 px-2 py-0.5 text-xs text-rose-700 hover:bg-rose-50 disabled:opacity-40 dark:border-rose-800 dark:text-rose-300">
+                      On a list…
+                    </button>
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      ) : <p className="text-sm text-slate-400">None recorded yet — nothing can be checked until a material is on the record.</p>}
+      {error && <p className="mt-1 text-xs text-rose-600">{error}</p>}
+    </section>
+  );
+}
+
+/** Admin: off / warn / on, the D-063 shape. A deploy never turns it on. */
+function BannedGateControl() {
+  const { data, refresh } = useApiGet('/suppliers/banned-gate');
+  if (!data) return null;
+  return (
+    <label className="ml-auto flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300" data-banned-gate-control>
+      Banned-list check on approval
+      <select id="supplier-banned-gate" value={data.mode}
+        onChange={async (e) => { await apiPut('/suppliers/banned-gate', { mode: e.target.value }); refresh(); }}
+        className="rounded border border-slate-300 px-1.5 py-1 text-xs dark:border-slate-600 dark:bg-slate-800">
+        <option value="off">Off</option>
+        <option value="warn">Warn — record gaps</option>
+        <option value="on">On — refuse approval</option>
+      </select>
+    </label>
   );
 }
 
@@ -1063,7 +1149,12 @@ function DispositionModal({ supplier, data, onClose, onSaved, queue = [], onAdva
   const DISPOSITIONS = data?.dispositions || [];
   const unanswered = CRITERIA.filter(c => !(c.key in criteria));
   const needsReason = disposition && disposition !== 'approved';
-  const ready = disposition && !unanswered.length && (!needsReason || notes.trim().length > 2);
+  // The banned-list gate (D-202): the server's own gaps, shown before the
+  // button is pressed. "On" refuses an approval with gaps; "warn" records them.
+  const banned = detail?.banned;
+  const bannedGaps = disposition === 'approved' && banned && banned.mode !== 'off' ? banned.gaps || [] : [];
+  const bannedBlocks = banned?.mode === 'on' && bannedGaps.length > 0;
+  const ready = disposition && !unanswered.length && (!needsReason || notes.trim().length > 2) && !bannedBlocks;
 
   const save = async (advance) => {
     setBusy(true); setError(null);
@@ -1177,6 +1268,17 @@ function DispositionModal({ supplier, data, onClose, onSaved, queue = [], onAdva
             ))}
           </div>
         </fieldset>
+
+        {bannedGaps.length > 0 && (
+          <div data-banned-gaps={banned.mode} className={`mb-3 rounded border p-2 text-sm ${bannedBlocks
+            ? 'border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-200'
+            : 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200'}`}>
+            <p className="font-medium">{bannedBlocks
+              ? 'Cannot be approved yet — the banned-list check is not complete:'
+              : 'The banned-list check is not complete. Approving now records these gaps on the decision:'}</p>
+            <ul className="mt-1 list-disc pl-5 text-xs">{bannedGaps.map((g, i) => <li key={g.material_id || i}>{g.reason}</li>)}</ul>
+          </div>
+        )}
 
         <label className="mb-3 block text-sm">
           <span className="text-slate-600 dark:text-slate-300">

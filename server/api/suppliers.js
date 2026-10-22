@@ -38,6 +38,10 @@ import { readTable } from '../tabular.js';
 import { mediaUpload, cleanupTemp, uploadErrorMessage, MAX_ARCHIVE_BYTES } from '../media.js';
 import { planSupplierImport, applySupplierImport } from '../supplier-import.js';
 import { DISPOSITIONS, RISK_CRITERIA } from '../supplier-sop.js';
+import { BANNED_RESULTS, GATE_MODES as BANNED_GATE_MODES, bannedGateMode, materialChecks, bannedGaps, recordBannedCheck } from '../supplier-banned-check.js';
+import { currentListEditions } from '../check-records.js';
+import { BANNED_LISTS } from '../../shared/check-forms.js';
+import { requireRole } from '../middleware/auth.js';
 import { matchStrength, nameKey } from '../supplier-reconcile.js';
 import { readFileSync, createReadStream, writeFileSync, unlinkSync, renameSync } from 'fs';
 import { tmpdir } from 'os';
@@ -142,6 +146,22 @@ router.get('/documents/expiring', (req, res) => {
   });
 });
 
+// The banned-list gate on "approved" (D-202). Declared before `/:id` — PUT
+// /:id exists further down and "banned-gate" is a perfectly good id.
+router.get('/banned-gate', (req, res) => {
+  if (!canRead(req.user)) return res.status(403).json({ error: 'Not permitted' });
+  res.json({ mode: bannedGateMode(getDb()), modes: BANNED_GATE_MODES });
+});
+router.put('/banned-gate', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const mode = req.body?.mode;
+  if (!BANNED_GATE_MODES.includes(mode)) return res.status(400).json({ error: `Mode must be one of ${BANNED_GATE_MODES.join(', ')}.` });
+  const before = bannedGateMode(db);
+  db.prepare("INSERT INTO app_settings (key, value) VALUES ('supplier_banned_gate', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(mode);
+  logAudit(req.user, 'supplier_banned_gate_changed', 'app_setting', 'supplier_banned_gate', { from: before, to: mode });
+  res.json({ mode });
+});
+
 // DECLARED BEFORE `/:id` — Express matches in declaration order and
 // "documents" is a perfectly good :id. Same trap as /products/master.csv.
 router.get('/:id', (req, res) => {
@@ -167,7 +187,32 @@ router.get('/:id', (req, res) => {
       FROM supplier_files WHERE supplier_id = ? ORDER BY period_label DESC, kind, filename`).all(s.id),
     questionnaires: questionnairesFor(db, s.id),
     questionnaire_form: { code: Q_FORM.code, revision: Q_FORM.revision },
+    // The banned-list check per material (D-202): derived on every read, so a
+    // new annual review makes yesterday's checks stale by itself.
+    can_decide: canDecide(req.user),
+    material_checks: materialChecks(db, s.id),
+    banned: (() => {
+      const review = currentListEditions(db);
+      return {
+        mode: bannedGateMode(db), gaps: bannedGaps(db, s.id), results: BANNED_RESULTS, lists: BANNED_LISTS,
+        review: review ? { id: review.id, reviewed_on: review.reviewed_on, editions: review.editions } : null,
+      };
+    })(),
   });
+});
+
+router.post('/:id/materials/:mid/banned-check', (req, res) => {
+  if (!canDecide(req.user)) return res.status(403).json({ error: 'Quality leadership or an admin records a banned-list check' });
+  const db = getDb();
+  const s = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(req.params.id);
+  if (!s) return res.status(404).json({ error: 'Not found' });
+  const out = recordBannedCheck(db, { supplierId: s.id, materialId: req.params.mid,
+    result: req.body?.result, notes: req.body?.notes, user: req.user });
+  if (out.error) return res.status(out.status || 400).json({ error: out.error });
+  logAudit(req.user, 'supplier_banned_check', 'supplier', s.id,
+    { material: out.material.item_description, result: out.check.result, editions: out.check.editions, review_id: out.check.review_id },
+    null, null, s.name);
+  res.status(201).json({ check: out.check, gaps: bannedGaps(db, s.id) });
 });
 
 // ── FORM 404-1 on a signed link ─────────────────────────────────────────────
@@ -677,6 +722,16 @@ router.post('/:id/disposition', (req, res) => {
     return res.status(400).json({ error: `All seven risk criteria must be answered — missing: ${missing.map(m => m.key).join(', ')}` });
   }
 
+  // THE BANNED-LIST GATE (D-202). Only "approved" is gated — a conditional or
+  // not-approved decision is not a clearance. Warn approves and stamps the
+  // gaps; on refuses, naming each material; off stamps nothing.
+  const gateMode = bannedGateMode(db);
+  const gaps = disposition === 'approved' && gateMode !== 'off' ? bannedGaps(db, s.id) : [];
+  if (gateMode === 'on' && gaps.length) {
+    return res.status(409).json({ error: `Not approved: the banned-list check is not complete — ${gaps.map(g => g.reason).join('; ')}.`,
+      banned_gaps: gaps, banned_gate_mode: gateMode });
+  }
+
   const prev = { status: s.status };
   db.transaction(() => {
     const q = db.prepare(`SELECT id FROM supplier_qualifications WHERE supplier_id = ?
@@ -696,8 +751,9 @@ router.post('/:id/disposition', (req, res) => {
     const nextDue = nextReviewDue({ due: anchor, doneOn: new Date(), months: 12 });
     db.prepare(`UPDATE supplier_qualifications SET disposition = ?, disposition_notes = ?,
       risk_criteria = ?, decided_by = ?, decided_at = datetime('now'),
-      next_review_due = ?, updated_at = datetime('now') WHERE id = ?`)
-      .run(disposition, clean(notes, 1000), JSON.stringify(risk_criteria), req.user.name, nextDue, qid);
+      next_review_due = ?, banned_check_gaps = ?, banned_gate_mode = ?, updated_at = datetime('now') WHERE id = ?`)
+      .run(disposition, clean(notes, 1000), JSON.stringify(risk_criteria), req.user.name, nextDue,
+        gaps.length ? JSON.stringify(gaps) : null, gateMode, qid);
     // The supplier's status MIRRORS the decision and is written nowhere else —
     // the same doctrine as knife_accountability.status and products.nfp_version.
     db.prepare(`UPDATE suppliers SET status = ?, status_reason = ?, status_set_by = ?,
@@ -706,8 +762,8 @@ router.post('/:id/disposition', (req, res) => {
   })();
 
   logAudit(req.user, 'supplier_disposition_set', 'supplier', s.id,
-    { disposition, period_label }, prev, { status: disposition }, s.name);
-  res.json({ ok: true });
+    { disposition, period_label, banned_gate_mode: gateMode, banned_gaps: gaps.length || undefined }, prev, { status: disposition }, s.name);
+  res.json({ ok: true, banned_gaps: gaps, banned_gate_mode: gateMode });
 });
 
 // ── The bytes behind the catalogue ──────────────────────────────────────────

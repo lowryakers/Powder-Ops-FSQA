@@ -5241,6 +5241,21 @@ Who we buy from and whether they are qualified to sell it to us — SOP 404 V4, 
   real 836-path listing, paths only), plus `scripts/verify-suppliers.mjs` — **30 assertions executed
   against a live server on a fresh database**, importing the real files over HTTP.
 
+### Every material is checked against the banned lists; "approved" waits for it (D-202, CAR 4990682-3 (a))
+`server/supplier-banned-check.js` (`materialChecks`, `bannedGaps`, `recordBannedCheck`, `bannedGateMode`),
+`supplier_banned_checks`, `POST /suppliers/:id/materials/:mid/banned-check`, `GET|PUT /suppliers/banned-gate`
+(declared before `/:id`), and `MaterialChecks` + `BannedGateControl` in `SuppliersPanel.jsx`.
+- **Per material; the editions are the latest annual review's, frozen on the check, never typed.** With no review
+  on file a check is refused. A newer review makes earlier checks **stale**.
+- `listed` needs a note, and only Quality records a check.
+- **Gate** (`app_settings.supplier_banned_gate`, off / warn (default) / on, the D-063 shape):
+  - only "approved" is gated;
+  - warn stamps `banned_check_gaps` on the qualification;
+  - on refuses with 409, naming each material;
+  - no materials recorded is a gap;
+  - an admin turns it on, never a deploy.
+- `verify:bannedcheck` (34).
+
 ### FORM 404-1 on a signed link (`server/supplier-questionnaire.js`, D-058)
 A supplier opens `/supplier-form/<token>`, answers the plant's own questionnaire on a phone or a laptop,
 types their name under the form's statement and presses Submit; the signed PDF files itself against the
