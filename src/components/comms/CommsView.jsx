@@ -1,5 +1,5 @@
 import { flushSync } from 'react-dom';
-import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { getSocket } from '../../lib/socket';
@@ -1325,6 +1325,10 @@ const UNREAD_ANCHOR_FALLBACK_COUNT = 5;
 // ONE distance decides both "pinned to the latest" and "show Jump to latest",
 // so nobody is ever neither pinned nor offered the button.
 const PIN_PX = 120;
+// History paging (D-199): the server's default page, and how near the top a
+// scroll asks for the page before it.
+const HISTORY_PAGE = 50;
+const OLDER_TRIGGER_PX = 200;
 // More unread than the newest page holds: fetch from the reader's marker.
 const UNREAD_PAGE = 40;
 
@@ -2380,6 +2384,11 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   const openInfoRef = useRef(null);       // { id, marker, unread } captured at open
   const markedUnreadRef = useRef(null);   // a channel just marked unread: mark nothing until reopened
   const windowPartialRef = useRef(false); // the loaded window starts at the marker and stops short of the latest
+  // HISTORY (D-199): a channel opens on its newest page and scrolling to the
+  // top loads the page before it, keeping the reader's place.
+  const [older, setOlder] = useState({ loading: false, done: false });
+  const olderRef = useRef({ loading: false, done: false, channel: null });
+  const restoreScrollRef = useRef(null);
   const [freshFor, setFreshFor] = useState(null); // the channel whose messages came from the server, not the cache
   // Declared HERE because openChannel below writes all three — state a
   // function closes over must be declared before the function is.
@@ -2697,6 +2706,8 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
       windowPartialRef.current = !!after && msgs.filter(m => m.created_at > after).length >= 300;
       if (!windowPartialRef.current) msgCacheRef.current.set(id, msgs);
       setMessages(msgs);
+      // A first page shorter than a page IS the whole history (D-199).
+      if (!after && msgs.length < HISTORY_PAGE) { olderRef.current = { loading: false, done: true, channel: id }; setOlder({ loading: false, done: true }); }
       // The landing decision waits for THIS, never the cached copy.
       setFreshFor(id);
       // NOTE: loading messages does NOT mark the channel read. See the effect
@@ -2711,6 +2722,9 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     // channel visited earlier is missing everything posted since (D-189).
     setFreshFor(null);
     windowPartialRef.current = false;
+    olderRef.current = { loading: false, done: false, channel: activeId };
+    setOlder({ loading: false, done: false });
+    restoreScrollRef.current = null;
     setMessages(activeId ? (msgCacheRef.current.get(activeId) || []) : []);
     setTypers([]); setPending([]);
     loadMessages(activeId);
@@ -2995,13 +3009,54 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     // A message that lands while you are at the latest is a message you saw.
     scheduleSeen();
   }, [messages, updateJump, scheduleSeen]);
+  // Load the page before the oldest message on screen (D-199). There was no
+  // way back past the newest 50 except the calendar, so a DM's history simply
+  // ended. Inclusive cursor + de-dupe by id, so a shared timestamp skips
+  // nothing; a page that brings nothing new is the beginning.
+  const loadOlder = useCallback(async () => {
+    const id = activeIdRef.current;
+    const st = olderRef.current;
+    if (!id || st.channel !== id || st.loading || st.done) return;
+    const oldest = messages[0];
+    if (!oldest) return;
+    olderRef.current = { ...st, loading: true };
+    setOlder({ loading: true, done: false });
+    try {
+      const page = await apiFetch(`/comms/channels/${id}/messages?through=${encodeURIComponent(oldest.created_at)}&limit=${HISTORY_PAGE}`);
+      if (activeIdRef.current !== id) return;
+      const have = new Set(messages.map(m => m.id));
+      const fresh = page.filter(m => !have.has(m.id));
+      const done = page.length < HISTORY_PAGE || fresh.length === 0;
+      if (fresh.length) {
+        const el = scrollRef.current;
+        if (el) restoreScrollRef.current = { height: el.scrollHeight, top: el.scrollTop };
+        pinnedRef.current = false;
+        setMessages(ms => [...fresh.filter(m => !ms.some(x => x.id === m.id)), ...ms]);
+      }
+      olderRef.current = { loading: false, done, channel: id };
+      setOlder({ loading: false, done });
+    } catch {
+      olderRef.current = { ...olderRef.current, loading: false };
+      setOlder(o => ({ ...o, loading: false }));
+    }
+  }, [messages]);
+  // Keep the reader's place when earlier messages are added above it.
+  useLayoutEffect(() => {
+    const r = restoreScrollRef.current; const el = scrollRef.current;
+    if (!r || !el) return;
+    restoreScrollRef.current = null;
+    el.scrollTop = el.scrollHeight - r.height + r.top;
+  }, [messages]);
+
   const onMessagesScroll = () => {
     const el = scrollRef.current; if (!el) return;
     const fromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     pinnedRef.current = fromBottom <= PIN_PX && Date.now() >= jumpHoldRef.current;
     updateJump();
     scheduleSeen();
+    if (el.scrollTop < OLDER_TRIGGER_PX) loadOlder();
   };
+
   const jumpToLatest = () => {
     jumpHoldRef.current = 0;
     pinnedRef.current = true;
@@ -3021,6 +3076,8 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
       const msgs = await apiFetch(`/comms/channels/${activeId}/messages?date=${d}`);
       pinnedRef.current = false; // we're reading history, not the live bottom
       setDateView(d);
+      olderRef.current = { loading: false, done: false, channel: activeId };
+      setOlder({ loading: false, done: false });
       setMessages(msgs);
       requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = 0; });
     } catch { /* ignore */ }
@@ -3028,6 +3085,8 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   const backToLatest = () => {
     setDateView(null);
     pinnedRef.current = true;
+    olderRef.current = { loading: false, done: false, channel: activeId };
+    setOlder({ loading: false, done: false });
     loadMessages(activeId);
   };
 
@@ -4042,6 +4101,16 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
                   </div>
                 )}
                 <div>{/* single wrapper so the pinned-scroll ResizeObserver sees content height */}
+                {messages.length > 0 && (
+                  <div className="flex justify-center py-2" data-history={older.done ? 'start' : older.loading ? 'loading' : 'more'}>
+                    {older.done
+                      ? <span className="text-[11px] text-gray-400">Beginning of the conversation</span>
+                      : <button type="button" onClick={loadOlder} disabled={older.loading} data-load-older=""
+                          className="text-xs text-powder-700 hover:underline disabled:text-gray-400">
+                          {older.loading ? 'Loading earlier messages…' : 'Load earlier messages'}
+                        </button>}
+                  </div>
+                )}
                 {messages.length === 0 && <p className="text-center text-sm text-gray-400 py-8">No messages yet. Say hello 👋</p>}
                 {messages.map((m, i) => {
                   const showDay = i === 0 || dayKey(m.created_at) !== dayKey(messages[i - 1].created_at);

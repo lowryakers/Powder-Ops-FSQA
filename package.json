@@ -105,6 +105,7 @@
     "verify:commsedit": "node scripts/verify-comms-edit.mjs",
     "verify:commspendingjump": "node scripts/verify-comms-pending-jump.mjs",
     "verify:unreadlanding": "node scripts/verify-unread-landing.mjs",
+    "verify:commshistory": "node scripts/verify-comms-history.mjs",
     "verify:threads": "node scripts/verify-threads.mjs",
     "verify:threadsinbox": "node scripts/verify-threads-inbox.mjs",
     "verify:trainingassign": "node scripts/verify-training-assign.mjs",
