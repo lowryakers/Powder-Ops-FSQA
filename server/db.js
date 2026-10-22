@@ -4951,7 +4951,7 @@ function runMigrations() {
    * stop trusting a setting.
    */
   /**
-   * Mock recall — the fields FORM 415-1 / SOP 415 V3 actually asks for.
+   * Mock recall — the fields FORM 415-1 / SOP 414 V3 (the recall SOP) actually asks for.
    *
    * The original table was a reasonable guess at a mock recall; the SOP names
    * seventeen specific things the exercise "will document" and three

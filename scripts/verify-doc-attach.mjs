@@ -20,7 +20,7 @@ const DOCS = [
   ['da-sop401', 'SOP 401', 'cGMP Policy and Procedure', 'V3'],
   ['da-pol007', 'POLICY 007', 'Visitor and Contractor Policy', 'V3'],
   ['da-wi007', 'WI007', 'Auger Stick Pack', 'V1'],
-  ['da-sop415', 'SOP 415', 'Recall and Mock Recall Procedures', 'V3'],  // browser section only
+  ['da-sop414', 'SOP 414', 'Recall and Mock Recall Procedures', 'V3'],  // browser section only
 ];
 {
   const db = new Database(process.env.DBPATH);
@@ -192,7 +192,7 @@ try {
 
     const countBefore = attachmentCount();
     await page.setInputFiles('[data-signed-input]', [
-      { name: 'SOP-415_Recall_Procedures_V2.pdf', mimeType: 'application/pdf', buffer: pdf('SOP-415_Recall_Procedures_V2.pdf') },
+      { name: 'SOP-414_Recall_Procedures_V2.pdf', mimeType: 'application/pdf', buffer: pdf('SOP-414_Recall_Procedures_V2.pdf') },
       { name: 'scan0099.pdf', mimeType: 'application/pdf', buffer: pdf('scan0099.pdf') },
     ]);
     await page.waitForSelector('[data-signed-row]', { timeout: 8000 });
@@ -200,7 +200,7 @@ try {
     t('the plan is on screen', rowStates.length === 2, JSON.stringify(rowStates));
     t('CHOOSING FILES UPLOADS NOTHING', attachmentCount() === countBefore, `${countBefore} → ${attachmentCount()}`);
     const body = await page.locator('[data-signed-modal]').innerText();
-    t('the plan names the document it matched', /SOP 415/.test(body) && /Recall and Mock Recall/.test(body), body.slice(0, 300));
+    t('the plan names the document it matched', /SOP 414/.test(body) && /Recall and Mock Recall/.test(body), body.slice(0, 300));
     t('and names the one it could not', rowStates.includes('unmatched') && /scan0099\.pdf/.test(body), body.slice(0, 300));
     t('it says removing a signed original takes an admin', /admin/i.test(body), body.slice(0, 400));
 
@@ -213,10 +213,10 @@ try {
       /scan0099\.pdf/.test(after) && /no document number/i.test(after), after.slice(0, 600));
     t('and the screen says how many documents still have no signed copy',
       /no signed copy on file/.test(after), after.slice(0, 500));
-    const sop415 = await listOf('da-sop415');
-    t('it landed on SOP 415 as the signed original with its revision',
-      sop415.length === 1 && sop415[0].kind === 'signed_original' && sop415[0].revision === '2',
-      JSON.stringify(sop415[0] || {}).slice(0, 220));
+    const sop414 = await listOf('da-sop414');
+    t('it landed on SOP 414 as the signed original with its revision',
+      sop414.length === 1 && sop414[0].kind === 'signed_original' && sop414[0].revision === '2',
+      JSON.stringify(sop414[0] || {}).slice(0, 220));
   } else {
     for (let i = 0; i < 10; i++) t('browser assertion (control could not reach the screen)', false);
   }

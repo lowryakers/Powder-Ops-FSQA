@@ -4958,6 +4958,9 @@ Banned-List Review has had all along.
 - **"Due" is derived from the last record's date on every read**; a stored `last_done` is stale on day one.
 - `verify:annualreviews` (53, pure + live + browser; in `verify:all`). **The control removes the kinds — the
   state the plant is in — and fails 8**, the first being a task payload carrying no form at all.
+- **A filed review OPENS on row click and shows every answer (D-198)** — each step, its note, methods, outcome,
+  findings, corrective actions. The by-hand door's `source: 'paper'` reads **Recorded by hand** on screen, never
+  "Paper report" (people type it straight in). `verify:annualreviews` (83).
 
 ## Recurring QA checks that ship pre-scheduled
 `SEED_SCHEDULES` in `server/api/quality-schedules.js` + `seedQualitySchedules(db)` (called from server.js).
@@ -5532,9 +5535,10 @@ SIGNED exercise (today with none). Its task is check kind `mock_recall`: **it ca
 (`missingForCheck` always names the exercise; batch-complete skips it) and the card opens Mock Recall. **The
 exercise's sign-off closes it** through `settleAnnualSchedule` — as of the day it was run, linked both ways
 (`mock_recalls.quality_schedule_id` / `work_order_id`), next due on that anniversary. A record older than 365
-days links but moves neither the task nor the clock. **SOP 415 is two documents in the plant's records**
-(Recall in the DCR log, Equipment Calibration in the registry) — Document Control's DCR, reported in D-196.
-`verify:mockrecalltask` (27; control fails at the first).
+days links but moves neither the task nor the clock. **The recall SOP is 414 and calibration is 415 (D-197)**:
+`SOP_CODE` in `mock-recall-form.js` is the one owner and the screen reads `sop_code` from the API; records
+filed before keep `SOP 415 V3`. The seeded DCR log still says 414 = Pest Control, 417 = Calibration — DC's.
+`verify:mockrecalltask` (30; control fails at the first).
 
 ### The recall flow chart is OURS, it is a RECALL chart, and it is where the drill is run (D-111)
 Two entries in `src/data/processFlows.js` — **`recall`** (15 steps) and **`mock_recall`** (7) — rendered by

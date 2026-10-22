@@ -1,5 +1,5 @@
 /**
- * SOP 415 (Mock Recall Procedure) V3 — the parts of the plant's own document
+ * SOP 414 (Recall and Mock Recall Procedures) V3 — the parts of the plant's own document
  * that the app has to enforce or reproduce.
  *
  * NOT USER-EDITABLE, for the same reason `scale-forms.js` tolerances aren't:
@@ -11,12 +11,17 @@
  * The wording of each documented item is the SOP's own, in the SOP's order, so
  * an auditor comparing the screen to Form 415-1 finds the same list.
  */
-export const SOP_CODE = 'SOP 415';
+// THE RECALL SOP IS 414 (confirmed by the plant, 22 Oct 2026, D-197). SOP 415
+// is Equipment Calibration. This code stamped 'SOP 415' from the DCR log's
+// numbering; records filed before D-197 keep the stamp they were filed with.
+// The REVISION (V3) and the form number (FORM 415-1) are as transcribed and
+// are Document Control's to confirm under the new number.
+export const SOP_CODE = 'SOP 414';
 export const SOP_REVISION = 'V3';
 export const FORM_CODE = 'FORM 415-1';
 
 /**
- * "The mock recall will document the following" — SOP 415 V3.
+ * "The mock recall will document the following" — SOP 414 V3.
  *
  * `key` maps to a `mock_recalls` column. `kind` drives the input. The list is
  * the record of scope: an item left blank is visible as blank rather than
@@ -117,7 +122,7 @@ export function missingItems(recall) {
 }
 
 /**
- * The recall contact list, from SOP 415 V3.
+ * The recall contact list, from SOP 414 V3.
  *
  * Held here rather than derived from the user roster on purpose: this is the
  * list on the controlled document, with the titles and the personal numbers as

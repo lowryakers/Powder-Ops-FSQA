@@ -210,14 +210,14 @@ const SEED_SCHEDULES = [
     ],
   },
   {
-    // SOP 415 V3: a mock recall "at least once a year, rotating products"
+    // SOP 414 V3 (the recall SOP; 415 is calibration, D-197): a mock recall "at least once a year, rotating products"
     // (OBL-24, D-196). Until this its cadence was REPORTED and never raised —
     // a date nothing watches. The exercise is the record (Mock Recall module,
     // FORM 415-1); signing it off closes this task, and the task cannot be
     // ticked closed on its own (shared/check-forms.js, kind mock_recall).
-    title: 'Annual Mock Recall (SOP 415)',
+    title: 'Annual Mock Recall (SOP 414)',
     module_id: 'Mock Recall',
-    description: 'Annual mock recall exercise under SOP 415 V3. Run it in the Mock Recall module on a product not used last year: trace the lot, record the mass balance and the times, tick the Form 415-1 box, and sign it off. Signing the exercise off closes this task.',
+    description: 'Annual mock recall exercise under SOP 414 V3. Run it in the Mock Recall module on a product not used last year: trace the lot, record the mass balance and the times, tick the Form 415-1 box, and sign it off. Signing the exercise off closes this task.',
     frequency_type: 'annual',
     frequency_value: 1,
     procedure_steps: [

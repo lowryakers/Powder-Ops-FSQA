@@ -2,13 +2,15 @@
 // Schedules: environmental monitoring results, GMP walk-throughs, banned-list
 // reviews, the annual management review and the annual Food Defense Plan
 // challenge. Every number is the length of the rows the endpoint returned.
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
 import { formatDate } from '../../lib/datetime.js';
 import { AlertTriangle, CalendarCheck, CheckCircle2, Clock, FlaskConical, Plus, ShieldAlert } from 'lucide-react';
 import CheckFields from '../common/CheckFields.jsx';
 import { missingForCheck } from '../../../shared/check-forms.js';
 import FrozenScroll from '../common/FrozenScroll';
+import { useRowExpand } from '../../lib/useRowExpand.js';
+import { ExpandCell, DetailRow } from '../common/RowDetail.jsx';
 
 const OUTCOME = {
   pending: { label: 'Awaiting result', cls: 'bg-amber-50 text-amber-800' },
@@ -322,6 +324,7 @@ function AnnualReviewTab({ path, kind, dateCol, title, intro, canAct }) {
   const form = data?.form;
   const last = data?.last;
   const fd = kind === 'food_defense_challenge';
+  const expand = useRowExpand();
 
   return (
     <div className="space-y-3" data-annual-review={kind} data-annual-count={rows.length}>
@@ -335,7 +338,7 @@ function AnnualReviewTab({ path, kind, dateCol, title, intro, canAct }) {
           <p className="text-sm">
             Last done <b>{formatDate(last[dateCol])}</b> by {fd ? last.performed_by : last.reviewed_by}
             <span className="text-gray-500"> · {data.days_since} days ago</span>
-            {last.source === 'paper' && <span className="ml-1 text-[11px] text-gray-500">(recorded from the paper report)</span>}
+            {last.source === 'paper' && <span className="ml-1 text-[11px] text-gray-500">(recorded by hand, not through the annual task)</span>}
             {data.due && <span className="block text-amber-800 text-xs mt-0.5">More than twelve months ago — the annual one is due.</span>}
           </p>
         ) : (
@@ -362,6 +365,7 @@ function AnnualReviewTab({ path, kind, dateCol, title, intro, canAct }) {
         <FrozenScroll className="rounded-xl border border-gray-200">
           <table className="min-w-full text-xs">
             <thead className="bg-gray-50 text-gray-500"><tr>
+              <th className="w-8 px-2 py-2" aria-label="Open" />
               <th className="text-left px-3 py-2">Date</th>
               <th className="text-left px-3 py-2">{fd ? 'Led by' : 'Reviewed by'}</th>
               <th className="text-left px-3 py-2">{fd ? 'Team' : 'Took part'}</th>
@@ -374,7 +378,9 @@ function AnnualReviewTab({ path, kind, dateCol, title, intro, canAct }) {
                 const done = Object.values(r.items || {}).filter(i => i?.result === 'done').length;
                 const total = Object.keys(r.items || {}).length;
                 return (
-                  <tr key={r.id} data-annual-row={r.id}>
+                  <Fragment key={r.id}>
+                  <tr data-annual-row={r.id} {...expand.rowProps(r.id)}>
+                    <td className="px-2 py-2"><ExpandCell open={expand.isExpanded(r.id)} /></td>
                     <td className="px-3 py-2 whitespace-nowrap">{formatDate(r[dateCol])}</td>
                     <td className="px-3 py-2">{fd ? r.performed_by : r.reviewed_by}</td>
                     <td className="px-3 py-2 max-w-xs">{fd ? r.team : r.attendees}</td>
@@ -384,14 +390,68 @@ function AnnualReviewTab({ path, kind, dateCol, title, intro, canAct }) {
                         ? (r.methods || []).map(m => (form?.methods || []).find(x => x.key === m)?.label || m).join(' · ')
                         : (r.na_count ? `${r.na_count} N/A` : '—')}
                     </td>
-                    <td className="px-3 py-2 text-gray-500">{r.source === 'paper' ? 'Paper report' : 'ReadyDoc task'}</td>
+                    <td className="px-3 py-2 text-gray-500">{r.source === 'paper' ? 'Recorded by hand' : 'Annual task'}</td>
                   </tr>
+                  {expand.isExpanded(r.id) && (
+                    <DetailRow colSpan={7}><ReviewDetail record={r} form={form} fd={fd} /></DetailRow>
+                  )}
+                  </Fragment>
                 );
               })}
             </tbody>
           </table>
         </FrozenScroll>
       )}
+    </div>
+  );
+}
+
+/**
+ * WHAT WAS ACTUALLY REVIEWED (D-198). Every answer — each item's result and
+ * note, the methods, outcome, findings, corrective actions — was stored from
+ * the first record, and the table showed only "9 of 9 reviewed". A review an
+ * auditor cannot read is a count, not a record. Items are listed in the
+ * SERVER's form order with their clause, so this reads like the procedure.
+ */
+function ReviewDetail({ record: r, form, fd }) {
+  const items = form?.items || [];
+  const answer = (k) => r.items?.[k] || {};
+  const text = (label, value, key) => value ? (
+    <div data-review-detail-field={key}>
+      <dt className="text-[10px] uppercase tracking-wider font-semibold text-gray-500">{label}</dt>
+      <dd className="text-sm text-gray-900 mt-0.5 whitespace-pre-wrap break-words">{value}</dd>
+    </div>
+  ) : null;
+  return (
+    <div className="space-y-3" data-review-detail={r.id}>
+      <dl className="grid sm:grid-cols-2 gap-x-6 gap-y-2.5">
+        {text(fd ? 'Team' : 'Took part', fd ? r.team : r.attendees, 'team')}
+        {text('Recorded', `${r.source === 'paper' ? 'By hand' : 'Through the annual task'}${r.created_at ? ` on ${formatDate(r.created_at)}` : ''}${fd && r.sop_revision ? ` · ${r.sop_revision}` : ''}${!fd && r.clause ? ` · ${r.clause}` : ''}`, 'source')}
+      </dl>
+      <ol className="space-y-1.5">
+        {items.map((it, i) => {
+          const a = answer(it.key);
+          const na = a.result === 'na';
+          return (
+            <li key={it.key} className="flex gap-2 text-sm" data-review-detail-item={it.key} data-review-result={a.result || ''}>
+              <span className={`shrink-0 mt-0.5 inline-flex items-center justify-center rounded-full text-[10px] font-semibold px-1.5 h-5 ${a.result === 'done' ? 'bg-green-100 text-green-800' : na ? 'bg-gray-200 text-gray-700' : 'bg-amber-100 text-amber-800'}`}>
+                {a.result === 'done' ? 'Reviewed' : na ? 'N/A' : 'Not answered'}
+              </span>
+              <span className="min-w-0">
+                <span className="text-gray-900">{it.roman ? `${it.roman}. ` : it.clause ? `${it.clause} · ` : `${i + 1}. `}{it.label}</span>
+                {a.note && <span className="block text-gray-600 text-xs mt-0.5 whitespace-pre-wrap" data-review-note-text>{na ? 'Why not applicable: ' : ''}{a.note}</span>}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+      <dl className="grid gap-y-2.5">
+        {fd && text('Challenge method(s) used', (r.methods || []).map(m => (form?.methods || []).find(x => x.key === m)?.label || m).join(' · '), 'methods')}
+        {fd && text('Outcome and response times', r.outcome, 'outcome')}
+        {fd && text('Strengths, weaknesses and gaps', r.findings, 'findings')}
+        {fd && text('Corrective actions', r.corrective_actions, 'corrective_actions')}
+        {text('Notes', r.notes, 'notes')}
+      </dl>
     </div>
   );
 }
@@ -423,8 +483,8 @@ function AnnualReviewEntry({ form, path, dateCol, onDone }) {
   return (
     <div className="rounded-xl border border-gray-200 p-3 space-y-2" data-annual-entry>
       <p className="text-xs text-gray-500">
-        It is filed with the date it was done and marked as coming from the paper report, so it never reads as one
-        ReadyDoc watched happen.
+        It is filed with the date it was done and marked as recorded by hand, so it never reads as one completed
+        through the annual task.
       </p>
       <div className="grid sm:grid-cols-2 gap-2">
         <label className="text-xs text-gray-600">

@@ -147,7 +147,7 @@ const march = {
   outcome: 'Mock adulteration scenario walked with the shift; access validation reviewed against the authorization list. Response within 10 minutes.',
   findings: 'All mitigation strategies rated Effective. No new vulnerabilities identified.',
   corrective_actions: 'none',
-  items: Object.fromEntries(FOOD_DEFENSE_ITEMS.map(i => [i.key, { result: 'done' }])),
+  items: Object.fromEntries(FOOD_DEFENSE_ITEMS.map((i, n) => [i.key, n === 0 ? { result: 'done', note: 'Plan read against the new dock layout' } : { result: 'done' }])),
 };
 const filed = await post('/check-records/food-defense/challenges', march, A);
 t('the March challenge can be recorded after the fact', filed.status === 201, `HTTP ${filed.status} ${JSON.stringify(await filed.clone().json()).slice(0,200)}`);
@@ -262,9 +262,25 @@ try {
     const body = await page.locator('[data-annual-review="food_defense_challenge"]').innerText();
     t('the March challenge is on it, carrying its own March date',
       /3\/18\/2026|18\/3\/2026|2026-03-18/.test(body) && /Carol Pierce/.test(body), body.slice(0, 600));
-    t('and it is labelled as the paper report', /Paper report/.test(body), body.slice(0, 400));
+    t('and it is labelled as recorded by hand — not "paper report" (D-198)', /Recorded by hand/.test(body) && !/Paper report/.test(body), body.slice(0, 400));
     t('the methods used are named in words, not keys',
       /Mock intentional adulteration/.test(body) && !/mock_scenario/.test(body), body.slice(0, 400));
+
+    // D-198: WHAT WAS REVIEWED is on the screen, not just "9 of 9 reviewed".
+    t('nothing of the detail shows until the row is opened', await page.locator('[data-review-detail]').count() === 0);
+    await page.locator('[data-annual-row]').first().click();
+    await page.waitForSelector('[data-review-detail]', { timeout: 8000 });
+    const detail = await page.locator('[data-review-detail]').innerText();
+    t('clicking the row opens every SOP step with its answer',
+      await page.locator('[data-review-detail-item]').count() === 9 && await page.locator('[data-review-detail-item][data-review-result="done"]').count() === 9,
+      String(await page.locator('[data-review-detail-item]').count()));
+    t('…with the step wording and its clause', /5\.1 B/.test(detail), detail.slice(0, 300));
+    t('…and the note written against a step', /Plan read against the new dock layout/.test(detail), detail.slice(0, 400));
+    t('the outcome, findings and corrective actions are shown in full',
+      /Response within 10 minutes/.test(detail) && /No new vulnerabilities identified/.test(detail) && /Corrective actions/i.test(detail), detail.slice(-500));
+    t('the team and how it was recorded are shown', /Ricardo Avalos/.test(detail) && /By hand/.test(detail) && /SOP 434 V3/.test(detail), detail.slice(0, 300));
+    await page.locator('[data-annual-row]').first().click();
+    t('clicking again closes it', await page.locator('[data-review-detail]').count() === 0);
 
     await page.locator('[data-annual-file-toggle]').click();
     await page.waitForSelector('[data-annual-entry]', { timeout: 8000 });

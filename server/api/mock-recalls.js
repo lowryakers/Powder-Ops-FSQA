@@ -204,13 +204,13 @@ router.post('/:id/approve', (req, res) => {
   }
   // An unsuccessful exercise needs its investigation before it can be closed.
   if (!check.successful && !String(recall.root_cause || '').trim()) {
-    return res.status(400).json({ error: 'This exercise did not meet the effectiveness criteria, so SOP 415 requires an investigation. Record the root cause and the actions taken.' });
+    return res.status(400).json({ error: `This exercise did not meet the effectiveness criteria, so ${SOP_CODE} requires an investigation. Record the root cause and the actions taken.` });
   }
 
   const result = check.successful ? 'pass' : 'fail';
   // THE SIGN-OFF CLOSES THE ANNUAL TASK (D-196) — in the same transaction, as
   // of the day the exercise was run, and pulls the next one to its
-  // anniversary. A failed exercise still settles it: SOP 415 asks for the
+  // anniversary. A failed exercise still settles it: the recall SOP asks for the
   // exercise once a year, and a failure with its investigation recorded IS
   // that exercise. An exercise run more than a year ago links but leaves the
   // task open — one is still owed (settleAnnualSchedule's window).

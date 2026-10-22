@@ -1,7 +1,7 @@
 // D-196 / OBL-24 (platform half): the annual mock recall raises its own task,
 // and signing the exercise off closes it.
 //
-// SOP 415 V3 asks for a mock recall at least once a year. Until this the
+// SOP 414 V3 (the recall SOP) asks for a mock recall at least once a year. Until this the
 // cadence was REPORTED on the Mock Recall screen and raised nothing — a date
 // nothing watches. Now an annual quality schedule raises the task; the task
 // cannot be ticked closed (a tick is not a drill); the exercise's sign-off
@@ -18,7 +18,7 @@ const { checkKindFor, missingForCheck } = await import('../shared/check-forms.js
 const { DOCUMENTED_ITEMS } = await import('../server/mock-recall-form.js');
 
 t('the seeded title resolves to the mock_recall kind',
-  checkKindFor({ title: 'Annual Mock Recall (SOP 415)', module_id: 'Mock Recall' }) === 'mock_recall');
+  checkKindFor({ title: 'Annual Mock Recall (SOP 414)', module_id: 'Mock Recall' }) === 'mock_recall');
 t('the task can never be satisfied from the card, whatever it is sent',
   missingForCheck({ kind: 'mock_recall' }, { anything: 'yes', mock_recall_id: 'x' }).length === 1);
 t('an ordinary schedule is untouched', checkKindFor({ title: 'Daily Scale PM' }) === null);
@@ -81,6 +81,11 @@ t('batch-complete skips it with a reason', (batch.skipped || []).some(s => s.id 
 const ranOn = dbx.prepare("SELECT date('now','-4 days') d").get().d;
 const created = await (await post('/mock-recalls', { product_name: 'Whey Blueberry Muffin Stick', lot_number: 'LOT-MR-1', reason: 'Annual exercise', date_initiated: ranOn }, A)).json();
 t('an exercise is started', !!created?.id, JSON.stringify(created).slice(0, 160));
+// D-197: the recall SOP is 414; 415 is Equipment Calibration.
+t('a new exercise is stamped SOP 414 V3 — the recall SOP', created?.checklist_revision === 'SOP 414 V3', created?.checklist_revision);
+const formDef = await get('/mock-recalls/form', A);
+t('the form serves sop_code SOP 414 for every screen to read', formDef?.sop_code === 'SOP 414', formDef?.sop_code);
+t('the task card names SOP 414 too', listed?.check_form?.sop === 'SOP 414 V3', listed?.check_form?.sop);
 const fill = Object.fromEntries(DOCUMENTED_ITEMS.map(f => [f.key, created[f.key] || 'Recorded']));
 await put(`/mock-recalls/${created.id}`, {
   ...fill, date_initiated: ranOn, mass_balance_pct: 100,

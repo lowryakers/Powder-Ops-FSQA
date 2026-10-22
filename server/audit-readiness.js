@@ -107,12 +107,12 @@ export function readinessReview(db) {
     const last = one(`SELECT recall_number, date_initiated FROM mock_recalls
       WHERE approved_at IS NOT NULL ORDER BY date_initiated DESC LIMIT 1`);
     if (!last) return [item('No signed mock recall on file', 'critical',
-      'SOP 415 requires an annual exercise; a new system with no history reads as overdue by definition.', 'recall')];
+      'SOP 414 requires an annual exercise; a new system with no history reads as overdue by definition.', 'recall')];
     const days = one("SELECT CAST(julianday('now') - julianday(?) AS INTEGER) d", last.date_initiated)?.d ?? null;
     const overdue = days !== null && days > 365;
     return [item(`Last signed exercise ${last.recall_number} — ${days} days ago`,
       overdue ? 'critical' : 'good',
-      overdue ? 'Past the annual cadence in SOP 415.' : null, 'recall')];
+      overdue ? 'Past the annual cadence in SOP 414.' : null, 'recall')];
   });
 
   // ── Internal audits ───────────────────────────────────────────────────────
