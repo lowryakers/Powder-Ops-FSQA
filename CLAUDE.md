@@ -1717,6 +1717,17 @@ already somewhere deliberate. ThreadPanel focuses its reply box on `parent.id` c
 clamped 320–760px, persisted in `localStorage.dock_chat_w`; the iframe goes `pointer-events:none` mid-drag so
 it doesn't eat the move events.
 
+## Several people into several channels at once (D-200)
+`POST /comms/admin/bulk-members` (admin; `planBulkMembers` in `api/comms.js`, `preview: true` writes nothing) and
+**Settings → Channels → Add people to channels** (`BulkAddMembers` in `CommsSettings.jsx`).
+- It loops the per-channel rules: a guest goes only into a `client--` channel, and archived channels, DMs and
+  deactivated accounts are refused.
+- Each refusal is named per person and channel; the rest still go in.
+- It only adds, never removes.
+- New members start read as of now.
+- One audit row per channel, carrying `bulk: true`.
+- `verify:bulkmembers` (28).
+
 ## Comms navigation: where you land, and what counts as "read"
 **A channel opens at its first unread only when the unread will not fit on one screen (D-189)** — measured after
 layout on the FRESH fetch (`freshFor`), never on the cached copy (the socket only feeds the open channel, so the
