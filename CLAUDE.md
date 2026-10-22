@@ -4958,6 +4958,9 @@ Banned-List Review has had all along.
 - **"Due" is derived from the last record's date on every read**; a stored `last_done` is stale on day one.
 - `verify:annualreviews` (53, pure + live + browser; in `verify:all`). **The control removes the kinds — the
   state the plant is in — and fails 8**, the first being a task payload carrying no form at all.
+- **A filed review OPENS on row click and shows every answer (D-198)** — each step, its note, methods, outcome,
+  findings, corrective actions. The by-hand door's `source: 'paper'` reads **Recorded by hand** on screen, never
+  "Paper report" (people type it straight in). `verify:annualreviews` (83).
 
 ## Recurring QA checks that ship pre-scheduled
 `SEED_SCHEDULES` in `server/api/quality-schedules.js` + `seedQualitySchedules(db)` (called from server.js).

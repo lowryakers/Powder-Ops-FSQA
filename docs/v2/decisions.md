@@ -7895,3 +7895,19 @@ SOP 415.** The registry was right; the code's recall number was wrong.
   `SOP 417` in `scale-forms.js` (`SCALE_PROCEDURE.document.code`). It may be its own document or part of
   SOP 415; not changed on a guess.
 - `verify:mockrecalltask` (27 → 30) asserts the stamp, the form and the task card.
+
+## D-198 — An annual review shows what was reviewed, and "recorded by hand" replaces "Paper report" (22 Oct 2026)
+Maria filed a Food Defense challenge and the screen showed a date, a team, "9 of 9 reviewed" and **Paper
+report** — nothing about what she actually reviewed. **Every answer was stored from the first record**
+(each step's result and note, the methods, the outcome, the findings, the corrective actions); the table
+showed only counts. A review an auditor cannot read is a count, not a record.
+- **Click a row and it opens** (`ReviewDetail` in `CheckRecordsTabs.jsx`, the `useRowExpand` pattern): every
+  step in the server's form order with its clause and answer (Reviewed / N/A / Not answered), the note
+  written against it, then the methods, outcome, findings, corrective actions and notes in full, who took
+  part, and how and when it was recorded. One component for both annual reviews, so the management review
+  gets the same view.
+- **"Paper report" was the wrong word.** The by-hand door (`Record one that already happened`) stamps
+  `source: 'paper'` so a back-filed review never reads as one completed through the annual task (D-115) —
+  but the person may have typed it straight into ReadyDoc from their own notes, as Maria did. The screen
+  now says **Recorded by hand** / **Annual task**. The stored value stays `paper`; nothing is migrated.
+- `verify:annualreviews` (76 → 83, browser). Control: the old screen fails on the label and cannot open a row.
