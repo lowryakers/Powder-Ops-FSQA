@@ -5002,6 +5002,9 @@ function runMigrations() {
   // rather than assumed — an ingredient trace and a finished-good trace are
   // different exercises and prove different things.
   addColumnIfMissing('mock_recalls', 'tracking_procedure', 'TEXT');
+  // D-196: the annual task an exercise's sign-off closes, linked both ways.
+  addColumnIfMissing('mock_recalls', 'quality_schedule_id', 'TEXT');
+  addColumnIfMissing('mock_recalls', 'work_order_id', 'TEXT');
 
   /**
    * Equipment documents — the manual, the spec sheet, the parts list.

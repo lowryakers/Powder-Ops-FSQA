@@ -79,6 +79,7 @@ export function checkFormFor(db, wo) {
   }
   if (kind === 'gmp_walk') return { kind, items: GMP_WALK_ITEMS, revision: GMP_WALK_REVISION, draft: true };
   if (kind === 'banned_list_review') return { kind, lists: BANNED_LISTS };
+  if (kind === 'mock_recall') return { kind, sop: 'SOP 415 V3', form_code: 'FORM 415-1', recorded_in: 'recall' };
   if (kind === 'management_review') {
     return { kind, items: MANAGEMENT_REVIEW_ITEMS, revision: MANAGEMENT_REVIEW_REVISION, clause: MANAGEMENT_REVIEW_CLAUSE, draft: true };
   }
@@ -251,7 +252,7 @@ export function fileAnnualReview(db, { form, check, wo, by, day, notes, source =
  * `nextFutureDue` is the generator's own stepper, so the date agrees with what
  * the schedule would have computed itself.
  */
-export function settleAnnualSchedule(db, { kind, table, recordId, day, by, user = null }) {
+export function settleAnnualSchedule(db, { kind, table, recordId, day, by, user = null, note = null, source = 'paper' }) {
   const out = { schedules: [], closed: [], next_due: null };
   const scheds = (() => {
     try {
@@ -268,17 +269,20 @@ export function settleAnnualSchedule(db, { kind, table, recordId, day, by, user 
       for (const w of open) {
         db.prepare(`UPDATE work_orders SET status = 'completed', completed_at = ?, completed_by = ?,
             notes = TRIM(COALESCE(notes, '') || ' ' || ?)
-          WHERE id = ?`).run(`${day} 12:00:00`, by, `Recorded from the paper review dated ${day}.`, w.id);
+          WHERE id = ?`).run(`${day} 12:00:00`, by, note || `Recorded from the paper review dated ${day}.`, w.id);
         logAudit(user || 'system', 'complete', 'work_order', w.id,
-          { source: 'paper', record: recordId, performed_on: day, completed_by: by }, null, null, w.title);
+          { source, record: recordId, performed_on: day, completed_by: by }, null, null, w.title);
         out.closed.push(w.id);
       }
     }
     // Linked to the schedule, and to the task it stood in for (the first one).
     db.prepare(`UPDATE ${table} SET quality_schedule_id = COALESCE(quality_schedule_id, ?),
         work_order_id = COALESCE(work_order_id, ?) WHERE id = ?`).run(s.id, out.closed[0] || null, recordId);
+    // A record outside the window leaves the clock alone too (D-196): its
+    // anniversary is already past, and pulling next_due back to it would
+    // overwrite the date a newer record set.
     const nd = nextFutureDue(db, day, s.frequency_type, s.frequency_value);
-    if (!s.next_due || nd < s.next_due) {
+    if (inWindow && (!s.next_due || nd < s.next_due)) {
       db.prepare("UPDATE quality_schedules SET next_due = ?, updated_at = datetime('now') WHERE id = ?").run(nd, s.id);
       out.next_due = nd;
     } else out.next_due = s.next_due;

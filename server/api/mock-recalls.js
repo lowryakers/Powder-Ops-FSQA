@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
+import { settleAnnualSchedule } from '../check-records.js';
 import {
   SOP_CODE, SOP_REVISION, FORM_CODE, DOCUMENTED_ITEMS, RECALL_CONTACTS,
   TRACKING_PROCEDURES, effectivenessCheck, missingItems, durationMinutes,
@@ -207,14 +208,32 @@ router.post('/:id/approve', (req, res) => {
   }
 
   const result = check.successful ? 'pass' : 'fail';
-  db.prepare(`UPDATE mock_recalls SET approved_by = ?, approved_at = ?, result = ?, completed_at = COALESCE(completed_at, ?),
-    investigation_required = ?, updated_at = datetime('now') WHERE id = ?`).run(
-    req.user.name, new Date().toISOString(), result, new Date().toISOString(),
-    check.successful ? 0 : 1, req.params.id,
-  );
+  // THE SIGN-OFF CLOSES THE ANNUAL TASK (D-196) — in the same transaction, as
+  // of the day the exercise was run, and pulls the next one to its
+  // anniversary. A failed exercise still settles it: SOP 415 asks for the
+  // exercise once a year, and a failure with its investigation recorded IS
+  // that exercise. An exercise run more than a year ago links but leaves the
+  // task open — one is still owed (settleAnnualSchedule's window).
+  let settled = null;
+  db.transaction(() => {
+    db.prepare(`UPDATE mock_recalls SET approved_by = ?, approved_at = ?, result = ?, completed_at = COALESCE(completed_at, ?),
+      investigation_required = ?, updated_at = datetime('now') WHERE id = ?`).run(
+      req.user.name, new Date().toISOString(), result, new Date().toISOString(),
+      check.successful ? 0 : 1, req.params.id,
+    );
+    const day = String(recall.date_initiated || '').slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+      settled = settleAnnualSchedule(db, {
+        kind: 'mock_recall', table: 'mock_recalls', recordId: req.params.id, day, by: req.user.name, user: req.user,
+        source: 'mock_recall', note: `Closed by mock recall ${recall.recall_number}, run ${day} and signed off.`,
+      });
+    }
+  })();
   const updated = db.prepare('SELECT * FROM mock_recalls WHERE id = ?').get(req.params.id);
-  logAudit(req.user, 'mock_recall_approved', 'mock_recall', req.params.id, { result }, recall, updated, recall.recall_number);
-  res.json(decorate(updated));
+  logAudit(req.user, 'mock_recall_approved', 'mock_recall', req.params.id,
+    { result, ...(settled?.closed?.length ? { closed_tasks: settled.closed } : {}), ...(settled?.next_due ? { next_due: settled.next_due } : {}) },
+    recall, updated, recall.recall_number);
+  res.json({ ...decorate(updated), schedule: settled });
 });
 
 // The way back from a signature is revoke → correct → sign again, all audited.

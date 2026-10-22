@@ -39,6 +39,11 @@
  *                         (SOP 434 V3 § 5.0). The steps are transcribed from
  *                         the plant's own controlled procedure, so the record
  *                         carries that procedure's revision rather than DRAFT-1.
+ *   mock_recall         — the annual mock recall (SOP 415 V3, FORM 415-1, D-196).
+ *                         The record is the exercise in the Mock Recall module,
+ *                         which has its own sign-off; SIGNING THE EXERCISE closes
+ *                         this task (settleAnnualSchedule). The task itself can
+ *                         never be ticked closed — a tick is not a drill.
  *   training            — an assigned training course. Completing the task is
  *                         what files the training record, so a course handed
  *                         to somebody cannot be "done" with nothing on the
@@ -170,6 +175,7 @@ export function checkKindFor({ title, module_id } = {}) {
   if (/management review/.test(t)) return 'management_review';
   if (/food defense plan challenge|annual food defense/.test(t)) return 'food_defense_challenge';
   if (/banned\/?prohibited substance list review/.test(t)) return 'banned_list_review';
+  if (/annual mock recall/.test(t)) return 'mock_recall';
   if (m === 'environmental monitoring' || /^emp zone|^tap water testing|^air testing|^compressed air testing/.test(t)) return 'emp';
   return null;
 }
@@ -194,6 +200,12 @@ export function missingForCheck(form, check) {
   const c = check || {};
   const out = [];
   if (!form) return out;
+  if (form.kind === 'mock_recall') {
+    // Never satisfiable from the task card, on purpose: the exercise is the
+    // record and its sign-off is what closes this task.
+    out.push({ key: 'mock_recall', label: 'A signed mock recall exercise — run it and sign it off in Mock Recall; that closes this task' });
+    return out;
+  }
   if (form.kind === 'training') {
     // A RESULT OR A TRAINER — whichever the course actually has. A course
     // carrying a test is finished by a score: either the one the app graded,

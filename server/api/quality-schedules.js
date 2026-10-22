@@ -209,6 +209,35 @@ const SEED_SCHEDULES = [
       'Follow the CARs to closure and verify effectiveness',
     ],
   },
+  {
+    // SOP 415 V3: a mock recall "at least once a year, rotating products"
+    // (OBL-24, D-196). Until this its cadence was REPORTED and never raised —
+    // a date nothing watches. The exercise is the record (Mock Recall module,
+    // FORM 415-1); signing it off closes this task, and the task cannot be
+    // ticked closed on its own (shared/check-forms.js, kind mock_recall).
+    title: 'Annual Mock Recall (SOP 415)',
+    module_id: 'Mock Recall',
+    description: 'Annual mock recall exercise under SOP 415 V3. Run it in the Mock Recall module on a product not used last year: trace the lot, record the mass balance and the times, tick the Form 415-1 box, and sign it off. Signing the exercise off closes this task.',
+    frequency_type: 'annual',
+    frequency_value: 1,
+    procedure_steps: [
+      'Pick a product and lot not used in last year\'s exercise',
+      'Open Mock Recall and start the exercise; record the start time',
+      'Walk the tracking procedure that applies and account for every unit',
+      'Record the mass balance (99.5–100.5%) and the finish time (within four hours)',
+      'If it failed, record the root cause and actions taken',
+      'Sign the exercise off — that closes this task',
+    ],
+    // First due on the anniversary of the last signed exercise, so a plant
+    // that ran one in March is not handed an overdue card at deploy; with
+    // none on file it is due today, which is the honest state.
+    first_due: (db, today) => {
+      try {
+        const r = db.prepare(`SELECT date(MAX(date_initiated), '+1 year') d FROM mock_recalls WHERE approved_at IS NOT NULL`).get();
+        return r?.d && r.d > today ? r.d : today;
+      } catch { return today; }
+    },
+  },
 ];
 
 export function seedQualitySchedules(db) {
@@ -224,7 +253,7 @@ export function seedQualitySchedules(db) {
   for (const s of [...SEED_SCHEDULES, ...EMP_SCHEDULES]) {
     if (exists.get(s.title)) continue;
     ins.run(uuid(), s.title, s.description, s.module_id, s.frequency_type, s.frequency_value,
-      JSON.stringify(s.procedure_steps), today);
+      JSON.stringify(s.procedure_steps), (s.first_due && s.first_due(db, today)) || today);
     added++;
   }
   if (added > 0) console.log(`[seed] Added ${added} recurring quality schedule(s)`);
