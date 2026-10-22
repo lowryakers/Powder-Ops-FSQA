@@ -73,12 +73,33 @@ export default function CheckFields({ form, value, onChange, lang = 'en', assign
       {form.kind === 'management_review' && <AnnualReviewFields form={form} v={v} set={set} lang={lang} />}
       {form.kind === 'food_defense_challenge' && <AnnualReviewFields form={form} v={v} set={set} lang={lang} />}
       {form.kind === 'stability_pull' && <PullFields form={form} v={v} set={set} lang={lang} />}
+      {form.kind === 'mock_recall' && <MockRecallFields form={form} lang={lang} />}
       {form.kind === 'training' && <TrainingFields form={form} v={v} set={set} lang={lang} assignee={assignee} />}
       {missing.length > 0 && (
         <p className="text-[11px] text-amber-800" data-check-missing={missing.length}>
           {tr(lang, 'still')}: {missing.map(m => m.label).join(' · ')}
         </p>
       )}
+    </div>
+  );
+}
+
+// D-196: nothing to fill in here — the exercise is the record and its own
+// sign-off closes this task. The card says so and opens the module.
+function MockRecallFields({ form, lang }) {
+  const es = lang === 'es';
+  return (
+    <div className="bg-white rounded-lg border border-amber-200 p-2 space-y-2" data-mock-recall-task>
+      <p className="text-xs text-gray-700">
+        {es
+          ? `Este simulacro se registra en Simulacro de retiro (${form.form_code}, ${form.sop}). Al firmar el simulacro, esta tarea se cierra sola.`
+          : `This exercise is recorded in Mock Recall (${form.form_code}, ${form.sop}). Signing the exercise off closes this task by itself.`}
+      </p>
+      <button type="button" data-mock-recall-open
+        onClick={() => window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab: form.recorded_in || 'recall' } }))}
+        className="px-3 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-medium">
+        {es ? 'Abrir Simulacro de retiro' : 'Open Mock Recall'}
+      </button>
     </div>
   );
 }

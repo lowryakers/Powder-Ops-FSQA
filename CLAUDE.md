@@ -54,7 +54,7 @@ workstreams collide over.
 > open is the wording check against the PDF — OBL-33**, split out rather than marking OBL-02 done on the
 > strength of it. A correction goes in the source file, never the database (the seeder is insert-only).
 >
-> Obligations today: **23 open · 5 drafted · 14 landed** of 42 (D-146, 5 Oct — OBL-42, PC #1's run trigger, split out of OBL-22). Landed: OBL-01 (ATP grading),
+> Obligations today: **23 open · 5 drafted · 15 landed** of 43 (D-196, 22 Oct — OBL-43, the annual mock recall task, split out of OBL-24). Landed: OBL-01 (ATP grading),
 > OBL-02 (the four controls seeded and guarded), OBL-08 (supplier register), OBL-31 (annual vendor review
 > raises work), OBL-32 (the ATP task door), and the eight software halves split out on 29 Sep — OBL-34
 > (banned-list review), OBL-35 (change register), OBL-36 (EMP results graded and trended), OBL-37 (spec
@@ -5525,6 +5525,16 @@ the controlled procedure requires is not evidence the procedure was followed —
 - Verified end to end: 36 assertions including the derived verdict moving when the number changes, both
   halves of the four-hour criterion, sign-off refused three different ways, and the revoke → correct → sign
   path.
+
+### The annual mock recall raises its own task; signing the exercise closes it (D-196, OBL-43)
+`Annual Mock Recall (SOP 415)` is a seeded annual quality schedule, first due on the anniversary of the last
+SIGNED exercise (today with none). Its task is check kind `mock_recall`: **it can never be ticked closed**
+(`missingForCheck` always names the exercise; batch-complete skips it) and the card opens Mock Recall. **The
+exercise's sign-off closes it** through `settleAnnualSchedule` — as of the day it was run, linked both ways
+(`mock_recalls.quality_schedule_id` / `work_order_id`), next due on that anniversary. A record older than 365
+days links but moves neither the task nor the clock. **SOP 415 is two documents in the plant's records**
+(Recall in the DCR log, Equipment Calibration in the registry) — Document Control's DCR, reported in D-196.
+`verify:mockrecalltask` (27; control fails at the first).
 
 ### The recall flow chart is OURS, it is a RECALL chart, and it is where the drill is run (D-111)
 Two entries in `src/data/processFlows.js` — **`recall`** (15 steps) and **`mock_recall`** (7) — rendered by

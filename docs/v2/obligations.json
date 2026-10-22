@@ -464,14 +464,14 @@
     },
     {
       "id": "OBL-24",
-      "title": "Two single-leg fixes: a form number for calibration, a generator for mock recall",
+      "title": "A form number for the calibration record (the mock-recall generator half is OBL-43)",
       "bucket": "A",
       "status": "open",
-      "owner": "Document Control + platform",
+      "owner": "Document Control",
       "sources": [
         "WALK-11"
       ],
-      "note": "Calibration has a record and no form number. Mock recall has a record and a form and no generator — its cadence is reported, not raised."
+      "note": "Calibration has a record and no form number — Document Control's to issue. The other half of the original obligation, a generator for the annual mock recall, landed on 22 Oct 2026 and was split out as OBL-43 (D-196) the D-119 way."
     },
     {
       "id": "OBL-25",
@@ -764,6 +764,23 @@
         "docs/v2/decisions.md"
       ],
       "note": "Split out of OBL-22 on 5 Oct 2026 (D-146) the D-119 way: the software half for PC #1 is landed and says so; OBL-22 keeps WALK-08 and the two controls and the plant decisions that remain. A run gets RUN-#### when it starts (the Receiving Log shape); whether its Pre-Op is on record is DERIVED from sanitation_records (a passing pre_op in the room since its previous run); a start with none raises one Cleaning task per room, completing it files the record, and a Pre-Op filed on the Sanitation form closes it. Reported, never gated."
+    },
+    {
+      "id": "OBL-43",
+      "title": "The annual mock recall raises its own task, and signing the exercise closes it",
+      "bucket": "A",
+      "status": "landed",
+      "owner": "platform",
+      "sources": [],
+      "artifacts": [
+        "server/api/quality-schedules.js",
+        "server/api/mock-recalls.js",
+        "server/check-records.js",
+        "shared/check-forms.js",
+        "scripts/verify-mock-recall-task.mjs",
+        "docs/v2/decisions.md"
+      ],
+      "note": "Split out of OBL-24 on 22 Oct 2026 (D-196). SOP 415 V3's 'at least once a year' was reported on the Mock Recall screen and raised nothing. An annual quality schedule now raises the task (first due on the anniversary of the last signed exercise, or today with none); the task cannot be ticked closed (check kind mock_recall); signing the exercise off closes it as of the day it was run and moves next due to that anniversary."
     }
   ]
 }

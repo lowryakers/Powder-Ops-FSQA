@@ -7844,3 +7844,33 @@ the same one signature service every QA signature uses.
 - Audited `signature_verified: true`; the password is never stored (asserted against the audit log).
 - Token callers are refused on all three routes (`APPROVE_ROUTES`), and the D-194 return-to-use route too.
 - `verify:scaleincident` (66), `verify:outofcal` (66). Control: the old server fails 7 across the two.
+
+## D-196 — The annual mock recall raises its own task; signing the exercise closes it (OBL-24 split → OBL-43, 22 Oct 2026)
+SOP 415 V3 asks for a mock recall "at least once a year, rotating products". The Mock Recall screen has
+reported that cadence since it shipped and raised nothing: a date nothing watches, the defect D-060 and
+D-115 closed for the other annual programs. OBL-24 paired it with calibration's missing form number; the
+two have different owners, so it is split the D-119 way — the software half lands as OBL-43, the form
+number stays OBL-24 with Document Control.
+- **An annual quality schedule, `Annual Mock Recall (SOP 415)`**, seeded once by title like the others.
+  **First due on the anniversary of the last SIGNED exercise**, or today with none — a plant that ran one
+  in March is not handed an overdue card at deploy, and one with nothing on file is honestly due.
+- **THE TASK CANNOT BE TICKED CLOSED.** It is a check kind (`mock_recall`, `shared/check-forms.js`) whose
+  `missingForCheck` can never be satisfied from the card: `complete-and-recur` refuses it (400
+  `requires_check`) and batch-complete skips it. A tick is not a drill. The card says where the exercise is
+  recorded and opens Mock Recall.
+- **SIGNING THE EXERCISE CLOSES IT**, in the sign-off's own transaction, through `settleAnnualSchedule`
+  (D-122's writer): completed **as of the day the exercise was run**, by the signer, with a note naming
+  the exercise; the record is linked to the schedule and the task (`mock_recalls.quality_schedule_id` /
+  `work_order_id`); next due moves to that anniversary. **A failed exercise settles it too** — with its
+  investigation recorded it IS the year's exercise.
+- **`settleAnnualSchedule` now leaves the clock alone for a record outside the 365-day window.** It already
+  left the task open; it was still pulling `next_due` back to an anniversary already past, overwriting the
+  date a newer record set. Applies to the D-122 paper reviews too (`verify:annualreviews` still 76).
+- `verify:mockrecalltask` (27). Control: `main` fails at the first assertion.
+
+**Not decided here — Document Control's (reported, not changed):** SOP 415 is two documents in this
+plant's own records. The DCR log (rows 0014, 0076, 0137) has SOP 415 = *Recall and Mock Recall Procedures*
+V1→V3 and row 0047 SOP 417 = *Equipment Calibration*; the live registry holds an *Equipment Calibration*
+SOP 415 V2, and Daniela's calibration update went in under 415. The mock recall code stamps `SOP 415 V3`
+(the recall procedure); the D-194 caution reads the calibration SOP by TITLE, so it is right whichever
+number wins. One of the two needs a new number, and that is a DCR, not a deploy.
