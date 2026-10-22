@@ -274,7 +274,8 @@ export function scalesForKiosk(db) {
 /**
  * The caution with the document it belongs to, read from the registry by
  * TITLE. The number is Document Control's (the live registry carries it as
- * SOP 415 V2 while the seeded DCR log says SOP 417), so it is looked up rather
+ * SOP 415 V2 while the seeded DCR log says SOP 417; the plant confirmed 415 on
+ * 22 Oct 2026, D-197), so it is looked up rather
  * than written into code; `document_source` says whether it was found.
  */
 export function cautionWithDocument(db) {

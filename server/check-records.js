@@ -7,6 +7,7 @@
 // rule: the task and the record are one event. Adding a program is one kind
 // in the shared spec and one branch here; pm.js does not change.
 
+import { SOP_CODE as RECALL_SOP, SOP_REVISION as RECALL_SOP_REV, FORM_CODE as RECALL_FORM } from './mock-recall-form.js';
 import { v4 as uuid } from 'uuid';
 import { plantDateOf } from './plant-clock.js';
 import {
@@ -79,7 +80,7 @@ export function checkFormFor(db, wo) {
   }
   if (kind === 'gmp_walk') return { kind, items: GMP_WALK_ITEMS, revision: GMP_WALK_REVISION, draft: true };
   if (kind === 'banned_list_review') return { kind, lists: BANNED_LISTS };
-  if (kind === 'mock_recall') return { kind, sop: 'SOP 415 V3', form_code: 'FORM 415-1', recorded_in: 'recall' };
+  if (kind === 'mock_recall') return { kind, sop: `${RECALL_SOP} ${RECALL_SOP_REV}`, form_code: RECALL_FORM, recorded_in: 'recall' };
   if (kind === 'management_review') {
     return { kind, items: MANAGEMENT_REVIEW_ITEMS, revision: MANAGEMENT_REVIEW_REVISION, clause: MANAGEMENT_REVIEW_CLAUSE, draft: true };
   }

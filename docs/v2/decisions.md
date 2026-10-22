@@ -7874,3 +7874,24 @@ V1→V3 and row 0047 SOP 417 = *Equipment Calibration*; the live registry holds 
 SOP 415 V2, and Daniela's calibration update went in under 415. The mock recall code stamps `SOP 415 V3`
 (the recall procedure); the D-194 caution reads the calibration SOP by TITLE, so it is right whichever
 number wins. One of the two needs a new number, and that is a DCR, not a deploy.
+
+## D-197 — The recall SOP is 414; calibration is 415 (22 Oct 2026, supersedes D-196's open question)
+D-196 reported SOP 415 as two documents — Recall in the seeded DCR log, Equipment Calibration in the live
+registry. The plant answered: **Recall and Mock Recall Procedures is SOP 414; Equipment Calibration is
+SOP 415.** The registry was right; the code's recall number was wrong.
+- **`SOP_CODE` in `server/mock-recall-form.js` is `SOP 414`** and is the one owner: the Mock Recall screen
+  reads `sop_code` from `/mock-recalls/form` instead of writing "SOP 415" six times, and the task card
+  (`checkFormFor`), the audit-readiness lines, the process maps and the seeded schedule title
+  (`Annual Mock Recall (SOP 414)` — not yet on any deployed database, so nothing to rename) follow it.
+- **Records filed before this keep `SOP 415 V3`.** A stamp is what the record was filed under; rewriting it
+  would be a history edit. New exercises stamp `SOP 414 V3`.
+- **The revision (V3) and the form number (FORM 415-1) are carried as transcribed and are NOT confirmed
+  under the new number** — Document Control's to say. If the recall form is now 414-1, it is one constant.
+- **The seeded DCR log is untouched** (it is the paper register as imported). Its rows give SOP 414 to
+  *Pest Control* (row 0011) and SOP 417 to *Equipment Calibration* (row 0047), so the paper register
+  disagrees with this numbering in two places — Document Control's to reconcile.
+- The calibration side needed nothing: the D-194 caution reads the SOP from the registry by title.
+- **Left alone:** the scale verification sheet `Procedure for Scale Calibration Verification` is labelled
+  `SOP 417` in `scale-forms.js` (`SCALE_PROCEDURE.document.code`). It may be its own document or part of
+  SOP 415; not changed on a guess.
+- `verify:mockrecalltask` (27 → 30) asserts the stamp, the form and the task card.

@@ -3,7 +3,7 @@
 //
 // The chart that prompted this was the PREVIOUS OWNER'S, and it is a RECALL
 // flow chart despite its filename: it starts at "Receive Complaint · is there a
-// health hazard?" and ends at "Terminate Recall". SOP 415 V3 is "Recall AND
+// health hazard?" and ends at "Terminate Recall". SOP 414 V3 is "Recall AND
 // Mock Recall Procedures" and covers both, so the honest recreation is TWO
 // flows — the response, and the annual exercise that rehearses its tracking
 // half, which is the one the module records.
@@ -11,7 +11,7 @@
 // Two things are asserted and they are the whole point:
 //   1. It describes POWDER OPS. Arete's chart routes through a Director of
 //      Operations and an ownership/legal group this plant does not have; every
-//      actor here has to be a role that exists on the org chart or in SOP 415's
+//      actor here has to be a role that exists on the org chart or in SOP 414's
 //      own contact list.
 //   2. It is ONE definition with TWO callers — the Auditor View's process maps
 //      and the Mock Recall panel. A second renderer is how one process ends up
@@ -35,7 +35,7 @@ const EMPTY = { steps: [] };
 const recall = FLOWS.find(f => f.id === 'recall') || EMPTY;
 const mock = FLOWS.find(f => f.id === 'mock_recall') || EMPTY;
 t('there is a recall flow', recall !== EMPTY);
-t('and a mock recall flow beside it — SOP 415 covers both', mock !== EMPTY);
+t('and a mock recall flow beside it — SOP 414 covers both', mock !== EMPTY);
 t('every step names an actor, an action and where it is recorded',
   recall.steps.length > 0 && mock.steps.length > 0
   && [...recall.steps, ...mock.steps].every(s => s.actor && s.action && s.form));
@@ -49,7 +49,7 @@ t('NO ROLE FROM THE INHERITED CHART SURVIVED — a re-badged map is the aspirati
   recall.steps.length > 0 && FOREIGN.every(rx => !rx.test(allText)),
   FOREIGN.filter(rx => rx.test(allText)).map(String).join(' '));
 
-// Actors are roles, never people. The names on SOP 415's contact list are the
+// Actors are roles, never people. The names on SOP 414's contact list are the
 // people who hold them, and a map that names them needs editing on a job move.
 const actors = [...recall.steps, ...mock.steps].map(s => s.actor);
 t('actors are roles, never the people holding them',
@@ -57,7 +57,7 @@ t('actors are roles, never the people holding them',
   actors.join(' · '));
 // …and the roles it does name are on the SOP's own list or the org chart.
 const TITLES = RECALL_CONTACTS.map(c => c.title);
-t('the escalation runs through roles SOP 415 actually names (QA Manager, CEO)',
+t('the escalation runs through roles SOP 414 actually names (QA Manager, CEO)',
   ['QA Manager', 'CEO'].every(r => actors.includes(r) && (TITLES.includes(r) || r === 'CEO')));
 
 t('the recall step that finds the product points at the SOP’s four tracking procedures, not a fifth invented one',

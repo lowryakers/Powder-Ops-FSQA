@@ -39,7 +39,7 @@
  *                         (SOP 434 V3 § 5.0). The steps are transcribed from
  *                         the plant's own controlled procedure, so the record
  *                         carries that procedure's revision rather than DRAFT-1.
- *   mock_recall         — the annual mock recall (SOP 415 V3, FORM 415-1, D-196).
+ *   mock_recall         — the annual mock recall (SOP 414 V3, FORM 415-1, D-196/D-197).
  *                         The record is the exercise in the Mock Recall module,
  *                         which has its own sign-off; SIGNING THE EXERCISE closes
  *                         this task (settleAnnualSchedule). The task itself can

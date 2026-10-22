@@ -9,7 +9,8 @@ import { formatDateTime } from '../../lib/datetime.js';
 import { FlowMaps } from './ProcessFlows.jsx';
 
 /**
- * Mock Recall — Form 415-1, driven by the plant's own SOP 415 V3.
+ * Mock Recall — Form 415-1, driven by the plant's own recall SOP (414 V3). The
+ * number is served by the API (`sop_code`), never written here (D-197).
  *
  * The form the SOP actually asks for, in the SOP's own wording and order, so
  * an auditor comparing the screen to the paper finds the same list. Three
@@ -95,12 +96,12 @@ function CriteriaCard({ effectiveness }) {
   );
 }
 
-function ContactsCard({ contacts, sopRevision }) {
+function ContactsCard({ contacts, sopCode, sopRevision }) {
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4">
       <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5 mb-2">
         <Phone size={14} className="text-gray-400" /> Recall contacts
-        <span className="text-[10px] font-normal text-gray-400">from SOP 415 {sopRevision}</span>
+        <span className="text-[10px] font-normal text-gray-400">from {sopCode} {sopRevision}</span>
       </h4>
       <div className="space-y-1">
         {(contacts || []).map(c => (
@@ -171,7 +172,7 @@ function RecallDetail({ id, form, onBack, onChanged }) {
         <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900 flex items-start gap-2">
           <AlertTriangle size={14} className="shrink-0 mt-0.5" />
           <span>
-            This exercise did not meet the effectiveness criteria. SOP 415 requires an investigation —
+            This exercise did not meet the effectiveness criteria. {form?.sop_code} requires an investigation —
             record the root cause and the actions taken before it can be signed off.
           </span>
         </div>
@@ -322,7 +323,7 @@ export default function MockRecallPanel() {
         <div className="min-w-0">
           <h2 className="text-lg font-semibold text-gray-900">Mock Recall</h2>
           <p className="text-xs text-gray-500">
-            Form 415-1, run against SOP 415 {form?.sop_revision || ''}. At least once a year, rotating products.
+            {form?.form_code || 'Form 415-1'}, run against {form?.sop_code} {form?.sop_revision || ''}. At least once a year, rotating products.
           </p>
         </div>
         <button onClick={() => setStarting(s => !s)}
@@ -347,7 +348,7 @@ export default function MockRecallPanel() {
               )}
               <p className="text-xs text-gray-600">
                 {status.overdue
-                  ? 'SOP 415 requires this at least once a year — it is overdue.'
+                  ? `${form?.sop_code || 'The recall SOP'} requires this at least once a year — it is overdue.`
                   : `Next one due in ${status.due_in_days} days.`}
                 {status.open_exercises > 0 && ` ${status.open_exercises} exercise${status.open_exercises === 1 ? '' : 's'} in progress.`}
               </p>
@@ -420,7 +421,7 @@ export default function MockRecallPanel() {
         It is the SAME data the Auditor View's process maps render (`FlowMaps`
         from ProcessFlows.jsx), not a second copy — one process described twice
         is how two screens start disagreeing. Both flows are here on purpose:
-        SOP 415 is Recall AND Mock Recall Procedures, and the exercise below is
+        The recall SOP (414) is Recall AND Mock Recall Procedures, and the exercise below is
         the rehearsal of the response above. Whoever runs the drill is the
         person who should have read how the real one goes.
       */}
@@ -430,7 +431,7 @@ export default function MockRecallPanel() {
             <Workflow size={14} className="text-gray-400" /> How a recall runs
           </h4>
           <p className="text-[11px] text-gray-500 mt-0.5 max-w-2xl">
-            Powder Ops&rsquo; own reading of SOP 415 {form?.sop_revision || ''} — the recall itself, and this exercise as its
+            Powder Ops&rsquo; own reading of {form?.sop_code} {form?.sop_revision || ''} — the recall itself, and this exercise as its
             rehearsal. A reference, not a controlled drawing: it carries no form number and nothing is stamped on a
             record from it. The printable copy is in the Auditor View under Process Maps.
           </p>
@@ -438,7 +439,7 @@ export default function MockRecallPanel() {
         <FlowMaps ids={['recall', 'mock_recall']} />
       </div>
 
-      {form && <ContactsCard contacts={form.contacts} sopRevision={form.sop_revision} />}
+      {form && <ContactsCard contacts={form.contacts} sopCode={form.sop_code} sopRevision={form.sop_revision} />}
     </div>
   );
 }

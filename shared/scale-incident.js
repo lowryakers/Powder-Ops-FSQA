@@ -4,7 +4,7 @@
 // written by Carol and Daniela for the SQF 11.2.3.4 corrective action (October
 // 2026) and belong to the Equipment Calibration SOP. WHICH NUMBER that SOP
 // carries is the registry's answer, not this file's: the seeded DCR log says
-// SOP 417, the live registry says SOP 415 V2, and the server reads it from
+// SOP 417, the live registry says SOP 415 V2 (415 is right — D-197), and the server reads it from
 // `sop_documents` by title at serve time (`cautionWithDocument`), so a
 // renumbering by Document Control needs no deploy. They live here, in
 // `shared/`, because three screens print them — the scale kiosk, the
