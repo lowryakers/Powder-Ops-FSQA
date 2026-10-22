@@ -2698,6 +2698,25 @@ function runMigrations() {
   // runs just before this, so the ALTER has a table to act on (the
   // migration-ordering rule).
   addColumnIfMissing('supplier_files', 'questionnaire_id', 'TEXT');
+  // The banned-substance check on a material (D-202). One row per check, never
+  // edited; the latest per material is the answer, and the editions are frozen
+  // from the annual review in force when it was made.
+  db.exec(`CREATE TABLE IF NOT EXISTS supplier_banned_checks (
+    id TEXT PRIMARY KEY,
+    supplier_id TEXT NOT NULL,
+    material_id TEXT NOT NULL,
+    result TEXT NOT NULL CHECK (result IN ('not_listed','listed')),
+    editions TEXT NOT NULL DEFAULT '{}',
+    review_id TEXT,
+    review_on TEXT,
+    notes TEXT,
+    checked_by TEXT,
+    checked_by_id TEXT,
+    checked_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_supplier_banned_checks ON supplier_banned_checks(material_id, checked_at);`);
+  addColumnIfMissing('supplier_qualifications', 'banned_check_gaps', 'TEXT');
+  addColumnIfMissing('supplier_qualifications', 'banned_gate_mode', 'TEXT');
   // A receipt records that QA was told a lab sample was due, and who was told.
   // Stamped on the LINE rather than kept only in the audit log: "was anybody
   // asked to pull a sample off that pallet" is a question about the receipt,

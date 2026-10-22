@@ -7973,3 +7973,31 @@ Three readers, two rules.
 - `verify:envlimits` (27, pure + live + browser at 390). Control: `main` stops at the controlled-definition
   step. Re-run green: completion-doors, backdated-recurrence, duplicate-readings, checklist-overlap,
   scale-incident, atp-limit, change-register.
+
+## D-202 — Every supplier material is checked against the banned lists, with the editions named; "approved" waits for it (22 Oct 2026)
+**Roadmap C3; CAR 4990682-3 (a), GMP for Sport 6.2.3.2(a), approved 29 Sep.** The approved plan promises
+that the banned-list check is recorded on the supplier record, with the list editions used. Nothing held it:
+`banned_list_reviews` recorded the annual review of the lists, and no record said that a given material had
+been checked against them. Single-spine move 02 (a record type through one writer).
+- **The unit is the material** (`supplier_materials`), the register's own rule (SOP 404 § III.A). One row per
+  check in `supplier_banned_checks`, never edited. The latest row per material is the answer.
+- **The editions are READ, never typed.** They come from `currentListEditions` (the latest annual review) and
+  are frozen on the check. No review on file means a check is refused (409, naming what to do). A newer
+  review makes every earlier check **stale**, so it is owed again. That is the review's own "materials
+  re-checked" question, made visible.
+- **Results:** `not_listed` / `listed`. `listed` requires a note (which list, which substance). Quality only
+  (`canDecide`); Purchasing is refused.
+- **The gate is the D-063 shape** (`app_settings.supplier_banned_gate`: off / warn by default / on; admin
+  sets it from the register header).
+  - Only "approved" is gated; a conditional decision is not a clearance.
+  - **Warn** approves and stamps `banned_check_gaps` + `banned_gate_mode` on the qualification.
+  - **On** refuses with 409 and names each material: not checked, stale, or ON a list.
+  - A supplier with no materials recorded is a gap: nothing was checked.
+  - A deploy never turns it on. An admin does, when SOP 404 V5 is live.
+- Screens: each material on the supplier record carries a chip (checked / check again / not checked / ON A
+  BANNED LIST) and the two buttons. The review the editions come from is named. The Disposition window shows
+  the gaps beside Approved before the button is pressed. A decision approved with gaps says so on its period.
+- `verify:bannedcheck` (34, live + browser at 1280 and 390). Control: `main` returns 404 on the first check.
+  Supplier verifies (storage 69, questionnaire 40, register 26/24/15) and `check:apitokens` (152) still pass.
+- **Still the plant's:** the SOP 404 revision that requires the check, and Document Control's approval of the
+  parked FORM 204-01 V2 receiving line.
