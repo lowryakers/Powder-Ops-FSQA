@@ -107,6 +107,7 @@
     "verify:unreadlanding": "node scripts/verify-unread-landing.mjs",
     "verify:commshistory": "node scripts/verify-comms-history.mjs",
     "verify:bulkmembers": "node scripts/verify-bulk-members.mjs",
+    "verify:envlimits": "node scripts/verify-env-limits.mjs",
     "verify:threads": "node scripts/verify-threads.mjs",
     "verify:threadsinbox": "node scripts/verify-threads-inbox.mjs",
     "verify:trainingassign": "node scripts/verify-training-assign.mjs",

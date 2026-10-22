@@ -18,6 +18,8 @@ import AtpSwabField from '../common/AtpSwabField.jsx';
 import TrainingTest from '../common/TrainingTest.jsx';
 import { missingForCheck } from '../../../shared/check-forms.js';
 import { OutOfServiceBanner } from '../common/ScaleIncident.jsx';
+import useEnvLimits from '../../lib/useEnvLimits.js';
+import { envVerdict } from '../../../shared/env-grade.js';
 
 function detectTaskType(task) {
   const t = (task.title || '').toLowerCase();
@@ -74,6 +76,10 @@ function TaskCard({ task, onComplete, onTestPassed, onFlagIssue, onSkipNA, onAss
 
   const steps = task.procedure_steps || [];
   const taskType = detectTaskType(task);
+  // Temp & Humidity: the limits in force and the server's own rule (D-201).
+  const envLimits = useEnvLimits(taskType === 'temp_humidity');
+  const envVerdictNow = taskType === 'temp_humidity' ? envVerdict(envLimits, readings) : null;
+  const envOut = envVerdictNow ? envVerdictNow.results.filter(r => r.out) : [];
   const issuePhotos = (() => { try { return JSON.parse(task.issue_attachments || '[]'); } catch { return []; } })();
   const today = localDateStr();
   const isOverdue = task.due_date < today;
@@ -96,9 +102,10 @@ function TaskCard({ task, onComplete, onTestPassed, onFlagIssue, onSkipNA, onAss
 
   const getReadingResult = () => {
     if (taskType === 'temp_humidity') {
-      const h = parseFloat(readings.humidity);
-      if (isNaN(h)) return null;
-      return h <= 40 ? 'pass' : 'fail';
+      // The rule the server grades the record with (D-201); null until the
+      // limits in force have loaded — the server decides either way.
+      const v = envVerdict(envLimits, readings);
+      return v ? (v.fail ? 'fail' : 'pass') : null;
     }
     if (taskType === 'chemical_dilution') {
       // Pass/Fail is the answer, as on the paper form. gradeDilution is the
@@ -479,11 +486,11 @@ function TaskCard({ task, onComplete, onTestPassed, onFlagIssue, onSkipNA, onAss
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. 35.2" />
                   </div>
                 </div>
-                {readings.humidity && parseFloat(readings.humidity) > 40 && (
-                  <div className="bg-red-100 border border-red-300 rounded-lg p-2 text-xs text-red-800 font-medium">
-                    {t('humidity_warning')}
+                {envOut.filter(r => r.key === 'humidity').map(r => (
+                  <div key="hw" data-env-warning="humidity" className="bg-red-100 border border-red-300 rounded-lg p-2 text-xs text-red-800 font-medium">
+                    {t('humidity_warning').replace('{limit}', `${r.limit}${r.unit}`)}
                   </div>
-                )}
+                ))}
                 <div className="flex items-center gap-2">
                   <button onClick={() => updateReading('rolling_doors_closed', !readings.rolling_doors_closed)}
                     className="text-gray-500 hover:text-green-600">
@@ -491,9 +498,11 @@ function TaskCard({ task, onComplete, onTestPassed, onFlagIssue, onSkipNA, onAss
                   </button>
                   <span className="text-sm text-gray-700">{t('rolling_doors')}</span>
                 </div>
-                {readings.temperature && readings.humidity && (
-                  <div className={`rounded-lg p-2 text-xs font-bold text-center ${parseFloat(readings.humidity) <= 40 ? 'bg-green-200 text-green-900' : 'bg-red-200 text-red-900'}`}>
-                    {parseFloat(readings.humidity) <= 40 ? t('pass_range') : t('fail_humidity')}
+                {readings.temperature && readings.humidity && envVerdictNow && (
+                  <div data-env-verdict={envVerdictNow.fail ? 'fail' : 'pass'} className={`rounded-lg p-2 text-xs font-bold text-center ${!envVerdictNow.fail ? 'bg-green-200 text-green-900' : 'bg-red-200 text-red-900'}`}>
+                    {!envVerdictNow.fail ? t('pass_range')
+                      : envOut.map(r => t(r.key === 'humidity' ? 'fail_humidity' : 'fail_temperature').replace('{limit}', `${r.limit}${r.unit}`)).join(' · ')}
+                    {envLimits && <div className="font-normal mt-0.5">{t('env_limits_source').replace('{doc}', `${envLimits.document} ${envLimits.revision}`)}</div>}
                   </div>
                 )}
               </>
