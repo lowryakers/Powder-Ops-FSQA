@@ -1727,6 +1727,10 @@ from scroll position** (`updateJump`, one `PIN_PX` for pin and button) — never
 stamps `chat_thread_reads`, never the channel marker. `read:changed` (socket, own room) syncs other sessions —
 never a push. `?after=<marker>` loads a backlog bigger than a page. A deep link outranks the landing
 (`queueMessage` clears `landOnNewRef` and `landPendingRef`). `verify:unreadlanding` (26).
+**Scrolling up loads the earlier history (D-199)** — a channel opens on its newest 50; within 200px of the top
+`loadOlder` fetches `?through=<oldest created_at>` (INCLUSIVE, de-duped by id — `before` skipped a shared
+timestamp), keeps the reader's place via `useLayoutEffect`, and the top says *Beginning of the conversation* at
+the end. There is no history limit on the server. `verify:commshistory` (25).
 **`commsLink` is cleared on EVERY exit from the Messages workspace** (onExit, onGoToSchedule, bottom nav,
 both app-navigate handlers). It's one-shot state; any exit that left it set replayed the old notification's
 channel + message on the next visit — the "channels keep opening scrolled to an old message with Jump to

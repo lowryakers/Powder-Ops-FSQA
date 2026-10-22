@@ -1324,9 +1324,14 @@ router.get('/channels/:id/messages', async (req, res) => {
   }
   const limit = Math.min(parseInt(req.query.limit) || 50, 200);
   const before = req.query.before;
+  // `through` is the HISTORY cursor (D-199): the oldest message on screen,
+  // INCLUSIVE, so a message sharing that exact timestamp (an imported Slack
+  // second) is never skipped. The client drops what it already holds by id.
+  const through = typeof req.query.through === 'string' && req.query.through ? req.query.through : null;
   let sql = 'SELECT * FROM chat_messages WHERE channel_id = ? AND (parent_id IS NULL OR also_in_channel = 1)';
   const params = [channel.id];
-  if (before) { sql += ' AND created_at < ?'; params.push(before); }
+  if (through) { sql += ' AND created_at <= ?'; params.push(through); }
+  else if (before) { sql += ' AND created_at < ?'; params.push(before); }
   sql += ' ORDER BY created_at DESC LIMIT ?';
   params.push(limit);
   const rows = db.prepare(sql).all(...params).reverse();

@@ -7911,3 +7911,21 @@ showed only counts. A review an auditor cannot read is a count, not a record.
   but the person may have typed it straight into ReadyDoc from their own notes, as Maria did. The screen
   now says **Recorded by hand** / **Annual task**. The stored value stays `paper`; nothing is migrated.
 - `verify:annualreviews` (76 → 83, browser). Control: the old screen fails on the label and cannot open a row.
+
+## D-199 — Scrolling up a channel or DM loads its earlier messages (22 Oct 2026)
+Marnee could not see older messages in a DM. **There was no limit**: the server keeps every message and
+`GET /channels/:id/messages` already took a `before` cursor. But the screen loaded the **newest 50** and
+nothing ever asked for the page before them; the calendar's jump-to-date was the only way back. A history
+that ends at 50 messages reads as a history that was deleted.
+- **Scrolling within 200px of the top loads the previous 50** (`loadOlder` in `CommsView.jsx`), and a
+  *Load earlier messages* button sits at the top of the list for anyone who prefers a tap. The top reads
+  **Beginning of the conversation** once there is nothing earlier, so the end of history is stated, not
+  implied.
+- **The reader keeps their place**: the scroll height before and after the prepend is measured in a
+  `useLayoutEffect`, so the message that was on top stays where it was and the new page sits above it.
+- **`through` is a new INCLUSIVE cursor** (`created_at <= ?`); the client drops what it already holds by id.
+  `before` (exclusive) skipped any message sharing the cursor's exact timestamp, which an imported Slack
+  second can. A page that brings nothing new is the beginning. `before` is unchanged for other callers.
+- Works in the jump-to-date view too, and resets on every channel switch.
+- `verify:commshistory` (25, live + browser at 1280 and 390; three messages sharing one second sit on a page
+  boundary). Control: `main` stops at 50. `verify:unreadlanding` (26) and `verify:threads` (44) still pass.
