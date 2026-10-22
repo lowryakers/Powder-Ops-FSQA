@@ -7946,3 +7946,30 @@ adds people to ONE channel, so a new starter who belongs in four channels meant 
   screen asks for the plan and shows "N to add · N already in · N can't be added". **Add** then sends the same
   request without `preview`.
 - `verify:bulkmembers` (28, live + browser at 1280 and 390). Control: on `main` the route does not exist.
+
+## D-201 — The temperature and humidity limits are owned by a document; the record says what it was checked against (22 Oct 2026)
+**Single-spine move 03** (architecture §7, roadmap 30 Sep: "next candidates, in value order: the
+temperature/humidity limits"). `ENV_LIMITS` in `server/env-limits.js` decided one thing: whether Adam got
+a DM. The record the daily check filed said "Humidity 41." and PASS. The Operator View kept its own copy of
+the rule: humidity "<= 40" passed, and temperature was never looked at. The procedure says below 40%,
+so a reading of exactly 40% showed PASS on the phone while the server's alert said out of range.
+Three readers, two rules.
+- **One rule, `shared/env-grade.js` (`envVerdict`, PURE; the limits are an argument).** The server's
+  `gradeEnvironment` and the Operator View both call it. At or above the limit is out; a blank reading is a
+  gap.
+- **The numbers are a controlled definition** (`envControlledEntry`, key `env:temp-humidity`, scope
+  `acceptance`): humidity and temperature limits, alert points, unit, `document`, `revision`.
+  - On first sight they are recorded as the baseline (a fresh database and the live one both start at
+    40/78).
+  - A change in code is parked. Approval applies it immediately.
+  - The document is **FORM 110-03 V2** (the register's form for the check). Which procedure states the
+    numbers is Document Control's question: `docs/v2/queued/dcr-temp-humidity-limits.md`.
+- **The record is graded (the ATP rule):** it can fail and never pass. Each reading is written with its
+  limit and document ("Humidity 41% OUT OF RANGE (limit below 40%, FORM 110-03 V2)"), so a record checked
+  against 40% goes on saying 40% after the number moves. The task still completes; the alert is unchanged.
+- **The screen reads the limits in force** (`GET /api/env-limits`, `src/lib/useEnvLimits.js`, the AtpLimitHint
+  arrangement). PASS/FAIL names the limit, names temperature when temperature is out, and says which
+  document the limits come from. It shows nothing until the limits have loaded.
+- `verify:envlimits` (27, pure + live + browser at 390). Control: `main` stops at the controlled-definition
+  step. Re-run green: completion-doors, backdated-recurrence, duplicate-readings, checklist-overlap,
+  scale-incident, atp-limit, change-register.

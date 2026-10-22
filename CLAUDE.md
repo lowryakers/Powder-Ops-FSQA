@@ -4903,7 +4903,7 @@ most of it.
 - A contractor is refused a target (400). Each change is audited with the previous value.
 - `verify:weektarget` (31; the control fails 18).
 
-## Temp & Humidity excursions alert Adam (`server/env-limits.js`)
+## Temp & Humidity excursions alert Adam (`server/env-limits.js`) — limits controlled since D-201 (above)
 Completing the daily Temp & Humidity check (Form 110-04) with an out-of-range reading DMs Adam through
 ReadyBot and pushes to his phone, hooked onto `complete-and-recur` in pm.js — the one path where an operator
 actually enters the numbers.
@@ -4916,10 +4916,22 @@ actually enters the numbers.
 - Targets Adam by name, falling back to QA admins/supervisors so a rename or an absence can't silence it.
 - **Best-effort and never blocking**: the reading is already recorded before the notification runs, so a
   comms failure can't fail the check. Audited as `environmental_alert` with the readings and who was told.
-- Limits are acceptance criteria, not settings — not editable in the app, same reasoning as `scale-forms.js`
-  tolerances. If they should be gated by Document Control like those are, add them to `controlled.js`.
+- Limits are acceptance criteria, not settings — not editable in the app, and gated by Document Control
+  through `controlled.js` since D-201.
 - Only the work-order path is covered. A temp/humidity record filed straight into Sanitation stores its
   numbers in free-text notes and is not parsed.
+
+## The temperature and humidity limits are a controlled definition (D-201, single-spine move 03)
+`shared/env-grade.js` (`envVerdict`, PURE) is the ONE rule. The server (`gradeEnvironment` in `env-limits.js`) and
+the Operator View (`useEnvLimits` → `GET /api/env-limits`) both call it.
+- The limits are below 40% and below 78°F. Exactly 40% is out.
+- `envControlledEntry` (key `env:temp-humidity`) parks a change to the numbers until Document Control approves.
+- The Temp & Humidity record is graded the ATP way: it can fail, never pass. Each reading is stamped with its limit
+  and document (FORM 110-03 V2).
+- The DM to Adam at 39% is unchanged.
+- **Never hard-code 40 or 78 on a screen again.** Which SOP owns the numbers is
+  `docs/v2/queued/dcr-temp-humidity-limits.md`.
+- `verify:envlimits` (27).
 
 ## A scheduled check files a record (`shared/check-forms.js` + `server/check-records.js`, D-060)
 A quality-schedule task DECLARES what its completion must carry, and the completion path files the record

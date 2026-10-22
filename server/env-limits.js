@@ -1,3 +1,5 @@
+import { envVerdict, readingNum } from '../shared/env-grade.js';
+
 // Environmental limits for the daily Temp & Humidity check (Form 110-04).
 //
 // Humidity is the one that matters here. The controlled procedure says it must
@@ -11,9 +13,15 @@
 //
 // These are acceptance criteria, not settings, and they are not editable in
 // the app for the same reason `scale-forms.js` tolerances are not — changing
-// what counts as acceptable is a document change, not a preference. If they
-// should be gated by Document Control the way scale tolerances are, add them
-// to the registry in controlled.js.
+// what counts as acceptable is a document change, not a preference.
+//
+// UNDER DOCUMENT CONTROL SINCE D-201 (single-spine move 03). `envControlledEntry`
+// registers both limits with `controlled.js`, so a change to a number here is
+// PARKED until Document Control approves it and the app goes on checking
+// against the approved one — the ATP limit's arrangement exactly. `document` and
+// `revision` name the form that carries the check (FORM 110-03 V2 in the
+// register); which procedure states 40% and 78°F is Document Control's to
+// confirm (docs/v2/queued/dcr-temp-humidity-limits.md).
 export const ENV_LIMITS = {
   humidity: {
     label: 'Humidity',
@@ -32,12 +40,17 @@ export const ENV_LIMITS = {
   },
 };
 
-const num = (v) => {
-  if (v === null || v === undefined || v === '') return null;
-  // Readings arrive as text from a phone keypad — "41", "41.2", "41 %", "78F".
-  const n = parseFloat(String(v).replace(/[^0-9.-]/g, ''));
-  return Number.isFinite(n) ? n : null;
+/** The document that owns the two numbers — printed on every graded record. */
+export const ENV_SOURCE = { document: 'FORM 110-03', revision: 'V2' };
+
+/** The procedure's wording, built from the number IN FORCE (never stored). */
+const limitText = (l) => `below ${l.procedureLimit}${l.unit}`;
+const refreshNotes = () => {
+  for (const l of Object.values(ENV_LIMITS)) l.note = `Procedure requires ${l.label.toLowerCase()} ${limitText(l)}.`;
 };
+
+// Readings arrive as text from a phone keypad — "41", "41.2", "41 %", "78F".
+const num = (v) => readingNum(v);
 
 /**
  * Which readings are out of range. Returns [] when everything is fine or the
@@ -68,3 +81,52 @@ export function environmentalBreaches(readings) {
 /** Does this work order look like the daily environmental check? */
 export const isEnvironmentalCheck = (title) =>
   /temp\s*(&|and|\/)?\s*humidity|humidity/i.test(String(title || ''));
+
+/**
+ * The record's account of the readings against the limits in force (D-201).
+ * The grade can FAIL a record and never PASS one — the ATP rule: an in-range
+ * reading leaves the filer's answer alone, an out-of-range one is a failed
+ * check. A blank reading is a gap and grades to nothing. `lines` carry the
+ * limit and its document, so a record checked against 40% goes on saying 40%
+ * after the number moves.
+ */
+export function gradeEnvironment(readings) {
+  const v = envVerdict(ENV_LIMITS, readings);
+  if (!v) return null;
+  const lines = v.results.map(r =>
+    `${r.label} ${r.value}${r.unit} ${r.out ? 'OUT OF RANGE' : 'in range'} (limit below ${r.limit}${r.unit}, ${ENV_SOURCE.document} ${ENV_SOURCE.revision}).`);
+  return { checked: v.results.length, outOfRange: v.results.filter(r => r.out).length, fail: v.fail, lines };
+}
+
+/** The limits IN FORCE, for the screen that shows PASS / FAIL as a reading is typed. */
+export const envLimitsInForce = () => ({
+  humidity: { ...ENV_LIMITS.humidity }, temperature: { ...ENV_LIMITS.temperature }, ...ENV_SOURCE,
+});
+
+/** The `controlled.js` entry — the limits as Document Control approved them. */
+export function envControlledEntry() {
+  const pick = (l) => ({ alertAtOrAbove: l.alertAtOrAbove, procedureLimit: l.procedureLimit, unit: l.unit });
+  return {
+    scope: 'acceptance',
+    key: 'env:temp-humidity',
+    label: `Temperature and humidity limits (${ENV_SOURCE.document})`,
+    current: () => ({
+      humidity: pick(ENV_LIMITS.humidity),
+      temperature: pick(ENV_LIMITS.temperature),
+      document: ENV_SOURCE.document,
+      revision: ENV_SOURCE.revision,
+    }),
+    apply: (snap) => {
+      for (const key of ['humidity', 'temperature']) {
+        const s = snap?.[key];
+        if (!s) continue;
+        if (typeof s.alertAtOrAbove === 'number') ENV_LIMITS[key].alertAtOrAbove = s.alertAtOrAbove;
+        if (typeof s.procedureLimit === 'number') ENV_LIMITS[key].procedureLimit = s.procedureLimit;
+        if (s.unit) ENV_LIMITS[key].unit = s.unit;
+      }
+      if (snap?.document) ENV_SOURCE.document = snap.document;
+      if (snap?.revision) ENV_SOURCE.revision = snap.revision;
+      refreshNotes();
+    },
+  };
+}

@@ -59,6 +59,7 @@ import formRoutes from './server/api/forms.js';
 import facilityRoutes from './server/api/facility.js';
 import plantCalendarRoutes from './server/api/plant-calendar.js';
 import { atpLimitInForce } from './server/atp-limits.js';
+import { envLimitsInForce } from './server/env-limits.js';
 import { sendHolidayNotices } from './server/plant-calendar.js';
 import supplierRoutes, { questionnaireLinkRouter } from './server/api/suppliers.js';
 import retentionRoutes from './server/api/retention.js';
@@ -2066,6 +2067,9 @@ app.use('/api/plant-calendar', plantCalendarRoutes);
 // Read-only, no module grant: whoever can type a reading must see the number it
 // is graded against, and while a change is parked that is the APPROVED one.
 app.get('/api/atp-limit', (req, res) => res.json(atpLimitInForce()));
+// The temperature and humidity limits in force (D-201) — read by the Operator
+// View's PASS / FAIL line, which used to carry its own copy of the rule.
+app.get('/api/env-limits', (req, res) => res.json(envLimitsInForce()));
 app.use('/api/retention', requireModuleWrite('retention-samples'), retentionRoutes);
 // Stability studies live beside the retention library their pulls come from.
 app.use('/api/stability', requireModuleWrite('retention-samples'), stabilityRoutes);

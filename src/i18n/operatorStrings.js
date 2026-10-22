@@ -89,10 +89,12 @@ const strings = {
   record_readings: { en: 'Record Readings', es: 'Registrar Lecturas' },
   temperature: { en: 'Temperature (°F) *', es: 'Temperatura (°F) *' },
   humidity: { en: 'Humidity (%) *', es: 'Humedad (%) *' },
-  humidity_warning: { en: 'Humidity exceeds 40% — notify manager and check dehumidifiers/A/C units.', es: 'La humedad supera el 40% — notifique al gerente y revise los deshumidificadores/A/C.' },
+  humidity_warning: { en: 'Humidity is not below {limit} — notify manager and check dehumidifiers/A/C units.', es: 'La humedad no está por debajo de {limit} — notifique al gerente y revise los deshumidificadores/A/C.' },
   rolling_doors: { en: 'Rolling doors verified closed', es: 'Puertas enrollables verificadas cerradas' },
   pass_range: { en: 'PASS — Within acceptable range', es: 'APROBADO — Dentro del rango aceptable' },
-  fail_humidity: { en: 'FAIL — Humidity above 40% threshold', es: 'FALLO — Humedad por encima del umbral de 40%' },
+  fail_humidity: { en: 'FAIL — Humidity must be below {limit}', es: 'FALLO — La humedad debe estar por debajo de {limit}' },
+  fail_temperature: { en: 'FAIL — Temperature must be below {limit}', es: 'FALLO — La temperatura debe estar por debajo de {limit}' },
+  env_limits_source: { en: 'Limits from {doc}', es: 'Límites de {doc}' },
 
   // Chemical dilution
   chemical_verification: { en: 'Chemical Verification', es: 'Verificación Química' },

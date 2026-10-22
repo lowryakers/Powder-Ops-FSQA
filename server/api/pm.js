@@ -15,7 +15,7 @@ import { generateSwabReorders } from '../swab-stock.js';
 import { getChannelByName, postMessageAs, botDm } from './comms.js';
 import { periodically, resetHousekeeping } from '../housekeeping.js';
 import { pushToUser } from '../push.js';
-import { environmentalBreaches, isEnvironmentalCheck } from '../env-limits.js';
+import { environmentalBreaches, isEnvironmentalCheck, gradeEnvironment } from '../env-limits.js';
 import { formFromTitle, gradeDilution, isMeasured, FORM_REVISION as DILUTION_REVISION } from '../../shared/dilution-forms.js';
 import { pmCompletion } from '../pm-completion.js';
 import { recordGroupFor, recordAreaForTask } from '../qa-records.js';
@@ -152,10 +152,17 @@ function fileQaInspectionRecord(db, { area: rawArea, wo, readings, stepResults, 
   const area = canonicalArea(rawArea) || rawArea;
   const r = readings || {};
   const ticks = Array.isArray(stepResults) ? stepResults.filter(s => s && (s.done ?? s.checked ?? s === true)).length : 0;
+  // THE TEMP & HUMIDITY RECORD IS GRADED AGAINST THE LIMITS IN FORCE (D-201).
+  // It filed "Temperature 80." as a pass: the alert went to Adam and the record
+  // said nothing. Each reading now names its limit and the document it came
+  // from, and an out-of-range one fails the record — never the other way.
+  const env = isEnvironmentalCheck(wo?.title) || /humidity/i.test(String(area)) ? gradeEnvironment(r) : null;
   const detail = [
     // Temp/humidity readings first — they are the substance of that form.
-    r.temperature != null && r.temperature !== '' ? `Temperature ${r.temperature}.` : null,
-    r.humidity != null && r.humidity !== '' ? `Humidity ${r.humidity}.` : null,
+    ...(env ? env.lines : [
+      r.temperature != null && r.temperature !== '' ? `Temperature ${r.temperature}.` : null,
+      r.humidity != null && r.humidity !== '' ? `Humidity ${r.humidity}.` : null,
+    ]),
     r.atp_reading != null && String(r.atp_reading).trim() !== '' ? `ATP ${r.atp_reading} RLU.` : null,
     Array.isArray(stepResults) && stepResults.length ? `${ticks} of ${stepResults.length} items checked.` : null,
     String(notes || '').trim() || null,
@@ -171,7 +178,7 @@ function fileQaInspectionRecord(db, { area: rawArea, wo, readings, stepResults, 
   // reading for this area also failed decides the escalation (two consecutive
   // failures raise the re-clean; one asks for a re-swab).
   const atpReading = r.atp_reading != null && String(r.atp_reading).trim() !== '' ? r.atp_reading : null;
-  const chosen = result === 'fail' || result === 'reclean' ? result : 'pass';
+  const chosen = env?.fail ? 'fail' : (result === 'fail' || result === 'reclean' ? result : 'pass');
   const grade = gradeAtp(atpReading);
   const decided = applyGrade(chosen, grade);
   const priorGradedFail = !!(grade && !grade.pass && db.prepare(
