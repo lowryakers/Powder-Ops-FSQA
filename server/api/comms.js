@@ -847,6 +847,62 @@ router.get('/admin/channels', requireRole('admin'), (req, res) => {
   res.json(rows);
 });
 
+// ── Add several people to several channels in one act (D-200) ────────────────
+// Settings → Channels → "Add people to channels". The per-channel Members screen
+// adds people to ONE channel; a new starter who belongs in #general, #batching,
+// #safety and #quality meant four trips through it. This is a loop over the same
+// rules, never a looser copy: an external account only ever lands in a
+// `client--` channel (the per-channel route's refusal), a DM is never a target,
+// an archived channel is refused. `preview: true` writes nothing and answers with
+// the same plan the commit uses, so what the screen shows is what lands.
+// A refusal is reported per person per channel — the rest still go in — because
+// refusing the whole act over one M4 guest makes the office work out who.
+export function planBulkMembers(db, userIds, channelIds) {
+  const people = [...new Set((userIds || []).filter(Boolean))]
+    .map(id => db.prepare('SELECT id, name, is_active, is_external FROM users WHERE id = ?').get(id))
+    .filter(Boolean);
+  const channels = [...new Set((channelIds || []).filter(Boolean))]
+    .map(id => db.prepare('SELECT id, name, kind, archived FROM chat_channels WHERE id = ?').get(id))
+    .filter(Boolean);
+  const isMember = db.prepare('SELECT 1 FROM chat_channel_members WHERE channel_id = ? AND user_id = ?');
+  const add = [], already = [], refused = [];
+  for (const c of channels) {
+    for (const u of people) {
+      const pair = { channel_id: c.id, channel: c.name, user_id: u.id, name: u.name };
+      if (c.kind === 'dm') refused.push({ ...pair, reason: 'A direct message is not a channel.' });
+      else if (c.archived) refused.push({ ...pair, reason: 'This channel is archived.' });
+      else if (!u.is_active) refused.push({ ...pair, reason: 'This account is deactivated.' });
+      else if (u.is_external && !isClientChannel(c.name)) refused.push({ ...pair, reason: `Works for another company — only a ${CLIENT_PREFIX} channel.` });
+      else if (isMember.get(c.id, u.id)) already.push(pair);
+      else add.push(pair);
+    }
+  }
+  return { people: people.length, channels: channels.length, add, already, refused };
+}
+
+router.post('/admin/bulk-members', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const userIds = Array.isArray(req.body?.user_ids) ? req.body.user_ids : [];
+  const channelIds = Array.isArray(req.body?.channel_ids) ? req.body.channel_ids : [];
+  if (!userIds.length || !channelIds.length) return res.status(400).json({ error: 'Pick at least one person and one channel.' });
+  const plan = planBulkMembers(db, userIds, channelIds);
+  if (req.body?.preview) return res.json({ preview: true, ...plan });
+  // Stamped read as of now — the per-channel route's reason: a NULL marker
+  // counts a channel's whole history as unread for somebody just added.
+  const now = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS t").get().t;
+  const ins = db.prepare('INSERT OR IGNORE INTO chat_channel_members (id, channel_id, user_id, role, last_read_at) VALUES (?, ?, ?, ?, ?)');
+  const added = [];
+  db.transaction(() => { for (const p of plan.add) if (ins.run(uuid(), p.channel_id, p.user_id, 'member', now).changes) added.push(p); })();
+  const byChannel = new Map();
+  for (const p of added) byChannel.set(p.channel_id, [...(byChannel.get(p.channel_id) || []), p]);
+  for (const [cid, rows] of byChannel) {
+    logAudit(req.user, 'update', 'chat_channel', cid,
+      { action: 'members_added', bulk: true, added: rows.map(r => r.name) }, null, null, rows[0].channel);
+    emitChannelsChanged(db, getChannelAny(db, cid));
+  }
+  res.json({ ...plan, add: undefined, added, preview: false });
+});
+
 // ── Sidebar sections (admin-defined channel groupings) ────────────────────────
 router.get('/sections', (req, res) => {
   const db = getDb();

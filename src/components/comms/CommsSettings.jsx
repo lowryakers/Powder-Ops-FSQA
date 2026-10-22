@@ -114,6 +114,7 @@ function ChannelsTab({ users }) {
   const [editName, setEditName] = useState('');
   const [managing, setManaging] = useState(null); // channel object for member mgmt
   const [busy, setBusy] = useState(false);
+  const [bulk, setBulk] = useState(false);
 
   const rows = channels || [];
   const secs = sections || [];
@@ -151,12 +152,14 @@ function ChannelsTab({ users }) {
     refresh();
   };
 
+  if (bulk) return <BulkAddMembers users={users} channels={rows} onBack={() => { setBulk(false); refresh(); }} />;
   if (managing) return <ChannelMembers channel={managing} users={users} onBack={() => { setManaging(null); refresh(); }} />;
 
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
         <p className="text-xs text-gray-400">{rows.filter(c => !c.archived).length} active channels</p>
+        <button onClick={() => setBulk(true)} data-open-bulk-members className="ml-auto mr-3 flex items-center gap-1 text-xs text-powder-600 hover:text-powder-700 font-medium"><UserPlus size={13} /> Add people to channels</button>
         <button onClick={clearUnread} disabled={busy} className="text-xs text-powder-600 hover:text-powder-700 font-medium disabled:opacity-50">Clear unread for everyone</button>
       </div>
       <SectionsManager secs={secs} channels={rows} onChange={reload}
@@ -220,6 +223,125 @@ function ChannelsTab({ users }) {
         Archiving hides a channel but keeps its history (reversible). Delete permanently removes the channel and every message — use with care. The megaphone makes a channel announcement-only (admins post, everyone reads).
       </p>
     </div>
+  );
+}
+
+/* ─────────── Several people into several channels, in one act (D-200) ─────────── */
+// The server decides who can go where (`POST /comms/admin/bulk-members`); this
+// screen picks, asks for the plan, shows it, and sends the same request again
+// without `preview`. It never works out a refusal for itself.
+function PickList({ title, items, picked, setPicked, filter, setFilter, render, data }) {
+  const q = filter.trim().toLowerCase();
+  const shown = q ? items.filter(i => (i.search || '').toLowerCase().includes(q)) : items;
+  const allShown = shown.length > 0 && shown.every(i => picked.has(i.id));
+  const toggle = (id) => setPicked(p => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const toggleAll = () => setPicked(p => { const n = new Set(p); shown.forEach(i => (allShown ? n.delete(i.id) : n.add(i.id))); return n; });
+  return (
+    <div className="border border-gray-200 rounded-lg flex flex-col min-w-0" data-pick={data}>
+      <div className="px-3 py-2 border-b border-gray-100 flex items-center gap-2">
+        <span className="text-xs font-semibold text-gray-700">{title}</span>
+        <span className="text-[11px] text-gray-400" data-pick-count>{picked.size} picked</span>
+        <button type="button" onClick={toggleAll} disabled={!shown.length} className="ml-auto text-[11px] text-powder-600 hover:text-powder-700 disabled:opacity-40">
+          {allShown ? 'Clear these' : `Pick all ${q ? 'shown' : ''}`.trim()}
+        </button>
+      </div>
+      <input id={`bulk-filter-${data}`} value={filter} onChange={e => setFilter(e.target.value)} placeholder="Filter…"
+        className="mx-2 mt-2 px-2 py-1 border border-gray-200 rounded text-sm" />
+      <div className="p-1 max-h-56 overflow-y-auto">
+        {shown.length === 0 && <p className="text-xs text-gray-400 px-2 py-2">Nothing matches.</p>}
+        {shown.map(i => (
+          <label key={i.id} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-powder-50 cursor-pointer">
+            <input type="checkbox" className="h-4 w-4 shrink-0" checked={picked.has(i.id)} onChange={() => toggle(i.id)} data-pick-item={i.id} />
+            {render(i)}
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BulkAddMembers({ users, channels, onBack }) {
+  const [people, setPeople] = useState(() => new Set());
+  const [chans, setChans] = useState(() => new Set());
+  const [pf, setPf] = useState('');
+  const [cf, setCf] = useState('');
+  const [plan, setPlan] = useState(null);
+  const [result, setResult] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const peopleItems = (users || []).filter(u => u.is_active && u.name !== 'ReadyBot')
+    .map(u => ({ ...u, search: `${u.name} ${u.department || ''} ${u.external_org || ''}` }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const channelItems = (channels || []).filter(c => !c.archived && c.kind !== 'dm').map(c => ({ ...c, search: c.name }));
+
+  const send = async (preview) => {
+    setBusy(true); setError('');
+    try {
+      const r = await apiPost('/comms/admin/bulk-members', { user_ids: [...people], channel_ids: [...chans], preview });
+      if (preview) setPlan(r); else { setResult(r); setPlan(null); }
+    } catch (e) { setError(e.message || 'Could not add them.'); }
+    finally { setBusy(false); }
+  };
+  const pick = (setter) => (fn) => { setter(fn); setPlan(null); setResult(null); };
+
+  return (
+    <div data-bulk-members>
+      <button onClick={onBack} className="text-sm text-powder-600 hover:text-powder-700 mb-3">← All channels</button>
+      <h4 className="font-semibold text-gray-900 mb-1">Add people to channels</h4>
+      <p className="text-[11px] text-gray-500 bg-gray-50 rounded-lg px-3 py-2 mb-3">
+        Pick one or more people and one or more channels. Everyone picked is added to every channel picked. Nobody is removed from anything.
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+        <PickList title="People" data="people" items={peopleItems} picked={people} setPicked={pick(setPeople)} filter={pf} setFilter={setPf}
+          render={u => (<><span className="text-sm text-gray-800 truncate">{u.name}</span>
+            <span className="text-[11px] text-gray-400 ml-auto shrink-0">{u.is_external ? (u.external_org || 'Guest') : deptLabel(u.department) || u.department}</span></>)} />
+        <PickList title="Channels" data="channels" items={channelItems} picked={chans} setPicked={pick(setChans)} filter={cf} setFilter={setCf}
+          render={c => (<>{c.kind === 'private' ? <Lock size={12} className="text-gray-400 shrink-0" /> : <Hash size={12} className="text-gray-400 shrink-0" />}
+            <span className="text-sm text-gray-800 truncate">{c.name}</span></>)} />
+      </div>
+      {error && <p className="text-xs text-red-600 mb-2">{error}</p>}
+      {!plan && !result && (
+        <button onClick={() => send(true)} disabled={busy || !people.size || !chans.size} data-bulk-preview
+          className="px-3 py-2 text-sm rounded-lg bg-powder-600 text-white font-medium hover:bg-powder-700 disabled:opacity-50">
+          {busy ? 'Checking…' : `Check ${people.size} ${people.size === 1 ? 'person' : 'people'} × ${chans.size} ${chans.size === 1 ? 'channel' : 'channels'}`}
+        </button>
+      )}
+      {plan && (
+        <div className="border border-powder-200 bg-powder-50 rounded-lg p-3 space-y-2" data-bulk-plan>
+          <p className="text-sm text-gray-800">
+            <span className="font-semibold" data-plan-add>{plan.add.length}</span> to add
+            {plan.already.length > 0 && <> · <span data-plan-already>{plan.already.length}</span> already in</>}
+            {plan.refused.length > 0 && <> · <span className="text-amber-700" data-plan-refused>{plan.refused.length}</span> can't be added</>}
+          </p>
+          <Refusals rows={plan.refused} />
+          <div className="flex gap-2">
+            <button onClick={() => send(false)} disabled={busy || !plan.add.length} data-bulk-commit
+              className="px-3 py-1.5 text-sm rounded-lg bg-powder-600 text-white font-medium hover:bg-powder-700 disabled:opacity-50">
+              {busy ? 'Adding…' : `Add ${plan.add.length}`}
+            </button>
+            <button onClick={() => setPlan(null)} className="px-3 py-1.5 text-sm rounded-lg text-gray-600 hover:bg-gray-100">Change picks</button>
+          </div>
+        </div>
+      )}
+      {result && (
+        <div className="border border-green-200 bg-green-50 rounded-lg p-3 space-y-2" data-bulk-result>
+          <p className="text-sm text-green-800"><Check size={14} className="inline -mt-0.5" /> Added <span className="font-semibold" data-result-added>{result.added.length}</span>
+            {result.already.length > 0 && <> · {result.already.length} were already in</>}</p>
+          <Refusals rows={result.refused} />
+          <button onClick={() => { setResult(null); setPeople(new Set()); setChans(new Set()); }} className="text-xs text-powder-600 hover:text-powder-700">Add more</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Refusals({ rows }) {
+  if (!rows?.length) return null;
+  return (
+    <ul className="text-[11px] text-amber-800 bg-amber-50 rounded px-2 py-1.5 space-y-0.5 max-h-32 overflow-y-auto" data-refusals>
+      {rows.map(r => <li key={`${r.channel_id}:${r.user_id}`}><span className="font-medium">{r.name}</span> → #{r.channel}: {r.reason}</li>)}
+    </ul>
   );
 }
 

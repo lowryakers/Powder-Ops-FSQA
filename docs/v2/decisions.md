@@ -7929,3 +7929,20 @@ that ends at 50 messages reads as a history that was deleted.
 - Works in the jump-to-date view too, and resets on every channel switch.
 - `verify:commshistory` (25, live + browser at 1280 and 390; three messages sharing one second sit on a page
   boundary). Control: `main` stops at 50. `verify:unreadlanding` (26) and `verify:threads` (44) still pass.
+
+## D-200 — Several people into several channels, in one act (22 Oct 2026)
+**Asked:** "add 1 or multiple people to several channels at once" from Communication Settings. The Members screen
+adds people to ONE channel, so a new starter who belongs in four channels meant four trips.
+- **`POST /comms/admin/bulk-members`** `{user_ids, channel_ids, preview}`, admin only. `planBulkMembers()` is the ONE
+  planner; the preview and the commit both call it, and the preview writes nothing.
+- **It loops the per-channel rules and never loosens them.** An external account is added only to a `client--`
+  channel (D-080). An archived channel, a DM and a deactivated account are refused. Each refusal names the person,
+  the channel and the reason, and the other pairs still go in. Refusing the whole act over one guest would leave
+  the office to work out who caused it.
+- It only ever adds; nobody is removed from anything. A new member starts read as of now, the per-channel route's
+  rule. One transaction. One audit row per channel with the names, carrying `bulk: true`. `channels:changed` is
+  emitted per channel.
+- Settings → Channels → **Add people to channels**: two pick lists, each with a filter and "pick all shown". The
+  screen asks for the plan and shows "N to add · N already in · N can't be added". **Add** then sends the same
+  request without `preview`.
+- `verify:bulkmembers` (28, live + browser at 1280 and 390). Control: on `main` the route does not exist.
