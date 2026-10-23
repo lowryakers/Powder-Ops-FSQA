@@ -146,7 +146,7 @@ t('and names Saturated Fat 0 g declared at 5%',
 t('and Sodium 570 mg, with the 25% it computes to',
   dv.some(w => w.nutrient === 'sodium' && w.computed_dv === 25));
 
-r = await post(`/nfp/${v1.id}/decide`, { decision: 'approved', approved_by: 'Matt Schramm' });
+r = await post(`/nfp/${v1.id}/decide`, { signature_password: 'Panel2026!', decision: 'approved', approved_by: 'Matt Schramm' });
 b = await J(r);
 t('APPROVING IS REFUSED while the panel disagrees with its own arithmetic',
   r.status === 409 && b?.needs_dv_ack === true && b?.dv_warnings?.length === 2,
@@ -202,6 +202,8 @@ saved = await J(r);
 t('CALCIUM 150 mg DECLARED AT 10% RAISES NOTHING', (saved?.dv_check || []).length === 0,
   JSON.stringify(saved?.dv_check));
 r = await post(`/nfp/${v2.id}/decide`, { decision: 'approved', approved_by: 'Matt Schramm' });
+t('approving in the app WITHOUT a password is refused (403 signature_required, D-206)', r.status === 403 && (await J(r))?.signature_required === true);
+r = await post(`/nfp/${v2.id}/decide`, { signature_password: 'Panel2026!', decision: 'approved', approved_by: 'Matt Schramm' });
 t('so it approves with no acknowledgement asked for at all', r.status === 200, String(r.status));
 const clean = (await J(await req(`/nfp/sku/${encodeURIComponent(P2.sku)}`)))?.versions?.[0];
 t('"[]" means checked and clean; NULL would mean never checked',

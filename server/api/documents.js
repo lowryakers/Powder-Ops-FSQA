@@ -885,6 +885,10 @@ router.put('/:id', (req, res) => {
 
   const equipmentIds = normalizeEquipmentIds(req.body, existing);
 
+// NOT A SIGNATURE (single-spine move 01, reviewed). `approved_by` / `approved_at` here are
+// TRANSCRIBED from the signed paper or Word original during an edit — who approved the
+// revision on the document itself — not an approval given in this app. The in-app
+// signature is POST /:id/sign, which is the door the sweep governs.
   db.prepare(`UPDATE sop_documents SET doc_number=?, title=?, category=?, revision=?, effective_date=?, review_due=?, review_frequency=?, status=?, owner=?, description=?, description_es=?, source_file=?, approved_by=?, approved_at=?, training_revision=?, equipment_id=?, equipment_ids=?, updated_at=datetime('now') WHERE id=?`).run(
     doc_number ?? existing.doc_number, title || existing.title, category || existing.category,
     newRevision, effective_date ?? existing.effective_date,

@@ -107,10 +107,10 @@ const audit = db.prepare("SELECT details FROM audit_log WHERE entity_id = ? AND 
 t('the upload is audited with the hash, the stored name and what was filled', !!audit && /sha256/.test(audit.details) && /stored_as/.test(audit.details) && /calories/.test(audit.details), (audit?.details || '').slice(0, 200));
 
 console.log('\n── the gate: every approval door refuses an unresolved mismatch ──');
-r = await json('POST', `/nfp/${v1}/decide`, { decision: 'approved', by: 'Maria Servin' }, admin);
+r = await json('POST', `/nfp/${v1}/decide`, { signature_password: 'ExtractCheck!!1', decision: 'approved', by: 'Maria Servin' }, admin);
 t('in-app approve is refused (409 needs_extract_resolution naming sodium)', r.status === 409 && r.body?.needs_extract_resolution?.[0]?.field === 'sodium', `${r.status} ${JSON.stringify(r.body).slice(0, 200)}`);
 r = await json('POST', `/nfp/${v1}/ready`, {}, admin);
-r = await json('POST', '/nfp/review-queue/approve', { ids: [v1] }, admin);
+r = await json('POST', '/nfp/review-queue/approve', { signature_password: 'ExtractCheck!!1', ids: [v1] }, admin);
 t('bulk approve skips it as flagged', r.status === 200 && r.body?.skipped?.[0]?.reason === 'has flags' && r.body?.approved?.length === 0, JSON.stringify(r.body?.skipped));
 r = await json('POST', `/nfp/${v1}/mismatches/sodium/resolve`, { choice: 'stored' }, PM);
 t('a TOKEN cannot resolve a mismatch (403, a decision)', r.status === 403, `${r.status} ${JSON.stringify(r.body).slice(0, 160)}`);
@@ -128,7 +128,7 @@ r = await json('POST', `/nfp/${v1}/mismatches/sodium/resolve`, { choice: 'file' 
 t('choosing the FILE writes 210 onto the draft, source extracted from file', r.status === 200 && r.body?.panel?.sodium_mg === 210 && r.body?.panel_sources?.sodium?.source === 'extracted from file' && r.body?.extract_mismatches?.length === 0, JSON.stringify([r.body?.panel?.sodium_mg, r.body?.panel_sources?.sodium]));
 const resolvedAudit = db.prepare("SELECT COUNT(*) c FROM audit_log WHERE entity_id = ? AND details LIKE '%\"choice\"%'").get(v1).c;
 t('each resolution is audited', resolvedAudit === 2, String(resolvedAudit));
-r = await json('POST', `/nfp/${v1}/decide`, { decision: 'approved', by: 'Maria Servin' }, admin);
+r = await json('POST', `/nfp/${v1}/decide`, { signature_password: 'ExtractCheck!!1', decision: 'approved', by: 'Maria Servin' }, admin);
 t('with everything resolved the approval lands', r.status === 200 && ver(v1).status === 'approved', `${r.status} ${JSON.stringify(r.body).slice(0, 200)}`);
 
 console.log('\n── the file against the approved one ──');
@@ -221,6 +221,9 @@ t('the draft card carries the extraction block', await page.locator('[data-nfp-e
 t('…the file label "New file"', await page.locator('[data-nfp-file-label="new_file"]').count() === 1);
 t('…the calories mismatch with its two buttons', await page.locator('[data-nfp-mismatch="calories"]').count() === 1 && await page.locator('[data-nfp-use-file="calories"]').count() === 1 && await page.locator('[data-nfp-keep-stored="calories"]').count() === 1);
 t('…and the blocking flag', await page.locator('[data-nfp-flag="extract_mismatch"]').count() === 1);
+// The drawer folds a section (D-178) — open the one holding the panel before clicking in it.
+const folded = page.locator('section[data-open="0"]:has([data-nfp-keep-stored="calories"]) [data-section-toggle]');
+if (await folded.count()) await folded.first().click();
 await page.locator('[data-nfp-keep-stored="calories"]').click();
 await page.waitForTimeout(1500);
 t('keeping the stored value from the card resolves it', await page.locator('[data-nfp-mismatch="calories"][data-nfp-mismatch-resolved="stored"]').count() === 1

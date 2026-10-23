@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApiGet, apiFetch } from '../../hooks/useApi';
+import { withSignature } from '../../lib/signature';
 import { AlertTriangle, CheckCircle2, Undo2, FileText, Link2 } from 'lucide-react';
 import { FIELD_LABEL } from '../../../shared/panel-reconcile.js';
 import { FORMULA_SOURCE_LABEL } from '../../../shared/panel-provenance.js';
@@ -57,8 +58,11 @@ function Row({ row, selected, onSelect, onChanged, onOpenSku }) {
   const [sendingBack, setSendingBack] = useState(false);
   const approve = async () => {
     setBusy('approve'); setError('');
-    try { await apiFetch(`/nfp/${row.id}/decide`, { method: 'POST', body: { decision: 'approved' } }); onChanged(); }
-    catch (e) { setError(e.data?.error || e.message); }
+    try {
+      await withSignature((extra) => apiFetch(`/nfp/${row.id}/decide`, { method: 'POST', body: { decision: 'approved', ...extra } }),
+        { title: 'Approve this nutrition panel', detail: `${row.sku} ${row.version}` });
+      onChanged();
+    } catch (e) { if (!e?.cancelled) setError(e.data?.error || e.message); }
     setBusy('');
   };
   const prov = row.provenance || {};
@@ -214,9 +218,10 @@ export default function NfpReviewQueue({ canManage, isAdmin, onOpenSku, onChange
   const bulk = async () => {
     setBusy(true); setError(''); setResult(null);
     try {
-      const r = await apiFetch('/nfp/review-queue/approve', { method: 'POST', body: { ids: [...selected] } });
+      const r = await withSignature((extra) => apiFetch('/nfp/review-queue/approve', { method: 'POST', body: { ids: [...selected], ...extra } }),
+        { title: `Approve ${selected.size} nutrition panel${selected.size === 1 ? '' : 's'}` });
       setResult(r); setSelected(new Set()); changed();
-    } catch (e) { setError(e.message); }
+    } catch (e) { if (!e?.cancelled) setError(e.message); }
     setBusy(false);
   };
 

@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useApiGet, apiPost, apiPut, apiDelete, apiUpload, apiFetch } from '../../hooks/useApi';
+import { withSignature } from '../../lib/signature';
 import DraftSpecsReview from './DraftSpecsReview.jsx';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
@@ -861,9 +862,10 @@ function SignCoaModal({ requestId, onSigned, onClose }) {
       if (useSaved && saved) { /* server falls back to the saved signature */ }
       else if (hasDrawn) body.signature = canvasRef.current.toDataURL('image/png');
       else { setError('Draw your signature, or use your saved one.'); setBusy(false); return; }
-      await apiPost(`/coa/requests/${requestId}/sign`, body);
+      await withSignature((extra) => apiPost(`/coa/requests/${requestId}/sign`, { ...body, ...extra }),
+        { title: 'Sign this Certificate of Analysis' });
       onSigned();
-    } catch (e) { setError(e.message); }
+    } catch (e) { if (!e?.cancelled) setError(e.message); }
     finally { setBusy(false); }
   };
 

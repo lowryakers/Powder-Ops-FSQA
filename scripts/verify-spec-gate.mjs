@@ -62,7 +62,7 @@ let a2r = row(a2.id);
 t('the same passing result now HOLDS the lot, with the gaps on the record', a2r.status === 'hold' && gapsOf(a2r).length === 5 && a2r.release_gate_mode === 'on', `${a2r.status}`);
 r = await call('PUT', `/coa/requests/${a2.id}`, { status: 'pass' }, Q); let j = await r.json();
 t('Mark Pass by hand meets the same gate', r.status === 400 && j.release_blocked && j.gaps.length === 5 && row(a2.id).status === 'hold');
-r = await call('POST', `/coa/requests/${a2.id}/sign`, { signature: SIG }, Q); j = await r.json();
+r = await call('POST', `/coa/requests/${a2.id}/sign`, { signature_password: 'Quality2026!', signature: SIG }, Q); j = await r.json();
 t('signing the certificate meets the same gate — no certificate number is issued', r.status === 400 && j.release_blocked && !row(a2.id).certificate_number);
 r = await call('POST', '/coa/requests/bulk-update', { ids: [a2.id], patch: { status: 'pass' } }, Q); j = await r.json();
 t('a bulk pass skips and NAMES the held lot rather than passing it in the batch', r.status === 200 && j.updated === 0 && j.blocked.length === 1 && j.blocked[0].lot_number === 'L-A2' && row(a2.id).status === 'hold');
@@ -85,6 +85,8 @@ r = await results(a2.id, [{ test_type: 'FTIR Identity', result_value: 'Matches r
 a2r = row(a2.id);
 t('an identity result releases the lot with NO gaps recorded', a2r.status === 'pass' && a2r.release_gaps === null && a2r.release_gate_mode === 'on', `${a2r.status} ${a2r.release_gaps}`);
 r = await call('POST', `/coa/requests/${a2.id}/sign`, { signature: SIG }, Q);
+t('signing the certificate WITHOUT a password is refused (403 signature_required, D-206)', r.status === 403 && (await r.json()).signature_required === true && !row(a2.id).certificate_number);
+r = await call('POST', `/coa/requests/${a2.id}/sign`, { signature_password: 'Quality2026!', signature: SIG }, Q);
 t('and the certificate signs', r.status === 200 && !!row(a2.id).certificate_number);
 g = await (await call('GET', '/coa/release-gate', null, Q)).json();
 t('nothing is held any more; the earlier warn-mode release still carries its gaps', g.held_count === 0 && g.released_with_gaps_count === 1);

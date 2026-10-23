@@ -74,7 +74,7 @@ const PANEL = {
 };
 const v = await J(await call('POST', '/nfp', { sku: W, version: 'V3', drive_url: 'https://drive.example/panel', provenance: { formula_ref: 'F-00123', formula_version: 'v2.0', bom_fill_weight_g: 34.86, source_system: 'Genesis R&D' } }));
 await call('PUT', `/nfp/${v.id}/panel`, { panel: PANEL, front_callouts: { protein_g: 24, calories: 130, added_sugar_g: null } });
-r = await call('POST', `/nfp/${v.id}/decide`, { decision: 'approved' });
+r = await call('POST', `/nfp/${v.id}/decide`, { signature_password: 'StellaStage2026!!', decision: 'approved' });
 p = await product(W);
 t('an approved panel from F-00123 v2.0 at 34.86 g: stage 5', r.ok && p?.stage?.stage === 5 && p.stage.next.key === 'shopify', `${r.status} ${p?.stage?.summary}`);
 r = await call('POST', `/products/${W}/confirm/shopify`, {});

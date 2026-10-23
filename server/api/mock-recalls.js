@@ -7,6 +7,7 @@ import {
   TRACKING_PROCEDURES, effectivenessCheck, missingItems, durationMinutes,
   MASS_BALANCE_MIN, MASS_BALANCE_MAX, MAX_DURATION_MINUTES,
 } from '../mock-recall-form.js';
+import { gateSignature, signatureEvidence } from '../signature.js';
 
 const router = Router();
 
@@ -207,6 +208,9 @@ router.post('/:id/approve', (req, res) => {
     return res.status(400).json({ error: `This exercise did not meet the effectiveness criteria, so ${SOP_CODE} requires an investigation. Record the root cause and the actions taken.` });
   }
 
+  // The authorization is a signature (move 01): asked last, before the write.
+  if (!gateSignature(req, res, { action: 'mock_recall_sign' })) return;
+
   const result = check.successful ? 'pass' : 'fail';
   // THE SIGN-OFF CLOSES THE ANNUAL TASK (D-196) — in the same transaction, as
   // of the day the exercise was run, and pulls the next one to its
@@ -231,7 +235,7 @@ router.post('/:id/approve', (req, res) => {
   })();
   const updated = db.prepare('SELECT * FROM mock_recalls WHERE id = ?').get(req.params.id);
   logAudit(req.user, 'mock_recall_approved', 'mock_recall', req.params.id,
-    { result, ...(settled?.closed?.length ? { closed_tasks: settled.closed } : {}), ...(settled?.next_due ? { next_due: settled.next_due } : {}) },
+    { result, ...signatureEvidence(), ...(settled?.closed?.length ? { closed_tasks: settled.closed } : {}), ...(settled?.next_due ? { next_due: settled.next_due } : {}) },
     recall, updated, recall.recall_number);
   res.json({ ...decorate(updated), schedule: settled });
 });

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
+import { withSignature } from '../../lib/signature';
 import { useAuth } from '../../hooks/useAuth';
 import {
   Plus, ArrowLeft, Package, Clock, Check, X, AlertTriangle, HelpCircle,
@@ -142,7 +143,7 @@ function RecallDetail({ id, form, onBack, onChanged }) {
   const act = async (fn) => {
     setError('');
     try { await fn(); await refresh(); onChanged?.(); }
-    catch (e) { setError(e.message); }
+    catch (e) { if (!e?.cancelled) setError(e.message); }
   };
 
   const proc = form.tracking_procedures?.[val('tracking_procedure')];
@@ -260,7 +261,8 @@ function RecallDetail({ id, form, onBack, onChanged }) {
           </button>
         )}
         {!locked && (
-          <button onClick={() => act(() => apiPost(`/mock-recalls/${id}/approve`, {}))}
+          <button onClick={() => act(() => withSignature((extra) => apiPost(`/mock-recalls/${id}/approve`, extra),
+            { title: 'Authorize this mock recall', detail: recall.recall_number }))}
             disabled={dirty || !recall.can_sign}
             title={dirty ? 'Save your changes first' : (recall.sign_block_reason || 'Authorize this mock recall')}
             className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 inline-flex items-center gap-1">

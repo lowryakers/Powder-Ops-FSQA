@@ -26,6 +26,7 @@ import { coerceCustomData, mergeCustomData, parseJson } from '../custom-fields.j
 import {
   CHECKLIST_CODE, CHECKLIST_REVISION, SECTIONS, SECTION_IDS, sectionById, itemsForSections,
 } from '../audit-checklist.js';
+import { gateSignature, signatureEvidence } from '../signature.js';
 
 const router = Router();
 const MODULE = 'internal-audits';
@@ -281,11 +282,13 @@ router.post('/:id/complete', (req, res) => {
   const blank = db.prepare('SELECT COUNT(*) n FROM internal_audit_items WHERE audit_id = ? AND result IS NULL').get(a.id).n;
   if (blank) return res.status(400).json({ error: `${blank} item${blank === 1 ? '' : 's'} still unanswered. Mark them compliant, not compliant, or N/A first.` });
 
+  // The lead auditor's signature (move 01): asked last, before the write.
+  if (!gateSignature(req, res, { action: 'internal_audit_sign' })) return;
   db.prepare(`UPDATE internal_audits SET status = 'completed', signed_by = ?, signed_at = datetime('now'),
       completed_at = date('now'), summary = COALESCE(?, summary), updated_at = datetime('now') WHERE id = ?`)
     .run(req.user.name, String(req.body?.summary || '').trim() || null, a.id);
   const next = db.prepare('SELECT * FROM internal_audits WHERE id = ?').get(a.id);
-  logAudit(req.user, 'approve', 'internal_audit', a.id, { audit_no: a.audit_no }, a, next, a.audit_no);
+  logAudit(req.user, 'approve', 'internal_audit', a.id, { audit_no: a.audit_no, ...signatureEvidence() }, a, next, a.audit_no);
   res.json({ ...shape(next, req.user), items: itemsFor(db, a.id) });
 });
 

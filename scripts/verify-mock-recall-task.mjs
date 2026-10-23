@@ -92,7 +92,9 @@ await put(`/mock-recalls/${created.id}`, {
   started_at: `${ranOn}T14:00:00.000Z`, ended_at: `${ranOn}T16:30:00.000Z`,
   summary_report_complete: true, form_415_1_checked: true, tracking_procedure: 'distributed',
 }, A);
-const signRes = await post(`/mock-recalls/${created.id}/approve`, {}, A);
+const noPw = await post(`/mock-recalls/${created.id}/approve`, {}, A);
+t('authorizing WITHOUT a password is refused (403 signature_required, D-206)', noPw.status === 403 && (await noPw.json()).signature_required === true);
+const signRes = await post(`/mock-recalls/${created.id}/approve`, { signature_password: 'Recall2026!',}, A);
 const signed = await signRes.json();
 t('the exercise signs off', signRes.status === 200 && signed.approved_at, `${signRes.status} ${JSON.stringify(signed).slice(0, 200)}`);
 t('the sign-off reports the task it closed', (signed.schedule?.closed || []).includes(wo.id), JSON.stringify(signed.schedule));
@@ -120,7 +122,7 @@ await put(`/mock-recalls/${old.id}`, {
   ...Object.fromEntries(DOCUMENTED_ITEMS.map(f => [f.key, old[f.key] || 'Recorded'])), date_initiated: oldDay, mass_balance_pct: 100,
   started_at: `${oldDay}T14:00:00.000Z`, ended_at: `${oldDay}T15:00:00.000Z`, summary_report_complete: true, form_415_1_checked: true,
 }, A);
-await post(`/mock-recalls/${old.id}/approve`, {}, A);
+await post(`/mock-recalls/${old.id}/approve`, { signature_password: 'Recall2026!',}, A);
 t('an exercise run over a year ago does NOT close this year\'s task',
   dbx.prepare('SELECT status FROM work_orders WHERE id = ?').get(id2).status === 'open');
 t('… and does not push next due back', dbx.prepare('SELECT next_due FROM quality_schedules WHERE id = ?').get(sch.id).next_due === anniversary);

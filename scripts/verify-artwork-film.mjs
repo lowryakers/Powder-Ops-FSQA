@@ -95,7 +95,7 @@ const PANEL = {
 };
 const v = await J(await call('POST', '/nfp', { sku: C, version: 'V3', drive_url: 'https://drive.example/panel', provenance: { formula_ref: 'F-00123', formula_version: 'v2.0', bom_fill_weight_g: 34.86, source_system: 'Genesis R&D' } }));
 await call('PUT', `/nfp/${v?.id}/panel`, { panel: PANEL, front_callouts: { protein_g: 24, calories: 130, added_sugar_g: null } });
-let r = await call('POST', `/nfp/${v?.id}/decide`, { decision: 'approved' });
+let r = await call('POST', `/nfp/${v?.id}/decide`, { signature_password: 'FionaFilm2026!!', decision: 'approved' });
 t('the panel for the third pouch is approved', r.ok, `${r.status} ${JSON.stringify(await J(r))}`);
 const aw = await J(await call('POST', '/artwork', { sku: C, nfp_version: 'V3' }));
 await call('POST', `/artwork/versions/${aw?.id}/status`, { status: 'in_review' });

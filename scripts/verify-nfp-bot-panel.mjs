@@ -141,11 +141,11 @@ const fw = r.body?.reconcile?.find(c => c.key === 'fill_weight');
 t('35.5 g × 30 = 1065 g against 710 g is a WARNING on the draft', fw?.status === 'warn' && /1065 g/.test(fw?.message || ''), JSON.stringify(fw));
 t('…listed as unresolved', r.body?.reconcile_unresolved?.some(c => c.key === 'fill_weight'));
 await json('PUT', `/nfp/${v2}/provenance`, { formula_ref: 'F-1', formula_version: 'v1', bom_fill_weight_g: 710 }, admin);
-r = await json('POST', `/nfp/${v2}/decide`, { decision: 'approved' }, admin);
+r = await json('POST', `/nfp/${v2}/decide`, { signature_password: 'PanelCheck!!1', decision: 'approved' }, admin);
 t('a person cannot approve it while the warning is unacknowledged (409)', r.status === 409 && r.body?.needs_reconcile_ack?.[0]?.key === 'fill_weight', JSON.stringify(r.body).slice(0, 200));
 r = await json('POST', `/nfp/${v2}/send`, { sent_to: 'Matt' }, admin);
 t('…nor send it out on a link (409)', r.status === 409 && !!r.body?.needs_reconcile_ack, String(r.status));
-r = await json('POST', `/nfp/${v2}/decide`, { decision: 'approved' }, PM);
+r = await json('POST', `/nfp/${v2}/decide`, { signature_password: 'PanelCheck!!1', decision: 'approved' }, PM);
 t('PM token: approve → 403', r.status === 403 && r.body?.error === 'approve_requires_human_session', JSON.stringify(r.body));
 r = await json('POST', `/nfp/${v2}/warnings/fill_weight/acknowledge`, {}, PM);
 t('PM token: acknowledge → 403 (a person only)', r.status === 403, JSON.stringify(r.body));
@@ -153,7 +153,7 @@ r = await json('POST', `/nfp/${v2}/warnings/fill_weight/acknowledge`, {}, admin)
 t('a person acknowledges the warning (201)', r.status === 201 && r.body?.acknowledgement?.acknowledged_by === 'Panel Admin', JSON.stringify(r.body).slice(0, 160));
 const ackAudit = db.prepare("SELECT actor, details FROM audit_log WHERE action = 'nfp_warning_acknowledged' AND entity_id = ?").get(v2);
 t('…logged with the user and the time', ackAudit?.actor === 'Panel Admin' && !!JSON.parse(ackAudit.details).at && JSON.parse(ackAudit.details).check === 'fill_weight');
-r = await json('POST', `/nfp/${v2}/decide`, { decision: 'approved' }, admin);
+r = await json('POST', `/nfp/${v2}/decide`, { signature_password: 'PanelCheck!!1', decision: 'approved' }, admin);
 t('now it can be approved', r.status === 200, `${r.status} ${JSON.stringify(r.body).slice(0, 200)}`);
 
 console.log('\n── the approved version is closed to the bot ──');
@@ -174,7 +174,7 @@ t('the diff against the approved NB-V2 names only calories', JSON.stringify(r.bo
   && r.body?.diff_vs_approved?.approved_version === 'NB-V2', JSON.stringify(r.body?.diff_vs_approved));
 await json('PUT', `/nfp/${v3}/provenance`, { formula_ref: 'F-1', formula_version: 'v1', bom_fill_weight_g: 710 }, admin);
 await json('POST', `/nfp/${v3}/warnings/calories/acknowledge`, {}, admin);
-r = await json('POST', `/nfp/${v3}/decide`, { decision: 'approved' }, admin);
+r = await json('POST', `/nfp/${v3}/decide`, { signature_password: 'PanelCheck!!1', decision: 'approved' }, admin);
 t('acknowledging ONE warning does not clear the other (still 409, fill weight named)', r.status === 409
   && r.body?.needs_reconcile_ack?.length === 1 && r.body.needs_reconcile_ack[0].key === 'fill_weight', JSON.stringify(r.body).slice(0, 200));
 r = await json('PUT', `/nfp/${v3}/panel-values`, { values: { calories: 320 }, source_ref: 'NB-V3b.pdf' }, PM);
@@ -198,7 +198,10 @@ const row = page.locator(`button:has(code:text-is("${sku}"))`).first();
 await row.scrollIntoViewIfNeeded().catch(() => {});
 await row.click().catch(() => {});
 await page.waitForTimeout(2000);
-const card = page.locator('[data-nfp-version="NB-V3"]').first();
+// The drawer folds a section (D-178) — open the one holding the panel first.
+const folded = page.locator('section[data-open="0"]:has([data-nfp-version="NB-V3"]) [data-section-toggle]');
+if (await folded.count()) { await folded.first().click(); await page.waitForTimeout(400); }
+const card = page.locator('[data-nfp-version="NB-V3"]:visible').first();
 const review = card.locator('[data-nfp-review]').first();
 const shown = await review.count() > 0;
 t('the draft card shows the review block', shown);

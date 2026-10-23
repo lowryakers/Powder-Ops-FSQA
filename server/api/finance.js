@@ -172,6 +172,8 @@ router.put('/:ledger/:id', (req, res) => {
   }
 
   db.prepare(`UPDATE ${cfg.table} SET ${cfg.fields.map(f => `${f} = ?`).join(', ')},
+// NOT A GMP SIGNATURE (move 01, reviewed): an AP bill marked approved for payment is a
+// finance step on a ledger hidden since D-075, not a signature on a compliance record.
     ${cfg.entity === 'ap_invoice' ? 'approved_by = ?, approved_at = ?,' : ''} updated_at = datetime('now') WHERE id = ?`)
     .run(...cfg.fields.map(f => next[f]), ...(cfg.entity === 'ap_invoice' ? [approvedBy, approvedAt] : []), req.params.id);
 

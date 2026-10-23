@@ -67,13 +67,13 @@ t('…and reads provenance_missing: true, approved against nothing recorded', pa
 console.log('\n── Part 1 · (4) approving a panel without formula_ref is refused ──');
 await put(`/nfp/${bare.id}/panel`, { panel: PANEL, front_callouts: { protein_g: 24, calories: 130, added_sugar_g: 1 } });
 {
-  const r = await post(`/nfp/${bare.id}/decide`, { decision: 'approved' });
+  const r = await post(`/nfp/${bare.id}/decide`, { signature_password: 'QuinnQA2026!!', decision: 'approved' });
   const b = await J(r);
   t('REFUSED, 409, naming the three fields', r.status === 409 && JSON.stringify(b.needs_provenance) === JSON.stringify(['formula_ref', 'formula_version', 'bom_fill_weight_g']), `${r.status} ${JSON.stringify(b)}`);
   const link = await post(`/nfp/${bare.id}/send`, { sent_to: 'Matt' });
   t('the approval LINK is refused too — a link that could only be refused is not worth sending', link.status === 409 && !!(await J(link))?.needs_provenance);
   const partial = await J(await put(`/nfp/${bare.id}/provenance`, { formula_version: 'v2.0', bom_fill_weight_g: 33.32 }));
-  const r2 = await post(`/nfp/${bare.id}/decide`, { decision: 'approved' });
+  const r2 = await post(`/nfp/${bare.id}/decide`, { signature_password: 'QuinnQA2026!!', decision: 'approved' });
   t('with formula_ref alone still missing, still refused — and only that one is named',
     r2.status === 409 && JSON.stringify((await J(r2)).needs_provenance) === '["formula_ref"]', JSON.stringify(partial?.provenance));
   const bad = await put(`/nfp/${bare.id}/provenance`, { bom_fill_weight_g: 'heavy' });
@@ -87,13 +87,13 @@ console.log('\n── Part 1 · (5) 33.32 g against a Catalogue 34.86 g warns an
   }));
   t('the card shows the gap before anybody presses Approve', saved?.fill_check_live?.status === 'mismatch' && saved.fill_check_live.diff_pct === 4.42,
     JSON.stringify(saved?.fill_check_live));
-  const r = await post(`/nfp/${bare.id}/decide`, { decision: 'approved' });
+  const r = await post(`/nfp/${bare.id}/decide`, { signature_password: 'QuinnQA2026!!', decision: 'approved' });
   const b = await J(r);
   t('APPROVAL WARNS: 409, needs_fill_ack, both numbers named', r.status === 409 && b.needs_fill_ack === true
     && b.fill_check.bom === 33.32 && b.fill_check.catalogue === 34.86 && /33\.32 g.*34\.86 g/.test(b.error), `${r.status} ${JSON.stringify(b).slice(0, 220)}`);
   t('…and a %DV tick does not wave it through — it is its own acknowledgment',
-    (await post(`/nfp/${bare.id}/decide`, { decision: 'approved', dv_ack: true })).status === 409);
-  const ok = await post(`/nfp/${bare.id}/decide`, { decision: 'approved', fill_ack: true, approved_by: 'Maria Servin' });
+    (await post(`/nfp/${bare.id}/decide`, { signature_password: 'QuinnQA2026!!', decision: 'approved', dv_ack: true })).status === 409);
+  const ok = await post(`/nfp/${bare.id}/decide`, { signature_password: 'QuinnQA2026!!', decision: 'approved', fill_ack: true, approved_by: 'Maria Servin' });
   t('with the acknowledgment it approves', ok.ok, `HTTP ${ok.status} ${JSON.stringify(await J(ok)).slice(0, 160)}`);
   const row = db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(bare.id);
   const ap = JSON.parse(row.approved_provenance || 'null');
@@ -153,7 +153,7 @@ console.log('\n── Part 2 · (2) a SKU missing only hex_spot_colors reports e
   const v = await filePanel(pouch.sku, 'V3', { formula_ref: 'F-00100', formula_version: 'v1', bom_fill_weight_g: 907, source_system: 'Genesis R&D' });
   await put(`/nfp/${v.id}/panel`, { panel: { ...PANEL, serving_size_g: 30, servings_per_container: 30, net_weight_g: 907 },
     front_callouts: { protein_g: 24, calories: 130, added_sugar_g: null } });
-  const ap = await post(`/nfp/${v.id}/decide`, { decision: 'approved' });
+  const ap = await post(`/nfp/${v.id}/decide`, { signature_password: 'QuinnQA2026!!', decision: 'approved' });
   t('its panel approves cleanly (provenance, fill weight and %DV all in order)', ap.ok, JSON.stringify(await J(ap)).slice(0, 200));
   db.prepare(`INSERT INTO artwork_versions (id, sku, component, version, status, source, proof_job_id, nfp_version, panel_rev)
     VALUES ('pv-art', ?, 'primary', 1, 'print_ready', 'proofing', 'job-777', 'V3', 1)`).run(pouch.sku);

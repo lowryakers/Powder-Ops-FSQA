@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApiGet, apiFetch, apiUpload } from '../../hooks/useApi';
+import { withSignature } from '../../lib/signature';
 import ProductFileImport from './ProductFileImport.jsx';
 import { computeDv, checkDailyValues } from '../../../shared/nutrition-dv.js';
 import { provenancePhrase, fillCheckSentence, PROVENANCE_LABEL } from '../../../shared/panel-provenance.js';
@@ -756,15 +757,16 @@ function VersionCard({ v, canEdit, onChanged, storage = true }) {
 
   const submitDecision = () => act('decide', async () => {
     try {
-      const r = await apiFetch(`/nfp/${v.id}/decide`, {
+      const r = await withSignature((extra) => apiFetch(`/nfp/${v.id}/decide`, {
         method: 'POST',
-        body: { decision: deciding, approved_by: by, comments, dv_ack: dvAck, fill_ack: fillAck },
-      });
+        body: { decision: deciding, approved_by: by, comments, dv_ack: dvAck, fill_ack: fillAck, ...extra },
+      }), { title: deciding === 'approved' ? 'Approve this nutrition panel' : 'Reject this nutrition panel', detail: `${v.sku} ${v.version}` });
       setStranded(r.stranded_artwork || []);
       setDeciding(null); setBy(''); setComments(''); setDvBlock([]); setDvAck(false);
       setFillBlock(null); setFillAck(false);
       onChanged();
     } catch (e) {
+      if (e?.cancelled) return;
       // The server refused because the panel disagrees with its own
       // arithmetic. Show WHAT it found rather than the sentence alone — a
       // refusal you cannot act on reads as the app being awkward.

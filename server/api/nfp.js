@@ -46,6 +46,7 @@ import {
 import {
   provenanceOf, provenanceMissing, fillWeightCheck, fillCheckSentence, provenanceStale, PROVENANCE_LABEL,
 } from '../../shared/panel-provenance.js';
+import { gateSignature, signatureEvidence } from '../signature.js';
 
 const router = Router();
 
@@ -608,6 +609,9 @@ router.post('/review-queue/approve', rejectTokenAuth, (req, res) => {
   const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [];
   if (!ids.length) return res.status(400).json({ error: 'Send the ids of the panels to approve.' });
   const by = (req.body?.approved_by || '').trim() || req.user.name;
+  // A batch is ONE act, signed once, before the loop — a refusal halfway would
+  // leave some panels approved and nothing saying which (the QA Review rule).
+  if (!gateSignature(req, res, { action: 'nfp_bulk_approve' })) return;
   const approved = [], skipped = [];
   for (const id of ids) {
     const v = db.prepare('SELECT * FROM nfp_versions WHERE id = ?').get(id);
@@ -618,7 +622,7 @@ router.post('/review-queue/approve', rejectTokenAuth, (req, res) => {
     try {
       const stranded = decide(db, v, { decision: 'approved', by, comments: req.body?.comments || '', via: 'in_app', dvAck: false, fillAck: false });
       logAudit(req.user, 'nfp_approved', 'nfp', v.id,
-        { sku: v.sku, version: v.version, by, via: 'in_app', bulk: true, provenance: provenanceOf(v) },
+        { sku: v.sku, version: v.version, by, via: 'in_app', bulk: true, ...signatureEvidence(), provenance: provenanceOf(v) },
         null, null, `${v.sku} NFP ${v.version}`);
       approved.push({ id, sku: v.sku, version: v.version, stranded_artwork: stranded });
     } catch (err) {
@@ -1710,7 +1714,14 @@ const DV_REFUSAL = 'This panel declares a % Daily Value that does not match its 
  * explicit acknowledgement gets through. What is impossible is approving a
  * defective panel without having been shown the defect.
  */
-function decide(db, v, { decision, by, comments, via, dvAck, fillAck }) {
+// Thrown when the signature gate has already answered the request (move 01).
+class SignatureRefused extends Error {}
+
+// `gate`, when given, runs AFTER every refusal below and before the write — so a
+// person is never asked for a password on an approval that would be refused
+// anyway. The in-app door passes it; the signed link (an approver with no
+// account, typing their own name) has no password to ask for and passes none.
+function decide(db, v, { decision, by, comments, via, dvAck, fillAck, gate }) {
   const now = new Date().toISOString();
   const approving = decision === 'approved';
   const provenance = provenanceOf(v);
@@ -1738,6 +1749,7 @@ function decide(db, v, { decision, by, comments, via, dvAck, fillAck }) {
   if ((warnings.length && !dvAck) || fillPending) {
     throw new DvUnacknowledged(warnings.length && !dvAck ? warnings : [], fill);
   }
+  if (gate && !gate()) throw new SignatureRefused();
   db.transaction(() => {
     if (approving) {
       // WHAT WAS APPROVED IS FROZEN WITH THE APPROVAL (D-128): the formula, its
@@ -1809,15 +1821,17 @@ router.post('/:id/decide', rejectTokenAuth, async (req, res) => {
   let stranded;
   try {
     stranded = decide(db, v, { decision, by, comments, via: 'in_app',
-      dvAck: req.body?.dv_ack === true, fillAck: req.body?.fill_ack === true });
+      dvAck: req.body?.dv_ack === true, fillAck: req.body?.fill_ack === true,
+      gate: () => gateSignature(req, res, { action: `nfp_${decision}` }) });
   } catch (err) {
+    if (err instanceof SignatureRefused) return;   // the gate already answered
     const body = refusalBody(err);
     if (body) return res.status(409).json(body);
     throw err;
   }
   const acked = req.body?.dv_ack === true;
   logAudit(req.user, decision === 'approved' ? 'nfp_approved' : 'nfp_rejected', 'nfp', v.id,
-    { sku: v.sku, version: v.version, by, via: 'in_app', dv_acknowledged: acked || undefined,
+    { sku: v.sku, version: v.version, by, via: 'in_app', ...signatureEvidence(), dv_acknowledged: acked || undefined,
       fill_acknowledged: req.body?.fill_ack === true || undefined,
       provenance: decision === 'approved' ? provenanceOf(v) : undefined },
     null, null, `${v.sku} NFP ${v.version}`);
