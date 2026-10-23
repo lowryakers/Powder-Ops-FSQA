@@ -3934,16 +3934,24 @@ Wired into Supply Orders, Time Tracking and both finance ledgers; reusable anywh
 
 ## The record interface: file, sign, revoke, retrieve, describe (D-207, move 02)
 `server/record-interface.js` (`RECORD_TYPES`, `retrieveRecords`, `canReadType`) and `server/api/records.js`
-(`GET /api/records`, `/types`, `/:type/:id`). Two types are adopted: sanitation and scale.
-- **An adapter calls the module's own function and never writes a column itself.** QA Review signs sanitation
-  and scale through `recordType(...).sign`.
+(`GET /api/records`, `/types`, `/:type/:id`). Three types are adopted: sanitation, scale and `qms` (D-210).
+- **An adapter calls the module's own function and never writes a column itself.** QA Review signs sanitation,
+  scale and the three sign-out logs through `recordType(...).sign`.
 - **A new type is one entry implementing all five, plus `get` and `canRead`.** `verify:recordinterface` refuses
   an entry missing any of them.
 - `sign` assumes the route already ran `gateSignature`.
 - Reads are per type, by module (sanitation group → Sanitation, QA group → QA Inspections, scale → Calibration).
   A record the caller may not read is a 404.
 - A scale verification can be revoked now (`DELETE /scale-verification/:id/verify`, signer or admin).
-- `verify:recordinterface` (28).
+- **`qms` is ONE type for every QMS form** (`qms_records.record_type`), narrowed by `?qms_type=`. Filing is
+  `createQmsRecord`; revoking is `revokeQmsApproval` (both extracted from `api/qms.js`, so the routes call them too).
+  - `sign` / `revoke` take `opts.role`. A form with one approval needs none; with several, the interface refuses
+    to guess (400).
+  - `opts.record_type` pins the form: a queue for one form never signs another form's record (404).
+  - The described row carries `signatures` (role, label, name, time) and `approvals_pending`; `signed_by` is the
+    latest signature.
+  - A `place` or `equipment` filter matches no QMS record (there is no such column), never all of them.
+- `verify:recordinterface` (46).
 
 ## Five more acts sign with the password (D-206, move 01)
 - Gated now: the internal audit sign-off, approving meeting minutes, authorizing a mock recall, signing a COA,

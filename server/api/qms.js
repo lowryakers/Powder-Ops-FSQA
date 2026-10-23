@@ -964,39 +964,52 @@ export function syncFlavorOrganoleptic(db, cfg, rec, user) {
 }
 
 // ── create ───────────────────────────────────────────────────────────────────
-router.post('/:type', (req, res) => {
-  const cfg = requireType(req, res); if (!cfg) return;
-  const db = getDb();
+/**
+ * File one QMS record. The route and the record interface (D-207) both call
+ * this, so a record filed through either is the same record with the same
+ * side effects (the organoleptic disposal, the flavour → organoleptic copy, the
+ * knife master, the QA tasting notice). Permission is the caller's: the route
+ * runs `requireType`; the interface checks the module itself.
+ * Returns { record } or { error, status }.
+ */
+export function createQmsRecord(db, cfg, user, body = {}) {
   const id = uuid();
-  const number = (req.body.record_number && String(req.body.record_number).trim()) || nextNumber(db, cfg);
-  const data = pickData(cfg, req.body);
+  const number = (body.record_number && String(body.record_number).trim()) || nextNumber(db, cfg);
+  const data = pickData(cfg, body);
   if (cfg.key === 'organoleptic' && formIsV2(cfg.fields)) {
-    const r = applySensoryFiling(db, { productName: data.product, data, body: req.body, user: req.user, recordId: id });
-    if (r.error) return res.status(400).json({ error: r.error });
+    const r = applySensoryFiling(db, { productName: data.product, data, body, user, recordId: id });
+    if (r.error) return { error: r.error, status: 400 };
   }
   db.prepare(`INSERT INTO qms_records (id, record_type, record_number, record_date, status, data, paper_record, document_url, capa_id, notes, created_by)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-    id, cfg.key, number, req.body.record_date || null, req.body.status || cfg.defaultStatus || null,
-    JSON.stringify(data), req.body.paper_record ? 1 : 0, req.body.document_url || null,
-    req.body.capa_id || null, req.body.notes || null, req.user.name);
-  logAudit(req.user, 'qms_created', cfg.key, id, { record_number: number });
+    id, cfg.key, number, body.record_date || null, body.status || cfg.defaultStatus || null,
+    JSON.stringify(data), body.paper_record ? 1 : 0, body.document_url || null,
+    body.capa_id || null, body.notes || null, user.name);
+  logAudit(user, 'qms_created', cfg.key, id, { record_number: number });
   const created = flatten(db.prepare('SELECT * FROM qms_records WHERE id = ?').get(id));
-  try { syncOrganolepticDisposal(db, cfg, created, req.user); } catch (e) { console.error('[organoleptic→disposal]', e.message); }
-  try { syncFlavorOrganoleptic(db, cfg, created, req.user); } catch (e) { console.error('[flavor→organoleptic]', e.message); }
+  try { syncOrganolepticDisposal(db, cfg, created, user); } catch (e) { console.error('[organoleptic→disposal]', e.message); }
+  try { syncFlavorOrganoleptic(db, cfg, created, user); } catch (e) { console.error('[flavor→organoleptic]', e.message); }
   try { syncKnifeMaster(db, cfg, created); } catch (e) { console.error('[knife→master]', e.message); }
   // A new flavour approval is a batch waiting to be tasted. Anyone can file it;
   // QA is told, because until they score it the approval cannot be sent and
   // nothing on anyone else's screen would say why. Fire-and-forget — the record
   // is written and a comms outage must not fail it.
   if (cfg.key === 'flavor_approval' && created.status === 'pending' && !sensoryComplete(created)) {
-    notifySensoryNeeded(db, created, req.user).catch(e => console.error('[flavor→sensory notify]', e.message));
+    notifySensoryNeeded(db, created, user).catch(e => console.error('[flavor→sensory notify]', e.message));
   }
   // Re-read: the sync hooks can write back to this record (the flavor approval
   // gets its organoleptic_record_id), and the caller should get the row as it
   // now stands rather than as it was a moment before.
   const fresh = flatten(db.prepare('SELECT * FROM qms_records WHERE id = ?').get(id));
   try { fresh.possible_duplicate = findPossibleDuplicate(db, cfg, fresh); } catch { /* advisory only */ }
-  res.status(201).json(fresh);
+  return { record: fresh };
+}
+
+router.post('/:type', (req, res) => {
+  const cfg = requireType(req, res); if (!cfg) return;
+  const r = createQmsRecord(getDb(), cfg, req.user, req.body);
+  if (r.error) return res.status(r.status || 400).json({ error: r.error });
+  res.status(201).json(r.record);
 });
 
 // Duplicate watcher: warn (never block) when a just-created record shares two
@@ -1339,22 +1352,31 @@ router.post('/:type/bulk-approve', (req, res) => {
   res.json({ signed, skipped });
 });
 
+/**
+ * Take back one approval signature: the original signer, or an admin. The
+ * route and the record interface both call this — one writer.
+ * Returns { ok } or { error, status }.
+ */
+export function revokeQmsApproval(db, cfg, id, user, roleKey) {
+  const row = db.prepare('SELECT * FROM qms_records WHERE id = ? AND record_type = ?').get(id, cfg.key);
+  if (!row) return { error: 'Not found', status: 404 };
+  const approvals = parseJson(row.approvals, {});
+  const sig = approvals[roleKey];
+  if (!sig) return { error: 'Not signed', status: 404 };
+  if (user.role !== 'admin' && sig.user_id !== user.id) return { error: 'Only an admin or the original signer can revoke.', status: 403 };
+  delete approvals[roleKey];
+  db.prepare("UPDATE qms_records SET approvals=?, updated_at=datetime('now') WHERE id=?").run(JSON.stringify(approvals), id);
+  logAudit(user, `qms_unsigned_${roleKey}`, cfg.key, id, { record_number: row.record_number });
+  return { ok: true };
+}
+
 router.delete('/:type/:id/approve/:role', (req, res) => {
   const cfg = requireType(req, res); if (!cfg) return;
   const db = getDb();
-  const row = db.prepare('SELECT * FROM qms_records WHERE id = ? AND record_type = ?').get(req.params.id, cfg.key);
-  if (!row) return res.status(404).json({ error: 'Not found' });
-  const approvals = parseJson(row.approvals, {});
-  const sig = approvals[req.params.role];
-  if (!sig) return res.status(404).json({ error: 'Not signed' });
-  if (req.user.role !== 'admin' && sig.user_id !== req.user.id) return res.status(403).json({ error: 'Only an admin or the original signer can revoke.' });
-  delete approvals[req.params.role];
-  db.prepare("UPDATE qms_records SET approvals=?, updated_at=datetime('now') WHERE id=?").run(JSON.stringify(approvals), req.params.id);
-  logAudit(req.user, `qms_unsigned_${req.params.role}`, cfg.key, req.params.id, { record_number: row.record_number });
-  {
-    const r = db.prepare('SELECT * FROM qms_records WHERE id = ?').get(req.params.id);
-    res.json(withPermissions(flatten(r), r, req.user));
-  }
+  const out = revokeQmsApproval(db, cfg, req.params.id, req.user, req.params.role);
+  if (out.error) return res.status(out.status || 400).json({ error: out.error });
+  const r = db.prepare('SELECT * FROM qms_records WHERE id = ?').get(req.params.id);
+  res.json(withPermissions(flatten(r), r, req.user));
 });
 
 // ── delete (single) ──────────────────────────────────────────────────────────
