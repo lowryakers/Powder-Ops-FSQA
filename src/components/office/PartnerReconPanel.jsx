@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import FrozenScroll from '../common/FrozenScroll';
 import { openFile } from '../../lib/openFile';
+import { formatDateTime } from '../../lib/datetime';
 
 // X − Y = Z.
 //
@@ -1174,6 +1175,56 @@ function SettledTwins({ rows, onVoid, busy }) {
   );
 }
 
+/**
+ * What the partner raised on their link — "This doesn't look right" on a
+ * document or a whole month end. Shown above the tabs while anything is open,
+ * because the office has to answer it wherever they happen to be looking. A
+ * raise on an OPEN document has already taken it out of the balance (it reads
+ * disputed); one on a settled document or a month changes no money.
+ */
+function PartnerRaised({ pid, canSettle, isAdmin }) {
+  const { data: rows, refresh } = useApiGet(`/partners/${pid}/reviews`, [pid]);
+  const [busy, setBusy] = useState(false);
+  const open = (rows || []).filter(r => !r.resolved_at);
+  if (!open.length) return null;
+  const act = async (fn) => { setBusy(true); try { await fn(); refresh(); } catch (e) { window.alert(e.message); } finally { setBusy(false); } };
+  return (
+    <div className="rounded-xl border border-amber-300 bg-amber-50 p-3" data-partner-raised>
+      <p className="text-sm font-semibold text-amber-900">
+        {open.length} raised by the partner on their link
+      </p>
+      <ul className="mt-2 space-y-1">
+        {open.map(r => (
+          <li key={r.id} data-partner-raised-row={r.id} className="text-xs text-amber-950 flex items-start justify-between gap-2 flex-wrap bg-white/70 rounded px-2 py-1">
+            <span className="min-w-0">
+              <span className="font-medium">
+                {r.doc_number ? r.doc_number : r.settlement_period ? `Settlement ${r.settlement_period}` : `${r.period_end} close`}
+              </span>
+              {r.document_id && <span className="text-amber-800"> ({r.doc_status === 'disputed' ? 'disputed — out of the balance' : r.doc_status})</span>}
+              {' '}— &ldquo;{r.note}&rdquo; · {r.raised_by} · {formatDateTime(r.created_at)}
+            </span>
+            <span className="flex items-center gap-1.5">
+              {canSettle && (
+                <button type="button" disabled={busy} data-partner-raised-answer onClick={() => {
+                  const resolution = window.prompt('What did you find? The partner reads this answer on their link.');
+                  if (resolution?.trim()) act(() => apiPost(`/partners/reviews/${r.id}/resolve`, { resolution }));
+                }} className="px-2 py-0.5 rounded border border-amber-400 text-amber-900 hover:bg-amber-100 disabled:opacity-50">Answer</button>
+              )}
+              {isAdmin && (
+                <button type="button" disabled={busy} data-partner-raised-delete onClick={() => {
+                  if (window.confirm('Delete this entry? Use it for a test or a mistake. A disputed document stays disputed until it is resolved as final.')) {
+                    act(() => apiDelete(`/partners/reviews/${r.id}`));
+                  }
+                }} className="px-2 py-0.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-100 disabled:opacity-50">Delete</button>
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export default function PartnerReconPanel({ user }) {
   const { data: partners } = useApiGet('/partners');
   const partner = (partners || [])[0] || null;
@@ -1340,6 +1391,8 @@ export default function PartnerReconPanel({ user }) {
           </button>
         </div>
       </div>
+
+      <PartnerRaised pid={partner.id} canSettle={canSettle} isAdmin={user?.role === 'admin'} />
 
       <ModuleTabs value={view} onChange={setView} tabs={[
         { id: 'balance', label: 'The balance', icon: Scale },
@@ -1550,7 +1603,7 @@ export default function PartnerReconPanel({ user }) {
                             { label: 'Description', value: d.description },
                             { label: 'Added by', value: d.created_by },
                             { label: 'Approved final by', value: d.finalized_by },
-                            { label: 'Dispute', value: d.disputed_reason ? `${d.disputed_reason} — ${d.disputed_by}` : null },
+                            { label: 'Dispute', value: d.disputed_reason ? `${d.disputed_reason} — ${d.disputed_by}${d.disputed_at ? `, ${formatDateTime(d.disputed_at)}` : ''}` : null },
                           ]} />
                           {canSettle && !d.settlement_id && d.status !== 'void' && (
                             <div className="mt-2"><DocDates d={d} onDone={reloadAll} /></div>

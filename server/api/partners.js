@@ -865,8 +865,55 @@ router.post('/documents/:docId/finalize', (req, res) => {
       finalized_by = ?, disputed_reason = NULL, disputed_at = NULL, disputed_by = NULL WHERE id = ?`)
     .run(req.user?.name || null, before.id);
   const after = db.prepare('SELECT * FROM partner_documents WHERE id = ?').get(before.id);
+  // A dispute the partner raised on this document is answered by resolving it,
+  // so their page stops reading "Powder Ops reviewing".
+  if (before.status === 'disputed') {
+    db.prepare(`UPDATE partner_reviews SET resolved_at = datetime('now'), resolved_by = ?, resolution = 'Confirmed as final'
+      WHERE document_id = ? AND resolved_at IS NULL`).run(req.user?.name || null, before.id);
+  }
   logAudit(req.user, 'update', 'partner_document', before.id, { finalized: true }, before, after, after.doc_number || after.id);
   res.json({ ...after, extracted_text: undefined });
+});
+
+/* ── What the partner raised on their link ────────────────────────────────── */
+
+// "This doesn't look right" from the partner page: against a document or a
+// whole month end. Open ones first; the office answers each with a note.
+router.get('/:id/reviews', (req, res) => {
+  const db = getDb();
+  res.json(db.prepare(`SELECT r.*, d.doc_number, d.direction, d.amount, d.status AS doc_status, s.period_end AS settlement_period
+    FROM partner_reviews r
+    LEFT JOIN partner_documents d ON d.id = r.document_id
+    LEFT JOIN partner_settlements s ON s.id = r.settlement_id
+    WHERE r.partner_id = ? ORDER BY (r.resolved_at IS NOT NULL), r.created_at DESC LIMIT 200`).all(req.params.id));
+});
+
+router.post('/reviews/:rid/resolve', (req, res) => {
+  if (!canSettle(req.user)) return res.status(403).json({ error: 'Only the office or an admin can answer what the partner raised.' });
+  const db = getDb();
+  const before = db.prepare('SELECT * FROM partner_reviews WHERE id = ?').get(req.params.rid);
+  if (!before) return res.status(404).json({ error: 'Not found' });
+  if (before.resolved_at) return res.status(400).json({ error: 'Already answered.' });
+  const resolution = clean(req.body?.resolution, 1000);
+  if (!resolution || resolution.length < 3) return res.status(400).json({ error: 'Say what was found — the partner reads this answer.' });
+  db.prepare(`UPDATE partner_reviews SET resolved_at = datetime('now'), resolved_by = ?, resolution = ? WHERE id = ?`)
+    .run(req.user?.name || null, resolution, before.id);
+  const after = db.prepare('SELECT * FROM partner_reviews WHERE id = ?').get(before.id);
+  logAudit(req.user, 'update', 'partner_review', before.id, { resolution }, before, after, before.note.slice(0, 60));
+  res.json(after);
+});
+
+// Admin only — for a test entry or one raised by mistake. It removes the
+// question, not any money: a dispute flag on a document is cleared by
+// "Resolve as final", never by this.
+router.delete('/reviews/:rid', (req, res) => {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Only an admin can delete what the partner raised.' });
+  const db = getDb();
+  const before = db.prepare('SELECT * FROM partner_reviews WHERE id = ?').get(req.params.rid);
+  if (!before) return res.status(404).json({ error: 'Not found' });
+  db.prepare('DELETE FROM partner_reviews WHERE id = ?').run(before.id);
+  logAudit(req.user, 'delete', 'partner_review', before.id, null, before, null, before.note.slice(0, 60));
+  res.json({ ok: true });
 });
 
 // A dispute EXCLUDES rather than blocks: one disagreement must not stop the

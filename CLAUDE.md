@@ -5906,6 +5906,20 @@ Verified end to end on a fresh DB: 35 assertions covering the arithmetic, Net-30
 - The reminders and month-end DM still read `due`. Settle stays person-only (approve class).
 - `verify:partnerrecon` (83).
 
+### The partner page leads with the latest closed month end (D-209)
+`lastClosedMonthEnd` / `openByCloseMonth` / `settleReference` / `monthName` in `server/partner-recon.js` (PURE),
+`closeView` / `settlementView` / `raiseReview` in `server/api/partner-portal.js`, `partner_reviews`, `PartnerRaised` on
+Partner Rec.
+- **The headline is the `due` reconcile at the last month end on or before today, with the credit.** It reads
+  unpaid, paid or nothing due. **Never put a net of everything open on the partner page**, and never a basis toggle.
+  The office page keeps its bases.
+- Open months: subtotal per side, no net. The credit is an info line.
+- Pay info shows the amount and `<CODE>-SETTLE-YYYY-MM`, never bank details.
+- "This doesn't look right" writes a `partner_reviews` row. On an open final document it also disputes it.
+  The office answers; deleting is admin-only.
+- Statement PDF per closed month. File buttons are `<a>` links to `/open` redirects.
+- `verify:partnerrecon` (118) pins today with `PARTNER_PORTAL_TODAY` (test only).
+
 ## Reimbursements (personal card spend) — Accounting tab #4
 `reimbursements` + `reimbursement_receipts` (`server/api/reimbursements.js`, `ReimbursementsPanel.jsx`),
 a tab in the **Accounting** hub. Today it is Marnee and Adam and a personal card; the loop is photograph the

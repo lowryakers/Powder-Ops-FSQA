@@ -2035,6 +2035,28 @@ function initSchema() {
       FOREIGN KEY (partner_id) REFERENCES partner_accounts(id)
     );
 
+    -- "This doesn't look right", raised by the partner on their link — against
+    -- one document (settled or not) or a whole month end. A row is the record
+    -- that they asked and when; the office answers it (resolved_*). On an
+    -- UNSETTLED final document the same act also marks it disputed, which takes
+    -- it out of the number until it is sorted out. On a settled document or a
+    -- month it changes no money: a settlement is immutable.
+    CREATE TABLE IF NOT EXISTS partner_reviews (
+      id TEXT PRIMARY KEY,
+      partner_id TEXT NOT NULL,
+      document_id TEXT,
+      settlement_id TEXT,
+      period_end TEXT,
+      note TEXT NOT NULL,
+      raised_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      resolved_at TEXT,
+      resolved_by TEXT,
+      resolution TEXT,
+      FOREIGN KEY (partner_id) REFERENCES partner_accounts(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_partner_reviews_partner ON partner_reviews(partner_id, resolved_at);
+
     -- Somebody paid for something out of their own pocket. Right now that is
     -- Marnee and Adam and a personal card, and the whole loop is: photograph
     -- the receipt, say what it was, and get it back in payroll.

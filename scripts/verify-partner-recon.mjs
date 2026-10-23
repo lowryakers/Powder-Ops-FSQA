@@ -214,12 +214,86 @@ for (const [n, dir, amt, cat, issued] of [
 db.prepare("UPDATE partner_documents SET category = 'materials' WHERE id = 'pr-i136'").run();
 sep.I136 = 'pr-i136';
 t('the September documents are filed and final', Object.values(sep).every(Boolean));
+
+console.log('\n── the partner page: the latest closed month end (today pinned to 2026-10-23) ──');
+let pp = (await json('GET', `/partner-portal/${ptok}`)).body;
+t('the headline is the September close, as of 2026-09-30', pp?.close?.period_end === '2026-09-30' && pp.close.label === 'September', JSON.stringify(pp?.close && { p: pp.close.period_end, l: pp.close.label }));
+t('…M4 owes Powder Ops 5,379.17, unpaid', pp.close.owed_to === 'powder-ops' && pp.close.amount === 5379.17 && pp.close.status === 'unpaid', JSON.stringify({ o: pp.close.owed_to, a: pp.close.amount, s: pp.close.status }));
+t('…on I128 alone (issued 8/25, due 9/24)', pp.close.documents.map(d => d.doc_number).join() === 'I128' && pp.close.documents[0].side === 'you_owe');
+t('…with the reference to pay against', pp.close.reference === 'A1-SETTLE-2026-09');
+t('47,712.63 appears nowhere on the link', !JSON.stringify(pp).includes('47712.63'));
+t('the link carries no basis and no as-at figure', !('basis' in pp) && !('as_of' in pp) && !('net_amount' in pp) && !('amount_due' in pp));
+const oct = pp.open.find(g => g.period_end === '2026-10-31');
+const octNums = (oct?.documents || []).map(d => d.doc_number).sort();
+t('open, not yet due: I131 I132 I135–I140, 1589, 1590 under the October close',
+  ['1589', '1590', 'I131', 'I132', 'I135', 'I136', 'I137', 'I138', 'I139', 'I140'].every(n => octNums.includes(n)) && pp.open.length === 1, JSON.stringify(pp.open.map(g => [g.period_end, g.documents.map(d => d.doc_number)])));
+t('…with a subtotal per side and no net for the open month', oct.you_are_owed === 66107.34 && oct.you_owe > 0 && !('net_amount' in oct) && !('owed_to' in oct), JSON.stringify({ y: oct.you_owe, p: oct.you_are_owed }));
+t('the credit is an info line: 173,122.51 available', pp.credit_available?.available === 173122.51);
+t('the August settlement is still on the link with its six', pp.settlements.find(s => s.period_end === '2026-08-31')?.documents.length === 6);
+
+let res = await fetch(`${BASE}/api/partner-portal/${ptok}/statements/close.pdf`);
+const closePdf = Buffer.from(await res.arrayBuffer());
+t('the September statement downloads as a PDF', res.status === 200 && /application\/pdf/.test(res.headers.get('content-type') || '') && closePdf.subarray(0, 4).toString() === '%PDF');
+const { execFileSync } = await import('child_process');
+const { writeFileSync, mkdtempSync } = await import('fs');
+const { tmpdir } = await import('os');
+const pdfText = (buf) => { const f = `${mkdtempSync(`${tmpdir()}/stmt-`)}/s.pdf`; writeFileSync(f, buf); return execFileSync('pdftotext', ['-layout', f, '-']).toString(); };
+const ct = pdfText(closePdf);
+t('…listing I128, the 5,379.17 and the reference A1-SETTLE-2026-09', /I128/.test(ct) && /\$5,379\.17/.test(ct) && /Reference: A1-SETTLE-2026-09/.test(ct) && /Unpaid/.test(ct), ct.slice(0, 300));
+res = await fetch(`${BASE}/api/partner-portal/${ptok}/statements/${sid}.pdf`);
+const augText = pdfText(Buffer.from(await res.arrayBuffer()));
+t('the August statement lists its six and the reference A1-SETTLE-2026-08', res.status === 200 && ['I123', 'I124', 'I125', 'I126', '1537', '1543'].every(n => augText.includes(n)) && /A1-SETTLE-2026-08/.test(augText) && /Paid/.test(augText));
+res = await fetch(`${BASE}/api/partner-portal/${ptok}/statements/not-a-settlement.pdf`);
+t('…another id is a 404', res.status === 404);
+
+const fdI128 = new FormData(); fdI128.append('files', pdf(), 'I128.pdf');
+await fetch(`${BASE}/api/partners/documents/${sep.I128}/file`, { method: 'POST', headers: { Authorization: `Bearer ${office}` }, body: fdI128 });
+res = await fetch(`${BASE}/api/partner-portal/${ptok}/documents/${sep.I128}/open`, { redirect: 'manual' });
+t('a PDF link is a real link: /open redirects to the file', res.status === 302 && !!res.headers.get('location'), String(res.status));
+res = await fetch(`${BASE}/api/partner-portal/${ptok}/documents/pr-other-doc/open`, { redirect: 'manual' });
+t('…and stays scoped to the partner (another account\'s document is 404)', res.status === 404);
+
+console.log('\n── "This doesn\'t look right" ──');
+r = await json('POST', `/partner-portal/${ptok}/reviews`, { document_id: ids.I123, note: 'Test: I123 amount looks off' });
+const rvSettled = r.body?.id;
+t('raised on a SETTLED document: recorded, no money moves', r.status === 201 && r.body.disputed === false
+  && db.prepare('SELECT settlement_id, status FROM partner_documents WHERE id = ?').get(ids.I123).settlement_id === sid);
+let internal = (await json('GET', `/partners/${PID}/reviews`, null, office)).body;
+const iv = internal.find(x => x.id === rvSettled);
+t('…the office sees it: the document, the note, the time', iv?.doc_number === 'I123' && iv.note === 'Test: I123 amount looks off' && !!iv.created_at && /portal/.test(iv.raised_by));
+pp = (await json('GET', `/partner-portal/${ptok}`)).body;
+t('…and the link reads it as open ("Powder Ops reviewing")', pp.reviews.find(x => x.id === rvSettled)?.status === 'open' && !('resolved_by' in pp.reviews[0]) && !('raised_by' in pp.reviews[0]));
+r = await json('POST', `/partner-portal/${ptok}/reviews`, { period_end: '2026-09-30', note: 'Test: September close' });
+t('raised on a month end: recorded', r.status === 201);
+const rvMonth = r.body.id;
+r = await json('POST', `/partner-portal/${ptok}/reviews`, { note: 'about nothing' });
+t('…naming nothing is refused', r.status === 400);
+r = await json('POST', `/partner-portal/${ptok}/reviews`, { document_id: 'pr-other-doc', note: 'not mine' });
+t('…another account\'s document is 404', r.status === 404);
+r = await json('POST', `/partner-portal/${ptok}/reviews`, { document_id: sep.I132, note: 'Test: I132 was not ordered' });
+t('raised on an OPEN final document: it is disputed and leaves the number', r.status === 201 && r.body.disputed === true
+  && db.prepare('SELECT status FROM partner_documents WHERE id = ?').get(sep.I132).status === 'disputed');
+t('…and is listed as waiting on the link', (await json('GET', `/partner-portal/${ptok}`)).body.waiting.some(d => d.doc_number === 'I132'));
+await fin(sep.I132);
+t('"Resolve as final" answers it on the link', (await json('GET', `/partner-portal/${ptok}`)).body.reviews.find(x => x.document_id === sep.I132)?.status === 'answered');
+r = await json('POST', `/partners/reviews/${rvMonth}/resolve`, { resolution: 'Checked: September is I128 only.' }, office);
+t('the office answers the month entry', r.status === 200 && (await json('GET', `/partner-portal/${ptok}`)).body.reviews.find(x => x.id === rvMonth)?.resolution === 'Checked: September is I128 only.');
+r = await json('POST', `/partners/reviews/${rvSettled}/resolve`, { resolution: 'x' }, office);
+t('…an answer needs words', r.status === 400);
+r = await json('POST', `/partners/reviews/${rvSettled}/resolve`, { resolution: 'Checked fine' }, bot);
+t('…a token cannot answer (403)', r.status === 403);
+r = await json('DELETE', `/partners/reviews/${rvSettled}`, null, office);
+t('deleting a test entry is admin-only (403 for the office)', r.status === 403);
+r = await json('DELETE', `/partners/reviews/${rvSettled}`, null, admin);
+t('…an admin deletes it, and it is gone from both sides', r.status === 200
+  && !(await json('GET', `/partners/${PID}/reviews`, null, office)).body.some(x => x.id === rvSettled)
+  && !(await json('GET', `/partner-portal/${ptok}`)).body.reviews.some(x => x.id === rvSettled));
 let due = (await json('GET', `/partners/${PID}/reconcile?as_of=2026-09-30&basis=due`, null, office)).body;
 t('basis=due as at 9/30 is I128 only: M4 owes 5,379.17', due.credit?.net_amount === 5379.17 && due.basis === 'due', JSON.stringify({ n: due.credit?.net_amount, r: due.receivable_total }));
 t('…the rest read "not due"', due.documents.excluded.filter(d => d.exclusion === 'not_due').length >= 10);
 let iss = (await json('GET', `/partners/${PID}/reconcile?as_of=2026-09-30&basis=issued`, null, office)).body;
 t('basis=issued as at 9/30 includes 1589/1590: we owe M4 47,712.63', iss.credit?.net_amount === -47712.63 && iss.basis === 'issued', JSON.stringify({ n: iss.credit?.net_amount, r: iss.receivable_total, p: iss.payable_total }));
-t('…and the partner link reads the same number on the same basis', (await json('GET', `/partner-portal/${ptok}?basis=issued&as_of=2026-09-30`)).body?.amount_due === 47712.63);
+t('…and the partner link has no basis: ?basis=issued changes nothing', (await json('GET', `/partner-portal/${ptok}?basis=issued&as_of=2026-09-30`)).body?.close?.amount === 5379.17);
 const chosen = ['I128', 'I131', 'I132', 'I136', 'I137', 'I135', 'I138', 'I139', 'I140'].map(n => sep[n]);
 const pv = (await json('POST', `/partners/${PID}/settle/preview`, { as_of: '2026-09-30', document_ids: chosen }, office)).body;
 t('the preview of the nine: M4 owes 18,394.71, credit draws 116,038.56', pv.credit?.net_amount === 18394.71 && pv.credit?.drawn_this_period === 116038.56, JSON.stringify(pv.credit && { n: pv.credit.net_amount, d: pv.credit.drawn_this_period }));
@@ -276,6 +350,8 @@ await page.waitForSelector('[data-choose-docs]', { timeout: 8000 }).catch(() => 
 t('the Balance tab has "Choose documents" listing 1589 and 1590 to tick', (await page.locator('[data-choose-row="1589"]').count()) === 1 && (await page.locator('[data-choose-row="1590"]').count()) === 1);
 await page.waitForSelector('[data-choose-who]', { timeout: 8000 }).catch(() => {});
 t('…and the selected total shows before Mark PAID', /\$/.test(await page.locator('[data-choose-who]').innerText().catch(() => '')) && /Mark PAID — \$/.test(await page.locator('[data-choose-settle]').innerText().catch(() => '')));
+// A settled document cannot take a new file, so the fixture gives I123 one directly.
+db.prepare("UPDATE partner_documents SET storage_key = 'partners/test/I123.pdf', filename = 'I123.pdf' WHERE id = ?").run(ids.I123);
 const ppage = await browser.newPage({ viewport: { width: 390, height: 900 } });
 await ppage.goto(`${BASE}/partner/${ptok}`);
 await ppage.waitForSelector('[data-portal-settlement="2026-08-31"]', { timeout: 8000 }).catch(() => {});
@@ -284,6 +360,12 @@ t('the partner page says "Already settled 2026-08-31" and opens to six documents
   /Already settled 2026-08-31/.test(await ppage.locator('[data-portal-settlement="2026-08-31"]').innerText().catch(() => ''))
   && (await ppage.locator('[data-portal-settled-doc]').count()) === 6);
 t('…with "Covered by the credit" on I123 and I124', (await ppage.locator('[data-portal-how="covered_by_credit"]').count()) === 2);
+t('the partner page has no basis toggle', (await ppage.locator('[role="radiogroup"]').count()) === 0);
+t('…it leads with the September close', /September close \(as of 2026-09-30\)/i.test(await ppage.locator('[data-portal-close]').innerText().catch(() => '')));
+t('…the August PDF button is a real link to the file', (await ppage.locator('[data-portal-settlement="2026-08-31"] a[data-portal-file="I123"]').count()) === 1
+  && /\/documents\/[^/]+\/open$/.test(await ppage.locator('[data-portal-settlement="2026-08-31"] a[data-portal-file="I123"]').getAttribute('href').catch(() => '')));
+t('…the October close is listed under Open, not yet due', (await ppage.locator('[data-portal-open-month="2026-10-31"]').count()) === 1);
+t('…each closed month offers its statement', (await ppage.locator('[data-portal-statement]').count()) >= 2);
 const overflow = await ppage.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
 t('…no sideways scroll at 390px', !overflow);
 await browser.close();
