@@ -8200,3 +8200,48 @@ nothing is migrated.
   - the revoke and its refusals;
   - who can read what.
   Control: on the code before this, `/api/records` does not exist and the scale revoke is a 404.
+
+## D-208 — The onboarding encryption key can be rotated, by a one-time script that re-keys what is stored (23 Oct 2026)
+**Why.** `ONBOARDING_ENC_KEY` may have been exposed, and there was no way to rotate it. Changing the variable on
+its own would orphan every stored SSN, EIN and bank number. `decryptField()` answers null on any failure, so a
+wrong key reads exactly like an empty field: the reveal would show blanks and an ADP send would go out without
+the numbers, and nothing would say why.
+- **`scripts/rekey-onboarding.mjs` (`npm run rekey:onboarding`) re-encrypts the four columns** from
+  `ONBOARDING_ENC_KEY` to `ONBOARDING_ENC_KEY_NEW`. The columns are `onboarding_records.ssn_enc`, `ein_enc`,
+  `dd_routing_enc` and `dd_account_enc`; there are no other `*_enc` columns in the schema.
+  - It is a script on purpose, not a route: re-keying is an operator act done once, with the server's own
+    variables.
+  - The live key, `onboarding-crypto.js`, the reveal and the ADP payload are untouched.
+- **Its own helpers take the key as a parameter.** They copy the module's format and its reading of a key
+  string, because the module's `key()` reads one variable only. `check:rekey` asserts the two agree in both
+  directions.
+- **A value is tried under the new key first.** If it opens, it is already migrated and left alone. That makes
+  the script safe to run again after the swap: packets filed between the run and the swap are still under the
+  old key.
+- **A value that opens under neither key is reported by row id and column and never overwritten.** A decrypt
+  failure is never read as an empty field. When any value is like that the run exits 3.
+- **Each re-encrypted value is decrypted again in memory and must equal the old plaintext before it is
+  written.** Every write is one transaction, and each UPDATE names the old ciphertext, so a row the live server
+  changed mid-run refuses. Any failure rolls the whole run back.
+- **`--dry-run` is the default and opens the file read-only.** `--apply` first writes a consistent copy to
+  `<DB_PATH>.pre-rekey-<timestamp>` and prints the path. That copy holds old-key ciphertext and is deleted by
+  hand once the swap is verified.
+- **A run with nothing to migrate writes nothing** — no backup and no audit row. Otherwise one `audit_log` row
+  is written through `logAudit`, inside the same transaction, carrying counts only.
+- **Nothing secret is ever printed**: no plaintext, no ciphertext and no key, in errors too. Output is counts,
+  row ids and column names.
+- **Found while reading the code, reported here and not changed:**
+  - The module's header says decryption happens in exactly one place. There are two: the ADP payload and the
+    reveal. The reveal does not decrypt the EIN.
+  - A key that is not exactly 64 hex characters is read as its first 32 characters. A 64-hex key pasted with a
+    trailing newline or space is therefore silently a DIFFERENT key, and every stored value reads as blank.
+    The script refuses any new key that is not exactly 64 hex characters.
+  - The `db.js` comment still names three encrypted fields; the EIN was added later.
+- `check:rekey` (41, on a fixture database, in `npm run check`). It covers:
+  - the round trip;
+  - a second run writing nothing;
+  - a third-key value reported and left byte-identical;
+  - a forced verification failure rolling back two updates already made;
+  - null and empty columns untouched;
+  - a dry run leaving the file byte-identical;
+  - no plaintext, ciphertext or key in any captured output.
