@@ -2033,6 +2033,15 @@ that has to be fed to stay useful. Office nav group, module id `candidates`.
   v2 guide as far as it could be read; the first live send is the test, and ADP's refusal text is returned
   verbatim. Runbook artifact + `docs/adp-run-onboarding.md` describe the API Central route.
 
+## The onboarding encryption key is rotated by a script, never by changing the variable (D-208)
+`scripts/rekey-onboarding.mjs` (`npm run rekey:onboarding`) re-encrypts `ssn_enc`, `ein_enc`, `dd_routing_enc` and
+`dd_account_enc` from `ONBOARDING_ENC_KEY` to `ONBOARDING_ENC_KEY_NEW`. Dry run is the default; `--apply` backs up
+first. The steps are: dry run, apply, swap the variable, then run it again for packets filed in between.
+- **A decrypt failure is never an empty field.** A value under neither key is reported and left as stored (exit 3).
+- **A new key must be exactly 64 hex characters.** The app reads anything else as its first 32 characters, so a
+  pasted newline is a different key.
+- Nothing secret is printed. `check:rekey` (41).
+
 ## The link saves what is in the box; the office can fill in or correct a packet (D-155)
 A phone's address AutoFill can set a box with no input event, so the wizard showed "UT" and saved a blank.
 `onScreen()` in `OnboardingWelcomePage.jsx` reads every named field at save time and uses the box's value where
