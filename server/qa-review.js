@@ -39,7 +39,7 @@ import { signOffProductionEntry } from './api/production.js';
 // Sanitation and scale sign through the record interface (D-207) — the same
 // module functions, reached the one way every other caller reaches them.
 import { recordType } from './record-interface.js';
-import { signQmsApproval, BULK_APPROVE } from './api/qms.js';
+import { BULK_APPROVE } from './api/qms.js';
 import { recordClearance, canClearHygiene, clearanceNeedsLook } from './api/pm.js';
 import { getType } from './qms-config.js';
 import { hasExplicitEdit } from './module-access.js';
@@ -59,7 +59,8 @@ const LIMIT = 200;
 
 // The sign-out logs, driven off one shared definition. Each is a qms_record
 // type whose required QA approval is a counter-signature, so signing goes
-// through signQmsApproval — the same function the module's own button calls.
+// through the record interface to signQmsApproval — the same function the
+// module's own button calls.
 function signOutSource({ key, type, label, form, module, noun, plural }) {
   const cfg = () => getType(type);
   const routine = (flat) => BULK_APPROVE[type].routine(flat);
@@ -90,10 +91,12 @@ function signOutSource({ key, type, label, form, module, noun, plural }) {
         extra: flat.comments || flat.return_reason || null,
       })),
     canSign: (u) => isQaReviewer(u) || hasExplicitEdit(u, module),
+    // Through the record interface (D-207), which calls signQmsApproval — the
+    // function the module's own button calls. `record_type` pins the form, so
+    // this queue can never sign another form's record.
     sign: (db, user, id) => {
-      const c = cfg();
-      if (!c) return { error: 'Unknown record type', status: 400 };
-      const out = signQmsApproval(db, c, id, user, BULK_APPROVE[type].role, { batch: true });
+      if (!cfg()) return { error: 'Unknown record type', status: 400 };
+      const out = recordType('qms').sign(db, user, id, { role: BULK_APPROVE[type].role, batch: true, record_type: type });
       return out.error ? { error: out.error, status: out.status || 400 } : { ok: true };
     },
   };

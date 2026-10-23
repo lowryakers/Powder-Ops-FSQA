@@ -8287,3 +8287,33 @@ Later documents are open and not yet due.
   dispute on it, would touch production data, so it was not done. `verify:partnerrecon` (118, today pinned to
   2026-10-23 through `PARTNER_PORTAL_TODAY`, honoured only under `NODE_ENV=test`) builds the same ledger and
   asserts each item. The control (`main`'s portal router) stops at the first closed-month assertion.
+
+## D-210 — Every QMS form joins the record interface as one `qms` type (2026-10-23)
+
+Move 02 continued. After sanitation and scale (D-207), the QMS records are the next most-read records. They
+include deviations, non-conformances, on-hold, the three sign-out logs, DCRs, flavour approvals and
+organoleptic tests.
+
+- **One type, not one per form.** The forms already share one table (`qms_records`) and one set of write paths.
+  Ten entries would be ten copies of one adapter. `?qms_type=` narrows the list.
+- **The adapter calls the module's functions.**
+  - Filing calls `createQmsRecord`, extracted from `POST /qms/:type` with every side effect: the organoleptic
+    disposal, the flavour → organoleptic copy, the knife master and the QA tasting notice.
+  - Signing calls `signQmsApproval`.
+  - Revoking calls `revokeQmsApproval`, extracted from `DELETE /qms/:type/:id/approve/:role`.
+  - The routes now call the same functions, so there is one writer whichever door is used.
+- **A QMS record can carry several approvals, so the interface names the role.**
+  - A form with one approval needs no role.
+  - A form with several is refused with 400 rather than guessed (a deviation has three).
+  - Revoke works the same way against the signatures actually on the record.
+- **`opts.record_type` pins the form.** QA Review's sign-out queues now sign through the interface with
+  `batch: true` and their own `record_type`, so an id from another form is a 404. The routine-only rule still
+  applies, because `signQmsApproval` applies it.
+- **The described row** carries the form code, "Deviation D50 — product", who filed it, the record date, the
+  status, every signature with its role and time, and the approvals still pending.
+- **Reads go by each form's module.** Someone with Deviations but not Non-Conformance sees only deviations.
+- **No column for machine or place.** QMS records have neither, so a filter on either matches none of them.
+- `verify:recordinterface` 28 → 46. The QMS, QA Review and signature verifies were rerun and pass (11 verifies).
+- **Still on paper here:** the scheduled check records (`fileCheckRecord`: EMP, GMP walk, list reviews, annual
+  reviews) and the production entries. They are next. After them comes move 04, a retrieval screen on
+  `GET /api/records`.

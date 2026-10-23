@@ -16,12 +16,15 @@
 // THE PASSWORD IS THE CALLER'S. `sign` assumes the route in front of it has
 // already run gateSignature; the interface is a service, not a door.
 //
-// Adopted so far: sanitation records and scale verifications, the two most-read
-// records. A new type is one entry in RECORD_TYPES that implements all five; the
+// Adopted so far: sanitation records, scale verifications, and every QMS form
+// (deviations, non-conformances, on-hold, the sign-out logs, DCRs, flavour
+// approvals, organoleptic tests — one `qms` type, narrowed by `qms_type`). A new type is one entry in RECORD_TYPES that implements all five; the
 // shape check in verify:recordinterface refuses an entry that does not.
 import { createSanitationRecord, verifySanitationRecord, revokeSanitationVerification } from './api/sanitation.js';
 import { recordScaleVerification, verifyScaleCheck, revokeScaleVerification } from './api/scale-verification.js';
 import { getScaleForm } from './scale-forms.js';
+import { createQmsRecord, signQmsApproval, revokeQmsApproval } from './api/qms.js';
+import { QMS_TYPES, getType } from './qms-config.js';
 import { formLabel } from '../shared/form-registry.js';
 import { moduleLevel } from './module-access.js';
 
@@ -81,6 +84,55 @@ const describeScale = (r) => {
   };
 };
 
+// ── QMS records ─────────────────────────────────────────────────────────────
+// One table holds every QMS form (`qms_records.record_type`), and a record can
+// carry several approvals (`approvals` JSON, keyed by role). So the described
+// row names every signature, and `signed_by` is the latest of them.
+const parseJson = (raw, fb) => { try { return raw ? JSON.parse(raw) : fb; } catch { return fb; } };
+const qmsSignatures = (cfg, row) => {
+  const a = parseJson(row.approvals, {});
+  return (cfg?.approvals || []).filter(x => a[x.key]).map(x => ({
+    role: x.key, label: x.label, name: a[x.key].name, at: a[x.key].signed_at,
+  })).sort((p, q) => String(p.at).localeCompare(String(q.at)));
+};
+const qmsModuleIds = [...new Set(Object.values(QMS_TYPES).map(c => c.moduleId).filter(Boolean))];
+const qmsReadable = (user) => Object.values(QMS_TYPES).filter(c => moduleLevel(user, c.moduleId)).map(c => c.key);
+
+const describeQms = (r) => {
+  const cfg = getType(r.record_type);
+  const data = parseJson(r.data, {});
+  const sigs = qmsSignatures(cfg, r);
+  const last = sigs[sigs.length - 1] || null;
+  const what = cfg?.primaryField ? data[cfg.primaryField] : null;
+  return {
+    type: 'qms',
+    id: r.id,
+    form: cfg?.formCode || r.record_type,
+    title: `${cfg?.singular || r.record_type} ${r.record_number || ''}`.trim() + (what ? ` — ${what}` : ''),
+    place: null,
+    equipment_id: null,
+    performed_by: r.created_by,
+    performed_at: r.record_date || r.created_at,
+    result: r.status || null,
+    signed_by: last?.name || null,
+    signed_at: last?.at || null,
+    signatures: sigs,
+    approvals_pending: (cfg?.approvals || []).filter(x => !sigs.some(s => s.role === x.key)).map(x => x.key),
+    group: r.record_type,
+    link: { tab: cfg?.moduleId || null, id: r.id },
+  };
+};
+
+// Which role an act is about. A form with ONE approval needs no name; a form
+// with several must be told, or the interface would be guessing which
+// signature somebody meant.
+function qmsRole(cfg, row, role, { signing }) {
+  if (role) return role;
+  if (signing) return (cfg.approvals || []).length === 1 ? cfg.approvals[0].key : null;
+  const signed = Object.keys(parseJson(row.approvals, {}));
+  return signed.length === 1 ? signed[0] : null;
+}
+
 export const RECORD_TYPES = [
   {
     type: 'sanitation',
@@ -131,6 +183,66 @@ export const RECORD_TYPES = [
       return db.prepare(sql).all(...params, Math.min(Number(q.limit) || MAX_ROWS, MAX_ROWS));
     },
     describe: describeScale,
+  },
+  {
+    type: 'qms',
+    label: 'QMS records (deviations, non-conformances, on hold, sign-outs, DCRs, flavour and organoleptic)',
+    modules: qmsModuleIds,
+    // `input.record_type` names the form. Filing needs the module, the rule the
+    // route applies (anyone who can see a deviation may report one).
+    file(db, user, input = {}) {
+      const cfg = getType(input.record_type);
+      if (!cfg) return { error: 'Unknown QMS record type', status: 400 };
+      if (user?.role !== 'admin' && !moduleLevel(user, cfg.moduleId)) return { error: 'Not found', status: 404 };
+      return createQmsRecord(db, cfg, user, input);
+    },
+    // opts.role names the approval; opts.record_type, when given, must match —
+    // a queue working one form must never sign another form's record.
+    sign(db, user, id, opts = {}) {
+      const row = db.prepare('SELECT * FROM qms_records WHERE id = ?').get(id);
+      if (!row || (opts.record_type && row.record_type !== opts.record_type)) return { error: 'Not found', status: 404 };
+      const cfg = getType(row.record_type);
+      const role = qmsRole(cfg, row, opts.role, { signing: true });
+      if (!role) return { error: 'This form has more than one approval — say which one.', status: 400 };
+      return signQmsApproval(db, cfg, id, user, role, { batch: !!opts.batch });
+    },
+    revoke(db, user, id, opts = {}) {
+      const row = db.prepare('SELECT * FROM qms_records WHERE id = ?').get(id);
+      if (!row || (opts.record_type && row.record_type !== opts.record_type)) return { error: 'Not found', status: 404 };
+      const cfg = getType(row.record_type);
+      const role = qmsRole(cfg, row, opts.role, { signing: false });
+      if (!role) return { error: 'Say which signature to revoke.', status: 400 };
+      return revokeQmsApproval(db, cfg, id, user, role);
+    },
+    get: (db, id) => db.prepare('SELECT * FROM qms_records WHERE id = ?').get(id) || null,
+    canRead: (user, r) => !!moduleLevel(user, getType(r.record_type)?.moduleId),
+    retrieve(db, q = {}, user = null) {
+      // No QMS record carries a machine or a place column, so a filter on
+      // either matches none of them rather than all of them.
+      if (q.equipment || q.place) return [];
+      let types = user ? qmsReadable(user) : Object.keys(QMS_TYPES);
+      if (q.qms_type) {
+        const want = new Set(String(q.qms_type).split(','));
+        types = types.filter(k => want.has(k));
+      }
+      if (!types.length) return [];
+      const at = 'COALESCE(record_date, created_at)';
+      const where = [`record_type IN (${types.map(() => '?').join(',')})`];
+      const params = [...types];
+      const from = sqlDate(q.from); const to = sqlDate(q.to);
+      if (from) { where.push(`substr(${at}, 1, 10) >= ?`); params.push(from); }
+      if (to) { where.push(`substr(${at}, 1, 10) <= ?`); params.push(to); }
+      const signedAny = "EXISTS (SELECT 1 FROM json_each(COALESCE(approvals, '{}')))";
+      if (q.person) {
+        where.push(`(lower(created_by) = lower(?) OR EXISTS (SELECT 1 FROM json_each(COALESCE(approvals, '{}')) WHERE lower(json_extract(value, '$.name')) = lower(?)))`);
+        params.push(String(q.person).trim(), String(q.person).trim());
+      }
+      if (q.signed === 'yes') where.push(signedAny);
+      if (q.signed === 'no') where.push(`NOT ${signedAny}`);
+      const sql = `SELECT * FROM qms_records WHERE ${where.join(' AND ')} ORDER BY ${at} DESC LIMIT ?`;
+      return db.prepare(sql).all(...params, Math.min(Number(q.limit) || MAX_ROWS, MAX_ROWS));
+    },
+    describe: describeQms,
   },
 ];
 
