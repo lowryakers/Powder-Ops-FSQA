@@ -17,7 +17,7 @@ import { getDb, logAudit } from '../db.js';
 import { storageEnabled, putObject, presignGet, deleteObject } from '../storage.js';
 import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { extractInvoiceText } from '../invoice-text.js';
-import { reconcile, applyCredit, dueDateFor, endOfMonth, round2, signedAmount, normDocNumber, creditLedger } from '../partner-recon.js';
+import { reconcile, applyCredit, dueDateFor, endOfMonth, round2, signedAmount, normDocNumber, creditLedger, BASES } from '../partner-recon.js';
 import { parseInvoice, parseLineItems, summarizeLineItems } from '../invoice-parse.js';
 import { botDm, postMessageAs } from './comms.js';
 import { pushToUser } from '../push.js';
@@ -922,14 +922,49 @@ router.delete('/documents/:docId', (req, res) => {
 
 // Everything unsettled, run through the one arithmetic. `as_of` defaults to the
 // end of the current month because that is the agreed rhythm.
-function currentReconciliation(db, partnerId, asOf) {
+const RECON_COLUMNS = `id, direction, doc_type, doc_number, reference, description,
+      issued_date, terms_days, due_date, amount, status, disputed_reason, settlement_id, filename, category`;
+/** `due` unless the caller named a basis the reconcile knows — `selected` is the settle path's own. */
+const basisOf = (v) => (v === 'issued' ? 'issued' : 'due');
+
+function currentReconciliation(db, partnerId, asOf, basis = 'due') {
   // `category` is in this list because the credit reads it. An explicit column
   // list silently drops a new column, and the symptom is not an error — it is
   // every document arriving uncategorised and a credit that absorbs nothing.
-  const rows = db.prepare(`SELECT id, direction, doc_type, doc_number, reference, description,
-      issued_date, terms_days, due_date, amount, status, disputed_reason, settlement_id, filename, category
+  const rows = db.prepare(`SELECT ${RECON_COLUMNS}
     FROM partner_documents WHERE partner_id = ? AND settlement_id IS NULL AND status != 'void'`).all(partnerId);
-  return reconcile(rows, asOf);
+  return reconcile(rows, asOf, BASES.includes(basis) ? basis : 'due');
+}
+
+/**
+ * Exactly the documents a person ticked for a settlement, run through the SAME
+ * arithmetic (`reconcile` with basis `selected`, then the credit) — so the
+ * preview on screen and the settlement it writes cannot disagree.
+ *
+ * Every id must be this partner's and must be a final, unsettled, undisputed
+ * document. One that is not refuses the whole selection by name: settling the
+ * rest quietly would pay a number that is not the one somebody looked at.
+ */
+function selectedReconciliation(db, partnerId, ids, asOf) {
+  const list = [...new Set((Array.isArray(ids) ? ids : []).map(String).filter(Boolean))];
+  if (!list.length) return { error: 'Tick at least one document to settle.' };
+  if (list.length > 500) return { error: 'Too many documents in one settlement.' };
+  const rows = db.prepare(`SELECT ${RECON_COLUMNS} FROM partner_documents
+    WHERE partner_id = ? AND id IN (${list.map(() => '?').join(',')})`).all(partnerId, ...list);
+  const found = new Set(rows.map(r => r.id));
+  const missing = list.filter(id => !found.has(id));
+  if (missing.length) return { error: `${missing.length} of the chosen documents are not on this ledger.`, refused: missing.map(id => ({ id, reason: 'not found' })) };
+  const refused = rows.filter(r => r.settlement_id || r.status !== 'final').map(r => ({
+    id: r.id, doc_number: r.doc_number,
+    reason: r.settlement_id ? 'already settled' : r.status === 'void' ? 'void' : r.status === 'disputed' ? 'disputed' : 'still a draft',
+  }));
+  if (refused.length) {
+    return {
+      error: `These cannot go into a settlement: ${refused.map(x => `${x.doc_number || x.id} (${x.reason})`).join(', ')}.`,
+      refused,
+    };
+  }
+  return { r: reconcile(rows, asOf, 'selected'), ids: list };
 }
 
 /**
@@ -955,7 +990,7 @@ router.get('/:id/reconcile', (req, res) => {
   const partner = db.prepare('SELECT * FROM partner_accounts WHERE id = ?').get(req.params.id);
   if (!partner) return res.status(404).json({ error: 'Partner not found' });
   const asOf = isoDay(req.query.as_of) || endOfMonth();
-  const r = currentReconciliation(db, partner.id, asOf);
+  const r = currentReconciliation(db, partner.id, asOf, basisOf(req.query.basis));
   const { credit, appliedToDate } = creditFor(db, partner.id);
   // Reported alongside the raw number, never instead of it: `net_before_credit`
   // stays on the payload so both companies can see the working, not just the
@@ -1081,6 +1116,23 @@ router.put('/credits/:creditId', (req, res) => {
 // finalised another invoice while the screen was open, the number moved — and
 // paying against a stale figure is exactly the failure this tool exists to
 // prevent, so `expected_net` mismatches are refused rather than reconciled.
+/**
+ * What a chosen set of documents comes to — the live figure on the "Choose
+ * documents" step. Writes nothing. Same loader, same reconcile, same credit as
+ * the settle below, so the total shown before Mark PAID is the total paid.
+ */
+router.post('/:id/settle/preview', (req, res) => {
+  if (!canSettle(req.user)) return res.status(403).json({ error: 'Only the office or an admin can prepare a settlement.' });
+  const db = getDb();
+  const partner = db.prepare('SELECT * FROM partner_accounts WHERE id = ?').get(req.params.id);
+  if (!partner) return res.status(404).json({ error: 'Partner not found' });
+  const asOf = isoDay(req.body?.as_of) || endOfMonth();
+  const sel = selectedReconciliation(db, partner.id, req.body?.document_ids, asOf);
+  if (sel.error) return res.status(400).json({ error: sel.error, refused: sel.refused || [] });
+  const { credit, appliedToDate } = creditFor(db, partner.id);
+  res.json({ ...sel.r, credit: credit ? applyCredit(sel.r, credit, appliedToDate) : null, written: false });
+});
+
 router.post('/:id/settle', (req, res) => {
   if (!canSettle(req.user)) return res.status(403).json({ error: 'Only the office or an admin can record a settlement.' });
   const db = getDb();
@@ -1088,7 +1140,18 @@ router.post('/:id/settle', (req, res) => {
   if (!partner) return res.status(404).json({ error: 'Partner not found' });
 
   const asOf = isoDay(req.body?.as_of) || endOfMonth();
-  const r = currentReconciliation(db, partner.id, asOf);
+  // Chosen documents, when a person ticked them; otherwise the whole basis
+  // (due by default — the behaviour before selection existed, unchanged).
+  const chosen = Array.isArray(req.body?.document_ids);
+  let r, basis;
+  if (chosen) {
+    const sel = selectedReconciliation(db, partner.id, req.body.document_ids, asOf);
+    if (sel.error) return res.status(400).json({ error: sel.error, refused: sel.refused || [] });
+    r = sel.r; basis = 'selected';
+  } else {
+    basis = basisOf(req.body?.basis);
+    r = currentReconciliation(db, partner.id, asOf, basis);
+  }
   const ids = [...r.documents.receivable, ...r.documents.payable].map(d => d.id);
   if (!ids.length) return res.status(400).json({ error: 'Nothing is due to settle for this period.' });
 
@@ -1113,13 +1176,13 @@ router.post('/:id/settle', (req, res) => {
   const tx = db.transaction(() => {
     db.prepare(`INSERT INTO partner_settlements
       (id, partner_id, period_end, receivable_total, payable_total, net_amount, owed_to,
-       document_count, status, paid_at, paid_by, payment_reference, notes, created_by)
-      VALUES (?,?,?,?,?,?,?,?, 'paid', datetime('now'), ?, ?, ?, ?)`)
+       document_count, status, paid_at, paid_by, payment_reference, notes, created_by, basis)
+      VALUES (?,?,?,?,?,?,?,?, 'paid', datetime('now'), ?, ?, ?, ?, ?)`)
       .run(id, partner.id, asOf, r.receivable_total, r.payable_total,
         netToPay,
         applied ? applied.owed_to : r.owed_to,
         ids.length, req.user?.name || null, clean(req.body?.payment_reference, 200),
-        clean(req.body?.notes, 2000), req.user?.name || null);
+        clean(req.body?.notes, 2000), req.user?.name || null, basis);
     const stamp = db.prepare('UPDATE partner_documents SET settlement_id = ? WHERE id = ?');
     for (const docId of ids) stamp.run(id, docId);
     // Same transaction as the settlement: a draw that lands without its
@@ -1143,6 +1206,7 @@ router.post('/:id/settle', (req, res) => {
   const settlement = db.prepare('SELECT * FROM partner_settlements WHERE id = ?').get(id);
   logAudit(req.user, 'create', 'partner_settlement', id, {
     net: netToPay, owed_to: settlement.owed_to, documents: ids.length, period_end: asOf,
+    basis, document_ids: ids,
     ...(applied?.drawn_this_period
       ? { credit_drawn: applied.drawn_this_period, credit_remaining: applied.remaining_balance, credit_id: credit.id }
       : {}),

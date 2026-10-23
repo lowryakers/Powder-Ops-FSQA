@@ -753,7 +753,121 @@ function EditCredit({ credit, onChanged }) {
   );
 }
 
-function TheNumber({ recon, partner, canSettle, onSettle, busy, onCreditChanged }) {
+const BASIS_LABEL = { due: 'due by the terms', issued: 'issued in the period', selected: 'chosen documents' };
+
+/**
+ * "Choose documents" — exactly which documents go into this settlement.
+ *
+ * The agreement with M4 is that each month end settles what was ISSUED that
+ * month plus earlier leftovers, and somebody decides what goes in; no as-of
+ * date under Net 30 produces that. So: every final, unsettled document is
+ * listed, pre-ticked by the basis on screen, and every tick asks the server for
+ * the figure (`/settle/preview`, the same loader and the same arithmetic the
+ * settle uses). Nothing here adds anything up — the total shown before Mark
+ * PAID is the server's, and the confirm names it.
+ */
+function ChooseDocuments({ recon, partner, onClose, onSettled }) {
+  const candidates = useMemo(() => {
+    const inc = [...(recon?.documents?.receivable || []), ...(recon?.documents?.payable || [])];
+    const later = (recon?.documents?.excluded || []).filter(d => d.exclusion === 'not_due' || d.exclusion === 'not_in_period');
+    return [...inc.map(d => ({ ...d, pre: true })), ...later.map(d => ({ ...d, pre: false }))]
+      .sort((a, b) => (a.direction === b.direction ? String(a.issued_date || '').localeCompare(String(b.issued_date || '')) : a.direction === 'receivable' ? -1 : 1));
+  }, [recon]);
+  const [ticked, setTicked] = useState(() => new Set(candidates.filter(d => d.pre).map(d => d.id)));
+  const [preview, setPreview] = useState(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const idsKey = [...ticked].sort().join(',');
+
+  useEffect(() => {
+    let live = true;
+    const ids = idsKey ? idsKey.split(',') : [];
+    if (!ids.length) { Promise.resolve().then(() => { if (live) { setPreview(null); setError(''); } }); return () => { live = false; }; }
+    apiPost(`/partners/${partner.id}/settle/preview`, { as_of: recon.as_of, document_ids: ids })
+      .then(r => { if (live) { setPreview(r); setError(''); } })
+      .catch(e => { if (live) setError(e.message); });
+    return () => { live = false; };
+  }, [idsKey, partner.id, recon.as_of]);
+
+  const toggle = (id) => setTicked(t => { const n = new Set(t); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const c = preview?.credit;
+  const owedTo = c ? c.owed_to : preview?.owed_to;
+  const due = c ? c.amount_due : preview?.amount_due;
+  const net = c ? c.net_amount : preview?.net_amount;
+  const drawOf = new Map((c?.draws || []).map(d => [d.document_id, d.amount]));
+  const who = owedTo === 'us' ? `${partner.name} pays Powder Ops` : owedTo === 'them' ? `Powder Ops pays ${partner.name}` : 'Nothing is owed either way';
+
+  const settle = async () => {
+    if (!preview) return;
+    const creditLine = c?.drawn_this_period > 0
+      ? `\n\n${money(c.drawn_this_period)} comes off the ${c.applies_to} credit, leaving ${money(c.remaining_balance)} on it.` : '';
+    if (!window.confirm(`${who} ${money(due)} for these ${ticked.size} documents.${creditLine}\n\nThe documents not ticked stay open for a later settlement. Record it as paid?`)) return;
+    const reference = window.prompt('Payment reference (cheque #, ACH, note) — optional:') ?? '';
+    setBusy(true); setError('');
+    try {
+      await apiPost(`/partners/${partner.id}/settle`, {
+        as_of: recon.as_of, document_ids: [...ticked], expected_net: net, payment_reference: reference,
+      });
+      onSettled?.();
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="mt-4 rounded-lg border border-gray-300 bg-white p-3 space-y-3" data-choose-docs>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <p className="text-sm font-semibold text-gray-900">Choose the documents for this settlement</p>
+        <button type="button" onClick={onClose} className="text-xs text-gray-500 hover:underline">Close</button>
+      </div>
+      <p className="text-xs text-gray-500">
+        Ticked by {BASIS_LABEL[recon.basis] || 'the basis'} as at {recon.as_of}. Untick anything that should roll to the next
+        period, or tick a later document to bring it in. Drafts and disputed documents cannot go in.
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs min-w-[560px]">
+          <thead className="text-gray-500"><tr>
+            <th className="w-6" /><th className="text-left py-1">Document</th><th className="text-left">Direction</th>
+            <th className="text-left">Category</th><th className="text-left">Issued</th><th className="text-left">Due</th>
+            <th className="text-right">Amount</th><th className="text-right">Credit</th>
+          </tr></thead>
+          <tbody className="divide-y divide-gray-100">
+            {candidates.map(d => (
+              <tr key={d.id} data-choose-row={d.doc_number || d.id} className={ticked.has(d.id) ? '' : 'text-gray-400'}>
+                <td className="py-1"><input type="checkbox" className="h-4 w-4 shrink-0" checked={ticked.has(d.id)} onChange={() => toggle(d.id)} /></td>
+                <td className="py-1 font-medium">{d.doc_number || '—'}{!d.pre && <span className="ml-1 text-[10px] text-amber-700">later</span>}</td>
+                <td>{d.direction === 'receivable' ? 'They owe us' : 'We owe them'}</td>
+                <td><CategoryChip value={d.category} /></td>
+                <td>{d.issued_date || '—'}</td>
+                <td>{d.due_date || '—'}</td>
+                <td className="text-right whitespace-nowrap">{money(d.signed)}</td>
+                <td className="text-right whitespace-nowrap text-indigo-700">{drawOf.has(d.id) ? `−${money(drawOf.get(d.id))}` : ''}</td>
+              </tr>
+            ))}
+            {!candidates.length && <tr><td colSpan={8} className="py-3 text-center text-gray-400">No final, unsettled documents.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      {preview && (
+        <div className="rounded-lg bg-gray-50 border border-gray-200 p-2.5" data-choose-total>
+          <SettlementMath receivable={preview.receivable_total} payable={preview.payable_total} credit={c}
+            netBefore={preview.net_amount} netAfter={net} />
+          {c?.drawn_this_period > 0 && (
+            <p className="mt-1 text-[11px] text-indigo-800">Credit {money(c.opening_balance)} before → {money(c.remaining_balance)} after.</p>
+          )}
+          <p className="mt-1 text-sm font-semibold text-gray-900" data-choose-who>{who} {money(due)} · {ticked.size} document{ticked.size === 1 ? '' : 's'}</p>
+        </div>
+      )}
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      <button type="button" onClick={settle} disabled={busy || !preview || !ticked.size}
+        className="inline-flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-black disabled:opacity-50" data-choose-settle>
+        <Check size={15} /> {busy ? 'Recording…' : preview ? `Mark PAID — ${money(due)}` : 'Mark PAID'}
+      </button>
+    </div>
+  );
+}
+
+function TheNumber({ recon, partner, canSettle, onSettle, busy, onCreditChanged, onSettled }) {
+  const [choosing, setChoosing] = useState(false);
   if (!recon) return null;
   const credit = recon.credit;
   // After the credit is what is actually owed, so that is the headline. The
@@ -800,11 +914,23 @@ function TheNumber({ recon, partner, canSettle, onSettle, busy, onCreditChanged 
 
       <CreditCard credit={credit} pid={partner?.id} canSettle={canSettle} onChanged={onCreditChanged} />
 
-      {canSettle && !nobody && (
-        <button onClick={onSettle} disabled={busy}
-          className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-black disabled:opacity-50">
-          <Check size={15} /> {busy ? 'Recording…' : 'Mark PAID and close the period'}
-        </button>
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        {canSettle && !nobody && (
+          <button onClick={onSettle} disabled={busy}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-black disabled:opacity-50">
+            <Check size={15} /> {busy ? 'Recording…' : 'Mark PAID and close the period'}
+          </button>
+        )}
+        {canSettle && (
+          <button type="button" onClick={() => setChoosing(o => !o)} data-choose-open
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-300 text-gray-800 rounded-lg text-sm font-medium hover:bg-gray-50">
+            Choose documents
+          </button>
+        )}
+      </div>
+      {choosing && (
+        <ChooseDocuments key={`${recon.as_of}-${recon.basis}`} recon={recon} partner={partner}
+          onClose={() => setChoosing(false)} onSettled={() => { setChoosing(false); onSettled?.(); }} />
       )}
       {!nobody && (
         <p className="mt-2 text-[11px] text-gray-500">
@@ -832,7 +958,7 @@ function ExcludedReport({ recon }) {
           <li key={e.reason} className="py-2 flex items-start gap-3">
             <span className="min-w-0 flex-1">
               <span className="block text-sm font-medium text-gray-800 capitalize">
-                {e.reason.replace('_', ' ')} · {e.count} document{e.count === 1 ? '' : 's'}
+                {e.reason.replace(/_/g, ' ')} · {e.count} document{e.count === 1 ? '' : 's'}
               </span>
               <span className="block text-xs text-gray-500">{e.note}</span>
             </span>
@@ -948,6 +1074,7 @@ function SettlementDetail({ settlementId, canSettle, onChanged }) {
       </ul>
       <div className="text-xs text-gray-500 flex items-center gap-3 flex-wrap">
         <span>paid {(s.paid_at || '').slice(0, 10)}{s.paid_by ? ` by ${s.paid_by}` : ''}</span>
+        {s.basis && <span data-settlement-basis={s.basis}>covers {BASIS_LABEL[s.basis] || s.basis}</span>}
         {s.payment_reference && <span>ref {s.payment_reference}</span>}
         <PaymentProof settlement={s} canSettle={canSettle} onDone={() => { setTick(x => x + 1); onChanged?.(); }} />
       </div>
@@ -1053,6 +1180,9 @@ export default function PartnerReconPanel({ user }) {
 
   const [view, setView] = useState('balance');
   const [asOf, setAsOf] = useState('');
+  // Which documents the period covers: due by the terms (the default, and what
+  // the reminders read) or issued in the period (the M4 agreement).
+  const [basis, setBasis] = useState('due');
   const [q, setQ] = useState('');
   const [dirFilter, setDirFilter] = useState('');
   // Which readiness gap the list is narrowed to, if any.
@@ -1071,7 +1201,7 @@ export default function PartnerReconPanel({ user }) {
 
   const pid = partner?.id;
   const { data: recon, refresh: refreshRecon } = useApiGet(
-    pid ? `/partners/${pid}/reconcile${asOf ? `?as_of=${asOf}` : ''}` : null, [pid, asOf]);
+    pid ? `/partners/${pid}/reconcile?basis=${basis}${asOf ? `&as_of=${asOf}` : ''}` : null, [pid, asOf, basis]);
   const docParams = new URLSearchParams(showSettled ? { settled: '1' } : { unsettled: '1' });
   if (q.trim()) docParams.set('q', q.trim());
   if (dirFilter) docParams.set('direction', dirFilter);
@@ -1166,7 +1296,7 @@ export default function PartnerReconPanel({ user }) {
     if (!window.confirm(`${who} ${money(due)}.${creditLine}\n\nThis closes ${recon.counts.receivable + recon.counts.payable} documents into a settlement you can reopen later. Record it as paid?`)) return;
     const reference = window.prompt('Payment reference (cheque #, ACH, note) — optional:') ?? '';
     await act(() => apiPost(`/partners/${pid}/settle`, {
-      as_of: recon.as_of, expected_net: expected, payment_reference: reference,
+      as_of: recon.as_of, basis: recon.basis, expected_net: expected, payment_reference: reference,
     }));
     // The proof is attached to the settlement that now exists, rather than
     // riding along with the settle call — an upload failure must never be in
@@ -1229,9 +1359,15 @@ export default function PartnerReconPanel({ user }) {
                 back to month end
               </button>
             )}
+            <div role="radiogroup" aria-label="Which documents the period covers" className="inline-flex rounded-lg border border-gray-300 overflow-hidden text-xs" data-basis>
+              {[['due', 'Due by'], ['issued', 'Issued in period']].map(([v, l]) => (
+                <button key={v} type="button" role="radio" aria-checked={basis === v} data-basis-opt={v} onClick={() => setBasis(v)}
+                  className={`px-2.5 py-1.5 ${basis === v ? 'bg-gray-900 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>{l}</button>
+              ))}
+            </div>
           </div>
           <TheNumber recon={recon} partner={partner} canSettle={canSettle} onSettle={settle} busy={busy}
-            onCreditChanged={reloadAll} />
+            onCreditChanged={reloadAll} onSettled={reloadAll} />
           <div className="grid gap-4 lg:grid-cols-2">
             <SideList title={`${partner.name} owes Powder Ops`} rows={recon?.documents?.receivable} tone="green" />
             <SideList title={`Powder Ops owes ${partner.name}`} rows={recon?.documents?.payable} tone="amber" />

@@ -298,6 +298,8 @@ function PortalSettlement({ s, token }) {
           ))}
           <div className="flex items-center gap-3 text-xs text-gray-500">
             {s.payment_reference && <span>ref {s.payment_reference}</span>}
+            {s.basis === 'selected' && <span>chosen documents</span>}
+            {s.basis === 'issued' && <span>documents issued in the period</span>}
             {s.paid_at && <span>paid {(s.paid_at || '').slice(0, 10)}</span>}
             {s.proof_filename && (
               <button type="button" onClick={async () => {
@@ -325,10 +327,11 @@ export default function PartnerPortalPage({ token }) {
     description: '', issued_date: new Date().toISOString().slice(0, 10), amount: '',
   });
   const [files, setFiles] = useState([]);
+  const [basis, setBasis] = useState('due');
 
   const load = useCallback(() => {
-    call(`/${encodeURIComponent(token)}`).then(setData).catch(e => setError(e.message));
-  }, [token]);
+    call(`/${encodeURIComponent(token)}?basis=${basis}`).then(setData).catch(e => setError(e.message));
+  }, [token, basis]);
   useEffect(load, [load]);
 
   const dispute = async (row) => {
@@ -396,9 +399,17 @@ export default function PartnerPortalPage({ token }) {
         )}
 
         <div className={`rounded-xl border-2 p-5 ${tone}`}>
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Settlement as at {data.as_of}
-          </p>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Settlement as at {data.as_of}
+            </p>
+            <div role="radiogroup" aria-label="Which documents the period covers" className="inline-flex rounded-lg border border-gray-300 overflow-hidden text-xs">
+              {[['due', 'Due by'], ['issued', 'Issued in period']].map(([v, l]) => (
+                <button key={v} type="button" role="radio" aria-checked={basis === v} onClick={() => setBasis(v)}
+                  className={`px-2.5 py-1 ${basis === v ? 'bg-gray-900 text-white' : 'bg-white text-gray-700'}`}>{l}</button>
+              ))}
+            </div>
+          </div>
           <p className="mt-1 text-3xl font-bold text-gray-900">{money(data.amount_due)}</p>
           <p className="mt-0.5 text-sm font-medium text-gray-700">
             {nobody ? 'Nothing is owed either way this period.'
@@ -442,7 +453,7 @@ export default function PartnerPortalPage({ token }) {
                 <li key={e.reason} className="py-2 flex items-start justify-between gap-3">
                   <span className="min-w-0">
                     <span className="block text-sm font-medium text-gray-800 capitalize">
-                      {e.reason.replace('_', ' ')} · {e.count} document{e.count === 1 ? '' : 's'}
+                      {e.reason.replace(/_/g, ' ')} · {e.count} document{e.count === 1 ? '' : 's'}
                     </span>
                     <span className="block text-xs text-gray-500">{e.note}</span>
                   </span>

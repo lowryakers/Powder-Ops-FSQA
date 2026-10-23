@@ -63,7 +63,9 @@ router.get('/:token', (req, res) => {
   const ctx = partnerFor(req, res); if (!ctx) return;
   const { db, partner } = ctx;
   const asOf = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.as_of || '')) ? req.query.as_of : endOfMonth();
-  const r = currentReconciliation(db, partner.id, asOf);
+  // The same basis the office is looking at, so both sides read one number.
+  const basis = req.query.basis === 'issued' ? 'issued' : 'due';
+  const r = currentReconciliation(db, partner.id, asOf, basis);
   // `proof_filename` is on this list because the partner is exactly who asks
   // for it. An explicit column list silently drops a new column — the same way
   // `category` went missing from the reconcile query — and the symptom here
@@ -85,6 +87,7 @@ router.get('/:token', (req, res) => {
       id: st.id, period_end: st.period_end, net_amount: st.net_amount, owed_to: st.owed_to, status: st.status,
       paid_at: st.paid_at, payment_reference: st.payment_reference, proof_filename: st.proof_filename,
       document_count: st.document_count,
+      basis: st.basis || null,
       // Their side of the table: what they owed us is "you owe".
       you_owed: st.receivable_total,
       you_were_owed: st.payable_total,
@@ -142,6 +145,7 @@ router.get('/:token', (req, res) => {
   res.json({
     partner: { name: partner.name, terms_days: partner.terms_days },
     as_of: asOf,
+    basis,
     // From the partner's point of view the sign flips: what we book as a
     // receivable is what THEY owe. `owed_to` names who is OWED the money — the
     // same meaning the internal field has, translated to their side. Getting

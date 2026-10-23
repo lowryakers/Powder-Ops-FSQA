@@ -5867,6 +5867,15 @@ Verified end to end on a fresh DB: 35 assertions covering the arithmetic, Net-30
 - **Dates on a final, unsettled document**: office/admin only, not for tokens (a date moves money between months).
 - `verify:partnerrecon` (60). `npm run report:partner-dupes -- <db copy>` is read-only and explains each copy.
 
+### A person chooses which documents a settlement covers (D-205)
+`BASES` + `classify(doc, asOf, basis)` / `reconcile(docs, asOf, basis)` (`due` default · `issued` · `selected`),
+`selectedReconciliation()`, `POST /partners/:id/settle/preview` (writes nothing), `document_ids` on `POST /:id/settle`,
+`partner_settlements.basis`, `ChooseDocuments` beside Mark PAID, the Due by / Issued in period toggle on both screens.
+- **One loader, one arithmetic** for the preview and the settle. A chosen id that is settled, void, disputed or draft
+  refuses the WHOLE selection by name (400). Without `document_ids`, settle is unchanged (basis recorded).
+- The reminders and month-end DM still read `due`. Settle stays person-only (approve class).
+- `verify:partnerrecon` (83).
+
 ## Reimbursements (personal card spend) — Accounting tab #4
 `reimbursements` + `reimbursement_receipts` (`server/api/reimbursements.js`, `ReimbursementsPanel.jsx`),
 a tab in the **Accounting** hub. Today it is Marnee and Adam and a personal card; the loop is photograph the
