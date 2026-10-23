@@ -38,6 +38,38 @@ const INFO_ONLY = { kind: 'info', alert_text: 'For Information Only', action_tex
 LIMITS.air = { 'Settle plate': INFO_ONLY };
 LIMITS.compressed_air = { 'Compressed air quality': INFO_ONLY };
 
+// UNDER DOCUMENT CONTROL SINCE D-204 (single-spine move 03, after the ATP
+// limit and the temperature/humidity limits). The levels above are the code's
+// transcription of FORM 604-01; `empControlledEntry` registers them with
+// controlled.js, so a change here PARKS for Document Control and the app goes
+// on grading against the approved snapshot, which `apply` writes back into
+// LIMITS in place. Every grade still freezes the text it used onto the sample.
+const LIMITS_SOURCE = { document: EMP_FORM_CODE, revision: EMP_REVISION };
+
+/** The levels in force, as served to a screen or a report. */
+export function empLimitsInForce() {
+  return { ...LIMITS_SOURCE, limits: JSON.parse(JSON.stringify(LIMITS)) };
+}
+
+/** The `controlled.js` entry — the alert and action levels as approved. */
+export function empControlledEntry() {
+  return {
+    scope: 'acceptance',
+    key: 'emp:FORM 604-01',
+    label: `Environmental monitoring alert and action levels (${EMP_FORM_CODE})`,
+    current: () => empLimitsInForce(),
+    apply: (snap) => {
+      if (!snap?.limits || typeof snap.limits !== 'object') return;
+      for (const zone of Object.keys(LIMITS)) if (!snap.limits[zone]) delete LIMITS[zone];
+      for (const [zone, tests] of Object.entries(snap.limits)) {
+        if (tests && typeof tests === 'object') LIMITS[zone] = JSON.parse(JSON.stringify(tests));
+      }
+      if (snap.document) LIMITS_SOURCE.document = snap.document;
+      if (snap.revision) LIMITS_SOURCE.revision = snap.revision;
+    },
+  };
+}
+
 export function limitsFor(zone, test) {
   const z = LIMITS[zone];
   if (!z) return null;

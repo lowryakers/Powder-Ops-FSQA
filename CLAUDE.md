@@ -4933,6 +4933,11 @@ the Operator View (`useEnvLimits` → `GET /api/env-limits`) both call it.
   `docs/v2/queued/dcr-temp-humidity-limits.md`.
 - `verify:envlimits` (27).
 
+## The EMP alert and action levels are a controlled definition (D-204)
+`empControlledEntry()` / `empLimitsInForce()` in `server/emp-results.js` (key `emp:FORM 604-01`), `GET /api/check-records/emp/limits`.
+A change to the level table parks for Document Control; grading reads the approved snapshot; each sample keeps the
+text it was graded against. **Never read the levels from a screen-side copy.** `verify:emplimits` (15).
+
 ## A scheduled check files a record (`shared/check-forms.js` + `server/check-records.js`, D-060)
 A quality-schedule task DECLARES what its completion must carry, and the completion path files the record
 that spec implies — inside the same transaction, the `fileQaInspectionRecord` rule. Three programs ride it

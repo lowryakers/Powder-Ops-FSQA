@@ -11,7 +11,7 @@
 import { Router } from 'express';
 import { randomUUID as uuid } from 'crypto';
 import { getDb, logAudit } from '../db.js';
-import { gradeEmpResult, EMP_FORM_CODE, EMP_REVISION } from '../emp-results.js';
+import { gradeEmpResult, empLimitsInForce, EMP_FORM_CODE, EMP_REVISION } from '../emp-results.js';
 import {
   EMP_ZONES, GMP_WALK_ITEMS, GMP_WALK_REVISION, BANNED_LISTS,
   MANAGEMENT_REVIEW_ITEMS, MANAGEMENT_REVIEW_REVISION, MANAGEMENT_REVIEW_CLAUSE,
@@ -46,6 +46,9 @@ const SAMPLE_SQL = `SELECT s.*, c.capa_number, c.status AS capa_status FROM emp_
 /* ── Environmental monitoring ─────────────────────────────────────────────── */
 
 router.get('/emp/zones', (_req, res) => res.json({ form_code: EMP_FORM_CODE, revision: EMP_REVISION, zones: EMP_ZONES }));
+// The alert and action levels IN FORCE — the approved snapshot, not the code's
+// transcription, while a change is parked with Document Control (D-204).
+router.get('/emp/limits', (_req, res) => res.json(empLimitsInForce()));
 
 // Samples, newest first, bounded. Filters narrow; nothing is hidden by
 // default — a log quietly missing its pending rows is worse than a long one.
@@ -112,7 +115,7 @@ function applyResult(db, actor, sample, { result_value, resulted_on, lab, notes 
     // sample, so re-entering a corrected value never raises a second.
     capa = raiseCapa(db, actor, {
       title: `EMP action level: ${sample.test} at ${sample.site} (${EMP_ZONES[sample.zone]?.label || sample.zone})`,
-      description: `Environmental monitoring result ${result_value} on sample of ${sample.sampled_on} (${EMP_FORM_CODE} ${EMP_REVISION}; action level ${g.action_limit}).\nRecord the investigation and the corrective action on the sample and here.`,
+      description: `Environmental monitoring result ${result_value} on sample of ${sample.sampled_on} (${empLimitsInForce().document} ${empLimitsInForce().revision}; action level ${g.action_limit}).\nRecord the investigation and the corrective action on the sample and here.`,
       source_type: 'Environmental Monitoring', priority: 'high', date_issued: day,
       extra: { emp_sample_id: sample.id },
     });
