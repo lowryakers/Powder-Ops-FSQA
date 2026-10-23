@@ -319,3 +319,59 @@ export function creditLedger(credit, applications = []) {
     groups,
   };
 }
+
+/* ── The partner's view: closed month ends ────────────────────────────────── */
+
+/**
+ * The latest CLOSED month end on or before `today` — the month end the
+ * partner's page leads with. On the last day of a month that day is the close;
+ * otherwise it is the last day of the previous month. The agreement with M4 is
+ * that each month end closes in cash on the documents DUE by it (Net 30), so a
+ * month that has not ended has no closing figure yet.
+ */
+export function lastClosedMonthEnd(today) {
+  const day = String(today || new Date().toISOString()).slice(0, 10);
+  if (endOfMonth(day) === day) return day;
+  const d = new Date(`${day}T00:00:00Z`);
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 0)).toISOString().slice(0, 10);
+}
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+/** "September" for 2026-09-30; the year is added when it is not `refYear`. */
+export function monthName(periodEnd, refYear) {
+  const [y, m] = String(periodEnd || '').split('-');
+  const name = MONTHS[Number(m) - 1] || String(periodEnd || '');
+  return refYear && String(refYear) !== y ? `${name} ${y}` : name;
+}
+
+/**
+ * The payment reference for a month end: `<CODE>-SETTLE-YYYY-MM`. The code is
+ * the partner's own when one is set, otherwise the first word of its name in
+ * capitals ("M4 Dynamics" → M4).
+ */
+export function settleReference(partner, periodEnd) {
+  const code = String(partner?.code || String(partner?.name || '').split(/\s+/)[0] || 'PARTNER')
+    .toUpperCase().replace(/[^A-Z0-9]/g, '') || 'PARTNER';
+  return `${code}-SETTLE-${String(periodEnd || '').slice(0, 7)}`;
+}
+
+/**
+ * Open, not yet due: the documents a `due` reconcile at the close left out as
+ * `not_due`, grouped by the month end each one falls into (its due date). Each
+ * month carries subtotals per side and NO net — an open month has no "who
+ * pays" until it closes. Pure: the excluded rows in, the groups out.
+ */
+export function openByCloseMonth(excluded) {
+  const groups = new Map();
+  for (const d of excluded || []) {
+    if (d.exclusion !== 'not_due') continue;
+    const key = endOfMonth(d.due_date);
+    let g = groups.get(key);
+    if (!g) { g = { period_end: key, receivable_total: 0, payable_total: 0, documents: [] }; groups.set(key, g); }
+    g.documents.push(d);
+    if (d.direction === 'receivable') g.receivable_total = round2(g.receivable_total + d.signed);
+    else g.payable_total = round2(g.payable_total + d.signed);
+  }
+  return [...groups.values()].sort((a, b) => a.period_end.localeCompare(b.period_end))
+    .map(g => ({ ...g, documents: g.documents.sort((a, b) => String(a.due_date).localeCompare(String(b.due_date))) }));
+}

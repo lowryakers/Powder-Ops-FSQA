@@ -1,17 +1,18 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Scale, AlertTriangle, Upload, FileText, Check, ExternalLink, History,
+  Scale, AlertTriangle, Upload, FileText, Check, ExternalLink, History, Download, CalendarClock,
 } from 'lucide-react';
-import { openFile } from '../../lib/openFile';
 
 // What M4 sees. A public page, no login — the token in the URL is the whole
-// credential, so the page is deliberately narrow: read the same ledger and the
-// same number we're looking at, hand over their own paperwork, and say when
-// they disagree with something.
+// credential, so the page is deliberately narrow: the latest closed month end
+// and who pays it, what is open and not yet due, what was already settled, a
+// way to hand over their own paperwork, and a way to say something looks wrong.
 //
-// It shows the SAME arithmetic, with the signs flipped to their side of the
-// table. A portal that showed the partner a different figure would defeat the
-// point of having one.
+// THE HEADLINE IS A CLOSED MONTH END, never a running total. Each month end
+// closes in cash on the documents due by it (Net 30); whoever owes pays. A net
+// of everything open is not a figure either company agreed, so an open month
+// shows its subtotals and no "who pays". The office keeps every basis on its
+// own page; this page has none to choose.
 
 const money = (n) => (Number(n) || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 
@@ -28,11 +29,45 @@ async function call(path, options = {}) {
   return data;
 }
 
-async function openPortalFile(token, d) {
-  try {
-    const { url } = await call(`/${token}/documents/${d.id}/file`);
-    if (url) openFile({ url, name: d.filename });
-  } catch (e) { window.alert(e.message); }
+/** A real link to the file, through the token-scoped route (it redirects). */
+function FileLink({ token, d, label }) {
+  if (!d.has_file) return null;
+  return (
+    <a href={`/api/partner-portal/${encodeURIComponent(token)}/documents/${d.id}/open`} target="_blank" rel="noopener noreferrer"
+      data-new-tab data-portal-file={d.doc_number || d.id}
+      className="inline-flex items-center gap-1 text-[11px] text-powder-600 hover:underline">
+      <ExternalLink size={10} /> {label || 'PDF'}
+    </a>
+  );
+}
+
+/**
+ * "This doesn't look right", or what became of it. An open question reads
+ * "Raised, Powder Ops reviewing"; an answered one shows the answer.
+ */
+function Review({ reviews, onRaise, target, what }) {
+  const mine = reviews.filter(x => (target.document_id ? x.document_id === target.document_id
+    : target.settlement_id ? x.settlement_id === target.settlement_id && !x.document_id
+      : x.period_end === target.period_end && !x.document_id && !x.settlement_id));
+  const openOne = mine.find(x => x.status === 'open');
+  const answered = mine.filter(x => x.status === 'answered');
+  return (
+    <span className="inline-flex items-center gap-2 flex-wrap">
+      {openOne ? (
+        <span data-portal-review-open className="px-1.5 py-0.5 rounded border border-amber-200 bg-amber-50 text-[10px] font-medium text-amber-800">
+          Raised, Powder Ops reviewing
+        </span>
+      ) : (
+        <button type="button" data-portal-raise onClick={() => onRaise(target, what)}
+          className="text-[11px] text-gray-400 hover:text-red-600 hover:underline">
+          This doesn&apos;t look right
+        </button>
+      )}
+      {answered.slice(0, 1).map(x => (
+        <span key={x.id} className="text-[11px] text-gray-500">Reviewed {String(x.resolved_at || '').slice(0, 10)}: {x.resolution}</span>
+      ))}
+    </span>
+  );
 }
 
 /** What was on a document — the lines read off it, when there are any. */
@@ -57,168 +92,155 @@ function PortalLines({ d }) {
   );
 }
 
-function DocList({ title, rows, tone, token, onDispute }) {
-  const total = (rows || []).reduce((t, r) => t + (r.signed || 0), 0);
+function DocRow({ d, token, reviews, onRaise, children }) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-      <div className={`px-4 py-2.5 border-b border-gray-100 flex items-center justify-between ${tone === 'owe' ? 'bg-amber-50/60' : 'bg-green-50/60'}`}>
-        <span className="text-sm font-semibold text-gray-900">{title}</span>
-        <span className="text-sm font-bold text-gray-900">{money(total)}</span>
+    <li className="py-2" data-portal-doc-row={d.doc_number || d.id}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm text-gray-900">
+            {d.doc_number || d.description || 'Document'}
+            <span className="ml-1.5 text-xs text-gray-400 capitalize">{d.doc_type === 'po' ? 'purchase order' : d.doc_type}</span>
+          </p>
+          <p className="text-xs text-gray-500">
+            issued {d.issued_date || '—'} · due {d.due_date || '—'}
+            {d.description && d.doc_number ? ` · ${d.description}` : ''}
+          </p>
+        </div>
+        <span className="flex items-center gap-2 shrink-0">
+          {children}
+          <span className={`text-sm whitespace-nowrap ${d.signed < 0 ? 'text-red-600' : 'text-gray-900'}`}>{money(d.signed)}</span>
+        </span>
       </div>
-      <ul className="divide-y divide-gray-100">
-        {(rows || []).map(r => (
-          <li key={r.id} className="px-4 py-2.5">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-sm text-gray-900 truncate">
-                  {r.doc_number || r.description || 'Document'}
-                  <span className="ml-1.5 text-xs text-gray-400 capitalize">
-                    {r.doc_type === 'po' ? 'purchase order' : r.doc_type}
-                  </span>
-                </p>
-                <p className="text-xs text-gray-500">
-                  issued {r.issued_date || '—'} · due {r.due_date || '—'}
-                  {r.description && r.doc_number ? ` · ${r.description}` : ''}
-                </p>
-              </div>
-              <span className={`text-sm whitespace-nowrap ${r.signed < 0 ? 'text-red-600' : 'text-gray-900'}`}>{money(r.signed)}</span>
-            </div>
-            <div className="mt-1 flex items-center gap-3 flex-wrap">
-              {r.filename && (
-                <button onClick={() => openPortalFile(token, r)} className="inline-flex items-center gap-1 text-[11px] text-powder-600 hover:underline">
-                  <ExternalLink size={10} /> {r.filename}
-                </button>
-              )}
-              <details className="text-[11px]" data-portal-doc={r.doc_number || r.id}>
-                <summary className="cursor-pointer text-gray-500">What was on it{r.line_summary ? ` — ${r.line_summary}` : ''}</summary>
-                <PortalLines d={r} />
-              </details>
-              <button onClick={() => onDispute(r)} className="text-[11px] text-gray-400 hover:text-red-600 hover:underline">
-                This doesn&apos;t look right
-              </button>
-            </div>
-          </li>
-        ))}
-        {(rows || []).length === 0 && <li className="px-4 py-6 text-center text-sm text-gray-400">Nothing here.</li>}
-      </ul>
-    </div>
+      <div className="mt-1 flex items-center gap-3 flex-wrap">
+        <FileLink token={token} d={d} />
+        <details className="text-[11px]" data-portal-doc={d.doc_number || d.id}>
+          <summary className="cursor-pointer text-gray-500">What was on it{d.line_summary ? ` — ${d.line_summary}` : ''}</summary>
+          <PortalLines d={d} />
+        </details>
+        {onRaise && <Review reviews={reviews} onRaise={onRaise} target={{ document_id: d.id }} what={d.doc_number || 'this document'} />}
+      </div>
+    </li>
   );
 }
 
-/**
- * The credit facility, from the partner's side.
- *
- * The whole working, not the balance alone. A partner shown only "you have
- * $95,000 left" has to take our word for it, which is exactly the standoff this
- * module exists to end — so this names the facility, what was drawn before,
- * what THIS period draws and against which of their runs, and what is left.
- *
- * "Not covered" is here for the same reason: "why wasn't my run credited" is
- * the first question, and an answer that needs a phone call puts the two
- * companies back on separate books.
- */
-function PortalCredit({ credit, ledger }) {
-  const [open, setOpen] = useState(false);
-  if (!credit) return null;
-  const used = credit.facility - credit.remaining_balance;
-  const pct = credit.facility > 0 ? Math.min(100, Math.round((used / credit.facility) * 100)) : 0;
+function SideLists({ docs, partnerName, token, reviews, onRaise, chip }) {
+  return [['you_owe', `What ${partnerName} owes Powder Ops`], ['you_are_owed', `What Powder Ops owes ${partnerName}`]].map(([side, label]) => {
+    const rows = docs.filter(d => d.side === side);
+    if (!rows.length) return null;
+    return (
+      <div key={side}>
+        <p className="text-[11px] font-semibold text-gray-700">{label}</p>
+        <ul className="divide-y divide-gray-100">
+          {rows.map(d => <DocRow key={d.id} d={d} token={token} reviews={reviews} onRaise={onRaise}>{chip?.(d)}</DocRow>)}
+        </ul>
+      </div>
+    );
+  });
+}
 
+const statementHref = (token, key) => `/api/partner-portal/${encodeURIComponent(token)}/statements/${key}.pdf`;
+
+function StatementLink({ token, keyName }) {
   return (
-    <div className="mt-4 rounded-lg border border-indigo-200 bg-indigo-50/70 p-3">
-      <div className="flex items-baseline justify-between gap-2 flex-wrap">
-        <span className="text-xs font-semibold uppercase tracking-wide text-indigo-900">
-          {credit.label} · {credit.applies_to} only
+    <a href={statementHref(token, keyName)} data-new-tab data-portal-statement={keyName} download
+      className="inline-flex items-center gap-1 text-xs text-powder-700 hover:underline">
+      <Download size={12} /> Download statement (PDF)
+    </a>
+  );
+}
+
+/** The latest closed month end — the one figure on this page that is owed. */
+function CloseCard({ close, partner, token, reviews, onRaise }) {
+  const youPay = close.owed_to === 'powder-ops';
+  const nobody = close.owed_to === 'nobody';
+  const tone = close.status === 'paid' || nobody ? 'border-gray-200 bg-white' : youPay ? 'border-amber-300 bg-amber-50' : 'border-green-300 bg-green-50';
+  const sentence = nobody ? 'Nothing is owed either way.'
+    : youPay ? `${partner.name} owes Powder Ops ${money(close.amount)}`
+      : `Powder Ops owes ${partner.name} ${money(close.amount)}`;
+  const status = close.status === 'paid'
+    ? `Paid${close.settlement?.paid_at ? ` ${String(close.settlement.paid_at).slice(0, 10)}` : ''}${close.settlement?.payment_reference ? ` · ref ${close.settlement.payment_reference}` : ''}`
+    : close.status === 'unpaid' ? 'Unpaid' : 'Nothing was due';
+  return (
+    <section className={`rounded-xl border-2 p-5 ${tone}`} data-portal-close={close.period_end}>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+          {close.label} close (as of {close.period_end})
+        </p>
+        <span data-portal-close-status={close.status}
+          className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${close.status === 'paid' ? 'bg-green-100 text-green-800' : close.status === 'unpaid' ? 'bg-amber-100 text-amber-900' : 'bg-gray-100 text-gray-600'}`}>
+          {status}
         </span>
-        <button type="button" onClick={() => setOpen(o => !o)} className="text-[11px] text-indigo-700 underline">
-          {open ? 'Hide detail' : 'How this was used'}
-        </button>
       </div>
-      <div className="mt-1 flex items-baseline gap-2 flex-wrap">
-        <span className="text-2xl font-bold text-indigo-900">{money(credit.remaining_balance)}</span>
-        <span className="text-xs text-indigo-800">left of {money(credit.facility)}</span>
-      </div>
-      <div className="mt-2 h-1.5 w-full rounded-full bg-indigo-200 overflow-hidden">
-        <div className="h-full bg-indigo-600" style={{ width: `${pct}%` }} />
-      </div>
-      <p className="mt-1.5 text-[11px] text-indigo-800">
-        This credit applies to {credit.applies_to} only — raw material purchases are not covered by it.
+      <p className="mt-1 text-2xl sm:text-3xl font-bold text-gray-900" data-portal-headline>{sentence}</p>
+      <p className="mt-1 text-xs text-gray-600">
+        Documents due by {close.period_end} under Net {partner.terms_days}. Anything due later is open, below.
       </p>
 
-      {open && (
-        <div className="mt-2.5 space-y-2 border-t border-indigo-200 pt-2">
-          <div className="grid grid-cols-3 gap-2 text-[11px]">
-            {[['Credit', credit.facility], ['Used before this period', credit.used_before_this_period],
-              ['Applied this period', credit.applied_this_period]].map(([l, v]) => (
-              <div key={l}>
-                <div className="text-indigo-700">{l}</div>
-                <div className="font-semibold text-indigo-900">{money(v)}</div>
-              </div>
-            ))}
-          </div>
-
-          {credit.applied_to?.length > 0 && (
-            <div>
-              <p className="text-[11px] font-semibold text-indigo-900">Applied to, this period</p>
-              <ul className="mt-0.5 space-y-0.5">
-                {credit.applied_to.map(d => (
-                  <li key={d.document_id} className="text-[11px] text-indigo-800 flex justify-between gap-2">
-                    <span className="truncate">{d.doc_number || d.description}</span>
-                    <span className="shrink-0 font-medium">
-                      {money(d.amount)}{!d.covered_in_full && ` of ${money(d.document_total)} — credit ran out`}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {credit.not_covered?.length > 0 && (
-            <div>
-              <p className="text-[11px] font-semibold text-gray-700">Not covered by the credit</p>
-              <ul className="mt-0.5 space-y-0.5">
-                {credit.not_covered.map(d => (
-                  <li key={d.document_id} className="text-[11px] text-gray-600 flex justify-between gap-2">
-                    <span className="truncate">{d.doc_number || d.description}</span>
-                    <span className="shrink-0">{money(d.amount)} · {d.reason}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {ledger?.groups?.length > 0 && (
-            <div data-portal-ledger>
-              <p className="text-[11px] font-semibold text-indigo-900">Earlier settlements against the credit</p>
-              <ol className="mt-1 space-y-1.5">
-                <li className="text-[11px] text-indigo-800 flex justify-between gap-2">
-                  <span>Credit</span><span className="font-semibold">{money(ledger.facility)}</span>
-                </li>
-                {ledger.groups.map(g => (
-                  <li key={g.settlement_id || 'none'} className="border-l-2 border-indigo-200 pl-2">
-                    <div className="text-[11px] text-indigo-900 flex justify-between gap-2">
-                      <span className="font-medium">Settlement to {g.period_end || '—'}</span>
-                      <span className="font-medium">−{money(g.total)}</span>
-                    </div>
-                    <ul className="mt-0.5 space-y-0.5">
-                      {g.draws.map((d, i) => (
-                        <li key={`${d.document_id}-${i}`} className="text-[11px] text-indigo-700 flex justify-between gap-2">
-                          <span className="truncate">{d.doc_number || d.description}</span>
-                          <span className="shrink-0">{money(d.amount)}</span>
-                        </li>
-                      ))}
-                    </ul>
-                    <div className="text-[10px] text-indigo-600 mt-0.5">{money(g.before)} → {money(g.after)}</div>
-                  </li>
-                ))}
-                <li className="text-[11px] text-indigo-900 flex justify-between gap-2 border-t border-indigo-200 pt-1">
-                  <span>Left before this period</span><span className="font-semibold">{money(ledger.remaining)}</span>
-                </li>
-              </ol>
-            </div>
-          )}
+      {close.documents.length > 0 && (
+        <div className="mt-3 space-y-2">
+          <SideLists docs={close.documents} partnerName={partner.name} token={token} reviews={reviews} onRaise={onRaise}
+            chip={(d) => d.credit_applied > 0 ? <span className="text-[10px] text-indigo-700">credit {money(d.credit_applied)}</span> : null} />
+          <p className="text-xs text-gray-600">
+            {partner.name} owes {money(close.you_owe)}
+            {close.credit && close.credit.side === 'you_owe' && <> (less the {close.credit.applies_to} credit {money(close.credit.applied)}) = {money(close.credit.side_after_credit)}</>}
+            {' '}− Powder Ops owes {money(close.you_are_owed)}
+            {close.credit && close.credit.side === 'you_are_owed' && <> (less the {close.credit.applies_to} credit {money(close.credit.applied)}) = {money(close.credit.side_after_credit)}</>}
+            {' '}= {money(close.amount)}.
+          </p>
         </div>
       )}
-    </div>
+
+      {close.status === 'unpaid' && !nobody && (
+        <div className="mt-3 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm" data-portal-pay>
+          <p className="font-medium text-gray-900">
+            {youPay ? 'To pay' : 'Powder Ops will pay'}: {money(close.amount)}
+          </p>
+          <p className="text-gray-700">Reference: <span className="font-mono" data-portal-reference>{close.reference}</span></p>
+          <p className="text-[11px] text-gray-500">Bank details are sent separately, not shown here.</p>
+        </div>
+      )}
+
+      <div className="mt-3 flex items-center gap-4 flex-wrap">
+        <StatementLink token={token} keyName="close" />
+        <Review reviews={reviews} onRaise={onRaise}
+          target={close.settlement ? { settlement_id: close.settlement.id } : { period_end: close.period_end }}
+          what={`the ${close.label} close`} />
+      </div>
+    </section>
+  );
+}
+
+/** Open, not yet due — grouped by the month end each falls into. No net. */
+function OpenSection({ open, credit, partner, token, reviews, onRaise }) {
+  return (
+    <section className="rounded-xl border border-gray-200 bg-white overflow-hidden" data-portal-open>
+      <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-1.5">
+        <CalendarClock size={14} className="text-gray-400" />
+        <span className="text-sm font-semibold text-gray-900">Open, not yet due</span>
+      </div>
+      <div className="px-4 py-3 space-y-4">
+        {credit && (
+          <p className="text-xs text-indigo-800" data-portal-credit-line>
+            {credit.label || 'Credit'} available: <span className="font-semibold">{money(credit.available)}</span>; applied at each close
+            {credit.applies_to ? ` (${credit.applies_to} only)` : ''}.
+          </p>
+        )}
+        {open.length === 0 && <p className="text-sm text-gray-400">Nothing open that falls due later.</p>}
+        {open.map(g => (
+          <div key={g.period_end} data-portal-open-month={g.period_end}>
+            <div className="flex items-baseline justify-between gap-2 flex-wrap border-b border-gray-100 pb-1">
+              <span className="text-sm font-semibold text-gray-900">{g.label} close <span className="font-normal text-gray-500">(due by {g.period_end})</span></span>
+              <span className="text-xs text-gray-600">
+                {partner.name} owes {money(g.you_owe)} · Powder Ops owes {money(g.you_are_owed)}
+              </span>
+            </div>
+            <div className="mt-1 space-y-2">
+              <SideLists docs={g.documents} partnerName={partner.name} token={token} reviews={reviews} onRaise={onRaise} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -233,7 +255,7 @@ const HOW_WORDS = {
  * the file behind it. M4's AP asked for exactly this list ("all the paid and
  * credited invoice #s included in the August reconciliation").
  */
-function PortalSettlement({ s, token }) {
+function PortalSettlement({ s, token, reviews, onRaise }) {
   const [open, setOpen] = useState(false);
   const owed = (side) => s.documents.filter(d => d.side === side);
   return (
@@ -280,15 +302,12 @@ function PortalSettlement({ s, token }) {
                         </span>
                       </div>
                       <div className="flex items-center gap-3 flex-wrap mt-0.5">
-                        {d.filename && (
-                          <button onClick={() => openPortalFile(token, d)} className="inline-flex items-center gap-1 text-[11px] text-powder-600 hover:underline">
-                            <ExternalLink size={10} /> PDF
-                          </button>
-                        )}
+                        <FileLink token={token} d={d} />
                         <details className="text-[11px]">
                           <summary className="cursor-pointer text-gray-500">What was on it</summary>
                           <PortalLines d={d} />
                         </details>
+                        <Review reviews={reviews} onRaise={onRaise} target={{ document_id: d.id }} what={d.doc_number || 'this document'} />
                       </div>
                     </li>
                   );
@@ -296,20 +315,17 @@ function PortalSettlement({ s, token }) {
               </ul>
             </div>
           ))}
-          <div className="flex items-center gap-3 text-xs text-gray-500">
+          <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
             {s.payment_reference && <span>ref {s.payment_reference}</span>}
             {s.basis === 'selected' && <span>chosen documents</span>}
             {s.basis === 'issued' && <span>documents issued in the period</span>}
             {s.paid_at && <span>paid {(s.paid_at || '').slice(0, 10)}</span>}
             {s.proof_filename && (
-              <button type="button" onClick={async () => {
-                try {
-                  const r = await fetch(`/api/partner-portal/${token}/settlements/${s.id}/proof`);
-                  const j = await r.json();
-                  if (j.url) openFile({ url: j.url, name: s.proof_filename }); else window.alert(j.error || 'Not available.');
-                } catch { window.alert('Could not open the file.'); }
-              }} className="text-[11px] text-indigo-700 underline">proof of payment</button>
+              <a href={`/api/partner-portal/${encodeURIComponent(token)}/settlements/${s.id}/proof/open`} target="_blank" rel="noopener noreferrer"
+                data-new-tab className="text-[11px] text-indigo-700 underline">proof of payment</a>
             )}
+            <StatementLink token={token} keyName={s.id} />
+            <Review reviews={reviews} onRaise={onRaise} target={{ settlement_id: s.id }} what={`the ${s.period_end} settlement`} />
           </div>
         </div>
       )}
@@ -327,19 +343,20 @@ export default function PartnerPortalPage({ token }) {
     description: '', issued_date: new Date().toISOString().slice(0, 10), amount: '',
   });
   const [files, setFiles] = useState([]);
-  const [basis, setBasis] = useState('due');
 
   const load = useCallback(() => {
-    call(`/${encodeURIComponent(token)}?basis=${basis}`).then(setData).catch(e => setError(e.message));
-  }, [token, basis]);
+    call(`/${encodeURIComponent(token)}`).then(setData).catch(e => setError(e.message));
+  }, [token]);
   useEffect(load, [load]);
 
-  const dispute = async (row) => {
-    const reason = window.prompt(`What's wrong with ${row.doc_number || 'this document'}?`);
-    if (!reason?.trim()) return;
+  const raise = async (target, what) => {
+    const note = window.prompt(`What's wrong with ${what}?`);
+    if (!note?.trim()) return;
     try {
-      await call(`/${token}/documents/${row.id}/dispute`, { method: 'POST', body: { reason } });
-      setSent('Flagged. It comes out of the number until it\'s sorted out, and Powder Ops can see why.');
+      const r = await call(`/${token}/reviews`, { method: 'POST', body: { ...target, note } });
+      setSent(r.disputed
+        ? 'Raised. It comes out of the number until it\'s sorted out, and Powder Ops can see why.'
+        : 'Raised. Powder Ops will review it and answer here.');
       load();
     } catch (e) { window.alert(e.message); }
   };
@@ -373,10 +390,7 @@ export default function PartnerPortalPage({ token }) {
   if (!data) {
     return <div className="min-h-screen bg-gray-50 flex items-center justify-center text-sm text-gray-500">Loading…</div>;
   }
-
-  const nobody = data.owed_to === 'nobody';
-  const youPay = data.owed_to === 'powder-ops';
-  const tone = nobody ? 'border-gray-200 bg-gray-50' : youPay ? 'border-amber-300 bg-amber-50' : 'border-green-300 bg-green-50';
+  const reviews = data.reviews || [];
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -386,7 +400,7 @@ export default function PartnerPortalPage({ token }) {
             <Scale size={18} className="text-powder-600" /> {data.partner.name} ⇄ Powder Ops
           </h1>
           <p className="text-sm text-gray-500">
-            The same ledger both sides are looking at. Net {data.partner.terms_days}, settled monthly.
+            The same ledger both sides are looking at. Each month end closes on what is due by it (Net {data.partner.terms_days}); whoever owes pays.
           </p>
         </div>
       </header>
@@ -398,73 +412,36 @@ export default function PartnerPortalPage({ token }) {
           </div>
         )}
 
-        <div className={`rounded-xl border-2 p-5 ${tone}`}>
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-              Settlement as at {data.as_of}
-            </p>
-            <div role="radiogroup" aria-label="Which documents the period covers" className="inline-flex rounded-lg border border-gray-300 overflow-hidden text-xs">
-              {[['due', 'Due by'], ['issued', 'Issued in period']].map(([v, l]) => (
-                <button key={v} type="button" role="radio" aria-checked={basis === v} onClick={() => setBasis(v)}
-                  className={`px-2.5 py-1 ${basis === v ? 'bg-gray-900 text-white' : 'bg-white text-gray-700'}`}>{l}</button>
-              ))}
-            </div>
-          </div>
-          <p className="mt-1 text-3xl font-bold text-gray-900">{money(data.amount_due)}</p>
-          <p className="mt-0.5 text-sm font-medium text-gray-700">
-            {nobody ? 'Nothing is owed either way this period.'
-              : youPay ? `${data.partner.name} pays Powder Ops`
-                : `Powder Ops pays ${data.partner.name}`}
-          </p>
-          <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-gray-600">
-            <span><span className="text-gray-400">you owe</span> {money(data.you_owe)}</span>
-            <span className="text-gray-400">−</span>
-            <span><span className="text-gray-400">you&apos;re owed</span> {money(data.you_are_owed)}</span>
-            <span className="text-gray-400">=</span>
-            <span className={data.credit?.applied_this_period ? 'text-gray-500' : 'font-semibold text-gray-900'}>
-              {money(Math.abs(data.credit ? data.credit.your_balance_before_credit : data.net_amount))}
-            </span>
-            {data.credit?.applied_this_period > 0 && (
-              <>
-                <span className="text-gray-400">−</span>
-                <span><span className="text-gray-400">credit</span> {money(data.credit.applied_this_period)}</span>
-                <span className="text-gray-400">=</span>
-                <span className="font-semibold text-gray-900">{money(Math.abs(data.net_amount))}</span>
-              </>
-            )}
-          </div>
+        <CloseCard close={data.close} partner={data.partner} token={token} reviews={reviews} onRaise={raise} />
 
-          <PortalCredit credit={data.credit} ledger={data.credit_ledger} />
-        </div>
+        <OpenSection open={data.open || []} credit={data.credit_available} partner={data.partner} token={token} reviews={reviews} onRaise={raise} />
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          <DocList title="What you owe Powder Ops" rows={data.documents.you_owe} tone="owe" token={token} onDispute={dispute} />
-          <DocList title="What Powder Ops owes you" rows={data.documents.you_are_owed} tone="owed" token={token} onDispute={dispute} />
-        </div>
-
-        {data.excluded_summary?.length > 0 && (
-          <div className="rounded-xl border border-gray-200 bg-white p-4">
-            <h2 className="text-sm font-semibold text-gray-900">Not in this number</h2>
-            <p className="text-xs text-gray-500 mb-2">
-              Deliberately left out of the figure above — anything not yet due lands in a later settlement.
+        {data.waiting?.length > 0 && (
+          <section className="rounded-xl border border-gray-200 bg-white p-4" data-portal-waiting>
+            <h2 className="text-sm font-semibold text-gray-900">Not counted yet</h2>
+            <p className="text-xs text-gray-500 mb-1">
+              Waiting for Powder Ops to confirm as final, or raised and being reviewed. None of these is in any figure above.
             </p>
             <ul className="divide-y divide-gray-100">
-              {data.excluded_summary.map(e => (
-                <li key={e.reason} className="py-2 flex items-start justify-between gap-3">
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium text-gray-800 capitalize">
-                      {e.reason.replace(/_/g, ' ')} · {e.count} document{e.count === 1 ? '' : 's'}
-                    </span>
-                    <span className="block text-xs text-gray-500">{e.note}</span>
-                  </span>
-                  <span className="text-xs text-gray-600 whitespace-nowrap text-right">
-                    {e.receivable ? <span className="block">you owe {money(e.receivable)}</span> : null}
-                    {e.payable ? <span className="block">you&apos;re owed {money(e.payable)}</span> : null}
-                  </span>
-                </li>
+              {data.waiting.map(d => (
+                <DocRow key={d.id} d={d} token={token} reviews={reviews} onRaise={null}>
+                  <span className="text-[10px] text-gray-500">{d.status === 'disputed' ? 'Raised, Powder Ops reviewing' : 'Waiting to be confirmed'}</span>
+                </DocRow>
               ))}
             </ul>
-          </div>
+          </section>
+        )}
+
+        {data.settlements?.length > 0 && (
+          <section className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-1.5">
+              <History size={14} className="text-gray-400" />
+              <span className="text-sm font-semibold text-gray-900">Already settled</span>
+            </div>
+            <ul className="divide-y divide-gray-100">
+              {data.settlements.map(s => <PortalSettlement key={s.id} s={s} token={token} reviews={reviews} onRaise={raise} />)}
+            </ul>
+          </section>
         )}
 
         <form onSubmit={submit} className="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
@@ -534,18 +511,6 @@ export default function PartnerPortalPage({ token }) {
             {busy ? 'Sending…' : 'Send it over'}
           </button>
         </form>
-
-        {data.settlements?.length > 0 && (
-          <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-1.5">
-              <History size={14} className="text-gray-400" />
-              <span className="text-sm font-semibold text-gray-900">Already settled</span>
-            </div>
-            <ul className="divide-y divide-gray-100">
-              {data.settlements.map(s => <PortalSettlement key={s.id} s={s} token={token} />)}
-            </ul>
-          </div>
-        )}
 
         <p className="text-[11px] text-gray-400 flex items-center gap-1 pb-6">
           <FileText size={11} /> This link is yours alone — anyone with it can see this page. Ask your

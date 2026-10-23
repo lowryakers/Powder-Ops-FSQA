@@ -8245,3 +8245,45 @@ the numbers, and nothing would say why.
   - null and empty columns untouched;
   - a dry run leaving the file byte-identical;
   - no plaintext, ciphertext or key in any captured output.
+
+## D-209 — The partner page leads with the latest closed month end; open months carry no net (2026-10-23)
+
+M4's AP uses the partner link. The page led with "Settlement as at 2026-10-31", which netted every open
+document and the credit into "$47,712.63 Powder Ops pays M4". No one agreed that figure, and it contradicted
+the September close, where M4 owes $5,379.17 on I128 alone. The page also offered a "Due by / Issued in
+period" toggle meant for the office.
+
+The agreement is: each month end closes in cash on the documents **due by** it (Net 30), and whoever owes pays.
+Later documents are open and not yet due.
+
+- **The headline is the latest closed month end** (`lastClosedMonthEnd`: the last calendar month end on or before
+  the plant's today). It uses the `due` reconcile at that date, with the credit applied the way the office's
+  settle applies it.
+  - **Unpaid:** documents due by it are still unsettled.
+  - **Paid:** nothing is left over and a settlement exists for that period end. It shows the date and the
+    reference.
+  - **Nothing due:** nothing fell due by that month end.
+- **No basis toggle and no as-at date on the partner page.** The portal ignores `basis` and `as_of`. The office
+  page keeps every basis. Settlement math, Mark PAID and voids are unchanged.
+- **Open, not yet due:** documents grouped by the month end their due date falls into (`openByCloseMonth`), each
+  month with a subtotal per side and **no net**. The credit is one information line ("available …; applied at
+  each close"), never a figure in an open month.
+- **Pay information on an unpaid close:** the amount and a reference `<CODE>-SETTLE-YYYY-MM`. The code is
+  `partner_accounts.code`, otherwise the first word of the name. Bank details are never on the page.
+- **"This doesn't look right" is a row in `partner_reviews`.** It can be raised on any document, a settlement or
+  a month end, and records who, the note and the time.
+  - On an **open final** document it also marks the document disputed, as before, which takes it out of the
+    number.
+  - On anything settled it moves no money; a settlement is immutable.
+  - The office sees open entries in a strip above the Partner Rec tabs. It answers with a note
+    (`POST /partners/reviews/:id/resolve`, person-only). "Resolve as final" on a disputed document answers its
+    entry too. Deleting an entry is admin-only, for tests and mistakes.
+  - The partner page shows "Raised, Powder Ops reviewing", then the answer. No office names reach the link.
+- **Each closed month has a statement PDF** (`/statements/close.pdf`, `/statements/<settlement>.pdf`). It holds
+  the documents, the totals and the pay-to and reference line, in the embedded Unicode font (D-151).
+- **File buttons are real links.** `/documents/:id/open` and `/settlements/:id/proof/open` redirect to a
+  short-lived address, scoped to the token's partner.
+- **What was not checked:** the acceptance list names the live link. Opening it, or raising and deleting a test
+  dispute on it, would touch production data, so it was not done. `verify:partnerrecon` (118, today pinned to
+  2026-10-23 through `PARTNER_PORTAL_TODAY`, honoured only under `NODE_ENV=test`) builds the same ledger and
+  asserts each item. The control (`main`'s portal router) stops at the first closed-month assertion.
