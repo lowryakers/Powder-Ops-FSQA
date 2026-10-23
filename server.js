@@ -31,6 +31,7 @@ import pmRoutes, { collapseDuplicateWorkOrders } from './server/api/pm.js';
 import checklistRoutes from './server/api/checklists.js';
 import calibrationRoutes from './server/api/calibration.js';
 import scaleVerificationRoutes from './server/api/scale-verification.js';
+import recordRoutes from './server/api/records.js';
 import qaReviewRoutes from './server/api/qa-review.js';
 import cleanupRoutes from './server/api/cleanup.js';
 import sanitationRoutes from './server/api/sanitation.js';
@@ -2007,6 +2008,9 @@ app.use('/api/pm', requireModuleWrite('pm', 'operator', { taskWrites: TASK_WRITE
 app.use('/api/checklists', requireModuleWrite('pm', 'operator', 'sanitation'), checklistRoutes);
 app.use('/api/calibration', requireModuleWrite('calibration'), calibrationRoutes);
 app.use('/api/scale-verification', requireModuleWrite('calibration'), scaleVerificationRoutes);
+// The record interface's read side (D-207): each type is read only by someone
+// who can open its module, decided per type inside the router.
+app.use('/api/records', recordRoutes);
 // Both the Sanitation log and QA Inspections read and write this mount — they
 // are two lists over one table, so an edit grant on either module opens it.
 // The swab log (D-186) — declared first, or /api/sanitation/:id reads "swab-log" as a record id.

@@ -3923,6 +3923,19 @@ report that competes with a queue gets skimmed. So it is three sections and no t
 `tr()` back. Uses the cached `/ai/translate-content` endpoint, so it silently stays English when AI is off.
 Wired into Supply Orders, Time Tracking and both finance ledgers; reusable anywhere.
 
+## The record interface: file, sign, revoke, retrieve, describe (D-207, move 02)
+`server/record-interface.js` (`RECORD_TYPES`, `retrieveRecords`, `canReadType`) and `server/api/records.js`
+(`GET /api/records`, `/types`, `/:type/:id`). Two types are adopted: sanitation and scale.
+- **An adapter calls the module's own function and never writes a column itself.** QA Review signs sanitation
+  and scale through `recordType(...).sign`.
+- **A new type is one entry implementing all five, plus `get` and `canRead`.** `verify:recordinterface` refuses
+  an entry missing any of them.
+- `sign` assumes the route already ran `gateSignature`.
+- Reads are per type, by module (sanitation group → Sanitation, QA group → QA Inspections, scale → Calibration).
+  A record the caller may not read is a 404.
+- A scale verification can be revoked now (`DELETE /scale-verification/:id/verify`, signer or admin).
+- `verify:recordinterface` (28).
+
 ## Five more acts sign with the password (D-206, move 01)
 - Gated now: the internal audit sign-off, approving meeting minutes, authorizing a mock recall, signing a COA,
   and deciding an NFP in the app (single and bulk). The password is asked last, after every other check.

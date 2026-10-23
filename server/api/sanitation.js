@@ -907,19 +907,26 @@ router.put('/:id/verify', (req, res) => {
 // verifier who spots a wrong value revokes their own signature, corrects the
 // record, and verifies again — all three steps audited. Same rule as QMS
 // approvals.
-router.delete('/:id/verify', (req, res) => {
-  const db = getDb();
-  const row = db.prepare('SELECT * FROM sanitation_records WHERE id = ?').get(req.params.id);
-  if (!row) return res.status(404).json({ error: 'Record not found' });
-  if (!row.verified_by) return res.status(400).json({ error: 'This record is not verified.' });
-  if (!mayRevokeSignature(req.user, row.verified_by)) {
-    return res.status(403).json({ error: `Only ${row.verified_by} or an admin can revoke this verification.` });
+// The one revoke (D-207): the route and the record interface both call it.
+// Returns { error, status } or { record }.
+export function revokeSanitationVerification(db, user, id) {
+  const row = db.prepare('SELECT * FROM sanitation_records WHERE id = ?').get(id);
+  if (!row) return { error: 'Record not found', status: 404 };
+  if (!row.verified_by) return { error: 'This record is not verified.', status: 400 };
+  if (!mayRevokeSignature(user, row.verified_by)) {
+    return { error: `Only ${row.verified_by} or an admin can revoke this verification.`, status: 403 };
   }
   db.prepare('UPDATE sanitation_records SET verified_by = NULL, verified_at = NULL WHERE id = ?').run(row.id);
   const updated = db.prepare('SELECT * FROM sanitation_records WHERE id = ?').get(row.id);
-  logAudit(req.user, 'update', 'sanitation_record', row.id,
+  logAudit(user, 'update', 'sanitation_record', row.id,
     { verification_revoked: true, was_verified_by: row.verified_by }, row, updated, row.area);
-  res.json(updated);
+  return { record: updated };
+}
+
+router.delete('/:id/verify', (req, res) => {
+  const { error, status, record } = revokeSanitationVerification(getDb(), req.user, req.params.id);
+  if (error) return res.status(status).json({ error });
+  res.json(record);
 });
 
 // Correcting a filed record. This route did not exist AT ALL — a sanitation
