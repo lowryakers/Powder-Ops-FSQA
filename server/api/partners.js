@@ -17,7 +17,7 @@ import { getDb, logAudit } from '../db.js';
 import { storageEnabled, putObject, presignGet, deleteObject } from '../storage.js';
 import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { extractInvoiceText } from '../invoice-text.js';
-import { reconcile, applyCredit, dueDateFor, endOfMonth, round2 } from '../partner-recon.js';
+import { reconcile, applyCredit, dueDateFor, endOfMonth, round2, signedAmount, normDocNumber, creditLedger } from '../partner-recon.js';
 import { parseInvoice, parseLineItems, summarizeLineItems } from '../invoice-parse.js';
 import { botDm, postMessageAs } from './comms.js';
 import { pushToUser } from '../push.js';
@@ -83,12 +83,17 @@ router.put('/:id', (req, res) => {
 /* ── Documents ────────────────────────────────────────────────────────────── */
 
 function listDocuments(db, partnerId, q = {}) {
-  let sql = 'SELECT * FROM partner_documents WHERE partner_id = ?';
+  // `settled_period` rides along so a settled row can say WHICH settlement it
+  // was paid in ("Settled 2026-08-31") without a second request per row.
+  let sql = `SELECT partner_documents.*,
+      (SELECT period_end FROM partner_settlements s WHERE s.id = partner_documents.settlement_id) AS settled_period
+    FROM partner_documents WHERE partner_id = ?`;
   const params = [partnerId];
   if (q.direction === 'receivable' || q.direction === 'payable') { sql += ' AND direction = ?'; params.push(q.direction); }
   if (q.status) { sql += ' AND status = ?'; params.push(q.status); }
   if (q.doc_type) { sql += ' AND doc_type = ?'; params.push(q.doc_type); }
   if (q.unsettled === '1') sql += ' AND settlement_id IS NULL';
+  if (q.settled === '1') sql += ' AND settlement_id IS NOT NULL';
   if (q.settlement_id) { sql += ' AND settlement_id = ?'; params.push(q.settlement_id); }
   if (q.q) {
     // The uploaded PDF's text is searched too, so a lot number printed inside
@@ -196,6 +201,8 @@ router.get('/:id/documents', (req, res) => {
   res.json({
     documents: listDocuments(db, req.params.id, req.query),
     gaps: documentGaps(db, req.params.id),
+    // Office-only: voiding is theirs, so the list of copies to look at is too.
+    ...(canSettle(req.user) ? { settled_twins: settledTwins(db, req.params.id) } : {}),
   });
 });
 
@@ -212,6 +219,16 @@ async function createDocument(db, { partnerId, body, files, user, source }) {
   const termsRaw = Number(body?.terms_days);
   const terms = Number.isFinite(termsRaw) && termsRaw >= 0 ? Math.floor(termsRaw) : partner.terms_days;
   const due = isoDay(body?.due_date) || dueDateFor(issued, terms);
+
+  // Every door that files a document — the form, the import, the partner's own
+  // portal — passes here, so the settled-copy refusal lives here once.
+  const settledDup = findExistingDoc(db, partnerId, { doc_number: body?.doc_number, amount, direction });
+  if (settledDup?.settlement_id) {
+    return {
+      error: duplicateNote(settledDup, amount), status: 409,
+      settlement_id: settledDup.settlement_id, settled_period: settledDup.settled_period, duplicate_of: settledDup.id,
+    };
+  }
 
   const out = [];
   const list = files?.length ? files : [null];
@@ -290,17 +307,80 @@ const OUR_NAMES = ['Powder Ops', 'PowderOps', 'Powder-Ops'];
  *
  * The single most damaging thing a re-import can do is add what is already
  * there — the amount owed simply doubles, and it is a plausible number so
- * nobody catches it. Matched on document number + amount within the partner,
- * which is what identifies an invoice; the date is checked too but a document
- * re-issued on a different date with the same number and amount is the same
- * document, not a second one.
+ * nobody catches it.
+ *
+ * MATCHED ON THE NUMBER AS AN IDENTITY (`normDocNumber`) AND THE DIRECTION,
+ * never on the exact string and the exact amount. The first version required
+ * both to be byte-for-byte equal, so "INV-I123" against "I123", or a file read
+ * at a different figure than the one typed in August, was a NEW document — and
+ * on 12 Oct five invoices already paid in the August settlement came back in as
+ * open, final copies that counted in the balance and drew the credit a second
+ * time. A different amount on the same number is still flagged (worded as
+ * such): it is far more often one invoice read two ways than two invoices.
+ *
+ * A SETTLED document is included and returned first. It is the case that
+ * matters most — the money behind it has already moved.
+ *
+ * `direction` may be null (a scan that could not tell which way a file points);
+ * then any direction matches, because "maybe a duplicate" is the safe answer.
  */
-function findExistingDoc(db, partnerId, { doc_number, amount }) {
-  if (!doc_number || amount == null) return null;
-  return db.prepare(
-    `SELECT id, doc_number, amount, direction, status, issued_date FROM partner_documents
-     WHERE partner_id = ? AND doc_number = ? AND ABS(amount - ?) < 0.005
-       AND status != 'void' LIMIT 1`).get(partnerId, String(doc_number), Number(amount)) || null;
+function findExistingDoc(db, partnerId, { doc_number, amount, direction }) {
+  const key = normDocNumber(doc_number);
+  if (!key) return null;
+  const rows = db.prepare(`SELECT d.id, d.doc_number, d.amount, d.direction, d.status, d.issued_date,
+      d.settlement_id, s.period_end AS settled_period
+    FROM partner_documents d LEFT JOIN partner_settlements s ON s.id = d.settlement_id
+    WHERE d.partner_id = ? AND d.status != 'void' AND d.doc_number IS NOT NULL`).all(partnerId);
+  const amt = amount == null || amount === '' || !Number.isFinite(Number(amount)) ? null : Number(amount);
+  const hits = rows
+    .filter(r => normDocNumber(r.doc_number) === key && (!direction || r.direction === direction))
+    .map(r => ({ ...r, same_amount: amt != null && Math.abs(Number(r.amount) - amt) < 0.005 }));
+  if (!hits.length) return null;
+  hits.sort((a, b) => (b.settlement_id ? 1 : 0) - (a.settlement_id ? 1 : 0)
+    || (b.same_amount ? 1 : 0) - (a.same_amount ? 1 : 0));
+  return hits[0];
+}
+
+const dollars = (n) => `$${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** What to say about a match — three different situations, three sentences. */
+function duplicateNote(dup, amount) {
+  if (dup.settlement_id) {
+    return `${dup.doc_number} is already settled ${dup.settled_period || ''} (${dollars(dup.amount)}). `
+      + 'It was paid in that settlement; a second document needs a different number, or a credit note.';
+  }
+  if (dup.same_amount || amount == null) {
+    return `${dup.doc_number} for ${dollars(dup.amount)} is already on this ledger (${dup.status}). Importing it again would double what is owed.`;
+  }
+  return `${dup.doc_number} is already on this ledger for ${dollars(dup.amount)} (${dup.status}) — this one reads ${dollars(amount)}. `
+    + 'Same number, different amount: most likely the same invoice read two ways. Check it before importing.';
+}
+
+/**
+ * Open documents that carry the number of a SETTLED one, same direction — the
+ * repair list for copies like the 12 Oct import. DERIVED on every read, so a
+ * person voiding the copy clears it; nothing is deleted or voided here.
+ */
+function settledTwins(db, partnerId) {
+  const rows = db.prepare(`SELECT d.id, d.doc_number, d.amount, d.direction, d.status, d.source,
+      d.created_at, d.created_by, d.settlement_id, s.period_end AS settled_period
+    FROM partner_documents d LEFT JOIN partner_settlements s ON s.id = d.settlement_id
+    WHERE d.partner_id = ? AND d.status != 'void' AND d.doc_number IS NOT NULL`).all(partnerId);
+  const settled = new Map();
+  for (const r of rows) {
+    if (!r.settlement_id) continue;
+    const k = `${r.direction}|${normDocNumber(r.doc_number)}`;
+    if (!settled.has(k)) settled.set(k, r);
+  }
+  return rows
+    .filter(r => !r.settlement_id)
+    .map(r => ({ r, twin: settled.get(`${r.direction}|${normDocNumber(r.doc_number)}`) }))
+    .filter(x => x.twin)
+    .map(({ r, twin }) => ({
+      id: r.id, doc_number: r.doc_number, amount: r.amount, direction: r.direction, status: r.status,
+      source: r.source, created_at: r.created_at, created_by: r.created_by,
+      twin: { id: twin.id, doc_number: twin.doc_number, amount: twin.amount, settlement_id: twin.settlement_id, period_end: twin.settled_period },
+    }));
 }
 
 router.post('/:id/documents/scan', uploadDocs, async (req, res) => {
@@ -344,8 +424,9 @@ router.post('/:id/documents/scan', uploadDocs, async (req, res) => {
         row.duplicate_of = {
           id: dup.id, doc_number: dup.doc_number, amount: dup.amount,
           direction: dup.direction, status: dup.status, issued_date: dup.issued_date,
+          same_amount: dup.same_amount, settlement_id: dup.settlement_id || null, settled_period: dup.settled_period || null,
         };
-        row.message = `${dup.doc_number} for ${dup.amount} is already on this ledger (${dup.status}). Importing it again would double what is owed.`;
+        row.message = duplicateNote(dup, parsed.amount);
       }
       out.push(row);
     }
@@ -406,9 +487,21 @@ router.post('/:id/documents/import', uploadDocs, async (req, res) => {
         skipped.push({ filename: name, reason: 'no amount' });
         continue;
       }
-      if (!row.allow_duplicate) {
-        const dup = findExistingDoc(db, partner.id, { doc_number: row.doc_number, amount: Number(row.amount) });
-        if (dup) { skipped.push({ filename: name, reason: `already on the ledger as ${dup.doc_number}` }); continue; }
+      const dup = findExistingDoc(db, partner.id, { doc_number: row.doc_number, amount: Number(row.amount), direction: row.direction });
+      // A SETTLED match is refused whatever the row says. The money behind it
+      // has moved; `allow_duplicate` is for "this really is a second document",
+      // and a second document with a settled document's number is a copy.
+      if (dup?.settlement_id) {
+        skipped.push({ filename: name, reason: `already settled ${dup.settled_period || ''} as ${dup.doc_number}`, settlement_id: dup.settlement_id });
+        continue;
+      }
+      // Any other match needs a PERSON to say it is a second document. A token
+      // never overrides a duplicate: the review step that would catch a wrong
+      // override is exactly what a direct API call skips.
+      const override = !!row.allow_duplicate && req.auth?.kind !== 'token';
+      if (dup && !override) {
+        skipped.push({ filename: name, reason: duplicateNote(dup, Number(row.amount)) });
+        continue;
       }
 
       const r = await createDocument(db, {
@@ -417,7 +510,10 @@ router.post('/:id/documents/import', uploadDocs, async (req, res) => {
       if (r.error) { skipped.push({ filename: name, reason: r.error }); continue; }
       const doc = r.documents[0];
       logAudit(req.user, 'create', 'partner_document', doc.id,
-        { imported: true, filename: name, direction: row.direction, amount: Number(row.amount), doc_number: row.doc_number },
+        // The override and what it overrode are recorded, so "why did this
+        // copy get in" is answerable from the trail next time.
+        { imported: true, filename: name, direction: row.direction, amount: Number(row.amount), doc_number: row.doc_number,
+          ...(dup ? { allow_duplicate: true, duplicate_of: dup.id } : {}) },
         null, null, partner.name);
       created.push({ ...doc, filename: name });
     }
@@ -439,7 +535,12 @@ router.post('/:id/documents', uploadDocs, async (req, res) => {
     const r = await createDocument(db, {
       partnerId: req.params.id, body: req.body, files, user: req.user, source: 'internal',
     });
-    if (r.error) return res.status(r.status || 400).json({ error: r.error });
+    if (r.error) {
+      return res.status(r.status || 400).json({
+        error: r.error,
+        ...(r.settlement_id ? { settlement_id: r.settlement_id, settled_period: r.settled_period, duplicate_of: r.duplicate_of } : {}),
+      });
+    }
     logAudit(req.user, 'create', 'partner_document', r.documents[0]?.id,
       { count: r.documents.length, direction: req.body?.direction }, null, null, r.partner.name);
     res.status(201).json(r.documents);
@@ -575,6 +676,66 @@ router.put('/documents/:docId/category', (req, res) => {
   const after = db.prepare('SELECT * FROM partner_documents WHERE id = ?').get(before.id);
   logAudit(req.user, 'update', 'partner_document', before.id,
     { field: 'category', from: before.category, to: category }, before, after, after.doc_number || after.id);
+  res.json({ ...after, extracted_text: undefined });
+});
+
+/**
+ * The dates on a document, on their own — issued, terms, due.
+ *
+ * The edit pencil is drafts-only, rightly, so a FINAL document with a wrong
+ * due date had no door at all: I136 was issued 24 Sep on Net 30 and carried a
+ * due date of 26 May, read off the file. The due date decides whether a
+ * document is in this month's number (Net 30 is the inclusion rule), so a wrong
+ * one is not cosmetic — but changing it is a correction to a date, never to the
+ * amount, the direction, the category or the lines, and this route touches
+ * nothing else.
+ *
+ * Office/admin only, refused once settled (the date was part of what was paid
+ * against) and refused on a void document. A due date before the issue date is
+ * refused rather than stored — that is the I136 mistake itself.
+ *
+ * NOT open to a bot token. The module's rule for tokens is that a document stays
+ * a draft while a token touches it, and this route exists precisely for final
+ * documents, where moving a date moves money between months.
+ */
+router.put('/documents/:docId/dates', (req, res) => {
+  if (!canSettle(req.user)) return res.status(403).json({ error: 'Only the office or an admin can change the dates on a document.' });
+  const db = getDb();
+  const before = db.prepare('SELECT * FROM partner_documents WHERE id = ?').get(req.params.docId);
+  if (!before) return res.status(404).json({ error: 'Document not found' });
+  if (before.settlement_id) {
+    return res.status(400).json({ error: 'This document is part of a settled payment. Its dates are part of what was paid against and cannot be changed.' });
+  }
+  if (before.status === 'void') return res.status(400).json({ error: 'This document is void.' });
+
+  const b = req.body || {};
+  if (b.issued_date !== undefined && b.issued_date !== '' && !isoDay(b.issued_date)) return res.status(400).json({ error: 'The issue date must be a date (YYYY-MM-DD).' });
+  if (b.due_date !== undefined && b.due_date !== '' && !isoDay(b.due_date)) return res.status(400).json({ error: 'The due date must be a date (YYYY-MM-DD).' });
+  const termsRaw = b.terms_days === undefined || b.terms_days === '' ? null : Number(b.terms_days);
+  if (termsRaw != null && !(Number.isFinite(termsRaw) && termsRaw >= 0 && termsRaw <= 365)) {
+    return res.status(400).json({ error: 'Terms are a number of days between 0 and 365.' });
+  }
+  const issued = isoDay(b.issued_date) || before.issued_date;
+  const terms = termsRaw != null ? Math.floor(termsRaw) : before.terms_days;
+  // A due date typed wins. Otherwise, if the issue date or the terms moved, the
+  // due date follows them; if neither moved, it is left as it was.
+  const moved = issued !== before.issued_date || terms !== before.terms_days;
+  const due = isoDay(b.due_date) || (moved ? dueDateFor(issued, terms) : before.due_date);
+  if (issued && due && due < issued) {
+    return res.status(400).json({ error: `A due date of ${due} is before the issue date (${issued}).` });
+  }
+  if (issued === before.issued_date && terms === before.terms_days && due === before.due_date) {
+    return res.json({ ...before, extracted_text: undefined, unchanged: true });
+  }
+  db.prepare(`UPDATE partner_documents SET issued_date = ?, terms_days = ?, due_date = ?,
+      updated_at = datetime('now'), updated_by = ? WHERE id = ?`)
+    .run(issued, terms, due, req.user?.name || null, before.id);
+  const after = db.prepare('SELECT * FROM partner_documents WHERE id = ?').get(before.id);
+  logAudit(req.user, 'update', 'partner_document', before.id, {
+    field: 'dates',
+    from: { issued_date: before.issued_date, terms_days: before.terms_days, due_date: before.due_date },
+    to: { issued_date: issued, terms_days: terms, due_date: due },
+  }, before, after, after.doc_number || after.id);
   res.json({ ...after, extracted_text: undefined });
 });
 
@@ -819,6 +980,28 @@ router.get('/:id/credits', (req, res) => {
 // The draws behind the balance. A running total nobody can open is a number
 // people are asked to take on faith, which is the state this module exists to
 // end.
+/**
+ * The facility as a ledger — every draw grouped by settlement, balance before
+ * and after each. Derived from the application rows (`creditLedger`).
+ */
+export function creditLedgerFor(db, credit) {
+  if (!credit) return null;
+  const apps = db.prepare(`SELECT a.settlement_id, a.document_id, a.amount, a.created_at,
+      d.doc_number, d.description, s.period_end, s.paid_at
+    FROM partner_credit_applications a
+    LEFT JOIN partner_documents d ON d.id = a.document_id
+    LEFT JOIN partner_settlements s ON s.id = a.settlement_id
+    WHERE a.credit_id = ? ORDER BY a.created_at, a.rowid`).all(credit.id);
+  return creditLedger(credit, apps);
+}
+
+router.get('/credits/:creditId/ledger', (req, res) => {
+  const db = getDb();
+  const credit = db.prepare('SELECT * FROM partner_credits WHERE id = ?').get(req.params.creditId);
+  if (!credit) return res.status(404).json({ error: 'Credit not found' });
+  res.json(creditLedgerFor(db, credit));
+});
+
 router.get('/credits/:creditId/applications', (req, res) => {
   const db = getDb();
   res.json(db.prepare(`SELECT a.*, d.doc_number, d.description, d.issued_date, d.category,
@@ -979,9 +1162,104 @@ router.get('/settlements/:settlementId', (req, res) => {
   const db = getDb();
   const s = db.prepare('SELECT * FROM partner_settlements WHERE id = ?').get(req.params.settlementId);
   if (!s) return res.status(404).json({ error: 'Settlement not found' });
-  const docs = listDocuments(db, s.partner_id, { settlement_id: s.id, limit: 2000 });
-  res.json({ settlement: s, documents: docs });
+  res.json(settlementDetail(db, s));
 });
+
+/**
+ * What a settlement was made of, and HOW each document cleared.
+ *
+ * The Settled tab showed "they owed $30,582.51 − we owed $78,280.00" over a
+ * payment of $74,574.98, which does not add up until you know $26,877.49 of
+ * what they owed was taken by the credit. So each document says how it left
+ * the ledger: CREDITED (a credit draw stamped into this settlement — with the
+ * remainder when only part was covered), NETTED (a receivable set against what
+ * we owed) or PAID (a payable, settled by the payment). The credit balance
+ * before and after is read off the draws (`creditLedger`), never stored.
+ *
+ * Nothing here is re-decided: the totals are the ones the settlement row
+ * froze, the draws are the rows it wrote.
+ */
+export function settlementDetail(db, s) {
+  const docs = listDocuments(db, s.partner_id, { settlement_id: s.id, limit: 2000 });
+  const draws = db.prepare(`SELECT credit_id, document_id, amount FROM partner_credit_applications
+    WHERE settlement_id = ? ORDER BY created_at, rowid`).all(s.id);
+  const drawOf = new Map();
+  for (const d of draws) drawOf.set(d.document_id, round2((drawOf.get(d.document_id) || 0) + Number(d.amount || 0)));
+
+  const documents = docs.map(d => {
+    const signed = round2(signedAmount(d));
+    const drawn = drawOf.get(d.id) || 0;
+    const how = drawn > 0 ? 'credited' : d.direction === 'receivable' ? 'netted' : 'paid';
+    return {
+      ...d,
+      signed,
+      how_cleared: how,
+      credited_amount: drawn || 0,
+      // What the credit did not cover, when it ran out part way through.
+      remainder: drawn > 0 ? round2(Math.max(0, signed - drawn)) : 0,
+    };
+  });
+
+  let credit = null;
+  if (draws.length) {
+    const c = db.prepare('SELECT * FROM partner_credits WHERE id = ?').get(draws[0].credit_id);
+    const ledger = creditLedgerFor(db, c);
+    const g = ledger?.groups.find(x => x.settlement_id === s.id);
+    const drawn = round2(draws.reduce((t, x) => t + Number(x.amount || 0), 0));
+    const sideTotal = c?.direction === 'payable' ? s.payable_total : s.receivable_total;
+    credit = {
+      credit_id: c?.id || null, label: c?.label || null, applies_to: c?.applies_to || null, direction: c?.direction || null,
+      facility: ledger?.facility ?? null,
+      drawn_this_period: drawn,
+      balance_before: g?.before ?? null,
+      balance_after: g?.after ?? null,
+      side_total: sideTotal,
+      side_net_after_credit: round2(sideTotal - drawn),
+    };
+  }
+  return {
+    settlement: s,
+    documents,
+    credit,
+    math: {
+      receivable: s.receivable_total,
+      payable: s.payable_total,
+      net_before_credit: round2(s.receivable_total - s.payable_total),
+      net_after_credit: s.net_amount,
+    },
+  };
+}
+
+/**
+ * A document as the PARTNER may see it — an allow list, so a column added to
+ * partner_documents later is not shipped to a public link by default. No file
+ * key, no extracted text, nobody's email, no internal note fields.
+ */
+export function portalDoc(d) {
+  const lines = Array.isArray(d.line_items) ? d.line_items : safeLines(d.line_items);
+  return {
+    id: d.id,
+    doc_type: d.doc_type,
+    doc_number: d.doc_number,
+    reference: d.reference,
+    description: d.description,
+    issued_date: d.issued_date,
+    terms_days: d.terms_days,
+    due_date: d.due_date,
+    amount: d.amount,
+    signed: d.signed != null ? d.signed : round2(signedAmount(d)),
+    category: d.category || null,
+    status: d.status,
+    disputed_reason: d.disputed_reason || null,
+    filename: d.filename || null,
+    has_file: !!(d.storage_key || d.filename),
+    line_items: lines,
+    line_summary: summarizeLineItems(lines),
+    lines_total: d.lines_total ?? null,
+    ...(d.exclusion ? { exclusion: d.exclusion, exclusion_note: d.exclusion_note } : {}),
+    ...(d.how_cleared ? { how_cleared: d.how_cleared, credited_amount: d.credited_amount, remainder: d.remainder } : {}),
+  };
+}
 
 /* ── Reminders ────────────────────────────────────────────────────────────── */
 //

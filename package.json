@@ -109,6 +109,8 @@
     "verify:bulkmembers": "node scripts/verify-bulk-members.mjs",
     "verify:envlimits": "node scripts/verify-env-limits.mjs",
     "verify:bannedcheck": "node scripts/verify-banned-check.mjs",
+    "verify:partnerrecon": "node scripts/verify-partner-recon.mjs",
+    "report:partner-dupes": "node scripts/report-partner-duplicates.mjs",
     "verify:threads": "node scripts/verify-threads.mjs",
     "verify:threadsinbox": "node scripts/verify-threads-inbox.mjs",
     "verify:trainingassign": "node scripts/verify-training-assign.mjs",

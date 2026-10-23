@@ -1,0 +1,231 @@
+// verify:partnerrecon — D-203. Partner Reconciliation: what a settlement was
+// made of, the same on the partner's link, no open copy of a settled document,
+// due dates on final documents, the credit as a ledger, and void/delete kept
+// person-only.
+//
+// Live against a fresh server (verify-all sets PORT and DBPATH, and the S3
+// stand-in for the import). Seeds the August settlement as it really was —
+// I123 9,642.92 + I124 17,234.57 manufacturing, I125 2,672.12 + I126 1,032.90
+// materials, M4's 1537 77,080.00 + 1543 1,200.00 — against a $200,000
+// manufacturing credit, settles it, and asserts the numbers the office and M4
+// both have to be able to read.
+//
+// Control: `main` before the change — the settlement detail carries no
+// `how_cleared`, so the first "how cleared" assertion fails and the re-import of
+// a settled number under another spelling creates a copy.
+import Database from 'better-sqlite3';
+import { chromium } from 'playwright-core';
+
+const PORT = process.env.PORT || 5123;
+const BASE = `http://localhost:${PORT}`;
+let pass = 0, fail = 0;
+const t = (n, ok, d = '') => { if (ok) { pass++; console.log(`  ✓ ${n}`); } else { fail++; console.log(`  ✗ ${n}${d ? ' — ' + d : ''}`); } };
+
+const db = new Database(process.env.DBPATH || process.env.DB_PATH);
+const mk = (id, name, role, dept, ma) => db.prepare(`INSERT OR REPLACE INTO users (id,name,username,role,department,is_active,setup_code,setup_code_expires_at,module_access)
+  VALUES (?,?,?,?,?,1,?,datetime('now','+7 day'),?)`).run(id, name, name, role, dept, `SC-${id}`, ma ? JSON.stringify(ma) : null);
+mk('pr-admin', 'Recon Admin', 'admin', 'admin', null);
+mk('pr-office', 'Recon Office', 'supervisor', 'office', { 'partner-reconciliation': 'edit' });
+mk('pr-floor', 'Recon Floor', 'operator', 'warehouse', { 'partner-reconciliation': 'edit' });
+mk('pr-bot', 'Recon Bot', 'operator', 'office', { 'partner-reconciliation': 'edit' });
+db.prepare(`INSERT OR IGNORE INTO partner_accounts (id, name, terms_days) VALUES ('pr-m4', 'A1 Partner Dynamics', 30)`).run();
+const PID = 'pr-m4';
+
+const json = async (method, path, body, auth) => {
+  const r = await fetch(`${BASE}/api${path}`, { method, headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: `Bearer ${auth}` } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  let j = null; try { j = await r.json(); } catch { /* empty */ }
+  return { status: r.status, body: j };
+};
+const signIn = async (name, id) => {
+  await json('POST', '/users/login', { name });
+  await json('POST', '/users/set-password', { user_id: id, password: 'PartnerRecon!!1', setup_code: `SC-${id}` });
+  return (await json('POST', '/users/login', { name, password: 'PartnerRecon!!1' })).body?.token;
+};
+const admin = await signIn('Recon Admin', 'pr-admin');
+const office = await signIn('Recon Office', 'pr-office');
+const floor = await signIn('Recon Floor', 'pr-floor');
+t('sessions', !!admin && !!office && !!floor);
+const bot = (await json('POST', '/api-tokens', { user_id: 'pr-bot', label: 'recon test bot', scopes: ['read', 'write'] }, admin)).body?.plaintext;
+t('a write token for a non-admin account (temp database only)', !!bot);
+
+const r2 = (n) => Math.round(n * 100) / 100;
+const add = async (doc) => {
+  const r = await json('POST', `/partners/${PID}/documents`, { issued_date: '2026-07-01', terms_days: 30, doc_type: 'invoice', ...doc }, office);
+  return r.body?.[0]?.id;
+};
+const fin = (id) => json('POST', `/partners/documents/${id}/finalize`, {}, office);
+
+console.log('\n── the August settlement ──');
+let r = await json('POST', `/partners/${PID}/credits`, { amount: 200000, applies_to: 'manufacturing', direction: 'receivable', label: 'Manufacturing credit' }, office);
+t('a $200,000 manufacturing credit', r.status === 201, String(r.status));
+const ids = {};
+for (const [n, dir, amt, cat] of [
+  ['I123', 'receivable', 9642.92, 'manufacturing'], ['I124', 'receivable', 17234.57, 'manufacturing'],
+  ['I125', 'receivable', 2672.12, 'materials'], ['I126', 'receivable', 1032.90, 'materials'],
+  ['1537', 'payable', 77080.00, 'manufacturing'], ['1543', 'payable', 1200.00, 'materials'],
+]) {
+  ids[n] = await add({ doc_number: n, direction: dir, amount: amt, category: cat });
+  await fin(ids[n]);
+}
+t('six documents filed and final', Object.values(ids).every(Boolean));
+const rec = (await json('GET', `/partners/${PID}/reconcile?as_of=2026-08-31`, null, office)).body;
+t('the balance before settling is the real one: credit draws 26,877.49', rec?.credit?.drawn_this_period === 26877.49, String(rec?.credit?.drawn_this_period));
+r = await json('POST', `/partners/${PID}/settle`, { as_of: '2026-08-31', expected_net: rec.credit.net_amount, payment_reference: 'ACH 0918' }, office);
+const sid = r.body?.id;
+t('settled: $74,574.98 to the partner', r.status === 201 && r.body.net_amount === -74574.98 && r.body.owed_to === 'them', JSON.stringify(r.body));
+
+console.log('\n── (a) the settlement opened ──');
+const det = (await json('GET', `/partners/settlements/${sid}`, null, office)).body;
+const how = Object.fromEntries((det?.documents || []).map(d => [d.doc_number, d]));
+t('all six documents are in it', det?.documents?.length === 6, String(det?.documents?.length));
+t('I123 9,642.92 CREDITED', how.I123?.how_cleared === 'credited' && how.I123.credited_amount === 9642.92 && how.I123.remainder === 0, JSON.stringify(how.I123 && { h: how.I123.how_cleared, c: how.I123.credited_amount }));
+t('I124 17,234.57 CREDITED', how.I124?.how_cleared === 'credited' && how.I124.credited_amount === 17234.57);
+t('I125 2,672.12 and I126 1,032.90 NETTED', how.I125?.how_cleared === 'netted' && how.I126?.how_cleared === 'netted' && how.I125.signed === 2672.12 && how.I126.signed === 1032.9);
+t('1537 77,080.00 and 1543 1,200.00 PAID', how['1537']?.how_cleared === 'paid' && how['1543']?.how_cleared === 'paid' && how['1537'].signed === 77080);
+t('the math: 30,582.51 − 26,877.49 = 3,705.02, against 78,280.00', det.math.receivable === 30582.51 && det.credit.drawn_this_period === 26877.49 && det.credit.side_net_after_credit === 3705.02 && det.math.payable === 78280, JSON.stringify({ m: det.math, c: det.credit }));
+t('…net paid 74,574.98 (78,280.00 − 3,705.02)', det.math.net_after_credit === -74574.98 && r2(78280 - det.credit.side_net_after_credit) === 74574.98);
+t('credit 200,000.00 before → 173,122.51 after', det.credit.balance_before === 200000 && det.credit.balance_after === 173122.51, JSON.stringify(det.credit));
+t('each document carries its lines and file name fields', 'line_items' in how.I123 && 'filename' in how.I123 && 'category' in how.I123);
+t('the payment reference travels with it', det.settlement.payment_reference === 'ACH 0918');
+
+console.log('\n── (b) the partner\'s link ──');
+const ptok = (await json('POST', `/partners/${PID}/portal-tokens`, { label: 'pr link' }, office)).body?.token;
+const portal = (await json('GET', `/partner-portal/${ptok}`)).body;
+const pst = portal?.settlements?.find(s => s.period_end === '2026-08-31');
+const phow = Object.fromEntries((pst?.documents || []).map(d => [d.doc_number, d]));
+t('the link lists the six August documents under that settlement', pst?.documents?.length === 6, String(pst?.documents?.length));
+t('…in their words: I123 covered by the credit, I125 netted, 1537 paid to you', phow.I123?.how_cleared === 'covered_by_credit' && phow.I125?.how_cleared === 'netted' && phow['1537']?.how_cleared === 'paid_to_you');
+t('…their side: what they owed is "you_owe"', phow.I123?.side === 'you_owe' && phow['1537']?.side === 'you_are_owed');
+t('…the credit 200,000 → 173,122.51 on their side too', pst.credit?.balance_before === 200000 && pst.credit?.balance_after === 173122.51 && pst.credit?.applied === 26877.49);
+const leaks = JSON.stringify(portal);
+t('no storage key, extracted text, creator or internal fields reach the link', !/storage_key|extracted_text|created_by|finalized_by|updated_by|parsed_amount/.test(leaks));
+t('the link carries the credit as a ledger', portal.credit_ledger?.groups?.[0]?.total === 26877.49 && portal.credit_ledger.remaining === 173122.51);
+const other = db.prepare(`INSERT OR IGNORE INTO partner_accounts (id, name, terms_days) VALUES ('pr-other', 'ZZ Other Co', 30)`).run();
+void other;
+db.prepare(`INSERT INTO partner_documents (id, partner_id, direction, doc_type, doc_number, amount, status, issued_date, due_date, terms_days)
+  VALUES ('pr-other-doc', 'pr-other', 'receivable', 'invoice', 'X1', 10, 'final', '2026-07-01', '2026-07-31', 30)`).run();
+r = await json('GET', `/partner-portal/${ptok}/documents/pr-other-doc/file`);
+t('the token stays scoped to its partner (another account\'s document is 404)', r.status === 404, String(r.status));
+
+console.log('\n── (c) no open copy of a settled document ──');
+r = await json('POST', `/partners/${PID}/documents`, { doc_number: 'INV-I123', direction: 'receivable', amount: 9642.92, issued_date: '2026-10-12' }, office);
+t('filing "INV-I123" again is REFUSED 409, naming the settlement', r.status === 409 && /already settled 2026-08-31/.test(r.body?.error || '') && r.body?.settlement_id === sid, JSON.stringify(r.body));
+r = await json('POST', `/partners/${PID}/documents`, { doc_number: 'i123', direction: 'receivable', amount: 1.00, allow_duplicate: true }, office);
+t('…a different amount and allow_duplicate do not get past it', r.status === 409);
+r = await json('POST', `/partners/${PID}/documents`, { doc_number: 'I123', direction: 'payable', amount: 50 }, office);
+t('…the same number the OTHER way is a different document', r.status === 201);
+
+const pdf = () => new Blob([Buffer.from('%PDF-1.4\n%fake\n')], { type: 'application/pdf' });
+const importRows = async (rows, auth) => {
+  const fd = new FormData();
+  for (let i = 0; i < rows.length; i++) fd.append('files', pdf(), `I${i}.pdf`);
+  fd.append('rows', JSON.stringify(rows));
+  const res = await fetch(`${BASE}/api/partners/${PID}/documents/import`, { method: 'POST', headers: { Authorization: `Bearer ${auth}` }, body: fd });
+  return { status: res.status, body: await res.json().catch(() => null) };
+};
+r = await importRows([{ direction: 'receivable', doc_number: 'I123', amount: 9642.92, allow_duplicate: true }], office);
+t('re-importing I123 is skipped "already settled 2026-08-31", even with allow_duplicate', r.status === 201 && r.body?.created?.length === 0 && /already settled 2026-08-31/.test(r.body?.skipped?.[0]?.reason || ''), JSON.stringify(r.body));
+
+const d1589 = await add({ doc_number: '1589', direction: 'receivable', amount: 500, category: 'materials' });
+r = await importRows([{ direction: 'receivable', doc_number: 'INV-1589', amount: 500 }], office);
+t('"INV-1589" is recognised as "1589" and skipped', r.body?.created?.length === 0 && /1589/.test(r.body?.skipped?.[0]?.reason || ''), JSON.stringify(r.body?.skipped));
+r = await importRows([{ direction: 'receivable', doc_number: '#1589', amount: 600 }], office);
+t('…a different amount is still flagged, worded as such', r.body?.created?.length === 0 && /different amount/i.test(r.body?.skipped?.[0]?.reason || ''), JSON.stringify(r.body?.skipped));
+r = await importRows([{ direction: 'receivable', doc_number: '1589', amount: 500, allow_duplicate: true }], bot);
+t('a TOKEN cannot override a duplicate with allow_duplicate', r.body?.created?.length === 0, JSON.stringify(r.body));
+r = await importRows([{ direction: 'receivable', doc_number: '1589', amount: 500, allow_duplicate: true }], office);
+t('a PERSON may, and the override is in the audit trail', r.body?.created?.length === 1
+  && db.prepare("SELECT COUNT(*) c FROM audit_log WHERE entity_type = 'partner_document' AND details LIKE '%\"allow_duplicate\":true%'").get().c === 1);
+void d1589;
+
+// The 12 Oct copies, as they exist on the live ledger: written straight in,
+// since no door will create them any more.
+const copy = (id, n, amt, cat) => db.prepare(`INSERT INTO partner_documents (id, partner_id, direction, doc_type, doc_number, amount, status, category, issued_date, terms_days, due_date, source)
+  VALUES (?, ?, 'receivable', 'invoice', ?, ?, 'final', ?, '2026-08-05', 30, '2026-09-04', 'import')`).run(id, PID, n, amt, cat);
+copy('pr-c123', 'I123', 9642.92, 'manufacturing'); copy('pr-c124', 'I124', 17234.57, 'manufacturing');
+copy('pr-c125', 'I125', 2672.12, 'materials'); copy('pr-c126', 'I126', 1032.90, 'materials');
+let docs = (await json('GET', `/partners/${PID}/documents?unsettled=1`, null, office)).body;
+t('the office banner lists the four copies', (docs.settled_twins || []).map(x => x.doc_number).sort().join() === 'I123,I124,I125,I126', JSON.stringify(docs.settled_twins?.map(x => x.doc_number)));
+t('…each names the settlement it duplicates', docs.settled_twins.every(x => x.twin.period_end === '2026-08-31' && x.twin.settlement_id === sid));
+t('…and the floor is not shown it', !('settled_twins' in (await json('GET', `/partners/${PID}/documents?unsettled=1`, null, floor)).body));
+let live = (await json('GET', `/partners/${PID}/reconcile?as_of=2026-12-31`, null, office)).body;
+t('while they stand, the copies draw the credit a second time', live.credit.draws.some(d => d.document_id === 'pr-c123'));
+for (const c of ['pr-c123', 'pr-c124', 'pr-c125', 'pr-c126']) await json('POST', `/partners/documents/${c}/void`, {}, office);
+docs = (await json('GET', `/partners/${PID}/documents?unsettled=1`, null, office)).body;
+t('voided by a person, the banner clears itself', (docs.settled_twins || []).length === 0);
+live = (await json('GET', `/partners/${PID}/reconcile?as_of=2026-12-31`, null, office)).body;
+t('…and the credit no longer draws on them', !live.credit.draws.some(d => ['pr-c123', 'pr-c124'].includes(d.document_id)));
+const settledList = (await json('GET', `/partners/${PID}/documents?settled=1`, null, office)).body;
+t('"Show settled" lists the settled documents with their period', settledList.documents.length === 6 && settledList.documents.every(d => d.settled_period === '2026-08-31'));
+
+console.log('\n── (d) dates on an unsettled final document ──');
+db.prepare(`INSERT INTO partner_documents (id, partner_id, direction, doc_type, doc_number, amount, status, issued_date, terms_days, due_date, source)
+  VALUES ('pr-i136', ?, 'receivable', 'invoice', 'I136', 1051.92, 'final', '2026-09-24', 30, '2026-05-26', 'ap-drop')`).run(PID);
+r = await json('PUT', '/partners/documents/pr-i136/dates', { due_date: '2026-10-24' }, office);
+t('the office sets I136\'s due date to 2026-10-24', r.status === 200 && r.body?.due_date === '2026-10-24' && r.body.amount === 1051.92, JSON.stringify(r.body));
+t('…audited with before and after', /"due_date":"2026-05-26"/.test(db.prepare("SELECT details FROM audit_log WHERE entity_id = 'pr-i136' ORDER BY rowid DESC LIMIT 1").get()?.details || ''));
+r = await json('PUT', '/partners/documents/pr-i136/dates', { due_date: '2026-05-26' }, office);
+t('a due date before the issue date is refused (the I136 mistake)', r.status === 400);
+r = await json('PUT', '/partners/documents/pr-i136/dates', { amount: 1, direction: 'payable', due_date: '2026-10-25' }, office);
+const i136 = db.prepare("SELECT amount, direction FROM partner_documents WHERE id = 'pr-i136'").get();
+t('…only the dates move — an amount or direction in the body is ignored', r.status === 200 && i136.amount === 1051.92 && i136.direction === 'receivable');
+r = await json('PUT', `/partners/documents/${ids.I125}/dates`, { due_date: '2026-10-24' }, office);
+t('a SETTLED document refuses with 400', r.status === 400);
+r = await json('PUT', '/partners/documents/pr-i136/dates', { due_date: '2026-10-24' }, floor);
+t('the floor cannot (403)', r.status === 403);
+r = await json('PUT', '/partners/documents/pr-i136/dates', { due_date: '2026-10-24' }, bot);
+t('a token cannot (403)', r.status === 403, String(r.status));
+
+console.log('\n── (e) the credit as a ledger ──');
+const credit = (await json('GET', `/partners/${PID}/credits`, null, office)).body[0];
+const ledger = (await json('GET', `/partners/credits/${credit.id}/ledger`, null, office)).body;
+const appsTotal = db.prepare('SELECT ROUND(SUM(amount), 2) t FROM partner_credit_applications WHERE credit_id = ?').get(credit.id).t;
+t('200,000.00 → August draws 26,877.49 → 173,122.51', ledger.facility === 200000 && ledger.groups.length === 1 && ledger.groups[0].total === 26877.49 && ledger.remaining === 173122.51, JSON.stringify(ledger));
+t('the ledger sums to the draw rows', ledger.applied_to_date === appsTotal);
+t('…and its balance is the opening the live credit starts from', live.credit.opening_balance === ledger.remaining);
+t('the August group names I123 and I124', ledger.groups[0].draws.map(d => d.doc_number).sort().join() === 'I123,I124');
+
+console.log('\n── (f) void and delete stay person-only ──');
+const open = await add({ doc_number: 'TV1', direction: 'receivable', amount: 10 });
+r = await json('POST', `/partners/documents/${open}/void`, {}, bot);
+t('a token POST to /void is 403 token_denied', r.status === 403 && /token_denied/.test(JSON.stringify(r.body)), JSON.stringify(r.body));
+r = await json('DELETE', `/partners/documents/${open}`, null, bot);
+t('a token DELETE is 403 token_denied', r.status === 403 && /token_denied/.test(JSON.stringify(r.body)), JSON.stringify(r.body));
+r = await json('DELETE', `/partners/documents/${ids.I123}`, null, admin);
+t('an admin deleting a SETTLED document is 400', r.status === 400);
+r = await json('POST', `/partners/documents/${ids.I123}/void`, {}, office);
+t('voiding a settled document is 400', r.status === 400);
+
+console.log('\n── the screens ──');
+const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium' }).catch(() => chromium.launch());
+const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+await page.goto(`${BASE}/manifest.webmanifest`);
+const me = (await json('GET', '/users/me', null, office)).body;
+await page.evaluate(([tok, u]) => { localStorage.setItem('auth_token', tok); localStorage.setItem('auth_user', JSON.stringify(u)); }, [office, me]);
+await page.goto(`${BASE}/?tab=partner-reconciliation`);
+await page.waitForTimeout(1500);
+const settledTab = page.getByRole('tab', { name: /Settled/ }).first();
+if (await settledTab.count()) await settledTab.click();
+await page.locator(`[data-settlement-row="${sid}"]`).click().catch(() => {});
+await page.waitForSelector(`[data-settlement-detail="${sid}"]`, { timeout: 8000 }).catch(() => {});
+const detailText = await page.locator(`[data-settlement-detail="${sid}"]`).innerText().catch(() => '');
+if (!detailText && process.env.PR_DEBUG) console.log((await page.locator('body').innerText()).slice(0, 1500));
+t('the Settled row opens to its six documents', (await page.locator(`[data-settlement-detail="${sid}"] [data-settled-doc]`).count()) === 6, detailText.slice(0, 200));
+t('…with Credited / Netted / Paid chips', (await page.locator('[data-how="credited"]').count()) === 2 && (await page.locator('[data-how="netted"]').count()) === 2 && (await page.locator('[data-how="paid"]').count()) === 2);
+t('…the credit 200,000 → 173,122.51', /\$200,000\.00 before this settlement → \$173,122\.51 after/.test(detailText));
+t('…and the math line reads 3,705.02', /\$3,705\.02/.test(detailText) && /\$74,574\.98/.test(detailText));
+
+const ppage = await browser.newPage({ viewport: { width: 390, height: 900 } });
+await ppage.goto(`${BASE}/partner/${ptok}`);
+await ppage.waitForSelector('[data-portal-settlement="2026-08-31"]', { timeout: 8000 }).catch(() => {});
+await ppage.locator('[data-portal-settlement="2026-08-31"] button').first().click().catch(() => {});
+t('the partner page says "Already settled 2026-08-31" and opens to six documents',
+  /Already settled 2026-08-31/.test(await ppage.locator('[data-portal-settlement="2026-08-31"]').innerText().catch(() => ''))
+  && (await ppage.locator('[data-portal-settled-doc]').count()) === 6);
+t('…with "Covered by the credit" on I123 and I124', (await ppage.locator('[data-portal-how="covered_by_credit"]').count()) === 2);
+const overflow = await ppage.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+t('…no sideways scroll at 390px', !overflow);
+await browser.close();
+
+console.log(`\n${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

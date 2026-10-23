@@ -28,6 +28,35 @@ async function call(path, options = {}) {
   return data;
 }
 
+async function openPortalFile(token, d) {
+  try {
+    const { url } = await call(`/${token}/documents/${d.id}/file`);
+    if (url) openFile({ url, name: d.filename });
+  } catch (e) { window.alert(e.message); }
+}
+
+/** What was on a document — the lines read off it, when there are any. */
+function PortalLines({ d }) {
+  const items = d.line_items || [];
+  if (!items.length) return <p className="text-[11px] text-gray-400 mt-1">No line detail on this document.</p>;
+  return (
+    <div className="mt-1 overflow-x-auto" data-portal-lines>
+      <table className="text-[11px] min-w-[320px]">
+        <tbody className="divide-y divide-gray-100">
+          {items.map((i, k) => (
+            <tr key={k}>
+              <td className="py-0.5 pr-3 text-gray-800">{i.description}</td>
+              <td className="py-0.5 pr-3 text-right text-gray-500 whitespace-nowrap">{i.quantity != null ? `${i.quantity} ×` : ''}</td>
+              <td className="py-0.5 pr-3 text-right text-gray-500 whitespace-nowrap">{i.unit_price != null ? money(i.unit_price) : ''}</td>
+              <td className="py-0.5 text-right text-gray-900 whitespace-nowrap">{i.amount != null ? money(i.amount) : '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function DocList({ title, rows, tone, token, onDispute }) {
   const total = (rows || []).reduce((t, r) => t + (r.signed || 0), 0);
   return (
@@ -54,17 +83,16 @@ function DocList({ title, rows, tone, token, onDispute }) {
               </div>
               <span className={`text-sm whitespace-nowrap ${r.signed < 0 ? 'text-red-600' : 'text-gray-900'}`}>{money(r.signed)}</span>
             </div>
-            <div className="mt-1 flex items-center gap-3">
+            <div className="mt-1 flex items-center gap-3 flex-wrap">
               {r.filename && (
-                <button onClick={async () => {
-                  try {
-                    const { url } = await call(`/${token}/documents/${r.id}/file`);
-                    if (url) openFile({ url, name: r.filename });
-                  } catch (e) { window.alert(e.message); }
-                }} className="inline-flex items-center gap-1 text-[11px] text-powder-600 hover:underline">
+                <button onClick={() => openPortalFile(token, r)} className="inline-flex items-center gap-1 text-[11px] text-powder-600 hover:underline">
                   <ExternalLink size={10} /> {r.filename}
                 </button>
               )}
+              <details className="text-[11px]" data-portal-doc={r.doc_number || r.id}>
+                <summary className="cursor-pointer text-gray-500">What was on it{r.line_summary ? ` — ${r.line_summary}` : ''}</summary>
+                <PortalLines d={r} />
+              </details>
               <button onClick={() => onDispute(r)} className="text-[11px] text-gray-400 hover:text-red-600 hover:underline">
                 This doesn&apos;t look right
               </button>
@@ -89,7 +117,7 @@ function DocList({ title, rows, tone, token, onDispute }) {
  * the first question, and an answer that needs a phone call puts the two
  * companies back on separate books.
  */
-function PortalCredit({ credit, history }) {
+function PortalCredit({ credit, ledger }) {
   const [open, setOpen] = useState(false);
   if (!credit) return null;
   const used = credit.facility - credit.remaining_balance;
@@ -158,22 +186,132 @@ function PortalCredit({ credit, history }) {
             </div>
           )}
 
-          {history?.length > 0 && (
-            <div>
-              <p className="text-[11px] font-semibold text-indigo-900">Earlier draws</p>
-              <ul className="mt-0.5 space-y-0.5 max-h-40 overflow-y-auto">
-                {history.map((h, i) => (
-                  <li key={i} className="text-[11px] text-indigo-800 flex justify-between gap-2">
-                    <span className="truncate">{h.doc_number || h.description}{h.period_end ? ` · ${h.period_end}` : ''}</span>
-                    <span className="shrink-0 font-medium">{money(h.amount)}</span>
+          {ledger?.groups?.length > 0 && (
+            <div data-portal-ledger>
+              <p className="text-[11px] font-semibold text-indigo-900">Earlier settlements against the credit</p>
+              <ol className="mt-1 space-y-1.5">
+                <li className="text-[11px] text-indigo-800 flex justify-between gap-2">
+                  <span>Credit</span><span className="font-semibold">{money(ledger.facility)}</span>
+                </li>
+                {ledger.groups.map(g => (
+                  <li key={g.settlement_id || 'none'} className="border-l-2 border-indigo-200 pl-2">
+                    <div className="text-[11px] text-indigo-900 flex justify-between gap-2">
+                      <span className="font-medium">Settlement to {g.period_end || '—'}</span>
+                      <span className="font-medium">−{money(g.total)}</span>
+                    </div>
+                    <ul className="mt-0.5 space-y-0.5">
+                      {g.draws.map((d, i) => (
+                        <li key={`${d.document_id}-${i}`} className="text-[11px] text-indigo-700 flex justify-between gap-2">
+                          <span className="truncate">{d.doc_number || d.description}</span>
+                          <span className="shrink-0">{money(d.amount)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="text-[10px] text-indigo-600 mt-0.5">{money(g.before)} → {money(g.after)}</div>
                   </li>
                 ))}
-              </ul>
+                <li className="text-[11px] text-indigo-900 flex justify-between gap-2 border-t border-indigo-200 pt-1">
+                  <span>Left before this period</span><span className="font-semibold">{money(ledger.remaining)}</span>
+                </li>
+              </ol>
             </div>
           )}
         </div>
       )}
     </div>
+  );
+}
+
+const HOW_WORDS = {
+  covered_by_credit: ['Covered by the credit', 'bg-indigo-50 text-indigo-700 border-indigo-200'],
+  netted: ['Netted', 'bg-green-50 text-green-700 border-green-200'],
+  paid_to_you: ['Paid to you', 'bg-amber-50 text-amber-800 border-amber-200'],
+};
+
+/**
+ * One settlement, from their side: every document in it, how each cleared, and
+ * the file behind it. M4's AP asked for exactly this list ("all the paid and
+ * credited invoice #s included in the August reconciliation").
+ */
+function PortalSettlement({ s, token }) {
+  const [open, setOpen] = useState(false);
+  const owed = (side) => s.documents.filter(d => d.side === side);
+  return (
+    <li className="px-4 py-2.5" data-portal-settlement={s.period_end}>
+      <button type="button" onClick={() => setOpen(o => !o)} className="w-full text-left flex items-center justify-between gap-3 flex-wrap">
+        <span className="text-sm text-gray-900">
+          Already settled {s.period_end} · {money(Math.abs(s.net_amount))}{' '}
+          <span className="text-gray-500">
+            {s.owed_to === 'us' ? 'you paid Powder Ops' : s.owed_to === 'them' ? 'Powder Ops paid you' : ''}
+            {' · '}{s.documents.length} document{s.documents.length === 1 ? '' : 's'}
+          </span>
+        </span>
+        <span className="text-xs text-powder-600">{open ? 'Hide' : 'Show the documents'}</span>
+      </button>
+      {open && (
+        <div className="mt-2 space-y-2">
+          <p className="text-xs text-gray-600">
+            You owed {money(s.you_owed)}
+            {s.credit?.applied > 0 && <> (less the {s.credit.applies_to} credit {money(s.credit.applied)}) = {money(s.credit.side_after_credit)}</>}
+            {' '}− Powder Ops owed you {money(s.you_were_owed)} = {money(Math.abs(s.net_amount))}
+            {s.owed_to === 'them' ? ' paid to you' : s.owed_to === 'us' ? ' paid to Powder Ops' : ''}.
+          </p>
+          {s.credit?.applied > 0 && (
+            <p className="text-xs text-indigo-800">Credit: {money(s.credit.balance_before)} before → {money(s.credit.balance_after)} after.</p>
+          )}
+          {[['you_owe', 'What you owed'], ['you_are_owed', 'What Powder Ops owed you']].map(([side, label]) => owed(side).length > 0 && (
+            <div key={side}>
+              <p className="text-[11px] font-semibold text-gray-700">{label}</p>
+              <ul className="divide-y divide-gray-100">
+                {owed(side).map(d => {
+                  const [w, tone] = HOW_WORDS[d.how_cleared] || ['—', 'bg-gray-100 border-gray-200'];
+                  return (
+                    <li key={d.id} className="py-1.5" data-portal-settled-doc={d.doc_number || d.id}>
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <span className="text-sm text-gray-900">
+                          {d.doc_number || 'Document'}
+                          <span className="ml-1 text-xs text-gray-400">issued {d.issued_date || '—'} · due {d.due_date || '—'}</span>
+                        </span>
+                        <span className="flex items-center gap-2">
+                          <span data-portal-how={d.how_cleared} className={`px-1.5 py-0.5 rounded border text-[10px] font-medium ${tone}`}>
+                            {w}{d.how_cleared === 'covered_by_credit' && d.remainder > 0 ? ` ${money(d.credited_amount)}, ${money(d.remainder)} netted` : ''}
+                          </span>
+                          <span className="text-sm whitespace-nowrap">{money(d.signed)}</span>
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 flex-wrap mt-0.5">
+                        {d.filename && (
+                          <button onClick={() => openPortalFile(token, d)} className="inline-flex items-center gap-1 text-[11px] text-powder-600 hover:underline">
+                            <ExternalLink size={10} /> PDF
+                          </button>
+                        )}
+                        <details className="text-[11px]">
+                          <summary className="cursor-pointer text-gray-500">What was on it</summary>
+                          <PortalLines d={d} />
+                        </details>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
+          <div className="flex items-center gap-3 text-xs text-gray-500">
+            {s.payment_reference && <span>ref {s.payment_reference}</span>}
+            {s.paid_at && <span>paid {(s.paid_at || '').slice(0, 10)}</span>}
+            {s.proof_filename && (
+              <button type="button" onClick={async () => {
+                try {
+                  const r = await fetch(`/api/partner-portal/${token}/settlements/${s.id}/proof`);
+                  const j = await r.json();
+                  if (j.url) openFile({ url: j.url, name: s.proof_filename }); else window.alert(j.error || 'Not available.');
+                } catch { window.alert('Could not open the file.'); }
+              }} className="text-[11px] text-indigo-700 underline">proof of payment</button>
+            )}
+          </div>
+        </div>
+      )}
+    </li>
   );
 }
 
@@ -285,7 +423,7 @@ export default function PartnerPortalPage({ token }) {
             )}
           </div>
 
-          <PortalCredit credit={data.credit} history={data.credit_history} />
+          <PortalCredit credit={data.credit} ledger={data.credit_ledger} />
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2">
@@ -393,28 +531,7 @@ export default function PartnerPortalPage({ token }) {
               <span className="text-sm font-semibold text-gray-900">Already settled</span>
             </div>
             <ul className="divide-y divide-gray-100">
-              {data.settlements.map(s => (
-                <li key={s.id} className="px-4 py-2.5 flex items-center justify-between gap-3">
-                  <span className="text-sm text-gray-900">
-                    {s.period_end} · {money(Math.abs(s.net_amount))}{' '}
-                    <span className="text-gray-500">
-                      {s.owed_to === 'us' ? 'you paid Powder Ops' : s.owed_to === 'them' ? 'Powder Ops paid you' : ''}
-                      {s.proof_filename && (
-                        <button type="button" onClick={async () => {
-                          try {
-                            const r = await fetch(`/api/partner-portal/${token}/settlements/${s.id}/proof`);
-                            const j = await r.json();
-                            if (j.url) openFile({ url: j.url, name: s.proof_filename }); else window.alert(j.error || 'Not available.');
-                          } catch { window.alert('Could not open the file.'); }
-                        }} className="ml-2 text-[11px] text-indigo-700 underline">proof of payment</button>
-                      )}
-                    </span>
-                  </span>
-                  <span className="text-xs text-gray-400 whitespace-nowrap">
-                    {s.payment_reference ? `ref ${s.payment_reference}` : (s.paid_at || '').slice(0, 10)}
-                  </span>
-                </li>
-              ))}
+              {data.settlements.map(s => <PortalSettlement key={s.id} s={s} token={token} />)}
             </ul>
           </div>
         )}

@@ -607,37 +607,60 @@ function CreditCard({ credit, pid, canSettle, onChanged }) {
   );
 }
 
-/** The settled draws behind the balance. */
+/**
+ * The facility as a ledger: every settled draw, grouped by the settlement that
+ * took it, with the balance before and after each — then what is left.
+ * Everything here comes from `GET /partners/credits/:id/ledger`, which derives
+ * it from the draw rows; nothing on this card subtracts for itself.
+ */
 function CreditHistory({ creditId }) {
-  const [rows, setRows] = useState(null);
+  const [ledger, setLedger] = useState(null);
   const [err, setErr] = useState(null);
   useEffect(() => {
     let live = true;
-    apiFetch(`/partners/credits/${creditId}/applications`)
-      .then(r => { if (live) setRows(r); })
+    apiFetch(`/partners/credits/${creditId}/ledger`)
+      .then(r => { if (live) setLedger(r); })
       .catch(e => { if (live) setErr(e.message); });
     return () => { live = false; };
   }, [creditId]);
 
   if (err) return <p className="text-[11px] text-red-700">Could not load the history: {err}</p>;
-  if (!rows) return <p className="text-[11px] text-indigo-700">Loading history…</p>;
-  if (!rows.length) {
+  if (!ledger) return <p className="text-[11px] text-indigo-700">Loading history…</p>;
+  return <CreditLedgerView ledger={ledger} />;
+}
+
+export function CreditLedgerView({ ledger }) {
+  if (!ledger?.groups?.length) {
     return <p className="text-[11px] text-indigo-700">Nothing has been settled against this credit yet.</p>;
   }
   return (
-    <div>
+    <div data-credit-ledger>
       <p className="text-[11px] font-semibold text-indigo-900">Already settled against the credit</p>
-      <ul className="mt-0.5 space-y-0.5 max-h-40 overflow-y-auto">
-        {rows.map(a => (
-          <li key={a.id} className="text-[11px] text-indigo-800 flex justify-between gap-2">
-            <span className="truncate min-w-0">
-              {a.doc_number || a.description || a.document_id}
-              {a.period_end && <span className="text-indigo-600"> · period to {a.period_end}</span>}
-            </span>
-            <span className="shrink-0 font-medium">{money(a.amount)}</span>
+      <ol className="mt-1 space-y-1.5">
+        <li className="text-[11px] text-indigo-800 flex justify-between gap-2">
+          <span>Facility</span><span className="font-semibold">{money(ledger.facility)}</span>
+        </li>
+        {ledger.groups.map(g => (
+          <li key={g.settlement_id || 'none'} data-ledger-group={g.period_end || ''} className="border-l-2 border-indigo-200 pl-2">
+            <div className="text-[11px] text-indigo-900 flex justify-between gap-2">
+              <span className="font-medium">Settlement to {g.period_end || '—'}</span>
+              <span className="font-medium">−{money(g.total)}</span>
+            </div>
+            <ul className="mt-0.5 space-y-0.5">
+              {g.draws.map((d, i) => (
+                <li key={`${d.document_id}-${i}`} className="text-[11px] text-indigo-700 flex justify-between gap-2">
+                  <span className="truncate min-w-0">{d.doc_number || d.description || d.document_id}</span>
+                  <span className="shrink-0">{money(d.amount)}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="text-[10px] text-indigo-600 mt-0.5">{money(g.before)} → {money(g.after)}</div>
           </li>
         ))}
-      </ul>
+        <li className="text-[11px] text-indigo-900 flex justify-between gap-2 border-t border-indigo-200 pt-1">
+          <span>Left before this period</span><span className="font-semibold" data-ledger-remaining>{money(ledger.remaining)}</span>
+        </li>
+      </ol>
     </div>
   );
 }
@@ -826,6 +849,204 @@ function ExcludedReport({ recon }) {
 
 /* ── Panel ────────────────────────────────────────────────────────────────── */
 
+/* ── How each settled document cleared ───────────────────────────────────── */
+
+const HOW_LABEL = {
+  credited: ['Credited', 'bg-indigo-50 text-indigo-700 border-indigo-200'],
+  netted: ['Netted', 'bg-green-50 text-green-700 border-green-200'],
+  paid: ['Paid', 'bg-amber-50 text-amber-800 border-amber-200'],
+};
+function HowChip({ d }) {
+  const [label, tone] = HOW_LABEL[d.how_cleared] || ['—', 'bg-gray-100 text-gray-600 border-gray-200'];
+  return (
+    <span data-how={d.how_cleared} className={`inline-block px-1.5 py-0.5 rounded border text-[10px] font-medium whitespace-nowrap ${tone}`}>
+      {label}{d.how_cleared === 'credited' && d.remainder > 0 ? ` ${money(d.credited_amount)} · ${money(d.remainder)} netted` : ''}
+    </span>
+  );
+}
+
+function SettledChip({ d }) {
+  return (
+    <span data-settled-chip className="inline-block px-1.5 py-0.5 rounded border border-gray-200 bg-gray-50 text-[10px] font-medium text-gray-600 whitespace-nowrap">
+      Settled {d.settled_period || ''}
+    </span>
+  );
+}
+
+async function openDocFile(d) {
+  try {
+    const { url } = await apiFetch(`/partners/documents/${d.id}/file`);
+    if (url) openFile({ url, name: d.filename });
+  } catch (e) { window.alert(e.message); }
+}
+
+/**
+ * One settlement, opened: every document, how it cleared, the math, the
+ * payment and the credit before and after. Loaded when the row is opened —
+ * `GET /partners/settlements/:id` existed and nothing called it.
+ */
+function SettlementDetail({ settlementId, canSettle, onChanged }) {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState(null);
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    let live = true;
+    apiFetch(`/partners/settlements/${settlementId}`)
+      .then(r => { if (live) setData(r); })
+      .catch(e => { if (live) setErr(e.message); });
+    return () => { live = false; };
+  }, [settlementId, tick]);
+  if (err) return <p className="text-xs text-red-700 mt-2">Could not load this settlement: {err}</p>;
+  if (!data) return <p className="text-xs text-gray-400 mt-2">Loading…</p>;
+  const { settlement: s, documents, credit, math } = data;
+  return (
+    <div className="mt-3 space-y-3" data-settlement-detail={s.id}>
+      <SettlementMath receivable={math.receivable} payable={math.payable} credit={credit}
+        netBefore={math.net_before_credit} netAfter={math.net_after_credit} />
+      {credit && (
+        <p className="text-xs text-indigo-800" data-credit-before-after>
+          {credit.label || 'Credit'}: {money(credit.balance_before)} before this settlement → {money(credit.balance_after)} after
+          ({money(credit.drawn_this_period)} drawn).
+        </p>
+      )}
+      <ul className="divide-y divide-gray-100 border border-gray-100 rounded-lg">
+        {documents.map(d => (
+          <li key={d.id} className="px-3 py-2" data-settled-doc={d.doc_number || d.id}>
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div className="min-w-0">
+                <p className="text-sm text-gray-900">
+                  <span className="font-medium">{d.doc_number || '—'}</span>
+                  <span className="ml-1.5 text-xs text-gray-500 capitalize">{d.doc_type === 'po' ? 'purchase order' : d.doc_type}</span>
+                  <span className="ml-1.5 text-xs text-gray-500">· {d.direction === 'receivable' ? 'they owed us' : 'we owed them'}</span>
+                </p>
+                <p className="text-xs text-gray-500">
+                  issued {d.issued_date || '—'} · due {d.due_date || '—'}
+                  {(d.line_summary || d.description) ? ` · ${d.line_summary || d.description}` : ''}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <CategoryChip value={d.category} />
+                <HowChip d={d} />
+                <span className={`text-sm font-semibold whitespace-nowrap ${d.signed < 0 ? 'text-red-600' : 'text-gray-900'}`}>{money(d.signed)}</span>
+              </div>
+            </div>
+            <div className="mt-1 flex items-center gap-3 flex-wrap">
+              {d.filename && (
+                <button onClick={() => openDocFile(d)} className="inline-flex items-center gap-1 text-[11px] text-powder-600 hover:underline">
+                  <ExternalLink size={10} /> PDF · {d.filename}
+                </button>
+              )}
+              {(d.line_items?.length > 0 || d.has_text) && (
+                <details className="text-xs">
+                  <summary className="cursor-pointer text-[11px] text-gray-500">What was on it</summary>
+                  <LineItems doc={d} money={money} onRead={() => setTick(x => x + 1)} />
+                </details>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+      <div className="text-xs text-gray-500 flex items-center gap-3 flex-wrap">
+        <span>paid {(s.paid_at || '').slice(0, 10)}{s.paid_by ? ` by ${s.paid_by}` : ''}</span>
+        {s.payment_reference && <span>ref {s.payment_reference}</span>}
+        <PaymentProof settlement={s} canSettle={canSettle} onDone={() => { setTick(x => x + 1); onChanged?.(); }} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Correcting the dates on an unsettled document — issued, terms, due — and
+ * nothing else. The edit pencil is drafts-only; this is the door for a FINAL
+ * document whose due date was read wrong (I136). The server refuses it once
+ * settled and refuses a due date before the issue date.
+ */
+function DocDates({ d, onDone }) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ issued_date: d.issued_date || '', terms_days: d.terms_days ?? '', due_date: d.due_date || '' });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  if (!open) {
+    return (
+      <button type="button" data-doc-dates={d.id} onClick={() => setOpen(true)}
+        className="text-[11px] text-powder-600 hover:underline">Change dates</button>
+    );
+  }
+  const save = async () => {
+    setBusy(true); setError('');
+    try {
+      await apiPut(`/partners/documents/${d.id}/dates`, {
+        issued_date: form.issued_date, terms_days: form.terms_days === '' ? undefined : Number(form.terms_days),
+        due_date: form.due_date,
+      });
+      setOpen(false);
+      onDone?.();
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="mt-2 p-2 rounded-lg border border-gray-200 bg-gray-50 space-y-2" data-doc-dates-form={d.id}>
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="block">
+          <span className="block text-[10px] text-gray-600">Issued</span>
+          <input type="date" value={form.issued_date} onChange={e => setForm(f => ({ ...f, issued_date: e.target.value }))}
+            className="px-2 py-1 border border-gray-300 rounded text-xs" />
+        </label>
+        <label className="block">
+          <span className="block text-[10px] text-gray-600">Terms (days)</span>
+          <input type="number" min="0" max="365" value={form.terms_days} onChange={e => setForm(f => ({ ...f, terms_days: e.target.value }))}
+            className="w-20 px-2 py-1 border border-gray-300 rounded text-xs" />
+        </label>
+        <label className="block">
+          <span className="block text-[10px] text-gray-600">Due</span>
+          <input type="date" name="due_date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))}
+            className="px-2 py-1 border border-gray-300 rounded text-xs" />
+        </label>
+        <button type="button" onClick={save} disabled={busy}
+          className="px-2.5 py-1 rounded bg-powder-600 text-white text-xs font-medium disabled:opacity-50">{busy ? 'Saving…' : 'Save dates'}</button>
+        <button type="button" onClick={() => setOpen(false)} className="px-2 py-1 text-xs text-gray-600">Cancel</button>
+      </div>
+      <p className="text-[10px] text-gray-500">Only the dates change. The due date decides which month this document is settled in.</p>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+    </div>
+  );
+}
+
+/**
+ * Open documents carrying the number of a settled one — the copies the 12 Oct
+ * import let in. Listed for the office with Void beside each; nothing is voided
+ * or deleted for them, and the list clears itself as each copy is voided.
+ */
+function SettledTwins({ rows, onVoid, busy }) {
+  if (!rows?.length) return null;
+  return (
+    <div className="rounded-xl border border-red-200 bg-red-50 p-3" data-settled-twins>
+      <p className="text-sm font-semibold text-red-900">
+        {rows.length} open document{rows.length === 1 ? '' : 's'} may be a copy of a settled invoice
+      </p>
+      <p className="text-xs text-red-800 mt-0.5">
+        Each one has the same number and direction as a document already paid in a settlement, and it is counting in
+        the balance (and can draw the credit) a second time. Look at each and void it if it is a copy.
+      </p>
+      <ul className="mt-2 space-y-1">
+        {rows.map(r => (
+          <li key={r.id} data-twin={r.doc_number} className="text-xs text-red-900 flex items-center justify-between gap-2 flex-wrap bg-white/70 rounded px-2 py-1">
+            <span className="min-w-0">
+              <span className="font-medium">{r.doc_number}</span> {money(r.amount)} · {r.status}
+              {r.source ? ` · ${r.source}` : ''} · added {(r.created_at || '').slice(0, 10)}
+              <span className="text-red-700"> — settled {r.twin.period_end} as {r.twin.doc_number} ({money(r.twin.amount)})</span>
+            </span>
+            <button type="button" disabled={busy} onClick={() => onVoid(r)}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-red-300 text-red-700 hover:bg-red-100 disabled:opacity-50">
+              <Ban size={11} /> Void
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export default function PartnerReconPanel({ user }) {
   const { data: partners } = useApiGet('/partners');
   const partner = (partners || [])[0] || null;
@@ -842,16 +1063,20 @@ export default function PartnerReconPanel({ user }) {
   const [reminders, setReminders] = useState(false);
   const [busy, setBusy] = useState(false);
   const [newLink, setNewLink] = useState(null);
+  // Settled documents are read-only and out of the balance; they are shown on
+  // request, never mixed into the working list.
+  const [showSettled, setShowSettled] = useState(false);
+  const [openSettlement, setOpenSettlement] = useState(null);
   const expand = useRowExpand();
 
   const pid = partner?.id;
   const { data: recon, refresh: refreshRecon } = useApiGet(
     pid ? `/partners/${pid}/reconcile${asOf ? `?as_of=${asOf}` : ''}` : null, [pid, asOf]);
-  const docParams = new URLSearchParams({ unsettled: '1' });
+  const docParams = new URLSearchParams(showSettled ? { settled: '1' } : { unsettled: '1' });
   if (q.trim()) docParams.set('q', q.trim());
   if (dirFilter) docParams.set('direction', dirFilter);
   const { data: docData, refresh: refreshDocs } = useApiGet(
-    pid ? `/partners/${pid}/documents?${docParams}` : null, [pid, q, dirFilter]);
+    pid ? `/partners/${pid}/documents?${docParams}` : null, [pid, q, dirFilter, showSettled]);
   const { data: settlements, refresh: refreshSettlements } = useApiGet(
     pid ? `/partners/${pid}/settlements` : null, [pid]);
   const { data: tokens, refresh: refreshTokens } = useApiGet(
@@ -883,7 +1108,7 @@ export default function PartnerReconPanel({ user }) {
   // What may be DONE to a document, defined once and rendered by both the
   // desktop row and the phone card. A second copy is how the two layouts start
   // offering different buttons on the same record.
-  const DocActions = ({ d }) => (
+  const DocActions = ({ d }) => (d.settlement_id ? null : (
     <>
       {d.status === 'draft' && canSettle && (
         <button onClick={() => act(() => apiPost(`/partners/documents/${d.id}/finalize`, {}))}
@@ -913,11 +1138,17 @@ export default function PartnerReconPanel({ user }) {
           className="ml-1 p-1 text-gray-300 hover:text-red-600" data-tip="Void"><Ban size={13} /></button>
       )}
       {user?.role === 'admin' && (
-        <button onClick={() => { if (window.confirm('Delete this document?')) act(() => apiDelete(`/partners/documents/${d.id}`)); }}
-          className="ml-1 p-1 text-gray-300 hover:text-red-600" data-tip="Delete"><Trash2 size={13} /></button>
+        <button onClick={() => {
+          // Said in full: delete is not void. The row and its stored file are
+          // removed for good; the only trace left is the audit log's snapshot.
+          if (window.confirm(`Delete ${d.doc_number || 'this document'} permanently?\n\nThis removes the row and its stored file. Only the audit log's snapshot of it remains — it cannot be restored. To take a document out of the balance but keep it on record, Void it instead.`)) {
+            act(() => apiDelete(`/partners/documents/${d.id}`));
+          }
+        }}
+          className="ml-1 p-1 text-gray-300 hover:text-red-600" data-tip="Delete permanently"><Trash2 size={13} /></button>
       )}
     </>
-  );
+  ));
 
   const settle = async () => {
     if (!recon) return;
@@ -1018,6 +1249,12 @@ export default function PartnerReconPanel({ user }) {
               list to exactly those rows — a count you cannot act on is the
               same as no count. */}
           <ReadyToShare gaps={docData?.gaps} active={gap} onPick={setGap} />
+          <SettledTwins rows={docData?.settled_twins} busy={busy}
+            onVoid={(r) => {
+              if (window.confirm(`Void ${r.doc_number} (${money(r.amount)})? It leaves the balance; the row stays on record as void.`)) {
+                act(() => apiPost(`/partners/documents/${r.id}/void`, {}));
+              }
+            }} />
 
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative flex-1 min-w-[200px]">
@@ -1032,7 +1269,17 @@ export default function PartnerReconPanel({ user }) {
               <option value="receivable">They owe us</option>
               <option value="payable">We owe them</option>
             </select>
+            <label className="inline-flex items-center gap-1.5 text-sm text-gray-600">
+              <input type="checkbox" className="h-4 w-4 shrink-0" checked={showSettled} data-show-settled
+                onChange={e => setShowSettled(e.target.checked)} />
+              Show settled
+            </label>
           </div>
+          {showSettled && (
+            <p className="text-xs text-gray-500">
+              Settled documents are read-only — they were paid in the settlement named on each. The balance does not count them.
+            </p>
+          )}
 
           {/* A PHONE GETS CARDS, NOT A SIDEWAYS TABLE.
               Seven columns of whitespace-nowrap is ~700px, so on a 390px screen
@@ -1046,13 +1293,13 @@ export default function PartnerReconPanel({ user }) {
               <div key={d.id} className="bg-white rounded-xl border border-gray-200 p-3">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="font-medium text-gray-900 truncate">{d.doc_number || '—'}</p>
+                    <p className={`font-medium truncate ${d.status === 'void' ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{d.doc_number || '—'}</p>
                     <p className="text-xs text-gray-500 capitalize">
                       {d.doc_type === 'po' ? 'Purchase order' : d.doc_type}
                       {d.source === 'partner-portal' && <span className="ml-1 text-powder-600">· from {partner.name}</span>}
                     </p>
                   </div>
-                  <p className={`text-sm font-semibold whitespace-nowrap ${d.doc_type === 'credit' ? 'text-red-600' : 'text-gray-900'}`}>
+                  <p className={`text-sm font-semibold whitespace-nowrap ${d.status === 'void' ? 'text-gray-400 line-through' : d.doc_type === 'credit' ? 'text-red-600' : 'text-gray-900'}`}>
                     {d.doc_type === 'credit' ? '−' : ''}{money(d.amount)}
                   </p>
                 </div>
@@ -1065,6 +1312,7 @@ export default function PartnerReconPanel({ user }) {
                 </p>
                 <div className="flex items-center gap-2 flex-wrap mt-2">
                   <StatusChip s={d.status} />
+                  {d.settlement_id && <SettledChip d={d} />}
                   {canSettle && !d.settlement_id
                     ? <CategoryPicker documentId={d.id} value={d.category} onChanged={reloadAll} />
                     : d.category
@@ -1074,10 +1322,11 @@ export default function PartnerReconPanel({ user }) {
                 <div className="mt-2 flex items-center gap-1 flex-wrap">
                   <DocActions d={d} />
                 </div>
+                {canSettle && !d.settlement_id && d.status !== 'void' && <div className="mt-1"><DocDates d={d} onDone={reloadAll} /></div>}
               </div>
             ))}
             {docs.length === 0 && (
-              <p className="bg-white rounded-xl border border-gray-200 px-3 py-8 text-center text-sm text-gray-400">Nothing outstanding.</p>
+              <p className="bg-white rounded-xl border border-gray-200 px-3 py-8 text-center text-sm text-gray-400">{showSettled ? 'Nothing settled yet.' : 'Nothing outstanding.'}</p>
             )}
           </div>
 
@@ -1101,7 +1350,7 @@ export default function PartnerReconPanel({ user }) {
                       <tr {...expand.rowProps(d.id)} className="border-b border-gray-100">
                         <td className="px-2 py-2.5"><ExpandCell open={expand.isExpanded(d.id)} /></td>
                         <td className="px-3 py-2.5 max-w-[22rem]">
-                          <span className="font-medium text-gray-900">{d.doc_number || '—'}</span>
+                          <span className={`font-medium ${d.status === 'void' ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{d.doc_number || '—'}</span>
                           <span className="block text-xs text-gray-500 capitalize">
                             {d.doc_type === 'po' ? 'Purchase order' : d.doc_type}
                             {d.source === 'partner-portal' && <span className="ml-1 text-powder-600">· from {partner.name}</span>}
@@ -1129,12 +1378,13 @@ export default function PartnerReconPanel({ user }) {
                         <td className="px-3 py-2.5 whitespace-nowrap text-xs text-gray-600">
                           {d.direction === 'receivable' ? 'They owe us' : 'We owe them'}
                         </td>
-                        <td className={`px-3 py-2.5 text-right font-semibold whitespace-nowrap ${d.doc_type === 'credit' ? 'text-red-600' : 'text-gray-900'}`}>
+                        <td className={`px-3 py-2.5 text-right font-semibold whitespace-nowrap ${d.status === 'void' ? 'text-gray-400 line-through' : d.doc_type === 'credit' ? 'text-red-600' : 'text-gray-900'}`}>
                           {d.doc_type === 'credit' ? '−' : ''}{money(d.amount)}
                         </td>
                         <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">{d.due_date || '—'}</td>
                         <td className="px-3 py-2.5">
                           <StatusChip s={d.status} />
+                          {d.settlement_id && <span className="ml-1"><SettledChip d={d} /></span>}
                           {/* The category, editable RIGHT HERE — the "N with no
                               category" banner filters to these rows, and a
                               filter that lands on rows with no control is a
@@ -1166,6 +1416,9 @@ export default function PartnerReconPanel({ user }) {
                             { label: 'Approved final by', value: d.finalized_by },
                             { label: 'Dispute', value: d.disputed_reason ? `${d.disputed_reason} — ${d.disputed_by}` : null },
                           ]} />
+                          {canSettle && !d.settlement_id && d.status !== 'void' && (
+                            <div className="mt-2"><DocDates d={d} onDone={reloadAll} /></div>
+                          )}
                           {/* The row's amount versus what the FILE prints as
                               its total. This is the discrepancy the partner
                               finds first, so it is said here — with the fix one
@@ -1224,7 +1477,7 @@ export default function PartnerReconPanel({ user }) {
                     </Fragment>
                   ))}
                   {docs.length === 0 && (
-                    <tr><td colSpan={7} className="px-3 py-8 text-center text-sm text-gray-400">Nothing outstanding.</td></tr>
+                    <tr><td colSpan={7} className="px-3 py-8 text-center text-sm text-gray-400">{showSettled ? 'Nothing settled yet.' : 'Nothing outstanding.'}</td></tr>
                   )}
                 </tbody>
               </table>
@@ -1236,26 +1489,34 @@ export default function PartnerReconPanel({ user }) {
       {view === 'history' && (
         <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
           {(settlements || []).map(s => (
-            <div key={s.id} className="px-4 py-3 flex items-start justify-between gap-3 flex-wrap">
-              <div className="min-w-0">
-                <p className="font-medium text-gray-900">
-                  {s.period_end} · {money(Math.abs(s.net_amount))}{' '}
-                  <span className="font-normal text-gray-500">
-                    {s.owed_to === 'us' ? `from ${partner.name}` : s.owed_to === 'them' ? `to ${partner.name}` : ''}
-                  </span>
-                </p>
-                <p className="text-xs text-gray-500">
-                  they owed {money(s.receivable_total)} − we owed {money(s.payable_total)} ·
-                  {' '}{s.document_count} document{s.document_count === 1 ? '' : 's'}
-                  {s.payment_reference ? ` · ref ${s.payment_reference}` : ''}
-                </p>
-                <div className="mt-1">
-                  <PaymentProof settlement={s} canSettle={canSettle} onDone={reloadAll} />
+            <div key={s.id} className="px-4 py-3">
+              {/* The row opens to every document in the settlement and how each
+                  cleared — the one-line summary alone made $74,574.98 look as if
+                  it did not add up. */}
+              <button type="button" data-settlement-row={s.id} onClick={() => setOpenSettlement(o => (o === s.id ? null : s.id))}
+                className="w-full text-left flex items-start justify-between gap-3 flex-wrap">
+                <div className="min-w-0">
+                  <p className="font-medium text-gray-900">
+                    <ExpandCell open={openSettlement === s.id} />{' '}
+                    {s.period_end} · {money(Math.abs(s.net_amount))}{' '}
+                    <span className="font-normal text-gray-500">
+                      {s.owed_to === 'us' ? `from ${partner.name}` : s.owed_to === 'them' ? `to ${partner.name}` : ''}
+                    </span>
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    they owed {money(s.receivable_total)} − we owed {money(s.payable_total)} ·
+                    {' '}{s.document_count} document{s.document_count === 1 ? '' : 's'}
+                    {s.payment_reference ? ` · ref ${s.payment_reference}` : ''}
+                    <span className="ml-1 text-powder-600">{openSettlement === s.id ? 'Hide' : 'Show the documents'}</span>
+                  </p>
                 </div>
-              </div>
-              <span className="text-xs text-gray-400 whitespace-nowrap">
-                paid {(s.paid_at || '').slice(0, 10)} · {s.paid_by}
-              </span>
+                <span className="text-xs text-gray-400 whitespace-nowrap">
+                  paid {(s.paid_at || '').slice(0, 10)} · {s.paid_by}
+                </span>
+              </button>
+              {openSettlement === s.id
+                ? <SettlementDetail settlementId={s.id} canSettle={canSettle} onChanged={reloadAll} />
+                : <div className="mt-1"><PaymentProof settlement={s} canSettle={canSettle} onDone={reloadAll} /></div>}
             </div>
           ))}
           {(settlements || []).length === 0 && (

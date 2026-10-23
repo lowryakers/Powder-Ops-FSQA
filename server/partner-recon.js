@@ -225,3 +225,68 @@ export function endOfMonth(dateish) {
   const d = dateish ? new Date(`${String(dateish).slice(0, 10)}T00:00:00Z`) : new Date();
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).toISOString().slice(0, 10);
 }
+
+/* ── Document numbers ─────────────────────────────────────────────────────── */
+
+/**
+ * The document number as an IDENTITY, not as typed.
+ *
+ * The duplicate check compared the number as an exact string, so "INV-1589",
+ * "#1589", "1589 " and "1589" were four different invoices — and an import of a
+ * document already settled sailed straight past it (the 12 Oct copies of
+ * I123–I126). Case, surrounding space, a leading "#", and an "INV"/"Invoice"/
+ * "Invoice No." prefix are how the same number gets written by two people and
+ * two systems; nothing else is folded. "I123" keeps its I — that letter is part
+ * of how Powder Ops numbers its invoices — and "INV" is only stripped when a
+ * separator or a digit follows it, so a number that merely starts with those
+ * letters is left alone.
+ */
+export function normDocNumber(v) {
+  let s = String(v ?? '').trim().toUpperCase();
+  if (!s) return null;
+  s = s.replace(/^(?:INVOICE|INV)(?=[\s#:.\d-]|$)(?:\s*(?:NO\.?|NUMBER))?/, '');
+  s = s.replace(/^[\s#:.-]+/, '').replace(/\s+/g, '');
+  return s || null;
+}
+
+/**
+ * The credit facility as a ledger: every draw, grouped by the settlement that
+ * took it, with the balance before and after each one.
+ *
+ * DERIVED, never stored. `applications` are the partner_credit_applications rows
+ * for ONE credit, in the order they were written (created_at, then insertion);
+ * the running balance is the facility minus everything before. A stored
+ * "balance after" would be a second owner of the number the draws already own.
+ */
+export function creditLedger(credit, applications = []) {
+  const facility = round2(Number(credit?.amount || 0));
+  const groups = [];
+  const byId = new Map();
+  for (const a of applications) {
+    const key = a.settlement_id || '(none)';
+    let g = byId.get(key);
+    if (!g) {
+      g = { settlement_id: a.settlement_id || null, period_end: a.period_end || null, paid_at: a.paid_at || null, draws: [], total: 0 };
+      byId.set(key, g);
+      groups.push(g);
+    }
+    g.draws.push({ document_id: a.document_id, doc_number: a.doc_number || null, description: a.description || null, amount: round2(a.amount) });
+    g.total = round2(g.total + Number(a.amount || 0));
+  }
+  let balance = facility;
+  for (const g of groups) {
+    g.before = balance;
+    balance = round2(balance - g.total);
+    g.after = balance;
+  }
+  return {
+    credit_id: credit?.id || null,
+    label: credit?.label || null,
+    applies_to: credit?.applies_to || null,
+    direction: credit?.direction || null,
+    facility,
+    applied_to_date: round2(facility - balance),
+    remaining: balance,
+    groups,
+  };
+}
