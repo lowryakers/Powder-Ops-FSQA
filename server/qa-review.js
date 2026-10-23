@@ -35,9 +35,10 @@
 // that fails it (bad condition, still out) is never offered as a checkbox and
 // has to be opened and signed deliberately.
 
-import { verifySanitationRecord } from './api/sanitation.js';
 import { signOffProductionEntry } from './api/production.js';
-import { verifyScaleCheck } from './api/scale-verification.js';
+// Sanitation and scale sign through the record interface (D-207) — the same
+// module functions, reached the one way every other caller reaches them.
+import { recordType } from './record-interface.js';
 import { signQmsApproval, BULK_APPROVE } from './api/qms.js';
 import { recordClearance, canClearHygiene, clearanceNeedsLook } from './api/pm.js';
 import { getType } from './qms-config.js';
@@ -163,7 +164,7 @@ export const SOURCES = [
       // refusal (403) from a missing record (404), and flattening both to 400
       // makes the queue report the same refusal differently from the module's
       // own button, which is the drift the shared function exists to prevent.
-      const { error, status } = verifySanitationRecord(db, user, id);
+      const { error, status } = recordType('sanitation').sign(db, user, id);
       return error ? { error, status: status || 400 } : { ok: true };
     },
   },
@@ -194,7 +195,7 @@ export const SOURCES = [
       // refusal (403) from a missing record (404), and flattening both to 400
       // makes the queue report the same refusal differently from the module's
       // own button, which is the drift the shared function exists to prevent.
-      const { error, status } = verifySanitationRecord(db, user, id);
+      const { error, status } = recordType('sanitation').sign(db, user, id);
       return error ? { error, status: status || 400 } : { ok: true };
     },
   },
@@ -220,7 +221,7 @@ export const SOURCES = [
     })),
     canSign: canSignScale,
     sign: (db, user, id) => {
-      const { error, status } = verifyScaleCheck(db, user, id);
+      const { error, status } = recordType('scale').sign(db, user, id);
       return error ? { error, status } : { ok: true };
     },
   },

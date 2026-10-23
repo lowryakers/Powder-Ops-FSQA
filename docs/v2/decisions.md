@@ -8160,3 +8160,43 @@ record and asked: is this a signature, and does it go through `gateSignature`?
   routes now send the password.
 - **Found in passing:** `verify:nfpbotpanel` and `verify:nfpextract` had been failing since D-178 folded the
   product drawer. They clicked a button inside a folded section. Both now open the section first.
+
+## D-207 — The record interface: sanitation and scale say the same five things about their records (23 Oct 2026)
+Single-spine move 02, "a record interface before a record table" (architecture.md § 02). No table is merged and
+nothing is migrated.
+- **`server/record-interface.js` holds `RECORD_TYPES`.** Each entry implements **file, sign, revoke, retrieve,
+  describe**, plus `get` and `canRead`. Two types are adopted: sanitation records (with QA inspection records,
+  which share the table) and scale verifications. These are the two most-read records, and the roadmap named
+  them.
+- **Every adapter calls the module's own function.** Nothing in the interface writes a record column:
+  - `file` is `createSanitationRecord` / `recordScaleVerification`;
+  - `sign` is `verifySanitationRecord` / `verifyScaleCheck`;
+  - `revoke` is the new `revokeSanitationVerification` / `revokeScaleVerification`.
+  QA Review's sanitation, QA-inspection and scale sources now sign through `recordType(...).sign`, so there is
+  one path to a signature.
+- **The password is the caller's.** `sign` assumes the route in front of it ran `gateSignature`. The interface
+  is a service, not a door.
+- **A scale verification could not be revoked at all**, so a QA who signed the wrong check had no way back.
+  `DELETE /scale-verification/:id/verify` follows the house rule: the signer or an admin revokes, and it is
+  audited with who had signed. Sanitation's revoke was route code and is now an exported function the route calls.
+- **`describe` is one shape** for every type: type, id, form (with its revision), title, place, equipment,
+  performed by/at, result, signed by/at, and a link to its screen.
+- **`GET /api/records` is the read side**, and the seed of move 04's retrieval surface.
+  - It filters by type, date range, person (who did it or who signed it), place, equipment, form number prefix,
+    and signed/unsigned.
+  - It is bounded (500), newest first, and says when it was cut.
+  - `GET /api/records/types` lists the types a person may read; `GET /api/records/:type/:id` describes one.
+  - It is read-only.
+- **Each type is read only by someone who can open its module.** Sanitation-group rows need Sanitation,
+  QA-group rows need QA Inspections, and scale needs Calibration. The router is mounted without
+  `requireModuleWrite`, because that guard would be a second, coarser copy of the same rule. A record the caller
+  may not read is a 404.
+- **Next on the interface:** the QMS record types and the check records (`fileCheckRecord`), then move 04's
+  screen on top of `GET /api/records`.
+- `verify:recordinterface` (28). It asserts:
+  - every type implements all five;
+  - the list's counts agree with the modules' own tables;
+  - a signature through either door shows on the described record;
+  - the revoke and its refusals;
+  - who can read what.
+  Control: on the code before this, `/api/records` does not exist and the scale revoke is a 404.

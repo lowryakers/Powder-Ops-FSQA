@@ -13,6 +13,7 @@ import { hasExplicitEdit } from '../module-access.js';
 import { scaleCheckStatus } from '../scale-checks.js';
 import { SCALE_FORMS, SCALE_PROCEDURE, procedureFor, getScaleForm, gradeReadings } from '../scale-forms.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
+import { mayRevokeSignature } from '../record-permissions.js';
 import { stampOnFile, withDisposition } from '../product-disposition.js';
 
 const router = Router();
@@ -154,6 +155,33 @@ router.put('/:id/verify', (req, res) => {
   const { error, status, record } = verifyScaleCheck(getDb(), req.user, req.params.id);
   if (error) return res.status(status).json({ error });
   logAudit(req.user, 'sign', 'scale_verification', req.params.id, signatureEvidence(), null, record);
+  res.json(record);
+});
+
+/**
+ * Revoking QA's counter-signature (D-207). There was no way back from a scale
+ * verification at all: a QA who signed the wrong check could not undo it. The
+ * house rule (record-permissions.js) — the signer or an admin revokes, the
+ * record is corrected, and it is signed again, all audited.
+ * Returns { error, status } or { record }.
+ */
+export function revokeScaleVerification(db, user, id) {
+  const existing = db.prepare('SELECT * FROM scale_verifications WHERE id = ?').get(id);
+  if (!existing) return { error: 'Scale verification not found', status: 404 };
+  if (!existing.verified_by) return { error: 'This check is not verified.', status: 400 };
+  if (!mayRevokeSignature(user, existing.verified_by)) {
+    return { error: `Only ${existing.verified_by} or an admin can revoke this verification.`, status: 403 };
+  }
+  db.prepare('UPDATE scale_verifications SET verified_by = NULL, verified_at = NULL WHERE id = ?').run(existing.id);
+  const updated = db.prepare('SELECT * FROM scale_verifications WHERE id = ?').get(existing.id);
+  logAudit(user, 'update', 'scale_verification', existing.id,
+    { verification_revoked: true, was_verified_by: existing.verified_by, form_code: existing.form_code }, existing, updated);
+  return { record: shape(updated) };
+}
+
+router.delete('/:id/verify', (req, res) => {
+  const { error, status, record } = revokeScaleVerification(getDb(), req.user, req.params.id);
+  if (error) return res.status(status).json({ error });
   res.json(record);
 });
 
