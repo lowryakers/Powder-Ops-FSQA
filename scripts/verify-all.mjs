@@ -129,6 +129,7 @@ const RUNS = [
   ['verify-bulk-members.mjs', 5120, {}, false],
   ['verify-env-limits.mjs', 5121, {}, false],
   ['verify-banned-check.mjs', 5122, {}, false],
+  ['verify-partner-recon.mjs', 5123, {}, true],
   ['verify-onboarding-edit.mjs', 5074, {}, false],
   // Same server on two addresses: the link names 127.0.0.1, the browser reads localhost (D-156).
   ['verify-reminder-link.mjs', 5075, { READYDOC_ORIGIN: 'http://127.0.0.1:5075' }, false],

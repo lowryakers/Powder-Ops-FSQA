@@ -5849,6 +5849,19 @@ lot number printed **inside** the PDF (`extracted_text` is searched, never shipp
 Verified end to end on a fresh DB: 35 assertions covering the arithmetic, Net-30 exclusion, the 403s, the
 409 on a stale balance, settlement immutability, and every portal boundary.
 
+### A settlement opens; a settled document cannot come back as an open copy (D-203)
+`settlementDetail()` / `portalDoc()` / `creditLedgerFor()` / `settledTwins()` in `api/partners.js`, `normDocNumber` +
+`creditLedger` in `server/partner-recon.js` (PURE), `PUT /partners/documents/:docId/dates`, `GET /partners/credits/:id/ledger`.
+- **Each settled document says how it cleared**: credited (a draw stamped into that settlement, remainder if partial),
+  netted (receivable), or paid (payable). The credit's balance before and after is DERIVED from the draw rows.
+- **The partner's link reads the same `settlementDetail`, through `portalDoc`**, an allow list. Never ship a raw
+  `partner_documents` row to the portal.
+- **The duplicate check matches `normDocNumber` + direction, settled documents first.** A settled match is refused at
+  `createDocument`, so every door is covered (409). A token never overrides a duplicate. The office banner lists open
+  copies of settled documents; a person voids them. Nothing auto-voids.
+- **Dates on a final, unsettled document**: office/admin only, not for tokens (a date moves money between months).
+- `verify:partnerrecon` (60). `npm run report:partner-dupes -- <db copy>` is read-only and explains each copy.
+
 ## Reimbursements (personal card spend) — Accounting tab #4
 `reimbursements` + `reimbursement_receipts` (`server/api/reimbursements.js`, `ReimbursementsPanel.jsx`),
 a tab in the **Accounting** hub. Today it is Marnee and Adam and a personal card; the loop is photograph the

@@ -26,7 +26,7 @@ import { getDb, logAudit } from '../db.js';
 import { presignGet } from '../storage.js';
 import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { endOfMonth, applyCredit } from '../partner-recon.js';
-import { createDocument, currentReconciliation, creditFor } from './partners.js';
+import { createDocument, currentReconciliation, creditFor, settlementDetail, portalDoc, creditLedgerFor } from './partners.js';
 
 const router = Router();
 
@@ -68,9 +68,45 @@ router.get('/:token', (req, res) => {
   // for it. An explicit column list silently drops a new column — the same way
   // `category` went missing from the reconcile query — and the symptom here
   // would be a settlement that looks unproven on their side and proven on ours.
-  const settlements = db.prepare(`SELECT id, period_end, net_amount, owed_to, status, paid_at, payment_reference,
-      proof_filename
-    FROM partner_settlements WHERE partner_id = ? ORDER BY period_end DESC LIMIT 24`).all(partner.id);
+  //
+  // Each settlement now carries its DOCUMENTS and how each cleared — M4's AP
+  // asked twice in September for "all the paid and credited invoice #s included
+  // in the August reconciliation", and the page showed one line per payment.
+  // Built by the same `settlementDetail` the office's Settled tab reads, then
+  // put in their words; every document passes through `portalDoc`, the allow
+  // list of what a public link may show.
+  const settlementRows = db.prepare(`SELECT * FROM partner_settlements WHERE partner_id = ?
+    ORDER BY period_end DESC, created_at DESC LIMIT 24`).all(partner.id);
+  const SIDE = { receivable: 'you_owe', payable: 'you_are_owed' };
+  const HOW = { credited: 'covered_by_credit', netted: 'netted', paid: 'paid_to_you' };
+  const settlements = settlementRows.map(st => {
+    const det = settlementDetail(db, st);
+    return {
+      id: st.id, period_end: st.period_end, net_amount: st.net_amount, owed_to: st.owed_to, status: st.status,
+      paid_at: st.paid_at, payment_reference: st.payment_reference, proof_filename: st.proof_filename,
+      document_count: st.document_count,
+      // Their side of the table: what they owed us is "you owe".
+      you_owed: st.receivable_total,
+      you_were_owed: st.payable_total,
+      credit: det.credit && {
+        label: det.credit.label, applies_to: det.credit.applies_to,
+        applied: det.credit.drawn_this_period,
+        balance_before: det.credit.balance_before, balance_after: det.credit.balance_after,
+        side_after_credit: det.credit.side_net_after_credit,
+      },
+      documents: det.documents.map(d => ({ ...portalDoc(d), side: SIDE[d.direction], how_cleared: HOW[d.how_cleared] })),
+    };
+  });
+
+  // Open documents carry their line items too. The reconcile rows are a narrow
+  // projection, so the lines are looked up once for the lot.
+  const lineRows = db.prepare(`SELECT id, line_items, lines_total, storage_key FROM partner_documents
+    WHERE partner_id = ? AND settlement_id IS NULL`).all(partner.id);
+  const extra = new Map(lineRows.map(x => [x.id, x]));
+  const open = (rows) => (rows || []).map(d => {
+    const x = extra.get(d.id) || {};
+    return portalDoc({ ...d, line_items: x.line_items, lines_total: x.lines_total, storage_key: x.storage_key });
+  });
 
   // The credit, in full, from their side.
   //
@@ -117,9 +153,9 @@ router.get('/:token', (req, res) => {
     owed_to: r.owed_to === 'us' ? 'powder-ops' : r.owed_to === 'them' ? 'you' : 'nobody',
     amount_due: r.amount_due,
     documents: {
-      you_owe: r.documents.receivable,
-      you_are_owed: r.documents.payable,
-      excluded: r.documents.excluded,
+      you_owe: open(r.documents.receivable),
+      you_are_owed: open(r.documents.payable),
+      excluded: open(r.documents.excluded),
     },
     excluded_summary: r.excluded_summary,
     counts: r.counts,
@@ -127,6 +163,9 @@ router.get('/:token', (req, res) => {
     // The credit reduces what they owe, so their bottom line follows it.
     credit: creditView,
     credit_history: credit ? past.all(credit.id) : [],
+    // The facility as a ledger: every draw grouped by settlement, with the
+    // balance before and after — the same derivation the office card reads.
+    credit_ledger: credit ? creditLedgerFor(db, credit) : null,
     ...(c ? { net_amount: -c.net_amount, amount_due: c.amount_due,
       owed_to: c.owed_to === 'us' ? 'powder-ops' : c.owed_to === 'them' ? 'you' : 'nobody' } : {}),
   });

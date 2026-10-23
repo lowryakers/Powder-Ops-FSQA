@@ -8001,3 +8001,68 @@ been checked against them. Single-spine move 02 (a record type through one write
   Supplier verifies (storage 69, questionnaire 40, register 26/24/15) and `check:apitokens` (152) still pass.
 - **Still the plant's:** the SOP 404 revision that requires the check, and Document Control's approval of the
   parked FORM 204-01 V2 receiving line.
+
+## D-203 — A settlement shows what it was made of; a settled document cannot come back in as an open copy (23 Oct 2026)
+**Partner Reconciliation, M4 Dynamics.** Four problems on one ledger, reported together:
+- The Settled tab showed one line per settlement: "they owed $30,582.51 − we owed $78,280.00" over a payment of
+  $74,574.98. It does not add up until you know $26,877.49 of what they owed was taken by the credit, and the
+  screen never said so. `GET /partners/settlements/:id` existed and nothing called it.
+- M4's AP asked on 21 and 23 Sep for "all the paid and credited invoice #s included in the August
+  reconciliation". Their link showed open documents and one line per settlement.
+- On 12 Oct an import created open, final copies of I123–I126 (and I128), already paid in the August
+  settlement. They counted in the balance, and the I123/I124 copies drew the credit a second time.
+- I136 (final, issued 24 Sep, Net 30) carries a due date of 26 May. The edit pencil is drafts-only, so nobody
+  could correct it.
+
+What changed:
+- **(a) A settlement opens.** `settlementDetail()` returns every document with `how_cleared`:
+  - **credited**: a credit draw stamped into this settlement; a part draw shows the remainder;
+  - **netted**: a receivable set against what we owed;
+  - **paid**: a payable.
+  It also returns the math (the Balance tab's `SettlementMath`) and the credit balance before and after,
+  read off the draw rows by `creditLedger()`. Nothing is stored. Lines and the PDF are on each document.
+- **(b) The partner's link shows the same thing in their words.** It uses the same `settlementDetail`, then
+  `portalDoc()`: an allow list, so no storage key, extracted text, creator or internal field reaches a public
+  link. Open documents carry their line items.
+- **(c) The duplicate check matches the number as an identity.** `normDocNumber`: case, spaces, `#`,
+  `INV`/`Invoice No.` are folded; `I123` keeps its I.
+  - It also matches the direction. It includes settled documents and returns them first.
+  - A different amount is still flagged, worded as "same number, different amount".
+  - **A settled match is refused at every door** (`createDocument`: the form, the import, the partner's
+    portal), 409 naming the settlement, whatever `allow_duplicate` says.
+  - **A token can never override a duplicate.**
+  - The office gets a derived banner of open copies of settled documents, with Void beside each. Nothing is
+    voided or deleted for them.
+  - Documents → **Show settled** lists settled documents read-only with a "Settled <period>" chip.
+- **(d) `PUT /partners/documents/:docId/dates`** changes issued date, terms and due date only.
+  - Office/admin only. Refused once settled, refused on a void document, refused for a due date before the
+    issue date. Audited before/after.
+  - **Not open to bot tokens**: the module's token rule is that a document stays a draft while a token touches
+    it, and this route exists for final documents, where moving a date moves money between months.
+- **(e) The credit is a ledger** on the office card and the partner's: the facility, each settlement's draws
+  with the balance before and after, and what is left. This period's pending draws come from `applyCredit`
+  as before.
+- **(f) Void and delete stay person-only**: no `bot-api.js` entry, `TOKEN_DENY` unchanged. Void documents are
+  struck through. The delete confirm says it removes the row and its stored file and leaves only the audit
+  log's snapshot.
+
+**The 12 Oct root cause, as far as the code can show it.** The old `findExistingDoc` matched
+`doc_number = ?` exactly and the amount to the half-cent. It was never direction-aware, and settled
+documents were not excluded (they stay `final`). So the copies got in for one of three reasons:
+- the number was stored differently (case, a prefix, a space);
+- the amount was read differently from the one typed in August;
+- the call came through the API with `allow_duplicate: true`, which a token could send and the server trusted.
+The browser path cannot send that flag. No production data was read from this session.
+`npm run report:partner-dupes -- <db copy>` (read-only) prints each copy beside the settled original with the
+audit row that created it, and names which reason applies. The import's audit entry now records
+`allow_duplicate` and what it overrode, so the next one is answerable from the trail.
+
+**No data was changed.** Settlement rows and credit applications are untouched. The four copies stay until a
+person voids them from the banner. Once they and I133 are voided, the live balance should read receivable
+134,433.27 / payable 66,107.34 / we owe M4 47,712.63 / credit left 57,083.95. That is the prompt's figure,
+not verified here.
+
+`verify:partnerrecon` (60, live + S3 stand-in + browser at 1280 and 390) seeds the August settlement exactly.
+Control: `main` carries no `how_cleared` and fails at the first "how cleared" assertion. Re-run green:
+ap-drop (110), token-attachments (58), kiosk-isolation (38), `check:apitokens` (152), `check:botapi` (73),
+`check:routes`.
