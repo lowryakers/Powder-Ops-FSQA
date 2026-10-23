@@ -336,6 +336,8 @@ router.post('/:id/approve', (req, res) => {
   const before = db.prepare('SELECT * FROM reimbursements WHERE id = ?').get(req.params.id);
   if (!before) return res.status(404).json({ error: 'Not found' });
   if (before.status === 'paid') return res.status(400).json({ error: 'Already paid.' });
+// NOT A GMP SIGNATURE (move 01, reviewed): approving a personal-card claim for payroll is
+// a pay decision by the office (canSettle), audited, and outside 21 CFR 11.
   db.prepare(`UPDATE reimbursements SET status = 'approved', approved_at = datetime('now'), approved_by = ?,
       rejected_at = NULL, rejected_by = NULL, rejected_reason = NULL WHERE id = ?`)
     .run(req.user?.name || null, before.id);

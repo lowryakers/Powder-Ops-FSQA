@@ -23,6 +23,7 @@ import { getDb, logAudit } from '../db.js';
 import { hasExplicitEdit, hasExplicitGrant } from '../module-access.js';
 import { coerceCustomData, mergeCustomData, parseJson } from '../custom-fields.js';
 import { richBlocks } from '../pdf-rich.js';
+import { gateSignature, signatureEvidence } from '../signature.js';
 
 const router = Router();
 const MODULE = 'meetings';
@@ -274,10 +275,12 @@ router.post('/:id/approve', (req, res) => {
   if (m.status === 'approved') return res.status(400).json({ error: 'Already approved.' });
   if (!String(m.minutes || '').trim()) return res.status(400).json({ error: 'There are no minutes to approve yet.' });
 
+  // Approving the minutes is the SQF record's signature (move 01).
+  if (!gateSignature(req, res, { action: 'meeting_approve' })) return;
   db.prepare(`UPDATE meetings SET status = 'approved', approved_by = ?, approved_at = datetime('now'), approval_note = ?, updated_at = datetime('now') WHERE id = ?`)
     .run(req.user.name, String(req.body?.note || '').trim() || null, m.id);
   const next = db.prepare('SELECT * FROM meetings WHERE id = ?').get(m.id);
-  logAudit(req.user, 'approve', 'meeting', m.id, { title: m.title, meeting_date: m.meeting_date }, m, next, m.title);
+  logAudit(req.user, 'approve', 'meeting', m.id, { title: m.title, meeting_date: m.meeting_date, ...signatureEvidence() }, m, next, m.title);
   res.json({ ...shape(next, req.user), actions: actionsFor(db, m.id) });
 });
 

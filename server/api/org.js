@@ -123,6 +123,9 @@ router.put('/meta', (req, res) => {
   const { version, approved_by, effective_date } = req.body;
   const existing = db.prepare('SELECT * FROM org_chart_meta WHERE id = 1').get();
   if (existing) {
+// NOT A SIGNATURE (move 01, reviewed): the org chart's version, approver and effective date
+// are typed from the controlled org-chart document's own header — metadata about a
+// document approved elsewhere, not an approval given here.
     db.prepare(`UPDATE org_chart_meta SET version=?, approved_by=?, effective_date=?, updated_at=datetime('now') WHERE id=1`)
       .run(version ?? existing.version, approved_by ?? existing.approved_by, effective_date ?? existing.effective_date);
   } else {

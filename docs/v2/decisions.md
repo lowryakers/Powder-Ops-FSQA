@@ -8133,3 +8133,30 @@ due 10/7) rolling to October. No as-of date produced that.
     open;
   - refusals for a settled id, a void id, a stale figure and a token.
   Control: the D-203 code fails at the first basis assertion.
+
+## D-206 — Five more signatures ask for the password; four writers are named as not signatures (23 Oct 2026)
+Single-spine move 01 ("one signature service"). The sweep read every route that puts a person's name under a
+record and asked: is this a signature, and does it go through `gateSignature`?
+- **Five were signatures and went through the session alone.** They now ask for the password at the moment of
+  signing (403 `signature_required`, never 401) and their audit rows carry `signature_verified`:
+  - the internal audit sign-off (`POST /internal-audits/:id/complete`, Form 403-01);
+  - approving meeting minutes (`POST /meetings/:id/approve`);
+  - authorizing a mock recall exercise (`POST /mock-recalls/:id/approve`);
+  - signing a COA certificate (`POST /coa/requests/:id/sign`);
+  - deciding a nutrition panel in the app (`POST /nfp/:id/decide`) and bulk approving from the review queue.
+- **The password is asked LAST**, after every other check. Nobody types it for a request that would be refused
+  anyway, and an unknown id is still a 404.
+- **`decide()` takes a `gate` option.** It is shared by three doors. The in-app door passes the password check.
+  The signed link has its own proof (the token and a typed name), and the paper door records a decision already
+  taken, so neither is asked. A refused password throws before the transaction, so nothing is written.
+- **Bulk approve asks once, before the loop.** A refusal halfway would leave some panels approved and nothing
+  saying which. This is the QA Review batch rule.
+- **Four writers are NOT signatures, and say so in a comment** ("NOT A SIGNATURE (move 01, reviewed)"): the typed
+  `approved_by` on a document edit, the AP ledger's approval, the org chart, and the reimbursement decision. Each
+  records who did an office act, not a regulated signature. Marking them stops the next sweep asking again.
+- **The client** wraps each of the five in `withSignature`; cancelling shows nothing.
+- `verify:signsweep` (16) walks the internal audit and the minutes end to end. They had no verify at all. The
+  mock recall, COA and NFP refusals are asserted in their own verifies. Nine verifies that signed through these
+  routes now send the password.
+- **Found in passing:** `verify:nfpbotpanel` and `verify:nfpextract` had been failing since D-178 folded the
+  product drawer. They clicked a button inside a folded section. Both now open the section first.

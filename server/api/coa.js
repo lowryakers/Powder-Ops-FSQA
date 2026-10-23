@@ -13,6 +13,7 @@ import { releaseGate, GATE_MODES, specCoverage } from '../../shared/spec-coverag
 import { parseColumnarCoa, foundSomething } from '../coa-parse.js';
 import { aiEnabled, readLabReport } from '../ai.js';
 import { composeSubmission, PROCESSING, processingLabel, PLANT_CONTACT } from '../coa-submission.js';
+import { gateSignature, signatureEvidence } from '../signature.js';
 
 // A drawn signature, as a data URL. One definition — the certificate sign-off
 // and the lab submission both validate against it.
@@ -1496,6 +1497,10 @@ router.post('/requests/:id/sign', (req, res) => {
   const gate = gateFor(db, r);
   if (gate.blocks) return res.status(400).json({ error: `This certificate cannot be issued: ${gate.gaps.join('; ')}.`, release_blocked: true, gaps: gate.gaps });
 
+  // The QA signature on a certificate is a 21 CFR 11.200 signature: asked
+  // last, after every refusal above, and before anything is written.
+  if (!gateSignature(req, res, { action: 'coa_sign' })) return;
+
   // Issuing details lock in at signing: certificate number and issuance date.
   const certNum = r.certificate_number || nextCertNumber(db);
   const today = new Date().toISOString().slice(0, 10);
@@ -1505,7 +1510,7 @@ router.post('/requests/:id/sign', (req, res) => {
               updated_at = datetime('now') WHERE id = ?`)
     .run(req.user.name, req.user.id, sig, certNum, today, gate.mode === 'off' || gate.ok ? null : JSON.stringify(gate.gaps), gate.mode, req.params.id);
   logAudit(req.user, 'sign', 'coa_request', req.params.id,
-    { certificate_number: certNum, attestation: 'I certify that the results on this Certificate of Analysis are true and accurate as obtained for the lot identified.' },
+    { certificate_number: certNum, ...signatureEvidence(), attestation: 'I certify that the results on this Certificate of Analysis are true and accurate as obtained for the lot identified.' },
     null, null, `${r.item_description} · Lot ${r.lot_number}`);
   res.json(db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id));
 });

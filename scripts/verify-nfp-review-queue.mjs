@@ -124,7 +124,7 @@ t('…for a person too', r.status === 409 && r.body?.error === 'open_draft_exist
 t('…and nothing was created', db.prepare("SELECT COUNT(*) n FROM nfp_versions WHERE sku = ? AND status != 'approved'").get(stick).n === 1);
 
 console.log('\n── ready for review: a bot marks it, keeps writing, cannot approve ──');
-r = await json('POST', `/nfp/${s1}/decide`, { decision: 'approved' }, admin);
+r = await json('POST', `/nfp/${s1}/decide`, { signature_password: 'QueueCheck!!1', decision: 'approved' }, admin);
 t('a person approving a draft with values and provenance works as before (not yet marked ready is fine)', r.status === 200, `${r.status} ${JSON.stringify(r.body).slice(0, 160)}`);
 t('…RQ-V1 is approved', db.prepare('SELECT status FROM nfp_versions WHERE id = ?').get(s1)?.status === 'approved');
 // Now the next version of the stick, as the bot would file it: a change of sodium only.
@@ -144,11 +144,11 @@ r = await json('PUT', `/nfp/${s2}/panel-values`, { values: { sodium: 125 }, sour
 t('the bot can still correct a panel that is ready for review (200)', r.status === 200 && r.body?.values?.sodium === 125, `${r.status}`);
 r = await json('POST', `/nfp/${s2}/ready`, {}, PM);
 t('marking it ready twice is 409 not_a_draft', r.status === 409 && r.body?.error === 'not_a_draft');
-r = await json('POST', `/nfp/${s2}/decide`, { decision: 'approved' }, PM);
+r = await json('POST', `/nfp/${s2}/decide`, { signature_password: 'QueueCheck!!1', decision: 'approved' }, PM);
 t('PM token: approve → 403 approve_requires_human_session', r.status === 403 && r.body?.error === 'approve_requires_human_session', JSON.stringify(r.body));
 r = await json('POST', `/nfp/${s2}/send-back`, { note: 'bot tries' }, PM);
 t('PM token: send back → 403', r.status === 403, `${r.status} ${JSON.stringify(r.body)}`);
-r = await json('POST', '/nfp/review-queue/approve', { ids: [s2] }, PM);
+r = await json('POST', '/nfp/review-queue/approve', { signature_password: 'QueueCheck!!1', ids: [s2] }, PM);
 t('PM token: bulk approve → 403', r.status === 403, String(r.status));
 t('…and the panel is still ready for review', db.prepare('SELECT status FROM nfp_versions WHERE id = ?').get(s2)?.status === 'ready_for_review');
 
@@ -159,7 +159,7 @@ await json('PUT', `/nfp/${pp}/panel-values`, { values: { serving_household: '1 s
 await json('PUT', `/nfp/${pp}`, { drive_url: 'https://drive.example/rq-p1' }, PM);
 r = await json('POST', `/nfp/${pp}/ready`, {}, PM);
 t('the pouch is marked ready with MISSING VALUES flagged', r.status === 200 && r.body?.flags?.some((f) => f.key === 'missing_values' && f.blocking) && r.body?.flags?.some((f) => f.key === 'provenance_missing'), JSON.stringify(r.body?.flags));
-r = await json('POST', `/nfp/${pp}/decide`, { decision: 'approved' }, admin);
+r = await json('POST', `/nfp/${pp}/decide`, { signature_password: 'QueueCheck!!1', decision: 'approved' }, admin);
 t('A VERSION CANNOT BE APPROVED WITH A REQUIRED VALUE EMPTY (409 needs_values naming them)', r.status === 409 && Array.isArray(r.body?.needs_values) && r.body.needs_values.includes('protein'), `${r.status} ${JSON.stringify(r.body).slice(0, 200)}`);
 
 console.log('\n── the queue ──');
@@ -180,7 +180,7 @@ t('the MISSING PANEL bucket names products with no approved panel, pouch-2 among
 t('a product with no family falls into "line · base flavor"', (q?.missing_panel?.find((p) => p.sku === pouch2)?.family_key || '').includes(' · '));
 
 console.log('\n── bulk approve: unflagged rows only; approval supersedes ──');
-r = await json('POST', '/nfp/review-queue/approve', { ids: [s2, pp] }, admin);
+r = await json('POST', '/nfp/review-queue/approve', { signature_password: 'QueueCheck!!1', ids: [s2, pp] }, admin);
 t('bulk approve approves the unflagged stick and SKIPS the flagged pouch, saying why', r.status === 200 && r.body?.approved?.length === 1 && r.body.approved[0].id === s2
   && r.body?.skipped?.length === 1 && r.body.skipped[0].id === pp && r.body.skipped[0].reason === 'has flags', JSON.stringify(r.body).slice(0, 300));
 t('RQ-V2 is approved and RQ-V1 superseded by it', db.prepare('SELECT status FROM nfp_versions WHERE id = ?').get(s2)?.status === 'approved'
@@ -255,6 +255,10 @@ t('with the pouch completed the bulk bar appears', await page.locator('[data-que
 t('…the row shows "first panel" and every value as new', await page.locator(`[data-queue-row][data-queue-sku="${pouch}"][data-queue-ready="1"]`).count() === 1 && await page.locator('[data-queue-change="sodium"]').count() === 1);
 await page.locator('[data-queue-select-all]').click();
 await page.locator('[data-queue-bulk-approve]').click();
+await page.waitForSelector('[data-signature-prompt] input[type=password]', { timeout: 10000 });
+await page.locator('[data-signature-prompt] input[type=password]').click();
+await page.keyboard.type('QueueCheck!!1');
+await page.keyboard.press('Enter');
 await page.waitForSelector('[data-queue-bulk-result]', { timeout: 10000 }).catch(() => {});
 t('bulk approve from the screen approves it', /Approved 1/.test(await page.locator('[data-queue-bulk-result]').innerText().catch(() => ''))
   && db.prepare('SELECT status FROM nfp_versions WHERE id = ?').get(pp)?.status === 'approved');

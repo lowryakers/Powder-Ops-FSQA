@@ -1,5 +1,6 @@
 import { useState, useRef, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut, apiDelete } from '../../hooks/useApi';
+import { withSignature } from '../../lib/signature';
 import { useAuth } from '../../hooks/useAuth';
 import { CustomFields, CustomFieldValues } from '../common/CustomFields';
 import FormatBar from '../common/FormatBar';
@@ -303,8 +304,10 @@ function MeetingDetail({ id, onBack, onChanged }) {
 
   const approve = async () => {
     setError('');
-    try { await apiPost(`/meetings/${id}/approve`, {}); await reload(); }
-    catch (e) { setError(e.message); }
+    try {
+      await withSignature((extra) => apiPost(`/meetings/${id}/approve`, extra), { title: 'Approve these minutes' });
+      await reload();
+    } catch (e) { if (!e?.cancelled) setError(e.message); }
   };
   const revoke = async () => {
     if (!confirm('Revoke the approval so the minutes can be corrected?')) return;

@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useApiGet, apiPost, apiPut, apiDelete } from '../../hooks/useApi';
+import { withSignature } from '../../lib/signature';
 import { useAuth } from '../../hooks/useAuth';
 import { CustomFields, CustomFieldValues } from '../common/CustomFields';
 import {
@@ -269,8 +270,11 @@ function AuditDetail({ id, checklist, onBack, onChanged }) {
 
   const complete = async () => {
     setError('');
-    try { setItems(null); await apiPost(`/internal-audits/${id}/complete`, {}); await refresh(); onChanged?.(); }
-    catch (e) { setError(e.message); }
+    try {
+      await withSignature((extra) => apiPost(`/internal-audits/${id}/complete`, extra),
+        { title: 'Sign off this internal audit', detail: 'Form 403-01 — lead auditor' });
+      setItems(null); await refresh(); onChanged?.();
+    } catch (e) { if (!e?.cancelled) setError(e.message); }
   };
   const revoke = async () => {
     if (!confirm('Revoke the sign-off so the audit can be corrected?')) return;

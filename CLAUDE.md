@@ -3923,6 +3923,14 @@ report that competes with a queue gets skimmed. So it is three sections and no t
 `tr()` back. Uses the cached `/ai/translate-content` endpoint, so it silently stays English when AI is off.
 Wired into Supply Orders, Time Tracking and both finance ledgers; reusable anywhere.
 
+## Five more acts sign with the password (D-206, move 01)
+- Gated now: the internal audit sign-off, approving meeting minutes, authorizing a mock recall, signing a COA,
+  and deciding an NFP in the app (single and bulk). The password is asked last, after every other check.
+- `decide()` in `api/nfp.js` takes `gate`. Only the in-app door passes it; the signed link and paper are not asked.
+- A route that records who did an office act but is not a signature carries a `NOT A SIGNATURE (move 01, reviewed)`
+  comment. Add one rather than leaving the next sweep to wonder.
+- A verify that signs through these routes must send `signature_password`. `verify:signsweep` (16).
+
 ## A QA signature proves it is you, at the moment you sign (`server/signature.js`)
 A QA signature is the plant's statement that a named person reviewed a record and accepted it — and the
 only thing standing behind that name was a session opened at some point earlier in the day, on a shared
