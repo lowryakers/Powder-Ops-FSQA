@@ -8066,3 +8066,24 @@ not verified here.
 Control: `main` carries no `how_cleared` and fails at the first "how cleared" assertion. Re-run green:
 ap-drop (110), token-attachments (58), kiosk-isolation (38), `check:apitokens` (152), `check:botapi` (73),
 `check:routes`.
+
+## D-204 — The environmental monitoring alert and action levels are under Document Control (23 Oct 2026)
+**Single-spine move 03 (limits out of code and into documents), after the ATP limit (D-020/D-180) and the
+temperature and humidity limits (D-201).** The FORM 604-01 levels (water, zone 1, the zone 2–4 pathogen
+presence tests) lived in `emp-results.js` as code. Changing ">500 CFU/mL" was a deploy, and the next result
+was graded against the new number without anyone approving it.
+- `empControlledEntry()` (key `emp:FORM 604-01`, scope `acceptance`) registers the whole level table with
+  `controlled.js`.
+  - A change in code PARKS. The app goes on grading against the approved snapshot, which `apply` writes back
+    into the table in place.
+  - Approval takes effect at once, with no restart.
+  - First sight records the code as the baseline silently, so no existing database parks anything at deploy.
+- **Every graded sample keeps the level it was graded against** (`alert_limit` / `action_limit` text, the
+  D-060 rule). A sample graded under >500 still says >500 after the level moves.
+- `GET /api/check-records/emp/limits` serves the levels in force. No screen held its own copy, so nothing on
+  the client changed.
+- An action-level CAR names the revision of the levels in force, not the code's constant.
+- The site list (which sites, which tests) is unchanged and not under this entry. It is the form's content,
+  not an acceptance criterion.
+- `verify:emplimits` (15, live): baseline, parked change ignored, approval applied, earlier sample unchanged,
+  action CAR. Control: `main` has no controlled row and no `/emp/limits`.
