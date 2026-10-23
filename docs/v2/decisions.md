@@ -8087,3 +8087,49 @@ was graded against the new number without anyone approving it.
   not an acceptance criterion.
 - `verify:emplimits` (15, live): baseline, parked change ignored, approval applied, earlier sample unchanged,
   action CAR. Control: `main` has no controlled row and no `/emp/limits`.
+
+## D-205 — A person chooses which documents go into a settlement; a period can be "issued in", not only "due by" (23 Oct 2026)
+**Partner Reconciliation, follows D-203.** The agreement with M4 is that each month end settles the documents
+**issued** in that month (plus earlier leftovers), and that somebody decides which ones go in. Settle took every
+final document **due** by the date (Net 30), so on 30 Sep the screen read "M4 owes $5,379.17" (I128 alone). The
+settlement actually agreed was materials I128 + I131 + I132 + I136 + I137 = 18,394.71 owed by M4, with
+manufacturing I135, I138, I139 and I140 (116,038.56) taken by the credit, and M4's bills 1589/1590 (issued 9/7,
+due 10/7) rolling to October. No as-of date produced that.
+- **A basis on the one arithmetic.** `classify(doc, asOf, basis)` and `reconcile(docs, asOf, basis)` in
+  `partner-recon.js` take one of three bases:
+  - `due`: today's rule, and still the default, including for the reminders and the month-end DM.
+  - `issued`: issued on or before the date. A later document reads "issued after the period end"
+    (`not_in_period`).
+  - `selected`: every eligible row the caller handed in.
+  The status rules (settled, void, disputed, draft) apply under every basis. A basis decides WHEN a final
+  document counts, never WHETHER an unfinished one does.
+- **Both sides read the same number.** `GET /:id/reconcile?basis=` and the partner link's `?basis=` both read it,
+  and both screens have the same Due by / Issued in period toggle.
+- **Choosing documents.** `selectedReconciliation()` is the one loader. It is used by
+  `POST /:id/settle/preview`, which writes nothing, and by `POST /:id/settle` when `document_ids` is sent.
+  - Every id must belong to this partner and be final, unsettled and undisputed. If any is not, the whole
+    selection is refused with a 400 that names each document and why. Settling the rest quietly would pay a
+    figure nobody looked at.
+  - The credit draws only on the ticked rows, because `applyCredit` works on the rows it is given.
+  - The `expected_net` 409 still applies to the figure after the credit.
+  - Without `document_ids`, settle behaves as before. It now also records its basis.
+- **`partner_settlements.basis`** (`due` / `issued` / `selected`) is a new nullable column. Every settlement
+  before this reads NULL and none is rewritten. The audit row carries the basis and the id list. The settled
+  detail and the partner's link say "chosen documents" / "issued in the period".
+- **The screen.** "Choose documents" sits beside Mark PAID.
+  - It lists every final, unsettled document, ticked according to the basis. Documents that are not due yet or
+    issued after the period end are listed unticked and marked "later".
+  - Each document shows its direction, category, issued date, due date, amount and the credit it draws.
+  - Every tick asks the server for the figure. The total and who pays show before the button, the button names
+    the amount, and the confirm names it again. Nothing on the screen adds anything up.
+- **Person-only.** Settle and preview are `canSettle`. `settle` is in the approve class, so a token gets
+  `403 approve_requires_human_session`, which is stricter than `token_denied`. Neither route is in `bot-api.js`,
+  and the portal cannot settle.
+- **Left alone on purpose:** the reminders and the month-end DM still read basis `due`.
+- `verify:partnerrecon` (60 → 83) seeds the September case exactly:
+  - due basis: 5,379.17;
+  - issued basis: we owe 47,712.63;
+  - the nine chosen: M4 owes 18,394.71, the credit draws 116,038.56 (173,122.51 → 57,083.95), and 1589/1590 stay
+    open;
+  - refusals for a settled id, a void id, a stale figure and a token.
+  Control: the D-203 code fails at the first basis assertion.

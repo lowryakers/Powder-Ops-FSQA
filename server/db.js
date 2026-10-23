@@ -6508,6 +6508,9 @@ function runMigrations() {
   // too, or it exists only on databases that never saw the earlier release.
   addColumnIfMissing('partner_settlements', 'proof_storage_key', 'TEXT');
   addColumnIfMissing('partner_settlements', 'proof_filename', 'TEXT');
+  // Which documents the settlement covered: 'due' (by the terms), 'issued' (in the
+  // period) or 'selected' (ticked by a person, D-205). NULL on every settlement before it.
+  addColumnIfMissing('partner_settlements', 'basis', 'TEXT');
   addColumnIfMissing('partner_settlements', 'proof_content_type', 'TEXT');
   addColumnIfMissing('partner_settlements', 'proof_size', 'INTEGER');
   addColumnIfMissing('partner_settlements', 'proof_uploaded_by', 'TEXT');

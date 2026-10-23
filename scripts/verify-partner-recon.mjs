@@ -196,6 +196,59 @@ t('an admin deleting a SETTLED document is 400', r.status === 400);
 r = await json('POST', `/partners/documents/${ids.I123}/void`, {}, office);
 t('voiding a settled document is 400', r.status === 400);
 
+console.log('\n── D-205: September — the documents a person chooses ──');
+// The plant's real September: materials I128 I131 I132 I136 I137 owed by M4,
+// manufacturing I135 I138 I139 I140 against the credit, M4's bills 1589/1590
+// issued 9/7 and due 10/7. I136 is already on the ledger (the dates check above).
+const sep = {};
+for (const [n, dir, amt, cat, issued] of [
+  ['I128', 'receivable', 5379.17, 'materials', '2026-08-25'], ['I131', 'receivable', 4577.10, 'materials', '2026-09-05'],
+  ['I132', 'receivable', 49.65, 'materials', '2026-09-10'], ['I137', 'receivable', 7336.87, 'materials', '2026-09-26'],
+  ['I135', 'receivable', 29009.64, 'manufacturing', '2026-09-02'], ['I138', 'receivable', 29009.64, 'manufacturing', '2026-09-12'],
+  ['I139', 'receivable', 29009.64, 'manufacturing', '2026-09-19'], ['I140', 'receivable', 29009.64, 'manufacturing', '2026-09-28'],
+  ['1589', 'payable', 33053.67, 'manufacturing', '2026-09-07'], ['1590', 'payable', 33053.67, 'manufacturing', '2026-09-07'],
+]) {
+  sep[n] = await add({ doc_number: n, direction: dir, amount: amt, category: cat, issued_date: issued, terms_days: 30 });
+  await fin(sep[n]);
+}
+db.prepare("UPDATE partner_documents SET category = 'materials' WHERE id = 'pr-i136'").run();
+sep.I136 = 'pr-i136';
+t('the September documents are filed and final', Object.values(sep).every(Boolean));
+let due = (await json('GET', `/partners/${PID}/reconcile?as_of=2026-09-30&basis=due`, null, office)).body;
+t('basis=due as at 9/30 is I128 only: M4 owes 5,379.17', due.credit?.net_amount === 5379.17 && due.basis === 'due', JSON.stringify({ n: due.credit?.net_amount, r: due.receivable_total }));
+t('…the rest read "not due"', due.documents.excluded.filter(d => d.exclusion === 'not_due').length >= 10);
+let iss = (await json('GET', `/partners/${PID}/reconcile?as_of=2026-09-30&basis=issued`, null, office)).body;
+t('basis=issued as at 9/30 includes 1589/1590: we owe M4 47,712.63', iss.credit?.net_amount === -47712.63 && iss.basis === 'issued', JSON.stringify({ n: iss.credit?.net_amount, r: iss.receivable_total, p: iss.payable_total }));
+t('…and the partner link reads the same number on the same basis', (await json('GET', `/partner-portal/${ptok}?basis=issued&as_of=2026-09-30`)).body?.amount_due === 47712.63);
+const chosen = ['I128', 'I131', 'I132', 'I136', 'I137', 'I135', 'I138', 'I139', 'I140'].map(n => sep[n]);
+const pv = (await json('POST', `/partners/${PID}/settle/preview`, { as_of: '2026-09-30', document_ids: chosen }, office)).body;
+t('the preview of the nine: M4 owes 18,394.71, credit draws 116,038.56', pv.credit?.net_amount === 18394.71 && pv.credit?.drawn_this_period === 116038.56, JSON.stringify(pv.credit && { n: pv.credit.net_amount, d: pv.credit.drawn_this_period }));
+t('…the credit draws only on the ticked manufacturing documents', pv.credit.draws.length === 4 && pv.credit.draws.every(d => ['I135', 'I138', 'I139', 'I140'].includes(d.doc_number)));
+t('…credit 173,122.51 before → 57,083.95 after', pv.credit.opening_balance === 173122.51 && pv.credit.remaining_balance === 57083.95);
+t('…and the preview wrote nothing', db.prepare('SELECT COUNT(*) c FROM partner_settlements').get().c === 1);
+r = await json('POST', `/partners/${PID}/settle`, { as_of: '2026-09-30', document_ids: [...chosen, ids.I125], expected_net: 18394.71 }, office);
+t('a settled document among the chosen is refused (400), naming it', r.status === 400 && /I125 \(already settled\)/.test(r.body?.error || ''), JSON.stringify(r.body));
+r = await json('POST', `/partners/${PID}/settle`, { as_of: '2026-09-30', document_ids: [...chosen, 'pr-c123'], expected_net: 18394.71 }, office);
+t('a void document among the chosen is refused (400)', r.status === 400 && /void/.test(r.body?.error || ''));
+r = await json('POST', `/partners/${PID}/settle`, { as_of: '2026-09-30', document_ids: chosen, expected_net: 18000 }, office);
+t('a stale expected_net is refused (409)', r.status === 409);
+r = await json('POST', `/partners/${PID}/settle`, { as_of: '2026-09-30', document_ids: chosen, expected_net: 18394.71 }, bot);
+t('a bot token cannot settle (403)', r.status === 403 && db.prepare('SELECT COUNT(*) c FROM partner_settlements').get().c === 1, JSON.stringify(r.body));
+r = await json('POST', `/partners/${PID}/settle`, { as_of: '2026-09-30', document_ids: chosen, expected_net: 18394.71, payment_reference: 'ACH 1015' }, office);
+const sid2 = r.body?.id;
+t('settled: M4 pays 18,394.71 for the nine', r.status === 201 && r.body.net_amount === 18394.71 && r.body.owed_to === 'us' && r.body.document_count === 9, JSON.stringify(r.body));
+t('…recorded as chosen documents', r.body?.basis === 'selected');
+t('…exactly the nine are stamped', db.prepare('SELECT COUNT(*) c FROM partner_documents WHERE settlement_id = ?').get(sid2).c === 9);
+t('…1589 and 1590 stay open for October', db.prepare('SELECT COUNT(*) c FROM partner_documents WHERE id IN (?, ?) AND settlement_id IS NULL').get(sep['1589'], sep['1590']).c === 2);
+const led2 = (await json('GET', `/partners/credits/${credit.id}/ledger`, null, office)).body;
+t('…the credit ledger reads 173,122.51 → 57,083.95 for September', led2.groups.length === 2 && led2.groups[1].before === 173122.51 && led2.groups[1].after === 57083.95 && led2.remaining === 57083.95, JSON.stringify(led2.groups.map(g => [g.before, g.after])));
+const audit2 = JSON.parse(db.prepare("SELECT details FROM audit_log WHERE entity_type = 'partner_settlement' AND entity_id = ?").get(sid2)?.details || '{}');
+t('…the audit names the basis and the nine ids', audit2.basis === 'selected' && audit2.document_ids?.length === 9);
+const det2 = (await json('GET', `/partners/settlements/${sid2}`, null, office)).body;
+t('the settled detail shows the nine, four credited', det2.documents.length === 9 && det2.documents.filter(d => d.how_cleared === 'credited').length === 4 && det2.settlement.basis === 'selected');
+const aug = (await json('GET', `/partners/settlements/${sid}`, null, office)).body;
+t('the August settlement (no document_ids) still holds its six and reads "due"', aug.settlement.basis === 'due' && aug.documents.length === 6 && aug.credit.balance_after === 173122.51);
+
 console.log('\n── the screens ──');
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium' }).catch(() => chromium.launch());
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
@@ -215,6 +268,14 @@ t('…with Credited / Netted / Paid chips', (await page.locator('[data-how="cred
 t('…the credit 200,000 → 173,122.51', /\$200,000\.00 before this settlement → \$173,122\.51 after/.test(detailText));
 t('…and the math line reads 3,705.02', /\$3,705\.02/.test(detailText) && /\$74,574\.98/.test(detailText));
 
+await page.getByRole('tab', { name: /balance/i }).first().click().catch(() => {});
+await page.locator('[data-basis-opt="issued"]').click().catch(() => {});
+await page.waitForTimeout(800);
+await page.locator('[data-choose-open]').click().catch(() => {});
+await page.waitForSelector('[data-choose-docs]', { timeout: 8000 }).catch(() => {});
+t('the Balance tab has "Choose documents" listing 1589 and 1590 to tick', (await page.locator('[data-choose-row="1589"]').count()) === 1 && (await page.locator('[data-choose-row="1590"]').count()) === 1);
+await page.waitForSelector('[data-choose-who]', { timeout: 8000 }).catch(() => {});
+t('…and the selected total shows before Mark PAID', /\$/.test(await page.locator('[data-choose-who]').innerText().catch(() => '')) && /Mark PAID — \$/.test(await page.locator('[data-choose-settle]').innerText().catch(() => '')));
 const ppage = await browser.newPage({ viewport: { width: 390, height: 900 } });
 await ppage.goto(`${BASE}/partner/${ptok}`);
 await ppage.waitForSelector('[data-portal-settlement="2026-08-31"]', { timeout: 8000 }).catch(() => {});

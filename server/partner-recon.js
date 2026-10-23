@@ -44,17 +44,44 @@ export const EXCLUSION = {
   disputed: 'Disputed. It stays out of the number until it\'s agreed or corrected.',
   void: 'Voided.',
   not_due: 'Not due yet under the agreed terms — it lands in a later settlement.',
+  not_in_period: 'Issued after the period end — it lands in a later settlement.',
   settled: 'Already settled in an earlier payment.',
 };
 
+/**
+ * WHICH DOCUMENTS A PERIOD COVERS — the basis.
+ *
+ * `due`      what is due by the date under the agreed terms (Net 30). The
+ *            default, and what reminders and the month-end DM read.
+ * `issued`   what was issued on or before the date. The agreement with M4 is
+ *            that each month end settles the documents ISSUED in that month
+ *            (plus earlier leftovers), and no as-of date under `due` produces
+ *            that number: September's materials invoices are not due until
+ *            October.
+ * `selected` every eligible row the caller handed in. Used when a person has
+ *            ticked exactly which documents go into a settlement; the rows
+ *            are already the selection, so no date excludes any of them.
+ *
+ * Status rules (settled, void, disputed, draft) apply under every basis — a
+ * basis decides WHEN a final document counts, never WHETHER an unfinished one
+ * does.
+ */
+export const BASES = ['due', 'issued', 'selected'];
+
 // One place decides eligibility, so the total and the report can never tell
 // different stories about the same row.
-export function classify(doc, asOf) {
+export function classify(doc, asOf, basis = 'due') {
   if (doc.settlement_id) return { included: false, reason: 'settled' };
   if (doc.status === 'void') return { included: false, reason: 'void' };
   if (doc.status === 'disputed') return { included: false, reason: 'disputed' };
   if (doc.status !== 'final') return { included: false, reason: 'draft' };
   const due = doc.due_date || dueDateFor(doc.issued_date, doc.terms_days);
+  if (basis === 'selected') return { included: true, due };
+  if (basis === 'issued') {
+    const issued = String(doc.issued_date || '').slice(0, 10);
+    if (issued && asOf && issued > asOf) return { included: false, reason: 'not_in_period', due };
+    return { included: true, due };
+  }
   // No date at all means nothing can say it isn't owed yet — treat it as due
   // rather than silently parking money nobody is tracking.
   if (due && asOf && due > asOf) return { included: false, reason: 'not_due', due };
@@ -65,12 +92,13 @@ export function classify(doc, asOf) {
 
 // `asOf` is the settlement date — normally the last day of the month. Anything
 // final and due on or before it counts; everything else is reported, not hidden.
-export function reconcile(docs, asOf) {
+export function reconcile(docs, asOf, basis = 'due') {
+  if (!BASES.includes(basis)) basis = 'due';
   const included = { receivable: [], payable: [] };
   const excluded = [];
 
   for (const d of docs || []) {
-    const c = classify(d, asOf);
+    const c = classify(d, asOf, basis);
     const row = { ...d, signed: round2(signedAmount(d)), due_date: c.due || d.due_date || null };
     if (c.included) included[d.direction].push(row);
     else excluded.push({ ...row, exclusion: c.reason, exclusion_note: EXCLUSION[c.reason] });
@@ -83,6 +111,7 @@ export function reconcile(docs, asOf) {
 
   return {
     as_of: asOf,
+    basis,
     receivable_total,
     payable_total,
     net_amount,
@@ -103,7 +132,7 @@ export function reconcile(docs, asOf) {
     },
     // Grouped so the report can say "three disputed, two not due yet" without
     // the client re-deriving the same buckets.
-    excluded_summary: ['disputed', 'draft', 'not_due', 'settled', 'void'].map(reason => {
+    excluded_summary: ['disputed', 'draft', 'not_due', 'not_in_period', 'settled', 'void'].map(reason => {
       const rows = excluded.filter(r => r.exclusion === reason);
       if (!rows.length) return null;
       return {
