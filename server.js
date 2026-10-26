@@ -112,6 +112,7 @@ import { seedStructureLists } from './server/structure-seed.js';
 import { placeRoom8 } from './server/sanitation-areas.js';
 import { seedSupplyLists } from './server/supply-list-seed.js';
 import { seedQualitySchedules } from './server/api/quality-schedules.js';
+import { seedCultureProgram } from './server/culture.js';
 import { settleFiledReviews } from './server/check-records.js';
 import { seedGenericSpecifications } from './server/spec-seed.js';
 import { seedForm607Specs } from './server/spec-607-seed.js';
@@ -1229,6 +1230,8 @@ try {
   // canonicalised against.
   seedSupplyLists(db);
   seedQualitySchedules(db);
+  // Daniela's answers for the culture program (D-213): checks, the review, anonymous on. Once each.
+  try { seedCultureProgram(db); } catch (e) { console.warn('[culture] seed skipped:', e.message); }
   // A review recorded by hand before D-122 settles its schedule now, once (D-123).
   try {
     for (const r of settleFiledReviews(db)) {

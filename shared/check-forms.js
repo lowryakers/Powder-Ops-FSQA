@@ -79,12 +79,48 @@ export const GMP_WALK_ANSWERS = ['c', 'nc', 'na'];
 /**
  * THE SUPERVISOR'S MONTHLY CULTURE CHECK (D-211). The observed items are the
  * GMP walk's own five — one definition of "correct gowning" — plus the safety
- * items, which are EMPTY until the plant names them: inventing a safety list
- * would put words on a record nobody chose. A safety item added here is a
- * change to a drafted form, so it goes in with Document Control's knowledge.
+ * items Document Control named on 26 Oct 2026 (D-213), in her words. A change
+ * to either list is a change to a drafted form, so it goes in with Document
+ * Control's knowledge.
  */
 export const CULTURE_CHECK_REVISION = 'DRAFT-1';
-export const CULTURE_SAFETY_ITEMS = [];
+export const CULTURE_SAFETY_ITEMS = [
+  { key: 'standing_on_pallet', label: 'Nobody standing on a pallet', label_es: 'Nadie parado sobre una tarima' },
+  { key: 'broken_items', label: 'No broken items', label_es: 'Sin artículos rotos' },
+  { key: 'blocked_entrances', label: 'No blocked entrances', label_es: 'Sin entradas bloqueadas' },
+  { key: 'floors', label: 'Clean, dry floors without loose wrap or debris', label_es: 'Pisos limpios y secos, sin plástico suelto ni basura' },
+  { key: 'tools_on_floor', label: 'No tools or equipment on the floors', label_es: 'Sin herramientas ni equipo en el piso' },
+  { key: 'potential_hazards', label: 'No other potential hazards', label_es: 'Sin otros peligros potenciales' },
+];
+
+/**
+ * WHO OWES THE MONTHLY CHECK (D-213) — Document Control's list, by department.
+ * `value` is the task group the check is routed to (the ONE routing
+ * vocabulary); `label` is the plant's own name for the department, which is
+ * not always the group's ("Sanitation" is the cleaning team, "Production" the
+ * filling line). `supervisor` is the name she gave — resolved to an account
+ * when the schedule is seeded, and never guessed between two people.
+ */
+export const CULTURE_DEPARTMENTS = [
+  { value: 'cleaning', label: 'Sanitation', supervisor: 'Zuleika' },
+  { value: 'filling', label: 'Production', supervisor: 'Debora' },
+  { value: 'batching', label: 'Batching', supervisor: 'Bernardo' },
+  { value: 'kitting', label: 'Kitting', supervisor: 'Jose' },
+  { value: 'warehouse', label: 'Warehouse', supervisor: 'Juan' },
+];
+
+/** A department's name in this program: the plant's word where it has one. */
+export const cultureDepartmentLabel = (value) =>
+  CULTURE_DEPARTMENTS.find(d => d.value === value)?.label || null;
+
+/** "Monthly Culture Check — Sanitation" → 'cleaning'. Labels and group values both resolve. */
+export function cultureDepartmentFromTitle(title, groupValues = []) {
+  const tail = String(title || '').split(/[—–-]/).pop().trim().toLowerCase();
+  const byLabel = CULTURE_DEPARTMENTS.find(d => d.label.toLowerCase() === tail);
+  if (byLabel) return byLabel.value;
+  const key = tail.replace(/\s+/g, '_');
+  return groupValues.includes(key) ? key : null;
+}
 
 /** What a concern is about. Daniela's own three, plus the two the program names. */
 export const CONCERN_CATEGORIES = [

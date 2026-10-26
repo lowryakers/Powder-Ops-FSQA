@@ -5040,8 +5040,11 @@ guard; guests 404), `culture_concerns` + `culture_checks`, `RaiseConcern.jsx` on
 - **One writer per table.** The monthly check is filed from the page or a "Monthly Culture Check — <Dept>" task,
   both through `fileCultureCheck`; talk concerns go through `raiseConcern` as `team_talk`. DRAFT-1.
 - **The month is derived on read** and says fewer concerns is not by itself a stronger culture.
-- Safety items (`CULTURE_SAFETY_ITEMS`) and the department schedules are empty until Daniela answers.
-- `verify:culture` (45).
+- **Daniela's answers are in (D-213)**: six safety items; anonymous on (once); one monthly check per department in
+  `CULTURE_DEPARTMENTS` (Sanitation = cleaning, Production = filling), routed by `quality_schedules.task_group` and named
+  by `resolveSupervisor` (never a guess); only a supervisor/admin completes it from the task; a monthly review task for
+  Document Control and the first review meeting. `seedCultureProgram` runs once per marker.
+- `verify:culture` (59). **It must not import server modules that call db.js** — that opens a second connection.
 
 ## Recurring QA checks that ship pre-scheduled
 `SEED_SCHEDULES` in `server/api/quality-schedules.js` + `seedQualitySchedules(db)` (called from server.js).

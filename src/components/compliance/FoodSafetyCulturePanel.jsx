@@ -209,6 +209,7 @@ function Checks({ meta, dept }) {
         )}
       </div>
       {filing && <FileCheck meta={meta} onDone={() => { setFiling(false); refresh?.(); }} onCancel={() => setFiling(false)} />}
+      {meta.can_review && <WhoChecks schedules={meta.check_schedules} />}
       {meta.can_review && (
         <ul className="space-y-2">
           {(rows || []).map(r => (
@@ -249,7 +250,7 @@ function FileCheck({ meta, onDone, onCancel }) {
   };
   return (
     <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 space-y-2 max-w-xl" data-culture-check-form>
-      <CheckFields form={form} value={v} onChange={setV} departments={meta.departments} />
+      <CheckFields form={form} value={v} onChange={setV} departments={meta.check_departments || meta.departments} />
       {error && <p className="text-sm text-red-600">{error}</p>}
       <div className="flex gap-2">
         <button type="button" onClick={save} disabled={busy || missing.length > 0} data-culture-check-save
@@ -275,6 +276,29 @@ function AnonymousSetting({ on, onChanged }) {
         <span className="block text-xs text-gray-500">When allowed, a person can leave their name off and no name is stored at all.</span>
       </span>
       <button type="button" onClick={toggle} disabled={busy} className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs">{on ? 'Turn off' : 'Allow'}</button>
+    </div>
+  );
+}
+
+// Who each department's monthly check is for (D-213) — Document Control's list,
+// as the schedules stand. A department whose supervisor could not be matched
+// to one account still gets its check on the team's list, and says so here.
+function WhoChecks({ schedules }) {
+  if (!schedules?.length) return null;
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-3" data-culture-who>
+      <p className="text-xs font-semibold text-gray-700">Monthly checks</p>
+      <ul className="mt-1 space-y-0.5 text-xs text-gray-700">
+        {schedules.map(s => (
+          <li key={s.department} className="flex justify-between gap-3 flex-wrap" data-culture-who-row={s.department}>
+            <span className="font-medium">{s.label}</span>
+            <span className="text-gray-600">
+              {!s.schedule ? 'No schedule' : !s.schedule.is_active ? 'Paused'
+                : <>{s.schedule.assigned_to || <span className="text-amber-700">{s.supervisor_named} — not matched to an account; the whole team sees it</span>} · next {s.schedule.next_due}</>}
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

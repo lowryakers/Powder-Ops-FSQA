@@ -4257,6 +4257,11 @@ function runMigrations() {
     );
   `);
   addColumnIfMissing('work_orders', 'quality_schedule_id', 'TEXT'); // link a QC task back to its schedule
+  // WHO A SCHEDULED CHECK IS FOR (D-213). The generator wrote every task to QA;
+  // a monthly culture check is the department supervisor's, so the schedule
+  // names the team it routes to and, optionally, the person. NULL team = 'qa'.
+  addColumnIfMissing('quality_schedules', 'task_group', 'TEXT');
+  addColumnIfMissing('quality_schedules', 'assigned_to', 'TEXT');
   // …and the same for an annual vendor review. Idempotence for the generator is
   // (this column, due_date): recording a review stamps next year's date, so
   // next year's task is a new one rather than a suppressed duplicate.

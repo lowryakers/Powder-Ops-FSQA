@@ -14,7 +14,7 @@ import {
   checkKindFor, empZoneFor, EMP_ZONES, GMP_WALK_ITEMS, GMP_WALK_REVISION, BANNED_LISTS,
   MANAGEMENT_REVIEW_ITEMS, MANAGEMENT_REVIEW_REVISION, MANAGEMENT_REVIEW_CLAUSE,
   FOOD_DEFENSE_ITEMS, FOOD_DEFENSE_METHODS, FOOD_DEFENSE_SOP,
-  missingForCheck, normalizeCheck, cultureCheckForm,
+  missingForCheck, normalizeCheck, cultureCheckForm, cultureDepartmentFromTitle,
 } from '../shared/check-forms.js';
 import { TASK_GROUP_VALUES } from '../shared/task-groups.js';
 import { fileCultureCheck } from './culture.js';
@@ -85,8 +85,7 @@ export function checkFormFor(db, wo) {
     // "Monthly Culture Check — Batching": the department is the title's last
     // part, matched against the task groups; one the list does not know is
     // left blank and the form asks for it.
-    const tail = String(sched.title || '').split(/[—–-]/).pop().trim().toLowerCase().replace(/\s+/g, '_');
-    return cultureCheckForm(TASK_GROUP_VALUES.includes(tail) ? tail : null);
+    return cultureCheckForm(cultureDepartmentFromTitle(sched.title, TASK_GROUP_VALUES));
   }
   if (kind === 'banned_list_review') return { kind, lists: BANNED_LISTS };
   if (kind === 'mock_recall') return { kind, sop: `${RECALL_SOP} ${RECALL_SOP_REV}`, form_code: RECALL_FORM, recorded_in: 'recall' };
