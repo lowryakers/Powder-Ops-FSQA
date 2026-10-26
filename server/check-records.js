@@ -14,8 +14,10 @@ import {
   checkKindFor, empZoneFor, EMP_ZONES, GMP_WALK_ITEMS, GMP_WALK_REVISION, BANNED_LISTS,
   MANAGEMENT_REVIEW_ITEMS, MANAGEMENT_REVIEW_REVISION, MANAGEMENT_REVIEW_CLAUSE,
   FOOD_DEFENSE_ITEMS, FOOD_DEFENSE_METHODS, FOOD_DEFENSE_SOP,
-  missingForCheck, normalizeCheck,
+  missingForCheck, normalizeCheck, cultureCheckForm,
 } from '../shared/check-forms.js';
+import { TASK_GROUP_VALUES } from '../shared/task-groups.js';
+import { fileCultureCheck } from './culture.js';
 import { EMP_SECTIONS, EMP_FORM_CODE, EMP_REVISION } from './emp-site-list.js';
 import { raiseCapa } from './capa-raise.js';
 import { insertCompletion } from './training-records.js';
@@ -79,6 +81,13 @@ export function checkFormFor(db, wo) {
     };
   }
   if (kind === 'gmp_walk') return { kind, items: GMP_WALK_ITEMS, revision: GMP_WALK_REVISION, draft: true };
+  if (kind === 'culture_check') {
+    // "Monthly Culture Check — Batching": the department is the title's last
+    // part, matched against the task groups; one the list does not know is
+    // left blank and the form asks for it.
+    const tail = String(sched.title || '').split(/[—–-]/).pop().trim().toLowerCase().replace(/\s+/g, '_');
+    return cultureCheckForm(TASK_GROUP_VALUES.includes(tail) ? tail : null);
+  }
   if (kind === 'banned_list_review') return { kind, lists: BANNED_LISTS };
   if (kind === 'mock_recall') return { kind, sop: `${RECALL_SOP} ${RECALL_SOP_REV}`, form_code: RECALL_FORM, recorded_in: 'recall' };
   if (kind === 'management_review') {
@@ -200,6 +209,14 @@ export function fileCheckRecord(db, { form, check, wo, by, when, notes }) {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(id, wo.id, wo.quality_schedule_id, day, by, JSON.stringify(c.editions), c.changes_found, c.actions_taken, c.materials_rechecked ? 1 : 0, notes || null);
     return { kind: 'banned_list_review', ids: [id] };
+  }
+  if (form.kind === 'culture_check') {
+    // The page's own writer (server/culture.js), so a check filed from a task is
+    // byte for byte one filed from the page apart from `source`.
+    const out = fileCultureCheck(db, { name: by, id: wo.completed_by_id || null }, { ...check, department: check?.department || form.department },
+      { wo, day, notes, source: 'task' });
+    if (out.error) throw Object.assign(new Error(out.error), { status: out.status });
+    return { ...out, capas: [] };
   }
   if (form.kind === 'management_review' || form.kind === 'food_defense_challenge') {
     return { ...fileAnnualReview(db, { form, check: c, wo, by, day, notes }), capas: [] };

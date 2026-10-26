@@ -44,6 +44,14 @@
  *                         which has its own sign-off; SIGNING THE EXERCISE closes
  *                         this task (settleAnnualSchedule). The task itself can
  *                         never be ticked closed — a tick is not a drill.
+ *   culture_check       — a supervisor's monthly food safety culture check
+ *                         (D-211): the GMP walk items, the safety items, what
+ *                         the supervisor noticed, and the team talk with the
+ *                         concerns raised in it. DRAFTED, stamped DRAFT-1 —
+ *                         the program and its form number are Document
+ *                         Control's. Filed from the Food Safety Culture page,
+ *                         or from a quality-schedule task titled
+ *                         "Monthly Culture Check — <department>".
  *   training            — an assigned training course. Completing the task is
  *                         what files the training record, so a course handed
  *                         to somebody cannot be "done" with nothing on the
@@ -67,6 +75,34 @@ export const GMP_WALK_ITEMS = [
 ];
 
 export const GMP_WALK_ANSWERS = ['c', 'nc', 'na'];
+
+/**
+ * THE SUPERVISOR'S MONTHLY CULTURE CHECK (D-211). The observed items are the
+ * GMP walk's own five — one definition of "correct gowning" — plus the safety
+ * items, which are EMPTY until the plant names them: inventing a safety list
+ * would put words on a record nobody chose. A safety item added here is a
+ * change to a drafted form, so it goes in with Document Control's knowledge.
+ */
+export const CULTURE_CHECK_REVISION = 'DRAFT-1';
+export const CULTURE_SAFETY_ITEMS = [];
+
+/** What a concern is about. Daniela's own three, plus the two the program names. */
+export const CONCERN_CATEGORIES = [
+  { key: 'gmp', label: 'GMP practice', label_es: 'Práctica GMP' },
+  { key: 'sanitation', label: 'Sanitation', label_es: 'Sanitización' },
+  { key: 'safety', label: 'Safety', label_es: 'Seguridad' },
+  { key: 'food_defense', label: 'Food defense', label_es: 'Defensa alimentaria' },
+  { key: 'other', label: 'Something else', label_es: 'Otra cosa' },
+];
+export const CONCERN_CATEGORY_KEYS = CONCERN_CATEGORIES.map(c => c.key);
+
+/** The form a culture check carries, wherever it is filed from. */
+export function cultureCheckForm(department = null) {
+  return {
+    kind: 'culture_check', department, items: GMP_WALK_ITEMS, safety_items: CULTURE_SAFETY_ITEMS,
+    revision: CULTURE_CHECK_REVISION, draft: true, categories: CONCERN_CATEGORIES,
+  };
+}
 
 /**
  * The annual site management review — SQF Code edition 9, clause 2.1.2.1.
@@ -172,6 +208,7 @@ export function checkKindFor({ title, module_id } = {}) {
   const t = String(title || '').toLowerCase();
   const m = String(module_id || '').toLowerCase();
   if (/weekly gmp walk/.test(t)) return 'gmp_walk';
+  if (/monthly culture check/.test(t)) return 'culture_check';
   if (/management review/.test(t)) return 'management_review';
   if (/food defense plan challenge|annual food defense/.test(t)) return 'food_defense_challenge';
   if (/banned\/?prohibited substance list review/.test(t)) return 'banned_list_review';
@@ -239,6 +276,20 @@ export function missingForCheck(form, check) {
       else if (a === 'nc' && !String(items[it.key]?.note || '').trim()) out.push({ key: `${it.key}_note`, label: `What was seen — ${it.label}` });
     }
     if (!String(c.area || '').trim()) out.push({ key: 'area', label: 'Area walked' });
+  } else if (form.kind === 'culture_check') {
+    const items = c.items || {};
+    for (const it of [...(form.items || GMP_WALK_ITEMS), ...(form.safety_items || CULTURE_SAFETY_ITEMS)]) {
+      const a = items[it.key]?.result;
+      if (!GMP_WALK_ANSWERS.includes(a)) out.push({ key: it.key, label: it.label });
+      else if (a === 'nc' && !String(items[it.key]?.note || '').trim()) out.push({ key: `${it.key}_note`, label: `What was seen — ${it.label}` });
+    }
+    if (!String(c.department || form.department || '').trim()) out.push({ key: 'department', label: 'Department' });
+    if (!String(c.observation_note || '').trim()) out.push({ key: 'observation_note', label: 'What you noticed this month' });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(c.talk_date || ''))) out.push({ key: 'talk_date', label: 'Date of the team talk' });
+    if (!(Number(c.talk_attendees) >= 1)) out.push({ key: 'talk_attendees', label: 'How many people were at the team talk' });
+    (Array.isArray(c.concerns) ? c.concerns : []).forEach((x, i) => {
+      if (x && String(x.description || '').trim() && !CONCERN_CATEGORY_KEYS.includes(x.category)) out.push({ key: `concern_${i}_category`, label: `What concern ${i + 1} is about` });
+    });
   } else if (form.kind === 'banned_list_review') {
     const ed = c.editions || {};
     for (const l of form.lists || BANNED_LISTS) {
@@ -307,6 +358,26 @@ export function normalizeCheck(form, check) {
       items[it.key] = { result: GMP_WALK_ANSWERS.includes(a.result) ? a.result : null, note: String(a.note || '').trim().slice(0, 500) || null };
     }
     return { area: String(c.area || '').trim().slice(0, 120), items };
+  }
+  if (form.kind === 'culture_check') {
+    const items = {};
+    for (const it of [...(form.items || GMP_WALK_ITEMS), ...(form.safety_items || CULTURE_SAFETY_ITEMS)]) {
+      const a = c.items?.[it.key] || {};
+      items[it.key] = { result: GMP_WALK_ANSWERS.includes(a.result) ? a.result : null, note: String(a.note || '').trim().slice(0, 500) || null };
+    }
+    const n = Number(c.talk_attendees);
+    return {
+      department: String(c.department || form.department || '').trim().slice(0, 60),
+      items,
+      observation_note: String(c.observation_note || '').trim().slice(0, 4000),
+      talk_date: /^\d{4}-\d{2}-\d{2}$/.test(String(c.talk_date || '')) ? c.talk_date : null,
+      talk_attendees: Number.isFinite(n) && n >= 1 ? Math.floor(n) : null,
+      talk_attendee_names: String(c.talk_attendee_names || '').trim().slice(0, 2000) || null,
+      // A blank row is nothing raised; a concern is its words and its category.
+      concerns: (Array.isArray(c.concerns) ? c.concerns : [])
+        .map(x => ({ category: CONCERN_CATEGORY_KEYS.includes(x?.category) ? x.category : null, description: String(x?.description || '').trim().slice(0, 2000) }))
+        .filter(x => x.description).slice(0, 50),
+    };
   }
   if (form.kind === 'banned_list_review') {
     const editions = {};

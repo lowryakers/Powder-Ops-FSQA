@@ -50,6 +50,18 @@ const S = {
   done: { en: 'Reviewed', es: 'Revisado' },
   why_na: { en: 'Why it does not apply this year', es: 'Por qué no aplica este año' },
   mr_notes: { en: 'Notes, decisions and actions agreed (optional)', es: 'Notas, decisiones y acciones acordadas (opcional)' },
+  cc_h: { en: 'Monthly food safety culture check', es: 'Revisión mensual de cultura de inocuidad' },
+  cc_dept: { en: 'Department', es: 'Departamento' },
+  cc_observed: { en: 'What you observed this month', es: 'Lo que observó este mes' },
+  cc_no_safety: { en: 'Safety items will be added here once the plant names them.', es: 'Los puntos de seguridad se agregarán aquí cuando la planta los defina.' },
+  cc_note: { en: 'What you noticed this month (general note)', es: 'Lo que notó este mes (nota general)' },
+  cc_talk: { en: 'Team talk', es: 'Plática con el equipo' },
+  cc_talk_date: { en: 'Date', es: 'Fecha' },
+  cc_talk_count: { en: 'How many people attended', es: 'Cuántas personas asistieron' },
+  cc_talk_names: { en: 'Who attended (optional)', es: 'Quiénes asistieron (opcional)' },
+  cc_concerns_hint: { en: 'Write down each concern people raised. Each one goes into the concern log to be answered. Leave this empty if none were raised.', es: 'Anote cada inquietud que el equipo expresó. Cada una pasa al registro para ser respondida. Déjelo vacío si no hubo.' },
+  cc_concern: { en: 'What was raised', es: 'Qué se expresó' },
+  cc_add_concern: { en: 'Add a concern raised', es: 'Agregar una inquietud' },
   fd_h: { en: 'Food Defense Plan challenge', es: 'Desafío del Plan de Defensa Alimentaria' },
   fd_team: { en: 'Food Defense Team members taking part', es: 'Miembros del Equipo de Defensa Alimentaria participantes' },
   fd_methods: { en: 'Challenge method(s) used — at least one (§ 5.2 C)', es: 'Método(s) de desafío usados — al menos uno (§ 5.2 C)' },
@@ -59,7 +71,7 @@ const S = {
 };
 const tr = (lang, k) => (S[k] || {})[lang] || (S[k] || {}).en || k;
 
-export default function CheckFields({ form, value, onChange, lang = 'en', assignee = null }) {
+export default function CheckFields({ form, value, onChange, lang = 'en', assignee = null, departments = null }) {
   const v = value || {};
   const set = (patch) => onChange({ ...v, ...patch });
   const missing = missingForCheck(form, v);
@@ -74,6 +86,7 @@ export default function CheckFields({ form, value, onChange, lang = 'en', assign
       {form.kind === 'food_defense_challenge' && <AnnualReviewFields form={form} v={v} set={set} lang={lang} />}
       {form.kind === 'stability_pull' && <PullFields form={form} v={v} set={set} lang={lang} />}
       {form.kind === 'mock_recall' && <MockRecallFields form={form} lang={lang} />}
+      {form.kind === 'culture_check' && <CultureFields form={form} v={v} set={set} lang={lang} departments={departments} />}
       {form.kind === 'training' && <TrainingFields form={form} v={v} set={set} lang={lang} assignee={assignee} />}
       {missing.length > 0 && (
         <p className="text-[11px] text-amber-800" data-check-missing={missing.length}>
@@ -146,30 +159,112 @@ function WalkFields({ form, v, set, lang }) {
       {form.draft && <p className="text-[11px] text-amber-800 bg-amber-50 rounded px-2 py-1">{tr(lang, 'draft')}</p>}
       <input value={v.area || ''} onChange={e => set({ area: e.target.value })} placeholder={tr(lang, 'area')} data-walk-area
         className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
-      <ul className="space-y-2">
-        {form.items.map(it => {
-          const a = items[it.key] || {};
-          return (
-            <li key={it.key} className="border-t border-gray-100 pt-2" data-walk-item={it.key}>
-              <p className="text-xs text-gray-800 mb-1">{lang === 'es' && it.label_es ? it.label_es : it.label}</p>
-              <div className="flex gap-1.5">
-                {GMP_WALK_ANSWERS.map(ans => (
-                  <button type="button" key={ans} onClick={() => setItem(it.key, { result: ans })} data-walk-answer={ans} aria-pressed={a.result === ans}
-                    className={`flex-1 py-2 rounded-lg text-xs font-bold border-2 ${a.result === ans
-                      ? (ans === 'c' ? 'bg-green-500 text-white border-green-500' : ans === 'nc' ? 'bg-red-500 text-white border-red-500' : 'bg-gray-500 text-white border-gray-500')
-                      : 'bg-white text-gray-600 border-gray-200'}`}>
-                    {tr(lang, ans)}
-                  </button>
-                ))}
-              </div>
-              {a.result === 'nc' && (
-                <input value={a.note || ''} onChange={e => setItem(it.key, { note: e.target.value })} placeholder={tr(lang, 'seen')} data-walk-note
-                  className="mt-1 w-full px-2 py-1.5 border border-red-200 rounded-lg text-sm" />
-              )}
-            </li>
-          );
-        })}
-      </ul>
+      <ObservedItems list={form.items} items={items} setItem={setItem} lang={lang} />
+    </div>
+  );
+}
+
+/**
+ * Compliant / not compliant / N-A with a note for anything not compliant —
+ * the GMP walk's rows, shared with the culture check so the two ask the same
+ * question the same way.
+ */
+function ObservedItems({ list, items, setItem, lang }) {
+  return (
+    <ul className="space-y-2">
+      {list.map(it => {
+        const a = items[it.key] || {};
+        return (
+          <li key={it.key} className="border-t border-gray-100 pt-2" data-walk-item={it.key}>
+            <p className="text-xs text-gray-800 mb-1">{lang === 'es' && it.label_es ? it.label_es : it.label}</p>
+            <div className="flex gap-1.5">
+              {GMP_WALK_ANSWERS.map(ans => (
+                <button type="button" key={ans} onClick={() => setItem(it.key, { result: ans })} data-walk-answer={ans} aria-pressed={a.result === ans}
+                  className={`flex-1 py-2 rounded-lg text-xs font-bold border-2 ${a.result === ans
+                    ? (ans === 'c' ? 'bg-green-500 text-white border-green-500' : ans === 'nc' ? 'bg-red-500 text-white border-red-500' : 'bg-gray-500 text-white border-gray-500')
+                    : 'bg-white text-gray-600 border-gray-200'}`}>
+                  {tr(lang, ans)}
+                </button>
+              ))}
+            </div>
+            {a.result === 'nc' && (
+              <input value={a.note || ''} onChange={e => setItem(it.key, { note: e.target.value })} placeholder={tr(lang, 'seen')} data-walk-note
+                className="mt-1 w-full px-2 py-1.5 border border-red-200 rounded-lg text-sm" />
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/**
+ * The supervisor's monthly culture check (D-211). What they observed, what
+ * they noticed, and the team talk with each concern raised in it — every
+ * concern lands in the concern log, named for the supervisor who wrote it down.
+ */
+function CultureFields({ form, v, set, lang, departments }) {
+  const items = v.items || {};
+  const setItem = (key, patch) => set({ items: { ...items, [key]: { ...(items[key] || {}), ...patch } } });
+  const concerns = Array.isArray(v.concerns) ? v.concerns : [];
+  const setConcern = (i, patch) => set({ concerns: concerns.map((x, k) => (k === i ? { ...x, ...patch } : x)) });
+  const cats = form.categories || [];
+  return (
+    <div className="bg-white rounded-lg border border-green-200 p-2 space-y-3">
+      <p className="text-xs font-semibold text-gray-700">{tr(lang, 'cc_h')} <span className="font-normal text-gray-400">— {form.revision}</span></p>
+      {form.draft && <p className="text-[11px] text-amber-800 bg-amber-50 rounded px-2 py-1">{tr(lang, 'draft')}</p>}
+      {!form.department && departments && (
+        <label className="block">
+          <span className="block text-xs font-medium text-gray-600 mb-1">{tr(lang, 'cc_dept')}</span>
+          <select value={v.department || ''} onChange={e => set({ department: e.target.value })} data-cc-department
+            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm">
+            <option value="">—</option>
+            {departments.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+          </select>
+        </label>
+      )}
+      <div>
+        <p className="text-xs font-medium text-gray-600">{tr(lang, 'cc_observed')}</p>
+        <ObservedItems list={[...(form.items || []), ...(form.safety_items || [])]} items={items} setItem={setItem} lang={lang} />
+        {!(form.safety_items || []).length && <p className="text-[11px] text-gray-500 mt-1">{tr(lang, 'cc_no_safety')}</p>}
+      </div>
+      <label className="block">
+        <span className="block text-xs font-medium text-gray-600 mb-1">{tr(lang, 'cc_note')}</span>
+        <textarea rows={3} value={v.observation_note || ''} onChange={e => set({ observation_note: e.target.value })} data-cc-note
+          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
+      </label>
+      <div className="border-t border-gray-100 pt-2 space-y-2">
+        <p className="text-xs font-semibold text-gray-700">{tr(lang, 'cc_talk')}</p>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="block">
+            <span className="block text-[11px] text-gray-600 mb-0.5">{tr(lang, 'cc_talk_date')}</span>
+            <input type="date" value={v.talk_date || ''} onChange={e => set({ talk_date: e.target.value })} data-cc-talk-date
+              className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
+          </label>
+          <label className="block">
+            <span className="block text-[11px] text-gray-600 mb-0.5">{tr(lang, 'cc_talk_count')}</span>
+            <input type="number" min="1" value={v.talk_attendees || ''} onChange={e => set({ talk_attendees: e.target.value })} data-cc-talk-count
+              className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
+          </label>
+        </div>
+        <input value={v.talk_attendee_names || ''} onChange={e => set({ talk_attendee_names: e.target.value })} placeholder={tr(lang, 'cc_talk_names')}
+          className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
+        <p className="text-[11px] text-gray-600">{tr(lang, 'cc_concerns_hint')}</p>
+        {concerns.map((x, i) => (
+          <div key={i} className="flex gap-1.5 items-start" data-cc-concern={i}>
+            <select value={x.category || ''} onChange={e => setConcern(i, { category: e.target.value })} data-cc-concern-category
+              className="px-2 py-1.5 border border-gray-300 rounded-lg text-xs shrink-0">
+              <option value="">—</option>
+              {cats.map(c => <option key={c.key} value={c.key}>{lang === 'es' && c.label_es ? c.label_es : c.label}</option>)}
+            </select>
+            <input value={x.description || ''} onChange={e => setConcern(i, { description: e.target.value })} placeholder={tr(lang, 'cc_concern')} data-cc-concern-text
+              className="flex-1 min-w-0 px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
+            <button type="button" onClick={() => set({ concerns: concerns.filter((_, k) => k !== i) })} className="text-xs text-gray-400 px-1">✕</button>
+          </div>
+        ))}
+        <button type="button" onClick={() => set({ concerns: [...concerns, { category: '', description: '' }] })} data-cc-add-concern
+          className="text-xs text-powder-700 hover:underline">+ {tr(lang, 'cc_add_concern')}</button>
+      </div>
     </div>
   );
 }

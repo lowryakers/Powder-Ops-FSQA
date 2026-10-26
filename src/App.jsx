@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { setParam } from './lib/deepLink.js';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, UserPlus, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Building2, Sliders, BookText, LifeBuoy, PenLine, ListTodo, UserPlus2} from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, UserPlus, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Building2, Sliders, BookText, LifeBuoy, PenLine, ListTodo, UserPlus2, HeartHandshake} from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -97,6 +97,7 @@ const DannysListPanel = lazy(() => import('./components/office/DannysListPanel.j
 const NewsletterReader = lazy(() => import('./components/office/NewsletterReader.jsx'));
 const ControlledChangesPanel = lazy(() => import('./components/compliance/ControlledChangesPanel.jsx'));
 const ChangeRegisterPanel = lazy(() => import('./components/compliance/ChangeRegisterPanel.jsx'));
+const FoodSafetyCulturePanel = lazy(() => import('./components/compliance/FoodSafetyCulturePanel.jsx'));
 const LogBuilderStudio = lazy(() => import('./components/compliance/LogBuilderStudio.jsx'));
 const PayTrackingPanel = lazy(() => import('./components/office/PayTrackingPanel.jsx'));
 const PartnerReconPanel = lazy(() => import('./components/office/PartnerReconPanel.jsx'));
@@ -169,6 +170,11 @@ const NAV_GROUPS = [
       { id: 'qa-review', label: 'QA Review', icon: ClipboardCheck, keywords: 'sign off signature verify pending queue backlog' },
       { id: 'coa', label: 'COA / Lab Testing', icon: TestTubes },
       { id: 'quality-schedules', label: 'Quality Schedules', icon: CalendarClock },
+      // Food safety culture (D-211, SQF 2.1.1.2): the month the review reads,
+      // the concern log and the supervisors' checks. Everybody else raises a
+      // concern from the Operator View, so the floor's nav does not grow.
+      { id: 'food-safety-culture', label: 'Food Safety Culture', icon: HeartHandshake, keywords: 'culture concern speak up report supervisor observation team talk gmp sanitation safety review',
+        visible: (u) => !u?.is_external && (u?.role === 'admin' || u?.role === 'supervisor' || ['qa', 'quality', 'document_control'].includes((u?.department || '').toLowerCase())) },
       { id: 'hygienic', label: 'Hygienic Design', icon: ClipboardCheck },
       // The plan with live status on it — cleaning, production, BP&G zones.
       { id: 'facility-map', label: 'Facility Map', icon: MapIcon, keywords: 'floor plan layout rooms zones rodent traps pest sinks extinguishers building' },
@@ -840,6 +846,7 @@ const RULE_WHY = {
   'doc-review': 'Document Control, or a QA / Document Control supervisor',
   'controlled-changes': 'Document Control department',
   'change-register': 'Document Control / QA department, or any supervisor',
+  'food-safety-culture': 'QA / Document Control department, or any supervisor',
   'log-builder': 'Document Control department',
   accounting: 'Office / admin supervisor (AP Drop queue)',
 };
@@ -2171,6 +2178,7 @@ function App() {
           {resolvedTab === 'supply-orders' && <SupplyOrdersPanel />}
           {resolvedTab === 'controlled-changes' && <ControlledChangesPanel />}
           {resolvedTab === 'change-register' && <ChangeRegisterPanel user={user} />}
+          {resolvedTab === 'food-safety-culture' && <FoodSafetyCulturePanel user={user} />}
           {resolvedTab === 'log-builder' && <LogBuilderStudio />}
           {resolvedTab === 'time-tracking' && <TimeTrackingPanel />}
           {resolvedTab === 'production-log' && <ProductionLog user={user} />}

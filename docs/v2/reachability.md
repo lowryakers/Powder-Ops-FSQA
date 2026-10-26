@@ -14,6 +14,7 @@ to go and look.
 
 | Mechanism | What it asks | Who acts | Where it is shown | How they are told | State |
 |---|---|---|---|---|---|
+| **Food safety culture concerns (D-211)** | Answer a concern somebody raised | QA / Document Control / supervisors | Food Safety Culture → Concerns | QA's bell line `culture-concerns` while any is open; the person who raised it reads the answer on their own concern | reached |
 | Scale checks due today (D-117) | Run this morning's 417-xx check | Batching / Filling / Kitting operators | Operator View strip, per team | The strip is on the screen the floor opens first; bell line for approvers after 09:00 | reached |
 | **MMR reference on the run (D-133)** | Name the approved MMR on the schedule cell and the EOD line; turn the gate on | Production supervisors (the reference); admin (the gate) | The box on both forms; the gate strip on the Production Log for admins and QA, with the runs filed without one | The box is in the form, the refusal is on screen when the gate is on; the strip counts the warn-era runs — no DM, because the person who has to act is the one filing the form | reached |
 | **New-product stage (D-134)** | Clear the product's next gate | The role owning that gate (Formulator / Ops / Design / Fulfillment) | Products → Pipeline, grouped by stage, filterable by owner; the drawer opens at the first unmet gate | Pull, not push — no DM: the Pipeline is the product team's own screen, and a message per gate per SKU would be wallpaper | reached (pull) |

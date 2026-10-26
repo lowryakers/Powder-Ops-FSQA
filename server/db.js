@@ -4327,6 +4327,55 @@ function runMigrations() {
     );
     CREATE INDEX IF NOT EXISTS idx_gmp_walkthroughs_date ON gmp_walkthroughs(walked_on);
 
+    -- FOOD SAFETY CULTURE (D-211, SQF 2.1.1.2). A concern is anything somebody
+    -- raised about GMP, sanitation, safety or food defense — on their own, or
+    -- in a supervisor's team talk. Anonymous only when the plant has switched
+    -- that on; then no name and no account id are stored at all, so there is
+    -- nothing to look up later. The office answers each one with words.
+    CREATE TABLE IF NOT EXISTS culture_concerns (
+      id TEXT PRIMARY KEY,
+      raised_on TEXT NOT NULL,
+      department TEXT,
+      category TEXT NOT NULL,
+      description TEXT NOT NULL,
+      raised_by_id TEXT,
+      raised_by TEXT,
+      anonymous INTEGER NOT NULL DEFAULT 0,
+      source TEXT NOT NULL DEFAULT 'direct',
+      culture_check_id TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      response TEXT,
+      responded_by TEXT,
+      responded_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_culture_concerns_date ON culture_concerns(raised_on);
+    CREATE INDEX IF NOT EXISTS idx_culture_concerns_status ON culture_concerns(status);
+
+    -- A supervisor's monthly culture check: what they observed, what they
+    -- noticed, and the team talk. Stamped with the drafted form's revision.
+    CREATE TABLE IF NOT EXISTS culture_checks (
+      id TEXT PRIMARY KEY,
+      work_order_id TEXT,
+      quality_schedule_id TEXT,
+      department TEXT NOT NULL,
+      checked_on TEXT NOT NULL,
+      checked_by TEXT NOT NULL,
+      checked_by_id TEXT,
+      checklist_revision TEXT NOT NULL,
+      items TEXT NOT NULL,
+      nc_count INTEGER NOT NULL DEFAULT 0,
+      observation_note TEXT NOT NULL,
+      talk_date TEXT,
+      talk_attendees INTEGER,
+      talk_attendee_names TEXT,
+      concern_count INTEGER NOT NULL DEFAULT 0,
+      notes TEXT,
+      source TEXT NOT NULL DEFAULT 'page',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_culture_checks_date ON culture_checks(checked_on);
+
     CREATE TABLE IF NOT EXISTS banned_list_reviews (
       id TEXT PRIMARY KEY,
       work_order_id TEXT,

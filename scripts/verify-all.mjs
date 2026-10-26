@@ -164,6 +164,7 @@ const RUNS = [
   ['verify-threads-inbox.mjs', 5116, {}, false],
   ['verify-signature-sweep.mjs', 5125, {}, false],
   ['verify-record-interface.mjs', 5126, {}, false],
+  ['verify-food-safety-culture.mjs', 5127, {}, false],
 ];
 
 // VERIFY_ONLY=verify-auth.mjs,verify-swab-stock.mjs runs just the entries that
