@@ -3932,6 +3932,16 @@ report that competes with a queue gets skimmed. So it is three sections and no t
 `tr()` back. Uses the cached `/ai/translate-content` endpoint, so it silently stays English when AI is off.
 Wired into Supply Orders, Time Tracking and both finance ledgers; reusable anywhere.
 
+## Which modules are used: `npm run report:usage -- <db copy>` (D-214)
+`scripts/report-module-usage.mjs` is READ-ONLY. It counts each module's rows and the audit entries PEOPLE wrote
+since go-live and in the last 90 days, and gives a verdict: never used / machine only / dormant / light / in use.
+- **Run it on a copy, never production.** Add a new module's tables and audit entity types to `MODULES`; record types
+  it does not know are listed at the end.
+- It also flags two demo-era leftovers. Invented completed tasks under Adam B. / Ricardo A. / Spencer R.: `server.js`
+  writes them on a database with no completed task. Active accounts that still have a PIN and no password: these can
+  be claimed with the PIN. **Do not add demo history or demo accounts to a seed.**
+- The findings and the cleanup plan are in `docs/v2/cleanup-and-spine-2026-10-26.md`.
+
 ## The record interface: file, sign, revoke, retrieve, describe (D-207, move 02)
 `server/record-interface.js` (`RECORD_TYPES`, `retrieveRecords`, `canReadType`) and `server/api/records.js`
 (`GET /api/records`, `/types`, `/:type/:id`). Three types are adopted: sanitation, scale and `qms` (D-210).

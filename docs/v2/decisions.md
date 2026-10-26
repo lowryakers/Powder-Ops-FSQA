@@ -8396,3 +8396,23 @@ Daniela answered the questions D-211 left open. This is the SQF / Costco audit c
   and the supervisors. "Schedule next" in Meetings carries the attendees forward.
 - Every part runs once per database under its own marker, so a paused check or a moved meeting stays as left.
 - `verify:culture` 45 → 59. The other verifies that read team task lists and meetings were rerun and pass.
+
+## D-214 — What is unused, measured; two demo-era leftovers found (2026-10-26)
+
+Asked: what is left on the single spine, and which parts of ReadyDoc have never been used. The full answer is
+`docs/v2/cleanup-and-spine-2026-10-26.md`.
+
+- **Use is measured, not guessed, and never from production directly.** `npm run report:usage -- <db copy>`
+  (`scripts/report-module-usage.mjs`) opens a copy read-only. Per module it shows rows held, rows since go-live,
+  and audit entries written by a PERSON (not the system, a seeder, ReadyBot or a bot token) since go-live and in
+  the last 90 days. The verdict is decided on people, because seeds and imports fill tables nobody touched.
+  Reading leaves no audit row, so read-only screens (KPIs, maps) cannot be judged by it.
+- **Found: boot writes invented maintenance history.** `server.js` fills a database that has no completed task with
+  four months of "completed" PM tasks under Adam B. / Ricardo A. / Spencer R. (1,955 on a fresh database), and a
+  later block rewrites `audit_log.actor`. The report finds them on a copy: completed under those names with no
+  audit entry by an account. **Not removed in this change**: it needs checking against live first, and verifies
+  may lean on those rows.
+- **Found: demo accounts with PINs in the repository.** An active account with a PIN and no password can be claimed
+  through `/set-password` with the PIN. The report lists any by name and never prints a PIN.
+- **Dead code** (no importer): the hidden finance panels and their routers, `/api/checklists`, three small client
+  files, `server/backfill-history.js`. Recommended: delete the code and keep the tables.
