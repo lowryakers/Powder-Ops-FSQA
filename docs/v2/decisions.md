@@ -8317,3 +8317,30 @@ organoleptic tests.
 - **Still on paper here:** the scheduled check records (`fileCheckRecord`: EMP, GMP walk, list reviews, annual
   reviews) and the production entries. They are next. After them comes move 04, a retrieval screen on
   `GET /api/records`.
+
+## D-211 — A food safety culture program: concerns, a monthly supervisor check, and the month (2026-10-26)
+
+Daniela asked for a food safety culture program (SQF 2.1.1.2). The pieces that do not wait on her answers are
+built; the ones that do are settings or empty lists.
+
+- **Anybody who works here can raise a concern** — GMP, sanitation, safety, food defense, other — from the
+  Operator View, which every employee has (D-124). `/api/culture` is mounted without `requireModuleWrite` (the
+  AP Drop arrangement) and decides per route. A guest is 404.
+- **"Without a name" is OFF until the plant decides** (`app_settings.culture_anonymous_concerns`, admin only).
+  While off it is refused, not silently dropped. When on, no name and no account id are stored, and the audit
+  row names nobody — a trail that names the person defeats the option.
+- **A person reads their own named concerns; QA, Document Control, supervisors and admins read all of them.**
+  Closing one needs words, because the person who raised it reads the answer.
+- **The supervisor's monthly check is one writer, two doors** (`fileCultureCheck`): the page today, and a
+  "Monthly Culture Check — <Department>" quality-schedule task through the D-060 check-record interface. Both
+  are validated by the same `missingForCheck`. It reuses the GMP walk's five observed items, plus a safety list
+  that ships EMPTY (Daniela's to name), a note, the team talk (date, headcount), and concerns from the talk,
+  which land in the same log as `team_talk`. Stamped DRAFT-1 — no controlled form exists.
+- **The month is derived on every read**: concerns by topic, department and door; checks by department; GMP
+  walks; observed not-compliant items; the month before beside it; what is still open. It carries the line
+  "fewer concerns is not by itself a stronger culture", because a falling count reads as good news otherwise.
+- **"Food Safety Culture Review" is a meeting type**, for the monthly review in Meetings.
+- QA's bell counts open concerns. Nav entry **Food Safety Culture** in Quality.
+- **Waiting on Daniela:** the departments and supervisors (then the monthly schedules are seeded), the safety
+  items, the anonymous decision, who attends the review and when.
+- `verify:culture` (45, live + browser at 390 and 1280).

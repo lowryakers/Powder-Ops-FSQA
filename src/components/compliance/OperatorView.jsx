@@ -6,6 +6,7 @@ import { CheckCircle, Clock, AlertTriangle, ChevronDown, ChevronUp, Wrench, Cale
 import { localDateStr, daysAgoStr } from '../../utils/dates';
 import FileUpload from '../FileUpload';
 import PlantHolidaysStrip from '../common/PlantHolidaysStrip';
+import RaiseConcern from '../common/RaiseConcern';
 import { createTranslator, formatDueLabelI18n } from '../../i18n/operatorStrings';
 import { canSeeQaReview } from '../../utils/permissions';
 import { formatDateTime, formatDate } from '../../lib/datetime.js';
@@ -1283,6 +1284,10 @@ export default function OperatorView() {
 
       {/* Paid holidays in the next 60 days (D-175) — everybody has this screen. */}
       <PlantHolidaysStrip days={60} lang={lang} />
+
+      {/* Food safety culture (D-211): anybody can raise a concern, from the one
+          screen everybody has. */}
+      <div><RaiseConcern user={authUser} lang={lang} /></div>
 
       {/* View as (admin): switches the WHOLE app — nav, shortcuts, permissions —
           to that person's view. The floating amber bar (App) shows Exit. */}

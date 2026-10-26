@@ -5032,6 +5032,17 @@ Banned-List Review has had all along.
   findings, corrective actions. The by-hand door's `source: 'paper'` reads **Recorded by hand** on screen, never
   "Paper report" (people type it straight in). `verify:annualreviews` (83).
 
+## Food safety culture: concerns, the monthly check, the month (D-211)
+`server/culture.js` (`raiseConcern`, `fileCultureCheck`, `cultureSummary`, `canReviewCulture`), `/api/culture` (no module
+guard; guests 404), `culture_concerns` + `culture_checks`, `RaiseConcern.jsx` on the Operator View,
+`FoodSafetyCulturePanel.jsx` (Quality → Food Safety Culture), check kind `culture_check` (`CultureFields`).
+- **Anyone raises a concern.** Anonymous is OFF until an admin turns it on; when on, no name, no id, no audit actor.
+- **One writer per table.** The monthly check is filed from the page or a "Monthly Culture Check — <Dept>" task,
+  both through `fileCultureCheck`; talk concerns go through `raiseConcern` as `team_talk`. DRAFT-1.
+- **The month is derived on read** and says fewer concerns is not by itself a stronger culture.
+- Safety items (`CULTURE_SAFETY_ITEMS`) and the department schedules are empty until Daniela answers.
+- `verify:culture` (45).
+
 ## Recurring QA checks that ship pre-scheduled
 `SEED_SCHEDULES` in `server/api/quality-schedules.js` + `seedQualitySchedules(db)` (called from server.js).
 Seeded **once, keyed on title** — an edited frequency, a paused schedule or a deleted one is a decision, and

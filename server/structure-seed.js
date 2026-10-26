@@ -67,6 +67,8 @@ export function seedStructureLists(db) {
     options: [
       'Management Review', 'Food Safety Team (HACCP)', 'Production / Operations',
       'Safety', 'Quality Review', 'Training', 'Customer / Supplier', 'Other',
+      // D-211: the monthly review of the food safety culture program.
+      'Food Safety Culture Review',
     ],
   });
 

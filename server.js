@@ -32,6 +32,7 @@ import checklistRoutes from './server/api/checklists.js';
 import calibrationRoutes from './server/api/calibration.js';
 import scaleVerificationRoutes from './server/api/scale-verification.js';
 import recordRoutes from './server/api/records.js';
+import cultureRoutes from './server/api/culture.js';
 import qaReviewRoutes from './server/api/qa-review.js';
 import cleanupRoutes from './server/api/cleanup.js';
 import sanitationRoutes from './server/api/sanitation.js';
@@ -2011,6 +2012,9 @@ app.use('/api/scale-verification', requireModuleWrite('calibration'), scaleVerif
 // The record interface's read side (D-207): each type is read only by someone
 // who can open its module, decided per type inside the router.
 app.use('/api/records', recordRoutes);
+// Food safety culture (D-211): raising a concern is open to every employee, so
+// no module guard; each route decides (server/api/culture.js).
+app.use('/api/culture', cultureRoutes);
 // Both the Sanitation log and QA Inspections read and write this mount — they
 // are two lists over one table, so an edit grant on either module opens it.
 // The swab log (D-186) — declared first, or /api/sanitation/:id reads "swab-log" as a record id.

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { canReviewCulture } from '../culture.js';
 import { openSuggestions } from './office.js';
 import { scaleChecksDue, scaleChecksOverdueNow } from '../scale-checks.js';
 import { openDispositions } from '../product-disposition.js';
@@ -638,6 +639,14 @@ router.get('/notifications', (req, res) => {
       const act = db.prepare("SELECT COUNT(*) c FROM emp_samples WHERE outcome = 'action' AND (corrective_action IS NULL OR corrective_action = '')").get().c;
       if (act > 0) items.push({ id: 'emp-action', tab: 'quality-schedules', severity: 'critical', count: act, label: `${act} environmental monitoring action-level result${act > 1 ? 's' : ''} with no corrective action recorded` });
       if (stale > 0) items.push({ id: 'emp-pending', tab: 'quality-schedules', severity: 'warning', count: stale, label: `${stale} environmental sample${stale > 1 ? 's' : ''} awaiting a laboratory result for over 14 days` });
+    } catch { /* table optional */ }
+  }
+  // Food safety culture (D-211): concerns nobody has answered yet reach the
+  // people who answer them — the log is otherwise only seen by whoever opens it.
+  if (canReviewCulture(req.user)) {
+    try {
+      const open = db.prepare("SELECT COUNT(*) c FROM culture_concerns WHERE status = 'open'").get().c;
+      if (open > 0) items.push({ id: 'culture-concerns', tab: 'food-safety-culture', severity: 'warning', count: open, label: `${open} food safety concern${open > 1 ? 's' : ''} raised and not yet answered` });
     } catch { /* table optional */ }
   }
   if (dueSoonWOs > 0) items.push({ id: 'pm-due-soon', tab: 'pm', severity: 'info', count: dueSoonWOs, label: `${dueSoonWOs} PM work order${dueSoonWOs > 1 ? 's' : ''} due within 7 days` });
