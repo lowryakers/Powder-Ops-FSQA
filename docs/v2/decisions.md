@@ -8369,3 +8369,30 @@ database, not guessed.
 - Production's real table sizes set the real "before"; the growth is quadratic, so a large imported history
   was likely worse than measured. The comms verifies (threads 44, inbox 29, unread landing 26, history 25,
   edit 11) pass.
+
+## D-213 — Daniela's answers for the food safety culture program (2026-10-26)
+
+Daniela answered the questions D-211 left open. This is the SQF / Costco audit correction, due **30 October 2026**.
+
+- **Monthly checks, one per department**, each a quality schedule routed to its own team and named for the supervisor:
+  Sanitation (cleaning) — Zuleika, Production (filling) — Debora, Batching — Bernardo, Kitting — Jose,
+  Warehouse — Juan. `CULTURE_DEPARTMENTS` in `shared/check-forms.js` is the one list.
+  - "Production" is the filling line: Debora is the stick-pack production supervisor (the org chart), and
+    `production` is a legacy department that routes nothing (D-094).
+  - **A first name is resolved to an account, never guessed** (`resolveSupervisor`): one match is used; several
+    narrow to supervisors, then to the team. Still ambiguous, or nobody, is reported at boot and on the screen; the
+    check still reaches the whole team.
+  - `quality_schedules.task_group` + `assigned_to` are new. The generator used to send every task to QA; a schedule
+    that names no team still does.
+  - **Only a supervisor or admin can complete the check from the task** (403 otherwise). It sits on the team's list,
+    so an operator can see it.
+  - The first checks are due on the day of the deploy, so they can be filed before 30 October.
+- **The six safety items are hers, in her words** (`CULTURE_SAFETY_ITEMS`): standing on a pallet, broken items,
+  blocked entrances, clean dry floors without loose wrap or debris, tools or equipment on floors, potential hazards.
+  Still DRAFT-1.
+- **Anonymous concerns are ON.** Set once (`culture_anonymous_default_v1`), so an admin who turns it off later keeps it off.
+- **The monthly review**: a "Monthly Food Safety Culture Review" task for Document Control on the 1st of each month,
+  and the first review meeting seeded on the first open day of next month. It invites admins, QA / Document Control
+  and the supervisors. "Schedule next" in Meetings carries the attendees forward.
+- Every part runs once per database under its own marker, so a paused check or a moved meeting stays as left.
+- `verify:culture` 45 → 59. The other verifies that read team task lists and meetings were rerun and pass.

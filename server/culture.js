@@ -20,7 +20,9 @@ import { logAudit } from './db.js';
 import { plantDateOf } from './plant-clock.js';
 import {
   cultureCheckForm, missingForCheck, normalizeCheck, CONCERN_CATEGORY_KEYS, CULTURE_CHECK_REVISION,
+  CULTURE_DEPARTMENTS,
 } from '../shared/check-forms.js';
+import { nextWorkday } from './plant-calendar.js';
 import { TASK_GROUP_VALUES } from '../shared/task-groups.js';
 
 export const CONCERN_STATUSES = ['open', 'in_review', 'closed'];
@@ -209,4 +211,112 @@ export function concernView(row, viewer) {
     responded_by: canReviewCulture(viewer) ? row.responded_by : null,
     culture_check_id: row.culture_check_id, is_mine: mine,
   };
+}
+
+/* ── Daniela's answers, put in place once (D-213) ────────────────────────────── */
+
+const fold = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
+
+/**
+ * The account a first name means. Never a guess between two people: one match
+ * is used; several are narrowed to supervisors, then to the team; anything still
+ * ambiguous (or nobody) is REPORTED and the schedule is left for the team.
+ */
+export function resolveSupervisor(db, firstName, team) {
+  const want = fold(firstName);
+  const rows = db.prepare(`SELECT id, name, role, department FROM users
+    WHERE is_active = 1 AND COALESCE(is_external, 0) = 0 AND name != 'ReadyBot' AND role != 'auditor'`).all()
+    .filter(u => fold(u.name).split(/\s+/)[0] === want);
+  if (rows.length === 1) return { user: rows[0] };
+  const sups = rows.filter(u => ['supervisor', 'admin'].includes(u.role));
+  if (sups.length === 1) return { user: sups[0] };
+  const onTeam = (sups.length ? sups : rows).filter(u => u.department === team);
+  if (onTeam.length === 1) return { user: onTeam[0] };
+  return { user: null, candidates: rows.map(u => u.name) };
+}
+
+const firstOfNextMonth = (today) => {
+  const [y, m] = today.split('-').map(Number);
+  const d = new Date(Date.UTC(y, m, 1));
+  return d.toISOString().slice(0, 10);
+};
+
+/** Who is asked to the monthly review: admins, QA / Document Control, and the supervisors. */
+export function reviewAttendees(db) {
+  return db.prepare(`SELECT id, name, role, department FROM users
+    WHERE is_active = 1 AND COALESCE(is_external, 0) = 0 AND name != 'ReadyBot' AND role != 'auditor'
+      AND (role IN ('admin', 'supervisor') OR LOWER(COALESCE(department, '')) IN ('qa', 'quality', 'document_control'))
+    ORDER BY name COLLATE NOCASE`).all();
+}
+
+const once = (db, key) => !!db.prepare('SELECT 1 FROM app_settings WHERE key = ?').get(key);
+const mark = (db, key) => db.prepare("INSERT INTO app_settings (key, value) VALUES (?, 'done') ON CONFLICT(key) DO NOTHING").run(key);
+
+/**
+ * ONCE PER DATABASE, each part under its own marker, so a schedule somebody
+ * pauses, a meeting somebody moves or the anonymous switch an admin turns off
+ * stays the way they left it.
+ *  - Anonymous concerns ON (Daniela: "submit either anonymously or with name").
+ *  - One monthly check per department, routed to that team and named for its
+ *    supervisor where the roster says who that is.
+ *  - A monthly review task for Document Control on the 1st, and the first
+ *    review meeting on the first open day of next month with its attendees.
+ */
+export function seedCultureProgram(db) {
+  const today = plantDateOf(new Date());
+  const report = [];
+  if (!once(db, 'culture_anonymous_default_v1')) {
+    db.prepare("INSERT INTO app_settings (key, value) VALUES ('culture_anonymous_concerns', 'on') ON CONFLICT(key) DO NOTHING").run();
+    mark(db, 'culture_anonymous_default_v1');
+    report.push('anonymous concerns on');
+  }
+  if (!once(db, 'culture_schedules_v1')) {
+    const exists = db.prepare('SELECT 1 FROM quality_schedules WHERE title = ?');
+    const ins = db.prepare(`INSERT INTO quality_schedules (id, title, description, module_id, frequency_type, frequency_value, procedure_steps, next_due, task_group, assigned_to)
+      VALUES (?, ?, ?, 'Food Safety Culture', 'monthly', 1, ?, ?, ?, ?)`);
+    for (const d of CULTURE_DEPARTMENTS) {
+      const title = `Monthly Culture Check — ${d.label}`;
+      if (exists.get(title)) continue;
+      const who = resolveSupervisor(db, d.supervisor, d.value);
+      ins.run(uuid(), title,
+        `The supervisor's monthly food safety culture check for ${d.label}: observe GMP and safety on the floor, hold a short team talk, and write down any concerns raised.`,
+        JSON.stringify(['Walk the area and answer each GMP and safety item', 'Hold a short team talk and note who attended', 'Write down any concerns the team raised']),
+        today, d.value, who.user?.name || null);
+      report.push(who.user ? `${d.label} → ${who.user.name}` : `${d.label} → nobody named (${who.candidates?.length ? `ambiguous: ${who.candidates.join(', ')}` : `no account for "${d.supervisor}"`}); routed to the team`);
+    }
+    const reviewTitle = 'Monthly Food Safety Culture Review';
+    if (!exists.get(reviewTitle)) {
+      ins.run(uuid(), reviewTitle,
+        'Hold the monthly Food Safety Culture Review in Meetings with admin, QA / Document Control and the supervisors. Read last month on Quality → Food Safety Culture.',
+        JSON.stringify(['Open Quality → Food Safety Culture and read last month', 'Hold the review meeting and record who attended', 'Assign an owner to each open concern']),
+        firstOfNextMonth(today), 'document_control', null);
+    }
+    mark(db, 'culture_schedules_v1');
+  }
+  if (!once(db, 'culture_review_meeting_v1')) {
+    const has = db.prepare("SELECT 1 FROM meetings WHERE meeting_type = 'Food Safety Culture Review' LIMIT 1").get();
+    if (!has) {
+      const date = nextWorkday(db, firstOfNextMonth(today));
+      const attendees = reviewAttendees(db).map(u => ({ user_id: u.id, name: u.name, role: u.role === 'admin' ? 'Admin' : u.role === 'supervisor' ? 'Supervisor' : 'QA / Document Control', present: false }));
+      db.prepare(`INSERT INTO meetings (id, meeting_type, title, meeting_date, agenda, attendees, status, created_by)
+        VALUES (?, 'Food Safety Culture Review', ?, ?, ?, ?, 'scheduled', 'system')`)
+        .run(uuid(), `Food Safety Culture Review — ${monthName(date)}`, date,
+          JSON.stringify(['Last month on the Food Safety Culture page: concerns, supervisor checks and GMP walks', 'Concerns still open — who owns each', 'Anything to change for next month']),
+          JSON.stringify(attendees));
+      report.push(`review meeting ${date} (${attendees.length} invited)`);
+    }
+    mark(db, 'culture_review_meeting_v1');
+  }
+  if (report.length) console.log(`[culture] ${report.join('; ')}`);
+  return report;
+}
+
+const monthName = (date) => new Date(date + 'T00:00:00Z').toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+
+/** The five monthly checks as they stand — the screen says who each is for. */
+export function cultureSchedules(db) {
+  return CULTURE_DEPARTMENTS.map(d => {
+    const s = db.prepare('SELECT id, title, next_due, is_active, assigned_to FROM quality_schedules WHERE title = ?').get(`Monthly Culture Check — ${d.label}`);
+    return { department: d.value, label: d.label, supervisor_named: d.supervisor, schedule: s || null };
+  });
 }

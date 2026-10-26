@@ -24,6 +24,9 @@ const t = (n, c, d = '') => { if (c) { pass++; console.log('  ✓ ' + n); } else
 
 const { default: Database } = await import('better-sqlite3');
 const db = new Database(process.env.DBPATH || process.env.DB_PATH);
+db.pragma('busy_timeout = 10000');
+// Server modules imported here only READ through `db` (or write through it); nothing calls db.js,
+// which would open a second connection and run migrations against the server's file.
 const mk = (id, name, role, dept, ma, ext = 0) => db.prepare(`INSERT OR REPLACE INTO users (id, name, username, role, department, is_active, is_external, module_access, setup_code, setup_code_expires_at)
   VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, datetime('now','+7 day'))`).run(id, name, name, role, dept, ext, ma ? JSON.stringify(ma) : null, `SC-${id}`);
 mk('fc-admin', 'Culture Admin', 'admin', 'quality', null);
@@ -56,7 +59,10 @@ const month = today.slice(0, 7);
 console.log('── who may do what ──');
 let r = await call('GET', '/culture/meta', undefined, O);
 t('an operator with no modules can reach the program and raise a concern', r.status === 200 && r.body.can_review === false && r.body.can_file_check === false && r.body.categories.length === 5, JSON.stringify(r.body).slice(0, 160));
-t('…and "without a name" starts OFF', r.body.anonymous_allowed === false);
+t('…and "without a name" is ON from the first boot (Daniela, D-213)', r.body.anonymous_allowed === true);
+t('the check form carries her six safety items', r.body.check_form.safety_items.length === 6 && r.body.check_form.safety_items.some(i => /pallet/i.test(i.label)));
+t('the departments read in the plant\'s words — Sanitation, Production', r.body.departments[0].label === 'Sanitation' && r.body.departments[1].label === 'Production');
+await call('PUT', '/culture/settings', { anonymous_allowed: false }, A);
 t('a supervisor may file the check; QA reviews', (await call('GET', '/culture/meta', undefined, S)).body.can_file_check === true
   && (await call('GET', '/culture/meta', undefined, Q)).body.can_review === true);
 r = await call('POST', '/culture/concerns', { category: 'gmp', description: 'x' }, X);
@@ -106,8 +112,8 @@ r = await call('GET', '/culture/concerns', undefined, O);
 t('…and the operator reads the answer on their own concern', /Room 2 checklist/.test(r.body[0]?.response || ''));
 
 console.log('\n── the supervisor\'s monthly check (page door) ──');
-const { GMP_WALK_ITEMS } = await import('../shared/check-forms.js');
-const allC = Object.fromEntries(GMP_WALK_ITEMS.map(i => [i.key, { result: 'c' }]));
+const { GMP_WALK_ITEMS, CULTURE_SAFETY_ITEMS } = await import('../shared/check-forms.js');
+const allC = Object.fromEntries([...GMP_WALK_ITEMS, ...CULTURE_SAFETY_ITEMS].map(i => [i.key, { result: 'c' }]));
 r = await call('POST', '/culture/checks', { department: 'batching' }, S);
 t('a blank check is refused and names what is missing', r.status === 400 && r.body.missing?.length >= 7, JSON.stringify(r.body).slice(0, 200));
 r = await call('POST', '/culture/checks', { department: 'batching', items: allC, observation_note: 'Good', talk_date: today, talk_attendees: 6 }, O);
@@ -131,11 +137,54 @@ db.prepare(`INSERT INTO work_orders (id, title, description, priority, due_date,
 const tasks = (await call('GET', '/pm/operator-tasks?limit=500', undefined, A)).body;
 const task = (Array.isArray(tasks) ? tasks : tasks.tasks || []).find(w => w.id === 'fc-wo');
 t('the task carries the culture form with its department from the title', task?.check_form?.kind === 'culture_check' && task.check_form.department === 'filling', JSON.stringify(task?.check_form || {}).slice(0, 160));
+r = await call('POST', '/pm/work-orders/fc-wo/complete-and-recur', { completed_by: 'Culture Other', check: { items: allC, observation_note: 'x', talk_date: today, talk_attendees: 3 } }, O2);
+t('an operator on the team cannot file the supervisor\'s check from the task (403)', r.status === 403, String(r.status));
 r = await call('POST', '/pm/work-orders/fc-wo/complete-and-recur', { completed_by: 'Culture Admin', check: { items: allC } }, A);
 t('completing it half-filled is refused', r.status === 400, String(r.status));
 r = await call('POST', '/pm/work-orders/fc-wo/complete-and-recur', { completed_by: 'Culture Admin', check: { items: allC, observation_note: 'All good on Filling.', talk_date: today, talk_attendees: 4 } }, A);
 const taskChk = db.prepare("SELECT * FROM culture_checks WHERE work_order_id = 'fc-wo'").get();
 t('completing it files the same record, from the task, for Filling', r.status < 300 && taskChk?.source === 'task' && taskChk.department === 'filling', `${r.status} ${JSON.stringify(r.body).slice(0, 160)}`);
+
+console.log('\n── Daniela\'s answers, seeded once (D-213) ──');
+const culture = await import('../server/culture.js');
+const qsRows = db.prepare("SELECT title, task_group, frequency_type, is_active, next_due FROM quality_schedules WHERE module_id = 'Food Safety Culture' ORDER BY title").all();
+const byTitle = Object.fromEntries(qsRows.map(q => [q.title, q]));
+t('five monthly checks, one per department, each routed to its team',
+  byTitle['Monthly Culture Check — Sanitation']?.task_group === 'cleaning' && byTitle['Monthly Culture Check — Production']?.task_group === 'filling'
+  && byTitle['Monthly Culture Check — Batching']?.task_group === 'batching' && byTitle['Monthly Culture Check — Kitting']?.task_group === 'kitting'
+  && byTitle['Monthly Culture Check — Warehouse']?.task_group === 'warehouse', JSON.stringify(qsRows.map(q => q.title)));
+t('…and a monthly review for Document Control on the 1st', byTitle['Monthly Food Safety Culture Review']?.task_group === 'document_control' && byTitle['Monthly Food Safety Culture Review'].next_due.endsWith('-01'));
+const mtg = db.prepare("SELECT * FROM meetings WHERE meeting_type = 'Food Safety Culture Review'").all();
+t('the first review meeting is scheduled on an open day at the start of next month', mtg.length === 1 && mtg[0].meeting_date > today && Number(mtg[0].meeting_date.slice(8)) <= 7, JSON.stringify(mtg.map(m => m.meeting_date)));
+const inv = culture.reviewAttendees(db).map(u => u.name);
+t('who is asked: admin, QA / Document Control and supervisors — not operators or guests',
+  inv.includes('Culture Admin') && inv.includes('Culture Quality') && inv.includes('Culture Super') && !inv.includes('Culture Operator') && !inv.includes('Culture Guest'));
+mk('fc-jo1', 'Jose Uno', 'operator', 'batching', null);
+mk('fc-jo2', 'José Luna', 'supervisor', 'kitting', null);
+mk('fc-ju1', 'Juana Gonzalez', 'operator', 'warehouse', null);
+mk('fc-ju2', 'Juan Gonzalez', 'supervisor', 'warehouse', null);
+mk('fc-de1', 'Debora One', 'supervisor', 'filling', null);
+mk('fc-de2', 'Debora Two', 'supervisor', 'batching', null);
+mk('fc-de3', 'Debora Three', 'supervisor', 'kitting', null);
+t('"Jose" is the kitting supervisor, accents folded, not the operator', culture.resolveSupervisor(db, 'Jose', 'kitting').user?.name === 'José Luna');
+t('"Juan" is Juan, never Juana', culture.resolveSupervisor(db, 'Juan', 'warehouse').user?.name === 'Juan Gonzalez');
+t('"Debora" narrows to the supervisor on the team', culture.resolveSupervisor(db, 'Debora', 'filling').user?.name === 'Debora One');
+const amb = culture.resolveSupervisor(db, 'Debora', 'cleaning');
+t('…and two people the team cannot tell apart are REPORTED, never guessed', amb.user === null && amb.candidates.length === 3);
+db.prepare("UPDATE quality_schedules SET is_active = 0 WHERE title = 'Monthly Culture Check — Kitting'").run();
+const again = culture.seedCultureProgram(db);
+t('a second boot changes nothing — a paused check stays paused', again.length === 0
+  && db.prepare("SELECT is_active FROM quality_schedules WHERE title = 'Monthly Culture Check — Kitting'").get().is_active === 0
+  && db.prepare("SELECT COUNT(*) c FROM quality_schedules WHERE module_id = 'Food Safety Culture'").get().c === 6);
+db.prepare("UPDATE quality_schedules SET is_active = 1 WHERE title = 'Monthly Culture Check — Kitting'").run();
+db.prepare(`INSERT INTO quality_schedules (id, title, module_id, frequency_type, frequency_value, next_due, is_active, task_group, assigned_to)
+  VALUES ('fc-qs2', 'Monthly Culture Check — Kitting (test)', 'x', 'monthly', 1, date('now'), 1, 'kitting', 'Culture Super')`).run();
+await call('GET', '/pm/operator-tasks?limit=500', undefined, A);   // housekeeping raises it (HOUSEKEEPING_MS=0)
+const gen = db.prepare("SELECT task_group, assigned_to FROM work_orders WHERE quality_schedule_id = 'fc-qs2'").get();
+t('a raised check goes to its team, named for its supervisor (not QA)', gen?.task_group === 'kitting' && gen.assigned_to === 'Culture Super', JSON.stringify(gen));
+const older = db.prepare("SELECT task_group FROM work_orders WHERE quality_schedule_id = (SELECT id FROM quality_schedules WHERE title = 'Tap Water Testing')").get();
+t('a schedule that names no team is still QA\'s', !older || older.task_group === 'qa');
+db.prepare("DELETE FROM work_orders WHERE quality_schedule_id = 'fc-qs2'").run();
 
 console.log('\n── the month ──');
 const sum = (await call('GET', `/culture/summary?month=${month}`, undefined, Q)).body;

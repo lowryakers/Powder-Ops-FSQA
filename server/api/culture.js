@@ -13,8 +13,9 @@ import { getDb } from '../db.js';
 import {
   canReviewCulture, canFileCultureCheck, anonymousAllowed, setAnonymousAllowed,
   raiseConcern, respondConcern, fileCultureCheck, cultureSummary, concernView, CONCERN_STATUSES,
+  cultureSchedules,
 } from '../culture.js';
-import { cultureCheckForm, CONCERN_CATEGORIES } from '../../shared/check-forms.js';
+import { cultureCheckForm, CONCERN_CATEGORIES, CULTURE_DEPARTMENTS, cultureDepartmentLabel } from '../../shared/check-forms.js';
 import { TASK_GROUPS } from '../../shared/task-groups.js';
 
 const router = Router();
@@ -34,7 +35,14 @@ const reviewerOnly = (req, res) => {
 router.get('/meta', (req, res) => {
   res.json({
     categories: CONCERN_CATEGORIES,
-    departments: TASK_GROUPS,
+    // The plant's own names first ("Sanitation", "Production"), then every
+    // other team a concern can be about.
+    departments: [
+      ...CULTURE_DEPARTMENTS.map(d => ({ value: d.value, label: d.label })),
+      ...TASK_GROUPS.filter(g => !cultureDepartmentLabel(g.value)),
+    ],
+    check_departments: CULTURE_DEPARTMENTS.map(d => ({ value: d.value, label: d.label })),
+    check_schedules: canReviewCulture(req.user) ? cultureSchedules(getDb()) : [],
     anonymous_allowed: anonymousAllowed(getDb()),
     can_review: canReviewCulture(req.user),
     can_file_check: canFileCultureCheck(req.user),

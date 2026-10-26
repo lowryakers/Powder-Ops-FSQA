@@ -20,6 +20,7 @@ import { formFromTitle, gradeDilution, isMeasured, FORM_REVISION as DILUTION_REV
 import { pmCompletion } from '../pm-completion.js';
 import { recordGroupFor, recordAreaForTask } from '../qa-records.js';
 import { checkFormFor, attachCheckForms, fileCheckRecord, missingForCheck } from '../check-records.js';
+import { canFileCultureCheck } from '../culture.js';
 import { attachSwabPlans } from '../clean-swabs.js';
 import { scaleChecksDue } from '../scale-checks.js';
 import { outOfServiceScales } from '../instrument-incidents.js';
@@ -1240,6 +1241,12 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
   // of each list. Refused up front, the way the step ticks and the dilution
   // reading are, and the same list the form showed (shared/check-forms.js).
   const checkForm = checkFormFor(db, existing);
+  // The monthly culture check is the SUPERVISOR's (D-213). The task sits on the
+  // whole team's list, so an operator can open it — and is told, rather than
+  // filing a record in a supervisor's name.
+  if (checkForm?.kind === 'culture_check' && !canFileCultureCheck(req.user)) {
+    return res.status(403).json({ error: 'The monthly culture check is filed by the department supervisor.' });
+  }
   if (checkForm) {
     const missing = missingForCheck(checkForm, req.body.check);
     if (missing.length) {
