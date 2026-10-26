@@ -24,7 +24,6 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { aiEnabled, answerQuestion } from '../ai.js';
 import { smsEnabled, sendSms, approverPhone } from '../sms.js';
-import { handleDannyInboundSms } from './danny.js';
 import { applyFlavorReplyText } from './submit.js';
 import { appBaseUrl } from '../links.js';
 import { getDb, logAudit } from '../db.js';
@@ -84,29 +83,11 @@ router.post('/inbound', (req, res) => {
   // webhook timeout, so it goes back via the REST API instead of the reply.
   res.type('text/xml').send('<Response></Response>');
 
-  // ── The Danny's List number is its own conversation ──
-  // A second dedicated number keeps his task thread apart from his question
-  // thread. Anything arriving ON that number is a task reply: stored verbatim
-  // (MMS payment screenshots included) and filed by a person — never parsed
-  // into a decision, never routed to the AI. Only his own number is heard;
-  // anything else is acked and dropped in the usual silence.
+  // The old Danny's List number (D-215: the list is retired). A text arriving on
+  // it is dropped in silence rather than falling through to the AI path, which
+  // would answer a task reply as though it were a question.
   const dannyFrom = (process.env.DANNY_SMS_FROM || '').replace(/\D/g, '').slice(-10);
-  if (dannyFrom && last10(to) === dannyFrom) {
-    const expected = last10((process.env.DANNY_SMS_TO || '').trim() || approverPhone());
-    if (!expected || last10(from) !== expected) return;
-    (async () => {
-      try {
-        const media = [];
-        const n = parseInt(req.body?.NumMedia || '0', 10) || 0;
-        for (let i = 0; i < n; i++) if (req.body[`MediaUrl${i}`]) media.push(req.body[`MediaUrl${i}`]);
-        const id = await handleDannyInboundSms(getDb(), last10(from), body, media);
-        // The robot number must not be a void — with no human on this thread,
-        // silence after a reply reads as "it didn't work".
-        if (id && smsEnabled()) await sendSms(from, 'Got it — on the list.', { from: (process.env.DANNY_SMS_FROM || '').trim() });
-      } catch (e) { console.warn('[sms] danny inbound failed:', e.message); }
-    })();
-    return;
-  }
+  if (dannyFrom && last10(to) === dannyFrom) return;
 
   const who = knownSender(from);
   if (!who || !body || !smsEnabled()) return;

@@ -108,3 +108,33 @@ export function grantOutNowByName(db) {
   })();
   return granted;
 }
+
+// A RETIRED MODULE LEAVES NO GRANT BEHIND (D-215). Danny's List was the only
+// private module, and an admin whose map held nothing but its grant read as full
+// access ONLY because the grant was private. Once the module is gone the key is
+// an ordinary one, and an admin map holding one ordinary key is a narrowed admin
+// with nothing in it. So the key comes off every account, once, before anything
+// reads it — audited per account, legacy array maps included.
+export const RETIRED_MODULE_IDS = ['dannys-list'];
+const RETIRE_FLAG = 'retired_module_grants_v1';
+
+export function removeRetiredModuleGrants(db, ids = RETIRED_MODULE_IDS) {
+  if (db.prepare('SELECT 1 FROM app_settings WHERE key = ?').get(RETIRE_FLAG)) return [];
+  const gone = new Set(ids);
+  const fixed = [];
+  db.transaction(() => {
+    for (const u of db.prepare('SELECT id, name, module_access FROM users WHERE module_access IS NOT NULL').all()) {
+      const raw = (() => { try { return JSON.parse(u.module_access); } catch { return null; } })();
+      if (!raw || typeof raw !== 'object') continue;
+      const removed = Array.isArray(raw) ? raw.filter((k) => gone.has(k)) : Object.keys(raw).filter((k) => gone.has(k));
+      if (!removed.length) continue;
+      const next = Array.isArray(raw) ? raw.filter((k) => !gone.has(k)) : Object.fromEntries(Object.entries(raw).filter(([k]) => !gone.has(k)));
+      db.prepare("UPDATE users SET module_access = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(next), u.id);
+      logAudit('system', 'permission_change', 'user', u.id, { removed, reason: 'D-215: module retired' },
+        { module_access: u.module_access }, { module_access: JSON.stringify(next) }, u.name);
+      fixed.push({ id: u.id, name: u.name, removed });
+    }
+    db.prepare('INSERT INTO app_settings (key, value) VALUES (?, ?)').run(RETIRE_FLAG, JSON.stringify({ at: new Date().toISOString(), fixed }));
+  })();
+  return fixed;
+}

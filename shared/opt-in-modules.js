@@ -7,5 +7,7 @@
 // day" is the leak that proved the default wrong. One list, imported by the
 // client's permissions rules AND by each module's own router gate, so the nav
 // and the server cannot disagree about who is in.
-export const OPT_IN_MODULES = ['dannys-list'];
+// Empty since Danny's List was retired (D-215). The rule stays for the next private
+// queue; adding one is an entry here and nothing else.
+export const OPT_IN_MODULES = [];
 export const OPT_IN_SET = new Set(OPT_IN_MODULES);

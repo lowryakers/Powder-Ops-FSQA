@@ -12,7 +12,7 @@
 import Database from 'better-sqlite3';
 import { spawn } from 'child_process';
 import { chromium } from 'playwright-core';
-import { ALL_MODULE_IDS } from '../server/module-access.js';
+import { ALL_MODULE_IDS, moduleLevel } from '../server/module-access.js';
 
 const PORT = Number(process.env.PORT || 5113);
 const BOOT2 = PORT + 100;
@@ -32,7 +32,9 @@ const mapOf = (id) => { const r = q('SELECT module_access FROM users WHERE id = 
   mk('ac-blank', 'Bea Blank', 'operator', 'warehouse', null);
   mk('ac-mapped', 'Mo Mapped', 'operator', 'warehouse', { sanitation: 'view' });
   // What the old bulk path wrote: every module at edit, Danny's List included.
-  mk('ac-victor', 'Victor Bulked', 'operator', 'warehouse', Object.fromEntries(ALL_MODULE_IDS.map((m) => [m, 'edit'])));
+  mk('ac-victor', 'Victor Bulked', 'operator', 'warehouse', { ...Object.fromEntries(ALL_MODULE_IDS.map((m) => [m, 'edit'])), 'dannys-list': 'edit' });
+  // An admin whose only entry was the Danny's List grant: full access only while that grant was private.
+  mk('ac-owner', 'Owen Owner', 'admin', 'executive', { 'dannys-list': 'edit' });
   mk('ac-intended', 'Ida Intended', 'supervisor', 'office', { 'dannys-list': 'edit', sanitation: 'view' });
   mk('ac-ricardo', 'Ricardo Testa', 'operator', 'maintenance', null);
   mk('ac-sup', 'Olga Rule', 'supervisor', 'qa', { sanitation: 'view' });
@@ -40,7 +42,7 @@ const mapOf = (id) => { const r = q('SELECT module_access FROM users WHERE id = 
   db.prepare(`INSERT INTO audit_log (actor, action, entity_type, entity_id, entity_label, details, previous_state, new_state, timestamp)
     VALUES ('Lowry', 'permission_change', 'user', 'ac-victor', 'Victor Bulked', '{"module_access":{"changed":true}}', NULL, ?, '2026-09-01 10:00:00')`)
     .run(JSON.stringify({ id: 'ac-victor', module_access: JSON.stringify({ sanitation: 'view', 'receiving-log': 'edit' }) }));
-  db.prepare("DELETE FROM app_settings WHERE key IN ('bulk_access_repair_v1', 'out_now_name_rule_v1')").run();
+  db.prepare("DELETE FROM app_settings WHERE key IN ('bulk_access_repair_v1', 'out_now_name_rule_v1', 'retired_module_grants_v1')").run();
   db.close();
 }
 
@@ -54,10 +56,12 @@ async function boot(port) {
 console.log('\n── the deploy repairs what the bulk bug wrote ──');
 const two = await boot(BOOT2);
 t('booted', !!two.url);
-t('VICTOR LOSES DANNY\'S LIST — the private module the bulk bug wrote', !mapOf('ac-victor')?.['dannys-list'], JSON.stringify(Object.keys(mapOf('ac-victor') || {})).slice(0, 80));
-t('a deliberate Danny\'s List grant on a small map is untouched', mapOf('ac-intended')?.['dannys-list'] === 'edit');
-t('the repair is audited per account', q("SELECT COUNT(*) n FROM audit_log WHERE entity_id = 'ac-victor' AND details LIKE '%D-187%'")[0].n === 1);
-t('the boot log names him', /Private modules removed from 1 account.*Victor Bulked \(dannys-list\)/.test(two.log()), two.log().match(/Private modules.*/)?.[0]);
+t('DANNY\'S LIST IS RETIRED: its grant comes off every account (D-215)', !mapOf('ac-victor')?.['dannys-list'] && !mapOf('ac-intended')?.['dannys-list'] && !mapOf('ac-owner')?.['dannys-list'], JSON.stringify(mapOf('ac-intended')));
+t('AN ADMIN WHOSE ONLY ENTRY WAS THAT GRANT KEEPS FULL ACCESS — not a narrowed admin holding nothing',
+  moduleLevel({ role: 'admin', module_access: mapOf('ac-owner') }, 'sanitation') === 'edit', JSON.stringify(mapOf('ac-owner')));
+t('…and nothing else on those maps moves', mapOf('ac-intended')?.sanitation === 'view' && mapOf('ac-victor')?.sanitation === 'edit');
+t('the removal is audited per account', q("SELECT COUNT(*) n FROM audit_log WHERE entity_id IN ('ac-victor','ac-intended','ac-owner') AND details LIKE '%D-215%'")[0].n === 3);
+t('the boot log names them', /Retired module grants removed from 3 account/.test(two.log()), two.log().match(/Retired module grants.*/)?.[0]);
 t('THE NAME RULE BECAME A GRANT: the account named Ricardo now holds Out now, visibly', mapOf('ac-ricardo')?.['currently-out'] === 'view');
 
 const URL = two.url;
@@ -75,17 +79,14 @@ t('a mapped account keeps its modules and gains the patch', mapOf('ac-mapped')?.
 t('reported as 2 updated', r1.updated === 2);
 const audit = q("SELECT previous_state, new_state FROM audit_log WHERE entity_id = 'ac-blank' AND details LIKE '%\"bulk\":true%'")[0];
 t('EACH ACCOUNT\'S BULK CHANGE IS AUDITED with its before and after', !!audit && /operator/.test(audit.new_state) && /null/.test(audit.previous_state), JSON.stringify(audit));
-const r2 = await (await post('/users/bulk-access', { user_ids: ['ac-blank'], module_access: { 'dannys-list': 'edit' } }, adm.token)).json();
-t('a private module is never granted in bulk — and the answer says so', !mapOf('ac-blank')?.['dannys-list'] && r2.private_ignored?.includes('dannys-list'), JSON.stringify(r2));
 await post('/users/bulk-access', { user_ids: ['ac-intended'], module_access: { sanitation: 'edit' }, mode: 'replace' }, adm.token);
-t('replace mode keeps a private grant it was not asked about', mapOf('ac-intended')?.['dannys-list'] === 'edit' && mapOf('ac-intended')?.sanitation === 'edit');
+t('replace mode sets what it was asked', mapOf('ac-intended')?.sanitation === 'edit');
 
 console.log('\n── the review list ──');
 const rev = await (await fetch(`${URL}/api/users/access-review`, { headers: { Authorization: `Bearer ${adm.token}` } })).json();
 const v = rev.accounts?.find((a) => a.id === 'ac-victor');
 t('Victor is listed as holding nearly every module', !!v, JSON.stringify(rev).slice(0, 200));
 t('…with the map set on him by hand, to restore in one click', v?.restore?.module_access?.sanitation === 'view' && v?.restore?.module_access?.['receiving-log'] === 'edit', JSON.stringify(v?.restore));
-t('the private-module repair is named on the list', rev.private_removed?.some((p) => p.name === 'Victor Bulked'));
 t('a normal account is not listed', !rev.accounts.some((a) => a.id === 'ac-mapped'));
 
 console.log('\n── Settings shows every module and why ──');
@@ -97,16 +98,12 @@ await page.evaluate(([tok, u]) => { localStorage.setItem('auth_token', tok); loc
 await page.goto(`${URL}/?tab=settings&section=users`);
 await page.waitForSelector('[data-access-review]', { timeout: 20000 }).catch(() => {});
 t('the review strip is on Settings → Users, naming Victor', await page.locator('[data-review-account="Victor Bulked"]').count() === 1);
-t('…and saying who lost Danny\'s List', /Victor Bulked/.test(await page.textContent('[data-private-removed]').catch(() => '')));
 await page.locator('[data-review-account="Victor Bulked"] [data-review-restore]').click();
 await page.waitForFunction(() => !document.querySelector('[data-review-account="Victor Bulked"]'), null, { timeout: 8000 }).catch(() => {});
 t('RESTORE puts back what was set by hand', JSON.stringify(mapOf('ac-victor')) === JSON.stringify({ sanitation: 'view', 'receiving-log': 'edit' }), JSON.stringify(mapOf('ac-victor')));
 
 await page.click('[data-who-open-btn]');
 await page.waitForSelector('[data-who-can-open]');
-await page.selectOption('[data-who-module]', 'dannys-list');
-const holders = await page.$$eval('[data-who-holder]', (els) => els.map((e) => e.getAttribute('data-who-holder')));
-t('WHO CAN OPEN DANNY\'S LIST names exactly the person ticked for it (and admins do not get it)', holders.length === 1 && holders[0] === 'Ida Intended', JSON.stringify(holders));
 await page.selectOption('[data-who-module]', 'office-requests');
 const reqHolder = await page.locator('[data-who-holder="Olga Rule"]').textContent().catch(() => '');
 t('a rule-based module names the rule (Requests — every supervisor)', /Every supervisor/.test(reqHolder), reqHolder);

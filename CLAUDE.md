@@ -3938,9 +3938,17 @@ since go-live and in the last 90 days, and gives a verdict: never used / machine
 - **Run it on a copy, never production.** Add a new module's tables and audit entity types to `MODULES`; record types
   it does not know are listed at the end.
 - It also flags two demo-era leftovers. Invented completed tasks under Adam B. / Ricardo A. / Spencer R.: `server.js`
-  writes them on a database with no completed task. Active accounts that still have a PIN and no password: these can
+  wrote them on a database with no completed task until D-215 removed the code; rows already written are still counted. Active accounts that still have a PIN and no password: these can
   be claimed with the PIN. **Do not add demo history or demo accounts to a seed.**
 - The findings and the cleanup plan are in `docs/v2/cleanup-and-spine-2026-10-26.md`.
+
+## Danny's List and the Log Builder studio are retired; a retired module's grant is removed (D-215)
+- `removeRetiredModuleGrants` (`server/access-review.js`, `RETIRED_MODULE_IDS`) strips a retired module's key from every
+  `module_access` map once, audited. **Retiring a module without it can lock an admin out**: an admin map holding one
+  unknown key is a narrowed admin with nothing in it.
+- `OPT_IN_MODULES` is empty; `check:modaccess` skips its private-module assertions until one exists.
+- The old `DANNY_SMS_FROM` number is dropped in silence in `sms-inbound.js`. Tables stay.
+- Settings → Log Structure (lists + custom fields) stays; only the studio and `/api/log-builder` are gone.
 
 ## The record interface: file, sign, revoke, retrieve, describe (D-207, move 02)
 `server/record-interface.js` (`RECORD_TYPES`, `retrieveRecords`, `canReadType`) and `server/api/records.js`
@@ -5462,7 +5470,7 @@ learn to ignore — which costs more than the step it was nagging about. `equipm
   counting the machine — the same two-mechanisms-disagreeing bug this module already got bitten by. The
   endpoint 400s and names the checkbox to use instead.
 
-## Log Builder (`server/api/log-builder.js` + `LogBuilderStudio.jsx`)
+## Log Builder studio — RETIRED (D-215). The notes below are history; Settings → Log Structure stays.
 The supervised copy/edit/approve path in front of the structure engine — the procurement copy/edit shape
 applied to log structure. Nav entry in **Document Control** (visible to admins, the DC department, and the
 `log-builder` grant — the grant finally means something); the direct editor in Settings stays for admins.
