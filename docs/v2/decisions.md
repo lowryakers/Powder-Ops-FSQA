@@ -8344,3 +8344,28 @@ built; the ones that do are settings or empty lists.
 - **Waiting on Daniela:** the departments and supervisors (then the monthly schedules are seeded), the safety
   items, the anonymous decision, who attends the review and when.
 - `verify:culture` (45, live + browser at 390 and 1280).
+
+## D-212 — Thread reads were blocking the whole server; one index and three small fixes (2026-10-26)
+
+Reported as long delays, slow clicks and slow-opening message threads. Measured on a seeded 29,000-message
+database, not guessed.
+
+- **`chat_messages` had no index on `parent_id`.** The D-190 "follows this thread" rule (`FOLLOWS`) runs
+  subqueries on it for every candidate row, so the thread and activity badges scanned the whole table once per
+  row: 17–21 seconds each. **better-sqlite3 is synchronous, so while that ran every other person's request
+  waited too** — that is the app-wide slowness, not just Messages. The badges refetch on every reply in a
+  followed thread.
+- **Index `idx_chat_messages_parent (parent_id, created_at)`**, and a `CROSS JOIN` in the last `FOLLOWS` branch
+  to pin the join order (the planner otherwise walked every mention of the user per row). `/activity/unread`
+  caches the read marker per thread or channel. All four endpoints: 16–21 s → 65–94 ms. Thread drawer
+  973 → 38 ms.
+- **The Threads inbox shipped every reply of 40 threads** (0.8–1.3 MB per open). The card shows the count and
+  the latest reply only (D-192), so it now gets `replies: [latest]`, `reply_count` and `replied_by_me`; the
+  drawer still fetches the whole thread. 52 KB.
+- **The inbox and Activity blanked themselves on every reply** — `refreshKey` was passed as a query dep, the
+  "a refresh must not blank the screen" trap again. Both refetch in place now.
+- Not changed, noted: two duplicate fetches on Messages load, an entry bundle of 765 KB (CommsView and the
+  kiosks are eager imports), `/pm/operator-tasks` at 192 KB for an admin.
+- Production's real table sizes set the real "before"; the growth is quadratic, so a large imported history
+  was likely worse than measured. The comms verifies (threads 44, inbox 29, unread landing 26, history 25,
+  edit 11) pass.

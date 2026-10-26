@@ -5972,6 +5972,13 @@ three months later.
   `verify:reimbursements` (8, in `verify:all`) files a claim exactly the way the phone does; the control
   without the fix fails 5 of them.
 
+## Thread reads must use the `parent_id` index; the inbox ships one reply per thread (D-212)
+`idx_chat_messages_parent (parent_id, created_at)`. Without it `FOLLOWS` scanned `chat_messages` per row and the badges
+took ~20 s — and better-sqlite3 is synchronous, so **every user's request waited**. **A comms query that runs per row
+must hit an index**; check `EXPLAIN QUERY PLAN` for `SCAN chat_messages`. `FOLLOWS`' mention branch is a `CROSS JOIN`
+on purpose (join order). `GET /comms/threads` returns `replies: [latest]` + `reply_count` + `replied_by_me`; the drawer
+fetches the full thread. **Never pass a refresh tick as a `useApiGet` dep** — call `refresh()`.
+
 ## The Threads inbox is a list to choose from; a thread is read in the drawer (D-192)
 Every `ThreadInboxCard` is ONE collapsed card: channel, "N new", the starter's words (two lines), the latest
 reply and its time. Unread first. **Clicking opens `ThreadPanel`** (rendered by `ThreadsView` itself, with
