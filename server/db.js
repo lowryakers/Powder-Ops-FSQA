@@ -4755,6 +4755,10 @@ function runMigrations() {
     PRIMARY KEY (user_id, parent_id)
   )`);
   db.exec('CREATE INDEX IF NOT EXISTS idx_chat_messages_pinned ON chat_messages(channel_id, pinned_at)');
+  // Every thread read filters on parent_id (FOLLOWS, threadUnread, the reply
+  // count in flattenMessage, the thread fetch). Without this each of those is a
+  // full scan of chat_messages, and FOLLOWS runs one PER ROW — O(n²).
+  db.exec('CREATE INDEX IF NOT EXISTS idx_chat_messages_parent ON chat_messages(parent_id, created_at)');
 
   addColumnIfMissing('chat_push_subscriptions', 'vapid_key', 'TEXT');
   addColumnIfMissing('chat_push_subscriptions', 'user_agent', 'TEXT');

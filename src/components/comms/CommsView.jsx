@@ -1665,8 +1665,10 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
 function ThreadInboxCard({ thread, me, refresh, onOpen, onOpenChannel, onMarkRead }) {
   const Icon = thread.channel_kind === 'dm' ? MessageSquare : thread.channel_kind === 'private' ? Lock : Hash;
   const unread = thread.unread || 0;
-  const acted = thread.replies.some(r => r.user_id === me.id);
+  // The server sends the latest reply only, plus the count and whether I replied.
+  const acted = thread.replied_by_me ?? thread.replies.some(r => r.user_id === me.id);
   const lastReply = thread.replies[thread.replies.length - 1];
+  const replyCount = thread.reply_count ?? thread.replies.length;
   const snippet = (m) => (m?.body || '').replace(/\s+/g, ' ').trim() || (m?.attachments?.length ? '(attachment)' : '');
   return (
     <div data-inbox-card={thread.parent.id} data-inbox-unread={unread}
@@ -1706,7 +1708,7 @@ function ThreadInboxCard({ thread, me, refresh, onOpen, onOpenChannel, onMarkRea
           </p>
         )}
         <p className="mt-0.5 text-[11px] text-gray-400">
-          {thread.replies.length} {thread.replies.length === 1 ? 'reply' : 'replies'}
+          {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
           {lastReply ? ` · ${fmtTime(lastReply.created_at)}` : ''}
         </p>
       </button>
@@ -1715,7 +1717,12 @@ function ThreadInboxCard({ thread, me, refresh, onOpen, onOpenChannel, onMarkRea
 }
 
 function ThreadsView({ me, mentionUsers, canTranslate, viewerLang, onTranslate, onOpenChannel, onCloseMobile, onRead, refreshKey, backButton, storageOn, socketRef }) {
-  const { data: threads, loading, refresh } = useApiGet('/comms/threads', [refreshKey]);
+  // refreshKey is a REFRESH, not a different query: passing it as a dep made
+  // useApiGet clear the list and show "Loading threads…" every time anyone
+  // replied in a followed thread. Refetch in place instead.
+  const { data: threads, loading, refresh } = useApiGet('/comms/threads');
+  const firstKey = useRef(refreshKey);
+  useEffect(() => { if (refreshKey !== firstKey.current) refresh(); }, [refreshKey, refresh]);
   // Unread first, then most recently active — the point of the view is what
   // still needs an answer, not a chronological archive.
   const list = useMemo(() => [...(threads || [])].sort((a, b) => {

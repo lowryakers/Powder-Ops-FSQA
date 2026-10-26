@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiFetch } from '../../hooks/useApi';
 import { AtSign, MessageSquare, Hash, Bell, ArrowLeft, Loader2, Inbox, Lock, CheckCheck } from 'lucide-react';
 
@@ -66,9 +66,14 @@ export default function ActivityView({ counts, onOpenMessage, onCloseMobile, ref
     return r;
   }, [tab, unreadOnly]);
 
+  // A new tab/filter is a different list and shows the spinner; a refreshKey
+  // bump (someone replied) refetches in place and keeps the rows on screen.
+  const shownFor = useRef(null);
   useEffect(() => {
     let stale = false;
-    setLoading(true);
+    const sameList = shownFor.current === load;
+    shownFor.current = load;
+    if (!sameList) setLoading(true);
     load().then(r => {
       if (stale) return;
       setItems(r.items || []);

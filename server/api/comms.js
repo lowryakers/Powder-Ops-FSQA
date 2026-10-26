@@ -490,7 +490,10 @@ const FOLLOWS = (p) => `(
     OR ${p}.user_id = $me
     OR EXISTS (SELECT 1 FROM chat_messages rr WHERE rr.parent_id = ${p}.id AND rr.user_id = $me)
     OR EXISTS (SELECT 1 FROM chat_mentions mn WHERE mn.message_id = ${p}.id AND mn.user_id = $me)
-    OR EXISTS (SELECT 1 FROM chat_mentions mr JOIN chat_messages rm ON rm.id = mr.message_id
+    -- CROSS JOIN pins the loop order: this thread's replies first (parent index),
+    -- then their mentions. Left to itself the planner walked every mention of
+    -- $me for every candidate parent — seconds per call (perf, 2026-10-26).
+    OR EXISTS (SELECT 1 FROM chat_messages rm CROSS JOIN chat_mentions mr ON mr.message_id = rm.id
                WHERE rm.parent_id = ${p}.id AND rm.deleted_at IS NULL AND mr.user_id = $me)
   ))`;
 
@@ -1418,7 +1421,12 @@ router.get('/threads', async (req, res) => {
     if (!parent) continue;
     const channel = getChannel(db, parent.channel_id);
     if (!channel || !canAccess(db, channel, me, isAdmin)) continue;
-    const replies = db.prepare('SELECT * FROM chat_messages WHERE parent_id = ? ORDER BY created_at ASC').all(parent.id);
+    // The inbox card shows the count and the LATEST reply only (D-192); the
+    // drawer fetches the whole thread itself. Shipping every reply of 40
+    // threads was ~0.8–1.3 MB per open and per refresh (perf, 2026-10-26).
+    const last = db.prepare('SELECT * FROM chat_messages WHERE parent_id = ? ORDER BY created_at DESC LIMIT 1').get(parent.id);
+    const replyCount = db.prepare('SELECT COUNT(*) c FROM chat_messages WHERE parent_id = ?').get(parent.id).c;
+    const repliedByMe = !!db.prepare('SELECT 1 FROM chat_messages WHERE parent_id = ? AND user_id = ? LIMIT 1').get(parent.id, me);
     const lastRead = db.prepare('SELECT last_read_at FROM chat_thread_reads WHERE parent_id = ? AND user_id = ?')
       .get(parent.id, me)?.last_read_at || null;
     out.push({
@@ -1426,7 +1434,9 @@ router.get('/threads', async (req, res) => {
       channel_name: channelLabel(db, channel, me),
       channel_kind: channel.kind,
       parent: await serialize(db, parent),
-      replies: await Promise.all(replies.map(m => serialize(db, m))),
+      replies: last ? [await serialize(db, last)] : [],
+      reply_count: replyCount,
+      replied_by_me: repliedByMe,
       last_reply: row.last_reply,
       unread: threadUnread(db, parent.id, me),
       // Where to draw the "new replies" line inside the thread.
@@ -1571,6 +1581,7 @@ router.get('/activity/unread', (req, res) => {
     if (!prev || ACTIVITY_KINDS.indexOf(r.kind) < ACTIVITY_KINDS.indexOf(prev.kind)) best.set(r.id, r);
   }
   const accessCache = new Map();
+  const markerCache = new Map();
   for (const r of best.values()) {
     let ok = accessCache.get(r.channel_id);
     if (ok === undefined) {
@@ -1579,8 +1590,15 @@ router.get('/activity/unread', (req, res) => {
       accessCache.set(r.channel_id, ok);
     }
     if (!ok) continue;
-    const lastRead = activityMarker(db,
-      { parentId: r.parent_id, channelId: r.channel_id, isMention: r.kind === 'mention' }, me);
+    // One marker per (thread|channel, kind) — the feed holds thousands of rows
+    // from a few hundred threads, and each lookup is 2–3 queries.
+    const mk = `${r.parent_id || 'c:' + r.channel_id}|${r.kind === 'mention' ? 1 : 0}`;
+    let lastRead = markerCache.get(mk);
+    if (lastRead === undefined) {
+      lastRead = activityMarker(db,
+        { parentId: r.parent_id, channelId: r.channel_id, isMention: r.kind === 'mention' }, me);
+      markerCache.set(mk, lastRead);
+    }
     if (lastRead && String(r.created_at) <= String(lastRead)) continue;
     counts.all++;
     counts[`${r.kind}s`]++;
