@@ -8795,3 +8795,18 @@ is never changed. Filled where blank at boot (`backfillBaseLots`, idempotent) an
   retirement recorded as `delete` reads "Retired (recorded as delete)". Stored actions are untouched.
 - **The Lab Requests list loads every request at once** (Lowry: "I don't like how it doesn't load all right
   away"). It asks for up to 5,000 and the "Load all" button is gone; a note appears only if that cap is reached.
+
+## D-240 — An admin dismisses a COA correction from the request; the brand is chosen when a request is filed (27 Oct 2026)
+
+- **Dismissing a correction item has a button now.** D-236 left it as an API call. A control that only a developer
+  can undo is the wrong default, and the item it matters most for, the held failed-lot certificate 8afd7fbe, leaves
+  the QA Review list the moment it is un-signed and corrected, so a button there would vanish exactly when it is
+  needed. It sits on the **request's own screen**, under the correction, where a refused signature is seen:
+  admin only, a reason asked for, recorded as `dismiss`. On the held item it reads "Lift the hold…". The decision
+  stands: 8afd7fbe is not to be signed, so nobody is expected to press it.
+- **The brand is asked when a request is filed** (Lowry: the brand is found from the lot in MRPEasy or Keychain, and
+  the moment to record it is when Maria first adds the request). A "Brand / client" box on the new-request form,
+  for Quality and admins, from the brand list; blank stays `unassigned`. `POST /coa/requests` takes `brand_owner`:
+  an unknown brand is 400, anyone else setting one is 403. An existing request is still changed from its own screen.
+  The bulk CSV (D-238) stays for the history and is not required.
+- `verify:coaphase1` (93 → 100). Control (both changes out) fails 3, then stops at the missing brand box.

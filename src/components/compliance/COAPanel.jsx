@@ -671,6 +671,9 @@ function RequestForm({ initial, labs, onSave, onCancel }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [specInfo, setSpecInfo] = useState(null);
+  const { user } = useAuth() || {};
+  const canSetBrand = !!user && (user.role === 'admin' || user.department === 'qa');
+  const { data: brands } = useApiGet(!initial && canSetBrand ? '/coa/brands' : null);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   // Pull the material spec for this item and pre-fill the test panel, so tests
@@ -806,6 +809,18 @@ function RequestForm({ initial, labs, onSave, onCancel }) {
           <input value={form.requested_by || ''} onChange={e => set('requested_by', e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
         </div>
+        {/* Whose product this is, chosen when the request is filed (D-240). On an
+            existing request it is changed from the request's own screen. */}
+        {!initial && canSetBrand && (
+          <div>
+            <label htmlFor="coa-new-brand" className="block text-xs font-medium text-gray-700 mb-1">Brand / client</label>
+            <select id="coa-new-brand" value={form.brand_owner || 'unassigned'} onChange={e => set('brand_owner', e.target.value)}
+              data-new-brand className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+              <option value="unassigned">Not set yet</option>
+              {(brands || []).map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
+            </select>
+          </div>
+        )}
       </div>
       <div>
         <label className="block text-xs font-medium text-gray-700 mb-1">Notes</label>
@@ -1008,9 +1023,22 @@ function CoaSettingsCard() {
 
 // The COA corrections decided for this request (D-236), with the steps the
 // server derives — the same rows QA Review shows.
-function CorrectionItems({ items }) {
+function CorrectionItems({ items, onChanged }) {
+  const { user } = useAuth() || {};
+  const isAdmin = user?.role === 'admin';
+  const [err, setErr] = useState(null);
   const open = (items || []).filter(i => i.status === 'open');
   if (!open.length) return null;
+  // An admin closes an item that no longer applies, with a reason (D-240). For
+  // the held failed-lot certificate this is what lets it be signed again.
+  const dismiss = async (i) => {
+    const reason = prompt(i.kind === 'UNSIGN_CORRECT_NO_RESIGN'
+      ? 'Why should this certificate be allowed to be signed again? This lifts the hold and is recorded.'
+      : 'Why is this correction no longer needed? This is recorded.');
+    if (!reason || reason.trim().length < 3) return;
+    try { await apiPost(`/coa/review-items/${i.id}/dismiss`, { reason: reason.trim() }); setErr(null); onChanged?.(); }
+    catch (x) { setErr(x.message); }
+  };
   return (
     <div className="space-y-2" data-correction-items>
       {open.map(i => (
@@ -1025,8 +1053,16 @@ function CorrectionItems({ items }) {
             ))}
           </ul>
           {i.blockedBy && !i.complete && <p className="mt-1 italic">{i.blockedBy}</p>}
+          {i.kind === 'UNSIGN_CORRECT_NO_RESIGN' && <p className="mt-1">This certificate cannot be signed while this item is open.</p>}
+          {isAdmin && i.id && (
+            <button type="button" onClick={() => dismiss(i)} data-dismiss-item={i.id}
+              className="mt-1.5 px-2 py-0.5 border border-current rounded text-[11px] font-semibold hover:bg-white/60">
+              {i.kind === 'UNSIGN_CORRECT_NO_RESIGN' ? 'Lift the hold…' : 'Dismiss…'}
+            </button>
+          )}
         </div>
       ))}
+      {err && <p className="text-xs text-red-600">{err}</p>}
     </div>
   );
 }
@@ -1256,7 +1292,7 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
             <Trash2 size={12} /> Delete this request
           </button>
         )}
-        <CorrectionItems items={detail.correction_items} />
+        <CorrectionItems items={detail.correction_items} onChanged={refreshDetail} />
         {showSign && <SignCoaModal requestId={requestId} onClose={() => setShowSign(false)} onSigned={() => { setShowSign(false); refreshDetail(); onRefresh(); }} />}
 
         {/* Test Results */}
