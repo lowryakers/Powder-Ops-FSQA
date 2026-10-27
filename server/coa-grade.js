@@ -17,38 +17,93 @@
 // quietly rendered as either of the others. `reason` says which case it is so
 // the row can explain itself instead of showing an empty cell.
 
-const NEGATIVE_WORDS = /\b(not\s*detected|non[\s-]?detected|nd|absent|negative|none\s*detected|no\s*growth|<\s*1\s*(cfu|est)?)\b/i;
+const NEGATIVE_WORDS = /\b(not\s*detected|non[\s-]?detect(?:ed)?|nd|absent|negative|none\s*detected|no\s*growth|<\s*1\s*(cfu|est)?)\b/i;
+const ND_ABBREV = /^n\.?\s?d\.?$/i;
 const POSITIVE_WORDS = /\b(detected|present|positive|growth)\b/i;
 const PASS_WORDS = /\b(pass(?:ed)?|complies|comply|conforms?|conforming|acceptable|satisfactory)\b/i;
-const FAIL_WORDS = /\b(fail(?:ed)?|does\s*not\s*comply|non[\s-]?conform\w*|out\s*of\s*spec\w*|unacceptable)\b/i;
+// Checked BEFORE the pass words, so "does not comply" / "non conform" can
+// never read as a pass (D-222).
+const FAIL_WORDS = /\b(fail(?:ed)?|does\s*not\s*(?:comply|conform|meet)|not\s*compliant|non[\s-]?(?:conform|compli)\w*|out\s*of\s*spec\w*|unacceptable)\b/i;
 
-/** The number in a result, and whether it was written as a bound ("<10", "≥5"). */
+/**
+ * A number as printed. A comma is a thousands separator ONLY in the
+ * 1,300 / 6,564.814 shape; anything else with a comma ("0,5", "12,5") is a
+ * European decimal or a typo, and reading "0,5" as 5 is a tenfold error on a
+ * heavy metal. Those are refused, not guessed (D-222).
+ */
+function readNumber(tok) {
+  const t = String(tok);
+  if (t.includes(',')) {
+    if (!/^[1-9]\d{0,2}(,\d{3})+(\.\d+)?$/.test(t)) return { ambiguous: true };
+    return { value: Number(t.replace(/,/g, '')) };
+  }
+  if (!/^(\d+(\.\d+)?|\.\d+)$/.test(t)) return { value: NaN };
+  return { value: Number(t) };
+}
+
+/** The number in a result, whether it was written as a bound ("<10", "≥5"), and any unit printed beside it. */
 export function parseResult(raw) {
   const s = String(raw ?? '').trim();
   if (!s) return { kind: 'empty' };
 
   // A bound: "<10", "< 10 cfu/g", "≤10", ">300", "≥ 5".
-  const bound = s.match(/^([<>]=?|[≤≥])\s*([\d.,]+)/);
+  const bound = s.match(/^([<>]=?|[≤≥])\s*([\d.,]+)\s*([a-zA-Z%µμ/][\w%µμ/ ]*)?$/);
   if (bound) {
-    const n = Number(String(bound[2]).replace(/,/g, ''));
-    if (Number.isFinite(n)) {
+    const n = readNumber(bound[2]);
+    if (n.ambiguous) return { kind: 'ambiguous_decimal' };
+    if (Number.isFinite(n.value)) {
       const op = bound[1];
-      return { kind: 'bound', value: n, below: op === '<' || op === '<=' || op === '≤' };
+      return { kind: 'bound', value: n.value, below: op === '<' || op === '<=' || op === '≤', unit: bound[3]?.trim() || null };
     }
   }
 
   // A plain number, possibly with a unit stuck to it ("35 cfu/g", "0.02 ppm").
-  const plain = s.match(/^([\d.,]+)\s*(?:[a-zA-Z%µ/]+)?$/);
+  const plain = s.match(/^([\d.,]+)\s*([a-zA-Z%µμ/][\w%µμ/ ]*)?$/);
   if (plain) {
-    const n = Number(String(plain[1]).replace(/,/g, ''));
-    if (Number.isFinite(n)) return { kind: 'number', value: n };
+    const n = readNumber(plain[1]);
+    if (n.ambiguous) return { kind: 'ambiguous_decimal' };
+    if (Number.isFinite(n.value)) return { kind: 'number', value: n.value, unit: plain[2]?.trim() || null };
   }
 
-  if (NEGATIVE_WORDS.test(s)) return { kind: 'negative' };
-  if (POSITIVE_WORDS.test(s)) return { kind: 'positive' };
   if (FAIL_WORDS.test(s)) return { kind: 'stated_fail' };
+  if (ND_ABBREV.test(s) || NEGATIVE_WORDS.test(s)) return { kind: 'negative' };
+  if (POSITIVE_WORDS.test(s)) return { kind: 'positive' };
   if (PASS_WORDS.test(s)) return { kind: 'stated_pass' };
   return { kind: 'unparsed' };
+}
+
+/**
+ * Units, so "2 ppm" is never compared with a limit of "500 ppb" as if they were
+ * the same number (D-222). Each family converts to one base; two units in
+ * different families, or an unknown unit that is not literally the same as the
+ * spec's, is a MISMATCH and the result is not graded.
+ */
+const UNIT_FAMILIES = {
+  mass: { ppm: 1, 'mg/kg': 1, 'ug/g': 1, ppb: 0.001, 'ug/kg': 0.001, 'ng/g': 0.001, ppt: 1e-6, 'ng/kg': 1e-6, 'mg/g': 1000, '%': 10000, 'g/100g': 10000, 'mg/100g': 10 },
+  count_g: { 'cfu/g': 1 },
+  count_ml: { 'cfu/ml': 1 },
+  mpn_g: { 'mpn/g': 1 },
+};
+export function normalizeUnit(u) {
+  const s = String(u ?? '').trim().toLowerCase()
+    .replace(/[µμ]/g, 'u').replace(/mcg/g, 'ug').replace(/\s*per\s*/g, '/').replace(/\s+/g, '');
+  if (!s) return null;
+  if (s === '%w/w' || s === 'percent') return '%';
+  return s;
+}
+export function unitFactor(u) {
+  const n = normalizeUnit(u);
+  if (!n) return null;
+  for (const [family, units] of Object.entries(UNIT_FAMILIES)) if (units[n] != null) return { family, factor: units[n], unit: n };
+  return { family: null, factor: null, unit: n };
+}
+/** How to express a value in `resultUnit` in the spec's unit: `{ scale }`, or `{ mismatch }`. Missing units are not a mismatch. */
+export function unitScale(resultUnit, specUnit) {
+  const r = unitFactor(resultUnit); const sp = unitFactor(specUnit);
+  if (!r || !sp) return { scale: 1 };
+  if (r.unit === sp.unit) return { scale: 1 };
+  if (r.family && r.family === sp.family) return { scale: r.factor / sp.factor };
+  return { mismatch: `${resultUnit} cannot be compared with ${specUnit}` };
 }
 
 /** Does the spec's own wording ask for absence? ("Negative", "Absent in 25g") */
@@ -73,16 +128,28 @@ function limitText(spec) {
  * @param stated       a pass/fail the report itself printed, if any
  * @returns { pass_fail: 'pass'|'fail'|null, graded_by, reason }
  */
-export function gradeResult(resultValue, spec, stated = null) {
-  // The lab's own verdict wins. It is the accredited party and it applied the
-  // method; second-guessing it from a transcribed number would be worse.
-  if (stated === 'pass' || stated === 'fail') {
-    return { pass_fail: stated, graded_by: 'report', reason: 'The lab report states this result.' };
+export function gradeResult(resultValue, spec, stated = null, opts = {}) {
+  const verdict = gradeAgainstSpec(resultValue, spec, opts);
+  // A verdict the report printed. It may FAIL a result, never rescue one: a
+  // "pass" on the lab's paper against a limit our specification fails is a
+  // fail (D-222). Where the specification cannot decide, the stated verdict
+  // stands — the caller only passes one printed beside a real limit.
+  if (stated === 'fail') return { pass_fail: 'fail', graded_by: 'report', reason: 'The lab report states this result failed.' };
+  if (stated === 'pass') {
+    if (verdict.pass_fail === 'fail') return { ...verdict, reason: `${verdict.reason} (The report printed a pass; the specification decides.)` };
+    if (verdict.pass_fail === 'pass') return verdict;
+    return { pass_fail: 'pass', graded_by: 'report', reason: 'The lab report states this result.' };
   }
+  return verdict;
+}
 
+function gradeAgainstSpec(resultValue, spec, opts = {}) {
   const parsed = parseResult(resultValue);
   if (parsed.kind === 'empty') {
     return { pass_fail: null, graded_by: null, reason: 'No result recorded yet.' };
+  }
+  if (parsed.kind === 'ambiguous_decimal') {
+    return { pass_fail: null, graded_by: null, reason: `"${resultValue}" uses a comma where a decimal point or thousands separator is ambiguous. Re-enter it with a decimal point.` };
   }
 
   // A result that states its own verdict in words, with no spec needed.
@@ -94,6 +161,14 @@ export function gradeResult(resultValue, spec, stated = null) {
       pass_fail: null, graded_by: null,
       reason: 'No active specification on file for this test, so there is nothing to grade it against. Add and approve one in the Specifications tab.',
     };
+  }
+
+  // Units before numbers: the result's own unit (the row's, else one printed
+  // in the value) against the specification's.
+  if (parsed.kind === 'number' || parsed.kind === 'bound') {
+    const u = unitScale(opts.unit || parsed.unit || null, spec.unit || null);
+    if (u.mismatch) return { pass_fail: null, graded_by: null, reason: `Unit mismatch: ${u.mismatch}. Not graded — check the unit on the result or the specification.` };
+    if (u.scale !== 1) parsed.value = Number((parsed.value * u.scale).toPrecision(12));
   }
 
   const limit = limitText(spec);
@@ -179,19 +254,33 @@ export function gradeResult(resultValue, spec, stated = null) {
  * It will not guess beyond that: an unmatched test is reported as having no
  * specification, which is a true statement someone can act on.
  */
+// EXACT names only, after normalising and dropping a trailing method word
+// (D-222). Substring matching filed "Iron as ferrous fumarate" under Arsenic,
+// "Gluten, G12 ELISA" under an R5 spec, "E. coli O157:H7" under generic E. coli
+// and "Listeria monocytogenes" under "Listeria spp." — each a different test.
+// A name nothing here recognises is unmatched, which is a true statement.
 const ALIASES = [
-  ['tamc', 'total aerobic microbial count', 'total aerobic plate count', 'total plate count', 'aerobic plate count', 'standard plate count', 'apc', 'tpc', 'tvc', 'total aerobic count'],
-  ['tymc', 'yeast and mold', 'yeasts and molds', 'rapid yeast and mold', 'total yeast and mold', 'yeast mold', 'y&m'],
-  ['e coli', 'escherichia coli', 'e coli bam', 'generic e coli'],
-  ['coliforms', 'total coliforms', 'coliform', 'total coliform'],
-  ['salmonella', 'salmonella spp'],
-  ['staphylococcus aureus', 's aureus', 'staph aureus', 'coagulase positive staphylococcus'],
-  ['listeria', 'listeria monocytogenes', 'listeria spp'],
-  ['bacillus subtilis', 'b subtilis'],
-  ['arsenic', 'as'], ['cadmium', 'cd'], ['mercury', 'hg'], ['lead', 'pb'],
-  ['gluten', 'gliadin'],
-  ['moisture', 'loss on drying', 'lod'],
+  ['tamc', 'total aerobic microbial', 'total aerobic microbial count', 'total aerobic plate', 'total aerobic plate count', 'total plate', 'total plate count', 'aerobic plate', 'aerobic plate count', 'standard plate', 'standard plate count', 'apc', 'tpc', 'tvc', 'total aerobic', 'total aerobic count'],
+  ['tymc', 'yeast and mold', 'yeast and mould', 'yeasts and molds', 'yeasts and moulds', 'rapid yeast and mold', 'total yeast and mold', 'total yeast and mould', 'yeast mold', 'yeast mould', 'y m'],
+  ['e coli', 'e coli', 'escherichia coli', 'generic e coli'],
+  ['e coli o157', 'e coli o157 h7', 'e coli o157', 'escherichia coli o157 h7', 'escherichia coli o157'],
+  ['coliforms', 'total coliforms', 'coliform', 'total coliform', 'coliforms'],
+  ['salmonella', 'salmonella', 'salmonella spp', 'salmonella species'],
+  ['staphylococcus aureus', 'staphylococcus aureus', 's aureus', 'staph aureus', 'coagulase positive staphylococcus'],
+  ['listeria spp', 'listeria', 'listeria spp', 'listeria species'],
+  ['listeria monocytogenes', 'listeria monocytogenes', 'l monocytogenes'],
+  ['bacillus subtilis', 'bacillus subtilis', 'b subtilis'],
+  ['arsenic', 'arsenic', 'as', 'total arsenic', 'arsenic as', 'arsenic total', 'arsenic nmt'],
+  ['cadmium', 'cadmium', 'cd', 'cadmium cd', 'cadmium nmt'],
+  ['mercury', 'mercury', 'hg', 'mercury hg', 'mercury nmt'],
+  ['lead', 'lead', 'pb', 'lead pb', 'lead nmt'],
+  ['gluten', 'gluten', 'gluten allergen', 'total gluten'],
+  ['gluten r5', 'gluten r5', 'r5 gluten', 'gluten allergen r5'],
+  ['gluten g12', 'gluten g12', 'g12 gluten', 'gluten allergen g12'],
+  ['gliadin', 'gliadin'],
+  ['moisture', 'moisture', 'loss on drying', 'lod'],
 ];
+const METHOD_TAIL = new Set(['bam', 'mod', 'usp', 'aoac', 'fda', 'iso', 'elisa', 'icp', 'ms', 'icpms', 'petrifilm', 'method']);
 
 export function normalizeTestName(name) {
   return String(name || '')
@@ -204,17 +293,25 @@ export function normalizeTestName(name) {
     .trim();
 }
 
-function aliasKey(name) {
+function stripMethod(n) {
+  const words = n.split(' ');
+  while (words.length > 1 && METHOD_TAIL.has(words[words.length - 1])) words.pop();
+  return words.join(' ');
+}
+
+const ALIAS_KEY = new Map();
+for (const [key, ...names] of ALIASES) {
+  for (const a of names) {
+    const n = stripMethod(normalizeTestName(a));
+    if (n && !ALIAS_KEY.has(n)) ALIAS_KEY.set(n, key);
+  }
+}
+
+/** The test a name means, or null. Exact match on the normalised name, never a substring. */
+export function aliasKey(name) {
   const n = normalizeTestName(name);
   if (!n) return null;
-  for (const group of ALIASES) {
-    for (const alias of group) {
-      const a = normalizeTestName(alias);
-      if (!a) continue;
-      if (n === a || n.startsWith(`${a} `) || n.endsWith(` ${a}`) || n.includes(` ${a} `)) return group[0];
-    }
-  }
-  return null;
+  return ALIAS_KEY.get(n) || ALIAS_KEY.get(stripMethod(n)) || null;
 }
 
 /** Build a lookup from the item's specs, keyed every way a report might name them. */
