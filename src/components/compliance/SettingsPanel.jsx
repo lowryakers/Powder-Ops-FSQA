@@ -97,8 +97,8 @@ const SECTIONS = [
       {
         id: 'backup',
         label: 'Data backup',
-        description: 'Full export, and the automatic weekly copies',
-        keywords: 'export csv zip download restore friday archive',
+        description: 'Full export, the automatic weekly copies, and which modules are used',
+        keywords: 'export csv zip download restore friday archive usage modules report unused',
         icon: Database,
         Component: DataBackupSection,
       },

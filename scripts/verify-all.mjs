@@ -165,6 +165,7 @@ const RUNS = [
   ['verify-signature-sweep.mjs', 5125, {}, false],
   ['verify-record-interface.mjs', 5126, {}, false],
   ['verify-food-safety-culture.mjs', 5127, { HOUSEKEEPING_MS: '0' }, false],
+  ['verify-module-usage.mjs', 5128, {}, false],
 ];
 
 // VERIFY_ONLY=verify-auth.mjs,verify-swab-stock.mjs runs just the entries that
