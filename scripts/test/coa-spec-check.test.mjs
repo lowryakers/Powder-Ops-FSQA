@@ -35,6 +35,7 @@ test('retireMalformedSpecs retires 202532 once, reports others, never touches dr
   assert.equal(db.prepare("SELECT approval_status s FROM coa_specifications WHERE id = 'draft'").get().s, 'draft');
   assert.equal(db.prepare('SELECT COUNT(*) n FROM coa_specifications').get().n, 5, 'nothing deleted');
   assert.equal(audit.length, 2);
+  assert.ok(audit.every(a => a[1] === 'retire'), 'audited as retire, never delete (D-230)');
   // Once: a malformed spec entered later on 202532 is reported, not retired.
   ins.run('later', '202532', 'Cadmium', 'ppm', 0.001, 0.1, 1, 'approved');
   const again = retireMalformedSpecs(db, () => {});
