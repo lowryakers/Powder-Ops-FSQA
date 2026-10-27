@@ -53,3 +53,22 @@ export function printable(value) {
   // eslint-disable-next-line no-control-regex
   return String(value).normalize('NFKC').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
 }
+
+/**
+ * Draw an existing Helvetica layout in the embedded faces (D-234). A document
+ * written against the built-in names ('Helvetica', 'Helvetica-Bold', …) keeps
+ * every call as it is, and each one lands on the matching Liberation Sans
+ * face — same metrics, so nothing moves, and "≤ 0.5 ppm" prints as written
+ * instead of the "d 0.5 ppm" WinAnsi made of it on a COA a customer receives.
+ * Any other font name passes through unchanged. Call once, right after
+ * `new PDFDocument(...)`.
+ */
+export function useUnicodeFaces(doc) {
+  const F = registerUnicodeFonts(doc);
+  if (F.regular === 'Helvetica') return doc; // the font files are missing: leave Helvetica in place
+  const FACE = { Helvetica: F.regular, 'Helvetica-Bold': F.bold, 'Helvetica-Oblique': F.italic, 'Helvetica-BoldOblique': F.boldItalic };
+  const setFont = doc.font.bind(doc);
+  doc.font = (name, ...rest) => setFont(FACE[name] || name, ...rest);
+  doc.font('Helvetica'); // pdfkit starts on Helvetica; text drawn before the first font() call gets the face too
+  return doc;
+}

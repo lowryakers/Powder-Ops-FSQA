@@ -8696,3 +8696,20 @@ reason (400 `reason_required`); the reason goes into the audit record. The Labs 
 server says so. Closing either again needs none. Still nothing reads these settings.
 - `verify:coa` (55 → 69 live; pure 18 → 24, plus the optional real-PDF suite). Control (the server before this,
   with the new checks) fails 6, from the all-N/A signing onward.
+
+## D-234 — The COA PDFs print in the embedded Unicode font, so "≤" is "≤" (27 Oct 2026)
+
+The certificate, the spec sheet and the lab submission form drew in pdfkit's built-in Helvetica, which is WinAnsi:
+"≤ 0.5 ppm" printed as `"d 0.5 ppm` on a certificate that goes to a customer. Found reading the certificate back in
+`verify:coa` (D-231).
+- **`useUnicodeFaces(doc)` in `server/pdf-unicode.js`** registers Liberation Sans (D-151) and maps the four Helvetica
+  names onto it, so every existing `doc.font('Helvetica…')` call lands on the embedded face. Liberation Sans has
+  Helvetica's metrics, so no layout moves. It covers ≤ ≥ µ ± ° × and a customer's own accented or full-width text.
+  If the font files are missing it leaves Helvetica in place rather than failing the export.
+- Called right after `new PDFDocument` in all three COA routes. Signed certificates re-render from their frozen
+  snapshot, so certificates already issued print correctly too; nothing stored changes.
+- Other pdfkit exports (QMS, disposals, documents, pay) still use Helvetica; `useUnicodeFaces` is the one-line fix
+  when one of them needs it.
+- `verify:coa` (69 → 72): the certificate and the spec sheet read back "≤ 0.5"; the draft heading keeps its dash.
+  Control (`coa.js` before this) fails 2, printing `"d 0.5 ppm`.
+- `check:mirrors` G4 fails locally on `main` and passes in CI; per Lowry it is a local setup issue and is left for later.

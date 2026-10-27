@@ -5,6 +5,7 @@ import path from 'path';
 import { mkdirSync, existsSync, createReadStream, statSync, unlinkSync, readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import PDFDocument from 'pdfkit';
+import { useUnicodeFaces } from '../pdf-unicode.js';
 import { readPdfColumns } from '../coa-pdf-text.js';
 import { getDb, logAudit, dataDir } from '../db.js';
 import { requireRole } from '../middleware/auth.js';
@@ -363,6 +364,8 @@ router.get('/specifications/pdf', (req, res) => {
 
   const SLATE = '#3a3a3a', ORANGE = '#c65d35', RULE = '#d8d4d0';
   const doc = new PDFDocument({ size: 'LETTER', margins: { top: 42, bottom: 60, left: 50, right: 50 }, bufferPages: true });
+  // ≤, ≥, µ and a customer's own characters print as written (D-234).
+  useUnicodeFaces(doc);
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="SpecSheet_${String(item_number).replace(/[^a-zA-Z0-9]/g, '_')}.pdf"`);
   doc.pipe(res);
@@ -695,6 +698,8 @@ router.get('/submissions/:id/pdf', (req, res) => {
     : db.prepare('SELECT * FROM coa_requests WHERE submission_id = ? ORDER BY created_at').all(s.id);
 
   const doc = new PDFDocument({ size: 'LETTER', margins: { top: 42, bottom: 70, left: 50, right: 50 }, bufferPages: true });
+  // ≤, ≥, µ and a customer's own characters print as written (D-234).
+  useUnicodeFaces(doc);
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="Sample_Submission_${s.submitted_at.slice(0, 10)}.pdf"`);
   doc.pipe(res);
@@ -1635,6 +1640,8 @@ router.get('/requests/:id/pdf', (req, res) => {
   const RED = '#cc0000';
 
   const doc = new PDFDocument({ size: 'LETTER', margins: { top: 42, bottom: 76, left: 50, right: 50 }, bufferPages: true });
+  // ≤, ≥, µ and a customer's own characters print as written (D-234).
+  useUnicodeFaces(doc);
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="COA_${certNum}_${(r.item_description || 'item').replace(/[^a-zA-Z0-9]/g, '_')}.pdf"`);
   doc.pipe(res);
