@@ -24,6 +24,9 @@ import { logAudit } from '../db.js';
 export const APPROVE_SEGMENTS = Object.freeze([
   'approve', 'approved', 'approval', 'approvals', 'bulk-approve', 'flavor-approve',
   'decide', 'decision',
+  // COA Phase 2 (D-244 … D-247): publishing, withdrawing, overriding the lot
+  // rule and approving a test plan are a person's acts, never a bot's.
+  'publish', 'withdraw', 'override', 'approve-plan',
   'sign', 'signature', 'signatures', 'signoff', 'sign-off', 'qa-signoff', 'countersign',
   'verify', 'verification',
   'release', 'release-gate',

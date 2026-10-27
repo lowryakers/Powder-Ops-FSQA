@@ -332,6 +332,75 @@ function parsePipeRows(lines) {
 }
 
 /**
+ * EVERY ANALYSIS LINE IS ACCOUNTED FOR (D-243). The pipe reader above skips a
+ * row whose result it cannot read and a repeated test name, and says nothing —
+ * so a test the app could not read looked exactly like a test the lab never
+ * ran. This walks the same tables and puts each analysis line in exactly one
+ * of three places: parsed, noise (with the rule that made it noise), or
+ * UNREAD (with a plain reason). It changes no result: the rows returned are
+ * still the readers' own.
+ *
+ * An analysis line is a pipe row inside a results table — after a header row
+ * naming a test column and a result column, the same walk the pipe reader
+ * makes — whose test cell has at least three letters and is not a section band
+ * or the wrapped tail of a name ("(MOD)" on a line of its own).
+ */
+const SCI_RE = /^[<>]?=?\d[\d.,]*\s*(?:[eE][+-]?\d+|[x×X*]\s*10)/;
+const SAMPLE_SIZE_RE = /\b(?:in|per)\s*\d+\s*(?:g|ml|mL)\b/i;
+const nameKey = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+function unreadReason(result) {
+  const r = String(result || '').trim();
+  if (!r) return 'No result is printed on this line.';
+  if (SCI_RE.test(r)) return `"${r}" is written in scientific notation, which the reader does not take from a report yet. Add it by hand.`;
+  if (SAMPLE_SIZE_RE.test(r)) return `"${r}" names a sample size, which the reader does not take from a report yet. Add it by hand.`;
+  return `"${r}" is not a result the reader recognises. Add it by hand, or say why it is not a result.`;
+}
+
+export function accountPipeRows(lines, readResults) {
+  const cellsOf = (l) => (/^\|.*\|$/.test(l) ? l.slice(1, -1).split('|').map(c => c.trim()) : null);
+  const read = new Set((readResults || []).map(r => nameKey(r.test_type)));
+  const seen = new Map();
+  const unread = [];
+  const noise = [];
+  let parsed = 0;
+  let cols = null;
+  for (const raw of lines) {
+    const line = raw.trim();
+    const cells = cellsOf(line);
+    // Same walk as parsePipeRows: a plain line (a wrapped "(MOD)", a footer)
+    // does not end the table; the next header row starts a new one.
+    if (!cells) continue;
+    if (cells.every(c => c === '' || /^:?-{2,}:?$/.test(c))) continue;
+    const mapped = cells.map(c => HEADER_CELL[c.toLowerCase().replace(/\s+/g, ' ')]);
+    if (mapped.filter(Boolean).length >= 2 && mapped.includes('test') && mapped.includes('result')) {
+      cols = {};
+      mapped.forEach((role, i) => { if (role && cols[role] === undefined) cols[role] = i; });
+      continue;
+    }
+    if (!cols) continue;
+    const test = String(cells[cols.test] || '').replace(/\s+(Report|Result|Spec(?:ification)?)\s*$/i, '').replace(/\s+/g, ' ').trim();
+    if ((test.match(/[A-Za-z]/g) || []).length < 3) continue;
+    const printed = String(cells[cols.result] ?? '').replace(/\s+/g, ' ').trim();
+    const result = printed.replace(/\s+/g, '');
+    if (!result && SECTION_RE.test(test) && test.length < 40) continue;          // a section band
+    if (!result && /^\(/.test(test)) continue;                                   // the wrapped tail of a name ("(MOD)")
+    if (NOISE_RE.test(test)) { noise.push({ line, rule: 'lab furniture (address, disclaimer, signature block)' }); continue; }
+    const k = nameKey(test);
+    if (seen.has(k)) {
+      if (seen.get(k) === result) noise.push({ line, rule: 'duplicate row, same value' });
+      else unread.push({ line, test, reason: `"${test}" appears twice with different results (${seen.get(k) || 'blank'} and ${result || 'blank'}). Keep the right one by hand.` });
+      continue;
+    }
+    seen.set(k, result);
+    if (!result || !new RegExp(`^${RESULT}$`, 'i').test(result)) { unread.push({ line, test, reason: unreadReason(printed) }); continue; }
+    if (read.has(k)) parsed++;
+    else unread.push({ line, test, reason: 'The reader saw this line but did not keep it. Add it by hand.' });
+  }
+  return { unread, noise, counts: { analysis_lines: parsed + noise.length + unread.length, parsed, noise: noise.length, unread: unread.length } };
+}
+
+/**
  * Test rows, found at the seam where the Result cell abuts the Analysis cell.
  *
  * A row may be split across lines when the Method cell wraps ("BAM CH. 4" /
@@ -419,7 +488,17 @@ export function parseColumnarCoa(text) {
     if (tail) header.date_of_results = toIso(tail);
   }
 
-  return { ...header, test_results };
+  // Every analysis line accounted for (D-243), and the two header facts a
+  // certificate needs: the lab's own report number and the report's date.
+  const account = accountPipeRows(lines, test_results);
+  return {
+    ...header, test_results,
+    lab_report_number: header.lab_reference || null,
+    report_date: header.date_of_results || null,
+    unread: account.unread.map(({ line, test, reason }) => ({ line, test, reason })),
+    noise: account.noise,
+    counts: account.counts,
+  };
 }
 
 /** Did this reader actually find anything? Used to decide whether to try AI. */

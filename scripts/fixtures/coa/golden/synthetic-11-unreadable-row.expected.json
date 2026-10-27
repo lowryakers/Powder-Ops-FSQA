@@ -1,0 +1,17 @@
+{
+  "fixture": "synthetic-11-unreadable-row",
+  "text_layer": true,
+  "lab_report_number": "190011",
+  "report_date": "2026-08-12",
+  "tests": [
+    {
+      "test": "Lead",
+      "value": "0.012",
+      "unit": "ppm",
+      "mdl": "0.005",
+      "method": "USP <233>"
+    }
+  ],
+  "unread": 2,
+  "noise": 0
+}

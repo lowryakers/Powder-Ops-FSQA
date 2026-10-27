@@ -42,8 +42,16 @@ const IDENTITY = ['item_number', 'item_description', 'lot_number', 'product_code
 // Closed once signed (with the results and the files).
 export const LOCKED_FIELDS = [...IDENTITY, 'tests_requested', 'certificate_number', 'date_of_issuance'];
 
-/** The content a signature covers, built the same way at signing and on every check after. */
-export function snapshotFor(db, request, { certificate_number, date_of_issuance }) {
+/**
+ * The content a signature covers, built the same way at signing and on every
+ * check after. Version 2 (D-244) adds, per result, whether a person entered or
+ * graded it by hand and why, where it came from (the PDF's SHA-256), and the
+ * plan and approver behind its limit; per file, the lab's report number and
+ * date; and who signed. Certificates signed before carry no version and print
+ * exactly as they always did.
+ */
+export const SNAPSHOT_VERSION = 2;
+export function snapshotFor(db, request, { certificate_number, date_of_issuance, signed_by = null, file_facts = {} }) {
   const specs = db.prepare('SELECT * FROM coa_specifications WHERE item_number = ? AND is_active = 1').all(request.item_number);
   const byId = Object.fromEntries(specs.map(s => [s.id, s]));
   const index = specIndex(specs);
@@ -57,12 +65,27 @@ export function snapshotFor(db, request, { certificate_number, date_of_issuance 
         pass_fail: t.pass_fail, method: t.method || spec?.method || t.notes || null, mdl: t.mdl ?? null,
         specification_id: spec?.id || null, specification: spec?.specification || null,
         min_value: spec?.min_value ?? null, max_value: spec?.max_value ?? null,
+        manual: !!(t.verdict_manual || t.edit_reason || t.source === 'manual'), verdict_manual: !!t.verdict_manual,
+        edit_reason: t.edit_reason || null, source: t.source || null, source_file_sha256: t.source_sha256 || null,
+        plan_id: spec?.plan_id || null, plan_version: spec?.plan_version ?? null,
+        spec_approved_by: spec?.approved_by || null, spec_approved_at: spec?.approved_at || null,
       };
     });
-  const files = db.prepare('SELECT id, filename, original_name, sha256 FROM coa_files WHERE request_id = ? ORDER BY id').all(request.id);
+  const files = db.prepare('SELECT id, filename, original_name, sha256, file_type, lab_report_number, lab_report_date FROM coa_files WHERE request_id = ? ORDER BY id').all(request.id)
+    .map(f => {
+      const fact = file_facts[f.id] || {};
+      return { id: f.id, filename: f.filename, original_name: f.original_name, file_type: f.file_type,
+        // A file attached before hashes were stored is fingerprinted at signing.
+        sha256: f.sha256 || fact.sha256 || null,
+        lab_report_number: f.lab_report_number || fact.lab_report_number || null,
+        lab_report_date: f.lab_report_date || fact.report_date || null };
+    });
+  const labFile = files.find(f => f.file_type === 'lab_results' && (f.lab_report_number || f.lab_report_date));
   return {
+    snapshot_version: SNAPSHOT_VERSION,
     request: Object.fromEntries(IDENTITY.map(k => [k, request[k] ?? null])),
-    certificate_number, date_of_issuance, results, files,
+    certificate_number, date_of_issuance, signed_by, results, files,
+    lab_report_number: labFile?.lab_report_number || null, lab_report_date: labFile?.lab_report_date || null,
   };
 }
 

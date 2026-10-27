@@ -20,6 +20,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { v4 as uuid } from 'uuid';
 import { isQaReviewer } from './qa-signing.js';
+import { unreadRowsFor } from './coa-checks.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const DECISION = 'A-20261027-001';
@@ -38,6 +39,16 @@ export const KINDS = {
   // D-242: a pair that MAY be one test entered twice. Maria decides; it grants
   // no un-sign and no delete — an admin deletes the record she marks.
   POSSIBLE_DUPLICATE: { label: 'Possible duplicate', steps: ['decide', 'remove'], authorizes: [] },
+  // D-243: lines of a lab report the reader could not read. Each is added as a
+  // result or answered with a reason; while any is open the certificate cannot
+  // be signed. Grants nothing.
+  UNREAD_ROWS: { label: 'Lines the app could not read', steps: ['resolve'], authorizes: [] },
+  // D-245: results on an unsigned request that could not be linked to the
+  // specification on file by the admin-run link script — the stored verdict
+  // disagrees with the approved limit, or no single spec matches. Opening each
+  // result and saving it (with a reason if the verdict is set by hand) links
+  // it. Grants nothing. Filed ONLY by `coa-link-results-to-specs.mjs --apply --file-items`.
+  SPEC_LINK_REVIEW: { label: 'Results that do not match the specification', steps: ['link'], authorizes: [] },
 };
 
 const STEP_LABEL = {
@@ -170,6 +181,8 @@ export function glutenCorrected(results) {
  */
 export function itemProgress(db, item) {
   if (item.kind === 'POSSIBLE_DUPLICATE') return possibleProgress(db, item);
+  if (item.kind === 'UNREAD_ROWS') return unreadProgress(db, item);
+  if (item.kind === 'SPEC_LINK_REVIEW') return specLinkProgress(db, item);
   const kind = KINDS[item.kind];
   const req = db.prepare('SELECT id, qa_signed_at FROM coa_requests WHERE id = ?').get(item.request_id);
   if (!req) {
@@ -243,6 +256,30 @@ export function recordDuplicateDecision(db, user, id, { remove, reason }) {
     reason, by: user.name, at: new Date().toISOString() };
   db.prepare('UPDATE coa_review_items SET decision = ? WHERE id = ?').run(JSON.stringify(decision), item.id);
   return { item: db.prepare('SELECT * FROM coa_review_items WHERE id = ?').get(item.id), before: item, decision };
+}
+
+/** Lines the app could not read (D-243): done when each is added as a result or answered. */
+export function unreadProgress(db, item) {
+  if (!db.prepare('SELECT 1 FROM coa_requests WHERE id = ?').get(item.request_id)) {
+    return { steps: [{ key: 'resolve', label: 'Add or answer each line', done: true }], complete: true, gone: true, blockedBy: null };
+  }
+  const fileId = parse(item.steps, {})?.file_id ?? null;
+  const rows = unreadRowsFor(db, item.request_id, fileId);
+  const open = rows.filter(r => r.state === 'open').length;
+  const steps = [{ key: 'resolve', label: `Add each line as a result, or say why it is not one (${rows.length - open} of ${rows.length} done)`, done: open === 0 }];
+  return { steps, complete: open === 0, gone: false, blockedBy: null, lines: rows };
+}
+
+/** Done when every listed result is linked to a specification, or gone. */
+export function specLinkProgress(db, item) {
+  const ids = parse(item.steps, {})?.result_ids || [];
+  const req = db.prepare('SELECT qa_signed_at FROM coa_requests WHERE id = ?').get(item.request_id);
+  if (!req) return { steps: [{ key: 'link', label: 'Open each result and save it', done: true }], complete: true, gone: true, blockedBy: null };
+  const rows = ids.map(id => db.prepare('SELECT id, specification_id FROM coa_test_results WHERE id = ?').get(id));
+  const left = rows.filter(r => r && !r.specification_id).length;
+  const steps = [{ key: 'link', label: `Open each result and save it against the specification (${ids.length - left} of ${ids.length} done)`, done: left === 0 }];
+  return { steps, complete: left === 0, gone: false,
+    blockedBy: left && req.qa_signed_at ? 'The certificate is signed, so its results are closed — un-sign it first.' : null };
 }
 
 /** Open items with their derived progress. */

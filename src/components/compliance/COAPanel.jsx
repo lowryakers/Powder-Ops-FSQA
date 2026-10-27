@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { useApiGet, apiPost, apiPut, apiDelete, apiUpload, apiFetch } from '../../hooks/useApi';
 import { withSignature } from '../../lib/signature';
 import DraftSpecsReview from './DraftSpecsReview.jsx';
+import CoaTestPlans from './CoaTestPlans.jsx';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule, canSeeQaReview } from '../../utils/permissions';
 import { Plus, Search, FileText, Upload, Download, Trash2, Edit2, FlaskConical, Building2, ClipboardList, CheckCircle2, X, PackageSearch, AlertTriangle, ChevronUp, ChevronDown, CheckSquare, Square, PenLine } from 'lucide-react';
@@ -1082,6 +1083,47 @@ function PossibleDuplicate({ item: i, onChanged, onError }) {
   );
 }
 
+// Lines on a lab report the reader could not read (D-243). Each is added as a
+// result (it then marks itself added) or answered here with a reason. While
+// any is open the certificate cannot be signed.
+function UnreadRows({ rows, signed, onChanged }) {
+  const [reasons, setReasons] = useState({});
+  const [error, setError] = useState('');
+  const open = (rows || []).filter(r => r.state === 'open');
+  if (!rows?.length) return null;
+  const dismiss = async (row) => {
+    setError('');
+    try { await apiPost(`/coa/unread-rows/${row.id}/dismiss`, { reason: reasons[row.id] || '' }); onChanged(); }
+    catch (e) { setError(e.message); }
+  };
+  return (
+    <div data-unread-rows className={`rounded-lg border px-3 py-2 ${open.length ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-gray-50'}`}>
+      <p className="text-xs font-semibold text-gray-900">
+        Lines the app could not read · {open.length ? `${open.length} still to answer` : 'all answered'}
+      </p>
+      {open.length > 0 && <p className="text-[11px] text-gray-700 mt-0.5">Add each as a result, or say why it is not one. The certificate cannot be signed until every line is answered.</p>}
+      <ul className="mt-1.5 space-y-1.5">
+        {rows.map(r => (
+          <li key={r.id} data-unread-row={r.state} className="text-[11px]">
+            <span className="font-mono text-gray-900">{r.line_text}</span>
+            <span className="text-gray-600"> — {r.reason}</span>
+            {r.state === 'added' && <span className="ml-1 text-green-700 font-medium">added as a result</span>}
+            {r.state === 'dismissed' && <span className="ml-1 text-gray-500">not a result: {r.resolved_reason} ({r.resolved_by})</span>}
+            {r.state === 'open' && !signed && (
+              <span className="flex gap-1.5 mt-1">
+                <input value={reasons[r.id] || ''} onChange={e => setReasons(x => ({ ...x, [r.id]: e.target.value }))}
+                  placeholder="Why this is not a result" className="flex-1 px-2 py-1 border border-gray-300 rounded text-[11px]" />
+                <button onClick={() => dismiss(r)} className="px-2 py-1 text-[11px] rounded border border-gray-300 bg-white hover:bg-gray-50">Not a result</button>
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+    </div>
+  );
+}
+
 function CorrectionItems({ items, onChanged }) {
   const { user } = useAuth() || {};
   const isAdmin = user?.role === 'admin';
@@ -1138,6 +1180,7 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
   const [uploading, setUploading] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [resultForm, setResultForm] = useState([{ test_type: '', result_value: '', pass_fail: '', notes: '' }]);
+  const [resultError, setResultError] = useState('');
   // A File (just uploaded) or a coa_files id (already attached) to read.
   const [scanFile, setScanFile] = useState(null);
   // The gate's refusal, verbatim — a Mark Pass that silently does nothing
@@ -1239,7 +1282,9 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
   const handleSaveResults = async () => {
     const valid = resultForm.filter(r => r.test_type);
     if (valid.length === 0) return;
-    await apiPost(`/coa/requests/${requestId}/results`, { results: valid });
+    setResultError('');
+    try { await apiPost(`/coa/requests/${requestId}/results`, { results: valid }); }
+    catch (e) { setResultError(e.message); return; }
     setResultForm([{ test_type: '', result_value: '', pass_fail: '', notes: '' }]);
     setShowResults(false);
     refreshDetail();
@@ -1354,6 +1399,7 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
           </button>
         )}
         <CorrectionItems items={detail.correction_items} onChanged={refreshDetail} />
+        <UnreadRows rows={detail.unread_rows} signed={!!detail.qa_signed_at} onChanged={refreshDetail} />
         {showSign && <SignCoaModal requestId={requestId} onClose={() => setShowSign(false)} onSigned={() => { setShowSign(false); refreshDetail(); onRefresh(); }} />}
 
         {/* Test Results */}
@@ -1437,8 +1483,16 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
                     next[i] = { ...next[i], notes: e.target.value };
                     setResultForm(next);
                   }} className="px-2 py-1.5 border border-gray-300 rounded text-xs" />
+                  {r.pass_fail && (
+                    <input data-manual-reason placeholder="Why you are setting Pass/Fail by hand (10+ characters)" value={r.edit_reason || ''} onChange={e => {
+                      const next = [...resultForm];
+                      next[i] = { ...next[i], edit_reason: e.target.value };
+                      setResultForm(next);
+                    }} className="col-span-4 px-2 py-1.5 border border-gray-300 rounded text-xs" />
+                  )}
                 </div>
               ))}
+              {resultError && <p className="text-xs text-red-600">{resultError}</p>}
               <div className="flex gap-2">
                 <button onClick={addResultRow} className="text-xs text-powder-600 hover:text-powder-700">+ Add Row</button>
                 <div className="flex-1" />
@@ -1523,14 +1577,15 @@ function ResultRow({ r, requestId, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  const open = () => { setForm({ ...r, pass_fail: r.pass_fail || '' }); setError(''); setEditing(true); };
+  const open = () => { setForm({ ...r, pass_fail: r.verdict_manual ? (r.pass_fail || '') : '', edit_reason: '' }); setError(''); setEditing(true); };
+  const hand = !!(r.verdict_manual || r.edit_reason);
 
   const save = async () => {
     setBusy(true); setError('');
     try {
       await apiPut(`/coa/requests/${requestId}/results/${r.id}`, {
         test_type: form.test_type, result_value: form.result_value, unit: form.unit,
-        pass_fail: form.pass_fail ?? '', notes: form.notes,
+        pass_fail: form.pass_fail ?? '', notes: form.notes, edit_reason: form.edit_reason || '',
       });
       setEditing(false);
       onChanged();
@@ -1549,14 +1604,19 @@ function ResultRow({ r, requestId, onChanged }) {
     return (
       <tr className="hover:bg-gray-50 cursor-pointer" onClick={open} title="Click to correct this result">
         <td className="px-3 py-2 font-medium whitespace-nowrap">{r.test_type}</td>
-        <td className="px-3 py-2 whitespace-nowrap">{r.result_value ?? '-'}{r.unit ? ` ${r.unit}` : ''}</td>
+        <td className="px-3 py-2 whitespace-nowrap">{r.result_value ?? '-'}{r.unit ? ` ${r.unit}` : ''}
+          {r.source === 'pdf' && !hand && <span className="ml-1 text-[10px] text-gray-400" title="Read from the lab report">PDF</span>}
+          {hand && <span data-hand-entered className="ml-1 text-[10px] font-semibold px-1 py-0.5 rounded bg-amber-50 text-amber-800" title={r.edit_reason || ''}>† by hand</span>}
+        </td>
         <td className="px-3 py-2 whitespace-nowrap">
           {r.pass_fail === 'pass' && <span className="text-green-600 font-medium">Pass</span>}
           {r.pass_fail === 'fail' && <span className="text-red-600 font-medium">Fail</span>}
           {r.pass_fail === 'na' && <span className="text-gray-400">N/A</span>}
           {!r.pass_fail && <span className="text-amber-600 font-medium">Not decided</span>}
         </td>
-        <td className="px-3 py-2 text-gray-500 w-full">{r.notes || '-'}</td>
+        <td className="px-3 py-2 text-gray-500 w-full">{r.notes || '-'}
+          {r.edit_reason && <span className="block text-[11px] text-amber-800">By hand: {r.edit_reason}</span>}
+        </td>
       </tr>
     );
   }
@@ -1579,11 +1639,14 @@ function ResultRow({ r, requestId, onChanged }) {
           <input value={form.notes || ''} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
             placeholder="Notes" className="px-2 py-1 border border-gray-300 rounded text-xs" />
         </div>
+        <input data-edit-reason value={form.edit_reason || ''} onChange={e => setForm(f => ({ ...f, edit_reason: e.target.value }))}
+          placeholder={r.edit_reason ? `Reason (on file: ${r.edit_reason})` : 'Reason — needed if you pick Pass/Fail yourself or change a value read from the lab report'}
+          className="mt-2 w-full px-2 py-1 border border-gray-300 rounded text-xs" />
         {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
         <div className="flex items-center gap-2 mt-2">
           <p className="text-[11px] text-gray-500 flex-1">
-            “Auto” re-grades from the result against the approved specification. Picking Pass or Fail overrules
-            it — say why in the notes.
+            “Auto” grades the result against the approved specification. Picking Pass or Fail yourself, or changing a
+            value the lab report printed, needs a reason of at least 10 characters, and the certificate marks it with †.
           </p>
           <button onClick={remove} disabled={busy} className="text-xs text-red-600 hover:underline">Remove</button>
           <button onClick={() => setEditing(false)} className="text-xs text-gray-500">Cancel</button>
@@ -1637,9 +1700,14 @@ function ScanReportPanel({ requestId, file, onClose, onApplied }) {
       const patch = {};
       for (const h of scan.header || []) if (pickHeader[h.key]) patch[h.key] = h.found;
       if (Object.keys(patch).length) await apiPut(`/coa/requests/${requestId}`, patch);
+      // The server reads the file again itself and grades each row; the
+      // report's own printed verdict travels as `stated_pass_fail`, never as
+      // a person's decision (D-243, D-244).
       const results = (scan.results || []).filter((_, i) => pickResult[i])
-        .map(r => ({ test_type: r.test_type, result_value: r.result_value, unit: r.unit, method: r.method || undefined, mdl: r.mdl || undefined, pass_fail: r.pass_fail || undefined }));
-      if (results.length) await apiPost(`/coa/requests/${requestId}/results`, { results });
+        .map(r => ({ test_type: r.test_type, result_value: r.result_value, unit: r.unit, method: r.method || undefined, mdl: r.mdl || undefined, stated_pass_fail: r.stated || undefined }));
+      if (results.length || (scan.file_id && scan.unread?.length)) {
+        await apiPost(`/coa/requests/${requestId}/results`, { results, source_file_id: scan.file_id || undefined });
+      }
       onApplied?.();
       onClose();
     } catch (e) { setError(e.message); }
@@ -1748,6 +1816,26 @@ function ScanReportPanel({ requestId, file, onClose, onApplied }) {
                 </div>
               )}
 
+              {/* Every line the reader could not read (D-243). Applying stores
+                  them; each must then be added as a result or answered before
+                  the certificate can be signed. */}
+              {scan.unread?.length > 0 && (
+                <div data-scan-unread className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                  <p className="text-xs font-medium text-amber-900">
+                    {scan.unread.length} line{scan.unread.length === 1 ? '' : 's'} on the report could not be read.
+                    {scan.file_id ? ' Applying keeps them on the request to add or answer before signing.' : ''}
+                  </p>
+                  <ul className="mt-1 space-y-0.5">
+                    {scan.unread.map((u, i) => (
+                      <li key={i} className="text-[11px] text-amber-900"><span className="font-mono">{u.line}</span> — {u.reason}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {(scan.lab_report_number || scan.report_date) && (
+                <p className="text-[11px] text-gray-600">Lab report {scan.lab_report_number || '—'}{scan.report_date ? ` · dated ${scan.report_date}` : ''}</p>
+              )}
+
               {/* A test the item has a spec for that this report says nothing
                   about. A missing test reads later as a passed one. */}
               {scan.unmatched_specs?.length > 0 && (
@@ -1775,7 +1863,7 @@ function ScanReportPanel({ requestId, file, onClose, onApplied }) {
           <span className="text-xs text-gray-500">{chosen} selected</span>
           <div className="flex-1" />
           <button onClick={onClose} className="px-3 py-1.5 text-xs text-gray-600">Cancel</button>
-          <button onClick={apply} disabled={busy || !chosen}
+          <button onClick={apply} disabled={busy || (!chosen && !(scan?.file_id && scan?.unread?.length))}
             className="px-3 py-1.5 bg-powder-600 text-white text-xs rounded-lg hover:bg-powder-700 disabled:opacity-50">
             {busy ? 'Applying…' : 'Apply selected'}
           </button>
@@ -2734,6 +2822,7 @@ export default function COAPanel() {
       {/* ───── Specifications Tab ───── */}
       {subTab === 'specs' && (
         <>
+          <CoaTestPlans canEdit={user?.role === 'admin' || canSeeQaReview(user)} />
           <DraftSpecsReview />
           <div className="flex justify-between items-center">
             <p className="text-sm text-gray-500">{specs?.length || 0} specifications on file</p>

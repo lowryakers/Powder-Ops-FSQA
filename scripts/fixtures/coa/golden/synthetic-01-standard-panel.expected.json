@@ -1,0 +1,87 @@
+{
+  "fixture": "synthetic-01-standard-panel",
+  "text_layer": true,
+  "lab_report_number": "190001",
+  "report_date": "2026-08-03",
+  "tests": [
+    {
+      "test": "Total Aerobic Microbial Count (USP)",
+      "value": "<100",
+      "unit": "cfu/g",
+      "mdl": "100",
+      "method": "USP <2021>"
+    },
+    {
+      "test": "Total Coliforms (BAM) (MOD)",
+      "value": "<10",
+      "unit": "cfu/g",
+      "mdl": "10",
+      "method": "BAM CH. 4"
+    },
+    {
+      "test": "E.Coli BAM (MOD)",
+      "value": "Absent",
+      "unit": null,
+      "mdl": null,
+      "method": "BAM CH. 4"
+    },
+    {
+      "test": "Salmonella",
+      "value": "Absent",
+      "unit": null,
+      "mdl": null,
+      "method": "BAM CH. 5"
+    },
+    {
+      "test": "Staphylococcus aureus",
+      "value": "<10",
+      "unit": "cfu/g",
+      "mdl": "10",
+      "method": "USP <2022>"
+    },
+    {
+      "test": "Yeast & Mold",
+      "value": "<10",
+      "unit": "cfu/g",
+      "mdl": "10",
+      "method": "USP <2021>"
+    },
+    {
+      "test": "Arsenic",
+      "value": "0.008",
+      "unit": "ppm",
+      "mdl": "0.005",
+      "method": "USP <233>"
+    },
+    {
+      "test": "Cadmium",
+      "value": "<0.005",
+      "unit": "ppm",
+      "mdl": "0.005",
+      "method": "USP <233>"
+    },
+    {
+      "test": "Mercury",
+      "value": "<0.005",
+      "unit": "ppm",
+      "mdl": "0.005",
+      "method": "USP <233>"
+    },
+    {
+      "test": "Lead",
+      "value": "0.012",
+      "unit": "ppm",
+      "mdl": "0.005",
+      "method": "USP <233>"
+    },
+    {
+      "test": "Gluten Allergen",
+      "value": "<4",
+      "unit": "ppm",
+      "mdl": "4",
+      "method": "ELISA"
+    }
+  ],
+  "unread": 0,
+  "noise": 0
+}

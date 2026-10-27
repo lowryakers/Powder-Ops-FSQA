@@ -1,0 +1,31 @@
+{
+  "fixture": "synthetic-03-gluten-and-report-only",
+  "text_layer": true,
+  "lab_report_number": "190003",
+  "report_date": "2026-08-05",
+  "tests": [
+    {
+      "test": "Gluten Allergen",
+      "value": "<4",
+      "unit": "ppm",
+      "mdl": "4",
+      "method": "ELISA"
+    },
+    {
+      "test": "Water Activity",
+      "value": "0.32",
+      "unit": null,
+      "mdl": null,
+      "method": "AOAC 978.18"
+    },
+    {
+      "test": "Moisture",
+      "value": "4.1",
+      "unit": "%",
+      "mdl": null,
+      "method": "AOAC 925.10"
+    }
+  ],
+  "unread": 0,
+  "noise": 0
+}

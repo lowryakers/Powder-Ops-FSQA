@@ -3893,6 +3893,29 @@ meant rebuilding the filter by hand — which nobody does. Every `AttentionBar` 
   - An admin deletes what she marks.
   - **The kind grants no un-sign or delete.** `verify:coapossibledupes` (33).
 
+## COA Phase 2A: test plans, what the reader could not read, hand edits marked † (D-243 … D-245)
+`server/coa-test-plans.js` + `server/api/coa-plans.js` (mounted inside the COA router), `server/coa-checks.js`
+(`readLabFile`, `compareReadToStored`, `rereadCheck`, `signChecks`, `recordUnreadRows`, `unreadRowsFor`),
+`coa_test_plans` / `coa_test_plan_tests` / `coa_products` / `coa_unread_rows`, `CoaTestPlans.jsx` (top of the
+Specifications tab), `UnreadRows` on a request.
+- **A test plan owns the limits.** Draft until Quality approves it with a password; an approved version is never
+  edited ("New version"). Applying previews first, then writes specs carrying plan, version and approver. **A limit
+  already on file from outside the plan is a CONFLICT and is skipped, never overwritten.** The two seeded plans
+  stay drafts; Quality fills them in. ProDough gluten is `< 20 ppm`, "Internal limit", never a claim.
+- **The reader never drops a line silently.** Each analysis line is read, noise (named rule) or unread (reason).
+  Sci notation and "ND in 25g" are NOT read (no real PDF confirmed them) — they come back unread.
+- **Applying a scan sends `source_file_id`**; the server re-reads the file itself, stores `source` / the SHA-256 /
+  `read_value`, and files ONE `UNREAD_ROWS` QA Review item for the lines it could not read. Never filed at boot.
+- **Signing re-reads every lab report, in every gate mode.** A changed or missing file, a line not saved, a value that
+  differs with no reason, or an open unread line blocks it. A test fixture's stored results must therefore match its
+  PDF.
+- **A hand verdict, or a value changed from the PDF, needs a 10+ character reason** (`edit_reason`) and prints **†**
+  with a footnote on the certificate. Snapshot v2 carries the signer, report number/date and per-result source;
+  v1 certificates print as before.
+- `scripts/coa-link-results-to-specs.mjs` (admin-run; dry run, `--apply`, `--file-items` → `SPEC_LINK_REVIEW`)
+  links only unsigned results whose verdict agrees with the one matching spec.
+- `verify:coa2` (65, live + browser). The release gate stays `warn`; nothing here changes it.
+
 ## COA item specification sheet
 The Specifications tab stores one row per test (right for auto pass/fail, hard to eyeball). "View item & all
 specs" (`ItemSpecSummaryModal` in COAPanel.jsx) regroups the rows under an item — the old paper spec sheet —

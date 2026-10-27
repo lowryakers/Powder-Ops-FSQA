@@ -8862,3 +8862,76 @@ deletes them.
 - `verify:coapossibledupes` (33, live + reboots + browser; in `verify:all`): 59 items beside the 43 untouched, a
   second run inserts 0, no COA row moves, the decide → admin-delete path, "not a duplicate", tokens refused.
   Control (queuing step removed) fails 4, then stops.
+
+## D-243 — The COA reader says what it could not read, and a signature reads the PDF again (27 Oct 2026)
+
+COA Phase 2, task B. The reader used to drop a row it could not read without a word: a result in a form it did not
+know, or a test printed twice. A dropped test is only noticed if a specification asks for it, and on live data almost
+none do.
+- **Every analysis line ends in exactly one of: read, noise (a named rule), or unread (a plain reason).**
+  `parseColumnarCoa` returns `unread`, `noise` and `counts` (`analysis_lines = parsed + noise + unread`). A test printed
+  twice with the same value is noise; with a different value it is unread. Wrapped "(MOD)" method lines and section
+  bands are not analysis lines.
+- **Nothing was widened.** Scientific notation and "Not Detected in 25g" style results are reported as unread with a
+  reason, not read, because no real CTLA report was available here to confirm which forms CTLA prints. Widen it once
+  `coa-golden-real.mjs` has run on the real PDFs.
+- **Two header facts are kept**: the lab report number and the report date, on the file (`coa_files.lab_report_number`,
+  `lab_report_date`) and in the signed snapshot.
+- **Golden files.** Twelve synthetic CTLA-layout PDFs with hand-written expected answers
+  (`scripts/fixtures/coa/golden/`) run on every build (`coa-golden-synthetic.test.mjs`, inside `verify:coa`).
+  `scripts/coa-golden-real.mjs --dir <folder>` runs the same comparison on real reports; no real report and no
+  expected file made from one is committed — a person compares `--write-expected` output with the printed reports.
+- **Unread lines are stored and answered.** Applying a scan with its file (`source_file_id`) stores the lines in
+  `coa_unread_rows` and files ONE QA Review item, kind `UNREAD_ROWS`. A line is answered by adding it as a result (its
+  state turns `added` by itself) or with "Not a result" and a reason (`POST /coa/unread-rows/:id/dismiss`, QA or admin).
+  While a line is open the certificate cannot be signed. Items are filed only when a person applies a scan — never at
+  boot.
+- **Where a result came from is stored**: `source` (`pdf` / `manual`), the file and its SHA-256, and what the reader
+  read (`read_value`, `read_unit`, `read_mdl`). Applying from a file makes the server read it again itself.
+- **At signing, every lab report is read again** (`signChecks` in `server/coa-checks.js`), in every gate mode. Blocked:
+  a missing or changed file, a report line not saved, a "from the PDF" result the PDF no longer shows, and a value that
+  differs from the report unless a person changed it with a reason. A file attached before hashes were stored is
+  fingerprinted at signing. Results saved before Phase 2 (no `source`) on a request with no lab report are still
+  allowed — Maria re-signs those in the 43 corrections.
+- An image scan with no text says so, stores nothing, and cannot be checked.
+- `verify:coa2` (65, live + browser), `coa-parse-unread` + `coa-golden-synthetic` + `coa-checks` tests.
+  `verify:coa` and `verify:coaphase1` fixtures now hold what their lab report says.
+
+## D-244 — Test plans own the limits; a hand edit needs a reason and is marked † on the certificate (27 Oct 2026)
+
+COA Phase 2, tasks A and C. On live data 1,632 results on 126 signed certificates trace to no specification, and a
+verdict could be set by hand with an optional note.
+- **A test plan** (`coa_test_plans` + `coa_test_plan_tests`) lists a product family's tests and how each is judged
+  (`<`, `≤`, `>`, `≥`, a range, absent, or reported only). It is a draft until Quality approves it with a password; an
+  approved version is never edited — "New version" makes the next draft. Two plans are seeded once, as drafts:
+  **ProDough standard panel** (the panel, with gluten `< 20 ppm` worded "Internal limit < 20 ppm", decision
+  A-20261027-005) and **Gluten-free claim**. Nothing is approved for Quality.
+- **COA products** (`coa_products`) name an item, its brand, a web slug, the gluten-free claim and a catalog SKU.
+- **Applying a plan** previews first and writes nothing; then, with a reason and a password, it writes the products'
+  specifications in one transaction, each carrying the plan, its version and its approver. A test with a different
+  limit already on file from outside the plan is a **CONFLICT** and is skipped, never overwritten. A strict `<` limit is
+  stored a hair below the number, so the grader's `≤` keeps it strict.
+- **Readiness, part 1**: `GET /coa/readiness` (QA, JSON or CSV) — per COA product: plan, tests required, tests with a
+  limit, and ready / needs plan / plan draft / limits missing.
+- **A hand edit needs a reason of 10+ characters**: a verdict the approved limit does not give, or a value changed from
+  what the lab report printed. It is flagged on the row (`verdict_manual`, `edit_reason`, `edited_by`, `edited_at`) and
+  in the audit. Going back to the PDF's value and the automatic verdict clears the flag. A report's own printed pass
+  travels as `stated_pass_fail` and no longer rescues a result the specification cannot decide.
+- **The signed snapshot is version 2**: who signed, and per result whether it was entered or graded by hand and why,
+  its source file's SHA-256, plan, version and approver; per file the report number and date. The internal certificate
+  prints a **†** beside a hand result with a footnote giving the reason, the **MDL** under the method, and the **lab
+  report number and date**; the signer is read from the snapshot. Version 1 certificates print exactly as before.
+- Screens: "Test plans and COA products" at the top of the Specifications tab; the reason box on a result; the unread
+  lines on a request.
+
+## D-245 — Old results are linked to their specifications only by a script an admin runs (27 Oct 2026)
+
+COA Phase 2, task A5. `scripts/coa-link-results-to-specs.mjs`: dry run by default; `--apply` backs up first and writes
+in one transaction with one audit row per result; `--file-items` also queues what needs a person.
+- Only results with no specification on an **unsigned** request. A signed request is never touched.
+- A result is linked only when exactly one active specification matches AND grading the stored value gives the same
+  verdict that is stored. Only `specification_id` is written.
+- Everything else goes to a CSV beside the backup and, with `--file-items`, one QA Review item per request (kind
+  `SPEC_LINK_REVIEW`: open each result and save it; a verdict the limit does not give needs a reason). It grants
+  nothing and is never filed at boot.
+- A second run links nothing. Tested on a scratch database in `coa-checks.test.mjs`. Nobody has run it on production.

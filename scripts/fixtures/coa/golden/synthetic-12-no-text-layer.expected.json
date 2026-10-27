@@ -1,0 +1,9 @@
+{
+  "fixture": "synthetic-12-no-text-layer",
+  "text_layer": false,
+  "lab_report_number": null,
+  "report_date": null,
+  "tests": [],
+  "unread": 0,
+  "noise": 0
+}
