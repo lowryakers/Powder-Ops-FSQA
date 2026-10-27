@@ -5,7 +5,7 @@ import DraftSpecsReview from './DraftSpecsReview.jsx';
 import CoaTestPlans from './CoaTestPlans.jsx';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule, canSeeQaReview } from '../../utils/permissions';
-import { Plus, Search, FileText, Upload, Download, Trash2, Edit2, FlaskConical, Building2, ClipboardList, CheckCircle2, X, PackageSearch, AlertTriangle, ChevronUp, ChevronDown, CheckSquare, Square, PenLine } from 'lucide-react';
+import { Plus, Search, FileText, Upload, Download, Trash2, Edit2, FlaskConical, Building2, ClipboardList, CheckCircle2, X, PackageSearch, AlertTriangle, ChevronUp, ChevronDown, CheckSquare, Square, PenLine, Globe } from 'lucide-react';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import CopyButton from '../common/CopyButton.jsx';
 import { downloadFile } from '../../lib/downloadFile.js';
@@ -15,6 +15,7 @@ import FrozenScroll from '../common/FrozenScroll';
 import { getParam, consumeParam } from '../../lib/deepLink.js';
 import { BATCH_STATE_LABEL } from '../../../shared/lot-model.js';
 import BrandReview from './BrandReview.jsx';
+import CoaRelease from './CoaRelease.jsx';
 
 // Typed-confirmation dialog for permanent, irreversible bulk deletion.
 function ConfirmDeleteModal({ count, onConfirm, onClose }) {
@@ -122,12 +123,19 @@ function ReleaseGateStrip({ isAdmin, refreshKey }) {
   const { data, refresh } = useApiGet('/coa/release-gate', [refreshKey]);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState(null);
+  const [why, setWhy] = useState('');
   if (!data) return null;
-  const setMode = async (mode) => {
-    if (!isAdmin || busy) return;
-    if (mode === 'on' && !confirm('Enforce the gate? A lot whose item lacks a specification covering identity, purity, strength, composition and contaminants, or with no identity result, can no longer be released.')) return;
+  // Moving the mode asks why and for the password (D-246): strict stops
+  // certificates and production sign-offs, and that is not a single click.
+  const setMode = async () => {
+    if (!isAdmin || busy || !pending) return;
     setBusy(true);
-    try { await apiPut('/coa/release-gate', { mode }); refresh(); } catch (e) { alert(e.message); } finally { setBusy(false); }
+    try {
+      await withSignature((x) => apiPut('/coa/release-gate', { mode: pending, reason: why, ...x }),
+        { title: 'Change the release gate', detail: `Release gate: ${data.mode === 'on' ? 'strict' : data.mode} → ${pending === 'on' ? 'strict' : pending}. Enter the password you sign in with.` });
+      setPending(null); setWhy(''); refresh();
+    } catch (e) { if (!e.cancelled) alert(e.message); } finally { setBusy(false); }
   };
   const tone = data.mode === 'on' ? 'border-green-200 bg-green-50 text-green-900' : data.mode === 'warn' ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-red-200 bg-red-50 text-red-900';
   const gapsItems = (data.coverage || []).filter(c => c.missing.length);
@@ -143,16 +151,24 @@ function ReleaseGateStrip({ isAdmin, refreshKey }) {
         </div>
         <div className="ml-auto flex items-center gap-2">
           {isAdmin && (
-            <select value={data.mode} onChange={e => setMode(e.target.value)} disabled={busy} data-gate-mode
+            <select value={pending || data.mode} onChange={e => { setPending(e.target.value === data.mode ? null : e.target.value); setWhy(''); }} disabled={busy} data-gate-mode
               className="px-2 py-1 border border-gray-300 rounded-lg text-xs bg-white text-gray-800">
               <option value="off">Off</option>
               <option value="warn">Warn — release, carry the gaps</option>
-              <option value="on">Enforce — hold the lot</option>
+              <option value="on">Strict — hold the lot</option>
             </select>
           )}
           <button type="button" onClick={() => setOpen(o => !o)} className="text-xs underline">{open ? 'Hide' : 'Details'}</button>
         </div>
       </div>
+      {pending && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+          <span>Move to <b>{pending === 'on' ? 'strict' : pending}</b>{pending === 'on' ? ' — a lot the rules do not release can no longer be certified or signed off in production' : ''}. Why?</span>
+          <input value={why} onChange={e => setWhy(e.target.value)} className="flex-1 min-w-[12rem] px-2 py-1 border border-gray-300 rounded bg-white text-gray-800" data-gate-mode-reason />
+          <button type="button" onClick={setMode} disabled={busy || why.trim().length < 3} className="px-2 py-1 rounded bg-powder-600 text-white disabled:opacity-50" data-gate-mode-go>Change</button>
+          <button type="button" onClick={() => setPending(null)} className="underline">Cancel</button>
+        </div>
+      )}
       <p className="mt-1 text-xs opacity-80">
         21 CFR 111.70: a lot is released against a specification covering identity, purity, strength, composition and limits on
         contaminants, and identity is confirmed by more than a look, smell and taste.
@@ -2442,15 +2458,22 @@ export default function COAPanel() {
   const isAdmin = user?.role === 'admin';
   // Brand review is for an admin or a QA reviewer — the server's own rule (D-238).
   const canBrandReview = canSeeQaReview(user);
-  const [subTab, setSubTab] = useState('requests');
+  const [subTab, setSubTab] = useState(() => (['release', 'specs'].includes(getParam('view')) ? getParam('view') : 'requests'));
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState(null);
   const [matReqItem, setMatReqItem] = useState(null);
   // A request opened from elsewhere (QA Review's COA corrections, D-236).
   const [selectedId, setSelectedId] = useState(() => getParam('request'));
+  const [releaseLot, setReleaseLot] = useState(() => { const v = getParam('lot'); if (!v) return null; const [item, base] = v.split('|'); return item && base ? { item, base } : null; });
+  useEffect(() => { consumeParam('lot'); if (['release', 'specs'].includes(getParam('view'))) consumeParam('view'); }, []);
   useEffect(() => { if (getParam('request')) consumeParam('request'); }, []);
   useEffect(() => {
-    const h = (e) => { if (e.detail?.tab === 'coa' && e.detail?.request) { setSubTab('requests'); setSelectedId(e.detail.request); } };
+    const h = (e) => {
+      if (e.detail?.tab !== 'coa') return;
+      if (e.detail.request) { setSubTab('requests'); setSelectedId(e.detail.request); }
+      else if (e.detail.view === 'release') { setSubTab('release'); setReleaseLot(e.detail.lot || null); }
+      else if (e.detail.view === 'specs') setSubTab('specs');
+    };
     window.addEventListener('app-navigate', h);
     return () => window.removeEventListener('app-navigate', h);
   }, []);
@@ -2634,9 +2657,11 @@ export default function COAPanel() {
           { id: 'specs', label: 'Specifications', icon: ClipboardList },
           { id: 'labs', label: 'Labs', icon: Building2 },
           ...(canBrandReview ? [{ id: 'brands', label: 'Brand review', icon: CheckSquare }] : []),
+          ...(canBrandReview ? [{ id: 'release', label: 'Release & publishing', icon: Globe }] : []),
         ]} />
 
       {subTab === 'brands' && canBrandReview && <BrandReview onApplied={() => refreshReqs()} />}
+      {subTab === 'release' && canBrandReview && <CoaRelease isAdmin={isAdmin} initialLot={releaseLot} key={releaseLot ? `${releaseLot.item}|${releaseLot.base}` : 'none'} />}
 
       {/* ───── Requests Tab ───── */}
       {subTab === 'requests' && (

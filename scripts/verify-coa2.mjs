@@ -149,7 +149,7 @@ try {
   const rd = Object.fromEntries(r.j.products.map(p => [p.item_number, p.status]));
   t('readiness: the pancake is ready, the waffle still needs a plan', rd['PD-PANCAKE'] === 'ready' && rd['PD-WAFFLE'] === 'needs plan', JSON.stringify(rd));
   r = await call('GET', '/coa/readiness?format=csv');
-  t('… and as a CSV', r.s === 200 && /^item_number,display_name/.test(r.j) && /PD-PANCAKE/.test(r.j));
+  t('… and as a CSV', r.s === 200 && /^section,item_number,display_name/.test(r.j) && /PD-PANCAKE/.test(r.j));
   t('… for Quality and admins only', (await call('GET', '/coa/readiness', null, O)).s === 403);
 
   // ── 3. Unread lines ───────────────────────────────────────────────────────

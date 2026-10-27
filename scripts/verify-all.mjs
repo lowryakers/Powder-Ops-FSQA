@@ -173,6 +173,7 @@ const RUNS = [
   ['verify-coa-phase1.mjs', 5133, { COA_P1_PORT: '5134' }, false],
   ['verify-coa-possible-dupes.mjs', 5135, { COA_DUP_PORT: '5136' }, false],
   ['verify-coa2.mjs', 5137, { COA2_PORT: '5138' }, false],
+  ['verify-coa2b.mjs', 5139, { COA2B_PORT: '5140' }, false],
 ];
 
 // VERIFY_ONLY=verify-auth.mjs,verify-swab-stock.mjs runs just the entries that

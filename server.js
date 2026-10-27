@@ -68,6 +68,7 @@ import retentionRoutes from './server/api/retention.js';
 import stabilityRoutes from './server/api/stability.js';
 import partnerRoutes, { partnerReminderNudges } from './server/api/partners.js';
 import partnerPortalRoutes from './server/api/partner-portal.js';
+import publicCoaRoutes from './server/api/public-coa.js';
 import joinRoutes from './server/api/join.js';
 import onboardingRoutes, { portalRouter as onboardingPortalRoutes } from './server/api/onboarding.js';
 import auditorPassRoutes, { publicRouter as auditorPassPublicRoutes } from './server/api/auditor-pass.js';
@@ -2132,6 +2133,9 @@ app.use('/api/suppliers', requireModuleWrite('suppliers'), supplierRoutes);
 app.use('/api/partners', requireModuleWrite('partner-reconciliation'), partnerRoutes);
 // Public: token-scoped partner access, guarded inside the router.
 app.use('/api/partner-portal', partnerPortalRoutes);
+// The public certificate page (D-247): outside /api, no session, its own
+// headers, and the same 404 for everything until three switches are on.
+app.use('/tested', publicCoaRoutes);
 // Two halves of the auditor pass, deliberately mounted separately: redeeming is
 // public (the holder has no session yet — that is the whole point), while
 // issuing and revoking are admin-only inside their own router.

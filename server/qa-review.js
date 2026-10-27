@@ -44,6 +44,7 @@ import { recordClearance, canClearHygiene, clearanceNeedsLook } from './api/pm.j
 import { getType } from './qms-config.js';
 import { hasExplicitEdit } from './module-access.js';
 import { pendingItems, reviewRow } from './coa-review-items.js';
+import { readinessActions } from './coa-lot-gate.js';
 // The signing predicates live in qa-signing.js so the modules' OWN Verify
 // routes can apply the same rule without importing this file back — see the
 // note there. Re-exported because this module's public surface already
@@ -298,6 +299,32 @@ export const SOURCES = [
     pending: (db, limit = LIMIT) => pendingItems(db).slice(0, limit).map(reviewRow),
     canSign: () => false,
     sign: () => ({ error: 'COA corrections are made on the request itself, not signed from this list.', status: 400 }),
+  },
+  // What stands between the COA gate and strict (D-246): products whose test
+  // plan is missing, a draft, or short of a limit, and each time warn recorded
+  // that strict would have blocked a lot — for Quality to call right or wrong.
+  // Worked on COA → Release & publishing; nothing is signed here.
+  {
+    key: 'coa-readiness',
+    label: 'COA readiness',
+    form: null,
+    module: 'coa',
+    kind: 'action',
+    noun: 'item',
+    plural: 'items',
+    count: (db) => readinessActions(db).length,
+    pending: (db, limit = LIMIT) => readinessActions(db).slice(0, limit).map(a => ({
+      id: a.id, request_id: null, title: a.title, subtitle: a.kind === 'product' ? 'Test plan' : 'Would block',
+      action_kind: a.kind === 'product' ? 'COA_PLAN' : 'COA_WOULD_BLOCK', by: null, date: (a.at || '').slice(0, 10), result: null, extra: null,
+      recommended_action: a.kind === 'product'
+        ? 'Finish and approve the product\'s test plan, then apply it (COA → Specifications).'
+        : 'Open the lot and say whether strict would have been right to block it (COA → Release & publishing).',
+      reason: a.kind === 'product' ? 'A lot of this product cannot be released until its plan is approved with every limit.' : (a.reasons || []).join('; '),
+      note: null, evidence: [], steps: [], blocked_by: null, decision_ref: 'D-246',
+      link: a.kind === 'product' ? { tab: 'coa', view: 'specs' } : { tab: 'coa', view: 'release', lot: { item: a.item_number, base: a.base_lot } },
+    })),
+    canSign: () => false,
+    sign: () => ({ error: 'COA readiness is worked on the COA screen, not signed from this list.', status: 400 }),
   },
   signOutSource({ key: 'sign-out-equipment', type: 'maintenance_sign_out',
     label: 'Equipment / Tool / Chemical sign-outs', form: '703-01', module: 'maintenance-signout',

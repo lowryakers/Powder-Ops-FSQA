@@ -8935,3 +8935,84 @@ in one transaction with one audit row per result; `--file-items` also queues wha
   `SPEC_LINK_REVIEW`: open each result and save it; a verdict the limit does not give needs a reason). It grants
   nothing and is never filed at boot.
 - A second run links nothing. Tested on a scratch database in `coa-checks.test.mjs`. Nobody has run it on production.
+
+## D-246 — A lot is released only when every batch passes its approved plan; one switch decides whether that stops anything (27 Oct 2026)
+
+COA Phase 2, task D. `shared/coa-lot-readiness.js` (PURE, the one rule) and `server/coa-lot-gate.js` (loading a lot, the
+doors, events, overrides, the readiness report).
+- **The rule.** A batch is ok only when its request is signed, every REQUIRED test of the product's APPROVED plan has
+  a result, every judged test has a pass or fail, nothing failed, no line of its lab report is left unread, and (when
+  re-read) the lab report still matches. A later passing request for the same batch supersedes a failed one
+  (`retest_of`, else the same batch). The lot is **released** only when every batch is ok. No approved plan is
+  **"No required tests defined"** — never released.
+- **It applies to items on the COA product list only.** A client's raw material is not judged by a ProDough rule.
+- **One switch: `coa_release_gate`** — off / warn / on, shown as **strict**. It governs the five-category check (CAR
+  4990683-3, unchanged) AND the lot rule. **Off** evaluates and records nothing. **Warn** (the default, and where it
+  stays) records what strict would do and stops nothing. **Strict** refuses. Moving it is an admin's act with a
+  reason and the password. **Nothing in this phase moves it.** Found while testing: strict also enforces the five
+  categories, and no ProDough plan covers identity, purity, strength or composition today — the readiness report
+  says so on its own line, so nobody switches to strict and finds every certificate held.
+- **Doors wired:** (1) signing a certificate — judges the batch being signed; (2) production QA sign-off
+  (`signOffProductionEntry`, so QA Review's batch path is covered too) — the entry's product name, and each MO line's,
+  maps to a COA product by its public name or an ALIAS, exactly (case and spacing aside, never a substring). Warn
+  signs and returns "COA: 1 of 2 batches signed and passing — lot not released"; strict refuses unless an override is
+  in force. **Not wired: shipping** — there is no shipping release door in ReadyDoc to put it on (the Shipping Truck
+  Inspection checks the trailer, not the lot). The roll-up and Mark Pass keep the category check only.
+- **Every evaluation is a `coa_gate_events` row.** Quality marks each would-block **correct** or **false_block**, with a
+  reason. The target before strict is 30 days in warn and no false block in the last 14.
+- **An override** (`coa_lot_overrides`, Quality, reason of 10+ characters, password, never a bot token, revocable)
+  opens the production sign-off door for one lot in strict. It never makes a certificate signable and never counts
+  toward publishing.
+- **Readiness** (`GET /coa/readiness`, JSON and CSV): plans per product, what strict would block today (lots in the
+  last 60 days, with the batch and the reason), the category gap, unlinked results, open unread / spec-link items, the
+  golden-file run and its age (`POST /coa/readiness/golden-attest`, password — Quality runs the real PDFs on a computer
+  and records what it showed; the PDFs never come to the server), days in warn and the reviews, overrides in force, the
+  public switches. Read-only: it never changes a mode.
+- **QA Review source "COA readiness"** (`kind: 'action'`): products whose plan is missing, a draft or short of a limit,
+  and would-blocks not yet reviewed. Nothing is signed from the list.
+- **The mode, the override, publishing and the public switches never queue offline** (`NEVER_QUEUE`).
+- `verify:coa2b` (105, live + browser at 1280 and 390), `coa-lot-readiness.test.mjs` (10, pure).
+
+## D-247 — A ProDough certificate can be published; the public page ships switched off (27 Oct 2026)
+
+COA Phase 2, task E. `server/coa-publications.js`, `server/coa-public-snapshot.js` (PURE), `server/coa-public-render.js`,
+`server/api/public-coa.js` (mounted at **`/tested`**, outside `/api`), `server/api/coa-publish.js`, `coa_publications`.
+- **Three switches, all closed after deploy:** `coa_settings.public_coa_enabled` (off), `coa_brands.public_publish_allowed`
+  for ProDough (0), `public_coa_indexable` (off). An admin changes the first two, each with a reason and the password;
+  the third has no switch. `public_nonclaim_gluten_display` stays `hidden`. **Until the first two are on, every public
+  address is the same 404** — a real certificate cannot be told from one that does not exist.
+- **Publishing is an admin's act for now** (`canPublishCoa`; who publishes is an open decision). A lot is published
+  WHOLE — every batch at once — and only when every check passes, each named in words: ProDough brand on the product
+  and every request; on the product list with a public name and a slug; the plan approved; the lot rule met (an
+  override does not count); each batch a currently signed passing certificate whose content hash matches; snapshot v2
+  (or a v1 that re-evaluates the same); **no result entered or graded by hand**; every result read from the attached
+  lab report, whose fingerprint matches and whose re-read agrees; no unread lines; the report number and date known
+  (kept internal). Preview and publish run the same checks.
+- **A publication is an immutable snapshot**: triggers refuse a rewrite of any identity or snapshot column and refuse
+  every delete. Publishing a batch again **supersedes** the old one (its address stays, with a banner to the
+  replacement). **Withdrawing** (Quality or an admin, reason of 10+ characters, password) leaves a tombstone (410) that
+  never shows the reason. **Un-signing a published certificate is refused** until it is withdrawn.
+- **What the public page may show is built in one place** (`publicSnapshot`): product, lot, batch, certificate number,
+  issue and test dates, best-by, and per test the name, method, result, unit, limit and Pass/Fail; "Approved by Powder
+  Ops QA"; "Results apply to the sample tested." Never the laboratory, its report number, a person, an internal id or
+  the item number; a string carrying "CTLA", "accredited", "ISO" or a report-number phrase is dropped. Hidden: gluten
+  on a product with no gluten-free claim, sensory tests, environmental tests, and report-only tests unless the plan
+  ticks them **show publicly**. The gluten-free tile only for a `gf_claim` product whose every batch is under 20 ppm.
+- **The public router reads four tables and writes none** (`check:publiccoa`): `coa_publications`, `coa_brands`,
+  `coa_settings`, `coa_products`. Routes: `/tested/c/:id` (HTML, `.json`, `.pdf` — the PDF embeds the Unicode font),
+  `/tested/lot/:slug/:lot`, `/tested/sku/:slug`, `/tested/verify?cert=&lot=` (both required), `/tested/embed/:slug`,
+  `/tested/badge/:slug.json`, `/tested/robots.txt`. Every response: a CSP with no script, noindex unless indexable, no
+  cookie, no framing (the embed honours `public_coa_frame_ancestors`, default none), a rate limit (60 pages / 20 checks
+  a minute per address).
+- **The in-app preview** renders the exact public page in a frame inside ReadyDoc, never a new tab.
+- `coa-public-snapshot.test.mjs` (5, pure, every rendering grepped), `check:publiccoa` (19), `verify:coa2b`.
+
+## D-248 — Open decisions recorded, not taken (27 Oct 2026)
+
+Phase 2B ships with three questions answered by the safest default, each changeable without a deploy except the first:
+- **Who publishes and withdraws.** Publishing: admin only (`canPublishCoa` in `server/coa-lot-gate.js`). Withdrawing:
+  Quality or an admin. Widening publishing is a one-line change and a new decision.
+- **Who flips the switches.** Admin only, with a reason and the password, audited.
+- **When to go strict.** Not now. The gate stays on warn until the readiness report reads clean: every ProDough plan
+  approved with every limit, the category gap closed, a golden-file run recorded, 30 days in warn with no false block
+  in the last 14.

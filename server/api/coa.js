@@ -23,6 +23,8 @@ import { stampBaseLot, lotGlutenRollup } from '../coa-lots.js';
 import { splitLot } from '../../shared/lot-model.js';
 import { readLabFile, squash, MIN_EDIT_REASON, recordUnreadRows, unreadRowsFor, signChecks } from '../coa-checks.js';
 import coaPlansRouter from './coa-plans.js';
+import { gateMode, MODE_WORDS, signDoor } from '../coa-lot-gate.js';
+import coaPublishRouter from './coa-publish.js';
 
 // A drawn signature, as a data URL. One definition — the certificate sign-off
 // and the lab submission both validate against it.
@@ -69,6 +71,7 @@ const coaUpload = multer({
 const router = Router();
 // Test plans, COA products and the readiness report (D-244).
 router.use(coaPlansRouter);
+router.use(coaPublishRouter);
 
 const REQUEST_FIELDS = ['item_number', 'item_description', 'lot_number', 'product_expiration', 'tests_requested', 'status', 'lab_id', 'lab_name', 'date_sent', 'tat_days', 'expected_results_date', 'date_of_results', 'date_sent_to_customer', 'requested_by', 'invoice_amount', 'retest_required', 'retest_of', 'notes', 'origin', 'supplier', 'product_code', 'manufacturer_lot', 'vendor_lot', 'received_date'];
 // certificate_number and date_of_issuance are NOT editable here: they are
@@ -82,15 +85,11 @@ const badStatus = (v) => v !== undefined && !STATUSES.includes(v);
 
 
 // The specification gate's mode (shared/spec-coverage.js). Default WARN: the
-// specification program is catching up (CAR 4990683-3 dates the full set for
-// 31 October), and refusing every release today would stop the plant to prove
-// a point. In warn mode a release CARRIES its gaps, which is what QA works down.
-export function gateMode(db) {
-  try {
-    const v = db.prepare("SELECT value FROM app_settings WHERE key = 'coa_release_gate'").get()?.value;
-    return GATE_MODES.includes(v) ? v : 'warn';
-  } catch { return 'warn'; }
-}
+// specification program is catching up (CAR 4990683-3), and refusing every
+// release today would stop the plant to prove a point. In warn mode a release
+// CARRIES its gaps, which is what QA works down. The one reader of the mode is
+// coa-lot-gate.js now (D-246): the lot rule and this gate share the switch.
+export { gateMode };
 
 /** The gate for one request, from its item's active specs and its results. */
 export function gateFor(db, request) {
@@ -989,13 +988,19 @@ router.get('/release-gate', (req, res) => {
     items_total: coverage.length, items_fully_covered: coverage.filter(c => c.missing.length === 0).length, coverage });
 });
 
+// Moving the mode is an admin decision with a reason and the password (D-246):
+// strict stops certificates and production sign-offs, and that is not a click.
 router.put('/release-gate', requireRole('admin'), (req, res) => {
   const db = getDb();
   const mode = req.body?.mode;
   if (!GATE_MODES.includes(mode)) return res.status(400).json({ error: `Mode must be one of ${GATE_MODES.join(', ')}.` });
   const before = gateMode(db);
+  if (mode === before) return res.json({ mode, unchanged: true });
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 3) return res.status(400).json({ error: `Say why the release gate is moving from ${MODE_WORDS[before]} to ${MODE_WORDS[mode]}.`, reason_required: true });
+  if (!gateSignature(req, res, { action: 'coa_release_gate' })) return;
   db.prepare("INSERT INTO app_settings (key, value) VALUES ('coa_release_gate', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(mode);
-  logAudit(req.user, 'coa_release_gate_changed', 'app_setting', 'coa_release_gate', { from: before, to: mode });
+  logAudit(req.user, 'coa_release_gate_changed', 'app_setting', 'coa_release_gate', { from: before, to: mode, reason, ...signatureEvidence() });
   res.json({ mode });
 });
 
@@ -1797,6 +1802,11 @@ router.post('/requests/:id/sign', async (req, res) => {
   // Signing the certificate IS the release. Same gate as the roll-up.
   const gate = gateFor(db, r);
   if (gate.blocks) return res.status(400).json({ error: `This certificate cannot be issued: ${gate.gaps.join('; ')}.`, release_blocked: true, gaps: gate.gaps });
+  // The lot rule (D-246), for an item on the COA product list: this batch must
+  // have every required test of an approved plan, all passing. Warn records
+  // what strict would do; strict refuses. An override never opens this door.
+  const lotDoor = signDoor(db, r, { actor: req.user.name });
+  if (lotDoor.block) return res.status(409).json({ error: `This certificate cannot be signed in strict mode: ${lotDoor.reasons.join('; ')}.`, lot_blocked: true, reasons: lotDoor.reasons });
 
   // The QA signature on a certificate is a 21 CFR 11.200 signature: asked
   // last, after every refusal above, and before anything is written.
@@ -1848,6 +1858,10 @@ router.delete('/requests/:id/sign', (req, res) => {
   const r = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id);
   if (!r) return res.status(404).json({ error: 'COA request not found' });
   if (!isSigned(r)) return res.status(409).json({ error: 'This certificate is not signed.' });
+  // A certificate on the public page is withdrawn first (D-247): un-signing it
+  // underneath would leave the web showing a certificate that no longer exists.
+  const live = db.prepare("SELECT public_id FROM coa_publications WHERE request_id = ? AND status = 'published'").get(r.id);
+  if (live) return res.status(409).json({ error: 'This certificate is published on the public page. Withdraw the publication first, then un-sign.', published: true });
   const reason = String(req.body?.reason || '').trim();
   if (reason.length < 3) return res.status(400).json({ error: 'Say why the signature is being removed.' });
   if (!allowed.admin && !gateSignature(req, res, { action: 'coa_unsign' })) return;

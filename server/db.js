@@ -4307,6 +4307,94 @@ function runMigrations() {
   }
   // The lab's own report number and report date, read off the PDF (D-243).
   for (const [c, t] of [['lab_report_number', 'TEXT'], ['lab_report_date', 'TEXT'], ['text_layer', 'INTEGER']]) addColumnIfMissing('coa_files', c, t);
+  // COA Phase 2B (D-246, D-247). The lot rule's record of what each door
+  // decided, Quality's overrides, the golden-file attestation, and the
+  // public publications — a snapshot that can never be rewritten or deleted.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS coa_gate_events (
+      id TEXT PRIMARY KEY,
+      at TEXT NOT NULL DEFAULT (datetime('now')),
+      door TEXT NOT NULL,
+      request_id TEXT,
+      entry_id TEXT,
+      base_lot TEXT,
+      item_number TEXT,
+      mode TEXT NOT NULL,
+      would_block INTEGER NOT NULL DEFAULT 0,
+      blocked INTEGER NOT NULL DEFAULT 0,
+      reasons TEXT,
+      overridden INTEGER NOT NULL DEFAULT 0,
+      actor TEXT,
+      review TEXT CHECK (review IN ('correct','false_block') OR review IS NULL),
+      reviewed_by TEXT,
+      reviewed_at TEXT,
+      review_note TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_coa_gate_events_lot ON coa_gate_events(item_number, base_lot);
+    CREATE TABLE IF NOT EXISTS coa_lot_overrides (
+      id TEXT PRIMARY KEY,
+      item_number TEXT NOT NULL,
+      base_lot TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      by_name TEXT NOT NULL,
+      at TEXT NOT NULL DEFAULT (datetime('now')),
+      revoked_at TEXT,
+      revoked_by TEXT,
+      revoke_reason TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_coa_lot_overrides_lot ON coa_lot_overrides(item_number, base_lot);
+    CREATE TABLE IF NOT EXISTS coa_golden_attestations (
+      id TEXT PRIMARY KEY,
+      run_on TEXT NOT NULL,
+      pdfs_read INTEGER NOT NULL,
+      mismatches INTEGER NOT NULL,
+      unread_rows INTEGER NOT NULL DEFAULT 0,
+      report_sha256 TEXT,
+      note TEXT,
+      by_name TEXT NOT NULL,
+      at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS coa_publications (
+      id TEXT PRIMARY KEY,
+      public_id TEXT NOT NULL UNIQUE,
+      certificate_number TEXT NOT NULL,
+      request_id TEXT NOT NULL,
+      base_lot TEXT NOT NULL,
+      batch TEXT,
+      item_number TEXT NOT NULL,
+      product_slug TEXT NOT NULL,
+      brand_owner TEXT NOT NULL,
+      snapshot TEXT NOT NULL,
+      snapshot_sha256 TEXT NOT NULL,
+      template_version INTEGER NOT NULL DEFAULT 1,
+      status TEXT NOT NULL DEFAULT 'published' CHECK (status IN ('published','withdrawn','superseded')),
+      published_by TEXT NOT NULL,
+      published_at TEXT NOT NULL DEFAULT (datetime('now')),
+      withdrawn_by TEXT,
+      withdrawn_at TEXT,
+      withdrawn_reason TEXT,
+      superseded_by_id TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_coa_publications_slug ON coa_publications(product_slug, status);
+    CREATE INDEX IF NOT EXISTS idx_coa_publications_request ON coa_publications(request_id);
+    CREATE TRIGGER IF NOT EXISTS coa_publications_no_delete BEFORE DELETE ON coa_publications
+      BEGIN SELECT RAISE(ABORT, 'A publication is never deleted; withdraw it.'); END;
+    CREATE TRIGGER IF NOT EXISTS coa_publications_frozen BEFORE UPDATE ON coa_publications
+      WHEN NEW.public_id IS NOT OLD.public_id OR NEW.certificate_number IS NOT OLD.certificate_number
+        OR NEW.request_id IS NOT OLD.request_id OR NEW.base_lot IS NOT OLD.base_lot OR NEW.batch IS NOT OLD.batch
+        OR NEW.item_number IS NOT OLD.item_number OR NEW.product_slug IS NOT OLD.product_slug
+        OR NEW.brand_owner IS NOT OLD.brand_owner OR NEW.snapshot IS NOT OLD.snapshot
+        OR NEW.snapshot_sha256 IS NOT OLD.snapshot_sha256 OR NEW.template_version IS NOT OLD.template_version
+        OR NEW.published_by IS NOT OLD.published_by OR NEW.published_at IS NOT OLD.published_at
+      BEGIN SELECT RAISE(ABORT, 'A publication''s snapshot is never rewritten.'); END;
+  `);
+  // Names a production entry may use for a COA product (exact match, never a
+  // substring), and a report-only test the plan shows publicly (D-246, D-247).
+  addColumnIfMissing('coa_products', 'aliases', 'TEXT');
+  addColumnIfMissing('coa_test_plan_tests', 'public', 'INTEGER NOT NULL DEFAULT 0');
+  db.prepare("INSERT OR IGNORE INTO coa_settings (key, value, updated_by) VALUES ('public_coa_enabled', 'off', 'system')").run();
+  db.prepare("INSERT OR IGNORE INTO coa_settings (key, value, updated_by) VALUES ('public_coa_indexable', 'off', 'system')").run();
+  db.prepare("INSERT OR IGNORE INTO coa_settings (key, value, updated_by) VALUES ('public_coa_frame_ancestors', 'none', 'system')").run();
   // A lot's base and its batch (D-237): 101690-1 is batch 1 of lot 101690.
   // Derived from lot_number, which is never changed.
   addColumnIfMissing('coa_requests', 'base_lot', 'TEXT');

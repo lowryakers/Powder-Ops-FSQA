@@ -288,7 +288,8 @@ try {
   const readers = [];
   const walk = (d) => { for (const f of readdirSync(d)) { const p = path.join(d, f); if (statSync(p).isDirectory()) { if (f !== 'node_modules') walk(p); } else if (/\.(m?js|jsx)$/.test(f) && readFileSync(p, 'utf8').includes(PUBLIC_WORD)) readers.push(path.relative(root, p)); } };
   walk(path.join(root, 'server')); walk(path.join(root, 'src')); walk(path.join(root, 'shared'));
-  t('nothing in the app reads public_publish_allowed (only the schema declares it)', readers.join() === 'server/db.js', readers.join());
+  // D-247: the public page reads it and the admin's switch writes it — nothing else.
+  t('only the schema, the public page and the admin switch touch public_publish_allowed', readers.sort().join() === ['server/api/coa-publish.js', 'server/coa-public-snapshot.js', 'server/db.js'].sort().join(), readers.join());
 
   console.log('\n── settings scaffold (D-226)');
   r = await call('GET', '/coa/settings');

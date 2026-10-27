@@ -186,8 +186,10 @@ try {
   t('a QA reviewer sees "COA corrections" with 43, as an action source', r.s === 200 && src?.count === 43 && src?.kind === 'action' && src?.can_sign === false, JSON.stringify({ count: src?.count, kind: src?.kind }));
   t('… counted in the QA Review total', r.j.total >= 43);
   const SHAPE = ['can_sign', 'count', 'form', 'items', 'key', 'label', 'module', 'noun', 'plural', 'view'].join();
-  t('every other source keeps exactly its old JSON shape (no `kind`)', r.j.sources.filter(s => s.key !== 'coa-corrections').every(s => Object.keys(s).sort().join() === SHAPE),
-    r.j.sources.filter(s => s.key !== 'coa-corrections').map(s => Object.keys(s).sort().join()).find(k => k !== SHAPE) || '');
+  // The action piles carry `kind` (COA corrections, and COA readiness since D-246); every signing source keeps its old shape.
+  const ACTION = new Set(['coa-corrections', 'coa-readiness']);
+  t('every signing source keeps exactly its old JSON shape (no `kind`)', r.j.sources.filter(s => !ACTION.has(s.key)).every(s => Object.keys(s).sort().join() === SHAPE),
+    r.j.sources.filter(s => !ACTION.has(s.key)).map(s => Object.keys(s).sort().join()).find(k => k !== SHAPE) || '');
   t('the operator gets 403', (await call('GET', '/qa-review', null, O)).s === 403);
   const resignRow = await rowOf('3818f512-e1d2-4614-b1c8-f0bffd78f75f');
   t('a row carries the recommended action, reason, steps and evidence links', /correct the gluten result to <4 ppm, then sign again/.test(resignRow?.recommended_action || '')

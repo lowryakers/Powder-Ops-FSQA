@@ -9,8 +9,10 @@ import { getDb, logAudit } from '../db.js';
 import { isQaReviewer } from '../qa-signing.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
 import {
-  getPlan, listPlans, cleanTest, planMissing, planApply, applyPlan, productReadiness, READINESS_WORDS, SLUG_RE, MAX_APPLY,
+  getPlan, listPlans, cleanTest, planMissing, planApply, applyPlan, SLUG_RE, MAX_APPLY,
 } from '../coa-test-plans.js';
+import { coaReadiness } from '../coa-lot-gate.js';
+import { publicState } from '../coa-public-snapshot.js';
 
 const router = Router();
 const QA_ONLY = 'Only Quality (a QA reviewer) or an admin can change test plans and COA products.';
@@ -65,9 +67,9 @@ router.put('/plans/:id', (req, res) => {
     }
     if (Array.isArray(req.body?.tests)) {
       db.prepare('DELETE FROM coa_test_plan_tests WHERE plan_id = ?').run(plan.id);
-      const ins = db.prepare(`INSERT INTO coa_test_plan_tests (id, plan_id, test_type, evaluation, comparator, min_value, max_value, unit, method, required, specification, sort)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-      tests.forEach((t, i) => ins.run(uuid(), plan.id, t.test_type, t.evaluation, t.comparator, t.min_value, t.max_value, t.unit, t.method, t.required, t.specification, i));
+      const ins = db.prepare(`INSERT INTO coa_test_plan_tests (id, plan_id, test_type, evaluation, comparator, min_value, max_value, unit, method, required, specification, sort, public)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+      tests.forEach((t, i) => ins.run(uuid(), plan.id, t.test_type, t.evaluation, t.comparator, t.min_value, t.max_value, t.unit, t.method, t.required, t.specification, i, t.public ? 1 : 0));
     }
   })();
   const after = getPlan(db, plan.id);
@@ -89,9 +91,9 @@ router.post('/plans/:id/new-version', (req, res) => {
   db.transaction(() => {
     db.prepare(`INSERT INTO coa_test_plans (id, name, brand_owner, version, status, supersedes_id, notes, created_by) VALUES (?, ?, ?, ?, 'draft', ?, ?, ?)`)
       .run(id, plan.name, plan.brand_owner, version, plan.id, plan.notes, req.user.name);
-    const ins = db.prepare(`INSERT INTO coa_test_plan_tests (id, plan_id, test_type, evaluation, comparator, min_value, max_value, unit, method, required, specification, sort)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-    for (const t of plan.tests) ins.run(uuid(), id, t.test_type, t.evaluation, t.comparator, t.min_value, t.max_value, t.unit, t.method, t.required, t.specification, t.sort);
+    const ins = db.prepare(`INSERT INTO coa_test_plan_tests (id, plan_id, test_type, evaluation, comparator, min_value, max_value, unit, method, required, specification, sort, public)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    for (const t of plan.tests) ins.run(uuid(), id, t.test_type, t.evaluation, t.comparator, t.min_value, t.max_value, t.unit, t.method, t.required, t.specification, t.sort, t.public ? 1 : 0);
   })();
   logAudit(req.user, 'create', 'coa_test_plan', id, { name: plan.name, version, supersedes: plan.id }, null, null, `${plan.name} v${version}`);
   res.status(201).json(getPlan(db, id));
@@ -165,41 +167,83 @@ router.put('/products/:item', (req, res) => {
   const product_id = pick('product_id', before?.product_id);
   if (product_id && !db.prepare('SELECT 1 FROM products WHERE sku = ?').get(product_id)) return res.status(400).json({ error: `No catalog product with SKU "${product_id}".` });
   const gf = b.gf_claim !== undefined ? (b.gf_claim ? 1 : 0) : (before?.gf_claim ?? 0);
-  const row = { display_name: pick('display_name', before?.display_name), slug, brand_owner: brand, gf_claim: gf, product_id, public_note: pick('public_note', before?.public_note) };
+  // The other names a production entry uses for this product (D-246). Matched
+  // exactly (case and spacing aside), never as a substring.
+  let aliases = before?.aliases ?? null;
+  if (b.aliases !== undefined) {
+    const list = (Array.isArray(b.aliases) ? b.aliases : String(b.aliases || '').split(/[\n;]/)).map(a => String(a).replace(/\s+/g, ' ').trim()).filter(Boolean);
+    if (list.some(a => a.length > 120)) return res.status(400).json({ error: 'A name is at most 120 characters.' });
+    const taken = list.find(a => db.prepare('SELECT item_number FROM coa_products WHERE item_number != ? AND (LOWER(display_name) = LOWER(?) OR EXISTS (SELECT 1 FROM json_each(COALESCE(aliases, \'[]\')) WHERE LOWER(value) = LOWER(?)))').get(item, a, a));
+    if (taken) return res.status(409).json({ error: `"${taken}" already names another COA product. One name must point at one product.` });
+    aliases = list.length ? JSON.stringify([...new Set(list)]) : null;
+  }
+  const row = { display_name: pick('display_name', before?.display_name), slug, brand_owner: brand, gf_claim: gf, product_id, public_note: pick('public_note', before?.public_note), aliases };
   if (before) {
-    db.prepare('UPDATE coa_products SET display_name = ?, slug = ?, brand_owner = ?, gf_claim = ?, product_id = ?, public_note = ? WHERE item_number = ?')
-      .run(row.display_name, row.slug, row.brand_owner, row.gf_claim, row.product_id, row.public_note, item);
+    db.prepare('UPDATE coa_products SET display_name = ?, slug = ?, brand_owner = ?, gf_claim = ?, product_id = ?, public_note = ?, aliases = ? WHERE item_number = ?')
+      .run(row.display_name, row.slug, row.brand_owner, row.gf_claim, row.product_id, row.public_note, row.aliases, item);
   } else {
     if (!db.prepare('SELECT 1 FROM coa_requests WHERE item_number = ?').get(item)) return res.status(400).json({ error: `No lab request has the item number "${item}".` });
-    db.prepare('INSERT INTO coa_products (item_number, display_name, slug, brand_owner, gf_claim, product_id, public_note, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(item, row.display_name, row.slug, row.brand_owner, row.gf_claim, row.product_id, row.public_note, req.user.name);
+    db.prepare('INSERT INTO coa_products (item_number, display_name, slug, brand_owner, gf_claim, product_id, public_note, aliases, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(item, row.display_name, row.slug, row.brand_owner, row.gf_claim, row.product_id, row.public_note, row.aliases, req.user.name);
   }
   const after = db.prepare('SELECT * FROM coa_products WHERE item_number = ?').get(item);
   logAudit(req.user, before ? 'update' : 'create', 'coa_product', item, { gf_claim_changed: !!before && before.gf_claim !== after.gf_claim }, before || null, after, item);
   res.json(after);
 });
 
-// ── Readiness, part 1 (A6) ─────────────────────────────────────────────────
+// ── Readiness (A6 + D6) ─────────────────────────────────────────────────────
+// One page, read-only: it never changes a mode. Part 1 (the plans) is as it
+// was; part 2 is the lot rule's report — what strict would block today.
 function readiness(db) {
-  const products = productReadiness(db);
-  const counts = products.reduce((m, p) => ({ ...m, [p.status]: (m[p.status] || 0) + 1 }), {});
+  const report = coaReadiness(db, { publicState: publicState(db) });
   // Catalog products (ProDough) with no COA product linked — information only.
   const unlinked = db.prepare(`SELECT sku, category || ' · ' || flavor || ' · ' || pack AS name FROM products WHERE status = 'active'
     AND sku NOT IN (SELECT product_id FROM coa_products WHERE product_id IS NOT NULL) ORDER BY sku LIMIT 2000`).all();
-  return { products, counts, words: READINESS_WORDS, catalog_without_coa_product: unlinked };
+  return { ...report, catalog_without_coa_product: unlinked };
 }
+const mayRead = (u) => u?.role === 'admin' || isQaReviewer(u);
 
 router.get('/readiness', (req, res) => {
-  if (!(req.user?.role === 'admin' || isQaReviewer(req.user))) return res.status(403).json({ error: 'The readiness report is for Quality and admins.' });
+  if (!mayRead(req.user)) return res.status(403).json({ error: 'The readiness report is for Quality and admins.' });
   const db = getDb();
   const r = readiness(db);
   if (req.query.format !== 'csv') return res.json(r);
   const cell = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-  const lines = ['item_number,display_name,brand,plan,plan_version,tests_required,tests_with_limit,status'];
-  for (const p of r.products) lines.push([p.item_number, p.display_name, p.brand_owner, p.plan_name, p.plan_version, p.tests_required, p.tests_with_limit, p.status].map(cell).join(','));
+  const lines = ['section,item_number,display_name,brand,plan,plan_version,tests_required,tests_with_limit,status,base_lot,batch,reason'];
+  for (const p of r.products) lines.push(['product', p.item_number, p.display_name, p.brand_owner, p.plan_name, p.plan_version, p.tests_required, p.tests_with_limit, p.status, '', '', ''].map(cell).join(','));
+  for (const l of r.would_block) {
+    const rows = l.at_fault.length ? l.at_fault : [{ batch: '', reasons: l.problems }];
+    for (const b of rows) lines.push(['would_block', l.item_number, l.display_name, '', '', '', '', '', l.state, l.base_lot, b.batch ?? '', (b.reasons || []).join('; ')].map(cell).join(','));
+  }
+  for (const x of r.lines) lines.push(['summary', '', '', '', '', '', '', '', x.ok ? 'ok' : 'not yet', '', '', x.text].map(cell).join(','));
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="coa-readiness.csv"');
   res.send(lines.join('\n') + '\n');
+});
+
+// The golden-file run (D-246): Quality runs the real CTLA PDFs through the
+// reader (`COA_REAL_PDF_DIR=… node --test scripts/test/coa-real-pdf.test.mjs`)
+// and records what it showed, with the password. The app does not run it — the
+// PDFs are never on the server. A record, not a switch.
+router.post('/readiness/golden-attest', (req, res) => {
+  if (!mayRead(req.user)) return res.status(403).json({ error: 'Only Quality or an admin can record a golden-file run.' });
+  const b = req.body || {};
+  const n = (v) => (Number.isInteger(Number(v)) && Number(v) >= 0 ? Number(v) : null);
+  const run_on = String(b.run_on || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(run_on)) return res.status(400).json({ error: 'Give the date the run was done.' });
+  const pdfs = n(b.pdfs_read); const mism = n(b.mismatches); const unread = n(b.unread_rows ?? 0);
+  if (!pdfs) return res.status(400).json({ error: 'Say how many lab reports were read (at least 1).' });
+  if (mism == null || unread == null) return res.status(400).json({ error: 'Give the number of mismatches and unread lines (0 if none).' });
+  const sha = b.report_sha256 ? String(b.report_sha256).trim().toLowerCase() : null;
+  if (sha && !/^[0-9a-f]{64}$/.test(sha)) return res.status(400).json({ error: 'The report fingerprint is a 64-character SHA-256.' });
+  if (!gateSignature(req, res, { action: 'coa_golden_attest' })) return;
+  const db = getDb();
+  const id = uuid();
+  db.prepare('INSERT INTO coa_golden_attestations (id, run_on, pdfs_read, mismatches, unread_rows, report_sha256, note, by_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(id, run_on, pdfs, mism, unread, sha, String(b.note || '').trim() || null, req.user.name);
+  const row = db.prepare('SELECT * FROM coa_golden_attestations WHERE id = ?').get(id);
+  logAudit(req.user, 'create', 'coa_golden_attestation', id, { ...row, ...signatureEvidence() }, null, row, `Golden-file run ${run_on}`);
+  res.status(201).json(row);
 });
 
 export default router;

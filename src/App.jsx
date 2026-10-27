@@ -1374,6 +1374,7 @@ function App() {
       if (e.detail?.view) setParam('view', e.detail.view);
       // `request` opens one COA request on arrival (QA Review's COA corrections).
       if (e.detail?.request) setParam('request', e.detail.request);
+      if (e.detail?.lot) setParam('lot', `${e.detail.lot.item}|${e.detail.lot.base}`);
       setActiveTab(e.detail?.tab || 'dashboard');
     };
     window.addEventListener('app-navigate', handler);
