@@ -114,6 +114,7 @@ import { seedCultureProgram } from './server/culture.js';
 import { settleFiledReviews } from './server/check-records.js';
 import { seedGenericSpecifications } from './server/spec-seed.js';
 import { retireMalformedSpecs } from './server/coa-spec-check.js';
+import { voidUnissuedCertNumbers } from './server/coa-certificate.js';
 import { seedForm607Specs } from './server/spec-607-seed.js';
 import { tagQaInspectionRecords, tagQaInspectionTasks } from './server/qa-records.js';
 import { syncAllKnifeStatuses } from './server/knife-state.js';
@@ -1513,6 +1514,15 @@ try {
   for (const r of m.reported) console.warn(`[coa] active specification ${r.item_number} · ${r.test_type} looks wrong: ${r.problems.join('; ')}`);
 } catch (err) {
   console.error('[coa] malformed specification check failed (non-fatal):', err.message);
+}
+
+// Certificate numbers the old PDF view handed to UNSIGNED requests (D-228):
+// voided once, audited with the old value; signed requests are never touched.
+try {
+  const v = voidUnissuedCertNumbers(db, logAudit);
+  if (v.voided.length) console.log(`[coa] voided ${v.voided.length} never-issued certificate number(s) on unsigned requests: ${v.voided.map(r => r.certificate_number).join(', ')}`);
+} catch (err) {
+  console.error('[coa] voiding never-issued certificate numbers failed (non-fatal):', err.message);
 }
 
 // The plant's own FORM 607-01 raw-material spec sheets, transcribed and filed
