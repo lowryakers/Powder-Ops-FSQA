@@ -60,8 +60,13 @@ sched('tr-check', 'tr-mon', 'Daily PM Checklist — Fixture Room (Qa)', 'qa', 'd
 card('tr-check-card', 'tr-check', 'tr-mon', 'Daily PM Checklist — Fixture Room (Qa)', 'qa');
 db.close();
 
+// Every server this script starts is stopped on the way out, however it exits — a crash that left one
+// running answered the next run's boot on the same port with old code.
+const procs = [];
+process.on('exit', () => { for (const p of procs) { try { p.kill(); } catch { /* gone */ } } });
 async function boot(port) {
   const proc = spawn(process.execPath, ['server.js'], { env: { ...process.env, PORT: String(port), DB_PATH: DBP, HOUSEKEEPING_MS: '0' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  procs.push(proc);
   let log = '';
   proc.stdout.on('data', (d) => { log += d; });
   proc.stderr.on('data', (d) => { log += d; });
@@ -141,7 +146,7 @@ await page.getByText('Light Inspection — Fixture Mixer Room').first().waitFor(
 const body = await page.textContent('body');
 t('it opens on QA: QA\'s inspection is there', /Light Inspection — Fixture Mixer Room/.test(body));
 t('and the Maintenance PM is not', !/Fixture Ribbon Mixer — Daily PM/.test(body));
-await page.getByRole('button', { name: 'All Groups' }).click();
+await page.getByRole('button', { name: 'All Groups' }).click({ timeout: 5000 }).catch(() => {});
 await page.getByText('Fixture Ribbon Mixer — Daily PM').first().waitFor({ timeout: 15000 }).catch(() => {});
 t('All Groups is one tap away and shows it', /Fixture Ribbon Mixer — Daily PM/.test(await page.textContent('body')));
 await browser.close();
