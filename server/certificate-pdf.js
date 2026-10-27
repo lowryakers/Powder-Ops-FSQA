@@ -20,6 +20,7 @@
 import PDFDocument from 'pdfkit';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { embedUnicodeFaces } from './pdf-unicode.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOGO_PATH = path.join(__dirname, 'assets', 'powder-ops-logo.jpg');
@@ -37,6 +38,7 @@ const pretty = (iso) => {
 
 export function renderCertificate(res, { cert, form }) {
   const doc = new PDFDocument({ size: 'LETTER', margins: { top: 42, bottom: 48, left: 50, right: 50 } });
+  embedUnicodeFaces(doc); // embedded Unicode faces, so ≤, µ and accented text print (D-235)
   const safe = String(cert.employee_name).replace(/[^a-zA-Z0-9]/g, '_');
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${cert.course_code}_Certificate_${safe}.pdf"`);

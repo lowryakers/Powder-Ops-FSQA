@@ -49,6 +49,7 @@ import { tellAssignee } from '../training-notify.js';
 import { revokeSessions } from './sessions.js';
 import { botDm, postMessageAs } from './comms.js';
 import { pushToUser } from '../push.js';
+import { embedUnicodeFaces } from '../pdf-unicode.js';
 
 export const router = Router();
 export const portalRouter = Router();
@@ -908,6 +909,7 @@ router.get('/:id/packet.pdf', (req, res) => {
   if (!rec) return res.status(404).json({ error: 'Not found' });
   const r = shape(db, rec);
   const doc = new PDFDocument({ size: 'LETTER', margin: 54 });
+  embedUnicodeFaces(doc); // embedded Unicode faces, so ≤, µ and accented text print (D-235)
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="onboarding-${(nameOf(rec) || 'packet').replace(/\W+/g, '-').toLowerCase()}.pdf"`);
   doc.pipe(res);

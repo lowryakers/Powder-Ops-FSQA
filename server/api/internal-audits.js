@@ -27,6 +27,7 @@ import {
   CHECKLIST_CODE, CHECKLIST_REVISION, SECTIONS, SECTION_IDS, sectionById, itemsForSections,
 } from '../audit-checklist.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
+import { embedUnicodeFaces } from '../pdf-unicode.js';
 
 const router = Router();
 const MODULE = 'internal-audits';
@@ -330,6 +331,7 @@ router.get('/:id/pdf', (req, res) => {
   const items = itemsFor(db, a.id);
 
   const doc = new PDFDocument({ size: 'LETTER', margin: 48 });
+  embedUnicodeFaces(doc); // embedded Unicode faces, so ≤, µ and accented text print (D-235)
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="internal-audit-${a.audit_no || a.id}.pdf"`);
   doc.pipe(res);

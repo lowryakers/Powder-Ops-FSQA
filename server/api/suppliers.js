@@ -59,6 +59,7 @@ import { postMessageAs, botDm } from './comms.js';
 import { pushToUser } from '../push.js';
 import { FORM as Q_FORM, HEADER as Q_HEADER, QUESTIONS as Q_QUESTIONS, ANSWERS as Q_ANSWERS, ANSWER_LABELS as Q_LABELS,
   SIGNATURE as Q_SIGNATURE, ATTACHMENT_KINDS as Q_ATTACH, normalizeAnswers, missingToSubmit, answersAsText } from '../supplier-questionnaire.js';
+import { embedUnicodeFaces } from '../pdf-unicode.js';
 
 const router = Router();
 
@@ -379,6 +380,7 @@ questionnaireLinkRouter.delete('/:token/files/:fileId', (req, res) => {
 function renderQuestionnairePdf({ supplier, answers, signature, files, submittedAt }) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'LETTER', margin: 54 });
+    embedUnicodeFaces(doc); // embedded Unicode faces, so ≤, µ and accented text print (D-235)
     const chunks = [];
     doc.on('data', c => chunks.push(c));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
