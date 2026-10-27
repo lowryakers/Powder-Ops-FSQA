@@ -18,6 +18,7 @@ import { getSource, safeCount } from '../qa-review.js';
 // auditor binder all read it from here.
 import { pmCompletion } from '../pm-completion.js';
 import { moduleUsage, usageText } from '../module-usage.js';
+import { taskRouting, routingText } from '../task-routing.js';
 
 const router = Router();
 
@@ -318,6 +319,13 @@ router.get('/export-all', requireRole('admin'), (req, res) => {
 router.get('/module-usage', requireRole('admin'), (req, res) => {
   const r = moduleUsage(getDb());
   res.json({ ...r, text: usageText(r, `live database, ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`) });
+});
+
+// Who sees which tasks (D-217): the same rule as /pm/operator-tasks, with every place it routes work
+// somewhere it probably should not go. READ-ONLY, run on demand, like the module-usage report.
+router.get('/task-routing', requireRole('admin'), (req, res) => {
+  const r = taskRouting(getDb());
+  res.json({ ...r, text: routingText(r, `live database, ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`) });
 });
 
 // Stored automatic backups (weekly Friday job writes them to R2 under backups/).

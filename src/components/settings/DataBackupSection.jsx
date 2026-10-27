@@ -56,33 +56,27 @@ function AutoBackupList() {
 }
 
 
-// Which modules people use (D-216). The same read-only report as `npm run report:usage`, run on the
-// live database on demand. It writes nothing; the text is for reading and for pasting to whoever asked.
-function ModuleUsage() {
+// A read-only report run on the live database on demand (D-216, D-217). Nothing runs until asked, and
+// nothing is written; the text is for reading here and for pasting to whoever asked.
+function ReadOnlyReport({ id, path, title, blurb, summary }) {
   const [report, setReport] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const run = async () => {
     setBusy(true); setError('');
-    try { setReport(await apiFetch('/compliance/module-usage')); }
+    try { setReport(await apiFetch(path)); }
     catch (e) { setError(e.message || 'The report did not run'); }
     finally { setBusy(false); }
   };
-  const fakeCount = report?.fake?.work_orders || 0;
-  const pins = report?.pin_accounts?.length || 0;
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3" data-module-usage>
+    <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3" {...{ [`data-${id}`]: true }}>
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h3 className="font-semibold text-gray-900">Module usage</h3>
-          <p className="text-sm text-gray-500 max-w-xl">
-            Which parts of ReadyDoc people actually use, counted from the audit trail since go-live. It also checks
-            for invented maintenance history from the demo build and for accounts that still sign in with a PIN.
-            Read-only: running it changes nothing.
-          </p>
+          <h3 className="font-semibold text-gray-900">{title}</h3>
+          <p className="text-sm text-gray-500 max-w-xl">{blurb} Read-only: running it changes nothing.</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <button type="button" onClick={run} disabled={busy} data-module-usage-run
+          <button type="button" onClick={run} disabled={busy} {...{ [`data-${id}-run`]: true }}
             className="px-4 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700 disabled:opacity-50 whitespace-nowrap">
             {busy ? 'Counting…' : report ? 'Run again' : 'Run the report'}
           </button>
@@ -92,18 +86,36 @@ function ModuleUsage() {
       {error && <p className="text-sm text-red-600">{error}</p>}
       {report && (
         <>
-          <p className="text-sm text-gray-700" data-module-usage-summary>
-            {report.modules.filter(m => m.verdict === 'in use').length} in use ·{' '}
-            {report.modules.filter(m => m.verdict === 'light' || m.verdict === 'dormant').length} light or dormant ·{' '}
-            {report.modules.filter(m => m.verdict === 'never used' || m.verdict === 'machine only').length} not used by a person ·{' '}
-            <span className={fakeCount ? 'text-red-700 font-medium' : ''}>{fakeCount ? `${fakeCount} invented maintenance record${fakeCount === 1 ? "" : "s"} found` : 'no invented maintenance history'}</span> ·{' '}
-            <span className={pins ? 'text-red-700 font-medium' : ''}>{pins ? `${pins} account${pins === 1 ? '' : 's'} still on a PIN` : 'no PIN-only accounts'}</span>
-          </p>
-          <pre className="text-[11px] leading-snug bg-gray-50 border border-gray-100 rounded-lg p-3 overflow-x-auto max-h-[28rem] whitespace-pre" data-module-usage-text>{report.text}</pre>
+          <p className="text-sm text-gray-700" {...{ [`data-${id}-summary`]: true }}>{summary(report)}</p>
+          <pre className="text-[11px] leading-snug bg-gray-50 border border-gray-100 rounded-lg p-3 overflow-x-auto max-h-[28rem] whitespace-pre" {...{ [`data-${id}-text`]: true }}>{report.text}</pre>
         </>
       )}
     </div>
   );
+}
+
+const red = (on, text) => <span className={on ? 'text-red-700 font-medium' : ''}>{text}</span>;
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+function usageSummary(r) {
+  const fake = r.fake?.work_orders || 0;
+  const pins = r.pin_accounts?.length || 0;
+  const count = (...v) => r.modules.filter(m => v.includes(m.verdict)).length;
+  return <>
+    {count('in use')} in use · {count('light', 'dormant')} light or dormant · {count('never used', 'machine only')} not used by a person ·{' '}
+    {red(fake, fake ? `${plural(fake, 'invented maintenance record')} found` : 'no invented maintenance history')} ·{' '}
+    {red(pins, pins ? `${plural(pins, 'account')} still on a PIN` : 'no PIN-only accounts')}
+  </>;
+}
+
+function routingSummary(r) {
+  if (!r.findings) return 'No task tables.';
+  const n = r.findings.reduce((s, f) => s + f.rows.length, 0);
+  const noDept = r.people.filter(p => /^NO DEPARTMENT|is not a team/.test(p.note)).length;
+  return <>
+    {r.active_schedules} active schedules · {red(n, n ? `${plural(n, 'item')} to look at in ${plural(r.findings.length, 'group')}` : 'nothing routed oddly')} ·{' '}
+    {red(noDept, noDept ? `${plural(noDept, 'person', 'people')} whose department routes wrong` : 'every department routes')}
+  </>;
 }
 
 export default function DataBackupSection() {
@@ -123,7 +135,10 @@ export default function DataBackupSection() {
       </div>
       <AutoBackupList />
     </div>
-    <ModuleUsage />
+    <ReadOnlyReport id="module-usage" path="/compliance/module-usage" title="Module usage" summary={usageSummary}
+      blurb="Which parts of ReadyDoc people actually use, counted from the audit trail since go-live. It also checks for invented maintenance history from the demo build and for accounts that still sign in with a PIN." />
+    <ReadOnlyReport id="task-routing" path="/compliance/task-routing" title="Who sees which tasks" summary={routingSummary}
+      blurb="What lands on each team's task list, and every schedule or card that is probably on the wrong one — machine PMs on QA, old room checklists, cards left behind — with where each is changed. Also each person's card count." />
     </div>
   );
 }

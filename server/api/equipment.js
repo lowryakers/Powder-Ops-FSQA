@@ -13,6 +13,7 @@ import { equipmentReadiness, readinessSummary, READINESS_STEPS, stampEquipmentRe
 import { ASSET_KINDS, defaultAssetKind } from '../../shared/equipment-types.js';
 import { isDesignedChecklist } from '../truck-checklists.js';
 import { checklistCoverage, isConsolidated, CONSOLIDATED_LIKE } from '../pm-coverage.js';
+import { TASK_TITLE_SQL } from '../qa-records.js';
 
 // The status vocabulary the table's CHECK-free column actually uses.
 const STATUSES = ['active', 'partial', 'out_of_service'];
@@ -99,15 +100,23 @@ function syncMaintenanceTasksToPM(db, equipmentId) {
 // routes the tasks to the chosen department.
 function syncTaskGroupToPM(db, equipmentId, taskGroup) {
   const tg = taskGroup || null;
-  // QA's inspections on this machine (tagged 'qa' by tagQaInspectionTasks)
-  // are QA's whichever department maintains the machine — re-routing them
-  // silently moved them off QA's list until the next restart re-tagged them.
-  // A room checklist anchored on this machine is the ROOM's team's, not this
-  // machine's (D-138) — re-routing one machine must not move a whole room.
-  db.prepare(`UPDATE pm_schedules SET task_group = ?, updated_at = datetime('now') WHERE equipment_id = ? AND COALESCE(task_group, '') != 'qa'
+  // QA's INSPECTIONS on this machine (BP&G, Light, Temp & Humidity — the titles tagQaInspectionTasks
+  // owns) are QA's whichever department maintains the machine. That exemption used to be "anything
+  // already on QA" (D-217), which also kept every machine PM that had ever been on QA there for good:
+  // move the machine to Maintenance and its Daily PM stayed on QA's list. Only the inspections are kept.
+  // A room checklist anchored on this machine is the ROOM's team's, not this machine's (D-138) —
+  // re-routing one machine must not move a whole room.
+  // MISSED cards move too: housekeeping turns yesterday's card missed, and a missed card left on the old
+  // team is still on that team's Operator View.
+  db.prepare(`UPDATE pm_schedules SET task_group = ?, updated_at = datetime('now') WHERE equipment_id = ? AND NOT ${TASK_TITLE_SQL}
     AND (description IS NULL OR description NOT LIKE ?)`).run(tg, equipmentId, CONSOLIDATED_LIKE);
-  db.prepare(`UPDATE work_orders SET task_group = ? WHERE equipment_id = ? AND status IN ('open','in_progress','overdue') AND COALESCE(task_group, '') != 'qa'
-    AND (pm_schedule_id IS NULL OR pm_schedule_id NOT IN (SELECT id FROM pm_schedules WHERE description LIKE ?))`).run(tg, equipmentId, CONSOLIDATED_LIKE);
+  // The cards follow THEIR schedule. A card no schedule raised (a reported issue, a chat task) keeps the old
+  // rule; a quality-schedule card is QA's and never moves with a machine.
+  db.prepare(`UPDATE work_orders SET task_group = ? WHERE status IN ('open','in_progress','overdue','missed') AND (
+      pm_schedule_id IN (SELECT id FROM pm_schedules WHERE equipment_id = ? AND NOT ${TASK_TITLE_SQL}
+        AND (description IS NULL OR description NOT LIKE ?))
+      OR (equipment_id = ? AND pm_schedule_id IS NULL AND quality_schedule_id IS NULL AND COALESCE(task_group, '') != 'qa'))`)
+    .run(tg, equipmentId, CONSOLIDATED_LIKE, equipmentId);
 }
 
 router.get('/', (req, res) => {

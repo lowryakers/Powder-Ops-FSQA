@@ -60,7 +60,7 @@ export function tagQaInspectionRecords(db) {
 //   "Temp & Humidity Check — Production"
 // SQL rather than the regex because this re-tags in bulk, and the two are kept
 // side by side so a change to one is an obvious prompt to change the other.
-const TASK_TITLE_SQL = `(title LIKE 'Brittle Plastic%' OR title LIKE 'Light Inspection%'
+export const TASK_TITLE_SQL = `(title LIKE 'Brittle Plastic%' OR title LIKE 'Light Inspection%'
   OR title LIKE 'Temp & Humidity%' OR title LIKE 'Temp/Humidity%'
   OR title LIKE 'Temperature & Humidity%' OR title LIKE 'Temperature and Humidity%')`;
 

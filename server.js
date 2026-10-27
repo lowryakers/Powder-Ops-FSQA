@@ -1102,8 +1102,9 @@ try {
   // Every boot, idempotent by construction: the line comes off the checklist,
   // and a checklist left empty is paused with its open cards cancelled.
   for (const r of repairChecklistOverlap(db, logAudit)) {
+    if (!r.removed.length) { console.log(`[migrate] Checklist "${r.title}" re-hung on a machine it still covers (its own machine's line had come off)`); continue; }
     console.log(`[migrate] Checklist overlap: "${r.title}" — ${r.removed.length} line(s) removed (each machine has its own daily schedule)`
-      + (r.paused ? `, checklist paused, ${r.cancelled} open card(s) cancelled` : `, ${r.kept} line(s) kept`));
+      + (r.paused ? `, checklist paused, ${r.cancelled} open card(s) cancelled` : `, ${r.kept} line(s) kept`) + (r.rehung_to ? ', re-hung on a machine it still covers' : ''));
     for (const x of r.removed) console.log(`[migrate]   ${x.line} → ${x.own_schedule.join(', ')}`);
   }
   // An active schedule the generator skips is NAMED at boot (D-142) — the same

@@ -8462,3 +8462,29 @@ Data backup → Module usage** (admin only, `GET /api/compliance/module-usage`),
 - The PIN check names accounts only; the verify asserts the PIN never reaches the browser.
 - A fresh database still reports the seven demo PIN accounts. That is item 1b of the cleanup plan, still open.
 - Verified: `verify:moduleusage` (22, live + browser at 1280 and 390px; in `verify:all`).
+
+## D-217 — Who sees which tasks: three routing defects, and a report for the rest (27 Oct 2026)
+
+Maria: QA still sees Daily PM tasks. The screenshot showed "Daily PM Checklist — Production (Qa)" beside the
+three Temp & Humidity checks, naming the Production 1 monitor. Lowry suspected more people see work that is not
+theirs. A card reaches a person by one rule (`/pm/operator-tasks`): its team is their department, or it is
+assigned to them. A schedule's team follows its machine's team. Three things broke that rule's inputs:
+- **A machine PM that had ever been on QA stayed on QA.** `syncTaskGroupToPM` exempted "anything already QA" so
+  QA's inspections would not leave with the machine — and that also pinned every machine PM routed to QA once.
+  The exemption is now QA's inspection titles only (`TASK_TITLE_SQL`, exported from `qa-records.js`, the one
+  list `tagQaInspectionTasks` owns). Cards follow THEIR schedule, MISSED included; a quality-schedule card never
+  moves with a machine. **Not a data change**: schedules already stuck move the next time the machine's team is
+  saved. The report names them.
+- **A room checklist kept naming a machine it no longer covered.** D-138 took the Temp & Humidity lines off the QA
+  checklist and left it hung on the Production 1 monitor. `repairChecklistOverlap` (every boot) re-hangs a
+  checklist, and its open cards, on a machine still on it, audited. Whether the QA checklist should run at all is
+  still the plant's call (D-138: reported, never unfolded); the report lists each line and whether its machine has
+  a daily of its own.
+- **The Task Center's team tabs were admin-only.** Anyone else holding Task Center saw every team's work mixed
+  together. Everyone gets the tabs now; a non-admin opens on their own team, All Groups one tap away. A default,
+  not a restriction.
+- **Settings → Data backup → Who sees which tasks** (`server/task-routing.js`, `GET /compliance/task-routing`,
+  `npm run report:routing -- <copy>`): per team, what lands on its list; nine kinds of finding, each with why and
+  where it is changed; each person's card count, and the people whose department routes wrong (blank falls back
+  to Warehouse; `production` routes nowhere). Read-only, the D-216 shape.
+- Verified: `verify:taskrouting` (27, two boots + browser). **Control (the three fixes undone) fails 8.**
