@@ -215,6 +215,19 @@ try {
   r = await call('GET', '/coa/specifications/pdf?item_number=COA-C');
   const sheetText = r.s === 200 ? (await readPdfColumns(r.j)).text : '';
   t('the spec sheet prints "≤ 0.5" too', /≤ 0\.5/.test(sheetText), sheetText.split('\n').find(l => /Arsenic/.test(l)) || '');
+  // The other symbols a specification is written with (D-239).
+  await call('POST', '/coa/specifications', { item_number: 'COA-G', item_description: 'Glyph check', test_type: 'Lead', specification: '≥ 0.1 µg/g <4 °C™', unit: 'ppm' }, A);
+  const gx = await req('COA-G', 'G-1');
+  await call('POST', `/coa/requests/${gx.id}/results`, { results: [{ test_type: 'Lead', result_value: '0.2', unit: 'ppm' }] });
+  r = await call('GET', `/coa/requests/${gx.id}/pdf?draft=1`);
+  const gText = r.s === 200 ? (await readPdfColumns(r.j)).text : '';
+  const gLine = gText.split('\n').find(l => /Lead/.test(l)) || '';
+  // The micro sign comes back from a reader as Greek mu — the same glyph.
+  const glyphs = (txt) => { const x = txt.replace(/μ/g, 'µ'); return ['≥ 0.1', 'µg/g', '<4', '°C', '™'].every(g => x.includes(g)); };
+  t('a draft certificate prints ≥ µ ° ™ and < as written', glyphs(gLine), gLine);
+  r = await call('GET', '/coa/specifications/pdf?item_number=COA-G');
+  const gSheet = r.s === 200 ? (await readPdfColumns(r.j)).text : '';
+  t('… and so does the spec sheet', glyphs(gSheet), gSheet.split('\n').find(l => /Lead/.test(l)) || '');
 
   console.log('\n── two certificates issued at once (D-223)');
   const ids = [];

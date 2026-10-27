@@ -6,6 +6,7 @@ import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import { formatDateTime } from '../../lib/datetime.js';
 import SortHeader from '../common/SortHeader.jsx';
 import FrozenScroll from '../common/FrozenScroll';
+import { actionLabel } from '../../../shared/audit-labels.js';
 
 // Columns as data. These keys are the ones the server allowlists in SORTABLE —
 // offering a header the server would ignore is how a click silently does
@@ -228,7 +229,7 @@ export default function AuditLogPanel() {
                 <div key={entry.id} className="px-3 py-2.5">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-medium text-gray-900 text-sm truncate">{entry.actor}</span>
-                    <span className={`shrink-0 px-2 py-0.5 rounded text-[11px] ${SECURITY_ACTIONS.has(entry.action) ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-700'}`}>{entry.action.replace(/_/g, ' ')}</span>
+                    <span className={`shrink-0 px-2 py-0.5 rounded text-[11px] ${SECURITY_ACTIONS.has(entry.action) ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-700'}`}>{actionLabel(entry)}</span>
                   </div>
                   <div className="mt-0.5 text-xs text-gray-600">
                     {entry.entity_label || entry.entity_type}
@@ -270,7 +271,7 @@ export default function AuditLogPanel() {
                           : <span className="text-gray-300 text-xs">—</span>}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
-                        <span className={`px-2 py-0.5 rounded text-xs ${SECURITY_ACTIONS.has(entry.action) ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-700'}`}>{entry.action}</span>
+                        <span className={`px-2 py-0.5 rounded text-xs ${SECURITY_ACTIONS.has(entry.action) ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-700'}`} data-action-label>{actionLabel(entry)}</span>
                       </td>
                       <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
                         {entry.entity_label || entry.entity_type}
@@ -286,7 +287,7 @@ export default function AuditLogPanel() {
                           { label: 'Actor', value: entry.actor },
                           { label: 'Role', value: entry.actor_role },
                           { label: 'Department', value: entry.actor_department },
-                          { label: 'Action', value: entry.action },
+                          { label: 'Action', value: actionLabel(entry) === entry.action ? entry.action : `${actionLabel(entry)} (${entry.action})` },
                           { label: 'Entity', value: entry.entity_label || entry.entity_type },
                           { label: 'Entity type', value: entry.entity_type },
                           { label: 'Entity ID', value: entry.entity_id },

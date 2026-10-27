@@ -3,7 +3,7 @@ import { useApiGet, apiPost, apiPut, apiDelete, apiUpload, apiFetch } from '../.
 import { withSignature } from '../../lib/signature';
 import DraftSpecsReview from './DraftSpecsReview.jsx';
 import { useAuth } from '../../hooks/useAuth';
-import { canEditModule } from '../../utils/permissions';
+import { canEditModule, canSeeQaReview } from '../../utils/permissions';
 import { Plus, Search, FileText, Upload, Download, Trash2, Edit2, FlaskConical, Building2, ClipboardList, CheckCircle2, X, PackageSearch, AlertTriangle, ChevronUp, ChevronDown, CheckSquare, Square, PenLine } from 'lucide-react';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import CopyButton from '../common/CopyButton.jsx';
@@ -11,6 +11,9 @@ import { downloadFile } from '../../lib/downloadFile.js';
 import { SignaturePad } from '../common/SignatureCanvas.jsx';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 import FrozenScroll from '../common/FrozenScroll';
+import { getParam, consumeParam } from '../../lib/deepLink.js';
+import { BATCH_STATE_LABEL } from '../../../shared/lot-model.js';
+import BrandReview from './BrandReview.jsx';
 
 // Typed-confirmation dialog for permanent, irreversible bulk deletion.
 function ConfirmDeleteModal({ count, onConfirm, onClose }) {
@@ -135,6 +138,7 @@ function ReleaseGateStrip({ isAdmin, refreshKey }) {
           <span data-gate-covered={data.items_fully_covered}>{data.items_fully_covered} of {data.items_total} tested items fully specified</span>
           {' · '}<span data-gate-with-gaps={data.released_with_gaps_count}>{data.released_with_gaps_count} released carrying gaps</span>
           {' · '}<span data-gate-held={data.held_count}>{data.held_count} held</span>
+          {data.lot_rollup && <>{' · '}<span data-lot-rollup={data.lot_rollup.not_met_count}>{data.lot_rollup.not_met_count} lot{data.lot_rollup.not_met_count === 1 ? '' : 's'} short of the per-lot gluten policy</span></>}
         </div>
         <div className="ml-auto flex items-center gap-2">
           {isAdmin && (
@@ -164,6 +168,19 @@ function ReleaseGateStrip({ isAdmin, refreshKey }) {
               </ul>
             )}
           </div>
+          {data.lot_rollup && (
+            <div className="md:col-span-2" data-lot-rollup-list>
+              <div className="font-semibold mb-1">Per-lot gluten policy — advisory, gates nothing ({data.lot_rollup.not_met_count} of {data.lot_rollup.lots_total} lots not met)</div>
+              <p className="opacity-80 mb-1">A lot meets it only when every batch known to ReadyDoc (the COA requests on file for that lot) has a signed, passing gluten result.</p>
+              {data.lot_rollup.not_met.length === 0 ? <div className="opacity-70">Every lot is met.</div> : (
+                <ul className="space-y-1 max-h-56 overflow-y-auto">
+                  {data.lot_rollup.not_met.map(l => (
+                    <li key={l.base_lot}><span className="font-medium">Lot {l.base_lot}</span> {l.item_description || ''} — {l.at_fault.map(b => `${b.batch ? `batch ${b.batch}` : 'the lot'}: ${BATCH_STATE_LABEL[b.state]}`).join('; ')}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
           <div>
             <div className="font-semibold mb-1">Released carrying gaps ({data.released_with_gaps_count}) · held ({data.held_count})</div>
             {data.released_with_gaps.length + data.held.length === 0 ? <div className="opacity-70">None.</div> : (
@@ -989,8 +1006,33 @@ function CoaSettingsCard() {
   );
 }
 
+// The COA corrections decided for this request (D-236), with the steps the
+// server derives — the same rows QA Review shows.
+function CorrectionItems({ items }) {
+  const open = (items || []).filter(i => i.status === 'open');
+  if (!open.length) return null;
+  return (
+    <div className="space-y-2" data-correction-items>
+      {open.map(i => (
+        <div key={i.item_key} className={`rounded-lg border px-3 py-2 text-xs ${i.complete ? 'border-green-200 bg-green-50 text-green-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
+          <p className="font-semibold">{i.complete ? 'Correction done: ' : 'Correction to make: '}{i.recommended_action}</p>
+          <p className="mt-0.5">{i.reason}</p>
+          <ul className="mt-1 space-y-0.5">
+            {(i.steps || []).map(st => (
+              <li key={st.key} className="flex items-center gap-1.5" data-correction-step={st.key} data-done={st.done ? '1' : '0'}>
+                {st.done ? <CheckCircle2 size={12} className="text-green-600" /> : <Square size={12} className="text-gray-400" />} {st.label}
+              </li>
+            ))}
+          </ul>
+          {i.blockedBy && !i.complete && <p className="mt-1 italic">{i.blockedBy}</p>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function RequestDetail({ requestId, labs, onClose, onRefresh }) {
-  const { data: detail, loading, refresh: refreshDetail } = useApiGet(`/coa/requests/${requestId}`, [requestId]);
+  const { data: detail, loading, error: detailError, refresh: refreshDetail } = useApiGet(`/coa/requests/${requestId}`, [requestId]);
   const { user } = useAuth() || {};
   const canSign = !!user && (['admin', 'supervisor'].includes(user.role) || user.department === 'qa');
   const canSetBrand = !!user && (user.role === 'admin' || user.department === 'qa');
@@ -1023,7 +1065,39 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
     URL.revokeObjectURL(url);
   };
 
+  if (!loading && !detail && detailError) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 p-8 text-center" data-request-gone>
+        <p className="font-semibold text-gray-900">This request no longer exists</p>
+        <p className="text-sm text-gray-500 mt-1">It may have been deleted as a duplicate.</p>
+        <button onClick={onClose} className="mt-3 px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-200 hover:bg-gray-50">Back to the list</button>
+      </div>
+    );
+  }
   if (loading || !detail) return <div className="p-8 text-center text-gray-400">Loading...</div>;
+
+  // What the server says this person may do to THIS request (D-236): an admin
+  // as before, or Quality while a COA correction in QA Review asks for it.
+  const correction = detail.correction || { unsign: false, delete: false };
+  const unsign = async () => {
+    const reason = prompt('Why is this signature being removed? The certificate number is voided and a new one is issued when it is signed again.');
+    if (!reason || reason.trim().length < 3) return;
+    try {
+      await withSignature((extra) => apiFetch(`/coa/requests/${requestId}/sign`, { method: 'DELETE', body: { reason: reason.trim(), ...extra } }),
+        { title: 'Remove the signature', detail: `${detail.item_description} · Lot ${detail.lot_number}` });
+      setGateMsg(null);
+    } catch (e) { if (e?.cancelled) return; setGateMsg(e.message); }
+    refreshDetail(); onRefresh();
+  };
+  const deleteDuplicate = async () => {
+    const reason = prompt('Why is this request being deleted? (It is an empty duplicate — say which request keeps the lab report.)');
+    if (!reason || reason.trim().length < 3) return;
+    try {
+      await withSignature((extra) => apiPost('/coa/requests/bulk-delete', { ids: [requestId], reason: reason.trim(), ...extra }),
+        { title: 'Delete this duplicate', detail: `${detail.item_description} · Lot ${detail.lot_number}` });
+    } catch (e) { if (e?.cancelled) return; setGateMsg(e.message); return; }
+    onRefresh(); onClose();
+  };
 
   const handleUpdate = async (form) => {
     try { await apiPut(`/coa/requests/${requestId}`, form); setGateMsg(null); }
@@ -1086,7 +1160,7 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
           <div>
             <h3 className="font-semibold text-gray-900">{detail.item_number} - {detail.item_description}</h3>
-            <p className="text-xs text-gray-500">Lot: {detail.lot_number}{detail.manufacturer_lot ? ` | Mfg Lot: ${detail.manufacturer_lot}` : ''}{detail.vendor_lot ? ` | Vendor: ${detail.vendor_lot}` : ''}</p>
+            <p className="text-xs text-gray-500">Lot: {detail.lot_number}{detail.batch ? <span className="ml-1 px-1.5 py-0.5 rounded bg-gray-100 text-gray-600" data-batch-chip>lot {detail.base_lot} · batch {detail.batch}</span> : null}{detail.lot_suspect ? <span className="ml-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-700" title="A ProDough lot is six digits. Check this one with the lab; it is not changed here.">check lot</span> : null}{detail.manufacturer_lot ? ` | Mfg Lot: ${detail.manufacturer_lot}` : ''}{detail.vendor_lot ? ` | Vendor: ${detail.vendor_lot}` : ''}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -1164,14 +1238,8 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
           {detail.qa_signed_by ? (
             <span className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 rounded-lg flex items-center gap-1">
               <CheckCircle2 size={12} /> Signed by {detail.qa_signed_by} · {(detail.qa_signed_at || '').slice(0, 10)}
-              {user?.role === 'admin' && (
-                <button onClick={async () => {
-                  const reason = prompt('Why is this signature being removed? The certificate number is voided and a new one is issued when it is signed again.');
-                  if (!reason || reason.trim().length < 3) return;
-                  try { await apiFetch(`/coa/requests/${requestId}/sign`, { method: 'DELETE', body: { reason: reason.trim() } }); setGateMsg(null); }
-                  catch (e) { setGateMsg(e.message); }
-                  refreshDetail(); onRefresh();
-                }} data-unsign
+              {correction.unsign && (
+                <button onClick={unsign} data-unsign
                   className="ml-1 text-green-600 hover:text-red-600" title="Remove signature"><X size={11} /></button>
               )}
             </span>
@@ -1182,6 +1250,13 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
             </button>
           )}
         </div>
+        {correction.delete && !detail.qa_signed_at && (
+          <button onClick={deleteDuplicate} data-delete-duplicate
+            className="px-3 py-1.5 text-xs font-medium bg-red-50 text-red-700 rounded-lg hover:bg-red-100 inline-flex items-center gap-1">
+            <Trash2 size={12} /> Delete this request
+          </button>
+        )}
+        <CorrectionItems items={detail.correction_items} />
         {showSign && <SignCoaModal requestId={requestId} onClose={() => setShowSign(false)} onSigned={() => { setShowSign(false); refreshDetail(); onRefresh(); }} />}
 
         {/* Test Results */}
@@ -2180,11 +2255,20 @@ export default function COAPanel() {
   const { user } = useAuth() || {};
   const canEdit = canEditModule(user, 'coa');
   const isAdmin = user?.role === 'admin';
+  // Brand review is for an admin or a QA reviewer — the server's own rule (D-238).
+  const canBrandReview = canSeeQaReview(user);
   const [subTab, setSubTab] = useState('requests');
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState(null);
   const [matReqItem, setMatReqItem] = useState(null);
-  const [selectedId, setSelectedId] = useState(null);
+  // A request opened from elsewhere (QA Review's COA corrections, D-236).
+  const [selectedId, setSelectedId] = useState(() => getParam('request'));
+  useEffect(() => { if (getParam('request')) consumeParam('request'); }, []);
+  useEffect(() => {
+    const h = (e) => { if (e.detail?.tab === 'coa' && e.detail?.request) { setSubTab('requests'); setSelectedId(e.detail.request); } };
+    window.addEventListener('app-navigate', h);
+    return () => window.removeEventListener('app-navigate', h);
+  }, []);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [showUploadCoa, setShowUploadCoa] = useState(false);
@@ -2197,17 +2281,19 @@ export default function COAPanel() {
   const [msg, setMsg] = useState(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
 
-  // The log is bounded server-side (1,391 imported requests is megabytes to a
-  // phone). `showAll` raises the bound on demand; the strip below says what is
-  // being shown out of what exists, so a capped list never reads as missing
-  // data — which is how it was reported.
-  const [showAll, setShowAll] = useState(false);
+  // EVERY request, at once. The list used to stop at the 500 most recent with
+  // a "Load all" button, and a log that opens part-loaded reads as rows that
+  // are missing (asked 27 Oct). The list payload carries no signature images
+  // or snapshots, so the whole log is one modest request. The server still
+  // caps at 5,000 and the strip below says so if that is ever reached.
+  const [baseLot, setBaseLot] = useState('');
   const reqQuery = [
     statusFilter !== 'all' ? `status=${statusFilter}` : '',
-    showAll ? 'limit=5000' : '',
+    baseLot ? `base_lot=${encodeURIComponent(baseLot)}` : '',
+    'limit=5000',
   ].filter(Boolean).join('&');
   const { data: reqPayload, loading: loadingReqs, refresh: refreshReqs } =
-    useApiGet('/coa/requests' + (reqQuery ? `?${reqQuery}` : ''), [statusFilter, showAll]);
+    useApiGet('/coa/requests' + (reqQuery ? `?${reqQuery}` : ''), [statusFilter, baseLot]);
   // Tolerates both shapes so a client running against an older server (or
   // mid-deploy) still lists its requests instead of rendering nothing.
   const requests = Array.isArray(reqPayload) ? reqPayload : (reqPayload?.requests || null);
@@ -2275,8 +2361,21 @@ export default function COAPanel() {
     const blocked = res.blocked?.length ? ` ${res.blocked.length} held by the specification gate: ${res.blocked.map(b => `lot ${b.lot_number}`).join(', ')}.` : '';
     setBulkStatus(''); clearSelection(); flash(`Updated ${res.updated} request${res.updated === 1 ? '' : 's'}.${blocked}`); refreshReqs(); refreshSummary();
   };
+  // Admin; or Quality when every ticked request is an empty duplicate a COA
+  // correction names (D-236) — then with a reason and the password.
+  const byId = useMemo(() => new Map((requests || []).map(r => [r.id, r])), [requests]);
+  const canDeleteSelection = selected.size > 0 && (isAdmin || [...selected].every(id => byId.get(id)?.correction?.delete));
   const handleBulkDelete = async () => {
-    const res = await apiPost('/coa/requests/bulk-delete', { ids: [...selected] });
+    let reason = '';
+    if (!isAdmin) {
+      reason = prompt('Why are these requests being deleted? (Empty duplicates — say which request keeps the lab report.)') || '';
+      if (reason.trim().length < 3) { setConfirmDelete(false); return; }
+    }
+    let res;
+    try {
+      res = await withSignature((extra) => apiPost('/coa/requests/bulk-delete', { ids: [...selected], ...(reason ? { reason: reason.trim() } : {}), ...extra }),
+        { title: `Delete ${selected.size} request${selected.size === 1 ? '' : 's'}` });
+    } catch (e) { setConfirmDelete(false); if (!e?.cancelled) flash(e.message); return; }
     setConfirmDelete(false); clearSelection(); flash(`Permanently deleted ${res.deleted} request${res.deleted === 1 ? '' : 's'}.`); refreshReqs(); refreshSummary();
   };
 
@@ -2349,7 +2448,10 @@ export default function COAPanel() {
           { id: 'lot-lookup', label: 'Lot Lookup', icon: PackageSearch },
           { id: 'specs', label: 'Specifications', icon: ClipboardList },
           { id: 'labs', label: 'Labs', icon: Building2 },
+          ...(canBrandReview ? [{ id: 'brands', label: 'Brand review', icon: CheckSquare }] : []),
         ]} />
+
+      {subTab === 'brands' && canBrandReview && <BrandReview onApplied={() => refreshReqs()} />}
 
       {/* ───── Requests Tab ───── */}
       {subTab === 'requests' && (
@@ -2395,7 +2497,7 @@ export default function COAPanel() {
                 <option value="">Set status…</option>
                 {Object.entries(STATUS_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
               </select>
-              {isAdmin && (
+              {canDeleteSelection && (
                 <button onClick={() => setConfirmDelete(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700"><Trash2 size={14} /> Delete permanently</button>
               )}
               <button onClick={clearSelection} className="px-3 py-1.5 text-gray-500 text-sm font-medium rounded-lg hover:bg-gray-100">Clear</button>
@@ -2410,19 +2512,16 @@ export default function COAPanel() {
               server-side on the whole table, so narrowing finds the rest
               without loading everything. */}
           {reqTotal != null && reqShown != null && reqShown < reqTotal && (
-            <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-              <span>
-                Showing the {reqShown.toLocaleString()} most recent of {reqTotal.toLocaleString()} lab requests.
-                Search or filter to reach an older one — nothing is missing.
-              </span>
-              <button type="button" onClick={() => setShowAll(true)}
-                className="ml-auto px-2.5 py-1 rounded-lg border border-amber-300 bg-white font-medium hover:bg-amber-100">
-                Load all {reqTotal.toLocaleString()}
-              </button>
+            <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900" data-req-capped>
+              Showing the {reqShown.toLocaleString()} most recent of {reqTotal.toLocaleString()} lab requests — the most the
+              screen loads at once. Search or filter to reach an older one; nothing is missing.
             </div>
           )}
-          {showAll && reqTotal != null && (
-            <p className="mb-2 text-xs text-gray-400">Showing all {reqTotal.toLocaleString()} lab requests.</p>
+          {baseLot && (
+            <p className="mb-2 text-xs text-gray-600" data-base-lot-filter>
+              Every batch of lot <span className="font-semibold">{baseLot}</span> known to ReadyDoc.
+              <button onClick={() => setBaseLot('')} className="ml-2 text-powder-600 hover:underline">Show all lots</button>
+            </p>
           )}
 
           {loadingReqs ? (
@@ -2452,7 +2551,7 @@ export default function COAPanel() {
                     </div>
                   </div>
                   <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500 min-w-0">
-                    {r.lot_number && <span className="min-w-0 break-all">Lot <span className="font-medium text-gray-700">{r.lot_number}</span></span>}
+                    {r.lot_number && <span className="min-w-0 break-all">Lot <span className="font-medium text-gray-700">{r.lot_number}</span>{r.batch && <span className="ml-1 px-1 rounded bg-gray-100 text-[10px] font-semibold" data-batch-chip>batch {r.batch}</span>}</span>}
                     {r.tests_requested && <span className="break-words">{r.tests_requested}</span>}
                   </div>
                   <div className="mt-0.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-400 min-w-0">
@@ -2501,7 +2600,16 @@ export default function COAPanel() {
                         )}
                         <td className="px-3 py-2.5 font-medium text-powder-700 whitespace-nowrap">{r.item_number}</td>
                         <td className="px-3 py-2.5 text-gray-700 w-full">{r.item_description}</td>
-                        <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">{r.lot_number}</td>
+                        <td className="px-3 py-2.5 text-gray-600" data-lot-cell>
+                          <span className="inline-flex items-center gap-1 max-w-[14rem]">
+                            <span className="truncate" title={r.lot_number}>{r.base_lot && r.batch ? r.base_lot : r.lot_number}</span>
+                            {r.batch && (
+                              <button onClick={e => { e.stopPropagation(); setBaseLot(r.base_lot); }} data-batch-chip
+                                title={`Batch ${r.batch} of lot ${r.base_lot} — show every batch of this lot`}
+                                className="shrink-0 px-1.5 py-0.5 rounded bg-gray-100 text-[10px] font-semibold text-gray-600 hover:bg-powder-100">b{r.batch}</button>
+                            )}
+                          </span>
+                        </td>
                         <td className="px-3 py-2.5 text-gray-600">{r.tests_requested}</td>
                         <td className="px-3 py-2.5 whitespace-nowrap"><span className="inline-flex items-center gap-1.5"><StatusBadge status={r.status} /><GapsChip request={r} /></span></td>
                         <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">{r.lab_name || '-'}</td>

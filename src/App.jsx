@@ -1372,6 +1372,8 @@ function App() {
       // `view` is the tab INSIDE the module (useModuleTabs reads it at mount),
       // so it must be in place before the tab switch mounts the module.
       if (e.detail?.view) setParam('view', e.detail.view);
+      // `request` opens one COA request on arrival (QA Review's COA corrections).
+      if (e.detail?.request) setParam('request', e.detail.request);
       setActiveTab(e.detail?.tab || 'dashboard');
     };
     window.addEventListener('app-navigate', handler);

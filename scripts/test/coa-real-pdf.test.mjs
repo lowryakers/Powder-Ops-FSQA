@@ -26,21 +26,36 @@ function layoutGlutenTokens(file) {
 
 if (!files.length) test('real CTLA reports', { skip: 'COA_REAL_PDF_DIR is not set (or holds no PDFs)' }, () => {});
 
+// The MDL as the line itself prints it: a number right before "Report" in the
+// merged "MDL Specification" cell, or the MDL column's own cell.
+function printedMdl(text, testType) {
+  const line = text.split('\n').find(l => l.startsWith('|') && l.includes(testType));
+  if (!line) return undefined;
+  const m = line.match(/\|\s*(\.\d+|\d+(?:\.\d+)?)\s+Report\s*\|/i);
+  return m ? m[1] : null;
+}
+
 for (const f of files) {
-  test(`real CTLA report ${f}: no doubled MDL, gluten read as printed`, async () => {
+  test(`real CTLA report ${f}: MDL read, no doubled MDL, gluten read as printed`, async () => {
     const full = path.join(dir, f);
-    const parsed = parseColumnarCoa((await readPdfColumns(readFileSync(full))).text);
-    assert.ok(parsed.test_results.length, 'the reader found test rows');
+    const text = (await readPdfColumns(readFileSync(full))).text;
+    const parsed = parseColumnarCoa(text);
+    // A real report that yields no rows FAILS — it never skips (D-239).
+    assert.ok(parsed.test_results.length, `${f}: the reader found no test rows`);
     for (const r of parsed.test_results) {
-      if (!r.mdl) continue;
-      const doubled = new RegExp(`^[<>≤≥]?${r.mdl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}{2}$`);
-      assert.ok(!doubled.test(r.result_value), `${r.test_type}: "${r.result_value}" is the MDL ${r.mdl} printed twice`);
+      const printed = printedMdl(text, r.test_type);
+      if (printed) assert.equal(r.mdl, printed, `${r.test_type}: the line prints MDL ${printed} before "Report", read ${r.mdl}`);
+      if (r.mdl) {
+        const doubled = new RegExp(`^[<>≤≥]?(?:${r.mdl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}){2}$`);
+        assert.ok(!doubled.test(r.result_value), `${r.test_type}: "${r.result_value}" is the MDL ${r.mdl} printed twice`);
+      }
     }
     const gluten = parsed.test_results.filter(r => /gluten/i.test(r.test_type));
     const printed = layoutGlutenTokens(full);
     for (const g of gluten) {
+      assert.equal(g.result_value, '<4', `${g.test_type}: read "${g.result_value}"`);
+      assert.equal(g.mdl, '4', `${g.test_type}: MDL read as ${g.mdl}, the report prints 4`);
       if (printed?.length) assert.ok(printed.includes(g.result_value), `${g.test_type}: read "${g.result_value}", pdftotext -layout shows ${printed.join(' ')}`);
-      else assert.equal(g.result_value, '<4', `${g.test_type}: read "${g.result_value}"`);
     }
   });
 }

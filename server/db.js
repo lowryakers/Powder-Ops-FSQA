@@ -4205,6 +4205,34 @@ function runMigrations() {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+  // COA corrections waiting on Quality (D-236): one row per decided item,
+  // keyed for idempotence. Progress is DERIVED (server/coa-review-items.js),
+  // never stored here; `status` only records an admin dismissing an item.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS coa_review_items (
+      id TEXT PRIMARY KEY,
+      item_key TEXT NOT NULL UNIQUE,
+      kind TEXT NOT NULL,
+      request_id TEXT NOT NULL,
+      title TEXT,
+      recommended_action TEXT,
+      reason TEXT,
+      evidence TEXT,
+      steps TEXT,
+      decision_ref TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      dismissed_by TEXT,
+      dismissed_reason TEXT,
+      dismissed_at TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_coa_review_items_request ON coa_review_items(request_id);
+  `);
+  // A lot's base and its batch (D-237): 101690-1 is batch 1 of lot 101690.
+  // Derived from lot_number, which is never changed.
+  addColumnIfMissing('coa_requests', 'base_lot', 'TEXT');
+  addColumnIfMissing('coa_requests', 'batch', 'TEXT');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_coa_requests_base_lot ON coa_requests(base_lot)');
   db.prepare("INSERT OR IGNORE INTO coa_brands (id, name, public_publish_allowed) VALUES ('brand-prodough', 'ProDough', 0)").run();
   db.prepare("INSERT OR IGNORE INTO coa_settings (key, value, updated_by) VALUES ('evidence_disclosure_mode', 'never', 'system')").run();
   db.prepare("INSERT OR IGNORE INTO coa_settings (key, value, updated_by) VALUES ('public_nonclaim_gluten_display', 'hidden', 'system')").run();

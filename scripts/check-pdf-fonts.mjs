@@ -37,7 +37,7 @@ for (const file of walk('server')) {
   });
 }
 
-const SAMPLE = 'Arsenic ≤ 0.5 ppm · 25 µg · José Núñez ±2 °C';
+const SAMPLE = 'Arsenic ≤ 0.5 ppm · ≥ 1 · 25 µg · José Núñez ±2 °C · ProDough™ <4';
 
 async function render(draw, { faces = true } = {}) {
   const doc = new PDFDocument({ size: 'LETTER', margin: 54 });
@@ -64,6 +64,14 @@ ok(emoji.includes(squash(SAMPLE)), 'richText with an emoji prints the sample', e
 // The control: without the faces the sample does not survive.
 const control = squash(await render(d => d.font('Helvetica').text(SAMPLE), { faces: false }));
 ok(!control.includes('≤ 0.5'), 'control: built-in Helvetica cannot print "≤" (so the check above means something)', control);
+
+// No font files: the symbols Helvetica cannot draw are spelled out, never garbled (D-239).
+{
+  const { fallbackText } = await import('../server/pdf-unicode.js');
+  const fb = squash(await render(d => { embedUnicodeFaces(d, { forceFallback: true }); d.font('Helvetica').text(SAMPLE); }, { faces: false }));
+  ok(fb.includes('Arsenic <= 0.5 ppm') && fb.includes('>= 1') && !fb.includes('"d'), 'without the font, "≤ 0.5" prints as "<= 0.5", never "\"d 0.5"', fb);
+  ok(fallbackText('≤ 0.5 ≥ 1') === '<= 0.5 >= 1', 'fallbackText spells out ≤ and ≥');
+}
 
 // A real export: the forklift certificate carries a person's name.
 const res = new PassThrough();

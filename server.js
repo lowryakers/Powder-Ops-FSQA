@@ -115,6 +115,8 @@ import { settleFiledReviews } from './server/check-records.js';
 import { seedGenericSpecifications } from './server/spec-seed.js';
 import { retireMalformedSpecs } from './server/coa-spec-check.js';
 import { voidUnissuedCertNumbers } from './server/coa-certificate.js';
+import { seedCoaPhase1ReviewItems } from './server/coa-review-items.js';
+import { backfillBaseLots } from './server/coa-lots.js';
 import { seedForm607Specs } from './server/spec-607-seed.js';
 import { tagQaInspectionRecords, tagQaInspectionTasks } from './server/qa-records.js';
 import { syncAllKnifeStatuses } from './server/knife-state.js';
@@ -1523,6 +1525,25 @@ try {
   if (v.voided.length) console.log(`[coa] voided ${v.voided.length} never-issued certificate number(s) on unsigned requests: ${v.voided.map(r => r.certificate_number).join(', ')}`);
 } catch (err) {
   console.error('[coa] voiding never-issued certificate numbers failed (non-fatal):', err.message);
+}
+
+// The COA corrections decided on 27 Oct (A-20261027-001/002, D-236): filed
+// once as QA Review items for Maria to work. Additive and idempotent; nothing
+// here un-signs, corrects or deletes a request. After the COA seed, because
+// the items name requests that must exist.
+try {
+  const s = seedCoaPhase1ReviewItems(db, logAudit);
+  if (s.inserted) console.log(`[coa] filed ${s.inserted} COA correction item(s) for QA Review (${s.skipped} named a request not on this database)`);
+} catch (err) {
+  console.error('[coa] seeding COA correction items failed (non-fatal):', err.message);
+}
+
+// Base lot and batch, derived from the lot as written (D-237). Fills blanks only.
+try {
+  const b = backfillBaseLots(db);
+  if (b.updated) console.log(`[coa] split ${b.updated} lot number(s) into base lot and batch`);
+} catch (err) {
+  console.error('[coa] base-lot backfill failed (non-fatal):', err.message);
 }
 
 // The plant's own FORM 607-01 raw-material spec sheets, transcribed and filed

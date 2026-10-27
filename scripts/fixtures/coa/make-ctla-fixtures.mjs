@@ -53,6 +53,7 @@ const REPORTS = [
     ] },
 ];
 
+function writeAll() {
 for (const r of REPORTS) {
   const doc = new PDFDocument({ size: 'LETTER', margin: 40 });
   doc.pipe(createWriteStream(path.join(here, `ctla-${r.id}.pdf`)));
@@ -87,3 +88,56 @@ for (const r of REPORTS) {
   doc.end();
 }
 console.log(`wrote ${REPORTS.length} fixtures to ${here}`);
+}
+
+// THE REAL LAYOUT (D-239): CTLA's header prints "MDL Specification" as one
+// cell, and a data row's MDL sits right against its "Report" — so the reader
+// sees ONE cell "4 Report". The four fixtures above give MDL its own column,
+// which is why they never caught `mdl` coming back null on every real row.
+// Synthetic, like the rest; no lab PDF is committed.
+// Run: node scripts/fixtures/coa/make-ctla-fixtures.mjs merged
+function writeMerged() {
+  const doc = new PDFDocument({ size: 'LETTER', margin: 40 });
+  doc.pipe(createWriteStream(path.join(here, 'ctla-merged-header.pdf')));
+  doc.font('Helvetica-Bold').fontSize(14).text('Certificate of Analysis', 50, 50, { lineBreak: false });
+  doc.font('Helvetica').fontSize(9);
+  let y = 90;
+  for (const [label, value] of [['CTLA ID:', '177281'], ['Date Received:', '7/28/2026'], ['Sample Name:', 'Pancake Mix (Chocolate)'], ['Lot Number:', '101685-1']]) {
+    doc.text(label, 50, y, { lineBreak: false });
+    doc.text(value, 150, y, { lineBreak: false });
+    y += 14;
+  }
+  y += 16;
+  doc.font('Helvetica-Bold');
+  doc.text('Analysis', 50, y, { lineBreak: false });
+  doc.text('Method', 205, y, { lineBreak: false });
+  doc.text('MDL Specification', 285, y, { lineBreak: false });
+  doc.text('Result', 405, y, { lineBreak: false });
+  doc.text('Units', 470, y, { lineBreak: false });
+  doc.font('Helvetica');
+  y += 16;
+  const rows = [
+    ['Total Aerobic Microbial Count (USP)', 'USP <2021>', '100', '<100', 'cfu/g'],
+    ['Total Coliforms (BAM) (MOD)', 'BAM CH. 4', '10', '<10', 'cfu/g'],
+    ['E.Coli BAM (MOD)', 'BAM CH. 4', '', 'Absent', ''],
+    ['Arsenic', 'USP <233>', '.001', '0.002', 'ppm'],
+    ['Gluten Allergen', 'ELISA', '4', '<4', 'ppm'],
+  ];
+  for (const [test, method, mdl, result, unit] of rows) {
+    doc.text(test, 50, y, { lineBreak: false });
+    doc.text(method, 205, y, { lineBreak: false });
+    // The MDL and "Report" one space apart, inside the one merged column.
+    const w = mdl ? doc.widthOfString(`${mdl} `) : 0;
+    if (mdl) doc.text(mdl, 290, y, { lineBreak: false });
+    doc.text('Report', 290 + w, y, { lineBreak: false });
+    doc.text(result, 405, y, { lineBreak: false });
+    if (unit) doc.text(unit, 470, y, { lineBreak: false });
+    y += 15;
+  }
+  doc.end();
+  console.log(`wrote ctla-merged-header.pdf to ${here}`);
+}
+if (process.argv[2] === 'merged') writeMerged();
+else {
+  writeAll();
+}

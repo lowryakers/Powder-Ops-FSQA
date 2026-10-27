@@ -1,0 +1,393 @@
+{
+ "decision": "A-20261027-001",
+ "note": "Generated from the COA Phase 1 brief (APPROVALS A-20261027-001/002). Request and file ids are ReadyDoc ids; no lab PDF is committed.",
+ "items": [
+  {
+   "kind": "RESIGN",
+   "request_id": "9e8cb2b4-3e5d-49f1-bc3b-99327147d012",
+   "lot": "101706",
+   "item_number": "BD0245",
+   "file_id": "9e17c04e-9d7a-4f29-9a5c-598a179a8b90",
+   "file_name": "COA_175698 (1).pdf",
+   "note": "dupGluten=N"
+  },
+  {
+   "kind": "RESIGN",
+   "request_id": "3818f512-e1d2-4614-b1c8-f0bffd78f75f",
+   "lot": "101055-1",
+   "item_number": "FG0909",
+   "file_id": "ea894197-6dd0-4a22-9067-6aa182538f23",
+   "file_name": "COA_168788 (1).pdf",
+   "note": "dupGluten=Y"
+  },
+  {
+   "kind": "RESIGN",
+   "request_id": "a91f5a42-560d-461c-95d0-33d4e5184d35",
+   "lot": "1011383",
+   "item_number": "MO76841",
+   "file_id": "17985851-95e4-4732-aabe-c9c470b93d67",
+   "file_name": "COA_183620.pdf",
+   "note": "dupGluten=Y"
+  },
+  {
+   "kind": "RESIGN",
+   "request_id": "c5f3e54f-cffd-44a7-b551-809186e0848e",
+   "lot": "101679",
+   "item_number": "FG0907",
+   "file_id": "cd34d018-6c99-4407-b68f-eb268ac3ef81",
+   "file_name": "COA_175697.pdf",
+   "note": "dupGluten=N"
+  },
+  {
+   "kind": "RESIGN",
+   "request_id": "4151ba70-d525-4824-8561-b90227defd27",
+   "lot": "101685-1",
+   "item_number": "FG0976",
+   "file_id": "1c7822ca-cef3-470a-ad21-e40af499852d",
+   "file_name": "COA_177281.pdf",
+   "note": "dupGluten=N"
+  },
+  {
+   "kind": "RESIGN",
+   "request_id": "8f122ca9-cdb1-49e4-8011-55f24b3c90da",
+   "lot": "101690-1",
+   "item_number": "FG0983",
+   "file_id": "6208352b-d3da-47b5-9a79-17d7c3f5edc6",
+   "file_name": "COA_176906.pdf",
+   "note": "dupGluten=N"
+  },
+  {
+   "kind": "RESIGN",
+   "request_id": "e919e928-7f9d-403c-a5b5-c7fe3ab7be6d",
+   "lot": "101690-2",
+   "item_number": "FG0983",
+   "file_id": "6f2ffa1b-9b69-4b7a-a394-2a08270d1594",
+   "file_name": "COA_176905.pdf",
+   "note": "dupGluten=N"
+  },
+  {
+   "kind": "RESIGN",
+   "request_id": "35b8425e-54f0-4cd4-bbad-e9f045bd9c04",
+   "lot": "101691",
+   "item_number": "FG0986",
+   "file_id": "858d5ed3-a3c5-4b03-81e7-67cd582765f2",
+   "file_name": "COA_177009.pdf",
+   "note": "dupGluten=N"
+  },
+  {
+   "kind": "RESIGN",
+   "request_id": "d085b85f-0909-4b29-b240-29bbc6ed650c",
+   "lot": "101691-2",
+   "item_number": "FG0986",
+   "file_id": "33bccb02-3fc5-4a73-905c-3ee10c410f6e",
+   "file_name": "COA_177280.pdf",
+   "note": "dupGluten=N"
+  },
+  {
+   "kind": "RESIGN",
+   "request_id": "850d0bf3-1e5d-4e06-a74e-2989b5e084b8",
+   "lot": "101692-2",
+   "item_number": "FG0932",
+   "file_id": "dfb32f1e-0b57-47a8-9566-332901972f57",
+   "file_name": "COA_177007.pdf",
+   "note": "dupGluten=N"
+  },
+  {
+   "kind": "RESIGN",
+   "request_id": "34427871-7f07-4825-9810-256e4f20210d",
+   "lot": "101701",
+   "item_number": "IM0034",
+   "file_id": "39e8ca42-2497-4b8a-9319-891b9207bd31",
+   "file_name": "COA_177008.pdf",
+   "note": "dupGluten=N"
+  },
+  {
+   "kind": "RESIGN",
+   "request_id": "33563d8a-9b0c-417d-af65-4832a718a048",
+   "lot": "101702",
+   "item_number": "IM0040",
+   "file_id": "7ddab7a7-4c41-41e4-be66-3cd24900d12f",
+   "file_name": "COA_176904.pdf",
+   "note": "dupGluten=N"
+  },
+  {
+   "kind": "RESIGN",
+   "request_id": "c22d218e-36a7-4a27-9db6-8d6e628ba34f",
+   "lot": "101702",
+   "item_number": "IM0040",
+   "file_id": "44e293e0-3460-4a7a-8083-c98e58830d36",
+   "file_name": "COA_177279.pdf",
+   "note": "dupGluten=N"
+  },
+  {
+   "kind": "RESIGN",
+   "request_id": "596f2bd4-900f-4a1a-99d9-2c0a0ab1cf9f",
+   "lot": "101703",
+   "item_number": "IM0046",
+   "file_id": "8ef612d3-8110-429d-99cc-fd5752a16cf0",
+   "file_name": "COA_177278.pdf",
+   "note": "dupGluten=N"
+  },
+  {
+   "kind": "RESIGN",
+   "request_id": "7615afb8-f2c4-4cd6-9295-0099412bb602",
+   "lot": "101712",
+   "item_number": "202621",
+   "file_id": "8e8fb4c8-ee40-441b-9fff-290b5c1fbd1b",
+   "file_name": "COA_180950.pdf",
+   "note": "dupGluten=N"
+  },
+  {
+   "kind": "RESIGN",
+   "request_id": "26d923b6-2172-4216-8382-6e74556cece5",
+   "lot": "101715 1",
+   "item_number": "202656",
+   "file_id": "9b9c0e89-7817-44a4-845b-02d1e5e0e6c9",
+   "file_name": "COA_175699.pdf",
+   "note": "dupGluten=N"
+  },
+  {
+   "kind": "RESIGN",
+   "request_id": "4754e412-6ee1-4e6f-a4c6-4d374bc85f3a",
+   "lot": "101954",
+   "item_number": "MO76803",
+   "file_id": "c27553b3-0aad-4109-ba51-ae48304d90f1",
+   "file_name": "COA_183621.pdf",
+   "note": "dupGluten=Y"
+  },
+  {
+   "kind": "UNSIGN_CORRECT_NO_RESIGN",
+   "request_id": "8afd7fbe-3ed0-4257-b22b-95c16eccff75",
+   "lot": "101706",
+   "item_number": "MO76751",
+   "file_id": "81d72bc5-352b-4f6a-8fee-21312b55bff0",
+   "file_name": "COA_175698.pdf",
+   "note": "dupGluten=N|also gluten <44 → <4"
+  },
+  {
+   "kind": "UNSIGN_FAILED",
+   "request_id": "568388b9-4d58-4a8f-b052-e20c9fa46020",
+   "lot": "101811",
+   "item_number": "MO76786",
+   "file_id": "4c13306d-675d-4196-b7e5-e0eea4d00306",
+   "file_name": "COA_182334.pdf",
+   "note": "Magnesium = 6,564.814 ppm; Sodium = 49,029.81 ppm; Vitamin B6 (Pyridox"
+  },
+  {
+   "kind": "UNSIGN_FAILED",
+   "request_id": "ff354a4c-3d58-4447-a113-bec45e553123",
+   "lot": "101809-1",
+   "item_number": "MO76788",
+   "file_id": "bb83a7b2-1c77-4775-a1db-9b80f357b0dc",
+   "file_name": "COA_180952.pdf",
+   "note": "Vitamin B6 (Pyridoxine HCl) = <0.151 mg/g"
+  },
+  {
+   "kind": "UNSIGN_FAILED",
+   "request_id": "66d13a98-1e49-478c-9321-520e13b5bf13",
+   "lot": "101548",
+   "item_number": "202518",
+   "file_id": "8358c1b1-52c3-4260-a0e8-98f02a3998ef",
+   "file_name": "COA_173955.pdf",
+   "note": "Total Aerobic Microbial Count (USP) = 7,400,000 cfu/g"
+  },
+  {
+   "kind": "CORRECT_ONLY",
+   "request_id": "1b26e549-0dc3-449d-8138-6381e6e42e9b",
+   "lot": "10169-1",
+   "item_number": "IM0040",
+   "file_id": "f2f447fd-1d24-4762-bd9f-d62ff2fef6d4",
+   "file_name": "COA_176899.pdf",
+   "note": "dupGluten=N"
+  },
+  {
+   "kind": "DELETE_DUPLICATE",
+   "request_id": "e2fad74c-6e40-4151-a901-e33e945eefa1",
+   "lot": "101434",
+   "item_description": "Flavor (Natural Cookies & Cream)",
+   "canonical_request_id": "515f3457-1c7a-46d5-a3ef-a8a94684aea3",
+   "file_id": "ca71b4ff-7430-422a-bf5e-5965628097ed",
+   "file_name": "COA_173941.pdf"
+  },
+  {
+   "kind": "DELETE_DUPLICATE",
+   "request_id": "1fe1a66e-1842-45a4-8a84-9d457656f7d4",
+   "lot": "101434",
+   "item_description": "Flavor (Natural Cookies & Cream)",
+   "canonical_request_id": "515f3457-1c7a-46d5-a3ef-a8a94684aea3",
+   "file_id": "ca71b4ff-7430-422a-bf5e-5965628097ed",
+   "file_name": "COA_173941.pdf"
+  },
+  {
+   "kind": "DELETE_DUPLICATE",
+   "request_id": "905b6c57-91d6-4426-b1cb-66214ef218fe",
+   "lot": "101434",
+   "item_description": "Flavor (Natural Cookies & Cream)",
+   "canonical_request_id": "515f3457-1c7a-46d5-a3ef-a8a94684aea3",
+   "file_id": "ca71b4ff-7430-422a-bf5e-5965628097ed",
+   "file_name": "COA_173941.pdf"
+  },
+  {
+   "kind": "DELETE_DUPLICATE",
+   "request_id": "dd2c4954-59e5-48b2-bc9f-d640d1c4840d",
+   "lot": "101434",
+   "item_description": "Flavor (Natural Cookies & Cream)",
+   "canonical_request_id": "515f3457-1c7a-46d5-a3ef-a8a94684aea3",
+   "file_id": "ca71b4ff-7430-422a-bf5e-5965628097ed",
+   "file_name": "COA_173941.pdf"
+  },
+  {
+   "kind": "DELETE_DUPLICATE",
+   "request_id": "a64d2c5d-1ab3-414c-95f9-44f9f6db885d",
+   "lot": "101434",
+   "item_description": "Flavor (Natural Cookies & Cream)",
+   "canonical_request_id": "515f3457-1c7a-46d5-a3ef-a8a94684aea3",
+   "file_id": "ca71b4ff-7430-422a-bf5e-5965628097ed",
+   "file_name": "COA_173941.pdf"
+  },
+  {
+   "kind": "DELETE_DUPLICATE",
+   "request_id": "acc418c8-11a7-402f-9978-3958d9c061c1",
+   "lot": "101434",
+   "item_description": "Flavor (Natural Cookies & Cream)",
+   "canonical_request_id": "515f3457-1c7a-46d5-a3ef-a8a94684aea3",
+   "file_id": "ca71b4ff-7430-422a-bf5e-5965628097ed",
+   "file_name": "COA_173941.pdf"
+  },
+  {
+   "kind": "DELETE_DUPLICATE",
+   "request_id": "a267a57b-bd4e-4b8c-ba0a-978aed531967",
+   "lot": "101434",
+   "item_description": "Flavor (Natural Cookies & Cream)",
+   "canonical_request_id": "515f3457-1c7a-46d5-a3ef-a8a94684aea3",
+   "file_id": "ca71b4ff-7430-422a-bf5e-5965628097ed",
+   "file_name": "COA_173941.pdf"
+  },
+  {
+   "kind": "DELETE_DUPLICATE",
+   "request_id": "2f394608-47c9-42fe-9c07-889563e7b2bc",
+   "lot": "101434",
+   "item_description": "Flavor (Natural Cookies & Cream)",
+   "canonical_request_id": "515f3457-1c7a-46d5-a3ef-a8a94684aea3",
+   "file_id": "ca71b4ff-7430-422a-bf5e-5965628097ed",
+   "file_name": "COA_173941.pdf"
+  },
+  {
+   "kind": "DELETE_DUPLICATE",
+   "request_id": "9199cb9e-c4d3-46e1-9f69-1fe059ef19e1",
+   "lot": "101434",
+   "item_description": "Flavor (Natural Cookies & Cream)",
+   "canonical_request_id": "515f3457-1c7a-46d5-a3ef-a8a94684aea3",
+   "file_id": "ca71b4ff-7430-422a-bf5e-5965628097ed",
+   "file_name": "COA_173941.pdf"
+  },
+  {
+   "kind": "DELETE_DUPLICATE",
+   "request_id": "758b6e7a-173a-4f12-8033-3a6ec57cce4e",
+   "lot": "101434",
+   "item_description": "Flavor (Natural Cookies & Cream)",
+   "canonical_request_id": "515f3457-1c7a-46d5-a3ef-a8a94684aea3",
+   "file_id": "ca71b4ff-7430-422a-bf5e-5965628097ed",
+   "file_name": "COA_173941.pdf"
+  },
+  {
+   "kind": "DELETE_DUPLICATE",
+   "request_id": "33a45d7e-b696-40d3-add6-c895da51cea6",
+   "lot": "101434",
+   "item_description": "Flavor (Natural Cookies & Cream)",
+   "canonical_request_id": "515f3457-1c7a-46d5-a3ef-a8a94684aea3",
+   "file_id": "ca71b4ff-7430-422a-bf5e-5965628097ed",
+   "file_name": "COA_173941.pdf"
+  },
+  {
+   "kind": "DELETE_DUPLICATE",
+   "request_id": "4bac29ba-b140-47cd-bc26-e0ba79d38648",
+   "lot": "101434",
+   "item_description": "Flavor (Natural Cookies & Cream)",
+   "canonical_request_id": "515f3457-1c7a-46d5-a3ef-a8a94684aea3",
+   "file_id": "ca71b4ff-7430-422a-bf5e-5965628097ed",
+   "file_name": "COA_173941.pdf"
+  },
+  {
+   "kind": "DELETE_DUPLICATE",
+   "request_id": "b4eb206f-5c44-4c57-ab44-be243b715802",
+   "lot": "101434",
+   "item_description": "Flavor (Natural Cookies & Cream)",
+   "canonical_request_id": "515f3457-1c7a-46d5-a3ef-a8a94684aea3",
+   "file_id": "ca71b4ff-7430-422a-bf5e-5965628097ed",
+   "file_name": "COA_173941.pdf"
+  },
+  {
+   "kind": "DELETE_DUPLICATE",
+   "request_id": "5b079308-198b-495a-b591-f103b05b6994",
+   "lot": "101434",
+   "item_description": "Flavor (Natural Cookies & Cream)",
+   "canonical_request_id": "515f3457-1c7a-46d5-a3ef-a8a94684aea3",
+   "file_id": "ca71b4ff-7430-422a-bf5e-5965628097ed",
+   "file_name": "COA_173941.pdf"
+  },
+  {
+   "kind": "DELETE_DUPLICATE",
+   "request_id": "0fb77227-3303-444f-ad05-3574c3189eb7",
+   "lot": "101434",
+   "item_description": "Flavor (Natural Cookies & Cream)",
+   "canonical_request_id": "515f3457-1c7a-46d5-a3ef-a8a94684aea3",
+   "file_id": "ca71b4ff-7430-422a-bf5e-5965628097ed",
+   "file_name": "COA_173941.pdf"
+  },
+  {
+   "kind": "DELETE_DUPLICATE",
+   "request_id": "f406434a-7071-4b79-87a1-e233f3139fe3",
+   "lot": "101434",
+   "item_description": "Flavor (Natural Cookies & Cream)",
+   "canonical_request_id": "515f3457-1c7a-46d5-a3ef-a8a94684aea3",
+   "file_id": "ca71b4ff-7430-422a-bf5e-5965628097ed",
+   "file_name": "COA_173941.pdf"
+  },
+  {
+   "kind": "DELETE_DUPLICATE",
+   "request_id": "58f1d24a-8753-4d6f-b44a-65c4a8506f12",
+   "lot": "101434",
+   "item_description": "Flavor (Natural Cookies & Cream)",
+   "canonical_request_id": "515f3457-1c7a-46d5-a3ef-a8a94684aea3",
+   "file_id": "ca71b4ff-7430-422a-bf5e-5965628097ed",
+   "file_name": "COA_173941.pdf"
+  },
+  {
+   "kind": "DELETE_DUPLICATE",
+   "request_id": "df7e8907-128a-4e3a-9af3-caa6d6365d3e",
+   "lot": "101434",
+   "item_description": "Flavor (Natural Cookies & Cream)",
+   "canonical_request_id": "515f3457-1c7a-46d5-a3ef-a8a94684aea3",
+   "file_id": "ca71b4ff-7430-422a-bf5e-5965628097ed",
+   "file_name": "COA_173941.pdf"
+  },
+  {
+   "kind": "DELETE_DUPLICATE",
+   "request_id": "fed02911-ffd7-4b2a-84f4-c2bd520491da",
+   "lot": "101548",
+   "item_description": "M4 Daily Fuel Sachet (Vanilla)",
+   "canonical_request_id": "66d13a98-1e49-478c-9321-520e13b5bf13",
+   "file_id": "8358c1b1-52c3-4260-a0e8-98f02a3998ef",
+   "file_name": "COA_173955.pdf"
+  },
+  {
+   "kind": "DELETE_DUPLICATE",
+   "request_id": "c7a13cb6-769d-4815-b305-a533f08945f9",
+   "lot": "L001118",
+   "item_description": "Dimagnesium Malate (15%)",
+   "canonical_request_id": "973a994d-7f15-4532-bd56-ca280368a9bd",
+   "file_id": "767451a2-4740-4cec-8b14-2a93fdad1fdc",
+   "file_name": "COA_150603.pdf"
+  },
+  {
+   "kind": "DELETE_DUPLICATE",
+   "request_id": "06365b91-836f-49b6-903b-dde980e63f33",
+   "lot": "L001118",
+   "item_description": "Dimagnesium Malate (15%)",
+   "canonical_request_id": "973a994d-7f15-4532-bd56-ca280368a9bd",
+   "file_id": "767451a2-4740-4cec-8b14-2a93fdad1fdc",
+   "file_name": "COA_150603.pdf"
+  }
+ ]
+}

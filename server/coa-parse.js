@@ -263,7 +263,26 @@ const HEADER_CELL = {
   mdl: 'mdl', 'detection limit': 'mdl', loq: 'mdl',
   method: 'method',
   specification: 'spec', spec: 'spec', limit: 'spec', 'specification limit': 'spec',
+  // CTLA prints these two headers as ONE cell, and each row's MDL sits against
+  // its "Report" in that column: "4 Report", ".001 Report", or just "Report".
+  'mdl specification': 'mdl_spec', 'mdl spec': 'mdl_spec', 'mdl specifications': 'mdl_spec',
 };
+
+/**
+ * Split a merged "MDL Specification" cell (D-239). A leading number is the
+ * MDL, kept as printed (".001" stays ".001"); the words after it are the
+ * specification. A cell that is only "Report" has no MDL.
+ */
+export function splitMdlSpec(cell) {
+  const s = String(cell ?? '').replace(/\s+/g, ' ').trim();
+  if (!s) return { mdl: null, spec: null };
+  const m = s.match(/^(\.\d+|\d+(?:\.\d+)?)(?:\s+(.+))?$/);
+  if (m) return { mdl: m[1], spec: m[2] || null };
+  return { mdl: null, spec: s };
+}
+
+/** ".001" → "0.001" for display; the stored text stays as the lab printed it. */
+export const displayMdl = (v) => (v == null || v === '' ? v : String(v).replace(/^\./, '0.'));
 
 function parsePipeRows(lines) {
   const cellsOf = (l) => (/^\|.*\|$/.test(l) ? l.slice(1, -1).split('|').map(c => c.trim()) : null);
@@ -301,7 +320,8 @@ function parsePipeRows(lines) {
       test_type,
       result_value,
       unit: cols.unit !== undefined ? (cells[cols.unit] || null) : null,
-      mdl: cols.mdl !== undefined ? (cells[cols.mdl] || null) : null,
+      mdl: cols.mdl !== undefined ? (cells[cols.mdl] || null)
+        : cols.mdl_spec !== undefined ? splitMdlSpec(cells[cols.mdl_spec]).mdl : null,
       method: cols.method !== undefined ? (String(cells[cols.method] || '').replace(/\s+/g, ' ').trim() || null) : null,
       section: null,
       // Same rule as the seam reader: the lab reports, the plant grades.

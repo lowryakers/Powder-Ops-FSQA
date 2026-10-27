@@ -8729,3 +8729,69 @@ partner statement already registered the font themselves (D-151, D-209).
   few lines, and "≤ 0.5 ppm · 25 µg · José Núñez ±2 °C" reads back through plain text, `richBlocks` and `richText`,
   and a name outside WinAnsi ("Đorđe Ćosić") through the real forklift certificate. Control (the certificate without
   the call) fails 2; built-in Helvetica is asserted not to print "≤", so the passing checks mean something.
+
+## D-236 — The 43 COA corrections are a QA Review pile, and Quality may make exactly those (27 Oct 2026)
+
+Decision A-20261027-001 settled what to do with 43 COA requests: 17 re-sign after the gluten misread is corrected
+(`<44` → `<4 ppm`), one failed-lot certificate (8afd7fbe) corrected and NOT re-signed, 3 failed-lot certificates
+un-signed, 1 corrected without a signature, 21 empty duplicates deleted. **Code changes none of them.** Maria does
+the work in the app; the app lists it, checks it and records it.
+- **`coa_review_items`**, seeded once from `server/seed/coa-phase1-review-items.json` (insert-only, one audit row,
+  marker `coa_phase1_review_items_seeded_v1`, written only once `coa_requests` has rows — on a fresh database the
+  history is seeded later). Called from `server.js` after the certificate-number pass, not from `runMigrations`
+  as the brief suggested: the items name requests the history seed files.
+- **A QA Review source of a new kind, `action`** (`coa-corrections`): no checkbox, no Sign button, `sign` refuses.
+  The API adds `kind` to that source only, so every other source's JSON is byte-for-byte what it was. Each row
+  carries the recommended action, why, the steps and links to the evidence (the request, the lab report).
+- **Progress is DERIVED, never ticked**: un-signed = an `unsign` audit row after the item was filed and the request
+  not signed since; corrected = exactly one "Gluten Allergen" row reading `<4 ppm` and no `<44` anywhere;
+  re-signed = signed after that un-sign; a deleted request is complete. A GET writes nothing.
+- **The permission is scoped to the item.** Un-sign was admin-only and stays so for every other certificate. A QA
+  reviewer may un-sign a request while an open, unfinished item authorizes it (RESIGN, UNSIGN_FAILED,
+  UNSIGN_CORRECT_NO_RESIGN), and delete one only while a DELETE_DUPLICATE item does AND the request is unsigned,
+  has no results, no files, came from a CTLA upload, and its canonical request holds the report (409 otherwise).
+  Both need a reason and the password; the audit row names the item and the decision. An admin is unchanged.
+- **8afd7fbe is held**: it cannot be signed (409 `held`, admin included) while its item is open. An admin dismisses
+  the item with a reason (audited `dismiss`), which lifts the hold. The re-test 9e8cb2b4 is a RESIGN with no hold.
+- Tokens: every new write is refused for a bot token; none of the routes is public. The bell carries the pile.
+- `verify:coaphase1` (93, live + reboots + browser; in `verify:all`). Control: `main` before this.
+
+## D-237 — A lot's suffix is its batch, and a lot meets the gluten policy only when every batch does (27 Oct 2026)
+
+`coa_requests.base_lot` + `batch`, derived from the lot as written by `splitLot` (`shared/lot-model.js`): a
+trailing `-N` or ` N` (one or two digits) after a base of five or more characters is the batch. The lot as written
+is never changed. Filled where blank at boot (`backfillBaseLots`, idempotent) and on every create or lot edit.
+- **A ProDough lot that does not look like one is FLAGGED ("check lot"), never fixed** — `10169-1` is very likely
+  `101690-1`, and only the lab can say.
+- `rollUpLots`: a base lot meets the gluten policy only when EVERY batch on file has a signed pass. Each batch not
+  meeting it is named with why (missing, unsigned, ungraded, failing). A later passing re-test of the same batch
+  supersedes its failure. **Advisory**: the release-gate strip reports it; nothing is gated, the gate stays `warn`.
+- `glutenSupportsGfClaim`: a ppm result below 20 (`<4` supports, `<44` does not, a number without a unit does not).
+  No claim wording, no public page — that is the next phase's decision.
+- The Lab Requests list shows the batch as a chip that filters to every batch of that lot.
+
+## D-238 — Brands are assigned in bulk from a reviewed list, and only `unassigned` moves (27 Oct 2026)
+
+`POST /coa/brands` (QA reviewer, 2–60 characters, unique, created closed to publishing) and
+`POST /coa/requests/brand-owner/bulk` (preview / apply, at most 2,000 rows), and **Brand review** on COA.
+- The 589 proposals are a CSV Maria reviews; the file is NOT seeded and NOT committed. The screen reads it in the
+  browser, the server previews it, a person ticks rows and applies with a reason and the password.
+- **Only `unassigned` requests change.** An assigned one is an error unless an admin passes `allow_change` with a
+  reason. An unknown brand is an error unless "add brands" is ticked; a brand added that way is closed to
+  publishing like any other. A second apply is all no-ops.
+- One transaction; one audit row per request carrying the batch id, plus one batch row.
+- Nothing reads `public_publish_allowed`; the two COA settings stay `never` / `hidden`.
+
+## D-239 — The rest of COA Phase 1: the "≤" fallback, the MDL column, audit labels, and the whole list (27 Oct 2026)
+
+- **"≤" (mostly D-234/D-235).** If the embedded font files are ever missing, `embedUnicodeFaces` now writes `<=`,
+  `>=`, `!=` and `-` rather than the WinAnsi garbage, and warns once. `check:pdffonts` (22) and `verify:coa` (74)
+  read "≥ 0.1 µg/g <4 °C" back out of a certificate and a spec sheet.
+- **The merged "MDL Specification" column**: CTLA prints the detection limit and the spec in one cell
+  (`4 Report`). `splitMdlSpec` takes the leading number as the MDL, kept as printed. A synthetic fixture with that
+  layout is in the repository; the real-PDF test no longer skips silently, fails on zero rows, and requires every
+  gluten row to read `<4` with MDL `4`. Control (the old parser) fails on the merged fixture.
+- **Audit labels** (`shared/audit-labels.js`): `retire`, `unsign`, `void`, `dismiss` read as words, and an old
+  retirement recorded as `delete` reads "Retired (recorded as delete)". Stored actions are untouched.
+- **The Lab Requests list loads every request at once** (Lowry: "I don't like how it doesn't load all right
+  away"). It asks for up to 5,000 and the "Load all" button is gone; a note appears only if that cap is reached.
