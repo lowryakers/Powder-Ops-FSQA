@@ -96,6 +96,8 @@ import disposalRoutes, { importDisposalLog } from './server/api/disposals.js';
 import { DISPOSAL_LOG_CSV } from './server/disposal-log-seed.js';
 import trainingRoutes from './server/api/training.js';
 import aiRoutes from './server/api/ai.js';
+import opsWebhookAdminRoutes from './server/api/ops-webhook-admin.js';
+import { initOpsWebhook } from './server/ops-webhook.js';
 import commsRoutes, { backfillEmbeddings, getChannelByName, postMessageAs, getBotUser, startReminderLoop, botDm } from './server/api/comms.js';
 import { pushToUser } from './server/push.js';
 import smsInboundRoutes from './server/api/sms-inbound.js';
@@ -2200,6 +2202,7 @@ app.use('/api/training', requireModuleWrite('training'), trainingRoutes);
 app.use('/api/certifications', requireModuleWrite('certifications'), certificationRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/comms', commsRoutes);
+app.use('/api/admin/ops-webhook', opsWebhookAdminRoutes);
 app.use('/api/mock-recalls', requireModuleWrite('recall'), mockRecallRoutes);
 app.use('/api/production', requireModuleWrite('production-log', 'production-schedule', 'production-dashboard', 'operator'), productionRoutes);
 app.use('/api/coa', requireModuleWrite('coa'), coaRoutes);
@@ -2344,6 +2347,7 @@ server.listen(PORT, '0.0.0.0', () => {
   // Recurring jobs: Friday auto-backup to R2, Monday expiry digest to #quality.
   startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges, qaActionNudges, employeeDocumentNudges, policyAckNudges: (d) => policyAckNudges(d, { botDm, postMessageAs, pushToUser }), trainingNudges, supplyCycleNudge, partnerReminderNudges, recordBackfillNudge, supplierReviewNudge, sendFlashReport, sendCleanupDigest, cleanupDigest, CLEANUP_BUSY_THRESHOLD, sendEodMissedDigest, eodMissedDigest, EOD_BUSY_THRESHOLD, sendHolidayNotices });
   startReminderLoop(db);
+  try { initOpsWebhook(db); } catch (e) { console.warn('[ops-webhook] not started:', e.message); }
   // Generate any due document-review tasks on startup (idempotent; also runs on
   // every operator-tasks fetch).
   try {

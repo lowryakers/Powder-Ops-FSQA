@@ -9036,3 +9036,29 @@ reads them from there (what was actually removed on that database, not the revie
 `--preserve-links` would have written to the kept request's notes. Admin-run in the Railway shell, never at boot. Dry
 run by default; `--apply` backs up first, one transaction, one audit row per request; never twice; a **signed** kept
 request is not changed and its link is printed instead. `check:coacopylinks` (14, scratch database).
+
+## D-251 — A post in #ops-requests wakes the right bot within seconds (27 Oct 2026)
+
+Approved as specced (A-20261027-010). Procurement answered `#ops-requests` from an hourly check, so an answer took 6 to
+49 minutes. ReadyDoc now sends a small POST to a Grok Bot webhook trigger when a message lands, so the bot wakes at
+once. **The POST is only a wake-up**: the bots still read the channel with their own cursor (`ops_requests.py poll`),
+so a lost or doubled wake cannot lose or double-handle a request, and the hourly check stays as the backup.
+- **Two targets.** `procurement` (Routine A): every new top-level message and thread reply written by a PERSON.
+  `controller` (Routine B): only a thread reply from `*Procurement Bot` whose text starts `→ Controller` — the one case
+  a bot post fires anything. Every other bot post fires nothing, which is what stops a bot answering itself in a loop.
+  A bot is an account that posted through a token, holds a live token, is named with a leading `*`, or is ReadyBot —
+  there is no single column for it.
+- **Two channels, in code.** `ops-requests` and `ops-requests-test` are a constant (`OPS_CHANNELS`); no env var widens
+  it (`OPS_WEBHOOK_CHANNELS` is ignored, asserted). Matched on the channel's name at post time, so nothing is cached and
+  a rename takes effect at once. Never a DM, never an archived channel.
+- **Off until an admin turns it on.** `OPS_WEBHOOK_ENABLED` plus each target's own URL and key; a target missing either
+  is off. URLs and keys live only in Railway's variables — never in code, logs, the database or the status screen
+  (logs show the host and the last six characters of the routine id).
+- **Never touches the post.** Called after the 201 is sent; one insert into `ops_webhook_log` (the outbox), sent on a
+  later tick. 8 s timeout; success is 200 with `success: true`; retries after about 2 s, 10 s, 30 s, 2 min and 10 min,
+  then `failed`. A `sent` row is never resent; a restart resumes `pending`/`sending` rows once. At most 3 in flight and
+  60 a minute (beyond: `rate_limited`). A 401 or "Automation is disabled" logs at error level.
+- **Edits, deletes and reactions never fire.** Whether an edit should re-fire is left open.
+- `GET /api/admin/ops-webhook/status`: admin session only (a token is 403), no URL or key.
+- `check:opswebhook` (42, fake fetch and clock), `verify:opswebhook` (14, live against a local fake hook; control —
+  the call removed from comms.js — fails).

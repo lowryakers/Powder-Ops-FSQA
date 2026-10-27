@@ -409,6 +409,16 @@ limit), `authenticateToken` in `middleware/auth.js`, `server/middleware/no-token
 - `GET /users/access-review` lists non-admins holding nearly every module with the last hand-set map to restore.
   `verify:accesssources` (25; control fails 7).
 
+## A post in #ops-requests wakes the right bot (D-251)
+`server/ops-webhook.js` (`OPS_CHANNELS`, `targetFor`, `buildPayload`, `enqueueOpsWebhook`, `pumpOpsWebhook`), the
+`ops_webhook_log` outbox, `GET /api/admin/ops-webhook/status` (admin session only), runbook `docs/ops-requests-webhook.md`.
+- **A wake-up only**; the bots still poll. `procurement` = a person's new message or reply; `controller` = only
+  `*Procurement Bot` replying `→ Controller`. No other bot post fires anything (no loops).
+- **The two channel names are a constant; never read them from config.** Off unless `OPS_WEBHOOK_ENABLED` plus that
+  target's URL and key. **Never log or store a URL or key** (`scrub`, `redactUrl`).
+- Called after the 201; never awaited. Outbox: never resent once sent, resumed after a restart, 3 in flight, 60/min.
+- `check:opswebhook` (42), `verify:opswebhook` (14).
+
 ## The bots' REST surface: existing routes, listed, paged and filtered (D-162)
 `server/bot-api.js` (`BOT_ROUTES`, `pageOf`/`pageList`, `stripForbidden`, `isBroadcastMention`), `server/api/bot.js`
 (`GET /api/bot/whoami`), `docs/bot-api.md`.

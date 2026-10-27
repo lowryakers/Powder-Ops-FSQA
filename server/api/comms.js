@@ -18,6 +18,7 @@ import { importSlackExport, previewSlackExport } from '../slack-import.js';
 import { requireRole } from '../middleware/auth.js';
 import { getType } from '../qms-config.js';
 import { readyDocOrigin, appOrigins } from '../links.js';
+import { enqueueOpsWebhook } from '../ops-webhook.js';
 
 const router = Router();
 
@@ -1833,6 +1834,9 @@ router.post('/channels/:id/messages', async (req, res) => {
   embedMessage(db, id, channel.id, body); // fire-and-forget
   try { channelHygiene(db, channel, message, req.user); } catch { /* best-effort */ }
   res.status(201).json(message);
+  // #ops-requests wake (D-251): after the response, never awaited, never throws.
+  enqueueOpsWebhook({ channel, message: { id, body, parent_id: req.body?.parent_id || null, created_at: now }, author: req.user,
+    viaToken: req.auth?.kind === 'token', attachmentCount: (message.attachments || []).length });
 });
 
 // ── Attachments ─────────────────────────────────────────────────────────────
