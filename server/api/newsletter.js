@@ -10,6 +10,7 @@ import { storageEnabled, putObject, presignGet, getObjectBuffer } from '../stora
 import { getChannelByName, postMessageAs } from './comms.js';
 import { aiEnabled, translateCached } from '../ai.js';
 import { readyDocOrigin } from '../links.js';
+import { embedUnicodeFaces } from '../pdf-unicode.js';
 
 // The company newsletter.
 //
@@ -297,6 +298,7 @@ async function renderPdf(db, issue, lang = 'en') {
 
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'LETTER', margins: { top: 54, bottom: 54, left: 54, right: 54 } });
+    embedUnicodeFaces(doc); // embedded Unicode faces, so ≤, µ and accented text print (D-235)
     const chunks = [];
     doc.on('data', c => chunks.push(c));
     doc.on('end', () => resolve(Buffer.concat(chunks)));

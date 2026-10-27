@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import PDFDocument from 'pdfkit';
 import { getDb, logAudit } from '../db.js';
+import { embedUnicodeFaces } from '../pdf-unicode.js';
 
 const router = Router();
 
@@ -277,6 +278,7 @@ router.get('/:id/pdf', (req, res) => {
   const approvals = parseApprovals(d.approvals);
 
   const pdf = new PDFDocument({ size: 'LETTER', layout: 'landscape', margin: 40 });
+  embedUnicodeFaces(pdf); // embedded Unicode faces, so ≤, µ and accented text print (D-235)
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="Disposal_${(d.disposal_number || d.id).toString().replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf"`);
   pdf.pipe(res);

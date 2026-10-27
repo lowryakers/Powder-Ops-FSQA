@@ -3861,9 +3861,10 @@ meant rebuilding the filter by hand — which nobody does. Every `AttentionBar` 
   are stored (`coa_test_results.method` / `.mdl`) and printed; spec retirement audits as `retire`; opening a COA
   setting needs a reason. `COA_REAL_PDF_DIR=<folder>` runs `coa-real-pdf.test.mjs` against real reports (never commit them).
   `verify:coa` 72 live + 24 pure.
-- **COA PDFs draw in the embedded Unicode font (D-234)**: `useUnicodeFaces(doc)` (`server/pdf-unicode.js`) right after
-  `new PDFDocument` maps the Helvetica names onto Liberation Sans, so "≤ 0.5 ppm" never prints as `"d 0.5 ppm`.
-  Use it in any pdfkit export that prints ≤/≥/µ or user text.
+- **Every PDF draws in the embedded Unicode font (D-234, D-235)**: `embedUnicodeFaces(doc)` (`server/pdf-unicode.js`) right
+  after `new PDFDocument` maps the Helvetica names onto Liberation Sans, so "≤ 0.5 ppm" never prints as `"d 0.5 ppm`.
+  **A new pdfkit export must call it** — `check:pdffonts` (20, in `npm run check`) fails otherwise. Not `use…`: the
+  hooks lint reads that as a React hook.
 
 ## COA item specification sheet
 The Specifications tab stores one row per test (right for auto pass/fail, hard to eyeball). "View item & all

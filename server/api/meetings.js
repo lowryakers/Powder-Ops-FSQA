@@ -24,6 +24,7 @@ import { hasExplicitEdit, hasExplicitGrant } from '../module-access.js';
 import { coerceCustomData, mergeCustomData, parseJson } from '../custom-fields.js';
 import { richBlocks } from '../pdf-rich.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
+import { embedUnicodeFaces } from '../pdf-unicode.js';
 
 const router = Router();
 const MODULE = 'meetings';
@@ -347,6 +348,7 @@ router.get('/:id/pdf', (req, res) => {
   const actions = actionsFor(db, m.id);
 
   const doc = new PDFDocument({ size: 'LETTER', margin: 54 });
+  embedUnicodeFaces(doc); // embedded Unicode faces, so ≤, µ and accented text print (D-235)
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="minutes-${m.meeting_date}-${m.meeting_type.replace(/\W+/g, '-').toLowerCase()}.pdf"`);
   doc.pipe(res);

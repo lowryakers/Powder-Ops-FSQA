@@ -8713,3 +8713,19 @@ The certificate, the spec sheet and the lab submission form drew in pdfkit's bui
 - `verify:coa` (69 → 72): the certificate and the spec sheet read back "≤ 0.5"; the draft heading keeps its dash.
   Control (`coa.js` before this) fails 2, printing `"d 0.5 ppm`.
 - `check:mirrors` G4 fails locally on `main` and passes in CI; per Lowry it is a local setup issue and is left for later.
+
+## D-235 — Every PDF export draws in the embedded Unicode font (27 Oct 2026)
+
+D-234 fixed the three COA PDFs and left the rest on WinAnsi Helvetica. Now every `new PDFDocument` in `server/` is
+followed by the embedded faces: meetings, internal audits, disposals, documents, pay, newsletter, onboarding packet,
+supplier questionnaire and the forklift certificate join the COA routes; the QMS records, the deviation form and the
+partner statement already registered the font themselves (D-151, D-209).
+- **Renamed `useUnicodeFaces` → `embedUnicodeFaces`.** The React hooks lint rule reads any `use…` function as a hook
+  and refused it in plain functions (`generatePDF`, `renderCertificate`) — the `applyKioskManifest` reasoning. D-234's
+  text keeps the old name as written.
+- Layouts do not move: Liberation Sans has Helvetica's metrics. `richBlocks` and `richText` still pass Helvetica names,
+  and the mapping lands each on its embedded face; emoji keep their own font; Courier (code) is untouched.
+- `check:pdffonts` (20, pure, in `npm run check`): every `new PDFDocument` in `server/` must call the faces within a
+  few lines, and "≤ 0.5 ppm · 25 µg · José Núñez ±2 °C" reads back through plain text, `richBlocks` and `richText`,
+  and a name outside WinAnsi ("Đorđe Ćosić") through the real forklift certificate. Control (the certificate without
+  the call) fails 2; built-in Helvetica is asserted not to print "≤", so the passing checks mean something.

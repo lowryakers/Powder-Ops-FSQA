@@ -9,6 +9,7 @@ import { normalizeName } from '../pay-seed.js';
 import { postMessageAs, botDm } from './comms.js';
 import { pushToUser } from '../push.js';
 import { readyDocOrigin } from '../links.js';
+import { embedUnicodeFaces } from '../pdf-unicode.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOGO_PATH = path.join(__dirname, '..', 'assets', 'powder-ops-logo.jpg');
@@ -727,6 +728,7 @@ router.post('/evaluation-pdf', async (req, res) => {
 
   try {
     const doc = new PDFDocument({ size: 'LETTER', margins: { top: 54, bottom: 54, left: 54, right: 54 } });
+    embedUnicodeFaces(doc); // embedded Unicode faces, so ≤, µ and accented text print (D-235)
     const chunks = [];
     doc.on('data', c => chunks.push(c));
     const done = new Promise((resolve, reject) => {

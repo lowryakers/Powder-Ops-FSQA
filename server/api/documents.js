@@ -12,6 +12,7 @@ import { createReadStream } from 'fs';
 import { getDb, logAudit } from '../db.js';
 import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { storageEnabled, putStream, presignGet, deleteObject } from '../storage.js';
+import { embedUnicodeFaces } from '../pdf-unicode.js';
 
 const clean = (v, max = 300) => { const t = String(v ?? '').trim(); return t ? t.slice(0, max) : null; };
 
@@ -1040,6 +1041,7 @@ function generatePDF(res, docs, sigsByDoc = null) {
   const PAGE_BOTTOM = 720;
 
   const pdf = new PDFDocument({ size: 'LETTER', margins: { top: 72, bottom: 72, left: LEFT, right: 72 } });
+  embedUnicodeFaces(pdf); // embedded Unicode faces, so ≤, µ and accented text print (D-235)
   res.setHeader('Content-Type', 'application/pdf');
   const typeLabel = TYPE_LABEL[docs[0].doc_type] || 'Document';
   const title = docs.length === 1 ? `${docs[0].doc_number || typeLabel} - ${docs[0].title}` : `${typeLabel}_${docs.length}_docs`;

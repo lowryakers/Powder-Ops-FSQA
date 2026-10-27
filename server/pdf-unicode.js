@@ -63,7 +63,7 @@ export function printable(value) {
  * Any other font name passes through unchanged. Call once, right after
  * `new PDFDocument(...)`.
  */
-export function useUnicodeFaces(doc) {
+export function embedUnicodeFaces(doc) {
   const F = registerUnicodeFonts(doc);
   if (F.regular === 'Helvetica') return doc; // the font files are missing: leave Helvetica in place
   const FACE = { Helvetica: F.regular, 'Helvetica-Bold': F.bold, 'Helvetica-Oblique': F.italic, 'Helvetica-BoldOblique': F.boldItalic };
