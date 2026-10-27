@@ -18,7 +18,7 @@ import { gateSignature, signatureEvidence } from '../signature.js';
 import { allocateCertNumber, snapshotFor, signRefusals, canonicalJson, sha256, isSigned, LOCKED_FIELDS, LOCKED_MESSAGE } from '../coa-certificate.js';
 import { plantDateOf } from '../plant-clock.js';
 import { isQaReviewer } from '../qa-signing.js';
-import { coaCorrectionAllowed, correctionFlags, duplicateDeleteRefusal, coaSignHold, dismissItem, DECISION as CORRECTION_DECISION, openItems, itemProgress } from '../coa-review-items.js';
+import { coaCorrectionAllowed, correctionFlags, duplicateDeleteRefusal, coaSignHold, dismissItem, recordDuplicateDecision, DECISION as CORRECTION_DECISION, openItems, itemProgress } from '../coa-review-items.js';
 import { stampBaseLot, lotGlutenRollup } from '../coa-lots.js';
 import { splitLot } from '../../shared/lot-model.js';
 
@@ -1063,9 +1063,19 @@ function openRequestIds(db) {
 }
 function correctionItemsFor(db, requestId) {
   try {
-    return db.prepare('SELECT * FROM coa_review_items WHERE request_id = ? ORDER BY created_at').all(requestId)
-      .map(i => ({ id: i.id, item_key: i.item_key, kind: i.kind, title: i.title, recommended_action: i.recommended_action, reason: i.reason,
-        status: i.status, dismissed_reason: i.dismissed_reason, ...itemProgress(db, i) }));
+    // A possible duplicate (D-242) shows on BOTH records of the pair.
+    return db.prepare(`SELECT * FROM coa_review_items WHERE request_id = ?
+        OR (kind = 'POSSIBLE_DUPLICATE' AND item_key LIKE '%' || ? || '%') ORDER BY created_at`).all(requestId, requestId)
+      .map(i => {
+        const extra = (() => { try { return JSON.parse(i.steps || '{}'); } catch { return {}; } })();
+        const seed = extra.seed || {};
+        return { id: i.id, item_key: i.item_key, kind: i.kind, title: i.title, recommended_action: i.recommended_action, reason: i.reason,
+          note: extra.note || null, status: i.status, dismissed_reason: i.dismissed_reason,
+          evidence: (() => { try { return JSON.parse(i.evidence || '[]'); } catch { return []; } })(),
+          decision: (() => { try { return i.decision ? JSON.parse(i.decision) : null; } catch { return null; } })(),
+          ...(i.kind === 'POSSIBLE_DUPLICATE' ? { pair: { a: seed.id_a, b: seed.id_b || null }, this_record: seed.id_b === requestId ? 'B' : 'A' } : {}),
+          ...itemProgress(db, i) };
+      });
   } catch { return []; }
 }
 
@@ -1077,14 +1087,34 @@ router.get('/review-items', (req, res) => {
 
 // An admin closes an item with a reason. It is the only way the held request
 // (8afd7fbe) can be signed again, and it is recorded.
-router.post('/review-items/:id/dismiss', requireRole('admin'), (req, res) => {
+// Closing an item: an admin for every kind; Quality may also dismiss a
+// POSSIBLE duplicate ("not a duplicate", D-242). Reason required, recorded.
+router.post('/review-items/:id/dismiss', (req, res) => {
+  const db = getDb();
+  const target = db.prepare('SELECT kind FROM coa_review_items WHERE id = ? OR item_key = ?').get(req.params.id, req.params.id);
+  const mayDismiss = req.user?.role === 'admin' || (target?.kind === 'POSSIBLE_DUPLICATE' && isQaReviewer(req.user));
+  if (!mayDismiss) return res.status(403).json({ error: target?.kind === 'POSSIBLE_DUPLICATE'
+    ? 'Only Quality or an admin can close a possible duplicate.' : 'Only an admin can dismiss a COA correction.' });
   const reason = String(req.body?.reason || '').trim();
   if (reason.length < 3) return res.status(400).json({ error: 'Say why this correction is being dismissed.' });
-  const db = getDb();
   const out = dismissItem(db, req.user, req.params.id, reason);
   if (out.error) return res.status(out.status).json({ error: out.error });
   logAudit(req.user, 'dismiss', 'coa_review_item', out.item.id, { reason, item_key: out.item.item_key, request_id: out.item.request_id },
     { status: out.before.status }, { status: 'dismissed' }, out.item.title);
+  res.json(out.item);
+});
+
+// Maria's answer on a possible duplicate (D-242): the same test, and which
+// record goes. Recorded only — an admin deletes it with the ordinary delete.
+router.post('/review-items/:id/decide', (req, res) => {
+  if (!(req.user?.role === 'admin' || isQaReviewer(req.user))) return res.status(403).json({ error: 'Only Quality or an admin can decide a possible duplicate.' });
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 3) return res.status(400).json({ error: 'Say why these are the same test.' });
+  const db = getDb();
+  const out = recordDuplicateDecision(db, req.user, req.params.id, { remove: String(req.body?.remove || '').toUpperCase(), reason });
+  if (out.error) return res.status(out.status).json({ error: out.error });
+  logAudit(req.user, 'update', 'coa_review_item', out.item.id, { decision: out.decision, item_key: out.item.item_key },
+    { decision: out.before.decision ? JSON.parse(out.before.decision) : null }, { decision: out.decision }, out.item.title);
   res.json(out.item);
 });
 

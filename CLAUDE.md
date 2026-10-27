@@ -3881,6 +3881,18 @@ meant rebuilding the filter by hand — which nobody does. Every `AttentionBar` 
   The brand is chosen on the new-request form; the bulk CSV is for the history only.
 - The Lab Requests list loads every request at once. `verify:coaphase1` (100, live + reboots + browser).
 
+## COA duplicates: the obvious ones by a script an admin runs, the possible ones by Maria (D-241, D-242)
+- `scripts/coa-remove-obvious-duplicates.mjs`: one-off, admin-run in the Railway shell, never at boot or by a route.
+  It deletes ONLY the ids in `scripts/data/coa-obvious-duplicates-2026-10-27.csv`, re-checks each at run time, and
+  skips anything signed, not empty, changed, linked, queued in QA Review, or whose keeper no longer matches.
+  - Run the dry run first; `--apply` refuses without one from the last 24 hours.
+  - `--apply` backs up and exports first, then deletes in one transaction with one audit row per delete.
+  - `--preserve-links` is Lowry's call. `check:coaremovedupes` (40).
+- The 59 possible duplicates are `POSSIBLE_DUPLICATE` items in the "COA corrections" pile.
+  - Maria marks "same test — remove A/B" or "not a duplicate" on the request screen.
+  - An admin deletes what she marks.
+  - **The kind grants no un-sign or delete.** `verify:coapossibledupes` (33).
+
 ## COA item specification sheet
 The Specifications tab stores one row per test (right for auto pass/fail, hard to eyeball). "View item & all
 specs" (`ItemSpecSummaryModal` in COAPanel.jsx) regroups the rows under an item — the old paper spec sheet —

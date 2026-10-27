@@ -1023,6 +1023,65 @@ function CoaSettingsCard() {
 
 // The COA corrections decided for this request (D-236), with the steps the
 // server derives — the same rows QA Review shows.
+// A pair of records that may be one test entered twice (D-242). Maria decides:
+// the same test (and which record goes — an admin then deletes it), or not a
+// duplicate (dismissed with a reason). Nothing here deletes a record.
+function PossibleDuplicate({ item: i, onChanged, onError }) {
+  const { user } = useAuth() || {};
+  const mayDecide = !!user && (user.role === 'admin' || canSeeQaReview(user));
+  const openRequest = (id) => window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab: 'coa', request: id } }));
+  const post = async (path, body) => {
+    try { await apiPost(path, body); onError(null); onChanged?.(); } catch (x) { onError(x.message); }
+  };
+  const decide = (letter) => {
+    const reason = prompt(`Why are these the same test? Record ${letter} will be marked for an admin to delete.`);
+    if (reason && reason.trim().length >= 3) post(`/coa/review-items/${i.id}/decide`, { remove: letter, reason: reason.trim() });
+  };
+  const notDuplicate = () => {
+    const reason = prompt(i.pair?.b ? 'Why is this not a duplicate? This closes the item and is recorded.'
+      : 'Say what you found (the extra lines are deleted, or they are not duplicates). This closes the item and is recorded.');
+    if (reason && reason.trim().length >= 3) post(`/coa/review-items/${i.id}/dismiss`, { reason: reason.trim() });
+  };
+  const pair = !!i.pair?.b;
+  return (
+    <div className={`rounded-lg border px-3 py-2 text-xs ${i.complete ? 'border-green-200 bg-green-50 text-green-800' : 'border-blue-200 bg-blue-50 text-blue-900'}`}
+      data-possible-duplicate={i.id}>
+      <p className="font-semibold">{i.complete ? 'Settled: ' : 'Possible duplicate: '}{i.recommended_action}</p>
+      {pair && <p className="mt-0.5">This is record {i.this_record}.</p>}
+      <p className="mt-0.5">{i.reason}</p>
+      {i.note && <p className="mt-0.5 italic">{i.note}</p>}
+      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+        {(i.evidence || []).map((e, n) => e.kind === 'request' ? (
+          <button key={n} type="button" onClick={() => openRequest(e.request_id)} className="underline">{e.label}</button>
+        ) : e.kind === 'file' ? (
+          <button key={n} type="button" onClick={() => downloadFile(`/coa/files/${e.file_id}/download`, e.label).catch(() => {})} className="underline">Lab report {e.label}</button>
+        ) : <span key={n}>{e.label}</span>)}
+      </div>
+      <ul className="mt-1 space-y-0.5">
+        {(i.steps || []).map(st => (
+          <li key={st.key} className="flex items-center gap-1.5" data-correction-step={st.key} data-done={st.done ? '1' : '0'}>
+            {st.done ? <CheckCircle2 size={12} className="text-green-600" /> : <Square size={12} className="text-gray-400" />} {st.label}
+          </li>
+        ))}
+      </ul>
+      {i.decision && <p className="mt-1" data-dup-decision>{i.decision.by} marked record {i.decision.remove} for removal: {i.decision.reason}</p>}
+      {i.blockedBy && !i.complete && <p className="mt-1 italic">{i.blockedBy}</p>}
+      {mayDecide && !i.complete && (
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {pair && ['A', 'B'].map(letter => (
+            <button key={letter} type="button" onClick={() => decide(letter)} data-dup-remove={letter}
+              className="px-2 py-0.5 border border-current rounded text-[11px] font-semibold hover:bg-white/60">
+              Same test — remove record {letter}{letter === i.this_record ? ' (this one)' : ''}…
+            </button>
+          ))}
+          <button type="button" onClick={notDuplicate} data-dup-dismiss
+            className="px-2 py-0.5 border border-current rounded text-[11px] font-semibold hover:bg-white/60">{pair ? 'Not a duplicate…' : 'Close this item…'}</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CorrectionItems({ items, onChanged }) {
   const { user } = useAuth() || {};
   const isAdmin = user?.role === 'admin';
@@ -1041,7 +1100,9 @@ function CorrectionItems({ items, onChanged }) {
   };
   return (
     <div className="space-y-2" data-correction-items>
-      {open.map(i => (
+      {open.map(i => i.kind === 'POSSIBLE_DUPLICATE' ? (
+        <PossibleDuplicate key={i.item_key} item={i} onChanged={onChanged} onError={setErr} />
+      ) : (
         <div key={i.item_key} className={`rounded-lg border px-3 py-2 text-xs ${i.complete ? 'border-green-200 bg-green-50 text-green-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
           <p className="font-semibold">{i.complete ? 'Correction done: ' : 'Correction to make: '}{i.recommended_action}</p>
           <p className="mt-0.5">{i.reason}</p>

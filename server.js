@@ -116,6 +116,7 @@ import { seedGenericSpecifications } from './server/spec-seed.js';
 import { retireMalformedSpecs } from './server/coa-spec-check.js';
 import { voidUnissuedCertNumbers } from './server/coa-certificate.js';
 import { seedCoaPhase1ReviewItems } from './server/coa-review-items.js';
+import { seedCoaPossibleDuplicates } from './server/coa-possible-duplicates.js';
 import { backfillBaseLots } from './server/coa-lots.js';
 import { seedForm607Specs } from './server/spec-607-seed.js';
 import { tagQaInspectionRecords, tagQaInspectionTasks } from './server/qa-records.js';
@@ -1536,6 +1537,16 @@ try {
   if (s.inserted) console.log(`[coa] filed ${s.inserted} COA correction item(s) for QA Review (${s.skipped} named a request not on this database)`);
 } catch (err) {
   console.error('[coa] seeding COA correction items failed (non-fatal):', err.message);
+}
+
+// The 59 POSSIBLE duplicates from the 27 Oct review (A-20261027-003, D-242):
+// queued once for Maria in the same pile. Additive; nothing here deletes or
+// changes a COA record.
+try {
+  const s = seedCoaPossibleDuplicates(db, logAudit);
+  if (s.inserted) console.log(`[coa] queued ${s.inserted} possible duplicate(s) for QA Review (${s.skipped} named a record not on this database)`);
+} catch (err) {
+  console.error('[coa] queuing possible duplicates failed (non-fatal):', err.message);
 }
 
 // Base lot and batch, derived from the lot as written (D-237). Fills blanks only.

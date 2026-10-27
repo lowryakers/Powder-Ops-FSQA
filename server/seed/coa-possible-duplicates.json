@@ -1,0 +1,596 @@
+{
+ "decision": "A-20261027-003",
+ "reviewed": "2026-10-27",
+ "items": [
+  {
+   "id_a": "a65c364b-4ec3-4f86-a4b3-cc4d7c498763",
+   "id_b": "ee205dff-0a08-4aad-977c-75ff77179551",
+   "how_sure": "Very likely",
+   "kind": "Empty row with clean lot vs row with a Drive link in its lot field",
+   "product": "(CN903) Non-Fat Dry Milk",
+   "lot": "L00727",
+   "suggestion": "Keep ee205dff (has the real status and result date), delete a65c364b, then fix the lot and send date on ee205dff",
+   "why": "Same item, lot and test. The row with the data has a Drive link typed into its Lot field and often a wrong send date; the other row has the clean lot but is an empty placeholder. Keep the row with data, then fix its lot (an edit, not a delete)."
+  },
+  {
+   "id_a": "4476e8e5-2324-405c-ae52-2d550ed8ce00",
+   "id_b": "807e1fc0-729f-4165-883a-3cf7d591f1e8",
+   "how_sure": "Very likely",
+   "kind": "Empty row with clean lot vs row with a Drive link in its lot field",
+   "product": "(CN903) Provon 292 Whey Protein Isolate (Instantized)",
+   "lot": "L00560",
+   "suggestion": "Keep 807e1fc0 (has the real status and result date), delete 4476e8e5, then fix the lot and send date on 807e1fc0",
+   "why": "Same item, lot and test. The row with the data has a Drive link typed into its Lot field and often a wrong send date; the other row has the clean lot but is an empty placeholder. Keep the row with data, then fix its lot (an edit, not a delete)."
+  },
+  {
+   "id_a": "f4437fdf-4942-4dce-a18d-20e34ecf5923",
+   "id_b": "f1aa59d1-0844-4385-9986-d4d03be2edca",
+   "how_sure": "Very likely",
+   "kind": "Empty row with clean lot vs row with a Drive link in its lot field",
+   "product": "(CN931) Vitamin B6 (Pyridoxine HIC 98%)",
+   "lot": "L009451",
+   "suggestion": "Keep f1aa59d1 (has the real status and result date), delete f4437fdf, then fix the lot and send date on f1aa59d1",
+   "why": "Same item, lot and test. The row with the data has a Drive link typed into its Lot field and often a wrong send date; the other row has the clean lot but is an empty placeholder. Keep the row with data, then fix its lot (an edit, not a delete)."
+  },
+  {
+   "id_a": "6b069553-c688-45c8-aa8b-94849157139b",
+   "id_b": "11ecd8a3-409b-4df5-a792-574800912e3d",
+   "how_sure": "Very likely",
+   "kind": "Empty row with clean lot vs row with a Drive link in its lot field",
+   "product": "Digestive Enzyme Blend (QID0418POP122)",
+   "lot": "L00312",
+   "suggestion": "Keep 11ecd8a3 (has the real status and result date), delete 6b069553, then fix the lot and send date on 11ecd8a3",
+   "why": "Same item, lot and test. The row with the data has a Drive link typed into its Lot field and often a wrong send date; the other row has the clean lot but is an empty placeholder. Keep the row with data, then fix its lot (an edit, not a delete)."
+  },
+  {
+   "id_a": "43ef6231-d65f-47bb-86eb-8075a50bfb4a",
+   "id_b": "a1570ae7-88de-4080-b0fb-ab5a500da8c9",
+   "how_sure": "Very likely",
+   "kind": "Empty row with clean lot vs row with a Drive link in its lot field",
+   "product": "Flavor (Natural French Vanilla)(WG13)(Powder)",
+   "lot": "100557",
+   "suggestion": "Keep a1570ae7 (has the real status and result date), delete 43ef6231, then fix the lot and send date on a1570ae7",
+   "why": "Same item, lot and test. The row with the data has a Drive link typed into its Lot field and often a wrong send date; the other row has the clean lot but is an empty placeholder. Keep the row with data, then fix its lot (an edit, not a delete)."
+  },
+  {
+   "id_a": "db317997-4db9-41f0-b5c6-cb18989e5a43",
+   "id_b": "68c2bcfc-b834-4e36-8dda-252acfdcbfba",
+   "how_sure": "Very likely",
+   "kind": "Empty row with clean lot vs row with a Drive link in its lot field",
+   "product": "PRO Chocolate Pancake Mix Pouch (454g)",
+   "lot": "100537",
+   "suggestion": "Keep 68c2bcfc (has the real status and result date), delete db317997, then fix the lot and send date on 68c2bcfc",
+   "why": "Same item, lot and test. The row with the data has a Drive link typed into its Lot field and often a wrong send date; the other row has the clean lot but is an empty placeholder. Keep the row with data, then fix its lot (an edit, not a delete)."
+  },
+  {
+   "id_a": "07295f79-5fa8-4859-a244-7e64e223ba99",
+   "id_b": "d6393178-349f-473d-8b2d-7a9cb59a62f2",
+   "how_sure": "Very likely",
+   "kind": "Empty row with clean lot vs row with a Drive link in its lot field",
+   "product": "PRO Pumpkin Pancake Mix Pouch (454g)",
+   "lot": "100604",
+   "suggestion": "Keep d6393178 (has the real status and result date), delete 07295f79, then fix the lot and send date on d6393178",
+   "why": "Same item, lot and test. The row with the data has a Drive link typed into its Lot field and often a wrong send date; the other row has the clean lot but is an empty placeholder. Keep the row with data, then fix its lot (an edit, not a delete)."
+  },
+  {
+   "id_a": "ac38b574-fb0e-4ef8-81a2-5f38255f666d",
+   "id_b": "570fa1cb-a155-4408-8187-b5896b290ec7",
+   "how_sure": "Very likely",
+   "kind": "Empty row with clean lot vs row with a Drive link in its lot field",
+   "product": "PRO Vegan Protein (Brownie Batter)",
+   "lot": "L00434",
+   "suggestion": "Keep 570fa1cb (has the real status and result date), delete ac38b574, then fix the lot and send date on 570fa1cb",
+   "why": "Same item, lot and test. The row with the data has a Drive link typed into its Lot field and often a wrong send date; the other row has the clean lot but is an empty placeholder. Keep the row with data, then fix its lot (an edit, not a delete)."
+  },
+  {
+   "id_a": "1bc147c5-2fc8-4fe5-92fb-db9339ea22b9",
+   "id_b": "1bba4532-228d-4387-82c3-e74f77060dd3",
+   "how_sure": "Very likely",
+   "kind": "Empty row with clean lot vs row with a Drive link in its lot field",
+   "product": "PRO Vegan Protein (Salted Caramel)(V2)",
+   "lot": "L00435",
+   "suggestion": "Keep 1bba4532 (has the real status and result date), delete 1bc147c5, then fix the lot and send date on 1bba4532",
+   "why": "Same item, lot and test. The row with the data has a Drive link typed into its Lot field and often a wrong send date; the other row has the clean lot but is an empty placeholder. Keep the row with data, then fix its lot (an edit, not a delete)."
+  },
+  {
+   "id_a": "bc22cc67-9930-4970-9257-0bbaae3b50d2",
+   "id_b": "771334b5-c2bc-4ca9-9413-dd8348348be3",
+   "how_sure": "Very likely",
+   "kind": "Empty row with clean lot vs row with a Drive link in its lot field",
+   "product": "PRO Vegan Protein (Vanilla) (V2)",
+   "lot": "L00391",
+   "suggestion": "Keep 771334b5 (has the real status and result date), delete bc22cc67, then fix the lot and send date on 771334b5",
+   "why": "Same item, lot and test. The row with the data has a Drive link typed into its Lot field and often a wrong send date; the other row has the clean lot but is an empty placeholder. Keep the row with data, then fix its lot (an edit, not a delete)."
+  },
+  {
+   "id_a": "4d16eeb9-06eb-4b08-b230-93a4f5bcaaf4",
+   "id_b": "c29a46d6-fdd6-481d-a2a3-abda68c915d0",
+   "how_sure": "Very likely",
+   "kind": "Empty row with clean lot vs row with a Drive link in its lot field",
+   "product": "PRO Whey Protein Iso (Chocolate Mint)",
+   "lot": "100611",
+   "suggestion": "Keep c29a46d6 (has the real status and result date), delete 4d16eeb9, then fix the lot and send date on c29a46d6",
+   "why": "Same item, lot and test. The row with the data has a Drive link typed into its Lot field and often a wrong send date; the other row has the clean lot but is an empty placeholder. Keep the row with data, then fix its lot (an edit, not a delete)."
+  },
+  {
+   "id_a": "bf814576-1f0d-4687-b2a7-1ff1e0736659",
+   "id_b": "d8a96308-f0a0-42d3-a8b4-9d54bc059f7b",
+   "how_sure": "Very likely",
+   "kind": "Empty row with clean lot vs row with a Drive link in its lot field",
+   "product": "PRO Whey Protein Iso (Coconut Cream)(V2)",
+   "lot": "100600",
+   "suggestion": "Keep d8a96308 (has the real status and result date), delete bf814576, then fix the lot and send date on d8a96308",
+   "why": "Same item, lot and test. The row with the data has a Drive link typed into its Lot field and often a wrong send date; the other row has the clean lot but is an empty placeholder. Keep the row with data, then fix its lot (an edit, not a delete)."
+  },
+  {
+   "id_a": "8e6bbbba-3188-4027-94e0-a4fbf8f286ea",
+   "id_b": "5628593c-10e3-4292-a65f-f2a0a83b3bd4",
+   "how_sure": "Very likely",
+   "kind": "Empty row with clean lot vs row with a Drive link in its lot field",
+   "product": "PRO Whey Protein Iso (Horchata)(V2)",
+   "lot": "100605",
+   "suggestion": "Keep 5628593c (has the real status and result date), delete 8e6bbbba, then fix the lot and send date on 5628593c",
+   "why": "Same item, lot and test. The row with the data has a Drive link typed into its Lot field and often a wrong send date; the other row has the clean lot but is an empty placeholder. Keep the row with data, then fix its lot (an edit, not a delete)."
+  },
+  {
+   "id_a": "0878b1d3-7f4d-48da-a5f4-add8c7b8643b",
+   "id_b": "806970e0-6901-4f74-acd8-664b264a1054",
+   "how_sure": "Very likely",
+   "kind": "Empty row with clean lot vs row with a Drive link in its lot field",
+   "product": "PRO Whey Protein Iso (Orange Cream)(V2)",
+   "lot": "100614",
+   "suggestion": "Keep 806970e0 (has the real status and result date), delete 0878b1d3, then fix the lot and send date on 806970e0",
+   "why": "Same item, lot and test. The row with the data has a Drive link typed into its Lot field and often a wrong send date; the other row has the clean lot but is an empty placeholder. Keep the row with data, then fix its lot (an edit, not a delete)."
+  },
+  {
+   "id_a": "fb0eac39-f34f-4aaa-a6d5-ba130b019492",
+   "id_b": "5e969d1c-cf92-4cf0-a6a9-bceb3f4696c4",
+   "how_sure": "Very likely",
+   "kind": "Empty row with clean lot vs row with a Drive link in its lot field",
+   "product": "PRO Whey Protein Iso (Peach Cobbler)(V2)",
+   "lot": "100549",
+   "suggestion": "Keep 5e969d1c (has the real status and result date), delete fb0eac39, then fix the lot and send date on 5e969d1c",
+   "why": "Same item, lot and test. The row with the data has a Drive link typed into its Lot field and often a wrong send date; the other row has the clean lot but is an empty placeholder. Keep the row with data, then fix its lot (an edit, not a delete)."
+  },
+  {
+   "id_a": "5d9dbb3c-dd4e-4d8d-9f6f-9ef8d6d87566",
+   "id_b": "0a85fa95-0188-4b32-a707-038c144fbbc7",
+   "how_sure": "Very likely",
+   "kind": "Empty row with clean lot vs row with a Drive link in its lot field",
+   "product": "PRO Whey Protein Iso (Peach Cobbler)(V2)",
+   "lot": "100610",
+   "suggestion": "Keep 0a85fa95 (has the real status and result date), delete 5d9dbb3c, then fix the lot and send date on 0a85fa95",
+   "why": "Same item, lot and test. The row with the data has a Drive link typed into its Lot field and often a wrong send date; the other row has the clean lot but is an empty placeholder. Keep the row with data, then fix its lot (an edit, not a delete)."
+  },
+  {
+   "id_a": "288d8814-ef92-4668-84b4-40aa042fb7a2",
+   "id_b": "7460fa3c-7abe-4b5d-a8ce-8216005a50ba",
+   "how_sure": "Very likely",
+   "kind": "Empty row with clean lot vs row with a Drive link in its lot field",
+   "product": "PRO Whey Protein Iso (Snickerdoodle)",
+   "lot": "100550",
+   "suggestion": "Keep 7460fa3c (has the real status and result date), delete 288d8814, then fix the lot and send date on 7460fa3c",
+   "why": "Same item, lot and test. The row with the data has a Drive link typed into its Lot field and often a wrong send date; the other row has the clean lot but is an empty placeholder. Keep the row with data, then fix its lot (an edit, not a delete)."
+  },
+  {
+   "id_a": "3185576c-2fb3-40b3-ac2f-1bd824ba4dc0",
+   "id_b": "82ec4d9e-2a83-40c9-8fe3-ca5a70ec3ed7",
+   "how_sure": "Very likely",
+   "kind": "Empty row with clean lot vs row with a Drive link in its lot field",
+   "product": "PRO Whey Protein Iso Stick Pack (Chocolate Mint)",
+   "lot": "L00863",
+   "suggestion": "Keep 82ec4d9e (has the real status and result date), delete 3185576c, then fix the lot and send date on 82ec4d9e",
+   "why": "Same item, lot and test. The row with the data has a Drive link typed into its Lot field and often a wrong send date; the other row has the clean lot but is an empty placeholder. Keep the row with data, then fix its lot (an edit, not a delete)."
+  },
+  {
+   "id_a": "b1e8dafe-4a06-402b-a1a2-8532f0f521cd",
+   "id_b": "13f6e7ac-1a66-4110-97d2-d92e95047f9e",
+   "how_sure": "Very likely",
+   "kind": "Empty row with clean lot vs row with a Drive link in its lot field",
+   "product": "PRO Whey Protein Iso Stick Pack (Chocolate PB)",
+   "lot": "L00862",
+   "suggestion": "Keep 13f6e7ac (has the real status and result date), delete b1e8dafe, then fix the lot and send date on 13f6e7ac",
+   "why": "Same item, lot and test. The row with the data has a Drive link typed into its Lot field and often a wrong send date; the other row has the clean lot but is an empty placeholder. Keep the row with data, then fix its lot (an edit, not a delete)."
+  },
+  {
+   "id_a": "49498bdf-9a79-48bc-9b09-0e8e49a36a8c",
+   "id_b": "5221e5ff-7926-43a5-95eb-802f82b8805d",
+   "how_sure": "Very likely",
+   "kind": "Empty row with clean lot vs row with a Drive link in its lot field",
+   "product": "PRO Whey Protein Iso Stick Pack (Sugar Cookie)",
+   "lot": "100608",
+   "suggestion": "Keep 5221e5ff (has the real status and result date), delete 49498bdf, then fix the lot and send date on 5221e5ff",
+   "why": "Same item, lot and test. The row with the data has a Drive link typed into its Lot field and often a wrong send date; the other row has the clean lot but is an empty placeholder. Keep the row with data, then fix its lot (an edit, not a delete)."
+  },
+  {
+   "id_a": "698a44ff-d187-4b36-9ebb-e1beb8485827",
+   "id_b": "184febea-6308-42bb-ad1d-2d721f200fb7",
+   "how_sure": "Very likely",
+   "kind": "Same lab PDF on two records",
+   "product": "Flavor, Natural Cake Batter Vanilla",
+   "lot": "101433",
+   "suggestion": "Both are signed: Maria decides which certificate to keep",
+   "why": "The two records point to the SAME lab PDF (identical file). Same product and lot entered under two different item numbers (202641 and 202671). Same test list and same dates."
+  },
+  {
+   "id_a": "1b26e549-0dc3-449d-8138-6381e6e42e9b",
+   "id_b": "87bee23e-a807-46fd-b0cd-e73881dd35d0",
+   "how_sure": "Very likely",
+   "kind": "Same lab PDF on two records",
+   "product": "Peach Cobbler Whey Protein Pouch",
+   "lot": "10169-1",
+   "suggestion": "Maria decides which one to keep",
+   "why": "The two records point to the SAME lab PDF (identical file). Same product and lot entered under two different item numbers (IM0040 and FG0932). Same test list and same dates."
+  },
+  {
+   "id_a": "9432015f-f99b-4610-a8c7-e93db64f350b",
+   "id_b": "f491d3b0-987d-4cdf-b674-970910aa2f1e",
+   "how_sure": "Very likely",
+   "kind": "Same lab PDF on two records",
+   "product": "Raspberry Cheesecake Whey Protein Stick",
+   "lot": "101704",
+   "suggestion": "Both are signed: Maria decides which certificate to keep",
+   "why": "The two records point to the SAME lab PDF (identical file). Same product and lot entered under two different item numbers (IM0036 and MO76749). Same test list and same dates."
+  },
+  {
+   "id_a": "0e388124-8482-46ab-b656-10bff7a2d531",
+   "id_b": "1e41e669-455e-4004-8f86-4ea8f2cbd570",
+   "how_sure": "Very likely",
+   "kind": "Same product and lot under two item numbers",
+   "product": "INTERMEDIATE- ProDough Protein Donut Sachet (White)",
+   "lot": "100894",
+   "suggestion": "Maria decides which one to keep",
+   "why": "Same product and lot entered under two different item numbers (IM0026 and MO01424). Same test list and same dates."
+  },
+  {
+   "id_a": "2bf4ceb3-43ca-4ca9-bce0-971244623234",
+   "id_b": "b4a177d5-bb2e-4db1-9dd3-80262dc08680",
+   "how_sure": "Very likely",
+   "kind": "Same product and lot under two item numbers",
+   "product": "INTERMEDIATE- ProDough Whey Protein Stick (Cinnamon Roll)",
+   "lot": "100674-2",
+   "suggestion": "Maria decides which one to keep",
+   "why": "Same product and lot entered under two different item numbers (MO01365 and 202623). Same test list and same dates."
+  },
+  {
+   "id_a": "4e2aca20-91df-4cf0-a1d4-1e76c428a994",
+   "id_b": "22b5bd87-1169-4e8e-b24c-24dcc3ce8dab",
+   "how_sure": "Very likely",
+   "kind": "Same product and lot under two item numbers",
+   "product": "M4FF Coffee Finished Good (15 ct )",
+   "lot": "100909-2",
+   "suggestion": "Maria decides which one to keep",
+   "why": "Same product and lot entered under two different item numbers (MO01426 and FG1135). Same test list and same dates."
+  },
+  {
+   "id_a": "d2d29551-9ba2-49da-8785-fd3d06f9abc5",
+   "id_b": "6f138a20-faff-49d5-a8c2-7eae09f06e37",
+   "how_sure": "Very likely",
+   "kind": "Same product and lot under two item numbers",
+   "product": "M4FF Coffee Finished Good (15 ct)",
+   "lot": "100909-3",
+   "suggestion": "Maria decides which one to keep",
+   "why": "Same product and lot entered under two different item numbers (MO01426 and FG1135). Same test list and same dates."
+  },
+  {
+   "id_a": "3a1e0080-fcc9-4eab-9f0a-f03501286a5d",
+   "id_b": "301a6c73-d509-4db7-9fab-e22a968de1b7",
+   "how_sure": "Very likely",
+   "kind": "Same product and lot under two item numbers",
+   "product": "M4FF Coffee Finished Good (30 Serving)",
+   "lot": "100910-4",
+   "suggestion": "Maria decides which one to keep",
+   "why": "Same product and lot entered under two different item numbers (MO01427 and FG1136). Same test list and same dates."
+  },
+  {
+   "id_a": "0a0a7ea9-e8f7-478c-ac26-1c48d7aa2971",
+   "id_b": "62af4952-d6e8-49cf-86db-4412520725f1",
+   "how_sure": "Very likely",
+   "kind": "Same product and lot under two item numbers",
+   "product": "M4FF Coffee Finished Good (30 Serving)",
+   "lot": "100910-5",
+   "suggestion": "Maria decides which one to keep",
+   "why": "Same product and lot entered under two different item numbers (MO01427 and FG1136). Same test list and same dates."
+  },
+  {
+   "id_a": "f4a6fc1d-ddbc-4c6c-a26f-e1ad397425a2",
+   "id_b": null,
+   "how_sure": "Very likely",
+   "kind": "Same result entered twice inside one record",
+   "product": "Flavor, Natural Cream",
+   "lot": "101431",
+   "suggestion": "Maria deletes the extra result lines in the record",
+   "why": "4 result lines appear twice in this certificate (Taste in the Minerals test; Color, Odor and Texture in the Organoleptic test), all created in the same minute."
+  },
+  {
+   "id_a": "857e7b0c-e77e-4256-af92-a2c46bbbbc04",
+   "id_b": "02053937-d950-4d19-a9fa-b00882996104",
+   "how_sure": "Needs a look",
+   "kind": "Empty \"pending\" request next to a finished one",
+   "product": "Rebaten G180 (Glucosylated Stevia)",
+   "lot": "101121",
+   "suggestion": "Delete 857e7b0c, keep 02053937",
+   "why": "Empty pending request for the same item and lot as a finished one, but it asks for a different set of tests; may be a real follow-up request"
+  },
+  {
+   "id_a": "f9ea8e3e-c563-4c08-9556-3996e737b5df",
+   "id_b": "b3c11e46-ed1d-4ab6-856c-b183e0e0f676",
+   "how_sure": "Needs a look",
+   "kind": "Same item, lot and test, dates do not match",
+   "product": "(CN931) DL-Malic Acid",
+   "lot": "101569",
+   "suggestion": "Delete f9ea8e3e, keep b3c11e46",
+   "why": "Empty record for the same item, lot and test as another record, but a date or test list does not match (dates 2026-05-18/2026-05-27 vs 2026-04-22/2026-05-06); needs a look"
+  },
+  {
+   "id_a": "df4091e3-4ab1-4294-8411-36b725cd5775",
+   "id_b": "39e622aa-bc27-493c-8e8e-6e030d14f84d",
+   "how_sure": "Needs a look",
+   "kind": "Same item, lot and test, dates do not match",
+   "product": "(CN943) AKR Mushroom Flavor Mix",
+   "lot": "100644",
+   "suggestion": "Maria decides which one to keep",
+   "why": "Empty record for the same item, lot and test as another record, but a date or test list does not match (dates 2025-10-10/2025-10-17 vs 2025-10-10/2025-10-17); needs a look"
+  },
+  {
+   "id_a": "e2877c5b-20a4-4a58-bb63-43783085a281",
+   "id_b": "1dca36c7-2dc2-495d-bb9d-fbe7ba3d46ad",
+   "how_sure": "Needs a look",
+   "kind": "Same item, lot and test, dates do not match",
+   "product": "(CN943) AKR SD 90 Base Mix",
+   "lot": "100642",
+   "suggestion": "Maria decides which one to keep",
+   "why": "Empty record for the same item, lot and test as another record, but a date or test list does not match (dates 2025-10-10/2025-10-17 vs 2025-10-10/2025-10-17); needs a look"
+  },
+  {
+   "id_a": "81e6b0b3-be25-42f1-ab79-08e02a410f40",
+   "id_b": "3ed38a8c-0379-4c58-bda8-573c3cc1ac0f",
+   "how_sure": "Needs a look",
+   "kind": "Same item, lot and test, dates do not match",
+   "product": "Alkify Blended Powder",
+   "lot": "L001113",
+   "suggestion": "Maria decides which one to keep",
+   "why": "Empty record for the same item, lot and test as another record, but a date or test list does not match (dates 2005-09-20/2025-09-16 vs 2025-05-09/2025-09-09); needs a look"
+  },
+  {
+   "id_a": "ceb05b66-ddce-45ac-80ed-06aecfba5f3b",
+   "id_b": "d5aca350-041b-44ab-bbdb-bc9ee3451331",
+   "how_sure": "Needs a look",
+   "kind": "Same item, lot and test, dates do not match",
+   "product": "Flavor (Natural French Vanilla)(WG13)(Powder)",
+   "lot": "100145",
+   "suggestion": "Delete ceb05b66, keep d5aca350",
+   "why": "Empty record for the same item, lot and test as another record, but a date or test list does not match (dates 2010-10-20/None vs 2025-10-10/2025-10-17); needs a look"
+  },
+  {
+   "id_a": "74e249c7-fab3-4780-8bd1-973f46a9749c",
+   "id_b": "4546f9c4-429f-4a92-8115-79c0dd3d6eae",
+   "how_sure": "Needs a look",
+   "kind": "Same item, lot and test, dates do not match",
+   "product": "Flavor, Natural Bananas Foster, BA-33482",
+   "lot": "101583",
+   "suggestion": "Delete 74e249c7, keep 4546f9c4",
+   "why": "Empty record for the same item, lot and test as another record, but a date or test list does not match (dates 20226-06-30/None vs 2026-02-20/2026-07-10); needs a look"
+  },
+  {
+   "id_a": "19e3a84e-b427-42ef-b3be-540f56dfea24",
+   "id_b": "add3c4f6-670f-4da1-be24-268f75fbcdf6",
+   "how_sure": "Needs a look",
+   "kind": "Same item, lot and test, dates do not match",
+   "product": "Flavor, Natural Birthday Cake, BC-25196",
+   "lot": "101582",
+   "suggestion": "Delete 19e3a84e, keep add3c4f6",
+   "why": "Empty record for the same item, lot and test as another record, but a date or test list does not match (dates 2025-06-30/None vs 2026-02-19/2026-07-10); needs a look"
+  },
+  {
+   "id_a": "000096b4-64af-4865-975f-a0d9c116fa1c",
+   "id_b": "ed70e465-62a1-4c92-9752-314ebb4e78c3",
+   "how_sure": "Needs a look",
+   "kind": "Same item, lot and test, dates do not match",
+   "product": "PRO Whey Protein Iso (Maple Donut)(V2)",
+   "lot": "100551",
+   "suggestion": "Maria decides which one to keep",
+   "why": "Empty record for the same item, lot and test as another record, but a date or test list does not match (dates 2009-09-20/2025-09-18 vs 2025-08-09/2025-09-09); needs a look"
+  },
+  {
+   "id_a": "2c747225-bb07-440a-b8a6-433bd9cf40ae",
+   "id_b": "f6df3b70-66a3-4f18-b134-4455f657f458",
+   "how_sure": "Needs a look",
+   "kind": "Same item, lot and test, dates do not match",
+   "product": "PRO Whey Protein Iso (Sugar Cookie) V2",
+   "lot": "100616",
+   "suggestion": "Maria decides which one to keep",
+   "why": "Empty record for the same item, lot and test as another record, but a date or test list does not match (dates 2009-09-20/2025-09-18 vs 2025-08-09/2025-10-09); needs a look"
+  },
+  {
+   "id_a": "720fabf1-0a36-44e5-99f0-ad1cdc50419b",
+   "id_b": "9dde5176-3744-4613-9fed-138647bb75f2",
+   "how_sure": "Needs a look",
+   "kind": "Same item, lot and test, dates do not match",
+   "product": "TP Hydration 15ct Finished Good (Blue Raspberry)",
+   "lot": "100623",
+   "suggestion": "Delete 720fabf1, keep 9dde5176",
+   "why": "Empty record for the same item, lot and test as another record, but a date or test list does not match (dates 2025-09-22/2025-10-01 vs None/2025-10-01); needs a look"
+  },
+  {
+   "id_a": "82c73098-d714-4a91-8ccc-0dd8404106a4",
+   "id_b": "82106b32-e40d-42f9-b6c1-994c20e09237",
+   "how_sure": "Needs a look",
+   "kind": "Same product and lot under two item numbers",
+   "product": "Alkify 30ct Finished Good",
+   "lot": "100135",
+   "suggestion": "Maria decides which one to keep",
+   "why": "Same product and lot entered under two different item numbers (202559 and 2025610). Test list or dates differ."
+  },
+  {
+   "id_a": "2ff9517a-2528-4620-930c-f866fb501dac",
+   "id_b": "748bfc80-1148-42ae-8ccd-e4120b01a56d",
+   "how_sure": "Needs a look",
+   "kind": "Same product and lot under two item numbers",
+   "product": "BLEND- ProDough Daily Recharge Greens/Reds (Tropical)",
+   "lot": "100100",
+   "suggestion": "Delete 2ff9517a, keep 748bfc80",
+   "why": "Same product and lot entered under two different item numbers (MO01293 and BD0235). Test list or dates differ."
+  },
+  {
+   "id_a": "9ef3f5ca-d200-4529-9a84-e5232c59cdb3",
+   "id_b": "d844ed53-9c0c-4314-a6c7-1523873ecb59",
+   "how_sure": "Needs a look",
+   "kind": "Same product and lot under two item numbers",
+   "product": "FINISHED GOOD- ProDough Protein Crepe Mix (Original)",
+   "lot": "100803 1",
+   "suggestion": "Maria decides which one to keep",
+   "why": "Same product and lot entered under two different item numbers (FG0907 and MO01408). Test list or dates differ."
+  },
+  {
+   "id_a": "6c0dfe5e-60ed-40cf-af80-0a641842c30b",
+   "id_b": "47f538e8-6638-4792-8247-633967074eab",
+   "how_sure": "Needs a look",
+   "kind": "Same product and lot under two item numbers",
+   "product": "FINISHED GOOD- ProDough Protein Pancake (Buttermilk)",
+   "lot": "100816 2",
+   "suggestion": "Maria decides which one to keep",
+   "why": "Same product and lot entered under two different item numbers (FG0900 and MO01417). Test list or dates differ."
+  },
+  {
+   "id_a": "0346aaab-3197-4b9b-8eae-8261feb7feb7",
+   "id_b": "d3b3b06a-a149-4c54-bfd1-b6e217737a79",
+   "how_sure": "Needs a look",
+   "kind": "Same product and lot under two item numbers",
+   "product": "FINISHED GOOD- ProDough Protein Pancake (Buttermilk)",
+   "lot": "100816 1",
+   "suggestion": "Maria decides which one to keep",
+   "why": "Same product and lot entered under two different item numbers (FG0900 and MO01388). Test list or dates differ."
+  },
+  {
+   "id_a": "9d5b0cb2-8c56-40b8-966e-2278bcd8e0ab",
+   "id_b": "75de7fe9-1760-4e6e-8866-141db291cfdd",
+   "how_sure": "Needs a look",
+   "kind": "Same product and lot under two item numbers",
+   "product": "FINISHED GOOD- ProDough Whey Protein (Chocolate Peanut Butter)",
+   "lot": "100698",
+   "suggestion": "Maria decides which one to keep",
+   "why": "Same product and lot entered under two different item numbers (FG1022 and MO01388). Test list or dates differ."
+  },
+  {
+   "id_a": "6441a14e-ea71-4ce7-b0bd-492bae2fbe9b",
+   "id_b": "e50cc71e-1ddb-4e9d-9a66-e5a98e8d3b02",
+   "how_sure": "Needs a look",
+   "kind": "Same product and lot under two item numbers",
+   "product": "INTERMEDIATE- ProDough Protein Donut Glaze Sachet (White)",
+   "lot": "100895",
+   "suggestion": "Maria decides which one to keep",
+   "why": "Same product and lot entered under two different item numbers (IM0027 and MO01425). Test list or dates differ."
+  },
+  {
+   "id_a": "2ba6a36e-424e-42a5-9f89-c7c47fb423e5",
+   "id_b": "f4c385dc-44fc-4c3f-9d7f-5f8eec2bfb36",
+   "how_sure": "Needs a look",
+   "kind": "Same product and lot under two item numbers",
+   "product": "Lemon Cake Whey Protein Stick",
+   "lot": "101715 2",
+   "suggestion": "Delete 2ba6a36e, keep f4c385dc",
+   "why": "Same product and lot entered under two different item numbers (MO76760 and 202656). Test list or dates differ."
+  },
+  {
+   "id_a": "2d62f6e4-3d60-4505-9e17-2a30c72f5fb8",
+   "id_b": "26d923b6-2172-4216-8382-6e74556cece5",
+   "how_sure": "Needs a look",
+   "kind": "Same product and lot under two item numbers",
+   "product": "Lemon Cake Whey Protein Stick",
+   "lot": "101715 1",
+   "suggestion": "Delete 2d62f6e4, keep 26d923b6",
+   "why": "Same product and lot entered under two different item numbers (MO76760 and 202656). Test list or dates differ."
+  },
+  {
+   "id_a": "0af62101-bffa-43a5-9c33-2c834cd14c2c",
+   "id_b": "4746aa75-f711-4023-9425-e50dc1b3d36b",
+   "how_sure": "Needs a look",
+   "kind": "Same product and lot under two item numbers",
+   "product": "M4FF Coffee Finished Good (15ct)",
+   "lot": "100909 1",
+   "suggestion": "Maria decides which one to keep",
+   "why": "Same product and lot entered under two different item numbers (FG1135 and MO01426). Test list or dates differ."
+  },
+  {
+   "id_a": "80dc28e4-c846-420e-a007-89290bbe3220",
+   "id_b": "c5f3e54f-cffd-44a7-b551-809186e0848e",
+   "how_sure": "Needs a look",
+   "kind": "Same product and lot under two item numbers",
+   "product": "Original Protein Crepe Mix",
+   "lot": "101679",
+   "suggestion": "Delete 80dc28e4, keep c5f3e54f",
+   "why": "Same product and lot entered under two different item numbers (MO76723 and FG0907). Test list or dates differ."
+  },
+  {
+   "id_a": "2760f2d6-2319-4842-9b89-715b584f114c",
+   "id_b": "b742add7-e8b9-4464-a871-ba508209b86e",
+   "how_sure": "Needs a look",
+   "kind": "Same product and lot under two item numbers",
+   "product": "PRO Whey Protein Iso (Snickerdoodle)(V2)",
+   "lot": "100612",
+   "suggestion": "Maria decides which one to keep",
+   "why": "Same product and lot entered under two different item numbers (FG0988 and MO01322). Test list or dates differ."
+  },
+  {
+   "id_a": "2d1f9767-215b-4f11-a6c2-f6f7547c7a05",
+   "id_b": "86d52dfb-877e-4072-b993-a5d19bb2c4b1",
+   "how_sure": "Needs a look",
+   "kind": "Same product and lot under two item numbers",
+   "product": "PRO Whey Protein Iso Stick Pack (Apple Pie)",
+   "lot": "L00856",
+   "suggestion": "Maria decides which one to keep",
+   "why": "Same product and lot entered under two different item numbers (MO01251 and IM0039). Test list or dates differ."
+  },
+  {
+   "id_a": "7cb87c1d-b85b-4663-ad84-7974ce3b7100",
+   "id_b": "7bff0433-2095-4797-8c12-449869198608",
+   "how_sure": "Needs a look",
+   "kind": "Same product and lot under two item numbers",
+   "product": "PRO Whey Protein Iso Stick Pack (Raspberry Cheesecake)",
+   "lot": "100601",
+   "suggestion": "Maria decides which one to keep",
+   "why": "Same product and lot entered under two different item numbers (IM0034 and MO01330). Test list or dates differ."
+  },
+  {
+   "id_a": "5cde0880-66e9-4d1d-b754-507937dfa2eb",
+   "id_b": "90d54e64-0865-4062-8948-96bdd1e0c0cc",
+   "how_sure": "Needs a look",
+   "kind": "Same product and lot under two item numbers",
+   "product": "PRO Whey Protein Iso Stick Pack (Snickerdoodle)",
+   "lot": "L00855",
+   "suggestion": "Maria decides which one to keep",
+   "why": "Same product and lot entered under two different item numbers (MO01250 and IM0045). Test list or dates differ."
+  },
+  {
+   "id_a": "cbb15b7d-1fc9-403e-8153-4d85ce260e09",
+   "id_b": "dfe4f648-b826-4cbf-b9d1-b35cdc8c6b28",
+   "how_sure": "Needs a look",
+   "kind": "Same product and lot under two item numbers",
+   "product": "PRO Whey Protein Iso Stick Pack (Sugar Cookie)",
+   "lot": "L00447",
+   "suggestion": "Maria decides which one to keep",
+   "why": "Same product and lot entered under two different item numbers (Unnamed and 202314). Test list or dates differ."
+  },
+  {
+   "id_a": "99075293-9562-4a77-9bc6-f1b4411419f0",
+   "id_b": "1f36d67b-79ab-4161-9049-d64ebe6883b8",
+   "how_sure": "Needs a look",
+   "kind": "Same product and lot under two item numbers",
+   "product": "TP Hydration Finished Good 15ct (Lemon Lime)",
+   "lot": "100658",
+   "suggestion": "Delete 99075293, keep 1f36d67b",
+   "why": "Same product and lot entered under two different item numbers (MO01359 and 202529). Test list or dates differ."
+  },
+  {
+   "id_a": "fbf135dd-1052-4b77-96e8-7bb867ff5f87",
+   "id_b": "8067493d-45fd-4434-8950-2c5bccb9c9f4",
+   "how_sure": "Needs a look",
+   "kind": "Same product and lot under two item numbers",
+   "product": "TP Hydration Finished Good 15ct (Watermelon)",
+   "lot": "100656",
+   "suggestion": "Delete fbf135dd, keep 8067493d",
+   "why": "Same product and lot entered under two different item numbers (MO01358 and 202532). Test list or dates differ."
+  }
+ ]
+}
