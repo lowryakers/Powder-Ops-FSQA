@@ -20,6 +20,7 @@ for (const id of ['176906', '176905', '176901', '180953']) {
     assert.equal(g.result_value, '<4');
     assert.equal(g.mdl, '4');
     assert.equal(g.unit, 'ppm');
+    assert.equal(g.method, 'ELISA', 'the Method column is carried (D-231)');
     assert.equal(p.lab_reference, id);
     assert.ok(!p.test_results.some(r => /44/.test(r.result_value)), 'no merged <44');
   });
@@ -38,9 +39,24 @@ test('CTLA 176906: blank MDL cells stay blank; the rest of the panel lines up', 
   assert.equal(row(p, 'E.Coli BAM (MOD)').result_value, 'Absent');
   assert.equal(row(p, 'E.Coli BAM (MOD)').mdl, null);
   assert.equal(row(p, 'Arsenic').result_value, '0.008');
+  assert.equal(row(p, 'Arsenic').method, 'USP <233>');
+  assert.equal(row(p, 'Arsenic').mdl, '0.005');
+  assert.equal(row(p, 'E.Coli BAM (MOD)').method, 'BAM CH. 4');
   assert.equal(row(p, 'Total Aerobic Microbial Count (USP)').result_value, '<100');
   assert.equal(p.lot_number, '101690-1');
   assert.equal(p.received_date, '2026-07-23');
+});
+
+test('the spaced-row reader keeps the method it trims off the test name (D-231)', () => {
+  const p = parseColumnarCoa([
+    'Analysis Specification Method Result MDL Units',
+    'Gluten Allergen Report ELISA <4 4 ppm',
+    'Arsenic Report ICP-MS 0.008 0.005 ppm',
+  ].join('\n'));
+  assert.equal(row(p, 'Gluten Allergen').method, 'ELISA');
+  assert.equal(row(p, 'Arsenic').method, 'ICP-MS');
+  assert.equal(row(p, 'Gluten Allergen').mdl, '4');
+  assert.equal(row(p, 'Arsenic').mdl, '0.005');
 });
 
 test('layoutPage places cells under their header columns', () => {

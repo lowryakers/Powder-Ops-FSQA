@@ -222,13 +222,20 @@ function parseSpacedRows(lines) {
     else if (trailing.length === 2) { result_value = trailing[1]; mdl = trailing[0]; }
     else result_value = trailing[0];
 
-    let test_type = tokens.join(' ').replace(METHOD_CUT_RE, '').replace(METHOD_TAIL_RE, '').trim();
+    // CTLA prints "<name> Report <method>": what follows the Specification
+    // word is the Method column. Otherwise a known method may end the name.
+    const whole = tokens.join(' ');
+    const afterSpec = whole.match(/\s+(?:Report|Result|Spec(?:ification)?)\b\s*(.*)$/i)?.[1]?.trim() || null;
+    const joined = whole.replace(METHOD_CUT_RE, '');
+    const methodHit = joined.match(METHOD_TAIL_RE);
+    const method = afterSpec || (methodHit ? methodHit[0].trim() : null);
+    let test_type = joined.replace(METHOD_TAIL_RE, '').trim();
     test_type = test_type.replace(/\s+/g, ' ').trim();
     if (test_type.length < 3 || !/[A-Za-z]{3}/.test(test_type)) continue;
     const key = test_type.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    results.push({ test_type, result_value, unit, mdl, section: null, pass_fail: null });
+    results.push({ test_type, result_value, unit, mdl, method, section: null, pass_fail: null });
   }
   return results;
 }
@@ -295,6 +302,7 @@ function parsePipeRows(lines) {
       result_value,
       unit: cols.unit !== undefined ? (cells[cols.unit] || null) : null,
       mdl: cols.mdl !== undefined ? (cells[cols.mdl] || null) : null,
+      method: cols.method !== undefined ? (String(cells[cols.method] || '').replace(/\s+/g, ' ').trim() || null) : null,
       section: null,
       // Same rule as the seam reader: the lab reports, the plant grades.
       pass_fail: null,

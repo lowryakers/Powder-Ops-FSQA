@@ -4183,6 +4183,10 @@ function runMigrations() {
   addColumnIfMissing('coa_requests', 'brand_owner', "TEXT DEFAULT 'unassigned'");
   // The bytes of every new upload, hashed at the door.
   addColumnIfMissing('coa_files', 'sha256', 'TEXT');
+  // The lab's method and detection limit, as read off the report (D-231).
+  // Nullable and new: older rows keep their method (if any) in notes.
+  addColumnIfMissing('coa_test_results', 'method', 'TEXT');
+  addColumnIfMissing('coa_test_results', 'mdl', 'TEXT');
   db.exec(`
     CREATE TABLE IF NOT EXISTS coa_counters (
       name TEXT PRIMARY KEY,
