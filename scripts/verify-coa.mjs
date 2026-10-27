@@ -98,7 +98,7 @@ try {
   r = await call('POST', `/coa/requests/${u1.id}/results`, { results: [{ test_type: 'Lead', result_value: '0,5', unit: 'ppm' }] });
   t('"0,5" is not read as 5 — left ungraded', r.j[0]?.pass_fail === null);
   const na = await req('COA-NA', 'NA-1');
-  await call('POST', `/coa/requests/${na.id}/results`, { results: [{ test_type: 'Odor', result_value: 'n/a', pass_fail: 'na' }, { test_type: 'Taste', result_value: 'n/a', pass_fail: 'na' }] });
+  await call('POST', `/coa/requests/${na.id}/results`, { results: [{ test_type: 'Odor', result_value: 'n/a', pass_fail: 'na', edit_reason: 'Not tested on this lot' }, { test_type: 'Taste', result_value: 'n/a', pass_fail: 'na', edit_reason: 'Not tested on this lot' }] });
   t('a request whose results are all N/A does not roll up to pass', row(na.id).status !== 'pass', row(na.id).status);
   await call('PUT', `/coa/requests/${na.id}`, { status: 'pass' });
   r = await sign(na.id);
@@ -119,7 +119,7 @@ try {
     { test_type: 'Lead', result_value: '0.2' },
     { test_type: 'Lead', result_value: '2.5 mg/g', unit: 'ppm' }] });
   t('a number the reader cannot take in full is left ungraded', r.j[0]?.pass_fail === null);
-  t('a number with no unit against a ppb limit is "unit not stated", not compared raw', r.j[1]?.pass_fail === null);
+  t('a number with no unit against a ppb limit is "unit not stated", not compared raw', r.j[1]?.pass_fail === null, JSON.stringify(r.j).slice(0, 300));
   t('a value whose own unit disagrees with the unit column is not graded', r.j[2]?.pass_fail === null);
 
   console.log('\n── specifications (D-225)');
@@ -131,14 +131,24 @@ try {
 
   console.log('\n── the certificate is not issued by reading it (D-223)');
   await call('POST', '/coa/specifications', { item_number: 'COA-C', item_description: 'Cert check', test_type: 'Arsenic', max_value: 0.5, unit: 'ppm' });
-  const c1 = await req('COA-C', 'C-1');
+  const c1 = await req('COA-R', 'C-1');
+  await call('POST', '/coa/specifications', { item_number: 'COA-R', item_description: 'Report check', test_type: 'Arsenic', max_value: 0.5, unit: 'ppm' });
   r = await upload(`/coa/requests/${c1.id}/files`, fixture('176906'), 'report.pdf', { file_type: 'lab_report' });
   t('a file type outside the list is a 400, and the file is not left behind', r.s === 400 && filesOnDisk() === 0, `${r.s} files=${filesOnDisk()}`);
   r = await upload(`/coa/requests/${c1.id}/files`, fixture('176906'), 'report.pdf', { file_type: 'lab_results' });
   const fileRow = r.j;
   t('a lab report uploads with the SHA-256 of its bytes', r.s === 201 && fileRow.sha256 === crypto.createHash('sha256').update(fixture('176906')).digest('hex'));
-  await call('POST', `/coa/requests/${c1.id}/results`, { results: [{ test_type: 'Arsenic', result_value: '0.02', unit: 'ppm' }] });
-  t('one passing result rolls the request up to pass', row(c1.id).status === 'pass', row(c1.id).status);
+  // Since D-243 a signature reads the attached report again, so the request
+  // holds exactly what the report says, applied from the file.
+  for (const [test_type, extra] of [['Total Aerobic Microbial Count (USP)', { max_value: 10000, unit: 'cfu/g' }], ['Total Yeast and Mold (USP)', { max_value: 1000, unit: 'cfu/g' }],
+    ['E.Coli BAM (MOD)', { specification: 'Absent' }], ['Salmonella', { specification: 'Absent' }], ['Lead', { max_value: 0.5, unit: 'ppm' }], ['Gluten Allergen', { max_value: 20, unit: 'ppm' }]]) {
+    await call('POST', '/coa/specifications', { item_number: 'COA-R', item_description: 'Report check', test_type, ...extra });
+  }
+  r = await call('POST', `/coa/requests/${c1.id}/results`, { source_file_id: fileRow.id, results: [
+    { test_type: 'Total Aerobic Microbial Count (USP)', result_value: '<100', unit: 'cfu/g' }, { test_type: 'Total Yeast and Mold (USP)', result_value: '<10', unit: 'cfu/g' },
+    { test_type: 'E.Coli BAM (MOD)', result_value: 'Absent' }, { test_type: 'Salmonella', result_value: 'Absent' },
+    { test_type: 'Arsenic', result_value: '0.008', unit: 'ppm' }, { test_type: 'Lead', result_value: '0.012', unit: 'ppm' }, { test_type: 'Gluten Allergen', result_value: '<4', unit: 'ppm' }] });
+  t('the report applied from the file: every result passes and rolls the request up to pass', r.s === 201 && row(c1.id).status === 'pass', `${r.s} ${row(c1.id).status} ${JSON.stringify(r.j).slice(0, 200)}`);
   r = await call('GET', `/coa/requests/${c1.id}/pdf`);
   t('the PDF of an unsigned request is a 409 …', r.s === 409 && r.j.draft_available === true);
   r = await call('GET', `/coa/requests/${c1.id}/pdf?draft=1`);
@@ -167,7 +177,11 @@ try {
   const c1s = row(c1.id);
   t('a clean pass signs, with a certificate number', r.s === 200 && /^\d{6}$/.test(c1s.certificate_number || ''), JSON.stringify(r.j).slice(0, 200));
   t('… and the SHA-256 of what was signed is the hash of its snapshot', c1s.signed_content_hash === crypto.createHash('sha256').update(c1s.signed_snapshot).digest('hex')
-    && JSON.parse(c1s.signed_snapshot).results[0].result_value === '0.02');
+    && JSON.parse(c1s.signed_snapshot).results.find(x => x.test_type === 'Arsenic')?.result_value === '0.008');
+  { const snap = JSON.parse(c1s.signed_snapshot);
+    t('the snapshot is version 2: who signed, the report number and date, and each result\'s source file', snap.snapshot_version === 2 && !!snap.signed_by
+      && snap.lab_report_number === '176906' && snap.lab_report_date === '2026-08-03'
+      && snap.results.every(x => x.source === 'pdf' && x.source_file_sha256 === fileRow.sha256 && x.manual === false), JSON.stringify({ v: snap.snapshot_version, n: snap.lab_report_number, d: snap.lab_report_date })); }
   r = await call('GET', `/coa/requests/${c1.id}/pdf`);
   t('the signed certificate downloads', r.s === 200 && r.j.slice(0, 4).toString() === '%PDF');
   const rid = (await call('GET', `/coa/requests/${c1.id}`)).j.test_results[0].id;

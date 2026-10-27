@@ -1,0 +1,38 @@
+{
+  "fixture": "synthetic-07-allergen-panel",
+  "text_layer": true,
+  "lab_report_number": "190007",
+  "report_date": "2026-10-09",
+  "tests": [
+    {
+      "test": "Soy Allergen",
+      "value": "<0.04",
+      "unit": "ppm",
+      "mdl": "0.04",
+      "method": "ELISA"
+    },
+    {
+      "test": "Milk Allergen",
+      "value": "<0.4",
+      "unit": "ppm",
+      "mdl": "0.4",
+      "method": "ELISA"
+    },
+    {
+      "test": "Peanut Allergen",
+      "value": "<0.04",
+      "unit": "ppm",
+      "mdl": "0.04",
+      "method": "ELISA"
+    },
+    {
+      "test": "Gluten Allergen",
+      "value": "<4",
+      "unit": "ppm",
+      "mdl": "4",
+      "method": "ELISA"
+    }
+  ],
+  "unread": 0,
+  "noise": 0
+}

@@ -4230,6 +4230,83 @@ function runMigrations() {
   `);
   // Maria's answer on a possible duplicate (D-242): which record goes, and why.
   addColumnIfMissing('coa_review_items', 'decision', 'TEXT');
+
+  // COA Phase 2 (D-243, D-244). Additive only: new tables, new nullable columns.
+  // A TEST PLAN is the list of tests a product family must have, with limits,
+  // a version and who approved it. Approved plans are never edited — a change
+  // is a new draft version. Applying a plan writes the coa_specifications rows
+  // the grader already reads, carrying the plan's id, version and approver.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS coa_test_plans (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      brand_owner TEXT,
+      version INTEGER NOT NULL DEFAULT 1,
+      status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','approved','retired')),
+      approved_by TEXT,
+      approved_at TEXT,
+      supersedes_id TEXT,
+      notes TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS coa_test_plan_tests (
+      id TEXT PRIMARY KEY,
+      plan_id TEXT NOT NULL REFERENCES coa_test_plans(id),
+      test_type TEXT NOT NULL,
+      evaluation TEXT NOT NULL DEFAULT 'limit' CHECK (evaluation IN ('limit','report_only')),
+      comparator TEXT,
+      min_value REAL,
+      max_value REAL,
+      unit TEXT,
+      method TEXT,
+      required INTEGER NOT NULL DEFAULT 1,
+      specification TEXT,
+      sort INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_coa_plan_tests_plan ON coa_test_plan_tests(plan_id);
+    CREATE TABLE IF NOT EXISTS coa_products (
+      item_number TEXT PRIMARY KEY,
+      display_name TEXT,
+      slug TEXT UNIQUE,
+      brand_owner TEXT,
+      plan_id TEXT,
+      plan_version INTEGER,
+      gf_claim INTEGER NOT NULL DEFAULT 0,
+      product_id TEXT,
+      public_note TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    -- Lines of a lab report the reader could not read (D-243). Each is added as
+    -- a result or dismissed with a reason; an open one blocks signing.
+    CREATE TABLE IF NOT EXISTS coa_unread_rows (
+      id TEXT PRIMARY KEY,
+      request_id TEXT NOT NULL,
+      file_id TEXT,
+      line_text TEXT NOT NULL,
+      test_name TEXT,
+      reason TEXT,
+      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','added','dismissed')),
+      resolved_by TEXT,
+      resolved_reason TEXT,
+      resolved_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (request_id, file_id, line_text)
+    );
+    CREATE INDEX IF NOT EXISTS idx_coa_unread_request ON coa_unread_rows(request_id);
+  `);
+  for (const [c, t] of [['plan_id', 'TEXT'], ['plan_version', 'INTEGER'], ['approved_by', 'TEXT'], ['approved_at', 'TEXT'], ['spec_version', 'INTEGER']]) {
+    addColumnIfMissing('coa_specifications', c, t);
+  }
+  // Where a result came from, what the reader read, and whether a person set
+  // it by hand (D-243, D-244). NULL on every row written before Phase 2.
+  for (const [c, t] of [['source', 'TEXT'], ['source_file_id', 'TEXT'], ['source_sha256', 'TEXT'], ['read_value', 'TEXT'], ['read_unit', 'TEXT'],
+    ['read_mdl', 'TEXT'], ['verdict_manual', 'INTEGER DEFAULT 0'], ['edit_reason', 'TEXT'], ['edited_by', 'TEXT'], ['edited_at', 'TEXT']]) {
+    addColumnIfMissing('coa_test_results', c, t);
+  }
+  // The lab's own report number and report date, read off the PDF (D-243).
+  for (const [c, t] of [['lab_report_number', 'TEXT'], ['lab_report_date', 'TEXT'], ['text_layer', 'INTEGER']]) addColumnIfMissing('coa_files', c, t);
   // A lot's base and its batch (D-237): 101690-1 is batch 1 of lot 101690.
   // Derived from lot_number, which is never changed.
   addColumnIfMissing('coa_requests', 'base_lot', 'TEXT');

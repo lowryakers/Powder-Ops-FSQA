@@ -117,6 +117,7 @@ import { retireMalformedSpecs } from './server/coa-spec-check.js';
 import { voidUnissuedCertNumbers } from './server/coa-certificate.js';
 import { seedCoaPhase1ReviewItems } from './server/coa-review-items.js';
 import { seedCoaPossibleDuplicates } from './server/coa-possible-duplicates.js';
+import { seedCoaTestPlans } from './server/coa-test-plans.js';
 import { backfillBaseLots } from './server/coa-lots.js';
 import { seedForm607Specs } from './server/spec-607-seed.js';
 import { tagQaInspectionRecords, tagQaInspectionTasks } from './server/qa-records.js';
@@ -1547,6 +1548,16 @@ try {
   if (s.inserted) console.log(`[coa] queued ${s.inserted} possible duplicate(s) for QA Review (${s.skipped} named a record not on this database)`);
 } catch (err) {
   console.error('[coa] queuing possible duplicates failed (non-fatal):', err.message);
+}
+
+// The ProDough test plans as DRAFTS (D-244): the panel's test names and the one
+// decided limit (gluten < 20 ppm, internal). Insert-only by name; nothing here
+// applies a plan or touches a specification.
+try {
+  const p = seedCoaTestPlans(db, logAudit);
+  if (p.created.length) console.log(`[coa] seeded ${p.created.length} draft test plan(s) for Quality to complete`);
+} catch (err) {
+  console.error('[coa] seeding test plans failed (non-fatal):', err.message);
 }
 
 // Base lot and batch, derived from the lot as written (D-237). Fills blanks only.

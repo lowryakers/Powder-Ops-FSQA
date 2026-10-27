@@ -1,0 +1,31 @@
+{
+  "fixture": "synthetic-09-wrapped-lines",
+  "text_layer": true,
+  "lab_report_number": "190009",
+  "report_date": "2026-08-10",
+  "tests": [
+    {
+      "test": "Total Coliforms (BAM)",
+      "value": "<10",
+      "unit": "cfu/g",
+      "mdl": "10",
+      "method": "BAM CH. 4"
+    },
+    {
+      "test": "E.Coli BAM",
+      "value": "Absent",
+      "unit": null,
+      "mdl": null,
+      "method": "BAM CH. 4"
+    },
+    {
+      "test": "Arsenic",
+      "value": "0.008",
+      "unit": "ppm",
+      "mdl": "0.005",
+      "method": "USP <233>"
+    }
+  ],
+  "unread": 0,
+  "noise": 0
+}

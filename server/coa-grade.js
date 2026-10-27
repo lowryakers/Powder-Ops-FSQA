@@ -161,10 +161,12 @@ export function gradeResult(resultValue, spec, stated = null, opts = {}) {
   // fail (D-222). Where the specification cannot decide, the stated verdict
   // stands — the caller only passes one printed beside a real limit.
   if (stated === 'fail') return { pass_fail: 'fail', graded_by: 'report', reason: 'The lab report states this result failed.' };
+  // A printed pass no longer rescues a result the specification cannot decide
+  // (D-244): it stays ungraded, and a person sets it with a reason.
   if (stated === 'pass') {
     if (verdict.pass_fail === 'fail') return { ...verdict, reason: `${verdict.reason} (The report printed a pass; the specification decides.)` };
     if (verdict.pass_fail === 'pass') return verdict;
-    return { pass_fail: 'pass', graded_by: 'report', reason: 'The lab report states this result.' };
+    return { ...verdict, pass_fail: null, graded_by: null, reason: `${verdict.reason || 'The specification cannot decide this result.'} The lab report states a pass, which is not enough on its own: set it by hand with a reason.` };
   }
   return verdict;
 }

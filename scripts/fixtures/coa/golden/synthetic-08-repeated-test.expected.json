@@ -1,0 +1,24 @@
+{
+  "fixture": "synthetic-08-repeated-test",
+  "text_layer": true,
+  "lab_report_number": "190008",
+  "report_date": "2026-08-09",
+  "tests": [
+    {
+      "test": "Gluten Allergen",
+      "value": "<4",
+      "unit": "ppm",
+      "mdl": "4",
+      "method": "ELISA"
+    },
+    {
+      "test": "Lead",
+      "value": "0.012",
+      "unit": "ppm",
+      "mdl": "0.005",
+      "method": "USP <233>"
+    }
+  ],
+  "unread": 1,
+  "noise": 1
+}

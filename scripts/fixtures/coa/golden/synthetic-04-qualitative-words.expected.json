@@ -1,0 +1,31 @@
+{
+  "fixture": "synthetic-04-qualitative-words",
+  "text_layer": true,
+  "lab_report_number": "190004",
+  "report_date": "2026-08-06",
+  "tests": [
+    {
+      "test": "E.Coli BAM (MOD)",
+      "value": "Absent",
+      "unit": null,
+      "mdl": null,
+      "method": "BAM CH. 4"
+    },
+    {
+      "test": "Listeria",
+      "value": "NotDetected",
+      "unit": null,
+      "mdl": null,
+      "method": "BAM CH. 10"
+    },
+    {
+      "test": "Coagulase Positive Staph",
+      "value": "Negative",
+      "unit": null,
+      "mdl": null,
+      "method": "BAM CH. 12"
+    }
+  ],
+  "unread": 2,
+  "noise": 0
+}

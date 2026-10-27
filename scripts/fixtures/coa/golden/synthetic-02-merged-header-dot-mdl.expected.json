@@ -1,0 +1,31 @@
+{
+  "fixture": "synthetic-02-merged-header-dot-mdl",
+  "text_layer": true,
+  "lab_report_number": "190002",
+  "report_date": "2026-08-04",
+  "tests": [
+    {
+      "test": "Total Aerobic Microbial Count (USP)",
+      "value": "<100",
+      "unit": "cfu/g",
+      "mdl": "100",
+      "method": "USP <2021>"
+    },
+    {
+      "test": "Arsenic",
+      "value": "0.002",
+      "unit": "ppm",
+      "mdl": ".001",
+      "method": "USP <233>"
+    },
+    {
+      "test": "Gluten Allergen",
+      "value": "<4",
+      "unit": "ppm",
+      "mdl": "4",
+      "method": "ELISA"
+    }
+  ],
+  "unread": 0,
+  "noise": 0
+}

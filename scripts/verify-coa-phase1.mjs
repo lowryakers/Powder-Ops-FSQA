@@ -97,10 +97,16 @@ try {
     const unsignedReq = (id, item, lot, status = 'pass', source = 'ctla_coa_upload') => insReq.run(id, item, `P1 ${item}`, lot, status, lab?.id || null, lab?.name || 'CTLA', source,
       null, null, null, null, null);
     const file = (fileId, reqId, name) => { const fn = `${fileId}.pdf`; writeFileSync(path.join(dir, 'coa-files', fn), pdf); insFile.run(fileId, reqId, fn, name, pdf.length); };
+    // The stored results are what the lab report on file (CTLA 176906) says,
+    // apart from the misread gluten value — since D-243 a signature reads the
+    // PDF again and refuses a line the record does not hold.
     const gluten44 = (reqId, two) => {
       insRes.run(crypto.randomUUID(), reqId, 'Gluten Allergen ReportELISA <', '<44', 'ppm', 'pass');
       if (two) insRes.run(crypto.randomUUID(), reqId, 'Gluten Allergen', '<44', 'ppm', 'pass');
-      insRes.run(crypto.randomUUID(), reqId, 'Total Aerobic Microbial Count (USP)', '<100', 'cfu/g', 'pass');
+      for (const [test, value, unit] of [['Total Aerobic Microbial Count (USP)', '<100', 'cfu/g'], ['Total Yeast and Mold (USP)', '<10', 'cfu/g'],
+        ['E.Coli BAM (MOD)', 'Absent', null], ['Salmonella', 'Absent', null], ['Arsenic', '0.008', 'ppm'], ['Lead', '0.012', 'ppm']]) {
+        insRes.run(crypto.randomUUID(), reqId, test, value, unit, 'pass');
+      }
     };
     // One of the 43 is also in the shipped COA history; file every fixture fresh.
     const allIds = [...new Set([...SEED.map(x => x.request_id), ...SEED.map(x => x.canonical_request_id).filter(Boolean)])];

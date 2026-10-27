@@ -1,0 +1,17 @@
+{
+  "fixture": "synthetic-05-scientific-notation",
+  "text_layer": true,
+  "lab_report_number": "190005",
+  "report_date": "2026-08-07",
+  "tests": [
+    {
+      "test": "Lead",
+      "value": "0.012",
+      "unit": "ppm",
+      "mdl": "0.005",
+      "method": "USP <233>"
+    }
+  ],
+  "unread": 2,
+  "noise": 0
+}

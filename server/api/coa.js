@@ -11,7 +11,7 @@ import { getDb, logAudit, dataDir } from '../db.js';
 import { requireRole } from '../middleware/auth.js';
 import { gradeResult, specIndex } from '../coa-grade.js';
 import { releaseGate, GATE_MODES, specCoverage } from '../../shared/spec-coverage.js';
-import { parseColumnarCoa, foundSomething } from '../coa-parse.js';
+import { parseColumnarCoa, foundSomething, displayMdl } from '../coa-parse.js';
 import { aiEnabled, readLabReport } from '../ai.js';
 import { composeSubmission, PROCESSING, processingLabel, PLANT_CONTACT } from '../coa-submission.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
@@ -21,6 +21,8 @@ import { isQaReviewer } from '../qa-signing.js';
 import { coaCorrectionAllowed, correctionFlags, duplicateDeleteRefusal, coaSignHold, dismissItem, recordDuplicateDecision, DECISION as CORRECTION_DECISION, openItems, itemProgress } from '../coa-review-items.js';
 import { stampBaseLot, lotGlutenRollup } from '../coa-lots.js';
 import { splitLot } from '../../shared/lot-model.js';
+import { readLabFile, squash, MIN_EDIT_REASON, recordUnreadRows, unreadRowsFor, signChecks } from '../coa-checks.js';
+import coaPlansRouter from './coa-plans.js';
 
 // A drawn signature, as a data URL. One definition — the certificate sign-off
 // and the lab submission both validate against it.
@@ -65,6 +67,8 @@ const coaUpload = multer({
 });
 
 const router = Router();
+// Test plans, COA products and the readiness report (D-244).
+router.use(coaPlansRouter);
 
 const REQUEST_FIELDS = ['item_number', 'item_description', 'lot_number', 'product_expiration', 'tests_requested', 'status', 'lab_id', 'lab_name', 'date_sent', 'tat_days', 'expected_results_date', 'date_of_results', 'date_sent_to_customer', 'requested_by', 'invoice_amount', 'retest_required', 'retest_of', 'notes', 'origin', 'supplier', 'product_code', 'manufacturer_lot', 'vendor_lot', 'received_date'];
 // certificate_number and date_of_issuance are NOT editable here: they are
@@ -850,7 +854,30 @@ router.get('/requests/:id', (req, res) => {
 
   const { suspect } = splitLot(request.lot_number);
   res.json({ ...request, files, test_results, specifications: specs, lot_suspect: suspect,
-    correction: correctionFlags(db, req.user, request.id), correction_items: correctionItemsFor(db, request.id) });
+    correction: correctionFlags(db, req.user, request.id), correction_items: correctionItemsFor(db, request.id),
+    unread_rows: unreadRowsFor(db, request.id) });
+});
+
+// A line the reader could not read is answered one of two ways: add it as a
+// result (which marks it added by itself), or dismiss it here with a reason —
+// "this is a footnote, not a result". QA or an admin only (D-243).
+router.post('/unread-rows/:id/dismiss', (req, res) => {
+  const db = getDb();
+  const u = req.user || {};
+  const qa = u.role === 'admin' || ['qa', 'quality'].includes(String(u.department || '').toLowerCase());
+  if (!qa) return res.status(403).json({ error: 'Only Quality or an admin can answer a line the app could not read.' });
+  const row = db.prepare('SELECT * FROM coa_unread_rows WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'That line was not found.' });
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 3) return res.status(400).json({ error: 'Say why this line is not a result (at least 3 characters).' });
+  if (row.status !== 'open') return res.status(409).json({ error: `This line is already ${row.status}.` });
+  const request = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(row.request_id);
+  if (request?.qa_signed_at) return res.status(409).json({ error: LOCKED_MESSAGE });
+  db.prepare("UPDATE coa_unread_rows SET status = 'dismissed', resolved_reason = ?, resolved_by = ?, resolved_at = datetime('now') WHERE id = ?")
+    .run(reason, u.name || null, row.id);
+  logAudit(req.user, 'dismiss', 'coa_unread_row', row.id, { request_id: row.request_id, line: row.line_text, reason },
+    { status: 'open' }, { status: 'dismissed' }, row.line_text);
+  res.json({ ok: true, unread_rows: unreadRowsFor(db, row.request_id) });
 });
 
 router.post('/requests', (req, res) => {
@@ -1123,18 +1150,32 @@ router.post('/review-items/:id/decide', (req, res) => {
 // The method and MDL as the lab printed them; blank is null (D-231).
 const cleanText = (v) => { const s = String(v ?? '').replace(/\s+/g, ' ').trim(); return s ? s.slice(0, 120) : null; };
 
-router.post('/requests/:id/results', (req, res) => {
+router.post('/requests/:id/results', async (req, res) => {
   const db = getDb();
   const request = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id);
   if (!request) return res.status(404).json({ error: 'COA request not found' });
 
   if (isSigned(request)) return res.status(409).json({ error: LOCKED_MESSAGE, locked: true });
   const { results } = req.body;
-  if (!Array.isArray(results) || results.length === 0) {
+  // A report whose every line was unread is applied with no rows ticked — the
+  // lines still have to be stored and answered.
+  if (!Array.isArray(results) || (results.length === 0 && !req.body.source_file_id)) {
     return res.status(400).json({ error: 'results array is required' });
   }
 
-  const insert = db.prepare(`INSERT INTO coa_test_results (id, request_id, test_type, result_value, unit, specification_id, pass_fail, notes, method, mdl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  // Applying a scanned lab report names the file (D-243). The server reads it
+  // again itself — never trusting what the browser says it read — so each row
+  // records what the PDF says and that it came from the PDF.
+  let file = null; let read = null; let readIdx = null; let fileSha = null;
+  if (req.body.source_file_id) {
+    file = db.prepare('SELECT * FROM coa_files WHERE id = ? AND request_id = ?').get(req.body.source_file_id, req.params.id);
+    if (!file) return res.status(404).json({ error: 'That lab report is not attached to this request.' });
+    const r = await readLabFile(file, UPLOAD_DIR);
+    if (r.missing) return res.status(404).json({ error: 'That lab report is no longer on the server.' });
+    if (r.hash_ok === false) return res.status(409).json({ error: 'That lab report has changed since it was attached. Attach it again.' });
+    if (r.image || r.unreadable) return res.status(400).json({ error: 'That lab report is an image scan with no text, so results cannot be read from it. Type them by hand, or ask the lab for the original PDF.' });
+    read = r.parsed; fileSha = r.sha256; readIdx = specIndex(read.test_results);
+  }
 
   // One grader, one spec lookup, shared with the scan preview and the edit
   // path — a preview computed differently from the commit is a preview that
@@ -1144,26 +1185,62 @@ router.post('/requests/:id/results', (req, res) => {
   const specs = db.prepare('SELECT * FROM coa_specifications WHERE item_number = ? AND is_active = 1').all(request.item_number);
   const index = specIndex(specs);
 
-  const tx = db.transaction((rows) => {
+  // Decide every row before writing any. A hand-set verdict, or a value
+  // changed from what the PDF says, needs a reason (D-244).
+  const rows = [];
+  for (const r of results) {
+    const spec = index.find(r.test_type);
+    const unit = r.unit || spec?.unit || null;
+    const readRow = readIdx ? readIdx.find(r.test_type) : null;
+    const wanted = r.pass_fail === '' || r.pass_fail == null ? null : String(r.pass_fail);
+    if (wanted && !['pass', 'fail', 'na'].includes(wanted)) return res.status(400).json({ error: 'Pass/fail must be pass, fail or na.' });
+    // gradeResult handles "<10", "Not Detected", "Absent in 25g" and the rest
+    // of a real micro panel. A verdict the REPORT printed is graded the same way
+    // (it can fail a result, never rescue one); a person's verdict is not.
+    // Graded on the unit the row states: a number with no unit is "unit not
+    // stated", never read in the spec's unit (D-229).
+    const auto = gradeResult(r.result_value, spec, r.stated_pass_fail || null, { unit: r.unit || null }).pass_fail;
+    const handVerdict = !!wanted && wanted !== auto;
+    const handValue = !!readRow && squash(r.result_value) !== squash(readRow.result_value);
+    const reason = String(r.edit_reason || '').trim();
+    if ((handVerdict || handValue) && reason.length < MIN_EDIT_REASON) {
+      const why = [handValue ? `the value differs from the lab report (${readRow.result_value})` : null,
+        handVerdict ? `the pass/fail is set by hand (the approved limit gives ${auto || 'no verdict'})` : null].filter(Boolean).join(' and ');
+      return res.status(400).json({ error: `${r.test_type}: ${why}. Say why, in at least ${MIN_EDIT_REASON} characters.`, needs_reason: true, test_type: r.test_type });
+    }
+    rows.push({ r, spec, unit, readRow, pass_fail: handVerdict ? wanted : auto, handVerdict, reason: (handVerdict || handValue || !readRow) && reason ? reason : null });
+  }
+
+  const insert = db.prepare(`INSERT INTO coa_test_results (id, request_id, test_type, result_value, unit, specification_id, pass_fail, notes, method, mdl,
+    source, source_file_id, source_sha256, read_value, read_unit, read_mdl, verdict_manual, edit_reason, edited_by, edited_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? IS NULL THEN NULL ELSE datetime('now') END)`);
+  const tx = db.transaction(() => {
     const created = [];
-    for (const r of rows) {
+    for (const x of rows) {
       const id = uuid();
-      const spec = index.find(r.test_type);
-      // gradeResult handles "<10", "Not Detected", "Absent in 25g" and the rest
-      // of a real micro panel, which parseFloat could not — every one of those
-      // used to land with no verdict at all.
-      const { pass_fail } = gradeResult(r.result_value, spec, r.pass_fail || null, { unit: r.unit || null });
-      insert.run(id, req.params.id, r.test_type, r.result_value ?? null, r.unit || spec?.unit || null, spec?.id || null, pass_fail, r.notes || null,
-        cleanText(r.method), cleanText(r.mdl));
+      insert.run(id, req.params.id, x.r.test_type, x.r.result_value ?? null, x.unit, x.spec?.id || null, x.pass_fail, x.r.notes || null,
+        cleanText(x.r.method), cleanText(x.r.mdl),
+        x.readRow ? 'pdf' : 'manual', x.readRow ? file.id : null, x.readRow ? fileSha : null,
+        x.readRow?.result_value ?? null, x.readRow?.unit ?? null, x.readRow?.mdl ?? null,
+        x.handVerdict ? 1 : 0, x.reason, x.reason ? req.user.name : null, x.reason);
       created.push(db.prepare('SELECT * FROM coa_test_results WHERE id = ?').get(id));
+    }
+    // The report's own number and date, kept on the file (fills blanks only).
+    if (file && read) {
+      db.prepare('UPDATE coa_files SET lab_report_number = COALESCE(lab_report_number, ?), lab_report_date = COALESCE(lab_report_date, ?), text_layer = 1 WHERE id = ?')
+        .run(read.lab_report_number || null, read.report_date || null, file.id);
     }
     return created;
   });
 
-  const created = tx(results);
+  const created = tx();
+  // Lines the reader could not read become a QA Review item (D-243).
+  const unread = file && read ? recordUnreadRows(db, request, file, read.unread, logAudit, req.user) : { stored: 0 };
   rollUpRequestStatus(db, req.params.id);
 
-  logAudit(req.user, 'create', 'coa_test_results', req.params.id, { results }, null, created);
+  logAudit(req.user, 'create', 'coa_test_results', req.params.id,
+    { results, source_file_id: file?.id || null, hand_set: rows.filter(x => x.handVerdict || x.reason).map(x => ({ test_type: x.r.test_type, reason: x.reason })), unread_lines: unread.stored },
+    null, created);
   res.status(201).json(created);
 });
 
@@ -1259,13 +1336,42 @@ router.put('/requests/:requestId/results/:id', (req, res) => {
     pass_fail = gradeResult(result_value, spec, null, { unit }).pass_fail;
   }
 
-  db.prepare(`UPDATE coa_test_results SET test_type = ?, result_value = ?, unit = ?, specification_id = ?, pass_fail = ?, notes = ?, method = ?, mdl = ? WHERE id = ?`)
-    .run(test_type, result_value ?? null, unit, spec?.id || null, pass_fail, notes, method, mdl, req.params.id);
+  // A hand-set verdict, or a value changed from what the lab report says,
+  // needs a reason and is flagged on the row (D-244). Going back to the PDF's
+  // own value and the automatic verdict clears the flag. An edit that leaves an
+  // already-explained hand edit as it was keeps its reason.
+  const auto = gradeResult(result_value, spec, null, { unit }).pass_fail;
+  const changedVerdict = (pass_fail ?? null) !== (existing.pass_fail ?? null);
+  const changedValue = squash(result_value) !== squash(existing.result_value);
+  // A person's verdict: one they set now, or one already flagged as theirs. A
+  // verdict an older row carries from before this rule is not re-asked on an
+  // edit that leaves it alone (a note, say).
+  const handVerdict = (pass_fail ?? null) !== (auto ?? null) && (changedVerdict || !!existing.verdict_manual);
+  const fromPdf = existing.source === 'pdf' && existing.read_value != null;
+  const handValue = fromPdf && squash(result_value) !== squash(existing.read_value);
+  const given = String(req.body.edit_reason || '').trim();
+  const nothingNew = !changedVerdict && !changedValue;
+  const reason = given || (nothingNew ? existing.edit_reason : null) || null;
+  if ((handVerdict || handValue) && String(reason || '').length < MIN_EDIT_REASON) {
+    const why = [handValue ? `the value differs from the lab report (${existing.read_value})` : null,
+      handVerdict ? `the pass/fail is set by hand (the approved limit gives ${auto || 'no verdict'})` : null].filter(Boolean).join(' and ');
+    return res.status(400).json({ error: `${test_type}: ${why}. Say why, in at least ${MIN_EDIT_REASON} characters.`, needs_reason: true });
+  }
+  const flagged = handVerdict || handValue;
+  // A row typed by hand may carry a reason it was given; a PDF row back at the
+  // PDF's value with the automatic verdict carries none.
+  const keepReason = flagged ? reason : (existing.source === 'manual' || existing.source == null ? (given || existing.edit_reason || null) : null);
+
+  db.prepare(`UPDATE coa_test_results SET test_type = ?, result_value = ?, unit = ?, specification_id = ?, pass_fail = ?, notes = ?, method = ?, mdl = ?,
+      verdict_manual = ?, edit_reason = ?, edited_by = ?, edited_at = CASE WHEN ? = 1 THEN datetime('now') ELSE edited_at END WHERE id = ?`)
+    .run(test_type, result_value ?? null, unit, spec?.id || null, pass_fail, notes, method, mdl,
+      handVerdict ? 1 : 0, keepReason, keepReason ? (given ? req.user.name : existing.edited_by) : null, given ? 1 : 0, req.params.id);
 
   rollUpRequestStatus(db, req.params.requestId);
   const updated = db.prepare('SELECT * FROM coa_test_results WHERE id = ?').get(req.params.id);
   logAudit(req.user, 'update', 'coa_test_result', req.params.id,
-    { test_type, changed_pass_fail: existing.pass_fail !== pass_fail }, existing, updated);
+    { test_type, changed_pass_fail: existing.pass_fail !== pass_fail, hand_verdict: handVerdict, hand_value: handValue, edit_reason: keepReason,
+      flag_cleared: !flagged && !!(existing.verdict_manual || (existing.edit_reason && existing.source === 'pdf')) }, existing, updated);
   res.json(updated);
 });
 
@@ -1330,6 +1436,13 @@ router.post('/requests/:id/scan', coaUpload.single('file'), async (req, res) => 
     sourceName = f.original_name;
   }
   if (!buffer) return res.status(400).json({ error: 'Upload a PDF, or name a file already attached to this request.' });
+  // Which attached file this is (D-243): the scan names it so the apply can
+  // record where each result came from. A PDF read without being attached has
+  // no file, and its results are saved as typed by hand.
+  const scannedSha = sha256(buffer);
+  const sourceFile = (req.body?.file_id
+    ? db.prepare('SELECT * FROM coa_files WHERE id = ? AND request_id = ?').get(req.body.file_id, req.params.id)
+    : db.prepare("SELECT * FROM coa_files WHERE request_id = ? AND sha256 = ? AND file_type = 'lab_results' ORDER BY created_at DESC LIMIT 1").get(req.params.id, scannedSha)) || null;
 
   let parsed;
   try {
@@ -1346,7 +1459,8 @@ router.post('/requests/:id/scan', coaUpload.single('file'), async (req, res) => 
     return res.json({
       readable: false,
       reason: 'no_text_layer',
-      message: 'This PDF has no text in it — it is a scanned image of the report, so nothing can be read out of it automatically. Ask the lab for the original PDF, or type the results in by hand.',
+      message: 'This PDF has no text in it — it is a scanned image of the report, so nothing can be read out of it automatically, and a certificate cannot be signed on it. Ask the lab for the original PDF, or type the results in by hand.',
+      image_scan: true,
       source_name: sourceName,
       page_count: parsed.numpages,
       header: [], results: [], unmatched_specs: [],
@@ -1364,15 +1478,10 @@ router.post('/requests/:id/scan', coaUpload.single('file'), async (req, res) => 
   // The columnar reader, for reports laid out as a table — which is all of
   // them. Deterministic: the same file gives the same answer every time, which
   // is why it is tried before the AI fallback.
-  const columnarRows = (() => {
-    try {
-      const columnar = parseColumnarCoa(text);
-      return foundSomething(columnar) ? columnar : null;
-    } catch (e) {
-      console.warn('[coa] columnar read failed:', e.message);
-      return null;
-    }
+  const columnarAll = (() => {
+    try { return parseColumnarCoa(text); } catch (e) { console.warn('[coa] columnar read failed:', e.message); return null; }
   })();
+  const columnarRows = columnarAll && foundSomething(columnarAll) ? columnarAll : null;
   if (columnarRows) {
     // "Customer:" on the report is US; the columnar reader files it as
     // lab_customer and never as the material's supplier.
@@ -1491,6 +1600,9 @@ router.post('/requests/:id/scan', coaUpload.single('file'), async (req, res) => 
       // Why a result carries no verdict, always named — an empty cell reads as
       // a pass to anyone skimming.
       grade_reason: graded.reason,
+      // A pass/fail the report itself printed — sent back on apply so the
+      // server grades it the same way, never as a person's decision.
+      stated: t.pass_fail || null,
       no_spec_reason: spec ? null
         : draftIndex.find(t.test_type)
           ? 'A specification for this test exists but is still a DRAFT. Approve it in the Specifications tab and this result will grade itself.'
@@ -1509,6 +1621,15 @@ router.post('/requests/:id/scan', coaUpload.single('file'), async (req, res) => 
   res.json({
     readable: true,
     source_name: sourceName,
+    // Where the results come from, the two header facts a certificate needs,
+    // and every line the reader could NOT read (D-243). Applying stores those
+    // lines and files a QA Review item; this proposal writes nothing.
+    file_id: sourceFile?.id || null,
+    sha256: scannedSha,
+    lab_report_number: columnarAll?.lab_report_number || null,
+    report_date: columnarAll?.report_date || null,
+    unread: columnarAll?.unread || [],
+    counts: columnarAll?.counts || null,
     page_count: parsed.numpages,
     read_by,
     ai_available: aiEnabled(),
@@ -1640,7 +1761,7 @@ router.delete('/files/:id', (req, res) => {
 // no print/sign/scan loop. Admins can remove a signature if signed in error.
 const canSignCoa = (u) => !!u && (['admin', 'supervisor'].includes(u.role) || u.department === 'qa');
 
-router.post('/requests/:id/sign', (req, res) => {
+router.post('/requests/:id/sign', async (req, res) => {
   if (!canSignCoa(req.user)) return res.status(403).json({ error: 'Only admins, supervisors, or QA can sign certificates.' });
   const db = getDb();
   const r = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id);
@@ -1665,6 +1786,14 @@ router.post('/requests/:id/sign', (req, res) => {
   const refusals = signRefusals(db, r);
   if (refusals.length) return res.status(409).json({ error: `This certificate cannot be signed: ${refusals.join('; ')}.`, sign_refused: true, reasons: refusals });
 
+  // The lab report is read AGAIN and compared with what is saved, and no line
+  // the reader could not read may be left open (D-243). In every gate mode:
+  // this protects the record, it does not wait for strict.
+  const checks = await signChecks(db, r, UPLOAD_DIR);
+  if (checks.problems.length) {
+    return res.status(409).json({ error: `This certificate cannot be signed: ${checks.problems.join('; ')}`, sign_refused: true, reasons: checks.problems, explained: checks.reread.explained });
+  }
+
   // Signing the certificate IS the release. Same gate as the roll-up.
   const gate = gateFor(db, r);
   if (gate.blocks) return res.status(400).json({ error: `This certificate cannot be issued: ${gate.gaps.join('; ')}.`, release_blocked: true, gaps: gate.gaps });
@@ -1683,7 +1812,8 @@ router.post('/requests/:id/sign', (req, res) => {
     // the PDF view made up (D-228).
     const certNum = allocateCertNumber(db);
     const issued = plantDateOf();
-    const snapshot = snapshotFor(db, fresh, { certificate_number: certNum, date_of_issuance: issued });
+    const snapshot = snapshotFor(db, fresh, { certificate_number: certNum, date_of_issuance: issued, signed_by: req.user.name,
+      file_facts: Object.fromEntries(checks.reread.files.map(f => [f.id, f])) });
     const json = canonicalJson(snapshot);
     const hash = sha256(json);
     db.prepare(`UPDATE coa_requests SET qa_signed_by = ?, qa_signed_by_id = ?, qa_signed_at = datetime('now'),
@@ -1753,6 +1883,11 @@ router.get('/requests/:id/pdf', (req, res) => {
   const snap = (issued && r.signed_snapshot && (() => { try { return JSON.parse(r.signed_snapshot); } catch { return null; } })())
     || snapshotFor(db, r, { certificate_number: issued ? r.certificate_number : null, date_of_issuance: issued ? r.date_of_issuance : null });
   const testResults = snap.results;
+  // Version 2 (D-244) prints what version 1 could not: the lab's report number
+  // and date, the MDL, and a † on every result entered or graded by hand.
+  // Certificates signed before print exactly as they always did.
+  const v2 = (snap.snapshot_version || 1) >= 2;
+  const signer = v2 ? snap.signed_by : r.qa_signed_by;
   const certNum = issued ? r.certificate_number : 'DRAFT';
   const specFor = (tr) => ({ method: tr.method, specification: tr.specification || (tr.min_value != null || tr.max_value != null ? specText(tr) : null), unit: tr.unit });
   Object.assign(r, snap.request);
@@ -1807,6 +1942,7 @@ router.get('/requests/:id/pdf', (req, res) => {
     ['Product Code', na(r.product_code || r.item_number), 'Manufacturer Lot', na(r.manufacturer_lot)],
     ['Date Received', fmtDate(r.received_date || r.date_sent), 'Origin', r.origin || 'United States'],
     ['Date of Analysis', fmtDate(r.date_of_results), 'Expiration Date', fmtDate(r.product_expiration)],
+    ...(v2 && (snap.lab_report_number || snap.lab_report_date) ? [['Lab Report No.', na(snap.lab_report_number), 'Report Date', fmtDate(snap.lab_report_date)]] : []),
   ];
   const halfW = pageW / 2;
   const labW = 105;
@@ -1875,9 +2011,9 @@ router.get('/requests/:id/pdf', (req, res) => {
     const spec = specFor(tr);
     const vals = [
       tr.test_type || '',
-      spec?.method || '',
+      v2 && tr.mdl ? `${spec?.method || ''}\nMDL ${displayMdl(tr.mdl)}` : (spec?.method || ''),
       spec?.specification || '',
-      tr.result_value || '',
+      v2 && tr.manual ? `${tr.result_value || ''} †` : (tr.result_value || ''),
       tr.unit || spec?.unit || '',
     ];
     doc.font('Helvetica').fontSize(8.2);
@@ -1913,6 +2049,20 @@ router.get('/requests/:id/pdf', (req, res) => {
     y += 24;
   }
 
+  // The hand-entered results, each with its reason (D-244).
+  const handRows = v2 ? testResults.filter(t => t.manual) : [];
+  if (handRows.length) {
+    y += 8;
+    doc.font('Helvetica').fontSize(7.4).fillColor('#444');
+    for (const t of handRows) {
+      const line = `† ${t.test_type}: entered or graded by hand${t.edit_reason ? `: ${t.edit_reason}` : ''}.`;
+      const h = doc.heightOfString(line, { width: pageW });
+      if (y + h > bottomY()) { doc.addPage(); y = doc.page.margins.top; }
+      doc.text(line, lm, y, { width: pageW });
+      y += h + 2;
+    }
+  }
+
   // ── Certification + signature ──
   if (y + 130 > bottomY()) { doc.addPage(); y = doc.page.margins.top; }
   y += 14;
@@ -1930,7 +2080,7 @@ router.get('/requests/:id/pdf', (req, res) => {
   }
   doc.moveTo(lm, y + 22).lineTo(lm + sigW, y + 22).lineWidth(0.8).strokeColor('#999').stroke();
   doc.font('Helvetica-Bold').fontSize(8.5).fillColor(SLATE)
-    .text(r.qa_signed_by ? `${r.qa_signed_by} — Quality` : 'Quality', lm, y + 27);
+    .text(signer ? `${signer} — Quality` : 'Quality', lm, y + 27);
   doc.font('Helvetica').fontSize(8).fillColor('#666')
     .text(r.qa_signed_at ? `Digitally signed ${fmtDate(r.qa_signed_at)}` : 'Powder Ops Quality Assurance', lm, y + 38);
 
