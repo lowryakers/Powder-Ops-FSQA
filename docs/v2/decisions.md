@@ -8543,3 +8543,100 @@ Asked of Maria and Daniela before anything was removed (D-215 left Retention ope
   sent for testing, and before that operations has to decide **who pays and which products go in**. TP Hydration
   went out for mineral and vitamin testing; Maria is checking with Carol whether another is needed. The shelf-life
   basis per SKU (D-130, D-133) is unaffected: `none_best_by` is recorded where no data covers a SKU.
+
+## D-221 — A lab report is read by where each cell sits, not by joining its text (27 Oct 2026)
+
+COA review of 27 Oct, finding 1. CTLA prints `Gluten Allergen | ELISA | 4 | Report | <4 | ppm` (MDL 4, result
+<4). The PDF reader joined every item on a line into one string, so MDL and result became `<44`. 22 of the 40
+gluten rows on file say `<44`; every underlying PDF says `<4`. The same seam made Alkify's soy `<0.040.04`.
+- **`server/coa-pdf-text.js` (`readPdfColumns`, `layoutPage`) reads pdf.js item positions** (`transform[4]`, width):
+  a line is split into cells at real gaps, and after a results header every cell goes in the column it sits under.
+  A blank cell stays blank. Output is the pipe rows `parseColumnarCoa` already reads. Both `/scan` and `/parse-coa` use it.
+- **The legacy pattern reader (`parseCTLACoa`) is a fallback only**: it runs when the column reader finds no rows,
+  and its rows never carry a verdict. It used to run first on every report and was what produced `<44`.
+- **Golden fixtures** `scripts/fixtures/coa/ctla-{176906,176905,176901,180953}.pdf` are RECONSTRUCTIONS in CTLA's
+  layout (`make-ctla-fixtures.mjs`), not the lab's files, which are on the production volume and were not copied
+  out. The old reader still reads `<44` / `<0.040.04` / `<0.40.4` from them (the control). Replace with the real
+  PDFs when Quality copies them out, same names.
+- **The 22 stored `<44` rows are not changed here.** Backfilling them from the PDFs is the plant's next step.
+
+## D-222 — Grading: units first, exact names, no European decimals, a printed pass never rescues a fail (27 Oct 2026)
+
+`server/coa-grade.js`. Review findings 5–7.
+- **Units are normalised before comparing** (`normalizeUnit`, `unitScale`): ppm = mg/kg = µg/g, ppb = µg/kg, mg/g,
+  %, cfu/g, cfu/ml, mpn/g. Units in different families, or two unknown units that differ, are a MISMATCH and the
+  result is not graded. A missing unit on either side is not a mismatch. 2 ppm against 500 ppb now fails.
+- **Aliases are exact** (the normalised name, a trailing method word dropped). "Iron as ferrous fumarate" no longer
+  matches Arsenic, G12 gluten no longer matches an R5 spec, E. coli O157:H7 is not generic E. coli, Listeria
+  monocytogenes is not Listeria spp. An unknown name is unmatched. `aliasKey` is exported and tested.
+- **"0,5" is refused**, never read as 5. A comma is a thousands separator only in the `1,300` shape.
+- **"does not comply" / "non conform" / "not compliant" are FAIL**; "N.D.", "Nondetect" read as not detected.
+- **A verdict the report printed can fail a result, never rescue one** the specification fails, and a stated
+  verdict is only carried beside a real limit — the lab's "Specification: Report" is not a verdict.
+- **Editing a result's note keeps its verdict**; changing its value, test or unit grades it again.
+- `node --test scripts/test/` (coa-grade, coa-pdf, coa-spec-check) runs inside `verify:coa`.
+
+## D-223 — The certificate is issued by signing, from a counter, and reading it changes nothing (27 Oct 2026)
+
+Review findings 2 and B13. `GET /requests/:id/pdf` handed out a certificate number (MAX + 1, outside any
+transaction) to any request it was opened on; seven unsigned requests hold one that way.
+- **The PDF route writes nothing.** A request that is not a signed pass answers 409; `?draft=1` renders an
+  internal DRAFT, watermarked, titled "DRAFT — NOT A CERTIFICATE", with no number and "Not issued".
+- **Numbers come from `coa_counters`, inside the signing transaction** (`allocateCertNumber` in
+  `server/coa-certificate.js`), never below the highest number on file. A partial UNIQUE index on
+  `certificate_number` (logged, not fatal, if the data already holds a duplicate).
+- **`certificate_number` and `date_of_issuance` are not editable** on PUT (400). Un-signing voids the number; the
+  counter never goes back, so a voided number is never reissued.
+- **A signed certificate prints its frozen snapshot**, so a spec edited later cannot change its limits. Ones signed
+  before this print from the live rows, as before.
+- The seven numbered-but-unsigned requests keep their numbers; signing one later uses it.
+
+## D-224 — Only a clean pass is signed; what was signed is hashed and closed (27 Oct 2026)
+
+Review findings 3, 4, 9 (B8), B9, B15, B17, and the backups gap.
+- **Signing requires** status pass, at least one result, a result for every active spec on the item, and no result
+  failed or undecided (`signRefusals`, 409 naming each). The release gate still runs after it (mode untouched: warn).
+- **`signed_snapshot` + `signed_content_hash`**: canonical JSON (keys sorted) of the lot's identity, the results
+  with their spec text and the files with their SHA-256, and its SHA-256, written in the signing transaction and audited.
+- **After signing**: adding, editing or deleting a result, uploading or deleting a file, and changing the lot's
+  identity, status or certificate fields are refused (409). Notes and dates sent still edit. Bulk delete skips a
+  signed request; bulk status skips it.
+- **Un-sign** (admin) needs a reason and clears the signature, the number, the issuance date and the snapshot,
+  audited with the voided number and hash.
+- **`import-parsed-coa`**: files the PDF as `lab_results` (the old `lab_report` broke the CHECK, so all 21 such
+  requests lost their PDF), runs in one transaction, grades the results and derives the status from them (the
+  client's status is validated and ignored), refuses the same `ctla_<lot>` twice (409 naming the first), and
+  refuses an `uploaded_file` name the server did not store.
+- **Status and file type are validated** on every route (400, not 500); a refused upload is removed from disk.
+- **A request whose results are all N/A does not roll up to pass.** Dates written by the roll-up, the submission and
+  signing are the plant's day (`plantDateOf`).
+- **Every new COA upload stores its SHA-256** (`coa_files.sha256`). Files already on file are not backfilled.
+- **`npm run backup` zips `coa-files/`** beside the database snapshot (and uploads it when R2 is configured),
+  pruned the same way. `COA_FILES_DIR` overrides the folder.
+- The request list no longer ships the drawn signature or the snapshot.
+
+## D-225 — A specification is switched on only by approval; 202532's malformed specs are retired (27 Oct 2026)
+
+Review findings B11, B12.
+- **`PUT /coa/specifications/:id` refuses `is_active`** (400). On is approval (`drafts/approve`), off is Retire.
+- **`specProblems` (`server/coa-spec-check.js`)**: a minimum on a contaminant, a negative minimum, a minimum above
+  the maximum, a numeric micro limit with no unit.
+- **`retireMalformedSpecs` (boot, once, `coa_spec_202532_retired_v1`)** retires the active specs on item 202532
+  that fail it (is_active = 0, audited with the reasons). Nothing is deleted and no corrected number is guessed;
+  Quality re-enters the limits. Active specs on other items that fail it are named in the boot log, not touched.
+  The 1,033 drafts are not read.
+
+## D-226 — Brand owner and two COA settings, default-deny, with nothing reading them as public (27 Oct 2026)
+
+Groundwork only. Decided by Lowry: only ProDough data may ever be public; private-label COAs never.
+- **`coa_requests.brand_owner`**, default `'unassigned'` on every row. Set by an admin or Quality
+  (`PUT /requests/:id/brand-owner`, audited), to `unassigned` or a name on `coa_brands`. Shown on the list and the
+  detail.
+- **`coa_brands`** (`name`, `public_publish_allowed` default 0). ProDough is seeded with 0. **Nothing in the app
+  reads `public_publish_allowed`**; `verify:coa` fails if any file other than the schema mentions it.
+- **`coa_settings`**: `evidence_disclosure_mode = 'never'` (later: `on_request_approval`) and
+  `public_nonclaim_gluten_display = 'hidden'` (later: `visible`). Admin-only to change, audited, a card on
+  Lab Testing → Labs. Nothing reads them yet.
+- No public page, route or gluten feature was built. No "gluten-free" wording was added.
+- `verify:coa` (55 live + 18 pure, in `npm run check`). Control (`main` before this) fails from the first assertion
+  with the reported `<44`.

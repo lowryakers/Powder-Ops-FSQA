@@ -3835,6 +3835,27 @@ meant rebuilding the filter by hand — which nobody does. Every `AttentionBar` 
 - Verified on a fresh DB: 26 API assertions and 9 in a real browser (bar 80 → drawer "80 in total", the
   info line 122, close, and each row naming the machine, its asset number and why it is listed).
 
+## COA Phase 0: the reader, the grader, the certificate, the lock (D-221 … D-226)
+`server/coa-pdf-text.js` (`readPdfColumns`, `layoutPage`), `server/coa-grade.js`, `server/coa-certificate.js`
+(`allocateCertNumber`, `snapshotFor`, `signRefusals`, `LOCKED_FIELDS`), `server/coa-spec-check.js`; `coa_counters`,
+`coa_brands`, `coa_settings`, `coa_requests.brand_owner` / `signed_snapshot` / `signed_content_hash`, `coa_files.sha256`.
+- **A PDF is read by cell POSITION, never by joining a line's text** — joining is how `<4` + MDL `4` became `<44`.
+  The legacy `parseCTLACoa` is a fallback only, and its rows carry no verdict.
+- **Grading: units first** (mismatch ⇒ ungraded), **exact alias names only** (no substring), "0,5" refused,
+  "does not comply" = fail, a printed pass never rescues a spec fail, "Report" is not a verdict.
+- **Reading the PDF writes nothing.** Not a signed pass ⇒ 409; `?draft=1` is a watermarked preview with no number.
+  Numbers come from `coa_counters` inside the signing transaction; `certificate_number` / `date_of_issuance` are
+  never PUT fields. Un-sign (admin, reason) voids the number; it is never reissued.
+- **Signing needs** status pass, a result for every active spec, nothing failed or undecided. After signing,
+  results, files, identity, status and certificate fields are closed (409) until an admin un-signs.
+- **`is_active` on a spec moves only by approval or Retire**, never PUT.
+- **`brand_owner` defaults `'unassigned'`; nothing reads `public_publish_allowed`** (verify:coa greps for it). The two
+  `coa_settings` (`never` / `hidden`) have no consumers. **Do not build a public page, route, gluten policy or
+  claim wording without the next phase's decisions.** The release gate stays in warn.
+- The golden fixtures in `scripts/fixtures/coa/` are reconstructions; swap in the real CTLA PDFs when Quality
+  copies them out. The 22 stored `<44` gluten rows are not yet corrected.
+- `verify:coa` (55 live + 18 pure, in `npm run check`; control fails from the first, reading `<44`).
+
 ## COA item specification sheet
 The Specifications tab stores one row per test (right for auto pass/fail, hard to eyeball). "View item & all
 specs" (`ItemSpecSummaryModal` in COAPanel.jsx) regroups the rows under an item — the old paper spec sheet —

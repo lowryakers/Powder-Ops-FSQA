@@ -918,10 +918,72 @@ function SignCoaModal({ requestId, onSigned, onClose }) {
   );
 }
 
+// Whose product a request is (D-226). 'unassigned' is the default and nothing
+// here, or anywhere in this phase, treats any value as permission to publish.
+function BrandChip({ value }) {
+  const v = value || 'unassigned';
+  return <span className={`text-xs px-1.5 py-0.5 rounded ${v === 'unassigned' ? 'bg-gray-100 text-gray-500' : 'bg-powder-50 text-powder-700'}`}>{v === 'unassigned' ? 'Unassigned' : v}</span>;
+}
+
+function BrandOwnerField({ request, canSet, onSaved }) {
+  const { data: brands } = useApiGet('/coa/brands');
+  const [err, setErr] = useState(null);
+  const value = request.brand_owner || 'unassigned';
+  return (
+    <div data-brand-owner-field>
+      <span className="text-xs text-gray-500 block">Brand owner</span>
+      {canSet ? (
+        <select value={value} className="text-sm border border-gray-200 rounded px-1.5 py-0.5"
+          onChange={async e => {
+            try { await apiPut(`/coa/requests/${request.id}/brand-owner`, { brand_owner: e.target.value }); setErr(null); onSaved?.(); }
+            catch (x) { setErr(x.message); }
+          }}>
+          <option value="unassigned">Unassigned</option>
+          {(brands || []).map(b => <option key={b.id} value={b.name}>{b.name}</option>)}
+        </select>
+      ) : <BrandChip value={value} />}
+      {err && <span className="block text-xs text-red-600">{err}</span>}
+    </div>
+  );
+}
+
+// Two COA settings with no consumers yet (D-226): recorded so they can change
+// later without a deploy. Admin only.
+const COA_SETTING_LABELS = {
+  evidence_disclosure_mode: { label: 'Lab report PDFs shared with clients', values: { never: 'Never', on_request_approval: 'On request, after approval' } },
+  public_nonclaim_gluten_display: { label: 'Gluten results without a gluten-free claim, on public pages', values: { hidden: 'Hidden', visible: 'Shown' } },
+};
+function CoaSettingsCard() {
+  const { data, refresh } = useApiGet('/coa/settings');
+  const [err, setErr] = useState(null);
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3" data-coa-settings>
+      <div>
+        <h3 className="text-sm font-semibold text-gray-900">COA settings</h3>
+        <p className="text-xs text-gray-500">Nothing uses these yet. They record the current decision so it can change later without a deploy.</p>
+      </div>
+      {(data?.settings || []).map(s => (
+        <label key={s.key} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+          <span className="text-gray-700">{COA_SETTING_LABELS[s.key]?.label || s.key}</span>
+          <select value={s.value} data-coa-setting={s.key} className="border border-gray-200 rounded px-2 py-1 text-sm"
+            onChange={async e => {
+              try { await apiPut(`/coa/settings/${s.key}`, { value: e.target.value }); setErr(null); refresh(); }
+              catch (x) { setErr(x.message); }
+            }}>
+            {(data.allowed[s.key] || []).map(v => <option key={v} value={v}>{COA_SETTING_LABELS[s.key]?.values[v] || v}</option>)}
+          </select>
+        </label>
+      ))}
+      {err && <p className="text-xs text-red-600">{err}</p>}
+    </div>
+  );
+}
+
 function RequestDetail({ requestId, labs, onClose, onRefresh }) {
   const { data: detail, loading, refresh: refreshDetail } = useApiGet(`/coa/requests/${requestId}`, [requestId]);
   const { user } = useAuth() || {};
   const canSign = !!user && (['admin', 'supervisor'].includes(user.role) || user.department === 'qa');
+  const canSetBrand = !!user && (user.role === 'admin' || user.department === 'qa');
   const [showSign, setShowSign] = useState(false);
   const [editing, setEditing] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -933,17 +995,20 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
   // reads as the app being broken (the qms.js lesson).
   const [gateMsg, setGateMsg] = useState(null);
 
+  // Only a signed pass is a certificate. Anything else downloads as a
+  // watermarked DRAFT with no number (D-223).
+  const issued = !!(detail?.qa_signed_at && detail?.status === 'pass' && detail?.certificate_number);
   const downloadPdf = async () => {
     const token = localStorage.getItem('auth_token');
-    const res = await fetch(`/api/coa/requests/${requestId}/pdf`, {
+    const res = await fetch(`/api/coa/requests/${requestId}/pdf${issued ? '' : '?draft=1'}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (!res.ok) return;
+    if (!res.ok) { setGateMsg((await res.json().catch(() => ({}))).error || 'The PDF could not be made.'); return; }
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `COA-${requestId}.pdf`;
+    a.download = issued ? `COA-${detail.certificate_number}.pdf` : `COA-DRAFT-${requestId}.pdf`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -951,7 +1016,8 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
   if (loading || !detail) return <div className="p-8 text-center text-gray-400">Loading...</div>;
 
   const handleUpdate = async (form) => {
-    await apiPut(`/coa/requests/${requestId}`, form);
+    try { await apiPut(`/coa/requests/${requestId}`, form); setGateMsg(null); }
+    catch (e) { setGateMsg(e.message); return; }
     setEditing(false);
     refreshDetail();
     onRefresh();
@@ -1042,6 +1108,7 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
           <div><span className="text-xs text-gray-500 block">Date of Results</span><span className="font-medium">{detail.date_of_results || '-'}</span></div>
           <div><span className="text-xs text-gray-500 block">Expiration</span><span className="font-medium">{detail.product_expiration || '-'}</span></div>
           <div><span className="text-xs text-gray-500 block">Requested By</span><span className="font-medium">{detail.requested_by || '-'}</span></div>
+          <BrandOwnerField request={detail} canSet={canSetBrand} onSaved={() => { refreshDetail(); onRefresh(); }} />
           {detail.certificate_number && (
             <div><span className="text-xs text-gray-500 block">Certificate #</span><span className="font-medium">{detail.certificate_number}</span></div>
           )}
@@ -1082,13 +1149,19 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
           )}
           <button onClick={downloadPdf}
             className="px-3 py-1.5 text-xs font-medium bg-powder-50 text-powder-700 rounded-lg hover:bg-powder-100 flex items-center gap-1">
-            <Download size={12} /> Export Powder Ops COA
+            <Download size={12} /> {issued ? 'Export Powder Ops COA' : 'Preview draft (no certificate)'}
           </button>
           {detail.qa_signed_by ? (
             <span className="px-3 py-1.5 text-xs font-medium bg-green-50 text-green-700 rounded-lg flex items-center gap-1">
               <CheckCircle2 size={12} /> Signed by {detail.qa_signed_by} · {(detail.qa_signed_at || '').slice(0, 10)}
               {user?.role === 'admin' && (
-                <button onClick={async () => { if (confirm('Remove this signature? The certificate will export unsigned.')) { await apiDelete(`/coa/requests/${requestId}/sign`); refreshDetail(); } }}
+                <button onClick={async () => {
+                  const reason = prompt('Why is this signature being removed? The certificate number is voided and a new one is issued when it is signed again.');
+                  if (!reason || reason.trim().length < 3) return;
+                  try { await apiFetch(`/coa/requests/${requestId}/sign`, { method: 'DELETE', body: { reason: reason.trim() } }); setGateMsg(null); }
+                  catch (e) { setGateMsg(e.message); }
+                  refreshDetail(); onRefresh();
+                }} data-unsign
                   className="ml-1 text-green-600 hover:text-red-600" title="Remove signature"><X size={11} /></button>
               )}
             </span>
@@ -2374,6 +2447,7 @@ export default function COAPanel() {
                   </div>
                   <div className="mt-0.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-400 min-w-0">
                     {r.lab_name && <span className="break-words">{r.lab_name}</span>}
+                    <BrandChip value={r.brand_owner} />
                     {r.date_sent && <span>Sent {r.date_sent}</span>}
                     {r.file_counts?.lab_results ? <span className="text-powder-600">{r.file_counts.lab_results} lab file{r.file_counts.lab_results > 1 ? 's' : ''}</span> : null}
                   </div>
@@ -2399,6 +2473,7 @@ export default function COAPanel() {
                       <SortHeader label="Tests" field="tests_requested" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                       <SortHeader label="Status" field="status" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                       <SortHeader label="Lab" field="lab_name" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                      <SortHeader label="Brand owner" field="brand_owner" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                       <SortHeader label="Date Sent" field="date_sent" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                       <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500">Files</th>
                     </tr>
@@ -2420,6 +2495,7 @@ export default function COAPanel() {
                         <td className="px-3 py-2.5 text-gray-600">{r.tests_requested}</td>
                         <td className="px-3 py-2.5 whitespace-nowrap"><span className="inline-flex items-center gap-1.5"><StatusBadge status={r.status} /><GapsChip request={r} /></span></td>
                         <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">{r.lab_name || '-'}</td>
+                        <td className="px-3 py-2.5 whitespace-nowrap" data-brand-owner><BrandChip value={r.brand_owner} /></td>
                         <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">{r.date_sent || '-'}</td>
                         <td className="px-3 py-2.5">
                           {r.file_counts?.lab_results ? (
@@ -2533,6 +2609,7 @@ export default function COAPanel() {
       {/* ───── Labs Tab ───── */}
       {subTab === 'labs' && (
         <>
+          {isAdmin && <CoaSettingsCard />}
           <div className="flex justify-between items-center">
             <p className="text-sm text-gray-500">{labs?.length || 0} labs configured</p>
             <button onClick={() => { setShowForm(true); setEditItem(null); }}
