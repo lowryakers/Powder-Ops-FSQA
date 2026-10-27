@@ -3866,6 +3866,19 @@ meant rebuilding the filter by hand — which nobody does. Every `AttentionBar` 
   **A new pdfkit export must call it** — `check:pdffonts` (20, in `npm run check`) fails otherwise. Not `use…`: the
   hooks lint reads that as a React hook.
 
+## COA Phase 1: the 43 corrections are Maria's, listed in QA Review (D-236 … D-239)
+`coa_review_items` (seeded once from `server/seed/coa-phase1-review-items.json`), `server/coa-review-items.js`
+(`itemProgress`, `coaCorrectionAllowed`, `duplicateDeleteRefusal`, `coaSignHold`), QA Review source `coa-corrections`
+(`kind: 'action'` — no checkbox, no Sign; the API adds `kind` to that source only), `shared/lot-model.js` +
+`server/coa-lots.js` (`base_lot` / `batch`), the brand bulk route and `BrandReview.jsx`.
+- **Code corrects none of the 43.** Progress is derived from the request and the audit log; a GET writes nothing.
+- **Quality's un-sign and delete are scoped to an open item that authorizes them** (reason + password, audited with
+  the item). Every other certificate is admin-only as before. A duplicate is deleted only while it is empty and its
+  canonical request holds the report. **8afd7fbe is held** (409) until an admin dismisses its item.
+- A lot's suffix is its batch; a base lot meets the gluten policy only when every batch has a signed pass —
+  **advisory**, the gate stays `warn`. Brands bulk-assign only `unassigned` requests; the 589-row CSV is not committed.
+- The Lab Requests list loads every request at once. `verify:coaphase1` (93, live + reboots + browser).
+
 ## COA item specification sheet
 The Specifications tab stores one row per test (right for auto pass/fail, hard to eyeball). "View item & all
 specs" (`ItemSpecSummaryModal` in COAPanel.jsx) regroups the rows under an item — the old paper spec sheet —

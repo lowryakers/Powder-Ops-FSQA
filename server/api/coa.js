@@ -17,6 +17,10 @@ import { composeSubmission, PROCESSING, processingLabel, PLANT_CONTACT } from '.
 import { gateSignature, signatureEvidence } from '../signature.js';
 import { allocateCertNumber, snapshotFor, signRefusals, canonicalJson, sha256, isSigned, LOCKED_FIELDS, LOCKED_MESSAGE } from '../coa-certificate.js';
 import { plantDateOf } from '../plant-clock.js';
+import { isQaReviewer } from '../qa-signing.js';
+import { coaCorrectionAllowed, correctionFlags, duplicateDeleteRefusal, coaSignHold, dismissItem, DECISION as CORRECTION_DECISION, openItems, itemProgress } from '../coa-review-items.js';
+import { stampBaseLot, lotGlutenRollup } from '../coa-lots.js';
+import { splitLot } from '../../shared/lot-model.js';
 
 // A drawn signature, as a data URL. One definition — the certificate sign-off
 // and the lab submission both validate against it.
@@ -486,6 +490,7 @@ router.get('/requests', (req, res) => {
   if (to) { sql += ' AND date_sent <= ?'; params.push(to); }
   if (item_number) { sql += ' AND item_number = ?'; params.push(item_number); }
   if (lot_number) { sql += ' AND lot_number = ?'; params.push(lot_number); }
+  if (req.query.base_lot) { sql += ' AND base_lot = ?'; params.push(String(req.query.base_lot)); }
   if (lab_id) { sql += ' AND lab_id = ?'; params.push(lab_id); }
   if (search) {
     sql += ' AND (item_number LIKE ? OR item_description LIKE ? OR lot_number LIKE ? OR manufacturer_lot LIKE ? OR vendor_lot LIKE ? OR supplier LIKE ?)';
@@ -520,10 +525,21 @@ router.get('/requests', (req, res) => {
   // `{ requests, total, shown }` rather than a bare array, the same shape the
   // draft-specifications endpoint uses, so the screen can say what it is
   // showing you out of what exists.
+  // What this person may un-sign or delete. An admin: as before. Anyone else:
+  // only what an open COA correction names (D-236) — read once, not per row.
+  const isAdmin = req.user?.role === 'admin';
+  const flagged = new Map();
+  if (!isAdmin) {
+    const openIds = openRequestIds(db);
+    for (const r of requests) {
+      if (openIds.has(r.id)) flagged.set(r.id, correctionFlags(db, req.user, r.id));
+    }
+  }
+  const flagsFor = (id) => isAdmin ? { unsign: true, delete: true, item_key: null } : (flagged.get(id) || { unsign: false, delete: false, item_key: null });
   res.json({
     // The drawn signature and the signed snapshot are for the detail and the
     // PDF; a list of 1,500 rows does not carry them.
-    requests: requests.map(({ qa_signature, signed_snapshot: _snapshot, ...r }) => ({ ...r, signed: !!qa_signature, file_counts: fileMap[r.id] || {} })),
+    requests: requests.map(({ qa_signature, signed_snapshot: _snapshot, ...r }) => ({ ...r, signed: !!qa_signature, file_counts: fileMap[r.id] || {}, correction: flagsFor(r.id) })),
     total,
     shown: requests.length,
     limit,
@@ -832,7 +848,9 @@ router.get('/requests/:id', (req, res) => {
   const test_results = db.prepare('SELECT * FROM coa_test_results WHERE request_id = ? ORDER BY test_type').all(req.params.id);
   const specs = db.prepare('SELECT * FROM coa_specifications WHERE item_number = ? AND is_active = 1').all(request.item_number);
 
-  res.json({ ...request, files, test_results, specifications: specs });
+  const { suspect } = splitLot(request.lot_number);
+  res.json({ ...request, files, test_results, specifications: specs, lot_suspect: suspect,
+    correction: correctionFlags(db, req.user, request.id), correction_items: correctionItemsFor(db, request.id) });
 });
 
 router.post('/requests', (req, res) => {
@@ -856,6 +874,7 @@ router.post('/requests', (req, res) => {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(id, item_number, item_description, lot_number, product_expiration || null, tests_requested, status, lab_id || null, lab_name, date_sent || null, tat_days || null, expected_results_date || null, requested_by || req.user.name, notes || null, req.user.name, origin || null, supplier || null, product_code || null, manufacturer_lot || null, vendor_lot || null, received_date || null);
 
+  stampBaseLot(db, id);
   const created = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(id);
   logAudit(req.user, 'create', 'coa_request', id, req.body, null, created);
   res.status(201).json(created);
@@ -907,6 +926,7 @@ router.put('/requests/:id', (req, res) => {
   updates.push("updated_at = datetime('now')");
   values.push(req.params.id);
   db.prepare(`UPDATE coa_requests SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+  if (req.body.lot_number !== undefined) stampBaseLot(db, req.params.id);
 
   const updated = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id);
   logAudit(req.user, 'update', 'coa_request', req.params.id, req.body, existing, updated);
@@ -926,7 +946,10 @@ router.get('/release-gate', (req, res) => {
   const specsByItem = {};
   for (const s of db.prepare('SELECT item_number, test_type FROM coa_specifications WHERE is_active = 1').all()) (specsByItem[s.item_number] ||= []).push(s);
   const coverage = items.map(i => { const c = specCoverage(specsByItem[i.item_number] || []); return { ...i, missing: c.missing }; });
-  res.json({ mode, modes: GATE_MODES, released_with_gaps: withGaps, released_with_gaps_count: withGaps.length, held, held_count: held.length,
+  // ADVISORY ONLY (D-237): base lots whose batches do not all carry a signed,
+  // passing gluten result. Gates nothing; the mode and every refusal are as they were.
+  const lot_rollup = (() => { try { return lotGlutenRollup(db); } catch { return null; } })();
+  res.json({ mode, modes: GATE_MODES, lot_rollup, released_with_gaps: withGaps, released_with_gaps_count: withGaps.length, held, held_count: held.length,
     items_total: coverage.length, items_fully_covered: coverage.filter(c => c.missing.length === 0).length, coverage });
 });
 
@@ -942,10 +965,28 @@ router.put('/release-gate', requireRole('admin'), (req, res) => {
 
 // Bulk permanent delete of lab requests (with their test results + files).
 // Admin only.
-router.post('/requests/bulk-delete', requireRole('admin'), (req, res) => {
+// Admin; or Quality for exactly the empty duplicates a COA correction item
+// names (D-236) — every id authorized, a reason, the password, and each one
+// still empty, unsigned and from the CTLA upload with its report kept elsewhere.
+router.post('/requests/bulk-delete', (req, res) => {
   const db = getDb();
   const { ids } = req.body;
   if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array is required' });
+  const auth = new Map();
+  if (req.user?.role !== 'admin') {
+    for (const id of ids) {
+      const a = coaCorrectionAllowed(db, req.user, id, 'delete');
+      if (!a) return res.status(403).json({ error: 'Only an admin can delete lab requests, or Quality for an empty duplicate a COA correction in QA Review names.', id });
+      const refusal = duplicateDeleteRefusal(db, id, a.item);
+      if (refusal) return res.status(409).json({ error: `Request ${id} cannot be deleted as a duplicate: ${refusal}`, id });
+      auth.set(id, a.item);
+    }
+    if (String(req.body?.reason || '').trim().length < 3) return res.status(400).json({ error: 'Say why these requests are being deleted.' });
+    if (!gateSignature(req, res, { action: 'coa_delete_duplicate' })) return;
+  } else {
+    for (const id of ids) { const a = coaCorrectionAllowed(db, req.user, id, 'delete'); if (a?.item) auth.set(id, a.item); }
+  }
+  const reason = String(req.body?.reason || '').trim() || null;
   const ph = ids.map(() => '?').join(',');
   const all = db.prepare(`SELECT id, certificate_number, qa_signed_at, lot_number FROM coa_requests WHERE id IN (${ph})`).all(...ids);
   // A signed certificate is a record and is never deleted (D-224).
@@ -960,7 +1001,12 @@ router.post('/requests/bulk-delete', requireRole('admin'), (req, res) => {
     db.prepare(`DELETE FROM coa_requests WHERE id IN (${dph})`).run(...del);
   });
   tx();
-  for (const r of found) logAudit(req.user, 'delete', 'coa_request', r.id, null, r, null);
+  for (const r of found) {
+    const item = auth.get(r.id);
+    logAudit(req.user, 'delete', 'coa_request', r.id,
+      (reason || item) ? { ...(reason ? { reason } : {}), ...(item ? { authorized_by: item.item_key, decision: CORRECTION_DECISION } : {}),
+        ...(req.user?.role !== 'admin' ? signatureEvidence() : {}) } : null, r, null);
+  }
   res.json({ deleted: found.length, skipped_signed });
 });
 
@@ -997,6 +1043,40 @@ router.post('/requests/bulk-update', (req, res) => {
   const info = okIds.length ? db.prepare(`UPDATE coa_requests SET status=?, updated_at=datetime('now') WHERE id IN (${ph})`).run(patch.status, ...okIds) : { changes: 0 };
   logAudit(req.user, 'coa_requests_bulk_updated', 'coa_request', null, { count: info.changes, status: patch.status, blocked: blocked.length });
   res.json({ updated: info.changes, blocked });
+});
+
+// ──────────────── COA corrections (D-236) ────────────────
+
+// The request ids with an open correction item — read once per list.
+function openRequestIds(db) {
+  try { return new Set(db.prepare("SELECT DISTINCT request_id FROM coa_review_items WHERE status = 'open'").all().map(r => r.request_id)); }
+  catch { return new Set(); }
+}
+function correctionItemsFor(db, requestId) {
+  try {
+    return db.prepare('SELECT * FROM coa_review_items WHERE request_id = ? ORDER BY created_at').all(requestId)
+      .map(i => ({ item_key: i.item_key, kind: i.kind, title: i.title, recommended_action: i.recommended_action, reason: i.reason,
+        status: i.status, dismissed_reason: i.dismissed_reason, ...itemProgress(db, i) }));
+  } catch { return []; }
+}
+
+// The open items, for the COA screen (QA Review reads the same functions).
+router.get('/review-items', (req, res) => {
+  const db = getDb();
+  res.json({ items: openItems(db).map(i => ({ id: i.id, item_key: i.item_key, kind: i.kind, request_id: i.request_id, title: i.title, ...i.progress })) });
+});
+
+// An admin closes an item with a reason. It is the only way the held request
+// (8afd7fbe) can be signed again, and it is recorded.
+router.post('/review-items/:id/dismiss', requireRole('admin'), (req, res) => {
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 3) return res.status(400).json({ error: 'Say why this correction is being dismissed.' });
+  const db = getDb();
+  const out = dismissItem(db, req.user, req.params.id, reason);
+  if (out.error) return res.status(out.status).json({ error: out.error });
+  logAudit(req.user, 'dismiss', 'coa_review_item', out.item.id, { reason, item_key: out.item.item_key, request_id: out.item.request_id },
+    { status: out.before.status }, { status: 'dismissed' }, out.item.title);
+  res.json(out.item);
 });
 
 // ──────────────── Test Results ────────────────
@@ -1526,6 +1606,10 @@ router.post('/requests/:id/sign', (req, res) => {
   const db = getDb();
   const r = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id);
   if (!r) return res.status(404).json({ error: 'COA request not found' });
+  // The one held request (D-236): a failed lot's certificate is corrected and
+  // NOT re-signed while its QA Review item is open.
+  const hold = coaSignHold(db, r.id);
+  if (hold) return res.status(409).json({ error: hold, held: true });
 
   let sig = req.body?.signature || null;
   if (!sig) sig = db.prepare('SELECT signature_image FROM users WHERE id = ?').get(req.user.id)?.signature_image || null;
@@ -1584,18 +1668,27 @@ router.post('/requests/:id/sign', (req, res) => {
 // signature AND the certificate number and issuance date: the number is void
 // and is never issued again (the counter does not go back). Audited with the
 // number and the snapshot hash it voided.
-router.delete('/requests/:id/sign', requireRole('admin'), (req, res) => {
+//
+// An admin, as before; or a QA reviewer for exactly the requests an open COA
+// correction item names (D-236) — then with the password, and the audit row
+// says which item and which decision authorized it.
+router.delete('/requests/:id/sign', (req, res) => {
   const db = getDb();
+  const allowed = coaCorrectionAllowed(db, req.user, req.params.id, 'unsign');
+  if (!allowed) return res.status(403).json({ error: 'Only an admin can un-sign a certificate, or Quality while a COA correction in QA Review asks for it.' });
   const r = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id);
   if (!r) return res.status(404).json({ error: 'COA request not found' });
   if (!isSigned(r)) return res.status(409).json({ error: 'This certificate is not signed.' });
   const reason = String(req.body?.reason || '').trim();
   if (reason.length < 3) return res.status(400).json({ error: 'Say why the signature is being removed.' });
+  if (!allowed.admin && !gateSignature(req, res, { action: 'coa_unsign' })) return;
   db.prepare(`UPDATE coa_requests SET qa_signed_by = NULL, qa_signed_by_id = NULL, qa_signed_at = NULL, qa_signature = NULL,
               certificate_number = NULL, date_of_issuance = NULL, signed_snapshot = NULL, signed_content_hash = NULL,
               updated_at = datetime('now') WHERE id = ?`).run(req.params.id);
   logAudit(req.user, 'unsign', 'coa_request', req.params.id,
-    { reason, previous_signer: r.qa_signed_by, voided_certificate_number: r.certificate_number, voided_content_sha256: r.signed_content_hash },
+    { reason, previous_signer: r.qa_signed_by, voided_certificate_number: r.certificate_number, voided_content_sha256: r.signed_content_hash,
+      ...(allowed.item ? { authorized_by: allowed.item.item_key, decision: CORRECTION_DECISION } : {}),
+      ...(!allowed.admin ? signatureEvidence() : {}) },
     null, null, `${r.item_description} · Lot ${r.lot_number}`);
   res.json({ ok: true });
 });
@@ -2174,6 +2267,113 @@ router.put('/requests/:id/brand-owner', (req, res) => {
   logAudit(req.user, 'update', 'coa_request', r.id, { brand_owner: { from: r.brand_owner, to: value } },
     { brand_owner: r.brand_owner }, { brand_owner: value }, `${r.item_description} · Lot ${r.lot_number}`);
   res.json({ id: r.id, brand_owner: value });
+});
+
+// ──────────────── Brands: create, and assign in bulk (D-238) ────────────────
+//
+// A new brand is ALWAYS created closed to publishing — the column's default,
+// which this file never names, so nothing here can open it or read it. Bulk assignment moves a request
+// from `unassigned` to a brand, never from one brand to another unless an
+// admin says so with a reason. Preview writes nothing; apply is one
+// transaction, signed with the password, one audit row per request.
+const canManageBrands = (u) => isQaReviewer(u);
+const BRAND_NAME = (v) => String(v ?? '').trim().replace(/\s+/g, ' ');
+const brandNameError = (name) => (name.length < 2 || name.length > 60) ? 'A brand name is 2 to 60 characters.'
+  : name.toLowerCase() === 'unassigned' ? '"unassigned" is not a brand.' : null;
+
+function insertBrand(db, name) {
+  const id = `brand-${uuid()}`;
+  db.prepare('INSERT INTO coa_brands (id, name) VALUES (?, ?)').run(id, name);
+  return db.prepare('SELECT id, name FROM coa_brands WHERE id = ?').get(id);
+}
+
+router.post('/brands', (req, res) => {
+  if (!canManageBrands(req.user)) return res.status(403).json({ error: 'Only an admin or Quality can add a brand.' });
+  const db = getDb();
+  const name = BRAND_NAME(req.body?.name);
+  const bad = brandNameError(name);
+  if (bad) return res.status(400).json({ error: bad });
+  if (db.prepare('SELECT 1 FROM coa_brands WHERE LOWER(name) = LOWER(?)').get(name)) return res.status(409).json({ error: `"${name}" is already on the list.` });
+  const created = insertBrand(db, name);
+  logAudit(req.user, 'create', 'coa_brand', created.id, { name, publishing: 'closed (default)' }, null, created, name);
+  res.status(201).json({ id: created.id, name: created.name });
+});
+
+export const BULK_BRAND_MAX = 2000;
+
+/** The plan for a bulk brand assignment. Writes nothing. */
+export function planBrandBulk(db, rows, { user, allowChange = false, createMissing = false } = {}) {
+  const brands = new Map(db.prepare('SELECT name FROM coa_brands').all().map(b => [b.name.toLowerCase(), b.name]));
+  const seen = new Set();
+  const out = { changes: [], no_ops: [], errors: [], brands_to_create: [], by_brand: {}, by_confidence: {} };
+  const toCreate = new Map();
+  rows.forEach((row, i) => {
+    const request_id = String(row?.request_id ?? '').trim();
+    const target = BRAND_NAME(row?.brand_owner);
+    const err = (error) => out.errors.push({ row: i + 1, request_id, brand_owner: target, error });
+    if (!request_id) return err('No request id.');
+    if (seen.has(request_id)) return err('This request is listed twice.');
+    seen.add(request_id);
+    const r = db.prepare('SELECT id, brand_owner, item_number, item_description, lot_number FROM coa_requests WHERE id = ?').get(request_id);
+    if (!r) return err('No such request.');
+    const from = r.brand_owner || 'unassigned';
+    if (!target || target.toLowerCase() === 'unassigned') return out.no_ops.push({ row: i + 1, request_id, reason: 'target is unassigned' });
+    let name = brands.get(target.toLowerCase()) || toCreate.get(target.toLowerCase());
+    if (!name) {
+      if (!createMissing) return err(`"${target}" is not a brand on the list.`);
+      const bad = brandNameError(target);
+      if (bad) return err(bad);
+      name = target; toCreate.set(target.toLowerCase(), target);
+    }
+    if (from === name) return out.no_ops.push({ row: i + 1, request_id, reason: `already ${name}` });
+    if (from !== 'unassigned' && !(allowChange && user?.role === 'admin')) {
+      return err(`Already assigned to ${from}. Changing an assigned request needs an admin and allow_change.`);
+    }
+    out.changes.push({ row: i + 1, request_id, from, to: name, item_number: r.item_number, item_description: r.item_description, lot_number: r.lot_number,
+      confidence: row?.confidence ?? null });
+    out.by_brand[name] = (out.by_brand[name] || 0) + 1;
+    if (row?.confidence != null && row.confidence !== '') out.by_confidence[row.confidence] = (out.by_confidence[row.confidence] || 0) + 1;
+  });
+  out.brands_to_create = [...toCreate.values()].filter(n => out.changes.some(c => c.to === n));
+  return out;
+}
+
+router.post('/requests/brand-owner/bulk', (req, res) => {
+  if (!canManageBrands(req.user)) return res.status(403).json({ error: 'Only an admin or Quality can assign brands.' });
+  const db = getDb();
+  const rows = Array.isArray(req.body?.rows) ? req.body.rows : null;
+  if (!rows || !rows.length) return res.status(400).json({ error: 'rows is required.' });
+  if (rows.length > BULK_BRAND_MAX) return res.status(400).json({ error: `At most ${BULK_BRAND_MAX} rows at a time.` });
+  const mode = req.body?.mode === 'apply' ? 'apply' : 'preview';
+  const allowChange = req.body?.allow_change === true;
+  const reason = String(req.body?.reason || '').trim();
+  if (allowChange && req.user?.role !== 'admin') return res.status(403).json({ error: 'Only an admin can change a request that already has a brand.' });
+  if (allowChange && reason.length < 3) return res.status(400).json({ error: 'Say why assigned requests are being changed.' });
+  const plan = planBrandBulk(db, rows, { user: req.user, allowChange, createMissing: req.body?.create_missing_brands === true });
+  const summary = { changes: plan.changes.length, no_ops: plan.no_ops.length, errors: plan.errors.length };
+  if (mode === 'preview') return res.json({ mode, ...summary, plan });
+
+  if (reason.length < 3) return res.status(400).json({ error: 'Say why these brands are being assigned.' });
+  if (!gateSignature(req, res, { action: 'coa_brand_bulk' })) return;
+  const batch_id = uuid();
+  const created = [];
+  db.transaction(() => {
+    for (const name of plan.brands_to_create) {
+      if (!db.prepare('SELECT 1 FROM coa_brands WHERE LOWER(name) = LOWER(?)').get(name)) created.push(insertBrand(db, name));
+    }
+    const set = db.prepare("UPDATE coa_requests SET brand_owner = ?, updated_at = datetime('now') WHERE id = ? AND COALESCE(brand_owner, 'unassigned') = ?");
+    for (const c of plan.changes) {
+      const info = set.run(c.to, c.request_id, c.from);
+      if (!info.changes) continue;
+      logAudit(req.user, 'update', 'coa_request', c.request_id, { brand_owner: { from: c.from, to: c.to }, batch_id, reason },
+        { brand_owner: c.from }, { brand_owner: c.to }, `${c.item_description} · Lot ${c.lot_number}`);
+    }
+  })();
+  for (const b of created) logAudit(req.user, 'create', 'coa_brand', b.id, { name: b.name, publishing: 'closed (default)', batch_id }, null, b, b.name);
+  logAudit(req.user, 'bulk_update', 'coa_brand_assignment', batch_id,
+    { ...signatureEvidence(), reason, changed: plan.changes.length, no_ops: plan.no_ops.length, errors: plan.errors.length,
+      by_brand: plan.by_brand, brands_created: created.map(b => b.name), allow_change: allowChange });
+  res.json({ mode, batch_id, ...summary, brands_created: created.map(b => b.name), plan });
 });
 
 // ──────────────── COA settings (scaffold, no consumers) ────────────────

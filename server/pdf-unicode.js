@@ -63,9 +63,23 @@ export function printable(value) {
  * Any other font name passes through unchanged. Call once, right after
  * `new PDFDocument(...)`.
  */
-export function embedUnicodeFaces(doc) {
-  const F = registerUnicodeFonts(doc);
-  if (F.regular === 'Helvetica') return doc; // the font files are missing: leave Helvetica in place
+// Built-in Helvetica cannot draw these; spelled out, they read correctly.
+// (µ ± ° ™ × are in WinAnsi and need no help.)
+const ASCII_FALLBACK = [[/≤/g, '<='], [/≥/g, '>='], [/≠/g, '!='], [/−/g, '-']];
+/** "≤ 0.5 ppm" → "<= 0.5 ppm" for a document that could not load the embedded font. */
+export const fallbackText = (s) => ASCII_FALLBACK.reduce((t, [re, to]) => t.replace(re, to), String(s));
+let warnedFallback = false;
+
+export function embedUnicodeFaces(doc, { forceFallback = false } = {}) {
+  const F = forceFallback ? { regular: 'Helvetica' } : registerUnicodeFonts(doc);
+  if (F.regular === 'Helvetica') {
+    // The font files are missing: leave Helvetica in place, and write the
+    // symbols it cannot draw as text rather than as garbage (D-239). Said once.
+    if (!warnedFallback) { warnedFallback = true; console.warn('[pdf] embedded Unicode font unavailable — writing ≤ ≥ as <= >= in generated PDFs'); }
+    const text = doc.text.bind(doc);
+    doc.text = (str, ...rest) => text(typeof str === 'string' ? fallbackText(str) : str, ...rest);
+    return doc;
+  }
   const FACE = { Helvetica: F.regular, 'Helvetica-Bold': F.bold, 'Helvetica-Oblique': F.italic, 'Helvetica-BoldOblique': F.boldItalic };
   const setFont = doc.font.bind(doc);
   doc.font = (name, ...rest) => setFont(FACE[name] || name, ...rest);

@@ -46,6 +46,9 @@ router.get('/', (req, res) => {
       count,
       can_sign: !!s.canSign(req.user),
       items: include ? safePending(s, db, limit) : null,
+      // Only an action source carries `kind`, so every other source's payload
+      // is byte-for-byte what it was (D-236).
+      ...(s.kind ? { kind: s.kind } : {}),
     };
   });
 

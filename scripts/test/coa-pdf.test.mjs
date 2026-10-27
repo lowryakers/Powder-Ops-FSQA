@@ -72,3 +72,41 @@ test('layoutPage places cells under their header columns', () => {
     '| Salmonella |  | Absent |  |',
   ]);
 });
+
+// THE REAL HEADER (D-239): "MDL Specification" is one cell on CTLA's reports,
+// and the reader used to return mdl null on every real row. Synthetic fixture.
+test('merged "MDL Specification" header: the MDL is split out of "4 Report"', async () => {
+  const p = parseColumnarCoa((await readPdfColumns(readFileSync(path.join(dir, 'ctla-merged-header.pdf')))).text);
+  const g = row(p, 'Gluten Allergen');
+  assert.equal(g.result_value, '<4');
+  assert.equal(g.mdl, '4');
+  assert.equal(g.method, 'ELISA');
+  assert.equal(row(p, 'Total Coliforms (BAM) (MOD)').mdl, '10');
+  assert.equal(row(p, 'Total Coliforms (BAM) (MOD)').method, 'BAM CH. 4');
+  assert.equal(row(p, 'E.Coli BAM (MOD)').mdl, null, 'a cell that is only "Report" has no MDL');
+  assert.equal(row(p, 'E.Coli BAM (MOD)').result_value, 'Absent');
+  assert.equal(row(p, 'Arsenic').mdl, '.001', 'a leading-dot MDL is kept as printed');
+});
+
+test('splitMdlSpec and displayMdl', async () => {
+  const { splitMdlSpec, displayMdl } = await import('../../server/coa-parse.js');
+  assert.deepEqual(splitMdlSpec('4 Report'), { mdl: '4', spec: 'Report' });
+  assert.deepEqual(splitMdlSpec('10 Report'), { mdl: '10', spec: 'Report' });
+  assert.deepEqual(splitMdlSpec('.001 Report'), { mdl: '.001', spec: 'Report' });
+  assert.deepEqual(splitMdlSpec('Report'), { mdl: null, spec: 'Report' });
+  assert.deepEqual(splitMdlSpec(''), { mdl: null, spec: null });
+  assert.equal(displayMdl('.001'), '0.001');
+  assert.equal(displayMdl('4'), '4');
+});
+
+test('pipe rows with the merged header, as the real reader prints them', () => {
+  const p = parseColumnarCoa([
+    '| Analysis | Method | MDL Specification | Result | Units |',
+    '| Gluten Allergen | ELISA | 4 Report | <4 | ppm |',
+    '| Total Coliforms (BAM) (MOD) | BAM CH. 4 | 10 Report | <10 | cfu/g |',
+    '| E.Coli BAM (MOD) | BAM CH. 4 | Report | Absent |',
+  ].join('\n'));
+  assert.equal(row(p, 'Gluten Allergen').mdl, '4');
+  assert.equal(row(p, 'Total Coliforms (BAM) (MOD)').mdl, '10');
+  assert.equal(row(p, 'E.Coli BAM (MOD)').mdl, null);
+});

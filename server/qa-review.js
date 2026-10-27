@@ -43,6 +43,7 @@ import { BULK_APPROVE } from './api/qms.js';
 import { recordClearance, canClearHygiene, clearanceNeedsLook } from './api/pm.js';
 import { getType } from './qms-config.js';
 import { hasExplicitEdit } from './module-access.js';
+import { pendingItems, reviewRow } from './coa-review-items.js';
 // The signing predicates live in qa-signing.js so the modules' OWN Verify
 // routes can apply the same rule without importing this file back — see the
 // note there. Re-exported because this module's public surface already
@@ -278,6 +279,25 @@ export const SOURCES = [
       const out = recordClearance(db, user, id, { status: 'cleared', method: 'QA Review sign-off', notes: 'Cleared from QA Review' });
       return out.error ? { error: out.error, status: out.status } : { ok: true };
     },
+  },
+  // COA CORRECTIONS (D-236). Not a counter-signature: each row is a DECIDED
+  // correction (A-20261027-001/002) Maria carries out on the COA request
+  // itself — un-sign, correct the gluten line, sign again, or delete an empty
+  // duplicate. `kind: 'action'` tells the panel to draw no checkbox and no Sign
+  // button (the doc-review.js rule: a source offers an action only when it has
+  // one). The steps tick themselves from the request and the audit log.
+  {
+    key: 'coa-corrections',
+    label: 'COA corrections',
+    form: null,
+    module: 'coa',
+    kind: 'action',
+    noun: 'correction',
+    plural: 'corrections',
+    count: (db) => pendingItems(db).length,
+    pending: (db, limit = LIMIT) => pendingItems(db).slice(0, limit).map(reviewRow),
+    canSign: () => false,
+    sign: () => ({ error: 'COA corrections are made on the request itself, not signed from this list.', status: 400 }),
   },
   signOutSource({ key: 'sign-out-equipment', type: 'maintenance_sign_out',
     label: 'Equipment / Tool / Chemical sign-outs', form: '703-01', module: 'maintenance-signout',

@@ -13,7 +13,7 @@ import { requireRole } from '../middleware/auth.js';
 import { hasExplicitGrant } from '../module-access.js';
 import { readinessReview } from '../audit-readiness.js';
 // One definition of "waiting on a signature" — see the sign-out badge note below.
-import { getSource, safeCount } from '../qa-review.js';
+import { getSource, safeCount, isQaReviewer } from '../qa-review.js';
 // One definition of "completed PM" — the dashboard, the Task Center and the
 // auditor binder all read it from here.
 import { pmCompletion } from '../pm-completion.js';
@@ -715,6 +715,11 @@ router.get('/notifications', (req, res) => {
   if (sopReviewDue > 0) items.push({ id: 'sop-review', tab: 'sops', severity: 'info', count: sopReviewDue, label: `${sopReviewDue} SOP${sopReviewDue > 1 ? 's' : ''} past review date` });
   // Points at QA Review, not the Production Log: signing is done in the review
   // queue now, and a notification that lands somewhere you can't act is noise.
+  // COA corrections decided on 27 Oct (D-236) — Quality's to carry out.
+  if (isQaReviewer(req.user)) {
+    const coaFix = safeCount(getSource('coa-corrections') || { count: () => 0 }, db);
+    if (coaFix > 0) items.push({ id: 'coa-corrections', tab: 'qa-review', severity: 'warning', count: coaFix, label: `${coaFix} COA correction${coaFix > 1 ? 's' : ''} to make (decided 27 Oct)` });
+  }
   if (pendingQA > 0) items.push({ id: 'production-qa', tab: 'qa-review', severity: 'warning', count: pendingQA, label: `${pendingQA} production entr${pendingQA > 1 ? 'ies' : 'y'} pending QA sign-off` });
   // A sign-out log's badge counts what QA can ACT on, not every unsigned row.
   //
