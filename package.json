@@ -114,6 +114,7 @@
     "verify:partnerrecon": "node scripts/verify-partner-recon.mjs",
     "verify:recordinterface": "node scripts/verify-record-interface.mjs",
     "verify:culture": "node scripts/verify-food-safety-culture.mjs",
+    "verify:moduleusage": "node scripts/verify-module-usage.mjs",
     "verify:signsweep": "node scripts/verify-signature-sweep.mjs",
     "verify:emplimits": "node scripts/verify-emp-limits.mjs",
     "report:partner-dupes": "node scripts/report-partner-duplicates.mjs",

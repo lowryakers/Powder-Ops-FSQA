@@ -8446,3 +8446,19 @@ Lowry's decisions on the D-214 cleanup plan.
 - Verified: `verify:accesssources` (22), `verify:kioskisolation` (38), `check:modaccess` (23 + 4 skipped), and the
   verifies that read completed work orders (cleanup digest, name keys, QA clearance). `verify:testgrading` fails one
   browser step on `main` as well; it is a separate task.
+
+## D-216 — The module-usage report runs from Settings, on the live database, read-only (27 Oct 2026)
+
+Lowry tried the report on his Mac and the OS refused the step. A report that needs a Terminal, a download of the
+production database and a Node install is one that does not get run. So the same report now runs from **Settings →
+Data backup → Module usage** (admin only, `GET /api/compliance/module-usage`), with a Copy button.
+- **One definition, two callers.** The logic moved to `server/module-usage.js` (`moduleUsage`, `usageText`,
+  `usageCsv`); `npm run report:usage` is a thin wrapper over it. `verify:moduleusage` asserts the screen and the
+  command line print the same report.
+- **It runs on production, so it must not write.** Every statement is a SELECT; it does not even write an audit row
+  (reading is not an act worth an entry, and the report counts audit rows). The verify takes the row count of every
+  table before and after and asserts none moved.
+- **Run on demand, never on page load.** It walks the audit log once per module.
+- The PIN check names accounts only; the verify asserts the PIN never reaches the browser.
+- A fresh database still reports the seven demo PIN accounts. That is item 1b of the cleanup plan, still open.
+- Verified: `verify:moduleusage` (22, live + browser at 1280 and 390px; in `verify:all`).

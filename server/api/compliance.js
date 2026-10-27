@@ -17,6 +17,7 @@ import { getSource, safeCount } from '../qa-review.js';
 // One definition of "completed PM" — the dashboard, the Task Center and the
 // auditor binder all read it from here.
 import { pmCompletion } from '../pm-completion.js';
+import { moduleUsage, usageText } from '../module-usage.js';
 
 const router = Router();
 
@@ -310,6 +311,13 @@ router.get('/export-all', requireRole('admin'), (req, res) => {
   res.setHeader('Content-Type', 'application/zip');
   res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
   res.send(buildBackupZip(db, req.user.name));
+});
+
+// Which modules are used (D-216): the report:usage CLI, run in place. READ-ONLY — every statement is
+// a SELECT, nothing is written, not even an audit row. Run on demand from Settings, never on load.
+router.get('/module-usage', requireRole('admin'), (req, res) => {
+  const r = moduleUsage(getDb());
+  res.json({ ...r, text: usageText(r, `live database, ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`) });
 });
 
 // Stored automatic backups (weekly Friday job writes them to R2 under backups/).

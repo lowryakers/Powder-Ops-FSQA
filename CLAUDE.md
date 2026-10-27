@@ -3932,10 +3932,13 @@ report that competes with a queue gets skimmed. So it is three sections and no t
 `tr()` back. Uses the cached `/ai/translate-content` endpoint, so it silently stays English when AI is off.
 Wired into Supply Orders, Time Tracking and both finance ledgers; reusable anywhere.
 
-## Which modules are used: `npm run report:usage -- <db copy>` (D-214)
-`scripts/report-module-usage.mjs` is READ-ONLY. It counts each module's rows and the audit entries PEOPLE wrote
+## Which modules are used: Settings → Data backup → Module usage, or `npm run report:usage -- <db copy>` (D-214, D-216)
+- **One definition (`server/module-usage.js`), two callers**: the Settings card (admin, `GET /compliance/module-usage`,
+  run on demand on the LIVE database) and the CLI. It must stay SELECT-only — it runs on production and writes not even
+  an audit row; `verify:moduleusage` (22) checks every table's row count before and after.
+The report is READ-ONLY. It counts each module's rows and the audit entries PEOPLE wrote
 since go-live and in the last 90 days, and gives a verdict: never used / machine only / dormant / light / in use.
-- **Run it on a copy, never production.** Add a new module's tables and audit entity types to `MODULES`; record types
+- The CLI runs on a copy; the Settings card runs on the live database. Add a new module's tables and audit entity types to `MODULES`; record types
   it does not know are listed at the end.
 - It also flags two demo-era leftovers. Invented completed tasks under Adam B. / Ricardo A. / Spencer R.: `server.js`
   wrote them on a database with no completed task until D-215 removed the code; rows already written are still counted. Active accounts that still have a PIN and no password: these can
