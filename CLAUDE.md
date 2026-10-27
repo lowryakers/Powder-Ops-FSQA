@@ -1535,6 +1535,16 @@ twice, no form number, files no record.
   read-only and names every odd route with where to change it. Add a finding there, not a one-off query.
 - `verify:taskrouting` (27; control fails 8).
 
+## Cards on the wrong list, closed; the Equipment list's team review (D-218, `server/routing-cleanup.js`)
+- **A room checklist with no lines is paused every boot** (`pauseEmptyChecklists`), its cards cancelled.
+- **`routing_cleanup_v1` (once)**: non-machine-team checklists naming no machine, machine PMs on zones, the newer of
+  two identical schedules, and open cards on equipment out of service or left by a paused schedule.
+- **Taking a machine out of service closes its open PM cards** (`closeEquipmentWork`, edit + bulk edit). Started and
+  completed cards are left.
+- **Equipment → team review** (`equipmentTeamReview`, `GET /equipment/team-review`, `EquipmentTeamReview.jsx`): the
+  machines to re-team, with Move to Maintenance. The app never re-teams a machine by itself.
+- `verify:routingcleanup` (29; control fails 9).
+
 ## Pausing a schedule closes what it raised (D-139, `server/pm-pause.js`) — supersedes D-055 below
 `PUT /pm/schedules/:id` with `is_active: false` cancels the schedule's `open`/`overdue`/`missed` cards in the
 same transaction (`closeScheduleWork`, reason + who on each, never deleted); a STARTED card is left and counted;
@@ -3954,6 +3964,9 @@ since go-live and in the last 90 days, and gives a verdict: never used / machine
   wrote them on a database with no completed task until D-215 removed the code; rows already written are still counted. Active accounts that still have a PIN and no password: these can
   be claimed with the PIN. **Do not add demo history or demo accounts to a seed.**
 - The findings and the cleanup plan are in `docs/v2/cleanup-and-spine-2026-10-26.md`.
+- **Both leftovers were retired once on the live database (D-219, `server/demo-cleanup.js`)**: the invented history
+  is CANCELLED with the reason (never deleted) and the PIN Auditor deactivated; nothing re-creates it.
+  `verify:democleanup` (10). **Retention Samples stays and Stability waits on operations (D-220).**
 
 ## Danny's List and the Log Builder studio are retired; a retired module's grant is removed (D-215)
 - `removeRetiredModuleGrants` (`server/access-review.js`, `RETIRED_MODULE_IDS`) strips a retired module's key from every

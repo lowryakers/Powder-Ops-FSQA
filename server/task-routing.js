@@ -193,3 +193,49 @@ export function routingText(r, label) {
   }
   return L.join('\n');
 }
+
+// ── The Equipment list's team review (D-218) ────────────────────────────────
+// "Clean up the equipment list so Adam can update it": the machines whose team sends their PMs to a
+// list that probably should not carry them. A schedule's team follows its machine's team
+// (`syncTaskGroupToPM`), so the fix is the machine's Team — this lists them, with a suggestion, and
+// changes nothing. Derived on every read, so a row leaves as soon as the team is set.
+const LINE_TEAMS = new Set(['batching', 'kitting', 'filling']);
+const LONGER = new Set(['weekly', 'biweekly', 'monthly', 'quarterly', 'semi_annual', 'annual']);
+
+export function equipmentTeamReview(db) {
+  const rows = db.prepare(`SELECT e.id, e.name, e.asset_id, e.task_group team, ps.title, ps.frequency_type, ps.task_group sched_team,
+      (SELECT COUNT(*) FROM work_orders w WHERE w.pm_schedule_id = ps.id AND w.status IN ${OUTSTANDING}) open_cards
+    FROM equipment e JOIN pm_schedules ps ON ps.equipment_id = e.id
+    WHERE e.status = 'active' AND COALESCE(e.asset_kind, 'machine') != 'zone' AND ps.is_active = 1
+      AND (ps.description IS NULL OR ps.description NOT LIKE ?)
+    ORDER BY e.name`).all(CONSOLIDATED_LIKE).filter(r => MACHINE_CARE.test(r.title));
+  const byMachine = new Map();
+  for (const r of rows) {
+    if (!byMachine.has(r.id)) byMachine.set(r.id, { id: r.id, name: r.name, asset_id: r.asset_id, team: r.team, schedules: [] });
+    byMachine.get(r.id).schedules.push(r);
+  }
+  const out = [];
+  for (const m of byMachine.values()) {
+    const cards = m.schedules.reduce((n, s) => n + s.open_cards, 0);
+    const cadences = [...new Set(m.schedules.map(s => s.frequency_type))];
+    const longer = m.schedules.filter(s => LONGER.has(s.frequency_type));
+    const split = m.schedules.filter(s => s.sched_team !== m.team);
+    let reason = null, suggested = null;
+    const lost = m.schedules.filter(s => !TASK_GROUP_VALUES.includes(s.sched_team));
+    if (!TASK_GROUP_VALUES.includes(m.team)) {
+      // A machine with no team is only a problem when its schedules route nowhere either; otherwise each
+      // schedule carries its own team and the cards arrive.
+      if (!lost.length) continue;
+      reason = m.team ? `Its team "${m.team}" is an old one, and ${lost.length} of its PM schedules reach nobody's list.`
+        : `It has no team, and ${lost.length} of its PM schedules reach nobody's list.`;
+      suggested = 'maintenance';
+    } else if ((LINE_TEAMS.has(m.team) || NOT_MACHINE_TEAMS.has(m.team)) && longer.length) {
+      reason = `Its ${longer.map(s => s.frequency_type).filter((v, i, a) => a.indexOf(v) === i).join(', ')} PMs go to the ${taskGroupLabel(m.team)} list.`;
+      suggested = 'maintenance';
+    } else if (split.length) {
+      reason = `Its PM schedules are on ${[...new Set(split.map(s => taskGroupLabel(s.sched_team) || 'no team'))].join(', ')} while the machine is on ${taskGroupLabel(m.team)}.`;
+    }
+    if (reason) out.push({ id: m.id, name: m.name, asset_id: m.asset_id, team: m.team, suggested, reason, cadences, open_cards: cards, schedules: m.schedules.length });
+  }
+  return { rows: out, suggested: out.filter(r => r.suggested).length };
+}

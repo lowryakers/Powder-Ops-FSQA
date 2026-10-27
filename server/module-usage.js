@@ -23,12 +23,12 @@ export const RECENT_DAYS = 90;
 export const MODULES = [
   // Floor
   ['Operator View / Task Center', 'Floor', ['work_orders', 'pm_schedules'], ['work_order', 'pm_schedule']],
-  ['Production Log + My Day', 'Production', ['production_entries', 'production_day_logs', 'production_runs'], ['production_entry', 'production_day_log', 'eod_template', 'production_missed_report']],
+  ['Production Log + My Day', 'Production', ['production_entries', 'production_day_logs', 'production_runs'], ['production_entry', 'production_day_log', 'eod_template', 'production_missed_report', 'production_cleaning_level']],
   ['Production Schedule', 'Production', ['production_schedule'], ['production_schedule']],
   ['Receiving Log + checklist', 'Warehouse', ['receiving_log', 'receiving_checklists', 'receiving_lab_test_items'], ['receiving_record', 'receiving_checklist', 'receiving_lab_test_item']],
   ['Shipping inspection', 'Warehouse', ['shipping_inspections'], ['shipping_inspection', 'shipping_photo']],
   ['Film / pouch inspection', 'Warehouse', ['film_pouch_inspections'], ['film_inspection']],
-  ['Sign In/Out (tools, knives, components)', 'Floor', ['maintenance_items'], ['maintenance_sign_out', 'component_sign_out', 'maintenance_items']],
+  ['Sign In/Out (tools, knives, components)', 'Floor', ['maintenance_items'], ['maintenance_sign_out', 'component_sign_out', 'maintenance_items', 'knife_sign_out', 'knife_accountability']],
   ['Equipment', 'Maintenance', ['equipment', 'equipment_files', 'equipment_step_waivers'], ['equipment', 'equipment_file']],
   ['Calibration + scale checks', 'Maintenance', ['calibration_instruments', 'calibration_records', 'scale_verifications', 'instrument_incidents'], ['calibration_instrument', 'calibration_record', 'calibration_certificate', 'scale_verification', 'instrument_incident']],
   ['Lockout / Tagout', 'Maintenance', ['loto_procedures', 'loto_executions'], ['loto_procedure', 'loto_execution']],
@@ -39,7 +39,7 @@ export const MODULES = [
   ['Sanitation + swab log', 'Quality', ['sanitation_records', 'sanitation_swabs', 'swab_log_entries', 'swab_stock_events'], ['sanitation_record', 'sanitation_reclean', 'swab_log', 'swab_stock']],
   ['Chemicals', 'Quality', ['approved_chemicals'], ['chemical']],
   ['COA / Lab Testing', 'Quality', ['coa_requests', 'coa_specifications', 'coa_files', 'coa_submissions'], ['coa_request', 'coa_requests', 'coa_specification', 'coa_file', 'coa_test_result', 'coa_test_results', 'coa_lab', 'coa_material_spec']],
-  ['Quality Schedules + check records', 'Quality', ['quality_schedules', 'emp_samples', 'gmp_walkthroughs', 'banned_list_reviews', 'management_reviews', 'food_defense_challenges'], ['quality_schedule', 'emp_sample']],
+  ['Quality Schedules + check records', 'Quality', ['quality_schedules', 'emp_samples', 'gmp_walkthroughs', 'banned_list_reviews', 'management_reviews', 'food_defense_challenges'], ['quality_schedule', 'emp_sample', 'food_defense_challenge', 'management_review']],
   ['Food Safety Culture', 'Quality', ['culture_concerns', 'culture_checks'], ['culture_concern', 'culture_check', 'culture_settings']],
   ['Suppliers', 'Quality', ['suppliers', 'supplier_materials', 'supplier_qualifications', 'supplier_files', 'supplier_questionnaires', 'supplier_banned_checks'], ['supplier', 'supplier_file']],
   ['Quality events (deviation / NC / on hold) + all QMS forms', 'Quality', ['qms_records'], ['qms_record', 'deviation', 'non_conformance', 'on_hold', 'organoleptic', 'flavor_approval', 'qms_attachment']],
@@ -56,7 +56,7 @@ export const MODULES = [
   ['Facility Map', 'Quality', ['facility_room_overrides'], ['facility_room']],
   ['Visitors', 'Office', ['visitor_visits', 'visitors'], ['visitor_visit', 'visitor_agreement']],
   // Document control
-  ['Controlled Documents + Forms', 'Document Control', ['sop_documents', 'document_attachments', 'controlled_forms'], ['document', 'document_attachment', 'document_revision_batch', 'document_revision_item', 'controlled_form', 'form_numbering', 'form_gap']],
+  ['Controlled Documents + Forms', 'Document Control', ['sop_documents', 'document_attachments', 'controlled_forms'], ['document', 'document_attachment', 'document_revision_batch', 'document_revision_item', 'controlled_form', 'form_numbering', 'form_gap', 'sop']],
   ['Document Change Requests', 'Document Control', [], ['document_change_request']],
   ['Controlled Changes', 'Document Control', ['controlled_definitions'], ['controlled_definition']],
   ['Change Register', 'Document Control', ['change_requests', 'software_releases'], ['change_request']],
@@ -71,7 +71,7 @@ export const MODULES = [
   ['AP Drop', 'Office', ['ap_drops'], ['ap_drop']],
   ['Partner Reconciliation', 'Office', ['partner_documents', 'partner_settlements'], ['partner_document', 'partner_settlement', 'partner_account', 'partner_credit', 'partner_reminder', 'partner_review', 'partner_portal_token']],
   ['Reimbursements', 'Office', ['reimbursements'], ['reimbursement', 'reimbursement_batch', 'reimbursement_receipt']],
-  ['AP / AR ledgers (hidden D-075)', 'Hidden', ['ap_invoices', 'ar_invoices', 'finance_files'], ['finance_file']],
+  ['AP / AR ledgers (hidden D-075)', 'Hidden', ['ap_invoices', 'ar_invoices', 'finance_files'], ['finance_file', 'ap_invoice', 'ar_invoice']],
   ['Banking (hidden D-075)', 'Hidden', ['bank_accounts', 'bank_transactions', 'bank_reconciliations'], ['bank_account', 'bank_transaction', 'bank_reconciliation']],
   ['QuickBooks (hidden D-075)', 'Hidden', ['qbo_accounts', 'qbo_contacts'], ['quickbooks_sync', 'quickbooks_discovery']],
   ['Requests / Supply Orders / standing lists', 'Office', ['supply_orders', 'supply_lists', 'supply_list_cycles', 'supply_invoices'], ['supply_order', 'supply_list', 'supply_list_cycle', 'supply_invoice', 'supply_suggestion']],
@@ -86,12 +86,13 @@ export const MODULES = [
   // System
   ['Messages', 'System', ['chat_messages'], ['chat_message', 'chat_channel', 'chat_attachment', 'comms']],
   ['Flash Report', 'System', [], ['flash_report']],
-  ['Ask AI / SMS to AI', 'System', [], ['ai', 'sms_query']],
+  ['Ask AI / SMS to AI', 'System', [], ['ai', 'sms_query', 'sms_contact', 'sms_optin', 'sms_test']],
   ['Bot API tokens', 'System', ['api_tokens'], ['api_token']],
   ['Kiosk keys', 'System', ['kiosk_tokens'], ['kiosk_token', 'kiosk_token_mode']],
   ['Auditor passes', 'System', ['auditor_passes'], ['auditor_pass']],
   ['Importer (files)', 'System', ['import_batches'], ['import_batch']],
-  ['Request button (removed)', 'Retired', ['app_requests'], []],
+  ['Request button (removed)', 'Retired', ['app_requests'], ['app_request']],
+  ['Settings: users, access, ReadyBot, cleanup', 'System', ['users'], ['user', 'user_invite', 'readybot_audience', 'cleanup_review']],
 ];
 
 // A person, as opposed to the machinery: the audit row names an account, or a name that is not one

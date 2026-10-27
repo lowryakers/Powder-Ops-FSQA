@@ -8488,3 +8488,58 @@ assigned to them. A schedule's team follows its machine's team. Three things bro
   where it is changed; each person's card count, and the people whose department routes wrong (blank falls back
   to Warehouse; `production` routes nowhere). Read-only, the D-216 shape.
 - Verified: `verify:taskrouting` (27, two boots + browser). **Control (the three fixes undone) fails 8.**
+
+## D-218 — The wrong-list cards, closed at the source; the Equipment list says which machines to re-team (27 Oct 2026)
+
+The first run of **Who sees which tasks** (D-217) on the live database, and Lowry's answers to it.
+- **QA's stray card was an EMPTY room checklist.** "Daily PM Checklist — Production (Qa)" had no lines: an old
+  task-list save (before D-138's guard) wrote the anchor's empty Daily list over it. It raised a blank card every
+  day. Two Cleaning checklists were the same. **`pauseEmptyChecklists` (every boot)** pauses a room checklist with
+  no lines and cancels its cards with the reason.
+- **Once per database (`routing_cleanup_v1`), on Lowry's instruction:**
+  - a room checklist for a team other than Maintenance or Warehouse whose lines name no machine (the Kitting scale
+    leftover; the daily scale check covers scales) is paused;
+  - a machine PM on an area (`asset_kind = zone`) is paused; the area keeps its own inspection;
+  - the newer of two identical active schedules is paused (Scale #73);
+  - outstanding cards on equipment out of service, and cards a paused schedule left behind, are cancelled with the
+    reason — **179 on the live report, most of Ricardo's 377**. Started cards and completed work are left.
+  A schedule somebody resumes afterwards stays resumed.
+- **From now on, taking a machine out of service closes its open PM cards** (`closeEquipmentWork`, on the edit and
+  on bulk edit). This reverses "open tasks stay open" from the retire-a-machine note, for the reason D-139 gave
+  for pausing: a card nobody will do, left on a list, is the noise that hides the real ones.
+- **The production teams' machine PMs are NOT moved by the app.** Lowry: the equipment list needs cleaning up and
+  Adam should make the changes. **Equipment → "N machines may be on the wrong team"** (`equipmentTeamReview` in
+  `task-routing.js`, `GET /equipment/team-review`) lists machines whose weekly-and-longer PMs go to a line, QA or
+  cleaning list, or whose schedules reach nobody, with a **Move to Maintenance** button that is the ordinary
+  equipment save. Derived on every read; a machine leaves the list when its team changes. The modal says that the
+  team moves the daily check too, and how to set it back.
+- **Not decided here:** the 19,460 invented completed tasks (Feb–Jun, before go-live) and the Auditor demo account
+  still on a PIN — both await Lowry's answer.
+- Verified: `verify:routingcleanup` (29, two boots + browser at 390 and 1280). **Control (the boot passes removed)
+  fails 9.**
+
+## D-219 — The demo build's leftovers are retired: the invented PM history and the PIN Auditor (27 Oct 2026)
+
+Answers the two items D-218 left open. The usage report (D-216) on the live database found **19,460 "completed"
+PM tasks under Adam B. / Ricardo A. / Spencer R., 15 Feb – 14 Jun 2026**, every one before go-live and none with
+an audit entry by an account — the fingerprint of the demo backfill D-215 removed. Team Activity counted them.
+And the demo **Auditor** account was still active on PIN 9999 with no password.
+- **`retireInventedHistory` (`server/demo-cleanup.js`, once, `demo_history_retired_v1`)** marks those tasks
+  CANCELLED with the reason on each, and writes ONE audit entry for the batch (the rows carry the reason).
+  **Nothing is deleted.** A completion with an audit entry by an account, or dated on/after go-live, is left.
+- **`deactivateDemoAuditor` (once, `demo_auditor_deactivated_v1`)** deactivates it, clears the PIN and drops its
+  sessions. Real auditors get a time-limited auditor pass.
+- **The boot block that re-created "Auditor" on PIN 9999 whenever no auditor account existed is gone.**
+- Still open: a fresh database still seeds the other demo PIN accounts (Admin, Adam B., Ricardo A., Spencer R.,
+  QA Tech, Cleaning Tech). Several verifies sign in through them; replacing that seed is its own change.
+- Verified: `verify:democleanup` (10; control fails 5).
+
+## D-220 — Retention Samples stays; Stability waits on operations (27 Oct 2026)
+
+Asked of Maria and Daniela before anything was removed (D-215 left Retention open).
+- **Retention Samples is in use**: Maria logs every retain in it (384 records, 85 entries by two people on the usage
+  report). It stays where it is.
+- **Stability stays, and is waiting on a decision outside ReadyDoc.** Carol: a study needs a protocol and samples
+  sent for testing, and before that operations has to decide **who pays and which products go in**. TP Hydration
+  went out for mineral and vitamin testing; Maria is checking with Carol whether another is needed. The shelf-life
+  basis per SKU (D-130, D-133) is unaffected: `none_best_by` is recorded where no data covers a SKU.
