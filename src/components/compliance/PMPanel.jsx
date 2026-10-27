@@ -1144,7 +1144,11 @@ export default function PMPanel() {
   const { user } = useAuth() || {};
   const isAdmin = user?.role === 'admin';
   const canEdit = canEditModule(user, 'pm');
-  const [groupFilter, setGroupFilter] = useState('all');
+  // A non-admin opens on THEIR team (D-217). The tabs were admin-only, so anyone else holding the Task
+  // Center saw every team's work at once — QA reading the whole plant's Daily PMs as their list. Every
+  // team stays one tap away; this is a default, not a restriction.
+  const [groupFilter, setGroupFilter] = useState(() =>
+    !isAdmin && GROUP_TABS.some(g => g.value === user?.department) ? user.department : 'all');
   const gp = groupFilter !== 'all' ? `?group=${groupFilter}` : '';
   const { data: metrics, loading: metricsLoading } = useApiGet(`/pm/metrics${gp}`);
   const { data: grouped, loading: taskLoading, refresh: refreshTasks } = useApiGet(`/pm/by-frequency${gp}`);
@@ -1393,21 +1397,19 @@ export default function PMPanel() {
 
       {showWOForm && <WOForm equipment={equipment} technicians={technicians} user={user} onSave={handleCreateWO} onCancel={() => setShowWOForm(false)} />}
 
-      {/* Group Filter (Admin) + View Toggle + Frequency Filter */}
+      {/* Group Filter + View Toggle + Frequency Filter */}
       <div className="space-y-2">
-        {isAdmin && (
-          <div className="flex items-start gap-2">
-            <Users size={14} className="text-gray-500 mt-1.5 shrink-0" />
-            <div className="flex gap-1 flex-wrap">
-              {GROUP_TABS.map(g => (
-                <button key={g.value} onClick={() => { setGroupFilter(g.value); if (view === 'completed') loadArchive(freqFilter, dateFrom, dateTo, g.value); }}
-                  className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${groupFilter === g.value ? `${g.color} text-white` : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                  {g.label}
-                </button>
-              ))}
-            </div>
+        <div className="flex items-start gap-2" data-task-team-tabs>
+          <Users size={14} className="text-gray-500 mt-1.5 shrink-0" />
+          <div className="flex gap-1 flex-wrap">
+            {GROUP_TABS.map(g => (
+              <button key={g.value} onClick={() => { setGroupFilter(g.value); if (view === 'completed') loadArchive(freqFilter, dateFrom, dateTo, g.value); }}
+                className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${groupFilter === g.value ? `${g.color} text-white` : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                {g.label}
+              </button>
+            ))}
           </div>
-        )}
+        </div>
         <div className="flex gap-2 flex-wrap">
           <button onClick={() => handleViewChange('incomplete')}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1 ${view === 'incomplete' ? 'bg-powder-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>

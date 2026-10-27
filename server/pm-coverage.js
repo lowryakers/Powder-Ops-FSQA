@@ -170,11 +170,28 @@ export function repairChecklistOverlap(db, logAudit) {
         const twins = l.equipment_ids.flatMap((id) => own.all(id, CONSOLIDATED_LIKE));
         if (twins.length) dup.push({ ...l, twins: twins.map((t) => t.title) });
       }
-      if (!dup.length) continue;
-      const drop = new Set(dup.map((d) => d.index));
-      const kept = c.steps.filter((_, i) => !drop.has(i));
       const s = c.schedule;
-      const entry = { id: s.id, title: s.title, removed: dup.map((d) => ({ line: d.label, own_schedule: d.twins })), kept: kept.length, paused: false, cancelled: 0 };
+      const drop = new Set(dup.map((d) => d.index));
+      const keptLines = c.lines.filter((l) => !drop.has(l.index));
+      // THE ANCHOR MUST BE A MACHINE THE CHECKLIST STILL COVERS (D-217). The schedule carries one
+      // equipment id, the first machine folded. When that machine's line came off, every card went on
+      // naming it — "Daily PM Checklist — Production (Qa)" kept showing the Production 1 monitor, which
+      // has its own Temp & Humidity check — so the card read as a second check of that monitor.
+      const rehang = keptLines.length && !keptLines.some((l) => l.equipment_ids.includes(s.equipment_id))
+        ? keptLines.find((l) => l.equipment_ids.length)?.equipment_ids[0] : null;
+      if (!dup.length && !rehang) continue;
+      const kept = c.steps.filter((_, i) => !drop.has(i));
+      const entry = { id: s.id, title: s.title, removed: dup.map((d) => ({ line: d.label, own_schedule: d.twins })), kept: kept.length, paused: false, cancelled: 0, rehung_to: rehang || null };
+      if (rehang) {
+        db.prepare("UPDATE pm_schedules SET equipment_id = ?, updated_at = datetime('now') WHERE id = ?").run(rehang, s.id);
+        db.prepare(`UPDATE work_orders SET equipment_id = ? WHERE pm_schedule_id = ? AND status IN ${OUTSTANDING}`).run(rehang, s.id);
+      }
+      if (!dup.length) {
+        logAudit?.('system', 'update', 'pm_schedule', s.id, { reason: 'consolidated_checklist_rehung', from: s.equipment_id, to: rehang },
+          { equipment_id: s.equipment_id }, { equipment_id: rehang }, s.title);
+        report.push(entry);
+        continue;
+      }
       if (kept.length) {
         const json = JSON.stringify(kept);
         db.prepare("UPDATE pm_schedules SET procedure_steps = ?, updated_at = datetime('now') WHERE id = ?").run(json, s.id);
@@ -191,8 +208,8 @@ export function repairChecklistOverlap(db, logAudit) {
         }
       }
       logAudit?.('system', 'update', 'pm_schedule', s.id,
-        { reason: 'consolidated_checklist_overlap', removed_lines: entry.removed, paused: entry.paused, cancelled: entry.cancelled },
-        { procedure_steps: c.steps }, { procedure_steps: kept, is_active: entry.paused ? 0 : s.is_active }, s.title);
+        { reason: 'consolidated_checklist_overlap', removed_lines: entry.removed, paused: entry.paused, cancelled: entry.cancelled, rehung_to: entry.rehung_to },
+        { procedure_steps: c.steps, equipment_id: s.equipment_id }, { procedure_steps: kept, is_active: entry.paused ? 0 : s.is_active, equipment_id: rehang || s.equipment_id }, s.title);
       report.push(entry);
     }
   });

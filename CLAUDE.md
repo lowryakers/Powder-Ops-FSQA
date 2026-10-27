@@ -1525,6 +1525,16 @@ twice, no form number, files no record.
   at boot, never unfolded** — reviving per-point schedules is the plant's decision (D-125 paused Pre-Op).
 - `verify:checklistoverlap` (19, live + reboots + browser; control fails 12).
 
+## Who sees which tasks, and three routing fixes (D-217, `server/task-routing.js`)
+- **A machine's team change moves its schedules except QA's INSPECTIONS** (`TASK_TITLE_SQL` from `qa-records.js`),
+  never "anything already on QA" — that pinned machine PMs to QA's list. Cards follow their own schedule, missed
+  included; a quality-schedule card never moves with a machine.
+- **`repairChecklistOverlap` re-hangs a room checklist on a machine it still covers** when its anchor's line is gone.
+- **The Task Center's team tabs are for everyone**, opening on the person's own team (`data-task-team-tabs`).
+- **Settings → Data backup → Who sees which tasks** (`GET /compliance/task-routing`, `npm run report:routing`) is
+  read-only and names every odd route with where to change it. Add a finding there, not a one-off query.
+- `verify:taskrouting` (27; control fails 8).
+
 ## Pausing a schedule closes what it raised (D-139, `server/pm-pause.js`) — supersedes D-055 below
 `PUT /pm/schedules/:id` with `is_active: false` cancels the schedule's `open`/`overdue`/`missed` cards in the
 same transaction (`closeScheduleWork`, reason + who on each, never deleted); a STARTED card is left and counted;
