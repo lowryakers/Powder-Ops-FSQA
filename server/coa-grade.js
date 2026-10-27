@@ -30,15 +30,35 @@ const FAIL_WORDS = /\b(fail(?:ed)?|does\s*not\s*(?:comply|conform|meet)|not\s*co
  * 1,300 / 6,564.814 shape; anything else with a comma ("0,5", "12,5") is a
  * European decimal or a typo, and reading "0,5" as 5 is a tenfold error on a
  * heavy metal. Those are refused, not guessed (D-222).
+ *
+ * Scientific notation is read IN FULL (D-227): 1.3e3, 1.3E+03, 1.3x10^3,
+ * 1.3×10^3 and 1.3×10³ are all 1300. The first cut read "1.3e3" as 1.3 with a
+ * unit of "e3" and passed it against ≤10,000 whatever the exponent said — so
+ * 1.3e5 passed too. A number is never read from only the front of a token.
  */
+const SUPERSCRIPT = { '⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4', '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9', '⁻': '-', '⁺': '+' };
+// The mantissa, then an optional exponent written any of the ways a lab prints one.
+const NUM_TOKEN = String.raw`[\d.,]+(?:\s*[eE]\s*[+-]?\d+|\s*[x×X*]\s*10\s*(?:\^\s*[+-]?\d+|[⁺⁻]?[⁰¹²³⁴⁵⁶⁷⁸⁹]+))?`;
+// What a unit may start with — never a stray exponent ("e3", "x10").
+const UNIT_TOKEN = String.raw`[a-zA-Z%µμ/][\w%µμ/ ]*`;
+const LOOKS_LIKE_EXPONENT = /^(?:[eE]\s*[+-]?\d|[eE]$|[xX×]\s*10\b)/;
+
 function readNumber(tok) {
-  const t = String(tok);
-  if (t.includes(',')) {
-    if (!/^[1-9]\d{0,2}(,\d{3})+(\.\d+)?$/.test(t)) return { ambiguous: true };
-    return { value: Number(t.replace(/,/g, '')) };
+  const t = String(tok).replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻]/g, c => SUPERSCRIPT[c]);
+  const m = t.match(/^([\d.,]+)(?:\s*[eE]\s*([+-]?\d+)|\s*[x×X*]\s*10\s*\^?\s*([+-]?\d+))?$/);
+  if (!m) return { value: NaN };
+  const mant = m[1];
+  const exp = m[2] ?? m[3];
+  let value;
+  if (mant.includes(',')) {
+    if (!/^[1-9]\d{0,2}(,\d{3})+(\.\d+)?$/.test(mant)) return { ambiguous: true };
+    value = Number(mant.replace(/,/g, ''));
+  } else {
+    if (!/^(\d+(\.\d+)?|\.\d+)$/.test(mant)) return { value: NaN };
+    value = Number(mant);
   }
-  if (!/^(\d+(\.\d+)?|\.\d+)$/.test(t)) return { value: NaN };
-  return { value: Number(t) };
+  if (exp != null) value = Number((value * 10 ** Number(exp)).toPrecision(12));
+  return { value };
 }
 
 /** The number in a result, whether it was written as a bound ("<10", "≥5"), and any unit printed beside it. */
@@ -46,24 +66,30 @@ export function parseResult(raw) {
   const s = String(raw ?? '').trim();
   if (!s) return { kind: 'empty' };
 
-  // A bound: "<10", "< 10 cfu/g", "≤10", ">300", "≥ 5".
-  const bound = s.match(/^([<>]=?|[≤≥])\s*([\d.,]+)\s*([a-zA-Z%µμ/][\w%µμ/ ]*)?$/);
-  if (bound) {
-    const n = readNumber(bound[2]);
+  // A bound: "<10", "< 10 cfu/g", "≤10", ">300", "≥ 5", "<1.0x10^1".
+  const bound = s.match(new RegExp(`^([<>]=?|[≤≥])\\s*(${NUM_TOKEN})\\s*(${UNIT_TOKEN})?$`));
+  // A plain number, possibly with a unit stuck to it ("35 cfu/g", "1.3E+03 cfu/g").
+  const plain = bound ? null : s.match(new RegExp(`^(${NUM_TOKEN})\\s*(${UNIT_TOKEN})?$`));
+  const hit = bound || plain;
+  if (hit) {
+    const numTok = bound ? bound[2] : plain[1];
+    const unit = (bound ? bound[3] : plain[2])?.trim() || null;
+    // A "unit" that is really the tail of the number means the number was not
+    // read in full. Refuse rather than grade the front of it.
+    if (unit && LOOKS_LIKE_EXPONENT.test(unit)) return { kind: 'unreadable_number' };
+    const n = readNumber(numTok);
     if (n.ambiguous) return { kind: 'ambiguous_decimal' };
     if (Number.isFinite(n.value)) {
-      const op = bound[1];
-      return { kind: 'bound', value: n.value, below: op === '<' || op === '<=' || op === '≤', unit: bound[3]?.trim() || null };
+      if (bound) {
+        const op = bound[1];
+        return { kind: 'bound', value: n.value, below: op === '<' || op === '<=' || op === '≤', unit };
+      }
+      return { kind: 'number', value: n.value, unit };
     }
+    if (/^[\d.,]/.test(s)) return { kind: 'unreadable_number' };
   }
-
-  // A plain number, possibly with a unit stuck to it ("35 cfu/g", "0.02 ppm").
-  const plain = s.match(/^([\d.,]+)\s*([a-zA-Z%µμ/][\w%µμ/ ]*)?$/);
-  if (plain) {
-    const n = readNumber(plain[1]);
-    if (n.ambiguous) return { kind: 'ambiguous_decimal' };
-    if (Number.isFinite(n.value)) return { kind: 'number', value: n.value, unit: plain[2]?.trim() || null };
-  }
+  // Starts like a number but the regexes could not take all of it ("1.3e", "2..5").
+  if (/^([<>]=?|[≤≥])?\s*\d/.test(s) && /\d\s*[eE×xX^]|\.\./.test(s)) return { kind: 'unreadable_number' };
 
   if (FAIL_WORDS.test(s)) return { kind: 'stated_fail' };
   if (ND_ABBREV.test(s) || NEGATIVE_WORDS.test(s)) return { kind: 'negative' };
@@ -97,7 +123,7 @@ export function unitFactor(u) {
   for (const [family, units] of Object.entries(UNIT_FAMILIES)) if (units[n] != null) return { family, factor: units[n], unit: n };
   return { family: null, factor: null, unit: n };
 }
-/** How to express a value in `resultUnit` in the spec's unit: `{ scale }`, or `{ mismatch }`. Missing units are not a mismatch. */
+/** How to express a value in `resultUnit` in the spec's unit: `{ scale }`, or `{ mismatch }`. The grader refuses a missing unit before asking (D-229). */
 export function unitScale(resultUnit, specUnit) {
   const r = unitFactor(resultUnit); const sp = unitFactor(specUnit);
   if (!r || !sp) return { scale: 1 };
@@ -148,6 +174,9 @@ function gradeAgainstSpec(resultValue, spec, opts = {}) {
   if (parsed.kind === 'empty') {
     return { pass_fail: null, graded_by: null, reason: 'No result recorded yet.' };
   }
+  if (parsed.kind === 'unreadable_number') {
+    return { pass_fail: null, graded_by: null, reason: `"${resultValue}" could not be read in full as a number, so it is not graded. Re-enter it (for example 1300, 1.3e3 or 1.3x10^3).` };
+  }
   if (parsed.kind === 'ambiguous_decimal') {
     return { pass_fail: null, graded_by: null, reason: `"${resultValue}" uses a comma where a decimal point or thousands separator is ambiguous. Re-enter it with a decimal point.` };
   }
@@ -165,8 +194,25 @@ function gradeAgainstSpec(resultValue, spec, opts = {}) {
 
   // Units before numbers: the result's own unit (the row's, else one printed
   // in the value) against the specification's.
+  //
+  // Two refusals were added in D-229. A value that prints its own unit
+  // ("2.5 mg/g") beside a unit column saying something else has two units and
+  // neither can be trusted. And a number with no unit against a limit that has
+  // one (or the reverse) is not compared raw — "0.5" against "≤ 1 ppm" might be
+  // 0.5 ppb or 0.5 %. Qualitative results (Absent, Not Detected) never reach here.
   if (parsed.kind === 'number' || parsed.kind === 'bound') {
-    const u = unitScale(opts.unit || parsed.unit || null, spec.unit || null);
+    const colUnit = String(opts.unit ?? '').trim() || null;
+    if (colUnit && parsed.unit && normalizeUnit(colUnit) !== normalizeUnit(parsed.unit)) {
+      return { pass_fail: null, graded_by: null, reason: `Unit mismatch: the value says ${parsed.unit} but the unit column says ${colUnit}. Not graded — correct one of them.` };
+    }
+    const resultUnit = colUnit || parsed.unit || null;
+    const specUnit = String(spec.unit ?? '').trim() || null;
+    if (!resultUnit !== !specUnit) {
+      return { pass_fail: null, graded_by: null, reason: resultUnit
+        ? `Unit not stated: the result is in ${resultUnit} but the specification has no unit. Not graded — add the unit to the specification.`
+        : `Unit not stated: the specification is in ${specUnit} but the result has no unit. Not graded — add the unit to the result.` };
+    }
+    const u = unitScale(resultUnit, specUnit);
     if (u.mismatch) return { pass_fail: null, graded_by: null, reason: `Unit mismatch: ${u.mismatch}. Not graded — check the unit on the result or the specification.` };
     if (u.scale !== 1) parsed.value = Number((parsed.value * u.scale).toPrecision(12));
   }
