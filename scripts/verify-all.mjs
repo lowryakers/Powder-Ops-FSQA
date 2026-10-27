@@ -168,6 +168,7 @@ const RUNS = [
   ['verify-module-usage.mjs', 5128, {}, false],
   ['verify-task-routing.mjs', 5129, {}, false],
   ['verify-routing-cleanup.mjs', 5131, {}, false],
+  ['verify-demo-cleanup.mjs', 5132, {}, false],
 ];
 
 // VERIFY_ONLY=verify-auth.mjs,verify-swab-stock.mjs runs just the entries that

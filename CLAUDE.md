@@ -3964,6 +3964,9 @@ since go-live and in the last 90 days, and gives a verdict: never used / machine
   wrote them on a database with no completed task until D-215 removed the code; rows already written are still counted. Active accounts that still have a PIN and no password: these can
   be claimed with the PIN. **Do not add demo history or demo accounts to a seed.**
 - The findings and the cleanup plan are in `docs/v2/cleanup-and-spine-2026-10-26.md`.
+- **Both leftovers were retired once on the live database (D-219, `server/demo-cleanup.js`)**: the invented history
+  is CANCELLED with the reason (never deleted) and the PIN Auditor deactivated; nothing re-creates it.
+  `verify:democleanup` (10). **Retention Samples stays and Stability waits on operations (D-220).**
 
 ## Danny's List and the Log Builder studio are retired; a retired module's grant is removed (D-215)
 - `removeRetiredModuleGrants` (`server/access-review.js`, `RETIRED_MODULE_IDS`) strips a retired module's key from every

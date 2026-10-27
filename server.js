@@ -146,6 +146,7 @@ import { seedDilutionLog } from './server/dilution-log-seed.js';
 import { retireDailyPreOp } from './server/preop-retire.js';
 import { repairChecklistOverlap, consolidatedChecklists } from './server/pm-coverage.js';
 import { pauseEmptyChecklists, routingCleanupOnce } from './server/routing-cleanup.js';
+import { retireInventedHistory, deactivateDemoAuditor } from './server/demo-cleanup.js';
 import { retireDailyScalePMs, retireSummary } from './server/pm-pause.js';
 import { generationSweep } from './server/pm-generation.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
@@ -997,18 +998,26 @@ try {
 } catch (e) { console.warn('[repair] pay review clock skipped:', e.message); }
 
 
-// Ensure auditor user exists (for existing databases)
-{
-  const hasAuditor = db.prepare("SELECT COUNT(*) as c FROM users WHERE role = 'auditor'").get().c;
-  if (!hasAuditor) {
-    try {
-      db.prepare(`INSERT INTO users (id, name, email, pin, role, department) VALUES (?, ?, ?, ?, ?, ?)`)
-        .run(uuid(), 'Auditor', 'auditor@powder-ops.com', '9999', 'auditor', 'warehouse');
-      console.log('[seed] Created auditor user');
-    } catch (e) {
-      console.warn('[seed] Could not create auditor user:', e.message);
+// The demo Auditor account (PIN 9999) is no longer re-created when no auditor exists (D-219): real auditors
+// get a time-limited auditor pass, and a recreated PIN account is a door anyone with the PIN walks through.
+// Its leftovers on a live database, once each (D-219): the invented PM history is retired (cancelled with
+// the reason, never deleted) and the demo Auditor on a known PIN is deactivated.
+for (const [key, run] of [
+  ['demo_history_retired_v1', () => {
+    const r = retireInventedHistory(db, logAudit);
+    if (r.retired) console.log(`[migrate] Retired ${r.retired} invented demo PM completions (${String(r.first).slice(0, 10)} to ${String(r.last).slice(0, 10)}) — cancelled with the reason, not deleted`);
+  }],
+  ['demo_auditor_deactivated_v1', () => {
+    const n = deactivateDemoAuditor(db, logAudit);
+    if (n) console.log('[migrate] Deactivated the demo Auditor account (known PIN, no password)');
+  }],
+]) {
+  try {
+    if (!db.prepare('SELECT 1 FROM app_settings WHERE key = ?').get(key)) {
+      run();
+      db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))").run(key, new Date().toISOString());
     }
-  }
+  } catch (e) { console.warn(`[migrate] ${key} skipped:`, e.message); }
 }
 
 // No demo history is ever written here (D-215). A database with no completed task
