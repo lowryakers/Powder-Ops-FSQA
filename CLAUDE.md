@@ -3849,9 +3849,9 @@ meant rebuilding the filter by hand — which nobody does. Every `AttentionBar` 
 - **Signing needs** status pass, a result for every active spec, nothing failed or undecided. After signing,
   results, files, identity, status and certificate fields are closed (409) until an admin un-signs.
 - **`is_active` on a spec moves only by approval or Retire**, never PUT.
-- **`brand_owner` defaults `'unassigned'`; nothing reads `public_publish_allowed`** (verify:coa greps for it). The two
-  `coa_settings` (`never` / `hidden`) have no consumers. **Do not build a public page, route, gluten policy or
-  claim wording without the next phase's decisions.** The release gate stays in warn.
+- **`brand_owner` defaults `'unassigned'`. `public_publish_allowed` is read only by the public page and written only by the
+  admin's switch (D-247; verify:coa greps for it).** `public_nonclaim_gluten_display` stays `hidden`. The release gate
+  stays in warn.
 - The golden fixtures in `scripts/fixtures/coa/` are reconstructions; swap in the real CTLA PDFs when Quality
   copies them out. The 22 stored `<44` gluten rows are not yet corrected.
 - `verify:coa` (55 live + 18 pure, in `npm run check`; control fails from the first, reading `<44`).
@@ -3915,6 +3915,31 @@ Specifications tab), `UnreadRows` on a request.
 - `scripts/coa-link-results-to-specs.mjs` (admin-run; dry run, `--apply`, `--file-items` → `SPEC_LINK_REVIEW`)
   links only unsigned results whose verdict agrees with the one matching spec.
 - `verify:coa2` (65, live + browser). The release gate stays `warn`; nothing here changes it.
+
+## COA Phase 2B: the lot rule, one gate switch, the public certificate page shipped off (D-246 … D-248)
+`shared/coa-lot-readiness.js` (PURE, the rule), `server/coa-lot-gate.js` (`gateMode` lives here now — coa.js re-exports it;
+`signDoor`, `productionDoor`, `coaReadiness`, `readinessActions`, `canPublishCoa`), `server/coa-publications.js`,
+`server/coa-public-snapshot.js` (PURE), `server/coa-public-render.js`, `server/api/coa-publish.js` (in the COA router),
+`server/api/public-coa.js` (**`/tested`**, outside `/api`), `CoaRelease.jsx` (COA → **Release & publishing**), the
+`coa_gate_events` / `coa_lot_overrides` / `coa_golden_attestations` / `coa_publications` tables, `coa_products.aliases`,
+`coa_test_plan_tests.public`. Runbook: `docs/v2/runbook-coa-public.md`.
+- **A lot is released only when every batch is signed with every required test of its APPROVED plan, all passing.**
+  No approved plan = "No required tests defined", never released. Applies to items on the COA product list only.
+- **`coa_release_gate` off / warn / on ("strict") is ONE switch for the five-category check AND the lot rule.** Warn
+  (default) records, strict refuses, off records nothing. Moving it: admin + reason + password. **Strict also enforces
+  the five categories, and no ProDough plan covers identity today** — the readiness report's `categories` line.
+- **Doors**: the certificate sign (judges the batch being signed) and `signOffProductionEntry` (product name or an
+  ALIAS, exact, case aside; every MO line). **No shipping door exists.** Roll-up / Mark Pass keep the category check only.
+- **An override opens the production door only** — never signing, never publishing. Quality, 10+ chars, password.
+- **The public page is the same 404 until `public_coa_enabled` = on AND ProDough's `public_publish_allowed` = 1.**
+  It reads only `coa_publications`, `coa_brands`, `coa_settings`, `coa_products` and writes nothing (`check:publiccoa`).
+  **A new public field goes through `publicSnapshot()`; never render a request, result or file row on `/tested`.**
+- **Never public**: the lab's name, its report number, a person, an internal id, the item number, "accredited", "ISO".
+  Gluten on a non-claim product, sensory, environmental and unticked report-only tests are hidden.
+- **Publishing = admin; withdrawing = Quality or admin.** Every batch at once; no hand-edited result; every result read
+  from the PDF. Publications are immutable (triggers); republishing supersedes; un-signing a published certificate is
+  refused until it is withdrawn. Nothing here moves the gate or a public switch.
+- `verify:coa2b` (105, live + browser), `coa-lot-readiness` + `coa-public-snapshot` tests, `check:publiccoa` (19).
 
 ## COA item specification sheet
 The Specifications tab stores one row per test (right for auto pass/fail, hard to eyeball). "View item & all

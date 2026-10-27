@@ -64,6 +64,7 @@ function AgeChip({ date }) {
 // steps as the request changes. No checkbox, no Sign button.
 function ActionRow({ r }) {
   const openRequest = (id) => window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab: 'coa', request: id } }));
+  const openLink = () => window.dispatchEvent(new CustomEvent('app-navigate', { detail: r.link }));
   const done = r.steps.filter(s => s.done).length;
   return (
     <li className="px-3 py-3" data-review-row={r.id} data-action-row={r.action_kind}>
@@ -99,11 +100,18 @@ function ActionRow({ r }) {
           </div>
         </div>
         <div className="shrink-0 flex flex-col items-end gap-1">
-          <span className="text-[10px] text-gray-400">{done} of {r.steps.length} done</span>
+          {r.steps.length > 0 && <span className="text-[10px] text-gray-400">{done} of {r.steps.length} done</span>}
+          {r.link && !r.request_id ? (
+            <button onClick={openLink} data-open-link={r.link.view}
+              className="px-2.5 py-1 bg-powder-600 text-white text-xs font-semibold rounded-md inline-flex items-center gap-1">
+              Open COA <ExternalLink size={11} />
+            </button>
+          ) : (
           <button onClick={() => openRequest(r.request_id)} data-open-request={r.request_id}
             className="px-2.5 py-1 bg-powder-600 text-white text-xs font-semibold rounded-md inline-flex items-center gap-1">
             Open request <ExternalLink size={11} />
           </button>
+          )}
         </div>
       </div>
     </li>

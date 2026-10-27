@@ -14,6 +14,7 @@ import { gateSignature, signatureEvidence } from '../signature.js';
 import { weekFor, holidayOn } from '../plant-calendar.js';
 import { weekSummaryLines } from '../../shared/plant-holidays.js';
 import { mmrGateMode, mmrGateCheck, mmrRef, mmrCoverage, MMR_GATE_MODES, MMR_GATE_KEY } from '../mmr-gate.js';
+import { productionDoor } from '../coa-lot-gate.js';
 
 // Production teams whose schedule gets published to a matching comms channel.
 // Team name (as stored on assignments) → the channel it maps to.
@@ -837,6 +838,15 @@ export function signOffProductionEntry(db, id, { by, notes, actionRequired } = {
     return { error: 'Say what needs correcting in the notes before flagging this entry.', status: 400 };
   }
 
+  // The COA lot rule (D-246) for a product on the COA product list: off asks
+  // nothing; warn signs and says where the lot stands; strict refuses unless
+  // Quality has overridden the lot. Every evaluation is recorded.
+  const coa = productionDoor(db, existing, { actor: by });
+  if (coa.block) {
+    const blocked = coa.lots.filter(l => l.block);
+    return { error: `Strict COA release: ${blocked.map(l => `${l.display_name || l.item_number} lot ${l.base_lot} — ${l.summary.replace(/^COA: /, '')}`).join('; ')}. Quality can override the lot if it must go ahead.`, status: 409, coa_gate: coa.lots };
+  }
+
   db.prepare(`
     UPDATE production_entries SET qa_signoff_by = ?, qa_signoff_at = datetime('now'), qa_notes = ?,
       qa_action_required = ?, qa_action_resolved_at = NULL, updated_at = datetime('now') WHERE id = ?
@@ -847,7 +857,7 @@ export function signOffProductionEntry(db, id, { by, notes, actionRequired } = {
   // Telling the person is part of asking them. Fire-and-forget so a comms
   // outage can never fail a signature that is already written.
   if (needsAction) notifyQaAction(db, updated, by).catch(() => {});
-  return { entry: updated };
+  return { entry: updated, coa_gate: coa.applies ? coa.lots : null };
 }
 
 /* ── QA corrections: who is asked, and what happens when nobody answers ──────
@@ -1127,13 +1137,13 @@ router.put('/entries/:id/qa-signoff', (req, res) => {
   // that says QA accepted a shift they did not.
   if (!gateSignature(req, res, { action: 'production_qa_signoff' })) return;
   const { qa_signoff_by, qa_notes, qa_action_required } = req.body || {};
-  const { error, status, entry } = signOffProductionEntry(getDb(), req.params.id, {
+  const { error, status, entry, coa_gate } = signOffProductionEntry(getDb(), req.params.id, {
     by: qa_signoff_by, notes: qa_notes, actionRequired: qa_action_required,
   });
-  if (error) return res.status(status).json({ error });
+  if (error) return res.status(status).json({ error, ...(coa_gate ? { coa_gate } : {}) });
   logAudit(req.user, 'sign', 'production_entry', req.params.id,
-    { ...signatureEvidence(), signed_as: qa_signoff_by || req.user?.name }, null, entry);
-  res.json(computeMetrics(entry));
+    { ...signatureEvidence(), signed_as: qa_signoff_by || req.user?.name, ...(coa_gate ? { coa_gate: coa_gate.map(l => l.summary) } : {}) }, null, entry);
+  res.json({ ...computeMetrics(entry), ...(coa_gate ? { coa_gate } : {}) });
 });
 
 // GET /entries/qa-actions — entries QA has asked the caller to correct.

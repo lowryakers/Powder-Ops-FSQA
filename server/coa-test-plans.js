@@ -74,10 +74,10 @@ function insertPlan(db, plan, tests) {
 
 function writeTests(db, planId, tests) {
   db.prepare('DELETE FROM coa_test_plan_tests WHERE plan_id = ?').run(planId);
-  const ins = db.prepare(`INSERT INTO coa_test_plan_tests (id, plan_id, test_type, evaluation, comparator, min_value, max_value, unit, method, required, specification, sort)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  const ins = db.prepare(`INSERT INTO coa_test_plan_tests (id, plan_id, test_type, evaluation, comparator, min_value, max_value, unit, method, required, specification, sort, public)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   tests.forEach((t, i) => ins.run(uuid(), planId, t.test_type, t.evaluation || 'limit', t.comparator || null, t.min_value ?? null, t.max_value ?? null,
-    t.unit || null, t.method || null, t.required === 0 || t.required === false ? 0 : 1, t.specification || null, i));
+    t.unit || null, t.method || null, t.required === 0 || t.required === false ? 0 : 1, t.specification || null, i, t.public ? 1 : 0));
 }
 
 export function getPlan(db, id) {
@@ -105,7 +105,10 @@ export function cleanTest(t) {
   if ((min_value != null && !Number.isFinite(min_value)) || (max_value != null && !Number.isFinite(max_value))) return [null, `${test_type}: a limit must be a number.`];
   return [{ test_type, evaluation, comparator, min_value, max_value, unit: String(t.unit || '').trim() || null,
     method: String(t.method || '').trim() || null, required: t.required === 0 || t.required === false ? 0 : 1,
-    specification: String(t.specification || '').trim() || null }, null];
+    specification: String(t.specification || '').trim() || null,
+    // Shown on the public certificate (D-247). Only a report-only test needs it:
+    // a judged test is public by default; a report-only one is hidden unless ticked.
+    public: t.public === true || t.public === 1 ? 1 : 0 }, null];
 }
 
 /** What stops this plan being approved, in words. An empty list means it may be. */

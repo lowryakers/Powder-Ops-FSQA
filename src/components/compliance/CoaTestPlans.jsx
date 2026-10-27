@@ -54,6 +54,10 @@ function PlanEditor({ plan, onSaved, onClose }) {
                     <input value={t.min_value} onChange={e => set(i, 'min_value', e.target.value)} placeholder="min" className="w-16 px-1.5 py-1 border border-gray-300 rounded mr-1" />)}
                   {t.evaluation !== 'report_only' && ['<', '<=', 'range'].includes(t.comparator) && (
                     <input value={t.max_value} onChange={e => set(i, 'max_value', e.target.value)} placeholder="max" className="w-16 px-1.5 py-1 border border-gray-300 rounded" />)}
+                  {t.evaluation === 'report_only' && (
+                    <label className="inline-flex items-center gap-1 text-[11px] text-gray-600" title="A reported-only test is hidden on the public certificate unless this is ticked.">
+                      <input type="checkbox" checked={!!t.public} onChange={e => set(i, 'public', e.target.checked)} data-plan-test-public /> show publicly
+                    </label>)}
                 </td>
                 <td className="pr-2"><input value={t.unit || ''} onChange={e => set(i, 'unit', e.target.value)} className="w-20 px-1.5 py-1 border border-gray-300 rounded" /></td>
                 <td className="pr-2"><input value={t.method || ''} onChange={e => set(i, 'method', e.target.value)} className="w-28 px-1.5 py-1 border border-gray-300 rounded" /></td>
@@ -147,6 +151,8 @@ function ApplyPanel({ plan, products, onDone, onClose }) {
   );
 }
 
+const aliasList = (p) => { try { return JSON.parse(p.aliases || '[]'); } catch { return []; } };
+
 function ProductRow({ p, brands, canEdit, onSaved }) {
   const [form, setForm] = useState(null);
   const [error, setError] = useState('');
@@ -159,12 +165,13 @@ function ProductRow({ p, brands, canEdit, onSaved }) {
     return (
       <tr className="border-t border-gray-100" data-coa-product={p.item_number}>
         <td className="py-1.5 pr-2 font-medium">{p.item_number}</td>
-        <td className="pr-2">{p.display_name || <span className="text-gray-400">—</span>}</td>
+        <td className="pr-2">{p.display_name || <span className="text-gray-400">—</span>}
+          {aliasList(p).length > 0 && <span className="block text-[11px] text-gray-500" data-coa-aliases>also: {aliasList(p).join('; ')}</span>}</td>
         <td className="pr-2">{p.brand_owner || '—'}</td>
         <td className="pr-2 font-mono text-[11px]">{p.slug || <span className="text-gray-400">—</span>}</td>
         <td className="pr-2">{p.gf_claim ? 'Gluten-free claim' : '—'}</td>
         <td className="pr-2">{p.plan_name ? `${p.plan_name} v${p.plan_version}` : <span className="text-gray-400">none</span>}</td>
-        <td>{canEdit && <button onClick={() => setForm({ display_name: p.display_name || '', slug: p.slug || '', brand_owner: p.brand_owner || '', gf_claim: !!p.gf_claim, product_id: p.product_id || '' })} className="text-powder-600 hover:underline">Edit</button>}</td>
+        <td>{canEdit && <button onClick={() => setForm({ display_name: p.display_name || '', slug: p.slug || '', brand_owner: p.brand_owner || '', gf_claim: !!p.gf_claim, product_id: p.product_id || '', aliases: aliasList(p).join('; ') })} className="text-powder-600 hover:underline">Edit</button>}</td>
       </tr>
     );
   }
@@ -172,7 +179,10 @@ function ProductRow({ p, brands, canEdit, onSaved }) {
   return (
     <tr className="border-t border-gray-100 bg-powder-50/40">
       <td className="py-1.5 pr-2 font-medium">{p.item_number}</td>
-      <td className="pr-2"><input value={form.display_name} onChange={e => f('display_name', e.target.value)} className="w-40 px-1.5 py-1 border border-gray-300 rounded" /></td>
+      <td className="pr-2"><input value={form.display_name} onChange={e => f('display_name', e.target.value)} className="w-40 px-1.5 py-1 border border-gray-300 rounded" />
+        <input value={form.aliases} onChange={e => f('aliases', e.target.value)} placeholder="other names on production entries, separated by ;" data-coa-alias-input
+          title="Exact names a production entry uses for this product. Matched exactly (case aside), never as part of a longer name."
+          className="mt-1 block w-40 px-1.5 py-1 border border-gray-300 rounded text-[11px]" /></td>
       <td className="pr-2">
         <select value={form.brand_owner} onChange={e => f('brand_owner', e.target.value)} className="px-1.5 py-1 border border-gray-300 rounded">
           <option value="">unassigned</option>{brands.map(b => <option key={b} value={b}>{b}</option>)}
