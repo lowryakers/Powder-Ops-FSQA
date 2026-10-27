@@ -29,7 +29,7 @@ const { default: Database } = await import('better-sqlite3');
 const db = new Database(process.env.DBPATH || process.env.DB_PATH);
 db.prepare(`INSERT OR REPLACE INTO users (id,name,username,role,department,is_active,setup_code,setup_code_expires_at)
   VALUES ('wt-admin','Week Admin','Week Admin','admin','office',1,'SC-WT',datetime('now','+7 day'))`).run();
-for (const [id, name] of [['wt-a', 'Alpha Weekly'], ['wt-b', 'Bravo Weekly']]) {
+for (const [id, name] of [['wt-a', 'Alpha Weekly'], ['wt-b', 'Bravo Weekly'], ['wt-c', 'Charlie Weekly']]) {
   db.prepare(`INSERT OR REPLACE INTO users (id,name,username,role,department,is_active)
     VALUES (?,?,?,'operator','warehouse',1)`).run(id, name, name);
 }
@@ -70,7 +70,7 @@ t('the period total is the sum of the two weeks as measured (32 + 40)', P(h, 'Al
 await put('/office/hours', { user_id: 'wt-a', week_start: W2, worked: 45, target: 44 });
 h = await J(await get('/office/hours'));
 // D-193: the weekly total is what is paid; recorded beyond it is unpaid, and
-// overtime is the paid worked hours over 40 — not over the person's own total.
+// overtime is the paid hours over 40 (D-249) — not over the person's own total.
 t('UNPAID IS DERIVED: 45 recorded against a 44 weekly total is 1:00 unpaid', wk(h, 'Alpha Weekly', W2)?.unpaid === 1,
   JSON.stringify(wk(h, 'Alpha Weekly', W2)));
 t('OVERTIME IS OVER 40 IN THE WEEKLY TOTAL: a 44 week is 4:00', wk(h, 'Alpha Weekly', W2)?.overtime === 4,
@@ -79,6 +79,25 @@ t('…paid hours are the weekly total, and the cost follows (44h × $20 + 4h × 
   wk(h, 'Alpha Weekly', W2)?.total === 44 && wk(h, 'Alpha Weekly', W2)?.cost === 920, String(wk(h, 'Alpha Weekly', W2)?.cost));
 r = await put('/office/hours', { user_id: 'wt-a', week_start: W2, unpaid: 3 });
 t('a typed unpaid figure for an employee is refused — it is worked out from the weekly total', r.status === 400, String(r.status));
+
+console.log('\n── overtime is every paid hour over 40 (D-249) ──');
+// The reported case: 40:15 worked, a 50:15 weekly total, so 10:00 paid
+// non-working. D-193 counted only the worked part and read 0:15 of overtime.
+await put('/office/hours', { user_id: 'wt-c', week_start: W1, worked: 40.25, target: 50.25 });
+// PTO is paid too: 30 worked + 15 PTO on a 45 weekly total.
+await put('/office/hours', { user_id: 'wt-c', week_start: W2, worked: 30, pto: 15, target: 45 });
+h = await J(await get('/office/hours'));
+const c1 = wk(h, 'Charlie Weekly', W1), c2 = wk(h, 'Charlie Weekly', W2);
+t('A 50:15 WEEKLY TOTAL IS 10:15 OF OVERTIME, paid non-working included', c1?.non_working === 10 && c1?.overtime === 10.25,
+  JSON.stringify(c1));
+t('PTO counts too: a 45 week of 30 worked + 15 PTO is 5:00 of overtime', c2?.overtime === 5, JSON.stringify(c2));
+t('…and the premium is half the rate on that same overtime (no pay row: no cost, never zero)', c1?.cost === null);
+t('the period overtime is the two weeks added', P(h, 'Charlie Weekly')?.period.overtime === 15.25, String(P(h, 'Charlie Weekly')?.period.overtime));
+await put('/office/hours', { user_id: 'wt-c', week_start: W1, auto_fill: false });
+h = await J(await get('/office/hours'));
+t('with auto-fill off nothing is paid beyond the 40:15 worked, so overtime is 0:15', wk(h, 'Charlie Weekly', W1)?.overtime === 0.25,
+  JSON.stringify(wk(h, 'Charlie Weekly', W1)));
+await put('/office/hours', { user_id: 'wt-c', week_start: W1, auto_fill: true });
 
 console.log('\n── a target alone is not an entry ──');
 r = await put('/office/hours', { user_id: 'wt-b', week_start: W1, target: 24 });
