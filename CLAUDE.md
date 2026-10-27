@@ -3877,7 +3877,9 @@ meant rebuilding the filter by hand — which nobody does. Every `AttentionBar` 
   canonical request holds the report. **8afd7fbe is held** (409) until an admin dismisses its item.
 - A lot's suffix is its batch; a base lot meets the gluten policy only when every batch has a signed pass —
   **advisory**, the gate stays `warn`. Brands bulk-assign only `unassigned` requests; the 589-row CSV is not committed.
-- The Lab Requests list loads every request at once. `verify:coaphase1` (93, live + reboots + browser).
+- **An admin dismisses an item from the request's own screen** ("Lift the hold…" on 8afd7fbe), reason required (D-240).
+  The brand is chosen on the new-request form; the bulk CSV is for the history only.
+- The Lab Requests list loads every request at once. `verify:coaphase1` (100, live + reboots + browser).
 
 ## COA item specification sheet
 The Specifications tab stores one row per test (right for auto pass/fail, hard to eyeball). "View item & all

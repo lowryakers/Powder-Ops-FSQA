@@ -334,6 +334,14 @@ try {
   r = await call('POST', '/coa/requests/brand-owner/bulk', { mode: 'preview', allow_change: true, reason: 'Wrong brand on import', rows: [{ request_id: ids[5], brand_owner: 'KOH' }] }, A);
   t('an admin with allow_change and a reason may change an assigned request', r.s === 200 && r.j.changes === 1);
   t('more than 2,000 rows is refused', (await call('POST', '/coa/requests/brand-owner/bulk', { mode: 'preview', rows: Array.from({ length: 2001 }, (_, i) => ({ request_id: `x${i}`, brand_owner: 'KOH' })) })).s === 400);
+  // The brand chosen when a request is filed (D-240).
+  const newReq = (b, tok = Q) => call('POST', '/coa/requests', { item_number: 'P1-NEW', item_description: 'Brand at filing', lot_number: '777001', tests_requested: 'HM & Micro', ...b }, tok);
+  r = await newReq({ brand_owner: 'KOH' });
+  t('Quality files a new request with its brand', r.s === 201 && req(r.j.id).brand_owner === 'KOH');
+  r = await newReq({});
+  t('… and without one it is unassigned, as before', r.s === 201 && req(r.j.id).brand_owner === 'unassigned');
+  t('a brand not on the list is refused (400)', (await newReq({ brand_owner: 'Nobody Inc' })).s === 400);
+  t('the operator cannot set a brand at filing (403)', (await newReq({ brand_owner: 'KOH' }, O)).s === 403);
   t('every brand is closed to publishing', all('SELECT public_publish_allowed p FROM coa_brands').every(b => b.p === 0));
   t('the release gate is still warn and the settings still never / hidden', (await call('GET', '/coa/release-gate')).j.mode === 'warn'
     && one("SELECT value v FROM coa_settings WHERE key = 'evidence_disclosure_mode'").v === 'never'
@@ -363,6 +371,7 @@ try {
     t('"Open request" lands on that request in COA with its correction and steps', await page.locator('[data-correction-step="unsign"]').count() === 1
       && await page.getByText('Lot: 101712').count() > 0);
     t('… and offers Quality the un-sign the item asks for', await page.locator('[data-unsign]').count() === 1);
+    t('Quality is not offered Dismiss on a correction (admin only)', await page.locator('[data-dismiss-item]').count() === 0);
     await page.evaluate((id) => window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab: 'coa', request: id } })), D1);
     await page.waitForSelector('[data-request-gone]', { timeout: 20000 });
     t('a deep link to a deleted request says "This request no longer exists"', await page.getByText('This request no longer exists').count() === 1);
@@ -373,6 +382,23 @@ try {
     t(`the Lab Requests list loads every request at once (${shown} of ${total}), with no "Load all"`, shown === total
       && await page.getByText(/Load all/).count() === 0 && await page.locator('[data-req-capped]').count() === 0, `${shown}/${total}`);
     t('a batch shows as a chip beside its base lot', await page.locator('[data-batch-chip]').count() > 0);
+    await page.getByRole('button', { name: /New Request/i }).first().click();
+    await page.waitForSelector('[data-new-brand]', { timeout: 20000 });
+    t('the new-request form asks Quality for the brand', await page.locator('[data-new-brand] option', { hasText: 'KOH' }).count() === 1);
+
+    // An admin sees the button on the request and lifts the item with a reason.
+    const adminPage = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
+    await adminPage.goto(`http://127.0.0.1:${PORT}/manifest.webmanifest`);
+    await adminPage.evaluate((tok) => localStorage.setItem('auth_token', tok), A);
+    await adminPage.goto(`http://127.0.0.1:${PORT}/?tab=coa`);
+    await adminPage.waitForSelector('table tbody tr', { timeout: 30000 });
+    await adminPage.evaluate((id) => window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab: 'coa', request: id } })), target);
+    await adminPage.waitForSelector('[data-dismiss-item]', { timeout: 20000 });
+    adminPage.once('dialog', d => d.accept('No longer needed, checked by the admin'));
+    await adminPage.locator('[data-dismiss-item]').first().click();
+    await adminPage.waitForFunction(() => !document.querySelector('[data-dismiss-item]'), null, { timeout: 20000 });
+    t('an admin dismisses a correction from the request screen, with a reason', item(target, 'RESIGN')?.status === 'dismissed'
+      && /No longer needed/.test(item(target, 'RESIGN')?.dismissed_reason || ''));
   } finally { await browser.close(); }
 } catch (e) {
   fail++; console.error(e);

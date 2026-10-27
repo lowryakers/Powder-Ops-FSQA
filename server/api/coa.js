@@ -867,6 +867,14 @@ router.post('/requests', (req, res) => {
     lab_name = lab?.name || null;
   }
 
+  // Whose product this is can be set at filing (D-240): Quality or an admin, a
+  // brand already on the list. Blank is "unassigned", as before.
+  const brand = String(req.body.brand_owner ?? '').trim() || 'unassigned';
+  if (brand !== 'unassigned') {
+    if (!canSetBrand(req.user)) return res.status(403).json({ error: 'Only an admin or Quality can set whose product this is.' });
+    if (!db.prepare('SELECT 1 FROM coa_brands WHERE name = ?').get(brand)) return res.status(400).json({ error: `"${brand}" is not on the brand list.` });
+  }
+
   const id = uuid();
   const status = date_sent ? 'sent' : 'pending';
 
@@ -874,6 +882,7 @@ router.post('/requests', (req, res) => {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(id, item_number, item_description, lot_number, product_expiration || null, tests_requested, status, lab_id || null, lab_name, date_sent || null, tat_days || null, expected_results_date || null, requested_by || req.user.name, notes || null, req.user.name, origin || null, supplier || null, product_code || null, manufacturer_lot || null, vendor_lot || null, received_date || null);
 
+  if (brand !== 'unassigned') db.prepare('UPDATE coa_requests SET brand_owner = ? WHERE id = ?').run(brand, id);
   stampBaseLot(db, id);
   const created = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(id);
   logAudit(req.user, 'create', 'coa_request', id, req.body, null, created);
@@ -1055,7 +1064,7 @@ function openRequestIds(db) {
 function correctionItemsFor(db, requestId) {
   try {
     return db.prepare('SELECT * FROM coa_review_items WHERE request_id = ? ORDER BY created_at').all(requestId)
-      .map(i => ({ item_key: i.item_key, kind: i.kind, title: i.title, recommended_action: i.recommended_action, reason: i.reason,
+      .map(i => ({ id: i.id, item_key: i.item_key, kind: i.kind, title: i.title, recommended_action: i.recommended_action, reason: i.reason,
         status: i.status, dismissed_reason: i.dismissed_reason, ...itemProgress(db, i) }));
   } catch { return []; }
 }
