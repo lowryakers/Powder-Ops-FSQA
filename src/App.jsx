@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { setParam } from './lib/deepLink.js';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, UserPlus, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Building2, Sliders, BookText, LifeBuoy, PenLine, ListTodo, UserPlus2, HeartHandshake} from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, UserPlus, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Building2, BookText, LifeBuoy, PenLine, UserPlus2, HeartHandshake} from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -93,12 +93,10 @@ const PoliciesPanel = lazy(() => import('./components/office/PoliciesPanel.jsx')
 const OnboardingWelcomePage = lazy(() => import('./components/OnboardingWelcomePage.jsx'));
 const OnboardingPanel = lazy(() => import('./components/office/OnboardingPanel.jsx'));
 const CandidatesPanel = lazy(() => import('./components/office/CandidatesPanel.jsx'));
-const DannysListPanel = lazy(() => import('./components/office/DannysListPanel.jsx'));
 const NewsletterReader = lazy(() => import('./components/office/NewsletterReader.jsx'));
 const ControlledChangesPanel = lazy(() => import('./components/compliance/ControlledChangesPanel.jsx'));
 const ChangeRegisterPanel = lazy(() => import('./components/compliance/ChangeRegisterPanel.jsx'));
 const FoodSafetyCulturePanel = lazy(() => import('./components/compliance/FoodSafetyCulturePanel.jsx'));
-const LogBuilderStudio = lazy(() => import('./components/compliance/LogBuilderStudio.jsx'));
 const PayTrackingPanel = lazy(() => import('./components/office/PayTrackingPanel.jsx'));
 const PartnerReconPanel = lazy(() => import('./components/office/PartnerReconPanel.jsx'));
 const ReimbursementsPanel = lazy(() => import('./components/office/ReimbursementsPanel.jsx'));
@@ -237,12 +235,6 @@ const NAV_GROUPS = [
       // signs the approval, so QA sees it as well as Document Control.
       { id: 'change-register', label: 'Change Register', icon: ShieldCheck, keywords: 'change control request impact assessment quality approval software release equipment process utility facility',
         visible: (u) => u?.role === 'admin' || ['document_control', 'qa', 'quality'].includes((u?.department || '').toLowerCase()) || u?.role === 'supervisor' },
-      // Access by department or explicit grant, not admin-only — the whole
-      // point of moving this out of Settings is that Document Control can
-      // reach it. Approval stays admin-only inside the module.
-      { id: 'log-builder', label: 'Log Builder', icon: Sliders, keywords: 'dropdown lists custom fields draft copy edit approve structure',
-        visible: (u) => u?.role === 'admin' || (u?.department || '').toLowerCase() === 'document_control'
-          || (u?.module_access && !Array.isArray(u.module_access) && u.module_access['log-builder'] === 'edit') },
       { id: 'org-chart', label: 'Org Chart', icon: Network },
     ],
   },
@@ -286,7 +278,6 @@ const NAV_GROUPS = [
       // at /kiosk/visitor; this is the record behind it.
       { id: 'visitors', label: 'Visitors', icon: Users, keywords: 'visitor sign in sign out lobby front desk NDA guest contractor kiosk lobbytrack' },
       // Granted, never a role default — it is one person's working queue.
-      { id: 'dannys-list', label: "Danny's List", icon: ListTodo, keywords: 'danny owner approvals payments text sms requests chase' },
     ],
   },
   {
@@ -847,7 +838,6 @@ const RULE_WHY = {
   'controlled-changes': 'Document Control department',
   'change-register': 'Document Control / QA department, or any supervisor',
   'food-safety-culture': 'QA / Document Control department, or any supervisor',
-  'log-builder': 'Document Control department',
   accounting: 'Office / admin supervisor (AP Drop queue)',
 };
 function accessReasons(user) {
@@ -2173,13 +2163,11 @@ function App() {
           {resolvedTab === 'onboarding' && <OnboardingPanel />}
           {resolvedTab === 'candidates' && <CandidatesPanel />}
           {resolvedTab === 'visitors' && <VisitorLogPanel />}
-          {resolvedTab === 'dannys-list' && <DannysListPanel />}
           {resolvedTab === 'pay-tracking' && <PayTrackingPanel />}
           {resolvedTab === 'supply-orders' && <SupplyOrdersPanel />}
           {resolvedTab === 'controlled-changes' && <ControlledChangesPanel />}
           {resolvedTab === 'change-register' && <ChangeRegisterPanel user={user} />}
           {resolvedTab === 'food-safety-culture' && <FoodSafetyCulturePanel user={user} />}
-          {resolvedTab === 'log-builder' && <LogBuilderStudio />}
           {resolvedTab === 'time-tracking' && <TimeTrackingPanel />}
           {resolvedTab === 'production-log' && <ProductionLog user={user} />}
           {resolvedTab === 'production-schedule' && <ProductionSchedule user={user} />}

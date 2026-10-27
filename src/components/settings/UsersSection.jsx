@@ -147,7 +147,6 @@ const MODULE_GROUPS = [
       { id: 'procurement', label: 'Procurement & Demand Planning' },
       { id: 'newsletter', label: 'Newsletter' },
       { id: 'pay-tracking', label: 'Pay Tracking (evaluations; rates stay admin-only)' },
-      { id: 'dannys-list', label: "Danny's List (the owner's text-message request log)", note: 'One person\'s working queue — grant it to whoever tracks what Danny owes and is owed, not by role.' },
       { id: 'policies', label: 'Policies (handbook; edit = upload and publish)' },
       { id: 'candidates', label: 'People (who we would hire when the timing is right)', note: 'Personal contact details for people who do not work here, so the module carries a SECOND door: office / HR departments and admins only. Granting this to anyone else gives them nothing.' },
     ],
@@ -155,7 +154,7 @@ const MODULE_GROUPS = [
   {
     label: 'System',
     modules: [
-      { id: 'log-builder', label: 'Log Builder (edit form fields & dropdown lists)', note: 'Grant Edit to let someone add fields and list options to any log without a deploy. Changes the shape of records, so give it to leads you trust with document control.' },
+      { id: 'log-builder', label: 'Log Structure (edit form fields & dropdown lists in Settings)', note: 'Grant Edit to let someone add fields and list options to any log without a deploy. Changes the shape of records, so give it to leads you trust with document control.' },
     ],
   },
 ];
@@ -768,7 +767,7 @@ function WhoCanOpenModal({ users, onClose }) {
   const people = (users || []).filter(u => u.is_active && !u.is_external && u.role !== 'auditor');
   const access = people.map(u => ({ u, rows: navAccessFor(asPerson(u)) }));
   const modules = [...new Map(access.flatMap(a => a.rows).map(r => [r.id, r])).values()].sort((a, b) => a.label.localeCompare(b.label));
-  const [mod, setMod] = useState(modules.find(m => m.id === 'dannys-list')?.id || modules[0]?.id || '');
+  const [mod, setMod] = useState(modules[0]?.id || '');
   const holders = access.map(a => ({ u: a.u, row: a.rows.find(r => r.id === mod) })).filter(x => x.row);
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" data-who-can-open>

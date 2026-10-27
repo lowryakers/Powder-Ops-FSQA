@@ -37,7 +37,7 @@ import qaReviewRoutes from './server/api/qa-review.js';
 import cleanupRoutes from './server/api/cleanup.js';
 import sanitationRoutes from './server/api/sanitation.js';
 import swabLogRoutes from './server/swab-log.js';
-import { repairBulkPrivateGrants, grantOutNowByName } from './server/access-review.js';
+import { repairBulkPrivateGrants, grantOutNowByName, removeRetiredModuleGrants } from './server/access-review.js';
 import bpgRoutes from './server/api/bpg.js';
 import auditRoutes from './server/api/audit.js';
 import integrationsRoutes from './server/api/integrations.js';
@@ -98,7 +98,6 @@ import aiRoutes from './server/api/ai.js';
 import commsRoutes, { backfillEmbeddings, getChannelByName, postMessageAs, getBotUser, startReminderLoop, botDm } from './server/api/comms.js';
 import { pushToUser } from './server/push.js';
 import smsInboundRoutes from './server/api/sms-inbound.js';
-import dannyRoutes, { handleShortcutReply } from './server/api/danny.js';
 import { initRealtime } from './server/realtime.js';
 import { aiEnabled } from './server/ai.js';
 import { storageEnabled, putObject, deleteObject } from './server/storage.js';
@@ -107,7 +106,6 @@ import { pushEnabled } from './server/push.js';
 import mockRecallRoutes from './server/api/mock-recalls.js';
 import productionRoutes, { qaActionNudges } from './server/api/production.js';
 import structureRoutes from './server/api/structure.js';
-import logBuilderRoutes from './server/api/log-builder.js';
 import { seedStructureLists } from './server/structure-seed.js';
 import { placeRoom8 } from './server/sanitation-areas.js';
 import { seedSupplyLists } from './server/supply-list-seed.js';
@@ -1012,63 +1010,9 @@ try {
   }
 }
 
-// Backfill 4 months of completed work order history if none exist
-const completedCount = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE status = 'completed'").get().c;
-if (completedCount === 0 && db.prepare("SELECT COUNT(*) as c FROM work_orders").get().c > 0) {
-  try {
-    const TECHS = ['Adam B.', 'Ricardo A.', 'Spencer R.'];
-    const pickOne = arr => arr[Math.floor(Math.random() * arr.length)];
-    const freqDays = { daily: 1, weekly: 7, biweekly: 14, monthly: 30, quarterly: 90, semi_annual: 182, annual: 365 };
-    const startDate = new Date();
-    startDate.setMonth(startDate.getMonth() - 4);
-    const endDate = new Date();
-    endDate.setDate(endDate.getDate() - 1);
-
-    const schedules = db.prepare('SELECT ps.*, e.name as eq_name FROM pm_schedules ps JOIN equipment e ON ps.equipment_id = e.id WHERE ps.is_active = 1').all();
-    const insertWO = db.prepare(`INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, status, priority, assigned_to, started_at, completed_at, completed_by, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'completed', 'normal', ?, ?, ?, ?, ?, ?, ?)`);
-    const NOTES = ['No issues found', 'Minor wear noted', 'Cleaned and lubricated', 'All readings within spec', 'Topped off lubricant', null, null, null, null, null];
-    let count = 0;
-    const seedTx = db.transaction(() => {
-      for (const s of schedules) {
-        const interval = freqDays[s.frequency_type] || 30;
-        const cursor = new Date(startDate);
-        while (cursor <= endDate) {
-          const dueDate = cursor.toISOString().split('T')[0];
-          const delay = Math.floor(Math.random() * Math.min(interval, 3));
-          const done = new Date(cursor); done.setDate(done.getDate() + delay);
-          done.setHours(6 + Math.floor(Math.random() * 10), Math.floor(Math.random() * 60));
-          if (done > endDate) break;
-          const tech = pickOne(TECHS);
-          const started = new Date(done.getTime() - (15 + Math.random() * 45) * 60000).toISOString();
-          const created = new Date(cursor); created.setDate(created.getDate() - Math.min(interval, 7));
-          insertWO.run(uuid(), s.id, s.equipment_id, s.title, dueDate, s.procedure_steps, tech, started, done.toISOString(), tech, pickOne(NOTES), created.toISOString(), done.toISOString());
-          count++;
-          cursor.setDate(cursor.getDate() + interval);
-        }
-      }
-    });
-    seedTx();
-    console.log(`[seed] Backfilled ${count} completed work orders (4 months of history)`);
-  } catch (e) {
-    console.warn('[seed] Could not backfill history:', e.message);
-  }
-}
-
-// Fix technician names on completed work orders
-const oldNames = ['Carlos M.', 'Derek W.', 'James R.', 'Luis T.'];
-const newNames = ['Adam B.', 'Ricardo A.', 'Spencer R.'];
-const hasOld = db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE assigned_to IN ('Carlos M.','Derek W.','James R.','Luis T.') AND status = 'completed'").get().c;
-if (hasOld > 0) {
-  const reassign = db.transaction(() => {
-    for (const old of oldNames) {
-      const replacement = newNames[Math.floor(Math.random() * newNames.length)];
-      db.prepare("UPDATE work_orders SET assigned_to = ?, completed_by = ? WHERE assigned_to = ? AND status = 'completed'").run(replacement, replacement, old);
-      db.prepare("UPDATE audit_log SET actor = ? WHERE actor = ?").run(replacement, old);
-    }
-  });
-  reassign();
-  console.log(`[migrate] Reassigned ${hasOld} completed WOs to correct technician names`);
-}
+// No demo history is ever written here (D-215). A database with no completed task
+// stays that way until somebody completes one: invented "completed" maintenance
+// under made-up technician names is a fabricated record, not a seed.
 
 // Seed cleaning/sanitation records and checklist templates
 try {
@@ -1408,6 +1352,11 @@ try {
     const fx = repairBulkPrivateGrants(db);
     if (fx.length) console.log(`[migrate] Private modules removed from ${fx.length} account(s) the bulk-permissions bug had given them: ${fx.map(f => `${f.name} (${f.removed.join(', ')})`).join('; ')}`);
   } catch (e) { console.warn('[migrate] bulk access repair:', e.message); }
+  // A retired module's grant comes off every account before anything reads it (D-215).
+  try {
+    const rm = removeRetiredModuleGrants(db);
+    if (rm.length) console.log(`[migrate] Retired module grants removed from ${rm.length} account(s): ${rm.map(f => `${f.name} (${f.removed.join(', ')})`).join('; ')}`);
+  } catch (e) { console.warn('[migrate] retired module grants:', e.message); }
   try {
     const g = grantOutNowByName(db);
     if (g.length) console.log(`[migrate] "Out now" name rule became a grant for: ${g.join(', ')}`);
@@ -2048,9 +1997,7 @@ app.use('/api/api-tokens', apiTokenRoutes);
 app.use('/api/bot', botRoutes);
 app.use('/api/submit', submitRoutes);
 app.use('/api/sms', smsInboundRoutes);
-app.use('/api/dannys-list', requireModuleWrite('dannys-list'), dannyRoutes);
 // Public, token-authorised, one write and nothing else — see handleShortcutReply.
-app.post('/api/danny-shortcut/reply', handleShortcutReply);
 app.use('/api/chemicals', requireModuleWrite('chemicals'), chemicalRoutes);
 app.use('/api/hygienic-design', requireModuleWrite('hygienic'), hygienicDesignRoutes);
 app.use('/api/complaints', requireModuleWrite('capa'), complaintRoutes);
@@ -2139,7 +2086,6 @@ app.use('/api/qms', qmsRoutes);
 // Structure is readable by anyone (forms need their own field/option lists to
 // render); every write inside is gated on admin / Log Builder edit.
 app.use('/api/structure', structureRoutes);
-app.use('/api/log-builder', logBuilderRoutes);
 app.use('/api/receiving', requireModuleWrite('receiving-log'), receivingRoutes);
 // The outbound truck inspection lives in the Receiving Log module (same dock, same people, same grant).
 app.use('/api/shipping', requireModuleWrite('receiving-log'), shippingRoutes);

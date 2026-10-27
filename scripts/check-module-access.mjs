@@ -22,6 +22,9 @@ const ok = (label, fn) => {
   try { fn(); } catch (e) { bad++; console.log(`  FAIL  ${label}\n        ${e.message}`); return; }
   console.log(`  ok    ${label}`);
 };
+// No private module exists since Danny's List was retired (D-215); the rule stays for
+// the next one, and these assertions run again the day OPT_IN_MODULES has an entry.
+const okOptIn = (label, fn) => (OPT_IN ? ok(label, fn) : console.log(`  skip  ${label} (no private module today)`));
 const user = (role, map) => ({ role, department: 'warehouse', module_access: map });
 
 console.log('\nWhat an empty map means');
@@ -75,15 +78,15 @@ ok('full access never includes the opt-in module', () => {
   assert.equal(map[OPT_IN], undefined);
   assert.equal(moduleLevel(user('operator', map), OPT_IN), null);
 });
-ok('an existing opt-in grant survives turning full access on', () => {
+okOptIn('an existing opt-in grant survives turning full access on', () => {
   const map = fullAccessMap('operator', { [OPT_IN]: 'edit' }, IDS);
   assert.equal(map[OPT_IN], 'edit');
   assert.equal(moduleLevel(user('operator', map), OPT_IN), 'edit');
 });
-ok('...and survives turning it off', () => {
+okOptIn('...and survives turning it off', () => {
   assert.deepEqual(noAccessMap({ [OPT_IN]: 'edit' }), { [OPT_IN]: 'edit' });
 });
-ok('an admin holding only an opt-in grant still has full access', () => {
+okOptIn('an admin holding only an opt-in grant still has full access', () => {
   assert.equal(isFullAccess('admin', { [OPT_IN]: 'edit' }, IDS), true);
   assert.equal(moduleLevel(user('admin', { [OPT_IN]: 'edit' }), 'sanitation'), 'edit');
 });
@@ -113,7 +116,7 @@ ok('an unpassed role is treated as non-admin', () => {
 
 console.log('\nThe roster row says what the editor says');
 const countOf = (u) => ORDINARY.filter(id => moduleLevel(u, id) != null).length;
-ok('an admin holding only an opt-in grant reads as full access, not "1 module"', () => {
+okOptIn('an admin holding only an opt-in grant reads as full access, not "1 module"', () => {
   const map = { [OPT_IN]: 'edit' };
   const s = accessSummary('admin', map, IDS);
   assert.equal(s.full, true);

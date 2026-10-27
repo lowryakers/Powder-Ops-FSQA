@@ -51,9 +51,6 @@ export const ALL_MODULE_IDS = [
   // The visitor book. The lobby tablet itself is a public kiosk and needs no
   // grant; this is the record behind it.
   'visitors',
-  // Danny's List — the text-message request log for the owner. Granted, never
-  // a role default: it is one person's working queue, not a plant module.
-  'dannys-list',
   'dcr', 'deviations', 'non-conformance', 'on-hold',
   'component-signout', 'maintenance-signout', 'currently-out', 'organoleptic',
   'knife-accountability', 'flavor-approvals',

@@ -63,7 +63,7 @@ const PACK = [
   ['POST', '/api/qms/sensory-specs/x/approve'], ['POST', '/api/qms/deviation/x/approve'], ['POST', '/api/qms/deviation/bulk-approve'],
   ['POST', '/api/meetings/x/approve'], ['PUT', '/api/hygienic-design/x/approve'], ['PUT', '/api/loto/executions/x/release'],
   ['POST', '/api/mock-recalls/x/approve'], ['POST', '/api/change-register/x/approve'], ['POST', '/api/controlled/x/approve'],
-  ['POST', '/api/disposals/x/approve'], ['POST', '/api/reimbursements/x/approve'], ['POST', '/api/log-builder/drafts/x/approve'],
+  ['POST', '/api/disposals/x/approve'], ['POST', '/api/reimbursements/x/approve'],
   ['POST', '/api/production/schedule/x/flavor-approve'], ['POST', '/api/users/me/signature'],
   ['POST', '/api/qms/flavor_approval/x/send'], ['POST', '/api/qms/flavor_approval/x/sensory'],
 ];

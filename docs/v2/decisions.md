@@ -8416,3 +8416,33 @@ Asked: what is left on the single spine, and which parts of ReadyDoc have never 
   through `/set-password` with the PIN. The report lists any by name and never prints a PIN.
 - **Dead code** (no importer): the hidden finance panels and their routers, `/api/checklists`, three small client
   files, `server/backfill-history.js`. Recommended: delete the code and keep the tables.
+
+## D-215 — Fake history removed; Danny's List and the Log Builder studio retired (2026-10-26)
+
+Lowry's decisions on the D-214 cleanup plan.
+
+- **The fake maintenance history is gone from the code.** `server.js` no longer writes four months of "completed" PM
+  tasks under Adam B. / Ricardo A. / Spencer R. on a database with no completed task, and the block that rewrote
+  `audit_log.actor` from older demo names is gone with it. `server/backfill-history.js` is deleted. Rows already on a
+  live database are untouched: `npm run report:usage` counts them, and retiring them is a separate decision.
+- **The demo accounts stay for now.** Whether any is still active with a PIN on live is what the usage report
+  answers; the fix follows from that.
+- **Danny's List is retired.** Gone: the screen, the router, the iPhone Shortcut route, the Settings tick, and the
+  SMS branch. A text on the old `DANNY_SMS_FROM` number is now dropped in silence instead of reaching the AI.
+  - The `danny_*` tables and `users.shortcut_token_hash` stay. Nothing is dropped.
+  - **Its grant comes off every account, once** (`removeRetiredModuleGrants`, `retired_module_grants_v1`, audited).
+    It was the only private module, so an admin whose map held only that grant read as full access only because
+    the grant was private. Once it is an ordinary key, that admin is narrowed to nothing. Lowry's own account is
+    that shape; measured: `moduleLevel` returns null for every module without the cleanup and edit with it.
+  - `OPT_IN_MODULES` is empty. The private-module rule stays for the next one; the checks that need a member skip
+    while there is none.
+- **The Log Builder studio is retired, the structure engine is not.** The draft / approve screen and
+  `/api/log-builder` are gone; Settings → Log Structure (dropdown lists and custom fields) stays, because Receiving,
+  Meetings, Visitors and others read those lists. The `log-builder` grant keeps its id and now reads "Log Structure"
+  in Settings. **Settings is admin-only at the door, so Document Control can no longer edit lists without an
+  admin**; the table `log_builder_drafts` stays.
+- **Kept, by decision:** Newsletter, Film and Shipping inspections, Procurement & Demand.
+- **Open:** Retention Samples (whether the screen stays, and where Stability lives).
+- Verified: `verify:accesssources` (22), `verify:kioskisolation` (38), `check:modaccess` (23 + 4 skipped), and the
+  verifies that read completed work orders (cleanup digest, name keys, QA clearance). `verify:testgrading` fails one
+  browser step on `main` as well; it is a separate task.

@@ -75,7 +75,7 @@ const MODULES = [
   ['Document Change Requests', 'Document Control', [], ['document_change_request']],
   ['Controlled Changes', 'Document Control', ['controlled_definitions'], ['controlled_definition']],
   ['Change Register', 'Document Control', ['change_requests', 'software_releases'], ['change_request']],
-  ['Log Builder (studio + structure)', 'Document Control', ['log_builder_drafts', 'custom_field_defs', 'app_list_options'], ['log_builder_draft', 'custom_field', 'app_list', 'app_list_option']],
+  ['Log Structure (Settings; the studio was retired, D-215)', 'Document Control', ['log_builder_drafts', 'custom_field_defs', 'app_list_options'], ['log_builder_draft', 'custom_field', 'app_list', 'app_list_option']],
   ['Training', 'Document Control', ['training_records', 'training_courses', 'training_test_attempts', 'training_practical_evaluations'], ['training', 'training_record', 'training_course', 'training_test_attempt', 'practical_evaluation']],
   ['Certifications', 'Document Control', ['certifications'], ['certification']],
   ['Org Chart', 'Document Control', ['org_positions'], ['org_position', 'org_chart']],
@@ -97,7 +97,7 @@ const MODULES = [
   ['Policies', 'Office', ['policies', 'policy_acknowledgements'], ['policy', 'policy_acknowledgement']],
   ['Onboarding + employee documents', 'Office', ['onboarding_records', 'employee_documents'], ['onboarding', 'onboarding_file', 'employee_document', 'employee_document_template']],
   ['People (candidates)', 'Office', ['candidates'], ['candidate', 'candidate_file']],
-  ["Danny's List", 'Office', ['danny_items'], ['danny_item', 'danny_reply', 'danny_attachment']],
+  ["Danny's List (retired, D-215)", 'Retired', ['danny_items'], ['danny_item', 'danny_reply', 'danny_attachment']],
   // System
   ['Messages', 'System', ['chat_messages'], ['chat_message', 'chat_channel', 'chat_attachment', 'comms']],
   ['Flash Report', 'System', [], ['flash_report']],
