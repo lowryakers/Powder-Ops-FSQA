@@ -3855,6 +3855,12 @@ meant rebuilding the filter by hand — which nobody does. Every `AttentionBar` 
 - The golden fixtures in `scripts/fixtures/coa/` are reconstructions; swap in the real CTLA PDFs when Quality
   copies them out. The 22 stored `<44` gluten rows are not yet corrected.
 - `verify:coa` (55 live + 18 pure, in `npm run check`; control fails from the first, reading `<44`).
+- **Follow-up (D-227 … D-233)**: numbers are read in full (`1.3e3`, `1.3x10^3`) or refused; a unit on one side only,
+  or a value's own unit disagreeing with the unit column, is ungraded; signing always draws a fresh number (seven
+  never-issued numbers voided once, `coa_unissued_cert_numbers_voided_v1`); all-N/A cannot be signed; method and MDL
+  are stored (`coa_test_results.method` / `.mdl`) and printed; spec retirement audits as `retire`; opening a COA
+  setting needs a reason. `COA_REAL_PDF_DIR=<folder>` runs `coa-real-pdf.test.mjs` against real reports (never commit them).
+  `verify:coa` 69 live + 24 pure.
 
 ## COA item specification sheet
 The Specifications tab stores one row per test (right for auto pass/fail, hard to eyeball). "View item & all

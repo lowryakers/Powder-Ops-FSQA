@@ -52,7 +52,9 @@ export function snapshotFor(db, request, { certificate_number, date_of_issuance 
       const spec = byId[t.specification_id] || index.find(t.test_type);
       return {
         id: t.id, test_type: t.test_type, result_value: t.result_value, unit: t.unit || spec?.unit || null,
-        pass_fail: t.pass_fail, method: spec?.method || t.notes || null,
+        // The lab's own method wins over the spec's; mdl joins the snapshot
+        // from D-231 on, so certificates signed earlier keep the shape they had.
+        pass_fail: t.pass_fail, method: t.method || spec?.method || t.notes || null, mdl: t.mdl ?? null,
         specification_id: spec?.id || null, specification: spec?.specification || null,
         min_value: spec?.min_value ?? null, max_value: spec?.max_value ?? null,
       };
@@ -72,6 +74,9 @@ export function signRefusals(db, request) {
   if (!results.length) out.push('it has no test results');
   const failed = results.filter(r => r.pass_fail === 'fail');
   if (failed.length) out.push(`${failed.length} result${failed.length === 1 ? '' : 's'} failed (${failed.map(r => r.test_type).join(', ')})`);
+  // A certificate states that the lot passed. All-N/A says nothing was tested
+  // against a limit, which is not a pass (D-228).
+  if (results.length && !results.some(r => r.pass_fail === 'pass')) out.push('no result passed — every result is N/A, so there is nothing to certify');
   const open = results.filter(r => !r.pass_fail);
   if (open.length) out.push(`${open.length} result${open.length === 1 ? ' has' : 's have'} no verdict (${open.map(r => r.test_type).join(', ')})`);
   const specs = db.prepare('SELECT test_type FROM coa_specifications WHERE item_number = ? AND is_active = 1').all(request.item_number);
@@ -82,4 +87,36 @@ export function signRefusals(db, request) {
 }
 
 export const isSigned = (r) => !!r?.qa_signed_at;
+
+/**
+ * Before D-223, opening an unsigned request's PDF handed it a certificate
+ * number. Seven requests on the live database still hold one that was never
+ * issued, and signing used to reuse it. This voids those numbers ONCE, on
+ * unsigned requests only, with the old value in the audit record. The counter
+ * is raised past every voided number first, so none is ever drawn again.
+ */
+const VOID_MARKER = 'coa_unissued_cert_numbers_voided_v1';
+export const UNISSUED_REASON = 'assigned by the unsigned PDF view before D-223; never issued';
+export function voidUnissuedCertNumbers(db, logAudit) {
+  if (db.prepare('SELECT value FROM app_settings WHERE key = ?').get(VOID_MARKER)) return { voided: [], already: true };
+  const rows = db.prepare(`SELECT id, item_description, lot_number, certificate_number, date_of_issuance FROM coa_requests
+    WHERE qa_signed_at IS NULL AND certificate_number IS NOT NULL AND TRIM(certificate_number) != ''`).all();
+  db.transaction(() => {
+    const highest = rows.map(r => Number(r.certificate_number)).filter(Number.isFinite).reduce((a, b) => Math.max(a, b), 0);
+    if (highest) {
+      db.prepare(`INSERT INTO coa_counters (name, value) VALUES ('certificate', ?)
+        ON CONFLICT(name) DO UPDATE SET value = MAX(value, excluded.value)`).run(highest);
+    }
+    const clear = db.prepare("UPDATE coa_requests SET certificate_number = NULL, date_of_issuance = NULL, updated_at = datetime('now') WHERE id = ? AND qa_signed_at IS NULL");
+    for (const r of rows) {
+      clear.run(r.id);
+      logAudit?.('system', 'void', 'coa_request', r.id,
+        { reason: UNISSUED_REASON, voided_certificate_number: r.certificate_number, voided_date_of_issuance: r.date_of_issuance || null },
+        { certificate_number: r.certificate_number, date_of_issuance: r.date_of_issuance || null },
+        { certificate_number: null, date_of_issuance: null }, `${r.item_description} · Lot ${r.lot_number}`);
+    }
+    db.prepare('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)').run(VOID_MARKER, new Date().toISOString());
+  })();
+  return { voided: rows.map(r => ({ id: r.id, certificate_number: r.certificate_number })) };
+}
 export const LOCKED_MESSAGE = 'This certificate is signed, so its results, files, lot details and certificate fields are closed. An admin can un-sign it with a reason to correct it.';

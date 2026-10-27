@@ -14,6 +14,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import Database from 'better-sqlite3';
+import { readPdfColumns } from '../server/coa-pdf-text.js';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const unit = spawnSync(process.execPath, ['--test', ...readdirSync(path.join(root, 'scripts/test')).filter(f => /^coa-.*\.test\.mjs$/.test(f)).map(f => path.join('scripts/test', f))], { cwd: root, encoding: 'utf8' });
@@ -99,6 +100,27 @@ try {
   const na = await req('COA-NA', 'NA-1');
   await call('POST', `/coa/requests/${na.id}/results`, { results: [{ test_type: 'Odor', result_value: 'n/a', pass_fail: 'na' }, { test_type: 'Taste', result_value: 'n/a', pass_fail: 'na' }] });
   t('a request whose results are all N/A does not roll up to pass', row(na.id).status !== 'pass', row(na.id).status);
+  await call('PUT', `/coa/requests/${na.id}`, { status: 'pass' });
+  r = await sign(na.id);
+  t('… and cannot be signed even when marked pass by hand (D-228)', r.s === 409 && /no result passed/.test(r.j.error) && !row(na.id).certificate_number, r.j.error);
+
+  console.log('\n── numbers read in full, units stated (D-227, D-229)');
+  await call('POST', '/coa/specifications', { item_number: 'COA-U', item_description: 'Unit check', test_type: 'Total Aerobic Plate Count', max_value: 10000, unit: 'cfu/g' });
+  const sci = await req('COA-U', 'SCI-1');
+  r = await call('POST', `/coa/requests/${sci.id}/results`, { results: [
+    { test_type: 'Total Aerobic Plate Count', result_value: '1.3e5', unit: 'cfu/g' }] });
+  t('1.3e5 cfu/g against ≤10,000 FAILS (the exponent is read)', r.j[0]?.pass_fail === 'fail', JSON.stringify(r.j));
+  const sci2 = await req('COA-U', 'SCI-2');
+  r = await call('POST', `/coa/requests/${sci2.id}/results`, { results: [{ test_type: 'Total Aerobic Plate Count', result_value: '1.3x10^3', unit: 'cfu/g' }] });
+  t('1.3x10^3 cfu/g passes as 1,300', r.j[0]?.pass_fail === 'pass');
+  const sci3 = await req('COA-U', 'SCI-3');
+  r = await call('POST', `/coa/requests/${sci3.id}/results`, { results: [
+    { test_type: 'Total Aerobic Plate Count', result_value: '1.3e', unit: 'cfu/g' },
+    { test_type: 'Lead', result_value: '0.2' },
+    { test_type: 'Lead', result_value: '2.5 mg/g', unit: 'ppm' }] });
+  t('a number the reader cannot take in full is left ungraded', r.j[0]?.pass_fail === null);
+  t('a number with no unit against a ppb limit is "unit not stated", not compared raw', r.j[1]?.pass_fail === null);
+  t('a value whose own unit disagrees with the unit column is not graded', r.j[2]?.pass_fail === null);
 
   console.log('\n── specifications (D-225)');
   const sp = (await call('GET', '/coa/specifications?item_number=COA-U')).j[0];
@@ -168,6 +190,24 @@ try {
   r = await sign(c1.id);
   t('signed again, it gets a NEW number; the voided one is never reissued', r.s === 200 && Number(row(c1.id).certificate_number) > Number(voided));
 
+  console.log('\n── a number found on an unsigned request is never issued (D-228)');
+  t('the one-time void ran at boot and left its marker', !!one("SELECT 1 x FROM app_settings WHERE key = 'coa_unissued_cert_numbers_voided_v1'"));
+  const leg = await req('COA-C', 'LEG-1');
+  await call('POST', `/coa/requests/${leg.id}/results`, { results: [{ test_type: 'Arsenic', result_value: '0.01', unit: 'ppm' }] });
+  { const w = new Database(dbPath); w.prepare("UPDATE coa_requests SET certificate_number = '170001', date_of_issuance = '2026-01-01' WHERE id = ?").run(leg.id); w.close(); }
+  r = await sign(leg.id);
+  t('signing draws a fresh number and today\'s date, never the one the request held', r.s === 200
+    && row(leg.id).certificate_number !== '170001' && row(leg.id).date_of_issuance !== '2026-01-01', `${row(leg.id).certificate_number} ${row(leg.id).date_of_issuance}`);
+
+  const mth = await req('COA-C', 'M-1');
+  await call('POST', `/coa/requests/${mth.id}/results`, { results: [{ test_type: 'Arsenic', result_value: '0.01', unit: 'ppm', method: 'USP <233>', mdl: '0.005' }] });
+  r = await sign(mth.id);
+  const snapR = JSON.parse(row(mth.id).signed_snapshot || '{}').results?.[0];
+  t('a newly signed certificate freezes the method and MDL (D-231)', r.s === 200 && snapR?.method === 'USP <233>' && snapR?.mdl === '0.005', JSON.stringify(snapR));
+  r = await call('GET', `/coa/requests/${mth.id}/pdf`);
+  const certText = r.s === 200 ? (await readPdfColumns(r.j)).text : '';
+  t('… and its PDF prints the method in the Method column', /USP <233>/.test(certText), certText.split('\n').find(l => /Arsenic/.test(l)) || '');
+
   console.log('\n── two certificates issued at once (D-223)');
   const ids = [];
   for (const lot of ['P-1', 'P-2', 'P-3', 'P-4']) {
@@ -181,7 +221,8 @@ try {
 
   console.log('\n── filing from a read PDF (D-224)');
   r = await upload('/coa/parse-coa', fixture('176901'), 'ctla-176901.pdf');
-  t('/parse-coa reads the gluten row as <4', r.s === 200 && r.j.test_results?.find(x => /gluten/i.test(x.test_type))?.result_value === '<4');
+  const pg = r.j.test_results?.find(x => /gluten/i.test(x.test_type));
+  t('/parse-coa reads the gluten row as <4, method ELISA, MDL 4', r.s === 200 && pg?.result_value === '<4' && pg?.method === 'ELISA' && pg?.mdl === '4', JSON.stringify(pg));
   const parsed = r.j; const uploaded = parsed._uploaded_file;
   r = await call('POST', '/coa/import-parsed-coa', { parsed: { ...parsed, status: 'sideways' }, uploaded_file: uploaded });
   t('an unknown status on the import is a 400', r.s === 400);
@@ -191,6 +232,8 @@ try {
   const impFile = one('SELECT * FROM coa_files WHERE request_id = ?', imp.id);
   t('… WITH its PDF, as lab_results, hashed', impFile?.file_type === 'lab_results' && impFile?.sha256 === crypto.createHash('sha256').update(fixture('176901')).digest('hex'));
   t('… and the client\'s "pass" is not taken: ungraded results leave it pending', row(imp.id).status === 'pending', row(imp.id).status);
+  const impG = one("SELECT method, mdl FROM coa_test_results WHERE request_id = ? AND test_type LIKE '%Gluten%'", imp.id);
+  t('… storing the method and MDL on the result (D-231)', impG?.method === 'ELISA' && impG?.mdl === '4', JSON.stringify(impG));
   r = await call('POST', '/coa/import-parsed-coa', { parsed, uploaded_file: uploaded });
   t('the same lot filed twice is refused and names the first', r.s === 409 && r.j.existing_id === imp.id);
   r = await call('POST', '/coa/import-parsed-coa', { parsed: { ...parsed, lot_number: 'X-9' }, uploaded_file: { filename: '../../etc/passwd' } });
@@ -219,8 +262,14 @@ try {
   t('Quality cannot change a setting', (await call('PUT', '/coa/settings/evidence_disclosure_mode', { value: 'on_request_approval' })).s === 403);
   t('an admin cannot set a value outside the list', (await call('PUT', '/coa/settings/evidence_disclosure_mode', { value: 'always' }, A)).s === 400);
   r = await call('PUT', '/coa/settings/evidence_disclosure_mode', { value: 'on_request_approval' }, A);
-  t('an admin changes it, audited', r.s === 200 && !!one("SELECT 1 x FROM audit_log WHERE entity_type = 'coa_setting'"));
-  await call('PUT', '/coa/settings/evidence_disclosure_mode', { value: 'never' }, A);
+  t('opening lab evidence needs a reason (D-233)', r.s === 400 && r.j.reason_required === true);
+  r = await call('PUT', '/coa/settings/public_nonclaim_gluten_display', { value: 'visible' }, A);
+  t('showing a non-claim gluten result needs a reason', r.s === 400 && r.j.reason_required === true);
+  r = await call('PUT', '/coa/settings/evidence_disclosure_mode', { value: 'on_request_approval', reason: 'Customer audit request, approved by Quality' }, A);
+  t('an admin changes it with a reason, and the reason is in the audit record', r.s === 200
+    && !!one("SELECT 1 x FROM audit_log WHERE entity_type = 'coa_setting' AND details LIKE '%Customer audit request%'"));
+  r = await call('PUT', '/coa/settings/evidence_disclosure_mode', { value: 'never' }, A);
+  t('closing it again needs no reason', r.s === 200);
 } finally {
   stop();
 }

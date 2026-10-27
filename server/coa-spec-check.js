@@ -7,7 +7,7 @@
 //
 // `specProblems` is the rule, pure. `retireMalformedSpecs` applies it ONCE per
 // database to the one item the review named, by RETIRING the rows (is_active =
-// 0, the same act as the Retire button) — never deleting them and never
+// 0, the same act as the Retire button; audited as 'retire', D-230) — never deleting them and never
 // guessing a corrected number. Quality re-enters the limit. Every other item's
 // malformed specs are reported at boot, not touched.
 import { aliasKey } from './coa-grade.js';
@@ -48,7 +48,7 @@ export function retireMalformedSpecs(db, logAudit) {
     const upd = db.prepare("UPDATE coa_specifications SET is_active = 0, updated_at = datetime('now') WHERE id = ?");
     for (const { s, problems } of out.retired) {
       upd.run(s.id);
-      logAudit?.('system', 'delete', 'coa_specification', s.id,
+      logAudit?.('system', 'retire', 'coa_specification', s.id,
         { reason: `Retired by ReadyDoc: ${problems.join('; ')}. Quality re-enters the limit (D-225).`, problems },
         s, { ...s, is_active: 0 }, `${s.item_number} · ${s.test_type}`);
     }

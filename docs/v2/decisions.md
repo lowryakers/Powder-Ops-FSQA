@@ -8640,3 +8640,59 @@ Groundwork only. Decided by Lowry: only ProDough data may ever be public; privat
 - No public page, route or gluten feature was built. No "gluten-free" wording was added.
 - `verify:coa` (55 live + 18 pure, in `npm run check`). Control (`main` before this) fails from the first assertion
   with the reported `<44`.
+
+## D-227 — A number is read in full, scientific notation included, or not at all (27 Oct 2026)
+
+Post-merge review of PR #72. `parseResult('1.3e3')` read 1.3 with a unit of "e3", so 1.3e5 passed a ≤10,000 cfu/g
+limit.
+- **`readNumber` takes the exponent**: `1.3e3`, `1.3E+03`, `1.3x10^3`, `1.3×10^3`, `1.3×10³` are all 1300;
+  `<1.0x10^1` is the bound `<10`.
+- **A token the reader cannot take whole is `unreadable_number`** (`1.3e`, `1.3x10`, `2..5`) and is left ungraded
+  with a reason. A "unit" that looks like the tail of a number (`e3`, `x10`) is refused, never kept as a unit.
+
+## D-228 — Signing always issues a fresh number; never-issued numbers are voided; all-N/A is not certifiable (27 Oct 2026)
+
+- **The sign route draws a new number from the counter and stamps today's plant date**, whatever the request held.
+  It used to reuse `fresh.certificate_number`, which on seven live requests was a number the old PDF view made up.
+- **`voidUnissuedCertNumbers` (boot, once, `coa_unissued_cert_numbers_voided_v1`)** clears the number (and the
+  issuance date set with it) on UNSIGNED requests only, audited `void` with the old values and the reason
+  "assigned by the unsigned PDF view before D-223; never issued". The counter is raised past every voided number
+  first, so none is drawn again. Signed requests are never touched.
+- **`signRefusals` refuses a request where no result passed** — every result N/A certifies nothing.
+
+## D-229 — A unit stated on one side only is not graded (27 Oct 2026)
+
+- **A value that prints its own unit beside a unit column saying something else** ("2.5 mg/g" with "ppm") is a
+  mismatch, left ungraded with the reason. The same unit written two ways (`mg/kg` / `MG/KG`) is not.
+- **A numeric result with a unit against a spec without one, or the reverse, is "unit not stated"** — never compared
+  raw. Qualitative results (Absent, Not Detected, Negative) are unaffected. CTLA prints units on its numeric rows,
+  so its reports still grade; a spec Quality entered without a unit stops grading numbers until the unit is added.
+
+## D-230 — Retiring a specification is audited as `retire`, not `delete` (27 Oct 2026)
+
+`retireMalformedSpecs` and the Retire button (`DELETE /coa/specifications/:id`, which has always set
+`is_active = 0`) both log `retire`. The audit screen renders the action as stored. Rows logged before keep `delete`.
+
+## D-231 — The lab's method and detection limit are stored on the result (27 Oct 2026)
+
+- **`coa_test_results.method` and `.mdl`** (new, nullable). The column reader carries Method and MDL from the
+  header-mapped table and from CTLA's spaced rows (`<name> Report <method> <result> <mdl> <unit>`); the scan
+  preview, the scan apply, `POST /results`, the result edit and `import-parsed-coa` write them. Old rows are not
+  touched; a method kept in `notes` stays there.
+- **The certificate's Method column prints the lab's method**, then the spec's, then the old notes.
+- **A certificate signed from now on freezes `method` and `mdl` in its snapshot**; earlier snapshots keep their shape.
+- Golden fixtures: gluten reads method ELISA, MDL 4, result `<4`.
+
+## D-232 — An optional check against real CTLA reports (27 Oct 2026)
+
+`scripts/test/coa-real-pdf.test.mjs` runs only when `COA_REAL_PDF_DIR` names a folder of real lab PDFs (never
+committed): no result may be its MDL printed twice, and each gluten result must be a token `pdftotext -layout`
+prints on the gluten line (`<4` when pdftotext is absent). Without the variable it reports one skipped test.
+
+## D-233 — Opening a closed COA setting needs a reason (27 Oct 2026)
+
+`evidence_disclosure_mode` away from `never`, or `public_nonclaim_gluten_display` to `visible`, is refused without a
+reason (400 `reason_required`); the reason goes into the audit record. The Labs card asks for it only when the
+server says so. Closing either again needs none. Still nothing reads these settings.
+- `verify:coa` (55 → 69 live; pure 18 → 24, plus the optional real-PDF suite). Control (the server before this,
+  with the new checks) fails 6, from the all-N/A signing onward.

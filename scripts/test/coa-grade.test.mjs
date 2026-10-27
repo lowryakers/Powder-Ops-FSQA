@@ -48,14 +48,59 @@ test('a unit mismatch is refused, not guessed', () => {
   assert.equal(g.pass_fail, null);
   assert.match(g.reason, /Unit mismatch/);
   assert.equal(gradeResult('50', spec({ max_value: 100, unit: 'cfu/g' }), null, { unit: 'mpn/g' }).pass_fail, null);
-  // A unit left blank on either side is not a mismatch.
-  assert.equal(gradeResult('50', spec({ max_value: 100, unit: 'cfu/g' })).pass_fail, 'pass');
+  // A unit stated on both sides that agrees still grades.
+  assert.equal(gradeResult('50', spec({ max_value: 100, unit: 'cfu/g' }), null, { unit: 'cfu/g' }).pass_fail, 'pass');
+});
+
+test('a unit stated on one side only is "unit not stated", never compared raw (D-229)', () => {
+  const a = gradeResult('50', spec({ max_value: 100, unit: 'cfu/g' }));
+  assert.equal(a.pass_fail, null);
+  assert.match(a.reason, /Unit not stated/);
+  const b = gradeResult('50', spec({ max_value: 100 }), null, { unit: 'cfu/g' });
+  assert.equal(b.pass_fail, null);
+  assert.match(b.reason, /Unit not stated/);
+  // Neither side has one: compared as before.
+  assert.equal(gradeResult('50', spec({ max_value: 100 })).pass_fail, 'pass');
+  // Qualitative results are unaffected.
+  assert.equal(gradeResult('Absent', spec({ specification: 'Absent in 25g', unit: 'cfu/g' })).pass_fail, 'pass');
+  assert.equal(gradeResult('Not Detected', spec({ max_value: 10, unit: 'cfu/g' })).pass_fail, 'pass');
+  assert.equal(gradeResult('Negative', spec({ specification: 'Negative' })).pass_fail, 'pass');
+});
+
+test('a value carrying its own unit that disagrees with the unit column is a mismatch (D-229)', () => {
+  const g = gradeResult('2.5 mg/g', spec({ max_value: 5000, unit: 'ppm' }), null, { unit: 'ppm' });
+  assert.equal(g.pass_fail, null);
+  assert.match(g.reason, /the value says mg\/g but the unit column says ppm/);
+  // The same unit written two ways is not a disagreement.
+  assert.equal(gradeResult('0.5 mg/kg', spec({ max_value: 1, unit: 'ppm' }), null, { unit: 'MG/KG' }).pass_fail, 'pass');
+});
+
+test('scientific notation is read in full or refused, never from the front (D-227)', () => {
+  const tamc = spec({ max_value: 10000, unit: 'cfu/g' });
+  for (const v of ['1.3e3', '1.3E3', '1.3E+03', '1.3x10^3', '1.3X10^3', '1.3×10^3', '1.3 x 10^3', '1.3×10³']) {
+    assert.equal(parseResult(v).value, 1300, v);
+    assert.equal(gradeResult(v, tamc, null, { unit: 'cfu/g' }).pass_fail, 'pass', v);
+  }
+  for (const v of ['1.3e5', '1.3E+05', '1.3x10^5', '1.3×10⁵']) {
+    assert.equal(parseResult(v).value, 130000, v);
+    assert.equal(gradeResult(v, tamc, null, { unit: 'cfu/g' }).pass_fail, 'fail', v);
+  }
+  assert.deepEqual(parseResult('<1.0x10^1'), { kind: 'bound', value: 10, below: true, unit: null });
+  assert.equal(parseResult('2.5E-02 ppm').value, 0.025);
+  assert.equal(parseResult('1.3E+03 cfu/g').unit, 'cfu/g');
+  for (const v of ['1.3e', '1.3x10', '1.3E+', '2..5', '1.3x10^']) {
+    assert.equal(parseResult(v).kind, 'unreadable_number', v);
+    const g = gradeResult(v, tamc, null, { unit: 'cfu/g' });
+    assert.equal(g.pass_fail, null, v);
+    assert.match(g.reason, /could not be read in full/, v);
+  }
 });
 
 test('"<X" supports a "<L" limit only when X <= L', () => {
-  assert.equal(gradeResult('<4', spec({ max_value: 20, unit: 'ppm' })).pass_fail, 'pass');
-  assert.equal(gradeResult('<20', spec({ max_value: 20, unit: 'ppm' })).pass_fail, 'pass');
-  assert.equal(gradeResult('<44', spec({ max_value: 20, unit: 'ppm' })).pass_fail, null);
+  const ppm = { unit: 'ppm' };
+  assert.equal(gradeResult('<4', spec({ max_value: 20, unit: 'ppm' }), null, ppm).pass_fail, 'pass');
+  assert.equal(gradeResult('<20', spec({ max_value: 20, unit: 'ppm' }), null, ppm).pass_fail, 'pass');
+  assert.equal(gradeResult('<44', spec({ max_value: 20, unit: 'ppm' }), null, ppm).pass_fail, null);
 });
 
 test('a stated pass never rescues a result the specification fails', () => {
