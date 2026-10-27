@@ -11,6 +11,7 @@ import { MACHINE_TYPES, ZONE_TYPES, defaultAssetKind } from '../../../shared/equ
 import { keepCurrent } from '../../lib/selectOptions.js';
 import ResyncStepsModal from './ResyncStepsModal.jsx';
 import FrozenScroll from '../common/FrozenScroll';
+import EquipmentTeamReview from './EquipmentTeamReview.jsx';
 
 // Types come from shared/equipment-types.js so the form, the setup checklist
 // and the boot migrations all speak the same vocabulary. The type only sets the
@@ -692,6 +693,7 @@ export default function EquipmentPanel() {
   const [resyncSteps, setResyncSteps] = useState(false);
   const [showReview, setShowReview] = useState(false);
   const { data: review, refresh: refreshReview } = useApiGet('/equipment/registry-review');
+  const { data: teamReview, refresh: refreshTeamReview } = useApiGet('/equipment/team-review');
 
   // The server refuses a machine with compliance history and says why; the
   // dialog relays that rather than a generic failure, because "set it Out of
@@ -999,6 +1001,8 @@ export default function EquipmentPanel() {
       {splitSteps && (
         <SplitMergedStepsModal onClose={() => setSplitSteps(false)} onDone={() => { refresh(); refreshStepSplit(); refreshFromTasks(); }} />
       )}
+
+      <EquipmentTeamReview review={teamReview} canEdit={canEdit} onChanged={() => { refresh(); refreshTeamReview(); }} />
 
       {/* Duplicates and the instrument overlap. Shown only when there is
           something to act on — a banner that is always there is wallpaper. */}

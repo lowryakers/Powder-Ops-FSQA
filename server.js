@@ -145,6 +145,7 @@ import { seedDilutionSchedules } from './server/dilution-seed.js';
 import { seedDilutionLog } from './server/dilution-log-seed.js';
 import { retireDailyPreOp } from './server/preop-retire.js';
 import { repairChecklistOverlap, consolidatedChecklists } from './server/pm-coverage.js';
+import { pauseEmptyChecklists, routingCleanupOnce } from './server/routing-cleanup.js';
 import { retireDailyScalePMs, retireSummary } from './server/pm-pause.js';
 import { generationSweep } from './server/pm-generation.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
@@ -1107,6 +1108,24 @@ try {
       + (r.paused ? `, checklist paused, ${r.cancelled} open card(s) cancelled` : `, ${r.kept} line(s) kept`) + (r.rehung_to ? ', re-hung on a machine it still covers' : ''));
     for (const x of r.removed) console.log(`[migrate]   ${x.line} → ${x.own_schedule.join(', ')}`);
   }
+  try {
+    // A room checklist with no lines asks for nothing (D-218) — every boot.
+    for (const r of pauseEmptyChecklists(db, logAudit)) {
+      console.log(`[migrate] Room checklist "${r.title}" paused: no lines left, ${r.cancelled} open card(s) cancelled`);
+    }
+    // Cards on the wrong list, closed once (D-218): leftover checklists, machine PMs on areas, duplicate
+    // schedules, and open cards from paused schedules or equipment out of service.
+    if (!db.prepare("SELECT 1 FROM app_settings WHERE key = 'routing_cleanup_v1'").get()
+        && db.prepare('SELECT COUNT(*) c FROM pm_schedules').get().c > 0) {
+      const r = routingCleanupOnce(db, logAudit);
+      db.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('routing_cleanup_v1', ?, datetime('now'))")
+        .run(JSON.stringify({ at: new Date().toISOString(), paused: r.paused.map(p => p.title), equipment_cards: r.equipment_cards, paused_schedule_cards: r.paused_schedule_cards }));
+      for (const p of r.paused) console.log(`[migrate] Paused "${p.title}" — ${p.why} (${p.cancelled} card(s) cancelled)`);
+      if (r.equipment_cards || r.paused_schedule_cards) {
+        console.log(`[migrate] Closed ${r.equipment_cards} open card(s) on equipment out of service and ${r.paused_schedule_cards} left by paused schedules`);
+      }
+    }
+  } catch (e) { console.warn('[migrate] routing cleanup skipped:', e.message); }
   // An active schedule the generator skips is NAMED at boot (D-142) — the same
   // sweep Recurring Schedules shows, so the deploy log says it too.
   {

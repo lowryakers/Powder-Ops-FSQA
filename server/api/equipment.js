@@ -14,6 +14,8 @@ import { ASSET_KINDS, defaultAssetKind } from '../../shared/equipment-types.js';
 import { isDesignedChecklist } from '../truck-checklists.js';
 import { checklistCoverage, isConsolidated, CONSOLIDATED_LIKE } from '../pm-coverage.js';
 import { TASK_TITLE_SQL } from '../qa-records.js';
+import { closeEquipmentWork } from '../routing-cleanup.js';
+import { equipmentTeamReview } from '../task-routing.js';
 
 // The status vocabulary the table's CHECK-free column actually uses.
 const STATUSES = ['active', 'partial', 'out_of_service'];
@@ -157,6 +159,12 @@ router.get('/:id/readiness', (req, res) => {
  *
  * BEFORE '/:id'.
  */
+// Machines whose team sends their PMs to a list that probably should not carry them (D-218). Read-only;
+// the change is the machine's own Team. BEFORE '/:id'.
+router.get('/team-review', (_req, res) => {
+  res.json(equipmentTeamReview(getDb()));
+});
+
 router.get('/registry-review', (_req, res) => {
   const db = getDb();
   const equipment = db.prepare('SELECT id, name, asset_id, type, status, asset_kind, location FROM equipment ORDER BY name').all();
@@ -931,6 +939,10 @@ router.post('/bulk-update', (req, res) => {
   if (changes.task_group !== undefined) {
     for (const id of ids) syncTaskGroupToPM(db, id, changes.task_group);
   }
+  // A machine taken out of service closes the PM cards it had raised (D-218), the pause rule.
+  if (changes.status && changes.status !== 'active') {
+    for (const id of ids) closeEquipmentWork(db, id, { by: req.user?.name, status: changes.status, logAudit });
+  }
   // Hold the same invariant the single-record paths do: a zone has no energy
   // source to lock out, so bulk-reclassifying to zone clears the flag rather
   // than leaving rows the checklist and the LOTO badge disagree about.
@@ -982,6 +994,10 @@ router.put('/:id', (req, res) => {
 
   if (maintenance_tasks !== undefined) {
     syncMaintenanceTasksToPM(db, req.params.id);
+  }
+  // Out of service closes the PM cards this machine had raised (D-218), the pause rule.
+  if (status && status !== 'active' && existing.status === 'active') {
+    closeEquipmentWork(db, req.params.id, { by: req.user?.name, status, logAudit });
   }
 
   // Adopt the current facts for any step already satisfied and not yet
