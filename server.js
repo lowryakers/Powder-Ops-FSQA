@@ -113,6 +113,7 @@ import { seedQualitySchedules } from './server/api/quality-schedules.js';
 import { seedCultureProgram } from './server/culture.js';
 import { settleFiledReviews } from './server/check-records.js';
 import { seedGenericSpecifications } from './server/spec-seed.js';
+import { retireMalformedSpecs } from './server/coa-spec-check.js';
 import { seedForm607Specs } from './server/spec-607-seed.js';
 import { tagQaInspectionRecords, tagQaInspectionTasks } from './server/qa-records.js';
 import { syncAllKnifeStatuses } from './server/knife-state.js';
@@ -1501,6 +1502,17 @@ try {
   seedGenericSpecifications(db);
 } catch (err) {
   console.error('[seed] Error seeding COA specifications (non-fatal):', err.message);
+}
+
+// Active specifications that cannot be right (D-225): item 202532's are
+// retired once (never deleted, never re-numbered by a guess); any other item's
+// are named here for Quality and left alone.
+try {
+  const m = retireMalformedSpecs(db, logAudit);
+  if (m.retired.length) console.log(`[coa] retired ${m.retired.length} malformed active specification(s) on item 202532: ${m.retired.map(r => r.test_type).join(', ')}`);
+  for (const r of m.reported) console.warn(`[coa] active specification ${r.item_number} · ${r.test_type} looks wrong: ${r.problems.join('; ')}`);
+} catch (err) {
+  console.error('[coa] malformed specification check failed (non-fatal):', err.message);
 }
 
 // The plant's own FORM 607-01 raw-material spec sheets, transcribed and filed

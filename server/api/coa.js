@@ -5,7 +5,7 @@ import path from 'path';
 import { mkdirSync, existsSync, createReadStream, statSync, unlinkSync, readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import PDFDocument from 'pdfkit';
-import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { readPdfColumns } from '../coa-pdf-text.js';
 import { getDb, logAudit, dataDir } from '../db.js';
 import { requireRole } from '../middleware/auth.js';
 import { gradeResult, specIndex } from '../coa-grade.js';
@@ -14,6 +14,8 @@ import { parseColumnarCoa, foundSomething } from '../coa-parse.js';
 import { aiEnabled, readLabReport } from '../ai.js';
 import { composeSubmission, PROCESSING, processingLabel, PLANT_CONTACT } from '../coa-submission.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
+import { allocateCertNumber, snapshotFor, signRefusals, canonicalJson, sha256, isSigned, LOCKED_FIELDS, LOCKED_MESSAGE } from '../coa-certificate.js';
+import { plantDateOf } from '../plant-clock.js';
 
 // A drawn signature, as a data URL. One definition — the certificate sign-off
 // and the lab submission both validate against it.
@@ -59,7 +61,16 @@ const coaUpload = multer({
 
 const router = Router();
 
-const REQUEST_FIELDS = ['item_number', 'item_description', 'lot_number', 'product_expiration', 'tests_requested', 'status', 'lab_id', 'lab_name', 'date_sent', 'tat_days', 'expected_results_date', 'date_of_results', 'date_sent_to_customer', 'requested_by', 'invoice_amount', 'retest_required', 'retest_of', 'notes', 'origin', 'supplier', 'product_code', 'manufacturer_lot', 'vendor_lot', 'received_date', 'certificate_number', 'date_of_issuance'];
+const REQUEST_FIELDS = ['item_number', 'item_description', 'lot_number', 'product_expiration', 'tests_requested', 'status', 'lab_id', 'lab_name', 'date_sent', 'tat_days', 'expected_results_date', 'date_of_results', 'date_sent_to_customer', 'requested_by', 'invoice_amount', 'retest_required', 'retest_of', 'notes', 'origin', 'supplier', 'product_code', 'manufacturer_lot', 'vendor_lot', 'received_date'];
+// certificate_number and date_of_issuance are NOT editable here: they are
+// written by signing and cleared by un-signing, nowhere else (D-223).
+
+// The values the tables' CHECK constraints allow. Checked before the write, so
+// a wrong value is a 400 that says what is allowed, not a 500 (D-224).
+const STATUSES = ['pending', 'sent', 'pass', 'fail', 'hold', 're_test', 'na'];
+const FILE_TYPES = ['lab_results', 'customer_coa', 'other'];
+const badStatus = (v) => v !== undefined && !STATUSES.includes(v);
+
 
 // The specification gate's mode (shared/spec-coverage.js). Default WARN: the
 // specification program is catching up (CAR 4990683-3 dates the full set for
@@ -79,11 +90,6 @@ export function gateFor(db, request) {
   return releaseGate({ specs, results, mode: gateMode(db) });
 }
 
-function nextCertNumber(db) {
-  const last = db.prepare("SELECT certificate_number FROM coa_requests WHERE certificate_number IS NOT NULL ORDER BY CAST(certificate_number AS INTEGER) DESC LIMIT 1").get();
-  const next = last ? parseInt(last.certificate_number) + 1 : 160001;
-  return String(next);
-}
 
 // ──────────────── Labs ────────────────
 
@@ -276,7 +282,13 @@ router.put('/specifications/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM coa_specifications WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Specification not found' });
 
-  const fields = ['item_number', 'item_description', 'test_type', 'specification', 'unit', 'min_value', 'max_value', 'method', 'sku_number', 'vendor', 'revision', 'is_active'];
+  // A specification is switched ON only by approval (drafts/approve) and OFF
+  // only by retiring it (DELETE). Flipping is_active here bypassed approval:
+  // a draft or a discarded spec could start grading results (D-225).
+  if (req.body.is_active !== undefined) {
+    return res.status(400).json({ error: 'A specification is activated by approving it and deactivated by retiring it, not by editing it.' });
+  }
+  const fields = ['item_number', 'item_description', 'test_type', 'specification', 'unit', 'min_value', 'max_value', 'method', 'sku_number', 'vendor', 'revision'];
   const updates = [];
   const values = [];
   for (const f of fields) {
@@ -505,7 +517,9 @@ router.get('/requests', (req, res) => {
   // draft-specifications endpoint uses, so the screen can say what it is
   // showing you out of what exists.
   res.json({
-    requests: requests.map(r => ({ ...r, file_counts: fileMap[r.id] || {} })),
+    // The drawn signature and the signed snapshot are for the detail and the
+    // PDF; a list of 1,500 rows does not carry them.
+    requests: requests.map(({ qa_signature, signed_snapshot: _snapshot, ...r }) => ({ ...r, signed: !!qa_signature, file_counts: fileMap[r.id] || {} })),
     total,
     shown: requests.length,
     limit,
@@ -594,7 +608,7 @@ router.post('/requests/submission', (req, res) => {
     db.prepare("UPDATE users SET signature_image = ?, updated_at = datetime('now') WHERE id = ?").run(sig, req.user.id);
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = plantDateOf();
   const submissionId = uuid();
   const tx = db.transaction(() => {
     // The body is FROZEN here. Correcting a request afterwards must never
@@ -845,6 +859,14 @@ router.put('/requests/:id', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'COA request not found' });
+  if (badStatus(req.body.status)) return res.status(400).json({ error: `Status must be one of ${STATUSES.join(', ')}.` });
+  if (req.body.certificate_number !== undefined || req.body.date_of_issuance !== undefined) {
+    return res.status(400).json({ error: 'The certificate number and date of issuance are set by signing, not by editing.' });
+  }
+  if (isSigned(existing)) {
+    const touched = LOCKED_FIELDS.filter(f => req.body[f] !== undefined && String(req.body[f] ?? '') !== String(existing[f] ?? ''));
+    if (touched.length) return res.status(409).json({ error: LOCKED_MESSAGE, locked: true, fields: touched });
+  }
 
   const updates = [];
   const values = [];
@@ -919,15 +941,21 @@ router.post('/requests/bulk-delete', requireRole('admin'), (req, res) => {
   const { ids } = req.body;
   if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array is required' });
   const ph = ids.map(() => '?').join(',');
-  const found = db.prepare(`SELECT id, certificate_number FROM coa_requests WHERE id IN (${ph})`).all(...ids);
+  const all = db.prepare(`SELECT id, certificate_number, qa_signed_at, lot_number FROM coa_requests WHERE id IN (${ph})`).all(...ids);
+  // A signed certificate is a record and is never deleted (D-224).
+  const skipped_signed = all.filter(isSigned).map(r => ({ id: r.id, lot_number: r.lot_number }));
+  const found = all.filter(r => !isSigned(r));
+  const del = found.map(r => r.id);
+  const dph = del.map(() => '?').join(',');
   const tx = db.transaction(() => {
-    db.prepare(`DELETE FROM coa_test_results WHERE request_id IN (${ph})`).run(...ids);
-    db.prepare(`DELETE FROM coa_files WHERE request_id IN (${ph})`).run(...ids);
-    db.prepare(`DELETE FROM coa_requests WHERE id IN (${ph})`).run(...ids);
+    if (!del.length) return;
+    db.prepare(`DELETE FROM coa_test_results WHERE request_id IN (${dph})`).run(...del);
+    db.prepare(`DELETE FROM coa_files WHERE request_id IN (${dph})`).run(...del);
+    db.prepare(`DELETE FROM coa_requests WHERE id IN (${dph})`).run(...del);
   });
   tx();
   for (const r of found) logAudit(req.user, 'delete', 'coa_request', r.id, null, r, null);
-  res.json({ deleted: found.length });
+  res.json({ deleted: found.length, skipped_signed });
 });
 
 // Bulk status update for lab requests.
@@ -936,14 +964,21 @@ router.post('/requests/bulk-update', (req, res) => {
   const { ids, patch } = req.body;
   if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array is required' });
   if (!patch || !patch.status) return res.status(400).json({ error: 'patch.status is required' });
+  if (badStatus(patch.status)) return res.status(400).json({ error: `Status must be one of ${STATUSES.join(', ')}.` });
   // A bulk pass is a bulk RELEASE and meets the same gate as a single one —
   // a lot the gate holds is skipped and named, never quietly passed in a batch.
   const blocked = [];
-  let okIds = ids;
+  // A signed certificate's status is closed; it is skipped and named.
+  let okIds = ids.filter(id => {
+    const r = db.prepare('SELECT id, lot_number, item_number, qa_signed_at, status FROM coa_requests WHERE id = ?').get(id);
+    if (r && isSigned(r) && r.status !== patch.status) { blocked.push({ id, lot_number: r.lot_number, item_number: r.item_number, gaps: ['signed certificate'] }); return false; }
+    return true;
+  });
   if (patch.status === 'pass') {
+    const candidates = okIds;
     okIds = [];
     const stamp = db.prepare("UPDATE coa_requests SET release_gaps = ?, release_gate_mode = ? WHERE id = ?");
-    for (const id of ids) {
+    for (const id of candidates) {
       const r = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(id);
       if (!r) continue;
       const gate = gateFor(db, r);
@@ -965,6 +1000,7 @@ router.post('/requests/:id/results', (req, res) => {
   const request = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id);
   if (!request) return res.status(404).json({ error: 'COA request not found' });
 
+  if (isSigned(request)) return res.status(409).json({ error: LOCKED_MESSAGE, locked: true });
   const { results } = req.body;
   if (!Array.isArray(results) || results.length === 0) {
     return res.status(400).json({ error: 'results array is required' });
@@ -988,7 +1024,7 @@ router.post('/requests/:id/results', (req, res) => {
       // gradeResult handles "<10", "Not Detected", "Absent in 25g" and the rest
       // of a real micro panel, which parseFloat could not — every one of those
       // used to land with no verdict at all.
-      const { pass_fail } = gradeResult(r.result_value, spec, r.pass_fail || null);
+      const { pass_fail } = gradeResult(r.result_value, spec, r.pass_fail || null, { unit: r.unit || null });
       insert.run(id, req.params.id, r.test_type, r.result_value ?? null, r.unit || spec?.unit || null, spec?.id || null, pass_fail, r.notes || null);
       created.push(db.prepare('SELECT * FROM coa_test_results WHERE id = ?').get(id));
     }
@@ -1018,9 +1054,12 @@ function rollUpRequestStatus(db, requestId) {
   const all = db.prepare('SELECT pass_fail FROM coa_test_results WHERE request_id = ?').all(requestId);
   if (!all.length) return;
   const hasFail = all.some(r => r.pass_fail === 'fail');
-  const allDecided = all.every(r => r.pass_fail === 'pass' || r.pass_fail === 'na');
+  // At least one real pass: a request whose every result is N/A tested
+  // nothing, and must not roll up to a pass (D-224).
+  const allDecided = all.every(r => r.pass_fail === 'pass' || r.pass_fail === 'na') && all.some(r => r.pass_fail === 'pass');
+  const today = plantDateOf();
   if (hasFail) {
-    db.prepare("UPDATE coa_requests SET status = 'fail', date_of_results = COALESCE(date_of_results, date('now')), updated_at = datetime('now') WHERE id = ?").run(requestId);
+    db.prepare("UPDATE coa_requests SET status = 'fail', date_of_results = COALESCE(date_of_results, ?), updated_at = datetime('now') WHERE id = ?").run(today, requestId);
   } else if (allDecided) {
     // Every test passed. Whether the LOT may be released is a second question
     // (CAR 4990683-3): does the item's specification cover identity, purity,
@@ -1030,11 +1069,11 @@ function rollUpRequestStatus(db, requestId) {
     const request = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(requestId);
     const gate = gateFor(db, request);
     if (gate.blocks) {
-      db.prepare("UPDATE coa_requests SET status = 'hold', release_gaps = ?, release_gate_mode = ?, date_of_results = COALESCE(date_of_results, date('now')), updated_at = datetime('now') WHERE id = ?")
-        .run(JSON.stringify(gate.gaps), gate.mode, requestId);
+      db.prepare("UPDATE coa_requests SET status = 'hold', release_gaps = ?, release_gate_mode = ?, date_of_results = COALESCE(date_of_results, ?), updated_at = datetime('now') WHERE id = ?")
+        .run(JSON.stringify(gate.gaps), gate.mode, today, requestId);
     } else {
-      db.prepare("UPDATE coa_requests SET status = 'pass', release_gaps = ?, release_gate_mode = ?, date_of_results = COALESCE(date_of_results, date('now')), updated_at = datetime('now') WHERE id = ?")
-        .run(gate.mode === 'off' || gate.ok ? null : JSON.stringify(gate.gaps), gate.mode, requestId);
+      db.prepare("UPDATE coa_requests SET status = 'pass', release_gaps = ?, release_gate_mode = ?, date_of_results = COALESCE(date_of_results, ?), updated_at = datetime('now') WHERE id = ?")
+        .run(gate.mode === 'off' || gate.ok ? null : JSON.stringify(gate.gaps), gate.mode, today, requestId);
     }
   } else {
     // Back to pending: something is still undecided. Only ever moves a verdict
@@ -1061,6 +1100,7 @@ router.put('/requests/:requestId/results/:id', (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Test result not found' });
   const request = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.requestId);
   if (!request) return res.status(404).json({ error: 'COA request not found' });
+  if (isSigned(request)) return res.status(409).json({ error: LOCKED_MESSAGE, locked: true });
 
   const test_type = req.body.test_type !== undefined ? String(req.body.test_type || '').trim() : existing.test_type;
   if (!test_type) return res.status(400).json({ error: 'A test name is required.' });
@@ -1070,20 +1110,24 @@ router.put('/requests/:requestId/results/:id', (req, res) => {
   const specs = db.prepare('SELECT * FROM coa_specifications WHERE item_number = ? AND is_active = 1').all(request.item_number);
   const spec = specIndex(specs).find(test_type);
 
+  const unit = req.body.unit !== undefined ? (req.body.unit || null) : (existing.unit || spec?.unit || null);
   // '' means "clear it and let the specification decide again"; a value means
-  // the person is overruling. Anything else keeps what is already there.
+  // the person is overruling. With neither, an edit that leaves the result
+  // itself alone (a note, say) keeps the verdict on file; one that changes the
+  // value, the test or the unit is graded afresh (D-222).
   let pass_fail;
   if (req.body.pass_fail !== undefined) {
     const wanted = req.body.pass_fail === '' ? null : String(req.body.pass_fail);
     if (wanted && !['pass', 'fail', 'na'].includes(wanted)) {
       return res.status(400).json({ error: 'Pass/fail must be pass, fail or na.' });
     }
-    pass_fail = wanted || gradeResult(result_value, spec, null).pass_fail;
+    pass_fail = wanted || gradeResult(result_value, spec, null, { unit }).pass_fail;
+  } else if (test_type === existing.test_type && String(result_value ?? '') === String(existing.result_value ?? '') && (unit || null) === (existing.unit || null)) {
+    pass_fail = existing.pass_fail;
   } else {
-    pass_fail = gradeResult(result_value, spec, existing.pass_fail || null).pass_fail;
+    pass_fail = gradeResult(result_value, spec, null, { unit }).pass_fail;
   }
 
-  const unit = req.body.unit !== undefined ? (req.body.unit || null) : (existing.unit || spec?.unit || null);
   db.prepare(`UPDATE coa_test_results SET test_type = ?, result_value = ?, unit = ?, specification_id = ?, pass_fail = ?, notes = ? WHERE id = ?`)
     .run(test_type, result_value ?? null, unit, spec?.id || null, pass_fail, notes, req.params.id);
 
@@ -1098,6 +1142,9 @@ router.delete('/requests/:requestId/results/:id', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM coa_test_results WHERE id = ? AND request_id = ?').get(req.params.id, req.params.requestId);
   if (!existing) return res.status(404).json({ error: 'Test result not found' });
+  if (isSigned(db.prepare('SELECT qa_signed_at FROM coa_requests WHERE id = ?').get(req.params.requestId))) {
+    return res.status(409).json({ error: LOCKED_MESSAGE, locked: true });
+  }
 
   db.prepare('DELETE FROM coa_test_results WHERE id = ?').run(req.params.id);
   // The request's verdict is derived from its results, so removing one has to
@@ -1175,32 +1222,17 @@ router.post('/requests/:id/scan', coaUpload.single('file'), async (req, res) => 
     });
   }
 
-  let extracted = parseCTLACoa(text);
-  let read_by = 'patterns';
+  // The legacy line-pattern reader is a FALLBACK only (D-221): it runs when the
+  // columnar reader found nothing, and its rows never carry a verdict. It used
+  // to run first on every report, and its glued "<44" gluten row was what
+  // reached the record.
+  let extracted = { test_results: [] };
+  let read_by = 'columns';
   let ai_error = null;
 
-  /**
-   * The columnar reader, for reports laid out as a table — which is all of them.
-   *
-   * `parseCTLACoa` wants "Label: value" on one line and a test name at the start
-   * of a line. In a real CoA the label column and the value column arrive as
-   * separate blocks, and the Result cell is glued to the front of the Analysis
-   * cell with no separator ("<100Total Aerobic Microbial Count (USP)"). So it
-   * matched nothing at all on CTLA's report — readable text, zero fields.
-   *
-   * Tried BEFORE the AI fallback because it is deterministic: the same file
-   * gives the same answer every time, which is what you want reading something
-   * that ends up on a compliance record.
-   */
-  //
-  // IT ALWAYS RUNS, and the RICHER read wins. This used to be gated on the
-  // pattern reader finding NOTHING — so one lucky row disabled it, and that
-  // is exactly what happened: `parseCTLACoa`'s test list contains "Gluten",
-  // the finished-good report has a line starting with that word, and a single
-  // matched row made a twelve-test report look successfully read. Micro,
-  // heavy metals and everything else were never looked for at all. A reader
-  // that found 1 of 12 has not succeeded; "found something" is not the same
-  // question as "found what was on the report".
+  // The columnar reader, for reports laid out as a table — which is all of
+  // them. Deterministic: the same file gives the same answer every time, which
+  // is why it is tried before the AI fallback.
   const columnarRows = (() => {
     try {
       const columnar = parseColumnarCoa(text);
@@ -1211,25 +1243,13 @@ router.post('/requests/:id/scan', coaUpload.single('file'), async (req, res) => 
     }
   })();
   if (columnarRows) {
-    // Columnar header values WIN. It read the report's actual layout, while
-    // the pattern reader guesses from one line at a time — and its guesses
-    // were wrong in a way that mattered: it maps "Customer:" to supplier, so
-    // a CoA offered "Powder Ops" as the material's supplier (the lab's
-    // customer is US), pre-ticked, on a compliance record. It also leaves
-    // dates as printed where the columnar reader stores ISO.
-    extracted = { ...extracted, ...Object.fromEntries(Object.entries(columnarRows).filter(([k, v]) => k !== 'test_results' && v)) };
-    // Same reason, stated once: our own name is never the supplier.
-    if (columnarRows.lab_customer && extracted.supplier
-      && String(extracted.supplier).trim().toLowerCase() === String(columnarRows.lab_customer).trim().toLowerCase()) {
-      delete extracted.supplier;
-    }
-    // MERGED, not replaced. The two readers see different row shapes — the
-    // columnar one reads the glued "0.008Arsenic" seam, the pattern one reads
-    // a plain "Gluten <5 ppm" line — so on a report carrying both, taking
-    // either wholesale drops real results. Union by test name, richer reader
-    // wins a genuine collision.
-    extracted.test_results = mergeTestRows(columnarRows.test_results, extracted.test_results);
-    if (columnarRows.test_results.length) read_by = extracted.test_results.length > columnarRows.test_results.length ? 'columns+patterns' : 'columns';
+    // "Customer:" on the report is US; the columnar reader files it as
+    // lab_customer and never as the material's supplier.
+    extracted = { ...Object.fromEntries(Object.entries(columnarRows).filter(([k, v]) => k !== 'test_results' && v)) };
+    extracted.test_results = columnarRows.test_results;
+  } else {
+    extracted = legacyFallback(text);
+    read_by = extracted.test_results.length ? 'patterns' : 'none';
   }
 
   /**
@@ -1278,12 +1298,14 @@ router.post('/requests/:id/scan', coaUpload.single('file'), async (req, res) => 
           test_type: t.test_type,
           result_value: t.result_value,
           unit: t.unit || null,
-          pass_fail: t.pass_fail || null,
+          // A lab's "Specification: Report" is not a verdict (D-222): a stated
+          // pass/fail is carried only when the report printed a real limit.
+          pass_fail: statedVerdict(t.pass_fail, t.spec_on_report),
           method: t.method || null,
           spec_on_report: t.spec_on_report || null,
         }))),
       };
-      if (aiRows > foundCount) read_by = read_by === 'patterns' ? 'ai' : `${read_by}+ai`;
+      if (aiRows > foundCount) read_by = read_by === 'none' ? 'ai' : `${read_by}+ai`;
     } catch (e) {
       // Never fails the scan — the pattern result and the raw text still stand.
       ai_error = e.message;
@@ -1323,7 +1345,7 @@ router.post('/requests/:id/scan', coaUpload.single('file'), async (req, res) => 
 
   const results = (extracted.test_results || []).map(t => {
     const spec = index.find(t.test_type);
-    const graded = gradeResult(t.result_value, spec, t.pass_fail || null);
+    const graded = gradeResult(t.result_value, spec, t.pass_fail || null, { unit: t.unit || null });
     return {
       test_type: t.test_type,
       result_value: t.result_value,
@@ -1432,11 +1454,17 @@ router.post('/requests/:id/files', upload.single('file'), (req, res) => {
   }
 
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-
+  // Refusals come before anything is kept: multer has already written the
+  // file, so a refused upload removes it again (D-224).
   const file_type = req.body.file_type || 'other';
+  const refuse = (status, body) => { try { unlinkSync(req.file.path); } catch { /* already gone */ } return res.status(status).json(body); };
+  if (!FILE_TYPES.includes(file_type)) return refuse(400, { error: `File type must be one of ${FILE_TYPES.join(', ')}.` });
+  if (isSigned(request)) return refuse(409, { error: LOCKED_MESSAGE, locked: true });
+
   const id = uuid();
-  db.prepare('INSERT INTO coa_files (id, request_id, file_type, filename, original_name, mime_type, size_bytes, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(id, req.params.id, file_type, req.file.filename, req.file.originalname, req.file.mimetype, req.file.size, req.user.name);
+  const hash = sha256(readFileSync(req.file.path));
+  db.prepare('INSERT INTO coa_files (id, request_id, file_type, filename, original_name, mime_type, size_bytes, uploaded_by, sha256) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(id, req.params.id, file_type, req.file.filename, req.file.originalname, req.file.mimetype, req.file.size, req.user.name, hash);
 
   const created = db.prepare('SELECT * FROM coa_files WHERE id = ?').get(id);
   logAudit(req.user, 'upload', 'coa_file', id, { file_type, original_name: req.file.originalname }, null, created);
@@ -1463,6 +1491,9 @@ router.delete('/files/:id', (req, res) => {
   const db = getDb();
   const file = db.prepare('SELECT * FROM coa_files WHERE id = ?').get(req.params.id);
   if (!file) return res.status(404).json({ error: 'File not found' });
+  if (isSigned(db.prepare('SELECT qa_signed_at FROM coa_requests WHERE id = ?').get(file.request_id))) {
+    return res.status(409).json({ error: LOCKED_MESSAGE, locked: true });
+  }
 
   const filePath = path.join(UPLOAD_DIR, file.filename);
   db.prepare('DELETE FROM coa_files WHERE id = ?').run(req.params.id);
@@ -1493,6 +1524,11 @@ router.post('/requests/:id/sign', (req, res) => {
     db.prepare("UPDATE users SET signature_image = ?, updated_at = datetime('now') WHERE id = ?").run(sig, req.user.id);
   }
 
+  // What is being certified has to be a clean pass (D-224): the status is
+  // pass, every required test has a result, nothing failed or is undecided.
+  const refusals = signRefusals(db, r);
+  if (refusals.length) return res.status(409).json({ error: `This certificate cannot be signed: ${refusals.join('; ')}.`, sign_refused: true, reasons: refusals });
+
   // Signing the certificate IS the release. Same gate as the roll-up.
   const gate = gateFor(db, r);
   if (gate.blocks) return res.status(400).json({ error: `This certificate cannot be issued: ${gate.gaps.join('; ')}.`, release_blocked: true, gaps: gate.gaps });
@@ -1501,26 +1537,50 @@ router.post('/requests/:id/sign', (req, res) => {
   // last, after every refusal above, and before anything is written.
   if (!gateSignature(req, res, { action: 'coa_sign' })) return;
 
-  // Issuing details lock in at signing: certificate number and issuance date.
-  const certNum = r.certificate_number || nextCertNumber(db);
-  const today = new Date().toISOString().slice(0, 10);
-  db.prepare(`UPDATE coa_requests SET qa_signed_by = ?, qa_signed_by_id = ?, qa_signed_at = datetime('now'),
-              qa_signature = ?, certificate_number = ?, date_of_issuance = COALESCE(date_of_issuance, ?),
-              release_gaps = ?, release_gate_mode = ?,
-              updated_at = datetime('now') WHERE id = ?`)
-    .run(req.user.name, req.user.id, sig, certNum, today, gate.mode === 'off' || gate.ok ? null : JSON.stringify(gate.gaps), gate.mode, req.params.id);
+  // The number, the issuance date and the frozen snapshot are written in ONE
+  // transaction, so two signings can never draw the same number (D-223).
+  const issue = db.transaction(() => {
+    const fresh = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id);
+    if (isSigned(fresh)) return { already: true };
+    const certNum = fresh.certificate_number || allocateCertNumber(db);
+    const issued = fresh.date_of_issuance || plantDateOf();
+    const snapshot = snapshotFor(db, fresh, { certificate_number: certNum, date_of_issuance: issued });
+    const json = canonicalJson(snapshot);
+    const hash = sha256(json);
+    db.prepare(`UPDATE coa_requests SET qa_signed_by = ?, qa_signed_by_id = ?, qa_signed_at = datetime('now'),
+                qa_signature = ?, certificate_number = ?, date_of_issuance = ?,
+                signed_snapshot = ?, signed_content_hash = ?,
+                release_gaps = ?, release_gate_mode = ?,
+                updated_at = datetime('now') WHERE id = ?`)
+      .run(req.user.name, req.user.id, sig, certNum, issued, json, hash,
+        gate.mode === 'off' || gate.ok ? null : JSON.stringify(gate.gaps), gate.mode, req.params.id);
+    return { certNum, hash };
+  });
+  const done = issue();
+  if (done.already) return res.status(409).json({ error: 'This certificate is already signed.' });
   logAudit(req.user, 'sign', 'coa_request', req.params.id,
-    { certificate_number: certNum, ...signatureEvidence(), attestation: 'I certify that the results on this Certificate of Analysis are true and accurate as obtained for the lot identified.' },
+    { certificate_number: done.certNum, content_sha256: done.hash, ...signatureEvidence(), attestation: 'I certify that the results on this Certificate of Analysis are true and accurate as obtained for the lot identified.' },
     null, null, `${r.item_description} · Lot ${r.lot_number}`);
   res.json(db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id));
 });
 
+// Un-signing is the one way back, and it says why (D-224). It clears the
+// signature AND the certificate number and issuance date: the number is void
+// and is never issued again (the counter does not go back). Audited with the
+// number and the snapshot hash it voided.
 router.delete('/requests/:id/sign', requireRole('admin'), (req, res) => {
   const db = getDb();
   const r = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id);
   if (!r) return res.status(404).json({ error: 'COA request not found' });
-  db.prepare("UPDATE coa_requests SET qa_signed_by = NULL, qa_signed_by_id = NULL, qa_signed_at = NULL, qa_signature = NULL, updated_at = datetime('now') WHERE id = ?").run(req.params.id);
-  logAudit(req.user, 'unsign', 'coa_request', req.params.id, { previous_signer: r.qa_signed_by }, null, null, `${r.item_description} · Lot ${r.lot_number}`);
+  if (!isSigned(r)) return res.status(409).json({ error: 'This certificate is not signed.' });
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 3) return res.status(400).json({ error: 'Say why the signature is being removed.' });
+  db.prepare(`UPDATE coa_requests SET qa_signed_by = NULL, qa_signed_by_id = NULL, qa_signed_at = NULL, qa_signature = NULL,
+              certificate_number = NULL, date_of_issuance = NULL, signed_snapshot = NULL, signed_content_hash = NULL,
+              updated_at = datetime('now') WHERE id = ?`).run(req.params.id);
+  logAudit(req.user, 'unsign', 'coa_request', req.params.id,
+    { reason, previous_signer: r.qa_signed_by, voided_certificate_number: r.certificate_number, voided_content_sha256: r.signed_content_hash },
+    null, null, `${r.item_description} · Lot ${r.lot_number}`);
   res.json({ ok: true });
 });
 
@@ -1531,27 +1591,24 @@ router.get('/requests/:id/pdf', (req, res) => {
   const r = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id);
   if (!r) return res.status(404).json({ error: 'COA request not found' });
 
-  const testResults = db.prepare('SELECT * FROM coa_test_results WHERE request_id = ? ORDER BY test_type').all(req.params.id);
-
-  const certNum = r.certificate_number || nextCertNumber(db);
-  if (!r.certificate_number) {
-    db.prepare("UPDATE coa_requests SET certificate_number = ?, updated_at = datetime('now') WHERE id = ?").run(certNum, req.params.id);
+  // READING THE CERTIFICATE CHANGES NOTHING (D-223). It used to hand out a
+  // certificate number to any request it was opened on. A request that is not
+  // a signed pass has no certificate: 409, unless an internal DRAFT preview is
+  // asked for, which is watermarked and carries no number.
+  const issued = !!(isSigned(r) && r.status === 'pass' && r.certificate_number);
+  if (!issued && req.query.draft !== '1') {
+    return res.status(409).json({ error: 'This request has no issued certificate. Only a signed pass is a Certificate of Analysis; a draft preview is available.', draft_available: true });
   }
+  // A signed certificate prints what was signed — its frozen snapshot — so a
+  // spec edited next year cannot change the limits on this year's paper.
+  // Certificates signed before snapshots existed print from the live rows.
+  const snap = (issued && r.signed_snapshot && (() => { try { return JSON.parse(r.signed_snapshot); } catch { return null; } })())
+    || snapshotFor(db, r, { certificate_number: issued ? r.certificate_number : null, date_of_issuance: issued ? r.date_of_issuance : null });
+  const testResults = snap.results;
+  const certNum = issued ? r.certificate_number : 'DRAFT';
+  const specFor = (tr) => ({ method: tr.method, specification: tr.specification || (tr.min_value != null || tr.max_value != null ? specText(tr) : null), unit: tr.unit });
+  Object.assign(r, snap.request);
 
-  // Specification + method come from the COA Specifications registry: by the
-  // result's explicit specification_id when set, else the active spec for
-  // this item + test type.
-  const specById = {};
-  const specByItemTest = {};
-  try {
-    for (const s of db.prepare('SELECT * FROM coa_specifications WHERE is_active = 1').all()) {
-      specById[s.id] = s;
-      specByItemTest[`${s.item_number}|${(s.test_type || '').toLowerCase()}`] = s;
-    }
-  } catch { /* optional */ }
-  const specFor = (tr) => specById[tr.specification_id] || specByItemTest[`${r.item_number}|${(tr.test_type || '').toLowerCase()}`] || null;
-
-  const today = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
   const fmtDate = (d) => {
     if (!d) return 'N/A';
     const parts = String(d).slice(0, 10).split('-');
@@ -1586,8 +1643,8 @@ router.get('/requests/:id/pdf', (req, res) => {
   doc.font('Helvetica-Bold').fontSize(12).fillColor(SLATE).text(String(certNum), lm, 61, { width: pageW, align: 'right' });
 
   let y = 42 + logoH + 18;
-  doc.font('Helvetica-Bold').fontSize(17).fillColor(SLATE)
-    .text('CERTIFICATE OF ANALYSIS', lm, y, { width: pageW, align: 'center', characterSpacing: 1 });
+  doc.font('Helvetica-Bold').fontSize(17).fillColor(issued ? SLATE : RED)
+    .text(issued ? 'CERTIFICATE OF ANALYSIS' : 'DRAFT — NOT A CERTIFICATE', lm, y, { width: pageW, align: 'center', characterSpacing: 1 });
   y += 24;
   doc.moveTo(lm, y).lineTo(lm + pageW, y).lineWidth(2).strokeColor(ORANGE).stroke();
   y += 14;
@@ -1668,7 +1725,7 @@ router.get('/requests/:id/pdf', (req, res) => {
     const spec = specFor(tr);
     const vals = [
       tr.test_type || '',
-      spec?.method || tr.notes || '',
+      spec?.method || '',
       spec?.specification || '',
       tr.result_value || '',
       tr.unit || spec?.unit || '',
@@ -1729,7 +1786,7 @@ router.get('/requests/:id/pdf', (req, res) => {
 
   doc.moveTo(lm + pageW - sigW, y + 22).lineTo(lm + pageW, y + 22).lineWidth(0.8).strokeColor('#999').stroke();
   doc.font('Helvetica-Bold').fontSize(8.5).fillColor(SLATE).text('Date of Issuance', lm + pageW - sigW, y + 27);
-  doc.font('Helvetica').fontSize(8).fillColor('#666').text(fmtDate(r.date_of_issuance) === 'N/A' ? today : fmtDate(r.date_of_issuance), lm + pageW - sigW, y + 38);
+  doc.font('Helvetica').fontSize(8).fillColor('#666').text(issued ? fmtDate(r.date_of_issuance) : 'Not issued', lm + pageW - sigW, y + 38);
 
   // ── Footer on every page (page count known once all pages exist) ──
   const range = doc.bufferedPageRange();
@@ -1743,6 +1800,13 @@ router.get('/requests/:id/pdf', (req, res) => {
     doc.text('This Certificate of Analysis represents data for the sample submitted and does not constitute a guarantee of quality for the entire lot from which it was taken.', lm, fy + 6, { width: pageW, align: 'center', lineBreak: false });
     doc.text(`Powder Ops  ·  281 E 1600 N, Vineyard, UT 84059  ·  ${certNum}  ·  Page ${i - range.start + 1} of ${range.count}`, lm, fy + 18, { width: pageW, align: 'center', lineBreak: false });
     doc.page.margins.bottom = keepBottom;
+    if (!issued) {
+      // The watermark: a draft must not be mistaken for the document.
+      doc.save().rotate(-35, { origin: [doc.page.width / 2, doc.page.height / 2] })
+        .font('Helvetica-Bold').fontSize(80).fillColor(RED).opacity(0.12)
+        .text('DRAFT', 0, doc.page.height / 2 - 40, { width: doc.page.width, align: 'center', lineBreak: false })
+        .restore();
+    }
   }
 
   doc.end();
@@ -1934,29 +1998,31 @@ function parseCTLACoa(text) {
 }
 
 /**
- * Read a PDF's text layer, keeping line breaks.
- *
- * Factored out of /parse-coa so scanning a report INTO an existing request uses
- * exactly the same reader — a second copy would drift, and the drift would show
- * up as the same file extracting differently depending on which screen you used.
+ * Read a PDF's text layer by cell position (server/coa-pdf-text.js, D-221).
+ * One reader for /scan and /parse-coa, so the same file reads the same way on
+ * either screen.
  */
-async function pdfLines(buffer) {
-  const pdfDoc = await getDocument({ data: new Uint8Array(buffer) }).promise;
-  const textParts = [];
-  for (let i = 1; i <= pdfDoc.numPages; i++) {
-    const page = await pdfDoc.getPage(i);
-    const content = await page.getTextContent();
-    let lastY = null;
-    const lineTexts = [];
-    for (const item of content.items) {
-      const y = item.transform?.[5];
-      if (lastY !== null && y !== undefined && Math.abs(y - lastY) > 2) lineTexts.push('\n');
-      lineTexts.push(item.str);
-      if (y !== undefined) lastY = y;
-    }
-    textParts.push(lineTexts.join(''));
-  }
-  return { text: textParts.join('\n'), numpages: pdfDoc.numPages };
+const pdfLines = readPdfColumns;
+
+/**
+ * The legacy line-pattern read, as a FALLBACK only: called when the columnar
+ * reader found no result rows. Its rows never carry a verdict and it sets no
+ * status — it once mapped "does not comply" to pass, and a stated verdict
+ * outranked the specification (D-222).
+ */
+/** A verdict the report printed, kept only beside a real specification — never beside "Report" or nothing. */
+function statedVerdict(passFail, specOnReport) {
+  if (passFail !== 'pass' && passFail !== 'fail') return null;
+  const spec = String(specOnReport || '').trim();
+  if (!spec || /^(report|reported|result|n\/?a|-+)$/i.test(spec)) return null;
+  return passFail;
+}
+
+function legacyFallback(text) {
+  const r = parseCTLACoa(text);
+  delete r.status;
+  r.test_results = (r.test_results || []).map(t => ({ ...t, pass_fail: null }));
+  return r;
 }
 
 router.post('/parse-coa', coaUpload.single('file'), async (req, res) => {
@@ -1964,7 +2030,8 @@ router.post('/parse-coa', coaUpload.single('file'), async (req, res) => {
 
   try {
     const parsed = await pdfLines(req.file.buffer);
-    const extracted = parseCTLACoa(parsed.text);
+    const columnar = parseColumnarCoa(parsed.text);
+    const extracted = foundSomething(columnar) ? { ...columnar } : legacyFallback(parsed.text);
 
     // Save uploaded PDF to disk for attachment
     const filename = `${uuid()}.pdf`;
@@ -1987,51 +2054,133 @@ router.post('/parse-coa', coaUpload.single('file'), async (req, res) => {
   }
 });
 
+// Filing a request straight from a read PDF (D-224). Three fixes:
+//  · the file is filed as 'lab_results' — the old 'lab_report' broke the
+//    table's CHECK, so every one of these requests lost its PDF;
+//  · request, results and file go in ONE transaction, so a failure leaves
+//    nothing half-filed;
+//  · the ctla_<lot> key is checked: the same lot filed twice is refused and
+//    names the request already on file.
+// The status is never taken from the client: it is derived from the results.
+const UPLOADED_NAME = /^[0-9a-f-]{36}\.pdf$/;
 router.post('/import-parsed-coa', (req, res) => {
   const db = getDb();
-  const { parsed, uploaded_file } = req.body;
+  const { parsed, uploaded_file } = req.body || {};
 
   if (!parsed?.item_description && !parsed?.lot_number) {
     return res.status(400).json({ error: 'Parsed data must include at least item_description or lot_number' });
   }
+  if (badStatus(parsed.status)) return res.status(400).json({ error: `Status must be one of ${STATUSES.join(', ')}.` });
+  for (const t of parsed.test_results || []) {
+    if (t.pass_fail != null && t.pass_fail !== '' && !['pass', 'fail', 'na'].includes(t.pass_fail)) {
+      return res.status(400).json({ error: 'A result\'s pass/fail must be pass, fail or na.' });
+    }
+  }
+  let fileHash = null;
+  if (uploaded_file) {
+    if (!UPLOADED_NAME.test(String(uploaded_file.filename || ''))) return res.status(400).json({ error: 'That uploaded file is not one this server stored.' });
+    const p = path.join(UPLOAD_DIR, uploaded_file.filename);
+    if (!existsSync(p)) return res.status(400).json({ error: 'The uploaded PDF is no longer on the server. Read the file again.' });
+    fileHash = sha256(readFileSync(p));
+  }
 
-  let ctlaLab = db.prepare("SELECT id FROM coa_labs WHERE name = 'CTLA'").get();
-  if (!ctlaLab) {
-    const labId = uuid();
-    db.prepare("INSERT INTO coa_labs (id, name) VALUES (?, 'CTLA')").run(labId);
-    ctlaLab = { id: labId };
+  const sourceRef = parsed.lot_number ? `ctla_${parsed.lot_number}` : `ctla_${Date.now()}`;
+  if (parsed.lot_number) {
+    const dupe = db.prepare("SELECT id, item_description FROM coa_requests WHERE source_ref = ?").get(sourceRef);
+    if (dupe) return res.status(409).json({ error: `Lot ${parsed.lot_number} was already filed from a lab report (${dupe.item_description}).`, existing_id: dupe.id });
   }
 
   const id = uuid();
-  const status = parsed.status || 'pending';
-
-  db.prepare(`INSERT INTO coa_requests (id, item_number, item_description, lot_number, product_expiration, tests_requested, status, lab_id, lab_name, date_of_results, origin, supplier, product_code, manufacturer_lot, vendor_lot, received_date, source, source_ref, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(id, parsed.item_number || '', parsed.item_description || 'Unknown', parsed.lot_number || '', parsed.product_expiration || null,
-      parsed.tests_requested || 'Unknown', status, ctlaLab.id, 'CTLA',
-      parsed.date_of_results || null, parsed.origin || null, parsed.supplier || null,
-      parsed.product_code || null, parsed.manufacturer_lot || null, parsed.vendor_lot || null,
-      parsed.received_date || null, 'ctla_coa_upload', `ctla_${parsed.lot_number || Date.now()}`, req.user.name);
-
-  // Insert test results
-  if (parsed.test_results?.length > 0) {
-    const insertResult = db.prepare('INSERT INTO coa_test_results (id, request_id, test_type, result_value, unit, pass_fail) VALUES (?, ?, ?, ?, ?, ?)');
-    for (const tr of parsed.test_results) {
-      insertResult.run(uuid(), id, tr.test_type, tr.result_value, tr.unit, tr.pass_fail);
+  const file = db.transaction(() => {
+    let ctlaLab = db.prepare("SELECT id FROM coa_labs WHERE name = 'CTLA'").get();
+    if (!ctlaLab) {
+      ctlaLab = { id: uuid() };
+      db.prepare("INSERT INTO coa_labs (id, name) VALUES (?, 'CTLA')").run(ctlaLab.id);
     }
-  }
+    db.prepare(`INSERT INTO coa_requests (id, item_number, item_description, lot_number, product_expiration, tests_requested, status, lab_id, lab_name, date_of_results, origin, supplier, product_code, manufacturer_lot, vendor_lot, received_date, source, source_ref, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(id, parsed.item_number || '', parsed.item_description || 'Unknown', parsed.lot_number || '', parsed.product_expiration || null,
+        parsed.tests_requested || 'Unknown', ctlaLab.id, 'CTLA',
+        parsed.date_of_results || null, parsed.origin || null, parsed.supplier || null,
+        parsed.product_code || null, parsed.manufacturer_lot || null, parsed.vendor_lot || null,
+        parsed.received_date || null, 'ctla_coa_upload', sourceRef, req.user.name);
 
-  // Attach the uploaded PDF
-  if (uploaded_file) {
-    const fileId = uuid();
-    db.prepare('INSERT INTO coa_files (id, request_id, file_type, filename, original_name, mime_type, size_bytes, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(fileId, id, 'lab_report', uploaded_file.filename, uploaded_file.original_name, 'application/pdf', uploaded_file.size_bytes, req.user.name);
+    if (parsed.test_results?.length > 0) {
+      const specs = db.prepare('SELECT * FROM coa_specifications WHERE item_number = ? AND is_active = 1').all(parsed.item_number || '');
+      const index = specIndex(specs);
+      const insertResult = db.prepare('INSERT INTO coa_test_results (id, request_id, test_type, result_value, unit, specification_id, pass_fail) VALUES (?, ?, ?, ?, ?, ?, ?)');
+      for (const tr of parsed.test_results) {
+        const spec = index.find(tr.test_type);
+        const { pass_fail } = gradeResult(tr.result_value, spec, tr.pass_fail || null, { unit: tr.unit || null });
+        insertResult.run(uuid(), id, tr.test_type, tr.result_value ?? null, tr.unit || spec?.unit || null, spec?.id || null, pass_fail);
+      }
+      rollUpRequestStatus(db, id);
+    }
+
+    if (uploaded_file) {
+      db.prepare('INSERT INTO coa_files (id, request_id, file_type, filename, original_name, mime_type, size_bytes, uploaded_by, sha256) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(uuid(), id, 'lab_results', uploaded_file.filename, uploaded_file.original_name || uploaded_file.filename, 'application/pdf', uploaded_file.size_bytes || null, req.user.name, fileHash);
+    }
+  });
+  try { file(); } catch (e) {
+    return res.status(400).json({ error: `Nothing was filed: ${e.message}` });
   }
 
   const created = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(id);
   const test_results = db.prepare('SELECT * FROM coa_test_results WHERE request_id = ?').all(id);
-  logAudit(req.user, 'import_coa_pdf', 'coa_request', id, { source: 'ctla_upload' }, null, created);
+  logAudit(req.user, 'import_coa_pdf', 'coa_request', id, { source: 'ctla_upload', file_sha256: fileHash }, null, created);
   res.status(201).json({ ...created, test_results });
+});
+
+// ──────────────── Brand owner (default-deny) ────────────────
+//
+// Whose product a request is. Every row starts 'unassigned', and NOTHING in
+// this phase treats any value — or the brand table's publish flag — as
+// permission to publish (D-226). Only an admin or Quality sets it; audited.
+const canSetBrand = (u) => !!u && (u.role === 'admin' || u.department === 'qa');
+
+router.get('/brands', (_req, res) => {
+  res.json(getDb().prepare('SELECT id, name FROM coa_brands ORDER BY name').all());
+});
+
+router.put('/requests/:id/brand-owner', (req, res) => {
+  if (!canSetBrand(req.user)) return res.status(403).json({ error: 'Only an admin or Quality can set whose product this is.' });
+  const db = getDb();
+  const r = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id);
+  if (!r) return res.status(404).json({ error: 'COA request not found' });
+  const value = String(req.body?.brand_owner ?? '').trim();
+  const known = value === 'unassigned' || !!db.prepare('SELECT 1 FROM coa_brands WHERE name = ?').get(value);
+  if (!known) return res.status(400).json({ error: 'Brand owner must be "unassigned" or a brand on the list.' });
+  db.prepare("UPDATE coa_requests SET brand_owner = ?, updated_at = datetime('now') WHERE id = ?").run(value, r.id);
+  logAudit(req.user, 'update', 'coa_request', r.id, { brand_owner: { from: r.brand_owner, to: value } },
+    { brand_owner: r.brand_owner }, { brand_owner: value }, `${r.item_description} · Lot ${r.lot_number}`);
+  res.json({ id: r.id, brand_owner: value });
+});
+
+// ──────────────── COA settings (scaffold, no consumers) ────────────────
+//
+// Two decisions recorded as settings so they can change later without a
+// deploy. Nothing reads them in this phase except this API and its screen.
+export const COA_SETTINGS = {
+  evidence_disclosure_mode: ['never', 'on_request_approval'],
+  public_nonclaim_gluten_display: ['hidden', 'visible'],
+};
+router.get('/settings', (_req, res) => {
+  const rows = getDb().prepare('SELECT key, value, updated_by, updated_at FROM coa_settings').all();
+  res.json({ settings: rows.filter(r => COA_SETTINGS[r.key]), allowed: COA_SETTINGS });
+});
+router.put('/settings/:key', requireRole('admin'), (req, res) => {
+  const allowed = COA_SETTINGS[req.params.key];
+  if (!allowed) return res.status(404).json({ error: 'No such setting.' });
+  const value = req.body?.value;
+  if (!allowed.includes(value)) return res.status(400).json({ error: `Must be one of ${allowed.join(', ')}.` });
+  const db = getDb();
+  const before = db.prepare('SELECT value FROM coa_settings WHERE key = ?').get(req.params.key)?.value ?? null;
+  db.prepare(`INSERT INTO coa_settings (key, value, updated_by, updated_at) VALUES (?, ?, ?, datetime('now'))
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_by = excluded.updated_by, updated_at = excluded.updated_at`)
+    .run(req.params.key, value, req.user.name);
+  logAudit(req.user, 'update', 'coa_setting', req.params.key, { from: before, to: value }, { value: before }, { value });
+  res.json({ key: req.params.key, value });
 });
 
 // ──────────────── Distinct values for filters ────────────────

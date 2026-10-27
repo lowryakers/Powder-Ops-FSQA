@@ -4175,6 +4175,44 @@ function runMigrations() {
   addColumnIfMissing('coa_requests', 'submission_id', 'TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS idx_coa_requests_submission ON coa_requests(submission_id)');
 
+  // COA Phase 0 (D-223 … D-226). All additive.
+  // What was signed, frozen: a canonical JSON snapshot and its SHA-256.
+  addColumnIfMissing('coa_requests', 'signed_snapshot', 'TEXT');
+  addColumnIfMissing('coa_requests', 'signed_content_hash', 'TEXT');
+  // Whose product this is. 'unassigned' on every row; nothing reads it as public.
+  addColumnIfMissing('coa_requests', 'brand_owner', "TEXT DEFAULT 'unassigned'");
+  // The bytes of every new upload, hashed at the door.
+  addColumnIfMissing('coa_files', 'sha256', 'TEXT');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS coa_counters (
+      name TEXT PRIMARY KEY,
+      value INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS coa_brands (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      public_publish_allowed INTEGER NOT NULL DEFAULT 0 CHECK(public_publish_allowed IN (0, 1)),
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS coa_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_by TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  db.prepare("INSERT OR IGNORE INTO coa_brands (id, name, public_publish_allowed) VALUES ('brand-prodough', 'ProDough', 0)").run();
+  db.prepare("INSERT OR IGNORE INTO coa_settings (key, value, updated_by) VALUES ('evidence_disclosure_mode', 'never', 'system')").run();
+  db.prepare("INSERT OR IGNORE INTO coa_settings (key, value, updated_by) VALUES ('public_nonclaim_gluten_display', 'hidden', 'system')").run();
+  // One certificate number, one certificate. A database that somehow already
+  // holds a duplicate keeps booting and says so; the counter still never
+  // issues a number twice.
+  try {
+    db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_coa_requests_cert_unique ON coa_requests(certificate_number) WHERE certificate_number IS NOT NULL AND certificate_number != ''");
+  } catch (e) {
+    console.warn(`[coa] certificate numbers are not unique on this database, so the unique index was not created: ${e.message}`);
+  }
+
   // Multiple schedule lines per room/day (e.g. several Kitting products on the same day)
   addColumnIfMissing('production_schedule', 'slot', 'INTEGER NOT NULL DEFAULT 0');
 
