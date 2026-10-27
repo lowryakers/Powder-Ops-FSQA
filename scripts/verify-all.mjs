@@ -171,6 +171,7 @@ const RUNS = [
   ['verify-demo-cleanup.mjs', 5132, {}, false],
   // Boots and reboots its own server (on COA_P1_PORT); the one started here idles.
   ['verify-coa-phase1.mjs', 5133, { COA_P1_PORT: '5134' }, false],
+  ['verify-coa-possible-dupes.mjs', 5135, { COA_DUP_PORT: '5136' }, false],
 ];
 
 // VERIFY_ONLY=verify-auth.mjs,verify-swab-stock.mjs runs just the entries that

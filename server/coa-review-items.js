@@ -35,6 +35,9 @@ export const KINDS = {
   UNSIGN_FAILED: { label: 'Un-sign', steps: ['unsign'], authorizes: ['unsign'] },
   CORRECT_ONLY: { label: 'Correct', steps: ['gluten'], authorizes: [] },
   DELETE_DUPLICATE: { label: 'Delete duplicate', steps: ['delete'], authorizes: ['delete'] },
+  // D-242: a pair that MAY be one test entered twice. Maria decides; it grants
+  // no un-sign and no delete — an admin deletes the record she marks.
+  POSSIBLE_DUPLICATE: { label: 'Possible duplicate', steps: ['decide', 'remove'], authorizes: [] },
 };
 
 const STEP_LABEL = {
@@ -42,6 +45,9 @@ const STEP_LABEL = {
   gluten: 'Correct the gluten result to <4 ppm',
   resign: 'Sign again',
   delete: 'Delete the duplicate',
+  decide: 'Decide: the same test, or not',
+  remove: 'An admin deletes the record marked',
+  results: 'Delete the result lines entered twice',
 };
 
 const itemKey = (kind, requestId) => `coa-p1:${kind}:${requestId}`;
@@ -163,6 +169,7 @@ export function glutenCorrected(results) {
  * the audit log; nothing here writes.
  */
 export function itemProgress(db, item) {
+  if (item.kind === 'POSSIBLE_DUPLICATE') return possibleProgress(db, item);
   const kind = KINDS[item.kind];
   const req = db.prepare('SELECT id, qa_signed_at FROM coa_requests WHERE id = ?').get(item.request_id);
   if (!req) {
@@ -184,6 +191,58 @@ export function itemProgress(db, item) {
   if (next?.key === 'gluten' && signed) blockedBy = 'The certificate is signed, so its results are closed — un-sign it first.';
   if (next?.key === 'resign' && !done.gluten) blockedBy = 'Correct the gluten result before signing again.';
   return { steps, complete: steps.every(s => s.done), gone: false, blockedBy };
+}
+
+/**
+ * A possible duplicate (D-242), derived. A pair is settled once either record
+ * is gone; Maria's recorded decision ticks the first step. A single record
+ * whose results were entered twice is settled once no result line repeats.
+ */
+export function possibleProgress(db, item) {
+  const seed = parse(item.steps, {})?.seed || {};
+  const get = db.prepare('SELECT id, qa_signed_at FROM coa_requests WHERE id = ?');
+  if (!seed.id_b) {
+    const req = get.get(item.request_id);
+    if (!req) return { steps: [{ key: 'results', label: STEP_LABEL.results, done: true }], complete: true, gone: true, blockedBy: null };
+    const repeats = db.prepare(`SELECT COUNT(*) c FROM (SELECT 1 FROM coa_test_results WHERE request_id = ?
+      GROUP BY LOWER(TRIM(test_type)), TRIM(COALESCE(result_value, '')), LOWER(TRIM(COALESCE(unit, ''))),
+        COALESCE(specification_id, ''), TRIM(COALESCE(notes, '')) HAVING COUNT(*) > 1)`).get(req.id).c;
+    const steps = [{ key: 'results', label: STEP_LABEL.results, done: repeats === 0 }];
+    return { steps, complete: repeats === 0, gone: false,
+      blockedBy: repeats && req.qa_signed_at ? 'The record is signed, so its results are closed — an admin un-signs it first.' : null };
+  }
+  const a = get.get(seed.id_a), b = get.get(seed.id_b);
+  const settled = !a || !b;
+  const decision = parse(item.decision, null);
+  const marked = decision ? (decision.remove === 'B' ? b : a) : null;
+  const steps = [
+    { key: 'decide', label: STEP_LABEL.decide, done: !!decision || settled },
+    { key: 'remove', label: decision ? `An admin deletes record ${decision.remove}` : STEP_LABEL.remove, done: settled },
+  ];
+  let blockedBy = null;
+  if (decision && !settled) blockedBy = marked?.qa_signed_at
+    ? `Record ${decision.remove} is signed — an admin un-signs it, then deletes it.`
+    : `Waiting for an admin to delete record ${decision.remove}.`;
+  return { steps, complete: settled, gone: settled, blockedBy };
+}
+
+/**
+ * Maria's answer on a possible duplicate: the same test, and which record
+ * goes. Recorded on the item; nothing is deleted here.
+ */
+export function recordDuplicateDecision(db, user, id, { remove, reason }) {
+  const item = db.prepare('SELECT * FROM coa_review_items WHERE id = ? OR item_key = ?').get(id, id);
+  if (!item) return { status: 404, error: 'No such correction item.' };
+  if (item.kind !== 'POSSIBLE_DUPLICATE') return { status: 400, error: 'Only a possible duplicate takes this decision.' };
+  if (item.status !== 'open') return { status: 409, error: 'This item is already closed.' };
+  const seed = parse(item.steps, {})?.seed || {};
+  if (!seed.id_b) return { status: 400, error: 'This item is about one record; delete the repeated result lines on it, or dismiss it.' };
+  if (!['A', 'B'].includes(remove)) return { status: 400, error: 'Say which record goes: A or B.' };
+  if (possibleProgress(db, item).complete) return { status: 409, error: 'One of the two records is already gone.' };
+  const decision = { remove, remove_id: remove === 'A' ? seed.id_a : seed.id_b, keep_id: remove === 'A' ? seed.id_b : seed.id_a,
+    reason, by: user.name, at: new Date().toISOString() };
+  db.prepare('UPDATE coa_review_items SET decision = ? WHERE id = ?').run(JSON.stringify(decision), item.id);
+  return { item: db.prepare('SELECT * FROM coa_review_items WHERE id = ?').get(item.id), before: item, decision };
 }
 
 /** Open items with their derived progress. */
@@ -272,7 +331,7 @@ export function reviewRow(item) {
     extra: null,
     recommended_action: item.recommended_action,
     reason: item.reason,
-    note: extra.note || null,
+    note: [extra.note, (() => { const d = parse(item.decision, null); return d ? `${d.by} marked record ${d.remove} for removal: ${d.reason}` : null; })()].filter(Boolean).join(' ') || null,
     evidence: parse(item.evidence, []),
     steps: item.progress?.steps || [],
     blocked_by: item.progress?.blockedBy || null,

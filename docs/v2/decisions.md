@@ -8810,3 +8810,55 @@ is never changed. Filled where blank at boot (`backfillBaseLots`, idempotent) an
   an unknown brand is 400, anyone else setting one is 403. An existing request is still changed from its own screen.
   The bulk CSV (D-238) stays for the history and is not required.
 - `verify:coaphase1` (93 → 100). Control (both changes out) fails 3, then stops at the missing brand box.
+
+## D-241 — The obvious COA duplicates are removed by a one-off script an admin runs (27 Oct 2026)
+
+Decision A-20261027-003 (Lowry). Maria reported duplicates from the first import into the Lab Testing Log. A read-only
+review of all 1,516 COA records and 142 lab PDFs (27 Oct, live API) found **51 obvious duplicate requests and 6
+byte-identical extra copies of a lab PDF**, plus 59 possible ones (D-242). The 21 empty CTLA-upload duplicates are
+Phase 1's (D-236) and not part of this.
+- **An approved exception to "no data deleted by code"**: `scripts/coa-remove-obvious-duplicates.mjs`, run by an
+  admin in the Railway shell. Not a migration, not run at boot, not an API route. The list it may delete is
+  `scripts/data/coa-obvious-duplicates-2026-10-27.csv`, committed; nothing is ever selected by a query.
+- **Every row is re-checked when the script runs, and skipped unless everything still holds**:
+  - it matches the list (item, lot, source, status; a Drive link typed into the lot reads as the text in brackets);
+  - it is NOT signed (a signed request is never deleted), has no file and no result, and `updated_at` is as reviewed;
+  - nothing points at it: no re-test, no retention sample or stability pull, no open QA Review item; Phase 1 has not
+    queued it (the 21 ids are embedded too);
+  - its keeper exists, is not itself on the list, has the same item and lot, and holds what the review saw.
+  A file copy goes only when the kept copy is on the same request, both are on disk, and size, SHA-256 and name
+  match; the newest copy is kept, and the disk file goes only if no other row uses it.
+- **Dry run first.** It writes nothing to the database. It does write one file, its own report in `backups/`,
+  because `--apply` refuses without a dry run from the last 24 hours whose every decision still holds. (The brief
+  said the dry run writes no file at all and also that `--apply` needs its report; the report is the one file.)
+- `--apply`: a consistent copy of the database and an export of every row and PDF it removes, then ONE transaction,
+  one audit row per deleted row (actor "Duplicate clean-up (A-20261027-003)", the decision, the keeper, the reason,
+  the Drive link), the disk files after commit, and a report. A second run deletes nothing.
+- `--preserve-links` (default OFF) also copies a removed row's Drive link into its keeper's notes, only on an
+  unsigned keeper and only once, audited. It is Lowry's call; the dry run says how many it would write.
+- On a database holding the shipped history only, the dry run reads 25 real rows exactly as the list does and skips
+  the rest, mostly because their keepers were filed later. One real catch: keeper `e87c3a3b` reads lot `101558` in the
+  history where the review saw `L001123`, so its four twins are skipped there. On production they go only if the
+  keeper still reads `L001123`.
+- `check:coaremovedupes` (40, temp database, in `npm run check`). Control (signed rows not refused) fails 5.
+
+## D-242 — The 59 POSSIBLE duplicates are Maria's, in the same QA Review pile (27 Oct 2026)
+
+Decision A-20261027-003. Nobody can tell from the data alone whether these are one test entered twice, so code never
+deletes them.
+- Seeded once from `server/seed/coa-possible-duplicates.json`, the D-236 way (`server/coa-possible-duplicates.js`):
+  INSERT OR IGNORE on `item_key` (`dup:<a>:<b>`, or `dup-rows:<a>` for the one record with result lines entered
+  twice), marker `coa_possible_duplicates_seeded_v1`, a pair whose records are gone is skipped, one audit row. It
+  never touches a COA record.
+- Kind `POSSIBLE_DUPLICATE`, **granting no un-sign and no delete** (`authorizes: []`). The words name "record A" and
+  "record B", never an id fragment; the evidence links both records and their lab reports and names what differs.
+- **Maria decides on the request screen** (the block shows on both records of the pair):
+  - **"Same test — remove record A/B…"** records which record goes and why (`coa_review_items.decision`, audited).
+    An admin then deletes it with the ordinary delete.
+  - **"Not a duplicate…"** dismisses the item with a reason. Quality may dismiss THIS kind; every other correction
+    is still admin-only.
+- Progress is derived: a pair settles once either record is gone; the single record settles once no result line
+  repeats (same test, value, unit, specification and note), or Maria closes it with what she found.
+- `verify:coapossibledupes` (33, live + reboots + browser; in `verify:all`): 59 items beside the 43 untouched, a
+  second run inserts 0, no COA row moves, the decide → admin-delete path, "not a duplicate", tokens refused.
+  Control (queuing step removed) fails 4, then stops.

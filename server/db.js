@@ -4228,6 +4228,8 @@ function runMigrations() {
     );
     CREATE INDEX IF NOT EXISTS idx_coa_review_items_request ON coa_review_items(request_id);
   `);
+  // Maria's answer on a possible duplicate (D-242): which record goes, and why.
+  addColumnIfMissing('coa_review_items', 'decision', 'TEXT');
   // A lot's base and its batch (D-237): 101690-1 is batch 1 of lot 101690.
   // Derived from lot_number, which is never changed.
   addColumnIfMissing('coa_requests', 'base_lot', 'TEXT');
