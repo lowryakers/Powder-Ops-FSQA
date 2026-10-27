@@ -12,8 +12,8 @@ import FrozenScroll from '../common/FrozenScroll';
 // The WEEKLY TOTAL (D-193) is what the week is paid at — the column Marnee
 // keys in, because ADP's worked figure does not separate unpaid time. Hours
 // recorded beyond it are UNPAID (derived, never typed); hours short of it show
-// as paid non-working (the auto-fill). Overtime is hours over 40 worked and
-// paid that week.
+// as paid non-working (the auto-fill). Overtime is every paid hour over 40 that
+// week — worked, PTO, holiday and paid non-working alike (D-249).
 const periodLabel = (p) => {
   const f = (d) => { const x = new Date(`${d}T00:00:00Z`); return `${x.getUTCMonth() + 1}/${x.getUTCDate()}`; };
   return `${f(p.start)} – ${f(p.end)}`;
@@ -549,7 +549,7 @@ export default function HoursTab() {
         <span className="text-xs text-gray-400">
           Weeks run Sunday–Saturday. Enter hours as <span className="font-medium text-gray-500">h:mm</span> (39:56) — decimals still work.
           <span className="font-medium text-gray-500">Weekly total</span> is the hours paid that week: anything recorded
-          beyond it is unpaid, anything short of it is paid non-working, and overtime is hours over {standardWeek} worked and paid.
+          beyond it is unpaid, anything short of it is paid non-working, and overtime is every paid hour over {standardWeek}.
         </span>
       </div>
 
@@ -597,7 +597,7 @@ export default function HoursTab() {
               {(data?.weeks || []).map(w => (
                 <th key={w} colSpan={6} className="px-3 pb-2 border-l border-gray-200">
                   <div className={`${WEEK_GRID} text-center`}>
-                    <span title="The hours paid this week. Over 40 worked is overtime; recorded beyond it is unpaid">Weekly total</span>
+                    <span title="The hours paid this week. Paid hours over 40 are overtime; recorded beyond it is unpaid">Weekly total</span>
                     <span>Worked</span><span>PTO</span><span>Holiday</span><span>Unpaid</span><span>Non-work</span>
                   </div>
                 </th>

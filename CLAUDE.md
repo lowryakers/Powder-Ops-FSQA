@@ -584,8 +584,8 @@ CSV of the period. Nothing new is stored and no door widens — `GET /office/hou
   unpaid) at the rate, plus the premium on the SAME `overtime` the column shows. **The premium is HALF the
   rate** — the OT hour is already inside `worked` and therefore inside `total`, so 1.5× here pays twice.
   48h at $20 on a 40h target is $1,040.
-- **Overtime is over 40 for everybody since D-193** (it was over each person's own target, with a note on
-  screen; the note is gone). A second overtime definition visible only in the money would be worse.
+- **Overtime is every paid hour over 40 for everybody (D-193, D-249)** (it was over each person's own target, with a
+  note on screen; the note is gone). A second overtime definition visible only in the money would be worse.
 - **NO RATE IS NO COST — null, never zero**, and the total names how many of the list it covers ("2 of 11
   people have a rate"). A blank rate on a linked row is **Salaried** (the word the Pay Tracking roster
   already uses); **no pay row at all is a different gap**, and those people are NAMED with a pointer to Pay
@@ -3888,6 +3888,8 @@ meant rebuilding the filter by hand — which nobody does. Every `AttentionBar` 
   - Run the dry run first; `--apply` refuses without one from the last 24 hours.
   - `--apply` backs up and exports first, then deletes in one transaction with one audit row per delete.
   - `--preserve-links` is Lowry's call. `check:coaremovedupes` (40).
+  - It ran without it; `scripts/coa-copy-drive-links.mjs` (D-250) copies the 26 links back from the audit log onto the
+    kept requests' notes (dry run, `--apply`; signed keepers listed, not changed). `check:coacopylinks` (14).
 - The 59 possible duplicates are `POSSIBLE_DUPLICATE` items in the "COA corrections" pile.
   - Maria marks "same test — remove A/B" or "not a duplicate" on the request screen.
   - An admin deletes what she marks.
@@ -5080,8 +5082,9 @@ most of it.
 - **Unpaid is DERIVED for an employee**: `max(0, worked + PTO + holiday − weekly total)`, shown read-only
   (`UnpaidCell`, `data-unpaid`); a typed `unpaid` on PUT is 400. A contractor's is still typed. Paid
   non-working is the other direction (short of the total, auto-fill on). Paid = the weekly total.
-- **Overtime = max(0, (worked − unpaid) − 40)** — over 40, not the person's own total; PTO, holiday and paid
-  non-working never count. A week where worked > the total and nobody raised the total reads as UNPAID.
+- **Overtime = max(0, paid hours − 40) (D-249, superseding D-193's clause)** — every paid hour over 40: worked, PTO,
+  holiday and paid non-working, never unpaid. A 50:16 weekly total is 10:16 OT. A week where worked > the total and
+  nobody raised the total reads as UNPAID.
 - **`employee_hours.target`**: NULL follows the person's usual target (`users.weekly_hours_target`).
   The non-working balance, overtime and cost read the week's own figure.
 - The usual target sits beside the name. Each week's Target box is amber when it differs, with a reset.

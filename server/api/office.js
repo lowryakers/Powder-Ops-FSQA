@@ -1287,9 +1287,8 @@ function rateRoster(db) {
 }
 
 // Overtime is paid at time and a half, so the PREMIUM on an overtime hour is
-// half the rate — the hour itself is already inside `worked`, and therefore
-// already inside the paid-hours total, so counting it at 1.5x here would pay
-// for it twice.
+// half the rate — the hour itself is already inside the paid-hours total, so
+// counting it at 1.5x here would pay for it twice.
 const OT_MULTIPLIER = 1.5;
 const money = (n) => Math.round(n * 100) / 100;
 
@@ -1304,8 +1303,8 @@ const money = (n) => Math.round(n * 100) / 100;
  * with the hours it sits beside, and whoever is looking cannot tell which of
  * the two is wrong — the activity-metrics rule, applied to money.
  *
- * `overtime` is hours over 40 in the week's worked-and-paid hours (D-193), the
- * same figure the column shows; inventing a second overtime definition down
+ * `overtime` is the week's paid hours over 40 (D-249), the same figure the
+ * column shows; inventing a second overtime definition down
  * here, visible only in the money, would be worse.
  *
  * No rate means no cost — null, never zero. A zero would state that the hours
@@ -1383,11 +1382,12 @@ router.get('/hours', (req, res) => {
         const recorded = worked + pto + holiday;
         unpaid = hasEntry ? Math.max(0, recorded - weekTarget) : 0;
         nonWorking = (hasEntry && autoFill) ? Math.max(0, weekTarget - recorded) : 0;
-        // OVERTIME is hours over 40 in the weekly total — over the ordinary
-        // week, NOT over the person's own usual total. PTO and holiday are paid
-        // but not worked and never count toward it, nor does paid non-working:
-        // what counts is the worked part of the total (worked minus unpaid).
-        overtime = hasEntry ? Math.max(0, (worked - unpaid) - STANDARD_WEEK_HOURS) : 0;
+        // OVERTIME is every PAID hour over 40 (D-249, superseding D-193's
+        // "worked part only"): the week's paid total — worked, PTO, holiday and
+        // paid non-working, never unpaid — over the ordinary 40-hour week. A
+        // 50:16 weekly total is 10:16 of overtime however it is made up.
+        overtime = hasEntry
+          ? Math.max(0, (worked + pto + holiday - unpaid + nonWorking) - STANDARD_WEEK_HOURS) : 0;
       }
       return {
         week_start: w, worked, pto, holiday, unpaid: round(unpaid), auto_fill: autoFill,

@@ -9016,3 +9016,23 @@ Phase 2B ships with three questions answered by the safest default, each changea
 - **When to go strict.** Not now. The gate stays on warn until the readiness report reads clean: every ProDough plan
   approved with every limit, the category gap closed, a golden-file run recorded, 30 days in warn with no false block
   in the last 14.
+
+## D-249 — Overtime is every paid hour over 40 (27 Oct 2026)
+
+Supersedes D-193's overtime clause. D-193 counted only the WORKED part of the weekly total ((worked − unpaid) − 40),
+so a 50:16 weekly total made of 40:16 worked and 10:00 paid non-working read 0:16 of overtime. The office reported the
+10/11–10/24 period showing 0:23 of overtime against many weekly totals above 40. **Overtime is now the week's paid hours
+over 40** — worked, PTO, holiday and paid non-working, never unpaid — which is the weekly total whenever auto-fill is on.
+D-193's reasoning was that PTO and non-working are not worked; the plant pays them as overtime, so the app follows the
+plant. Contractors still have no overtime. The premium stays HALF the rate: the overtime hour is already inside the
+paid total, so total × rate already pays it once. The grid, both total rows, the cost and the CSV read the one figure.
+`verify:weektarget` (39; control fails 3, the decisive one reading 0:15 where 10:15 is owed).
+
+## D-250 — The 26 Drive links from the removed duplicates are copied onto the kept requests (27 Oct 2026)
+
+D-241's clean-up ran without `--preserve-links`, so 26 removed requests took a Drive link with them. The links were
+never lost — each `delete` audit row carries `keeper_id` and `lab_report_link` — so `scripts/coa-copy-drive-links.mjs`
+reads them from there (what was actually removed on that database, not the review's list) and appends the same line
+`--preserve-links` would have written to the kept request's notes. Admin-run in the Railway shell, never at boot. Dry
+run by default; `--apply` backs up first, one transaction, one audit row per request; never twice; a **signed** kept
+request is not changed and its link is printed instead. `check:coacopylinks` (14, scratch database).
