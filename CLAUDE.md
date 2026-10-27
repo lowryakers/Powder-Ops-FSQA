@@ -3860,7 +3860,10 @@ meant rebuilding the filter by hand — which nobody does. Every `AttentionBar` 
   never-issued numbers voided once, `coa_unissued_cert_numbers_voided_v1`); all-N/A cannot be signed; method and MDL
   are stored (`coa_test_results.method` / `.mdl`) and printed; spec retirement audits as `retire`; opening a COA
   setting needs a reason. `COA_REAL_PDF_DIR=<folder>` runs `coa-real-pdf.test.mjs` against real reports (never commit them).
-  `verify:coa` 69 live + 24 pure.
+  `verify:coa` 72 live + 24 pure.
+- **COA PDFs draw in the embedded Unicode font (D-234)**: `useUnicodeFaces(doc)` (`server/pdf-unicode.js`) right after
+  `new PDFDocument` maps the Helvetica names onto Liberation Sans, so "≤ 0.5 ppm" never prints as `"d 0.5 ppm`.
+  Use it in any pdfkit export that prints ≤/≥/µ or user text.
 
 ## COA item specification sheet
 The Specifications tab stores one row per test (right for auto pass/fail, hard to eyeball). "View item & all

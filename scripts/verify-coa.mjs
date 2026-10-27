@@ -207,6 +207,14 @@ try {
   r = await call('GET', `/coa/requests/${mth.id}/pdf`);
   const certText = r.s === 200 ? (await readPdfColumns(r.j)).text : '';
   t('… and its PDF prints the method in the Method column', /USP <233>/.test(certText), certText.split('\n').find(l => /Arsenic/.test(l)) || '');
+  const asLine = certText.split('\n').find(l => /Arsenic/.test(l)) || '';
+  t('… and prints the specification "≤ 0.5" as written, not a WinAnsi "d 0.5" (D-234)', /≤ 0\.5/.test(asLine) && !/"d 0\.5/.test(asLine), asLine);
+  r = await call('GET', `/coa/requests/${f1.id}/pdf?draft=1`);
+  const draftText = r.s === 200 ? (await readPdfColumns(r.j)).text : '';
+  t('the draft heading prints its dash: "DRAFT — NOT A CERTIFICATE"', /DRAFT — NOT A CERTIFICATE/.test(draftText), draftText.split('\n').find(l => /DRAFT/.test(l)) || '');
+  r = await call('GET', '/coa/specifications/pdf?item_number=COA-C');
+  const sheetText = r.s === 200 ? (await readPdfColumns(r.j)).text : '';
+  t('the spec sheet prints "≤ 0.5" too', /≤ 0\.5/.test(sheetText), sheetText.split('\n').find(l => /Arsenic/.test(l)) || '');
 
   console.log('\n── two certificates issued at once (D-223)');
   const ids = [];
