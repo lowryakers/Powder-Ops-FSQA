@@ -314,7 +314,8 @@ router.delete('/specifications/:id', (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Specification not found' });
 
   db.prepare("UPDATE coa_specifications SET is_active = 0, updated_at = datetime('now') WHERE id = ?").run(req.params.id);
-  logAudit(req.user, 'delete', 'coa_specification', req.params.id, null, existing, null);
+  // A retirement, not a deletion: the row stays and can be read (D-230).
+  logAudit(req.user, 'retire', 'coa_specification', req.params.id, null, existing, { ...existing, is_active: 0 });
   res.json({ success: true });
 });
 
@@ -995,6 +996,9 @@ router.post('/requests/bulk-update', (req, res) => {
 
 // ──────────────── Test Results ────────────────
 
+// The method and MDL as the lab printed them; blank is null (D-231).
+const cleanText = (v) => { const s = String(v ?? '').replace(/\s+/g, ' ').trim(); return s ? s.slice(0, 120) : null; };
+
 router.post('/requests/:id/results', (req, res) => {
   const db = getDb();
   const request = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id);
@@ -1006,7 +1010,7 @@ router.post('/requests/:id/results', (req, res) => {
     return res.status(400).json({ error: 'results array is required' });
   }
 
-  const insert = db.prepare(`INSERT INTO coa_test_results (id, request_id, test_type, result_value, unit, specification_id, pass_fail, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+  const insert = db.prepare(`INSERT INTO coa_test_results (id, request_id, test_type, result_value, unit, specification_id, pass_fail, notes, method, mdl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
 
   // One grader, one spec lookup, shared with the scan preview and the edit
   // path — a preview computed differently from the commit is a preview that
@@ -1025,7 +1029,8 @@ router.post('/requests/:id/results', (req, res) => {
       // of a real micro panel, which parseFloat could not — every one of those
       // used to land with no verdict at all.
       const { pass_fail } = gradeResult(r.result_value, spec, r.pass_fail || null, { unit: r.unit || null });
-      insert.run(id, req.params.id, r.test_type, r.result_value ?? null, r.unit || spec?.unit || null, spec?.id || null, pass_fail, r.notes || null);
+      insert.run(id, req.params.id, r.test_type, r.result_value ?? null, r.unit || spec?.unit || null, spec?.id || null, pass_fail, r.notes || null,
+        cleanText(r.method), cleanText(r.mdl));
       created.push(db.prepare('SELECT * FROM coa_test_results WHERE id = ?').get(id));
     }
     return created;
@@ -1106,6 +1111,8 @@ router.put('/requests/:requestId/results/:id', (req, res) => {
   if (!test_type) return res.status(400).json({ error: 'A test name is required.' });
   const result_value = req.body.result_value !== undefined ? req.body.result_value : existing.result_value;
   const notes = req.body.notes !== undefined ? (req.body.notes || null) : existing.notes;
+  const method = req.body.method !== undefined ? cleanText(req.body.method) : (existing.method ?? null);
+  const mdl = req.body.mdl !== undefined ? cleanText(req.body.mdl) : (existing.mdl ?? null);
 
   const specs = db.prepare('SELECT * FROM coa_specifications WHERE item_number = ? AND is_active = 1').all(request.item_number);
   const spec = specIndex(specs).find(test_type);
@@ -1128,8 +1135,8 @@ router.put('/requests/:requestId/results/:id', (req, res) => {
     pass_fail = gradeResult(result_value, spec, null, { unit }).pass_fail;
   }
 
-  db.prepare(`UPDATE coa_test_results SET test_type = ?, result_value = ?, unit = ?, specification_id = ?, pass_fail = ?, notes = ? WHERE id = ?`)
-    .run(test_type, result_value ?? null, unit, spec?.id || null, pass_fail, notes, req.params.id);
+  db.prepare(`UPDATE coa_test_results SET test_type = ?, result_value = ?, unit = ?, specification_id = ?, pass_fail = ?, notes = ?, method = ?, mdl = ? WHERE id = ?`)
+    .run(test_type, result_value ?? null, unit, spec?.id || null, pass_fail, notes, method, mdl, req.params.id);
 
   rollUpRequestStatus(db, req.params.requestId);
   const updated = db.prepare('SELECT * FROM coa_test_results WHERE id = ?').get(req.params.id);
@@ -1351,6 +1358,7 @@ router.post('/requests/:id/scan', coaUpload.single('file'), async (req, res) => 
       result_value: t.result_value,
       unit: t.unit || spec?.unit || null,
       method: t.method || null,
+      mdl: t.mdl || null,
       spec_on_report: t.spec_on_report || null,
       specification_id: spec?.id || null,
       specification: spec ? (spec.specification || null) : null,
@@ -1542,8 +1550,11 @@ router.post('/requests/:id/sign', (req, res) => {
   const issue = db.transaction(() => {
     const fresh = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id);
     if (isSigned(fresh)) return { already: true };
-    const certNum = fresh.certificate_number || allocateCertNumber(db);
-    const issued = fresh.date_of_issuance || plantDateOf();
+    // Always a fresh number and today's date: a number found on an unsigned
+    // request was never issued, and reusing it would certify under a number
+    // the PDF view made up (D-228).
+    const certNum = allocateCertNumber(db);
+    const issued = plantDateOf();
     const snapshot = snapshotFor(db, fresh, { certificate_number: certNum, date_of_issuance: issued });
     const json = canonicalJson(snapshot);
     const hash = sha256(json);
@@ -2108,11 +2119,12 @@ router.post('/import-parsed-coa', (req, res) => {
     if (parsed.test_results?.length > 0) {
       const specs = db.prepare('SELECT * FROM coa_specifications WHERE item_number = ? AND is_active = 1').all(parsed.item_number || '');
       const index = specIndex(specs);
-      const insertResult = db.prepare('INSERT INTO coa_test_results (id, request_id, test_type, result_value, unit, specification_id, pass_fail) VALUES (?, ?, ?, ?, ?, ?, ?)');
+      const insertResult = db.prepare('INSERT INTO coa_test_results (id, request_id, test_type, result_value, unit, specification_id, pass_fail, method, mdl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
       for (const tr of parsed.test_results) {
         const spec = index.find(tr.test_type);
         const { pass_fail } = gradeResult(tr.result_value, spec, tr.pass_fail || null, { unit: tr.unit || null });
-        insertResult.run(uuid(), id, tr.test_type, tr.result_value ?? null, tr.unit || spec?.unit || null, spec?.id || null, pass_fail);
+        insertResult.run(uuid(), id, tr.test_type, tr.result_value ?? null, tr.unit || spec?.unit || null, spec?.id || null, pass_fail,
+          cleanText(tr.method), cleanText(tr.mdl));
       }
       rollUpRequestStatus(db, id);
     }
@@ -2165,6 +2177,12 @@ export const COA_SETTINGS = {
   evidence_disclosure_mode: ['never', 'on_request_approval'],
   public_nonclaim_gluten_display: ['hidden', 'visible'],
 };
+// A move AWAY from the closed default is a decision someone has to explain:
+// sharing lab evidence, or showing a non-claim gluten result (D-233).
+const SETTING_NEEDS_REASON = {
+  evidence_disclosure_mode: (v) => v !== 'never',
+  public_nonclaim_gluten_display: (v) => v === 'visible',
+};
 router.get('/settings', (_req, res) => {
   const rows = getDb().prepare('SELECT key, value, updated_by, updated_at FROM coa_settings').all();
   res.json({ settings: rows.filter(r => COA_SETTINGS[r.key]), allowed: COA_SETTINGS });
@@ -2176,10 +2194,14 @@ router.put('/settings/:key', requireRole('admin'), (req, res) => {
   if (!allowed.includes(value)) return res.status(400).json({ error: `Must be one of ${allowed.join(', ')}.` });
   const db = getDb();
   const before = db.prepare('SELECT value FROM coa_settings WHERE key = ?').get(req.params.key)?.value ?? null;
+  const reason = String(req.body?.reason ?? '').trim();
+  if (value !== before && SETTING_NEEDS_REASON[req.params.key]?.(value) && reason.length < 3) {
+    return res.status(400).json({ error: 'Say why this is changing — this setting opens something that is closed by default.', reason_required: true });
+  }
   db.prepare(`INSERT INTO coa_settings (key, value, updated_by, updated_at) VALUES (?, ?, ?, datetime('now'))
     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_by = excluded.updated_by, updated_at = excluded.updated_at`)
     .run(req.params.key, value, req.user.name);
-  logAudit(req.user, 'update', 'coa_setting', req.params.key, { from: before, to: value }, { value: before }, { value });
+  logAudit(req.user, 'update', 'coa_setting', req.params.key, { from: before, to: value, ...(reason ? { reason } : {}) }, { value: before }, { value });
   res.json({ key: req.params.key, value });
 });
 

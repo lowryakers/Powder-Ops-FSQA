@@ -967,8 +967,18 @@ function CoaSettingsCard() {
           <span className="text-gray-700">{COA_SETTING_LABELS[s.key]?.label || s.key}</span>
           <select value={s.value} data-coa-setting={s.key} className="border border-gray-200 rounded px-2 py-1 text-sm"
             onChange={async e => {
-              try { await apiPut(`/coa/settings/${s.key}`, { value: e.target.value }); setErr(null); refresh(); }
-              catch (x) { setErr(x.message); }
+              const value = e.target.value;
+              // The server decides which changes need a reason (D-233); asked
+              // only when it says so, and cancelling changes nothing.
+              try { await apiPut(`/coa/settings/${s.key}`, { value }); setErr(null); refresh(); }
+              catch (x) {
+                if (!x.data?.reason_required) { setErr(x.message); refresh(); return; }
+                const reason = window.prompt(`${COA_SETTING_LABELS[s.key]?.label || s.key}: why is this changing? (recorded in the audit log)`);
+                if (!reason || reason.trim().length < 3) { setErr(reason == null ? null : 'A reason of at least 3 characters is needed.'); refresh(); return; }
+                try { await apiPut(`/coa/settings/${s.key}`, { value, reason: reason.trim() }); setErr(null); }
+                catch (y) { setErr(y.message); }
+                refresh();
+              }
             }}>
             {(data.allowed[s.key] || []).map(v => <option key={v} value={v}>{COA_SETTING_LABELS[s.key]?.values[v] || v}</option>)}
           </select>
@@ -1456,7 +1466,7 @@ function ScanReportPanel({ requestId, file, onClose, onApplied }) {
       for (const h of scan.header || []) if (pickHeader[h.key]) patch[h.key] = h.found;
       if (Object.keys(patch).length) await apiPut(`/coa/requests/${requestId}`, patch);
       const results = (scan.results || []).filter((_, i) => pickResult[i])
-        .map(r => ({ test_type: r.test_type, result_value: r.result_value, unit: r.unit, pass_fail: r.pass_fail || undefined }));
+        .map(r => ({ test_type: r.test_type, result_value: r.result_value, unit: r.unit, method: r.method || undefined, mdl: r.mdl || undefined, pass_fail: r.pass_fail || undefined }));
       if (results.length) await apiPost(`/coa/requests/${requestId}/results`, { results });
       onApplied?.();
       onClose();
