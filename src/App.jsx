@@ -758,7 +758,7 @@ function AccountMenu({ user, onChangePassword, onLogout, onViewAs, onInstallHelp
         <div className="h-7 w-7 rounded-full bg-powder-100 flex items-center justify-center text-xs font-bold text-powder-700">
           {(user.name || '?')[0]}
         </div>
-        <span className="hidden lg:inline text-sm text-gray-600">{user.name}</span>
+        <span className="hidden @5xl:inline max-w-[11rem] truncate text-sm text-gray-600" data-topbar-name>{user.name}</span>
         <ChevronDown size={14} className="text-gray-400" />
       </button>
       {open && (
@@ -916,10 +916,10 @@ function ModuleSearch({ user, onNavigate, compact = false }) {
         </button>
       ) : (
         <button onClick={() => setOpen(true)} title="Search modules (⌘K)"
-          className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 text-gray-400 hover:bg-gray-50 text-sm w-48 lg:w-56">
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 text-gray-400 hover:bg-gray-50 text-sm w-48 @4xl:w-56">
           <Search size={15} />
           <span className="flex-1 text-left">Search…</span>
-          <kbd className="hidden lg:inline text-[10px] text-gray-300 border border-gray-200 rounded px-1">⌘K</kbd>
+          <kbd className="hidden @4xl:inline text-[10px] text-gray-300 border border-gray-200 rounded px-1">⌘K</kbd>
         </button>
       )}
       {open && (
@@ -1255,6 +1255,20 @@ function App() {
     catch { return 420; }
   });
   const [dockDragging, setDockDragging] = useState(false);
+  // THE MODULE KEEPS ITS ROOM (D-253). The remembered width is a preference; what
+  // is drawn is that preference clamped so the module column (window − 240px
+  // sidebar − dock) never falls under MODULE_MIN. A 760px dock in a 1280px window
+  // left the module 280px. Narrowing the window shrinks the dock; widening it
+  // gives the remembered width back, because the preference is never rewritten.
+  const MODULE_MIN = 560, SIDEBAR_W = 240;
+  const [winW, setWinW] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const on = () => setWinW(window.innerWidth);
+    window.addEventListener('resize', on);
+    return () => window.removeEventListener('resize', on);
+  }, []);
+  const dockRoom = (w) => Math.max(DOCK_MIN, Math.min(DOCK_MAX, w - SIDEBAR_W - MODULE_MIN));
+  const shownDockWidth = Math.min(dockWidth, dockRoom(winW));
   // Drag the left edge of the docked panel. Tracked on window so the pointer can
   // leave the thin handle mid-drag; the iframe is made click-through meanwhile so
   // it doesn't swallow the move events.
@@ -1263,7 +1277,7 @@ function App() {
     setDockDragging(true);
     const move = (ev) => {
       const x = ev.touches ? ev.touches[0].clientX : ev.clientX;
-      const w = Math.min(DOCK_MAX, Math.max(DOCK_MIN, window.innerWidth - x));
+      const w = Math.min(dockRoom(window.innerWidth), Math.max(DOCK_MIN, window.innerWidth - x));
       setDockWidth(w);
     };
     const end = () => {
@@ -2061,21 +2075,26 @@ function App() {
       {/* Main content */}
       <div className="flex-1 min-w-0 flex flex-col">
         <PasswordExpiringBanner daysLeft={user.password_days_left} />
-        {/* Desktop top bar */}
-        <header className="hidden md:block bg-white border-b border-gray-200 sticky top-0 z-30">
-          <div className="px-6 lg:px-8 py-2.5 flex items-center justify-between max-w-7xl mx-auto">
-            <div className="flex items-center gap-1">
-              <h1 className="text-sm font-semibold text-gray-700">{activeItem?.label || 'Dashboard'}</h1>
+        {/* Desktop top bar. IT COLLAPSES BY ITS OWN WIDTH, NOT THE WINDOW'S
+            (D-253): with Messages docked beside it the column can be 600px in a
+            1440px window, and window breakpoints showed the full search box, the
+            Split Screen label and the account name in a row that could not hold
+            them. `@container` + the `@…:` variants size each piece off this bar.
+            The title truncates; the controls never wrap or squeeze. */}
+        <header className="hidden md:block bg-white border-b border-gray-200 sticky top-0 z-30 @container" data-topbar>
+          <div className="px-4 @3xl:px-6 @5xl:px-8 py-2.5 flex items-center gap-3 max-w-7xl mx-auto">
+            <div className="flex items-center gap-1 min-w-0 flex-1">
+              <h1 className="text-sm font-semibold text-gray-700 truncate" data-topbar-title>{activeItem?.label || 'Dashboard'}</h1>
               <PageInfo moduleId={resolvedTab} title={activeItem?.label || 'Dashboard'} />
             </div>
-            <div className="flex items-center gap-3">
-              {/* Full box on a wide screen; the icon form below lg, where the
-                  box no longer fits but search is still wanted. */}
-              <div className="hidden lg:block"><ModuleSearch user={user} onNavigate={setActiveTab} /></div>
-              <div className="lg:hidden"><ModuleSearch user={user} onNavigate={setActiveTab} compact /></div>
-              <button onClick={toggleDockChat} data-tip={dockChat ? 'Close the docked Messages panel' : 'Dock Messages beside this module'}
-                className={`hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${dockChat ? 'text-powder-700 bg-powder-50' : 'text-gray-500 hover:bg-gray-100'}`}>
-                <PanelRight size={16} /> Split Screen
+            <div className="flex items-center gap-1 @3xl:gap-2 @5xl:gap-3 shrink-0">
+              {/* Full box when the bar has room; the icon form otherwise. */}
+              <div className="hidden @3xl:block" data-topbar-search="full"><ModuleSearch user={user} onNavigate={setActiveTab} /></div>
+              <div className="@3xl:hidden" data-topbar-search="icon"><ModuleSearch user={user} onNavigate={setActiveTab} compact /></div>
+              <button onClick={toggleDockChat} data-tip={dockChat ? 'Close the docked Messages panel' : 'Dock Messages beside this module'} data-topbar-split
+                aria-label="Split Screen"
+                className={`hidden lg:flex items-center gap-1.5 px-1.5 @4xl:px-2.5 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${dockChat ? 'text-powder-700 bg-powder-50' : 'text-gray-500 hover:bg-gray-100'}`}>
+                <PanelRight size={16} /> <span className="hidden @4xl:inline">Split Screen</span>
               </button>
               <button onClick={() => setHome('fsqa')} data-tip={homePref === 'fsqa' ? 'ReadyDoc is your home screen' : 'Make ReadyDoc your home screen'}
                 className={`p-1.5 rounded-lg transition-colors ${homePref === 'fsqa' ? 'text-powder-600 bg-powder-50' : 'text-gray-400 hover:bg-gray-100'}`}>
@@ -2228,7 +2247,7 @@ function App() {
 
       {dockChat && (
         <aside className="hidden lg:flex flex-col shrink-0 border-l border-gray-200 sticky top-0 h-screen bg-white relative"
-          style={{ width: dockWidth }}>
+          style={{ width: shownDockWidth }} data-dock-panel>
           {/* Drag handle straddling the left border. Widens on hover so it's
               catchable without being visible clutter at rest.
               Positioning is inline, not via the `absolute` utility: this element
@@ -2245,7 +2264,7 @@ function App() {
           </div>
           <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-100 bg-gray-50">
             <span className="text-xs font-semibold text-gray-500">Messages</span>
-            <button onClick={toggleDockChat} className="p-1 text-gray-400 hover:text-gray-600 rounded" data-tip="Close docked chat">
+            <button onClick={toggleDockChat} className="p-1 text-gray-400 hover:text-gray-600 rounded" data-tip="Close docked chat" data-tip-left>
               <X size={14} />
             </button>
           </div>

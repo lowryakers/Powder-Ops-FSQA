@@ -3691,7 +3691,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     // (users who navigate by quick tabs), so leave room for it on phones.
     <div className={`fixed inset-0 bg-white flex flex-col ${bottomNavPadding ? 'pb-14 md:pb-0' : ''}`}>
       {/* top bar */}
-      <div className="flex items-center gap-3 px-4 h-12 border-b border-gray-200 shrink-0">
+      <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 h-12 border-b border-gray-200 shrink-0" data-comms-topbar>
         {onBackToModule ? (
           <button onClick={onBackToModule} className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-semibold text-powder-700 bg-powder-50 hover:bg-powder-100 rounded-lg shrink-0" title={`Back to ${backLabel}`}>
             <ArrowLeft size={16} /> {backLabel}

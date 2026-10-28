@@ -61,6 +61,7 @@ const RUNS = [
     OPS_WEBHOOK_CONTROLLER_URL: 'http://127.0.0.1:5143/automations/webhook/ctrlROUTINE1', OPS_WEBHOOK_CONTROLLER_KEY: 'crsr_fakeCtrl' }, false],
   ['verify-test-runner.mjs', 5144, { OPS_WEBHOOK_ENABLED: '1', OPS_HOOK_PORT: '5145',
     OPS_WEBHOOK_URL: 'http://127.0.0.1:5145/automations/webhook/procROUTINE2', OPS_WEBHOOK_KEY: 'crsr_fakeProc2' }, false],
+  ['verify-topbar.mjs', 5146, {}, false],
   ['verify-in-app-files.mjs', 5095, {}, true],
   ['verify-policy-acks.mjs', 5096, {}, false],
   ['verify-bpg-items.mjs', 5010, {}, false],

@@ -9082,3 +9082,35 @@ them instead of a person, but D-251 deliberately wakes nobody for a bot post. So
 - **Its token is minted by an admin** in Settings → Bot API tokens, scopes Read + Write; nothing in a deploy creates
   one. That token is what Jarvis holds.
 - `check:opswebhook` (51), `verify:testrunner` (23; control without the guard fails 6).
+
+## D-253 — The top bar sizes itself by its own width, the dock leaves the module room, and a tooltip is only drawn while hovered (28 Oct 2026)
+Marnee resized ReadyDoc with Messages docked, and the top bar's pieces ran into each other. The title, search box,
+Split Screen, icons and her name all collided. Three causes, all fixed:
+- **The bar used WINDOW breakpoints** (`lg:`) to decide what to show. With Messages docked, a 1440px window can leave
+  the module column 600px wide. The window was still "large", so the bar asked for the full search box, the Split
+  Screen label and the account name in a row that could not hold them. The bar is a `@container` now, and every piece
+  reads the bar's own width:
+  - the full search box from 48rem, otherwise the icon;
+  - the Split Screen label and the ⌘K hint from 56rem, otherwise just the icon;
+  - the account name from 64rem, otherwise the avatar, and the name truncates when it does show;
+  - the page title truncates;
+  - the controls never wrap or squeeze.
+- **The dock could take almost all of the module's room.** A remembered 760px dock in a 1280px window left the module
+  280px. The width drawn is now the remembered width clamped so the module keeps at least 560px (beside the 240px
+  sidebar). The remembered width itself is never rewritten, so widening the window gives it back.
+- **Every tooltip was an invisible box that was always there.** `[data-tip]::after` sat at opacity 0, and an absolutely
+  positioned box widens the page even when you can't see it. The dock's close button sits at the right edge, so with
+  the dock open the whole app panned sideways. The bubble now exists only on `:hover`; a short keyframe replaces the
+  fade. The close button also gets `data-tip-left`.
+- The Messages bar inside the dock tightens its gaps below `sm`. It already sized by the iframe's width, and it is
+  checked at both dock extremes.
+- `verify:topbar` (66, a real browser):
+  - nine window widths from 768 to 1600, docked and not;
+  - the bar is one row, with no overlap, nothing past its edge and no sideways pan;
+  - the name and the full search show only where they fit;
+  - the dock's drawn width;
+  - a tooltip has no box until hovered.
+- Controls:
+  - Putting the window breakpoints and the unclamped dock back fails 21. This is her report exactly: at 1440px with
+    a 760px dock, the search box overlaps the buttons and "Marnee Dortch-…" runs off the bar.
+  - The old tooltip rule fails the tooltip check.
