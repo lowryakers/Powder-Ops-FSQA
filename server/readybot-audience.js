@@ -28,6 +28,7 @@ import { controlledChangeRecipients } from './api/controlled.js';
 import { auditorPassRecipients } from './api/auditor-pass.js';
 import { supplyCycleRecipients } from './api/office.js';
 import { largeClaimRecipients, LARGE_CLAIM_OVER } from './api/reimbursements.js';
+import { lateResultsRecipients, LATE_SETTING } from './coa-late-results.js';
 
 const listed = (rows) => rows.map(u => ({ id: u.id, name: u.name }));
 
@@ -74,6 +75,7 @@ export function readybotAudiences(db) {
   const auditorPass = auditorPassRecipients(db);
   const supplyCycles = supplyCycleRecipients(db);
   const largeClaims = largeClaimRecipients(db);
+  const lateResults = lateResultsRecipients(db);
 
   return [
     {
@@ -130,6 +132,16 @@ export function readybotAudiences(db) {
       note: largeClaims.source === 'default'
         ? 'Nobody has been chosen, so it goes to the people who can approve and pay a claim: admins and office supervisors. The person who filed it is never told about their own claim.'
         : 'The person who filed it is never told about their own claim.',
+    },
+    {
+      key: 'coa_late_results',
+      label: 'Lab results overdue',
+      what: 'A sample at the lab is past the date its results were due, so somebody calls the lab.',
+      when: 'Once a weekday morning, only while something is late. Samples with no expected date are not counted.',
+      setting: LATE_SETTING,
+      source: lateResults.source,
+      recipients: listed(lateResults.users),
+      note: lateResults.source === 'default' ? 'Nobody has been chosen, so it goes to the QA supervisors.' : null,
     },
     {
       key: 'employee_documents',
@@ -263,4 +275,5 @@ export const SETTABLE = {
   auditor_pass_recipients: 'An auditor pass was issued',
   supply_cycle_recipients: 'Standing supply list due',
   reimbursement_alert_recipients: 'Reimbursement over $100',
+  coa_late_results_recipients: 'Lab results overdue',
 };

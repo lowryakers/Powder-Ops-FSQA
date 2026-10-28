@@ -15,8 +15,8 @@ import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { useCappedList } from '../../lib/useCappedList';
 import ShowMore from '../common/ShowMore.jsx';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
-import { canFilmInspect } from '../../utils/permissions';
-import { getParam, consumeParam } from '../../lib/deepLink';
+import { canFilmInspect, canViewModule } from '../../utils/permissions';
+import { getParam, consumeParam, setParam } from '../../lib/deepLink';
 import { withCurrent } from '../../lib/managedList.js';
 import FrozenScroll from '../common/FrozenScroll';
 
@@ -419,6 +419,16 @@ const COLUMNS = [
 ];
 
 function ReceivingTable({ user }) {
+  const openLabRequest = (r) => {
+    // Set before navigating: COA may not be mounted yet to hear the event.
+    if (r.lab_request_id) {
+      setParam('request', r.lab_request_id);
+      window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab: 'coa', request: r.lab_request_id } }));
+    } else {
+      setParam('from_receiving', r.id);
+      window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab: 'coa', from_receiving: r.id } }));
+    }
+  };
   const [from, setFrom] = useState(daysAgoStr(90));
   const [to, setTo] = useState(localDateStr());
   const [q, setQ] = useState('');
@@ -687,6 +697,15 @@ function ReceivingTable({ user }) {
                           )}
                           {/* One checklist covers the whole receipt, so it
                               opens from any line that carries the number. */}
+                          {/* D-257: the sample is due, so the next act is the lab
+                              request — filled in from this line on the COA screen.
+                              Only for people who can open COA. */}
+                          {r.lab_test_required && canViewModule(user, 'coa') && (
+                            <button type="button" onClick={() => openLabRequest(r)} data-start-lab-request={r.id}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-purple-600 text-white text-xs font-semibold">
+                              <FlaskConical size={12} /> {r.lab_request_id ? 'Open the lab request' : 'Start lab request'}
+                            </button>
+                          )}
                           {r.inspection_no && (
                             <button type="button" onClick={() => setChecklist(r.inspection_no)}
                               className="inline-flex items-center gap-1 text-powder-700 hover:underline text-xs font-medium">

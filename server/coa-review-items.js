@@ -282,10 +282,32 @@ export function specLinkProgress(db, item) {
     blockedBy: left && req.qa_signed_at ? 'The certificate is signed, so its results are closed — un-sign it first.' : null };
 }
 
-/** Open items with their derived progress. */
+// D-256: the pile is worked most dangerous first. A signed certificate that is
+// wrong can already be in a customer's hands; an empty duplicate harms nobody.
+// It used to sort by the kind's code name, which put the 21 signed
+// certificates under 80 duplicate cards.
+export const RISK_ORDER = Object.freeze([
+  'UNSIGN_FAILED', 'UNSIGN_CORRECT_NO_RESIGN', 'RESIGN', 'CORRECT_ONLY',
+  'UNREAD_ROWS', 'SPEC_LINK_REVIEW', 'DELETE_DUPLICATE', 'POSSIBLE_DUPLICATE',
+]);
+const riskRank = (kind) => { const i = RISK_ORDER.indexOf(kind); return i < 0 ? RISK_ORDER.length : i; };
+
+// Empty duplicates of the same kept request are one card on the screen, so
+// they sort next to each other.
+const groupKeyOf = (item) => {
+  if (item.kind !== 'DELETE_DUPLICATE') return null;
+  const canon = parse(item.steps, {})?.seed?.canonical_request_id;
+  return canon ? `keeps:${canon}` : null;
+};
+
+/** Open items with their derived progress, most dangerous first. */
 export function openItems(db) {
-  return db.prepare("SELECT * FROM coa_review_items WHERE status = 'open' ORDER BY kind, created_at, item_key").all()
-    .map(i => ({ ...i, progress: itemProgress(db, i) }));
+  return db.prepare("SELECT * FROM coa_review_items WHERE status = 'open'").all()
+    .map(i => ({ ...i, progress: itemProgress(db, i), group_key: groupKeyOf(i) }))
+    .sort((a, b) => riskRank(a.kind) - riskRank(b.kind)
+      || String(a.group_key || '').localeCompare(String(b.group_key || ''))
+      || String(a.created_at || '').localeCompare(String(b.created_at || ''))
+      || String(a.item_key).localeCompare(String(b.item_key)));
 }
 
 /** The pile: open and not yet complete. */
@@ -352,9 +374,27 @@ export function dismissItem(db, user, id, reason) {
   return { item: db.prepare('SELECT * FROM coa_review_items WHERE id = ?').get(item.id), before: item };
 }
 
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+
+/** A request named the way Maria knows it: what, which lot, when it was filed. */
+export function requestLabel(db, id) {
+  const r = db?.prepare('SELECT item_number, item_description, lot_number, created_at, qa_signed_at FROM coa_requests WHERE id = ?').get(id);
+  if (!r) return 'a request that is no longer on file';
+  const what = r.item_description || r.item_number || 'request';
+  return `${what} · lot ${r.lot_number || 'blank'} · filed ${String(r.created_at || '').slice(0, 10) || 'unknown'}${r.qa_signed_at ? ' · signed' : ''}`;
+}
+
+// D-256: the stored wording names requests by their long ids. Read out, each
+// becomes the request's own name. The stored text is never rewritten.
+const plainIds = (db, text) => (text && db
+  ? String(text).replace(UUID_RE, (id) => `the request "${requestLabel(db, id)}"`)
+  : text);
+
 /** The QA Review row for one item. */
-export function reviewRow(item) {
+export function reviewRow(item, db = null) {
   const extra = parse(item.steps, {});
+  const groupKey = item.group_key ?? groupKeyOf(item);
+  const keeper = groupKey ? groupKey.slice('keeps:'.length) : null;
   return {
     id: item.id,
     item_key: item.item_key,
@@ -366,12 +406,38 @@ export function reviewRow(item) {
     date: (item.created_at || '').slice(0, 10),
     result: null,
     extra: null,
-    recommended_action: item.recommended_action,
-    reason: item.reason,
-    note: [extra.note, (() => { const d = parse(item.decision, null); return d ? `${d.by} marked record ${d.remove} for removal: ${d.reason}` : null; })()].filter(Boolean).join(' ') || null,
+    risk: riskRank(item.kind),
+    group_key: groupKey,
+    group_label: keeper && db ? requestLabel(db, keeper) : null,
+    request_label: db ? requestLabel(db, item.request_id) : null,
+    recommended_action: plainIds(db, item.recommended_action),
+    reason: plainIds(db, item.reason),
+    note: [plainIds(db, extra.note), (() => { const d = parse(item.decision, null); return d ? `${d.by} marked record ${d.remove} for removal: ${d.reason}` : null; })()].filter(Boolean).join(' ') || null,
     evidence: parse(item.evidence, []),
     steps: item.progress?.steps || [],
     blocked_by: item.progress?.blockedBy || null,
     decision_ref: item.decision_ref,
   };
+}
+
+/**
+ * D-256: every open "delete empty duplicate" item at once (or the ones named),
+ * each checked exactly as a single delete is. Ready ones can go in one act;
+ * a refused one is named with its reason and left alone. Writes nothing.
+ */
+export function emptyDuplicatePlan(db, { requestIds = null } = {}) {
+  const wanted = Array.isArray(requestIds) && requestIds.length ? new Set(requestIds) : null;
+  const items = pendingItems(db).filter(i => i.kind === 'DELETE_DUPLICATE' && (!wanted || wanted.has(i.request_id)));
+  const ready = [], refused = [];
+  for (const item of items) {
+    const refusal = duplicateDeleteRefusal(db, item.request_id, item);
+    const row = { request_id: item.request_id, item_key: item.item_key, label: requestLabel(db, item.request_id),
+      keeps: requestLabel(db, parse(item.steps, {})?.seed?.canonical_request_id) };
+    if (refusal) refused.push({ ...row, reason: refusal }); else ready.push(row);
+  }
+  if (wanted) {
+    const seen = new Set(items.map(i => i.request_id));
+    for (const id of wanted) if (!seen.has(id)) refused.push({ request_id: id, label: requestLabel(db, id), reason: 'It is not an open "delete empty duplicate" correction.' });
+  }
+  return { ready, refused };
 }

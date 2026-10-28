@@ -5,7 +5,7 @@ import { CheckCircle2, XCircle, ExternalLink, RefreshCw, ClipboardCheck, AlertTr
 import { useCappedList } from '../../lib/useCappedList';
 import ShowMore from '../common/ShowMore.jsx';
 import { withSignature } from '../../lib/signature';
-import { downloadFile } from '../../lib/downloadFile.js';
+import CoaCorrectionsList, { ActionRow } from './CoaCorrectionsList.jsx';
 
 // QA Review Center — everything waiting on a QA signature, in one place.
 //
@@ -56,65 +56,6 @@ function AgeChip({ date }) {
       bad ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-700'}`}>
       {n}d
     </span>
-  );
-}
-
-// One COA correction (D-236). Not a signature: the work is done on the request
-// itself, so the row says what to do, why, what proves it, and ticks its own
-// steps as the request changes. No checkbox, no Sign button.
-function ActionRow({ r }) {
-  const openRequest = (id) => window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab: 'coa', request: id } }));
-  const openLink = () => window.dispatchEvent(new CustomEvent('app-navigate', { detail: r.link }));
-  const done = r.steps.filter(s => s.done).length;
-  return (
-    <li className="px-3 py-3" data-review-row={r.id} data-action-row={r.action_kind}>
-      <div className="flex items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800" data-action-chip>{r.subtitle}</span>
-            <p className="text-[15px] font-medium text-gray-900 leading-snug">{r.title}</p>
-          </div>
-          <p className="text-sm text-gray-800 mt-1" data-recommended>{r.recommended_action}</p>
-          <p className="text-xs text-gray-500 mt-0.5">{r.reason}</p>
-          {r.note && <p className="text-xs text-blue-700 mt-1" data-action-note>{r.note}</p>}
-          <ul className="mt-1.5 space-y-0.5">
-            {r.steps.map((s, i) => (
-              <li key={s.key} className={`text-xs flex items-center gap-1.5 ${s.done ? 'text-green-700' : 'text-gray-600'}`}
-                data-step={s.key} data-done={s.done ? '1' : '0'}>
-                {s.done ? <CheckCircle2 size={13} /> : <span className="w-[13px] h-[13px] rounded-full border border-gray-300 inline-block" />}
-                {i + 1}. {s.label}
-              </li>
-            ))}
-          </ul>
-          {r.blocked_by && <p className="text-xs text-amber-700 mt-1">{r.blocked_by}</p>}
-          <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs">
-            {(r.evidence || []).map((e, i) => e.kind === 'request' ? (
-              <button key={i} type="button" onClick={() => openRequest(e.request_id)} className="text-powder-600 hover:underline">{e.label}</button>
-            ) : e.kind === 'file' ? (
-              <button key={i} type="button" data-evidence-file={e.file_id}
-                onClick={() => downloadFile(`/coa/files/${e.file_id}/download`, e.label).catch(() => {})}
-                className="text-powder-600 hover:underline">Lab report: {e.label}</button>
-            ) : (
-              <span key={i} className="text-gray-500">{e.label}</span>
-            ))}
-          </div>
-        </div>
-        <div className="shrink-0 flex flex-col items-end gap-1">
-          {r.steps.length > 0 && <span className="text-[10px] text-gray-400">{done} of {r.steps.length} done</span>}
-          {r.link && !r.request_id ? (
-            <button onClick={openLink} data-open-link={r.link.view}
-              className="px-2.5 py-1 bg-powder-600 text-white text-xs font-semibold rounded-md inline-flex items-center gap-1">
-              Open COA <ExternalLink size={11} />
-            </button>
-          ) : (
-          <button onClick={() => openRequest(r.request_id)} data-open-request={r.request_id}
-            className="px-2.5 py-1 bg-powder-600 text-white text-xs font-semibold rounded-md inline-flex items-center gap-1">
-            Open request <ExternalLink size={11} />
-          </button>
-          )}
-        </div>
-      </div>
-    </li>
   );
 }
 
@@ -235,7 +176,9 @@ export default function QAReviewPanel() {
             </div>
           )}
 
-          {current && current.kind === 'action' && (
+          {current && current.key === 'coa-corrections' && <CoaCorrectionsList current={current} refresh={refresh} />}
+
+          {current && current.kind === 'action' && current.key !== 'coa-corrections' && (
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden" data-action-source={current.key}>
               <div className="px-3 py-2 border-b border-gray-100 bg-gray-50 text-xs text-gray-500">
                 {current.count} {current.count === 1 ? current.noun : current.plural} to make — done on each request, not signed here.

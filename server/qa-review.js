@@ -296,7 +296,7 @@ export const SOURCES = [
     noun: 'correction',
     plural: 'corrections',
     count: (db) => pendingItems(db).length,
-    pending: (db, limit = LIMIT) => pendingItems(db).slice(0, limit).map(reviewRow),
+    pending: (db, limit = LIMIT) => pendingItems(db).slice(0, limit).map(i => reviewRow(i, db)),
     canSign: () => false,
     sign: () => ({ error: 'COA corrections are made on the request itself, not signed from this list.', status: 400 }),
   },

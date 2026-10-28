@@ -55,7 +55,7 @@ export function resolveTarget(db, targetKey, excludeUserId = null, targets = NOT
  * Returns who it actually reached, which is what gets written onto the record —
  * "notified QA" with nobody behind it would be worse than no record at all.
  */
-export async function sendEscalation(db, { item, target, inspectionNo, detail, from, path, origin, icon = '📦', targets = NOTIFY_TARGETS, tagPrefix = 'receiving' }) {
+export async function sendEscalation(db, { item, target, inspectionNo, detail, from, path, origin, icon = '📦', targets = NOTIFY_TARGETS, tagPrefix = 'receiving', links = [] }) {
   const people = resolveTarget(db, target, from?.id, targets);
   if (!people.length) return { sent: [], reason: 'nobody to notify' };
   const t = targets[target];
@@ -80,7 +80,8 @@ export async function sendEscalation(db, { item, target, inspectionNo, detail, f
         `${icon} *${t.subject}*\nInspection *${inspectionNo}* — ${item}\n`
         + `${detail ? `${detail}\n` : ''}`
         + `${raisedBy}\n`
-        + `[Open it](${link})`);
+        + `[Open it](${link})`
+        + links.map(l => ` · [${l.label}](${readyDocOrigin()}${l.path})`).join(''));
       pushToUser(p.id, {
         title: t.subject,
         body: `${inspectionNo}: ${item}`.slice(0, 120),

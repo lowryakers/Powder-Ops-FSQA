@@ -4405,6 +4405,10 @@ function runMigrations() {
   // Derived from lot_number, which is never changed.
   addColumnIfMissing('coa_requests', 'base_lot', 'TEXT');
   addColumnIfMissing('coa_requests', 'batch', 'TEXT');
+  // D-257: a lab request started from a receiving line's lab-test alert names
+  // that line, so the line can say the request exists and a second is refused.
+  addColumnIfMissing('coa_requests', 'receiving_log_id', 'TEXT');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_coa_requests_receiving ON coa_requests(receiving_log_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_coa_requests_base_lot ON coa_requests(base_lot)');
   db.prepare("INSERT OR IGNORE INTO coa_brands (id, name, public_publish_allowed) VALUES ('brand-prodough', 'ProDough', 0)").run();
   db.prepare("INSERT OR IGNORE INTO coa_settings (key, value, updated_by) VALUES ('evidence_disclosure_mode', 'never', 'system')").run();

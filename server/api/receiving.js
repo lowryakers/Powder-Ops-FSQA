@@ -98,7 +98,10 @@ router.get('/next-inspection-no', (req, res) => {
 router.get('/', (req, res) => {
   const db = getDb();
   const { from, to, status, uom, q, limit } = req.query;
-  let sql = 'SELECT * FROM receiving_log WHERE 1=1';
+  // `lab_request_id` (D-257): the lab request started from this line, if any —
+  // read from the request's own link, never stored on the line.
+  let sql = `SELECT *, (SELECT c.id FROM coa_requests c WHERE c.receiving_log_id = receiving_log.id
+    ORDER BY c.created_at DESC LIMIT 1) AS lab_request_id FROM receiving_log WHERE 1=1`;
   const params = [];
   if (from) { sql += ' AND date_received >= ?'; params.push(from); }
   if (to) { sql += ' AND date_received <= ?'; params.push(to); }
@@ -563,6 +566,9 @@ async function notifyLabTest(db, line, user) {
     path: `/?tab=receiving-log&inspection=${encodeURIComponent(line.inspection_no || '')}`,
     // Nobody pressed a button here — the item arriving is the whole trigger.
     origin: 'On QA\'s standing lab-test list — raised automatically when this was received.',
+    // D-257: the next act is filing the lab request, so the alert offers it
+    // pre-filled from this line.
+    links: [{ label: 'Start the lab request', path: `/?tab=coa&from_receiving=${encodeURIComponent(line.id)}` }],
   });
   if (sent?.length) {
     db.prepare("UPDATE receiving_log SET lab_test_notified_at = datetime('now'), lab_test_notified_to = ? WHERE id = ?")

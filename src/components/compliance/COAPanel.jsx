@@ -119,6 +119,42 @@ function GapsChip({ request }) {
 // /coa/release-gate — mode, what the gate has let through carrying gaps, what
 // it is holding, and which items still lack a full specification. Only an
 // admin moves the mode; the switch is audited.
+// D-258: samples past the date their results were due, named, each one a
+// click into its request. Requests with no expected date are counted apart:
+// they cannot be late, and the line says why they are not listed.
+function LateResultsStrip({ refreshKey, onOpen }) {
+  const { data } = useApiGet('/coa/late-results', [refreshKey]);
+  const late = data?.late || [];
+  if (!data || (!late.length && !data.no_date)) return null;
+  return (
+    <div className={`rounded-xl border px-3 py-2.5 ${late.length ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-white'}`} data-late-results={late.length}>
+      {late.length > 0 && (
+        <>
+          <p className="text-sm font-semibold text-amber-800 flex items-center gap-1.5">
+            <AlertTriangle size={15} /> {late.length} sample{late.length === 1 ? '' : 's'} past the date results were due
+          </p>
+          <ul className="mt-1 space-y-0.5">
+            {late.slice(0, 8).map(r => (
+              <li key={r.id} className="text-xs text-amber-900">
+                <button type="button" onClick={() => onOpen(r.id)} className="hover:underline text-left" data-late-row={r.id}>
+                  {r.item_description || r.item_number} · lot {r.lot_number || 'blank'}{r.lab_name ? ` · ${r.lab_name}` : ''} · due {String(r.expected).slice(0, 10)} · <b>{r.days_late} day{r.days_late === 1 ? '' : 's'} late</b>
+                </button>
+              </li>
+            ))}
+          </ul>
+          {late.length > 8 && <p className="text-xs text-amber-700 mt-0.5">…and {late.length - 8} more.</p>}
+          <p className="text-xs text-amber-700 mt-1">Call the lab, or enter the results if they came in. QA gets this list each weekday morning while anything is late.</p>
+        </>
+      )}
+      {data.no_date > 0 && (
+        <p className={`text-xs ${late.length ? 'text-amber-700 mt-1' : 'text-gray-500'}`} data-late-nodate={data.no_date}>
+          {data.no_date} sample{data.no_date === 1 ? '' : 's'} at the lab {data.no_date === 1 ? 'has' : 'have'} no expected date, so {data.no_date === 1 ? 'it is' : 'they are'} not checked for lateness. Add the date sent and turnaround days to include {data.no_date === 1 ? 'it' : 'them'}.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function ReleaseGateStrip({ isAdmin, refreshKey }) {
   const { data, refresh } = useApiGet('/coa/release-gate', [refreshKey]);
   const [open, setOpen] = useState(false);
@@ -678,19 +714,22 @@ function TestsRequestedPicker({ value, onChange, specTests }) {
 }
 
 // ──────── Request Form ────────
-function RequestForm({ initial, labs, onSave, onCancel }) {
-  const [form, setForm] = useState(initial || {
-    item_number: '', item_description: '', lot_number: '', product_expiration: '',
-    tests_requested: '', lab_id: '', date_sent: '', tat_days: 7,
-    expected_results_date: '', requested_by: '', notes: '',
-    origin: '', supplier: '', product_code: '', manufacturer_lot: '', vendor_lot: '', received_date: '',
-  });
+const BLANK_REQUEST = {
+  item_number: '', item_description: '', lot_number: '', product_expiration: '',
+  tests_requested: '', lab_id: '', date_sent: '', tat_days: 7,
+  expected_results_date: '', requested_by: '', notes: '',
+  origin: '', supplier: '', product_code: '', manufacturer_lot: '', vendor_lot: '', received_date: '',
+};
+
+// `prefill` (D-257) starts a NEW request from a receiving line; `initial` edits one.
+function RequestForm({ initial, prefill, notice, labs, onSave, onCancel }) {
+  const [form, setForm] = useState(initial || { ...BLANK_REQUEST, ...(prefill || {}) });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [specInfo, setSpecInfo] = useState(null);
   const { user } = useAuth() || {};
   const canSetBrand = !!user && (user.role === 'admin' || user.department === 'qa');
-  const { data: brands } = useApiGet(!initial && canSetBrand ? '/coa/brands' : null);
+  const { data: brands } = useApiGet(!initial?.id && canSetBrand ? '/coa/brands' : null);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   // Pull the material spec for this item and pre-fill the test panel, so tests
@@ -738,6 +777,11 @@ function RequestForm({ initial, labs, onSave, onCancel }) {
   return (
     <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
       <h3 className="font-semibold text-gray-900">{initial?.id ? 'Edit Lab Request' : 'New Lab Request'}</h3>
+      {notice && (
+        <div className="text-[12px] text-purple-900 bg-purple-50 border border-purple-100 rounded-lg px-3 py-2" data-receiving-prefill>
+          {notice}
+        </div>
+      )}
       {specInfo?.count > 0 && (
         <div className="text-[12px] text-powder-800 bg-powder-50 border border-powder-100 rounded-lg px-3 py-2 flex items-center justify-between gap-2">
           <span>Spec on file{specInfo.revision ? ` (${specInfo.revision})` : ''}{specInfo.vendor ? ` · ${specInfo.vendor}` : ''} — {specInfo.count} test{specInfo.count === 1 ? '' : 's'}. Results will auto pass/fail against it.</span>
@@ -2467,10 +2511,33 @@ export default function COAPanel() {
   const [releaseLot, setReleaseLot] = useState(() => { const v = getParam('lot'); if (!v) return null; const [item, base] = v.split('|'); return item && base ? { item, base } : null; });
   useEffect(() => { consumeParam('lot'); if (['release', 'specs'].includes(getParam('view'))) consumeParam('view'); }, []);
   useEffect(() => { if (getParam('request')) consumeParam('request'); }, []);
+  // D-257: "Start the lab request" from a receiving line's lab-test alert opens
+  // the new-request form filled from that line. A line that already has one
+  // opens that request instead.
+  const [fromReceiving, setFromReceiving] = useState(null);
+  const startFromReceiving = async (lineId) => {
+    if (!lineId) return;
+    consumeParam('from_receiving');
+    setSubTab('requests');
+    try {
+      const p = await apiFetch(`/coa/receiving-prefill/${encodeURIComponent(lineId)}`);
+      if (p.existing) { setShowForm(false); setFromReceiving(null); setSelectedId(p.existing.id); return; }
+      const missing = p.missing?.length ? ` Fill in: ${p.missing.join(' and ')} (not on the receiving line).` : '';
+      setFromReceiving({ prefill: p.prefill, notice: `Filled in from the receiving line. Check it, add the lab and the date sent, then save.${missing}` });
+      setShowForm(true);
+    } catch (e) { window.alert(e?.message || 'Could not open that receiving line.'); }
+  };
+  const startRef = useRef(startFromReceiving);
+  useEffect(() => { startRef.current = startFromReceiving; });
+  useEffect(() => {
+    const id = getParam('from_receiving');
+    if (id) { consumeParam('from_receiving'); startRef.current(id); }
+  }, []);
   useEffect(() => {
     const h = (e) => {
       if (e.detail?.tab !== 'coa') return;
-      if (e.detail.request) { setSubTab('requests'); setSelectedId(e.detail.request); }
+      if (e.detail.from_receiving) startRef.current(e.detail.from_receiving);
+      else if (e.detail.request) { consumeParam('request'); setSubTab('requests'); setSelectedId(e.detail.request); }
       else if (e.detail.view === 'release') { setSubTab('release'); setReleaseLot(e.detail.lot || null); }
       else if (e.detail.view === 'specs') setSubTab('specs');
     };
@@ -2546,6 +2613,7 @@ export default function COAPanel() {
   const handleCreateRequest = async (form) => {
     await apiPost('/coa/requests', form);
     setShowForm(false);
+    setFromReceiving(null);
     refreshReqs();
     refreshSummary();
   };
@@ -2667,6 +2735,7 @@ export default function COAPanel() {
       {subTab === 'requests' && (
         <>
           <ReleaseGateStrip isAdmin={isAdmin} refreshKey={reqPayload} />
+          <LateResultsStrip refreshKey={reqPayload} onOpen={setSelectedId} />
           <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
             <div className="relative flex-1">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -2714,7 +2783,9 @@ export default function COAPanel() {
             </div>
           )}
 
-          {showForm && <RequestForm labs={labs} onSave={handleCreateRequest} onCancel={() => setShowForm(false)} />}
+          {showForm && <RequestForm key={fromReceiving?.prefill?.receiving_log_id || 'new'} labs={labs}
+            prefill={fromReceiving?.prefill} notice={fromReceiving?.notice}
+            onSave={handleCreateRequest} onCancel={() => { setShowForm(false); setFromReceiving(null); }} />}
 
           {/* WHAT YOU ARE LOOKING AT, OUT OF WHAT EXISTS. The list is bounded
               server-side, and a capped list with nothing saying so reads as

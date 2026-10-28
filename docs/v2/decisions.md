@@ -9169,3 +9169,49 @@ were wrong:
 - `verify:topbar`'s "full search box" case moved from 1440px docked to 1600px docked (67 checks). The reserved
   scrollbar gutter puts the 1440 bar a few pixels under the line, which is a fine way for it to look.
 - Not covered: other roles' views, very large real data sets, and touch gestures.
+
+## D-256 — The COA corrections pile is worked most dangerous first; empty duplicates go in one act (28 Oct 2026)
+
+QA Review → COA corrections read 102 (the 43 corrections of D-236 plus the 59 possible duplicates of D-242, which is
+right). It sorted by the item kind's code name, so the 21 **signed certificates that are wrong** (17 re-sign, 4
+un-sign) sat under 80 duplicate cards, and every duplicate card spelled the kept request as a 36-character id.
+`openItems` / `reviewRow` in `server/coa-review-items.js`, `CoaCorrectionsList.jsx`,
+`POST /coa/corrections/duplicates/delete`.
+- **Order is risk (`RISK_ORDER`)**: un-sign a failed lot, un-sign and correct, re-sign, correct, unread lines,
+  spec links, delete duplicate, possible duplicate. Within a kind, copies of one kept request sit together.
+- **Chips** across the top filter one kind at a time, with counts, in the same order.
+- **Copies of one kept request are one card**, "N empty copies of the same lab report", with one button.
+- **No long id in the words.** Read out, each id becomes the request's own name (item · lot · filed date). The
+  stored wording is not rewritten.
+- **Every empty duplicate can be deleted in one act** (Quality or admin). Each is checked exactly as a single delete
+  is: no results, no file, not signed, from the CTLA upload, its lab report kept on another request. One that fails
+  is named and left; the rest go. `preview: true` writes nothing; a reason and the password are required; one audit
+  row per request (`bulk: true`, the item, the signature) plus a summary. It deletes nothing a correction item does
+  not name, and never a possible duplicate (those stay Maria's decision and an admin's delete, D-242).
+- `verify:coaworklist` (52, with D-257 and D-258; control: `main` fails 16 of the first 23, then stops).
+
+## D-257 — A receiving line's lab-test alert starts the lab request, filled in (28 Oct 2026)
+
+The alert told Adam and Maria a sample was due, and they then retyped the item, lot and tests into a new lab
+request. `GET /coa/receiving-prefill/:id`, `coa_requests.receiving_log_id`, the link in the alert, the button on
+the receiving line, the prefilled form on COA.
+- **The alert carries "Start the lab request"**, and the receiving line's detail has the same button for anyone who
+  can open COA (it reads "Open the lab request" once one exists).
+- **The form is filled from the line** (part, description, vendor lot as the lot, expiry, received date, the vendor
+  off the checklist, PO and inspection in the notes) and the tests from QA's standing list. Nothing is written until
+  the person checks it and saves. A blank vendor lot or blank tests are named on the form.
+- **One line, one lab request.** The request names the line; a second is refused (409, naming the first). The
+  receiving list reads `lab_request_id` from the request's own link, never a copy on the line.
+- Warehouse does nothing new: file the line with the vendor lot, and set the sample aside.
+
+## D-258 — Late lab results are named, and QA is told once a weekday morning (28 Oct 2026)
+
+The bell said "N lab requests awaiting results" — every sample out, late or not. `server/coa-late-results.js`,
+`GET /coa/late-results`, the strip on Lab Requests, Settings → ReadyBot messages → "Lab results overdue".
+- **Late = sent, no results date, and the expected date before the plant's today.** The expected date is the one
+  typed, else the date sent plus the lab's turnaround days. **A sample with no expected date is never called late**;
+  it is counted apart, and the strip says how to include it. Guessing a date is how a reminder becomes noise.
+- **One message per open weekday from 9am, only while something is late**, listing up to ten. Default audience:
+  QA supervisors; settable (`coa_late_results_recipients`). Quiet on a holiday and when nothing is late.
+- The live data was not checked from here. The strip shows how many samples out have no expected date; if that
+  number is large, fill the dates in before relying on the message.

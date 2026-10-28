@@ -3957,6 +3957,17 @@ Specifications tab), `UnreadRows` on a request.
   refused until it is withdrawn. Nothing here moves the gate or a public switch.
 - `verify:coa2b` (105, live + browser), `coa-lot-readiness` + `coa-public-snapshot` tests, `check:publiccoa` (19).
 
+## COA corrections by risk; receiving starts the lab request; late results named (D-256 … D-258)
+- **QA Review's COA corrections sort by `RISK_ORDER`** (wrong signed certificates first), filter by chip, group
+  copies of one kept request into one card, and print requests by name, never id (`requestLabel`; stored text kept).
+- **`POST /coa/corrections/duplicates/delete`** deletes every open empty duplicate in one act (Quality/admin, reason +
+  password, `preview: true` writes nothing). Each goes through `duplicateDeleteRefusal`; a refused one is named and left.
+- **A lab-test alert links to `/?tab=coa&from_receiving=<line id>`**: `GET /coa/receiving-prefill/:id` fills the form,
+  `coa_requests.receiving_log_id` links it, a second request per line is 409. `sendEscalation` takes `links`.
+- **Late = sent, no results date, expected date (typed, else sent + tat) before today** (`lateLabResults`). No date ⇒
+  counted apart, never late. ReadyBot to QA once an open weekday from 9am, only when late (`coa_late_results_recipients`).
+- `verify:coaworklist` (52; control fails 16 of the first 23). Instructions: `docs/lab-request-from-receiving.md`.
+
 ## COA item specification sheet
 The Specifications tab stores one row per test (right for auto pass/fail, hard to eyeball). "View item & all
 specs" (`ItemSpecSummaryModal` in COAPanel.jsx) regroups the rows under an item — the old paper spec sheet —
