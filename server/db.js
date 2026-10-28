@@ -2481,6 +2481,12 @@ function initSchema() {
     );
   `);
 
+  // A claim over $100 alerts the office once, as it is filed (D-254). After the
+  // reimbursements CREATE above — a column migration before its table kills a
+  // fresh boot.
+  addColumnIfMissing('reimbursements', 'large_alert_at', 'TEXT');
+  addColumnIfMissing('reimbursements', 'large_alert_to', 'TEXT');
+
   // ── write-drafts → write (D-164) ──────────────────────────────────────────
   // The token scope `write-drafts` became `write`. Tokens minted under the old
   // name keep working (the reader maps it too), but the stored value is moved

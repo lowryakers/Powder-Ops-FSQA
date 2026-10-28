@@ -9114,3 +9114,23 @@ Split Screen, icons and her name all collided. Three causes, all fixed:
   - Putting the window breakpoints and the unclamped dock back fails 21. This is her report exactly: at 1440px with
     a 760px dock, the search box overlaps the buttons and "Marnee Dortch-…" runs off the bar.
   - The old tooltip rule fails the tooltip check.
+
+## D-254 — A reimbursement over $100 messages the office the moment it is filed (28 Oct 2026)
+Lowry reads reimbursements on payroll day. A large claim may be worth paying another way so the person is not out of
+pocket until then, and that decision needs somebody to know the claim exists.
+- **Over $100, not at it** (`LARGE_CLAIM_OVER` in `api/reimbursements.js`, the one place the number lives). The list
+  carries `large` per claim and `large_over`, and the screen draws an amber **Over $100** chip from them. The client
+  keeps no copy of the number.
+- **A ReadyBot DM and a push, sent once per claim.** `large_alert_at` / `large_alert_to` are claimed with a conditional
+  UPDATE before anything is sent, so a double submit or a later edit cannot send a second one. The message names the
+  person, the amount, the merchant and category, the date, the receipt count, and says to approve it and pay it
+  another way if it should be paid before payroll.
+- **The edit path asks too**, so a $50 claim corrected to $120 alerts then. Only a claim still `submitted` or
+  `approved` alerts; a paid or rejected one never does.
+- **The person who filed it, and the person who keyed it in for them, are not told about it.**
+- **Who is told is a Settings decision**: ReadyBot messages → "Reimbursement over $100"
+  (`reimbursement_alert_recipients`). Unset, it goes to the people who can approve and pay a claim: admins and
+  office/admin supervisors. It falls back to the admins, never to nobody.
+- Fire-and-forget after the claim is written, so a comms outage never fails a claim filed at the till. Audited as
+  `large_claim_alert`.
+- `verify:reimbalert` (20, live). Control: without the two `alertLargeClaim` calls it fails 9.

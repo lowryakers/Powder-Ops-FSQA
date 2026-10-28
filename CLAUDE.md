@@ -6184,6 +6184,16 @@ navigated that narrow column to the **whole app** — sidebar and all — inside
   `window.parent` (docked) or `window.opener` (popout); App's listener is **origin-checked**. The panel stays
   on Messages and the module opens where the modules live.
 
+## A reimbursement over $100 alerts the office as it is filed (D-254)
+- `LARGE_CLAIM_OVER` (100, strictly over) and `alertLargeClaim()` live in `api/reimbursements.js`.
+  - It runs on both POST and PUT, after the response.
+  - Each claim alerts once (`large_alert_at`, claimed before sending).
+  - The filer and whoever keyed it in are never told.
+- The audience is `largeClaimRecipients()`: settable as `reimbursement_alert_recipients`; the default is admins plus
+  office/admin supervisors.
+- The list carries `large` / `large_over`. Draw the chip from those and never hard-code 100 on the screen.
+- `verify:reimbalert` (20).
+
 ## Retention Samples: still empty, and why
 The module is built and working but the log has **no rows** — nothing was ever seeded. The plant's own
 Retention Sample log (the 16-page PDF, boxes 15–19) was read to design the module, but the PDF is not in the
