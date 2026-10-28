@@ -141,15 +141,21 @@ body { overflow-x: hidden; }
 }
 
 /* Instant, styled tooltips for icon-only buttons. Add data-tip="Label" to any
-   element; shows below on hover. Hover-capable pointers only (skips touch). */
+   element; shows below on hover. Hover-capable pointers only (skips touch).
+   THE BUBBLE EXISTS ONLY WHILE HOVERED (D-253). It used to be drawn at opacity 0
+   all the time, and an invisible absolutely-positioned box still widens the page:
+   a tip on a control near the right edge (the docked panel's close button) made
+   the whole app pan sideways with nobody pointing at it. `content` is set on
+   :hover only, and a short keyframe stands in for the old opacity transition. */
+@keyframes tip-in { from { opacity: 0; translate: 0 -3px; } to { opacity: 1; translate: 0 0; } }
 @media (hover: hover) {
   [data-tip] { position: relative; }
-  [data-tip]::after {
+  [data-tip]:hover::after {
     content: attr(data-tip);
     position: absolute;
     top: calc(100% + 6px);
     left: 50%;
-    transform: translateX(-50%) translateY(-3px);
+    transform: translateX(-50%);
     background: #1f2937;
     color: #fff;
     font-size: 11px;
@@ -159,16 +165,13 @@ body { overflow-x: hidden; }
     padding: 5px 8px;
     border-radius: 6px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.18);
-    opacity: 0;
     pointer-events: none;
-    transition: opacity .12s ease, transform .12s ease;
+    animation: tip-in .12s ease;
     z-index: 60;
   }
-  [data-tip]:hover::after { opacity: 1; transform: translateX(-50%) translateY(0); }
   /* data-tip-left aligns the bubble to the element's right edge (for icons near
      the right side of the screen, so the tip doesn't overflow the viewport). */
-  [data-tip][data-tip-left]::after { left: auto; right: 0; transform: translateY(-3px); }
-  [data-tip][data-tip-left]:hover::after { transform: translateY(0); }
+  [data-tip][data-tip-left]:hover::after { left: auto; right: 0; transform: none; }
 }
 
 /* Desktop: make horizontal table scrollbars always visible (mouse users get no

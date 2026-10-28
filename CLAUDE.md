@@ -6161,6 +6161,15 @@ cards used to expand in place with every reply, so a reader scrolled the whole o
 - `data-inbox-card` / `data-inbox-unread` / `data-inbox-open` / `data-inbox-markread`, `data-nav-threads`.
   `verify:threadsinbox` (29, 1280 + 390; control stops at the first card click).
 
+## The top bar collapses by its OWN width; the dock leaves the module 560px; a tooltip exists only on hover (D-253)
+- The desktop `<header data-topbar>` in App.jsx is a `@container`. Show or hide a piece with `@3xl:` / `@4xl:` / `@5xl:`,
+  **never `lg:`**: with Messages docked, the window is wide while the column is not.
+- `shownDockWidth` is the remembered `dock_chat_w` clamped by `dockRoom(window)`, which keeps the module at least
+  `MODULE_MIN` (560px) beside the 240px sidebar. The preference is never rewritten.
+- `[data-tip]::after` is generated on `:hover` only. An invisible tooltip box near the right edge panned the whole app.
+  **Do not move `content:` back onto the resting rule.**
+- `verify:topbar` (66, browser, nine widths, docked and not).
+
 ## Split Screen / chat popout: back must stay inside Messages
 The `/chat` route is either the ~420px docked panel (an iframe) or a 460px popout. It used to be given
 `onExit={() => window.location.href = '/'}`, so "← ReadyDoc" or a swipe-back at the end of the chain
