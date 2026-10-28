@@ -78,6 +78,7 @@ import kioskTokenRoutes from './server/api/kiosk-tokens.js';
 import apiTokenRoutes from './server/api/api-tokens.js';
 import botRoutes from './server/api/bot.js';
 import { tokenApproveGuard } from './server/middleware/no-token-approve.js';
+import { seedTestRunner, testRunnerGuard } from './server/test-runner.js';
 import { KIOSKS } from './server/kiosk-tokens.js';
 import { seedCandidates } from './server/candidates-seed.js';
 import reimbursementRoutes from './server/api/reimbursements.js';
@@ -1464,6 +1465,7 @@ try {
   tx();
   const joined = db.prepare('SELECT COUNT(*) c FROM chat_channel_members').get().c - before;
   if (joined > 0) console.log(`[seed] Auto-joined users to default channels (${joined} memberships)`);
+  try { seedTestRunner(db); } catch (e) { console.warn('[test-runner] not seeded:', e.message); }
 } catch (err) {
   console.error('[seed] Error ensuring default channels (non-fatal):', err.message);
 }
@@ -2042,6 +2044,9 @@ app.use('/api', (req, res, next) => {
 // NOTHING A BOT TOKEN HOLDS APPROVES, SIGNS OR RELEASES (D-161). authenticate()
 // already refuses it; this is the same list mounted once, globally, so it holds
 // for every router below whether or not that router remembers the rule.
+// THE TEST RUNNER READS AND POSTS IN #ops-requests-test AND NOTHING ELSE (D-252),
+// whatever its role says — one allow list, on every /api request it makes.
+app.use('/api', testRunnerGuard(getDb));
 app.use('/api', tokenApproveGuard);
 
 // --- API Routes ---
