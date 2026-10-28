@@ -9062,3 +9062,23 @@ so a lost or doubled wake cannot lose or double-handle a request, and the hourly
 - `GET /api/admin/ops-webhook/status`: admin session only (a token is 403), no URL or key.
 - `check:opswebhook` (42, fake fetch and clock), `verify:opswebhook` (14, live against a local fake hook; control —
   the call removed from comms.js — fails).
+
+## D-252 — A "Test Runner" bot posts the #ops-requests test questions, and can do nothing else (28 Oct 2026)
+
+The #ops-requests bots are tested with 20 questions posted one at a time in `#ops-requests-test`. A bot (Jarvis) can post
+them instead of a person, but D-251 deliberately wakes nobody for a bot post. So one account is the exception.
+- **`Test Runner` is seeded once** (`server/test-runner.js`): an operator in the office, no password, no modules, never
+  auto-joined to #general, added to `#ops-requests-test` once that channel exists (a person removing it sticks). It is
+  known by the id recorded in `app_settings.test_runner_user_id`, **never by its name**; an existing account already
+  called "Test Runner" is reported and not adopted.
+- **Its whole reach is one allow list, checked on every /api request it makes** (`testRunnerGuard`, mounted right after
+  authentication): read `#ops-requests-test` and its threads, post a message or a reply there, `GET /bot/whoami`.
+  Everything else is `403 test_runner_scope` — another channel, a DM, a reaction, a module, an approve or sign route.
+  Its role does not matter: promoting it in Settings opens nothing. It is in no approver role (operator, office), and
+  edits stay refused by the token rules (D-164) underneath.
+- **The webhook counts its post in `#ops-requests-test` as a person's** (`isTestRunnerPost`), so a test question wakes
+  Procurement the way a real one does. Anywhere else, and for every other bot, nothing fires. The webhook's flag
+  (`OPS_WEBHOOK_ENABLED`) still decides whether anything is sent.
+- **Its token is minted by an admin** in Settings → Bot API tokens, scopes Read + Write; nothing in a deploy creates
+  one. That token is what Jarvis holds.
+- `check:opswebhook` (51), `verify:testrunner` (23; control without the guard fails 6).

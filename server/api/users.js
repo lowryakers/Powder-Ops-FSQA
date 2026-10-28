@@ -4,6 +4,7 @@ import { getDb, logAudit, newSetupCode } from '../db.js';
 import crypto from 'crypto';
 import { requireRole, clearFileCookie } from '../middleware/auth.js';
 import { passwordDaysLeft, passwordExpired } from '../password-policy.js';
+import { isTestRunner } from '../test-runner.js';
 import { issueSession, revokeSessions } from './sessions.js';
 import { OPT_IN_SET } from '../../shared/opt-in-modules.js';
 import { accessReview, dismissReview } from '../access-review.js';
@@ -24,6 +25,7 @@ const router = Router();
 // hand, which is the deliberate act it should be.
 export function joinDefaultChannels(db, userId, external) {
   if (external) return;
+  if (isTestRunner(db, userId)) return; // its one channel is #ops-requests-test (D-252)
   try {
     // Stamped read AS OF NOW. A bare NULL last_read_at reads as "never read
     // anything" to channelUnread(), which then counts #general's and

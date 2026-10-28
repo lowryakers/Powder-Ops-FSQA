@@ -23,6 +23,7 @@
 //     host and the last 6 characters of the routine id.
 import crypto from 'crypto';
 import { readyDocOrigin } from './links.js';
+import { isTestRunnerPost } from './test-runner.js';
 
 export const OPS_CHANNELS = Object.freeze(['ops-requests', 'ops-requests-test']);
 export const PROCUREMENT_BOT_NAME = '*Procurement Bot';
@@ -117,6 +118,8 @@ export function targetFor(db, { channel, message, author, viaToken, attachmentCo
   if (!OPS_CHANNELS.includes(String(channel.name || ''))) return null;
   const body = String(message?.body || '');
   if (!body.trim() && !attachmentCount) return null;
+  // The Test Runner's questions in #ops-requests-test count as a person's (D-252).
+  if (isTestRunnerPost(db, channel, author)) return 'procurement';
   const bot = isBotAuthor(db, author, viaToken);
   if (!bot) return 'procurement';
   if (message.parent_id && body.trimStart().startsWith(HANDOFF_PREFIX)

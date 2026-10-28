@@ -418,6 +418,10 @@ limit), `authenticateToken` in `middleware/auth.js`, `server/middleware/no-token
   target's URL and key. **Never log or store a URL or key** (`scrub`, `redactUrl`).
 - Called after the 201; never awaited. Outbox: never resent once sent, resumed after a restart, 3 in flight, 60/min.
 - `check:opswebhook` (42), `verify:opswebhook` (14).
+- **The `Test Runner` account (D-252, `server/test-runner.js`)** may only read and post in `#ops-requests-test`
+  (`testRunnerGuard`, one allow list, 403 `test_runner_scope` otherwise, whatever its role); its post there wakes
+  Procurement like a person's. Known by `app_settings.test_runner_user_id`, never its name. Its token is minted by an
+  admin in Settings. `check:opswebhook` (51), `verify:testrunner` (23).
 
 ## The bots' REST surface: existing routes, listed, paged and filtered (D-162)
 `server/bot-api.js` (`BOT_ROUTES`, `pageOf`/`pageList`, `stripForbidden`, `isBroadcastMention`), `server/api/bot.js`

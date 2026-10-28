@@ -40,3 +40,18 @@ A target is on only when the flag is on **and** its own URL and key are both set
 
 Set `OPS_WEBHOOK_ENABLED` to `0` (or delete it). Railway redeploys and nothing is sent. To stop one target only,
 delete its URL or key.
+
+## The Test Runner (posting the test questions by bot)
+
+A bot account called **Test Runner** can post the `[TEST]` questions in `#ops-requests-test` for you. Its posts there
+wake Procurement just like yours do. It can do nothing else: no other channel, no reactions, no edits, no approvals.
+
+To give Jarvis its token:
+1. ReadyDoc → Settings → **Bot API tokens** → **New token**.
+2. Account: **Test Runner**. Label: `Jarvis test runner`. Scopes: tick **Read** and **Write**.
+3. Create, then copy the token (it starts `rdk_`). It is shown once.
+4. Give it to Jarvis the same way you give it the other bot tokens — never in a chat or a file.
+
+If the Test Runner is not in `#ops-requests-test` yet (the channel was created after the last deploy), add it from the
+channel's member list, or wait for the next deploy.
+To stop it: Settings → Bot API tokens → **Revoke** on that token.

@@ -115,6 +115,24 @@ await post(ops, person, 'via token', { viaToken: true });
 await post(ops, { id: 'rb', name: 'ReadyBot' }, 'nudge');
 t('a *-named bot, a token holder, a token post and ReadyBot: no call', calls.length === 0, String(calls.length));
 
+console.log('── the Test Runner (D-252)');
+db.prepare("INSERT OR REPLACE INTO users (id, name, username, role, department, is_active) VALUES ('u-runner','Test Runner','Test Runner','operator','office',1)").run();
+db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('test_runner_user_id', 'u-runner')").run();
+const runner = { id: 'u-runner', name: 'Test Runner' };
+const impostor = { id: 'u-impostor', name: 'Test Runner' };
+reset();
+await post(opsTest, runner, '[TEST] Where is PO00613?', { viaToken: true });
+t('its token post in #ops-requests-test wakes Procurement', calls.length === 1 && calls[0].body.target === 'procurement' && calls[0].body.author.name === 'Test Runner');
+reset();
+await post(ops, runner, 'Where is PO00613?', { viaToken: true });
+await post(general, runner, 'x', { viaToken: true });
+await post(opsTest, impostor, '[TEST] x', { viaToken: true });
+t('in #ops-requests or anywhere else it fires nothing, and the name alone is not the account', calls.length === 0, String(calls.length));
+setEnv({ OPS_WEBHOOK_URL: P_URL, OPS_WEBHOOK_KEY: P_KEY }); init(); reset();
+await post(opsTest, runner, '[TEST] x', { viaToken: true });
+t('with the flag off it fires nothing', calls.length === 0);
+setEnv({ OPS_WEBHOOK_ENABLED: '1', OPS_WEBHOOK_URL: P_URL, OPS_WEBHOOK_KEY: P_KEY }); init(); reset();
+
 console.log('── controller: only *Procurement Bot replying "→ Controller"');
 setEnv({ OPS_WEBHOOK_ENABLED: '1', OPS_WEBHOOK_URL: P_URL, OPS_WEBHOOK_KEY: P_KEY }); init(); reset();
 await post(ops, procBot, '→ Controller Paid?: Stauber invoice 4471', { parent: top.m.id });
@@ -202,6 +220,28 @@ t('the status never holds a URL or key', !st.includes(P_KEY) && !st.includes(C_K
 t('logs and stored errors never hold a URL or key', ![P_KEY, C_KEY, P_URL, C_URL, 'fake-signing-secret'].some(s => allLogs.includes(s)));
 t('scrub removes a key that appears in an error', !W.scrub(`bad ${P_KEY} at ${P_URL}`, env).includes(P_KEY) && !W.scrub(`x crsr_other123`, env).includes('crsr_other'));
 t('redactUrl keeps host and last 6', W.redactUrl(P_URL) === 'fake-hooks.invalid/…123456');
+
+console.log('── the Test Runner seed');
+const TR = await import('../server/test-runner.js');
+const quietLog = { log() {}, warn() {} };
+db.prepare("DELETE FROM app_settings WHERE key IN ('test_runner_user_id','test_runner_joined_test_channel')").run();
+t('an existing account already named "Test Runner" is not adopted or duplicated', TR.seedTestRunner(db, quietLog) === null
+  && db.prepare("SELECT COUNT(*) AS n FROM users WHERE name = 'Test Runner'").get().n === 1);
+db.prepare("DELETE FROM users WHERE id = 'u-runner'").run();
+const rid = TR.seedTestRunner(db, quietLog);
+const ru = db.prepare('SELECT * FROM users WHERE id = ?').get(rid);
+t('the seed creates it: operator, office, no password, no modules', ru?.role === 'operator' && ru?.department === 'office' && !ru?.password_hash && ru?.module_access === '{}');
+t('a second boot creates nothing', TR.seedTestRunner(db, quietLog) === rid && db.prepare("SELECT COUNT(*) AS n FROM users WHERE name = 'Test Runner'").get().n === 1);
+db.prepare("INSERT INTO chat_channels (id, kind, name, created_by) VALUES ('ch-seed-test','private','ops-requests-test','x')").run();
+TR.seedTestRunner(db, quietLog);
+const member = () => db.prepare("SELECT COUNT(*) AS n FROM chat_channel_members WHERE channel_id = 'ch-seed-test' AND user_id = ?").get(rid).n;
+t('once the channel exists it is added to it', member() === 1);
+db.prepare("DELETE FROM chat_channel_members WHERE channel_id = 'ch-seed-test' AND user_id = ?").run(rid);
+TR.seedTestRunner(db, quietLog);
+t('a person removing it from the channel is not undone', member() === 0);
+t('its allow list: post and read in its channel, nothing else', TR.testRunnerAllows(db, 'POST', '/comms/channels/ch-seed-test/messages')
+  && TR.testRunnerAllows(db, 'GET', '/comms/channels/ch-seed-test/messages') && !TR.testRunnerAllows(db, 'POST', '/comms/channels/ch-ops/messages')
+  && !TR.testRunnerAllows(db, 'POST', '/comms/messages/m-1/reactions') && !TR.testRunnerAllows(db, 'POST', '/qms/deviation/x/approve'));
 
 W.stopOpsWebhook();
 console.log(`\n${pass}/${pass + fail} checks passed`);
