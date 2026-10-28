@@ -43,6 +43,7 @@ import auditRoutes from './server/api/audit.js';
 import integrationsRoutes from './server/api/integrations.js';
 import complianceRoutes, { buildBackupZip, computeCritical, seedAuditorBinderDefaults } from './server/api/compliance.js';
 import { startScheduledJobs } from './server/scheduled-jobs.js';
+import { sendLateResults } from './server/coa-late-results.js';
 import lotoRoutes from './server/api/loto.js';
 import userRoutes, { joinDefaultChannels } from './server/api/users.js';
 import submitRoutes from './server/api/submit.js';
@@ -2350,7 +2351,7 @@ server.listen(PORT, '0.0.0.0', () => {
   backfillInvoiceText().catch(e => console.warn('[invoices] backfill error:', e.message));
   backfillFinanceFileText().catch(e => console.warn('[finance] backfill error:', e.message));
   // Recurring jobs: Friday auto-backup to R2, Monday expiry digest to #quality.
-  startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges, qaActionNudges, employeeDocumentNudges, policyAckNudges: (d) => policyAckNudges(d, { botDm, postMessageAs, pushToUser }), trainingNudges, supplyCycleNudge, partnerReminderNudges, recordBackfillNudge, supplierReviewNudge, sendFlashReport, sendCleanupDigest, cleanupDigest, CLEANUP_BUSY_THRESHOLD, sendEodMissedDigest, eodMissedDigest, EOD_BUSY_THRESHOLD, sendHolidayNotices });
+  startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges, qaActionNudges, employeeDocumentNudges, policyAckNudges: (d) => policyAckNudges(d, { botDm, postMessageAs, pushToUser }), trainingNudges, supplyCycleNudge, partnerReminderNudges, recordBackfillNudge, supplierReviewNudge, sendFlashReport, sendCleanupDigest, cleanupDigest, CLEANUP_BUSY_THRESHOLD, sendEodMissedDigest, eodMissedDigest, EOD_BUSY_THRESHOLD, sendHolidayNotices, sendLateResults });
   startReminderLoop(db);
   try { initOpsWebhook(db); } catch (e) { console.warn('[ops-webhook] not started:', e.message); }
   // Generate any due document-review tasks on startup (idempotent; also runs on

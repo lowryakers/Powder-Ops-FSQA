@@ -304,7 +304,18 @@ export async function runDue(db, deps, now = new Date()) {
   // and the threshold is what tells those apart without anybody deciding. Silent
   // at zero, because a digest that arrives saying nothing is one people learn to
   // delete unread — and then they delete the one that mattered.
-  if (deps.sendCleanupDigest && wall.getHours() >= 6 && openWeekday) {
+  // Lab results past their due date (D-258): once a weekday morning, only when
+  // something is late. The day is stamped whether or not anything was sent,
+  // so a quiet morning is not re-checked every hour.
+  if (deps.sendLateResults && wall.getHours() >= 9 && openWeekday && getFlag(db, 'last_coa_late_results_day') !== ymdLocal(wall)) {
+    try {
+      const r = await deps.sendLateResults(db, { botDm: deps.botDm, postMessageAs: deps.postMessageAs, pushToUser: deps.pushToUser }, now);
+      setFlag(db, 'last_coa_late_results_day', ymdLocal(wall));
+      if (r.sent) console.log(`[jobs] late lab results: ${r.late} sample(s) to ${r.sent} recipient(s)`);
+    } catch (e) { console.warn('[jobs] late lab results failed:', e.message); }
+  }
+
+    if (deps.sendCleanupDigest && wall.getHours() >= 6 && openWeekday) {
     const lastCleanup = getFlag(db, 'last_cleanup_digest_at');
     const elapsed = lastCleanup ? now - new Date(lastCleanup) : Infinity;
     const pile = (() => { try { return deps.cleanupDigest(db).tasks; } catch { return 0; } })();

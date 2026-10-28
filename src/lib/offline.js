@@ -88,6 +88,7 @@ const NEVER_QUEUE = [
   /\/cleanup\//,               // bulk-closes compliance records
   /\/import(\/|$)/,            // bulk writes decided from a preview
   /\/bulk-delete(\/|$)/,
+  /\/delete(\/|$)/,           // one-step deletes (COA empty duplicates, D-256)
   // COA release and publishing (D-246, D-247): each one is signed with the password.
   /\/(publish|withdraw|override|golden-attest)(\/|$)/,
   /\/coa\/(release-gate|public-switches)(\/|$)/,

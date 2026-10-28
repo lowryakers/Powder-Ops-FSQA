@@ -37,6 +37,7 @@
     "verify:coa": "node scripts/verify-coa.mjs",
     "verify:coaphase1": "node scripts/verify-coa-phase1.mjs",
     "verify:coapossibledupes": "node scripts/verify-coa-possible-dupes.mjs",
+    "verify:coaworklist": "node scripts/verify-coa-worklist.mjs",
     "verify:coa2": "node scripts/verify-coa2.mjs",
     "verify:coa2b": "node scripts/verify-coa2b.mjs",
     "check:publiccoa": "node scripts/check-public-coa.mjs",

@@ -18,7 +18,9 @@ import { gateSignature, signatureEvidence } from '../signature.js';
 import { allocateCertNumber, snapshotFor, signRefusals, canonicalJson, sha256, isSigned, LOCKED_FIELDS, LOCKED_MESSAGE } from '../coa-certificate.js';
 import { plantDateOf } from '../plant-clock.js';
 import { isQaReviewer } from '../qa-signing.js';
-import { coaCorrectionAllowed, correctionFlags, duplicateDeleteRefusal, coaSignHold, dismissItem, recordDuplicateDecision, DECISION as CORRECTION_DECISION, openItems, itemProgress } from '../coa-review-items.js';
+import { labTestFor } from '../lab-test-items.js';
+import { lateLabResults } from '../coa-late-results.js';
+import { coaCorrectionAllowed, correctionFlags, duplicateDeleteRefusal, coaSignHold, dismissItem, recordDuplicateDecision, DECISION as CORRECTION_DECISION, openItems, itemProgress, emptyDuplicatePlan } from '../coa-review-items.js';
 import { stampBaseLot, lotGlutenRollup } from '../coa-lots.js';
 import { splitLot } from '../../shared/lot-model.js';
 import { readLabFile, squash, MIN_EDIT_REASON, recordUnreadRows, unreadRowsFor, signChecks } from '../coa-checks.js';
@@ -879,6 +881,45 @@ router.post('/unread-rows/:id/dismiss', (req, res) => {
   res.json({ ok: true, unread_rows: unreadRowsFor(db, row.request_id) });
 });
 
+// D-258: samples at the lab past the date their results were due, and how
+// many out have no expected date (and so cannot be called late).
+router.get('/late-results', (req, res) => {
+  res.json(lateLabResults(getDb()));
+});
+
+// D-257: a lab request started from a receiving line's lab-test alert. The
+// form is filled from the line (part, description, vendor lot, expiry, the
+// date it arrived, the vendor off its checklist) and the tests from QA's
+// standing list. Nothing is written here; the person checks it and saves.
+router.get('/receiving-prefill/:id', (req, res) => {
+  const db = getDb();
+  const line = db.prepare('SELECT * FROM receiving_log WHERE id = ?').get(req.params.id);
+  if (!line) return res.status(404).json({ error: 'That receiving line is not on file.' });
+  const existing = db.prepare('SELECT id, lot_number, status, created_at FROM coa_requests WHERE receiving_log_id = ? ORDER BY created_at DESC LIMIT 1').get(line.id) || null;
+  const rules = db.prepare('SELECT * FROM receiving_lab_test_items WHERE is_active = 1').all();
+  const rule = labTestFor(line, rules);
+  const vendor = line.inspection_no
+    ? db.prepare('SELECT vendor FROM receiving_checklists WHERE inspection_no = ?').get(line.inspection_no)?.vendor || null
+    : null;
+  const where = [line.inspection_no && `inspection ${line.inspection_no}`, line.po_number && `PO ${line.po_number}`].filter(Boolean).join(' · ');
+  res.json({
+    existing,
+    missing: [!line.vendor_lot && 'vendor lot', !rule?.tests && 'tests'].filter(Boolean),
+    prefill: {
+      receiving_log_id: line.id,
+      item_number: line.part_number || '',
+      item_description: line.part_description || '',
+      lot_number: line.vendor_lot || '',
+      vendor_lot: line.vendor_lot || '',
+      product_expiration: line.expiration_date || '',
+      received_date: line.date_received || '',
+      supplier: vendor || '',
+      tests_requested: rule?.tests || '',
+      notes: `Sample from the receiving line${where ? ` (${where})` : ''}, on QA's lab-test list.`,
+    },
+  });
+});
+
 router.post('/requests', (req, res) => {
   const db = getDb();
   const { item_number, item_description, lot_number, product_expiration, tests_requested, lab_id, date_sent, tat_days, expected_results_date, requested_by, notes, origin, supplier, product_code, manufacturer_lot, vendor_lot, received_date } = req.body;
@@ -901,6 +942,15 @@ router.post('/requests', (req, res) => {
     if (!db.prepare('SELECT 1 FROM coa_brands WHERE name = ?').get(brand)) return res.status(400).json({ error: `"${brand}" is not on the brand list.` });
   }
 
+  // D-257: started from a receiving line — the line must exist, and one line
+  // gets one lab request (a second is refused, naming the first).
+  const receivingId = String(req.body.receiving_log_id || '').trim() || null;
+  if (receivingId) {
+    if (!db.prepare('SELECT 1 FROM receiving_log WHERE id = ?').get(receivingId)) return res.status(400).json({ error: 'That receiving line is not on file.' });
+    const prior = db.prepare('SELECT id, lot_number FROM coa_requests WHERE receiving_log_id = ?').get(receivingId);
+    if (prior) return res.status(409).json({ error: `A lab request for this receiving line already exists (lot ${prior.lot_number}).`, existing_id: prior.id });
+  }
+
   const id = uuid();
   const status = date_sent ? 'sent' : 'pending';
 
@@ -909,6 +959,7 @@ router.post('/requests', (req, res) => {
     .run(id, item_number, item_description, lot_number, product_expiration || null, tests_requested, status, lab_id || null, lab_name, date_sent || null, tat_days || null, expected_results_date || null, requested_by || req.user.name, notes || null, req.user.name, origin || null, supplier || null, product_code || null, manufacturer_lot || null, vendor_lot || null, received_date || null);
 
   if (brand !== 'unassigned') db.prepare('UPDATE coa_requests SET brand_owner = ? WHERE id = ?').run(brand, id);
+  if (receivingId) db.prepare('UPDATE coa_requests SET receiving_log_id = ? WHERE id = ?').run(receivingId, id);
   stampBaseLot(db, id);
   const created = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(id);
   logAudit(req.user, 'create', 'coa_request', id, req.body, null, created);
@@ -1049,6 +1100,37 @@ router.post('/requests/bulk-delete', (req, res) => {
         ...(req.user?.role !== 'admin' ? signatureEvidence() : {}) } : null, r, null);
   }
   res.json({ deleted: found.length, skipped_signed });
+});
+
+// D-256: delete every empty duplicate a COA correction names, in one act.
+// Admin or Quality. Each is checked exactly as a single delete is (empty, not
+// signed, from the CTLA upload, its lab report kept on another request); one
+// that fails is named and left alone, the rest go. `preview: true` writes
+// nothing. One reason and one password for the act; one audit row per request.
+router.post('/corrections/duplicates/delete', (req, res) => {
+  const db = getDb();
+  if (req.user?.role !== 'admin' && !isQaReviewer(req.user)) {
+    return res.status(403).json({ error: 'Only Quality or an admin can delete the empty duplicates.' });
+  }
+  const plan = emptyDuplicatePlan(db, { requestIds: req.body?.request_ids });
+  if (req.body?.preview) return res.json(plan);
+  if (!plan.ready.length) return res.status(409).json({ error: 'There is no empty duplicate ready to delete.', ...plan });
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 3) return res.status(400).json({ error: 'Say why these requests are being deleted.', reason_required: true });
+  if (!gateSignature(req, res, { action: 'coa_delete_duplicates' })) return;
+  const ids = plan.ready.map(r => r.request_id);
+  const rows = ids.map(id => db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(id));
+  const ph = ids.map(() => '?').join(',');
+  db.transaction(() => {
+    db.prepare(`DELETE FROM coa_test_results WHERE request_id IN (${ph})`).run(...ids);
+    db.prepare(`DELETE FROM coa_files WHERE request_id IN (${ph})`).run(...ids);
+    db.prepare(`DELETE FROM coa_requests WHERE id IN (${ph})`).run(...ids);
+  })();
+  rows.forEach((r, i) => logAudit(req.user, 'delete', 'coa_request', r.id,
+    { reason, authorized_by: plan.ready[i].item_key, decision: CORRECTION_DECISION, bulk: true, ...signatureEvidence() }, r, null));
+  logAudit(req.user, 'coa_duplicates_deleted', 'coa_request', null,
+    { reason, deleted: ids.length, refused: plan.refused.length, decision: CORRECTION_DECISION, ...signatureEvidence() });
+  res.json({ deleted: ids.length, refused: plan.refused });
 });
 
 // Bulk status update for lab requests.
