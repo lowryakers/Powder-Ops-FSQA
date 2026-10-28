@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, Calendar, Share2, Plus, X, ChevronDown, Chec
 import DiscussLink from '../DiscussLink.jsx';
 import { useDragPager } from '../../lib/useDragPager';
 import ScheduleProgressPanel from './ScheduleProgressPanel.jsx';
+import FrozenScroll from '../common/FrozenScroll';
 import { PRODUCTION_TEAMS as TEAMS, ROOM_GROUPS } from '../../constants/productionLines';
 import { roomLabel } from '../../../shared/rooms.js';
 
@@ -1652,7 +1653,9 @@ export default function ProductionSchedule({ user }) {
       {!loading && !error && (
         <div className={showProgress ? 'hidden md:grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]' : 'contents'}>
         <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="overflow-auto max-h-[calc(100vh-13rem)]">
+          {/* Measured, not guessed (D-255): the old 100vh-13rem box ran past the
+              bottom of the window, sideways scrollbar and all. */}
+          <FrozenScroll>
             <table className="w-full border-collapse min-w-[640px]">
               <thead>
                 <tr className="bg-gray-50">
@@ -1748,7 +1751,7 @@ export default function ProductionSchedule({ user }) {
                 })}
               </tbody>
             </table>
-          </div>
+          </FrozenScroll>
         </div>
         {showProgress && (
           <ScheduleProgressPanel monday={monday} assignmentMap={assignmentMap} entryFor={entryFor}

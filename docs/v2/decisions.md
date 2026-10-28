@@ -9134,3 +9134,38 @@ pocket until then, and that decision needs somebody to know the claim exists.
 - Fire-and-forget after the claim is written, so a comms outage never fails a claim filed at the till. Audited as
   `large_claim_alert`.
 - `verify:reimbalert` (20, live). Control: without the two `alertLargeClaim` calls it fails 9.
+
+## D-255 — The scroll review: four screens fixed, pop-ups hold the page still, and a sweep that keeps it so (28 Oct 2026)
+Lowry asked for a review of everywhere ReadyDoc scrolls, up and down or sideways. A real browser opened every module,
+and up to eight tabs of each, at a 1440 desktop, 1280 with Messages docked, a 1024 laptop and a 390 phone: 620
+screens. **Most of it was already right**: no scroll box inside another, no cut-off controls, switching modules
+starts at the top, every tall pop-up scrolls, and the D-149 frozen logs keep their scrollbars on screen. Five things
+were wrong:
+- **Sanitation's swab-log entry row panned the page 16px at 1024px.** Its one-row grid needs ~760px. It is laid out
+  by the width the form has now (`@container`): two columns, then three, then the single row from 56rem.
+- **The Production Schedule grid's sideways scrollbar was below the window when docked.** It was capped at
+  `100vh − 13rem`, the guessed number D-149 retired. It is a `FrozenScroll` now: measured, header pinned.
+- **Products → Pipeline did the same at laptop width and on a phone.** Each column's list is capped by measuring
+  where the board starts. On a phone the stages stack top to bottom instead of scrolling sideways through ten.
+- **The Org Chart on a phone opened at 100% in a box taller than the screen**, with its sideways scrollbar off the
+  bottom. On a phone it opens fitted to the width, and the page does the vertical scrolling. Zoom still works.
+- **Only the photo viewer held the page still behind it.** In the other ~126 pop-ups, scrolling past the end
+  slid the page underneath. One CSS rule now covers them all: `html:has(.fixed.inset-0[class*="bg-black"])`
+  locks the page while any tinted backdrop is on screen.
+  - `scrollbar-gutter: stable` stops the page jumping sideways when the lock removes the scrollbar.
+  - Lists, drawers and menus that float over the page (`fixed`, or inside something fixed) get
+    `overscroll-behavior: contain`, so their scroll stops at their own end.
+  - **A new pop-up must use the same tinted `fixed inset-0` backdrop to be covered.**
+- **`verify:scroll`** keeps it so. It checks every module and tab at three sizes (docked 1280, 1024 and 390) for:
+  - a page that pans sideways;
+  - a scroll box inside another;
+  - a sideways scrollbar off-screen with the page at the top;
+  - a cut-off control.
+
+  Then it checks the pop-up lock on and off. It is in `verify:all` (not CI). Control: `main` before this fails it
+  on each of the five. 1,865 checks; about 11 minutes.
+- Its first run also caught the Org Chart docked at 1280px: the box's `75vh` ran below the window. It is measured
+  too now.
+- `verify:topbar`'s "full search box" case moved from 1440px docked to 1600px docked (67 checks). The reserved
+  scrollbar gutter puts the 1440 bar a few pixels under the line, which is a fine way for it to look.
+- Not covered: other roles' views, very large real data sets, and touch gestures.
