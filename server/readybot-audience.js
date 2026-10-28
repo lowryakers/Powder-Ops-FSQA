@@ -27,6 +27,7 @@ import { recordBackfillRecipients } from './qa-record-backfill.js';
 import { controlledChangeRecipients } from './api/controlled.js';
 import { auditorPassRecipients } from './api/auditor-pass.js';
 import { supplyCycleRecipients } from './api/office.js';
+import { largeClaimRecipients, LARGE_CLAIM_OVER } from './api/reimbursements.js';
 
 const listed = (rows) => rows.map(u => ({ id: u.id, name: u.name }));
 
@@ -72,6 +73,7 @@ export function readybotAudiences(db) {
   const ctrlChanges = controlledChangeRecipients(db);
   const auditorPass = auditorPassRecipients(db);
   const supplyCycles = supplyCycleRecipients(db);
+  const largeClaims = largeClaimRecipients(db);
 
   return [
     {
@@ -116,6 +118,18 @@ export function readybotAudiences(db) {
       note: supplyCycles.source === 'default'
         ? 'Nobody has been chosen, so it goes to admins and the office / HR departments.'
         : null,
+    },
+    {
+      key: 'large_reimbursements',
+      label: `Reimbursement over $${LARGE_CLAIM_OVER}`,
+      what: `A reimbursement claim over $${LARGE_CLAIM_OVER} was filed, so it can be paid before payroll if it should be.`,
+      when: 'The moment it is filed (or edited over the line), once per claim.',
+      setting: 'reimbursement_alert_recipients',
+      source: largeClaims.source,
+      recipients: listed(largeClaims.users),
+      note: largeClaims.source === 'default'
+        ? 'Nobody has been chosen, so it goes to the people who can approve and pay a claim: admins and office supervisors. The person who filed it is never told about their own claim.'
+        : 'The person who filed it is never told about their own claim.',
     },
     {
       key: 'employee_documents',
@@ -248,4 +262,5 @@ export const SETTABLE = {
   controlled_change_recipients: 'A change is parked for Document Control',
   auditor_pass_recipients: 'An auditor pass was issued',
   supply_cycle_recipients: 'Standing supply list due',
+  reimbursement_alert_recipients: 'Reimbursement over $100',
 };

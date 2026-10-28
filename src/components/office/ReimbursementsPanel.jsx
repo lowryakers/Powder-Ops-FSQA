@@ -36,6 +36,18 @@ const STATUS = {
   rejected: { label: 'Rejected', cls: 'bg-red-100 text-red-700' },
 };
 
+// A claim over the line (D-254). The server decides `large` and the threshold;
+// this only draws them, so the flag cannot disagree with the alert that was sent.
+function LargeChip({ row, over }) {
+  if (!row.large) return null;
+  return (
+    <span data-reimb-large className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[11px] font-semibold whitespace-nowrap"
+      title={row.large_alert_at ? 'The office was messaged when this was filed.' : undefined}>
+      Over ${over ?? 100}
+    </span>
+  );
+}
+
 function StatusChip({ s }) {
   const t = STATUS[s] || { label: s, cls: 'bg-gray-100 text-gray-700' };
   return <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap ${t.cls}`}>{t.label}</span>;
@@ -357,6 +369,7 @@ export default function ReimbursementsPanel({ user }) {
                   <p className="font-semibold text-gray-900">{money(r.amount)}
                     <span className="ml-2 font-normal text-sm text-gray-500">{r.merchant || r.category || '—'}</span>
                   </p>
+                  {r.large && <div className="mt-0.5"><LargeChip row={r} over={data?.large_over} /></div>}
                   <p className="text-xs text-gray-500">{r.spent_on}{canDecide ? ` · ${r.person}` : ''}</p>
                   {r.description && <p className="text-xs text-gray-600 mt-0.5">{r.description}</p>}
                 </div>
@@ -436,7 +449,10 @@ export default function ReimbursementsPanel({ user }) {
                           </span>
                         )}
                       </td>
-                      <td className="px-3 py-2.5 text-right font-semibold text-gray-900 whitespace-nowrap">{money(r.amount)}</td>
+                      <td className="px-3 py-2.5 text-right font-semibold text-gray-900 whitespace-nowrap">
+                        {money(r.amount)}
+                        {r.large && <span className="block mt-0.5"><LargeChip row={r} over={data?.large_over} /></span>}
+                      </td>
                       <td className="px-3 py-2.5"><StatusChip s={r.status} /></td>
                       <td className="px-3 py-2.5 text-right whitespace-nowrap" onClick={stopRowClick}>
                         {canDecide && r.status === 'submitted' && (

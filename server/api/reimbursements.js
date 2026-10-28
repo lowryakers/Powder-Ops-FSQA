@@ -26,6 +26,10 @@ import { getDb, logAudit } from '../db.js';
 import { storageEnabled, putObject, presignGet, deleteObject } from '../storage.js';
 import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { coerceCustomData, mergeCustomData, parseJson } from '../custom-fields.js';
+import { botDm, postMessageAs } from './comms.js';
+import { pushToUser } from '../push.js';
+import { readyDocOrigin } from '../links.js';
+import { resolve, byDept } from '../readybot-recipients.js';
 
 const router = Router();
 
@@ -34,6 +38,78 @@ const uploadReceipts = (req, res, next) => receiptUpload(req, res, (err) => {
   if (err) return res.status(413).json({ error: uploadErrorMessage(err) });
   next();
 });
+
+/* ── A claim over $100 is told to the office the moment it is filed (D-254) ──
+ *
+ * The office reads reimbursements on payroll day. A large one may be worth paying
+ * another way so the person is not out of pocket for two weeks, and that decision
+ * can only be made if somebody knows the claim exists. So a claim OVER $100 (not
+ * at it) sends a ReadyBot DM and a push to the office the moment it is filed, and
+ * the row carries an "Over $100" flag on the screen.
+ *
+ *  - ONCE PER CLAIM. `large_alert_at` is claimed with a conditional UPDATE before
+ *    anything is sent, so a double submit or an edit cannot send a second one.
+ *  - An EDIT that raises a claim over the line alerts then (the file path and the
+ *    edit path both ask); an edit of a claim already alerted sends nothing.
+ *  - The person who filed it, and the person who keyed it in on their behalf,
+ *    are not told about their own claim.
+ *  - Fire-and-forget, after the claim is written: a comms outage never fails a
+ *    claim somebody filed standing at the till.
+ *  - Who is told is a Settings decision (ReadyBot messages →
+ *    `reimbursement_alert_recipients`); unset, it is the people who can approve
+ *    and pay a claim (admins, office/admin supervisors), and never nobody.
+ */
+export const LARGE_CLAIM_OVER = 100;
+const isLarge = (amount) => Number(amount) > LARGE_CLAIM_OVER;
+
+export function largeClaimRecipients(db) {
+  return resolve(db, 'reimbursement_alert_recipients', () => {
+    const admins = (() => {
+      try { return db.prepare("SELECT id, name FROM users WHERE is_active = 1 AND name != 'ReadyBot' AND role = 'admin' ORDER BY name").all(); } catch { return []; }
+    })();
+    return [...admins, ...byDept(db, ['office', 'admin'], ['supervisor'])];
+  });
+}
+
+const dollars = (n) => `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** Send the alert for this claim if it is over the line and has not had one. Never throws. */
+export async function alertLargeClaim(db, id, actor) {
+  try {
+    const row = db.prepare('SELECT * FROM reimbursements WHERE id = ?').get(id);
+    if (!row || !isLarge(row.amount) || row.large_alert_at) return { sent: 0 };
+    if (!['submitted', 'approved'].includes(row.status)) return { sent: 0 };
+    const skip = new Set([row.user_id, actor?.id].filter(Boolean));
+    const to = largeClaimRecipients(db).users.filter(u => !skip.has(u.id));
+    // Claim the alert before sending, so two requests cannot both send it.
+    const claimed = db.prepare(`UPDATE reimbursements SET large_alert_at = datetime('now'), large_alert_to = ?
+      WHERE id = ? AND large_alert_at IS NULL`).run(JSON.stringify(to.map(u => u.name)), id);
+    if (!claimed.changes || !to.length) return { sent: 0 };
+    const receipts = db.prepare('SELECT COUNT(*) n FROM reimbursement_receipts WHERE reimbursement_id = ?').get(id).n;
+    const what = [row.merchant, row.category].filter(Boolean).join(' · ') || 'no merchant given';
+    const body = `💵 *Reimbursement over ${dollars(LARGE_CLAIM_OVER)}* — ${row.person} asked for *${dollars(row.amount)}*\n`
+      + `${what}, spent ${row.spent_on}${row.description ? ` — ${row.description}` : ''}\n`
+      + `${receipts ? `${receipts} receipt${receipts === 1 ? '' : 's'} attached.` : 'No receipt attached yet.'}\n`
+      + `If it should be paid before payroll, approve it and pay it another way.\n`
+      + `[Open Reimbursements](${readyDocOrigin()}/?tab=reimbursements)`;
+    let sent = 0;
+    for (const u of to) {
+      try {
+        const { bot, dm } = botDm(db, u.id);
+        await postMessageAs(db, dm, bot, body);
+        pushToUser(u.id, { title: `Reimbursement ${dollars(row.amount)}`, body: `${row.person} — ${what}`,
+          tag: `reimbursement-${id}`, url: '/?tab=reimbursements' }).catch(() => {});
+        sent += 1;
+      } catch { /* one unreachable recipient must not stop the others */ }
+    }
+    logAudit({ name: 'ReadyBot' }, 'notify', 'reimbursement', id,
+      { event: 'large_claim_alert', amount: row.amount, to: to.map(u => u.name), sent }, null, null, `${row.person} — ${dollars(row.amount)}`);
+    return { sent };
+  } catch (e) {
+    console.warn('[reimbursements] large-claim alert failed:', e.message);
+    return { sent: 0 };
+  }
+}
 
 /* ── Who may do what ──────────────────────────────────────────────────────── */
 
@@ -82,6 +158,7 @@ const withPermissions = (row, user) => ({
   ...row,
   can_edit: row.status === 'paid' ? user?.role === 'admin' : ownsOrSettles(user, row),
   can_decide: canSettle(user),
+  large: isLarge(row.amount),
 });
 
 router.get('/', (req, res) => {
@@ -139,6 +216,7 @@ router.get('/', (req, res) => {
     })),
     totals,
     categories: CATEGORIES,
+    large_over: LARGE_CLAIM_OVER,
     // Only the office can see the roster filter; for everyone else there is
     // nothing to filter by.
     // One entry per PERSON, under their current name — `DISTINCT person`
@@ -195,6 +273,7 @@ router.post('/', uploadReceipts, async (req, res) => {
     logAudit(req.user, 'create', 'reimbursement', id,
       { amount, person, receipts: files.length }, null, null, `${person} — $${amount}`);
     res.status(201).json(loadOne(db, id, req.user));
+    alertLargeClaim(db, id, req.user);
   } finally {
     cleanupTemp(files);
   }
@@ -308,6 +387,7 @@ router.put('/:id', (req, res) => {
   const after = db.prepare('SELECT * FROM reimbursements WHERE id = ?').get(before.id);
   logAudit(req.user, 'update', 'reimbursement', before.id, null, before, after, after.person);
   res.json(loadOne(db, before.id, req.user));
+  alertLargeClaim(db, before.id, req.user);
 });
 
 router.delete('/:id', (req, res) => {
