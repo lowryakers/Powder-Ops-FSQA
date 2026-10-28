@@ -47,6 +47,9 @@ const hook = http.createServer((req, res) => {
 });
 await new Promise(r => hook.listen(HOOK_PORT, '127.0.0.1', r));
 
+// A server already on the port would answer for ours and the run would test the wrong one.
+try { await fetch(`${BASE}/api/users/lookup?q=zz`); console.log(`  ✗ port ${PORT} is already in use; stop that server first`); hook.close(); process.exit(1); } catch { /* free */ }
+
 // ── the scratch database, seeded before the server starts ──
 const dbPath = path.join(tmp, 'app.db');
 const boot = spawnSync(process.execPath, ['-e', "import('./server/db.js').then(m => { m.getDb(); process.exit(0); })"],
