@@ -9215,3 +9215,68 @@ The bell said "N lab requests awaiting results" — every sample out, late or no
   QA supervisors; settable (`coa_late_results_recipients`). Quiet on a holiday and when nothing is late.
 - The live data was not checked from here. The strip shows how many samples out have no expected date; if that
   number is large, fill the dates in before relying on the message.
+
+## D-259 — ReadyDoc watches the #ops-requests bots and tells Lowry when they stop (28 Oct 2026)
+
+On 28 October, around 2:55 PM MT, the bots' scheduled runs stopped in the middle of a test, and nobody noticed for
+about 20 minutes. ReadyDoc now watches for two things and alerts one person (Lowry A-20261028-027, -030).
+`server/ops-monitor.js`, `ops_monitor_incidents`, `GET /api/admin/ops-monitor/status`.
+- **(a) Webhook errors.** A target's deliveries (D-251) have failed for `OPS_MONITOR_WEBHOOK_MINUTES` (15) straight.
+  - An erroring row is `pending`/`failed` with an attempt and an error, first tried after that target's last `sent` row.
+  - `rate_limited` is not an error, and a target that is switched off is not watched.
+  - Procurement and Controller are separate incidents.
+  - It recovers on the next `sent` row. With few messages that can lag, and the recovery post says so.
+  - Nothing probes the hook: a probe would wake a bot.
+- **(b) Bot silence.** No bot has been seen for `OPS_MONITOR_SILENCE_MINUTES` (120), Monday to Friday, 7:00 AM to
+  5:00 PM plant time.
+  - Silence is counted from 7:00 at the earliest. An evening or a weekend alone never alerts, and nothing opens after 5 PM.
+  - An incident still open at 5 PM stays open, and recovers at the next sighting.
+  - Paid holidays are not skipped: Lowry asked for weekdays only.
+- **Who is a bot:** an active account holding a live API token (D-161), not "the name starts with `*`".
+  - It counts as seen when it uses its token or posts (a thread reply counts; a deleted post does not).
+  - ReadyBot is excluded, because the monitor's own alerts are ReadyBot posts. The Test Runner (D-252) is excluded too.
+  - No bot at all means no alert; the status says `no_bots`.
+- **Why 120 minutes:** the weekday P0 sweep runs hourly but reads only Gmail and REGISTER.md, so ReadyDoc cannot see it.
+  - What ReadyDoc does see is Procurement's backup check every 90 minutes on weekdays (7:07, 8:37, 10:07, 11:37, 1:07,
+    2:37, 4:07 MT), plus webhook-woken runs and other bots' token calls.
+  - The worst normal gap is about 115 minutes with start lateness. 120 stays quiet on a normal day, with about
+    5 minutes to spare.
+  - It only holds once the 90-minute schedule is live. On a slower schedule, 120 would fire by itself.
+- **An alert goes two ways, with no email and no new credential:**
+  - a ReadyBot post in the private `#alerts` channel, whose only member is the recipient;
+  - one `pushToUser` call to that account only, with the channel's own tag so the phone replaces rather than stacks.
+- **How the channel stays private:**
+  - It is created once, when the flag is on.
+  - Before every post the monitor checks the channel is private and has only the recipient in it. If not, it posts
+    nothing, changes nothing, makes no second channel, sends the push only, and the status says `unsafe`.
+- **Reading the push result:** `pushToUser` returns nothing. So the monitor reads the outcome back from the
+  recipient's subscription rows: `sent` / `failed` / `none` (no phone) / `disabled` (no VAPID).
+- **The recipient is one account:**
+  - the active account whose email is `lowry@powder-ops.com` (a lookup key; nothing is emailed);
+  - otherwise `OPS_MONITOR_USER_ID`;
+  - otherwise nobody, and the status says `not_found` or `ambiguous`.
+  - It never falls back to admins.
+- **One alert, one recovery:**
+  - An incident sends one alert and one recovery. A partial unique index allows only one open incident per key, and
+    the state lives in the table, so a restart resends nothing.
+  - An alert counts as delivered if it was posted OR pushed. Otherwise it is retried every 5 minutes, at most 6 times,
+    and shown as `unalerted`.
+  - An incident never alerted closes with no recovery.
+- **Off by default** (`OPS_MONITOR_ENABLED`): no timer, table, channel, post or push.
+  - With the flag on, it only reads, writes its own table and #alerts, and notifies the one account.
+  - `ops-webhook.js` and `push.js` are unchanged. One index was added, on `chat_messages(user_id, created_at)`,
+    created only when the flag is on.
+  - Test-only overrides (`OPS_MONITOR_TICK_MS`, `OPS_MONITOR_TEST_WALL`) are ignored unless `NODE_ENV=test`.
+- **Limits:**
+  - It runs inside ReadyDoc, so it cannot report ReadyDoc down.
+  - A push needs the app installed with notifications on, and VAPID set.
+  - An admin can add people to any channel (checked before each post).
+- **Open:**
+  - Should a paid holiday be quiet?
+  - Should an edit count as a sign of life?
+  - Should there be an outside uptime check?
+  - Should the P0 sweep make one cheap ReadyDoc call per run, so it counts?
+- Tests:
+  - `check:opsmonitor` (96; fake clock and push, MDT and MST);
+  - `verify:opsmonitor` (20, live, its own server). The control (the `startOpsMonitor` call removed) fails at the first
+    monitor assertion.

@@ -100,6 +100,8 @@ import trainingRoutes from './server/api/training.js';
 import aiRoutes from './server/api/ai.js';
 import opsWebhookAdminRoutes from './server/api/ops-webhook-admin.js';
 import { initOpsWebhook } from './server/ops-webhook.js';
+import opsMonitorAdminRoutes from './server/api/ops-monitor-admin.js';
+import { startOpsMonitor } from './server/ops-monitor.js';
 import commsRoutes, { backfillEmbeddings, getChannelByName, postMessageAs, getBotUser, startReminderLoop, botDm } from './server/api/comms.js';
 import { pushToUser } from './server/push.js';
 import smsInboundRoutes from './server/api/sms-inbound.js';
@@ -2209,6 +2211,7 @@ app.use('/api/certifications', requireModuleWrite('certifications'), certificati
 app.use('/api/ai', aiRoutes);
 app.use('/api/comms', commsRoutes);
 app.use('/api/admin/ops-webhook', opsWebhookAdminRoutes);
+app.use('/api/admin/ops-monitor', opsMonitorAdminRoutes);
 app.use('/api/mock-recalls', requireModuleWrite('recall'), mockRecallRoutes);
 app.use('/api/production', requireModuleWrite('production-log', 'production-schedule', 'production-dashboard', 'operator'), productionRoutes);
 app.use('/api/coa', requireModuleWrite('coa'), coaRoutes);
@@ -2354,6 +2357,7 @@ server.listen(PORT, '0.0.0.0', () => {
   startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges, qaActionNudges, employeeDocumentNudges, policyAckNudges: (d) => policyAckNudges(d, { botDm, postMessageAs, pushToUser }), trainingNudges, supplyCycleNudge, partnerReminderNudges, recordBackfillNudge, supplierReviewNudge, sendFlashReport, sendCleanupDigest, cleanupDigest, CLEANUP_BUSY_THRESHOLD, sendEodMissedDigest, eodMissedDigest, EOD_BUSY_THRESHOLD, sendHolidayNotices, sendLateResults });
   startReminderLoop(db);
   try { initOpsWebhook(db); } catch (e) { console.warn('[ops-webhook] not started:', e.message); }
+  try { startOpsMonitor(db); } catch (e) { console.warn('[ops-monitor] not started:', e.message); }
   // Generate any due document-review tasks on startup (idempotent; also runs on
   // every operator-tasks fetch).
   try {

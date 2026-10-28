@@ -423,6 +423,23 @@ limit), `authenticateToken` in `middleware/auth.js`, `server/middleware/no-token
   Procurement like a person's. Known by `app_settings.test_runner_user_id`, never its name. Its token is minted by an
   admin in Settings. `check:opswebhook` (51), `verify:testrunner` (23).
 
+## ReadyDoc tells Lowry when the #ops-requests bots stop (D-259)
+`server/ops-monitor.js` (`startOpsMonitor`, `tickOpsMonitor`, `webhookCheck`, `silenceCheck`, `botSignals`, `resolveRecipient`,
+`ensureAlertsChannel`, `opsMonitorStatus`), the `ops_monitor_incidents` table, `GET /api/admin/ops-monitor/status` (admin session
+only), runbook `docs/ops-monitor.md`.
+- **Off unless `OPS_MONITOR_ENABLED`.** Off means no timer, table, channel, post or push.
+- **Two triggers:** webhook errors for 15 min straight per target; no bot seen for 120 min, Mon–Fri 7 AM–5 PM MT (holidays not skipped).
+- **A bot is an account holding a live token**, never judged by its name. ReadyBot and the Test Runner are excluded.
+- **An alert is a ReadyBot post in private `#alerts` plus `pushToUser` to ONE account.** That account is found by
+  email `lowry@powder-ops.com`, else `OPS_MONITOR_USER_ID`, else nobody. Never an admins fallback. No email.
+- **Before every post, check #alerts is private with only the recipient in it**, or post nothing and push only.
+  Never post anywhere else.
+- **One alert and one recovery per incident** (partial unique index, state in the table). The push result is read back
+  from the subscription rows.
+- Test-only overrides (`OPS_MONITOR_TICK_MS`, `OPS_MONITOR_TEST_WALL`) are ignored unless `NODE_ENV=test`.
+- **No route changes or fires it.**
+- `check:opsmonitor` (96), `verify:opsmonitor` (20, its own server; control fails).
+
 ## The bots' REST surface: existing routes, listed, paged and filtered (D-162)
 `server/bot-api.js` (`BOT_ROUTES`, `pageOf`/`pageList`, `stripForbidden`, `isBroadcastMention`), `server/api/bot.js`
 (`GET /api/bot/whoami`), `docs/bot-api.md`.
