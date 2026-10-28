@@ -140,6 +140,21 @@ body { overflow-x: hidden; }
   display: none;
 }
 
+/* THE PAGE HOLDS STILL BEHIND A POP-UP (D-255). Every one of the ~126 pop-ups
+   here is a `fixed inset-0` backdrop with a black tint; while one is on screen
+   the page behind it does not scroll, so scrolling past the end of a pop-up no
+   longer slides the screen underneath. One rule, not 126 edits — and a pop-up
+   added later is covered the moment it uses the same backdrop.
+   `scrollbar-gutter: stable` keeps the page from shifting sideways by a
+   scrollbar's width when the lock takes the scrollbar away (Windows mice).
+   And a list, drawer or menu that floats over the page (`fixed`, or inside
+   something fixed) keeps its own scroll: reaching its end stops there rather
+   than carrying on into the page behind. */
+html { scrollbar-gutter: stable; }
+html:has(.fixed.inset-0[class*="bg-black"]) { overflow: hidden; }
+.fixed.overflow-y-auto, .fixed .overflow-y-auto,
+.fixed.overflow-auto, .fixed .overflow-auto { overscroll-behavior: contain; }
+
 /* Instant, styled tooltips for icon-only buttons. Add data-tip="Label" to any
    element; shows below on hover. Hover-capable pointers only (skips touch).
    THE BUBBLE EXISTS ONLY WHILE HOVERED (D-253). It used to be drawn at opacity 0

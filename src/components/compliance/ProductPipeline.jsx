@@ -3,7 +3,8 @@
 // computed by the server (shared/product-stage.js) and rendered as given —
 // nothing here re-decides a gate. Blocked products are shown apart with their
 // reason and owner and leave the needs-work count; they are never hidden.
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCompactLayout } from '../../lib/useCompactLayout';
 import { STAGES, STAGE_OWNERS } from '../../../shared/product-stage.js';
 import { Ban } from 'lucide-react';
 
@@ -29,6 +30,27 @@ export default function ProductPipeline({ products, onOpen, loading = false }) {
   const allHold = flowing.filter((p) => p.stage.stage === 9).length;
   const blockOwners = [...new Set(products.map((p) => p.stage?.blocked?.owner).filter(Boolean))];
 
+  // THE BOARD ENDS ON SCREEN (D-255). Each column's list is capped by MEASURING
+  // where the board starts, so the sideways scrollbar under it sits inside the
+  // window rather than a page-scroll below it (the FrozenScroll rule: measured,
+  // never a guessed calc()). On a phone the stages stack top to bottom instead,
+  // so nobody swipes sideways through ten columns.
+  const compact = useCompactLayout();
+  const boardRef = useRef(null);
+  const [listMax, setListMax] = useState(null);
+  useLayoutEffect(() => {
+    const el = boardRef.current;
+    if (compact || !el) { setListMax(null); return undefined; }
+    const measure = () => {
+      const top = el.getBoundingClientRect().top + window.scrollY;
+      const room = window.innerHeight - top - 16 - 64 - 16;   // gap, column header, scrollbar
+      setListMax(Math.max(200, Math.min(416, Math.floor(room))));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [compact, loading]);
+
   // Columns of zeros before the catalog has loaded read as "nothing needs work".
   if (loading) return <p className="text-sm text-gray-500" data-pipeline-loading>Loading…</p>;
   return (
@@ -51,17 +73,18 @@ export default function ProductPipeline({ products, onOpen, loading = false }) {
         </select>
       </div>
 
-      <div className="overflow-x-auto pb-1">
-        <div className="flex gap-2 min-w-max">
+      <div ref={boardRef} className={compact ? '' : 'overflow-x-auto pb-1'} data-pipeline-board>
+        <div className={compact ? 'flex flex-col gap-2' : 'flex gap-2 min-w-max'}>
           {byStage.map((c) => (
             <section key={c.n} data-pipeline-stage={c.n} data-count={c.items.length}
-              className="w-48 shrink-0 rounded-lg border border-gray-200 bg-gray-50/60">
+              className={`${compact ? 'w-full' : 'w-48 shrink-0'} rounded-lg border border-gray-200 bg-gray-50/60`}>
               <header className="px-2 py-1.5 border-b border-gray-200">
                 <p className="text-[11px] font-semibold text-gray-500">Stage {c.n}</p>
                 <p className="text-xs font-medium text-gray-900 leading-tight">{c.label}</p>
                 <p className="text-[11px] text-gray-500 tabular-nums">{c.items.length} product{c.items.length === 1 ? '' : 's'}</p>
               </header>
-              <ul className="p-1.5 space-y-1 max-h-[26rem] overflow-y-auto">
+              <ul className={`p-1.5 space-y-1 overflow-y-auto overscroll-contain ${compact ? 'max-h-64' : ''}`}
+                style={!compact && listMax ? { maxHeight: listMax } : (compact ? undefined : { maxHeight: 416 })}>
                 {c.items.map((p) => (
                   <li key={p.sku}>
                     <button type="button" onClick={() => onOpen(p.sku, p.stage.next?.key)} data-pipeline-product={p.sku}

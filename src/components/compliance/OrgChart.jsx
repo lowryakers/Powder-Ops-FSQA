@@ -1,4 +1,5 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
+import { useCompactLayout } from '../../lib/useCompactLayout';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
@@ -359,6 +360,33 @@ export default function OrgChart() {
     const natural = chart.scrollWidth / zoom;
     setZoom(Math.max(0.35, Math.min(1, +( (wrap.clientWidth - 24) / natural ).toFixed(2))));
   };
+  // ON A PHONE THE CHART OPENS FITTED (D-255). It used to open at 100% in a box
+  // taller than the screen, whose sideways scrollbar sat off the bottom: you saw
+  // the left edge of the company and had to find a hidden scrollbar to see the
+  // rest. Fitted, and with the page doing the vertical scrolling; Zoom still works.
+  const compact = useCompactLayout();
+  const fittedOnce = useRef(false);
+  // On a wider screen the box ends 16px above the bottom of the window, wherever it
+  // starts (the FrozenScroll rule). `75vh` assumed it started near the top, and with
+  // the header and controls above it the sideways scrollbar sat below the window.
+  const [boxMax, setBoxMax] = useState(null);
+  useEffect(() => {
+    if (compact) return undefined;
+    const measure = () => {
+      const el = chartWrapRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top + window.scrollY;
+      setBoxMax(Math.max(300, Math.floor(window.innerHeight - top - 16)));
+    };
+    const raf = requestAnimationFrame(measure);
+    window.addEventListener('resize', measure);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', measure); };
+  }, [compact, roots.length]);
+  useEffect(() => {
+    if (!compact || fittedOnce.current || !roots.length) return undefined;
+    const raf = requestAnimationFrame(() => { fittedOnce.current = true; fitToWidth(); });
+    return () => cancelAnimationFrame(raf);
+  });
 
   return (
     <div className="space-y-4">
@@ -426,7 +454,8 @@ export default function OrgChart() {
           <p className="text-sm">No positions yet.{canEdit ? ' Click "Add Position" to start building the chart.' : ''}</p>
         </div>
       ) : (
-        <div ref={chartWrapRef} className="bg-white rounded-xl border border-gray-200 overflow-auto overscroll-contain max-h-[75vh]">
+        <div ref={chartWrapRef} data-org-chart className="bg-white rounded-xl border border-gray-200 overflow-auto overscroll-contain"
+          style={compact ? undefined : { maxHeight: boxMax || '75vh' }}>
           {canEdit && <p className="text-[11px] text-gray-400 px-4 pt-3">Tip: drag a position onto another to change its reporting line. Hover a box for add/edit/remove.</p>}
           <div ref={chartRef} className="orgtree min-w-full" style={{ zoom }}>
             <ul>

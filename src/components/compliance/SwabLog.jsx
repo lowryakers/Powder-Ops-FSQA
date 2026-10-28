@@ -79,7 +79,11 @@ export default function SwabLog({ onFiled }) {
       </div>
 
       {draft && (
-        <form onSubmit={add} className="grid grid-cols-2 sm:grid-cols-[8.5rem_6rem_minmax(8rem,1fr)_minmax(7rem,1fr)_5.5rem_6rem_auto] gap-2 items-end" data-swab-entry>
+        // Laid out by the width the form HAS, not the window's (D-255): the one-row
+        // layout needs ~760px, and a 1024px laptop or a docked Messages panel leaves
+        // less, which panned the whole page sideways.
+        <div className="@container">
+        <form onSubmit={add} className="grid grid-cols-2 @lg:grid-cols-3 @4xl:grid-cols-[8.5rem_6rem_minmax(8rem,1fr)_minmax(7rem,1fr)_5.5rem_6rem_auto] gap-2 items-end" data-swab-entry>
           <label className="text-[11px] text-gray-500">Date
             <input type="date" value={draft.swabbed_on} onChange={(e) => setDraft({ ...draft, swabbed_on: e.target.value })} className={cell} data-swab-date />
           </label>
@@ -104,10 +108,10 @@ export default function SwabLog({ onFiled }) {
           <label className="text-[11px] text-gray-500">ATP (RLU)
             <input ref={atpRef} value={draft.atp_reading} onChange={(e) => setDraft({ ...draft, atp_reading: e.target.value })} className={cell} inputMode="decimal" data-swab-atp-in />
           </label>
-          <button type="submit" className="col-span-2 sm:col-span-1 px-3 py-1.5 bg-powder-600 text-white rounded-md text-sm font-medium hover:bg-powder-700" data-swab-add-line>
+          <button type="submit" className="col-span-2 @lg:col-span-1 px-3 py-1.5 bg-powder-600 text-white rounded-md text-sm font-medium hover:bg-powder-700" data-swab-add-line>
             Add
           </button>
-          <div className="col-span-2 sm:col-span-7 flex flex-wrap items-center gap-2 text-sm text-gray-700">
+          <div className="col-span-2 @lg:col-span-3 @4xl:col-span-7 flex flex-wrap items-center gap-2 text-sm text-gray-700">
             <label className="inline-flex items-center gap-1.5">
               <input type="checkbox" className="h-4 w-4 shrink-0" checked={draft.allergen_swab} onChange={(e) => setDraft({ ...draft, allergen_swab: e.target.checked })} data-swab-allergen-in />
               Allergen swab
@@ -120,6 +124,7 @@ export default function SwabLog({ onFiled }) {
           </div>
           <datalist id="swab-log-surfaces">{SURFACES.map((s) => <option key={s} value={s} />)}</datalist>
         </form>
+        </div>
       )}
 
       {error && <p className="text-sm text-red-700" data-swab-log-error>{error}</p>}

@@ -6168,7 +6168,16 @@ cards used to expand in place with every reply, so a reader scrolled the whole o
   `MODULE_MIN` (560px) beside the 240px sidebar. The preference is never rewritten.
 - `[data-tip]::after` is generated on `:hover` only. An invisible tooltip box near the right edge panned the whole app.
   **Do not move `content:` back onto the resting rule.**
-- `verify:topbar` (66, browser, nine widths, docked and not).
+- `verify:topbar` (67, browser, nine widths, docked and not).
+
+## Scrolling: the page holds still behind a pop-up; boxes are measured, never guessed (D-255)
+- **Any `fixed inset-0` backdrop with a `bg-black/…` tint locks the page** (`html:has(...)` in `index.css`), and
+  scrollers inside `fixed` elements stop at their own end. **A new pop-up must use that backdrop** or it is not covered.
+- **A box capped with `calc(100vh − Nrem)` is the D-149 bug.** Use `FrozenScroll`, or measure where the box starts.
+- **A row of fixed-width columns lays out by its container** (`@container`), not the window. Messages docked makes
+  the window wide and the column narrow.
+- **`verify:scroll`** (every module and tab, three sizes, plus the pop-up lock) fails on a sideways pan, a scroll box
+  inside another, an off-screen sideways scrollbar or a cut-off control. Run it after any layout change.
 
 ## Split Screen / chat popout: back must stay inside Messages
 The `/chat` route is either the ~420px docked panel (an iframe) or a 460px popout. It used to be given
