@@ -9594,3 +9594,22 @@ current one on file in Supplier Qualification; (2) QA keeps a list of part numbe
 - `verify:receivingcoc` (38, live + S3 stand-in + browser at 1280 and 360). Control: switching off the sign-off gate signs
   a receipt with no CoC; the run fails from that check on.
 
+## D-276 — A quiz attempt named as proof of competence must be that person's pass at that course (29 Oct 2026)
+
+**Asked by Lowry:** "when a training record uses a quiz attempt as proof of competence, the server must check the
+attempt is for the same person and course, and is a pass. Otherwise reject."
+
+- **The gap:** D-269 made competence required and counted any `test_attempt_id` as a passed quiz (`passedQuiz`).
+  `POST /api/training` stored whatever id it was sent, so somebody else's attempt, a failed one, one at another course,
+  or an id that does not exist saved a completed record with no trainer's tick. The task card already refused these
+  (D-158) with its own inline copy of the rule.
+- **One rule now, `attemptProblem(db, id, {course_id, employee_user_id, employee_name})`** in
+  `server/training-records.js`: the attempt exists, is at this course, is this person's (account id when both sides have
+  one, else the name with case ignored), and passed. The record form (POST), the record edit (PUT: moving a completed
+  record that cites an attempt to another person or course) and the task card all call it. Refused as
+  `400 ATTEMPT_MISMATCH` naming the reason; nothing is filed.
+- **Only where the attempt is proof**: a completed record. A failed record filed from a failed test still carries its
+  attempt and stays editable.
+- **Records already on file are not re-checked or changed.** Read-only to the past; the rule is for new writes and edits.
+- `verify:attemptproof` (12). Control: without the check on POST, all four bad attempts save (201) and the run fails 6.
+

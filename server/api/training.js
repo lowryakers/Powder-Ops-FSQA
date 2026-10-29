@@ -13,7 +13,7 @@ import { parseTrainingLog } from '../training-log.js';
 import { parseScanName, similarity, isScanEntry } from '../scanned-tests.js';
 import { extractInvoiceText } from '../invoice-text.js';
 import { requireRole } from '../middleware/auth.js';
-import { addMonths, dueDateFor, supersedeOlder, courseTrainingRevision, insertCompletion, gradeTestAttempt, attemptReview } from '../training-records.js';
+import { addMonths, dueDateFor, supersedeOlder, courseTrainingRevision, insertCompletion, gradeTestAttempt, attemptReview, attemptProblem } from '../training-records.js';
 import { assignTraining } from '../training-assign.js';
 import { tellAssignee, assignmentReach } from '../training-notify.js';
 import { trainingSnapshot, cellFor, personTraining, trainingRoster } from '../training-status.js';
@@ -304,6 +304,9 @@ router.post('/', (req, res) => {
   const dcr = dcrOrError(db, req.body.dcr_id);
   if (dcr.error) return res.status(400).json({ error: dcr.error });
   const { recorded_by: _rb, recorded_by_id: _rbi, session_id: _s, ...body } = req.body;
+  // A quiz attempt named as proof must be this person's pass at this course (D-276).
+  const attemptErr = (body.status || 'completed') === 'completed' ? attemptProblem(db, body.test_attempt_id, body) : null;
+  if (attemptErr) return res.status(400).json({ error: attemptErr, code: 'ATTEMPT_MISMATCH' });
   if (lacksCompetence({ status: 'completed', ...body }, passMarkOf(db, body.course_id))) {
     return res.status(400).json({ error: COMPETENCE_REQUIRED_MSG, code: 'COMPETENCE_REQUIRED' });
   }
@@ -551,6 +554,13 @@ router.put('/:id', (req, res) => {
   // Ticking the statement stores it in words; unticking clears it.
   const competence = b.competence_confirmed === undefined ? existing.competence_statement
     : (b.competence_confirmed ? competenceStatement(trainer) : null);
+  // An edit that moves the record to another person or course cannot keep a
+  // quiz attempt that was not theirs at that course as its proof (D-276).
+  const attemptErr = status !== 'completed' ? null : attemptProblem(db, existing.test_attempt_id, {
+    course_id, employee_user_id: b.employee_user_id ?? existing.employee_user_id,
+    employee_name: b.employee_name || existing.employee_name,
+  });
+  if (attemptErr) return res.status(400).json({ error: attemptErr, code: 'ATTEMPT_MISMATCH' });
   if (status === 'completed' && lacksCompetence({
     status, passed: passedVal, score: b.score ?? existing.score,
     test_attempt_id: existing.test_attempt_id, competence_statement: competence,

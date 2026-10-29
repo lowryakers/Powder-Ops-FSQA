@@ -29,7 +29,7 @@ import { outOfServiceScales } from '../instrument-incidents.js';
 import { canonicalArea } from '../sanitation-areas.js';
 import { planStepSplit } from '../../shared/pm-step-split.js';
 import { personMatch, resolveUserId, withCurrentNames } from '../person-links.js';
-import { gradeTestAttempt } from '../training-records.js';
+import { gradeTestAttempt, attemptProblem } from '../training-records.js';
 import { closeScheduleWork, pauseReason } from '../pm-pause.js';
 import { generationSweep } from '../pm-generation.js';
 import { isClosedDay, nextWorkday, holidayOn } from '../plant-calendar.js';
@@ -1267,15 +1267,9 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
     // training task, which skipped both the test and the self-score refusal.
     const attemptId = String(req.body.check?.test_attempt_id || '').trim();
     if (checkForm.kind === 'training' && attemptId) {
-      const at = db.prepare('SELECT * FROM training_test_attempts WHERE id = ?').get(attemptId);
-      const same = at && at.course_id === existing.training_course_id
-        && ((existing.assigned_to_id && at.employee_user_id === existing.assigned_to_id)
-          || (existing.assigned_to && String(at.employee_name || '').toLowerCase() === existing.assigned_to.toLowerCase()));
-      if (!same || !at.passed) {
-        return res.status(400).json({ error: !same
-          ? 'That test attempt is not this person\'s attempt at this course.'
-          : `That attempt scored ${at.score}% and did not pass — the training stays open until a test is passed.` });
-      }
+      const problem = attemptProblem(db, attemptId, { course_id: existing.training_course_id,
+        employee_user_id: existing.assigned_to_id, employee_name: existing.assigned_to });
+      if (problem) return res.status(400).json({ error: problem.replace('cannot stand as proof of competence', 'the training stays open until a test is passed') });
     }
     if (checkForm.kind === 'training' && checkForm.has_test && !attemptId) {
       const u = req.user || {};

@@ -138,6 +138,26 @@ export function insertCompletion(db, body) {
  * operator who passes the forklift test and closes the app has been trained,
  * and a record that depends on a second act is one that goes missing.
  */
+/**
+ * Why a test attempt cannot stand as proof of competence for this person and
+ * course, in words, or null when it can (D-276). The attempt must exist, be at
+ * THIS course, be THIS person's (account id when both sides have one, else the
+ * name, case aside), and be a pass. One rule for every door that accepts an
+ * attempt id: the task card (D-158) and the training record form.
+ */
+export function attemptProblem(db, attemptId, { course_id, employee_user_id = null, employee_name = null } = {}) {
+  const id = String(attemptId || '').trim();
+  if (!id) return null;
+  const at = db.prepare('SELECT * FROM training_test_attempts WHERE id = ?').get(id);
+  if (!at) return 'That test attempt was not found.';
+  const samePerson = (employee_user_id && at.employee_user_id)
+    ? at.employee_user_id === employee_user_id
+    : !!employee_name && String(at.employee_name || '').trim().toLowerCase() === String(employee_name).trim().toLowerCase();
+  if (!course_id || at.course_id !== course_id || !samePerson) return 'That test attempt is not this person\'s attempt at this course.';
+  if (!at.passed) return `That attempt scored ${at.score}% and did not pass — it cannot stand as proof of competence.`;
+  return null;
+}
+
 export function gradeTestAttempt(db, { course_id, employee_name, employee_user_id = null, answers, test_id = null }) {
   const course = db.prepare('SELECT * FROM training_courses WHERE id = ?').get(course_id);
   if (!course) return { error: 'Course not found' };
