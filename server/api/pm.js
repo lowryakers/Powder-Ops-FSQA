@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { storageEnabled, presignGet } from '../storage.js';
+import { isVideo } from '../media.js';
 import { CLOSED_STATUSES } from '../../shared/work-order-status.js';
 import { writeScheduleItems } from '../bpg-zones.js';
 import { v4 as uuid } from 'uuid';
@@ -1723,6 +1725,23 @@ function trainingTaskFor(db, req, res) {
   }
   return wo;
 }
+
+// The course's videos and handouts, for the person doing the training task
+// (D-264). The floor has no Training module, so the course form — the only place
+// these showed — was out of their reach. Same door as the test: the assignee, or
+// a supervisor sitting with them.
+router.get('/work-orders/:id/training-materials', async (req, res) => {
+  const db = getDb();
+  const wo = trainingTaskFor(db, req, res);
+  if (!wo) return;
+  const rows = db.prepare('SELECT * FROM training_materials WHERE course_id = ? ORDER BY created_at').all(wo.training_course_id);
+  if (!rows.length || !storageEnabled()) return res.json([]);
+  res.json(await Promise.all(rows.map(async m => ({
+    id: m.id, title: m.title, filename: m.filename, content_type: m.content_type, size: m.size,
+    is_video: isVideo(m.content_type, m.filename),
+    url: await presignGet(m.storage_key, m.filename),
+  }))));
+});
 
 router.get('/work-orders/:id/training-test', (req, res) => {
   const db = getDb();

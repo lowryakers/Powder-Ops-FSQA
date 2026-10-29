@@ -98,7 +98,7 @@ export function certificationFor(db, course, { employee_name, employee_user_id =
     // The four facts 1910.178(l)(6) names, resolved here so the certificate,
     // the screen and the API cannot each work them out differently.
     trained_on: trainedOn,
-    trained_by: trained?.trainer || (trained?.method === 'online_test' ? 'ReadyDoc online test' : null) || null,
+    trained_by: trained?.trainer || (['online_test', 'quiz'].includes(trained?.method) ? 'ReadyDoc online test' : null) || null,
     training_score: trained?.score ?? null,
     evaluated_on: evaluatedOn,
     evaluated_by: evaluated?.evaluator_name || null,

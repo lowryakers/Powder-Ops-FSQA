@@ -11,6 +11,7 @@
 
 import { v4 as uuid } from 'uuid';
 import { plantDateOf } from './plant-clock.js';
+import { competenceStatement, wantsCompetence } from '../shared/training-record-fields.js';
 
 export const addMonths = (isoDate, months) => {
   if (!isoDate || !months) return null;
@@ -29,20 +30,53 @@ export function dueDateFor(db, courseId, completionDate) {
 }
 
 /**
- * Mark earlier completions of the same course by the same person superseded,
- * so the matrix reflects the most recent one.
+ * Settle which of a person's completions of a course is current: the one
+ * TRAINED most recently, every other one superseded.
+ *
+ * It used to mark everything except the record just filed, whatever its date —
+ * so logging a session from March pushed aside a completion from September, and
+ * the matrix read the March one as current (D-264). Now the dates decide; the
+ * record just filed only wins when it is the latest. `keepId` is kept for
+ * callers and ignored.
  *
  * MATCHED ON THE ACCOUNT WHERE THERE IS ONE, the name otherwise. Name-only
  * matching left a renamed person with two "current" completions — the record
  * filed under the old spelling was never superseded — the same split the
  * time-adjustment and pay-roster keys had.
  */
-export function supersedeOlder(db, employeeName, courseId, keepId, employeeUserId = null) {
+export function supersedeOlder(db, employeeName, courseId, _keepId = null, employeeUserId = null) {
   if (!courseId) return;
-  db.prepare(`UPDATE training_records SET superseded = 1
-    WHERE id != ? AND course_id = ?
-      AND (LOWER(employee_name) = LOWER(?) OR (? IS NOT NULL AND employee_user_id = ?))`)
-    .run(keepId, courseId, employeeName, employeeUserId, employeeUserId);
+  const rows = db.prepare(`SELECT id, status, passed, completion_date, training_date, created_at FROM training_records
+    WHERE course_id = ? AND (LOWER(employee_name) = LOWER(?) OR (? IS NOT NULL AND employee_user_id = ?))`)
+    .all(courseId, employeeName, employeeUserId, employeeUserId);
+  const done = rows.filter(r => r.status === 'completed' && r.passed !== 0)
+    .sort((a, b) => String(b.completion_date || b.training_date || '').localeCompare(String(a.completion_date || a.training_date || ''))
+      || String(b.created_at || '').localeCompare(String(a.created_at || '')));
+  const current = done[0]?.id;
+  if (!current) return;
+  const set = db.prepare('UPDATE training_records SET superseded = ? WHERE id = ? AND superseded != ?');
+  for (const r of rows) { const v = r.id === current ? 0 : 1; set.run(v, r.id, v); }
+}
+
+/**
+ * Once per database (D-264): re-settle every person × course with the rule
+ * above, because the old rule may have left an older completion current.
+ * `superseded` is derived state, not a filed fact, so correcting it rewrites no
+ * record. Returns how many people × courses changed.
+ */
+export function resettleCurrentOnce(db, log = console) {
+  const MARK = 'training_current_resettled_v1';
+  if (db.prepare('SELECT 1 FROM app_settings WHERE key = ?').get(MARK)) return null;
+  const before = new Map(db.prepare('SELECT id, superseded FROM training_records').all().map(r => [r.id, r.superseded]));
+  const pairs = db.prepare(`SELECT DISTINCT course_id, employee_name, employee_user_id FROM training_records
+    WHERE course_id IS NOT NULL AND status = 'completed'`).all();
+  db.transaction(() => { for (const p of pairs) supersedeOlder(db, p.employee_name, p.course_id, null, p.employee_user_id || null); })();
+  const after = db.prepare('SELECT id, superseded FROM training_records').all();
+  const moved = after.filter(r => before.get(r.id) !== r.superseded).length;
+  db.prepare("INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+    .run(MARK, JSON.stringify({ at: new Date().toISOString(), records_changed: moved }));
+  if (moved) log.log?.(`[training] re-settled current completions by date: ${moved} record(s) changed`);
+  return { records_changed: moved };
 }
 
 /** The revision of a course's linked document that current training must reflect. */
@@ -68,17 +102,25 @@ export function insertCompletion(db, body) {
   const next_due = dueDateFor(db, body.course_id, completion);
   // Stamp the document revision this completion was trained against.
   const sopRevision = body.sop_revision || courseTrainingRevision(db, body.course_id);
+  const sopId = body.sop_id || (body.course_id ? db.prepare('SELECT sop_id FROM training_courses WHERE id = ?').get(body.course_id)?.sop_id : null) || null;
+  // The statement is stored in words, naming the trainer, when the form ticked it.
+  const competence = body.competence_statement
+    || (body.competence_confirmed && wantsCompetence(body.method) ? competenceStatement(body.trainer) : null);
   db.prepare(`INSERT INTO training_records
     (id, employee_name, employee_id, employee_user_id, training_topic, course_id, sop_id, trainer, method,
-     training_date, completion_date, status, passed, score, next_due_date, certificate_url, document_url, gdrive_url, test_attempt_id, notes, sop_revision)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+     training_date, completion_date, status, passed, score, next_due_date, certificate_url, document_url, gdrive_url, test_attempt_id, notes, sop_revision,
+     recorded_by, recorded_by_id, language, competence_statement, dcr_id, session_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     id, body.employee_name, body.employee_id || null, body.employee_user_id || null,
-    body.training_topic || body.course_title || '', body.course_id || null, body.sop_id || null,
+    body.training_topic || body.course_title || '', body.course_id || null, sopId,
     body.trainer || null, body.method || null,
     body.training_date || plantDateOf(), completion,
     failed ? 'failed' : (body.status || (completion ? 'completed' : 'scheduled')),
     body.passed === undefined ? null : (body.passed ? 1 : 0), body.score ?? null, next_due,
-    body.certificate_url || null, body.document_url || null, body.gdrive_url || null, body.test_attempt_id || null, body.notes || null, sopRevision);
+    body.certificate_url || null, body.document_url || null, body.gdrive_url || null, body.test_attempt_id || null, body.notes || null, sopRevision,
+    // Who keyed it in is the CALLER's account, passed by the route from the
+    // session — never a value from the request body.
+    body.recorded_by || 'ReadyDoc', body.recorded_by_id || null, body.language || null, competence, body.dcr_id || null, body.session_id || null);
   if (!failed && (body.status === 'completed' || completion)) supersedeOlder(db, body.employee_name, body.course_id, id, body.employee_user_id || null);
   return db.prepare('SELECT * FROM training_records WHERE id = ?').get(id);
 }
@@ -139,7 +181,7 @@ export function gradeTestAttempt(db, { course_id, employee_name, employee_user_i
   if (passed) {
     record = insertCompletion(db, {
       employee_name, employee_user_id, course_id, course_title: course.title,
-      method: 'online_test', status: 'completed', passed: true, score,
+      method: 'quiz', status: 'completed', passed: true, score,
       // THE PLANT'S DAY, not UTC's (D-158): a test passed after 6pm Mountain
       // was dated tomorrow, and its retraining clock ran a day short.
       completion_date: plantDateOf(), test_attempt_id: attemptId,

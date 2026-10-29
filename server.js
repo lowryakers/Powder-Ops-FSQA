@@ -166,6 +166,7 @@ import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, s
 import { seedProductionEntries, seedEodTemplates } from './server/production-seed.js';
 import { seedTrainingCourses, seedWorkInstructionCourses } from './server/training-seed.js';
 import { flagBotAccountsOnce } from './server/trainees.js';
+import { resettleCurrentOnce } from './server/training-records.js';
 import { matrixCounts } from './server/training-status.js';
 import { regradeFiledAttempts, repairFailedCompletions, alignPassMarks } from './server/training-regrade.js';
 import { seedReferenceLibrary } from './server/reference-seed.js';
@@ -2382,6 +2383,8 @@ server.listen(PORT, '0.0.0.0', () => {
   // Bots and system accounts are not trainees (D-262). Once per database; the
   // report (who, and the training counts before and after) is in the audit log
   // and in app_settings.training_bot_accounts_flagged_v1.
+  // Which completion is current is decided by the date trained (D-264), once over what is on file.
+  try { resettleCurrentOnce(db); } catch (e) { console.warn('[training] re-settle current failed:', e.message); }
   try { flagBotAccountsOnce(db, { countMatrix: (d) => matrixCounts(d) }); }
   catch (e) { console.warn('[training] bot accounts not flagged:', e.message); }
   // Generate any due recurring quality-control tasks on startup (idempotent).

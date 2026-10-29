@@ -7,6 +7,7 @@
 import { useAuth } from '../../hooks/useAuth';
 import { useState } from 'react';
 import { missingForCheck, GMP_WALK_ANSWERS, REVIEW_ANSWERS } from '../../../shared/check-forms.js';
+import { METHOD_KEYS } from '../../../shared/training-record-fields.js';
 
 const S = {
   sites_h: { en: 'Sites sampled', es: 'Sitios muestreados' },
@@ -37,9 +38,10 @@ const S = {
   self_test: { en: 'Your score is worked out when you submit the test above, and shown to you at the end. There is nothing to type here.', es: 'Su puntaje se calcula al enviar el examen de arriba y se le muestra al final. Aquí no hay nada que escribir.' },
   trainer: { en: 'Who delivered the training', es: 'Quién impartió la capacitación' },
   method: { en: 'How (optional)', es: 'Cómo (opcional)' },
-  method_person: { en: 'In person', es: 'En persona' },
-  method_video: { en: 'Video', es: 'Video' },
-  method_read: { en: 'Read and understood', es: 'Leído y entendido' },
+  method_verbal: { en: 'Verbal', es: 'Verbal' },
+  method_hands_on: { en: 'Hands-on', es: 'Práctica' },
+  method_read_and_sign: { en: 'Read and sign', es: 'Leer y firmar' },
+  method_quiz: { en: 'Quiz', es: 'Examen' },
   method_test: { en: 'Test taken in ReadyDoc', es: 'Examen tomado en ReadyDoc' },
   passing: { en: 'Passing score', es: 'Puntaje para aprobar' },
   renews: { en: 'Records a completion, and the next one comes due in', es: 'Registra la finalización, y la próxima vence en' },
@@ -445,9 +447,8 @@ function TrainingFields({ form, v, set, lang, assignee }) {
           <select value={v.method || ''} onChange={e => set({ method: e.target.value })} data-training-method
             className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm">
             <option value="">{tr(lang, 'method')}</option>
-            <option value="in person">{tr(lang, 'method_person')}</option>
-            <option value="video">{tr(lang, 'method_video')}</option>
-            <option value="read and understood">{tr(lang, 'method_read')}</option>
+            {/* The plant's four methods (D-264) — the same list as the Training screen. */}
+            {METHOD_KEYS.map(k => <option key={k} value={k}>{tr(lang, `method_${k}`)}</option>)}
           </select>
         </>
       )}

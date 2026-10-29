@@ -9383,3 +9383,70 @@ narrowed admin could not get them back.
 - The other sidebar items without a box are opened by a rule, not a grant, and Settings shows those rules under "What
   they can open" (D-187): Doc Control Review, Controlled Changes, Change Register, Food Safety Culture, Accounting,
   Quality Events, Controlled Documents, Sign In/Out, and the admin-only items.
+
+## D-264 — A training record says how somebody was trained; one session records many people (29 Oct 2026)
+
+SQF 2.9.2.3 and Daniela's FORM 408-02 ask a training record for the document and revision trained on, the date
+trained, who trained, how, the trainer's word that the person is competent, and the language. ReadyDoc had the
+document, the revision, the date and the trainer. It had no language, no competence statement, no link to the change
+request, and nothing saying who typed the record in. Lowry approved the plan with one condition: as simple as it can be.
+- **Every record can now hold** (`training_records`): the document revision trained on (`sop_revision`, filled from
+  the course's document, editable for past training); the date trained (one date on the form, past allowed, future
+  refused); trainer; method; language (English / Spanish / both); the trainer's statement of competence, stored in
+  fixed words naming the trainer; and a link to the Document Change Request (`dcr_id`, picked from the DCRs on file,
+  optional).
+- **The date recorded and who recorded it are ReadyDoc's.** `created_at` is the date recorded; `recorded_by` /
+  `recorded_by_id` come from the session on every write path (the form, a session, a task completion, the imports),
+  never from the request body. Editing either is refused (`400 SYSTEM_SET`), not silently dropped.
+- **Four methods**: verbal, hands-on, read and sign, quiz (`shared/training-record-fields.js`, the one list; the
+  employee's task form offers the same four). Older records keep the value they were filed with and read "In person
+  (older record)", "Quiz (online test)", "Outside training (older record)". Nothing is rewritten.
+- **The competence statement is asked for verbal and hands-on, and flagged when missing, not refused.** A session
+  logged today from last spring may have no trainer to ask; refusing it would stop the record being kept at all. The
+  Records list and the Sessions list say "no competence statement". No password: the trainer is often not the person
+  keying it in, and "recorded by" already says who did.
+- **One session, many people** (`training_sessions`): Group Training is now "Record a training session". It saves the
+  session once (course, document revision, DCR, date, trainer, method, language, statement, who recorded it) and one
+  record per attendee pointing back to it (`session_id`). Group sign-in sheets go through the same route. A new
+  **Sessions** tab lists them with who attended. No second screen was built.
+- **A backdated record no longer pushes a newer one aside.** `supersedeOlder` marked every other completion
+  superseded, whatever its date, so logging a March session after a September one made March current. The latest date
+  trained now wins. Once per database (`training_current_resettled_v1`) every person × course is re-settled by the same
+  rule; `superseded` is derived state, so this rewrites no record.
+- **Found by the test, fixed:** `PUT /training/:id` read `passed: null` as 0. The Edit form sends the record back
+  whole, so saving any record with no score turned it into a fail. A blank now stays blank.
+- **Course videos reach the trainee's task.** `GET /pm/work-orders/:id/training-materials` (assignee or a supervisor,
+  the test's door) feeds `TaskMaterials` above the test on My Tasks and the Task Center. They were only in the course
+  form, behind the Training module.
+- **The document importer keeps the version.** `guessMeta` read "V4" off the filename only to remove it from the
+  title, so every imported document read 1.0. It now returns it, the review screen has a Version box, and the bulk
+  save sends it. Documents already imported at 1.0 are Document Control's to correct (Update from file); the app
+  changes no version itself.
+- **The test result stays on screen until the trainee presses Close.** Passing refreshed the task list at once, which
+  removed the passed task's card, and the score with it, before anyone read it. `verify:trainingtest` and
+  `verify:testgrading` caught this in the browser once the refresh got faster.
+- `verify:trainingrecords` (41, live + browser). The control (the old supersede rule) fails 2.
+
+## D-265 — The crisis drill and its product integrity inspection live in Safety (29 Oct 2026)
+
+Daniela asked for a "Crisis Management Review": her sheet *Crisis Management Drill and Product Integrity Inspection*
+(SOP 501), used for the 21 Oct 2026 earthquake drill in the Warehouse. It is the SQF 2.6.4.2 record (the annual crisis
+test and its effect on product), so it goes in **Safety** beside the crisis contacts (501-01) and the evacuation
+headcount (501-02), as a fourth tab, **Crisis Drills**.
+- **Transcribed word for word** (`shared/crisis-drill.js`). It has no form number yet, so every record is stamped
+  `DRAFT-1` and says "not yet numbered by Document Control" (the D-052 arrangement). The note for Document Control is
+  `docs/v2/queued/dcr-crisis-drill-product-integrity.md`.
+- **One table, `crisis_drills`**: the answers in `data`, the two review signatures as columns.
+- **Filed by** QA, Document Control, office/HR, supervisors and admins. It can be saved half-filled and finished later.
+  A drill date in the future is refused.
+- **Reviewed by two people, each with their password** (`gateSignature`): the QA / SQF Practitioner line (Quality or an
+  admin) and the Management line (a supervisor or an admin), never the same person. Refused while anything is left
+  (`missingToSign`): blanks, an unmarked inspection line, a Fail with no gap or corrective action, "Effective" with a
+  Fail, a result short of "Effective" with no corrective action, "Not effective" with no retest.
+- **A signed drill is closed.** Revoke (the signer or an admin, with a reason), correct, sign again. A reviewed drill
+  cannot be deleted; an unreviewed one only by an admin.
+- **The readiness review** names the latest drill in the last 12 months, its result and whether both reviews are signed,
+  or says there is none.
+- **Daniela's 21 Oct drill is not entered by ReadyDoc.** It is a real record; she files it on the screen with its real
+  date, and the test files a copy into a test database only.
+- `verify:crisisdrill` (29, live + browser at 1280 and 390). The control (no completeness check at signing) fails 1.

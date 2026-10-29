@@ -1,5 +1,12 @@
 # The Training module: what it stores, what it counts, and where it falls short
 
+> **Update, 29 Oct 2026 (D-264, PR after #88).** Several gaps below are now closed. Each record can hold the language,
+> the trainer's statement of competence, a link to the change request (DCR), and who recorded it (set by ReadyDoc,
+> not editable). Methods are verbal / hands-on / read and sign / quiz. Group Training saves one **session** with
+> everyone on it (Training → Sessions). Logging an old session no longer pushes a newer record aside. Course videos
+> show on the trainee's own task. The document importer keeps the version from the filename. The sections below
+> describe the module as it was before that change, and are kept as the record of why.
+
 Written 29 Oct 2026, read from the code on branch `claude/food-safety-preventive-controls-8y6mu2` (same as `main` for
 everything in Training). Nothing was changed to write this. It is meant for reviewing the module against SQF Code
 Ed. 9 (2.9 Training; 2.2.3 records) and NSF/ANSI 455-2 / GMP for Sport (personnel training) by someone who does not

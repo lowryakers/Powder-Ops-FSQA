@@ -150,8 +150,10 @@ export function fileCheckRecord(db, { form, check, wo, by, when, notes }) {
       training_date: day, completion_date: day, status: 'completed',
       score: c.score, passed: passed === null ? undefined : passed,
       test_attempt_id: c.test_attempt_id,
-      trainer: c.trainer, method: c.method || (c.test_attempt_id ? 'in-app test' : null),
+      trainer: c.trainer, method: c.method || (c.test_attempt_id ? 'quiz' : null),
       notes: notes || null,
+      // Whoever pressed Complete keyed it in (D-264).
+      recorded_by: by || null,
     });
     return { kind: 'training', ids: [rec.id], course: form.code || form.title, trainee, next_due: rec.next_due_date };
   }

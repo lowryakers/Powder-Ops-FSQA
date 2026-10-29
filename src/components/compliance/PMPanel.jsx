@@ -16,6 +16,7 @@ import { TASK_GROUPS } from '../../../shared/task-groups.js';
 import CheckFields from '../common/CheckFields.jsx';
 import AtpSwabField from '../common/AtpSwabField.jsx';
 import TrainingTest from '../common/TrainingTest.jsx';
+import { TaskMaterials } from './TrainingHowFields.jsx';
 import { missingForCheck } from '../../../shared/check-forms.js';
 import { getParam } from '../../lib/deepLink.js';
 
@@ -130,6 +131,7 @@ function CompleteForm({ wo, chemicals, onComplete, onTestPassed, onCancel }) {
           because a test that graded differently depending on which screen it
           was opened from is not a test. Passing files the record and closes
           the task, so there is nothing left to submit. */}
+      {wo.check_form?.kind === 'training' && <TaskMaterials workOrderId={wo.id} />}
       {wo.check_form?.kind === 'training' && wo.check_form.has_test && (
         <TrainingTest workOrderId={wo.id} onDone={onTestPassed} />
       )}

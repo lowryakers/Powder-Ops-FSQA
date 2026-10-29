@@ -16,6 +16,8 @@ import FilePreview from '../FilePreview.jsx';
 import { pdfViewerUrl } from '../../lib/pdfUrl';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 import FrozenScroll from '../common/FrozenScroll';
+import { HowTrainedFields, RecordedLine, HowChips, TrainingSessions } from './TrainingHowFields.jsx';
+import { localDateStr } from '../../utils/dates';
 
 // Columns as data for the Records tab. Evidence and the actions cell have no
 // key — a link is not a value to order by.
@@ -25,8 +27,10 @@ const TRAINING_RECORD_COLUMNS = [
   // a course, so the sort has to fall back the same way or those file under
   // blank and bury themselves at the end.
   { key: 'course_title', label: 'Course', type: 'text', sortValue: r => r.course_title || r.training_topic },
-  { key: 'completion_date', label: 'Completed', type: 'date' },
+  { key: 'completion_date', label: 'Trained', type: 'date' },
   { key: 'score', label: 'Score', type: 'number' },
+  { key: 'method', label: 'How', type: 'text' },
+  { key: 'created_at', label: 'Recorded', type: 'date' },
   { label: 'Evidence' },
   { label: '' },
 ];
@@ -517,24 +521,32 @@ function TrainingLogImportModal({ onClose, onDone }) {
 
 // ── Completion modal ──────────────────────────────────────────────────────────
 function CompletionModal({ initial, courses, users, onClose, onSaved }) {
-  const [form, setForm] = useState(initial || {
-    employee_name: '', course_id: '', training_date: new Date().toISOString().slice(0, 10),
-    completion_date: new Date().toISOString().slice(0, 10), method: 'in_person', score: '', trainer: '', notes: '', document_url: '',
-  });
+  const today = localDateStr();
+  const [form, setForm] = useState(() => initial
+    ? { ...initial, competence_confirmed: !!initial.competence_statement }
+    : {
+      employee_name: '', course_id: '', training_date: today, completion_date: today,
+      method: 'verbal', language: '', score: '', trainer: '', notes: '', document_url: '',
+      competence_confirmed: false, sop_revision: '', dcr_id: '',
+    });
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
   const [uploading, setUploading] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const submit = async (e) => {
     e.preventDefault();
-    setSaving(true);
+    setSaving(true); setError('');
     try {
       const match = (users || []).find(u => u.name.toLowerCase() === form.employee_name.trim().toLowerCase());
-      const payload = { ...form, employee_user_id: match?.id || null, status: 'completed' };
+      // The date recorded and who recorded it are the server's (D-264): never sent.
+      const { recorded_by: _rb, recorded_by_id: _rbi, created_at: _c, updated_at: _u, session_id: _s, ...rest } = form;
+      const payload = { ...rest, employee_user_id: match?.id || rest.employee_user_id || null, status: 'completed' };
       if (initial?.id) await apiPut(`/training/${initial.id}`, payload);
       else await apiPost('/training', payload);
       onSaved();
-    } finally { setSaving(false); }
+    } catch (err) { setError(err.message); }
+    finally { setSaving(false); }
   };
   const onFile = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
@@ -546,7 +558,7 @@ function CompletionModal({ initial, courses, users, onClose, onSaved }) {
     <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <form onSubmit={submit} onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-lg p-5 space-y-3 max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-gray-900">{initial?.id ? 'Edit' : 'Log'} training completion</h3>
+          <h3 className="font-semibold text-gray-900">{initial?.id ? 'Edit' : 'Log'} a training record</h3>
           <button type="button" onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -565,28 +577,20 @@ function CompletionModal({ initial, courses, users, onClose, onSaved }) {
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Completed *</label>
-            <input type="date" required value={form.completion_date} onChange={e => set('completion_date', e.target.value)}
+            {/* One date: the day the training happened. It may be in the past — the
+                date it was recorded is kept separately by ReadyDoc. */}
+            <label className="block text-xs font-medium text-gray-700 mb-1">Date trained *</label>
+            <input type="date" required max={today} value={form.completion_date || ''} data-field="date-trained"
+              onChange={e => setForm(f => ({ ...f, completion_date: e.target.value, training_date: e.target.value }))}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Method</label>
-            <select value={form.method || ''} onChange={e => set('method', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-              {/* Imported rows have no method; without a blank option the browser picks in_person and the edit fabricates one. */}
-              <option value="">Not recorded</option>
-              {['in_person', 'read_and_sign', 'online_test', 'external'].map(m => <option key={m} value={m}>{m.replace(/_/g, ' ')}</option>)}
-            </select>
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Score (%)</label>
-            <input type="number" step="any" min="0" max="100" value={form.score || ''} onChange={e => set('score', e.target.value ? parseFloat(e.target.value) : '')}
+            <input type="number" step="any" min="0" max="100" value={form.score ?? ''} onChange={e => set('score', e.target.value ? parseFloat(e.target.value) : '')}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
           </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Trainer</label>
-            <input value={form.trainer || ''} onChange={e => set('trainer', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+          <div className="col-span-2">
+            <HowTrainedFields value={form} onChange={setForm} legacyMethod={initial?.method} />
           </div>
           <div className="col-span-2">
             <label className="block text-xs font-medium text-gray-700 mb-1">Scanned form / certificate</label>
@@ -608,6 +612,8 @@ function CompletionModal({ initial, courses, users, onClose, onSaved }) {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
           </div>
         </div>
+        <RecordedLine record={initial} />
+        {error && <p className="text-sm text-red-600">{error}</p>}
         <div className="flex gap-2">
           <button type="submit" disabled={saving} className="flex-1 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">{saving ? 'Saving…' : 'Save completion'}</button>
           <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Cancel</button>
@@ -1074,11 +1080,12 @@ function AssignModal({ courses, users, onClose, onAssigned }) {
 }
 
 function GroupTrainingModal({ courses, users, onClose, onSaved }) {
-  const today = new Date().toISOString().slice(0, 10);
+  // One training session for many people at once (D-264): the session is stored
+  // once and every attendee gets their own record pointing back to it.
+  const today = localDateStr();
   const [courseId, setCourseId] = useState('');
   const [date, setDate] = useState(today);
-  const [trainer, setTrainer] = useState('');
-  const [method, setMethod] = useState('in_person');
+  const [how, setHow] = useState({ method: 'verbal', language: '', trainer: '', competence_confirmed: false, sop_revision: '', dcr_id: '' });
   const [sel, setSel] = useState({}); // userId -> { checked, name, score }
   const [search, setSearch] = useState('');
   const [sheet, setSheet] = useState(null); // the signed sign-in sheet (Form 409-02)
@@ -1096,7 +1103,7 @@ function GroupTrainingModal({ courses, users, onClose, onSaved }) {
     setSaving(true); setError('');
     try {
       const res = await apiPost('/training/bulk-complete', {
-        course_id: courseId, completion_date: date, training_date: date, trainer, method,
+        course_id: courseId, completion_date: date, training_date: date, ...how,
         attendees: chosen.map(([id, v]) => ({ employee_user_id: id, employee_name: v.name, score: v.score })),
       });
       // One sheet, everyone's record: the scan is stored once and referenced
@@ -1121,7 +1128,7 @@ function GroupTrainingModal({ courses, users, onClose, onSaved }) {
     <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[92vh] flex flex-col">
         <div className="flex items-center justify-between p-4 border-b">
-          <h3 className="font-semibold text-gray-900">Record group training</h3>
+          <h3 className="font-semibold text-gray-900">Record a training session</h3>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
         </div>
         <div className="p-4 space-y-3 overflow-y-auto">
@@ -1133,19 +1140,12 @@ function GroupTrainingModal({ courses, users, onClose, onSaved }) {
                 {(courses || []).filter(c => c.active).map(c => <option key={c.id} value={c.id}>{c.code ? `${c.code} — ` : ''}{c.title}</option>)}
               </select>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Date *</label>
-              <input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Method</label>
-              <select value={method} onChange={e => setMethod(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                {['in_person', 'read_and_sign', 'online_test', 'external'].map(m => <option key={m} value={m}>{m.replace(/_/g, ' ')}</option>)}
-              </select>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-700 mb-1">Date trained * <span className="font-normal text-gray-400">— can be in the past</span></label>
+              <input type="date" max={today} value={date} onChange={e => setDate(e.target.value)} data-field="date-trained" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
             </div>
             <div className="col-span-2">
-              <label className="block text-xs font-medium text-gray-700 mb-1">Trainer</label>
-              <input value={trainer} onChange={e => setTrainer(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+              <HowTrainedFields value={how} onChange={setHow} />
             </div>
             <div className="col-span-2">
               <label className="block text-xs font-medium text-gray-700 mb-1">Signed sign-in sheet (photo or PDF)</label>
@@ -1646,6 +1646,8 @@ export default function TrainingPanel() {
     { id: 'due', label: 'Retraining Due' },
     { id: 'courses', label: 'Courses' },
     { id: 'records', label: 'Records' },
+    // One row per training session, with who attended (D-264).
+    { id: 'sessions', label: 'Sessions' },
     // Each attempt question by question (D-144): the reviewer could see a
     // score and nothing behind it.
     { id: 'attempts', label: 'Test answers' },
@@ -1893,8 +1895,10 @@ export default function TrainingPanel() {
             {recSort.sorted.map(r => (
               <RecordCard key={r.id} title={r.employee_name} subtitle={r.course_title || r.training_topic || '—'}
                 fields={[
-                  { label: 'Completed', value: r.completion_date },
+                  { label: 'Trained', value: r.completion_date },
                   { label: 'Score', value: r.score != null ? `${r.score}%` : null },
+                  { label: 'How', value: <HowChips record={r} /> },
+                  { label: 'Recorded', value: r.created_at ? `${String(r.created_at).slice(0, 10)}${r.recorded_by ? ` · ${r.recorded_by}` : ''}` : null },
                 ]}
                 actions={(evidenceLink(r) || answersLink(r) || canEdit) ? <>
                   {evidenceLink(r)}
@@ -1918,6 +1922,11 @@ export default function TrainingPanel() {
                     <td className="px-4 py-2 text-gray-600">{r.course_title || r.training_topic || '—'}</td>
                     <td className="px-4 py-2 text-gray-600">{r.completion_date || '—'}</td>
                     <td className="px-4 py-2 text-gray-600">{r.score != null ? `${r.score}%` : '—'}</td>
+                    <td className="px-4 py-2"><HowChips record={r} /></td>
+                    <td className="px-4 py-2 text-xs text-gray-500" data-recorded>
+                      {String(r.created_at || '').slice(0, 10) || '—'}
+                      {r.recorded_by && <span className="block text-[11px] text-gray-400">{r.recorded_by}</span>}
+                    </td>
                     <td className="px-4 py-2">
                       {/* Imported scans live in storage under evidence_key — a
                           different field from the hand-attached document_url,
@@ -1931,12 +1940,14 @@ export default function TrainingPanel() {
                     </td>
                   </tr>
                 ))}
-                {filteredRecords.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-500">No training records yet.</td></tr>}
+                {filteredRecords.length === 0 && <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-500">No training records yet.</td></tr>}
               </tbody>
             </table>
           </FrozenScroll>
         </div>
       )}
+
+      {view === 'sessions' && <TrainingSessions />}
 
       {view === 'certifications' && (
         <div className="space-y-3">

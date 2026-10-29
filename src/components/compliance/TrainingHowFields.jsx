@@ -1,0 +1,175 @@
+// How somebody was trained (D-264): method, trainer, language, the trainer's
+// statement of competence, the document revision and the change request.
+// One component, used by the single-record form AND the session form, so the
+// two cannot ask for different things.
+import { useEffect, useState } from 'react';
+import { useApiGet, apiFetch } from '../../hooks/useApi';
+import { Video, FileText } from 'lucide-react';
+import {
+  METHODS, LEGACY_METHODS, LANGUAGES, methodLabel, languageLabel, competenceStatement, wantsCompetence,
+} from '../../../shared/training-record-fields.js';
+import { formatDateTime } from '../../lib/datetime';
+
+const inputCls = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm';
+
+export function HowTrainedFields({ value, onChange, legacyMethod = null }) {
+  const set = (k, v) => onChange({ ...value, [k]: v });
+  const { data: dcrs } = useApiGet('/training/change-requests');
+  return (
+    <div className="grid grid-cols-2 gap-3" data-how-trained>
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1">Method *</label>
+        <select required value={value.method || ''} onChange={e => set('method', e.target.value)} className={inputCls} data-field="method">
+          {!value.method && <option value="">— Select —</option>}
+          {/* An older record keeps the value it was filed with; it is shown, not offered for new ones. */}
+          {legacyMethod && LEGACY_METHODS[legacyMethod] && <option value={legacyMethod}>{LEGACY_METHODS[legacyMethod]}</option>}
+          {METHODS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+        </select>
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1">Language</label>
+        <select value={value.language || ''} onChange={e => set('language', e.target.value)} className={inputCls} data-field="language">
+          <option value="">Not recorded</option>
+          {LANGUAGES.map(l => <option key={l.key} value={l.key}>{l.label}</option>)}
+        </select>
+      </div>
+      <div className="col-span-2">
+        <label className="block text-xs font-medium text-gray-700 mb-1">Trainer</label>
+        <input value={value.trainer || ''} onChange={e => set('trainer', e.target.value)} className={inputCls} data-field="trainer" />
+      </div>
+      {wantsCompetence(value.method) && (
+        <label className="col-span-2 flex items-start gap-2 rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm text-gray-700" data-field="competence">
+          <input type="checkbox" className="mt-0.5 h-4 w-4 shrink-0" checked={!!value.competence_confirmed}
+            onChange={e => set('competence_confirmed', e.target.checked)} />
+          <span>
+            <span className="font-medium">Trainer&apos;s statement of competence.</span>{' '}
+            &ldquo;{competenceStatement(value.trainer)}&rdquo;
+            <span className="block text-[11px] text-gray-500 mt-0.5">Leave it unticked if the trainer has not said so. The record is still saved and shows it as missing.</span>
+          </span>
+        </label>
+      )}
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1">Document revision trained on</label>
+        <input value={value.sop_revision || ''} onChange={e => set('sop_revision', e.target.value)} className={inputCls}
+          placeholder="The document's current revision" data-field="sop_revision" />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-gray-700 mb-1">Change request (DCR)</label>
+        <select value={value.dcr_id || ''} onChange={e => set('dcr_id', e.target.value)} className={inputCls} data-field="dcr_id">
+          <option value="">None</option>
+          {(dcrs || []).map(d => (
+            <option key={d.id} value={d.id}>
+              {[d.record_number, d.doc_number, d.doc_name, d.revision ? `rev ${d.revision}` : null].filter(Boolean).join(' · ')}
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+}
+
+/** "Recorded 29 Oct 2026 2:14 PM by Daniela Servin" — the system's half, read-only. */
+export function RecordedLine({ record }) {
+  if (!record?.created_at) return null;
+  return (
+    <p className="text-xs text-gray-500" data-recorded-line>
+      Recorded {formatDateTime(record.created_at)}{record.recorded_by ? ` by ${record.recorded_by}` : ''}. Set by ReadyDoc; it cannot be edited.
+    </p>
+  );
+}
+
+/** Method and language as a short line, with the missing-statement flag. */
+export function HowChips({ record }) {
+  const missing = wantsCompetence(record.method) && !record.competence_statement;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1">
+      <span className="text-xs text-gray-600">{methodLabel(record.method)}</span>
+      {record.language && <span className="text-[11px] text-gray-400">· {languageLabel(record.language)}</span>}
+      {missing && (
+        <span className="text-[10px] font-medium text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded-full" data-competence-missing>
+          no competence statement
+        </span>
+      )}
+    </span>
+  );
+}
+
+const fmtBytes = (n) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round((n || 0) / 1024))} KB`);
+
+/** The course's videos and handouts, on the trainee's own task (D-264). */
+export function TaskMaterials({ workOrderId, lang = 'en' }) {
+  const [items, setItems] = useState(null);
+  useEffect(() => {
+    let live = true;
+    apiFetch(`/pm/work-orders/${workOrderId}/training-materials`).then(r => { if (live) setItems(r || []); }).catch(() => { if (live) setItems([]); });
+    return () => { live = false; };
+  }, [workOrderId]);
+  if (!items?.length) return null;
+  return (
+    <div className="space-y-2" data-task-materials>
+      <p className="text-xs font-semibold text-gray-700">{lang === 'es' ? 'Material del curso' : 'Course material'}</p>
+      {items.map(m => (
+        <div key={m.id} className="rounded-lg border border-gray-200 bg-white p-2">
+          {m.is_video && m.url && <video src={m.url} controls playsInline preload="metadata" className="w-full max-h-64 rounded bg-black" data-task-video />}
+          <div className="flex items-center gap-2 mt-1">
+            {m.is_video ? <Video size={14} className="text-powder-600 shrink-0" /> : <FileText size={14} className="text-powder-600 shrink-0" />}
+            <a href={m.url || undefined} target="_blank" rel="noreferrer" className="text-sm text-gray-800 truncate hover:underline flex-1">{m.title || m.filename}</a>
+            <span className="text-[10px] text-gray-400 shrink-0">{fmtBytes(m.size)}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Training sessions, newest first (D-264). "Show me the attendance for the
+ * 12 March GMP refresher" is one row here: the course, the document revision,
+ * the change request, how and by whom, and every attendee.
+ */
+export function TrainingSessions() {
+  const { data, loading } = useApiGet('/training/sessions');
+  const [open, setOpen] = useState(null);
+  if (loading && !data) return <p className="text-sm text-gray-500">Loading…</p>;
+  if (!data?.length) {
+    return <p className="text-sm text-gray-500 bg-white rounded-xl border border-gray-200 p-6 text-center">
+      No sessions yet. A session is saved each time training is recorded for a group (Group training, or a group sign-in sheet).
+    </p>;
+  }
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100" data-sessions>
+      {data.map(s => {
+        const missing = wantsCompetence(s.method) && !s.competence_statement;
+        return (
+          <div key={s.id} className="px-4 py-3">
+            <button type="button" onClick={() => setOpen(open === s.id ? null : s.id)} className="w-full text-left" data-session={s.id}>
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <span className="text-sm font-semibold text-gray-900">{s.training_date}</span>
+                <span className="text-sm text-gray-800">{s.course_code ? `${s.course_code} — ` : ''}{s.course_title}</span>
+                <span className="text-xs text-gray-500">{s.attendee_count} {s.attendee_count === 1 ? 'person' : 'people'}</span>
+              </div>
+              <div className="text-xs text-gray-500 mt-0.5 flex flex-wrap gap-x-3">
+                <span>{methodLabel(s.method)}{s.language ? ` · ${languageLabel(s.language)}` : ''}</span>
+                {s.trainer && <span>Trainer: {s.trainer}</span>}
+                {(s.doc_number || s.sop_revision) && <span>{s.doc_number || 'Document'}{s.sop_revision ? ` rev ${s.sop_revision}` : ''}</span>}
+                {s.dcr_number && <span>DCR {s.dcr_number}</span>}
+                <span>Recorded {String(s.created_at || '').slice(0, 10)}{s.recorded_by ? ` by ${s.recorded_by}` : ''}</span>
+                {missing && <span className="text-amber-800">no competence statement</span>}
+              </div>
+            </button>
+            {open === s.id && (
+              <div className="mt-2 space-y-1">
+                {s.competence_statement && <p className="text-xs text-gray-600 italic">&ldquo;{s.competence_statement}&rdquo;</p>}
+                <ul className="text-sm text-gray-700 columns-[14rem]">
+                  {s.attendees.map(a => (
+                    <li key={a.id}>{a.employee_name}{a.score != null ? ` · ${a.score}%` : ''}{a.passed === 0 ? ' · did not pass' : ''}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}

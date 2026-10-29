@@ -80,7 +80,7 @@ export function regradeFiledAttempts(db) {
       const note = `Passed the online test on ${day} (${score}%). It was graded as not passed by a fault in the grader and re-graded on ${plantDateOf()} from the answers given (D-157).`;
       const record = insertCompletion(db, {
         employee_name: a.employee_name, employee_user_id: a.employee_user_id, course_id: a.course_id, course_title: a.course_title,
-        method: 'online_test', status: 'completed', passed: true, score,
+        method: 'quiz', status: 'completed', passed: true, score,
         training_date: day, completion_date: day, test_attempt_id: a.id, notes: note,
       });
       db.prepare('UPDATE training_test_attempts SET record_id = ? WHERE id = ?').run(record.id, a.id);
