@@ -9462,3 +9462,30 @@ supervisor's.
   `PUT /api/safety/drill-signers`, audited with the names before and after. Only active employee accounts can be added.
 - The QA line is unchanged (Quality or an admin), and the two lines are still signed by two different people.
 - `verify:crisisdrill` 29 → 34: another supervisor is refused, Adam signs, only an admin changes the list.
+
+## D-267 — Finding the training records the edit bug turned into fails (29 Oct 2026)
+
+From D-158 (7 Oct 2026) until D-264 (29 Oct 2026), saving a training record through Edit sent `passed: null`, which the
+server read as 0, so a completed record with no score became `failed` and the person read as not trained. D-264 fixed
+the edit; this finds the records already turned.
+- **Read-only** (`server/edit-failed-training.js`). It runs on demand from Settings → Data backup → "Training records an
+  edit turned into a fail" (admin only, `GET /api/compliance/edit-failed-training`), or `npm run report:editfails -- <db
+  copy>`. It writes nothing, not even an audit row.
+- **How one is recognised:** failed, passed 0, not from an in-app test, *still carrying its completion date* (a real fail
+  is filed with none), with an edit logged on or after 7 Oct. One with a score below the course pass mark may be a real
+  fail (D-158 correctly turned those), so it is listed apart to check.
+- Each line names the person, course, date trained, score, who edited it and when, and whether another passing record
+  still makes the person read as trained.
+- **Nothing is put back automatically.** Which records to restore is a person's decision; restoring is the next step.
+- `verify:editfails` (10).
+
+## D-268 — In Messages, bullets under a numbered line nest under it (29 Oct 2026)
+
+Lowry's update to Daniela was written as "1. Heading / - bullet / - bullet / 2. Heading / …". `renderBody` in
+`CommsView.jsx` started a new list at every switch between numbers and bullets, so every heading after the first
+restarted at "1." and the bullets sat level with the headings.
+- **Bullets typed straight after a numbered line nest under that item**, and the next numbered line continues the same
+  list. A paragraph line still ends the list, so a plain bullet list after a paragraph is its own list.
+- **A numbered list starts at the number typed** (`<ol start>`), so "7." reads 7.
+- Messages only. The newsletter and document renderer (`shared/rich-markup.js`) is unchanged.
+- `verify:messagelists` (5, browser). The control (the old renderer) fails 4: six lists, every heading "1.".

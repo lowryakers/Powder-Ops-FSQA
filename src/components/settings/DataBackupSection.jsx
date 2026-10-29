@@ -113,6 +113,12 @@ function sameNameSummary(r) {
   return n ? red(true, `${plural(n, 'name')} with more than one account: ${r.groups.map(g => g.accounts[0]?.name).join(', ')}`) : 'Every account has its own name.';
 }
 
+function editFailSummary(r) {
+  const n = r.likely.length;
+  return <>{red(n, n ? `${plural(n, 'training record')} turned into a fail by the edit bug` : 'No record was turned into a fail by an edit')}
+    {r.check.length ? ` · ${plural(r.check.length, 'more')} to check (score below the pass mark)` : ''}</>;
+}
+
 function routingSummary(r) {
   if (!r.findings) return 'No task tables.';
   const n = r.findings.reduce((s, f) => s + f.rows.length, 0);
@@ -146,6 +152,8 @@ export default function DataBackupSection() {
       blurb="What lands on each team's task list, and every schedule or card that is probably on the wrong one — machine PMs on QA, old room checklists, cards left behind — with where each is changed. Also each person's card count." />
     <ReadOnlyReport id="same-name" path="/compliance/same-name-accounts" title="Accounts that share a name" summary={sameNameSummary}
       blurb="People with more than one account under the same name, side by side: which one signs in, how each was created, and what is filed against each. Nothing is merged." />
+    <ReadOnlyReport id="edit-fails" path="/compliance/edit-failed-training" title="Training records an edit turned into a fail" summary={editFailSummary}
+      blurb="From 7 to 29 October, saving a training record through Edit could mark it failed, so the person read as not trained. This lists those records, and edited fails with a low score to check. Nothing is changed." />
     </div>
   );
 }

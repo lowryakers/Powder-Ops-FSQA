@@ -238,7 +238,12 @@ function renderBody(text, users, me) {
 
   const blocks = [];
   let para = [];
-  let list = null; // { type: 'ul' | 'ol', items: [] }
+  // { type: 'ul' | 'ol', start, items: [{ text, sub: [] }] }. Bullets typed
+  // straight after a numbered line NEST under it, so "1. Heading / - a / - b /
+  // 2. Heading" reads 1, 2 with bullets under each — the shape people write
+  // an update in. They used to start a new list, and every heading after them
+  // restarted at "1.".
+  let list = null;
   const flushPara = () => {
     if (!para.length) return;
     const key = `p${blocks.length}`;
@@ -250,8 +255,17 @@ function renderBody(text, users, me) {
     const key = `l${blocks.length}`;
     const cls = (list.type === 'ul' ? 'list-disc' : 'list-decimal') + ' pl-5 space-y-0.5 my-1';
     const Tag = list.type;
-    blocks.push(<Tag key={key} className={cls}>
-      {list.items.map((it, i) => <li key={i} className="break-words">{renderInline(it, users, me, `${key}-${i}`)}</li>)}
+    blocks.push(<Tag key={key} className={cls} start={list.type === 'ol' && list.start !== 1 ? list.start : undefined}>
+      {list.items.map((it, i) => (
+        <li key={i} className="break-words">
+          {renderInline(it.text, users, me, `${key}-${i}`)}
+          {it.sub.length > 0 && (
+            <ul className="list-disc pl-5 space-y-0.5 mt-0.5" data-nested-list>
+              {it.sub.map((t, j) => <li key={j} className="break-words">{renderInline(t, users, me, `${key}-${i}-${j}`)}</li>)}
+            </ul>
+          )}
+        </li>
+      ))}
     </Tag>);
     list = null;
   };
@@ -260,15 +274,16 @@ function renderBody(text, users, me) {
     // A space after the marker is required, so `*bold*` (no space) is not a
     // bullet and only a genuine "- "/"* "/"1. " list item is.
     const bullet = line.match(/^\s*[-*]\s+(.*)$/);
-    const numbered = line.match(/^\s*\d+\.\s+(.*)$/);
+    const numbered = line.match(/^\s*(\d+)\.\s+(.*)$/);
     if (bullet) {
       flushPara();
+      if (list?.type === 'ol') { list.items[list.items.length - 1].sub.push(bullet[1]); continue; }
       if (!list || list.type !== 'ul') { flushList(); list = { type: 'ul', items: [] }; }
-      list.items.push(bullet[1]);
+      list.items.push({ text: bullet[1], sub: [] });
     } else if (numbered) {
       flushPara();
-      if (!list || list.type !== 'ol') { flushList(); list = { type: 'ol', items: [] }; }
-      list.items.push(numbered[1]);
+      if (!list || list.type !== 'ol') { flushList(); list = { type: 'ol', start: Number(numbered[1]) || 1, items: [] }; }
+      list.items.push({ text: numbered[2], sub: [] });
     } else {
       flushList();
       para.push(line);
