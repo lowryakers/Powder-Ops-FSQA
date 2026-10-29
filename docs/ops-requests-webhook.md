@@ -55,3 +55,24 @@ To give Jarvis its token:
 If the Test Runner is not in `#ops-requests-test` yet (the channel was created after the last deploy), add it from the
 channel's member list, or wait for the next deploy.
 To stop it: Settings → Bot API tokens → **Revoke** on that token.
+
+## The Quality bot's signal: a document revision approved (D-277)
+
+The same outbox carries one more event, to the Quality bot: **`document.revision_approved`**, sent once per document
+and revision when a revision is approved in ReadyDoc (a draft approved, a paper revision recorded from the worklist,
+or a document's first approval). It is separate from the two channel wakes and has its own switch.
+
+| Variable | What it is |
+|---|---|
+| `QUALITY_WEBHOOK_URL` | The Quality bot routine's webhook URL |
+| `QUALITY_WEBHOOK_KEY` | Its key, sent as `Authorization: Bearer <key>` |
+| `QUALITY_WEBHOOK_ENABLED` | `1` turns it on. Unset or `0` is off — nothing is queued or sent |
+
+To turn it on: in Railway → the ReadyDoc service → Variables, add the URL and the key, then add
+`QUALITY_WEBHOOK_ENABLED` = `1` last. Railway redeploys. Approvals before that are not sent afterwards.
+
+The body: `event`, `version`, `dedupe_id`, `document` (id, doc_number, title, doc_type, category), `old_revision`
+(null on a first approval), `new_revision`, `effective_date`, `approved_by`, `approved_at`, `source`
+(`draft` | `transcribed` | `first_approval`), `change_summary`, `linked_courses` (id, code, title,
+`built_on_revision`, `needs_update`) and `link` (opens the document in ReadyDoc). `OPS_WEBHOOK_SIGNING_SECRET`, when set,
+signs it like the others. The bot answers `200 {"success": true}`; anything else is retried on the same schedule.

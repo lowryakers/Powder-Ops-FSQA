@@ -148,6 +148,7 @@ const RUNS = [
   ['verify-training-update.mjs', 5162, {}, false],
   ['verify-receiving-coc.mjs', 5163, {}, true],
   ['verify-attempt-proof.mjs', 5164, {}, false],
+  ['verify-doc-revisions.mjs', 5165, { QUALITY_WEBHOOK_ENABLED: '1', QUALITY_HOOK_PORT: '5166', QUALITY_WEBHOOK_URL: 'http://127.0.0.1:5166/quality', QUALITY_WEBHOOK_KEY: 'qual-key' }, false],
   ['verify-banned-check.mjs', 5122, {}, false],
   ['verify-partner-recon.mjs', 5123, { PARTNER_PORTAL_TODAY: '2026-10-23' }, true],
   ['verify-emp-limits.mjs', 5124, {}, false],

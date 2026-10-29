@@ -4884,6 +4884,43 @@ function runMigrations() {
   addColumnIfMissing('sop_documents', 'training_revision', 'TEXT');
   addColumnIfMissing('sop_versions', 'minor', 'INTEGER NOT NULL DEFAULT 0');
 
+  // A revision is its own record (D-277). The document row keeps the APPROVED
+  // revision in force; a change to its text or number is a DRAFT revision here
+  // until somebody approves it, and approving supersedes the one before. Nothing
+  // existing is copied in: a document's first row appears when its first new
+  // revision is started or recorded.
+  db.exec(`CREATE TABLE IF NOT EXISTS document_revisions (
+    id TEXT PRIMARY KEY,
+    document_id TEXT NOT NULL,
+    revision TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('draft','approved','superseded')),
+    source TEXT NOT NULL DEFAULT 'draft',     -- draft | baseline | transcribed | first_approval
+    title TEXT,
+    description TEXT,
+    description_es TEXT,
+    effective_date TEXT,
+    change_summary TEXT,
+    previous_revision TEXT,
+    created_by TEXT,
+    created_by_id TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT,
+    approved_by TEXT,
+    approved_by_id TEXT,
+    approved_at TEXT,
+    superseded_at TEXT,
+    FOREIGN KEY (document_id) REFERENCES sop_documents(id)
+  )`);
+  try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_doc_rev_one_draft ON document_revisions(document_id) WHERE status = 'draft'"); } catch { /* ignore */ }
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_doc_rev_doc ON document_revisions(document_id, created_at)'); } catch { /* ignore */ }
+  // The revision of its document a course was built on (D-277), and who said so.
+  addColumnIfMissing('training_courses', 'built_on_revision', 'TEXT');
+  addColumnIfMissing('training_courses', 'built_on_kind', 'TEXT');      // updated | no_change | linked
+  addColumnIfMissing('training_courses', 'built_on_by', 'TEXT');
+  addColumnIfMissing('training_courses', 'built_on_by_id', 'TEXT');
+  addColumnIfMissing('training_courses', 'built_on_at', 'TEXT');
+  addColumnIfMissing('training_courses', 'built_on_note', 'TEXT');
+
   // Equipment ↔ training / document linkage. A course and a work instruction can
   // be ABOUT a machine (WI021 is literally "Hexagon Tumbler Mixer Operation"),
   // and without the link nothing can answer "is this machine ready to run" —

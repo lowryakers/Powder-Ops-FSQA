@@ -14,6 +14,9 @@ import { pdfViewerUrl } from '../../lib/pdfUrl';
 import SearchSelect from '../common/SearchSelect.jsx';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 import FrozenScroll from '../common/FrozenScroll';
+import DocumentRevisions from './DocumentRevisions.jsx';
+import { getParam, consumeParam } from '../../lib/deepLink';
+import { isApprovedStatus } from '../../../shared/document-revision.js';
 
 /**
  * Wet signatures on a controlled document — the drawn image beside name,
@@ -200,6 +203,9 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
   const [proofing, setProofing] = useState(false);
   const [proofNotes, setProofNotes] = useState(null);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  // An approved document's text and revision number change only through a
+  // draft revision (D-277); this form edits its metadata.
+  const locked = !!initial?.id && isApprovedStatus(initial.status);
   const { data: trainingImpact } = useApiGet(`/training/by-document/${initial?.id || 'none'}`, [initial?.id]);
   const { data: equipment } = useApiGet('/equipment');
   const { data: aiStatus } = useApiGet('/ai/status');
@@ -230,7 +236,8 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
     e.preventDefault();
     setSaving(true);
     try {
-      await onSave({ ...form, doc_type: docType });
+      const { content, content_es, revision, ...meta } = form;
+      await onSave(locked ? { ...meta, doc_type: docType } : { ...form, content, content_es, revision, doc_type: docType });
     } catch (saveErr) {
       // A refused save must SAY so. This was try/finally with NO catch, so a
       // 403 or a validation 400 cleared the spinner and left the modal sitting
@@ -259,7 +266,8 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
           </div>
           <div className="sm:col-span-1">
             <label className="block text-xs font-medium text-gray-700 mb-1">Revision</label>
-            <input value={form.revision} onChange={e => set('revision', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+            <input value={form.revision} onChange={e => set('revision', e.target.value)} disabled={locked} data-doc-revision-input
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-100 disabled:text-gray-500" />
           </div>
           <div className="sm:col-span-2">
             <label className="block text-xs font-medium text-gray-700 mb-1">Title *</label>
@@ -282,7 +290,9 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
                 Reinstate, which is its own audited act. */}
             <select value={form.status} onChange={e => set('status', e.target.value)} disabled={form.status === 'archived'}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-100 disabled:text-gray-500">
-              {(form.status === 'archived' ? STATUSES : STATUSES.filter(s => s.value !== 'archived'))
+              {(form.status === 'archived' ? STATUSES
+                : locked ? STATUSES.filter(s => isApprovedStatus(s.value))
+                : STATUSES.filter(s => s.value !== 'archived'))
                 .map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
             {form.status === 'archived' && (
@@ -349,6 +359,13 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
           </div>
         </div>
 
+        {locked ? (
+          <div className="rounded-lg border border-powder-200 bg-powder-50 px-3 py-2.5 text-sm text-powder-900" data-doc-locked>
+            This document is approved (revision {initial.revision}). Its text and revision number change through a new
+            revision: close this form, open the document, and use <strong>Start revision</strong>. The approved text stays in
+            force until the new revision is approved.
+          </div>
+        ) : (<>
         <div>
           <div className="flex items-center justify-between mb-1">
             <label className="block text-xs font-medium text-gray-700">Content</label>
@@ -393,7 +410,9 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
           <p className="text-[11px] text-gray-400 mt-1">Shown when a reader switches this document to Spanish. AI drafts are editable — review before relying on them.</p>
         </div>
 
-        {initial?.id && (
+        </>)}
+
+        {initial?.id && !locked && (
           <div className="space-y-2">
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Change summary (for version history)</label>
@@ -611,7 +630,7 @@ function WithdrawForm({ doc, onCancel, onConfirm }) {
   );
 }
 
-function DocumentViewer({ doc, typeLabel, canEdit, onEdit, onArchive, onReinstate, onClose }) {
+function DocumentViewer({ doc, typeLabel, canEdit, onEdit, onArchive, onReinstate, onClose, onChanged }) {
   const { data: versions } = useApiGet(`/documents/${doc.id}/versions`, [doc.id]);
   const [showVersions, setShowVersions] = useState(false);
   const [lang, setLang] = useState('en');
@@ -703,6 +722,8 @@ function DocumentViewer({ doc, typeLabel, canEdit, onEdit, onArchive, onReinstat
             {(!versions || versions.length === 0) && <p className="text-xs text-gray-400">No version history.</p>}
           </div>
         )}
+
+        <DocumentRevisions doc={doc} canEdit={canEdit} onChanged={onChanged} />
 
         <DocumentAttachments docId={doc.id} canEdit={canEdit} />
 
@@ -1029,11 +1050,12 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
   // When an Org Chart position's "Job Description" link navigates here, open the
   // linked document once it has loaded (id stashed in localStorage for timing).
   useEffect(() => {
-    let focusId = null;
-    try { focusId = localStorage.getItem('doc_focus'); } catch { /* ignore */ }
+    // A link carrying ?doc=<id> (the Quality bot's revision signal, D-277) opens it too.
+    let focusId = getParam('doc');
+    if (!focusId) { try { focusId = localStorage.getItem('doc_focus'); } catch { /* ignore */ } }
     if (!focusId || !docs) return;
     const doc = docs.find(d => d.id === focusId);
-    if (doc) { setViewing(doc); try { localStorage.removeItem('doc_focus'); } catch { /* ignore */ } }
+    if (doc) { setViewing(doc); consumeParam('doc'); try { localStorage.removeItem('doc_focus'); } catch { /* ignore */ } }
   }, [docs]);
   const isAdmin = user?.role === 'admin';
 
@@ -1265,6 +1287,7 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
           onEdit={(d) => { setViewing(null); setEditing(d); }}
           onArchive={(d) => setWithdrawing(d)}
           onReinstate={handleReinstate}
+          onChanged={async () => { refresh(); try { setViewing(await apiFetch(`/documents/${viewing.id}`)); } catch { /* list refresh still shows it */ } }}
           onClose={() => setViewing(null)} />
       )}
       {withdrawing && (

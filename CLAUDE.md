@@ -6285,6 +6285,19 @@ revoke by DELETE with a reason), `CrisisDrills.jsx`. SOP 501, SQF 2.6.4.2.
 - A verify that calls a server function which audits must use the app's own connection (`getDb()`), not a second
   `better-sqlite3` handle, or the two lock each other out. `verify:trainingupdate` (43).
 
+## Document revisions; the Quality bot is told; retraining waits for the course (D-277)
+`document_revisions` + `server/document-revisions.js` (`recordApprovedRevision` — THE one writer of an approved revision),
+`shared/document-revision.js` (`revisionKey`, `sameRevision`, `nextRevision`, `isApprovedStatus`), `server/course-revision.js`
+(`markCourseRevision`, `retrainingAudience`), `DocumentRevisions.jsx`, `CourseRevision.jsx`.
+- **`sop_documents` is the APPROVED revision in force.** An approved doc's text / number never change through PUT
+  (`409 APPROVED_REVISION_LOCKED`); a draft revision is edited beside it and approved with the password under a NEW number.
+  The old one is kept (`superseded`, or `baseline`). **Nothing existing was migrated** — rows appear on first use.
+- **Approval signals the Quality bot** — target `quality` on the ops-webhook outbox, off unless `QUALITY_WEBHOOK_ENABLED`
+  + `_URL` + `_KEY`. Payload `document.revision_approved`, once per document + revision.
+- **`training_courses.built_on_revision`** is set by linking (kind `linked`) or by `POST /training/courses/:id/revision`
+  (`updated` / `no_change`) only. **That mark is the only thing that assigns retraining for a revision**, and until it
+  the matrix measures against the course's revision, not the document's. `verify:docrevisions` (47).
+
 ## A training record says how somebody was trained; one session records many (D-264)
 `shared/training-record-fields.js` (`METHODS`, `LEGACY_METHODS`, `LANGUAGES`, `competenceStatement`, `wantsCompetence`,
 `trainingFieldErrors`), `training_records.recorded_by` / `recorded_by_id` / `language` / `competence_statement` / `dcr_id`
