@@ -9450,3 +9450,15 @@ headcount (501-02), as a fourth tab, **Crisis Drills**.
 - **Daniela's 21 Oct drill is not entered by ReadyDoc.** It is a real record; she files it on the screen with its real
   date, and the test files a copy into a test database only.
 - `verify:crisisdrill` (29, live + browser at 1280 and 390). The control (no completeness check at signing) fails 1.
+
+## D-266 — The crisis drill's Management Review is signed by Adam or an admin (29 Oct 2026)
+
+Lowry decided, for now, that the Management Review line on a crisis drill (D-265) is Adam's or an admin's, not any
+supervisor's.
+- **Kept as account ids, never a name test** (the D-187 rule): `app_settings.crisis_drill_management_signers`. When
+  unset, it is filled once from the one active account named "Adam Bliss". If there is none, or two, it stays empty
+  and only admins sign.
+- **An admin changes the list** on Safety → Crisis Drills ("Change" beside "Management Review is signed by …"),
+  `PUT /api/safety/drill-signers`, audited with the names before and after. Only active employee accounts can be added.
+- The QA line is unchanged (Quality or an admin), and the two lines are still signed by two different people.
+- `verify:crisisdrill` 29 → 34: another supervisor is refused, Adam signs, only an admin changes the list.

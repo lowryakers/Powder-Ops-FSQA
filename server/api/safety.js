@@ -38,7 +38,28 @@ const dept = (u) => (u?.department || '').toLowerCase();
 const canFileDrill = (u) => u?.role === 'admin' || u?.role === 'supervisor'
   || ['qa', 'quality', 'office', 'hr', 'document_control'].includes(dept(u));
 const canSignQa = (u) => u?.role === 'admin' || ['qa', 'quality'].includes(dept(u));
-const canSignMgmt = (u) => u?.role === 'admin' || u?.role === 'supervisor';
+// The Management line (D-266): admins, plus the accounts named in
+// app_settings.crisis_drill_management_signers — an account id list, never a
+// name test. Unset, it is filled ONCE from the active account called "Adam
+// Bliss" (Lowry's decision, 29 Oct 2026); none or two such accounts leaves it
+// empty and only admins sign. An admin changes it on Safety → Crisis Drills.
+const MGMT_KEY = 'crisis_drill_management_signers';
+function mgmtSignerIds(db) {
+  const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(MGMT_KEY);
+  if (row) return parseJson(row.value, []) || [];
+  const adam = db.prepare("SELECT id FROM users WHERE LOWER(TRIM(name)) = 'adam bliss' AND is_active = 1").all();
+  const ids = adam.length === 1 ? [adam[0].id] : [];
+  if (db.prepare('SELECT COUNT(*) n FROM users').get().n > 0) {
+    db.prepare('INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING').run(MGMT_KEY, JSON.stringify(ids));
+  }
+  return ids;
+}
+const canSignMgmt = (u) => u?.role === 'admin' || (!!u?.id && mgmtSignerIds(getDb()).includes(u.id));
+const mgmtSigners = (db) => {
+  const ids = mgmtSignerIds(db);
+  if (!ids.length) return [];
+  return db.prepare(`SELECT id, name FROM users WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids);
+};
 
 const canCorrect = (u) => u?.role === 'admin' || u?.role === 'supervisor'
   || ['qa', 'quality', 'office', 'hr'].includes((u?.department || '').toLowerCase());
@@ -50,7 +71,7 @@ router.get('/forms', (req, res) => res.json({
     title: DRILL_TITLE, form_code: DRILL_FORM_CODE, revision: DRILL_REVISION, sop: DRILL_SOP, objective: DRILL_OBJECTIVE,
     activities: ACTIVITIES, scenarios: SCENARIOS, inspection_items: INSPECTION_ITEMS, marks: MARKS,
     hold_status: HOLD_STATUS, results: RESULTS, reviews: REVIEWS,
-    can_file: canFileDrill(req.user), can_sign_qa: canSignQa(req.user), can_sign_management: canSignMgmt(req.user),
+    can_file: canFileDrill(req.user), can_sign_qa: canSignQa(req.user), can_sign_management: canSignMgmt(req.user), management_signers: mgmtSigners(getDb()),
   },
   impact: { source: IMPACT_SOURCE, exposed: EXPOSED, can_assess: canAssess(req.user) },
 }));
@@ -329,7 +350,7 @@ router.post('/drills/:id/sign/:review', (req, res) => {
   const row = db.prepare('SELECT * FROM crisis_drills WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
   const may = review === 'qa' ? canSignQa(req.user) : canSignMgmt(req.user);
-  if (!may) return res.status(403).json({ error: review === 'qa' ? 'The QA / SQF Practitioner review is signed by Quality or an admin.' : 'The Management review is signed by a supervisor or an admin.' });
+  if (!may) return res.status(403).json({ error: review === 'qa' ? 'The QA / SQF Practitioner review is signed by Quality or an admin.' : 'The Management review is signed by the named management reviewer or an admin.' });
   const col = review === 'qa' ? 'qa' : 'mgmt';
   if (row[`${col}_signed_at`]) return res.status(409).json({ error: `${REVIEWS[review]} is already signed by ${row[`${col}_signed_by`]}.` });
   const other = review === 'qa' ? row.mgmt_signed_by_id : row.qa_signed_by_id;
@@ -358,6 +379,19 @@ router.delete('/drills/:id/sign/:review', (req, res) => {
   db.prepare(`UPDATE crisis_drills SET ${col}_signed_by = NULL, ${col}_signed_by_id = NULL, ${col}_signed_at = NULL, updated_at = datetime('now') WHERE id = ?`).run(row.id);
   logAudit(req.user, 'revoke', 'crisis_drill', row.id, { review: REVIEWS[review], was_signed_by: row[`${col}_signed_by`], reason }, null, null, `Crisis drill ${row.drill_date}`);
   res.json(shapeDrill(db.prepare('SELECT * FROM crisis_drills WHERE id = ?').get(row.id)));
+});
+
+// Who signs the Management line, besides admins (D-266). Admin only to change.
+router.put('/drill-signers', (req, res) => {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Only an admin can change who signs the Management review.' });
+  const db = getDb();
+  const ids = [...new Set((Array.isArray(req.body?.user_ids) ? req.body.user_ids : []).map(String))];
+  const found = ids.length ? db.prepare(`SELECT id, name FROM users WHERE is_active = 1 AND COALESCE(is_external, 0) = 0 AND id IN (${ids.map(() => '?').join(',')})`).all(...ids) : [];
+  if (found.length !== ids.length) return res.status(400).json({ error: 'Every signer must be an active employee account.' });
+  const before = mgmtSigners(db).map(u => u.name);
+  db.prepare('INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(MGMT_KEY, JSON.stringify(ids));
+  logAudit(req.user, 'update', 'setting', MGMT_KEY, { management_review_signers: { from: before, to: found.map(u => u.name) } }, null, null, 'Crisis drill: Management review signers');
+  res.json({ management_signers: found });
 });
 
 // Admin only, and never once signed — a reviewed drill is history.

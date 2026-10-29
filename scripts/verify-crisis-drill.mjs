@@ -24,6 +24,7 @@ mk('cd-dc', 'Dana Control', 'operator', 'document_control', { safety: 'edit' });
 mk('cd-qa', 'Quinn Quality', 'operator', 'qa', { safety: 'edit' });
 mk('cd-mgr', 'Max Manager', 'supervisor', 'production', { safety: 'edit' });
 mk('cd-op', 'Oscar Floor', 'operator', 'warehouse', { safety: 'edit' });
+mk('cd-adam', 'Adam Bliss', 'supervisor', 'production', { safety: 'edit' });
 mk('cd-admin', 'Ada Admin', 'admin', 'admin', {});
 db.close();
 
@@ -43,12 +44,14 @@ const dc = await signIn('Dana Control', 'cd-dc');
 const qa = await signIn('Quinn Quality', 'cd-qa');
 const mgr = await signIn('Max Manager', 'cd-mgr');
 const op = await signIn('Oscar Floor', 'cd-op');
+const adam = await signIn('Adam Bliss', 'cd-adam');
 const admin = await signIn('Ada Admin', 'cd-admin');
 
 const forms = (await call('GET', '/safety/forms', null, dc.token)).json;
 t('the form is served: nine inspection lines, the objective, DRAFT-1, SOP 501',
   forms?.drill?.inspection_items?.length === 9 && /identify, isolate, and protect/.test(forms.drill.objective) && forms.drill.revision === 'DRAFT-1' && forms.drill.sop === 'SOP 501');
 t('Document Control may file it', forms?.drill?.can_file === true && forms?.drill?.can_sign_qa === false);
+t('the Management review is signed by Adam (by account) or an admin', forms?.drill?.management_signers?.map(u => u.id).join() === 'cd-adam', JSON.stringify(forms?.drill?.management_signers));
 
 console.log('\n── filing ──');
 let r = await call('POST', '/safety/drills', { drill_date: '2026-10-21' }, op.token);
@@ -101,7 +104,14 @@ t('a signed drill is closed to edits', r.status === 409);
 r = await call('POST', `/safety/drills/${half.id}/sign/management`, { signature_password: PW }, qa.token);
 t('one person cannot sign both lines', r.status === 403 || r.status === 409);
 r = await call('POST', `/safety/drills/${half.id}/sign/management`, { signature_password: PW }, mgr.token);
-t('management signs', r.status === 200 && r.json?.mgmt_signed_by === 'Max Manager');
+t('another supervisor cannot sign the Management line', r.status === 403);
+r = await call('POST', `/safety/drills/${half.id}/sign/management`, { signature_password: PW }, adam.token);
+t('Adam signs the Management line', r.status === 200 && r.json?.mgmt_signed_by === 'Adam Bliss', r.text.slice(0, 120));
+r = await call('PUT', '/safety/drill-signers', { user_ids: ['cd-adam', 'cd-mgr'] }, adam.token);
+t('only an admin changes who signs', r.status === 403);
+r = await call('PUT', '/safety/drill-signers', { user_ids: ['cd-adam', 'cd-mgr'] }, admin.token);
+t('an admin can add a signer', r.status === 200 && r.json?.management_signers?.length === 2);
+await call('PUT', '/safety/drill-signers', { user_ids: ['cd-adam'] }, admin.token);
 const audit = q("SELECT details FROM audit_log WHERE entity_type = 'crisis_drill' AND action = 'sign' ORDER BY id DESC LIMIT 1")[0];
 t('the signature is audited as password-verified', /signature_verified/.test(audit?.details || ''));
 r = await call('DELETE', `/safety/drills/${half.id}`, null, admin.token);
@@ -130,7 +140,8 @@ for (const width of [1280, 390]) {
   await page.locator(`[data-drill-row="${half.id}"]`).click();
   await page.locator('[data-drill-form]').waitFor({ timeout: 10000 });
   t(`${width}px: opened, it is read-only and shows both signatures`, await page.locator('[data-drill-save]').count() === 0
-    && /Quinn Quality/.test(await page.locator('[data-drill-reviews]').innerText()) && /Max Manager/.test(await page.locator('[data-drill-reviews]').innerText()));
+    && /Quinn Quality/.test(await page.locator('[data-drill-reviews]').innerText()) && /Adam Bliss/.test(await page.locator('[data-drill-reviews]').innerText()));
+  if (width === 1280) t('the tab names who signs the Management review', /signed by Adam Bliss or an admin/.test(await page.locator('[data-drill-signers]').innerText().catch(() => '')));
   t(`${width}px: no sideways scroll`, await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
   await page.close();
 }
