@@ -44,7 +44,7 @@ t('ProductsPanel has NO artwork status select — the release on the Artwork boa
   !/'print_ready', 'rejected', 'superseded'/.test(src('src/components/compliance/ProductsPanel.jsx'))
   && /ARTWORK_OWNED/.test(src('server/api/products.js')) && /'rejected'/.test(src('server/api/artwork.js')));
 t('the training method select offers a blank for imported rows',
-  /<option value="">Not recorded<\/option>/.test(src('src/components/compliance/TrainingPanel.jsx')));
+  /<option value="">Not recorded<\/option>/.test(src('src/components/compliance/TrainingHowFields.jsx')));
 
 console.log('\n── one team list ──');
 t('every team has a value and a label', TASK_GROUPS.length > 0 && TASK_GROUPS.every(g => g.value && g.label));

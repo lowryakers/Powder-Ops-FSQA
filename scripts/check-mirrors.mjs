@@ -9,8 +9,12 @@ const t = (n, c, d = '') => { if (c) pass++; else { fail++; console.log('  ✗ '
 
 t('G3 closing a re-clean task from a cleaning record clears rework_required',
   /rework_required = 0, notes = COALESCE/.test(src('server/api/sanitation.js')));
+// D-217: the schedules and their cards keep QA's INSPECTIONS by title
+// (TASK_TITLE_SQL), not "anything already on QA"; a one-off card on the machine
+// that is already QA's keeps its team.
 t('G4 reassigning a machine leaves QA\'s inspections on QA\'s list',
-  (src('server/api/equipment.js').match(/COALESCE\(task_group, ''\) != 'qa'/g) || []).length === 2);
+  (src('server/api/equipment.js').match(/NOT \$\{TASK_TITLE_SQL\}/g) || []).length === 2
+  && /COALESCE\(task_group, ''\) != 'qa'/.test(src('server/api/equipment.js')));
 { const pay = src('server/api/pay.js');
   // Four callers since D-057: the assignment list, the review list, the nudge,
   // and payActions (the office's queue). A fifth list route must join them.
