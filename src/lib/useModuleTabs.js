@@ -6,6 +6,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { getParam, consumeParam } from './deepLink.js';
+import { logPageView } from './activityLog.js';
 
 /* ── Which tabs this person actually gets ─────────────────────────────────── */
 
@@ -63,6 +64,9 @@ export function useModuleTabs({ id, tabs, user, initial = null }) {
   // Spend the deep link once it has actually landed, so navigating away and
   // back doesn't keep dragging you to the linked tab.
   useEffect(() => { consumeParam('view'); }, []);
+
+  // The tab inside a module is a page view of its own (D-261).
+  useEffect(() => { if (id && current) logPageView(id, current); }, [id, current]);
 
   useEffect(() => {
     if (!storageKey || !current) return;

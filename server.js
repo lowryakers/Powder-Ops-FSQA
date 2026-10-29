@@ -182,6 +182,8 @@ import { cleanupDuplicateTasks } from './server/duplicate-task-cleanup.js';
 import { seedKnifeMasterlist } from './server/knife-seed.js';
 import { applyTruckChecklists } from './server/truck-checklists.js';
 import { authenticate, isPublicPath, optionalAuth, sessionUser, readCookie, FILE_COOKIE } from './server/middleware/auth.js';
+import { activityMiddleware, startUserActivity, flushActivity } from './server/user-activity.js';
+import userActivityRoutes from './server/api/user-activity.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -2051,6 +2053,10 @@ app.use('/api', (req, res, next) => {
 // whatever its role says — one allow list, on every /api request it makes.
 app.use('/api', testRunnerGuard(getDb));
 app.use('/api', tokenApproveGuard);
+// WHO WAS ACTIVE AND WHEN (D-261). After the sign-in check, so every row names a
+// person; it records on the response's finish and never changes what is answered.
+startUserActivity();
+app.use('/api', activityMiddleware);
 
 // --- API Routes ---
 // requireModuleWrite makes the Settings View level real on the server: users
@@ -2088,6 +2094,7 @@ app.use('/api/bpg', bpgRoutes);
 app.use('/api/qa-review', qaReviewRoutes);
 app.use('/api/cleanup', cleanupRoutes);
 app.use('/api/audit', auditRoutes);
+app.use('/api/user-activity', userActivityRoutes);
 // Which optional services are on. Admin-only, and it returns variable NAMES
 // only — never a value. The router guards each route itself.
 app.use('/api/integrations', integrationsRoutes);
@@ -2379,6 +2386,7 @@ server.listen(PORT, '0.0.0.0', () => {
 
 function shutdown(signal) {
   console.log(`[server] ${signal} received — draining connections...`);
+  try { flushActivity(); } catch { /* the queue is best-effort on the way out */ }
   server.closeAllConnections();
   server.close(() => {
     console.log('[server] All connections drained. Exiting.');

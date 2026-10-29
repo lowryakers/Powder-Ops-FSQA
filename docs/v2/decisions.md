@@ -9305,3 +9305,34 @@ was broken; the change was silent. `server/equipment-guard.js`.
 - The Equipment screen asks with `window.confirm`, naming each check. A no keeps the form open, unchanged.
 - `verify:eqqaguard` (19, live + browser at 1280). The control (both guards removed) fails 10.
 - **Still owed by the plant:** set QA-TH-010/011/012 back to active, so tomorrow's Temp & Humidity tasks are raised.
+
+## D-261 — Who was active and when: one append-only activity log (29 Oct 2026)
+
+Lowry asked for a per-user activity log: logins, logouts and timeouts, page and record views, edits with field-level
+changes, downloads and file opens, filterable by person and date, exported to CSV, readable by a bot, kept two years
+or more. `server/user-activity.js`, the `user_activity` table, `/api/user-activity`, the **User Activity** screen (System).
+- **One table, append-only.** Two triggers refuse every UPDATE and DELETE, and no code deletes from it
+  (`check:useractivity` scans for one). Nothing is pruned, so it keeps everything, well past two years.
+- **audit_log is untouched.** The activity log LISTENS to `logAudit` (`setAuditListener`) after its insert, and the
+  listener cannot fail it. An edit's field-level before/after is computed from the same states the audit entry stores,
+  and the row keeps `audit_id`. The same actions on `main` and on this branch wrote byte-identical audit rows.
+- **Where each kind comes from:**
+  - Sign-in and sign-out: the audit listener. Timeout: a sweep that dates it when the session expired.
+  - Revoked: `revokeSessions`.
+  - Record view: a GET of `…/<id>`, once per person per record in five minutes.
+  - Page view and file open: the screen, batched (15 s, 20 events, or a beacon when the tab hides).
+  - Download: any `/api` answer that is a file.
+  - Edit: the audit listener; a write that keeps no audit entry still leaves a row naming the fields, and says it has
+    no "before".
+- **Batched:** page views, record views and downloads are queued in memory and written every 2 s in one transaction.
+  Edits, sign-ins and timeouts are written at once.
+- **Never stored:** passwords, tokens, setup codes, account or routing numbers, signatures, a file's contents, a query
+  string, or the words of a chat message.
+- **Who reads it:** an admin's own session; a bot's READ token whose account holds the `user-activity` grant
+  (Settings → Users → "User Activity (bot read access)"). A person with that grant gets nothing; the screen is admin-only.
+- **Found and fixed on the way:** sessions compared `expires_at` (ISO, with a `T`) to `datetime('now')` (with a
+  space) as text, so a session kept working until midnight UTC on the day it should have ended. Both session queries
+  now compare `datetime(expires_at)`.
+- There is no idle timeout in ReadyDoc; a "timeout" is a session reaching its expiry (30 days, or an auditor pass).
+- `check:useractivity` (57, pure), `verify:useractivity` (53, live + browser). The control (middleware and listener
+  removed) fails from the first sign-in assertion.

@@ -12,7 +12,7 @@ const SESSION_QUERY = `
   SELECT u.id, u.name, u.role, u.department, u.module_access, u.is_active, u.is_external, u.password_changed_at
   FROM sessions s
   JOIN users u ON s.user_id = u.id
-  WHERE s.token = ? AND s.expires_at > datetime('now') AND u.is_active = 1
+  WHERE s.token = ? AND datetime(s.expires_at) > datetime('now') AND u.is_active = 1
 `;
 
 
@@ -115,6 +115,10 @@ const PUBLIC_ROUTES = [
   // full name exactly, which is the problem short usernames exist to solve.
   // Returns at most 10 active users and needs 2+ characters to match.
   { method: 'GET', path: '/users/lookup' },
+  // The screen's last page views, sent with navigator.sendBeacon as the page
+  // closes (D-261). A beacon cannot carry an Authorization header, so the
+  // session token rides in the body and the route checks it itself.
+  { method: 'POST', path: '/user-activity/beacon' },
   { method: 'POST', path: '/sms/inbound' },   // Twilio — signature-checked in the handler
   { prefix: '/submit/' },                     // public kiosk forms (QR codes)
   // The partner reconciliation portal. Authenticated by a hashed token in the

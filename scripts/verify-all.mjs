@@ -139,6 +139,7 @@ const RUNS = [
   ['verify-bulk-members.mjs', 5120, {}, false],
   ['verify-env-limits.mjs', 5121, {}, false],
   ['verify-equipment-qa-guard.mjs', 5155, {}, false],
+  ['verify-user-activity.mjs', 5156, {}, false],
   ['verify-banned-check.mjs', 5122, {}, false],
   ['verify-partner-recon.mjs', 5123, { PARTNER_PORTAL_TODAY: '2026-10-23' }, true],
   ['verify-emp-limits.mjs', 5124, {}, false],

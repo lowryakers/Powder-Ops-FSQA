@@ -6861,6 +6861,37 @@ function runMigrations() {
   addColumnIfMissing('audit_log', 'actor_role', 'TEXT');
   addColumnIfMissing('audit_log', 'actor_department', 'TEXT');
   addColumnIfMissing('audit_log', 'entity_label', 'TEXT');
+  // Who was active and when (D-261, server/user-activity.js). APPEND-ONLY: the two
+  // triggers refuse an UPDATE or a DELETE from any door, so the history cannot be
+  // edited or pruned. Nothing is ever deleted, so it keeps more than the two years
+  // asked for. It sits beside audit_log and never writes to it.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS user_activity (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      occurred_at TEXT NOT NULL,
+      user_id TEXT,
+      user_name TEXT,
+      action TEXT NOT NULL,
+      page TEXT,
+      record_type TEXT,
+      record_id TEXT,
+      record_label TEXT,
+      details TEXT,
+      via TEXT NOT NULL DEFAULT 'session',
+      audit_id INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_activity_at ON user_activity(occurred_at);
+    CREATE INDEX IF NOT EXISTS idx_user_activity_user_at ON user_activity(user_id, occurred_at);
+    CREATE TRIGGER IF NOT EXISTS user_activity_no_update BEFORE UPDATE ON user_activity
+      BEGIN SELECT RAISE(ABORT, 'user_activity is append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS user_activity_no_delete BEFORE DELETE ON user_activity
+      BEGIN SELECT RAISE(ABORT, 'user_activity is append-only'); END;
+  `);
+  // A session that ended before the log existed is not a timeout the log saw.
+  if (addColumnIfMissing('sessions', 'activity_ended_at', 'TEXT')) {
+    db.prepare(`UPDATE sessions SET activity_ended_at = 'before-activity-log'
+      WHERE datetime(expires_at) <= datetime('now')`).run();
+  }
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_audit_log_actor_id ON audit_log(actor_id)'); } catch { /* ignore */ }
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action)'); } catch { /* ignore */ }
   backfillAuditActorIdentity();
@@ -7073,6 +7104,13 @@ export function canonicalAction(action) {
 // persist a stable actor identity that survives a user being renamed and
 // enables role/department filtering. `entityLabel` is an optional
 // human-readable name for the affected record.
+// D-261: the activity log listens to every audit entry a PERSON causes, so an
+// edit carries its field-level before and after without each route repeating
+// itself. The listener cannot change, delay or fail the audit entry: it runs
+// after the insert, and anything it throws is swallowed here.
+let auditListener = null;
+export function setAuditListener(fn) { auditListener = typeof fn === 'function' ? fn : null; }
+
 export function logAudit(actor, action, entityType, entityId, details, previousState, newState, entityLabel) {
   const db = getDb();
   let actorName, actorId = null, actorRole = null, actorDept = null;
@@ -7090,7 +7128,7 @@ export function logAudit(actor, action, entityType, entityId, details, previousS
   } else {
     actorName = actor || 'system';
   }
-  db.prepare(`
+  const info = db.prepare(`
     INSERT INTO audit_log (actor, actor_id, actor_role, actor_department, action, entity_type, entity_id, entity_label, details, previous_state, new_state)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
@@ -7106,4 +7144,10 @@ export function logAudit(actor, action, entityType, entityId, details, previousS
     previousState ? JSON.stringify(previousState) : null,
     newState ? JSON.stringify(newState) : null
   );
+  if (auditListener) {
+    try {
+      auditListener({ actor, action: canonicalAction(action), entityType, entityId, entityLabel,
+        details, previousState, newState, auditId: Number(info.lastInsertRowid) });
+    } catch { /* the activity log never fails an audit entry */ }
+  }
 }

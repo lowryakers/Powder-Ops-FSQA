@@ -131,6 +131,7 @@ const MODULE_GROUPS = [
       { id: 'dcr', label: 'Document Change Requests' },
       { id: 'org-chart', label: 'Org Chart' },
       { id: 'audit', label: 'Audit Log', note: 'Read-only history of every change: who did what, when, and what the value was before. What an auditor asks to see.' },
+      { id: 'user-activity', label: 'User Activity (bot read access)', note: "Lets this account's READ token pull the activity log (who signed in, pages, changes, downloads) from GET /api/user-activity. The screen itself stays admins-only; a person given this sees nothing new." },
     ],
   },
   {

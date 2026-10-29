@@ -7,6 +7,7 @@
 // and which fields the client is handed are decided here and nowhere else.
 import crypto from 'crypto';
 import { v4 as uuid } from 'uuid';
+import { recordRevokedSessions } from '../user-activity.js';
 import { passwordDaysLeft, passwordExpired } from '../password-policy.js';
 import { setFileCookie } from '../middleware/auth.js';
 import { disconnectUser } from '../realtime.js';
@@ -80,6 +81,8 @@ export function issueSession(db, user, res = null, { notAfter = null } = {}) {
  */
 export function revokeSessions(db, userId, { keepToken = null, devices = false } = {}) {
   if (!userId) return 0;
+  // D-261: each live session ended here is a row in the activity log.
+  try { recordRevokedSessions(db, userId, { keepToken }); } catch { /* the log never blocks a revoke */ }
   const r = keepToken
     ? db.prepare('DELETE FROM sessions WHERE user_id = ? AND token != ?').run(userId, keepToken)
     : db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);

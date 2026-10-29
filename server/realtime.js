@@ -19,7 +19,7 @@ function userForToken(token) {
   const db = getDb();
   const row = db.prepare(`
     SELECT u.id, u.name, u.username, u.role FROM sessions s JOIN users u ON s.user_id = u.id
-    WHERE s.token = ? AND s.expires_at > datetime('now') AND u.is_active = 1
+    WHERE s.token = ? AND datetime(s.expires_at) > datetime('now') AND u.is_active = 1
   `).get(token);
   return row || null;
 }

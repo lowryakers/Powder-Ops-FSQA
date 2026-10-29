@@ -184,6 +184,11 @@ const MODULE_INFO = {
     links: 'Aggregates work orders, submissions, and production entries.',
     sqf: 'Supports management review with objective performance data (SQF 2.1.3).',
   },
+  'user-activity': {
+    what: 'Who was active and when: sign-ins, sign-outs and timeouts, pages and records opened, changes with before/after values, files opened and downloaded. Append-only; filter by person and date, export to CSV (admin only).',
+    links: 'Edits come from the same before/after values the Audit Log stores; bots read it from GET /api/user-activity.',
+    sqf: 'Access and use of electronic records is traceable to a person (SQF 2.2.3; 21 CFR 11.10(e)).',
+  },
   audit: {
     what: 'The immutable audit log: every create/update/delete/approval with actor identity, before/after values, and timestamps. Filterable and exportable.',
     links: 'Every module writes here automatically; entity views show per-record history.',

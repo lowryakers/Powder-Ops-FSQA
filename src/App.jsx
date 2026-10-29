@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { setParam } from './lib/deepLink.js';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, UserPlus, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Building2, BookText, LifeBuoy, PenLine, UserPlus2, HeartHandshake} from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, UserPlus, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Building2, BookText, LifeBuoy, PenLine, UserPlus2, HeartHandshake, Activity} from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -45,6 +45,7 @@ const ChemicalsPanel = lazy(() => import('./components/compliance/ChemicalsPanel
 const HygienicDesignPanel = lazy(() => import('./components/compliance/HygienicDesignPanel.jsx'));
 const QualitySchedulesPanel = lazy(() => import('./components/compliance/QualitySchedulesPanel.jsx'));
 const TeamActivityPanel = lazy(() => import('./components/compliance/TeamActivityPanel.jsx'));
+const UserActivityPanel = lazy(() => import('./components/compliance/UserActivityPanel.jsx'));
 const AuditorView = lazy(() => import('./components/compliance/AuditorView.jsx'));
 const CAPAPanel = lazy(() => import('./components/compliance/CAPAPanel.jsx'));
 const DocumentRegistry = lazy(() => import('./components/compliance/DocumentRegistry.jsx'));
@@ -83,6 +84,7 @@ import PageInfo from './components/PageInfo.jsx';
 import ChangePasswordModal from './components/common/ChangePasswordModal.jsx';
 import SignaturePrompt from './components/common/SignaturePrompt.jsx';
 import DocumentsToSignCard, { SignDocumentHost } from './components/common/DocumentsToSign.jsx';
+import { logPageView } from './lib/activityLog.js';
 const SupplyOrdersPanel = lazy(() => import('./components/office/SupplyOrdersPanel.jsx'));
 const TimeTrackingPanel = lazy(() => import('./components/office/TimeTrackingPanel.jsx'));
 const CheckedOutPanel = lazy(() => import('./components/compliance/CheckedOutPanel.jsx'));
@@ -285,6 +287,8 @@ const NAV_GROUPS = [
     items: [
       { id: 'ask-ai', label: 'Ask AI', icon: Sparkles, adminOnly: true, aiOnly: true },
       { id: 'team-activity', label: 'Team Activity', icon: Users, adminOnly: true },
+      // Who was signed in and what they opened or changed (D-261). Admins only; a bot reads it by API.
+      { id: 'user-activity', label: 'User Activity', icon: Activity, adminOnly: true, keywords: 'activity log who logged in sign in login page views downloads usage history' },
       { id: 'audit', label: 'Audit Log', icon: ScrollText },
       { id: 'settings', label: 'Settings', icon: Settings, adminOnly: true },
     ],
@@ -1483,6 +1487,12 @@ function App() {
     return () => { cancelled = true; document.removeEventListener('visibilitychange', onVis); };
   }, [openFromNotification]);
 
+  // Which page a person is on (D-261): batched by activityLog, one event per change.
+  useEffect(() => {
+    if (!user?.id) return;
+    logPageView(workspace === 'comms' ? 'messages' : (activeTab || 'home'));
+  }, [user?.id, workspace, activeTab]);
+
   // Notification tapped while the app is already open: the SW posts the channel.
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
@@ -2234,6 +2244,7 @@ function App() {
           {resolvedTab === 'suppliers' && <SuppliersPanel user={user} />}
           {resolvedTab === 'critical-tracking' && <DashboardHub user={user} onNavigate={setActiveTab} initialTab="critical" />}
           {resolvedTab === 'team-activity' && user.role === 'admin' && <TeamActivityPanel />}
+          {resolvedTab === 'user-activity' && user.role === 'admin' && <UserActivityPanel />}
           {resolvedTab === 'audit' && <AuditLogPanel />}
           {resolvedTab === 'settings' && <SettingsPanel initialSection={deepSection} />}
           </Suspense>

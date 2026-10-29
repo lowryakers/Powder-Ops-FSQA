@@ -6221,6 +6221,17 @@ navigated that narrow column to the **whole app** — sidebar and all — inside
   `window.parent` (docked) or `window.opener` (popout); App's listener is **origin-checked**. The panel stays
   on Messages and the module opens where the modules live.
 
+## Who was active and when: the append-only activity log (D-261, `server/user-activity.js`)
+- **`user_activity` is APPEND-ONLY** (triggers refuse UPDATE/DELETE). Never delete from it; `check:useractivity` scans for one.
+- **It never writes to `audit_log`.** It listens via `setAuditListener` (db.js), after the insert, and cannot fail it.
+  An edit's field changes come from the audit entry's own previous/new state.
+- **Add a secret-looking field name to `SECRET_KEY` (or `FORBIDDEN_KEYS`) rather than filtering it in a route.** Query
+  strings are dropped from every path; chat/AI writes record field names only.
+- Page views are batched on the screen (`src/lib/activityLog.js`); on hide they go by `sendBeacon` to the public
+  `/api/user-activity/beacon`, which checks the session token in the body.
+- Reads: admin session, or a token whose account holds the `user-activity` grant. Paged at 200.
+- `check:useractivity` (57), `verify:useractivity` (53; control fails from the first).
+
 ## Equipment carrying QA checks asks before going out of service (D-260, `server/equipment-guard.js`)
 - **A status change away from active on equipment with an active QA check is `409 stops_qa_checks`** (PUT and bulk), naming
   each check, until `confirm_stop_checks: true`. A QA check = `task_group = 'qa'` or a `TASK_TITLE_SQL` title.
