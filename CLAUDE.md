@@ -6240,9 +6240,11 @@ navigated that narrow column to the **whole app** — sidebar and all — inside
 revoke by DELETE with a reason), `CrisisDrills.jsx`. SOP 501, SQF 2.6.4.2.
 - **Transcribed, DRAFT-1, no form number** until Document Control issues one (`docs/v2/queued/dcr-crisis-drill-product-integrity.md`).
 - **Two password-signed reviews (QA, Management), two different people**, refused until `missingToSign` is empty. Signed = closed.
+- **Management = admins + `app_settings.crisis_drill_management_signers` (account ids; filled once from "Adam Bliss", D-266)**;
+  an admin changes it on the tab (`PUT /safety/drill-signers`). Never test the name at signing.
 - A form body inside a scrolling modal: put `overflow-y-auto` on a DIV around the `<fieldset>` — a fieldset does not
   scroll as a flex item, and the footer covered the inspection buttons.
-- `verify:crisisdrill` (29; control fails 1).
+- `verify:crisisdrill` (34; control fails 1).
 
 ## A training record says how somebody was trained; one session records many (D-264)
 `shared/training-record-fields.js` (`METHODS`, `LEGACY_METHODS`, `LANGUAGES`, `competenceStatement`, `wantsCompetence`,

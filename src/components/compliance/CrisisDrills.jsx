@@ -2,7 +2,7 @@
 // Integrity Inspection, SOP 501. The form's definition comes from the server
 // (shared/crisis-drill.js); the screen draws it and runs the same "what is
 // still missing" check the server runs before a review can be signed.
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { Plus, X, ShieldCheck, AlertTriangle, CheckCircle2, Trash2 } from 'lucide-react';
 import { cleanDrill, missingToSign, resultLabel, scenarioLabel } from '../../../shared/crisis-drill.js';
@@ -261,7 +261,49 @@ function DrillForm({ form, initial, onClose, onSaved }) {
   );
 }
 
-export default function CrisisDrills({ form, user }) {
+/** Who signs the Management Review besides admins (D-266). An admin changes it. */
+function ManagementSigners({ form, user, onChanged }) {
+  const [editing, setEditing] = useState(false);
+  const [users, setUsers] = useState(null);
+  const [sel, setSel] = useState(() => new Set((form.management_signers || []).map(u => u.id)));
+  const [error, setError] = useState('');
+  useEffect(() => {
+    if (!editing || users) return;
+    apiFetch('/users').then(list => setUsers((list || []).filter(u => u.is_active !== 0 && !u.is_external && u.role !== 'admin'))).catch(e => setError(e.message));
+  }, [editing, users]);
+  const names = (form.management_signers || []).map(u => u.name);
+  const save = async () => {
+    setError('');
+    try { await apiPut('/safety/drill-signers', { user_ids: [...sel] }); setEditing(false); onChanged(); }
+    catch (e) { setError(e.message); }
+  };
+  return (
+    <div className="text-xs text-gray-600" data-drill-signers>
+      Management Review is signed by {names.length ? names.join(', ') : 'nobody named'} or an admin.
+      {user?.role === 'admin' && !editing && <button type="button" onClick={() => setEditing(true)} className="ml-2 text-powder-700 hover:underline">Change</button>}
+      {editing && (
+        <div className="mt-2 border border-gray-200 rounded-lg p-2 bg-white max-w-md space-y-2">
+          <div className="max-h-48 overflow-y-auto space-y-1">
+            {(users || []).map(u => (
+              <label key={u.id} className="flex items-center gap-2 text-sm">
+                <input type="checkbox" className="h-4 w-4 shrink-0" checked={sel.has(u.id)}
+                  onChange={() => setSel(x => { const n = new Set(x); if (n.has(u.id)) n.delete(u.id); else n.add(u.id); return n; })} /> {u.name}
+              </label>
+            ))}
+            {!users && !error && <p className="text-xs text-gray-400">Loading…</p>}
+          </div>
+          {error && <p className="text-xs text-red-600">{error}</p>}
+          <div className="flex gap-2">
+            <button type="button" onClick={save} className="px-3 py-1 bg-powder-600 text-white rounded text-xs font-medium">Save</button>
+            <button type="button" onClick={() => setEditing(false)} className="px-3 py-1 border border-gray-300 rounded text-xs">Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function CrisisDrills({ form, user, onFormChanged }) {
   const { data, refresh } = useApiGet('/safety/drills');
   const [open, setOpen] = useState(null); // null | {} new | record
   if (!form) return null;
@@ -274,6 +316,7 @@ export default function CrisisDrills({ form, user }) {
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <p className="text-sm text-gray-700">{form.title} ({form.sop}). The annual crisis test and what it did to product and materials (SQF 2.6.4.2).</p>
+          <ManagementSigners key={(form.management_signers || []).map(u => u.id).join(',')} form={form} user={user} onChanged={() => onFormChanged?.()} />
         </div>
         {form.can_file && (
           <button type="button" onClick={() => setOpen({})} data-drill-new

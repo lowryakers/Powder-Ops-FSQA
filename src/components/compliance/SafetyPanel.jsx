@@ -495,7 +495,7 @@ function FirstAidForm({ form, rec, onChange, onSave, onClose }) {
 }
 
 export default function SafetyPanel({ user }) {
-  const { data: forms } = useApiGet('/safety/forms');
+  const { data: forms, refresh: refreshForms } = useApiGet('/safety/forms');
   const TABS = useMemo(() => [
     { id: 'contacts', label: 'Crisis Contacts', icon: Phone },
     { id: 'evacuations', label: 'Evacuations', icon: Users },
@@ -514,7 +514,7 @@ export default function SafetyPanel({ user }) {
       <ModuleTabs tabs={tabs} value={tab} onChange={setTab} />
       {tab === 'contacts' && <CrisisContacts form={forms?.crisis} />}
       {tab === 'evacuations' && <Evacuations form={forms?.evacuation} impact={forms?.impact} user={user} />}
-      {tab === 'drills' && <CrisisDrills form={forms?.drill} user={user} />}
+      {tab === 'drills' && <CrisisDrills form={forms?.drill} user={user} onFormChanged={refreshForms} />}
       {tab === 'first-aid' && <FirstAidLog form={forms?.first_aid} user={user} />}
     </div>
   );
