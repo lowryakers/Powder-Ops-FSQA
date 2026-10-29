@@ -143,6 +143,7 @@ const RUNS = [
   ['verify-not-trainee.mjs', 5157, {}, false],
   ['verify-training-records.mjs', 5158, {}, false],
   ['verify-crisis-drill.mjs', 5159, {}, false],
+  ['verify-edit-failed-training.mjs', 5160, {}, false],
   ['verify-banned-check.mjs', 5122, {}, false],
   ['verify-partner-recon.mjs', 5123, { PARTNER_PORTAL_TODAY: '2026-10-23' }, true],
   ['verify-emp-limits.mjs', 5124, {}, false],

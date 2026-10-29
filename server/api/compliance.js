@@ -19,6 +19,7 @@ import { getSource, safeCount, isQaReviewer } from '../qa-review.js';
 import { pmCompletion } from '../pm-completion.js';
 import { moduleUsage, usageText } from '../module-usage.js';
 import { sameNameAccounts, sameNameText } from '../same-name-accounts.js';
+import { editFailedTraining, editFailedText } from '../edit-failed-training.js';
 import { taskRouting, routingText } from '../task-routing.js';
 
 const router = Router();
@@ -334,6 +335,12 @@ router.get('/task-routing', requireRole('admin'), (req, res) => {
 router.get('/same-name-accounts', requireRole('admin'), (req, res) => {
   const r = sameNameAccounts(getDb(), { name: req.query.name || null });
   res.json({ ...r, text: sameNameText(r, `live database, ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`) });
+});
+
+// Training records an edit turned into a fail (D-267). READ-ONLY, run on demand.
+router.get('/edit-failed-training', requireRole('admin'), (req, res) => {
+  const r = editFailedTraining(getDb());
+  res.json({ ...r, text: editFailedText(r, `live database, ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`) });
 });
 
 // Stored automatic backups (weekly Friday job writes them to R2 under backups/).

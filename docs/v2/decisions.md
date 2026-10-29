@@ -9462,3 +9462,19 @@ supervisor's.
   `PUT /api/safety/drill-signers`, audited with the names before and after. Only active employee accounts can be added.
 - The QA line is unchanged (Quality or an admin), and the two lines are still signed by two different people.
 - `verify:crisisdrill` 29 → 34: another supervisor is refused, Adam signs, only an admin changes the list.
+
+## D-267 — Finding the training records the edit bug turned into fails (29 Oct 2026)
+
+From D-158 (7 Oct 2026) until D-264 (29 Oct 2026), saving a training record through Edit sent `passed: null`, which the
+server read as 0, so a completed record with no score became `failed` and the person read as not trained. D-264 fixed
+the edit; this finds the records already turned.
+- **Read-only** (`server/edit-failed-training.js`). It runs on demand from Settings → Data backup → "Training records an
+  edit turned into a fail" (admin only, `GET /api/compliance/edit-failed-training`), or `npm run report:editfails -- <db
+  copy>`. It writes nothing, not even an audit row.
+- **How one is recognised:** failed, passed 0, not from an in-app test, *still carrying its completion date* (a real fail
+  is filed with none), with an edit logged on or after 7 Oct. One with a score below the course pass mark may be a real
+  fail (D-158 correctly turned those), so it is listed apart to check.
+- Each line names the person, course, date trained, score, who edited it and when, and whether another passing record
+  still makes the person read as trained.
+- **Nothing is put back automatically.** Which records to restore is a person's decision; restoring is the next step.
+- `verify:editfails` (10).
