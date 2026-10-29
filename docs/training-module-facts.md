@@ -256,3 +256,39 @@ answer. It only flags; it never changes a key.
     auditor role, but not the other bots (`server/audit-readiness.js`).
 11. **No session record** ties a group training together (item 1). "Show me the attendance for the 12 March GMP
     refresher" means searching by course and date.
+
+---
+
+## Carol Pierce: how to see both records, and the proposal (waiting for Lowry's OK — nothing merged)
+
+**See them side by side:** Settings → Data backup → **Accounts that share a name** → Run the report. It is read-only.
+It shows, for each account: id, sign-in name, role, department, active, created date, how it was created (an auditor
+pass, Settings, an import or a seed), whether it can sign in, last sign-in, live sessions, auditor passes, org chart
+position, training records, open training tasks, pay roster rows, chat messages and audit entries. It also shows how
+many training records carry the name with no account (those count for whichever account has the name).
+
+The test database reproduced the reported symptom: an auditor pass issued as "Carol Pierce" makes a second account
+(role **auditor**, department QA, sign-in name "Carol Pierce 2", signs in by link only), and Training lists her twice.
+
+**Proposal, depending on what the report shows:**
+
+- **If account 2 is an auditor-pass account (most likely): do not merge.** It is a separate read-only door for a
+  visitor, and folding it into her staff account would give that pass whatever her staff account carries. Instead:
+  1. Leave auditor-pass accounts out of Training, as with the bots: either tick "Not a trainee" on it, or make the
+     rule "role = auditor is never a trainee" (one line in `trainingSnapshot`, plus a test).
+  2. If the pass is finished, revoke it (Settings → Auditor passes), which deactivates the account. Nothing is
+     deleted.
+  3. Training records filed against the auditor account, if any, are moved to her staff account, as in the next
+     section.
+- **If both are staff accounts (an import or a second "Add user"):** keep the one that signs in (password set, latest
+  sign-in, org chart position) and move the other's records onto it, in one audited transaction:
+  1. `training_records.employee_user_id`, `training_test_attempts.employee_user_id`,
+     `training_practical_evaluations.employee_user_id`;
+  2. `work_orders.assigned_to_id`, `org_positions.user_id`, `pay_employees.user_id`, `training_requirements.user_id`
+     (only where no row already exists for the kept account);
+  3. chat memberships the kept account lacks.
+
+  Then **deactivate** the other account, never delete it, so its id still resolves on old records. Write one audit
+  entry per table moved, carrying the row ids, plus a summary entry ("merged account X into Y"), so the merge can be
+  read back and undone. Names already written on records (`employee_name`, `actor`, signatures) are snapshots and do
+  not change. It would be a one-off admin script with a dry run first, the `coa-remove-obvious-duplicates` pattern.
