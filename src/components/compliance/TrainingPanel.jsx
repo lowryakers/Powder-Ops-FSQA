@@ -18,6 +18,7 @@ import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 import FrozenScroll from '../common/FrozenScroll';
 import { HowTrainedFields, RecordedLine, HowChips, TrainingSessions, PeoplePicker } from './TrainingHowFields.jsx';
 import { localDateStr } from '../../utils/dates';
+import CourseRevision from './CourseRevision.jsx';
 import { passedQuiz, COMPETENCE_REQUIRED_MSG } from '../../../shared/training-record-fields.js';
 
 // Columns as data for the Records tab. Evidence and the actions cell have no
@@ -1883,6 +1884,7 @@ export default function TrainingPanel() {
                   {c.sop_test_stale && (
                     <span className="inline-flex items-center gap-1 mt-1 text-[11px] font-medium text-orange-800 bg-orange-100 px-2 py-0.5 rounded-full"><AlertTriangle size={11} /> SOP updated — test needs review</span>
                   )}
+                  <CourseRevision course={c} canEdit={canEdit} onChanged={refreshCourses} />
                 </div>
                 {canEdit && (
                   <div className="flex items-center gap-1 shrink-0">

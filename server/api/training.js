@@ -23,6 +23,8 @@ import { certificationFor, certificationRoster } from '../training-certification
 import { questionMisses } from '../training-misses.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
 import { plantDateOf } from '../plant-clock.js';
+import { markCourseRevision, stampLinkedRevision, CourseRevisionError, MARK_KINDS } from '../course-revision.js';
+import { isApprovedStatus, sameRevision } from '../../shared/document-revision.js';
 import { trainingFieldErrors, competenceStatement, competenceMissing, COMPETENCE_REQUIRED_MSG } from '../../shared/training-record-fields.js';
 import { renderCertificate } from '../certificate-pdf.js';
 
@@ -38,7 +40,7 @@ router.get('/courses', (req, res) => {
   const db = getDb();
   const rows = db.prepare(`
     SELECT c.*, sd.title AS sop_title, sd.doc_number AS sop_number, sd.revision AS sop_revision,
-      sd.training_revision AS sop_training_revision,
+      sd.training_revision AS sop_training_revision, sd.status AS sop_status,
       (SELECT COUNT(*) FROM training_tests t WHERE t.course_id = c.id AND t.is_current = 1) AS has_current_test,
       (SELECT t.sop_revision FROM training_tests t WHERE t.course_id = c.id AND t.is_current = 1) AS test_sop_revision
     FROM training_courses c
@@ -57,6 +59,13 @@ router.get('/courses', (req, res) => {
     // of which codes have an evaluation — that second copy is how a screen
     // starts offering a form the server does not have, or hiding one it does.
     has_practical: !!evaluationFor(r.code),
+    // D-277: the revision the course was built on, against the document's
+    // approved one. A course behind its document NEEDS UPDATE, and no
+    // retraining is assigned for the new revision until somebody marks it.
+    ...(() => {
+      const docRevision = r.sop_id && isApprovedStatus(r.sop_status) ? (r.sop_training_revision || r.sop_revision || null) : null;
+      return { doc_revision: docRevision, needs_update: !!(r.sop_id && docRevision && !sameRevision(r.built_on_revision, docRevision)) };
+    })(),
   })));
 });
 
@@ -73,6 +82,7 @@ router.post('/courses', (req, res) => {
     JSON.stringify(required_positions || []),
     has_test ? 1 : 0, passing_score ?? 80, active === undefined ? 1 : (active ? 1 : 0),
     retrain_on_doc_change === undefined ? 1 : (retrain_on_doc_change ? 1 : 0));
+  if (sop_id) stampLinkedRevision(db, id, req.user);
   logAudit(req.user, 'training_course_created', 'training_course', id, { title }, null, null, title);
   res.status(201).json(db.prepare('SELECT * FROM training_courses WHERE id = ?').get(id));
 });
@@ -82,6 +92,9 @@ router.put('/courses/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM training_courses WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
   const b = req.body;
+  // The built-on revision has one door, POST /courses/:id/revision (D-277).
+  const owned = ['built_on_revision', 'built_on_kind', 'built_on_by', 'built_on_at', 'built_on_note'].filter(k => b[k] !== undefined);
+  if (owned.length) return res.status(400).json({ error: 'Which revision a course is built on is set with "Mark course updated" or "No course change needed", not by editing the course.', code: 'BUILT_ON_OWNED' });
   db.prepare(`UPDATE training_courses SET code=?, title=?, category=?, description=?, sop_id=?, equipment_id=?, retrain_months=?,
     required_roles=?, required_departments=?, required_positions=?, has_test=?, passing_score=?, active=?, retrain_on_doc_change=?, updated_at=datetime('now') WHERE id=?`).run(
     b.code ?? existing.code, b.title || existing.title, b.category || existing.category, b.description ?? existing.description,
@@ -104,8 +117,27 @@ router.put('/courses/:id', (req, res) => {
   if (b.passing_score !== undefined && b.passing_score !== null) {
     db.prepare('UPDATE training_tests SET passing_score = ? WHERE course_id = ? AND is_current = 1').run(b.passing_score, req.params.id);
   }
+  // Linking (or relinking) a course to a document records the revision it is
+  // built on as the one in force today (D-277).
+  if (b.sop_id !== undefined && (b.sop_id || null) !== (existing.sop_id || null)) stampLinkedRevision(db, req.params.id, req.user);
   logAudit(req.user, 'training_course_updated', 'training_course', req.params.id, { title: b.title || existing.title }, null, null, b.title || existing.title);
   res.json(db.prepare('SELECT * FROM training_courses WHERE id = ?').get(req.params.id));
+});
+
+// Mark a course for its document's approved revision (D-277): "updated" or
+// "no change needed". This is the ONLY place retraining for a new revision is
+// assigned — to everyone whose completion was on an earlier revision.
+router.post('/courses/:id/revision', (req, res) => {
+  const db = getDb();
+  const course = db.prepare('SELECT * FROM training_courses WHERE id = ?').get(req.params.id);
+  if (!course) return res.status(404).json({ error: 'Course not found' });
+  try {
+    const out = markCourseRevision(db, course, { kind: req.body?.kind, note: req.body?.note, actor: req.user, due_date: req.body?.due_date || null });
+    res.json({ ...out, label: MARK_KINDS[out.kind], course: db.prepare('SELECT * FROM training_courses WHERE id = ?').get(course.id) });
+  } catch (e) {
+    if (e instanceof CourseRevisionError) return res.status(e.status).json({ error: e.message });
+    throw e;
+  }
 });
 
 // ── COMPLETIONS (training_records) ───────────────────────────────────────────

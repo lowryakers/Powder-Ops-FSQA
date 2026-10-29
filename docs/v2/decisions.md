@@ -9613,3 +9613,52 @@ attempt is for the same person and course, and is a pass. Otherwise reject."
 - **Records already on file are not re-checked or changed.** Read-only to the past; the rule is for new writes and edits.
 - `verify:attemptproof` (12). Control: without the check on POST, all four bad attempts save (201) and the run fails 6.
 
+## D-277 — Document revisions are their own records; approval signals the Quality bot; retraining waits for the course (29 Oct 2026)
+
+**Asked by Lowry:** (1) a new approved revision gets a new revision number, history kept; draft edits do not change the
+approved revision; do not change existing data yet — Daniela is reviewing documents first. (2) When a revision is
+approved, send a signal the Quality bot can receive (the ops-requests webhook pattern) with the document, old and new
+revision, and linked courses. (3) Courses record which document revision they were built on; a newer approved revision
+shows the course as "needs update". (4) Retraining for a revision is assigned only after the linked course is marked
+updated for that revision, or someone confirms no course change is needed.
+
+**What was wrong:** a document was one row. Editing an approved SOP changed its text and revision number on the spot,
+before anyone approved anything, and moved `training_revision` with it — so the matrix read people "out of date"
+against text nobody had approved. Nothing ever assigned retraining. Courses did not say which revision they taught.
+
+- **`document_revisions`** (draft / approved / superseded). The `sop_documents` row stays THE APPROVED REVISION IN FORCE.
+  `server/document-revisions.js` is the one module; **`recordApprovedRevision` is the one writer of an approved
+  revision** — approving a draft, the worklist applying a paper revision (`applyRevision`, source `transcribed`), and a
+  draft document's first move to Approved (source `first_approval`) all go through it.
+- **An approved document (`active` or `under_review`) is not edited in place**: `PUT /documents/:id` refuses a change to
+  its text, Spanish text or revision number, or a move back to draft (`409 APPROVED_REVISION_LOCKED`). Metadata still
+  edits. A paper revision applied from the worklist with new text and no new number is refused too.
+- **A draft is started from the text in force** (`POST /documents/:id/revisions`, one per document), edited
+  (`PUT …/revisions/:rid`), discarded with a reason, or **approved** (`POST …/revisions/:rid/approve`): QA, Document
+  Control, a supervisor or an admin, with the password, asked last. **The number must be new** — no revision this
+  document was ever approved under, "V4" and "4" being one number (`shared/document-revision.js`); `409
+  REVISION_NUMBER_USED` names the next free one. The revision replaced is kept as `superseded` (as `baseline` when it
+  was never filed).
+- **Nothing existing is changed.** No backfill. A document's first revision rows appear when its first new revision is
+  started or recorded. Documents created as Approved directly (`POST /documents` with status active) are untouched and
+  signal nothing.
+- **The signal** is a third target, `quality`, on the ops-requests outbox (`server/ops-webhook.js`): same retries,
+  signing, never-resent rule; its own switch `QUALITY_WEBHOOK_ENABLED` + `QUALITY_WEBHOOK_URL` + `QUALITY_WEBHOOK_KEY`.
+  Off unless all three are set. Payload `document.revision_approved`: the document, `old_revision`, `new_revision`,
+  effective date, approver, source, change summary, `linked_courses` (each with `built_on_revision`, `needs_update`) and
+  a link (`?tab=sops&doc=<id>` opens it). Once per document + revision (`dedupe_id`).
+- **`training_courses.built_on_revision`** (+ kind / by / at / note). Linking or relinking a course stamps the revision
+  in force (`linked`). It is set otherwise ONLY by `POST /training/courses/:id/revision` with `updated` or `no_change`
+  (a reason required for no change); the course PUT refuses it (`BUILT_ON_OWNED`). `needs_update` is DERIVED.
+- **Retraining is assigned only by that mark** (`server/course-revision.js`): everyone whose current passing completion
+  is on another revision gets a retraining task (`source: 'revision'`), when the course retrains on document changes.
+  **Until then the matrix measures people against the revision the course teaches** (`cellFor` and
+  `courseTrainingRevision` read `built_on_revision` first), so nobody reads out of date against a course that has not
+  caught up. A course with no recorded revision behaves exactly as before.
+- **Screens**: the document view's Revisions panel (start, edit, approve, discard, history, linked courses);
+  the edit form locks text and revision number on an approved document and says where to go; the course card shows
+  "Built on rev N", "Needs update for rev M", and the two buttons.
+- **Touches records**: new tables/columns, a new refusal on the document edit, new assignment. Opened for review (D-274).
+- `verify:docrevisions` (47, live + a stand-in Quality bot + browser). Control: without the PUT guard the approved text is
+  edited in place and the run fails from that check on.
+

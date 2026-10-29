@@ -82,8 +82,11 @@ export function resettleCurrentOnce(db, log = console) {
 /** The revision of a course's linked document that current training must reflect. */
 export function courseTrainingRevision(db, courseId) {
   if (!courseId) return null;
-  const c = db.prepare('SELECT sop_id FROM training_courses WHERE id = ?').get(courseId);
+  const c = db.prepare('SELECT sop_id, built_on_revision FROM training_courses WHERE id = ?').get(courseId);
   if (!c?.sop_id) return null;
+  // The revision the course teaches (D-277): a completion is on what the course
+  // was built on, not on a newer revision the course has not caught up with.
+  if (c.built_on_revision) return c.built_on_revision;
   const d = db.prepare('SELECT training_revision, revision FROM sop_documents WHERE id = ?').get(c.sop_id);
   return d?.training_revision || d?.revision || null;
 }

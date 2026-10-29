@@ -55,6 +55,8 @@ export const APPROVE_ROUTES = Object.freeze([
   { method: 'POST', re: /^\/calibration\/incidents\/[^/]+\/return$/, label: 'POST /api/calibration/incidents/:id/return — QA returns a scale to use' },
   { method: 'POST', re: /^\/calibration\/records$/, label: 'POST /api/calibration/records carrying a product decision',
     when: (req) => !!req.body?.product_disposition?.disposition },
+  // Who may sign the crisis drill's Management review (D-266) is a person's decision, never a token's.
+  { method: 'PUT', re: /^\/safety\/drill-signers$/, label: 'PUT /api/safety/drill-signers — who signs the crisis drill for Management' },
 ]);
 
 const segmentsOf = (path) => String(path || '').split('/').filter(Boolean).map(s => s.toLowerCase());

@@ -85,7 +85,10 @@ export function cellFor(user, course, snap) {
     };
   }
 
-  const needRev = course.sop_id ? snap.docRev[course.sop_id] : null;
+  // Measured against the revision the COURSE teaches (D-277) when it records
+  // one: a new document revision makes nobody out of date until the course is
+  // marked for it, which is also when their retraining is assigned.
+  const needRev = course.sop_id ? (course.built_on_revision || snap.docRev[course.sop_id]) : null;
   const docOutdated = course.retrain_on_doc_change && course.sop_id && rec.sop_revision && needRev && rec.sop_revision !== needRev;
   let state = 'current';
   if (rec.next_due_date && rec.next_due_date < snap.today) state = 'overdue';

@@ -34,7 +34,10 @@ export const TIMEOUT_MS = 8000;
 export const BACKOFF_MS = [2000, 10000, 30000, 120000, 600000];
 export const MAX_IN_FLIGHT = 3;
 export const RATE_PER_MINUTE = 60;
-const TARGETS = ['procurement', 'controller'];
+// `quality` is not a channel wake: it carries a document-control event (D-277,
+// a revision approved) to the Quality bot. Same outbox, same retries, same
+// signing; its own switch, URL and key.
+const TARGETS = ['procurement', 'controller', 'quality'];
 
 const on = (v) => /^(1|true|yes|on)$/i.test(String(v || '').trim());
 
@@ -46,6 +49,8 @@ export function targetConfig(env = process.env) {
     flag: enabled,
     procurement: pair(env.OPS_WEBHOOK_URL, env.OPS_WEBHOOK_KEY),
     controller: pair(env.OPS_WEBHOOK_CONTROLLER_URL, env.OPS_WEBHOOK_CONTROLLER_KEY),
+    quality: { ...pair(env.QUALITY_WEBHOOK_URL, env.QUALITY_WEBHOOK_KEY),
+      enabled: on(env.QUALITY_WEBHOOK_ENABLED) && !!(env.QUALITY_WEBHOOK_URL && env.QUALITY_WEBHOOK_KEY) },
     signingSecret: env.OPS_WEBHOOK_SIGNING_SECRET || null,
   };
 }
@@ -62,7 +67,7 @@ export function redactUrl(url) {
 /** Remove any configured URL or key from a piece of text before it is stored or logged. */
 export function scrub(text, env = process.env) {
   let s = String(text ?? '');
-  for (const v of [env.OPS_WEBHOOK_URL, env.OPS_WEBHOOK_KEY, env.OPS_WEBHOOK_CONTROLLER_URL, env.OPS_WEBHOOK_CONTROLLER_KEY, env.OPS_WEBHOOK_SIGNING_SECRET]) {
+  for (const v of [env.OPS_WEBHOOK_URL, env.OPS_WEBHOOK_KEY, env.OPS_WEBHOOK_CONTROLLER_URL, env.OPS_WEBHOOK_CONTROLLER_KEY, env.OPS_WEBHOOK_SIGNING_SECRET, env.QUALITY_WEBHOOK_URL, env.QUALITY_WEBHOOK_KEY]) {
     if (v && v.length >= 4) s = s.split(v).join('[redacted]');
   }
   return s.replace(/crsr_[A-Za-z0-9_-]+/g, '[redacted]').slice(0, 500);
@@ -194,6 +199,29 @@ export function enqueueOpsWebhook({ channel, message, author, viaToken = false, 
     return target;
   } catch (e) {
     state.log.error?.(`[ops-webhook] enqueue failed: ${scrub(e.message, state.env)}`);
+    return null;
+  }
+}
+
+/**
+ * Queue an event for the Quality bot (D-277). Called after the act is committed;
+ * never throws, never awaits the network. `payload.dedupe_id` makes it
+ * once-only: the same revision approved twice is one signal. Off (returns null,
+ * writes nothing) unless QUALITY_WEBHOOK_ENABLED and its URL and key are set.
+ */
+export function enqueueQualitySignal(payload) {
+  try {
+    const db = state.db;
+    if (!db || !payload?.dedupe_id) return null;
+    const cfg = targetConfig(state.env);
+    if (!cfg.quality.enabled) return null;
+    const now = state.now();
+    const r = db.prepare(`INSERT OR IGNORE INTO ops_webhook_log (dedupe_id, target, channel_name, message_id, payload, status, next_attempt_at, created_at)
+      VALUES (?, 'quality', NULL, ?, ?, 'pending', ?, ?)`).run(payload.dedupe_id, payload.document?.id || null, JSON.stringify(payload), now, now);
+    if (r.changes) setImmediate(() => { pumpOpsWebhook().catch(() => {}); });
+    return r.changes ? 'quality' : 'duplicate';
+  } catch (e) {
+    state.log.error?.(`[ops-webhook] quality enqueue failed: ${scrub(e.message, state.env)}`);
     return null;
   }
 }

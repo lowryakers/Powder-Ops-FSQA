@@ -14,6 +14,12 @@ import { getDb, logAudit } from '../db.js';
 import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { storageEnabled, putStream, presignGet, deleteObject } from '../storage.js';
 import { embedUnicodeFaces } from '../pdf-unicode.js';
+import { gateSignature } from '../signature.js';
+import { isApprovedStatus, sameRevision } from '../../shared/document-revision.js';
+import {
+  RevisionError, listRevisions, draftOf, startDraft, saveDraft, discardDraft, recordApprovedRevision,
+  linkedCourses, suggestedRevision, revisionNumberProblem,
+} from '../document-revisions.js';
 
 const clean = (v, max = 300) => { const t = String(v ?? '').trim(); return t ? t.slice(0, max) : null; };
 
@@ -491,6 +497,28 @@ router.post('/propose-revisions', receiveImportFiles, async (req, res) => {
 // screen — including the version snapshot and the audit entry. A second copy is
 // how one of them quietly stops writing history.
 export function applyRevision(db, doc, fields, { actor, filename }) {
+  // An APPROVED document's revision is recorded through the one writer (D-277):
+  // a paper revision applied from the worklist is an approved revision with a
+  // new number, kept beside the one it replaces, and it signals the Quality bot.
+  // Its text cannot move without a new number.
+  if (isApprovedStatus(doc.status)) {
+    const moved = fields.revision && !sameRevision(fields.revision, doc.revision);
+    const textMoved = (fields.description !== undefined && fields.description !== null && fields.description !== '' && fields.description !== doc.description);
+    if (!moved && textMoved) return { error: 'This document is approved. A change to its text needs a new revision number — tick the revision too, or start a draft revision on the document.' };
+    if (moved) {
+      try {
+        recordApprovedRevision(db, doc, {
+          revision: fields.revision, title: fields.title || undefined, description: textMoved ? fields.description : undefined,
+          effective_date: fields.effective_date || undefined, change_summary: `Applied from an uploaded revision (${filename || 'file'})`,
+        }, { source: 'transcribed', actor });
+        if (filename) db.prepare('UPDATE sop_documents SET source_file = ? WHERE id = ?').run(filename, doc.id);
+        return { document: db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(doc.id), applied: Object.keys(fields) };
+      } catch (e) {
+        if (e instanceof RevisionError) return { error: e.message };
+        throw e;
+      }
+    }
+  }
   const allowed = ['revision', 'effective_date', 'title', 'description'];
   const sets = [];
   const vals = [];
@@ -779,6 +807,81 @@ router.delete('/signatures/:sigId', (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Revisions (D-277) ────────────────────────────────────────────────────────
+// Reading is open to the registry. Starting, editing and discarding a draft is
+// the registry's edit right (the mount guard). Approving is a signature: QA,
+// Document Control, a supervisor or an admin, with their password.
+const revErr = (res, e) => {
+  if (e instanceof RevisionError) return res.status(e.status).json({ error: e.message, ...e.extra });
+  throw e;
+};
+const docOr404 = (db, id, res) => {
+  const doc = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(id);
+  if (!doc) res.status(404).json({ error: 'Not found' });
+  return doc;
+};
+
+router.get('/:id/revisions', (req, res) => {
+  const db = getDb();
+  const doc = docOr404(db, req.params.id, res); if (!doc) return;
+  res.json({
+    in_force: { revision: doc.revision, status: doc.status, approved: isApprovedStatus(doc.status), approved_by: doc.approved_by, approved_at: doc.approved_at },
+    revisions: listRevisions(db, doc.id),
+    draft: draftOf(db, doc.id),
+    suggested_revision: isApprovedStatus(doc.status) ? suggestedRevision(db, doc) : null,
+    courses: linkedCourses(db, doc),
+    can_approve: canWetSign(req.user),
+  });
+});
+
+router.post('/:id/revisions', (req, res) => {
+  const db = getDb();
+  const doc = docOr404(db, req.params.id, res); if (!doc) return;
+  try { res.status(201).json(startDraft(db, doc, req.user, req.body || {})); }
+  catch (e) { revErr(res, e); }
+});
+
+const draftFor = (db, doc, rid, res) => {
+  const d = db.prepare('SELECT * FROM document_revisions WHERE id = ? AND document_id = ?').get(rid, doc.id);
+  if (!d) res.status(404).json({ error: 'No such revision on this document.' });
+  return d;
+};
+
+router.put('/:id/revisions/:rid', (req, res) => {
+  const db = getDb();
+  const doc = docOr404(db, req.params.id, res); if (!doc) return;
+  const draft = draftFor(db, doc, req.params.rid, res); if (!draft) return;
+  try { res.json(saveDraft(db, doc, draft, req.body || {}, req.user)); }
+  catch (e) { revErr(res, e); }
+});
+
+router.delete('/:id/revisions/:rid', (req, res) => {
+  const db = getDb();
+  const doc = docOr404(db, req.params.id, res); if (!doc) return;
+  const draft = draftFor(db, doc, req.params.rid, res); if (!draft) return;
+  try { discardDraft(db, doc, draft, req.body?.reason, req.user); res.json({ ok: true }); }
+  catch (e) { revErr(res, e); }
+});
+
+router.post('/:id/revisions/:rid/approve', (req, res) => {
+  if (!canWetSign(req.user)) return res.status(403).json({ error: 'Approving a revision is for QA, Document Control, supervisors and admins.' });
+  const db = getDb();
+  const doc = docOr404(db, req.params.id, res); if (!doc) return;
+  const draft = draftFor(db, doc, req.params.rid, res); if (!draft) return;
+  if (draft.status !== 'draft') return res.status(409).json({ error: 'This revision is not a draft.' });
+  if (doc.status === 'archived') return res.status(409).json({ error: 'This document is no longer in use — reinstate it first.' });
+  if (!String(draft.description || '').trim()) return res.status(400).json({ error: 'The draft has no text to approve.' });
+  const numberProblem = revisionNumberProblem(db, doc, draft.revision);
+  if (numberProblem) return res.status(409).json({ error: numberProblem, code: 'REVISION_NUMBER_USED', suggested: suggestedRevision(db, doc) });
+  // The password is asked last, once the revision is otherwise approvable.
+  if (!gateSignature(req, res)) return;
+  try {
+    const out = recordApprovedRevision(db, doc, { ...draft, change_summary: draft.change_summary },
+      { source: 'draft', draftId: draft.id, actor: req.user });
+    res.json(out);
+  } catch (e) { revErr(res, e); }
+});
+
 router.get('/:id', (req, res) => {
   const db = getDb();
   const doc = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id);
@@ -853,6 +956,23 @@ router.put('/:id', (req, res) => {
   if (existing.status !== 'archived' && newStatus === 'archived') {
     return res.status(400).json({ error: 'Withdrawing a document needs a reason -- use "No longer in use", which records who withdrew it and why.', use: 'withdraw' });
   }
+  // AN APPROVED REVISION IS NOT EDITED IN PLACE (D-277). Its text and number
+  // change only by approving a draft revision, which keeps the one it replaces.
+  // Metadata (owner, review dates, category, equipment) still edits here.
+  if (isApprovedStatus(existing.status)) {
+    const changes = [];
+    if (revision !== undefined && revision !== null && String(revision) !== String(existing.revision)) changes.push('revision number');
+    if (content !== undefined && content !== existing.description) changes.push('text');
+    if (content_es !== undefined && (content_es || null) !== (existing.description_es || null)) changes.push('Spanish text');
+    if (changes.length) {
+      return res.status(409).json({ code: 'APPROVED_REVISION_LOCKED', use: 'draft_revision',
+        error: `This document is approved (revision ${existing.revision}). Its ${changes.join(' and ')} cannot be edited in place — start a new revision, edit the draft, and approve it.` });
+    }
+    if (!isApprovedStatus(newStatus)) {
+      return res.status(409).json({ code: 'APPROVED_REVISION_LOCKED',
+        error: 'An approved document stays approved until a new revision is approved, or it is withdrawn ("No longer in use").' });
+    }
+  }
   // Resolve review frequency (validate against known values) and, if the caller
   // changed the frequency without supplying an explicit review date, re-derive
   // the next review date from the effective date (or today) + the new frequency.
@@ -875,12 +995,11 @@ router.put('/:id', (req, res) => {
   const isMinor = !!_minor;
   const materialChange = (bodyChanged || revisionChanged) && !isMinor;
   // Capture approval the first time a document moves to the approved/effective state
-  let approvedBy = existing.approved_by;
-  let approvedAt = existing.approved_at;
-  if (newStatus === 'active' && existing.status !== 'active') {
-    approvedBy = req.body.approved_by || req.user.name;
-    approvedAt = new Date().toISOString();
-  }
+  // A document's FIRST approval goes through the one writer of an approved
+  // revision (D-277), after the rest of the edit is saved as a draft document.
+  const becomingApproved = isApprovedStatus(newStatus) && !isApprovedStatus(existing.status);
+  const approvedBy = existing.approved_by;
+  const approvedAt = existing.approved_at;
 
   const newRevision = revision || existing.revision;
   // Bump training_revision only on a material change; otherwise keep the prior
@@ -896,7 +1015,7 @@ router.put('/:id', (req, res) => {
   db.prepare(`UPDATE sop_documents SET doc_number=?, title=?, category=?, revision=?, effective_date=?, review_due=?, review_frequency=?, status=?, owner=?, description=?, description_es=?, source_file=?, approved_by=?, approved_at=?, training_revision=?, equipment_id=?, equipment_ids=?, updated_at=datetime('now') WHERE id=?`).run(
     doc_number ?? existing.doc_number, title || existing.title, category || existing.category,
     newRevision, effective_date ?? existing.effective_date,
-    newReviewDue, newFrequency, newStatus, owner ?? existing.owner,
+    newReviewDue, newFrequency, becomingApproved ? existing.status : newStatus, owner ?? existing.owner,
     content ?? existing.description, content_es !== undefined ? content_es : existing.description_es,
     source_file ?? existing.source_file,
     approvedBy, approvedAt, trainingRevision,
@@ -904,9 +1023,20 @@ router.put('/:id', (req, res) => {
     req.params.id
   );
 
-  const updated = withEquipment(db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id));
+  let updated = withEquipment(db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id));
   db.prepare('INSERT INTO sop_versions (id, sop_id, revision, changed_by, change_summary, snapshot, minor) VALUES (?, ?, ?, ?, ?, ?, ?)')
     .run(uuid(), req.params.id, updated.revision, req.user.name, _change_summary || (isMinor ? 'Minor edit' : 'Updated'), JSON.stringify(updated), isMinor ? 1 : 0);
+  if (becomingApproved) {
+    try {
+      recordApprovedRevision(db, updated, { revision: updated.revision, change_summary: _change_summary || null },
+        { source: 'first_approval', actor: req.user, approved_by: req.body.approved_by || null });
+      if (newStatus === 'under_review') db.prepare("UPDATE sop_documents SET status = 'under_review' WHERE id = ?").run(req.params.id);
+    } catch (e) {
+      if (e instanceof RevisionError) return res.status(e.status).json({ error: e.message, ...e.extra });
+      throw e;
+    }
+    updated = withEquipment(db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id));
+  }
 
   // How many completed trainings this change just invalidated (for the response).
   let retraining_triggered = 0;
