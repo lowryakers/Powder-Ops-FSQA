@@ -6221,6 +6221,14 @@ navigated that narrow column to the **whole app** — sidebar and all — inside
   `window.parent` (docked) or `window.opener` (popout); App's listener is **origin-checked**. The panel stays
   on Messages and the module opens where the modules live.
 
+## Equipment carrying QA checks asks before going out of service (D-260, `server/equipment-guard.js`)
+- **A status change away from active on equipment with an active QA check is `409 stops_qa_checks`** (PUT and bulk), naming
+  each check, until `confirm_stop_checks: true`. A QA check = `task_group = 'qa'` or a `TASK_TITLE_SQL` title.
+- On a confirmed change QA is DMed + pushed (`equipment_qa_stop_recipients`, default QA/quality supervisors, settable on
+  ReadyBot messages). The audit names the checks. Nothing is paused or deleted by the guard.
+- Cause: the Temp/Humidity monitors were set out of service on 27 Oct and QA's Temp & Humidity tasks silently stopped.
+- `verify:eqqaguard` (19; control fails 10).
+
 ## A reimbursement over $100 alerts the office as it is filed (D-254)
 - `LARGE_CLAIM_OVER` (100, strictly over) and `alertLargeClaim()` live in `api/reimbursements.js`.
   - It runs on both POST and PUT, after the response.

@@ -9280,3 +9280,28 @@ about 20 minutes. ReadyDoc now watches for two things and alerts one person (Low
   - `check:opsmonitor` (96; fake clock and push, MDT and MST);
   - `verify:opsmonitor` (20, live, its own server). The control (the `startOpsMonitor` call removed) fails at the first
     monitor assertion.
+
+## D-260 — Setting equipment out of service asks first when QA checks run on it, and QA is told (29 Oct 2026)
+
+On 27 October, at 12:39 PM, the three Temp/Humidity monitors (QA-TH-010/011/012) were set out of service during a
+tidy-up of the Equipment list. That was reasonable for a machine and wrong for a monitoring point. Out-of-service
+equipment raises no new card, and its open cards are closed (D-218). So QA's daily Temp & Humidity tasks
+disappeared. Maria reported on 29 October that "since yesterday" they were not in QA's tasks. Nothing in the code
+was broken; the change was silent. `server/equipment-guard.js`.
+- **The status change is refused (409 `stops_qa_checks`) until the person confirms it**, on both doors:
+  `PUT /equipment/:id` and `POST /equipment/bulk-update`. The refusal names every check that would stop.
+  - A QA check is an active `pm_schedules` row on that equipment that is on QA's list (`task_group = 'qa'`) or has a
+    QA inspection title (`TASK_TITLE_SQL`).
+  - Only equipment that is active now counts. Another edit to equipment already out of service is not asked again.
+    Setting it back to active is never asked.
+  - Confirming is allowed: a monitor really can be taken down. The body carries `confirm_stop_checks: true`, and the
+    audit entry names the checks (`qa_checks_stopped`).
+- **QA is told**: a ReadyBot DM and a phone push to `equipment_qa_stop_recipients`, after the save.
+  - By default the recipients are the QA/quality supervisors. The audience is settable on Settings → ReadyBot messages
+    ("QA checks stopped").
+  - The people who lose the task are never the people on the Equipment screen.
+- **Nothing is paused or deleted by this.** The guard asks and tells; D-218's closing of the open cards still happens
+  on a confirmed change.
+- The Equipment screen asks with `window.confirm`, naming each check. A no keeps the form open, unchanged.
+- `verify:eqqaguard` (19, live + browser at 1280). The control (both guards removed) fails 10.
+- **Still owed by the plant:** set QA-TH-010/011/012 back to active, so tomorrow's Temp & Humidity tasks are raised.

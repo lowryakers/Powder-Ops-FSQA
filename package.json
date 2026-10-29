@@ -128,6 +128,7 @@
     "verify:commshistory": "node scripts/verify-comms-history.mjs",
     "verify:bulkmembers": "node scripts/verify-bulk-members.mjs",
     "verify:envlimits": "node scripts/verify-env-limits.mjs",
+    "verify:eqqaguard": "node scripts/verify-equipment-qa-guard.mjs",
     "verify:bannedcheck": "node scripts/verify-banned-check.mjs",
     "verify:partnerrecon": "node scripts/verify-partner-recon.mjs",
     "verify:recordinterface": "node scripts/verify-record-interface.mjs",
