@@ -132,7 +132,7 @@ t('a score does not satisfy a course that has no test — "trained by nobody" is
   pjBare.status === 400 && /delivered/i.test((pjBareBody?.missing || []).map(m => m.label).join(' ')), JSON.stringify(pjBareBody?.missing));
 const pjDone = await fetch(`${B}/pm/work-orders/${pjWo}/complete-and-recur`, {
   method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok.op}` },
-  body: JSON.stringify({ completed_by: 'Gaston Ruiz', check: { trainer: 'Juan Gonzalez', method: 'verbal' } }),
+  body: JSON.stringify({ completed_by: 'Gaston Ruiz', check: { trainer: 'Juan Gonzalez', method: 'verbal', competence_confirmed: true } }),
 });
 t('with a trainer it completes', pjDone.ok, `${pjDone.status}`);
 const pjRec = db.prepare('SELECT * FROM training_records WHERE course_id = ? ORDER BY created_at DESC LIMIT 1').get(pj.id);

@@ -44,22 +44,49 @@ export const LANGUAGES = [
 export const isLanguage = (l) => LANGUAGES.some(x => x.key === l);
 export const languageLabel = (l) => LANGUAGES.find(x => x.key === l)?.label || 'Not recorded';
 
+/** The words the trainer ticks (D-269). */
+export const COMPETENCE_TICK = 'I confirm this person understands this training.';
+
 /**
- * The trainer's statement of competence, in fixed words. The trainer is named
- * in it; ticking it on the form is the trainer saying it (or the person keying
- * the record in saying the trainer said it — "recorded by" shows which).
+ * The trainer's statement of competence, as stored on the record: the ticked
+ * words with the trainer's name. Ticking it is the trainer saying it (or the
+ * person keying the record in saying the trainer said it — "recorded by"
+ * shows which).
  */
 export function competenceStatement(trainer) {
   const who = String(trainer || '').trim() || 'The trainer';
-  return `${who} trained the people on this record and observed that each one can do the work this training covers.`;
+  return `${who}: "${COMPETENCE_TICK}"`;
 }
 
 /**
- * Verbal and hands-on training are judged by the trainer watching, so they
- * want the statement. A record without it is filed and flagged, not refused:
- * a past session somebody is logging today may have no trainer to ask.
+ * A passed quiz is the other evidence of competence: an in-app test (a test
+ * attempt) or a score at or above the course's pass mark.
  */
-export const wantsCompetence = (method) => method === 'verbal' || method === 'hands_on';
+export function passedQuiz(r, passMark = 80) {
+  if (r?.test_attempt_id) return true;
+  const raw = r?.score;
+  if (raw === null || raw === undefined || String(raw).trim() === '') return false;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= Number(passMark ?? 80);
+}
+
+/**
+ * COMPETENCE IS REQUIRED (D-269, superseding D-264's flag-only rule). A
+ * completion a person files — the record form, the group entry, Group Sheets,
+ * the task card — saves only with a passed quiz OR the trainer's tick. A
+ * failed result is not a completion and is not asked. The importers file
+ * history as it was and are not asked either.
+ */
+export function competenceMissing(r, passMark = 80) {
+  if (r?.status === 'failed') return false;
+  if (passedQuiz(r, passMark)) return false;
+  return !(r?.competence_confirmed || String(r?.competence_statement || '').trim());
+}
+
+export const COMPETENCE_REQUIRED_MSG = `A passed quiz, or the trainer's tick "${COMPETENCE_TICK}", is required to save a training record.`;
+
+/** Kept for the record list's flag: a record with neither reads "no competence statement". */
+export const wantsCompetence = () => true;
 
 /** Problems with the how-it-was-trained fields on a write, in words. */
 export function trainingFieldErrors(b, today) {

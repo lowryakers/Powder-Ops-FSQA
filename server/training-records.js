@@ -11,7 +11,7 @@
 
 import { v4 as uuid } from 'uuid';
 import { plantDateOf } from './plant-clock.js';
-import { competenceStatement, wantsCompetence } from '../shared/training-record-fields.js';
+import { competenceStatement } from '../shared/training-record-fields.js';
 
 export const addMonths = (isoDate, months) => {
   if (!isoDate || !months) return null;
@@ -105,7 +105,7 @@ export function insertCompletion(db, body) {
   const sopId = body.sop_id || (body.course_id ? db.prepare('SELECT sop_id FROM training_courses WHERE id = ?').get(body.course_id)?.sop_id : null) || null;
   // The statement is stored in words, naming the trainer, when the form ticked it.
   const competence = body.competence_statement
-    || (body.competence_confirmed && wantsCompetence(body.method) ? competenceStatement(body.trainer) : null);
+    || (body.competence_confirmed ? competenceStatement(body.trainer) : null);
   db.prepare(`INSERT INTO training_records
     (id, employee_name, employee_id, employee_user_id, training_topic, course_id, sop_id, trainer, method,
      training_date, completion_date, status, passed, score, next_due_date, certificate_url, document_url, gdrive_url, test_attempt_id, notes, sop_revision,

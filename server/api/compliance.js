@@ -20,6 +20,7 @@ import { pmCompletion } from '../pm-completion.js';
 import { moduleUsage, usageText } from '../module-usage.js';
 import { sameNameAccounts, sameNameText } from '../same-name-accounts.js';
 import { editFailedTraining, editFailedText } from '../edit-failed-training.js';
+import { restoreEditFailed } from '../edit-failed-restore.js';
 import { taskRouting, routingText } from '../task-routing.js';
 
 const router = Router();
@@ -341,6 +342,14 @@ router.get('/same-name-accounts', requireRole('admin'), (req, res) => {
 router.get('/edit-failed-training', requireRole('admin'), (req, res) => {
   const r = editFailedTraining(getDb());
   res.json({ ...r, text: editFailedText(r, `live database, ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`) });
+});
+
+// Put back the records the edit bug failed (D-271). Admin, reason required;
+// eligibility is re-derived from the finder, never taken from the request.
+router.post('/edit-failed-training/restore', requireRole('admin'), (req, res) => {
+  const r = restoreEditFailed(getDb(), req.body?.ids, { actor: req.user, reason: req.body?.reason });
+  if (r.error) return res.status(400).json({ error: r.error });
+  res.json(r);
 });
 
 // Stored automatic backups (weekly Friday job writes them to R2 under backups/).

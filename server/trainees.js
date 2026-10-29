@@ -19,6 +19,14 @@ import { logAudit } from './db.js';
 /** SQL: this users row (alias `u`) is a trainee. */
 export const TRAINEE_SQL = (alias = 'u') => `COALESCE(${alias}.not_trainee, 0) = 0`;
 
+/**
+ * SQL: this training_records row (alias `tr`) belongs to a trainee. A record
+ * keyed by account id is matched on the id; one keyed by name only, on the name.
+ */
+export const TRAINEE_RECORD_SQL = (alias = 'tr') => `NOT EXISTS (SELECT 1 FROM users nt
+  WHERE COALESCE(nt.not_trainee, 0) = 1
+    AND (nt.id = ${alias}.employee_user_id OR (${alias}.employee_user_id IS NULL AND LOWER(nt.name) = LOWER(${alias}.employee_name))))`;
+
 export const isTrainee = (u) => !!u && !Number(u.not_trainee);
 
 /** Account ids that are not trainees, for name-keyed reads. */
@@ -108,5 +116,36 @@ export function flagBotAccountsOnce(db, { countMatrix = null, log = console } = 
   logAudit('system', 'update', 'training', null, { event: 'bot_accounts_not_trainees', ...report });
   log.log?.(`[training] ${bots.length} bot/system account(s) marked not a trainee: ${bots.map(b => b.name).join(', ') || '—'}`
     + (before && after ? ` · matrix before ${JSON.stringify(before)} after ${JSON.stringify(after)}` : ''));
+  return report;
+}
+
+/**
+ * Once per database (D-273): an auditor-pass account that duplicates a staff
+ * member's name and has never signed in is not a trainee. Found by what it IS —
+ * role auditor, the same name as another active account that is not an
+ * auditor, no login on record — never by the name itself. It is Carol Pierce's
+ * second account today (D-262); the rule would catch the next one the same way.
+ * It is NOT deactivated or merged: the pass may still be used. A person who
+ * clears the flag in Settings keeps it cleared — the marker stops a re-run.
+ */
+export function flagUnusedAuditorDuplicatesOnce(db, { log = console } = {}) {
+  const MARK = 'training_auditor_duplicates_flagged_v1';
+  if (db.prepare('SELECT value FROM app_settings WHERE key = ?').get(MARK)) return null;
+  if (!db.prepare('SELECT COUNT(*) n FROM users').get().n) return null; // a fresh database seeds its accounts later
+  const rows = db.prepare(`SELECT a.id, a.name FROM users a
+    WHERE a.role = 'auditor' AND COALESCE(a.not_trainee, 0) = 0
+      AND EXISTS (SELECT 1 FROM users b WHERE b.id != a.id AND b.is_active = 1 AND b.role != 'auditor'
+                  AND LOWER(TRIM(b.name)) = LOWER(TRIM(a.name)))
+      AND NOT EXISTS (SELECT 1 FROM audit_log l WHERE l.action = 'login' AND l.entity_type = 'user' AND l.entity_id = a.id)`).all();
+  let closed = 0;
+  db.transaction(() => {
+    for (const r of rows) closed += setNotTrainee(db, r.id, true, {
+      actor: 'system', reason: 'auditor account with the same name as a staff account, never signed in',
+    })?.closed || 0;
+  })();
+  const report = { flagged: rows.map(r => ({ id: r.id, name: r.name })), training_tasks_closed: closed };
+  db.prepare("INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+    .run(MARK, JSON.stringify({ at: new Date().toISOString(), ...report }));
+  log.log?.(`[training] ${rows.length} unused auditor duplicate account(s) marked not a trainee: ${rows.map(r => r.name).join(', ') || '—'}`);
   return report;
 }

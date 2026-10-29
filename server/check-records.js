@@ -151,6 +151,7 @@ export function fileCheckRecord(db, { form, check, wo, by, when, notes }) {
       score: c.score, passed: passed === null ? undefined : passed,
       test_attempt_id: c.test_attempt_id,
       trainer: c.trainer, method: c.method || (c.test_attempt_id ? 'quiz' : null),
+      competence_confirmed: !!c.competence_confirmed,
       notes: notes || null,
       // Whoever pressed Complete keyed it in (D-264).
       recorded_by: by || null,

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { createReadStream } from 'fs';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
-import { nonTraineeIds, nonTraineeNames } from '../trainees.js';
+import { nonTraineeIds, nonTraineeNames, TRAINEE_RECORD_SQL } from '../trainees.js';
 import { personKey } from '../person-key.js';
 import { aiEnabled, generateTestQuestions, readSheetNames } from '../ai.js';
 import { storageEnabled, putStream, putObject, presignGet, deleteObject } from '../storage.js';
@@ -23,7 +23,7 @@ import { certificationFor, certificationRoster } from '../training-certification
 import { questionMisses } from '../training-misses.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
 import { plantDateOf } from '../plant-clock.js';
-import { trainingFieldErrors, competenceStatement, wantsCompetence } from '../../shared/training-record-fields.js';
+import { trainingFieldErrors, competenceStatement, competenceMissing, COMPETENCE_REQUIRED_MSG } from '../../shared/training-record-fields.js';
 import { renderCertificate } from '../certificate-pdf.js';
 
 const router = Router();
@@ -276,6 +276,24 @@ function dcrOrError(db, id) {
   return r ? { id: r.id } : { error: 'That change request was not found.' };
 }
 
+/** The course's pass mark (80 when the course has none, or no course). */
+function passMarkOf(db, courseId) {
+  if (!courseId) return 80;
+  return db.prepare('SELECT passing_score FROM training_courses WHERE id = ?').get(courseId)?.passing_score ?? 80;
+}
+
+/**
+ * Competence is required on a completion a person files (D-269): a passed quiz
+ * or the trainer's tick. A result below the pass mark is a fail, not a
+ * completion, and is not asked.
+ */
+function lacksCompetence(r, passMark) {
+  const scored = r.score !== null && r.score !== undefined && String(r.score).trim() !== '' && Number.isFinite(Number(r.score));
+  if (r.passed === false || r.passed === 0 || (scored && Number(r.score) < passMark)) return false;
+  if (r.status && r.status !== 'completed') return false;
+  return competenceMissing(r, passMark);
+}
+
 router.post('/', (req, res) => {
   const db = getDb();
   if (!req.body.employee_name || (!req.body.training_topic && !req.body.course_id)) {
@@ -286,6 +304,9 @@ router.post('/', (req, res) => {
   const dcr = dcrOrError(db, req.body.dcr_id);
   if (dcr.error) return res.status(400).json({ error: dcr.error });
   const { recorded_by: _rb, recorded_by_id: _rbi, session_id: _s, ...body } = req.body;
+  if (lacksCompetence({ status: 'completed', ...body }, passMarkOf(db, body.course_id))) {
+    return res.status(400).json({ error: COMPETENCE_REQUIRED_MSG, code: 'COMPETENCE_REQUIRED' });
+  }
   const rec = insertCompletion(db, { ...body, dcr_id: dcr.id, ...recorder(req) });
   logAudit(req.user, 'training_created', 'training', rec.id, { employee_name: rec.employee_name, course_id: rec.course_id }, null, null, rec.employee_name);
   res.status(201).json(rec);
@@ -311,13 +332,21 @@ router.post('/bulk-complete', (req, res) => {
   const completion = completion_date || training_date || plantDateOf();
   const how = method || 'verbal';
   const sopRevision = (req.body.sop_revision && String(req.body.sop_revision).trim()) || courseTrainingRevision(db, course_id);
-  const competence = competence_confirmed && wantsCompetence(how) ? competenceStatement(trainer) : null;
-
-  let created = 0;
-  const ids = [];
+  const competence = competence_confirmed ? competenceStatement(trainer) : null;
+  // Competence is required for every attendee (D-269): each one either passed
+  // the quiz (a score at or above the pass mark) or the trainer ticks it.
   // A bot or system account is not a trainee (D-262): named and left out.
   const notTrainee = nonTraineeIds(db);
   const notTraineeNames = nonTraineeNames(db);
+  const isBot = (a) => notTrainee.has(a.employee_user_id) || (!a.employee_user_id && notTraineeNames.has(String(a.employee_name || '').trim().toLowerCase()));
+  const lacking = attendees.filter(a => (a.employee_name || '').trim() && !isBot(a)
+    && lacksCompetence({ score: a.score, competence_confirmed }, pass)).map(a => a.employee_name.trim());
+  if (lacking.length) {
+    return res.status(400).json({ error: `${COMPETENCE_REQUIRED_MSG} Missing for: ${lacking.join(', ')}.`, code: 'COMPETENCE_REQUIRED', lacking });
+  }
+
+  let created = 0;
+  const ids = [];
   const skipped = [];
   const sessionId = uuid();
   const who = recorder(req);
@@ -329,7 +358,7 @@ router.post('/bulk-complete', (req, res) => {
     for (const a of attendees) {
       const name = (a.employee_name || '').trim();
       if (!name) continue;
-      if (notTrainee.has(a.employee_user_id) || (!a.employee_user_id && notTraineeNames.has(name.toLowerCase()))) {
+      if (isBot(a)) {
         skipped.push({ name, why: 'not a trainee (a bot or system account)' });
         continue;
       }
@@ -521,7 +550,13 @@ router.put('/:id', (req, res) => {
   const trainer = b.trainer ?? existing.trainer;
   // Ticking the statement stores it in words; unticking clears it.
   const competence = b.competence_confirmed === undefined ? existing.competence_statement
-    : (b.competence_confirmed && wantsCompetence(method) ? competenceStatement(trainer) : null);
+    : (b.competence_confirmed ? competenceStatement(trainer) : null);
+  if (status === 'completed' && lacksCompetence({
+    status, passed: passedVal, score: b.score ?? existing.score,
+    test_attempt_id: existing.test_attempt_id, competence_statement: competence,
+  }, passMarkOf(db, course_id))) {
+    return res.status(400).json({ error: COMPETENCE_REQUIRED_MSG, code: 'COMPETENCE_REQUIRED' });
+  }
   db.prepare(`UPDATE training_records SET employee_name=?, employee_id=?, employee_user_id=?, training_topic=?, course_id=?, sop_id=?,
     trainer=?, method=?, training_date=?, completion_date=?, status=?, passed=?, score=?, next_due_date=?,
     certificate_url=?, document_url=?, gdrive_url=?, notes=?, sop_revision=?, language=?, competence_statement=?, dcr_id=?,
@@ -762,7 +797,8 @@ router.get('/by-document/:sopId', (req, res) => {
   const db = getDb();
   const courses = db.prepare('SELECT id, code, title, retrain_on_doc_change FROM training_courses WHERE sop_id = ? AND active = 1 ORDER BY title').all(req.params.sopId);
   const completions = db.prepare(`SELECT COUNT(DISTINCT tr.id) c FROM training_records tr JOIN training_courses c ON tr.course_id = c.id
-    WHERE c.sop_id = ? AND c.retrain_on_doc_change = 1 AND tr.superseded = 0 AND tr.status = 'completed'`).get(req.params.sopId).c;
+    WHERE c.sop_id = ? AND c.retrain_on_doc_change = 1 AND tr.superseded = 0 AND tr.status = 'completed'
+      AND ${TRAINEE_RECORD_SQL('tr')}`).get(req.params.sopId).c;
   res.json({ courses, count: courses.length, completions });
 });
 

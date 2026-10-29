@@ -1,5 +1,8 @@
-// Training records an edit turned into a fail (D-267). READ-ONLY: every
-// statement is a SELECT; it writes nothing, not even an audit row.
+// Training records an edit turned into a fail (D-267). The FINDER is READ-ONLY:
+// every statement in editFailedTraining is a SELECT; it writes nothing, not
+// even an audit row. The one writer is restoreEditFailed in
+// edit-failed-restore.js (D-271), kept apart so the report script can import
+// this file against a copy without loading the app's database module.
 //
 // The bug (fixed in D-264): from D-158 (7 Oct 2026) until 29 Oct 2026, saving a
 // training record through Edit sent `passed: null` back, the server read it as
@@ -67,3 +70,4 @@ export function editFailedText(r, source = '') {
   out.push(...(r.check.length ? r.check.map(line) : ['  None.']));
   return out.join('\n');
 }
+

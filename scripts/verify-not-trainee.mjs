@@ -63,7 +63,7 @@ t('the bots are counted as trainees today', BOTS.every(b => beforeUsers.includes
 r = await call('POST', '/training/assign', { course_id: gmp.id, people: [{ user_id: 'nt-bot2' }, { user_id: 'nt-op' }], due_date: '2026-12-01' }, admin.token);
 t('a bot can be assigned training today', r.json?.created?.some(c => c.user_id === 'nt-bot2'), r.text);
 const botTask = r.json?.created?.find(c => c.user_id === 'nt-bot2')?.work_order_id;
-r = await call('POST', '/training/bulk-complete', { course_id: gmp.id, training_date: '2025-02-01', attendees: [{ employee_user_id: 'nt-bot3', employee_name: '*Operations Bot' }] }, admin.token);
+r = await call('POST', '/training/bulk-complete', { course_id: gmp.id, training_date: '2025-02-01', competence_confirmed: true, attendees: [{ employee_user_id: 'nt-bot3', employee_name: '*Operations Bot' }] }, admin.token);
 t('a bot can be recorded as trained today', r.json?.created === 1);
 
 console.log('\n── the deploy ──');
@@ -111,7 +111,7 @@ const roster = (await call('GET', '/training/people', null, admin.token)).json;
 t('By person lists no bot', !roster.some(p => BOTS.includes(p.name)));
 r = await call('POST', '/training/assign', { course_id: gmp.id, people: [{ user_id: 'nt-bot4' }], due_date: '2026-12-01' }, admin.token);
 t('assigning a course to a bot is skipped, by name', !r.json?.created?.length && r.json?.skipped?.[0]?.why?.startsWith('not a trainee'), r.text);
-r = await call('POST', '/training/bulk-complete', { course_id: gmp.id, training_date: '2025-03-01', attendees: [
+r = await call('POST', '/training/bulk-complete', { course_id: gmp.id, training_date: '2025-03-01', competence_confirmed: true, attendees: [
   { employee_user_id: 'nt-bot5', employee_name: '*Pulse Bot' }, { employee_user_id: 'nt-op', employee_name: 'Omar Operator' }] }, admin.token);
 t('Group Training leaves a bot out and records the person', r.json?.created === 1 && r.json?.skipped?.[0]?.name === '*Pulse Bot', r.text);
 const due = (await call('GET', '/training/due', null, admin.token)).json;
