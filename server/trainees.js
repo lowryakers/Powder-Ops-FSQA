@@ -146,6 +146,67 @@ export function flagUnusedAuditorDuplicatesOnce(db, { log = console } = {}) {
   const report = { flagged: rows.map(r => ({ id: r.id, name: r.name })), training_tasks_closed: closed };
   db.prepare("INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
     .run(MARK, JSON.stringify({ at: new Date().toISOString(), ...report }));
-  log.log?.(`[training] ${rows.length} unused auditor duplicate account(s) marked not a trainee: ${rows.map(r => r.name).join(', ') || '—'}`);
+  log.log?.(`[training] ${rows.length} unused auditor duplicate account(s) marked not a trainee`);
+  for (const r of rows) log.log?.(`[training]   not a trainee: ${r.name} (account ${r.id}) — auditor account sharing a staff name, never signed in`);
   return report;
+}
+
+/**
+ * What the D-273 pass did on THIS database, and what the rule would match now
+ * (D-274). READ-ONLY: every statement is a SELECT; it writes nothing, not even an
+ * audit row. Lowry asked to see every account it matched before trusting it.
+ */
+export function auditorDuplicateReport(db) {
+  const safe = (fn, d) => { try { return fn(); } catch { return d; } };
+  const MARK = 'training_auditor_duplicates_flagged_v1';
+  const raw = safe(() => db.prepare('SELECT value FROM app_settings WHERE key = ?').get(MARK)?.value, null);
+  const marker = raw ? safe(() => JSON.parse(raw), null) : null;
+  const describe = (id) => safe(() => db.prepare(`SELECT id, name, username, role, department, is_active,
+      COALESCE(not_trainee, 0) AS not_trainee, created_at FROM users WHERE id = ?`).get(id), null);
+  const twins = db.prepare(`SELECT id, name, role, department FROM users
+    WHERE id != ? AND LOWER(TRIM(name)) = LOWER(TRIM(?)) ORDER BY name`);
+  const changes = db.prepare(`SELECT timestamp, actor, details FROM audit_log
+    WHERE entity_type = 'user' AND entity_id = ? AND details LIKE '%not_trainee%' ORDER BY id`);
+  const logins = db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE action = 'login' AND entity_type = 'user' AND entity_id = ?`);
+  const flagged = (marker?.flagged || []).map(f => {
+    const u = describe(f.id);
+    return {
+      id: f.id, name: u?.name ?? f.name, username: u?.username ?? null, role: u?.role ?? null,
+      department: u?.department ?? null, active: u ? !!u.is_active : null, still_not_trainee: u ? !!u.not_trainee : null,
+      logins_since: safe(() => logins.get(f.id).n, null),
+      same_name_accounts: safe(() => twins.all(f.id, u?.name ?? f.name), []),
+      changes: safe(() => changes.all(f.id), []),
+    };
+  });
+  // What the rule would match today (nothing is changed by asking).
+  const would = safe(() => db.prepare(`SELECT a.id, a.name, a.username FROM users a
+    WHERE a.role = 'auditor'
+      AND EXISTS (SELECT 1 FROM users b WHERE b.id != a.id AND b.is_active = 1 AND b.role != 'auditor'
+                  AND LOWER(TRIM(b.name)) = LOWER(TRIM(a.name)))
+      AND NOT EXISTS (SELECT 1 FROM audit_log l WHERE l.action = 'login' AND l.entity_type = 'user' AND l.entity_id = a.id)
+    ORDER BY a.name`).all(), []);
+  const flaggedIds = new Set(flagged.map(f => f.id));
+  return {
+    ran: !!marker, ran_at: marker?.at || null, flagged,
+    would_match_now: would.map(w => ({ ...w, already_flagged: flaggedIds.has(w.id) })),
+    generated_at: new Date().toISOString(),
+  };
+}
+
+export function auditorDuplicateText(r, source = '') {
+  const out = [`Unused auditor accounts marked not a trainee (D-273)${source ? ` — ${source}` : ''}`, ''];
+  if (!r.ran) out.push('The pass has not run on this database yet (it runs once, when the app starts).');
+  else {
+    out.push(`The pass ran ${r.ran_at} and matched ${r.flagged.length} account(s):`);
+    if (!r.flagged.length) out.push('  None.');
+    for (const f of r.flagged) {
+      out.push(`  ${f.name} — account ${f.id}${f.username ? `, signs in as "${f.username}"` : ''}, role ${f.role || '?'}, ${f.active ? 'active' : 'inactive'}`
+        + `${f.still_not_trainee ? '' : ' — flag since cleared by hand'}${f.logins_since ? ` — has signed in ${f.logins_since} time(s) since` : ''}`);
+      for (const t of f.same_name_accounts) out.push(`      same name: ${t.name} — account ${t.id}, role ${t.role}${t.department ? `, ${t.department}` : ''}`);
+      for (const c of f.changes) out.push(`      change logged ${c.timestamp} by ${c.actor || 'system'}`);
+    }
+  }
+  out.push('', `The rule would match now (${r.would_match_now.length}):`);
+  out.push(...(r.would_match_now.length ? r.would_match_now.map(w => `  ${w.name} — account ${w.id}${w.already_flagged ? ' (already flagged)' : ' (NOT flagged — the pass runs once)'}`) : ['  None.']));
+  return out.join('\n');
 }

@@ -9551,3 +9551,16 @@ Checked each place D-262 named:
 - `docs/training-module-facts.md` is rewritten to describe the module as it now works.
 - `verify:trainingupdate` (43, live + browser). Control: `main` before this — a record with neither saves (201), and
   there is no restore route.
+
+## D-274 — What the auditor-duplicate pass matched is visible; past-dated revisions; when "merge when green" applies (29 Oct 2026)
+
+- **The D-273 pass is reported, account by account.** Settings → Data backup → "Unused auditor accounts marked not a
+  trainee" (`GET /api/compliance/auditor-duplicates`, admin, READ-ONLY) lists every account the pass matched on that
+  database, the same-name accounts beside each, every logged change, sign-ins since, and what the rule would match now.
+  The boot log names each account with its id. Each change was already audited through `setNotTrainee`. Lowry asked to
+  be told before the next deploy if it matched anyone besides Carol Pierce's second account.
+- **Next round: a record dated in the past takes the revision in effect on that date** (from `sop_versions`), not the
+  document's current one. Open in `docs/training-module-facts.md` § 8.
+- **"Merge when green" applies only to changes that touch no records or data.** A change that writes, rewrites,
+  restores, flags or migrates records (a boot pass, a repair, a new required field on a record) waits for Lowry's
+  review even when every test passes. A read-only report, a screen change or docs may be merged once green.

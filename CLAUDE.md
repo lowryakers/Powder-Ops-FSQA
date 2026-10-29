@@ -129,6 +129,11 @@ the seven `where: keychain` forms is producing anything yet. `where` in `form-re
 *produced today* with *intended destination*; for those seven the answers differ, and the first is what an
 auditor asks for. Small Track A fix, not yet made.
 
+## Merging (D-274)
+**"Merge when green" applies only to changes that touch no records or data.** Anything that writes, rewrites,
+restores, flags or migrates records — a boot pass, a repair, a new required field — is opened as a PR and **waits for
+Lowry's review**, even when every test passes. Read-only reports, screen-only changes and docs may merge once green.
+
 ## The NSF audit: official reports, and the two CAR deadlines (D-056)
 Audit 24–26 Aug 2026, auditor Sonya Hess, one visit, two audits: **GMP for Sport (4990682) 3 minor · NSF/ANSI
 455-2 (4990683) 9 minor · 0 major · 0 critical · 0 Not Acceptable.** The official reports arrived 4 September
@@ -6262,7 +6267,8 @@ revoke by DELETE with a reason), `CrisisDrills.jsx`. SOP 501, SQF 2.6.4.2.
   what the D-267 finder lists as the bug's own, re-derived at restore time. Never at boot.
 - **`TRAINEE_RECORD_SQL`** filters training_records rows the way `TRAINEE_SQL` filters users. `tellAssignee` refuses a
   not-a-trainee account. `flagUnusedAuditorDuplicatesOnce` (boot, once) marks an auditor account sharing a staff name
-  and never signed in — Carol Pierce's second account — by facts, never by name.
+  and never signed in — Carol Pierce's second account — by facts, never by name. **What it matched is listed in
+  Settings → Data backup** (`auditorDuplicateReport`, read-only, D-274).
 - A verify that calls a server function which audits must use the app's own connection (`getDb()`), not a second
   `better-sqlite3` handle, or the two lock each other out. `verify:trainingupdate` (43).
 
