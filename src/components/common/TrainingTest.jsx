@@ -71,8 +71,10 @@ export default function TrainingTest({ workOrderId, lang: initialLang = 'en', on
     setBusy(true); setError('');
     try {
       const r = await apiPost(`/pm/work-orders/${workOrderId}/training-test`, { answers, test_id: test.test_id });
+      // The list refreshes when they press Close, not now: refreshing here
+      // removed the passed task's card — and the score with it — before the
+      // trainee had read it (D-264).
       setResult(r);
-      if (r.passed) onDone?.(r);
     } catch (e) { setError(e.message); }
     finally { setBusy(false); }
   };

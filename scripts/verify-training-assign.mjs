@@ -132,11 +132,11 @@ t('a score does not satisfy a course that has no test — "trained by nobody" is
   pjBare.status === 400 && /delivered/i.test((pjBareBody?.missing || []).map(m => m.label).join(' ')), JSON.stringify(pjBareBody?.missing));
 const pjDone = await fetch(`${B}/pm/work-orders/${pjWo}/complete-and-recur`, {
   method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok.op}` },
-  body: JSON.stringify({ completed_by: 'Gaston Ruiz', check: { trainer: 'Juan Gonzalez', method: 'in person' } }),
+  body: JSON.stringify({ completed_by: 'Gaston Ruiz', check: { trainer: 'Juan Gonzalez', method: 'verbal' } }),
 });
 t('with a trainer it completes', pjDone.ok, `${pjDone.status}`);
 const pjRec = db.prepare('SELECT * FROM training_records WHERE course_id = ? ORDER BY created_at DESC LIMIT 1').get(pj.id);
-t('and the record says who delivered it', pjRec?.trainer === 'Juan Gonzalez' && pjRec?.method === 'in person', JSON.stringify({ trainer: pjRec?.trainer, method: pjRec?.method }));
+t('and the record says who delivered it', pjRec?.trainer === 'Juan Gonzalez' && pjRec?.method === 'verbal', JSON.stringify({ trainer: pjRec?.trainer, method: pjRec?.method }));
 
 console.log('\n── the test is taken FROM THE TASK, because the floor has no Training module ──');
 {
@@ -183,7 +183,7 @@ console.log('\n── the test is taken FROM THE TASK, because the floor has no 
   t('…and the task closes with it, so it does not sit on his phone after he passed',
     ok?.work_order_completed === true && db.prepare('SELECT status FROM work_orders WHERE id = ?').get(os.id).status === 'completed');
   const orec = db.prepare("SELECT * FROM training_records WHERE id = ?").get(ok.record_id);
-  t('the record is HIS, with the score and the method', orec?.employee_user_id === 'ta-op2' && orec?.score === 100 && orec?.method === 'online_test',
+  t('the record is HIS, with the score and the method', orec?.employee_user_id === 'ta-op2' && orec?.score === 100 && orec?.method === 'quiz',
     JSON.stringify({ who: orec?.employee_name, score: orec?.score, method: orec?.method }));
   t('and exactly ONE record was filed — not one from the test and another from a completion',
     db.prepare("SELECT COUNT(*) c FROM training_records WHERE course_id = ? AND employee_user_id = 'ta-op2'").get(forklift.id).c === 1);

@@ -17,6 +17,7 @@ import RuleTip from '../common/RuleTip.jsx';
 import CheckFields from '../common/CheckFields.jsx';
 import AtpSwabField from '../common/AtpSwabField.jsx';
 import TrainingTest from '../common/TrainingTest.jsx';
+import { TaskMaterials } from './TrainingHowFields.jsx';
 import { missingForCheck } from '../../../shared/check-forms.js';
 import { OutOfServiceBanner } from '../common/ScaleIncident.jsx';
 import useEnvLimits from '../../lib/useEnvLimits.js';
@@ -464,6 +465,8 @@ function TaskCard({ task, onComplete, onTestPassed, onFlagIssue, onSkipNA, onAss
                 the authorization; the floor has no Training module, and a task
                 telling somebody to take a test they cannot reach is worse than
                 no task. Passing files the record and closes this card. */}
+            {/* The course's videos and handouts, here where the trainee is (D-264). */}
+            {task.check_form?.kind === 'training' && <TaskMaterials workOrderId={task.id} lang={lang} />}
             {task.check_form?.kind === 'training' && task.check_form.has_test && (
               <TrainingTest workOrderId={task.id} lang={lang} onDone={onTestPassed} />
             )}

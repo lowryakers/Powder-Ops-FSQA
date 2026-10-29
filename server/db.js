@@ -4794,6 +4794,34 @@ function runMigrations() {
   addColumnIfMissing('training_records', 'evidence_filename', 'TEXT');
   addColumnIfMissing('training_records', 'evidence_text', 'TEXT');
   addColumnIfMissing('training_records', 'evidence_status', 'TEXT');
+  // How somebody was trained (D-264, SQF 2.9.2.3, FORM 408-02). recorded_by /
+  // recorded_by_id are set by the server from the session and never edited;
+  // created_at is the date recorded. session_id ties a record to the one
+  // training session it came from. Older rows read NULL ("not recorded").
+  addColumnIfMissing('training_records', 'recorded_by', 'TEXT');
+  addColumnIfMissing('training_records', 'recorded_by_id', 'TEXT');
+  addColumnIfMissing('training_records', 'language', 'TEXT');
+  addColumnIfMissing('training_records', 'competence_statement', 'TEXT');
+  addColumnIfMissing('training_records', 'dcr_id', 'TEXT');
+  addColumnIfMissing('training_records', 'session_id', 'TEXT');
+  db.exec(`CREATE TABLE IF NOT EXISTS training_sessions (
+    id TEXT PRIMARY KEY,
+    course_id TEXT NOT NULL,
+    sop_id TEXT,
+    sop_revision TEXT,
+    dcr_id TEXT,
+    training_date TEXT NOT NULL,
+    trainer TEXT,
+    method TEXT,
+    language TEXT,
+    competence_statement TEXT,
+    notes TEXT,
+    attendee_count INTEGER NOT NULL DEFAULT 0,
+    recorded_by TEXT,
+    recorded_by_id TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_training_session ON training_records(session_id)'); } catch { /* ignore */ }
   addColumnIfMissing('training_tests', 'sop_revision', 'TEXT');
   addColumnIfMissing('sop_documents', 'training_revision', 'TEXT');
   addColumnIfMissing('sop_versions', 'minor', 'INTEGER NOT NULL DEFAULT 0');

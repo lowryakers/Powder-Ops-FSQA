@@ -1,3 +1,4 @@
+import { METHOD_KEYS } from './training-record-fields.js';
 /**
  * A scheduled check that files a RECORD — the one interface behind four
  * programs (D-060).
@@ -374,7 +375,8 @@ export function normalizeCheck(form, check) {
       test_attempt_id: String(c.test_attempt_id || '').trim().slice(0, 60) || null,
       score,
       trainer: String(c.trainer || '').trim().slice(0, 120) || null,
-      method: String(c.method || '').trim().slice(0, 60) || null,
+      // One of the plant's four methods, or nothing (D-264); free text is dropped.
+      method: METHOD_KEYS.includes(String(c.method || '').trim()) ? String(c.method).trim() : null,
     };
   }
   if (form.kind === 'stability_pull') {

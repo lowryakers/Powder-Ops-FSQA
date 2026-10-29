@@ -753,6 +753,8 @@ function BulkImportModal({ defaultDocType, onImported, onClose }) {
         doc_type: defaultDocType,
         category: 'quality',
         doc_number: d.doc_number || '',
+        // The version the filename names (D-264) — it used to be dropped, so every import read 1.0.
+        revision: d.revision || '',
         title: d.title || d.filename,
         content: d.content || '',
         pages: d.pages,
@@ -776,7 +778,7 @@ function BulkImportModal({ defaultDocType, onImported, onClose }) {
     setStep('saving');
     try {
       const documents = rows.filter(r => r.include && r.title).map(r => ({
-        doc_type: r.doc_type, doc_number: r.doc_number, title: r.title,
+        doc_type: r.doc_type, doc_number: r.doc_number, title: r.title, revision: r.revision || undefined,
         category: r.category, content: r.content, source_file: r.filename,
       }));
       const res = await apiPost('/documents/bulk', { documents });
@@ -831,6 +833,7 @@ function BulkImportModal({ defaultDocType, onImported, onClose }) {
                         <th className="px-2 py-2 w-8"></th>
                         <th className="text-left px-2 py-2 text-xs font-medium text-gray-500">Type</th>
                         <th className="text-left px-2 py-2 text-xs font-medium text-gray-500 whitespace-nowrap">Doc #</th>
+                        <th className="text-left px-2 py-2 text-xs font-medium text-gray-500">Version</th>
                         <th className="text-left px-2 py-2 text-xs font-medium text-gray-500">Title</th>
                         <th className="text-left px-2 py-2 text-xs font-medium text-gray-500">Category</th>
                         <th className="px-2 py-2 text-xs font-medium text-gray-500 whitespace-nowrap">Pages</th>
@@ -853,6 +856,10 @@ function BulkImportModal({ defaultDocType, onImported, onClose }) {
                               <input value={r.doc_number} onChange={e => setRow(i, { doc_number: e.target.value })} className="w-24 px-1.5 py-1 border border-gray-200 rounded text-xs" />
                             </td>
                             <td className="px-2 py-1.5">
+                              <input value={r.revision} onChange={e => setRow(i, { revision: e.target.value })} placeholder="1.0" data-import-revision
+                                className="w-14 px-1.5 py-1 border border-gray-200 rounded text-xs" />
+                            </td>
+                            <td className="px-2 py-1.5">
                               <input value={r.title} onChange={e => setRow(i, { title: e.target.value })} className="w-full min-w-[180px] px-1.5 py-1 border border-gray-200 rounded text-xs" />
                             </td>
                             <td className="px-2 py-1.5">
@@ -869,7 +876,7 @@ function BulkImportModal({ defaultDocType, onImported, onClose }) {
                           </tr>
                           {previewIdx === i && (
                             <tr>
-                              <td colSpan={7} className="px-3 py-2 bg-gray-50">
+                              <td colSpan={8} className="px-3 py-2 bg-gray-50">
                                 <div className="grid md:grid-cols-2 gap-3">
                                   <div>
                                     <p className="text-[10px] font-medium text-gray-500 mb-1">Original file</p>

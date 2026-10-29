@@ -314,7 +314,9 @@ function guessMeta(filename, text) {
   // the next revision renames it again. Only a trailing v/rev token goes; a
   // title that genuinely ends in a number ("Allergen Control Program 2") stays.
   title = stripRevisionSuffix(title);
-  return { doc_number, title: title.slice(0, 120) };
+  // …and the version it names is KEPT (D-264). It was stripped and thrown away,
+  // so every imported document read "1.0" whatever its file said.
+  return { doc_number, title: title.slice(0, 120), revision: revisionFromFilename(filename) || null };
 }
 
 // POST /extract — parse uploaded documents into draft candidates (does not
@@ -327,10 +329,10 @@ router.post('/extract', receiveImportFiles, async (req, res) => {
   for (const f of req.files) {
     try {
       const { text, pages, isMarkdown } = await extractDocText(f);
-      const { doc_number, title } = guessMeta(f.originalname, text);
+      const { doc_number, title, revision } = guessMeta(f.originalname, text);
       // mammoth/Markdown sources already carry structure — don't re-mangle them.
       const content = isMarkdown ? text : textToMarkdown(text);
-      out.push({ filename: f.originalname, doc_number, title, content, pages, ok: true });
+      out.push({ filename: f.originalname, doc_number, title, revision, content, pages, ok: true });
     } catch (err) {
       out.push({ filename: f.originalname, ok: false, error: err.message });
     }

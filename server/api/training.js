@@ -22,6 +22,8 @@ import { evaluationFor, missingToSign, gradeEvaluation, normalizeAnswers, EVALUA
 import { certificationFor, certificationRoster } from '../training-certification.js';
 import { questionMisses } from '../training-misses.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
+import { plantDateOf } from '../plant-clock.js';
+import { trainingFieldErrors, competenceStatement, wantsCompetence } from '../../shared/training-record-fields.js';
 import { renderCertificate } from '../certificate-pdf.js';
 
 const router = Router();
@@ -264,27 +266,52 @@ router.get('/assignments', (req, res) => {
   })));
 });
 
+// Who keyed a record in, from the session. Never read from the body (D-264).
+const recorder = (req) => ({ recorded_by: req.user?.name || 'ReadyDoc', recorded_by_id: req.user?.id || null });
+
+/** A DCR id must name a Document Change Request, or it is not stored. */
+function dcrOrError(db, id) {
+  if (!id) return { id: null };
+  const r = db.prepare("SELECT id FROM qms_records WHERE id = ? AND record_type = 'document_change_request'").get(id);
+  return r ? { id: r.id } : { error: 'That change request was not found.' };
+}
+
 router.post('/', (req, res) => {
   const db = getDb();
   if (!req.body.employee_name || (!req.body.training_topic && !req.body.course_id)) {
     return res.status(400).json({ error: 'employee_name and a course (or topic) are required' });
   }
-  const rec = insertCompletion(db, req.body);
+  const errors = trainingFieldErrors(req.body, plantDateOf());
+  if (errors.length) return res.status(400).json({ error: errors.join(' ') });
+  const dcr = dcrOrError(db, req.body.dcr_id);
+  if (dcr.error) return res.status(400).json({ error: dcr.error });
+  const { recorded_by: _rb, recorded_by_id: _rbi, session_id: _s, ...body } = req.body;
+  const rec = insertCompletion(db, { ...body, dcr_id: dcr.id, ...recorder(req) });
   logAudit(req.user, 'training_created', 'training', rec.id, { employee_name: rec.employee_name, course_id: rec.course_id }, null, null, rec.employee_name);
   res.status(201).json(rec);
 });
 
 // Record a small-group training + test in one shot: one completion per attendee.
+// Record one training session for many people at once (D-264): the session is
+// stored once, and each attendee gets their own record pointing back to it.
+// Group Training and Group Sheets both come through here.
 router.post('/bulk-complete', (req, res) => {
   const db = getDb();
-  const { course_id, training_date, completion_date, trainer, method, attendees } = req.body;
+  const { course_id, training_date, completion_date, trainer, method, attendees, language, competence_confirmed, notes } = req.body;
   if (!course_id || !Array.isArray(attendees) || attendees.length === 0) {
     return res.status(400).json({ error: 'course_id and at least one attendee are required' });
   }
-  const course = db.prepare('SELECT title, passing_score FROM training_courses WHERE id = ?').get(course_id);
+  const errors = trainingFieldErrors(req.body, plantDateOf());
+  if (errors.length) return res.status(400).json({ error: errors.join(' ') });
+  const dcr = dcrOrError(db, req.body.dcr_id);
+  if (dcr.error) return res.status(400).json({ error: dcr.error });
+  const course = db.prepare('SELECT title, passing_score, sop_id FROM training_courses WHERE id = ?').get(course_id);
   if (!course) return res.status(404).json({ error: 'Course not found' });
   const pass = course.passing_score ?? 80;
-  const completion = completion_date || training_date || new Date().toISOString().slice(0, 10);
+  const completion = completion_date || training_date || plantDateOf();
+  const how = method || 'verbal';
+  const sopRevision = (req.body.sop_revision && String(req.body.sop_revision).trim()) || courseTrainingRevision(db, course_id);
+  const competence = competence_confirmed && wantsCompetence(how) ? competenceStatement(trainer) : null;
 
   let created = 0;
   const ids = [];
@@ -292,7 +319,13 @@ router.post('/bulk-complete', (req, res) => {
   const notTrainee = nonTraineeIds(db);
   const notTraineeNames = nonTraineeNames(db);
   const skipped = [];
+  const sessionId = uuid();
+  const who = recorder(req);
   const tx = db.transaction(() => {
+    db.prepare(`INSERT INTO training_sessions (id, course_id, sop_id, sop_revision, dcr_id, training_date, trainer, method, language,
+        competence_statement, notes, recorded_by, recorded_by_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(sessionId, course_id, course.sop_id || null, sopRevision || null, dcr.id, training_date || completion, trainer || null, how,
+        language || null, competence, notes || null, who.recorded_by, who.recorded_by_id);
     for (const a of attendees) {
       const name = (a.employee_name || '').trim();
       if (!name) continue;
@@ -304,19 +337,49 @@ router.post('/bulk-complete', (req, res) => {
       const rec = insertCompletion(db, {
         employee_name: name, employee_user_id: a.employee_user_id || null,
         course_id, course_title: course.title, status: 'completed',
-        method: method || 'in_person', trainer: trainer || null,
+        method: how, trainer: trainer || null,
         training_date: training_date || completion, completion_date: completion,
         score, passed: score == null ? true : score >= pass,
+        sop_revision: sopRevision, language: language || null, competence_statement: competence,
+        dcr_id: dcr.id, session_id: sessionId, ...who,
       });
       ids.push(rec.id);
       created++;
     }
+    db.prepare('UPDATE training_sessions SET attendee_count = ? WHERE id = ?').run(created, sessionId);
   });
   tx();
-  logAudit(req.user, 'training_group_completed', 'training', null, { course_id, count: created, ...(skipped.length ? { skipped } : {}) }, null, null, course.title);
+  logAudit(req.user, 'training_group_completed', 'training', sessionId, { course_id, count: created, session_id: sessionId, ...(skipped.length ? { skipped } : {}) }, null, null, course.title);
   // ids are returned so the client can attach the signed sign-in sheet to
   // every record it just created in one upload.
-  res.json({ created, ids, skipped });
+  res.json({ created, ids, skipped, session_id: sessionId });
+});
+
+// Training sessions, newest first, each with who attended (D-264). "Show me the
+// attendance for the 12 March GMP refresher" is this list.
+router.get('/sessions', (req, res) => {
+  const db = getDb();
+  const limit = Math.min(Number(req.query.limit) || 200, 500);
+  const rows = db.prepare(`SELECT s.*, c.code AS course_code, c.title AS course_title, d.doc_number, d.title AS doc_title,
+      q.record_number AS dcr_number
+    FROM training_sessions s
+    LEFT JOIN training_courses c ON c.id = s.course_id
+    LEFT JOIN sop_documents d ON d.id = s.sop_id
+    LEFT JOIN qms_records q ON q.id = s.dcr_id
+    ORDER BY s.training_date DESC, s.created_at DESC LIMIT ?`).all(limit);
+  const att = db.prepare('SELECT id, employee_name, employee_user_id, passed, score, superseded FROM training_records WHERE session_id = ? ORDER BY employee_name');
+  res.json(rows.map(r => ({ ...r, attendees: att.all(r.id) })));
+});
+
+// Document Change Requests to link a record or a session to, newest first.
+router.get('/change-requests', (req, res) => {
+  const db = getDb();
+  const rows = db.prepare(`SELECT id, record_number, record_date, data FROM qms_records
+    WHERE record_type = 'document_change_request' ORDER BY COALESCE(record_date, created_at) DESC LIMIT 300`).all();
+  res.json(rows.map(r => {
+    const d = (() => { try { return JSON.parse(r.data || '{}') || {}; } catch { return {}; } })();
+    return { id: r.id, record_number: r.record_number, record_date: r.record_date, doc_number: d.doc_number || null, doc_name: d.doc_name || null, revision: d.revision || null };
+  }));
 });
 
 // ── Bulk group sheets: parse ~50 filenames in one call ────────────────────────
@@ -436,26 +499,50 @@ router.put('/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM training_records WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
   const b = req.body;
+  const errors = trainingFieldErrors(b, plantDateOf());
+  if (errors.length) return res.status(400).json({ error: errors.join(' ') });
+  // The date recorded and who recorded it are the system's (D-264): refused, not
+  // silently dropped, so a client that sends them learns they did not save.
+  for (const k of ['recorded_by', 'recorded_by_id', 'created_at', 'session_id']) {
+    if (b[k] !== undefined && b[k] !== existing[k]) return res.status(400).json({ error: `${k.replace(/_/g, ' ')} is set by ReadyDoc and cannot be edited.`, code: 'SYSTEM_SET' });
+  }
+  const dcr = b.dcr_id !== undefined ? dcrOrError(db, b.dcr_id) : { id: existing.dcr_id };
+  if (dcr.error) return res.status(400).json({ error: dcr.error });
   const course_id = b.course_id !== undefined ? b.course_id : existing.course_id;
   const completion = b.completion_date !== undefined ? b.completion_date : existing.completion_date;
   // A record whose result did not pass is `failed`, never `completed` (D-158):
   // an edit cannot turn a fail into a line the matrix reads as trained.
-  const passedVal = b.passed !== undefined ? (b.passed ? 1 : 0) : existing.passed;
+  // A blank stays blank (D-264): the Edit form sends the record back whole, and
+  // reading `passed: null` as 0 turned every untested record it saved into a fail.
+  const passedVal = b.passed === undefined ? existing.passed : (b.passed === null || b.passed === '' ? null : (b.passed ? 1 : 0));
   const status = (b.status || existing.status) === 'completed' && passedVal === 0 ? 'failed' : (b.status || existing.status);
   const next_due = status === 'failed' ? null : (dueDateFor(db, course_id, completion) ?? existing.next_due_date);
+  const method = b.method ?? existing.method;
+  const trainer = b.trainer ?? existing.trainer;
+  // Ticking the statement stores it in words; unticking clears it.
+  const competence = b.competence_confirmed === undefined ? existing.competence_statement
+    : (b.competence_confirmed && wantsCompetence(method) ? competenceStatement(trainer) : null);
   db.prepare(`UPDATE training_records SET employee_name=?, employee_id=?, employee_user_id=?, training_topic=?, course_id=?, sop_id=?,
     trainer=?, method=?, training_date=?, completion_date=?, status=?, passed=?, score=?, next_due_date=?,
-    certificate_url=?, document_url=?, gdrive_url=?, notes=?, updated_at=datetime('now') WHERE id=?`).run(
+    certificate_url=?, document_url=?, gdrive_url=?, notes=?, sop_revision=?, language=?, competence_statement=?, dcr_id=?,
+    updated_at=datetime('now') WHERE id=?`).run(
     b.employee_name || existing.employee_name, b.employee_id ?? existing.employee_id, b.employee_user_id ?? existing.employee_user_id,
     b.training_topic ?? existing.training_topic, course_id, b.sop_id ?? existing.sop_id,
-    b.trainer ?? existing.trainer, b.method ?? existing.method,
+    trainer, method,
     b.training_date || existing.training_date, completion, status,
     passedVal, b.score ?? existing.score, next_due,
     b.certificate_url ?? existing.certificate_url, b.document_url ?? existing.document_url,
-    b.gdrive_url ?? existing.gdrive_url, b.notes ?? existing.notes, req.params.id);
-  if (status === 'completed') supersedeOlder(db, b.employee_name || existing.employee_name, course_id, req.params.id, b.employee_user_id ?? existing.employee_user_id ?? null);
-  logAudit(req.user, 'training_updated', 'training', req.params.id, { employee_name: b.employee_name || existing.employee_name }, null, null, b.employee_name || existing.employee_name);
-  res.json(db.prepare('SELECT * FROM training_records WHERE id = ?').get(req.params.id));
+    b.gdrive_url ?? existing.gdrive_url, b.notes ?? existing.notes,
+    b.sop_revision !== undefined ? (b.sop_revision || null) : existing.sop_revision,
+    b.language !== undefined ? (b.language || null) : existing.language, competence, dcr.id, req.params.id);
+  supersedeOlder(db, b.employee_name || existing.employee_name, course_id, req.params.id, b.employee_user_id ?? existing.employee_user_id ?? null);
+  const after = db.prepare('SELECT * FROM training_records WHERE id = ?').get(req.params.id);
+  const changed = {};
+  for (const k of ['training_date', 'completion_date', 'trainer', 'method', 'language', 'competence_statement', 'dcr_id', 'sop_revision', 'score', 'passed', 'status']) {
+    if (existing[k] !== after[k]) changed[k] = { from: existing[k], to: after[k] };
+  }
+  logAudit(req.user, 'training_updated', 'training', req.params.id, { employee_name: after.employee_name, changed }, null, null, after.employee_name);
+  res.json(after);
 });
 
 // ── REQUIREMENT MATRIX ───────────────────────────────────────────────────────
@@ -861,6 +948,7 @@ router.post('/import', (req, res) => {
         completion_date: date || undefined,
         status: 'completed', passed: true,
         method: 'external',
+        recorded_by: req.user?.name || null, recorded_by_id: req.user?.id || null,
         trainer: idx.trainer >= 0 ? (r[idx.trainer] || '').trim() || null : null,
         score: idx.score >= 0 && r[idx.score] ? parseFloat(r[idx.score]) : null,
         notes: idx.notes >= 0 ? (r[idx.notes] || '').trim() || null : null,
@@ -1137,8 +1225,8 @@ router.post('/import-log/commit', logUpload.single('file'), (req, res) => {
   catch (e) { return res.status(400).json({ error: `Could not read that spreadsheet: ${e.message}` }); }
 
   const ins = db.prepare(`INSERT INTO training_records
-    (id, employee_name, employee_id, training_topic, trainer, training_date, completion_date, status, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'completed', ?)`);
+    (id, employee_name, employee_id, training_topic, trainer, training_date, completion_date, status, notes, recorded_by, recorded_by_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?)`);
   db.transaction(() => {
     for (const r of plan.create) {
       // Say when the date came from the sheet's period rather than the cell.
@@ -1146,7 +1234,7 @@ router.post('/import-log/commit', logUpload.single('file'), (req, res) => {
       const note = [`Imported from the Training Log (${r.source})`,
         r.approximate ? 'date approximate — taken from the sheet period' : null]
         .filter(Boolean).join(' · ');
-      ins.run(uuid(), r.employee_name, r.employee_id, r.training_topic, r.trainer, r.training_date, r.training_date, note);
+      ins.run(uuid(), r.employee_name, r.employee_id, r.training_topic, r.trainer, r.training_date, r.training_date, note, req.user?.name || null, req.user?.id || null);
     }
   })();
   logAudit(req.user, 'create', 'training_record', null,
@@ -1347,8 +1435,8 @@ router.post('/import/scans/commit', requireRole('admin'), zipScanUpload.single('
   };
 
   const insert = db.prepare(`INSERT INTO training_records
-    (id, employee_name, employee_user_id, training_topic, course_id, training_date, completion_date, status, passed, method, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'completed', 1, 'scanned test', ?)`);
+    (id, employee_name, employee_user_id, training_topic, course_id, training_date, completion_date, status, passed, method, notes, recorded_by, recorded_by_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'completed', 1, 'quiz', ?, ?, ?)`);
   const getUser = db.prepare('SELECT id, name FROM users WHERE id = ? AND is_active = 1');
 
   // The rows are written first, in one transaction, so a storage hiccup can
@@ -1386,7 +1474,7 @@ router.post('/import/scans/commit', requireRole('admin'), zipScanUpload.single('
 
       const id = uuid();
       insert.run(id, personName, userId, course.title, course.id, f.date, f.date,
-        `Imported from the scanned test "${f.filename}".`);
+        `Imported from the scanned test "${f.filename}".`, req.user?.name || null, req.user?.id || null);
       summary.created++;
       summary.created_rows.push({ id, name: personName, course: course.title, date: f.date, filename: f.filename });
       pending.push({ id, f });

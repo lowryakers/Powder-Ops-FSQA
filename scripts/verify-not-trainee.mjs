@@ -165,7 +165,7 @@ await page.goto(`http://localhost:${PORT}/manifest.webmanifest`);
 await page.evaluate(([tok, u]) => { localStorage.setItem('auth_token', tok); localStorage.setItem('auth_user', JSON.stringify(u)); }, [admin.token, admin.user]);
 await page.goto(`http://localhost:${PORT}/?tab=training`);
 await page.getByRole('button', { name: 'Group Training' }).click({ timeout: 20000 }).catch(() => {});
-await page.getByText('Record group training').waitFor({ timeout: 10000 }).catch(() => {});
+await page.getByText('Record a training session').waitFor({ timeout: 10000 }).catch(() => {});
 const listed = await page.locator('div.fixed').last().innerText().catch(() => '');
 t('Group Training does not offer a bot as an attendee', /Omar Operator/.test(listed) && !/\*Jarvis|\*Pulse Bot/.test(listed), listed.slice(0, 120));
 await browser.close();

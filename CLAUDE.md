@@ -6235,6 +6235,22 @@ navigated that narrow column to the **whole app** — sidebar and all — inside
 - "Accounts that share a name" (Settings → Data backup; `report:samename`) is READ-ONLY. Never merge accounts from it.
 - `verify:nottrainee` (38; control fails 3). The Training review is `docs/training-module-facts.md`.
 
+## A training record says how somebody was trained; one session records many (D-264)
+`shared/training-record-fields.js` (`METHODS`, `LEGACY_METHODS`, `LANGUAGES`, `competenceStatement`, `wantsCompetence`,
+`trainingFieldErrors`), `training_records.recorded_by` / `recorded_by_id` / `language` / `competence_statement` / `dcr_id`
+/ `session_id`, `training_sessions`, `GET /training/sessions`, `GET /training/change-requests`,
+`GET /pm/work-orders/:id/training-materials`, `TrainingHowFields.jsx` (`HowTrainedFields`, `HowChips`, `TrainingSessions`,
+`TaskMaterials`).
+- **`recorded_by` comes from the session, never the body**, on every writer (pass it into `insertCompletion`). PUT refuses
+  it and `created_at` (`400 SYSTEM_SET`). A new training writer must set it.
+- **Four methods only for new writes**; old values stay as filed and read through `methodLabel`. Never convert them.
+- **The competence statement is flagged when missing, never required.**
+- **The latest date trained is current** (`supersedeOlder` ignores which record was filed last). Group Training and
+  Group Sheets both save a `training_sessions` row.
+- **`passed: null` on PUT stays null** — the Edit form sends the record back whole.
+- The document importer keeps the filename's version (`guessMeta` returns `revision`).
+- `verify:trainingrecords` (41; control fails 2).
+
 ## Who was active and when: the append-only activity log (D-261, `server/user-activity.js`)
 - **`user_activity` is APPEND-ONLY** (triggers refuse UPDATE/DELETE). Never delete from it; `check:useractivity` scans for one.
 - **It never writes to `audit_log`.** It listens via `setAuditListener` (db.js), after the insert, and cannot fail it.
