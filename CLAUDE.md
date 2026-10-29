@@ -6272,6 +6272,9 @@ revoke by DELETE with a reason), `CrisisDrills.jsx`. SOP 501, SQF 2.6.4.2.
   record must send `competence_confirmed: true` or a passing score.
 - **`PeoplePicker`** (TrainingHowFields.jsx) is the one picker for both group screens: department + role filters,
   Select all, untick. No automatic "affected by this revision" picking until course-document links are fixed.
+- **A quiz attempt is proof only if it is that person's PASS at that course (D-276)** — `attemptProblem` in
+  `server/training-records.js`, called by POST/PUT `/api/training` and the task card; `400 ATTEMPT_MISMATCH` otherwise.
+  `verify:attemptproof` (12).
 - **Group Sheets uses `HowTrainedFields`** like the other two forms; recorded date/by stay ReadyDoc's.
 - **Restore** (`server/edit-failed-restore.js`, `POST /compliance/edit-failed-training/restore`, admin, reason): only
   what the D-267 finder lists as the bug's own, re-derived at restore time. Never at boot.
