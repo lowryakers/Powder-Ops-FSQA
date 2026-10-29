@@ -171,7 +171,9 @@ Who has it:
   Test Runner, and accounts named with the "*" bot prefix. A new bot is flagged when its first token is made.
 - **An unused auditor account that duplicates a staff member's name** (D-273), set once per database: role auditor, the
   same name as an active staff account, and never signed in. This is **Carol Pierce's second account**. It is found by
-  those facts, never by her name, and it is not deactivated or merged.
+  those facts, never by her name, and it is not deactivated or merged. **Settings → Data backup → "Unused auditor
+  accounts marked not a trainee"** lists every account it matched on that database, each change it logged, and what
+  the rule would match now (D-274).
 - Anyone else ticked by hand in Settings → Users.
 
 Other auditor-pass accounts are still counted while they are active (a pending decision). "Accounts that share a
@@ -236,6 +238,9 @@ missed it, and at least 60% of those chose the same other answer. It never chang
 7. **Unused values.** `status` allows `scheduled` / `in_progress` / `overdue` but nothing writes them; `employee_id` is a
    leftover; there are four evidence fields.
 8. **Nothing records that a video was watched.** Read-and-sign or a test is what records the training.
+9. **A record dated in the past takes the document's CURRENT revision** (next round, D-274). When the date trained
+   is in the past, the record should carry the revision that was in effect on that date (from `sop_versions`), not
+   today's. Until then, type the right revision into the revision box when logging an old session.
 
 ---
 

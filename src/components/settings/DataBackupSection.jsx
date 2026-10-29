@@ -109,6 +109,13 @@ function usageSummary(r) {
   </>;
 }
 
+function auditorDupSummary(r) {
+  if (!r.ran) return 'The pass has not run on this database yet.';
+  const others = r.flagged.length;
+  return <>{red(others > 1, `${plural(others, 'account')} marked not a trainee`)} on {String(r.ran_at).slice(0, 10)}
+    {r.flagged.length ? ` (${r.flagged.map(f => f.name).join(', ')})` : ''} · the rule would match {r.would_match_now.length} now</>;
+}
+
 function sameNameSummary(r) {
   const n = r.groups.length;
   return n ? red(true, `${plural(n, 'name')} with more than one account: ${r.groups.map(g => g.accounts[0]?.name).join(', ')}`) : 'Every account has its own name.';
@@ -195,6 +202,8 @@ export default function DataBackupSection() {
       blurb="Which parts of ReadyDoc people actually use, counted from the audit trail since go-live. It also checks for invented maintenance history from the demo build and for accounts that still sign in with a PIN." />
     <ReadOnlyReport id="task-routing" path="/compliance/task-routing" title="Who sees which tasks" summary={routingSummary}
       blurb="What lands on each team's task list, and every schedule or card that is probably on the wrong one — machine PMs on QA, old room checklists, cards left behind — with where each is changed. Also each person's card count." />
+    <ReadOnlyReport id="auditor-dups" path="/compliance/auditor-duplicates" title="Unused auditor accounts marked not a trainee" summary={auditorDupSummary}
+      blurb="An auditor account with the same name as a staff member, never signed in, is left out of training (D-273). This lists every account that rule matched here, each change it logged, and what it would match now." />
     <ReadOnlyReport id="same-name" path="/compliance/same-name-accounts" title="Accounts that share a name" summary={sameNameSummary}
       blurb="People with more than one account under the same name, side by side: which one signs in, how each was created, and what is filed against each. Nothing is merged." />
     <ReadOnlyReport id="edit-fails" path="/compliance/edit-failed-training" title="Training records an edit turned into a fail" summary={editFailSummary}

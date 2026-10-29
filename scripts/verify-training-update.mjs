@@ -147,6 +147,18 @@ t('an auditor with a name of their own is not', nt('tu-ann') === 0);
 t('an auditor duplicate that has signed in is not', nt('tu-dan2') === 0);
 t('the account stays active (nothing deactivated)', adb.prepare('SELECT is_active a FROM users WHERE id = ?').get('tu-cara2').a === 1);
 t('it runs once', flagUnusedAuditorDuplicatesOnce(adb, { log: {} }) === null);
+{
+  const auditBefore = adb.prepare('SELECT COUNT(*) n FROM audit_log').get().n;
+  const rep = await call('GET', '/compliance/auditor-duplicates', null, admin.token);
+  t('the report lists every account the pass matched — here only the duplicate', rep.status === 200
+    && rep.json?.flagged?.map(f => f.id).join() === 'tu-cara2', JSON.stringify(rep.json?.flagged)?.slice(0, 200));
+  const f0 = rep.json?.flagged?.[0];
+  t('…with the staff account it duplicates and the change it logged', f0?.same_name_accounts?.some(x => x.id === 'tu-cara1') && f0?.changes?.length >= 1);
+  t('…and what the rule would match now', rep.json?.would_match_now?.some(w => w.id === 'tu-cara2' && w.already_flagged));
+  t('…in plain text', /Cara Pierce — account tu-cara2/.test(rep.json?.text || ''));
+  t('running the report writes nothing', adb.prepare('SELECT COUNT(*) n FROM audit_log').get().n === auditBefore);
+  t('the report is admin-only', (await call('GET', '/compliance/auditor-duplicates', null, sup.token)).status === 403);
+}
 adb.close();
 H_DB = new Database(DBP);
 
