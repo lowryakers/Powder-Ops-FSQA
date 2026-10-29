@@ -9564,3 +9564,33 @@ Checked each place D-262 named:
 - **"Merge when green" applies only to changes that touch no records or data.** A change that writes, rewrites,
   restores, flags or migrates records (a boot pass, a repair, a new required field on a record) waits for Lowry's
   review even when every test passes. A read-only report, a screen change or docs may be merged once green.
+
+## D-275 — Packaging, gloves and poly bags carry proof of a Certificate of Compliance on every receipt (29 Oct 2026)
+
+**Asked by Lowry:** "We need to have proof that we are checking all our incoming packaging, gloves and poly bags to have
+a certificate of compliance." Answered: (1) proof is EITHER the certificate that came with the delivery OR the supplier's
+current one on file in Supplier Qualification; (2) QA keeps a list of part numbers; (3) sign-off waits for it.
+
+- **FORM 204-01 already asks "Certificate of Conformance" (Yes / No / N/A) and a tick is not proof.** The receiver decided
+  whether it applied and nothing of the certificate was kept. The question's wording is unchanged; what is new is the
+  list, the proof record and the sign-off gate.
+- **QA's list, the lab-test shape** (`receiving_coc_items`, `server/coc-items.js`): part number, description, type
+  (Packaging / Gloves / Poly bags / Other food-contact material). QA or an admin edits it (`canSetLabTests`); the warehouse
+  reads it (Receiving → **CoC Items**). Matched on part # only, case and spaces ignored. Retired, never deleted.
+- **A receiving line for a listed part makes the CoC REQUIRED on its inspection**, derived on every read
+  (`cocState` in `server/coc-state.js`), never stored.
+- **Proof is a row** (`receiving_coc_proofs`): `attached` (photo or PDF, stored, SHA-256, who and when) or `on_file`
+  (a `supplier_files` certificate, refused if it expired before the inspection date; one with no expiry recorded is
+  accepted and says so). Removing one needs a reason and keeps the row. Nothing changes once the checklist is signed.
+- **Sign-off is refused (`400 COC_REQUIRED`)** while a listed part has no proof, and while the form's own CoC line says
+  N/A with a CoC owed or anything but Yes once all are proved. The sign-off audit names the proofs it relied on.
+- **Seen where it is acted on**: the CoC section on the checklist, a "CoC needed" chip on the Inspections list, and a
+  bell line for QA and the warehouse (`coc-missing`). Purchasing is still told by the form's existing No escalation.
+- **The list starts EMPTY.** Nothing is asked until QA adds the part numbers — the app does not guess which parts are
+  packaging, gloves or poly bags.
+- **Touches records**: new tables and a new sign-off refusal. Opened for Lowry's review under D-274; not merged by me.
+- **For Document Control**: SOP 205 / FORM 204-01 now carry a requirement the paper does not state (proof per listed part,
+  sign-off waits). A note is added to `docs/v2/queued/dcr-form-204-01-v2.md`.
+- `verify:receivingcoc` (38, live + S3 stand-in + browser at 1280 and 360). Control: switching off the sign-off gate signs
+  a receipt with no CoC; the run fails from that check on.
+

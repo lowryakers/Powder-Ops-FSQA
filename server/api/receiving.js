@@ -18,6 +18,12 @@ import { sendEscalation } from '../receiving-notify.js';
 import { FILM_REVISION } from '../film-pouch-checklist.js';
 import { nextInspectionNo } from '../inspection-no.js';
 import { labTestFor, alertDetail, itemKey } from '../lab-test-items.js';
+import { readFileSync } from 'fs';
+import { createHash } from 'crypto';
+import { storageEnabled, putObject, presignGet } from '../storage.js';
+import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
+import { cocSignRefusals, isCocCategory, onFileCurrent, COC_CATEGORIES } from '../coc-items.js';
+import { cocState } from '../coc-state.js';
 
 const router = Router();
 const MODULE = 'receiving-log';
@@ -192,6 +198,7 @@ router.get('/checklists', (req, res) => {
     const c = shapeChecklist(r);
     return {
       ...c,
+      coc_missing: cocState(db, c.inspection_no, c.inspection_date).missing,
       // Enough to decide which one to pick up without opening each in turn.
       answered: Object.keys(c.answers).length,
       total: c.unanswered.length + Object.keys(c.answers).length,
@@ -211,7 +218,10 @@ router.get('/checklist/:inspectionNo', (req, res) => {
   const no = req.params.inspectionNo;
   const row = db.prepare('SELECT * FROM receiving_checklists WHERE inspection_no = ?').get(no);
   const lines = db.prepare('SELECT * FROM receiving_log WHERE inspection_no = ? ORDER BY created_at').all(no).map(shape);
-  res.json({ checklist: shapeChecklist(row), lines, form: CHECKLIST });
+  res.json({
+    checklist: shapeChecklist(row), lines, form: CHECKLIST,
+    coc: { ...cocState(db, no, row?.inspection_date), storage_enabled: storageEnabled() },
+  });
 });
 
 const HEADER_COLS = ['po_number', 'truck_number', 'pallet_count', 'driver_name', 'vendor', 'vendor_lot', 'customer_number', 'inspection_date', 'system_status'];
@@ -418,12 +428,22 @@ router.post('/checklist/:inspectionNo/review', (req, res) => {
     });
   }
 
+  // THE CERTIFICATE OF COMPLIANCE IS PROOF, NOT A TICK (D-275). A listed part
+  // on this inspection with no CoC attached or linked holds the sign-off.
+  const coc = cocState(db, row.inspection_no, row.inspection_date);
+  const cocRefusals = cocSignRefusals(coc.required, answers);
+  if (cocRefusals.length) {
+    return res.status(400).json({ error: cocRefusals.join(' '), code: 'COC_REQUIRED', coc_missing: coc.required.filter(r => r.status === 'missing') });
+  }
+
   db.prepare(`UPDATE receiving_checklists SET reviewed_by = ?, reviewed_at = datetime('now'),
     system_status = COALESCE(?, system_status), updated_at = datetime('now') WHERE id = ?`)
     .run(req.user.name, req.body?.system_status || null, row.id);
   const updated = db.prepare('SELECT * FROM receiving_checklists WHERE id = ?').get(row.id);
   logAudit(req.user, 'receiving_checklist_reviewed', 'receiving_checklist', row.id,
-    { inspection_no: row.inspection_no, system_status: updated.system_status }, row, updated, row.inspection_no);
+    { inspection_no: row.inspection_no, system_status: updated.system_status,
+      ...(coc.required.length ? { coc: coc.required.map(r => ({ part_number: r.part_number, proofs: r.proofs.map(p => p.id) })) } : {}) },
+    row, updated, row.inspection_no);
   res.json(shapeChecklist(updated));
 });
 
@@ -498,6 +518,161 @@ router.delete('/lab-test-items/:id', (req, res) => {
   db.prepare("UPDATE receiving_lab_test_items SET is_active = 0, updated_at = datetime('now') WHERE id = ?").run(row.id);
   logAudit(req.user, 'update', 'receiving_lab_test_item', row.id, { action: 'retired' }, row, null, row.part_number);
   res.json({ ok: true });
+});
+
+/* ── Certificates of Compliance (D-275) ───────────────────────────────────
+ *
+ * QA's list of items that need a CoC on every receipt, and the proof per
+ * inspection. Declared BEFORE `/:id`. Reading is open to the module; the list
+ * is QA's (the lab-test rule), the proof is the receiver's.
+ */
+const COC_ONLY_QA = 'Only QA can change which items need a Certificate of Compliance.';
+router.get('/coc-items', (req, res) => {
+  const rows = getDb().prepare('SELECT * FROM receiving_coc_items ORDER BY is_active DESC, part_number').all();
+  res.json({ items: rows.map(r => ({ ...r, is_active: !!r.is_active })), categories: COC_CATEGORIES, can_edit: canSetLabTests(req.user) });
+});
+
+router.post('/coc-items', (req, res) => {
+  if (!canSetLabTests(req.user)) return res.status(403).json({ error: COC_ONLY_QA });
+  const db = getDb();
+  const part = String(req.body?.part_number || '').trim();
+  if (!part) return res.status(400).json({ error: 'A part # is required — the list is matched on the item code.' });
+  const category = req.body?.category || 'other';
+  if (!isCocCategory(category)) return res.status(400).json({ error: 'Category must be Packaging, Gloves, Poly bags or Other.' });
+  const existing = db.prepare('SELECT * FROM receiving_coc_items WHERE UPPER(TRIM(part_number)) = ?').get(itemKey(part));
+  if (existing) {
+    db.prepare(`UPDATE receiving_coc_items SET part_description = ?, category = ?, note = ?, is_active = 1, updated_at = datetime('now') WHERE id = ?`)
+      .run(req.body.part_description || existing.part_description || null, category, req.body.note ?? existing.note ?? null, existing.id);
+    const row = db.prepare('SELECT * FROM receiving_coc_items WHERE id = ?').get(existing.id);
+    logAudit(req.user, 'update', 'receiving_coc_item', row.id, { revived: !existing.is_active }, existing, row, part);
+    return res.json({ ...row, is_active: !!row.is_active });
+  }
+  const id = uuid();
+  db.prepare(`INSERT INTO receiving_coc_items (id, part_number, part_description, category, note, created_by) VALUES (?, ?, ?, ?, ?, ?)`)
+    .run(id, part, req.body.part_description || null, category, req.body.note || null, req.user?.name || null);
+  const row = db.prepare('SELECT * FROM receiving_coc_items WHERE id = ?').get(id);
+  logAudit(req.user, 'create', 'receiving_coc_item', id, { part_number: part, category }, null, row, part);
+  res.status(201).json({ ...row, is_active: !!row.is_active });
+});
+
+// Retired, never deleted: a receipt filed under the rule still cites it.
+router.delete('/coc-items/:id', (req, res) => {
+  if (!canSetLabTests(req.user)) return res.status(403).json({ error: COC_ONLY_QA });
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM receiving_coc_items WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not on the list.' });
+  db.prepare("UPDATE receiving_coc_items SET is_active = 0, updated_at = datetime('now') WHERE id = ?").run(row.id);
+  logAudit(req.user, 'update', 'receiving_coc_item', row.id, { action: 'retired' }, row, null, row.part_number);
+  res.json({ ok: true });
+});
+
+function openChecklistFor(db, no, res) {
+  const row = db.prepare('SELECT * FROM receiving_checklists WHERE inspection_no = ?').get(no);
+  if (!row) { res.status(404).json({ error: 'No checklist for this inspection yet.' }); return null; }
+  // A signed-off checklist is the record of the accepted delivery: revoke,
+  // correct, sign again.
+  if (row.reviewed_at) { res.status(409).json({ error: 'This checklist is signed off. Revoke the sign-off to change its certificates.' }); return null; }
+  return row;
+}
+const listedPart = (db, part) => db.prepare('SELECT * FROM receiving_coc_items WHERE is_active = 1 AND UPPER(TRIM(part_number)) = ?').get(itemKey(part));
+
+// Attach the certificate that came with this delivery.
+const cocUpload = mediaUpload({ files: 5 }).array('files', 5);
+router.post('/checklist/:inspectionNo/coc', (req, res, next) => cocUpload(req, res, (err) => {
+  if (err) return res.status(400).json({ error: uploadErrorMessage(err) });
+  next();
+}), async (req, res) => {
+  const files = req.files || [];
+  try {
+    if (!canLog(req.user)) return res.status(403).json({ error: 'Filing a receiving inspection needs the Receiving Log.' });
+    const db = getDb();
+    const row = openChecklistFor(db, req.params.inspectionNo, res);
+    if (!row) return;
+    const part = String(req.body?.part_number || '').trim();
+    if (!listedPart(db, part)) return res.status(400).json({ error: 'That part is not on QA\'s Certificate of Compliance list.' });
+    if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured on this server.' });
+    if (!files.length) return res.status(400).json({ error: 'No file received — take a photo of the certificate or choose the PDF.' });
+    const ids = [];
+    for (const f of files) {
+      const id = uuid();
+      const bytes = readFileSync(f.path);
+      const safe = (f.originalname || 'coc').replace(/[^\w.-]+/g, '_').slice(0, 120);
+      const key = `receiving/coc/${row.id}/${id}-${safe}`;
+      await putObject(key, bytes, f.mimetype);
+      db.prepare(`INSERT INTO receiving_coc_proofs (id, inspection_no, part_number, source, storage_key, filename, content_type, size, sha256, note, recorded_by, recorded_by_id)
+        VALUES (?, ?, ?, 'attached', ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, row.inspection_no, part, key,
+        (f.originalname || 'coc').slice(0, 255), f.mimetype || null, f.size || null,
+        createHash('sha256').update(bytes).digest('hex'), req.body?.note || null, req.user.name, req.user.id || null);
+      ids.push(id);
+    }
+    logAudit(req.user, 'create', 'receiving_coc_proof', ids[0], { inspection_no: row.inspection_no, part_number: part, source: 'attached', files: ids.length }, null, null, row.inspection_no);
+    res.status(201).json(cocState(db, row.inspection_no, row.inspection_date));
+  } finally { cleanupTemp(files); }
+});
+
+// Certificates on file in Supplier Qualification that could be linked.
+router.get('/checklist/:inspectionNo/coc/on-file', (req, res) => {
+  const db = getDb();
+  const row = db.prepare('SELECT inspection_no, inspection_date, vendor FROM receiving_checklists WHERE inspection_no = ?').get(req.params.inspectionNo);
+  if (!row) return res.status(404).json({ error: 'No checklist for this inspection yet.' });
+  const q = String(req.query.q || '').trim();
+  const like = `%${q}%`;
+  const rows = db.prepare(`SELECT f.id, f.filename, f.kind, f.expires_on, f.created_at, s.name AS supplier_name
+    FROM supplier_files f JOIN suppliers s ON s.id = f.supplier_id
+    WHERE (? = '' OR s.name LIKE ? OR f.filename LIKE ?)
+      AND (f.kind LIKE '%certificate%' OR LOWER(f.filename) LIKE '%coc%' OR LOWER(f.filename) LIKE '%conformance%'
+           OR LOWER(f.filename) LIKE '%compliance%' OR LOWER(f.filename) LIKE '%conformity%')
+    ORDER BY (s.name LIKE ?) DESC, f.expires_on IS NULL, f.expires_on DESC LIMIT 50`)
+    .all(q, like, like, `%${row.vendor || '\u0000'}%`);
+  res.json(rows.map(f => ({ ...f, current: onFileCurrent(f, row.inspection_date) })));
+});
+
+// Link the supplier's standing certificate.
+router.post('/checklist/:inspectionNo/coc/on-file', (req, res) => {
+  if (!canLog(req.user)) return res.status(403).json({ error: 'Filing a receiving inspection needs the Receiving Log.' });
+  const db = getDb();
+  const row = openChecklistFor(db, req.params.inspectionNo, res);
+  if (!row) return;
+  const part = String(req.body?.part_number || '').trim();
+  if (!listedPart(db, part)) return res.status(400).json({ error: 'That part is not on QA\'s Certificate of Compliance list.' });
+  const file = db.prepare('SELECT f.*, s.name AS supplier_name FROM supplier_files f JOIN suppliers s ON s.id = f.supplier_id WHERE f.id = ?').get(req.body?.supplier_file_id || '');
+  if (!file) return res.status(400).json({ error: 'That certificate was not found in Supplier Qualification.' });
+  if (!onFileCurrent(file, row.inspection_date)) {
+    return res.status(400).json({ error: `That certificate expired on ${file.expires_on}, before this delivery. Attach the one that came with the truck, or ask the supplier for a current one.` });
+  }
+  const id = uuid();
+  db.prepare(`INSERT INTO receiving_coc_proofs (id, inspection_no, part_number, source, supplier_file_id, filename, expires_on, note, recorded_by, recorded_by_id)
+    VALUES (?, ?, ?, 'on_file', ?, ?, ?, ?, ?, ?)`).run(id, row.inspection_no, part, file.id,
+    `${file.supplier_name} — ${file.filename}`.slice(0, 255), file.expires_on || null, req.body?.note || null, req.user.name, req.user.id || null);
+  logAudit(req.user, 'create', 'receiving_coc_proof', id, { inspection_no: row.inspection_no, part_number: part, source: 'on_file', supplier_file_id: file.id }, null, null, row.inspection_no);
+  res.status(201).json(cocState(db, row.inspection_no, row.inspection_date));
+});
+
+router.get('/coc-proofs/:id/url', async (req, res) => {
+  const p = getDb().prepare('SELECT * FROM receiving_coc_proofs WHERE id = ?').get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'Not found' });
+  if (p.source === 'on_file') {
+    const f = getDb().prepare('SELECT storage_key, filename FROM supplier_files WHERE id = ?').get(p.supplier_file_id);
+    if (!f?.storage_key) return res.status(404).json({ error: 'The certificate is listed in Supplier Qualification but no file is stored for it.' });
+    return res.json({ url: await presignGet(f.storage_key, f.filename) });
+  }
+  if (!p.storage_key) return res.status(404).json({ error: 'No file' });
+  res.json({ url: await presignGet(p.storage_key, p.filename) });
+});
+
+// Removed with a reason, never deleted; only while the checklist is open.
+router.delete('/coc-proofs/:id', (req, res) => {
+  if (!canLog(req.user)) return res.status(403).json({ error: 'Filing a receiving inspection needs the Receiving Log.' });
+  const db = getDb();
+  const p = db.prepare('SELECT * FROM receiving_coc_proofs WHERE id = ? AND removed_at IS NULL').get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'Not found' });
+  const row = openChecklistFor(db, p.inspection_no, res);
+  if (!row) return;
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 3) return res.status(400).json({ error: 'Say why it is being removed — the certificate stays on the record.' });
+  db.prepare("UPDATE receiving_coc_proofs SET removed_at = datetime('now'), removed_by = ?, removed_reason = ? WHERE id = ?").run(req.user.name, reason, p.id);
+  logAudit(req.user, 'update', 'receiving_coc_proof', p.id, { action: 'removed', reason, inspection_no: p.inspection_no, part_number: p.part_number }, p, null, p.inspection_no);
+  res.json(cocState(db, row.inspection_no, row.inspection_date));
 });
 
 router.post('/', (req, res) => {

@@ -36,3 +36,14 @@ the check per arrival.
   list review (CAR 4990682-2) records as current. The line is the record that the check was made.
 - It does not qualify the material at approval time (SOP 404). That is item (a) of the CAR response and
   lives on the supplier record, not on the receiving form.
+
+## Added 29 October 2026 — Certificate of Compliance proof (D-275)
+
+The line "Certificate of Conformance" is unchanged, but ReadyDoc now requires **proof** of it for every part QA lists
+(packaging, gloves, poly bags): the certificate that came with the delivery, or the supplier's current one on file.
+The checklist cannot be signed off until each listed part has one. **SOP 205 and FORM 204-01 do not say this yet.**
+Document Control to decide whether SOP 205 gains a sentence (suggested: *"For items on QA's Certificate of Compliance
+list, the CoC is attached to the receiving record or linked to the supplier's current certificate before the checklist
+is signed off."*) and whether the form's line should read "Certificate of Compliance/Conformance on record for listed
+items".
+

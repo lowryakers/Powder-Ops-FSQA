@@ -3,7 +3,7 @@ import { useApiGet, apiPost, apiPut, apiDelete } from '../../hooks/useApi';
 import {
   PackageCheck, Plus, ClipboardList, Search, Filter, Pencil,
   CheckCircle, Clock, AlertTriangle, ChevronUp, ChevronDown, ExternalLink, Upload, ClipboardCheck,
-  ScanLine, FlaskConical, Truck,
+  ScanLine, FlaskConical, Truck, ShieldCheck,
 } from 'lucide-react';
 import { localDateStr, daysAgoStr } from '../../utils/dates';
 import { CustomFields, CustomFieldValues } from '../common/CustomFields';
@@ -801,6 +801,11 @@ function InspectionsTab({ canLog, onOpen }) {
                 <AlertTriangle size={11} /> {r.escalations_outstanding} to notify
               </span>
             )}
+            {r.coc_missing > 0 && !r.reviewed_at && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[11px] font-semibold" data-coc-chip>
+                <ShieldCheck size={11} /> {r.coc_missing} CoC needed
+              </span>
+            )}
             {r.reviewed_at ? (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-800 text-[11px] font-semibold">
                 <CheckCircle size={11} /> Signed off
@@ -874,6 +879,113 @@ function InspectionsTab({ canLog, onOpen }) {
   );
 }
 
+// ── QA's Certificate of Compliance list (D-275) ─────────────────────────────
+//
+// Packaging, gloves and poly bags must arrive with a CoC. A receiving line for a
+// part on this list makes the certificate required on its inspection, and
+// sign-off waits for it. Matched on the part # only. Retired, never deleted.
+function CocItemsTab() {
+  const { data, refresh } = useApiGet('/receiving/coc-items');
+  const blank = { part_number: '', part_description: '', category: 'packaging', note: '' };
+  const [form, setForm] = useState(blank);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const items = data?.items || [];
+  const cats = data?.categories || [];
+  const canEdit = !!data?.can_edit;
+  const active = items.filter(i => i.is_active);
+  const catLabel = (k) => cats.find(c => c.key === k)?.label || k;
+
+  const add = async (e) => {
+    e.preventDefault();
+    setBusy(true); setError(null);
+    try { await apiPost('/receiving/coc-items', form); setForm(blank); refresh(); }
+    catch (err) { setError(err.message); } finally { setBusy(false); }
+  };
+  const retire = async (id) => {
+    setError(null);
+    try { await apiDelete(`/receiving/coc-items/${id}`); refresh(); }
+    catch (err) { setError(err.message); }
+  };
+
+  const cls = 'w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm';
+  return (
+    <div className="space-y-4" data-coc-items>
+      <div className="bg-white border border-gray-200 rounded-xl p-4">
+        <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+          <ShieldCheck size={17} className="text-powder-600" /> Items that need a Certificate of Compliance
+        </h3>
+        <p className="text-sm text-gray-600 mt-1">
+          When one of these is received, its inspection asks for the CoC — a photo or PDF of the one that came
+          with the delivery, or the supplier&apos;s current one on file — and cannot be signed off until it has one.
+          Matched on the <strong>part #</strong>.
+        </p>
+        {!canEdit && <p className="text-xs text-gray-500 mt-2 italic">Read-only — QA decides what is on this list.</p>}
+      </div>
+
+      {canEdit && (
+        <form onSubmit={add} className="bg-white border border-gray-200 rounded-xl p-4 space-y-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <label className="block">
+              <span className="block text-[11px] text-gray-600 mb-0.5">Part # <span className="text-red-500">*</span></span>
+              <input value={form.part_number} required className={cls} placeholder="PK-POUCH-LG" data-coc-item-part
+                onChange={e => setForm(f => ({ ...f, part_number: e.target.value }))} />
+            </label>
+            <label className="block">
+              <span className="block text-[11px] text-gray-600 mb-0.5">Description</span>
+              <input value={form.part_description} className={cls} placeholder="Large stand-up pouch"
+                onChange={e => setForm(f => ({ ...f, part_description: e.target.value }))} />
+            </label>
+            <label className="block">
+              <span className="block text-[11px] text-gray-600 mb-0.5">Type</span>
+              <select value={form.category} className={cls} data-coc-item-category
+                onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>
+                {cats.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className="block text-[11px] text-gray-600 mb-0.5">Note (optional)</span>
+              <input value={form.note} className={cls} placeholder="Supplier sends one per lot"
+                onChange={e => setForm(f => ({ ...f, note: e.target.value }))} />
+            </label>
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <button type="submit" disabled={busy || !form.part_number.trim()}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">
+            <Plus size={14} /> {busy ? 'Adding…' : 'Add to the list'}
+          </button>
+        </form>
+      )}
+
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-gray-100 text-sm font-semibold text-gray-700">On the list ({active.length})</div>
+        {active.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-gray-500 text-center">
+            Nothing on the list yet — no receipt will ask for a CoC until QA adds the items.
+          </p>
+        ) : (
+          <ul className="divide-y divide-gray-100">
+            {active.map(i => (
+              <li key={i.id} className="px-4 py-2.5 flex items-start gap-3" data-coc-item={i.part_number}>
+                <div className="flex-1 min-w-0">
+                  <span className="font-medium text-gray-900">{i.part_number}</span>
+                  {i.part_description && <span className="text-gray-600"> — {i.part_description}</span>}
+                  <div className="text-xs text-gray-500 mt-0.5">{catLabel(i.category)}{i.note && <> · {i.note}</>}</div>
+                </div>
+                {canEdit && (
+                  <button type="button" onClick={() => retire(i.id)}
+                    className="text-xs text-gray-500 hover:text-red-600 shrink-0">Remove</button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      {!canEdit && error && <p className="text-sm text-red-600">{error}</p>}
+    </div>
+  );
+}
+
 /* ── Module ──────────────────────────────────────────────────────────────── */
 
 export default function ReceivingLogPanel({ user }) {
@@ -885,7 +997,7 @@ export default function ReceivingLogPanel({ user }) {
   // the effect below clears them so a later remount doesn't replay the link.
   const [tab, setTab] = useState(() => {
     const v = getParam('view');
-    if (v && ['inspections', 'shipping', 'film', 'log', 'form', 'import', 'lab-tests'].includes(v)) return v;
+    if (v && ['inspections', 'shipping', 'film', 'log', 'form', 'import', 'lab-tests', 'coc-items'].includes(v)) return v;
     return canFile(user) ? 'inspections' : 'log';
   });
   const [refreshKey, setRefreshKey] = useState(0);
@@ -925,6 +1037,8 @@ export default function ReceivingLogPanel({ user }) {
     // QA's standing list. Visible to the warehouse read-only, because the
     // receiver whose line raised an alert should be able to see the rule.
     { id: 'lab-tests', label: 'Lab Tests', icon: FlaskConical },
+    // QA's CoC list (D-275), read-only for the warehouse for the same reason.
+    { id: 'coc-items', label: 'CoC Items', icon: ShieldCheck },
     ...(canImport ? [{ id: 'import', label: 'Import', icon: Upload }] : []),
   ];
 
@@ -967,6 +1081,7 @@ export default function ReceivingLogPanel({ user }) {
           fields={importTarget.fields} onDone={() => setRefreshKey(k => k + 1)} />
       )}
       {tab === 'lab-tests' && <LabTestItemsTab />}
+      {tab === 'coc-items' && <CocItemsTab />}
       {tab === 'log' && <ReceivingTable key={refreshKey} user={user} />}
     </div>
   );

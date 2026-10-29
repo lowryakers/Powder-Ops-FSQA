@@ -2731,6 +2731,16 @@ sheet that must open even with no R2 configured. The zone **item lists** it docu
 `pm_schedules.procedure_steps` (`item|qty|material`, one schedule per zone) and the zone names in the
 `bpg_zones` managed list. Operator task views don't render reference documents yet.
 
+## Packaging, gloves and poly bags need a Certificate of Compliance on the receipt (D-275)
+`receiving_coc_items` (QA's list) + `receiving_coc_proofs`, `server/coc-items.js` (PURE: `cocRequirements`,
+`cocSignRefusals`, `onFileCurrent`), `server/coc-state.js` (`cocState`, `openCocGaps`), the `/receiving/coc-items`,
+`/receiving/checklist/:no/coc[/on-file]` and `/receiving/coc-proofs/:id` routes, `CocProofs.jsx` on the checklist, the
+**CoC Items** tab.
+- **A listed part on a line makes the CoC required, derived on read.** Proof = `attached` (stored, hashed) or `on_file`
+  (a `supplier_files` certificate current on the inspection date). Removing needs a reason; nothing moves once signed.
+- **Sign-off is refused (`COC_REQUIRED`)** until each listed part is proved, and the form's CoC line must then be Yes.
+- The list is QA's (`canSetLabTests`), starts empty, part # only. Bell line `coc-missing`. `verify:receivingcoc` (38).
+
 ## Receiving Inspection Checklist — FORM 204-01 V1
 `server/receiving-checklist.js` (the form, verbatim, typos included — "informm purchasing" stays) +
 `server/receiving-notify.js` + checklist routes in `api/receiving.js` + `ReceivingChecklist.jsx`.

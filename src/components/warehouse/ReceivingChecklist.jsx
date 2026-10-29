@@ -4,6 +4,7 @@ import {
   ClipboardCheck, X, AlertTriangle, BellRing, Check, CheckCircle2, RotateCcw, Plus, Trash2,
 } from 'lucide-react';
 import { formatDateTime } from '../../lib/datetime.js';
+import CocProofs from './CocProofs.jsx';
 
 /**
  * FORM 204-01 — the Receiving Inspection Checklist, on the dock.
@@ -274,6 +275,8 @@ export default function ReceivingChecklist({ inspectionNo, onClose, onAddLine })
                 </div>
               ))}
 
+              <CocProofs inspectionNo={inspectionNo} coc={data.coc} locked={locked} onChanged={refresh} />
+
               <div className="p-3 space-y-2 border-t border-gray-100">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-gray-600">Notes</p>
                 <ItemNotes rows={notes} locked={locked}
@@ -288,6 +291,11 @@ export default function ReceivingChecklist({ inspectionNo, onClose, onAddLine })
           {!locked && outstanding.length > 0 && !blocked && (
             <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2">
               {outstanding.length} escalation{outstanding.length === 1 ? '' : 's'} still to send before this can be signed off.
+            </p>
+          )}
+          {!locked && data?.coc?.missing > 0 && !blocked && (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2" data-coc-footer>
+              {data.coc.missing} item{data.coc.missing === 1 ? '' : 's'} still need{data.coc.missing === 1 ? 's' : ''} a Certificate of Compliance before this can be signed off.
             </p>
           )}
           {!locked && cl && (
