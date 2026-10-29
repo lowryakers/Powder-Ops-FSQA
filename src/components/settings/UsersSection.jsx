@@ -111,6 +111,9 @@ const MODULE_GROUPS = [
       // and they read as missing. Quality Schedules is the one that surfaced it.
       { id: 'quality-schedules', label: 'Quality Schedules (EMP swabs, water & air testing)', note: 'The recurring quality checks from FORM 604-01 — they generate QA tasks in the Task Center.' },
       { id: 'facility-map', label: 'Facility Map (floor plan, cleaning status, pest, BP&G zones)' },
+      // Suppliers, Onboarding and Visitors had always needed a grant and never
+      // had a box here, so only an admin could ever open them (29 Oct 2026).
+      { id: 'suppliers', label: 'Suppliers (qualification, questionnaires, certificates)', note: 'View reads the register. Edit adds suppliers, materials and documents and sends questionnaire links. Approving a supplier and recording a banned-list check stay with Quality leadership and admins.' },
     ],
   },
   {
@@ -149,6 +152,8 @@ const MODULE_GROUPS = [
       { id: 'newsletter', label: 'Newsletter' },
       { id: 'pay-tracking', label: 'Pay Tracking (evaluations; rates stay admin-only)' },
       { id: 'policies', label: 'Policies (handbook; edit = upload and publish)' },
+      { id: 'onboarding', label: 'Onboarding (new-hire packets and employee documents)', note: 'Starts packets, sends links and keeps employee documents. Seeing the full SSN and bank numbers additionally needs the office / HR department (or admin) and a password at the moment of looking.' },
+      { id: 'visitors', label: 'Visitors (lobby sign in / out log)' },
       { id: 'candidates', label: 'People (who we would hire when the timing is right)', note: 'Personal contact details for people who do not work here, so the module carries a SECOND door: office / HR departments and admins only. Granting this to anyone else gives them nothing.' },
     ],
   },

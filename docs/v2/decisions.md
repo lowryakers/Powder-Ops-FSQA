@@ -9367,3 +9367,19 @@ the read-only review that came first.
   name only. READ-ONLY. Nothing is merged until Lowry decides.
 - `verify:nottrainee` (38, two reboots + browser). The control (the snapshot filter removed) fails 3, the people
   count reading 20 → 20 with 11 flagged.
+
+## D-263 — Suppliers, Onboarding and Visitors get their boxes in Settings; a check keeps the list complete (29 Oct 2026)
+
+Lowry was not confident the module list in Settings → Users was complete. It was not. **Suppliers, Onboarding and
+Visitors** have always been mounted behind `requireModuleWrite`, and Onboarding's own door asks for the grant by name
+(`canManage`). None of the three ever had a box in `MODULE_GROUPS`, so no one but an admin could be given them, and a
+narrowed admin could not get them back.
+- The three are now in the list (Quality: Suppliers; Office: Onboarding, Visitors), with notes on what each grant
+  does not cover. A non-admin who read "Full access" before now reads three short, which was always true.
+- **`check:modulelist`** (in `npm run check`) reads `App.jsx`, `server.js` and `UsersSection.jsx`. It fails when a
+  sidebar item opened by its own grant, or a module a server mount asks for, has no box. The exceptions are listed
+  with the reason: `office-requests`, which the two request-form boxes open; the admin-only Supply Orders and Time
+  Tracking; and Banking, hidden since D-075.
+- The other sidebar items without a box are opened by a rule, not a grant, and Settings shows those rules under "What
+  they can open" (D-187): Doc Control Review, Controlled Changes, Change Register, Food Safety Culture, Accounting,
+  Quality Events, Controlled Documents, Sign In/Out, and the admin-only items.

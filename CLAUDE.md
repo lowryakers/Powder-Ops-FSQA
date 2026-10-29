@@ -6221,6 +6221,11 @@ navigated that narrow column to the **whole app** — sidebar and all — inside
   `window.parent` (docked) or `window.opener` (popout); App's listener is **origin-checked**. The panel stays
   on Messages and the module opens where the modules live.
 
+## Every module a person can be given has a box in Settings (D-263)
+- **A new module behind `requireModuleWrite` (or a sidebar item without `visible`/`adminOnly`/`anyOf`) needs a
+  `MODULE_GROUPS` entry in `UsersSection.jsx`**, or `check:modulelist` fails. Suppliers, Onboarding and Visitors had
+  none for their whole life, so only admins could open them.
+
 ## Bots are not trainees; accounts that share a name (D-262, `server/trainees.js`, `server/same-name-accounts.js`)
 - **`users.not_trainee` leaves an account out of EVERY training count, list and assignment** — read it through
   `TRAINEE_SQL` / `nonTraineeIds` / `nonTraineeNames`, never a name test. A new training count or pick list must use it.
