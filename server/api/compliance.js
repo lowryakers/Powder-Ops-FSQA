@@ -20,6 +20,7 @@ import { pmCompletion } from '../pm-completion.js';
 import { moduleUsage, usageText } from '../module-usage.js';
 import { sameNameAccounts, sameNameText } from '../same-name-accounts.js';
 import { auditorDuplicateReport, auditorDuplicateText } from '../trainees.js';
+import { openCocGaps } from '../coc-state.js';
 import { editFailedTraining, editFailedText } from '../edit-failed-training.js';
 import { restoreEditFailed } from '../edit-failed-restore.js';
 import { taskRouting, routingText } from '../task-routing.js';
@@ -657,6 +658,11 @@ router.get('/notifications', (req, res) => {
       const m = db.prepare("SELECT COUNT(*) c FROM change_requests WHERE status = 'implemented'").get().c;
       if (m > 0) items.push({ id: 'change-closes', tab: 'change-register', severity: 'info', count: m, label: `${m} implemented change${m > 1 ? 's' : ''} awaiting Quality's effectiveness check` });
     } catch { /* table optional */ }
+  }
+  // Deliveries whose sign-off waits on a Certificate of Compliance (D-275).
+  if (isApprover || dept === 'warehouse') {
+    const gaps = openCocGaps(db);
+    if (gaps.length) items.push({ id: 'coc-missing', tab: 'receiving-log', severity: 'warning', count: gaps.length, label: `${gaps.length} receiving inspection${gaps.length > 1 ? 's' : ''} waiting on a Certificate of Compliance` });
   }
   // The specification release gate (CAR 4990683-3): lots the gate is holding,
   // and lots it let through carrying named gaps. Both read the columns the

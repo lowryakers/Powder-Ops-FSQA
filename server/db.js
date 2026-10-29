@@ -1220,6 +1220,45 @@ function initSchema() {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_receiving_lot ON receiving_log(vendor_lot);
+    -- Items that need a Certificate of Compliance on every receipt (D-275):
+    -- packaging, gloves, poly bags. QA's standing list, matched on part number
+    -- exactly like receiving_lab_test_items. Retired, never deleted.
+    CREATE TABLE IF NOT EXISTS receiving_coc_items (
+      id TEXT PRIMARY KEY,
+      part_number TEXT NOT NULL UNIQUE,
+      part_description TEXT,
+      category TEXT NOT NULL DEFAULT 'other',
+      note TEXT,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    -- The proof for one listed part on one inspection: the certificate that came
+    -- with the delivery (a stored file) or the current one on file in Supplier
+    -- Qualification (supplier_files). Removed with a reason, never deleted, and
+    -- closed once the checklist is signed off.
+    CREATE TABLE IF NOT EXISTS receiving_coc_proofs (
+      id TEXT PRIMARY KEY,
+      inspection_no TEXT NOT NULL,
+      part_number TEXT NOT NULL,
+      source TEXT NOT NULL CHECK (source IN ('attached','on_file')),
+      storage_key TEXT,
+      filename TEXT,
+      content_type TEXT,
+      size INTEGER,
+      sha256 TEXT,
+      supplier_file_id TEXT,
+      expires_on TEXT,
+      note TEXT,
+      recorded_by TEXT,
+      recorded_by_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      removed_at TEXT,
+      removed_by TEXT,
+      removed_reason TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_coc_proofs_inspection ON receiving_coc_proofs(inspection_no);
 
     -- FORM 204-01 — the Receiving Inspection Checklist.
     --
