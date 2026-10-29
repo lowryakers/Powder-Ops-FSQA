@@ -12,6 +12,8 @@ In short:
 - Nothing assigns retraining automatically when a document is revised. The affected people are only flagged.
 - It counts bot and auditor accounts as trainees. Phase 2 below fixes the bots.
 - **Logging an old session can push a newer completion aside** (item 4 and item 8, number 1).
+- Almost every document reads version 1.0 because the importer drops the version (item 3).
+- A course can hold videos up to 2 GB that play in the app, but only the course form shows them (item 9).
 
 ---
 
@@ -129,6 +131,31 @@ What does **not** happen:
 - It only works when the course is **linked to the document** (`training_courses.sop_id`), and only for completions
   that carry a `sop_revision`. Imported history has none, so those people are never flagged. In D-103, no course was
   linked to its document at all; Training → Documents offers to link the obvious ones.
+
+
+### Why almost every document reads "1.0"
+
+Because the bulk importer throws the revision away. Nothing in Document Control is wrong about the documents
+themselves; the version number was never carried in.
+
+- **Import** on Controlled Documents (`DocumentImportModal` in `src/components/compliance/DocumentRegistry.jsx`)
+  sends each file to `POST /api/documents/extract`. `guessMeta()` in `server/api/documents.js` reads the document
+  number and the title from the filename. It recognises the version on the end of the name
+  (`…_Food_Safety_Policy_Statement_V4.pdf`), but only to **remove** it from the title (`stripRevisionSuffix`). It
+  never returns it.
+- The review screen has no revision box, and the save (`POST /api/documents/bulk`) sends none. The server then fills
+  in `d.revision || '1.0'`, and the column itself defaults to `'1.0'` (`sop_documents.revision`, `server/db.js`).
+- So every document that came in through Import reads 1.0, whatever its filename said. Only two paths ever set a real
+  version: **Update from file** (`POST /documents/propose-revisions` reads it with `revisionFromFilename()`, and
+  Document Control ticks it), and typing it into the document by hand.
+- **Why it matters for training:** a training record copies the document's revision at the time
+  (`training_records.sop_revision`). A record against a document stuck at 1.0 says "trained on 1.0", which is not the
+  version anybody was trained on. And the out-of-date check above compares against that 1.0. Once Document Control
+  corrects a document's version, its existing records read as trained on the old one.
+- **Fix:** have Import keep the version it already reads from the filename (one line in `guessMeta`, a revision box on
+  the review screen). Documents already imported need Document Control to set the right version, most quickly with
+  **Update from file** using the signed files, which also files the evidence. This is in the Part 3 plan; nothing has
+  been changed yet.
 
 ---
 
@@ -256,6 +283,30 @@ answer. It only flags; it never changes a key.
     auditor role, but not the other bots (`server/audit-readiness.js`).
 11. **No session record** ties a group training together (item 1). "Show me the attendance for the 12 March GMP
     refresher" means searching by course and date.
+12. **Imported documents lose their version** and read 1.0 (item 3), so training records against them say 1.0 too.
+13. **Course videos are invisible to the trainee** (item 9). They show only in the course form.
+
+
+## 9. Can a course carry short videos? Yes, and they play in the app
+
+- **Where:** Training → open a course → the **Course material** section at the bottom of the course form
+  (`CourseMaterials` in `src/components/compliance/TrainingPanel.jsx`). Upload a video, a PDF or a handout; it shows up
+  for that course with a progress bar while it uploads.
+- **Stored:** table `training_materials` (course, title, file name, type, size, who uploaded it, when), and the file
+  itself in the plant's file storage (Cloudflare R2). Routes: `GET|POST /api/training/courses/:id/materials`,
+  `DELETE /api/training/materials/:id` (`server/api/training.js`).
+- **Size and formats:** a video can be up to **2 GB** (D-116, `MAX_LONG_VIDEO_BYTES` in `server/media.js`), which is
+  roughly 15 minutes of phone video at 1080p. Every common video type is accepted (mp4, mov, webm, wmv, mts, avi and
+  more). Up to 5 files per upload. Other files are limited to 25 MB.
+- **Playback:** mp4, mov and webm play inline in the browser. A format the browser cannot play (avi, mkv, wmv) is
+  offered as a download instead. On a phone, an mp4 shot on the phone plays.
+- **Needs:** file storage switched on (the four `R2_*` settings on Railway). Without it the upload is refused with
+  "File storage is not configured on this server."
+- **The gap:** the videos are shown **only inside the course form**, which needs the Training module. An employee
+  doing a training task on My Tasks / Operator View, or taking the test, does **not** see the course's videos. So today
+  the video is something a trainer shows, not something a trainee opens from their own task. Showing the materials on
+  the training task and above the test is a small change; it is not in the Part 3 plan unless you want it.
+- Nothing records that a person **watched** a video. Read-and-sign or a test is still what records the training.
 
 ---
 
