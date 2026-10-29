@@ -21,6 +21,8 @@
 // a link carrying `download` or `data-new-tab` is left alone, and the viewer's
 // own header has "Open in browser tab".
 
+import { logFileOpen } from './activityLog.js';
+
 const IMG_RE = /\.(png|jpe?g|gif|webp|bmp|svg)$/i;
 const PDF_RE = /\.pdf$/i;
 
@@ -68,6 +70,7 @@ export const OPEN_FILE_EVENT = 'readydoc-open-file';
 
 export function openFile({ url, name } = {}) {
   if (!url) return;
+  logFileOpen(url, name);
   if (hosts > 0 && opensInApp(url, name)) {
     window.dispatchEvent(new CustomEvent(OPEN_FILE_EVENT, { detail: { url, name: name || nameFromUrl(url) } }));
     return;

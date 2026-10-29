@@ -16,6 +16,15 @@ import { checklistCoverage, isConsolidated, CONSOLIDATED_LIKE } from '../pm-cove
 import { TASK_TITLE_SQL } from '../qa-records.js';
 import { closeEquipmentWork } from '../routing-cleanup.js';
 import { equipmentTeamReview } from '../task-routing.js';
+import { qaChecksStoppedBy, stopRefusal, tellQaChecksStopped } from '../equipment-guard.js';
+import { botDm, postMessageAs } from './comms.js';
+import { pushToUser } from '../push.js';
+
+// QA is told after the response; a comms failure never fails the equipment change (D-260).
+const tellQa = (db, checks, status, by) => {
+  if (!checks.length) return;
+  tellQaChecksStopped(db, { checks, status, by }, { botDm, postMessageAs, pushToUser }).catch(() => {});
+};
 
 // The status vocabulary the table's CHECK-free column actually uses.
 const STATUSES = ['active', 'partial', 'out_of_service'];
@@ -930,6 +939,10 @@ router.post('/bulk-update', (req, res) => {
   if (fields.length === 0) return res.status(400).json({ error: 'No valid fields to update' });
   fields.push("updated_at = datetime('now')");
 
+  // Out of service stops QA's checks on this equipment; say which, and wait for a yes (D-260).
+  const stopping = changes.status && changes.status !== 'active' ? qaChecksStoppedBy(db, ids) : [];
+  if (stopping.length && req.body.confirm_stop_checks !== true) return res.status(409).json(stopRefusal(stopping, changes.status));
+
   const placeholders = ids.map(() => '?').join(',');
   db.prepare(`UPDATE equipment SET ${fields.join(', ')} WHERE id IN (${placeholders})`).run(...vals, ...ids);
 
@@ -950,8 +963,10 @@ router.post('/bulk-update', (req, res) => {
     db.prepare(`UPDATE equipment SET loto_required = 0 WHERE id IN (${placeholders})`).run(...ids);
   }
 
-  logAudit(req.user, 'bulk_update', 'equipment', null, { ids, fields: Object.keys(changes) }, null, null);
-  res.json({ updated: ids.length });
+  logAudit(req.user, 'bulk_update', 'equipment', null, { ids, fields: Object.keys(changes),
+    ...(stopping.length ? { qa_checks_stopped: stopping.map(c => c.title) } : {}) }, null, null);
+  res.json({ updated: ids.length, qa_checks_stopped: stopping.length });
+  tellQa(db, stopping, changes.status, req.user?.name);
 });
 
 router.put('/:id', (req, res) => {
@@ -964,6 +979,9 @@ router.put('/:id', (req, res) => {
   // never "re-derive it from the type". Someone who marked a machine as not
   // needing lockout must not have that undone by an unrelated edit.
   const assetKind = ASSET_KINDS.includes(req.body.asset_kind) ? req.body.asset_kind : existing.asset_kind;
+  // Out of service stops QA's checks on this equipment; say which, and wait for a yes (D-260).
+  const stopping = status && status !== 'active' && existing.status === 'active' ? qaChecksStoppedBy(db, [req.params.id]) : [];
+  if (stopping.length && req.body.confirm_stop_checks !== true) return res.status(409).json(stopRefusal(stopping, status));
   // A ZONE CANNOT REQUIRE LOCKOUT. That isn't a preference to be preserved —
   // an area has no energy source — and leaving the flag set produced a row the
   // checklist treated as a zone while the LOTO coverage badge still counted it
@@ -1006,8 +1024,10 @@ router.put('/:id', (req, res) => {
   // Nothing here is a step's OWN column, so an edit never clears staleness.
   stampEquipmentReadiness(db, req.params.id, [], req.user?.name);
   const updated = db.prepare('SELECT * FROM equipment WHERE id = ?').get(req.params.id);
-  logAudit(req.user, 'update', 'equipment', req.params.id, null, existing, updated);
+  logAudit(req.user, 'update', 'equipment', req.params.id,
+    stopping.length ? { qa_checks_stopped: stopping.map(c => c.title) } : null, existing, updated);
   res.json(updated);
+  tellQa(db, stopping, status, req.user?.name);
 });
 
 export default router;

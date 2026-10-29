@@ -19,6 +19,7 @@
 
 import { evaluationFor } from './practical-evaluations.js';
 import { addMonths } from './training-records.js';
+import { nonTraineeIds, nonTraineeNames } from './trainees.js';
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -121,8 +122,12 @@ export function certificationFor(db, course, { employee_name, employee_user_id =
 export function certificationRoster(db, course) {
   if (!evaluationFor(course?.code)) return [];
   const people = new Map();
+  // A bot or system account is not a trainee (D-262).
+  const skipIds = nonTraineeIds(db);
+  const skipNames = nonTraineeNames(db);
   const add = (name, userId) => {
     if (!name) return;
+    if (skipIds.has(userId) || skipNames.has(String(name).toLowerCase())) return;
     const key = String(name).toLowerCase();
     const prev = people.get(key);
     if (!prev || (!prev.employee_user_id && userId)) people.set(key, { employee_name: name, employee_user_id: userId || prev?.employee_user_id || null });

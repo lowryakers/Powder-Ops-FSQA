@@ -29,6 +29,7 @@ import { auditorPassRecipients } from './api/auditor-pass.js';
 import { supplyCycleRecipients } from './api/office.js';
 import { largeClaimRecipients, LARGE_CLAIM_OVER } from './api/reimbursements.js';
 import { lateResultsRecipients, LATE_SETTING } from './coa-late-results.js';
+import { qaStopRecipients, STOP_SETTING } from './equipment-guard.js';
 
 const listed = (rows) => rows.map(u => ({ id: u.id, name: u.name }));
 
@@ -76,6 +77,7 @@ export function readybotAudiences(db) {
   const supplyCycles = supplyCycleRecipients(db);
   const largeClaims = largeClaimRecipients(db);
   const lateResults = lateResultsRecipients(db);
+  const qaStop = qaStopRecipients(db);
 
   return [
     {
@@ -142,6 +144,16 @@ export function readybotAudiences(db) {
       source: lateResults.source,
       recipients: listed(lateResults.users),
       note: lateResults.source === 'default' ? 'Nobody has been chosen, so it goes to the QA supervisors.' : null,
+    },
+    {
+      key: 'equipment_qa_stop',
+      label: 'QA checks stopped',
+      what: 'Somebody set equipment that carries a QA check (Temp & Humidity, BP&G, Light Inspection) out of service, so that check raises no task.',
+      when: 'Once, the moment the change is saved and confirmed.',
+      setting: STOP_SETTING,
+      source: qaStop.source,
+      recipients: listed(qaStop.users),
+      note: qaStop.source === 'default' ? 'Nobody has been chosen, so it goes to the QA supervisors.' : null,
     },
     {
       key: 'employee_documents',
@@ -276,4 +288,5 @@ export const SETTABLE = {
   supply_cycle_recipients: 'Standing supply list due',
   reimbursement_alert_recipients: 'Reimbursement over $100',
   coa_late_results_recipients: 'Lab results overdue',
+  equipment_qa_stop_recipients: 'QA checks stopped',
 };

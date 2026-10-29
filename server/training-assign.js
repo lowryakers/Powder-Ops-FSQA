@@ -91,8 +91,9 @@ export function assignTraining(db, {
       // The account is the identity; resolve the name from it so the task and
       // the record it files read the way every other record does (D-074).
       if (person.user_id) {
-        const u = db.prepare('SELECT id, name, department FROM users WHERE id = ? AND is_active = 1').get(person.user_id);
+        const u = db.prepare('SELECT id, name, department, COALESCE(not_trainee, 0) AS not_trainee FROM users WHERE id = ? AND is_active = 1').get(person.user_id);
         if (!u) { skipped.push({ ...person, why: 'no such active account' }); continue; }
+        if (u.not_trainee) { skipped.push({ ...person, name: u.name, why: 'not a trainee (a bot or system account)' }); continue; }
         person.name = u.name; person.department = u.department;
       }
       if (!person.name) { skipped.push({ ...person, why: 'no name' }); continue; }
@@ -241,6 +242,8 @@ const NEW_HIRE_DUE_DAYS = 30;
  */
 export function assignNewHireTraining(db, { user, assigned_by = 'ReadyDoc', reason = 'New hire', today = dayStr(new Date()) } = {}) {
   if (!user?.id) return { created: [], skipped: [], courses: 0 };
+  const flag = db.prepare('SELECT COALESCE(not_trainee, 0) AS n FROM users WHERE id = ?').get(user.id);
+  if (flag?.n) return { created: [], skipped: [], courses: 0 };
   const due = plusDays(today, NEW_HIRE_DUE_DAYS);
   // SELECT *, not a hand-listed projection: the rule reads required_positions
   // too now, and a projection narrower than the code that reads it is a column

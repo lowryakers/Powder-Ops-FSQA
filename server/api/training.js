@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { createReadStream } from 'fs';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
+import { nonTraineeIds, nonTraineeNames } from '../trainees.js';
 import { personKey } from '../person-key.js';
 import { aiEnabled, generateTestQuestions, readSheetNames } from '../ai.js';
 import { storageEnabled, putStream, putObject, presignGet, deleteObject } from '../storage.js';
@@ -253,7 +254,8 @@ router.get('/assignments', (req, res) => {
   const rows = db.prepare(`SELECT wo.id, wo.title, wo.due_date, wo.status, wo.assigned_to, wo.assigned_to_id,
       wo.completed_at, wo.completed_by, c.id AS course_id, c.code AS course_code, c.title AS course_title, c.has_test
     FROM work_orders wo JOIN training_courses c ON c.id = wo.training_course_id
-    WHERE wo.training_course_id IS NOT NULL
+    LEFT JOIN users au ON au.id = wo.assigned_to_id
+    WHERE wo.training_course_id IS NOT NULL AND COALESCE(au.not_trainee, 0) = 0
     ORDER BY CASE WHEN wo.status IN ('open','in_progress','overdue','missed') THEN 0 ELSE 1 END, wo.due_date`).all();
   res.json(rows.map(r => ({
     ...r,
@@ -286,10 +288,18 @@ router.post('/bulk-complete', (req, res) => {
 
   let created = 0;
   const ids = [];
+  // A bot or system account is not a trainee (D-262): named and left out.
+  const notTrainee = nonTraineeIds(db);
+  const notTraineeNames = nonTraineeNames(db);
+  const skipped = [];
   const tx = db.transaction(() => {
     for (const a of attendees) {
       const name = (a.employee_name || '').trim();
       if (!name) continue;
+      if (notTrainee.has(a.employee_user_id) || (!a.employee_user_id && notTraineeNames.has(name.toLowerCase()))) {
+        skipped.push({ name, why: 'not a trainee (a bot or system account)' });
+        continue;
+      }
       const score = a.score === '' || a.score === undefined || a.score === null ? null : Number(a.score);
       const rec = insertCompletion(db, {
         employee_name: name, employee_user_id: a.employee_user_id || null,
@@ -303,10 +313,10 @@ router.post('/bulk-complete', (req, res) => {
     }
   });
   tx();
-  logAudit(req.user, 'training_group_completed', 'training', null, { course_id, count: created }, null, null, course.title);
+  logAudit(req.user, 'training_group_completed', 'training', null, { course_id, count: created, ...(skipped.length ? { skipped } : {}) }, null, null, course.title);
   // ids are returned so the client can attach the signed sign-in sheet to
   // every record it just created in one upload.
-  res.json({ created, ids });
+  res.json({ created, ids, skipped });
 });
 
 // ── Bulk group sheets: parse ~50 filenames in one call ────────────────────────
@@ -372,7 +382,7 @@ router.post('/sheets/read-names', sheetUpload.single('file'), async (req, res) =
     return res.status(502).json({ error: `Could not read the sheet: ${e.message}` });
   }
   if (!read?.length) return res.json({ names: [] });
-  const users = db.prepare("SELECT id, name FROM users WHERE is_active = 1 AND name != 'ReadyBot'").all();
+  const users = db.prepare("SELECT id, name FROM users WHERE is_active = 1 AND name != 'ReadyBot' AND COALESCE(not_trainee, 0) = 0").all();
   const byKey = new Map(users.map(u => [personKey(u.name), u]));
   const names = read.map(r => {
     const exact = byKey.get(personKey(r));
@@ -613,11 +623,15 @@ router.get('/due', (_req, res) => {
   const today = new Date().toISOString().slice(0, 10);
   const soon = addMonths(today, 1);
   const rows = db.prepare(`
-    SELECT tr.id, tr.employee_name, tr.next_due_date, tr.completion_date, c.title AS course_title, c.code AS course_code
+    SELECT tr.id, tr.employee_name, tr.employee_user_id, tr.next_due_date, tr.completion_date, c.title AS course_title, c.code AS course_code
     FROM training_records tr JOIN training_courses c ON tr.course_id = c.id
     WHERE tr.superseded = 0 AND tr.status = 'completed' AND tr.next_due_date IS NOT NULL AND tr.next_due_date <= ?
     ORDER BY tr.next_due_date ASC`).all(soon);
-  res.json(rows.map(r => ({ ...r, overdue: r.next_due_date < today })));
+  // Not a bot's or a system account's (D-262).
+  const notTrainee = nonTraineeIds(db);
+  const notTraineeNames = nonTraineeNames(db);
+  res.json(rows.filter(r => !notTrainee.has(r.employee_user_id) && !notTraineeNames.has(String(r.employee_name || '').toLowerCase()))
+    .map(r => ({ ...r, overdue: r.next_due_date < today })));
 });
 
 // ── DOCUMENT LINKAGE ──────────────────────────────────────────────────────────
@@ -975,7 +989,7 @@ function analyzeBuffer(db, buffer) {
   // way every run — a suggestion that changes between two previews of the same
   // file is worse than one that is merely debatable.
   const courses = db.prepare('SELECT id, title, code FROM training_courses ORDER BY code, title').all();
-  const users = db.prepare("SELECT id, name FROM users WHERE is_active = 1 AND name != 'ReadyBot'").all();
+  const users = db.prepare("SELECT id, name FROM users WHERE is_active = 1 AND name != 'ReadyBot' AND COALESCE(not_trainee, 0) = 0").all();
   const userByName = new Map(users.map(u => [personKey(u.name), u]));
 
   const byCourse = new Map();
@@ -1033,7 +1047,7 @@ router.post('/import-log/analyze', logUpload.single('file'), (req, res) => {
 function planRows(db, buffer, mapping, opts) {
   const parsed = parseTrainingLog(buffer);
   const courses = new Map(db.prepare('SELECT id, title, code FROM training_courses').all().map(c => [c.id, c]));
-  const users = db.prepare("SELECT id, name FROM users WHERE is_active = 1 AND name != 'ReadyBot'").all();
+  const users = db.prepare("SELECT id, name FROM users WHERE is_active = 1 AND name != 'ReadyBot' AND COALESCE(not_trainee, 0) = 0").all();
   const userByName = new Map(users.map(u => [personKey(u.name), u]));
   // Already-imported rows, so re-running is safe. A completion is identified by
   // person + topic + date: the same training on the same day is the same event.
@@ -1223,7 +1237,7 @@ function readScanZip(buffer) {
 
 function scanContext(db) {
   const courses = db.prepare('SELECT id, title, code FROM training_courses WHERE active = 1 ORDER BY code, title').all();
-  const users = db.prepare("SELECT id, name FROM users WHERE is_active = 1 AND name != 'ReadyBot'").all();
+  const users = db.prepare("SELECT id, name FROM users WHERE is_active = 1 AND name != 'ReadyBot' AND COALESCE(not_trainee, 0) = 0").all();
   return { courses, users, userByKey: new Map(users.map(u => [personKey(u.name), u])) };
 }
 

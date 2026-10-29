@@ -61,6 +61,8 @@ const RUNS = [
     OPS_WEBHOOK_CONTROLLER_URL: 'http://127.0.0.1:5143/automations/webhook/ctrlROUTINE1', OPS_WEBHOOK_CONTROLLER_KEY: 'crsr_fakeCtrl' }, false],
   ['verify-test-runner.mjs', 5144, { OPS_WEBHOOK_ENABLED: '1', OPS_HOOK_PORT: '5145',
     OPS_WEBHOOK_URL: 'http://127.0.0.1:5145/automations/webhook/procROUTINE2', OPS_WEBHOOK_KEY: 'crsr_fakeProc2' }, false],
+  // Boots its own server (it needs fake VAPID keys generated at boot).
+  ['verify-ops-monitor.mjs', 5151, { OPS_MON_PORT: '5152', OPS_MON_HOOK_PORT: '5153' }, false],
   ['verify-topbar.mjs', 5146, {}, false],
   ['verify-reimb-alert.mjs', 5147, {}],
   ['verify-scroll.mjs', 5148, {}, false],
@@ -136,6 +138,9 @@ const RUNS = [
   ['verify-comms-history.mjs', 5119, {}, false],
   ['verify-bulk-members.mjs', 5120, {}, false],
   ['verify-env-limits.mjs', 5121, {}, false],
+  ['verify-equipment-qa-guard.mjs', 5155, {}, false],
+  ['verify-user-activity.mjs', 5156, {}, false],
+  ['verify-not-trainee.mjs', 5157, {}, false],
   ['verify-banned-check.mjs', 5122, {}, false],
   ['verify-partner-recon.mjs', 5123, { PARTNER_PORTAL_TODAY: '2026-10-23' }, true],
   ['verify-emp-limits.mjs', 5124, {}, false],

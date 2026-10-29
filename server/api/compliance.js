@@ -18,6 +18,7 @@ import { getSource, safeCount, isQaReviewer } from '../qa-review.js';
 // auditor binder all read it from here.
 import { pmCompletion } from '../pm-completion.js';
 import { moduleUsage, usageText } from '../module-usage.js';
+import { sameNameAccounts, sameNameText } from '../same-name-accounts.js';
 import { taskRouting, routingText } from '../task-routing.js';
 
 const router = Router();
@@ -326,6 +327,13 @@ router.get('/module-usage', requireRole('admin'), (req, res) => {
 router.get('/task-routing', requireRole('admin'), (req, res) => {
   const r = taskRouting(getDb());
   res.json({ ...r, text: routingText(r, `live database, ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`) });
+});
+
+// Accounts that share a name, side by side (D-262). READ-ONLY, run on demand: it
+// shows the two records so a person decides; nothing here merges or moves anything.
+router.get('/same-name-accounts', requireRole('admin'), (req, res) => {
+  const r = sameNameAccounts(getDb(), { name: req.query.name || null });
+  res.json({ ...r, text: sameNameText(r, `live database, ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`) });
 });
 
 // Stored automatic backups (weekly Friday job writes them to R2 under backups/).

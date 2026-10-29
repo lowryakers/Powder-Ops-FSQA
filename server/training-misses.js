@@ -20,6 +20,7 @@
 // made in the test editor; a key the app rewrote on a vote would be a
 // fabricated answer to a safety question.
 import { questionResult, optionList, optionIndexOf } from './training-records.js';
+import { nonTraineeIds, nonTraineeNames } from './trainees.js';
 
 export const KEY_CHECK = { minPeople: 3, missRate: 0.5, agreeRate: 0.6 };
 
@@ -53,9 +54,12 @@ export function questionMisses(db, { course_id = null, include_old = false } = {
 
   const courses = [];
   let keyChecks = 0;
+  // A bot's or system account's attempt is not a trainee's (D-262).
+  const skipIds = nonTraineeIds(db);
+  const skipNames = nonTraineeNames(db);
   for (const t of tests) {
     const questions = qStmt.all(t.id);
-    const attempts = aStmt.all(t.id);
+    const attempts = aStmt.all(t.id).filter(a => !skipIds.has(a.employee_user_id) && !skipNames.has(String(a.employee_name || '').toLowerCase()));
     const latest = new Map();
     for (const a of attempts) latest.set(personOf(a), a);   // ordered by time: the last write wins
     const people = [...latest.values()];

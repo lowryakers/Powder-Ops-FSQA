@@ -238,6 +238,16 @@ export const ROUTES = Object.freeze([
     body: PARTNER_DOC_FIELDS,
     properties: { doc_id: str('The document id.'), ...anyProps(PARTNER_DOC_FIELDS, { amount: num('Amount.'), terms_days: num('Payment terms in days.') }) },
     required: ['doc_id'] },
+
+  { tool: 'list_user_activity', method: 'GET', path: '/api/user-activity', paged: true,
+    description: "The activity log: who signed in, signed out or timed out, pages and records opened, changes (with before and after), files opened or downloaded. Newest first. Needs the account's 'User Activity' grant.",
+    query: ['user_id', 'from', 'to', 'action', 'q', 'limit', 'offset'],
+    properties: {
+      user_id: str('Only this person.'), from: str('First day, YYYY-MM-DD (UTC).'), to: str('Last day, YYYY-MM-DD (UTC).'),
+      action: { type: 'string', enum: ['login', 'logout', 'session_timeout', 'session_revoked', 'page_view', 'record_view', 'edit', 'download', 'file_open'], description: 'Only this kind of activity.' },
+      q: str('Text in the page or record.'),
+      ...page,
+    }, required: [] },
 ]);
 
 /** The server's own spelling of a path, for comparison with BOT_ROUTES (param names differ). */

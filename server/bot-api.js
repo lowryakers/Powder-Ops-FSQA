@@ -46,6 +46,7 @@ export const BOT_ROUTES = Object.freeze([
   { method: 'GET', path: '/api/partners/:id/credits', module: 'partner-reconciliation', scope: 'read', paged: true },
   { method: 'POST', path: '/api/partners/:id/documents', module: 'partner-reconciliation (edit)', scope: 'write' },
   { method: 'PUT', path: '/api/partners/documents/:docId', module: 'partner-reconciliation (edit)', scope: 'write' },
+  { method: 'GET', path: '/api/user-activity', module: 'user-activity', scope: 'read', paged: true },
 ]);
 
 // ── What a `write` token may write (D-164) ──────────────────────────────────

@@ -699,7 +699,7 @@ function GroupSheetBulkModal({ courses, users, onClose, onDone }) {
   };
 
   const filed = (queue || []).filter(s => s.status === 'filed');
-  const list = useMemo(() => (users || []).filter(u => u.is_active !== 0 && (!search || u.name.toLowerCase().includes(search.toLowerCase()))), [users, search]);
+  const list = useMemo(() => (users || []).filter(u => u.is_active !== 0 && !u.is_external && !u.not_trainee && (!search || u.name.toLowerCase().includes(search.toLowerCase()))), [users, search]);
   const courseName = (id) => { const c = activeCourses.find(x => x.id === id); return c ? `${c.code ? `${c.code} — ` : ''}${c.title}` : id; };
 
   return (
@@ -879,7 +879,7 @@ function AssignModal({ courses, users, onClose, onAssigned }) {
   // nobody — a card raised into silence, which is worse than none at all.
   // The same reasoning that keeps them off the payroll hours list (D-098).
   const list = useMemo(
-    () => (users || []).filter(u => u.is_active !== 0 && !u.is_external
+    () => (users || []).filter(u => u.is_active !== 0 && !u.is_external && !u.not_trainee
       && (!search || u.name.toLowerCase().includes(search.toLowerCase()))),
     [users, search]);
   const active = useMemo(() => (courses || []).filter(c => c.active !== 0), [courses]);
@@ -1085,7 +1085,7 @@ function GroupTrainingModal({ courses, users, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const list = useMemo(() => (users || []).filter(u => u.is_active !== 0 && (!search || u.name.toLowerCase().includes(search.toLowerCase()))), [users, search]);
+  const list = useMemo(() => (users || []).filter(u => u.is_active !== 0 && !u.is_external && !u.not_trainee && (!search || u.name.toLowerCase().includes(search.toLowerCase()))), [users, search]);
   const toggle = (u) => setSel(s => ({ ...s, [u.id]: s[u.id]?.checked ? { ...s[u.id], checked: false } : { checked: true, name: u.name, score: '' } }));
   const setScore = (id, v) => setSel(s => ({ ...s, [id]: { ...s[id], score: v } }));
   const chosen = Object.entries(sel).filter(([, v]) => v.checked);

@@ -13,6 +13,7 @@
 // out of the route in the first place.
 
 import { audienceContext, appliesReason } from './training-assign.js';
+import { TRAINEE_SQL } from './trainees.js';
 
 const ASSIGNMENT_OPEN = ['open', 'in_progress', 'overdue', 'missed'];
 
@@ -24,7 +25,9 @@ function addMonths(dateStr, months) {
 
 // Everything the rule needs, read once. Callers hand this to `cellFor`.
 export function trainingSnapshot(db, { today = new Date().toISOString().slice(0, 10) } = {}) {
-  const users = db.prepare("SELECT id, name, role, department FROM users WHERE is_active = 1 AND COALESCE(is_external, 0) = 0 ORDER BY name").all();
+  // Bots and system accounts are not trainees (D-262).
+  const users = db.prepare(`SELECT id, name, role, department FROM users u
+    WHERE is_active = 1 AND COALESCE(is_external, 0) = 0 AND ${TRAINEE_SQL('u')} ORDER BY name`).all();
   const courses = db.prepare('SELECT * FROM training_courses WHERE active = 1 ORDER BY category, title').all();
   const records = db.prepare("SELECT * FROM training_records WHERE superseded = 0 AND status = 'completed' AND COALESCE(passed, 1) = 1").all();
   const ctx = audienceContext(db);
@@ -165,4 +168,17 @@ export function trainingRoster(db, opts = {}) {
       outstanding: OUTSTANDING_STATES.reduce((n, s) => n + counts[s], 0),
     };
   });
+}
+
+/** The four cards at the top of Training (plus out of date), from the same walk as the matrix. */
+export function matrixCounts(db, opts = {}) {
+  const snap = trainingSnapshot(db, opts);
+  const counts = { people: snap.users.length, missing: 0, overdue: 0, due_soon: 0, current: 0, outdated: 0 };
+  for (const u of snap.users) {
+    for (const c of snap.courses) {
+      const cell = cellFor(u, c, snap);
+      if (cell && counts[cell.state] !== undefined) counts[cell.state]++;
+    }
+  }
+  return counts;
 }

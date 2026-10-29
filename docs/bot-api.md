@@ -630,3 +630,21 @@ Removing or editing an attachment or a message stays person-only: every `DELETE`
 - **Grant:** `partner-reconciliation: edit`.
 - **While draft only.** A token may edit a document only while it is a draft and not in a settlement; otherwise `token_denied` / `not_open_to_tokens`. Disputing, voiding, finalizing or deleting one is never open to a token.
 - **Returns:** **200** with the document.
+
+### `GET /api/user-activity`
+
+The activity log (D-261): who signed in, signed out or timed out, which pages and records they opened, what they changed, and which files they opened or downloaded.
+
+- **Scope:** `read`.
+- **Grant:** `user-activity` (Settings → Users → the bot's account → "User Activity (bot read access)"). An admin's own session also reads it; no other person does.
+- **Query:** `user_id`, `from` and `to` (`YYYY-MM-DD`, whole UTC days), `action` (`login`, `logout`, `session_timeout`, `session_revoked`, `page_view`, `record_view`, `edit`, `download`, `file_open`), `q` (text in the page or record), `limit` (default and at most 200), `offset`.
+- **Paged:** yes. The body is `{ rows, total, limit, offset }`, newest first; the total is also `X-Total-Count`.
+- **Never in it:** a password, a token, a setup code, an account or routing number, a signature, or a file's contents.
+
+```json
+{ "rows": [ { "id": 812, "occurred_at": "2026-10-29T15:04:11.204Z", "user_id": "u-41…", "user_name": "Maria Servin",
+    "action": "edit", "action_label": "Changed a record", "page": "/api/equipment/4f2…",
+    "record_type": "equipment", "record_id": "4f2…", "record_label": "Temp/Humidity Monitor", "via": "session",
+    "details": { "audit_action": "update", "changes": [ { "field": "status", "from": "active", "to": "out_of_service" } ] } } ],
+  "total": 1, "limit": 200, "offset": 0 }
+```

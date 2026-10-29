@@ -111,6 +111,9 @@ const MODULE_GROUPS = [
       // and they read as missing. Quality Schedules is the one that surfaced it.
       { id: 'quality-schedules', label: 'Quality Schedules (EMP swabs, water & air testing)', note: 'The recurring quality checks from FORM 604-01 — they generate QA tasks in the Task Center.' },
       { id: 'facility-map', label: 'Facility Map (floor plan, cleaning status, pest, BP&G zones)' },
+      // Suppliers, Onboarding and Visitors had always needed a grant and never
+      // had a box here, so only an admin could ever open them (29 Oct 2026).
+      { id: 'suppliers', label: 'Suppliers (qualification, questionnaires, certificates)', note: 'View reads the register. Edit adds suppliers, materials and documents and sends questionnaire links. Approving a supplier and recording a banned-list check stay with Quality leadership and admins.' },
     ],
   },
   {
@@ -131,6 +134,7 @@ const MODULE_GROUPS = [
       { id: 'dcr', label: 'Document Change Requests' },
       { id: 'org-chart', label: 'Org Chart' },
       { id: 'audit', label: 'Audit Log', note: 'Read-only history of every change: who did what, when, and what the value was before. What an auditor asks to see.' },
+      { id: 'user-activity', label: 'User Activity (bot read access)', note: "Lets this account's READ token pull the activity log (who signed in, pages, changes, downloads) from GET /api/user-activity. The screen itself stays admins-only; a person given this sees nothing new." },
     ],
   },
   {
@@ -148,6 +152,8 @@ const MODULE_GROUPS = [
       { id: 'newsletter', label: 'Newsletter' },
       { id: 'pay-tracking', label: 'Pay Tracking (evaluations; rates stay admin-only)' },
       { id: 'policies', label: 'Policies (handbook; edit = upload and publish)' },
+      { id: 'onboarding', label: 'Onboarding (new-hire packets and employee documents)', note: 'Starts packets, sends links and keeps employee documents. Seeing the full SSN and bank numbers additionally needs the office / HR department (or admin) and a password at the moment of looking.' },
+      { id: 'visitors', label: 'Visitors (lobby sign in / out log)' },
       { id: 'candidates', label: 'People (who we would hire when the timing is right)', note: 'Personal contact details for people who do not work here, so the module carries a SECOND door: office / HR departments and admins only. Granting this to anyone else gives them nothing.' },
     ],
   },
@@ -1008,6 +1014,13 @@ function UserForm({ initial, onSave, onCancel, canViewPin }) {
             className="rounded border-gray-300" />
           <span className="font-medium text-gray-700">Client (outside company)</span>
         </label>
+        {/* A bot or system account still signs in, posts and holds its token; it
+            just is not a person who is trained (D-262). */}
+        <label className="flex items-center gap-2 text-sm" data-not-trainee title="Leaves this account out of every training count, the matrix, assignments and the attendee lists. Nothing else changes.">
+          <input type="checkbox" checked={!!form.not_trainee} onChange={e => setForm({ ...form, not_trainee: e.target.checked })}
+            className="rounded border-gray-300" />
+          <span className="font-medium text-gray-700">Not a trainee (bot or system account)</span>
+        </label>
       </div>
       {!!form.is_external && (
         <div className="p-3 bg-sky-50 rounded-lg border border-sky-200 space-y-2 -mt-1">
@@ -1154,6 +1167,9 @@ function UserName({ u }) {
       )}
       {u.is_contractor ? (
         <span className="ml-2 px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded text-[10px] font-bold">CONTRACTOR</span>
+      ) : null}
+      {u.not_trainee ? (
+        <span className="ml-2 px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-[10px] font-bold" title="Left out of training counts">NOT A TRAINEE</span>
       ) : null}
       {u.is_external ? (
         <span className="ml-2 px-1.5 py-0.5 bg-sky-100 text-sky-700 rounded text-[10px] font-bold">

@@ -87,7 +87,7 @@ const db = new Database(DBP);
 const mk = (id, name, role, dept, ma) => db.prepare(`INSERT OR REPLACE INTO users (id,name,username,role,department,is_active,setup_code,setup_code_expires_at,module_access)
   VALUES (?,?,?,?,?,1,?,datetime('now','+7 day'),?)`).run(id, name, name, role, dept, `SC-${id}`, ma ? JSON.stringify(ma) : null);
 mk('ba-admin', 'Surface Admin', 'admin', 'office', null);
-mk('ba-bot', 'Catalog Bot', 'supervisor', 'qa', { products: 'edit', artwork: 'view', procurement: 'view', 'partner-reconciliation': 'view', 'ap-drop': 'view' });
+mk('ba-bot', 'Catalog Bot', 'supervisor', 'qa', { products: 'edit', artwork: 'view', procurement: 'view', 'partner-reconciliation': 'view', 'ap-drop': 'view', 'user-activity': 'view' });
 const call = async (method, path, body, auth) => {
   const r = await fetch(`${URL}${path}`, { method, headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: `Bearer ${auth}` } : {}) }, body: body ? JSON.stringify(body) : undefined });
   let j = null; try { j = await r.json(); } catch { /* empty */ }

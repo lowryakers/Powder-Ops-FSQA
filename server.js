@@ -100,6 +100,8 @@ import trainingRoutes from './server/api/training.js';
 import aiRoutes from './server/api/ai.js';
 import opsWebhookAdminRoutes from './server/api/ops-webhook-admin.js';
 import { initOpsWebhook } from './server/ops-webhook.js';
+import opsMonitorAdminRoutes from './server/api/ops-monitor-admin.js';
+import { startOpsMonitor } from './server/ops-monitor.js';
 import commsRoutes, { backfillEmbeddings, getChannelByName, postMessageAs, getBotUser, startReminderLoop, botDm } from './server/api/comms.js';
 import { pushToUser } from './server/push.js';
 import smsInboundRoutes from './server/api/sms-inbound.js';
@@ -163,6 +165,8 @@ import { generationSweep } from './server/pm-generation.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
 import { seedProductionEntries, seedEodTemplates } from './server/production-seed.js';
 import { seedTrainingCourses, seedWorkInstructionCourses } from './server/training-seed.js';
+import { flagBotAccountsOnce } from './server/trainees.js';
+import { matrixCounts } from './server/training-status.js';
 import { regradeFiledAttempts, repairFailedCompletions, alignPassMarks } from './server/training-regrade.js';
 import { seedReferenceLibrary } from './server/reference-seed.js';
 import { seedCertifications } from './server/cert-seed.js';
@@ -180,6 +184,8 @@ import { cleanupDuplicateTasks } from './server/duplicate-task-cleanup.js';
 import { seedKnifeMasterlist } from './server/knife-seed.js';
 import { applyTruckChecklists } from './server/truck-checklists.js';
 import { authenticate, isPublicPath, optionalAuth, sessionUser, readCookie, FILE_COOKIE } from './server/middleware/auth.js';
+import { activityMiddleware, startUserActivity, flushActivity } from './server/user-activity.js';
+import userActivityRoutes from './server/api/user-activity.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -2049,6 +2055,10 @@ app.use('/api', (req, res, next) => {
 // whatever its role says — one allow list, on every /api request it makes.
 app.use('/api', testRunnerGuard(getDb));
 app.use('/api', tokenApproveGuard);
+// WHO WAS ACTIVE AND WHEN (D-261). After the sign-in check, so every row names a
+// person; it records on the response's finish and never changes what is answered.
+startUserActivity();
+app.use('/api', activityMiddleware);
 
 // --- API Routes ---
 // requireModuleWrite makes the Settings View level real on the server: users
@@ -2086,6 +2096,7 @@ app.use('/api/bpg', bpgRoutes);
 app.use('/api/qa-review', qaReviewRoutes);
 app.use('/api/cleanup', cleanupRoutes);
 app.use('/api/audit', auditRoutes);
+app.use('/api/user-activity', userActivityRoutes);
 // Which optional services are on. Admin-only, and it returns variable NAMES
 // only — never a value. The router guards each route itself.
 app.use('/api/integrations', integrationsRoutes);
@@ -2209,6 +2220,7 @@ app.use('/api/certifications', requireModuleWrite('certifications'), certificati
 app.use('/api/ai', aiRoutes);
 app.use('/api/comms', commsRoutes);
 app.use('/api/admin/ops-webhook', opsWebhookAdminRoutes);
+app.use('/api/admin/ops-monitor', opsMonitorAdminRoutes);
 app.use('/api/mock-recalls', requireModuleWrite('recall'), mockRecallRoutes);
 app.use('/api/production', requireModuleWrite('production-log', 'production-schedule', 'production-dashboard', 'operator'), productionRoutes);
 app.use('/api/coa', requireModuleWrite('coa'), coaRoutes);
@@ -2354,6 +2366,7 @@ server.listen(PORT, '0.0.0.0', () => {
   startScheduledJobs(db, { storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges, qaActionNudges, employeeDocumentNudges, policyAckNudges: (d) => policyAckNudges(d, { botDm, postMessageAs, pushToUser }), trainingNudges, supplyCycleNudge, partnerReminderNudges, recordBackfillNudge, supplierReviewNudge, sendFlashReport, sendCleanupDigest, cleanupDigest, CLEANUP_BUSY_THRESHOLD, sendEodMissedDigest, eodMissedDigest, EOD_BUSY_THRESHOLD, sendHolidayNotices, sendLateResults });
   startReminderLoop(db);
   try { initOpsWebhook(db); } catch (e) { console.warn('[ops-webhook] not started:', e.message); }
+  try { startOpsMonitor(db); } catch (e) { console.warn('[ops-monitor] not started:', e.message); }
   // Generate any due document-review tasks on startup (idempotent; also runs on
   // every operator-tasks fetch).
   try {
@@ -2366,6 +2379,11 @@ server.listen(PORT, '0.0.0.0', () => {
     const rel = recordRelease(db, { version: process.env.npm_package_version || null });
     if (rel?.first_seen) console.log(`[change-register] release ${rel.sha.slice(0, 8)} recorded`);
   } catch (e) { console.warn('[change-register] release not recorded:', e.message); }
+  // Bots and system accounts are not trainees (D-262). Once per database; the
+  // report (who, and the training counts before and after) is in the audit log
+  // and in app_settings.training_bot_accounts_flagged_v1.
+  try { flagBotAccountsOnce(db, { countMatrix: (d) => matrixCounts(d) }); }
+  catch (e) { console.warn('[training] bot accounts not flagged:', e.message); }
   // Generate any due recurring quality-control tasks on startup (idempotent).
   try {
     const q = generateQualityScheduleTasks(db);
@@ -2375,6 +2393,7 @@ server.listen(PORT, '0.0.0.0', () => {
 
 function shutdown(signal) {
   console.log(`[server] ${signal} received — draining connections...`);
+  try { flushActivity(); } catch { /* the queue is best-effort on the way out */ }
   server.closeAllConnections();
   server.close(() => {
     console.log('[server] All connections drained. Exiting.');

@@ -62,7 +62,7 @@ export function readinessReview(db) {
   add('Training', () => {
     const untrained = n(`SELECT COUNT(*) c FROM users u
       WHERE (u.is_active IS NULL OR u.is_active = 1) AND u.role != 'auditor'
-        AND LOWER(u.name) NOT IN ('readybot')
+        AND LOWER(u.name) NOT IN ('readybot') AND COALESCE(u.not_trainee, 0) = 0
         AND NOT EXISTS (SELECT 1 FROM training_records tr WHERE LOWER(tr.employee_name) = LOWER(u.name))`);
     const emptyCourses = n(`SELECT COUNT(*) c FROM training_courses tc
       WHERE tc.active = 1

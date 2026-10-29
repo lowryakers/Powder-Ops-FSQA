@@ -228,7 +228,7 @@ function EquipmentForm({ initial, ccps, onSave, onCancel }) {
               retire a machine was bulk edit. Out of service also stops it
               generating new PM tasks, which is the point of retiring it. */}
           <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
-          <select value={form.status || 'active'} onChange={e => setForm({ ...form, status: e.target.value })}
+          <select data-eq-status value={form.status || 'active'} onChange={e => setForm({ ...form, status: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
             <option value="active">Active</option>
             <option value="partial">Partially operational</option>
@@ -236,7 +236,7 @@ function EquipmentForm({ initial, ccps, onSave, onCancel }) {
           </select>
           {form.status && form.status !== 'active' && (
             <p className="text-[11px] text-gray-500 mt-1">
-              No new PM tasks are generated while this is not active. Open tasks stay open.
+              No new tasks are raised while this is not active, and its open PM tasks are closed. If QA checks run on it, you are asked first.
             </p>
           )}
         </div>
@@ -668,6 +668,21 @@ function CcpManager({ ccps, equipment, onClose, onChanged }) {
   );
 }
 
+/**
+ * Taking equipment out of service stops the QA checks raised on it (Temp & Humidity on a monitor,
+ * BP&G on a zone). The server refuses with the list (409 stops_qa_checks); this asks, in those
+ * words, and sends again only on a yes. Returns null when the person says no (D-260).
+ */
+async function confirmingQaStop(send) {
+  try { return await send(false); } catch (e) {
+    if (e.status !== 409 || e.data?.code !== 'stops_qa_checks') throw e;
+    const lines = (e.data.checks || []).map(c => `• ${c.title} (${c.equipment})`).join('\n');
+    const yes = window.confirm(`Setting this to "${e.data.status}" stops these QA checks:\n\n${lines}\n\n`
+      + 'No new task is raised for them and their open tasks are closed. QA will be told.\n\nIs this equipment really out of use?');
+    return yes ? send(true) : null;
+  }
+}
+
 export default function EquipmentPanel() {
   const { data: equipment, loading, refresh } = useApiGet('/equipment');
   const { data: ccps, refresh: refreshCcps } = useApiGet('/haccp');
@@ -786,7 +801,11 @@ export default function EquipmentPanel() {
       setExpandedId(created.id);
     }
   };
-  const handleUpdate = async (form) => { await apiPut(`/equipment/${editing.id}`, form); setEditing(null); refresh(); };
+  const handleUpdate = async (form) => {
+    const saved = await confirmingQaStop((ok) => apiPut(`/equipment/${editing.id}`, ok ? { ...form, confirm_stop_checks: true } : form));
+    if (saved === null) return;
+    setEditing(null); refresh();
+  };
   const hasFilters = search || filterKind || filterType || filterLocation || filterStatus;
   const clearFilters = () => { setSearch(''); setFilterKind(''); setFilterType(''); setFilterLocation(''); setFilterStatus(''); };
 
@@ -808,7 +827,8 @@ export default function EquipmentPanel() {
   };
 
   const handleBulkApply = async (changes) => {
-    await apiPost('/equipment/bulk-update', { ids: [...selected], changes });
+    const saved = await confirmingQaStop((ok) => apiPost('/equipment/bulk-update', { ids: [...selected], changes, ...(ok ? { confirm_stop_checks: true } : {}) }));
+    if (saved === null) return;
     setSelected(new Set());
     refresh();
   };

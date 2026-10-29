@@ -423,6 +423,23 @@ limit), `authenticateToken` in `middleware/auth.js`, `server/middleware/no-token
   Procurement like a person's. Known by `app_settings.test_runner_user_id`, never its name. Its token is minted by an
   admin in Settings. `check:opswebhook` (51), `verify:testrunner` (23).
 
+## ReadyDoc tells Lowry when the #ops-requests bots stop (D-259)
+`server/ops-monitor.js` (`startOpsMonitor`, `tickOpsMonitor`, `webhookCheck`, `silenceCheck`, `botSignals`, `resolveRecipient`,
+`ensureAlertsChannel`, `opsMonitorStatus`), the `ops_monitor_incidents` table, `GET /api/admin/ops-monitor/status` (admin session
+only), runbook `docs/ops-monitor.md`.
+- **Off unless `OPS_MONITOR_ENABLED`.** Off means no timer, table, channel, post or push.
+- **Two triggers:** webhook errors for 15 min straight per target; no bot seen for 120 min, Mon–Fri 7 AM–5 PM MT (holidays not skipped).
+- **A bot is an account holding a live token**, never judged by its name. ReadyBot and the Test Runner are excluded.
+- **An alert is a ReadyBot post in private `#alerts` plus `pushToUser` to ONE account.** That account is found by
+  email `lowry@powder-ops.com`, else `OPS_MONITOR_USER_ID`, else nobody. Never an admins fallback. No email.
+- **Before every post, check #alerts is private with only the recipient in it**, or post nothing and push only.
+  Never post anywhere else.
+- **One alert and one recovery per incident** (partial unique index, state in the table). The push result is read back
+  from the subscription rows.
+- Test-only overrides (`OPS_MONITOR_TICK_MS`, `OPS_MONITOR_TEST_WALL`) are ignored unless `NODE_ENV=test`.
+- **No route changes or fires it.**
+- `check:opsmonitor` (96), `verify:opsmonitor` (20, its own server; control fails).
+
 ## The bots' REST surface: existing routes, listed, paged and filtered (D-162)
 `server/bot-api.js` (`BOT_ROUTES`, `pageOf`/`pageList`, `stripForbidden`, `isBroadcastMention`), `server/api/bot.js`
 (`GET /api/bot/whoami`), `docs/bot-api.md`.
@@ -6203,6 +6220,39 @@ navigated that narrow column to the **whole app** — sidebar and all — inside
   that button previously did nothing whatsoever. It now `postMessage`s `readydoc-navigate` to
   `window.parent` (docked) or `window.opener` (popout); App's listener is **origin-checked**. The panel stays
   on Messages and the module opens where the modules live.
+
+## Every module a person can be given has a box in Settings (D-263)
+- **A new module behind `requireModuleWrite` (or a sidebar item without `visible`/`adminOnly`/`anyOf`) needs a
+  `MODULE_GROUPS` entry in `UsersSection.jsx`**, or `check:modulelist` fails. Suppliers, Onboarding and Visitors had
+  none for their whole life, so only admins could open them.
+
+## Bots are not trainees; accounts that share a name (D-262, `server/trainees.js`, `server/same-name-accounts.js`)
+- **`users.not_trainee` leaves an account out of EVERY training count, list and assignment** — read it through
+  `TRAINEE_SQL` / `nonTraineeIds` / `nonTraineeNames`, never a name test. A new training count or pick list must use it.
+- Setting it cancels the account's open training tasks (reason, never deleted). The account stays active.
+- Set once per database on bots (token holders, ReadyBot, Test Runner, `*`-named), and on an account's first token.
+- Auditor-pass accounts are still counted (that is the Carol Pierce duplicate) — a pending decision.
+- "Accounts that share a name" (Settings → Data backup; `report:samename`) is READ-ONLY. Never merge accounts from it.
+- `verify:nottrainee` (38; control fails 3). The Training review is `docs/training-module-facts.md`.
+
+## Who was active and when: the append-only activity log (D-261, `server/user-activity.js`)
+- **`user_activity` is APPEND-ONLY** (triggers refuse UPDATE/DELETE). Never delete from it; `check:useractivity` scans for one.
+- **It never writes to `audit_log`.** It listens via `setAuditListener` (db.js), after the insert, and cannot fail it.
+  An edit's field changes come from the audit entry's own previous/new state.
+- **Add a secret-looking field name to `SECRET_KEY` (or `FORBIDDEN_KEYS`) rather than filtering it in a route.** Query
+  strings are dropped from every path; chat/AI writes record field names only.
+- Page views are batched on the screen (`src/lib/activityLog.js`); on hide they go by `sendBeacon` to the public
+  `/api/user-activity/beacon`, which checks the session token in the body.
+- Reads: admin session, or a token whose account holds the `user-activity` grant. Paged at 200.
+- `check:useractivity` (57), `verify:useractivity` (53; control fails from the first).
+
+## Equipment carrying QA checks asks before going out of service (D-260, `server/equipment-guard.js`)
+- **A status change away from active on equipment with an active QA check is `409 stops_qa_checks`** (PUT and bulk), naming
+  each check, until `confirm_stop_checks: true`. A QA check = `task_group = 'qa'` or a `TASK_TITLE_SQL` title.
+- On a confirmed change QA is DMed + pushed (`equipment_qa_stop_recipients`, default QA/quality supervisors, settable on
+  ReadyBot messages). The audit names the checks. Nothing is paused or deleted by the guard.
+- Cause: the Temp/Humidity monitors were set out of service on 27 Oct and QA's Temp & Humidity tasks silently stopped.
+- `verify:eqqaguard` (19; control fails 10).
 
 ## A reimbursement over $100 alerts the office as it is filed (D-254)
 - `LARGE_CLAIM_OVER` (100, strictly over) and `alertLargeClaim()` live in `api/reimbursements.js`.
