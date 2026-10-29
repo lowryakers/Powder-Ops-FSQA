@@ -6298,6 +6298,21 @@ revoke by DELETE with a reason), `CrisisDrills.jsx`. SOP 501, SQF 2.6.4.2.
   (`updated` / `no_change`) only. **That mark is the only thing that assigns retraining for a revision**, and until it
   the matrix measures against the course's revision, not the document's. `verify:docrevisions` (47).
 
+## Course drafts: the Quality bot stages, two people publish (D-278)
+`course_drafts` + `course_draft_materials`, `server/course-drafts.js` (`createDraft`, `updateDraft`, `draftDiff`, `draftView`,
+`signDraft`, `isBotAccount`, `purgeIfUnreferenced`), `/api/training/drafts…`, token grant `course-drafts`, `CourseDrafts.jsx`
+(Training → **Course drafts**).
+- **A draft is never a `training_courses` row** — nothing that counts training reads the draft tables. Keep it that way.
+- **The bot writes only through the `course-drafts` grant** (stage, edit while open, upload while open). Never add a live
+  course, quiz, material, record or document route to `WRITE_AREAS` for it.
+- **Two password signatures, two different people**: `document` (Document Control or admin) and `food_safety` (QA
+  supervisor or admin); never the stager, never a bot account (token or session). Reachable at Training view.
+  An edit clears the signatures. The second signature publishes.
+- **Publishing a draft built on the document's new revision is "course updated for revision N"** (`markCourseRevision`) —
+  it assigns retraining. A draft built on a revision the document has moved past is `409 DOCUMENT_MOVED`.
+- A live course file's object is purged only when no live or draft row still points at it.
+- `verify:coursedrafts` (56; control fails from the first upload).
+
 ## A training record says how somebody was trained; one session records many (D-264)
 `shared/training-record-fields.js` (`METHODS`, `LEGACY_METHODS`, `LANGUAGES`, `competenceStatement`, `wantsCompetence`,
 `trainingFieldErrors`), `training_records.recorded_by` / `recorded_by_id` / `language` / `competence_statement` / `dcr_id`

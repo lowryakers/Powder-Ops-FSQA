@@ -19,6 +19,7 @@ import FrozenScroll from '../common/FrozenScroll';
 import { HowTrainedFields, RecordedLine, HowChips, TrainingSessions, PeoplePicker } from './TrainingHowFields.jsx';
 import { localDateStr } from '../../utils/dates';
 import CourseRevision from './CourseRevision.jsx';
+import CourseDrafts from './CourseDrafts.jsx';
 import { passedQuiz, COMPETENCE_REQUIRED_MSG } from '../../../shared/training-record-fields.js';
 
 // Columns as data for the Records tab. Evidence and the actions cell have no
@@ -1663,6 +1664,8 @@ export default function TrainingPanel() {
     { id: 'documents', label: 'Documents' },
     { id: 'due', label: 'Retraining Due' },
     { id: 'courses', label: 'Courses' },
+    // New versions staged by the Quality bot, published by two people (D-278).
+    { id: 'drafts', label: 'Course drafts' },
     { id: 'records', label: 'Records' },
     // One row per training session, with who attended (D-264).
     { id: 'sessions', label: 'Sessions' },
@@ -1967,6 +1970,8 @@ export default function TrainingPanel() {
       )}
 
       {view === 'sessions' && <TrainingSessions />}
+
+      {view === 'drafts' && <CourseDrafts onPublished={refreshAll} />}
 
       {view === 'certifications' && (
         <div className="space-y-3">

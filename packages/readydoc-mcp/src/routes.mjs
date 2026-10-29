@@ -40,6 +40,18 @@ const PARTNER_DOC_FIELDS = ['direction', 'doc_type', 'doc_number', 'reference', 
 // refused file is named before anything is uploaded. The server still decides.
 export const CHAT_ATTACHMENT_EXTENSIONS = Object.freeze(['.pdf', '.png', '.jpg', '.jpeg', '.csv', '.xlsx', '.docx']);
 const CHAT_FILES = { arg: 'file_path', many: 'file_paths', max: 10, field: 'files', allow: CHAT_ATTACHMENT_EXTENSIONS };
+// D-278: a course draft's fields, and the quiz shape (English + Spanish).
+const DRAFT_FIELDS = ['course_id', 'title', 'code', 'category', 'description', 'retrain_months', 'passing_score', 'sop_id', 'built_from_revision', 'change_note', 'questions'];
+const DRAFT_PROPS = {
+  title: str('Course title.'), code: str('Course code, e.g. the document number.'), category: str('Category, e.g. GMP.'),
+  description: str('What the course teaches.'), retrain_months: num('Retrain every N months (blank = one-time).'), passing_score: num('Pass mark, 1–100.'),
+  sop_id: str('The controlled document the course is built from.'), built_from_revision: str("That document's revision (defaults to the one in force)."),
+  change_note: str('What changed and why.'),
+  questions: { type: ['array', 'null'], description: 'The quiz. null keeps the live quiz.', items: { type: 'object', properties: {
+    type: { type: 'string', enum: ['multiple_choice', 'true_false', 'short_answer'] }, prompt: str('The question in English.'), prompt_es: str('The question in Spanish.'),
+    options: { type: 'array', items: { type: 'string' } }, options_es: { type: 'array', items: { type: 'string' }, description: 'Spanish options, one for one with the English.' },
+    correct_answer: str('The correct answer (for multiple choice, the option number, e.g. "2").'), points: num('Points (default 1).') }, required: ['prompt', 'correct_answer'] } },
+};
 const anyProps = (keys, extra = {}) => Object.fromEntries(keys.map(k => [k, extra[k] || { type: ['string', 'number', 'boolean', 'null'], description: k.replace(/_/g, ' ') }]));
 
 export const ROUTES = Object.freeze([
@@ -248,6 +260,32 @@ export const ROUTES = Object.freeze([
       q: str('Text in the page or record.'),
       ...page,
     }, required: [] },
+
+  // D-278: the Quality bot's course drafts. The writes need a token holding the
+  // `course-drafts` grant. Publishing takes two people in ReadyDoc; no tool does it.
+  { tool: 'list_course_drafts', method: 'GET', path: '/api/training/drafts',
+    description: 'Training course drafts (open by default), with the document and revision each was built from, who staged it and who has signed.',
+    query: ['status'], properties: { status: { type: 'string', enum: ['draft', 'published', 'discarded', 'all'], description: 'Which drafts (default draft).' } }, required: [] },
+  { tool: 'get_course_draft', method: 'GET', path: '/api/training/drafts/:id',
+    description: 'One course draft: content, quiz, files, the document and revision it was built from, what changes against the live course, and its signatures.',
+    properties: { id: str('The draft id.') }, required: ['id'] },
+  { tool: 'stage_course_draft', method: 'POST', path: '/api/training/drafts',
+    description: 'Stage a DRAFT training course. With course_id it starts as a copy of that live course; without it, a new course. Never visible to trainees and never counts; two people publish it in ReadyDoc. Needs a write token with the course-drafts grant.',
+    body: DRAFT_FIELDS,
+    properties: { course_id: str('The live course to draft a new version of (omit for a new course).'), ...DRAFT_PROPS }, required: [] },
+  { tool: 'update_course_draft', method: 'PUT', path: '/api/training/drafts/:id',
+    description: 'Edit an open course draft. Send only the fields to change; a blank clears one. Any signature already given is cleared. Needs a write token with the course-drafts grant.',
+    body: [...DRAFT_FIELDS.filter(f => f !== 'course_id'), 'remove_material_ids', 'remove_draft_material_ids'],
+    properties: {
+      id: str('The draft id.'), ...DRAFT_PROPS,
+      remove_material_ids: { type: 'array', items: { type: 'string' }, description: 'Live course files this draft takes away.' },
+      remove_draft_material_ids: { type: 'array', items: { type: 'string' }, description: 'Files this draft added that should come off it.' },
+    }, required: ['id'] },
+  { tool: 'upload_course_draft_files', method: 'POST', path: '/api/training/drafts/:id/materials',
+    description: 'Upload files to an open course draft: a training video (mp4, mov, m4v, webm; up to 2 GB), or a pdf, png, jpg, docx or pptx. Clears any signature. Needs a write token with the course-drafts grant.',
+    body: ['title'], file: { arg: 'file_path', many: 'file_paths', max: 5, field: 'files', required: true, allow: ['.mp4', '.mov', '.m4v', '.webm', '.pdf', '.png', '.jpg', '.jpeg', '.docx', '.pptx'] },
+    properties: { id: str('The draft id.'), title: str('A title for the file (optional).'), file_path: filePath('file'),
+      file_paths: { type: 'array', items: { type: 'string' }, description: 'Several files (up to 5).' } }, required: ['id'] },
 ]);
 
 /** The server's own spelling of a path, for comparison with BOT_ROUTES (param names differ). */

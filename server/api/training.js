@@ -5,7 +5,7 @@ import { getDb, logAudit } from '../db.js';
 import { nonTraineeIds, nonTraineeNames, TRAINEE_RECORD_SQL } from '../trainees.js';
 import { personKey } from '../person-key.js';
 import { aiEnabled, generateTestQuestions, readSheetNames } from '../ai.js';
-import { storageEnabled, putStream, putObject, presignGet, deleteObject } from '../storage.js';
+import { storageEnabled, putStream, putObject, presignGet } from '../storage.js';
 import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage, isVideo, MAX_LONG_VIDEO_BYTES } from '../media.js';
 import multer from 'multer';
 import AdmZip from 'adm-zip';
@@ -27,6 +27,10 @@ import { markCourseRevision, stampLinkedRevision, CourseRevisionError, MARK_KIND
 import { isApprovedStatus, sameRevision } from '../../shared/document-revision.js';
 import { trainingFieldErrors, competenceStatement, competenceMissing, COMPETENCE_REQUIRED_MSG } from '../../shared/training-record-fields.js';
 import { renderCertificate } from '../certificate-pdf.js';
+import {
+  CourseDraftError, SIGN_ROLES, createDraft, updateDraft, addDraftMaterials, getDraft, draftView, listDrafts,
+  signDraft, revokeSignature, discardDraft, isBotAccount, purgeIfUnreferenced, draftMaterialShape, tokenDraftFileRefusal,
+} from '../course-drafts.js';
 
 const router = Router();
 
@@ -1371,10 +1375,119 @@ router.delete('/materials/:id', (req, res) => {
   const m = db.prepare('SELECT * FROM training_materials WHERE id = ?').get(req.params.id);
   if (!m) return res.status(404).json({ error: 'Not found' });
   db.prepare('DELETE FROM training_materials WHERE id = ?').run(m.id);
-  deleteObject(m.storage_key); // best effort; the row is already gone
+  // A published course draft can share the object (D-278): purge only the last reference.
+  purgeIfUnreferenced(db, m.storage_key); // best effort; the row is already gone
   logAudit(req.user, 'training_material_deleted', 'training_course', m.course_id,
     { filename: m.filename }, null, null, m.filename);
   res.json({ ok: true });
+});
+
+// ── COURSE DRAFTS (D-278) ───────────────────────────────────────────────────
+// The Quality bot stages a draft (its token's `course-drafts` grant opens only
+// the three writes below); two people publish it. A draft is never training.
+function draftFail(res, e) {
+  if (e instanceof CourseDraftError) return res.status(e.status).json({ error: e.message, ...e.extra });
+  throw e;
+}
+async function draftPayload(db, d, user) {
+  const view = draftView(db, d, user);
+  const files = db.prepare('SELECT * FROM course_draft_materials WHERE draft_id = ? ORDER BY created_at').all(d.id);
+  view.materials = await Promise.all(files.map(m => draftMaterialShape(m, storageEnabled() ? presignGet : null)));
+  const removeIds = view.remove_material_ids;
+  view.live_materials = d.course_id
+    ? db.prepare('SELECT id, filename, content_type, size FROM training_materials WHERE course_id = ? ORDER BY created_at').all(d.course_id)
+      .map(m => ({ ...m, is_video: isVideo(m.content_type, m.filename), taken_away: removeIds.includes(m.id) }))
+    : [];
+  return view;
+}
+
+router.get('/drafts', (req, res) => {
+  res.json(listDrafts(getDb(), { status: ['draft', 'published', 'discarded', 'all'].includes(req.query.status) ? req.query.status : 'draft' }));
+});
+
+router.get('/drafts/:id', async (req, res) => {
+  const db = getDb();
+  try { res.json(await draftPayload(db, getDraft(db, req.params.id), req.user)); }
+  catch (e) { draftFail(res, e); }
+});
+
+router.post('/drafts', async (req, res) => {
+  const db = getDb();
+  try { res.status(201).json(await draftPayload(db, createDraft(db, req.body || {}, req.user), req.user)); }
+  catch (e) { draftFail(res, e); }
+});
+
+router.put('/drafts/:id', async (req, res) => {
+  const db = getDb();
+  try {
+    const { draft, signatures_cleared } = updateDraft(db, getDraft(db, req.params.id), req.body || {}, req.user);
+    res.json({ ...(await draftPayload(db, draft, req.user)), signatures_cleared });
+  } catch (e) { draftFail(res, e); }
+});
+
+router.post('/drafts/:id/materials', uploadMaterials, async (req, res) => {
+  const files = req.files || [];
+  try {
+    if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured on this server.' });
+    const db = getDb();
+    const d = getDraft(db, req.params.id);
+    if (d.status !== 'draft') return res.status(409).json({ error: `This draft is ${d.status} and can no longer be changed.` });
+    if (!files.length) return res.status(400).json({ error: 'No files uploaded' });
+    if (req.auth?.kind === 'token') {
+      const refused = files.map(f => tokenDraftFileRefusal(f.originalname)).find(Boolean);
+      if (refused) return res.status(415).json({ error: refused });
+    }
+    const tooBig = rejectOversize(files, { videoMax: MAX_LONG_VIDEO_BYTES });
+    if (tooBig) return res.status(413).json({ error: tooBig });
+    const stored = [];
+    for (const f of files) {
+      const id = uuid();
+      const safe = (f.originalname || 'file').replace(/[^\w.-]+/g, '_').slice(0, 120);
+      const key = `training-drafts/${d.id}/${id}-${safe}`;
+      await putStream(key, createReadStream(f.path), f.mimetype);
+      stored.push({ id, title: (req.body?.title || '').slice(0, 200) || null, filename: (f.originalname || 'file').slice(0, 255),
+        content_type: f.mimetype || null, size: f.size || null, storage_key: key });
+    }
+    const cleared = addDraftMaterials(db, d, stored, req.user);
+    res.status(201).json({ files: stored.map(s => ({ id: s.id, filename: s.filename, content_type: s.content_type, size: s.size, is_video: isVideo(s.content_type, s.filename) })), signatures_cleared: cleared });
+  } catch (e) {
+    draftFail(res, e);
+  } finally {
+    cleanupTemp(files);
+  }
+});
+
+// A person's two acts. `sign` is the approve class (D-161): a token is refused
+// before this runs, and signDraft refuses a bot account signed in any other way.
+router.post('/drafts/:id/sign/:role', async (req, res) => {
+  const db = getDb();
+  try {
+    const d = getDraft(db, req.params.id);
+    if (!SIGN_ROLES[req.params.role]) return res.status(400).json({ error: 'Sign as "document" or "food_safety".' });
+    if (isBotAccount(db, req.user)) return res.status(403).json({ error: 'A bot account can never approve or publish a course.' });
+    if (!gateSignature(req, res)) return;
+    const out = signDraft(db, d, req.params.role, req.user);
+    res.json({ ...(await draftPayload(db, getDraft(db, d.id), req.user)), published: out.published });
+  } catch (e) { draftFail(res, e); }
+});
+
+router.delete('/drafts/:id/sign/:role', async (req, res) => {
+  const db = getDb();
+  try {
+    const d = getDraft(db, req.params.id);
+    revokeSignature(db, d, req.params.role, req.user, req.body?.reason);
+    res.json(await draftPayload(db, getDraft(db, d.id), req.user));
+  } catch (e) { draftFail(res, e); }
+});
+
+router.post('/drafts/:id/discard', async (req, res) => {
+  const db = getDb();
+  try {
+    if (isBotAccount(db, req.user)) return res.status(403).json({ error: 'A bot account cannot discard a draft. A person does.' });
+    const d = getDraft(db, req.params.id);
+    discardDraft(db, d, req.user, req.body?.reason);
+    res.json(await draftPayload(db, getDraft(db, d.id), req.user));
+  } catch (e) { draftFail(res, e); }
 });
 
 // ── Import a ZIP of scanned tests ─────────────────────────────────────────────

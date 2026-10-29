@@ -39,11 +39,14 @@ const LEGACY_SCOPES = Object.freeze({ 'write-drafts': 'write' });
 
 // GRANTS (D-171): named extra write areas an admin gives ONE token, on top of
 // `write`. A grant opens only the WRITE_AREAS entries that name it, and never
-// lifts TOKEN_DENY or the approve guard. One grant exists:
+// lifts TOKEN_DENY or the approve guard. Two grants exist:
 //   nfp-panel — upload the panel PDF and write panel values on a DRAFT
 //   nutrition panel, with a source reference. The Product Manager bot's.
+//   course-drafts — stage a DRAFT course: content, quiz (EN + ES) and files,
+//   a video up to 2 GB. The Quality bot's (D-278). Publishing takes two people.
 export const TOKEN_GRANTS = Object.freeze({
   'nfp-panel': 'Nutrition panels — upload the panel PDF and write panel values on a DRAFT panel, each write naming its source. Never approves.',
+  'course-drafts': 'Training course drafts — stage and edit a DRAFT course (content, quiz in English and Spanish, files incl. a video up to 2 GB). Never touches a live course; two people publish it.',
 });
 
 export function normalizeGrants(input) {

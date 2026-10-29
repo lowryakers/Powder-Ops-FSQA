@@ -47,6 +47,12 @@ export const BOT_ROUTES = Object.freeze([
   { method: 'POST', path: '/api/partners/:id/documents', module: 'partner-reconciliation (edit)', scope: 'write' },
   { method: 'PUT', path: '/api/partners/documents/:docId', module: 'partner-reconciliation (edit)', scope: 'write' },
   { method: 'GET', path: '/api/user-activity', module: 'user-activity', scope: 'read', paged: true },
+  // D-278: the Quality bot's course drafts (writes need the course-drafts grant).
+  { method: 'GET', path: '/api/training/drafts', module: 'training', scope: 'read' },
+  { method: 'GET', path: '/api/training/drafts/:id', module: 'training', scope: 'read' },
+  { method: 'POST', path: '/api/training/drafts', module: 'training (edit)', scope: 'write' },
+  { method: 'PUT', path: '/api/training/drafts/:id', module: 'training (edit)', scope: 'write' },
+  { method: 'POST', path: '/api/training/drafts/:id/materials', module: 'training (edit)', scope: 'write' },
 ]);
 
 // ── What a `write` token may write (D-164) ──────────────────────────────────
@@ -75,6 +81,10 @@ const draftNfp = (db, id) => ['draft', 'ready_for_review'].includes(db.prepare('
 const draftPartnerDoc = (db, id) => {
   const d = db.prepare('SELECT status, settlement_id FROM partner_documents WHERE id = ?').get(id);
   return !d || (d.status === 'draft' && !d.settlement_id); // missing → the handler 404s
+};
+const openDraft = (db, id) => {
+  const d = db.prepare('SELECT status FROM course_drafts WHERE id = ?').get(id);
+  return !d || d.status === 'draft'; // missing → the handler 404s
 };
 export const WRITE_AREAS = Object.freeze([
   // products
@@ -141,6 +151,15 @@ export const WRITE_AREAS = Object.freeze([
   // 403 that says why, rather than a bare not_open_to_tokens.
   { area: 'nfp-panel', grant: 'nfp-panel', method: 'PUT', re: /^\/nfp\/[^/]+\/panel-file$/, label: 'PUT /api/nfp/:id/panel-file — the panel PDF (draft only; nfp-panel grant)' },
   { area: 'nfp-panel', grant: 'nfp-panel', method: 'PUT', re: /^\/nfp\/[^/]+\/panel-values$/, label: 'PUT /api/nfp/:id/panel-values — panel values + source (draft only; nfp-panel grant)' },
+  // The Quality bot's course drafts (D-278) — only a token holding the
+  // `course-drafts` GRANT, and only while the draft is open. Live courses,
+  // tests, materials and records stay off this list, so every write to them is
+  // refused to every token. Signing and discarding are person-only by segment.
+  { area: 'course-drafts', grant: 'course-drafts', method: 'POST', re: /^\/training\/drafts\/?$/, label: 'POST /api/training/drafts — stage a draft course (course-drafts grant)' },
+  { area: 'course-drafts', grant: 'course-drafts', method: 'PUT', re: /^\/training\/drafts\/([^/]+)$/, label: 'PUT /api/training/drafts/:id (while draft; course-drafts grant)',
+    when: (req, m, db) => openDraft(db, m[1]) },
+  { area: 'course-drafts', grant: 'course-drafts', method: 'POST', re: /^\/training\/drafts\/([^/]+)\/materials$/, label: 'POST /api/training/drafts/:id/materials — files, a video up to 2 GB (while draft; course-drafts grant)',
+    when: (req, m, db) => openDraft(db, m[1]) },
   // messages
   { area: 'messages', method: 'POST', re: /^\/comms\/channels\/[^/]+\/messages$/, label: 'POST /api/comms/channels/:id/messages' },
   { area: 'messages', method: 'POST', re: /^\/comms\/channels\/[^/]+\/attachments$/, label: 'POST /api/comms/channels/:id/attachments' },

@@ -4921,6 +4921,49 @@ function runMigrations() {
   addColumnIfMissing('training_courses', 'built_on_at', 'TEXT');
   addColumnIfMissing('training_courses', 'built_on_note', 'TEXT');
 
+  // A course DRAFT (D-278): the Quality bot stages a new version of a course —
+  // content, quiz, files — and two people publish it. ITS OWN TABLES, never a
+  // status on training_courses: the matrix, assignment, the Operator View and
+  // the course list read training_courses, and a draft living there would need
+  // a filter in every one of them. Here no reader of live training can see it.
+  db.exec(`CREATE TABLE IF NOT EXISTS course_drafts (
+    id TEXT PRIMARY KEY,
+    course_id TEXT,                         -- NULL: a new course
+    status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','published','discarded')),
+    code TEXT,
+    title TEXT NOT NULL,
+    category TEXT,
+    description TEXT,
+    retrain_months INTEGER,
+    passing_score REAL,
+    sop_id TEXT,                            -- the document it was built from
+    built_from_revision TEXT,               -- that document's revision, as staged
+    questions TEXT,                         -- JSON quiz (EN + ES); NULL = keep the live quiz
+    remove_material_ids TEXT NOT NULL DEFAULT '[]', -- live materials this draft takes away
+    change_note TEXT,
+    staged_by TEXT, staged_by_id TEXT, staged_via_token INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_by TEXT, updated_by_id TEXT, updated_at TEXT,
+    doc_confirmed_by TEXT, doc_confirmed_by_id TEXT, doc_confirmed_at TEXT,
+    fs_approved_by TEXT, fs_approved_by_id TEXT, fs_approved_at TEXT,
+    published_at TEXT, published_test_id TEXT,
+    discarded_by TEXT, discarded_at TEXT, discard_reason TEXT
+  )`);
+  try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_course_draft_one_open ON course_drafts(course_id) WHERE status = 'draft' AND course_id IS NOT NULL"); } catch { /* ignore */ }
+  db.exec(`CREATE TABLE IF NOT EXISTS course_draft_materials (
+    id TEXT PRIMARY KEY,
+    draft_id TEXT NOT NULL,
+    title TEXT,
+    filename TEXT NOT NULL,
+    content_type TEXT,
+    size INTEGER,
+    storage_key TEXT NOT NULL,
+    uploaded_by TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (draft_id) REFERENCES course_drafts(id)
+  )`);
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_course_draft_materials ON course_draft_materials(draft_id)'); } catch { /* ignore */ }
+
   // Equipment ↔ training / document linkage. A course and a work instruction can
   // be ABOUT a machine (WI021 is literally "Hexagon Tumbler Mixer Operation"),
   // and without the link nothing can answer "is this machine ready to run" —
