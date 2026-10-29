@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import {
-  LifeBuoy, Phone, Users, Plus, Pencil, Trash2, X, ClipboardList, AlertTriangle, CheckCircle2,
+  LifeBuoy, Phone, Users, ShieldAlert, Plus, Pencil, Trash2, X, ClipboardList, AlertTriangle, CheckCircle2,
 } from 'lucide-react';
 import ModuleTabs from '../common/ModuleTabs.jsx';
 import { useModuleTabs } from '../../lib/useModuleTabs.js';
@@ -10,6 +10,7 @@ import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 import FrozenScroll from '../common/FrozenScroll';
 import { checkImpact, EXPOSED, IMPACT_SOURCE } from '../../../shared/crisis-impact.js';
 import { formatDateTime } from '../../lib/datetime.js';
+import CrisisDrills from './CrisisDrills.jsx';
 
 /**
  * Safety: the three controlled safety forms in one place.
@@ -498,6 +499,8 @@ export default function SafetyPanel({ user }) {
   const TABS = useMemo(() => [
     { id: 'contacts', label: 'Crisis Contacts', icon: Phone },
     { id: 'evacuations', label: 'Evacuations', icon: Users },
+    // The crisis drill and its product integrity inspection (D-265, SOP 501).
+    { id: 'drills', label: 'Crisis Drills', icon: ShieldAlert },
     { id: 'first-aid', label: 'First Aid Log', icon: ClipboardList },
   ], []);
   const { tabs, tab, setTab } = useModuleTabs({ id: 'safety', tabs: TABS });
@@ -511,6 +514,7 @@ export default function SafetyPanel({ user }) {
       <ModuleTabs tabs={tabs} value={tab} onChange={setTab} />
       {tab === 'contacts' && <CrisisContacts form={forms?.crisis} />}
       {tab === 'evacuations' && <Evacuations form={forms?.evacuation} impact={forms?.impact} user={user} />}
+      {tab === 'drills' && <CrisisDrills form={forms?.drill} user={user} />}
       {tab === 'first-aid' && <FirstAidLog form={forms?.first_aid} user={user} />}
     </div>
   );

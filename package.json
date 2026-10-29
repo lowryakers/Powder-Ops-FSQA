@@ -133,6 +133,7 @@
     "verify:useractivity": "node scripts/verify-user-activity.mjs",
     "verify:nottrainee": "node scripts/verify-not-trainee.mjs",
     "verify:trainingrecords": "node scripts/verify-training-records.mjs",
+    "verify:crisisdrill": "node scripts/verify-crisis-drill.mjs",
     "report:samename": "node scripts/report-same-name.mjs",
     "check:useractivity": "node scripts/check-user-activity.mjs",
     "verify:bannedcheck": "node scripts/verify-banned-check.mjs",

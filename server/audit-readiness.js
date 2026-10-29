@@ -363,6 +363,20 @@ export function readinessReview(db) {
       lastDrill.impact_at ? 'good' : 'warning',
       lastDrill.impact_at ? null : 'SQF 2.6.4.2: the crisis test must record its impact on product and materials. Add it on the Safety screen.', 'safety'));
     }
+    // The crisis drill with its product integrity inspection (D-265, SOP 501):
+    // the annual crisis test, reviewed by QA and by management.
+    const drill = one(`SELECT drill_date, result, qa_signed_at, mgmt_signed_at FROM crisis_drills
+      WHERE drill_date >= date('now', '-366 days') ORDER BY drill_date DESC LIMIT 1`);
+    if (!drill) {
+      items.push(item('No crisis drill and product integrity inspection in the last 12 months', 'warning',
+        'SQF 2.6.4.2: test the crisis management procedure at least annually and record its effect on product. Safety → Crisis Drills.', 'safety'));
+    } else {
+      const reviewed = drill.qa_signed_at && drill.mgmt_signed_at;
+      items.push(item(`Crisis drill ${drill.drill_date}${drill.result ? ` — ${drill.result.replace(/_/g, ' ')}` : ''}${reviewed ? ', reviewed' : ', not yet reviewed'}`,
+        reviewed && drill.result !== 'not_effective' ? 'good' : 'warning',
+        reviewed ? (drill.result === 'not_effective' ? 'The last drill was not effective; a retest is owed.' : null)
+          : 'The QA / SQF Practitioner and Management reviews are not both signed. Safety → Crisis Drills.', 'safety'));
+    }
     return items;
   });
 

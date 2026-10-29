@@ -6235,6 +6235,15 @@ navigated that narrow column to the **whole app** — sidebar and all — inside
 - "Accounts that share a name" (Settings → Data backup; `report:samename`) is READ-ONLY. Never merge accounts from it.
 - `verify:nottrainee` (38; control fails 3). The Training review is `docs/training-module-facts.md`.
 
+## Safety → Crisis Drills: the crisis drill and product integrity inspection (D-265)
+`shared/crisis-drill.js` (the form, `cleanDrill`, `missingToSign`), `crisis_drills`, `/api/safety/drills` (+ `/:id/sign/:review`,
+revoke by DELETE with a reason), `CrisisDrills.jsx`. SOP 501, SQF 2.6.4.2.
+- **Transcribed, DRAFT-1, no form number** until Document Control issues one (`docs/v2/queued/dcr-crisis-drill-product-integrity.md`).
+- **Two password-signed reviews (QA, Management), two different people**, refused until `missingToSign` is empty. Signed = closed.
+- A form body inside a scrolling modal: put `overflow-y-auto` on a DIV around the `<fieldset>` — a fieldset does not
+  scroll as a flex item, and the footer covered the inspection buttons.
+- `verify:crisisdrill` (29; control fails 1).
+
 ## A training record says how somebody was trained; one session records many (D-264)
 `shared/training-record-fields.js` (`METHODS`, `LEGACY_METHODS`, `LANGUAGES`, `competenceStatement`, `wantsCompetence`,
 `trainingFieldErrors`), `training_records.recorded_by` / `recorded_by_id` / `language` / `competence_statement` / `dcr_id`

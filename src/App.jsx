@@ -202,7 +202,7 @@ const NAV_GROUPS = [
       { id: 'internal-audits', label: 'Internal Audits', icon: ClipboardCheck, keywords: 'form 403-01 checklist audit findings CAR corrective action self audit' },
       // The three safety forms: crisis contacts (501-01), evacuation
       // headcounts (501-02), first aid injuries (502-01).
-      { id: 'safety', label: 'Safety', icon: LifeBuoy, keywords: 'crisis management contact list evacuation headcount drill first aid injury accident form 501 502 emergency' },
+      { id: 'safety', label: 'Safety', icon: LifeBuoy, keywords: 'crisis management contact list evacuation headcount drill product integrity inspection first aid injury accident form 501 502 emergency' },
     ],
   },
   {

@@ -9426,3 +9426,27 @@ request, and nothing saying who typed the record in. Lowry approved the plan wit
   removed the passed task's card, and the score with it, before anyone read it. `verify:trainingtest` and
   `verify:testgrading` caught this in the browser once the refresh got faster.
 - `verify:trainingrecords` (41, live + browser). The control (the old supersede rule) fails 2.
+
+## D-265 — The crisis drill and its product integrity inspection live in Safety (29 Oct 2026)
+
+Daniela asked for a "Crisis Management Review": her sheet *Crisis Management Drill and Product Integrity Inspection*
+(SOP 501), used for the 21 Oct 2026 earthquake drill in the Warehouse. It is the SQF 2.6.4.2 record (the annual crisis
+test and its effect on product), so it goes in **Safety** beside the crisis contacts (501-01) and the evacuation
+headcount (501-02), as a fourth tab, **Crisis Drills**.
+- **Transcribed word for word** (`shared/crisis-drill.js`). It has no form number yet, so every record is stamped
+  `DRAFT-1` and says "not yet numbered by Document Control" (the D-052 arrangement). The note for Document Control is
+  `docs/v2/queued/dcr-crisis-drill-product-integrity.md`.
+- **One table, `crisis_drills`**: the answers in `data`, the two review signatures as columns.
+- **Filed by** QA, Document Control, office/HR, supervisors and admins. It can be saved half-filled and finished later.
+  A drill date in the future is refused.
+- **Reviewed by two people, each with their password** (`gateSignature`): the QA / SQF Practitioner line (Quality or an
+  admin) and the Management line (a supervisor or an admin), never the same person. Refused while anything is left
+  (`missingToSign`): blanks, an unmarked inspection line, a Fail with no gap or corrective action, "Effective" with a
+  Fail, a result short of "Effective" with no corrective action, "Not effective" with no retest.
+- **A signed drill is closed.** Revoke (the signer or an admin, with a reason), correct, sign again. A reviewed drill
+  cannot be deleted; an unreviewed one only by an admin.
+- **The readiness review** names the latest drill in the last 12 months, its result and whether both reviews are signed,
+  or says there is none.
+- **Daniela's 21 Oct drill is not entered by ReadyDoc.** It is a real record; she files it on the screen with its real
+  date, and the test files a copy into a test database only.
+- `verify:crisisdrill` (29, live + browser at 1280 and 390). The control (no completeness check at signing) fails 1.

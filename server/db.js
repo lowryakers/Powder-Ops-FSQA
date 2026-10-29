@@ -1397,6 +1397,25 @@ function initSchema() {
     );
     CREATE INDEX IF NOT EXISTS idx_evac_date ON evacuation_headcounts(event_date DESC);
 
+    -- Crisis Management Drill and Product Integrity Inspection (D-265, SOP 501).
+    -- The answers live in data (shared/crisis-drill.js cleanDrill); the two review
+    -- signatures are columns, because they close the record.
+    CREATE TABLE IF NOT EXISTS crisis_drills (
+      id TEXT PRIMARY KEY,
+      form_revision TEXT NOT NULL,
+      drill_date TEXT NOT NULL,
+      result TEXT,
+      data TEXT NOT NULL DEFAULT '{}',
+      evacuation_id TEXT,
+      qa_signed_by TEXT, qa_signed_by_id TEXT, qa_signed_at TEXT,
+      mgmt_signed_by TEXT, mgmt_signed_by_id TEXT, mgmt_signed_at TEXT,
+      created_by TEXT,
+      created_by_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_crisis_drill_date ON crisis_drills(drill_date DESC);
+
     -- FORM 502-01 — the first aid injury/accident log, one row per injury.
     -- Columns mirror the paper's five, plus provenance.
     CREATE TABLE IF NOT EXISTS first_aid_injuries (

@@ -17,6 +17,12 @@ import {
   SAFETY_FORMS, EVAC_REVISION, EVAC_WORK_AREAS, EVAC_REASONS, FIRST_AID_REVISION,
 } from '../safety-forms.js';
 import { checkImpact, cleanImpact, impactState, EXPOSED, IMPACT_SOURCE } from '../../shared/crisis-impact.js';
+import {
+  DRILL_TITLE, DRILL_FORM_CODE, DRILL_REVISION, DRILL_SOP, DRILL_OBJECTIVE, ACTIVITIES, SCENARIOS, INSPECTION_ITEMS, MARKS,
+  HOLD_STATUS, RESULTS, REVIEWS, cleanDrill, fileErrors, missingToSign,
+} from '../../shared/crisis-drill.js';
+import { gateSignature, signatureEvidence } from '../signature.js';
+import { plantDateOf } from '../plant-clock.js';
 
 const router = Router();
 
@@ -25,12 +31,27 @@ const router = Router();
 const canAssess = (u) => u?.role === 'admin' || u?.role === 'supervisor'
   || ['qa', 'quality'].includes((u?.department || '').toLowerCase());
 
+// The crisis drill (D-265): Document Control runs it (Daniela conducted the
+// 21 Oct drill), so filing is the correcting departments plus DC. QA signs the
+// QA / SQF Practitioner line; a manager signs the Management line.
+const dept = (u) => (u?.department || '').toLowerCase();
+const canFileDrill = (u) => u?.role === 'admin' || u?.role === 'supervisor'
+  || ['qa', 'quality', 'office', 'hr', 'document_control'].includes(dept(u));
+const canSignQa = (u) => u?.role === 'admin' || ['qa', 'quality'].includes(dept(u));
+const canSignMgmt = (u) => u?.role === 'admin' || u?.role === 'supervisor';
+
 const canCorrect = (u) => u?.role === 'admin' || u?.role === 'supervisor'
   || ['qa', 'quality', 'office', 'hr'].includes((u?.department || '').toLowerCase());
 
 // The three forms, verbatim. Everything the panel renders comes from here.
 router.get('/forms', (req, res) => res.json({
   ...SAFETY_FORMS,
+  drill: {
+    title: DRILL_TITLE, form_code: DRILL_FORM_CODE, revision: DRILL_REVISION, sop: DRILL_SOP, objective: DRILL_OBJECTIVE,
+    activities: ACTIVITIES, scenarios: SCENARIOS, inspection_items: INSPECTION_ITEMS, marks: MARKS,
+    hold_status: HOLD_STATUS, results: RESULTS, reviews: REVIEWS,
+    can_file: canFileDrill(req.user), can_sign_qa: canSignQa(req.user), can_sign_management: canSignMgmt(req.user),
+  },
   impact: { source: IMPACT_SOURCE, exposed: EXPOSED, can_assess: canAssess(req.user) },
 }));
 
@@ -243,6 +264,112 @@ router.delete('/first-aid/:id', (req, res) => {
   logAudit(req.user, 'first_aid_deleted', 'first_aid_injury', row.id, {}, row, null,
     `${row.employee_name} · ${row.injury_date}`);
   res.json({ ok: true });
+});
+
+// ── Crisis Management Drill and Product Integrity Inspection (D-265) ───────
+
+const shapeDrill = (r) => {
+  const d = parseJson(r.data, {}) || {};
+  const missing = missingToSign(d);
+  return {
+    id: r.id, form_revision: r.form_revision, drill_date: r.drill_date, result: r.result, evacuation_id: r.evacuation_id,
+    ...d,
+    qa_signed_by: r.qa_signed_by, qa_signed_at: r.qa_signed_at,
+    mgmt_signed_by: r.mgmt_signed_by, mgmt_signed_at: r.mgmt_signed_at,
+    created_by: r.created_by, created_at: r.created_at, updated_at: r.updated_at,
+    missing_to_sign: missing,
+    // Any review signature closes the record; the way back is to revoke it.
+    signed: !!(r.qa_signed_at || r.mgmt_signed_at),
+    failed_lines: INSPECTION_ITEMS.filter(it => d.inspection?.[it.key] === 'F').map(it => it.label),
+  };
+};
+
+router.get('/drills', (req, res) => {
+  const db = getDb();
+  const rows = db.prepare('SELECT * FROM crisis_drills ORDER BY drill_date DESC, created_at DESC LIMIT 200').all();
+  res.json(rows.map(shapeDrill));
+});
+
+router.post('/drills', (req, res) => {
+  if (!canFileDrill(req.user)) return res.status(403).json({ error: 'Filing a crisis drill is for QA, Document Control, office/HR, supervisors and admins.' });
+  const d = cleanDrill(req.body || {});
+  const errors = fileErrors(d, plantDateOf());
+  if (errors.length) return res.status(400).json({ error: errors.join(' ') });
+  const db = getDb();
+  const id = uuid();
+  db.prepare(`INSERT INTO crisis_drills (id, form_revision, drill_date, result, data, evacuation_id, created_by, created_by_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(id, DRILL_REVISION, d.drill_date, d.result, JSON.stringify(d), d.evacuation_id, req.user?.name || null, req.user?.id || null);
+  logAudit(req.user, 'create', 'crisis_drill', id, { drill_date: d.drill_date, scenario: d.scenario, result: d.result }, null, d, `Crisis drill ${d.drill_date}`);
+  res.status(201).json(shapeDrill(db.prepare('SELECT * FROM crisis_drills WHERE id = ?').get(id)));
+});
+
+router.put('/drills/:id', (req, res) => {
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM crisis_drills WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  if (!canFileDrill(req.user)) return res.status(403).json({ error: 'You cannot correct this record.' });
+  if (row.qa_signed_at || row.mgmt_signed_at) {
+    return res.status(409).json({ error: 'This drill has been reviewed and signed. Revoke the signature first, then correct it.' });
+  }
+  const before = parseJson(row.data, {}) || {};
+  const d = cleanDrill({ ...before, ...(req.body || {}) });
+  const errors = fileErrors(d, plantDateOf());
+  if (errors.length) return res.status(400).json({ error: errors.join(' ') });
+  db.prepare(`UPDATE crisis_drills SET drill_date = ?, result = ?, data = ?, evacuation_id = ?, updated_at = datetime('now') WHERE id = ?`)
+    .run(d.drill_date, d.result, JSON.stringify(d), d.evacuation_id, row.id);
+  logAudit(req.user, 'update', 'crisis_drill', row.id, { drill_date: d.drill_date }, before, d, `Crisis drill ${d.drill_date}`);
+  res.json(shapeDrill(db.prepare('SELECT * FROM crisis_drills WHERE id = ?').get(row.id)));
+});
+
+// Sign one of the two review lines, with the password (the QA-signature rule).
+router.post('/drills/:id/sign/:review', (req, res) => {
+  const db = getDb();
+  const review = req.params.review;
+  if (!REVIEWS[review]) return res.status(404).json({ error: 'Unknown review line.' });
+  const row = db.prepare('SELECT * FROM crisis_drills WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  const may = review === 'qa' ? canSignQa(req.user) : canSignMgmt(req.user);
+  if (!may) return res.status(403).json({ error: review === 'qa' ? 'The QA / SQF Practitioner review is signed by Quality or an admin.' : 'The Management review is signed by a supervisor or an admin.' });
+  const col = review === 'qa' ? 'qa' : 'mgmt';
+  if (row[`${col}_signed_at`]) return res.status(409).json({ error: `${REVIEWS[review]} is already signed by ${row[`${col}_signed_by`]}.` });
+  const other = review === 'qa' ? row.mgmt_signed_by_id : row.qa_signed_by_id;
+  if (other && other === req.user?.id) return res.status(409).json({ error: 'The two reviews are signed by two different people.' });
+  const missing = missingToSign(parseJson(row.data, {}) || {});
+  if (missing.length) return res.status(409).json({ error: `Finish the record before it is reviewed: ${missing.join('; ')}.`, missing });
+  if (!gateSignature(req, res, { action: `crisis_drill_${review}_review` })) return;
+  db.prepare(`UPDATE crisis_drills SET ${col}_signed_by = ?, ${col}_signed_by_id = ?, ${col}_signed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`)
+    .run(req.user.name, req.user.id, row.id);
+  logAudit(req.user, 'sign', 'crisis_drill', row.id, { review: REVIEWS[review], ...signatureEvidence() }, null, null, `Crisis drill ${row.drill_date}`);
+  res.json(shapeDrill(db.prepare('SELECT * FROM crisis_drills WHERE id = ?').get(row.id)));
+});
+
+// Revoke a review signature: the signer or an admin, with a reason.
+router.delete('/drills/:id/sign/:review', (req, res) => {
+  const db = getDb();
+  const review = req.params.review;
+  if (!REVIEWS[review]) return res.status(404).json({ error: 'Unknown review line.' });
+  const row = db.prepare('SELECT * FROM crisis_drills WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  const col = review === 'qa' ? 'qa' : 'mgmt';
+  if (!row[`${col}_signed_at`]) return res.status(409).json({ error: 'That review is not signed.' });
+  if (req.user?.role !== 'admin' && row[`${col}_signed_by_id`] !== req.user?.id) return res.status(403).json({ error: 'Only the person who signed, or an admin, can revoke it.' });
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 3) return res.status(400).json({ error: 'Say why the signature is being revoked.' });
+  db.prepare(`UPDATE crisis_drills SET ${col}_signed_by = NULL, ${col}_signed_by_id = NULL, ${col}_signed_at = NULL, updated_at = datetime('now') WHERE id = ?`).run(row.id);
+  logAudit(req.user, 'revoke', 'crisis_drill', row.id, { review: REVIEWS[review], was_signed_by: row[`${col}_signed_by`], reason }, null, null, `Crisis drill ${row.drill_date}`);
+  res.json(shapeDrill(db.prepare('SELECT * FROM crisis_drills WHERE id = ?').get(row.id)));
+});
+
+// Admin only, and never once signed — a reviewed drill is history.
+router.delete('/drills/:id', (req, res) => {
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM crisis_drills WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Only an admin can delete a drill record.' });
+  if (row.qa_signed_at || row.mgmt_signed_at) return res.status(409).json({ error: 'A reviewed drill cannot be deleted.' });
+  db.prepare('DELETE FROM crisis_drills WHERE id = ?').run(row.id);
+  logAudit(req.user, 'delete', 'crisis_drill', row.id, { drill_date: row.drill_date }, parseJson(row.data, {}), null, `Crisis drill ${row.drill_date}`);
+  res.json({ deleted: true });
 });
 
 export default router;
