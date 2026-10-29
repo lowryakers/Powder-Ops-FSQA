@@ -108,6 +108,11 @@ function usageSummary(r) {
   </>;
 }
 
+function sameNameSummary(r) {
+  const n = r.groups.length;
+  return n ? red(true, `${plural(n, 'name')} with more than one account: ${r.groups.map(g => g.accounts[0]?.name).join(', ')}`) : 'Every account has its own name.';
+}
+
 function routingSummary(r) {
   if (!r.findings) return 'No task tables.';
   const n = r.findings.reduce((s, f) => s + f.rows.length, 0);
@@ -139,6 +144,8 @@ export default function DataBackupSection() {
       blurb="Which parts of ReadyDoc people actually use, counted from the audit trail since go-live. It also checks for invented maintenance history from the demo build and for accounts that still sign in with a PIN." />
     <ReadOnlyReport id="task-routing" path="/compliance/task-routing" title="Who sees which tasks" summary={routingSummary}
       blurb="What lands on each team's task list, and every schedule or card that is probably on the wrong one — machine PMs on QA, old room checklists, cards left behind — with where each is changed. Also each person's card count." />
+    <ReadOnlyReport id="same-name" path="/compliance/same-name-accounts" title="Accounts that share a name" summary={sameNameSummary}
+      blurb="People with more than one account under the same name, side by side: which one signs in, how each was created, and what is filed against each. Nothing is merged." />
     </div>
   );
 }

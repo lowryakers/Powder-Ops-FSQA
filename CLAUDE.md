@@ -6221,6 +6221,15 @@ navigated that narrow column to the **whole app** — sidebar and all — inside
   `window.parent` (docked) or `window.opener` (popout); App's listener is **origin-checked**. The panel stays
   on Messages and the module opens where the modules live.
 
+## Bots are not trainees; accounts that share a name (D-262, `server/trainees.js`, `server/same-name-accounts.js`)
+- **`users.not_trainee` leaves an account out of EVERY training count, list and assignment** — read it through
+  `TRAINEE_SQL` / `nonTraineeIds` / `nonTraineeNames`, never a name test. A new training count or pick list must use it.
+- Setting it cancels the account's open training tasks (reason, never deleted). The account stays active.
+- Set once per database on bots (token holders, ReadyBot, Test Runner, `*`-named), and on an account's first token.
+- Auditor-pass accounts are still counted (that is the Carol Pierce duplicate) — a pending decision.
+- "Accounts that share a name" (Settings → Data backup; `report:samename`) is READ-ONLY. Never merge accounts from it.
+- `verify:nottrainee` (38; control fails 3). The Training review is `docs/training-module-facts.md`.
+
 ## Who was active and when: the append-only activity log (D-261, `server/user-activity.js`)
 - **`user_activity` is APPEND-ONLY** (triggers refuse UPDATE/DELETE). Never delete from it; `check:useractivity` scans for one.
 - **It never writes to `audit_log`.** It listens via `setAuditListener` (db.js), after the insert, and cannot fail it.

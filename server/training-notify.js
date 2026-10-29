@@ -111,6 +111,7 @@ export async function trainingNudges(db) {
       AND wo.status IN ${LIVE}
       AND wo.assigned_to_id IS NOT NULL
       AND u.is_active = 1 AND COALESCE(u.is_external, 0) = 0 AND u.role != 'auditor'
+      AND COALESCE(u.not_trainee, 0) = 0
       AND wo.created_at <= datetime('now', '-2 days')
       AND (wo.last_nudge_at IS NULL OR wo.last_nudge_at <= datetime('now', '-2 days'))
     ORDER BY wo.due_date`).all();

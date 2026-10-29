@@ -1009,6 +1009,13 @@ function UserForm({ initial, onSave, onCancel, canViewPin }) {
             className="rounded border-gray-300" />
           <span className="font-medium text-gray-700">Client (outside company)</span>
         </label>
+        {/* A bot or system account still signs in, posts and holds its token; it
+            just is not a person who is trained (D-262). */}
+        <label className="flex items-center gap-2 text-sm" data-not-trainee title="Leaves this account out of every training count, the matrix, assignments and the attendee lists. Nothing else changes.">
+          <input type="checkbox" checked={!!form.not_trainee} onChange={e => setForm({ ...form, not_trainee: e.target.checked })}
+            className="rounded border-gray-300" />
+          <span className="font-medium text-gray-700">Not a trainee (bot or system account)</span>
+        </label>
       </div>
       {!!form.is_external && (
         <div className="p-3 bg-sky-50 rounded-lg border border-sky-200 space-y-2 -mt-1">
@@ -1155,6 +1162,9 @@ function UserName({ u }) {
       )}
       {u.is_contractor ? (
         <span className="ml-2 px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded text-[10px] font-bold">CONTRACTOR</span>
+      ) : null}
+      {u.not_trainee ? (
+        <span className="ml-2 px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-[10px] font-bold" title="Left out of training counts">NOT A TRAINEE</span>
       ) : null}
       {u.is_external ? (
         <span className="ml-2 px-1.5 py-0.5 bg-sky-100 text-sky-700 rounded text-[10px] font-bold">

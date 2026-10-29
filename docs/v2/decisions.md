@@ -9336,3 +9336,34 @@ or more. `server/user-activity.js`, the `user_activity` table, `/api/user-activi
 - There is no idle timeout in ReadyDoc; a "timeout" is a session reaching its expiry (30 days, or an auditor pass).
 - `check:useractivity` (57, pure), `verify:useractivity` (53, live + browser). The control (middleware and listener
   removed) fails from the first sign-in assertion.
+
+## D-262 — Bots and system accounts are not trainees; accounts that share a name are shown side by side (29 Oct 2026)
+
+Training counted every active non-client account, so each bot (*Procurement Bot, *Jarvis, … — ordinary non-admin
+accounts that hold API tokens, D-161), ReadyBot and the Test Runner owed every "everyone" course. Approved by Lowry:
+a "not a trainee" flag, set on every bot, with no account deleted or deactivated. `docs/training-module-facts.md` is
+the read-only review that came first.
+- **`users.not_trainee`** (Settings → Users → "Not a trainee (bot or system account)", audited). The account still
+  signs in, posts in #ops-requests and holds its token.
+- **One rule, `server/trainees.js`**, read by every place Training counts people:
+  - the matrix, By person and the four cards (`trainingSnapshot`);
+  - assigning (skipped as "not a trainee") and new-hire assignment;
+  - Group Training and Group Sheets (`bulk-complete` names and skips a bot, and the pick lists hide it);
+  - the importers' name matching;
+  - `/training/due`, `/training/assignments` and their reminders;
+  - certification and Most missed;
+  - the readiness review's "people with no training record".
+- **Setting the flag cancels that account's open training tasks**, with the reason (never deleted). Clearing it
+  changes nothing else.
+- **Once per database** (`training_bot_accounts_flagged_v1`), the deploy flags every account that has held a bot
+  token, ReadyBot, the Test Runner and every account named with the bots' `*` prefix. It records the training counts
+  before and after in that setting and in the audit log. An account's first bot token sets the flag too. A flag
+  somebody cleared stays cleared.
+- **Auditor-pass accounts are still counted.** That is the Carol Pierce duplicate (an auditor pass in her name makes
+  a second, read-only account), and whether those accounts should leave Training is a separate decision.
+- **Accounts that share a name** (`server/same-name-accounts.js`; Settings → Data backup → "Accounts that share a
+  name"; `npm run report:samename -- <db copy> ["Name"]`) puts them side by side: how each was created, can it sign
+  in, last sign-in, org position, training records, tasks, pay row, messages. It also shows training filed under the
+  name only. READ-ONLY. Nothing is merged until Lowry decides.
+- `verify:nottrainee` (38, two reboots + browser). The control (the snapshot filter removed) fails 3, the people
+  count reading 20 → 20 with 11 flagged.

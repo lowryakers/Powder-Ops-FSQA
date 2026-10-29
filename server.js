@@ -165,6 +165,8 @@ import { generationSweep } from './server/pm-generation.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
 import { seedProductionEntries, seedEodTemplates } from './server/production-seed.js';
 import { seedTrainingCourses, seedWorkInstructionCourses } from './server/training-seed.js';
+import { flagBotAccountsOnce } from './server/trainees.js';
+import { matrixCounts } from './server/training-status.js';
 import { regradeFiledAttempts, repairFailedCompletions, alignPassMarks } from './server/training-regrade.js';
 import { seedReferenceLibrary } from './server/reference-seed.js';
 import { seedCertifications } from './server/cert-seed.js';
@@ -2377,6 +2379,11 @@ server.listen(PORT, '0.0.0.0', () => {
     const rel = recordRelease(db, { version: process.env.npm_package_version || null });
     if (rel?.first_seen) console.log(`[change-register] release ${rel.sha.slice(0, 8)} recorded`);
   } catch (e) { console.warn('[change-register] release not recorded:', e.message); }
+  // Bots and system accounts are not trainees (D-262). Once per database; the
+  // report (who, and the training counts before and after) is in the audit log
+  // and in app_settings.training_bot_accounts_flagged_v1.
+  try { flagBotAccountsOnce(db, { countMatrix: (d) => matrixCounts(d) }); }
+  catch (e) { console.warn('[training] bot accounts not flagged:', e.message); }
   // Generate any due recurring quality-control tasks on startup (idempotent).
   try {
     const q = generateQualityScheduleTasks(db);

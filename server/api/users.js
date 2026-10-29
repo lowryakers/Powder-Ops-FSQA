@@ -10,6 +10,7 @@ import { OPT_IN_SET } from '../../shared/opt-in-modules.js';
 import { accessReview, dismissReview } from '../access-review.js';
 import { uniqueUsername, validateUsername, deriveUsername } from '../usernames.js';
 import { smsEnabled, sendOptIn, sendSms } from '../sms.js';
+import { setNotTrainee } from '../trainees.js';
 import { issueInvite, revokeInvites, inviteState, inviteBlockedReason, inviteMessage, tenDigits, INVITE_DAYS }
   from '../user-invites.js';
 
@@ -61,7 +62,7 @@ function verifyPassword(password, stored) {
 router.get('/', (req, res) => {
   const db = getDb();
   const { role, active } = req.query;
-  let sql = 'SELECT id, name, username, email, role, department, is_active, is_contractor, is_external, external_org, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, home_workspace, quick_tabs, phone, sms_access, sms_consent_at, sms_consent_by, created_at FROM users WHERE 1=1';
+  let sql = 'SELECT id, name, username, email, role, department, is_active, is_contractor, is_external, COALESCE(not_trainee, 0) AS not_trainee, external_org, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, home_workspace, quick_tabs, phone, sms_access, sms_consent_at, sms_consent_by, created_at FROM users WHERE 1=1';
   const params = [];
   if (role) { sql += ' AND role = ?'; params.push(role); }
   if (active !== undefined) { sql += ' AND is_active = ?'; params.push(active === 'true' ? 1 : 0); }
@@ -488,7 +489,13 @@ router.put('/:id', requireRole('admin'), async (req, res) => {
       moduleAccessStr, homeWorkspace, quickTabsStr, phoneVal, smsVal, consentAt, consentBy,
       req.params.id);
 
-  const updated = db.prepare('SELECT id, name, username, email, role, department, is_active, is_contractor, is_external, external_org, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, phone, sms_access, created_at FROM users WHERE id = ?').get(req.params.id);
+  // Not a trainee (D-262): its own write, audited by setNotTrainee, which also
+  // closes the account's open training tasks when the flag goes on.
+  let traineeChange = null;
+  if (req.body.not_trainee !== undefined) {
+    traineeChange = setNotTrainee(db, req.params.id, !!req.body.not_trainee, { actor: req.user });
+  }
+  const updated = db.prepare('SELECT id, name, username, email, role, department, is_active, is_contractor, is_external, COALESCE(not_trainee, 0) AS not_trainee, external_org, contractor_company, contractor_license, contractor_insurance_expiry, contractor_scope, module_access, phone, sms_access, created_at FROM users WHERE id = ?').get(req.params.id);
 
   // Surface security-relevant changes (role, active status, module permissions)
   // as their own explicit audit actions so they're easy to filter for.
@@ -528,7 +535,7 @@ router.put('/:id', requireRole('admin'), async (req, res) => {
         null, null, updated.name);
     } catch (e) { optinError = e.message; }
   }
-  res.json({ ...updated, optin_sent: optinSent, optin_error: optinError });
+  res.json({ ...updated, optin_sent: optinSent, optin_error: optinError, ...(traineeChange?.changed ? { training_tasks_closed: traineeChange.closed } : {}) });
 });
 
 // --- Auth ---

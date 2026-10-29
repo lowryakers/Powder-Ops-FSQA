@@ -3,6 +3,7 @@ import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from './db.js';
 import { writeAreaFor, writeAreaAllows } from './bot-api.js';
 import { approveRouteFor, tokenDenyFor } from './middleware/no-token-approve.js';
+import { setNotTrainee } from './trainees.js';
 
 // API tokens for the bots (D-161).
 //
@@ -121,6 +122,13 @@ export function createToken(db, { userId, label, scopes, expiresAt = null }, act
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(id, user.id, name, plaintext.slice(0, 8), hashToken(plaintext), JSON.stringify(s), actor?.name || 'system', exp);
   logAudit(actor, 'create', 'api_token', id, { for: user.name, user_id: user.id, label: name, scopes: s, expires_at: exp, prefix: plaintext.slice(0, 8) }, null, null, name);
+  // An account that holds a bot token is a bot, not a trainee (D-262). Said
+  // once, at the account's FIRST token; clearing it in Settings afterwards is
+  // respected by every later token.
+  try {
+    const first = db.prepare('SELECT COUNT(*) n FROM api_tokens WHERE user_id = ?').get(user.id).n === 1;
+    if (first) setNotTrainee(db, user.id, true, { actor, reason: 'holds a bot API token' });
+  } catch { /* the token stands */ }
   return { token: getToken(db, id), plaintext };
 }
 

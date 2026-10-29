@@ -5982,6 +5982,9 @@ function runMigrations() {
   // nobody would notice happening. Their module map does the rest (a NULL map
   // is a Messages-only account).
   addColumnIfMissing('users', 'is_external', 'INTEGER NOT NULL DEFAULT 0');
+  // Not a person who is trained: a bot or system account (D-262, server/trainees.js).
+  // Not a deactivation — the account still signs in, posts and holds its token.
+  addColumnIfMissing('users', 'not_trainee', 'INTEGER NOT NULL DEFAULT 0');
   // WHICH outside company. A fact about the person, and deliberately NOT part
   // of their name: the first client accounts were created as "Matt (M4
   // Dynamic)" to tell them from the plant's own Matt, and the suffix then WAS

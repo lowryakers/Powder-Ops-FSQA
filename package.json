@@ -130,6 +130,8 @@
     "verify:envlimits": "node scripts/verify-env-limits.mjs",
     "verify:eqqaguard": "node scripts/verify-equipment-qa-guard.mjs",
     "verify:useractivity": "node scripts/verify-user-activity.mjs",
+    "verify:nottrainee": "node scripts/verify-not-trainee.mjs",
+    "report:samename": "node scripts/report-same-name.mjs",
     "check:useractivity": "node scripts/check-user-activity.mjs",
     "verify:bannedcheck": "node scripts/verify-banned-check.mjs",
     "verify:partnerrecon": "node scripts/verify-partner-recon.mjs",
