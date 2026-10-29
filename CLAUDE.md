@@ -1751,6 +1751,9 @@ the layer. Three defects, all now covered by `npm run check:composer` (44 assert
   you already pasted and pressing Ctrl+K means "give this a name".
 - A ReadyDoc link still opens in-app (`parseAppLink`) rather than reloading the site in a new tab.
 
+**Lists in a message (D-268):** bullets typed straight after a numbered line nest under it, and an `<ol>` starts at the
+typed number — `renderBody`, `verify:messagelists`.
+
 ## Comms composer: rich text + reliable focus + resizable split screen
 **Formatting:** `renderBody()` is now block-aware — it splits into paragraphs and turns `- `/`* ` runs into a
 bullet `<ul>` and `1. ` runs into a numbered `<ol>`, so the message body renders inside a `<div>` (a `<p>`

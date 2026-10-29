@@ -9478,3 +9478,14 @@ the edit; this finds the records already turned.
   still makes the person read as trained.
 - **Nothing is put back automatically.** Which records to restore is a person's decision; restoring is the next step.
 - `verify:editfails` (10).
+
+## D-268 — In Messages, bullets under a numbered line nest under it (29 Oct 2026)
+
+Lowry's update to Daniela was written as "1. Heading / - bullet / - bullet / 2. Heading / …". `renderBody` in
+`CommsView.jsx` started a new list at every switch between numbers and bullets, so every heading after the first
+restarted at "1." and the bullets sat level with the headings.
+- **Bullets typed straight after a numbered line nest under that item**, and the next numbered line continues the same
+  list. A paragraph line still ends the list, so a plain bullet list after a paragraph is its own list.
+- **A numbered list starts at the number typed** (`<ol start>`), so "7." reads 7.
+- Messages only. The newsletter and document renderer (`shared/rich-markup.js`) is unchanged.
+- `verify:messagelists` (5, browser). The control (the old renderer) fails 4: six lists, every heading "1.".
