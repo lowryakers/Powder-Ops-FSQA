@@ -63,6 +63,8 @@ const courseLabel = (c) => `${c.code ? `${c.code} — ` : ''}${c.title}`;
  */
 export async function tellAssignee(db, { user_id, items = [], assigned_by = 'the office', reason = null, reminder = false } = {}) {
   if (!user_id || !items.length) return false;
+  // Never to a bot or system account (D-262, D-273), whichever caller asked.
+  if (db.prepare('SELECT COALESCE(not_trainee, 0) AS n FROM users WHERE id = ?').get(user_id)?.n) return false;
   const origin = readyDocOrigin();
   const link = `${origin}/?tab=operator`;
   const lines = items.map(i => `• *${courseLabel(i.course)}*${i.due_date ? ` — due ${i.due_date}` : ''}`).join('\n');

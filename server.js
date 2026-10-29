@@ -165,7 +165,7 @@ import { generationSweep } from './server/pm-generation.js';
 import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
 import { seedProductionEntries, seedEodTemplates } from './server/production-seed.js';
 import { seedTrainingCourses, seedWorkInstructionCourses } from './server/training-seed.js';
-import { flagBotAccountsOnce } from './server/trainees.js';
+import { flagBotAccountsOnce, flagUnusedAuditorDuplicatesOnce } from './server/trainees.js';
 import { resettleCurrentOnce } from './server/training-records.js';
 import { matrixCounts } from './server/training-status.js';
 import { regradeFiledAttempts, repairFailedCompletions, alignPassMarks } from './server/training-regrade.js';
@@ -2387,6 +2387,9 @@ server.listen(PORT, '0.0.0.0', () => {
   try { resettleCurrentOnce(db); } catch (e) { console.warn('[training] re-settle current failed:', e.message); }
   try { flagBotAccountsOnce(db, { countMatrix: (d) => matrixCounts(d) }); }
   catch (e) { console.warn('[training] bot accounts not flagged:', e.message); }
+  // Carol Pierce's unused auditor account, and any like it, is not a trainee (D-269).
+  try { flagUnusedAuditorDuplicatesOnce(db); }
+  catch (e) { console.warn('[training] auditor duplicates not flagged:', e.message); }
   // Generate any due recurring quality-control tasks on startup (idempotent).
   try {
     const q = generateQualityScheduleTasks(db);

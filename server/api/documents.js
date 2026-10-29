@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { TRAINEE_RECORD_SQL } from '../trainees.js';
 import { isoDay, nextReviewDue } from '../review-cadence.js';
 import { cleanFilename, stripRevisionSuffix, revisionFromFilename } from '../filename-meta.js';
 import { orderWorklist, worklistProgress } from '../doc-worklist.js';
@@ -913,7 +914,8 @@ router.put('/:id', (req, res) => {
     retraining_triggered = db.prepare(`
       SELECT COUNT(*) c FROM training_records tr JOIN training_courses c ON tr.course_id = c.id
       WHERE c.sop_id = ? AND c.retrain_on_doc_change = 1 AND tr.superseded = 0 AND tr.status = 'completed'
-        AND (tr.sop_revision IS NULL OR tr.sop_revision != ?)`).get(req.params.id, trainingRevision).c;
+        AND (tr.sop_revision IS NULL OR tr.sop_revision != ?)
+        AND ${TRAINEE_RECORD_SQL('tr')}`).get(req.params.id, trainingRevision).c;
   }
   logAudit(req.user, 'document_updated', 'document', req.params.id, { title: updated.title, material_change: materialChange, retraining_triggered }, existing, updated);
   res.json({ ...updated, retraining_triggered });

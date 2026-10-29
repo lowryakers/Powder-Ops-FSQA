@@ -64,7 +64,7 @@ t('a past date is accepted', r.status === 201 && sept?.training_date === '2026-0
 t('recorded by is the signed-in person, not what the form sent', sept?.recorded_by === 'Dana Records' && sept?.recorded_by_id === 'tr-admin');
 t('date recorded is set by ReadyDoc (today)', !!sept?.created_at && sept.created_at.slice(0, 4) === new Date().toISOString().slice(0, 4));
 t('method, language, revision and DCR are stored', sept?.method === 'hands_on' && sept?.language === 'es' && sept?.sop_revision === '4' && sept?.dcr_id === 'tr-dcr');
-t('the competence statement is stored in words, naming the trainer', /^Adam Bliss trained the people on this record/.test(sept?.competence_statement || ''));
+t('the competence statement is stored in words, naming the trainer', sept?.competence_statement === 'Adam Bliss: "I confirm this person understands this training."', sept?.competence_statement);
 
 r = await call('POST', '/training', { employee_name: 'Olga Floor', course_id: course.id, status: 'completed', training_date: '2099-01-01', completion_date: '2099-01-01', method: 'verbal' }, admin.token);
 t('a date in the future is refused', r.status === 400 && /future/.test(r.json?.error || ''), r.text);
@@ -86,17 +86,19 @@ t('…and does not turn a record with no score into a fail (the Edit form sends 
 const audit = one("SELECT details FROM audit_log WHERE entity_type = 'training' AND entity_id = ? ORDER BY id DESC LIMIT 1", sept.id);
 t('the edit is audited with what changed', /"language":\{"from":"es","to":"both"\}/.test(audit?.details || ''), audit?.details);
 r = await call('PUT', `/training/${sept.id}`, { competence_confirmed: false }, admin.token);
-t('unticking the statement clears it', r.json?.competence_statement === null);
+t('unticking the statement on a record with no quiz is refused (competence is required, D-269)', r.status === 400 && r.json?.code === 'COMPETENCE_REQUIRED', r.text.slice(0, 160));
 
 console.log('\n── a past session does not push a newer record aside ──');
-r = await call('POST', '/training', { employee_name: 'Olga Floor', employee_user_id: 'tr-op', course_id: course.id, status: 'completed', training_date: '2026-03-01', completion_date: '2026-03-01', method: 'verbal' }, admin.token);
+r = await call('POST', '/training', { employee_name: 'Olga Floor', employee_user_id: 'tr-op', course_id: course.id, status: 'completed', training_date: '2026-03-01', completion_date: '2026-03-01', method: 'verbal', competence_confirmed: true }, admin.token);
 const march = r.json;
 const flags = Object.fromEntries(q('SELECT id, superseded FROM training_records WHERE id IN (?, ?)', sept.id, march.id).map(x => [x.id, x.superseded]));
 t('logging March after September leaves September current', flags[sept.id] === 0 && flags[march.id] === 1, JSON.stringify(flags));
-r = await call('POST', '/training', { employee_name: 'Olga Floor', employee_user_id: 'tr-op', course_id: course.id, status: 'completed', training_date: '2026-10-01', completion_date: '2026-10-01', method: 'verbal' }, admin.token);
+r = await call('POST', '/training', { employee_name: 'Olga Floor', employee_user_id: 'tr-op', course_id: course.id, status: 'completed', training_date: '2026-10-01', completion_date: '2026-10-01', method: 'quiz', score: 95 }, admin.token);
 const oct = r.json;
 t('a newer record still becomes current', one('SELECT superseded s FROM training_records WHERE id = ?', oct.id).s === 0 && one('SELECT superseded s FROM training_records WHERE id = ?', sept.id).s === 1);
-t('verbal without the statement is saved and flagged as missing', oct?.competence_statement === null && oct?.method === 'verbal');
+t('a passed quiz needs no tick', oct?.status === 'completed' && oct?.competence_statement === null);
+r = await call('POST', '/training', { employee_name: 'Olga Floor', employee_user_id: 'tr-op', course_id: course.id, status: 'completed', training_date: '2026-10-02', completion_date: '2026-10-02', method: 'verbal' }, admin.token);
+t('neither a passed quiz nor the trainer\'s tick: refused', r.status === 400 && r.json?.code === 'COMPETENCE_REQUIRED', r.text.slice(0, 160));
 
 // Records left in the old (wrong) state are put right once, on boot.
 {
@@ -124,12 +126,12 @@ const sess = one('SELECT * FROM training_sessions WHERE id = ?', sid);
 t('the session holds the document revision, DCR, method, language and trainer', sess?.sop_revision === '3' && sess?.dcr_id === 'tr-dcr' && sess?.method === 'verbal' && sess?.language === 'both' && sess?.trainer === 'Maria Servin' && sess?.attendee_count === 2);
 t('…and who recorded it', sess?.recorded_by === 'Dana Records');
 const recs = q('SELECT * FROM training_records WHERE session_id = ?', sid);
-t('each attendee has their own record pointing at the session', recs.length === 2 && recs.every(x => x.sop_revision === '3' && x.language === 'both' && x.recorded_by === 'Dana Records' && /^Maria Servin/.test(x.competence_statement || '')));
+t('each attendee has their own record pointing at the session', recs.length === 2 && recs.every(x => x.sop_revision === '3' && x.language === 'both' && x.recorded_by === 'Dana Records' && /^Maria Servin: /.test(x.competence_statement || '')));
 t('a June session does not push Olga\'s October record aside', one('SELECT superseded s FROM training_records WHERE id = ?', oct.id).s === 0);
 r = await call('GET', '/training/sessions', null, admin.token);
 const listed = r.json?.find(s => s.id === sid);
 t('the Sessions list shows it with who attended', listed?.attendees?.map(a => a.employee_name).sort().join(',') === 'Olga Floor,Pedro Line' && listed?.dcr_number === 'TR-0001');
-r = await call('POST', '/training/bulk-complete', { course_id: course.id, training_date: '2099-01-01', attendees: [{ employee_user_id: 'tr-op', employee_name: 'Olga Floor' }] }, admin.token);
+r = await call('POST', '/training/bulk-complete', { course_id: course.id, training_date: '2099-01-01', competence_confirmed: true, attendees: [{ employee_user_id: 'tr-op', employee_name: 'Olga Floor' }] }, admin.token);
 t('a session dated in the future is refused', r.status === 400);
 r = await call('GET', '/training/change-requests', null, admin.token);
 t('the DCR picker lists change requests', r.json?.some(d => d.id === 'tr-dcr' && d.doc_number === 'SOP 401' && d.revision === '4'));
@@ -155,6 +157,9 @@ console.log('\n── the document importer keeps the version ──');
   t('the imported document is stored at that version, not 1.0', stored?.revision === '4', JSON.stringify(stored));
 }
 
+// A record filed before competence was required, with neither — the list flags it.
+{ const w = new Database(DBP); w.prepare(`INSERT INTO training_records (id, employee_name, training_topic, course_id, training_date, completion_date, status, method)
+    VALUES ('tr-legacy', 'Olga Floor', 'Legacy', ?, '2025-01-01', '2025-01-01', 'completed', 'verbal')`).run(course.id); w.close(); }
 console.log('\n── the screens ──');
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
@@ -170,9 +175,9 @@ const modal = page.locator('div.fixed').last();
 const methods = await modal.locator('[data-field="method"] option').allInnerTexts().catch(() => []);
 t('the session form offers the four methods', ['Verbal', 'Hands-on', 'Read and sign', 'Quiz'].every(m => methods.includes(m)), methods.join(','));
 t('…a language, the revision and the change request', await modal.locator('[data-field="language"]').count() === 1 && await modal.locator('[data-field="sop_revision"]').count() === 1 && await modal.locator('[data-field="dcr_id"] option', { hasText: 'TR-0001' }).count() === 1);
-t('…and the competence statement for verbal training', await modal.locator('[data-field="competence"]').count() === 1);
+t('…and the trainer\'s competence tick, whatever the method', await modal.locator('[data-field="competence"]').count() === 1);
 await modal.locator('[data-field="method"]').selectOption('read_and_sign');
-t('…which is not asked for read and sign', await modal.locator('[data-field="competence"]').count() === 0);
+t('…still asked for read and sign', await modal.locator('[data-field="competence"]').count() === 1);
 t('the date cannot be set in the future', (await modal.locator('[data-field="date-trained"]').getAttribute('max')) !== null);
 await page.keyboard.press('Escape');
 await page.goto(`http://localhost:${PORT}/?tab=training&view=sessions`);

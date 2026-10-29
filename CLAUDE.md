@@ -6249,6 +6249,23 @@ revoke by DELETE with a reason), `CrisisDrills.jsx`. SOP 501, SQF 2.6.4.2.
   scroll as a flex item, and the footer covered the inspection buttons.
 - `verify:crisisdrill` (34; control fails 1).
 
+## Competence is required; the group picker; restoring the edit bug's fails (D-269 – D-273)
+- **A training record a person files saves only with a passed quiz OR the trainer's tick "I confirm this person
+  understands this training."** (`competenceMissing` / `passedQuiz` in `shared/training-record-fields.js`, `400
+  COMPETENCE_REQUIRED`). POST, PUT, bulk-complete (Group Training + Group Sheets) and a no-test training task. A fail and
+  the importers are not asked. **This supersedes D-264's "flagged, never required".** A verify that files a training
+  record must send `competence_confirmed: true` or a passing score.
+- **`PeoplePicker`** (TrainingHowFields.jsx) is the one picker for both group screens: department + role filters,
+  Select all, untick. No automatic "affected by this revision" picking until course-document links are fixed.
+- **Group Sheets uses `HowTrainedFields`** like the other two forms; recorded date/by stay ReadyDoc's.
+- **Restore** (`server/edit-failed-restore.js`, `POST /compliance/edit-failed-training/restore`, admin, reason): only
+  what the D-267 finder lists as the bug's own, re-derived at restore time. Never at boot.
+- **`TRAINEE_RECORD_SQL`** filters training_records rows the way `TRAINEE_SQL` filters users. `tellAssignee` refuses a
+  not-a-trainee account. `flagUnusedAuditorDuplicatesOnce` (boot, once) marks an auditor account sharing a staff name
+  and never signed in — Carol Pierce's second account — by facts, never by name.
+- A verify that calls a server function which audits must use the app's own connection (`getDb()`), not a second
+  `better-sqlite3` handle, or the two lock each other out. `verify:trainingupdate` (43).
+
 ## A training record says how somebody was trained; one session records many (D-264)
 `shared/training-record-fields.js` (`METHODS`, `LEGACY_METHODS`, `LANGUAGES`, `competenceStatement`, `wantsCompetence`,
 `trainingFieldErrors`), `training_records.recorded_by` / `recorded_by_id` / `language` / `competence_statement` / `dcr_id`
@@ -6258,7 +6275,7 @@ revoke by DELETE with a reason), `CrisisDrills.jsx`. SOP 501, SQF 2.6.4.2.
 - **`recorded_by` comes from the session, never the body**, on every writer (pass it into `insertCompletion`). PUT refuses
   it and `created_at` (`400 SYSTEM_SET`). A new training writer must set it.
 - **Four methods only for new writes**; old values stay as filed and read through `methodLabel`. Never convert them.
-- **The competence statement is flagged when missing, never required.**
+- **The competence statement is REQUIRED now (D-269)** — a passed quiz or the trainer's tick.
 - **The latest date trained is current** (`supersedeOlder` ignores which record was filed last). Group Training and
   Group Sheets both save a `training_sessions` row.
 - **`passed: null` on PUT stays null** — the Edit form sends the record back whole.

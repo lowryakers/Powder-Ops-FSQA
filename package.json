@@ -136,6 +136,7 @@
     "verify:crisisdrill": "node scripts/verify-crisis-drill.mjs",
     "verify:editfails": "node scripts/verify-edit-failed-training.mjs",
     "verify:messagelists": "node scripts/verify-message-lists.mjs",
+    "verify:trainingupdate": "node scripts/verify-training-update.mjs",
     "report:samename": "node scripts/report-same-name.mjs",
     "report:editfails": "node scripts/report-edit-failed-training.mjs",
     "check:useractivity": "node scripts/check-user-activity.mjs",

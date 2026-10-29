@@ -9489,3 +9489,65 @@ restarted at "1." and the bullets sat level with the headings.
 - **A numbered list starts at the number typed** (`<ol start>`), so "7." reads 7.
 - Messages only. The newsletter and document renderer (`shared/rich-markup.js`) is unchanged.
 - `verify:messagelists` (5, browser). The control (the old renderer) fails 4: six lists, every heading "1.".
+
+## D-269 — Competence is required on a training record (29 Oct 2026) — supersedes D-264's flag-only rule
+
+D-264 stored the trainer's statement of competence and flagged a record without it, because "a past session somebody
+is logging today may have no trainer to ask". Lowry decided otherwise: a training record without evidence the person
+understood it is not a training record.
+- **A completion a person files saves only with a passed quiz OR the trainer's tick, "I confirm this person
+  understands this training."** A passed quiz is an in-app test or a score at or above the course's pass mark. The tick
+  is stored in words with the trainer's name (`competenceStatement`). `competenceMissing` / `passedQuiz` /
+  `COMPETENCE_TICK` in `shared/training-record-fields.js` are the one rule; the screens and the server read it.
+- **Every door a person uses:** `POST /training`, `PUT /training/:id`, `POST /training/bulk-complete` (Group Training and
+  Group Sheets; the refusal names each attendee missing it, bots aside) and an assigned task for a course with no test
+  (`missingForCheck`). Refused as `400 COMPETENCE_REQUIRED`; the forms hold their Save button until it is there.
+- **Not asked:** a failed result (not a completion) and the importers (history is filed as it was). The method no longer
+  decides whether it is asked (D-264 asked only for verbal and hands-on).
+- **Nothing is backfilled.** Older records without either stay as filed and read "no competence statement"; editing one
+  asks for the tick.
+
+## D-270 — The group entry picks people by department and role (29 Oct 2026)
+
+Group Training and Group Sheets share one picker (`PeoplePicker` in `TrainingHowFields.jsx`): filter by department and
+role, **Select all** ticks everyone the filters show, then untick who was absent. Trainees only.
+- **Automatic "affected by this revision" picking is deliberately not built.** Course-to-document links are wrong in
+  places and are corrected next round; a pick list built on them would be wrong.
+
+## D-271 — Restoring the records the edit bug failed (29 Oct 2026)
+
+D-267 found them; Lowry asked for the button. `restoreEditFailed` (`server/edit-failed-restore.js`),
+`POST /api/compliance/edit-failed-training/restore` (admin), **Restore N records** on the Settings report.
+- **Eligibility is re-derived from the finder at restore time**, never taken from the request: only records it lists as
+  the edit bug's own. A low-score fail (may be real), a real fail, or one already restored or changed is skipped and
+  named.
+- Each goes back to `completed` with its own date trained, pass left blank (1 if its score passes), retraining clock
+  recomputed, and which record is current re-settled. **A reason is required** and goes on one audit entry per record,
+  plus a summary.
+- Nothing runs at boot; a person presses the button. The restore is not held to D-269: it puts back what was there.
+- Kept in its own file so the read-only report script keeps importing the finder without the app's database module.
+
+## D-272 — Group Sheets asks how the training was done (29 Oct 2026)
+
+Group Sheets sent only "read and sign" and a trainer. It now uses the same `HowTrainedFields` as the record form and
+Group Training: date trained (past allowed, never future), trainer, method (starts on read and sign), language, the
+document revision, the change request and the competence tick. Each course's linked document is named under the
+course list. The revision box applies only to a one-course sheet; with several courses each record takes its own
+course's revision. **The date recorded and who recorded it stay ReadyDoc's** (the session and records stamp the
+signed-in person).
+
+## D-273 — Not-a-trainee accounts are out of retraining, reminders and Most missed; Carol's second account (29 Oct 2026)
+
+Checked each place D-262 named:
+- **Already right:** `/training/due`, the every-other-day chase (`trainingNudges` SQL), Most missed, assigning, Group
+  Training, the matrix.
+- **Fixed:** the count a document revision reports (`retraining_triggered`) and `/training/by-document` counted bots'
+  records — `TRAINEE_RECORD_SQL` in `server/trainees.js` is the record-side twin of `TRAINEE_SQL`. `tellAssignee` now
+  refuses a not-a-trainee account itself, whichever caller asks. Group Training's competence check skips bots.
+- **Carol Pierce's second account** is marked not a trainee by `flagUnusedAuditorDuplicatesOnce` (boot, once per
+  database, `training_auditor_duplicates_flagged_v1`): role auditor, the same name as an active non-auditor account,
+  and no login in the audit log. **Found by those facts, never by her name.** Not deactivated, not merged; audited
+  through `setNotTrainee`. Other auditor-pass accounts are still counted (the pending decision from D-262).
+- `docs/training-module-facts.md` is rewritten to describe the module as it now works.
+- `verify:trainingupdate` (43, live + browser). Control: `main` before this — a record with neither saves (201), and
+  there is no restore route.

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useApiGet, apiFetch } from '../../hooks/useApi';
+import { useApiGet, apiFetch, apiPost } from '../../hooks/useApi';
 import CopyButton from '../common/CopyButton';
 
 // Full data export, plus the automatic Friday copies. Moved out of the Settings
@@ -58,7 +58,7 @@ function AutoBackupList() {
 
 // A read-only report run on the live database on demand (D-216, D-217). Nothing runs until asked, and
 // nothing is written; the text is for reading here and for pasting to whoever asked.
-function ReadOnlyReport({ id, path, title, blurb, summary }) {
+function ReadOnlyReport({ id, path, title, blurb, summary, action = null }) {
   const [report, setReport] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -88,6 +88,7 @@ function ReadOnlyReport({ id, path, title, blurb, summary }) {
         <>
           <p className="text-sm text-gray-700" {...{ [`data-${id}-summary`]: true }}>{summary(report)}</p>
           <pre className="text-[11px] leading-snug bg-gray-50 border border-gray-100 rounded-lg p-3 overflow-x-auto max-h-[28rem] whitespace-pre" {...{ [`data-${id}-text`]: true }}>{report.text}</pre>
+          {action && action(report, run)}
         </>
       )}
     </div>
@@ -111,6 +112,50 @@ function usageSummary(r) {
 function sameNameSummary(r) {
   const n = r.groups.length;
   return n ? red(true, `${plural(n, 'name')} with more than one account: ${r.groups.map(g => g.accounts[0]?.name).join(', ')}`) : 'Every account has its own name.';
+}
+
+/**
+ * Put the edit bug's fails back (D-271). Only the records the report lists as
+ * the bug's own; the low-score ones to check are never restored from here. The
+ * server re-checks every id against the finder, and a reason is required.
+ */
+function EditFailRestore({ report, rerun }) {
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState('');
+  const n = report.likely?.length || 0;
+  if (result) {
+    return (
+      <p className="text-sm text-green-800 bg-green-50 border border-green-200 rounded-lg p-2" data-edit-fails-restored>
+        Restored {plural(result.restored.length, 'record')}{result.skipped.length ? ` · ${result.skipped.length} skipped (no longer on the list)` : ''}. Each one is completed again and the person reads as trained.
+      </p>
+    );
+  }
+  if (!n) return null;
+  const go = async () => {
+    if (!window.confirm(`Restore ${plural(n, 'training record')} to completed? Each one keeps its date trained, and the restore is logged with your reason.`)) return;
+    setBusy(true); setError('');
+    try { setResult(await apiPost('/compliance/edit-failed-training/restore', { ids: report.likely.map(x => x.id), reason })); rerun(); }
+    catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="border border-amber-200 bg-amber-50 rounded-lg p-3 space-y-2" data-edit-fails-restore>
+      <p className="text-sm text-amber-900">
+        Put the {plural(n, 'record')} the edit bug failed back to completed. The ones with a low score, listed to check, are left alone — open those and decide.
+      </p>
+      <div className="flex gap-2 flex-wrap">
+        <input value={reason} onChange={e => setReason(e.target.value)} placeholder="Reason (goes on every record)" data-edit-fails-reason
+          className="flex-1 min-w-[14rem] px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white" />
+        <button type="button" onClick={go} disabled={busy || reason.trim().length < 3} data-edit-fails-restore-go
+          className="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 disabled:opacity-50 whitespace-nowrap">
+          {busy ? 'Restoring…' : `Restore ${plural(n, 'record')}`}
+        </button>
+      </div>
+      {error && <p className="text-sm text-red-600">{error}</p>}
+    </div>
+  );
 }
 
 function editFailSummary(r) {
@@ -153,7 +198,8 @@ export default function DataBackupSection() {
     <ReadOnlyReport id="same-name" path="/compliance/same-name-accounts" title="Accounts that share a name" summary={sameNameSummary}
       blurb="People with more than one account under the same name, side by side: which one signs in, how each was created, and what is filed against each. Nothing is merged." />
     <ReadOnlyReport id="edit-fails" path="/compliance/edit-failed-training" title="Training records an edit turned into a fail" summary={editFailSummary}
-      blurb="From 7 to 29 October, saving a training record through Edit could mark it failed, so the person read as not trained. This lists those records, and edited fails with a low score to check. Nothing is changed." />
+      action={(report, rerun) => <EditFailRestore report={report} rerun={rerun} />}
+      blurb="From 7 to 29 October, saving a training record through Edit could mark it failed, so the person read as not trained. This lists those records, and edited fails with a low score to check. Restore puts the listed ones back." />
     </div>
   );
 }

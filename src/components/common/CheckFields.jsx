@@ -43,6 +43,8 @@ const S = {
   method_read_and_sign: { en: 'Read and sign', es: 'Leer y firmar' },
   method_quiz: { en: 'Quiz', es: 'Examen' },
   method_test: { en: 'Test taken in ReadyDoc', es: 'Examen tomado en ReadyDoc' },
+  competence: { en: 'I confirm this person understands this training.', es: 'Confirmo que esta persona entiende esta capacitación.' },
+  competence_hint: { en: 'The trainer ticks this. Required — there is no test to pass.', es: 'Lo marca quien capacitó. Obligatorio: no hay examen que aprobar.' },
   passing: { en: 'Passing score', es: 'Puntaje para aprobar' },
   renews: { en: 'Records a completion, and the next one comes due in', es: 'Registra la finalización, y la próxima vence en' },
   months: { en: 'months', es: 'meses' },
@@ -450,6 +452,11 @@ function TrainingFields({ form, v, set, lang, assignee }) {
             {/* The plant's four methods (D-264) — the same list as the Training screen. */}
             {METHOD_KEYS.map(k => <option key={k} value={k}>{tr(lang, `method_${k}`)}</option>)}
           </select>
+          <label className="flex items-start gap-2 text-sm text-gray-700" data-training-competence>
+            <input type="checkbox" className="mt-0.5 h-5 w-5 shrink-0" checked={!!v.competence_confirmed}
+              onChange={e => set({ competence_confirmed: e.target.checked })} />
+            <span>{tr(lang, 'competence')}<span className="block text-[11px] text-gray-500">{tr(lang, 'competence_hint')}</span></span>
+          </label>
         </>
       )}
       {!!form.retrain_months && (

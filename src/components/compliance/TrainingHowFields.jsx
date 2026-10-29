@@ -2,17 +2,22 @@
 // statement of competence, the document revision and the change request.
 // One component, used by the single-record form AND the session form, so the
 // two cannot ask for different things.
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useApiGet, apiFetch } from '../../hooks/useApi';
 import { Video, FileText } from 'lucide-react';
 import {
-  METHODS, LEGACY_METHODS, LANGUAGES, methodLabel, languageLabel, competenceStatement, wantsCompetence,
+  METHODS, LEGACY_METHODS, LANGUAGES, methodLabel, languageLabel, COMPETENCE_TICK,
 } from '../../../shared/training-record-fields.js';
 import { formatDateTime } from '../../lib/datetime';
 
 const inputCls = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm';
 
-export function HowTrainedFields({ value, onChange, legacyMethod = null }) {
+/**
+ * `quizPassed` — the record already carries a passed quiz, so the tick is not
+ * needed. `group` — the session form, where the tick covers each attendee
+ * without a passing score.
+ */
+export function HowTrainedFields({ value, onChange, legacyMethod = null, quizPassed = false, group = false }) {
   const set = (k, v) => onChange({ ...value, [k]: v });
   const { data: dcrs } = useApiGet('/training/change-requests');
   return (
@@ -37,17 +42,21 @@ export function HowTrainedFields({ value, onChange, legacyMethod = null }) {
         <label className="block text-xs font-medium text-gray-700 mb-1">Trainer</label>
         <input value={value.trainer || ''} onChange={e => set('trainer', e.target.value)} className={inputCls} data-field="trainer" />
       </div>
-      {wantsCompetence(value.method) && (
-        <label className="col-span-2 flex items-start gap-2 rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm text-gray-700" data-field="competence">
-          <input type="checkbox" className="mt-0.5 h-4 w-4 shrink-0" checked={!!value.competence_confirmed}
-            onChange={e => set('competence_confirmed', e.target.checked)} />
-          <span>
-            <span className="font-medium">Trainer&apos;s statement of competence.</span>{' '}
-            &ldquo;{competenceStatement(value.trainer)}&rdquo;
-            <span className="block text-[11px] text-gray-500 mt-0.5">Leave it unticked if the trainer has not said so. The record is still saved and shows it as missing.</span>
+      <label className={`col-span-2 flex items-start gap-2 rounded-lg border p-2.5 text-sm text-gray-700 ${
+        quizPassed || value.competence_confirmed ? 'border-gray-200 bg-gray-50' : 'border-amber-300 bg-amber-50'}`} data-field="competence">
+        <input type="checkbox" className="mt-0.5 h-5 w-5 shrink-0" checked={!!value.competence_confirmed}
+          onChange={e => set('competence_confirmed', e.target.checked)} />
+        <span>
+          <span className="font-medium">&ldquo;{COMPETENCE_TICK}&rdquo;</span>
+          <span className="block text-[11px] text-gray-500 mt-0.5">
+            {quizPassed
+              ? 'Not needed — this record has a passed quiz.'
+              : group
+                ? 'The trainer ticks this. Required for everyone on this session who did not pass a quiz.'
+                : 'The trainer ticks this. Required unless the record has a passed quiz — a record cannot be saved without one or the other.'}
           </span>
-        </label>
-      )}
+        </span>
+      </label>
       <div>
         <label className="block text-xs font-medium text-gray-700 mb-1">Document revision trained on</label>
         <input value={value.sop_revision || ''} onChange={e => set('sop_revision', e.target.value)} className={inputCls}
@@ -80,7 +89,7 @@ export function RecordedLine({ record }) {
 
 /** Method and language as a short line, with the missing-statement flag. */
 export function HowChips({ record }) {
-  const missing = wantsCompetence(record.method) && !record.competence_statement;
+  const missing = !record.competence_statement && !record.test_attempt_id && !(record.score != null && record.passed);
   return (
     <span className="inline-flex flex-wrap items-center gap-1">
       <span className="text-xs text-gray-600">{methodLabel(record.method)}</span>
@@ -139,7 +148,7 @@ export function TrainingSessions() {
   return (
     <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100" data-sessions>
       {data.map(s => {
-        const missing = wantsCompetence(s.method) && !s.competence_statement;
+        const missing = !s.competence_statement;
         return (
           <div key={s.id} className="px-4 py-3">
             <button type="button" onClick={() => setOpen(open === s.id ? null : s.id)} className="w-full text-left" data-session={s.id}>
@@ -170,6 +179,71 @@ export function TrainingSessions() {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+const pretty = (s) => String(s || '').replace(/_/g, ' ');
+
+/**
+ * Who was trained, for the group entry and Group Sheets (D-270): filter by
+ * department and role, "Select all" ticks everyone the filters show, then
+ * untick the people who were not there. Picking by who a document revision
+ * affects is NOT built — course–document links are being corrected first.
+ *
+ * Trainees only: inactive, outside-client and not-a-trainee accounts (bots)
+ * are never offered. `isChecked(id)` / `setChecked(users, on)` keep the
+ * caller's own selection shape.
+ */
+export function PeoplePicker({ users, isChecked, setChecked, renderExtra = null, heightCls = 'max-h-56' }) {
+  const [search, setSearch] = useState('');
+  const [dept, setDept] = useState('');
+  const [role, setRole] = useState('');
+  const pool = useMemo(() => (users || []).filter(u => u.is_active !== 0 && !u.is_external && !u.not_trainee), [users]);
+  const depts = useMemo(() => [...new Set(pool.map(u => u.department).filter(Boolean))].sort(), [pool]);
+  const roles = useMemo(() => [...new Set(pool.map(u => u.role).filter(Boolean))].sort(), [pool]);
+  const shown = useMemo(() => pool.filter(u =>
+    (!dept || u.department === dept) && (!role || u.role === role)
+    && (!search || u.name.toLowerCase().includes(search.toLowerCase()))), [pool, dept, role, search]);
+  const ticked = pool.filter(u => isChecked(u.id)).length;
+  const allShownTicked = shown.length > 0 && shown.every(u => isChecked(u.id));
+  const sel = 'px-2 py-1 border border-gray-300 rounded-lg text-xs bg-white';
+  return (
+    <div data-people-picker>
+      <div className="flex items-center justify-between gap-2 flex-wrap mb-1.5">
+        <span className="text-xs font-medium text-gray-700" data-picked-count>{ticked} selected</span>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <select value={dept} onChange={e => setDept(e.target.value)} className={sel} data-filter-dept aria-label="Department">
+            <option value="">All departments</option>
+            {depts.map(d => <option key={d} value={d} className="capitalize">{pretty(d)}</option>)}
+          </select>
+          <select value={role} onChange={e => setRole(e.target.value)} className={sel} data-filter-role aria-label="Role">
+            <option value="">All roles</option>
+            {roles.map(r => <option key={r} value={r}>{pretty(r)}</option>)}
+          </select>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…" className={`${sel} w-28`} />
+        </div>
+      </div>
+      <div className="flex items-center gap-3 mb-1 text-xs">
+        <button type="button" data-select-all disabled={!shown.length || allShownTicked}
+          onClick={() => setChecked(shown, true)} className="text-powder-700 font-medium hover:underline disabled:text-gray-300 disabled:no-underline">
+          Select all{dept || role || search ? ` ${shown.length} shown` : ` (${shown.length})`}
+        </button>
+        <button type="button" data-clear-all disabled={!ticked}
+          onClick={() => setChecked(pool.filter(u => isChecked(u.id)), false)} className="text-gray-500 hover:underline disabled:text-gray-300 disabled:no-underline">
+          Clear
+        </button>
+      </div>
+      <div className={`border border-gray-200 rounded-lg divide-y divide-gray-100 ${heightCls} overflow-y-auto`}>
+        {shown.map(u => (
+          <div key={u.id} className="flex items-center gap-2 px-3 py-1.5" data-person={u.name}>
+            <input type="checkbox" className="h-4 w-4 shrink-0" checked={!!isChecked(u.id)} onChange={() => setChecked([u], !isChecked(u.id))} />
+            <span className="flex-1 text-sm text-gray-800">{u.name} <span className="text-[11px] text-gray-400 capitalize">{pretty(u.department)}{u.role ? ` · ${pretty(u.role)}` : ''}</span></span>
+            {renderExtra && isChecked(u.id) && renderExtra(u)}
+          </div>
+        ))}
+        {shown.length === 0 && <p className="text-sm text-gray-500 text-center py-4">No matching people.</p>}
+      </div>
     </div>
   );
 }

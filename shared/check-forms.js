@@ -1,4 +1,4 @@
-import { METHOD_KEYS } from './training-record-fields.js';
+import { METHOD_KEYS, COMPETENCE_TICK } from './training-record-fields.js';
 /**
  * A scheduled check that files a RECORD — the one interface behind four
  * programs (D-060).
@@ -297,8 +297,10 @@ export function missingForCheck(form, check) {
       else if (!c.test_attempt_id && scored && Number(c.score) < Number(form.passing_score ?? 80)) {
         out.push({ key: 'score', label: `A passing score — ${Number(c.score)}% is under the ${form.passing_score ?? 80}% pass mark, so the training stays open until it is passed` });
       }
-    } else if (!String(c.trainer || '').trim()) {
-      out.push({ key: 'trainer', label: 'Who delivered the training' });
+    } else {
+      if (!String(c.trainer || '').trim()) out.push({ key: 'trainer', label: 'Who delivered the training' });
+      // No test, so no quiz to pass: the trainer confirms competence (D-269).
+      if (!c.competence_confirmed) out.push({ key: 'competence', label: `The trainer's tick: "${COMPETENCE_TICK}"` });
     }
   } else if (form.kind === 'stability_pull') {
     if (!String(c.quantity || '').trim()) out.push({ key: 'quantity', label: 'What was pulled (quantity / container)' });
@@ -377,6 +379,7 @@ export function normalizeCheck(form, check) {
       trainer: String(c.trainer || '').trim().slice(0, 120) || null,
       // One of the plant's four methods, or nothing (D-264); free text is dropped.
       method: METHOD_KEYS.includes(String(c.method || '').trim()) ? String(c.method).trim() : null,
+      competence_confirmed: !!c.competence_confirmed,
     };
   }
   if (form.kind === 'stability_pull') {

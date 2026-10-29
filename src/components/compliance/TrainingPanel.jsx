@@ -16,8 +16,9 @@ import FilePreview from '../FilePreview.jsx';
 import { pdfViewerUrl } from '../../lib/pdfUrl';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 import FrozenScroll from '../common/FrozenScroll';
-import { HowTrainedFields, RecordedLine, HowChips, TrainingSessions } from './TrainingHowFields.jsx';
+import { HowTrainedFields, RecordedLine, HowChips, TrainingSessions, PeoplePicker } from './TrainingHowFields.jsx';
 import { localDateStr } from '../../utils/dates';
+import { passedQuiz, COMPETENCE_REQUIRED_MSG } from '../../../shared/training-record-fields.js';
 
 // Columns as data for the Records tab. Evidence and the actions cell have no
 // key — a link is not a value to order by.
@@ -533,6 +534,11 @@ function CompletionModal({ initial, courses, users, onClose, onSaved }) {
   const [error, setError] = useState('');
   const [uploading, setUploading] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  // Competence is required (D-269): a passed quiz, or the trainer's tick. A
+  // score under the pass mark is a fail and is not asked.
+  const passMark = (courses || []).find(c => c.id === form.course_id)?.passing_score ?? 80;
+  const isFail = form.score !== '' && form.score != null && Number(form.score) < passMark;
+  const needsTick = !isFail && !passedQuiz(form, passMark) && !form.competence_confirmed;
 
   const submit = async (e) => {
     e.preventDefault();
@@ -590,7 +596,8 @@ function CompletionModal({ initial, courses, users, onClose, onSaved }) {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
           </div>
           <div className="col-span-2">
-            <HowTrainedFields value={form} onChange={setForm} legacyMethod={initial?.method} />
+            <HowTrainedFields value={form} onChange={setForm} legacyMethod={initial?.method}
+              quizPassed={passedQuiz(form, (courses || []).find(c => c.id === form.course_id)?.passing_score ?? 80)} />
           </div>
           <div className="col-span-2">
             <label className="block text-xs font-medium text-gray-700 mb-1">Scanned form / certificate</label>
@@ -615,7 +622,9 @@ function CompletionModal({ initial, courses, users, onClose, onSaved }) {
         <RecordedLine record={initial} />
         {error && <p className="text-sm text-red-600">{error}</p>}
         <div className="flex gap-2">
-          <button type="submit" disabled={saving} className="flex-1 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">{saving ? 'Saving…' : 'Save completion'}</button>
+          <button type="submit" disabled={saving || needsTick} data-save-completion
+            title={needsTick ? COMPETENCE_REQUIRED_MSG : undefined}
+            className="flex-1 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">{saving ? 'Saving…' : 'Save completion'}</button>
           <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Cancel</button>
         </div>
       </form>
@@ -639,14 +648,14 @@ function GroupSheetBulkModal({ courses, users, onClose, onDone }) {
   const [busy, setBusy] = useState(false);
   const [reading, setReading] = useState(false);
   const [error, setError] = useState('');
-  const [search, setSearch] = useState('');
   const activeCourses = useMemo(() => (courses || []).filter(c => c.active), [courses]);
 
   const pick = async (files) => {
     if (!files?.length) return;
     const q = files.map(f => ({
       file: f, name: f.name, url: URL.createObjectURL(f), isImage: /^image\//.test(f.type),
-      date: '', courseIds: [], trainer: '', sel: {}, status: 'pending', readResult: null,
+      date: '', courseIds: [], sel: {}, status: 'pending', readResult: null,
+      how: { method: 'read_and_sign', language: '', trainer: '', competence_confirmed: false, sop_revision: '', dcr_id: '' },
     }));
     setQueue(q); setIdx(0); setError('');
     try {
@@ -660,9 +669,13 @@ function GroupSheetBulkModal({ courses, users, onClose, onDone }) {
 
   const cur = queue?.[idx];
   const patch = (p) => setQueue(q => q.map((item, i) => (i === idx ? { ...item, ...p } : item)));
-  const toggleUser = (u) => patch({ sel: { ...cur.sel, [u.id]: cur.sel[u.id] ? undefined : { name: u.name } } });
+  const setChecked = (list, on) => {
+    const sel = { ...cur.sel };
+    for (const u of list) sel[u.id] = on ? { name: u.name } : undefined;
+    patch({ sel });
+  };
   const chosen = cur ? Object.entries(cur.sel).filter(([, v]) => v) : [];
-  const advance = () => { setError(''); setSearch(''); setIdx(i => i + 1); };
+  const advance = () => { setError(''); setIdx(i => i + 1); };
 
   const readNames = async () => {
     setReading(true); setError('');
@@ -681,13 +694,18 @@ function GroupSheetBulkModal({ courses, users, onClose, onDone }) {
     if (!cur.courseIds.length) { setError('Pick at least one course.'); return; }
     if (!cur.date) { setError('The sheet needs its training date.'); return; }
     if (!chosen.length) { setError('Tick who signed the sheet.'); return; }
+    // Competence is required (D-269); a sign-in sheet carries no quiz, so the trainer ticks it.
+    if (!cur.how.competence_confirmed) { setError(COMPETENCE_REQUIRED_MSG); return; }
     setBusy(true); setError('');
     try {
       const ids = [];
       for (const courseId of cur.courseIds) {
         const res = await apiPost('/training/bulk-complete', {
           course_id: courseId, completion_date: cur.date, training_date: cur.date,
-          trainer: cur.trainer, method: 'read_and_sign',
+          ...cur.how,
+          // One revision box, so it applies only when the sheet is for one course;
+          // with several, each record takes its own course's current revision.
+          sop_revision: cur.courseIds.length === 1 ? cur.how.sop_revision : '',
           attendees: chosen.map(([id, v]) => ({ employee_user_id: id, employee_name: v.name })),
         });
         ids.push(...(res.ids || []));
@@ -705,7 +723,6 @@ function GroupSheetBulkModal({ courses, users, onClose, onDone }) {
   };
 
   const filed = (queue || []).filter(s => s.status === 'filed');
-  const list = useMemo(() => (users || []).filter(u => u.is_active !== 0 && !u.is_external && !u.not_trainee && (!search || u.name.toLowerCase().includes(search.toLowerCase()))), [users, search]);
   const courseName = (id) => { const c = activeCourses.find(x => x.id === id); return c ? `${c.code ? `${c.code} — ` : ''}${c.title}` : id; };
 
   return (
@@ -761,19 +778,11 @@ function GroupSheetBulkModal({ courses, users, onClose, onDone }) {
 
             <div className="p-4 space-y-3 overflow-y-auto">
               <p className="text-xs font-semibold text-gray-500">Sheet {idx + 1} of {queue.length}</p>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Training date *</label>
-                  <input type="date" value={cur.date} onChange={e => patch({ date: e.target.value })}
-                    className="w-full px-2.5 py-2 border border-gray-300 rounded-lg text-sm" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Trainer</label>
-                  <input value={cur.trainer} onChange={e => patch({ trainer: e.target.value })}
-                    className="w-full px-2.5 py-2 border border-gray-300 rounded-lg text-sm" />
-                </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Date trained * <span className="font-normal text-gray-400">— can be in the past</span></label>
+                <input type="date" max={localDateStr()} value={cur.date} onChange={e => patch({ date: e.target.value })} data-field="date-trained"
+                  className="w-full px-2.5 py-2 border border-gray-300 rounded-lg text-sm" />
               </div>
-
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Course(s) * <span className="font-normal text-gray-400">— a sheet naming several SOPs files one record per course per signer</span></label>
                 <div className="flex flex-wrap gap-1.5 mb-1.5">
@@ -790,7 +799,25 @@ function GroupSheetBulkModal({ courses, users, onClose, onDone }) {
                   <option value="">+ Add a course…</option>
                   {activeCourses.map(c => <option key={c.id} value={c.id}>{c.code ? `${c.code} — ` : ''}{c.title}</option>)}
                 </select>
+                {cur.courseIds.length > 0 && (
+                  <div className="mt-1.5 space-y-0.5" data-sheet-documents>
+                    {cur.courseIds.map(id => {
+                      const c = activeCourses.find(x => x.id === id);
+                      return (
+                        <p key={id} className="text-[11px] text-gray-500">
+                          Document: {c?.sop_number ? `${c.sop_number} — ${c.sop_title}` : <span className="text-amber-700">no document linked to this course</span>}
+                          {c?.sop_number && (c.sop_training_revision || c.sop_revision) ? ` · current revision ${c.sop_training_revision || c.sop_revision}` : ''}
+                        </p>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
+
+              <HowTrainedFields value={cur.how} onChange={how => patch({ how })} group />
+              {cur.courseIds.length > 1 && (
+                <p className="text-[11px] text-gray-500 -mt-1">Several courses: each record takes its own course&apos;s current revision; the revision box is used only for a one-course sheet.</p>
+              )}
 
               <div>
                 <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
@@ -800,8 +827,6 @@ function GroupSheetBulkModal({ courses, users, onClose, onDone }) {
                       className="inline-flex items-center gap-1 px-2 py-1 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-[11px] font-medium hover:bg-purple-100 disabled:opacity-50">
                       <Sparkles size={11} /> {reading ? 'Reading…' : 'Read names from the sheet'}
                     </button>
-                    <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…"
-                      className="px-2 py-1 border border-gray-300 rounded-lg text-xs w-28" />
                   </div>
                 </div>
                 {cur.readResult && (
@@ -821,14 +846,7 @@ function GroupSheetBulkModal({ courses, users, onClose, onDone }) {
                     ))}
                   </div>
                 )}
-                <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-44 overflow-y-auto">
-                  {list.map(u => (
-                    <label key={u.id} className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-gray-50">
-                      <input type="checkbox" checked={!!cur.sel[u.id]} onChange={() => toggleUser(u)} />
-                      <span className="flex-1 text-sm text-gray-800">{u.name} <span className="text-[11px] text-gray-400 capitalize">{(u.department || '').replace(/_/g, ' ')}</span></span>
-                    </label>
-                  ))}
-                </div>
+                <PeoplePicker users={users} isChecked={id => !!cur.sel[id]} setChecked={setChecked} heightCls="max-h-44" />
               </div>
 
               {error && <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-2">{error}</p>}
@@ -1087,19 +1105,27 @@ function GroupTrainingModal({ courses, users, onClose, onSaved }) {
   const [date, setDate] = useState(today);
   const [how, setHow] = useState({ method: 'verbal', language: '', trainer: '', competence_confirmed: false, sop_revision: '', dcr_id: '' });
   const [sel, setSel] = useState({}); // userId -> { checked, name, score }
-  const [search, setSearch] = useState('');
   const [sheet, setSheet] = useState(null); // the signed sign-in sheet (Form 409-02)
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const list = useMemo(() => (users || []).filter(u => u.is_active !== 0 && !u.is_external && !u.not_trainee && (!search || u.name.toLowerCase().includes(search.toLowerCase()))), [users, search]);
-  const toggle = (u) => setSel(s => ({ ...s, [u.id]: s[u.id]?.checked ? { ...s[u.id], checked: false } : { checked: true, name: u.name, score: '' } }));
+  const setChecked = (list, on) => setSel(s => {
+    const next = { ...s };
+    for (const u of list) next[u.id] = on ? { score: '', ...next[u.id], checked: true, name: u.name } : { ...next[u.id], checked: false };
+    return next;
+  });
   const setScore = (id, v) => setSel(s => ({ ...s, [id]: { ...s[id], score: v } }));
   const chosen = Object.entries(sel).filter(([, v]) => v.checked);
+  // Competence is required (D-269): everyone without a passing score needs the trainer's tick.
+  const passMark = (courses || []).find(c => c.id === courseId)?.passing_score ?? 80;
+  const isFail = (v) => v.score !== '' && v.score != null && Number(v.score) < passMark;
+  const unproven = chosen.filter(([, v]) => !isFail(v) && !passedQuiz(v, passMark));
+  const needsTick = unproven.length > 0 && !how.competence_confirmed;
 
   const save = async () => {
     if (!courseId) { setError('Pick a course.'); return; }
     if (chosen.length === 0) { setError('Select at least one attendee.'); return; }
+    if (needsTick) { setError(`${COMPETENCE_REQUIRED_MSG} ${unproven.length} ${unproven.length === 1 ? 'person has' : 'people have'} no passing score.`); return; }
     setSaving(true); setError('');
     try {
       const res = await apiPost('/training/bulk-complete', {
@@ -1145,7 +1171,7 @@ function GroupTrainingModal({ courses, users, onClose, onSaved }) {
               <input type="date" max={today} value={date} onChange={e => setDate(e.target.value)} data-field="date-trained" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
             </div>
             <div className="col-span-2">
-              <HowTrainedFields value={how} onChange={setHow} />
+              <HowTrainedFields value={how} onChange={setHow} group quizPassed={chosen.length > 0 && unproven.length === 0} />
             </div>
             <div className="col-span-2">
               <label className="block text-xs font-medium text-gray-700 mb-1">Signed sign-in sheet (photo or PDF)</label>
@@ -1156,28 +1182,19 @@ function GroupTrainingModal({ courses, users, onClose, onSaved }) {
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="text-xs font-medium text-gray-700">Attendees ({chosen.length} selected)</label>
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…" className="px-2 py-1 border border-gray-300 rounded-lg text-xs w-32" />
-            </div>
-            <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-56 overflow-y-auto">
-              {list.map(u => (
-                <div key={u.id} className="flex items-center gap-2 px-3 py-1.5">
-                  <input type="checkbox" checked={!!sel[u.id]?.checked} onChange={() => toggle(u)} />
-                  <span className="flex-1 text-sm text-gray-800">{u.name} <span className="text-[11px] text-gray-400 capitalize">{(u.department || '').replace(/_/g, ' ')}</span></span>
-                  {sel[u.id]?.checked && (
-                    <input type="number" step="any" min="0" max="100" value={sel[u.id].score} onChange={e => setScore(u.id, e.target.value)} placeholder="score" className="w-16 px-2 py-1 border border-gray-300 rounded text-xs" />
-                  )}
-                </div>
-              ))}
-              {list.length === 0 && <p className="text-sm text-gray-500 text-center py-4">No matching people.</p>}
-            </div>
-            <p className="text-[11px] text-gray-400 mt-1">Leave score blank for attendance-only; a score is marked pass/fail against the course threshold.</p>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Attendees</label>
+            <PeoplePicker users={users} isChecked={id => !!sel[id]?.checked} setChecked={setChecked}
+              renderExtra={u => (
+                <input type="number" step="any" min="0" max="100" value={sel[u.id].score} onChange={e => setScore(u.id, e.target.value)}
+                  placeholder="score" className="w-16 px-2 py-1 border border-gray-300 rounded text-xs" />
+              )} />
+            <p className="text-[11px] text-gray-400 mt-1">A score at or above the pass mark is a passed quiz. Anyone without one needs the trainer&apos;s tick above. A score under the pass mark files as a fail.</p>
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
         <div className="flex items-center gap-2 p-4 border-t">
-          <button onClick={save} disabled={saving} className="flex-1 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">{saving ? 'Saving…' : `Record ${chosen.length || ''} completion${chosen.length === 1 ? '' : 's'}`}</button>
+          <button onClick={save} disabled={saving || needsTick} data-record-session title={needsTick ? COMPETENCE_REQUIRED_MSG : undefined}
+            className="flex-1 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">{saving ? 'Saving…' : `Record ${chosen.length || ''} completion${chosen.length === 1 ? '' : 's'}`}</button>
           <button onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Cancel</button>
         </div>
       </div>
