@@ -17,6 +17,25 @@ import {
   CalendarClock, FileWarning, Link2, Loader2, Trash2,
 } from 'lucide-react';
 import FrozenScroll from '../common/FrozenScroll';
+import { GUARANTEE_KIND, GUARANTEE_LABEL, GUARANTEE_STATUS_TEXT, DUE_SOON_DAYS } from '../../../shared/supplier-guarantee.js';
+
+// The letter of guarantee chip (D-289). The server decides the state; this only draws it.
+const GUARANTEE_TONE = {
+  current: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300',
+  due_soon: 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300',
+  expired: 'bg-rose-100 text-rose-800 dark:bg-rose-950/50 dark:text-rose-300',
+  missing: 'bg-rose-100 text-rose-800 dark:bg-rose-950/50 dark:text-rose-300',
+  no_renewal_date: 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300',
+};
+const GuaranteeChip = ({ g }) => {
+  if (!g?.required) return <span className="text-slate-400">—</span>;
+  return (
+    <span data-guarantee={g.status} className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${GUARANTEE_TONE[g.status] || ''}`}>
+      {g.status === 'missing' ? 'Missing' : g.status === 'no_renewal_date' ? 'No renewal date'
+        : `${g.status === 'expired' ? 'Expired' : 'Renews'} ${formatDate(g.renews_on)}`}
+    </span>
+  );
+};
 
 // Supplier and laboratory qualification — SOP 404 V4.
 //
@@ -56,6 +75,7 @@ const COLUMNS = [
   { key: 'material_count', label: 'Materials', type: 'number' },
   { key: 'file_count', label: 'Files', type: 'number' },
   { key: 'expired_files', label: 'Expired', type: 'number' },
+  { key: 'guarantee_order', label: 'Letter of guarantee', type: 'number' },
   { key: 'next_expiry', label: 'Next expiry', type: 'date' },
 ];
 
@@ -94,7 +114,12 @@ export default function SuppliersPanel({ user }) {
 
   // Memoised because `data?.suppliers || []` is a new array on every render,
   // which would make the filter below recompute each time.
-  const suppliers = useMemo(() => data?.suppliers || [], [data]);
+  // guarantee_order sorts the gaps first: missing, expired, no date, renews soon, current.
+  const suppliers = useMemo(() => (data?.suppliers || []).map(s => ({
+    ...s,
+    guarantee_order: !s.guarantee?.required ? 9
+      : ({ missing: 0, expired: 1, no_renewal_date: 2, due_soon: 3, current: 4 })[s.guarantee.status] ?? 9,
+  })), [data]);
   const summary = data?.summary || {};
 
   const filtered = useMemo(() => {
@@ -104,6 +129,7 @@ export default function SuppliersPanel({ user }) {
       if (only === 'decide' && !s.awaiting_disposition) return false;
       if (only === 'active' && !s.actively_using) return false;
       if (only === 'expired' && !s.expired_files) return false;
+      if (only === 'guarantee' && !s.guarantee?.gap) return false;
       if (!needle) return true;
       return [s.name, s.vendor_type, ...(s.legacy_names || [])]
         .filter(Boolean).some(v => String(v).toLowerCase().includes(needle));
@@ -139,7 +165,7 @@ export default function SuppliersPanel({ user }) {
 
       {tab === 'register' && (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <Stat value={summary.active ?? 0} label="Actively used"
               onClick={() => setOnly(only === 'active' ? null : 'active')} active={only === 'active'} />
             {/* TWO GAPS, NOT ONE. "Awaiting a disposition" is Quality's queue
@@ -169,7 +195,23 @@ export default function SuppliersPanel({ user }) {
                 ? () => setOnly(only === 'expired' ? null : 'expired') : undefined}
               active={only === 'expired'}
             />
+            {/* Packaging / food-contact suppliers with no current letter of guarantee (D-289). */}
+            <Stat
+              value={summary.guarantee_gaps ?? 0}
+              label="No current letter of guarantee"
+              tone={summary.guarantee_gaps ? 'text-rose-600 dark:text-rose-400' : ''}
+              onClick={summary.guarantee_gaps ? () => setOnly(only === 'guarantee' ? null : 'guarantee') : undefined}
+              active={only === 'guarantee'}
+            />
           </div>
+
+          {only === 'guarantee' && (
+            <div data-guarantee-note className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
+              <FileWarning className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>Packaging and food-contact suppliers we buy from owe a letter of guarantee with a renewal date. These have
+                none on file, one with no renewal date, or one that has expired. Open a supplier and attach the letter.</span>
+            </div>
+          )}
 
           {only === 'gap' && (
             <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
@@ -210,6 +252,7 @@ export default function SuppliersPanel({ user }) {
                   { label: 'Files', value: s.file_count },
                   { label: 'Expired', value: s.expired_files ? <span className="font-medium text-rose-600">{s.expired_files}</span> : null },
                   { label: 'Next expiry', value: s.next_expiry ? formatDate(s.next_expiry) : null },
+                  { label: 'Letter of guarantee', value: s.guarantee?.required ? <GuaranteeChip g={s.guarantee} /> : null },
                 ]}>
                 {expand.isExpanded(s.id) && (
                   <div className="mt-3 border-t border-slate-100 pt-3" onClick={e => e.stopPropagation()}>
@@ -250,6 +293,7 @@ export default function SuppliersPanel({ user }) {
                           ? <span className="font-medium text-rose-600 dark:text-rose-400">{s.expired_files}</span>
                           : '—'}
                       </td>
+                      <td className="px-3 py-2"><GuaranteeChip g={s.guarantee} /></td>
                       <td className="px-3 py-2 text-slate-500">{s.next_expiry ? formatDate(s.next_expiry) : '—'}</td>
                     </tr>
                     {expand.isExpanded(s.id) && (
@@ -304,9 +348,10 @@ export default function SuppliersPanel({ user }) {
 // archive walk uses, so a file attached by hand is catalogued exactly as one
 // that arrived in the zip — and if the name says nothing it lands as "other",
 // visibly, rather than being guessed at.
-function AttachSupplierFiles({ supplierId, onDone }) {
+function AttachSupplierFiles({ supplierId, onDone, letter = false }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
+  const [renewal, setRenewal] = useState('');
   const inputRef = useRef(null);
 
   const send = async (fileList) => {
@@ -316,6 +361,7 @@ function AttachSupplierFiles({ supplierId, onDone }) {
     try {
       const fd = new FormData();
       for (const f of picked) fd.append('files', f);
+      if (letter) { fd.append('kind', GUARANTEE_KIND); fd.append('expires_on', renewal); }
       const r = await apiUpload(`/suppliers/${supplierId}/files`, fd, 'POST');
       const n = r?.saved?.length || 0;
       setMsg({ ok: true, text: `${n} document${n === 1 ? '' : 's'} attached.` });
@@ -335,12 +381,21 @@ function AttachSupplierFiles({ supplierId, onDone }) {
           {msg.text}
         </span>
       )}
-      <input ref={inputRef} type="file" multiple className="hidden"
+      {letter && (
+        <label className="flex items-center gap-1 text-xs text-slate-600 dark:text-slate-300">
+          Renews on
+          <input type="date" value={renewal} onChange={e => setRenewal(e.target.value)} onClick={stopRowClick}
+            data-guarantee-renewal className="rounded border border-slate-300 px-1.5 py-0.5 text-xs dark:border-slate-600 dark:bg-slate-900" />
+        </label>
+      )}
+      <input ref={inputRef} type="file" multiple={!letter} className="hidden"
         accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.zip"
         onChange={e => send(e.target.files)} />
-      <button type="button" disabled={busy} onClick={e => { stopRowClick(e); inputRef.current?.click(); }}
+      <button type="button" disabled={busy || (letter && !renewal)} data-guarantee-attach={letter ? '' : undefined}
+        title={letter && !renewal ? 'Enter the renewal date first' : undefined}
+        onClick={e => { stopRowClick(e); inputRef.current?.click(); }}
         className="inline-flex items-center gap-1 rounded border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800">
-        <Upload size={12} /> {busy ? 'Attaching…' : 'Attach documents'}
+        <Upload size={12} /> {busy ? 'Attaching…' : letter ? `Attach ${GUARANTEE_LABEL.toLowerCase()}` : 'Attach documents'}
       </button>
     </div>
   );
@@ -452,6 +507,8 @@ function SupplierDetail({ id, user, onDecide, onRemoved }) {
           </ul>
         ) : <p className="text-sm text-slate-400">None recorded.</p>}
       </section>
+
+      <GuaranteeSection supplier={supplier} guarantee={data.guarantee} canEdit={data.can_edit} onChanged={refresh} />
 
       <MaterialChecks supplierId={id} materials={data.material_checks || materials} banned={data.banned}
         canDecide={data.can_decide} onChanged={refresh} />
@@ -565,6 +622,67 @@ function SupplierDetail({ id, user, onDecide, onRemoved }) {
         ) : <p className="text-sm text-slate-400">None.</p>}
       </section>
     </div>
+  );
+}
+
+// ── The letter of guarantee (D-289) ─────────────────────────────────────────
+// Owed by a packaging supplier, or any supplier ticked as supplying food-contact
+// material, while we buy from it. Filed with its renewal date; the register and
+// the QA bell list the ones with no current letter.
+function GuaranteeSection({ supplier, guarantee, canEdit, onChanged }) {
+  const [busy, setBusy] = useState(false);
+  const [date, setDate] = useState('');
+  const g = guarantee || {};
+  const isPackaging = String(supplier.vendor_type || '').toLowerCase() === 'packaging';
+  const setFoodContact = async (value) => {
+    setBusy(true);
+    try { await apiPut(`/suppliers/${supplier.id}`, { food_contact: value }); onChanged?.(); }
+    catch (e) { window.alert(e.message); } finally { setBusy(false); }
+  };
+  const setRenewal = async () => {
+    if (!g.file || !date) return;
+    setBusy(true);
+    try { await apiPut(`/suppliers/files/${g.file.id}/renewal`, { expires_on: date }); setDate(''); onChanged?.(); }
+    catch (e) { window.alert(e.message); } finally { setBusy(false); }
+  };
+  return (
+    <section data-guarantee-section={g.status || 'not_required'} className="md:col-span-2 rounded border border-slate-200 p-2 dark:border-slate-700">
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{GUARANTEE_LABEL}</h4>
+        {g.required && <GuaranteeChip g={g} />}
+      </div>
+      <p className="text-sm text-slate-600 dark:text-slate-300">
+        {g.required
+          ? <>{GUARANTEE_STATUS_TEXT[g.status]}{g.file ? <> — <span className="text-slate-500">{g.file.filename}</span></> : null}.
+              {g.status === 'due_soon' && ` Renews within ${DUE_SOON_DAYS} days; ask the supplier for the new letter.`}</>
+          : supplier.actively_using
+            ? 'Not required: not a packaging supplier and not marked as supplying food-contact material.'
+            : 'Not required while we are not buying from this supplier.'}
+      </p>
+      {canEdit && (
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          {!isPackaging && (
+            <label className="flex items-center gap-2 text-sm" onClick={stopRowClick}>
+              <input type="checkbox" className="h-4 w-4 shrink-0" data-food-contact checked={Number(supplier.food_contact) === 1}
+                disabled={busy} onChange={e => setFoodContact(e.target.checked)} />
+              Supplies food-contact material (owes a letter of guarantee)
+            </label>
+          )}
+          {g.status === 'no_renewal_date' && g.file && (
+            <span className="flex items-center gap-1 text-xs">
+              Renewal date for this letter
+              <input type="date" value={date} onChange={e => setDate(e.target.value)} onClick={stopRowClick}
+                data-guarantee-set-date className="rounded border border-slate-300 px-1.5 py-0.5 text-xs dark:border-slate-600 dark:bg-slate-900" />
+              <button type="button" disabled={busy || !date} onClick={e => { stopRowClick(e); setRenewal(); }}
+                className="rounded border border-slate-300 px-2 py-0.5 text-xs disabled:opacity-50 dark:border-slate-600">Save</button>
+            </span>
+          )}
+          {(g.required || isPackaging || Number(supplier.food_contact) === 1) && (
+            <AttachSupplierFiles supplierId={supplier.id} onDone={onChanged} letter />
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 

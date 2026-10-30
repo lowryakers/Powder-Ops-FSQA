@@ -9862,3 +9862,22 @@ Lowry, after reading the package against the SOP 444 draft:
   "SOP ___ / FORM ___ (to be issued)". The SOP 444 draft's SOP-438 reference points at it once numbered.
 - #100 merges after 5 PM MT today; next, the letter of guarantee PR, then backups / idle sign-out / reset password /
   first signature / printouts.
+
+## D-289 — The packaging / food-contact letter of guarantee (30 Oct 2026)
+An NSF reviewer asked Daniela to show the required documentation for packaging material; ReadyDoc had no such
+document type (a supplier file was a generic "statement"). Lowry: build it in Supplier Qualification, with a renewal
+date, required for packaging / food-contact suppliers, gaps on the supplier list and the QA bell.
+- **`shared/supplier-guarantee.js` is the rule (PURE).** Owed while we buy from the supplier (`actively_using`) when
+  its `vendor_type` is packaging **or** a person ticked `suppliers.food_contact` (new column; NULL = nobody has said).
+  Never guessed from a name.
+- **A supplier file of kind `letter_of_guarantee`, filed with its renewal date** (`supplier_files.expires_on`). Upload
+  is refused without one (`RENEWAL_REQUIRED`) unless the filename carries a date. The archive reader recognises
+  "Letter of Guarantee / Guaranty / Warranty", "Continuing Guarantee", "Food contact guarantee". A letter that came in
+  with no date gets one set by hand (`PUT /suppliers/files/:id/renewal`, that kind only, audited).
+- **States, derived on read:** missing · no renewal date · expired (the three gaps) · renews within 30 days (a warning)
+  · current. The letter that counts is the one renewing last.
+- **Seen where the actors look:** a count and a column on the register (filter opens the list), the supplier's own
+  section with the food-contact tick and the attach control, and the bell line `guarantee-missing` for Quality
+  (approvers) and Purchasing. Nothing is gated: no receipt or approval is refused for a missing letter (the receiving
+  CoC is D-275's separate rule).
+- `verify:guarantee` (30, live + browser at 1280 and 390; the control without the renewal-date rule fails 4).

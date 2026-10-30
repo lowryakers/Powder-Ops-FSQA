@@ -1,3 +1,4 @@
+import { openGuaranteeGaps } from '../supplier-guarantee.js';
 import { Router } from 'express';
 import { canReviewCulture } from '../culture.js';
 import { openSuggestions } from './office.js';
@@ -670,6 +671,14 @@ router.get('/notifications', (req, res) => {
   if (isApprover || dept === 'warehouse') {
     const gaps = openCocGaps(db);
     if (gaps.length) items.push({ id: 'coc-missing', tab: 'receiving-log', severity: 'warning', count: gaps.length, label: `${gaps.length} receiving inspection${gaps.length > 1 ? 's' : ''} waiting on a Certificate of Compliance` });
+  }
+  // Packaging / food-contact suppliers with no current letter of guarantee (D-289).
+  // Quality and Purchasing: Purchasing chases the letter, Quality accepts it.
+  if (isApprover || dept === 'purchasing') {
+    try {
+      const gaps = openGuaranteeGaps(db);
+      if (gaps.length) items.push({ id: 'guarantee-missing', tab: 'suppliers', severity: 'warning', count: gaps.length, label: `${gaps.length} packaging / food-contact supplier${gaps.length > 1 ? 's' : ''} with no current letter of guarantee` });
+    } catch { /* optional */ }
   }
   // The specification release gate (CAR 4990683-3): lots the gate is holding,
   // and lots it let through carrying named gaps. Both read the columns the

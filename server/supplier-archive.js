@@ -85,6 +85,9 @@ const KINDS = [
   { kind: 'questionnaire',        re: /\b(vendor|supplier)\s*(qualification)?\s*(questionnaire|vq)\b/i },
   { kind: 'raw_material_questionnaire', re: /\b(raw\s*material|rm)\b.*\b(questionnaire|vq)\b|\brm\s*vq\b/i },
   { kind: 'audit_report',         re: /\baudit\s*report\b/i },
+  // The packaging / food-contact letter of guarantee (D-289). Before the
+  // certificate and statement rules: "Continuing Guarantee 2026.pdf" is neither.
+  { kind: 'letter_of_guarantee',  re: /\bletter\s*of\s*(guarantee|guaranty|warranty)\b|\bcontinuing\s*(guarantee|guaranty)\b|\b(guarantee|guaranty)\s*letter\b|\bfood\s*contact\s*(guarantee|guaranty|letter)\b/i },
   // A CERTIFICATE IS OFTEN NAMED BY ITS TOPIC AND NEVER SAYS "certificate".
   // "Kosher Exp. 12.31.2025.pdf", "IM Non-GMO (Exp 8.20.25).pdf", "BRCGS EN
   // (Exp 7.2.2025).pdf" — 52 of the archive's files. Requiring the word
