@@ -105,7 +105,7 @@ const WI_COURSES = [
   // Electronic signatures (D-284, 21 CFR 11.100 / 11.200 / 11.300). Everyone
   // who signs in signs something, so it applies to everyone (no departments).
   // Draft 1 until Document Control issues the policy; the wording is
-  // docs/v2/part11-validation/esignature-policy.md, kept the same here.
+  // docs/v2/validation/VAL-RD-2026-01/attachments/esignature-policy.md, kept the same here.
   { code: 'ESIG-101', title: 'Electronic Signatures: Your Password Is Your Signature', category: 'Quality',
     depts: [], retrain_months: 12, has_test: true,
     description: 'E-signature policy (draft 1, pending Document Control). 1. In ReadyDoc your password is your signature. When you enter it to approve, verify, sign off or record something, it means the same as signing your name by hand: you personally did, reviewed or approved what the screen says. 2. Your password is yours alone. Never share it, never let anyone sign in as you, never sign in for someone else, and never write it where others can see it. 3. Signing means what the screen says: Approved (a document is correct and in force), Trained and competent (you trained this person and they understand), Verified or Reviewed (you checked the record). Read before you sign. 4. If you think someone knows your password, change it straight away (Account menu, Change password) and tell your supervisor or QA. 5. A signature cannot be removed or edited. A mistake is corrected by a new signed entry with a reason. 6. Using another person\'s account, or letting someone use yours, is a serious violation of company policy.' },

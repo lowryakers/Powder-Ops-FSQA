@@ -6307,7 +6307,8 @@ revoke by DELETE with a reason), `CrisisDrills.jsx`. SOP 501, SQF 2.6.4.2.
   (signed · changed). **An edit never takes one off** (`409 COMPETENCE_SIGNED`); a correction is the signed withdraw.
 - **`audit_log` refuses UPDATE and DELETE by trigger.** Never write a migration that rewrites audit rows.
 - A verify that files an approval or a competence tick must send `signature_password`. `verify:part11` (33).
-- The validation pack, the e-signature policy (course ESIG-101) and the unsent FDA letter: `docs/v2/part11-validation/`.
+- The validation package is `docs/v2/validation/VAL-RD-2026-01/` (SOP 444, D-285): plan, Part 11 assessment, IQ/OQ/PQ,
+  requirement-to-test table, summary report; the e-signature policy (ESIG-101) and the unsent FDA letter are its attachments.
 
 ## A bot never approves, by token or by password; the check is read-only (D-279)
 - **`tokenApproveGuard` refuses a bot ACCOUNT on every `APPROVE_ROUTES` match** (`403 bot_account_cannot_approve`),

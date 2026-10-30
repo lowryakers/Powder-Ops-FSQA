@@ -9802,3 +9802,22 @@ current address, which may have changed in FDA's 2024 field reorganization). **E
 alone. It is not auto-assigned; the office assigns it when the policy is issued.
 - Note for the letter: Part 11 applies to electronic records required by 21 CFR 111 whether or not the letter is sent.
   The letter adds no inspection; not sending it while using electronic signatures is itself a gap.
+
+## D-285 — The validation pack is the first execution of SOP 444: package VAL-RD-2026-01 (30 Oct 2026)
+Lowry: the pack is the first execution of the new SOP 444 (computer system validation), and must match it. **The
+structure is the five parts the approved CAR 4990683-5 commits to, verbatim:** validation plan (intended use, GMP
+records held) · Part 11 assessment (11.10, 11.30, 11.50, 11.70, 11.100, 11.200, 11.300, clause by clause) · IQ
+(hosting, configuration, backup and a restore test) / OQ (logins, audit-trail completeness and protection, e-signature
+display and password re-entry, retention and retrieval, access rights, copies for inspection) / PQ (normal use) ·
+requirement-to-test table · summary report approved by Quality. `docs/v2/part11-validation/` moved to
+`docs/v2/validation/VAL-RD-2026-01/`; its D-284 pages are folded into the OQ (OQ-06 – OQ-13).
+- **Roles from the org chart:** Lowry prepares and executes; Daniela Servin (Document Control Manager) reviews;
+  **Maria Servin (Quality Manager / SQF Practitioner) approves the plan before testing and the summary report.**
+- **SOP 444 is drafted by the Quality bot, separately.** The package index lists every term SOP 444 must agree with
+  (package contents, numbering, roles, sequence, deviations, risk basis, automated evidence, change control); **where
+  the SOP's draft differs, the SOP wins** and the package changes under a deviation before the plan is approved.
+- **Findings written into the assessment, not hidden:** the automatic weekly backup is a CSV export kept 8 weeks, and a
+  full database snapshot is manual; sessions last 30 days with no idle sign-out; kiosk keys ship off; one admin can
+  reset a password and sign as that person; the first signing of a session asks for the password only; other modules'
+  printouts don't yet print the meaning. Twelve open items (O-1 … O-12) in the summary report, each for Quality to
+  accept with an owner and a date.
