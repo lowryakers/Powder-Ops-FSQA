@@ -52,6 +52,8 @@ controls); the Messages chat (not a GMP record); office finance screens.
 The roles are SOP 444 § 5.0's, confirmed by Lowry on 30 Oct 2026. **Nobody approves a report on tests they executed** (SOP 444 § 6.8), so the person who
 built ReadyDoc prepares the package and supports the tests but does not execute them.
 
+**In short: Daniela Servin runs the tests; Carol Pierce reviews the test results and the summary report.**
+
 | SOP 444 role | Person | Here |
 |---|---|---|
 | Approver (management) | Lowry Akers | Approves this plan and the summary report; releases ReadyDoc for use |
