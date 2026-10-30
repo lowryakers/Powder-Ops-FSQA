@@ -10,6 +10,7 @@
 // records raise CARs through.
 
 import { v4 as uuid } from 'uuid';
+import { createHash } from 'crypto';
 import { plantDateOf } from './plant-clock.js';
 import { competenceStatement } from '../shared/training-record-fields.js';
 
@@ -92,6 +93,36 @@ export function courseTrainingRevision(db, courseId) {
 }
 
 /** File one completion. Returns the stored row. */
+// ── The competence tick is a signature (D-282, 21 CFR 11.50 / 11.70 / 11.200) ──
+// The signer is the signed-in person, never the typed trainer; the password is
+// asked at the moment of signing; the signature carries its meaning in words and
+// a fingerprint of the facts it was given over, so a later change to any of them
+// reads "changed since signed" rather than passing silently.
+export const COMPETENCE_MEANING = 'Trained and competent';
+const SIGNED_FIELDS = ['employee_name', 'employee_user_id', 'course_id', 'training_date', 'completion_date', 'competence_statement', 'competence_signed_by_id', 'competence_signed_at'];
+export function competenceHash(rec) {
+  return createHash('sha256').update(JSON.stringify(SIGNED_FIELDS.map(k => rec?.[k] ?? null))).digest('hex');
+}
+/** 'signed' (intact) · 'changed' (a signed fact moved since) · null (no signature on this record). */
+export function competenceSignatureState(rec) {
+  if (!rec?.competence_signed_at) return null;
+  return rec.competence_hash && rec.competence_hash === competenceHash(rec) ? 'signed' : 'changed';
+}
+/** Facts a signed competence sign-off covers: an edit may not move them. */
+export const COMPETENCE_SIGNED_FIELDS = ['employee_name', 'employee_user_id', 'course_id', 'training_date', 'completion_date'];
+
+/** Is `user` the person being signed off? Nobody signs their own competence. */
+export function isTraineeSelf(user, { employee_user_id, employee_name } = {}) {
+  if (!user) return false;
+  if (employee_user_id && employee_user_id === user.id) return true;
+  return !employee_user_id && !!employee_name && String(employee_name).trim().toLowerCase() === String(user.name || '').trim().toLowerCase();
+}
+
+/** The signature stamp for a person signing now (call after gateSignature). */
+export function competenceStamp(user) {
+  return { statement: competenceStatement(user.name), by: user.name, by_id: user.id, at: new Date().toISOString() };
+}
+
 export function insertCompletion(db, body) {
   const id = uuid();
   // A RESULT BELOW THE PASS MARK IS NOT A COMPLETION (D-158). It is filed —
@@ -107,8 +138,9 @@ export function insertCompletion(db, body) {
   const sopRevision = body.sop_revision || courseTrainingRevision(db, body.course_id);
   const sopId = body.sop_id || (body.course_id ? db.prepare('SELECT sop_id FROM training_courses WHERE id = ?').get(body.course_id)?.sop_id : null) || null;
   // The statement is stored in words, naming the trainer, when the form ticked it.
-  const competence = body.competence_statement
-    || (body.competence_confirmed ? competenceStatement(body.trainer) : null);
+  const signed = body.competence_signed || null; // a stamp from competenceStamp(), when a person signed it here
+  const competence = signed ? signed.statement : (body.competence_statement
+    || (body.competence_confirmed ? competenceStatement(body.trainer) : null));
   db.prepare(`INSERT INTO training_records
     (id, employee_name, employee_id, employee_user_id, training_topic, course_id, sop_id, trainer, method,
      training_date, completion_date, status, passed, score, next_due_date, certificate_url, document_url, gdrive_url, test_attempt_id, notes, sop_revision,
@@ -116,7 +148,8 @@ export function insertCompletion(db, body) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     id, body.employee_name, body.employee_id || null, body.employee_user_id || null,
     body.training_topic || body.course_title || '', body.course_id || null, sopId,
-    body.trainer || null, body.method || null,
+    // The trainer who signs is the signed-in person (D-282); a typed name never stands for a signature.
+    signed ? signed.by : (body.trainer || null), body.method || null,
     body.training_date || plantDateOf(), completion,
     failed ? 'failed' : (body.status || (completion ? 'completed' : 'scheduled')),
     body.passed === undefined ? null : (body.passed ? 1 : 0), body.score ?? null, next_due,
@@ -124,8 +157,17 @@ export function insertCompletion(db, body) {
     // Who keyed it in is the CALLER's account, passed by the route from the
     // session — never a value from the request body.
     body.recorded_by || 'ReadyDoc', body.recorded_by_id || null, body.language || null, competence, body.dcr_id || null, body.session_id || null);
+  if (signed) stampCompetenceSignature(db, id, signed);
   if (!failed && (body.status === 'completed' || completion)) supersedeOlder(db, body.employee_name, body.course_id, id, body.employee_user_id || null);
   return db.prepare('SELECT * FROM training_records WHERE id = ?').get(id);
+}
+
+/** Write the signature columns and the fingerprint over the record as it now stands. */
+export function stampCompetenceSignature(db, id, signed) {
+  db.prepare(`UPDATE training_records SET competence_statement = ?, competence_signed_by = ?, competence_signed_by_id = ?,
+    competence_signed_at = ?, competence_withdrawn = NULL WHERE id = ?`).run(signed.statement, signed.by, signed.by_id, signed.at, id);
+  const rec = db.prepare('SELECT * FROM training_records WHERE id = ?').get(id);
+  db.prepare('UPDATE training_records SET competence_hash = ? WHERE id = ?').run(competenceHash(rec), id);
 }
 
 /**

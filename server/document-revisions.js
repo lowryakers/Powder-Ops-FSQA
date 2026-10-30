@@ -18,6 +18,8 @@
 // its first new revision is started or recorded; the revision in force then is
 // filed beside it as `baseline`, from the row as it stands.
 import { v4 as uuid } from 'uuid';
+import { createHash } from 'crypto';
+import { signatureEvidence } from './signature.js';
 import { logAudit } from './db.js';
 import { readyDocOrigin } from './links.js';
 import { enqueueQualitySignal } from './ops-webhook.js';
@@ -140,9 +142,9 @@ export function linkedCourses(db, doc) {
  * and `training_revision`. Then, after the commit, one signal to the Quality bot.
  *
  * @param fields { revision, title?, description?, description_es?, effective_date?, change_summary? }
- * @param opts   { source: 'draft' | 'transcribed' | 'first_approval', draftId?, actor, approved_by? }
+ * @param opts   { source: 'draft' | 'transcribed' | 'first_approval', draftId?, actor }
  */
-export function recordApprovedRevision(db, doc, fields, { source, draftId = null, actor, approved_by = null } = {}) {
+export function recordApprovedRevision(db, doc, fields, { source, draftId = null, actor } = {}) {
   const revision = String(fields.revision || '').trim();
   const wasApproved = isApprovedStatus(doc.status);
   const problem = wasApproved || db.prepare('SELECT 1 FROM document_revisions WHERE document_id = ? LIMIT 1').get(doc.id)
@@ -150,7 +152,8 @@ export function recordApprovedRevision(db, doc, fields, { source, draftId = null
   if (problem) throw new RevisionError(problem, 409, { code: 'REVISION_NUMBER_USED', suggested: suggestedRevision(db, doc) });
 
   const nowIso = new Date().toISOString();
-  const approver = approved_by || actor?.name || 'system';
+  // The approver is the signed-in person (D-282), never a typed name.
+  const approver = actor?.name || 'system';
   const next = {
     title: fields.title || doc.title,
     description: fields.description !== undefined ? fields.description : doc.description,
@@ -188,6 +191,9 @@ export function recordApprovedRevision(db, doc, fields, { source, draftId = null
     db.prepare(`UPDATE sop_documents SET revision = ?, title = ?, description = ?, description_es = ?, effective_date = ?,
         approved_by = ?, approved_at = ?, training_revision = ?, status = 'active', updated_at = datetime('now') WHERE id = ?`)
       .run(revision, next.title, next.description, next.description_es, next.effective_date, approver, nowIso, revision, doc.id);
+    const signedRow = db.prepare('SELECT * FROM document_revisions WHERE id = ?').get(revId);
+    db.prepare('UPDATE document_revisions SET approved_meaning = ?, approved_hash = ? WHERE id = ?')
+      .run(APPROVAL_MEANING[source] || 'Approved', revisionHash(signedRow), revId);
     const after = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(doc.id);
     db.prepare('INSERT INTO sop_versions (id, sop_id, revision, changed_by, change_summary, snapshot) VALUES (?, ?, ?, ?, ?, ?)')
       .run(uuid(), doc.id, revision, actor?.name || 'system',
@@ -197,12 +203,32 @@ export function recordApprovedRevision(db, doc, fields, { source, draftId = null
   const after = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(doc.id);
   const courses = linkedCourses(db, after);
   logAudit(actor, 'approve', 'document_revision', revId,
+    // Every door into this writer asks for the approver's password first (D-282).
     { document_id: doc.id, from_revision: wasApproved ? doc.revision : null, to_revision: revision, source,
+      meaning: APPROVAL_MEANING[source] || 'Approved', ...signatureEvidence(),
       courses_needing_update: courses.filter(c => c.needs_update).map(c => c.code || c.title) },
     doc, after, `${doc.doc_number || doc.title} rev ${revision}`);
   const signal = qualitySignalFor(after, { from: wasApproved ? doc.revision : null, to: revision, approver, approvedAt: nowIso, source, changeSummary: fields.change_summary, courses });
   const queued = enqueueQualitySignal(signal);
   return { document: after, revision: db.prepare('SELECT * FROM document_revisions WHERE id = ?').get(revId), courses, signal: queued };
+}
+
+// ── An approval is a signature (D-282, 21 CFR 11.50 / 11.70) ──────────────────
+// Who (the signed-in person, never a typed name), when, what it means, and a
+// fingerprint of the exact revision approved — so the approval cannot be read
+// as covering text it was not given over.
+export const APPROVAL_MEANING = {
+  draft: 'Approved',
+  first_approval: 'Approved',
+  transcribed: 'Approved on paper — recorded from the signed original',
+};
+const HASHED = ['document_id', 'revision', 'title', 'description', 'description_es', 'effective_date', 'approved_by_id', 'approved_at'];
+export const revisionHash = (r) => createHash('sha256').update(JSON.stringify(HASHED.map(k => r?.[k] ?? null))).digest('hex');
+/** 'signed' (intact) · 'changed' · 'not_recorded' (approved before fingerprints) · null (not approved). */
+export function approvalState(r) {
+  if (!r || !['approved', 'superseded'].includes(r.status) || !r.approved_at) return null;
+  if (!r.approved_hash) return 'not_recorded';
+  return r.approved_hash === revisionHash(r) ? 'signed' : 'changed';
 }
 
 /** The Quality bot's payload: the document, old and new revision, the linked courses. */

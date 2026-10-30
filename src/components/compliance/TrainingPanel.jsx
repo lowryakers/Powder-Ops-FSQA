@@ -16,8 +16,12 @@ import FilePreview from '../FilePreview.jsx';
 import { pdfViewerUrl } from '../../lib/pdfUrl';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 import FrozenScroll from '../common/FrozenScroll';
-import { HowTrainedFields, RecordedLine, HowChips, TrainingSessions, PeoplePicker } from './TrainingHowFields.jsx';
+import { HowTrainedFields, RecordedLine, HowChips, TrainingSessions, PeoplePicker, SignOffBlock } from './TrainingHowFields.jsx';
 import { localDateStr } from '../../utils/dates';
+import { withSignature } from '../../lib/signature';
+
+// Ticking competence is signing it (D-282). One prompt per act; a group is one act.
+const SIGN_COMPETENCE = { title: 'Sign off this training', detail: 'Your password is your signature: trained and competent' };
 import CourseRevision from './CourseRevision.jsx';
 import CourseDrafts from './CourseDrafts.jsx';
 import { passedQuiz, COMPETENCE_REQUIRED_MSG } from '../../../shared/training-record-fields.js';
@@ -550,10 +554,11 @@ function CompletionModal({ initial, courses, users, onClose, onSaved }) {
       // The date recorded and who recorded it are the server's (D-264): never sent.
       const { recorded_by: _rb, recorded_by_id: _rbi, created_at: _c, updated_at: _u, session_id: _s, ...rest } = form;
       const payload = { ...rest, employee_user_id: match?.id || rest.employee_user_id || null, status: 'completed' };
-      if (initial?.id) await apiPut(`/training/${initial.id}`, payload);
-      else await apiPost('/training', payload);
+      // Ticking competence signs it (D-282): the server asks for the password.
+      if (initial?.id) await withSignature((extra) => apiPut(`/training/${initial.id}`, { ...payload, ...extra }), SIGN_COMPETENCE);
+      else await withSignature((extra) => apiPost('/training', { ...payload, ...extra }), SIGN_COMPETENCE);
       onSaved();
-    } catch (err) { setError(err.message); }
+    } catch (err) { if (!err.cancelled) setError(err.message); }
     finally { setSaving(false); }
   };
   const onFile = async (e) => {
@@ -598,7 +603,7 @@ function CompletionModal({ initial, courses, users, onClose, onSaved }) {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
           </div>
           <div className="col-span-2">
-            <HowTrainedFields value={form} onChange={setForm} legacyMethod={initial?.method}
+            <HowTrainedFields value={form} onChange={setForm} legacyMethod={initial?.method} signedBy={initial?.competence_signed_at ? initial.competence_signed_by : null}
               quizPassed={passedQuiz(form, (courses || []).find(c => c.id === form.course_id)?.passing_score ?? 80)} />
           </div>
           <div className="col-span-2">
@@ -622,6 +627,7 @@ function CompletionModal({ initial, courses, users, onClose, onSaved }) {
           </div>
         </div>
         <RecordedLine record={initial} />
+        <SignOffBlock record={initial} onChanged={onClose} />
         {error && <p className="text-sm text-red-600">{error}</p>}
         <div className="flex gap-2">
           <button type="submit" disabled={saving || needsTick} data-save-completion
@@ -701,15 +707,21 @@ function GroupSheetBulkModal({ courses, users, onClose, onDone }) {
     setBusy(true); setError('');
     try {
       const ids = [];
+      // One password for the whole sheet (D-282): asked on the first course and
+      // sent with the rest — one act of signing, however many courses it covers.
+      let signedWith = null;
       for (const courseId of cur.courseIds) {
-        const res = await apiPost('/training/bulk-complete', {
+        const body = {
           course_id: courseId, completion_date: cur.date, training_date: cur.date,
           ...cur.how,
           // One revision box, so it applies only when the sheet is for one course;
           // with several, each record takes its own course's current revision.
           sop_revision: cur.courseIds.length === 1 ? cur.how.sop_revision : '',
           attendees: chosen.map(([id, v]) => ({ employee_user_id: id, employee_name: v.name })),
-        });
+        };
+        const res = signedWith
+          ? await apiPost('/training/bulk-complete', { ...body, ...signedWith })
+          : await withSignature((extra) => { signedWith = extra; return apiPost('/training/bulk-complete', { ...body, ...extra }); }, SIGN_COMPETENCE);
         ids.push(...(res.ids || []));
       }
       if (ids.length) {
@@ -720,7 +732,7 @@ function GroupSheetBulkModal({ courses, users, onClose, onDone }) {
       }
       patch({ status: 'filed', created: ids.length });
       advance();
-    } catch (e) { setError(e.message); }
+    } catch (e) { if (!e.cancelled) setError(e.message); }
     finally { setBusy(false); }
   };
 
@@ -1130,10 +1142,10 @@ function GroupTrainingModal({ courses, users, onClose, onSaved }) {
     if (needsTick) { setError(`${COMPETENCE_REQUIRED_MSG} ${unproven.length} ${unproven.length === 1 ? 'person has' : 'people have'} no passing score.`); return; }
     setSaving(true); setError('');
     try {
-      const res = await apiPost('/training/bulk-complete', {
+      const res = await withSignature((extra) => apiPost('/training/bulk-complete', { ...extra,
         course_id: courseId, completion_date: date, training_date: date, ...how,
         attendees: chosen.map(([id, v]) => ({ employee_user_id: id, employee_name: v.name, score: v.score })),
-      });
+      }), SIGN_COMPETENCE);
       // One sheet, everyone's record: the scan is stored once and referenced
       // by every completion this just created. Best-effort — the completions
       // are already filed, and a storage failure must not look like they
@@ -1149,7 +1161,7 @@ function GroupTrainingModal({ courses, users, onClose, onSaved }) {
         } catch (e) { alert(`The completions are saved, but the sheet did not attach: ${e.message}`); }
       }
       onSaved(res.created, attached);
-    } catch (e) { setError(e.message); setSaving(false); }
+    } catch (e) { if (!e.cancelled) setError(e.message); setSaving(false); }
   };
 
   return (

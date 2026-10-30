@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { GitBranch, CheckCircle2, X, Edit2, Trash2, AlertTriangle } from 'lucide-react';
 import { withSignature } from '../../lib/signature';
-import { formatDate } from '../../lib/datetime.js';
+import { formatDate, formatDateTime } from '../../lib/datetime.js';
 import DocumentBodyEditor from './DocumentBodyEditor.jsx';
 
 /**
@@ -120,7 +120,11 @@ export default function DocumentRevisions({ doc, canEdit, onChanged }) {
                 {r.source === 'baseline' ? ' · recorded when revision control started' : ''}
                 {r.change_summary && r.source !== 'baseline' ? ` · ${r.change_summary}` : ''}
               </span>
-              <span className="text-gray-400 shrink-0">{r.approved_by || '—'}{r.approved_at ? ` · ${formatDate(r.approved_at)}` : ''}</span>
+              <span className="text-gray-500 shrink-0 text-right" data-rev-signature={r.approval_state || ''}>
+                {r.approved_by || '—'}{r.approved_at ? ` · ${formatDateTime(r.approved_at)}` : ''}{r.approved_meaning ? ` · ${r.approved_meaning}` : ''}
+                {r.approval_state === 'signed' && <span className="ml-1 text-green-700">· signed</span>}
+                {r.approval_state === 'changed' && <span className="ml-1 text-red-700 font-semibold">· changed since signed</span>}
+              </span>
             </li>
           ))}
         </ul>

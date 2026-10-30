@@ -129,14 +129,26 @@ const pjBare = await fetch(`${B}/pm/work-orders/${pjWo}/complete-and-recur`, {
 });
 const pjBareBody = await J(pjBare);
 t('a score does not satisfy a course that has no test — "trained by nobody" is not a record',
-  pjBare.status === 400 && /delivered/i.test((pjBareBody?.missing || []).map(m => m.label).join(' ')), JSON.stringify(pjBareBody?.missing));
-const pjDone = await fetch(`${B}/pm/work-orders/${pjWo}/complete-and-recur`, {
+  pjBare.status === 400 && /trainer signs it/i.test((pjBareBody?.missing || []).map(m => m.label).join(' ')), JSON.stringify(pjBareBody?.missing));
+// D-282: the competence tick is the TRAINER's signature — never the trainee's own,
+// never a typed name — and it needs the trainer's password.
+const pjSelf = await fetch(`${B}/pm/work-orders/${pjWo}/complete-and-recur`, {
   method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok.op}` },
-  body: JSON.stringify({ completed_by: 'Gaston Ruiz', check: { trainer: 'Juan Gonzalez', method: 'verbal', competence_confirmed: true } }),
+  body: JSON.stringify({ completed_by: 'Gaston Ruiz', check: { trainer: 'Juan Gonzalez', method: 'verbal', competence_confirmed: true }, signature_password: 'GastonPW2026!' }),
 });
-t('with a trainer it completes', pjDone.ok, `${pjDone.status}`);
+t('the trainee cannot sign off their own competence', pjSelf.status === 400 && (await J(pjSelf))?.code === 'SELF_COMPETENCE', `${pjSelf.status}`);
+const pjNoPw = await fetch(`${B}/pm/work-orders/${pjWo}/complete-and-recur`, {
+  method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok.sup}` },
+  body: JSON.stringify({ completed_by: 'Wanda Floor', check: { method: 'verbal', competence_confirmed: true } }),
+});
+t('the trainer is asked for their password', pjNoPw.status === 403 && (await J(pjNoPw))?.signature_required === true, `${pjNoPw.status}`);
+const pjDone = await fetch(`${B}/pm/work-orders/${pjWo}/complete-and-recur`, {
+  method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok.sup}` },
+  body: JSON.stringify({ completed_by: 'Wanda Floor', check: { trainer: 'Somebody Typed', method: 'verbal', competence_confirmed: true }, signature_password: 'WandaPW2026!' }),
+});
+t('with the trainer\'s password it completes', pjDone.ok, `${pjDone.status}`);
 const pjRec = db.prepare('SELECT * FROM training_records WHERE course_id = ? ORDER BY created_at DESC LIMIT 1').get(pj.id);
-t('and the record says who delivered it', pjRec?.trainer === 'Juan Gonzalez' && pjRec?.method === 'verbal', JSON.stringify({ trainer: pjRec?.trainer, method: pjRec?.method }));
+t('and the record says who delivered it: the signed-in signer, not the typed name', pjRec?.trainer === 'Wanda Floor' && pjRec?.competence_signed_by === 'Wanda Floor' && pjRec?.method === 'verbal', JSON.stringify({ trainer: pjRec?.trainer, method: pjRec?.method }));
 
 console.log('\n── the test is taken FROM THE TASK, because the floor has no Training module ──');
 {

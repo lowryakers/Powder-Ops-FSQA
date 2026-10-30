@@ -12,6 +12,12 @@
 // Control: drop TRAINEE_SQL from trainingSnapshot — the "after" counts equal "before".
 import Database from 'better-sqlite3';
 import { spawn } from 'child_process';
+
+// Signing asks for the signer's password (D-282). Everyone in this script has
+// the one password it set, so a write carries it — as a person re-entering it would.
+const SIGN_PW = 'Trainee2026!!';
+const SIGNED_PATHS = /^\/(documents(\/[^/]+)?|documents\/[^/]+\/apply-revision|documents\/revisions\/items\/[^/]+\/apply|training(\/[^/]+)?|training\/bulk-complete|pm\/work-orders\/[^/]+\/complete-and-recur)$/;
+const signed = (b, m, p) => (m !== 'GET' && SIGNED_PATHS.test(String(p).split('?')[0]) && b && typeof b === 'object' && !Array.isArray(b) && b.signature_password === undefined && !('password' in b) ? { ...b, signature_password: SIGN_PW } : b);
 import { chromium } from 'playwright-core';
 
 const PORT = Number(process.env.PORT || 5157);
@@ -42,7 +48,7 @@ db.close();
 
 const H = { 'Content-Type': 'application/json' };
 const mkCall = (url) => async (m, p, b, tok) => {
-  const r = await fetch(`${url}/api${p}`, { method: m, headers: { ...H, ...(tok && { Authorization: `Bearer ${tok}` }) }, body: b ? JSON.stringify(b) : undefined });
+  const r = await fetch(`${url}/api${p}`, { method: m, headers: { ...H, ...(tok && { Authorization: `Bearer ${tok}` }) }, body: b ? JSON.stringify(signed(b, m, p)) : undefined });
   const text = await r.text(); let json = null; try { json = JSON.parse(text); } catch { /* not json */ }
   return { status: r.status, json, text };
 };

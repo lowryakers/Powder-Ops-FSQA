@@ -13,7 +13,8 @@ import { parseTrainingLog } from '../training-log.js';
 import { parseScanName, similarity, isScanEntry } from '../scanned-tests.js';
 import { extractInvoiceText } from '../invoice-text.js';
 import { requireRole } from '../middleware/auth.js';
-import { addMonths, dueDateFor, supersedeOlder, courseTrainingRevision, insertCompletion, gradeTestAttempt, attemptReview, attemptProblem } from '../training-records.js';
+import { addMonths, dueDateFor, supersedeOlder, courseTrainingRevision, insertCompletion, gradeTestAttempt, attemptReview, attemptProblem,
+  competenceStamp, competenceSignatureState, isTraineeSelf, stampCompetenceSignature, COMPETENCE_SIGNED_FIELDS, COMPETENCE_MEANING } from '../training-records.js';
 import { assignTraining } from '../training-assign.js';
 import { tellAssignee, assignmentReach } from '../training-notify.js';
 import { trainingSnapshot, cellFor, personTraining, trainingRoster } from '../training-status.js';
@@ -22,6 +23,7 @@ import { evaluationFor, missingToSign, gradeEvaluation, normalizeAnswers, EVALUA
 import { certificationFor, certificationRoster } from '../training-certification.js';
 import { questionMisses } from '../training-misses.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
+import { renderTrainingRecordPdf } from '../training-record-pdf.js';
 import { plantDateOf } from '../plant-clock.js';
 import { markCourseRevision, stampLinkedRevision, CourseRevisionError, MARK_KINDS } from '../course-revision.js';
 import { isApprovedStatus, sameRevision } from '../../shared/document-revision.js';
@@ -173,8 +175,26 @@ router.get('/', (req, res) => {
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 500, 1), 5000);
   sql += ' ORDER BY tr.training_date DESC LIMIT ?';
   params.push(limit);
-  res.json(db.prepare(sql).all(...params));
+  res.json(db.prepare(sql).all(...params).map(withSignatureState));
 });
+
+// Every training record read carries whether its competence signature is intact (D-282).
+const withSignatureState = (r) => (r ? { ...r, competence_signature: competenceSignatureState(r), competence_meaning: r.competence_signed_at ? COMPETENCE_MEANING : null } : r);
+
+/**
+ * The competence tick is a signature (D-282). The signer is the signed-in
+ * person; nobody signs off their own competence; the password is asked last.
+ * Returns the stamp, or null after answering the request.
+ */
+function signCompetenceOr(req, res, trainees) {
+  const self = trainees.filter(t => isTraineeSelf(req.user, t));
+  if (self.length) {
+    res.status(400).json({ error: 'Nobody signs off their own competence — the trainer signs it.', code: 'SELF_COMPETENCE' });
+    return null;
+  }
+  if (!gateSignature(req, res, { action: 'training_competence' })) return null;
+  return competenceStamp(req.user);
+}
 
 
 
@@ -346,9 +366,15 @@ router.post('/', (req, res) => {
   if (lacksCompetence({ status: 'completed', ...body }, passMarkOf(db, body.course_id))) {
     return res.status(400).json({ error: COMPETENCE_REQUIRED_MSG, code: 'COMPETENCE_REQUIRED' });
   }
-  const rec = insertCompletion(db, { ...body, dcr_id: dcr.id, ...recorder(req) });
-  logAudit(req.user, 'training_created', 'training', rec.id, { employee_name: rec.employee_name, course_id: rec.course_id }, null, null, rec.employee_name);
-  res.status(201).json(rec);
+  let signed = null;
+  if (body.competence_confirmed) {
+    signed = signCompetenceOr(req, res, [{ employee_user_id: body.employee_user_id, employee_name: body.employee_name }]);
+    if (!signed) return;
+  }
+  const rec = insertCompletion(db, { ...body, dcr_id: dcr.id, competence_signed: signed, ...recorder(req) });
+  logAudit(req.user, 'training_created', 'training', rec.id, { employee_name: rec.employee_name, course_id: rec.course_id,
+    ...(signed ? { competence_signed: true, ...signatureEvidence() } : {}) }, null, null, rec.employee_name);
+  res.status(201).json(withSignatureState(rec));
 });
 
 // Record a small-group training + test in one shot: one completion per attendee.
@@ -371,7 +397,6 @@ router.post('/bulk-complete', (req, res) => {
   const completion = completion_date || training_date || plantDateOf();
   const how = method || 'verbal';
   const sopRevision = (req.body.sop_revision && String(req.body.sop_revision).trim()) || courseTrainingRevision(db, course_id);
-  const competence = competence_confirmed ? competenceStatement(trainer) : null;
   // Competence is required for every attendee (D-269): each one either passed
   // the quiz (a score at or above the pass mark) or the trainer ticks it.
   // A bot or system account is not a trainee (D-262): named and left out.
@@ -383,6 +408,13 @@ router.post('/bulk-complete', (req, res) => {
   if (lacking.length) {
     return res.status(400).json({ error: `${COMPETENCE_REQUIRED_MSG} Missing for: ${lacking.join(', ')}.`, code: 'COMPETENCE_REQUIRED', lacking });
   }
+  // One signature for the session, given by the signed-in trainer (D-282).
+  let signed = null;
+  if (competence_confirmed) {
+    signed = signCompetenceOr(req, res, attendees.filter(a => (a.employee_name || '').trim() && !isBot(a)));
+    if (!signed) return;
+  }
+  const competence = signed ? signed.statement : null;
 
   let created = 0;
   const ids = [];
@@ -392,7 +424,7 @@ router.post('/bulk-complete', (req, res) => {
   const tx = db.transaction(() => {
     db.prepare(`INSERT INTO training_sessions (id, course_id, sop_id, sop_revision, dcr_id, training_date, trainer, method, language,
         competence_statement, notes, recorded_by, recorded_by_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(sessionId, course_id, course.sop_id || null, sopRevision || null, dcr.id, training_date || completion, trainer || null, how,
+      .run(sessionId, course_id, course.sop_id || null, sopRevision || null, dcr.id, training_date || completion, signed ? signed.by : (trainer || null), how,
         language || null, competence, notes || null, who.recorded_by, who.recorded_by_id);
     for (const a of attendees) {
       const name = (a.employee_name || '').trim();
@@ -405,10 +437,10 @@ router.post('/bulk-complete', (req, res) => {
       const rec = insertCompletion(db, {
         employee_name: name, employee_user_id: a.employee_user_id || null,
         course_id, course_title: course.title, status: 'completed',
-        method: how, trainer: trainer || null,
+        method: how, trainer: signed ? signed.by : (trainer || null),
         training_date: training_date || completion, completion_date: completion,
         score, passed: score == null ? true : score >= pass,
-        sop_revision: sopRevision, language: language || null, competence_statement: competence,
+        sop_revision: sopRevision, language: language || null, competence_signed: signed,
         dcr_id: dcr.id, session_id: sessionId, ...who,
       });
       ids.push(rec.id);
@@ -417,7 +449,8 @@ router.post('/bulk-complete', (req, res) => {
     db.prepare('UPDATE training_sessions SET attendee_count = ? WHERE id = ?').run(created, sessionId);
   });
   tx();
-  logAudit(req.user, 'training_group_completed', 'training', sessionId, { course_id, count: created, session_id: sessionId, ...(skipped.length ? { skipped } : {}) }, null, null, course.title);
+  logAudit(req.user, 'training_group_completed', 'training', sessionId, { course_id, count: created, session_id: sessionId, ...(skipped.length ? { skipped } : {}),
+    ...(signed ? { competence_signed: true, ...signatureEvidence() } : {}) }, null, null, course.title);
   // ids are returned so the client can attach the signed sign-in sheet to
   // every record it just created in one upload.
   res.json({ created, ids, skipped, session_id: sessionId });
@@ -586,10 +619,25 @@ router.put('/:id', (req, res) => {
   const status = (b.status || existing.status) === 'completed' && passedVal === 0 ? 'failed' : (b.status || existing.status);
   const next_due = status === 'failed' ? null : (dueDateFor(db, course_id, completion) ?? existing.next_due_date);
   const method = b.method ?? existing.method;
-  const trainer = b.trainer ?? existing.trainer;
-  // Ticking the statement stores it in words; unticking clears it.
-  const competence = b.competence_confirmed === undefined ? existing.competence_statement
-    : (b.competence_confirmed ? competenceStatement(trainer) : null);
+  // Signed: the trainer is the signer, and does not move (D-282).
+  const trainer = existing.competence_signed_at ? existing.trainer : (b.trainer ?? existing.trainer);
+  // A SIGNED sign-off is closed (D-282): the facts it was signed over do not
+  // move and the tick does not come off. Withdrawing is its own act, with a
+  // reason and a password (POST /:id/competence/withdraw).
+  const blank = (v) => (v === undefined || v === null || v === '' ? null : String(v));
+  if (existing.competence_signed_at) {
+    const moved = COMPETENCE_SIGNED_FIELDS.filter(k => b[k] !== undefined && blank(b[k]) !== blank(existing[k]));
+    if (b.competence_confirmed === false || moved.length) {
+      return res.status(409).json({ code: 'COMPETENCE_SIGNED',
+        error: `This sign-off was signed by ${existing.competence_signed_by}. ${moved.length ? `The ${moved.map(k => k.replace(/_/g, ' ')).join(', ')} cannot change` : 'The tick cannot come off'} while it is signed — the signer or an admin withdraws the signature first, with a reason.` });
+    }
+  }
+  // Ticking it NOW is signing it (D-282); a statement already on file stays as filed.
+  const signingNow = !existing.competence_signed_at && !existing.competence_statement && !!b.competence_confirmed;
+  const competence = existing.competence_signed_at ? existing.competence_statement
+    : signingNow ? competenceStatement(req.user?.name)
+    : b.competence_confirmed === undefined ? existing.competence_statement
+    : (b.competence_confirmed ? (existing.competence_statement || competenceStatement(trainer)) : null);
   // An edit that moves the record to another person or course cannot keep a
   // quiz attempt that was not theirs at that course as its proof (D-276).
   const attemptErr = status !== 'completed' ? null : attemptProblem(db, existing.test_attempt_id, {
@@ -602,6 +650,11 @@ router.put('/:id', (req, res) => {
     test_attempt_id: existing.test_attempt_id, competence_statement: competence,
   }, passMarkOf(db, course_id))) {
     return res.status(400).json({ error: COMPETENCE_REQUIRED_MSG, code: 'COMPETENCE_REQUIRED' });
+  }
+  let signed = null;
+  if (signingNow) {
+    signed = signCompetenceOr(req, res, [{ employee_user_id: b.employee_user_id ?? existing.employee_user_id, employee_name: b.employee_name || existing.employee_name }]);
+    if (!signed) return;
   }
   db.prepare(`UPDATE training_records SET employee_name=?, employee_id=?, employee_user_id=?, training_topic=?, course_id=?, sop_id=?,
     trainer=?, method=?, training_date=?, completion_date=?, status=?, passed=?, score=?, next_due_date=?,
@@ -616,14 +669,58 @@ router.put('/:id', (req, res) => {
     b.gdrive_url ?? existing.gdrive_url, b.notes ?? existing.notes,
     b.sop_revision !== undefined ? (b.sop_revision || null) : existing.sop_revision,
     b.language !== undefined ? (b.language || null) : existing.language, competence, dcr.id, req.params.id);
+  if (signed) {
+    db.prepare('UPDATE training_records SET trainer = ? WHERE id = ?').run(signed.by, req.params.id);
+    stampCompetenceSignature(db, req.params.id, signed);
+  }
   supersedeOlder(db, b.employee_name || existing.employee_name, course_id, req.params.id, b.employee_user_id ?? existing.employee_user_id ?? null);
   const after = db.prepare('SELECT * FROM training_records WHERE id = ?').get(req.params.id);
   const changed = {};
   for (const k of ['training_date', 'completion_date', 'trainer', 'method', 'language', 'competence_statement', 'dcr_id', 'sop_revision', 'score', 'passed', 'status']) {
     if (existing[k] !== after[k]) changed[k] = { from: existing[k], to: after[k] };
   }
-  logAudit(req.user, 'training_updated', 'training', req.params.id, { employee_name: after.employee_name, changed }, null, null, after.employee_name);
-  res.json(after);
+  logAudit(req.user, 'training_updated', 'training', req.params.id, { employee_name: after.employee_name, changed,
+    ...(signed ? { competence_signed: true, ...signatureEvidence() } : {}) }, null, null, after.employee_name);
+  res.json(withSignatureState(after));
+});
+
+// One record on paper, with its sign-off (D-282). Declared before GET '/:id'-style routes.
+router.get('/:id/pdf', (req, res) => {
+  const db = getDb();
+  const rec = db.prepare('SELECT * FROM training_records WHERE id = ?').get(req.params.id);
+  if (!rec) return res.status(404).json({ error: 'Not found' });
+  const course = rec.course_id ? db.prepare('SELECT code, title FROM training_courses WHERE id = ?').get(rec.course_id) : null;
+  renderTrainingRecordPdf(res, rec, { course });
+});
+
+// Withdrawing a signed competence sign-off (D-282): the signer or an admin, with
+// a reason and their password. The signature is never deleted — who signed,
+// when, and who withdrew it and why are kept on the record. A completion that
+// has no other evidence of competence goes back to In progress.
+router.post('/:id/competence/withdraw', (req, res) => {
+  const db = getDb();
+  const rec = db.prepare('SELECT * FROM training_records WHERE id = ?').get(req.params.id);
+  if (!rec) return res.status(404).json({ error: 'Not found' });
+  if (!rec.competence_signed_at) return res.status(409).json({ error: 'This record has no signed competence sign-off to withdraw.' });
+  if (req.user?.role !== 'admin' && rec.competence_signed_by_id !== req.user?.id) {
+    return res.status(403).json({ error: 'Only the person who signed it, or an admin, can withdraw this signature.' });
+  }
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 3) return res.status(400).json({ error: 'Say why the signature is being withdrawn.' });
+  if (!gateSignature(req, res, { action: 'training_competence_withdraw' })) return;
+  const withdrawn = { statement: rec.competence_statement, signed_by: rec.competence_signed_by, signed_by_id: rec.competence_signed_by_id,
+    signed_at: rec.competence_signed_at, withdrawn_by: req.user.name, withdrawn_by_id: req.user.id, withdrawn_at: new Date().toISOString(), reason };
+  const stillCompetent = !lacksCompetence({ status: rec.status, passed: rec.passed, score: rec.score, test_attempt_id: rec.test_attempt_id, competence_statement: null },
+    passMarkOf(db, rec.course_id));
+  const status = rec.status === 'completed' && !stillCompetent ? 'in_progress' : rec.status;
+  db.prepare(`UPDATE training_records SET competence_statement = NULL, competence_signed_by = NULL, competence_signed_by_id = NULL,
+    competence_signed_at = NULL, competence_hash = NULL, competence_withdrawn = ?, status = ?,
+    next_due_date = CASE WHEN ? = 'in_progress' THEN NULL ELSE next_due_date END, updated_at = datetime('now') WHERE id = ?`)
+    .run(JSON.stringify(withdrawn), status, status, rec.id);
+  const after = db.prepare('SELECT * FROM training_records WHERE id = ?').get(rec.id);
+  logAudit(req.user, 'training_competence_withdrawn', 'training', rec.id, { reason, signed_by: rec.competence_signed_by, status_from: rec.status, status_to: status, ...signatureEvidence() },
+    rec, after, rec.employee_name);
+  res.json(withSignatureState(after));
 });
 
 // ── REQUIREMENT MATRIX ───────────────────────────────────────────────────────
@@ -1941,7 +2038,7 @@ router.get('/:id', (req, res) => {
     FROM training_records tr LEFT JOIN training_courses c ON tr.course_id = c.id
     LEFT JOIN sop_documents sd ON tr.sop_id = sd.id WHERE tr.id = ?`).get(req.params.id);
   if (!rec) return res.status(404).json({ error: 'Not found' });
-  res.json(rec);
+  res.json(withSignatureState(rec));
 });
 
 export default router;

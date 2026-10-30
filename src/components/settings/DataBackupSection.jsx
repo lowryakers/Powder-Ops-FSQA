@@ -116,6 +116,10 @@ function auditorDupSummary(r) {
     {r.flagged.length ? ` (${r.flagged.map(f => f.name).join(', ')})` : ''} · the rule would match {r.would_match_now.length} now</>;
 }
 
+function sharedSummary(r) {
+  return r.flagged_accounts ? red(true, r.verdict) : r.verdict;
+}
+
 function sameNameSummary(r) {
   const n = r.groups.length;
   return n ? red(true, `${plural(n, 'name')} with more than one account: ${r.groups.map(g => g.accounts[0]?.name).join(', ')}`) : 'Every account has its own name.';
@@ -204,6 +208,8 @@ export default function DataBackupSection() {
       blurb="What lands on each team's task list, and every schedule or card that is probably on the wrong one — machine PMs on QA, old room checklists, cards left behind — with where each is changed. Also each person's card count." />
     <ReadOnlyReport id="auditor-dups" path="/compliance/auditor-duplicates" title="Unused auditor accounts marked not a trainee" summary={auditorDupSummary}
       blurb="An auditor account with the same name as a staff member, never signed in, is left out of training (D-273). This lists every account that rule matched here, each change it logged, and what it would match now." />
+    <ReadOnlyReport id="shared-accounts" path="/compliance/shared-accounts" title="Shared sign-ins" summary={sharedSummary}
+      blurb="Your password is your signature, so it must be yours alone. This lists accounts signed in on several devices at once, or from many devices in 30 days, for you to ask about. It blocks nothing." />
     <ReadOnlyReport id="same-name" path="/compliance/same-name-accounts" title="Accounts that share a name" summary={sameNameSummary}
       blurb="People with more than one account under the same name, side by side: which one signs in, how each was created, and what is filed against each. Nothing is merged." />
     <ReadOnlyReport id="edit-fails" path="/compliance/edit-failed-training" title="Training records an edit turned into a fail" summary={editFailSummary}

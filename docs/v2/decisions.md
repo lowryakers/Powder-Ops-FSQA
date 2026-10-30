@@ -9749,3 +9749,56 @@ one-time 11.100(c) certification letter (no FDA review). A signature drawn fresh
 under 11.3(b)(8) and avoids that letter, but 11.10 / 11.50 / 11.70 still apply, and drawing every sign-off is slower
 than the password already used on ~25 routes. Recommendation: password as the signature, send the letter, fix the
 drawn "Sign". **The plan (nine items) is not built until Lowry chooses.**
+
+## D-282 — One way to sign: the password, at the moment of signing, by the person signed in (30 Oct 2026)
+Lowry chose password signatures over drawn ones (D-281): "simplest version that works and gets used". Scope: document
+approvals and training sign-offs. Other signatures already use `gateSignature`.
+- **The drawn "Sign" on documents is removed** (`POST /documents/:id/sign` and its revoke are gone). Rows drawn before
+  stay on their documents as history, on the screen and the PDF, and can no longer be added or removed. `My signature`
+  stays for the COA certificate image (that certificate is already password-signed).
+- **Every approval of a document asks for the password, asked last**: filing it as Approved/Effective (`POST /documents`,
+  now through `recordApprovedRevision` like a PUT into force), moving it into force (`PUT`), approving a draft revision,
+  and recording a paper revision on an approved document (both apply doors). Only QA, Document Control, supervisors and
+  admins approve. **No typed approver** (`400 TYPED_APPROVER`); the approver is the session. The PUT no longer passes
+  `approved_by` into the writer, and the writer no longer accepts it.
+- **The competence tick is the trainer's signature** (`signCompetenceOr` in `api/training.js`, the same rule in the task
+  path in `api/pm.js`): the signed-in person, never the trainee (`400 SELF_COMPETENCE`), with their password. **A group
+  is one password** (bulk-complete; Group Sheets asks once for several courses). The statement and `trainer` name the
+  signer; the typed Trainer box is gone from the record form, Group Training, Group Sheets and the task card, and the
+  task check no longer asks "who delivered it".
+- **Each signature stores name, date and time, and meaning, and a fingerprint.** Documents:
+  `document_revisions.approved_meaning` (Approved / "Approved on paper — recorded from the signed original") and
+  `approved_hash` over the revision's text, number, effective date, approver and time; `approvalState()` reads
+  signed / changed / not_recorded. Training: `competence_signed_by(_id)`, `competence_signed_at`, `competence_hash`;
+  `competenceSignatureState()`; meaning "Trained and competent". Every read carries the state.
+- **An edit cannot take a signature off or move what it covers**: a signed sign-off refuses an untick or a change to the
+  person, course or dates (`409 COMPETENCE_SIGNED`); other fields still edit. **A correction is a new signed act:**
+  `POST /training/:id/competence/withdraw` (the signer or an admin, reason, password) keeps who signed, when, who
+  withdrew it and why in `competence_withdrawn`; a completion with no other proof goes back to In progress.
+- **Printouts**: the document PDF prints each approval of the revision as name — meaning (rev) · date and time with the
+  zone · whether the fingerprint matches, then pre-D-282 drawn signatures as history. `GET /training/:id/pdf` prints a
+  training record with its sign-off (`server/training-record-pdf.js`). `plantDateTime()` in `plant-clock.js` is the one
+  formatter.
+- **Records**: new columns only; nothing existing is rewritten. Statements filed before stay as filed and print as
+  "recorded before signatures were required".
+- `verify:part11` (33; control without the competence gate fails 2). Twelve existing verifies now sign with the password.
+
+## D-283 — The audit log is locked by the database; the start-up rewrites stop; a shared sign-in report (30 Oct 2026)
+- **Triggers refuse UPDATE and DELETE on `audit_log`** (`audit_log_no_update`, `audit_log_no_delete`), whatever code
+  asks — the `user_activity` arrangement (D-261).
+- **`backfillAuditActorIdentity` and `normalizeAuditActions` are deleted.** They ran on every boot, so on every deployed
+  database their work was long finished; a trail the software edits is not a trail. New rows are written canonical.
+- **Shared sign-ins** (`server/shared-accounts.js`, `GET /api/compliance/shared-accounts`, Settings → Data backup):
+  accounts open on two or more devices at once, or on four or more in 30 days. Read-only; blocks nothing. Sessions now
+  record `ip` and `user_agent` at sign-in; older sessions read "device not recorded".
+- Covered by `verify:part11`.
+
+## D-284 — Validation pack, e-signature policy as course ESIG-101, FDA letter drafted and not sent (30 Oct 2026)
+Lowry is hesitant to send the 11.100(c) letter until compliance can be proved. `docs/v2/part11-validation/`: one page
+per requirement with a test run in the live app (step, expected result, pass/fail, initials), a results page for Lowry
+and Daniela to sign, the e-signature policy (draft 1, pending Document Control) and the letter (draft; confirm FDA's
+current address, which may have changed in FDA's 2024 field reorganization). **ESIG-101** is seeded insert-only by
+`seedWorkInstructionCourses`: applies to everyone, yearly, five questions the app grades so each person completes it
+alone. It is not auto-assigned; the office assigns it when the policy is issued.
+- Note for the letter: Part 11 applies to electronic records required by 21 CFR 111 whether or not the letter is sent.
+  The letter adds no inspection; not sending it while using electronic signatures is itself a gap.

@@ -123,7 +123,7 @@ export function attachCheckForms(db, rows) {
  * File the record a completed check is evidence for. Must run inside the
  * completion's transaction. Returns { kind, ids, capas } for the audit line.
  */
-export function fileCheckRecord(db, { form, check, wo, by, when, notes }) {
+export function fileCheckRecord(db, { form, check, wo, by, when, notes, signed = null }) {
   const c = normalizeCheck(form, check);
   // The plant's day (D-158): `when` is a UTC instant unless it was back-dated
   // to a bare day, and slicing an instant filed every evening check tomorrow.
@@ -152,6 +152,7 @@ export function fileCheckRecord(db, { form, check, wo, by, when, notes }) {
       test_attempt_id: c.test_attempt_id,
       trainer: c.trainer, method: c.method || (c.test_attempt_id ? 'quiz' : null),
       competence_confirmed: !!c.competence_confirmed,
+      competence_signed: signed,
       notes: notes || null,
       // Whoever pressed Complete keyed it in (D-264).
       recorded_by: by || null,

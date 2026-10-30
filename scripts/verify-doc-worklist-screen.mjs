@@ -22,7 +22,7 @@ fs.writeFileSync('/tmp/SOP-777_Browser_Test_V9.md','# Browser Test Procedure\n\n
 // the document must exist to match
 await p.evaluate(async () => {
   await fetch('/api/documents', { method:'POST', headers:{'Content-Type':'application/json',Authorization:'Bearer '+localStorage.getItem('auth_token')},
-    body: JSON.stringify({ doc_type:'sop', doc_number:'SOP 777', title:'Browser Test Procedure', category:'quality', revision:'V1', status:'active', content:'old body' }) });
+    body: JSON.stringify({ doc_type:'sop', doc_number:'SOP 777', title:'Browser Test Procedure', category:'quality', revision:'V1', status:'active', content:'old body', signature_password:'DocSecret2026' }) });
 });
 await fileInput.setInputFiles('/tmp/SOP-777_Browser_Test_V9.md');
 await p.waitForTimeout(4000);
@@ -32,7 +32,14 @@ t('it is labelled by what it is asking for', /Revision has moved/i.test(after));
 t('the proposed change is shown with both values', /V1\s*→\s*V9/.test(after.replace(/\s+/g,' ')), after.slice(-400));
 const apply=p.locator('button',{hasText:/Apply \d+ change/});
 t('an Apply button naming the count is offered', await apply.count()>=1, await apply.first().innerText().catch(()=>''));
-await apply.first().click(); await p.waitForTimeout(3000);
+await apply.first().click();
+// On an approved document, applying records an approved revision: the password prompt (D-282).
+await p.waitForSelector('[data-signature-prompt] input[type=password]', { timeout: 10000 }).catch(() => {});
+t('applying to an approved document asks for the password', await p.locator('[data-signature-prompt]').count() === 1);
+await p.locator('[data-signature-prompt] input[type=password]').click().catch(() => {});
+await p.keyboard.type('DocSecret2026');
+await p.locator('[data-signature-prompt] button[type=submit]').click().catch(() => {});
+await p.waitForTimeout(3000);
 const done=await p.locator('body').innerText();
 t('applying clears it from the queue', !/SOP-777_Browser_Test_V9\.md/.test(done), done.slice(-200));
 // Not a fixed number — this DB may already carry items from the API check.

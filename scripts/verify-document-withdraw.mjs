@@ -10,7 +10,16 @@ const PORT = process.env.PORT || 4924;
 const B = `http://localhost:${PORT}/api`;
 const J = async r => { try { return await r.json(); } catch { return null; } };
 let token = null;
-const req = (p, o = {}) => fetch(B + p, { ...o, headers: {
+// Approving a document asks for the signer's password (D-282). This script's
+// signer re-enters the one password it set, as a person would at the prompt.
+const SIGN_PW = 'DocPW2026!';
+const SIGNED_PATHS = /^\/(documents(\/[^/]+)?|documents\/[^/]+\/apply-revision|documents\/revisions\/items\/[^/]+\/apply)$/;
+const withSig = (p, o) => {
+  if (!o.method || o.method === 'GET' || typeof o.body !== 'string' || !SIGNED_PATHS.test(String(p).replace(/^\/api/, '').split('?')[0])) return o;
+  try { const b = JSON.parse(o.body); if (b && typeof b === 'object' && !Array.isArray(b) && b.signature_password === undefined) return { ...o, body: JSON.stringify({ ...b, signature_password: SIGN_PW }) }; } catch { /* not JSON */ }
+  return o;
+};
+const req = (p, o = {}) => fetch(B + p, { ...withSig(p, o), headers: {
   'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(o.headers || {}) } });
 const post = (p, b) => req(p, { method: 'POST', body: JSON.stringify(b) });
 const put = (p, b) => req(p, { method: 'PUT', body: JSON.stringify(b) });
@@ -63,8 +72,9 @@ console.log('\nThe doors still work, and are the only way across the line');
   const r2 = await put(`/documents/${doc.id}`, { status: 'archived' });
   const b2 = await J(r2);
   t('PUT status=archived on a live document is refused — withdrawing needs a reason', r2.status === 400 && b2?.use === 'withdraw', `got ${r2.status}`);
-  const r3 = await put(`/documents/${doc.id}`, { status: 'active' });
-  t('an ordinary status change (draft → active) still works', r3.ok && status(doc.id)?.status === 'active', `got ${r3.status}`);
+  // Approving it again is a NEW approved revision (D-277/D-282): V1 was already approved once.
+  const r3 = await put(`/documents/${doc.id}`, { status: 'active', revision: 'V2' });
+  t('an ordinary status change (draft → active) still works, under a new number', r3.ok && status(doc.id)?.status === 'active', `got ${r3.status}`);
 }
 
 console.log(`\n${pass}/${pass + fail} assertions passed`);

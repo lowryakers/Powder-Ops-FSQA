@@ -4862,6 +4862,14 @@ function runMigrations() {
   addColumnIfMissing('training_records', 'competence_statement', 'TEXT');
   addColumnIfMissing('training_records', 'dcr_id', 'TEXT');
   addColumnIfMissing('training_records', 'session_id', 'TEXT');
+  // The competence tick is a signature (D-282, 21 CFR 11): who signed, when,
+  // a fingerprint of what they signed, and — if it was ever withdrawn — by whom
+  // and why. NULL on every record filed before: those statements were not signed.
+  addColumnIfMissing('training_records', 'competence_signed_by', 'TEXT');
+  addColumnIfMissing('training_records', 'competence_signed_by_id', 'TEXT');
+  addColumnIfMissing('training_records', 'competence_signed_at', 'TEXT');
+  addColumnIfMissing('training_records', 'competence_hash', 'TEXT');
+  addColumnIfMissing('training_records', 'competence_withdrawn', 'TEXT');
   db.exec(`CREATE TABLE IF NOT EXISTS training_sessions (
     id TEXT PRIMARY KEY,
     course_id TEXT NOT NULL,
@@ -4913,6 +4921,10 @@ function runMigrations() {
   )`);
   try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_doc_rev_one_draft ON document_revisions(document_id) WHERE status = 'draft'"); } catch { /* ignore */ }
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_doc_rev_doc ON document_revisions(document_id, created_at)'); } catch { /* ignore */ }
+  // An approval is a signature (D-282): what it means, in words, and a
+  // fingerprint of the exact revision approved. NULL on revisions approved before.
+  addColumnIfMissing('document_revisions', 'approved_meaning', 'TEXT');
+  addColumnIfMissing('document_revisions', 'approved_hash', 'TEXT');
   // The revision of its document a course was built on (D-277), and who said so.
   addColumnIfMissing('training_courses', 'built_on_revision', 'TEXT');
   addColumnIfMissing('training_courses', 'built_on_kind', 'TEXT');      // updated | no_change | linked
@@ -7056,6 +7068,10 @@ function runMigrations() {
     CREATE TRIGGER IF NOT EXISTS user_activity_no_delete BEFORE DELETE ON user_activity
       BEGIN SELECT RAISE(ABORT, 'user_activity is append-only'); END;
   `);
+  // Which device a session was opened from (D-283): read by the shared-account
+  // report. NULL on sessions opened before — reported as "device not recorded".
+  addColumnIfMissing('sessions', 'ip', 'TEXT');
+  addColumnIfMissing('sessions', 'user_agent', 'TEXT');
   // A session that ended before the log existed is not a timeout the log saw.
   if (addColumnIfMissing('sessions', 'activity_ended_at', 'TEXT')) {
     db.prepare(`UPDATE sessions SET activity_ended_at = 'before-activity-log'
@@ -7063,8 +7079,18 @@ function runMigrations() {
   }
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_audit_log_actor_id ON audit_log(actor_id)'); } catch { /* ignore */ }
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action)'); } catch { /* ignore */ }
-  backfillAuditActorIdentity();
-  normalizeAuditActions();
+  // THE AUDIT TRAIL IS LOCKED (D-283, 21 CFR 11.10(e)). The database refuses
+  // any UPDATE or DELETE on audit_log, whatever code asks. The two start-up
+  // steps that used to rewrite old rows (backfilling actor ids, renaming old
+  // action words) no longer run: on every database already deployed they had
+  // finished long ago (they ran on every boot), and a trail the software edits
+  // is not a trail. Every new row is written canonical by logAudit.
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS audit_log_no_update BEFORE UPDATE ON audit_log
+      BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS audit_log_no_delete BEFORE DELETE ON audit_log
+      BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
+  `);
 
   // Hot-path indexes added after the fact. task_group is now a primary filter
   // for the split department teams (operator-tasks, archive, missed-reports);
@@ -7085,51 +7111,6 @@ function runMigrations() {
   catch (e) { console.warn('[migrate] person links unavailable:', e.message); }
 }
 
-// Fill actor_id/role/department on historical audit rows by matching the stored
-// actor name back to a current user. Idempotent — only touches rows still null.
-function backfillAuditActorIdentity() {
-  try {
-    const rows = db.prepare(
-      "SELECT DISTINCT actor FROM audit_log WHERE actor_id IS NULL AND actor IS NOT NULL AND actor != ''"
-    ).all();
-    if (rows.length === 0) return;
-    const findUser = db.prepare('SELECT id, role, department FROM users WHERE LOWER(name) = LOWER(?)');
-    const update = db.prepare(
-      'UPDATE audit_log SET actor_id = ?, actor_role = ?, actor_department = ? WHERE actor = ? AND actor_id IS NULL'
-    );
-    let filled = 0;
-    const tx = db.transaction(() => {
-      for (const { actor } of rows) {
-        const u = findUser.get(actor);
-        if (u) filled += update.run(u.id, u.role, u.department, actor).changes;
-      }
-    });
-    tx();
-    if (filled > 0) console.log(`[migrate] Backfilled actor identity on ${filled} audit log rows`);
-  } catch (e) {
-    console.warn('[migrate] audit actor backfill:', e.message);
-  }
-}
-
-// Normalize historical action verbs to the canonical set so old + new rows
-// filter consistently. Idempotent — canonicalAction is stable on its output.
-function normalizeAuditActions() {
-  try {
-    const rows = db.prepare('SELECT DISTINCT action FROM audit_log WHERE action IS NOT NULL').all();
-    const update = db.prepare('UPDATE audit_log SET action = ? WHERE action = ?');
-    let changed = 0;
-    const tx = db.transaction(() => {
-      for (const { action } of rows) {
-        const canon = canonicalAction(action);
-        if (canon !== action) changed += update.run(canon, action).changes;
-      }
-    });
-    tx();
-    if (changed > 0) console.log(`[migrate] Normalized action verbs on ${changed} audit log rows`);
-  } catch (e) {
-    console.warn('[migrate] audit action normalization:', e.message);
-  }
-}
 
 // Go-live cutoff: work the team performed before the system was in real use
 // was tracked on paper, not here. Recurring work orders the engine generated

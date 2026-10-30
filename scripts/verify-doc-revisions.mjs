@@ -19,6 +19,12 @@
 // text cannot be edited in place" fails, and the draft no longer stands apart.
 import http from 'http';
 import Database from 'better-sqlite3';
+
+// Signing asks for the signer's password (D-282). Everyone in this script has
+// the one password it set, so a write carries it — as a person re-entering it would.
+const SIGN_PW = 'Control2026!!';
+const SIGNED_PATHS = /^\/(documents(\/[^/]+)?|documents\/[^/]+\/apply-revision|documents\/revisions\/items\/[^/]+\/apply|training(\/[^/]+)?|training\/bulk-complete|pm\/work-orders\/[^/]+\/complete-and-recur)$/;
+const signed = (b, m, p) => (m !== 'GET' && SIGNED_PATHS.test(String(p).split('?')[0]) && b && typeof b === 'object' && !Array.isArray(b) && b.signature_password === undefined && !('password' in b) ? { ...b, signature_password: SIGN_PW } : b);
 import { chromium } from 'playwright-core';
 
 const PORT = Number(process.env.PORT || 5165);
@@ -53,7 +59,7 @@ const waitFor = async (n, ms = 5000) => { const end = Date.now() + ms; while (re
   db.close();
 }
 const call = async (m, p, b, tok) => {
-  const r = await fetch(`${URL}/api${p}`, { method: m, headers: { 'Content-Type': 'application/json', ...(tok && { Authorization: `Bearer ${tok}` }) }, body: b ? JSON.stringify(b) : undefined });
+  const r = await fetch(`${URL}/api${p}`, { method: m, headers: { 'Content-Type': 'application/json', ...(tok && { Authorization: `Bearer ${tok}` }) }, body: b ? JSON.stringify(signed(b, m, p)) : undefined });
   let json = null; try { json = await r.json(); } catch { /* not json */ }
   return { status: r.status, json };
 };
@@ -103,6 +109,11 @@ t('a number already used ("v3" is V3) is refused, before any password', r.status
 await call('PUT', `/documents/${doc.id}/revisions/${draft.id}`, { revision: 'V4' }, tok);
 r = await call('POST', `/documents/${doc.id}/revisions/${draft.id}/approve`, {}, tok);
 t('approving asks for the password', r.status === 403 && r.json?.signature_required === true);
+// Filing SOP 900 as approved at V3 was itself an approval (D-282): one signal,
+// for V3. Counted here and cleared, so what follows counts only the draft's approval.
+await waitFor(1);
+t('filing it as approved signed V3 and signalled it once', received.length === 1 && received[0]?.body?.new_revision === 'V3' && received[0]?.body?.source === 'first_approval', `${received.length}`);
+received.length = 0;
 t('nothing was signalled before approval', received.length === 0);
 r = await call('POST', `/documents/${doc.id}/revisions/${draft.id}/approve`, { signature_password: 'Control2026!!' }, tok);
 t('approved with the password', r.status === 200 && r.json?.document?.revision === 'V4', `${r.status} ${r.json?.error}`);
@@ -110,7 +121,7 @@ r = await call('GET', `/documents/${doc.id}`, null, tok);
 t('the document is now V4 with the new text', r.json?.revision === 'V4' && /New text/.test(r.json?.description) && r.json?.training_revision === 'V4');
 r = await call('GET', `/documents/${doc.id}/revisions`, null, tok);
 const hist = r.json?.revisions || [];
-t('V3 is kept as superseded history, V4 is in force', hist.some(h => h.revision === 'V3' && h.status === 'superseded' && h.source === 'baseline' && /Old text/.test(h.description))
+t('V3 is kept as superseded history, V4 is in force', hist.some(h => h.revision === 'V3' && h.status === 'superseded' && h.source === 'first_approval' && /Old text/.test(h.description) && h.approval_state === 'signed')
   && hist.some(h => h.revision === 'V4' && h.status === 'approved' && h.approved_by === 'Dana Control'));
 
 console.log('\n── 2. the Quality bot is told ──');

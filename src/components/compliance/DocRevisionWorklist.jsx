@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApiGet, apiPost, apiUpload } from '../../hooks/useApi';
+import { withSignature } from '../../lib/signature';
 import { FileUp, Check, SkipForward, Loader2, AlertTriangle, FileQuestion } from 'lucide-react';
 
 // Document Control's worklist.
@@ -41,14 +42,14 @@ function Item({ item, onDone }) {
     setBusy(true); setError(null);
     try {
       if (what === 'apply') {
-        await apiPost(`/documents/revisions/items/${item.id}/apply`, { fields: [...picked] });
+        await withSignature((extra) => apiPost(`/documents/revisions/items/${item.id}/apply`, { fields: [...picked], ...extra }), { title: 'Record this revision', detail: 'On an approved document this records an approved revision — your password is your signature' });
       } else {
         const reason = window.prompt(`Skip ${item.filename}?\n\nThe row stays, with your reason on it.\n\nWhy?`);
         if (!reason) { setBusy(false); return; }
         await apiPost(`/documents/revisions/items/${item.id}/skip`, { reason });
       }
       onDone();
-    } catch (e) { setError(e.message || 'Could not save'); }
+    } catch (e) { if (!e.cancelled) setError(e.message || 'Could not save'); }
     finally { setBusy(false); }
   };
 

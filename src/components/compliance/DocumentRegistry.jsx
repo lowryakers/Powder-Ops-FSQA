@@ -8,121 +8,39 @@ import DocumentBodyEditor from './DocumentBodyEditor.jsx';
 import RecordHistory from '../common/RecordHistory.jsx';
 import RevisionUploadModal from '../settings/RevisionUploadModal.jsx';
 import SignedCopyBulkModal from './SignedCopyBulkModal.jsx';
-import { SignaturePad } from '../common/SignatureCanvas.jsx';
-import { formatDate } from '../../lib/datetime.js';
+import { formatDate, formatDateTime } from '../../lib/datetime.js';
 import { pdfViewerUrl } from '../../lib/pdfUrl';
 import SearchSelect from '../common/SearchSelect.jsx';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 import FrozenScroll from '../common/FrozenScroll';
 import DocumentRevisions from './DocumentRevisions.jsx';
 import { getParam, consumeParam } from '../../lib/deepLink';
+import { withSignature } from '../../lib/signature';
 import { isApprovedStatus } from '../../../shared/document-revision.js';
 
 /**
- * Wet signatures on a controlled document — the drawn image beside name,
- * capacity and date, the way a signed paper original reads. Signing applies
- * the signature you drew once (Account menu → My signature); if none is on
- * file yet, the pad opens right here, so Danny's first signature is drawn at
- * the moment he needs it and every later one is two taps.
+ * Drawn signatures recorded before D-282, shown as history only. Signing a
+ * document is now one act: approving its revision with your password (see
+ * Revisions below), which records your name, the date and time, and what the
+ * signature means.
  */
 function DocumentSignatures({ doc }) {
-  const { user } = useAuth() || {};
-  const { data: sigs, refresh } = useApiGet(`/documents/${doc.id}/signatures`, [doc.id]);
-  const [signing, setSigning] = useState(false);
-  const [needsPad, setNeedsPad] = useState(false);
-  const [capacity, setCapacity] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-
-  const canSign = user && (user.role === 'admin' || user.role === 'supervisor'
-    || ['qa', 'quality', 'document_control'].includes(String(user.department || '').toLowerCase()));
-  const defaultCapacity = user?.department === 'qa' || user?.department === 'quality' ? 'Quality Assurance'
-    : user?.department === 'document_control' ? 'Document Control'
-      : user?.role === 'admin' ? 'Management' : 'Supervisor';
-
-  const sign = async () => {
-    setBusy(true); setError('');
-    try {
-      await apiPost(`/documents/${doc.id}/sign`, { capacity: capacity || defaultCapacity });
-      setSigning(false); setNeedsPad(false);
-      refresh();
-    } catch (e) {
-      if (e.needs_signature || /draw your signature/i.test(e.message || '')) setNeedsPad(true);
-      else setError(e.message);
-    } finally { setBusy(false); }
-  };
-
-  const savePadAndSign = async (image) => {
-    setBusy(true); setError('');
-    try {
-      await apiPost('/users/me/signature', { image });
-      setNeedsPad(false);
-      await apiPost(`/documents/${doc.id}/sign`, { capacity: capacity || defaultCapacity });
-      setSigning(false);
-      refresh();
-    } catch (e) { setError(e.message); }
-    finally { setBusy(false); }
-  };
-
-  const revoke = async (sig) => {
-    if (!window.confirm(`Revoke ${sig.name}'s signature?`)) return;
-    try { await apiFetch(`/documents/signatures/${sig.id}`, { method: 'DELETE' }); refresh(); }
-    catch (e) { setError(e.message); }
-  };
-
-  if (!sigs?.length && !canSign) return null;
+  const { data: sigs } = useApiGet(`/documents/${doc.id}/signatures`, [doc.id]);
+  if (!sigs?.length) return null;
   return (
-    <div className="px-5 py-3 border-t border-gray-100">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Signatures</p>
-        {canSign && doc.status !== 'archived' && !signing && (
-          <button type="button" onClick={() => { setSigning(true); setCapacity(defaultCapacity); }}
-            className="text-xs font-semibold text-powder-700 hover:underline">Sign this document</button>
-        )}
-      </div>
-
-      {(sigs || []).map(s => (
+    <div className="px-5 py-3 border-t border-gray-100" data-legacy-signatures>
+      <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Drawn signatures (before password signing)</p>
+      {sigs.map(s => (
         <div key={s.id} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
           {s.signature_image
             ? <img src={s.signature_image} alt="" className="h-10 max-w-[140px] object-contain shrink-0" />
             : <span className="text-gray-300 text-xs shrink-0">(no image)</span>}
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium text-gray-900 truncate">{s.name}</p>
-            <p className="text-[11px] text-gray-500">{s.capacity} · {formatDate(s.signed_at)}</p>
+            <p className="text-[11px] text-gray-500">{s.capacity} · {formatDateTime(s.signed_at)}</p>
           </div>
-          {user && (user.role === 'admin' || user.id === s.user_id) && (
-            <button type="button" onClick={() => revoke(s)} className="text-[11px] text-gray-400 hover:text-red-600 shrink-0">revoke</button>
-          )}
         </div>
       ))}
-      {!sigs?.length && <p className="text-xs text-gray-400 py-1.5">Not signed yet.</p>}
-
-      {signing && (
-        <div className="mt-2 bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2">
-          {needsPad ? (
-            <>
-              <p className="text-xs text-gray-600">Draw your signature once — it's saved to your account and applied here.</p>
-              <SignaturePad onSave={savePadAndSign} saving={busy} onCancel={() => { setNeedsPad(false); setSigning(false); }} />
-            </>
-          ) : (
-            <>
-              <label className="block">
-                <span className="text-[11px] font-medium text-gray-600">Signing in the capacity of</span>
-                <input value={capacity} onChange={e => setCapacity(e.target.value)}
-                  className="mt-0.5 w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm" />
-              </label>
-              <div className="flex gap-2">
-                <button type="button" onClick={sign} disabled={busy}
-                  className="px-3 py-1.5 bg-powder-600 text-white rounded-lg text-sm font-medium disabled:opacity-50">
-                  {busy ? 'Signing…' : 'Apply my signature'}
-                </button>
-                <button type="button" onClick={() => setSigning(false)} className="px-3 py-1.5 text-sm text-gray-500">Cancel</button>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-      {error && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-2 mt-1">{error}</p>}
     </div>
   );
 }
@@ -239,6 +157,7 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
       const { content, content_es, revision, ...meta } = form;
       await onSave(locked ? { ...meta, doc_type: docType } : { ...form, content, content_es, revision, doc_type: docType });
     } catch (saveErr) {
+      if (saveErr.cancelled) return;
       // A refused save must SAY so. This was try/finally with NO catch, so a
       // 403 or a validation 400 cleared the spinner and left the modal sitting
       // there — indistinguishable from a dead button, which is how a
@@ -1082,13 +1001,16 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
     else { setSortField(field); setSortOrder('asc'); }
   };
 
+  // Saving a document as Approved / Effective IS approving it (D-282): the
+  // server asks for the password; withSignature prompts and re-sends.
+  const sig = (form) => ({ title: `Approve ${form.doc_number || form.title || 'this document'}`, detail: `Revision ${form.revision || ''} — your password is your signature` });
   const handleCreate = async (form) => {
-    await apiPost('/documents', form);
+    await withSignature((extra) => apiPost('/documents', { ...form, ...extra }), sig(form));
     setCreating(false);
     refresh();
   };
   const handleUpdate = async (form) => {
-    await apiPut(`/documents/${editing.id}`, form);
+    await withSignature((extra) => apiPut(`/documents/${editing.id}`, { ...form, ...extra }), sig(form));
     setEditing(null);
     setViewing(null);
     refresh();

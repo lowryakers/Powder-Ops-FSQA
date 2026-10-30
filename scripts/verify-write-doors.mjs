@@ -6,7 +6,16 @@ const PORT = process.env.PORT || 4926;
 const B = `http://localhost:${PORT}/api`;
 const J = async r => { try { return await r.json(); } catch { return null; } };
 let token = null;
-const req = (p, o = {}) => fetch(B + p, { ...o, headers: {
+// Approving a document asks for the signer's password (D-282). This script's
+// signer re-enters the one password it set, as a person would at the prompt.
+const SIGN_PW = 'DoorsAdmin2026!';
+const SIGNED_PATHS = /^\/(documents(\/[^/]+)?|documents\/[^/]+\/apply-revision|documents\/revisions\/items\/[^/]+\/apply)$/;
+const withSig = (p, o) => {
+  if (!o.method || o.method === 'GET' || typeof o.body !== 'string' || !SIGNED_PATHS.test(String(p).replace(/^\/api/, '').split('?')[0])) return o;
+  try { const b = JSON.parse(o.body); if (b && typeof b === 'object' && !Array.isArray(b) && b.signature_password === undefined) return { ...o, body: JSON.stringify({ ...b, signature_password: SIGN_PW }) }; } catch { /* not JSON */ }
+  return o;
+};
+const req = (p, o = {}) => fetch(B + p, { ...withSig(p, o), headers: {
   'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(o.headers || {}) } });
 const post = (p, b) => req(p, { method: 'POST', body: JSON.stringify(b) });
 const put = (p, b) => req(p, { method: 'PUT', body: JSON.stringify(b) });

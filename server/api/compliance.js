@@ -19,6 +19,7 @@ import { getSource, safeCount, isQaReviewer } from '../qa-review.js';
 import { pmCompletion } from '../pm-completion.js';
 import { moduleUsage, usageText } from '../module-usage.js';
 import { sameNameAccounts, sameNameText } from '../same-name-accounts.js';
+import { sharedAccounts, sharedAccountsText } from '../shared-accounts.js';
 import { auditorDuplicateReport, auditorDuplicateText } from '../trainees.js';
 import { openCocGaps } from '../coc-state.js';
 import { editFailedTraining, editFailedText } from '../edit-failed-training.js';
@@ -338,6 +339,12 @@ router.get('/task-routing', requireRole('admin'), (req, res) => {
 router.get('/same-name-accounts', requireRole('admin'), (req, res) => {
   const r = sameNameAccounts(getDb(), { name: req.query.name || null });
   res.json({ ...r, text: sameNameText(r, `live database, ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`) });
+});
+
+// Is anybody sharing a sign-in (D-283)? READ-ONLY: it reports, blocks nothing.
+router.get('/shared-accounts', requireRole('admin'), (req, res) => {
+  const r = sharedAccounts(getDb());
+  res.json({ ...r, text: sharedAccountsText(r, `live database, ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`) });
 });
 
 // What the unused-auditor-duplicate pass matched (D-274). READ-ONLY.

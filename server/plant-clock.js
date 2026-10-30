@@ -75,3 +75,10 @@ export function plantWallClock(now = new Date()) {
   const p = Object.fromEntries(partsFmt.formatToParts(now).map(x => [x.type, x.value]));
   return new Date(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second);
 }
+
+/** A stored instant as the plant reads it, with the zone named: "Oct 30, 2026, 2:41 PM MDT" (D-282). */
+export function plantDateTime(v) {
+  const d = parseServerTime(v);
+  if (!d) return 'time not recorded';
+  return d.toLocaleString('en-US', { timeZone: PLANT_TZ, year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
+}
