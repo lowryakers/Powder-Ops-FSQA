@@ -70,6 +70,8 @@ export const APPROVE_ROUTES = Object.freeze([
     when: (req) => !!req.body?.competence_confirmed },
   { method: 'PUT', re: /^\/training\/[^/]+$/, label: 'PUT /api/training/:id carrying the trainer\'s competence statement',
     when: (req) => !!req.body?.competence_confirmed },
+  { method: 'POST', re: /^\/pm\/work-orders\/[^/]+\/complete-and-recur$/, label: 'POST /api/pm/work-orders/:id/complete-and-recur carrying the trainer\'s competence statement',
+    when: (req) => !!req.body?.check?.competence_confirmed },
   { method: 'POST', re: /^\/training\/bulk-complete$/, label: 'POST /api/training/bulk-complete — a group sign-off' },
   { method: 'POST', re: /^\/training\/courses\/[^/]+\/revision$/, label: 'POST /api/training/courses/:id/revision — a person says the course is updated for a revision' },
   // Who may sign the crisis drill's Management review (D-266) is a person's decision, never a token's.

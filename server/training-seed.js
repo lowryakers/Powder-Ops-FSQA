@@ -102,6 +102,13 @@ const WI_COURSES = [
   { code: 'FORK-101', title: 'Forklift Safety & Certification', category: 'Safety',
     depts: ['warehouse', 'batching'], retrain_months: 36, has_test: true,
     description: 'Powered industrial truck operation under 29 CFR 1910.178: forklift characteristics, load centre and centre of gravity, the stability triangle, load handling, pre-shift inspection, trailer and dock safety, travelling on ramps, refuelling and battery changing, and safe mounting and dismounting.' },
+  // Electronic signatures (D-284, 21 CFR 11.100 / 11.200 / 11.300). Everyone
+  // who signs in signs something, so it applies to everyone (no departments).
+  // Draft 1 until Document Control issues the policy; the wording is
+  // docs/v2/validation/VAL-RD-2026-01/attachments/esignature-policy.md, kept the same here.
+  { code: 'ESIG-101', title: 'Electronic Signatures: Your Password Is Your Signature', category: 'Quality',
+    depts: [], retrain_months: 12, has_test: true,
+    description: 'E-signature policy (draft 1, pending Document Control). 1. In ReadyDoc your password is your signature. When you enter it to approve, verify, sign off or record something, it means the same as signing your name by hand: you personally did, reviewed or approved what the screen says. 2. Your password is yours alone. Never share it, never let anyone sign in as you, never sign in for someone else, and never write it where others can see it. 3. Signing means what the screen says: Approved (a document is correct and in force), Trained and competent (you trained this person and they understand), Verified or Reviewed (you checked the record). Read before you sign. 4. If you think someone knows your password, change it straight away (Account menu, Change password) and tell your supervisor or QA. 5. A signature cannot be removed or edited. A mistake is corrected by a new signed entry with a reason. 6. Using another person\'s account, or letting someone use yours, is a serious violation of company policy.' },
   { code: 'PJ-101', title: 'Electric Pallet Jack Safety', category: 'Safety',
     depts: ['warehouse'], retrain_months: 36, has_test: false,
     description: 'Powered pallet jack operation: three-wheel design and the rear drive/brake wheel, the steering-handle controls, stopping by "plugging" and its tipping risk, walkie vs walkie-rider types, and the requirement to be checked out on the specific machine. Pre-use inspection to a company checklist (brakes, controls, emergency switch) with repairs before use. Safe operation: forks lowered, squared and wide enough, load centred and within rated capacity, extra caution on high-lift carriages, all body parts inside the vehicle boundaries, facing the direction of travel, one hand on the controls, horn where needed, wide turns, no riders, no pushing or pulling other loads or vehicles, no raising or lowering while moving, and a complete stop before stepping off.' },
@@ -110,6 +117,18 @@ const WI_COURSES = [
 // The plant's own test, transcribed from the signed document (answer key
 // included) rather than generated — this is the paper people already take.
 const WI_TESTS = {
+  // Five questions on the e-signature policy (D-284). The app grades it, so each
+  // person completes it themselves: no trainer signature needed.
+  'ESIG-101': {
+    title: 'Electronic Signatures — check your understanding', passing_score: 80,
+    questions: [
+      { type: 'multiple_choice', prompt: 'Who may use your ReadyDoc password?', options: ['Only me', 'Me and my supervisor', 'Anyone on my shift', 'IT, if they ask'], correct: '0' },
+      { type: 'multiple_choice', prompt: 'When you enter your password to sign something in ReadyDoc, what does it mean?', options: ['Someone asked me to click', 'It is only a login check', 'I personally did, reviewed or approved what the screen says', 'The record will be checked by QA later anyway'], correct: '2' },
+      { type: 'multiple_choice', prompt: 'A coworker asks to use your login on the floor tablet to finish their record. What do you do?', options: ['Sign in for them this once', 'Say no, and have them sign in with their own account', 'Tell them your password', 'Allow it if a supervisor says it is OK'], correct: '1' },
+      { type: 'multiple_choice', prompt: 'You think someone may know your password. What do you do?', options: ['Keep using it until it expires', 'Write it down somewhere safe', 'Change it now and tell your supervisor or QA', 'Nothing, unless something goes wrong'], correct: '2' },
+      { type: 'true_false', prompt: 'A signature in ReadyDoc counts the same as signing your name by hand.', options: ['True', 'False'], correct: 'true' },
+    ],
+  },
   'SAF-201': {
     title: 'Fire Extinguisher and Emergency Exit Awareness TEST', passing_score: 80,
     questions: [

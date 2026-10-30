@@ -3,10 +3,13 @@
 // One component, used by the single-record form AND the session form, so the
 // two cannot ask for different things.
 import { useEffect, useMemo, useState } from 'react';
-import { useApiGet, apiFetch } from '../../hooks/useApi';
+import { useApiGet, apiFetch, apiPost } from '../../hooks/useApi';
+import { downloadFile } from '../../lib/downloadFile';
+import { withSignature } from '../../lib/signature';
+import { useAuth } from '../../hooks/useAuth';
 import { Video, FileText } from 'lucide-react';
 import {
-  METHODS, LEGACY_METHODS, LANGUAGES, methodLabel, languageLabel, COMPETENCE_TICK,
+  METHODS, LEGACY_METHODS, LANGUAGES, methodLabel, languageLabel, COMPETENCE_TICK, EXTERNAL_TICK,
 } from '../../../shared/training-record-fields.js';
 import { formatDateTime } from '../../lib/datetime';
 
@@ -17,7 +20,8 @@ const inputCls = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm';
  * needed. `group` — the session form, where the tick covers each attendee
  * without a passing score.
  */
-export function HowTrainedFields({ value, onChange, legacyMethod = null, quizPassed = false, group = false }) {
+export function HowTrainedFields({ value, onChange, legacyMethod = null, quizPassed = false, group = false, signedBy = null, external = false }) {
+  const { user } = useAuth() || {};
   const set = (k, v) => onChange({ ...value, [k]: v });
   const { data: dcrs } = useApiGet('/training/change-requests');
   return (
@@ -38,22 +42,28 @@ export function HowTrainedFields({ value, onChange, legacyMethod = null, quizPas
           {LANGUAGES.map(l => <option key={l.key} value={l.key}>{l.label}</option>)}
         </select>
       </div>
-      <div className="col-span-2">
-        <label className="block text-xs font-medium text-gray-700 mb-1">Trainer</label>
-        <input value={value.trainer || ''} onChange={e => set('trainer', e.target.value)} className={inputCls} data-field="trainer" />
-      </div>
+      {/* No typed trainer (D-282): the trainer who signs is whoever is signed in,
+          and the password is the signature. An older record shows what it was filed with. */}
+      {!external && value.trainer && value.trainer !== user?.name && (
+        <p className="col-span-2 text-xs text-gray-500" data-field="trainer-filed">Trainer on file: {value.trainer}</p>
+      )}
       <label className={`col-span-2 flex items-start gap-2 rounded-lg border p-2.5 text-sm text-gray-700 ${
         quizPassed || value.competence_confirmed ? 'border-gray-200 bg-gray-50' : 'border-amber-300 bg-amber-50'}`} data-field="competence">
-        <input type="checkbox" className="mt-0.5 h-5 w-5 shrink-0" checked={!!value.competence_confirmed}
+        <input type="checkbox" className="mt-0.5 h-5 w-5 shrink-0" checked={!!value.competence_confirmed} disabled={!!signedBy}
           onChange={e => set('competence_confirmed', e.target.checked)} />
         <span>
-          <span className="font-medium">&ldquo;{COMPETENCE_TICK}&rdquo;</span>
+          <span className="font-medium">&ldquo;{external ? EXTERNAL_TICK : COMPETENCE_TICK}&rdquo;</span>
+          <span className="block text-[11px] text-gray-600 mt-0.5" data-competence-signer>
+            {signedBy ? `Signed by ${signedBy}. A signed sign-off cannot be changed by editing.` : `Signed by you${user?.name ? ` (${user.name})` : ''} with your password when you save.`}
+          </span>
           <span className="block text-[11px] text-gray-500 mt-0.5">
-            {quizPassed
+            {external
+              ? 'You sign as the person recording it (meaning "Recorded external training"). The outside trainer is named on the record, not as a signer.'
+              : quizPassed
               ? 'Not needed — this record has a passed quiz.'
               : group
-                ? 'The trainer ticks this. Required for everyone on this session who did not pass a quiz.'
-                : 'The trainer ticks this. Required unless the record has a passed quiz — a record cannot be saved without one or the other.'}
+                ? 'The trainer signs this. Required for everyone on this session who did not pass a quiz.'
+                : 'The trainer signs this. Required unless the record has a passed quiz — a record cannot be saved without one or the other.'}
           </span>
         </span>
       </label>
@@ -84,6 +94,49 @@ export function RecordedLine({ record }) {
     <p className="text-xs text-gray-500" data-recorded-line>
       Recorded {formatDateTime(record.created_at)}{record.recorded_by ? ` by ${record.recorded_by}` : ''}. Set by ReadyDoc; it cannot be edited.
     </p>
+  );
+}
+
+/**
+ * The sign-off as signed (D-282): who, when (plant time), what it means, and
+ * whether the fingerprint still matches. Print the record; the signer or an
+ * admin can withdraw the signature with a reason and their password.
+ */
+export function SignOffBlock({ record, onChanged }) {
+  const { user } = useAuth() || {};
+  const [error, setError] = useState('');
+  if (!record?.id) return null;
+  const print = async () => {
+    setError('');
+    try { await downloadFile(`/training/${record.id}/pdf`, `training-record-${record.id}.pdf`); } catch (e) { setError(e.message); }
+  };
+  const withdraw = async () => {
+    const reason = window.prompt('Why is this signature being withdrawn? The record keeps who signed it and your reason.');
+    if (!reason) return;
+    setError('');
+    try {
+      await withSignature((extra) => apiPost(`/training/${record.id}/competence/withdraw`, { reason, ...extra }),
+        { title: 'Withdraw this sign-off', detail: 'Your password is your signature' });
+      onChanged?.();
+    } catch (e) { if (!e.cancelled) setError(e.message); }
+  };
+  const mayWithdraw = record.competence_signed_at && (user?.role === 'admin' || user?.id === record.competence_signed_by_id);
+  return (
+    <div className="text-xs rounded-lg border border-gray-200 p-2 space-y-1" data-signoff-block={record.competence_signature || 'none'}>
+      {record.competence_signed_at ? (
+        <p className="text-gray-800">
+          <span className="font-semibold">Signed by {record.competence_signed_by}</span> · {formatDateTime(record.competence_signed_at)} · {record.competence_meaning || 'Trained and competent'}
+          {record.competence_signature === 'changed'
+            ? <span className="ml-1 text-red-700 font-semibold">· changed since signed</span>
+            : <span className="ml-1 text-green-700">· password signature</span>}
+        </p>
+      ) : <p className="text-gray-500">No password signature on this record.</p>}
+      <div className="flex gap-2">
+        <button type="button" onClick={print} data-print-record className="px-2 py-1 rounded-md border border-gray-300 hover:bg-gray-50">Print record</button>
+        {mayWithdraw && <button type="button" onClick={withdraw} data-withdraw-signoff className="px-2 py-1 rounded-md text-red-700 hover:bg-red-50">Withdraw signature…</button>}
+      </div>
+      {error && <p className="text-red-700">{error}</p>}
+    </div>
   );
 }
 

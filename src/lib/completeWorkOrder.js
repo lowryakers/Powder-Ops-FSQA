@@ -1,4 +1,10 @@
 import { apiPost } from '../hooks/useApi';
+import { withSignature } from './signature';
+
+// A training task's competence tick is a signature (D-282): the server asks for
+// the password and withSignature prompts and re-sends. Nothing else is asked.
+const SIGN = { title: 'Sign off this training', detail: 'Your password is your signature: trained and competent' };
+const post = (url, body) => withSignature((extra) => apiPost(url, { ...body, ...extra }), SIGN);
 
 // ONE COMPLETION PATH, TWO FORMS. The Operator View and the Task Center both
 // complete work orders, and the duplicate-readings question has to be asked
@@ -17,7 +23,7 @@ import { apiPost } from '../hooks/useApi';
 // the wording, because the floor screen has to ask in Spanish.
 export async function completeWorkOrder(woId, form, confirmDuplicate) {
   try {
-    return await apiPost(`/pm/work-orders/${woId}/complete-and-recur`, form);
+    return await post(`/pm/work-orders/${woId}/complete-and-recur`, form);
   } catch (err) {
     const dup = err?.data?.duplicate_readings ? err.data : null;
     // Anything else is a real failure and belongs to the caller — a 400 on the
@@ -31,7 +37,7 @@ export async function completeWorkOrder(woId, form, confirmDuplicate) {
       cancel.cancelled = true;
       throw cancel;
     }
-    return apiPost(`/pm/work-orders/${woId}/complete-and-recur`,
+    return post(`/pm/work-orders/${woId}/complete-and-recur`,
       { ...form, confirm_duplicate_readings: true });
   }
 }

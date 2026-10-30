@@ -13,6 +13,12 @@
 // "a backdated record leaves the newer one current" fails, as does the re-settle.
 import Database from 'better-sqlite3';
 import { chromium } from 'playwright-core';
+
+// Signing asks for the signer's password (D-282). Everyone in this script has
+// the one password it set, so a write carries it — as a person re-entering it would.
+const SIGN_PW = 'Records2026!!';
+const SIGNED_PATHS = /^\/(documents(\/[^/]+)?|documents\/[^/]+\/apply-revision|documents\/revisions\/items\/[^/]+\/apply|training(\/[^/]+)?|training\/bulk-complete|pm\/work-orders\/[^/]+\/complete-and-recur)$/;
+const signed = (b, m, p) => (m !== 'GET' && SIGNED_PATHS.test(String(p).split('?')[0]) && b && typeof b === 'object' && !Array.isArray(b) && b.signature_password === undefined && !('password' in b) ? { ...b, signature_password: SIGN_PW } : b);
 import { resettleCurrentOnce } from '../server/training-records.js';
 
 const PORT = Number(process.env.PORT || 5158);
@@ -38,7 +44,7 @@ db.close();
 
 const H = { 'Content-Type': 'application/json' };
 const call = async (m, p, b, tok) => {
-  const r = await fetch(`http://localhost:${PORT}/api${p}`, { method: m, headers: { ...H, ...(tok && { Authorization: `Bearer ${tok}` }) }, body: b ? JSON.stringify(b) : undefined });
+  const r = await fetch(`http://localhost:${PORT}/api${p}`, { method: m, headers: { ...H, ...(tok && { Authorization: `Bearer ${tok}` }) }, body: b ? JSON.stringify(signed(b, m, p)) : undefined });
   const text = await r.text(); let json = null; try { json = JSON.parse(text); } catch { /* not json */ }
   return { status: r.status, json, text };
 };
@@ -64,7 +70,10 @@ t('a past date is accepted', r.status === 201 && sept?.training_date === '2026-0
 t('recorded by is the signed-in person, not what the form sent', sept?.recorded_by === 'Dana Records' && sept?.recorded_by_id === 'tr-admin');
 t('date recorded is set by ReadyDoc (today)', !!sept?.created_at && sept.created_at.slice(0, 4) === new Date().toISOString().slice(0, 4));
 t('method, language, revision and DCR are stored', sept?.method === 'hands_on' && sept?.language === 'es' && sept?.sop_revision === '4' && sept?.dcr_id === 'tr-dcr');
-t('the competence statement is stored in words, naming the trainer', sept?.competence_statement === 'Adam Bliss: "I confirm this person understands this training."', sept?.competence_statement);
+// D-282: the statement names the person who SIGNED it (the session), never a typed trainer.
+t('the competence statement is stored in words, naming the signer', sept?.competence_statement === 'Dana Records: "I confirm this person understands this training."', sept?.competence_statement);
+t('…signed with a password, with a time, a meaning and an intact fingerprint', sept?.competence_signed_by === 'Dana Records' && !!sept?.competence_signed_at
+  && sept?.competence_meaning === 'Trained and competent' && sept?.competence_signature === 'signed' && sept?.trainer === 'Dana Records', JSON.stringify({ by: sept?.competence_signed_by, st: sept?.competence_signature }));
 
 r = await call('POST', '/training', { employee_name: 'Olga Floor', course_id: course.id, status: 'completed', training_date: '2099-01-01', completion_date: '2099-01-01', method: 'verbal' }, admin.token);
 t('a date in the future is refused', r.status === 400 && /future/.test(r.json?.error || ''), r.text);
@@ -86,7 +95,7 @@ t('…and does not turn a record with no score into a fail (the Edit form sends 
 const audit = one("SELECT details FROM audit_log WHERE entity_type = 'training' AND entity_id = ? ORDER BY id DESC LIMIT 1", sept.id);
 t('the edit is audited with what changed', /"language":\{"from":"es","to":"both"\}/.test(audit?.details || ''), audit?.details);
 r = await call('PUT', `/training/${sept.id}`, { competence_confirmed: false }, admin.token);
-t('unticking the statement on a record with no quiz is refused (competence is required, D-269)', r.status === 400 && r.json?.code === 'COMPETENCE_REQUIRED', r.text.slice(0, 160));
+t('unticking a SIGNED statement is refused — it is withdrawn, never edited off (D-282)', r.status === 409 && r.json?.code === 'COMPETENCE_SIGNED', r.text.slice(0, 160));
 
 console.log('\n── a past session does not push a newer record aside ──');
 r = await call('POST', '/training', { employee_name: 'Olga Floor', employee_user_id: 'tr-op', course_id: course.id, status: 'completed', training_date: '2026-03-01', completion_date: '2026-03-01', method: 'verbal', competence_confirmed: true }, admin.token);
@@ -123,10 +132,10 @@ r = await call('POST', '/training/bulk-complete', {
 const sid = r.json?.session_id;
 t('a session is saved for the group', !!sid && r.json?.created === 2, r.text.slice(0, 160));
 const sess = one('SELECT * FROM training_sessions WHERE id = ?', sid);
-t('the session holds the document revision, DCR, method, language and trainer', sess?.sop_revision === '3' && sess?.dcr_id === 'tr-dcr' && sess?.method === 'verbal' && sess?.language === 'both' && sess?.trainer === 'Maria Servin' && sess?.attendee_count === 2);
+t('the session holds the document revision, DCR, method, language and trainer', sess?.sop_revision === '3' && sess?.dcr_id === 'tr-dcr' && sess?.method === 'verbal' && sess?.language === 'both' && sess?.trainer === 'Dana Records' && sess?.attendee_count === 2);
 t('…and who recorded it', sess?.recorded_by === 'Dana Records');
 const recs = q('SELECT * FROM training_records WHERE session_id = ?', sid);
-t('each attendee has their own record pointing at the session', recs.length === 2 && recs.every(x => x.sop_revision === '3' && x.language === 'both' && x.recorded_by === 'Dana Records' && /^Maria Servin: /.test(x.competence_statement || '')));
+t('each attendee has their own record pointing at the session', recs.length === 2 && recs.every(x => x.sop_revision === '3' && x.language === 'both' && x.recorded_by === 'Dana Records' && /^Dana Records: /.test(x.competence_statement || '') && x.competence_signed_by_id === 'tr-admin'));
 t('a June session does not push Olga\'s October record aside', one('SELECT superseded s FROM training_records WHERE id = ?', oct.id).s === 0);
 r = await call('GET', '/training/sessions', null, admin.token);
 const listed = r.json?.find(s => s.id === sid);
@@ -184,7 +193,7 @@ await page.goto(`http://localhost:${PORT}/?tab=training&view=sessions`);
 await page.locator('[data-session]').first().waitFor({ timeout: 20000 }).catch(() => {});
 await page.locator(`[data-session="${sid}"]`).click().catch(() => {});
 const sessText = await page.locator('[data-sessions]').innerText().catch(() => '');
-t('the Sessions tab lists the session and, opened, who attended', /Maria Servin/.test(sessText) && /Pedro Line/.test(sessText) && /DCR TR-0001/.test(sessText), sessText.slice(0, 200));
+t('the Sessions tab lists the session and, opened, who attended', /Dana Records/.test(sessText) && /Pedro Line/.test(sessText) && /DCR TR-0001/.test(sessText), sessText.slice(0, 200));
 await browser.close();
 
 console.log(`\n${pass} passed, ${fail} failed`);

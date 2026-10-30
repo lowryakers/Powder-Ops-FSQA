@@ -14,6 +14,12 @@
 // Caller sets PORT + DBPATH (verify-all does).
 // Control: drop the bot-account branch from tokenApproveGuard — the bot account
 // signed in with a password approves the document revision.
+
+// Signing asks for the signer's password (D-282). Everyone in this script has
+// the one password it set, so a write carries it — as a person re-entering it would.
+const SIGN_PW = 'NoBotSign2026!';
+const SIGNED_PATHS = /^\/(documents(\/[^/]+)?|documents\/[^/]+\/apply-revision|documents\/revisions\/items\/[^/]+\/apply|training(\/[^/]+)?|training\/bulk-complete|pm\/work-orders\/[^/]+\/complete-and-recur)$/;
+const signed = (b, m, p) => (m !== 'GET' && SIGNED_PATHS.test(String(p).split('?')[0]) && b && typeof b === 'object' && !Array.isArray(b) && b.signature_password === undefined && !('password' in b) ? { ...b, signature_password: SIGN_PW } : b);
 import Database from 'better-sqlite3';
 
 const PORT = Number(process.env.PORT || 5168);
@@ -38,7 +44,7 @@ const q = (sql, ...a) => { const d = new Database(DBP, { readonly: true }); try 
 }
 const call = async (m, p, b, tok) => {
   const headers = { 'Content-Type': 'application/json', ...(tok ? { Authorization: `Bearer ${tok}` } : {}) };
-  const r = await fetch(`${URL}/api${p}`, { method: m, headers, body: b ? JSON.stringify(b) : undefined });
+  const r = await fetch(`${URL}/api${p}`, { method: m, headers, body: b ? JSON.stringify(signed(b, m, p)) : undefined });
   let json = null; try { json = await r.json(); } catch { /* not json */ }
   return { status: r.status, json };
 };

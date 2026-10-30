@@ -20,6 +20,12 @@
 // Control: drop the `course-drafts` entries from WRITE_AREAS — the bot cannot
 // stage anything and the run stops at the first draft.
 import Database from 'better-sqlite3';
+
+// Signing asks for the signer's password (D-282). Everyone in this script has
+// the one password it set, so a write carries it — as a person re-entering it would.
+const SIGN_PW = 'Drafts2026!!';
+const SIGNED_PATHS = /^\/(documents(\/[^/]+)?|documents\/[^/]+\/apply-revision|documents\/revisions\/items\/[^/]+\/apply|training(\/[^/]+)?|training\/bulk-complete|pm\/work-orders\/[^/]+\/complete-and-recur)$/;
+const signed = (b, m, p) => (m !== 'GET' && SIGNED_PATHS.test(String(p).split('?')[0]) && b && typeof b === 'object' && !Array.isArray(b) && b.signature_password === undefined && !('password' in b) ? { ...b, signature_password: SIGN_PW } : b);
 import { chromium } from 'playwright-core';
 
 const PORT = Number(process.env.PORT || 5167);
@@ -45,7 +51,7 @@ const q = (sql, ...a) => { const d = new Database(DBP, { readonly: true }); try 
 const call = async (m, p, b, tok, form) => {
   const headers = tok ? { Authorization: `Bearer ${tok}` } : {};
   if (!form) headers['Content-Type'] = 'application/json';
-  const r = await fetch(`${URL}/api${p}`, { method: m, headers, body: form || (b ? JSON.stringify(b) : undefined) });
+  const r = await fetch(`${URL}/api${p}`, { method: m, headers, body: form || (b ? JSON.stringify(signed(b, m, p)) : undefined) });
   let json = null; try { json = await r.json(); } catch { /* not json */ }
   return { status: r.status, json };
 };

@@ -44,7 +44,7 @@ const S = {
   method_quiz: { en: 'Quiz', es: 'Examen' },
   method_test: { en: 'Test taken in ReadyDoc', es: 'Examen tomado en ReadyDoc' },
   competence: { en: 'I confirm this person understands this training.', es: 'Confirmo que esta persona entiende esta capacitación.' },
-  competence_hint: { en: 'The trainer ticks this. Required — there is no test to pass.', es: 'Lo marca quien capacitó. Obligatorio: no hay examen que aprobar.' },
+  competence_hint: { en: 'The trainer signs this with their own password when completing — never the person trained. Required: there is no test to pass.', es: 'Lo firma quien capacitó, con su propia contraseña, al completar — nunca la persona capacitada. Obligatorio: no hay examen que aprobar.' },
   passing: { en: 'Passing score', es: 'Puntaje para aprobar' },
   renews: { en: 'Records a completion, and the next one comes due in', es: 'Registra la finalización, y la próxima vence en' },
   months: { en: 'months', es: 'meses' },
@@ -444,8 +444,6 @@ function TrainingFields({ form, v, set, lang, assignee }) {
         </>
       ) : (
         <>
-          <input value={v.trainer || ''} onChange={e => set({ trainer: e.target.value })} placeholder={tr(lang, 'trainer')} data-training-trainer
-            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" />
           <select value={v.method || ''} onChange={e => set({ method: e.target.value })} data-training-method
             className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm">
             <option value="">{tr(lang, 'method')}</option>

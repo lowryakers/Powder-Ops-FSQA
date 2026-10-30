@@ -298,9 +298,10 @@ export function missingForCheck(form, check) {
         out.push({ key: 'score', label: `A passing score — ${Number(c.score)}% is under the ${form.passing_score ?? 80}% pass mark, so the training stays open until it is passed` });
       }
     } else {
-      if (!String(c.trainer || '').trim()) out.push({ key: 'trainer', label: 'Who delivered the training' });
-      // No test, so no quiz to pass: the trainer confirms competence (D-269).
-      if (!c.competence_confirmed) out.push({ key: 'competence', label: `The trainer's tick: "${COMPETENCE_TICK}"` });
+      // No test, so no quiz to pass: the trainer confirms competence (D-269) —
+      // and the trainer IS whoever signs it with their password (D-282), so
+      // there is no typed "who delivered it" to ask for.
+      if (!c.competence_confirmed) out.push({ key: 'competence', label: `The trainer signs it: "${COMPETENCE_TICK}"` });
     }
   } else if (form.kind === 'stability_pull') {
     if (!String(c.quantity || '').trim()) out.push({ key: 'quantity', label: 'What was pulled (quantity / container)' });

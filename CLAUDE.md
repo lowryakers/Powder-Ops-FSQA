@@ -6298,6 +6298,24 @@ revoke by DELETE with a reason), `CrisisDrills.jsx`. SOP 501, SQF 2.6.4.2.
   (`updated` / `no_change`) only. **That mark is the only thing that assigns retraining for a revision**, and until it
   the matrix measures against the course's revision, not the document's. `verify:docrevisions` (47).
 
+## Signing is the password, at the moment of signing, by the signed-in person (D-282 – D-284)
+- **No drawn "Sign" and no typed approver or trainer anywhere.** Approving a document (filing it Approved, moving it
+  into force, approving a revision, recording a paper revision) and ticking competence (record, group, task card) all
+  call `gateSignature` last; a group is one password. **Nobody signs their own competence** (`SELF_COMPETENCE`).
+- **A signature carries name, time, meaning and a fingerprint** (`document_revisions.approved_meaning/approved_hash`,
+  `training_records.competence_signed_*` + `competence_hash`). Reads carry `approval_state` / `competence_signature`
+  (signed · changed). **An edit never takes one off** (`409 COMPETENCE_SIGNED`); a correction is the signed withdraw.
+- **`audit_log` refuses UPDATE and DELETE by trigger.** Never write a migration that rewrites audit rows.
+- A verify that files an approval or a competence tick must send `signature_password`. `verify:part11` (33).
+- The validation package is `docs/v2/validation/VAL-RD-2026-01/` (SOP 444, D-285): plan, Part 11 assessment, IQ/OQ/PQ,
+- **External training (D-286):** "Outside trainer (not in ReadyDoc)" on the single record. The outside trainer is a fact
+  (the trainer column), the person entering it signs with meaning **Recorded external training**, a certificate is
+  required and fingerprinted. Never a group entry; nobody records their own. `competence_meaning` NULL = "Trained and
+  competent". Read the meaning through `meaningOf()`.
+- **Revalidation (D-287):** a change touching signing, records, the audit trail or access re-runs its OQ tests before use;
+  one-page annual review (`08-annual-review.md`). Roles follow SOP 444 § 5.0: nobody approves tests they executed.
+  requirement-to-test table, summary report; the e-signature policy (ESIG-101) and the unsent FDA letter are its attachments.
+
 ## A bot never approves, by token or by password; the check is read-only (D-279)
 - **`tokenApproveGuard` refuses a bot ACCOUNT on every `APPROVE_ROUTES` match** (`403 bot_account_cannot_approve`),
   not only its token. A bot = `isBotAccount()` in `server/trainees.js` (ever held a token, ReadyBot, Test Runner, `*`

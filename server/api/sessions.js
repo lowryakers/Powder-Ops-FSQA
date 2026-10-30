@@ -29,8 +29,12 @@ export function issueSession(db, user, res = null, { notAfter = null } = {}) {
   expires.setDate(expires.getDate() + SESSION_DAYS);
   const cap = notAfter ? new Date(notAfter) : null;
   if (cap && !Number.isNaN(cap.getTime()) && cap < expires) expires.setTime(cap.getTime());
-  db.prepare('INSERT INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)')
-    .run(uuid(), user.id, token, expires.toISOString());
+  // The device it was opened from (D-283), for the shared-account report.
+  const req = res?.req || null;
+  const ip = req ? String(req.headers?.['x-forwarded-for'] || req.ip || '').split(',')[0].trim().slice(0, 64) || null : null;
+  const ua = req ? String(req.headers?.['user-agent'] || '').slice(0, 300) || null : null;
+  db.prepare('INSERT INTO sessions (id, user_id, token, expires_at, ip, user_agent) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(uuid(), user.id, token, expires.toISOString(), ip, ua);
   setFileCookie(res, token, Math.max(1, Math.ceil((expires - Date.now()) / 86400000)));
 
   const moduleAccess = user.module_access ? JSON.parse(user.module_access) : null;

@@ -9749,3 +9749,116 @@ one-time 11.100(c) certification letter (no FDA review). A signature drawn fresh
 under 11.3(b)(8) and avoids that letter, but 11.10 / 11.50 / 11.70 still apply, and drawing every sign-off is slower
 than the password already used on ~25 routes. Recommendation: password as the signature, send the letter, fix the
 drawn "Sign". **The plan (nine items) is not built until Lowry chooses.**
+
+## D-282 — One way to sign: the password, at the moment of signing, by the person signed in (30 Oct 2026)
+Lowry chose password signatures over drawn ones (D-281): "simplest version that works and gets used". Scope: document
+approvals and training sign-offs. Other signatures already use `gateSignature`.
+- **The drawn "Sign" on documents is removed** (`POST /documents/:id/sign` and its revoke are gone). Rows drawn before
+  stay on their documents as history, on the screen and the PDF, and can no longer be added or removed. `My signature`
+  stays for the COA certificate image (that certificate is already password-signed).
+- **Every approval of a document asks for the password, asked last**: filing it as Approved/Effective (`POST /documents`,
+  now through `recordApprovedRevision` like a PUT into force), moving it into force (`PUT`), approving a draft revision,
+  and recording a paper revision on an approved document (both apply doors). Only QA, Document Control, supervisors and
+  admins approve. **No typed approver** (`400 TYPED_APPROVER`); the approver is the session. The PUT no longer passes
+  `approved_by` into the writer, and the writer no longer accepts it.
+- **The competence tick is the trainer's signature** (`signCompetenceOr` in `api/training.js`, the same rule in the task
+  path in `api/pm.js`): the signed-in person, never the trainee (`400 SELF_COMPETENCE`), with their password. **A group
+  is one password** (bulk-complete; Group Sheets asks once for several courses). The statement and `trainer` name the
+  signer; the typed Trainer box is gone from the record form, Group Training, Group Sheets and the task card, and the
+  task check no longer asks "who delivered it".
+- **Each signature stores name, date and time, and meaning, and a fingerprint.** Documents:
+  `document_revisions.approved_meaning` (Approved / "Approved on paper — recorded from the signed original") and
+  `approved_hash` over the revision's text, number, effective date, approver and time; `approvalState()` reads
+  signed / changed / not_recorded. Training: `competence_signed_by(_id)`, `competence_signed_at`, `competence_hash`;
+  `competenceSignatureState()`; meaning "Trained and competent". Every read carries the state.
+- **An edit cannot take a signature off or move what it covers**: a signed sign-off refuses an untick or a change to the
+  person, course or dates (`409 COMPETENCE_SIGNED`); other fields still edit. **A correction is a new signed act:**
+  `POST /training/:id/competence/withdraw` (the signer or an admin, reason, password) keeps who signed, when, who
+  withdrew it and why in `competence_withdrawn`; a completion with no other proof goes back to In progress.
+- **Printouts**: the document PDF prints each approval of the revision as name — meaning (rev) · date and time with the
+  zone · whether the fingerprint matches, then pre-D-282 drawn signatures as history. `GET /training/:id/pdf` prints a
+  training record with its sign-off (`server/training-record-pdf.js`). `plantDateTime()` in `plant-clock.js` is the one
+  formatter.
+- **Records**: new columns only; nothing existing is rewritten. Statements filed before stay as filed and print as
+  "recorded before signatures were required".
+- `verify:part11` (33; control without the competence gate fails 2). Twelve existing verifies now sign with the password.
+
+## D-283 — The audit log is locked by the database; the start-up rewrites stop; a shared sign-in report (30 Oct 2026)
+- **Triggers refuse UPDATE and DELETE on `audit_log`** (`audit_log_no_update`, `audit_log_no_delete`), whatever code
+  asks — the `user_activity` arrangement (D-261).
+- **`backfillAuditActorIdentity` and `normalizeAuditActions` are deleted.** They ran on every boot, so on every deployed
+  database their work was long finished; a trail the software edits is not a trail. New rows are written canonical.
+- **Shared sign-ins** (`server/shared-accounts.js`, `GET /api/compliance/shared-accounts`, Settings → Data backup):
+  accounts open on two or more devices at once, or on four or more in 30 days. Read-only; blocks nothing. Sessions now
+  record `ip` and `user_agent` at sign-in; older sessions read "device not recorded".
+- Covered by `verify:part11`.
+
+## D-284 — Validation pack, e-signature policy as course ESIG-101, FDA letter drafted and not sent (30 Oct 2026)
+Lowry is hesitant to send the 11.100(c) letter until compliance can be proved. `docs/v2/part11-validation/`: one page
+per requirement with a test run in the live app (step, expected result, pass/fail, initials), a results page for Lowry
+and Daniela to sign, the e-signature policy (draft 1, pending Document Control) and the letter (draft; confirm FDA's
+current address, which may have changed in FDA's 2024 field reorganization). **ESIG-101** is seeded insert-only by
+`seedWorkInstructionCourses`: applies to everyone, yearly, five questions the app grades so each person completes it
+alone. It is not auto-assigned; the office assigns it when the policy is issued.
+- Note for the letter: Part 11 applies to electronic records required by 21 CFR 111 whether or not the letter is sent.
+  The letter adds no inspection; not sending it while using electronic signatures is itself a gap.
+
+## D-285 — The validation pack is the first execution of SOP 444: package VAL-RD-2026-01 (30 Oct 2026)
+Lowry: the pack is the first execution of the new SOP 444 (computer system validation), and must match it. **The
+structure is the five parts the approved CAR 4990683-5 commits to, verbatim:** validation plan (intended use, GMP
+records held) · Part 11 assessment (11.10, 11.30, 11.50, 11.70, 11.100, 11.200, 11.300, clause by clause) · IQ
+(hosting, configuration, backup and a restore test) / OQ (logins, audit-trail completeness and protection, e-signature
+display and password re-entry, retention and retrieval, access rights, copies for inspection) / PQ (normal use) ·
+requirement-to-test table · summary report approved by Quality. `docs/v2/part11-validation/` moved to
+`docs/v2/validation/VAL-RD-2026-01/`; its D-284 pages are folded into the OQ (OQ-06 – OQ-13).
+- **Roles from the org chart:** Lowry prepares and executes; Daniela Servin (Document Control Manager) reviews;
+  **Maria Servin (Quality Manager / SQF Practitioner) approves the plan before testing and the summary report.**
+- **SOP 444 is drafted by the Quality bot, separately.** The package index lists every term SOP 444 must agree with
+  (package contents, numbering, roles, sequence, deviations, risk basis, automated evidence, change control); **where
+  the SOP's draft differs, the SOP wins** and the package changes under a deviation before the plan is approved.
+- **Findings written into the assessment, not hidden:** the automatic weekly backup is a CSV export kept 8 weeks, and a
+  full database snapshot is manual; sessions last 30 days with no idle sign-out; kiosk keys ship off; one admin can
+  reset a password and sign as that person; the first signing of a session asks for the password only; other modules'
+  printouts don't yet print the meaning. Twelve open items (O-1 … O-12) in the summary report, each for Quality to
+  accept with an owner and a date.
+
+## D-286 — External training: the person entering it signs "Recorded external training", certificate required (30 Oct 2026)
+Lowry asked how training by an outside trainer (not in ReadyDoc) is signed, as the condition for merging #100. It was
+**not** handled: the signer was always written as the trainer with the meaning "Trained and competent", which for an
+outside course would have recorded the office as having trained and judged the person.
+- **"Outside trainer (not in ReadyDoc)" on the single training record.** The outside trainer or company is a FACT in the
+  trainer column, never a signer. The person entering it signs with their password, meaning **Recorded external
+  training**, statement `<name>: "I recorded external training given by <trainer>. The certificate is attached."`
+- **The certificate is required** (`EXTERNAL_INCOMPLETE`), and the signature's fingerprint covers it, the meaning and the
+  trainer; an edit cannot swap the certificate while signed (`COMPETENCE_SIGNED`). `training_records.competence_meaning`
+  holds the meaning; NULL = "Trained and competent", so every signature before this hashes and reads exactly as it did.
+- **Per person, never a group entry** (`EXTERNAL_PER_PERSON` on bulk-complete): each person's certificate is their own.
+- **Nobody records their own** (`SELF_COMPETENCE`), the same rule as a sign-off.
+- **Unchanged:** a quiz-passed record needs no signature; records from before #100 keep what they were filed with.
+- `verify:part11` 33 → 43.
+
+## D-287 — Revalidation on any change to signing, records, audit trail or access; one-page annual review; package follows SOP 444 (30 Oct 2026)
+Lowry decided SOP 444 § 9 item 10. **A change touching signing, records, the audit trail or access goes through the
+Change Register and re-runs its OQ tests, recorded, before use**; anything else is recorded "no revalidation needed"
+with the reason. **Once a year, one page** (`08-annual-review.md`, eleven questions answered from screens). The SOP
+will match.
+- Package checked against the Quality bot's SOP 444 draft (V1 DRAFT, 10/30/2026); **the SOP won** on every difference.
+  Roles are its § 5.0's: Carol Pierce reviews, **Lowry Akers approves the plan and releases for use**, a QA approver
+  signs the summary report. Because § 6.8 says nobody approves tests they executed, **Lowry no longer executes; Daniela
+  Servin is the proposed test executor** and Maria Servin the proposed QA approver (its § 9 item 5, still open).
+- Added: interim controls (plan §8), test environment, retention with a copy outside ReadyDoc (plan §10), build id and
+  user/token lists in the IQ, the restore checking `audit_log`, the SOP's three conclusions, and its Appendix A row by
+  row in the requirement-to-test table. The package README lists what the SOP still leaves open (numbering, FORM 438-01,
+  the SOP-438 vs ESIG-101 policy overlap).
+- Supersedes D-285's roles (Lowry executes; Daniela reviews; Maria approves the plan).
+
+## D-288 — Validation roles confirmed; SOP 444 keeps its number; one e-signature policy (30 Oct 2026)
+Lowry, after reading the package against the SOP 444 draft:
+- **Roles confirmed:** Daniela Servin executes the tests, Maria Servin is the QA approver, Carol Pierce reviews, Lowry
+  Akers approves and releases. D-287's "proposed" is dropped.
+- **The number stays SOP 444** — it is the number in the NSF corrective action (4990683-5).
+- **One e-signature policy document;** ESIG-101 is the course that teaches it. Daniela issues the policy's document
+  number and the authorization form's number (FORM 438-01 is already the grievance form). Until then the package writes
+  "SOP ___ / FORM ___ (to be issued)". The SOP 444 draft's SOP-438 reference points at it once numbered.
+- #100 merges after 5 PM MT today; next, the letter of guarantee PR, then backups / idle sign-out / reset password /
+  first signature / printouts.

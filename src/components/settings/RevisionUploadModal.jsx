@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { apiUpload, apiPost } from '../../hooks/useApi';
+import { withSignature } from '../../lib/signature';
 import { Upload, X, CheckCircle2, AlertTriangle, Loader2, FileText } from 'lucide-react';
 
 // Bringing existing controlled documents up to date from the finalised paper.
@@ -32,10 +33,10 @@ function FileResult({ file, onApplied }) {
         if (!picked.has(c.field)) continue;
         fields[c.field] = c.field === 'description' ? c.content : c.to;
       }
-      await apiPost(`/documents/${file.document.id}/apply-revision`, { fields, filename: file.filename });
+      await withSignature((extra) => apiPost(`/documents/${file.document.id}/apply-revision`, { fields, filename: file.filename, ...extra }), { title: 'Record this revision', detail: 'On an approved document this records an approved revision — your password is your signature' });
       setDone(true);
       onApplied?.();
-    } catch (e) { setError(e.message); }
+    } catch (e) { if (!e.cancelled) setError(e.message); }
     finally { setBusy(false); }
   };
 

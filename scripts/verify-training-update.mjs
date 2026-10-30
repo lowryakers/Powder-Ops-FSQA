@@ -16,6 +16,12 @@ import Database from 'better-sqlite3';
 import { chromium } from 'playwright-core';
 import { writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+
+// Signing asks for the signer's password (D-282). Everyone in this script has
+// the one password it set, so a write carries it — as a person re-entering it would.
+const SIGN_PW = 'Update2026!!xx';
+const SIGNED_PATHS = /^\/(documents(\/[^/]+)?|documents\/[^/]+\/apply-revision|documents\/revisions\/items\/[^/]+\/apply|training(\/[^/]+)?|training\/bulk-complete|pm\/work-orders\/[^/]+\/complete-and-recur)$/;
+const signed = (b, m, p) => (m !== 'GET' && SIGNED_PATHS.test(String(p).split('?')[0]) && b && typeof b === 'object' && !Array.isArray(b) && b.signature_password === undefined && !('password' in b) ? { ...b, signature_password: SIGN_PW } : b);
 import { join } from 'node:path';
 
 const PORT = Number(process.env.PORT || 5162);
@@ -43,7 +49,7 @@ const one = (sql, ...a) => H_DB.prepare(sql).get(...a);
 
 const H = { 'Content-Type': 'application/json' };
 const call = async (m, p, b, tok) => {
-  const r = await fetch(`http://localhost:${PORT}/api${p}`, { method: m, headers: { ...H, ...(tok && { Authorization: `Bearer ${tok}` }) }, body: b ? JSON.stringify(b) : undefined });
+  const r = await fetch(`http://localhost:${PORT}/api${p}`, { method: m, headers: { ...H, ...(tok && { Authorization: `Bearer ${tok}` }) }, body: b ? JSON.stringify(signed(b, m, p)) : undefined });
   const text = await r.text(); let json = null; try { json = JSON.parse(text); } catch { /* not json */ }
   return { status: r.status, json, text };
 };
@@ -85,7 +91,8 @@ const base = { employee_name: 'Wes Warehouse', employee_user_id: 'tu-w1', course
 r = await call('POST', '/training', base, admin.token);
 t('neither a passed quiz nor the trainer\'s tick: refused', r.status === 400 && r.json?.code === 'COMPETENCE_REQUIRED', r.text.slice(0, 120));
 r = await call('POST', '/training', { ...base, competence_confirmed: true }, admin.token);
-t('with the tick it saves, and the statement names the trainer', r.status === 201 && r.json?.competence_statement === 'Adam Bliss: "I confirm this person understands this training."', r.text.slice(0, 160));
+// D-282: the statement names whoever signed it with their password (the session), never a typed trainer.
+t('with the tick it saves, and the statement names the signer', r.status === 201 && r.json?.competence_statement === 'Una Admin: "I confirm this person understands this training."', r.text.slice(0, 160));
 r = await call('POST', '/training', { ...base, method: 'quiz', score: pass80 }, admin.token);
 t('a passed quiz saves without the tick', r.status === 201);
 r = await call('POST', '/training', { ...base, method: 'quiz', score: pass80 - 10, passed: false }, admin.token);
@@ -197,24 +204,29 @@ await gs.locator('input[type=file]').setInputFiles(pdf).catch(() => {});
 await gs.locator('[data-how-trained]').waitFor({ timeout: 10000 }).catch(() => {});
 const has = async (sel) => (await gs.locator(sel).count()) > 0;
 t('Group Sheets asks the date trained, method, language, trainer, revision, change request and competence',
-  await has('[data-field="date-trained"]') && await has('[data-field="method"]') && await has('[data-field="language"]') && await has('[data-field="trainer"]')
+  await has('[data-field="date-trained"]') && await has('[data-field="method"]') && await has('[data-field="language"]') && await has('[data-competence-signer]')
   && await has('[data-field="sop_revision"]') && await has('[data-field="dcr_id"]') && await has('[data-field="competence"]'));
 t('…with read and sign as the method it starts on', (await gs.locator('[data-field="method"]').inputValue().catch(() => '')) === 'read_and_sign');
 t('…and no box for the date recorded or who recorded it', !(await has('[data-field="recorded_by"]')) && !(await has('[data-field="created_at"]')));
 await gs.locator('select', { hasText: 'Add a course' }).selectOption(course.id).catch(() => {});
 t('…the course\'s document is named', await has('[data-sheet-documents]'));
 await gs.locator('[data-field="date-trained"]').fill('2026-10-20').catch(() => {});
-await gs.locator('[data-field="trainer"]').fill('Maria Servin').catch(() => {});
 await gs.locator('[data-field="language"]').selectOption('es').catch(() => {});
 await gs.locator('[data-person="Cleo Cleaning"] input[type=checkbox]').check().catch(() => {});
 await gs.getByRole('button', { name: /File sheet/ }).click().catch(() => {});
 t('filing without the competence tick is refused on screen', /I confirm this person understands this training/.test(await gs.innerText().catch(() => '')));
 await gs.locator('[data-field="competence"] input').check().catch(() => {});
 await gs.getByRole('button', { name: /File sheet/ }).click().catch(() => {});
+// The tick is a signature (D-282): the trainer's own password, through the real prompt.
+await page.waitForSelector('[data-signature-prompt] input[type=password]', { timeout: 10000 }).catch(() => {});
+t('filing the sheet asks for the signer\'s password', await page.locator('[data-signature-prompt]').count() === 1);
+await page.locator('[data-signature-prompt] input[type=password]').click().catch(() => {});
+await page.keyboard.type('Update2026!!xx');
+await page.locator('[data-signature-prompt] button[type=submit]').click().catch(() => {});
 await page.waitForTimeout(1500);
 const sheetRec = one(`SELECT * FROM training_records WHERE employee_user_id = 'tu-c1' AND session_id IS NOT NULL ORDER BY created_at DESC LIMIT 1`);
-t('the sheet files with its fields, and ReadyDoc stamps who recorded it', sheetRec?.method === 'read_and_sign' && sheetRec?.language === 'es' && sheetRec?.trainer === 'Maria Servin'
-  && sheetRec?.training_date === '2026-10-20' && sheetRec?.recorded_by === 'Una Admin' && /^Maria Servin: /.test(sheetRec?.competence_statement || ''), JSON.stringify(sheetRec)?.slice(0, 200));
+t('the sheet files with its fields, and ReadyDoc stamps who recorded it', sheetRec?.method === 'read_and_sign' && sheetRec?.language === 'es' && sheetRec?.trainer === 'Una Admin'
+  && sheetRec?.training_date === '2026-10-20' && sheetRec?.recorded_by === 'Una Admin' && /^Una Admin: /.test(sheetRec?.competence_statement || '') && !!sheetRec?.competence_signed_at, JSON.stringify(sheetRec)?.slice(0, 200));
 await page.keyboard.press('Escape');
 
 // Settings: the restore button on the report.

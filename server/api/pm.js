@@ -22,6 +22,7 @@ import { formFromTitle, gradeDilution, isMeasured, FORM_REVISION as DILUTION_REV
 import { pmCompletion } from '../pm-completion.js';
 import { recordGroupFor, recordAreaForTask } from '../qa-records.js';
 import { checkFormFor, attachCheckForms, fileCheckRecord, missingForCheck } from '../check-records.js';
+import { gateSignature } from '../signature.js';
 import { canFileCultureCheck } from '../culture.js';
 import { attachSwabPlans } from '../clean-swabs.js';
 import { scaleChecksDue } from '../scale-checks.js';
@@ -29,7 +30,7 @@ import { outOfServiceScales } from '../instrument-incidents.js';
 import { canonicalArea } from '../sanitation-areas.js';
 import { planStepSplit } from '../../shared/pm-step-split.js';
 import { personMatch, resolveUserId, withCurrentNames } from '../person-links.js';
-import { gradeTestAttempt, attemptProblem } from '../training-records.js';
+import { gradeTestAttempt, attemptProblem, competenceStamp, isTraineeSelf } from '../training-records.js';
 import { closeScheduleWork, pauseReason } from '../pm-pause.js';
 import { generationSweep } from '../pm-generation.js';
 import { isClosedDay, nextWorkday, holidayOn } from '../plant-calendar.js';
@@ -1287,6 +1288,17 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
   const backdate = resolveBackdate(performed_on, late_entry_reason);
   if (backdate.error) return res.status(400).json({ error: backdate.error, requires_backdate_reason: /reason/.test(backdate.error) });
 
+  // The trainer's competence tick on a training task is a signature (D-282):
+  // the signed-in person, never the trainee, with their password, asked last.
+  let competenceSigned = null;
+  if (checkForm?.kind === 'training' && req.body.check?.competence_confirmed) {
+    if (isTraineeSelf(req.user, { employee_user_id: existing.assigned_to_id, employee_name: existing.assigned_to })) {
+      return res.status(400).json({ error: 'Nobody signs off their own competence — the trainer signs it.', code: 'SELF_COMPETENCE' });
+    }
+    if (!gateSignature(req, res, { action: 'training_competence' })) return;
+    competenceSigned = competenceStamp(req.user);
+  }
+
   // The task and the RECORD are written together. A completion that files no
   // record is what sent QA back to typing Form 106-01 in by hand, and a record
   // that exists without its completion (or the other way round) is two
@@ -1334,7 +1346,7 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
         // record the completion is evidence for, in the same transaction.
         checkFiled = fileCheckRecord(db, {
           form: checkForm, check: req.body.check, wo: existing, by: completedBy,
-          when: backdate.when || completedAt, notes,
+          when: backdate.when || completedAt, notes, signed: competenceSigned,
         });
       }
     }

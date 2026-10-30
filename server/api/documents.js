@@ -15,10 +15,11 @@ import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage } from '..
 import { storageEnabled, putStream, presignGet, deleteObject } from '../storage.js';
 import { embedUnicodeFaces } from '../pdf-unicode.js';
 import { gateSignature } from '../signature.js';
+import { plantDateTime } from '../plant-clock.js';
 import { isBotAccount } from '../trainees.js';
 import { isApprovedStatus, sameRevision } from '../../shared/document-revision.js';
 import {
-  RevisionError, listRevisions, draftOf, startDraft, saveDraft, discardDraft, recordApprovedRevision,
+  RevisionError, listRevisions, draftOf, startDraft, saveDraft, discardDraft, recordApprovedRevision, approvalState,
   linkedCourses, suggestedRevision, revisionNumberProblem,
 } from '../document-revisions.js';
 
@@ -556,6 +557,10 @@ router.post('/:id/apply-revision', (req, res) => {
   const db = getDb();
   const doc = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id);
   if (!doc) return res.status(404).json({ error: 'Not found' });
+  // On an approved document this records an approved revision from the signed
+  // paper (D-282): the person recording it signs with their password.
+  if (isApprovedStatus(doc.status) && !canWetSign(req.user)) return res.status(403).json({ error: 'Recording an approved revision is for QA, Document Control, supervisors and admins.' });
+  if (isApprovedStatus(doc.status) && !gateSignature(req, res, { action: 'document_revision_recorded' })) return;
   const r = applyRevision(db, doc, req.body?.fields || {},
     { actor: req.user, filename: req.body?.filename });
   if (r.error) return res.status(400).json({ error: r.error });
@@ -667,6 +672,8 @@ router.post('/revisions/items/:id/apply', (req, res) => {
     fields[c.field] = c.field === 'description' ? extracted.content : c.to;
   }
 
+  if (isApprovedStatus(doc.status) && !canWetSign(req.user)) return res.status(403).json({ error: 'Recording an approved revision is for QA, Document Control, supervisors and admins.' });
+  if (isApprovedStatus(doc.status) && !gateSignature(req, res, { action: 'document_revision_recorded' })) return;
   const r = applyRevision(db, doc, fields, { actor: req.user, filename: item.filename });
   if (r.error) return res.status(400).json({ error: r.error });
   db.prepare(`UPDATE document_revision_items SET state = 'applied', applied_fields = ?,
@@ -752,13 +759,10 @@ router.get('/', (req, res) => {
   res.json(db.prepare(sql).all(...params).map(withEquipment));
 });
 
-// ── Wet signatures on controlled documents ──────────────────────────────────
-// Danny (or QA, or Document Control) draws their signature ONCE on a phone;
-// signing a document applies it. The signature row stamps name, capacity,
-// time AND a snapshot of the drawn image — self-contained history, so
-// re-drawing the stored signature never rewrites what a signed document
-// shows. Declared before the '/:id' routes ('signatures' is a perfectly good
-// :id — the org /meta trap).
+// ── Who may approve a controlled document ───────────────────────────────────
+// QA, Document Control, supervisors and admins. The drawn signatures recorded
+// before D-282 are read here as history; declared before the '/:id' routes
+// ('signatures' is a perfectly good :id — the org /meta trap).
 
 const canWetSign = (u) => u?.role === 'admin' || u?.role === 'supervisor'
   || ['qa', 'quality', 'document_control'].includes((u?.department || '').toLowerCase());
@@ -768,45 +772,10 @@ router.get('/:id/signatures', (req, res) => {
   res.json(db.prepare('SELECT * FROM document_signatures WHERE document_id = ? ORDER BY signed_at').all(req.params.id));
 });
 
-router.post('/:id/sign', (req, res) => {
-  if (!canWetSign(req.user)) return res.status(403).json({ error: 'Signing a controlled document is for QA, Document Control, supervisors and admins.' });
-  const db = getDb();
-  const doc = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id);
-  if (!doc) return res.status(404).json({ error: 'Not found' });
-  // A withdrawn document is history — nobody signs history into effect.
-  if (doc.status === 'archived') return res.status(409).json({ error: 'This document is no longer in use — reinstate it before signing.' });
-  const capacity = String(req.body?.capacity || '').trim();
-  if (capacity.length < 2) return res.status(400).json({ error: 'Say in what capacity you are signing (e.g. CEO, Quality Assurance).' });
-  // The drawn image is what makes this a WET signature — without one on file,
-  // the button sends the person to draw it first rather than filing a
-  // signature with nothing behind it.
-  const sig = db.prepare('SELECT signature_image FROM users WHERE id = ?').get(req.user.id)?.signature_image;
-  if (!sig) return res.status(409).json({ error: 'Draw your signature first (Account menu → My signature), then sign.', needs_signature: true });
-  if (db.prepare('SELECT 1 FROM document_signatures WHERE document_id = ? AND user_id = ? AND capacity = ?')
-    .get(doc.id, req.user.id, capacity)) {
-    return res.status(409).json({ error: 'You have already signed this document in that capacity.' });
-  }
-  const id = uuid();
-  db.prepare(`INSERT INTO document_signatures (id, document_id, user_id, name, capacity, signature_image)
-    VALUES (?, ?, ?, ?, ?, ?)`).run(id, doc.id, req.user.id, req.user.name, capacity, sig);
-  logAudit(req.user, 'document_signed', 'document', doc.id,
-    { capacity, doc_number: doc.doc_number }, null, null, `${doc.doc_number || ''} ${doc.title}`.trim());
-  res.status(201).json(db.prepare('SELECT * FROM document_signatures WHERE id = ?').get(id));
-});
-
-// The way back is revoke — the signer, or an admin. Audited like every revoke.
-router.delete('/signatures/:sigId', (req, res) => {
-  const db = getDb();
-  const sig = db.prepare('SELECT * FROM document_signatures WHERE id = ?').get(req.params.sigId);
-  if (!sig) return res.status(404).json({ error: 'Not found' });
-  if (req.user.role !== 'admin' && sig.user_id !== req.user.id) {
-    return res.status(403).json({ error: 'Only the person who signed, or an admin, can revoke a signature.' });
-  }
-  db.prepare('DELETE FROM document_signatures WHERE id = ?').run(sig.id);
-  logAudit(req.user, 'document_signature_revoked', 'document', sig.document_id,
-    { signed_by: sig.name, capacity: sig.capacity }, sig, null);
-  res.json({ ok: true });
-});
+// The drawn "Sign" is gone (D-282). One way to sign anything: the person's own
+// password at the moment of signing. Signatures drawn before stay on the
+// documents they were given on, as history (GET above, and the PDF), and can
+// no longer be added or removed.
 
 // ── Revisions (D-277) ────────────────────────────────────────────────────────
 // Reading is open to the registry. Starting, editing and discarding a draft is
@@ -827,7 +796,7 @@ router.get('/:id/revisions', (req, res) => {
   const doc = docOr404(db, req.params.id, res); if (!doc) return;
   res.json({
     in_force: { revision: doc.revision, status: doc.status, approved: isApprovedStatus(doc.status), approved_by: doc.approved_by, approved_at: doc.approved_at },
-    revisions: listRevisions(db, doc.id),
+    revisions: listRevisions(db, doc.id).map(r => ({ ...r, approval_state: approvalState(r) })),
     draft: draftOf(db, doc.id),
     suggested_revision: isApprovedStatus(doc.status) ? suggestedRevision(db, doc) : null,
     courses: linkedCourses(db, doc),
@@ -904,8 +873,17 @@ router.post('/', (req, res) => {
   const type = DOC_TYPES.has(doc_type) ? doc_type : 'sop';
   const id = uuid();
   const st = status || 'draft';
-  const approvedBy = st === 'active' ? (req.body.approved_by || req.user.name) : null;
-  const approvedAt = st === 'active' ? new Date().toISOString() : null;
+  // Filing a document straight into force IS approving it (D-282): QA, Document
+  // Control, a supervisor or an admin, with their own password, asked last. The
+  // approver is the signed-in person; a typed `approved_by` is refused.
+  const approving = isApprovedStatus(st);
+  if (req.body.approved_by && req.body.approved_by !== req.user.name) {
+    return res.status(400).json({ error: 'The approver is the person signing. A typed approver name is not accepted.', code: 'TYPED_APPROVER' });
+  }
+  if (approving && !canWetSign(req.user)) return res.status(403).json({ error: 'Approving a controlled document is for QA, Document Control, supervisors and admins.' });
+  if (approving && !gateSignature(req, res, { action: 'document_approve' })) return;
+  const approvedBy = null;
+  const approvedAt = null;
 
   // Review frequency defaults to annual (SQF baseline). When no explicit review
   // date is given, derive it from the effective date (or today) + the frequency.
@@ -925,7 +903,7 @@ router.post('/', (req, res) => {
     (id, doc_type, doc_number, title, category, revision, effective_date, review_due, review_frequency, status, owner, description, source_file, approved_by, approved_at, equipment_id, equipment_ids)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     id, type, doc_number || '', title, category, revision || 'V1',
-    effective_date || null, reviewDue, reviewFrequency, st, owner || null,
+    effective_date || null, reviewDue, reviewFrequency, approving ? 'draft' : st, owner || null,
     content || null, source_file || null, approvedBy, approvedAt,
     equipmentIds[0] || null, equipmentIds.length ? JSON.stringify(equipmentIds) : null
   );
@@ -934,6 +912,16 @@ router.post('/', (req, res) => {
   db.prepare('INSERT INTO sop_versions (id, sop_id, revision, changed_by, change_summary, snapshot) VALUES (?, ?, ?, ?, ?, ?)')
     .run(uuid(), id, created.revision, req.user.name, 'Created', JSON.stringify(created));
   logAudit(req.user, 'document_created', 'document', id, { doc_type: type, title, category });
+  if (approving) {
+    try {
+      recordApprovedRevision(db, created, { revision: created.revision }, { source: 'first_approval', actor: req.user });
+      if (st === 'under_review') db.prepare("UPDATE sop_documents SET status = 'under_review' WHERE id = ?").run(id);
+    } catch (e) {
+      if (e instanceof RevisionError) return res.status(e.status).json({ error: e.message, ...e.extra });
+      throw e;
+    }
+    return res.status(201).json(withEquipment(db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(id)));
+  }
   res.status(201).json(created);
 });
 
@@ -1000,6 +988,13 @@ router.put('/:id', (req, res) => {
   // A document's FIRST approval goes through the one writer of an approved
   // revision (D-277), after the rest of the edit is saved as a draft document.
   const becomingApproved = isApprovedStatus(newStatus) && !isApprovedStatus(existing.status);
+  // Moving a document into force IS approving it (D-282): the right people,
+  // their own password, asked last; never a typed approver.
+  if (req.body.approved_by && req.body.approved_by !== existing.approved_by && req.body.approved_by !== req.user.name) {
+    return res.status(400).json({ error: 'The approver is the person signing. A typed approver name is not accepted.', code: 'TYPED_APPROVER' });
+  }
+  if (becomingApproved && !canWetSign(req.user)) return res.status(403).json({ error: 'Approving a controlled document is for QA, Document Control, supervisors and admins.' });
+  if (becomingApproved && !gateSignature(req, res, { action: 'document_approve' })) return;
   const approvedBy = existing.approved_by;
   const approvedAt = existing.approved_at;
 
@@ -1031,7 +1026,7 @@ router.put('/:id', (req, res) => {
   if (becomingApproved) {
     try {
       recordApprovedRevision(db, updated, { revision: updated.revision, change_summary: _change_summary || null },
-        { source: 'first_approval', actor: req.user, approved_by: req.body.approved_by || null });
+        { source: 'first_approval', actor: req.user });
       if (newStatus === 'under_review') db.prepare("UPDATE sop_documents SET status = 'under_review' WHERE id = ?").run(req.params.id);
     } catch (e) {
       if (e instanceof RevisionError) return res.status(e.status).json({ error: e.message, ...e.extra });
@@ -1151,7 +1146,7 @@ router.get('/:id/pdf', (req, res) => {
   const doc = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id);
   if (!doc) return res.status(404).json({ error: 'Not found' });
   const sigs = db.prepare('SELECT * FROM document_signatures WHERE document_id = ? ORDER BY signed_at').all(doc.id);
-  generatePDF(res, [doc], { [doc.id]: sigs });
+  generatePDF(res, [doc], { [doc.id]: sigs }, { [doc.id]: approvalsFor(db, doc) });
 });
 
 router.post('/pdf', (req, res) => {
@@ -1162,13 +1157,22 @@ router.post('/pdf', (req, res) => {
   const docs = db.prepare(`SELECT * FROM sop_documents WHERE id IN (${placeholders}) ORDER BY category, doc_number`).all(...ids);
   if (!docs.length) return res.status(404).json({ error: 'No documents found' });
   const sigsByDoc = {};
-  for (const d of docs) sigsByDoc[d.id] = db.prepare('SELECT * FROM document_signatures WHERE document_id = ? ORDER BY signed_at').all(d.id);
-  generatePDF(res, docs, sigsByDoc);
+  const approvalsByDoc = {};
+  for (const d of docs) {
+    sigsByDoc[d.id] = db.prepare('SELECT * FROM document_signatures WHERE document_id = ? ORDER BY signed_at').all(d.id);
+    approvalsByDoc[d.id] = approvalsFor(db, d);
+  }
+  generatePDF(res, docs, sigsByDoc, approvalsByDoc);
 });
+
+// The approvals of the revision a printout shows (D-282).
+const approvalsFor = (db, doc) => db.prepare(`SELECT * FROM document_revisions WHERE document_id = ?
+  AND status IN ('approved','superseded') AND approved_at IS NOT NULL ORDER BY approved_at`).all(doc.id)
+  .filter(r => sameRevision(r.revision, doc.revision));
 
 const STATUS_LABEL = { draft: 'Draft', under_review: 'In Review', active: 'Approved / Effective', superseded: 'Superseded', archived: 'Archived' };
 
-function generatePDF(res, docs, sigsByDoc = null) {
+function generatePDF(res, docs, sigsByDoc = null, approvalsByDoc = null) {
   const LEFT = 72;
   const RIGHT = 540;
   const BODY_W = RIGHT - LEFT;
@@ -1207,6 +1211,7 @@ function generatePDF(res, docs, sigsByDoc = null) {
       ['Status', STATUS_LABEL[doc.status] || doc.status || '—'],
       ['Owner', doc.owner || '—'],
       ['Approved By', doc.approved_by || '—'],
+      ['Approved At', doc.approved_at ? plantDateTime(doc.approved_at) : 'not recorded'],
       ['Effective Date', doc.effective_date || '—'],
       ['Review Due', doc.review_due || '—'],
     ];
@@ -1257,33 +1262,31 @@ function generatePDF(res, docs, sigsByDoc = null) {
       pdf.fillColor('#9ca3af').fontSize(10).font('Helvetica-Oblique').text('No content yet.', LEFT, pdf.y, { width: BODY_W });
     }
 
-    // Wet signatures — the drawn image beside name, capacity and date, the way
-    // a signed paper original reads. Rendered from each signature's own stored
-    // snapshot, never the signer's current pad.
+    // Signatures (D-282). Every approval of this revision, printed as
+    // name · date and time (plant time) · meaning · whether the fingerprint
+    // still matches the text. Signatures drawn before D-282 follow as history.
+    const approvals = (approvalsByDoc && approvalsByDoc[doc.id]) || [];
     const sigs = (sigsByDoc && sigsByDoc[doc.id]) || [];
-    if (sigs.length) {
-      ensureSpace(60 + sigs.length * 58);
+    if (approvals.length || sigs.length) {
+      ensureSpace(60 + (approvals.length + sigs.length) * 30);
       pdf.moveDown(1.5);
       pdf.fillColor('#111827').fontSize(11).font('Helvetica-Bold').text('Signatures', LEFT, pdf.y, { width: BODY_W });
       pdf.moveDown(0.4);
+      for (const a of approvals) {
+        ensureSpace(32);
+        const state = approvalState(a);
+        const seal = state === 'signed' ? 'Electronically signed (password) · fingerprint matches this revision'
+          : state === 'changed' ? 'WARNING: this revision changed after it was signed'
+          : 'Signed before fingerprints were recorded';
+        pdf.fillColor('#111827').fontSize(10).font('Helvetica-Bold').text(`${a.approved_by || '—'} — ${a.approved_meaning || 'Approved'} (rev ${a.revision})`, LEFT, pdf.y, { width: BODY_W });
+        pdf.fillColor('#4b5563').fontSize(9).font('Helvetica').text(`${plantDateTime(a.approved_at)} · ${seal}`, LEFT, pdf.y, { width: BODY_W });
+        pdf.moveDown(0.5);
+      }
       for (const s of sigs) {
-        ensureSpace(58);
-        const y = pdf.y;
-        let drew = false;
-        if (s.signature_image && s.signature_image.startsWith('data:image/')) {
-          try {
-            const buf = Buffer.from(s.signature_image.split(',')[1], 'base64');
-            pdf.image(buf, LEFT, y, { fit: [150, 40] });
-            drew = true;
-          } catch { /* fall through to text-only */ }
-        }
-        pdf.fillColor('#111827').fontSize(10).font('Helvetica-Bold')
-          .text(s.name, LEFT + (drew ? 165 : 0), y + 4, { width: BODY_W - (drew ? 165 : 0), lineBreak: false });
-        pdf.fillColor('#4b5563').fontSize(9).font('Helvetica')
-          .text(`${s.capacity} · ${String(s.signed_at).slice(0, 10)}`, LEFT + (drew ? 165 : 0), y + 18, { width: BODY_W - (drew ? 165 : 0), lineBreak: false });
-        pdf.moveTo(LEFT, y + 46).lineTo(RIGHT, y + 46).strokeColor('#e5e7eb').stroke();
-        pdf.y = y + 52;
-        pdf.x = LEFT;
+        ensureSpace(30);
+        pdf.fillColor('#6b7280').fontSize(9).font('Helvetica')
+          .text(`${s.name} · ${s.capacity} · ${plantDateTime(s.signed_at)} · drawn signature recorded before D-282 (history)`, LEFT, pdf.y, { width: BODY_W });
+        pdf.moveDown(0.3);
       }
     }
 
