@@ -9738,3 +9738,14 @@ revisions were controlled and carried the old default revision "1.0", so the nex
 - **A new document with no revision typed starts at V1** (was "1.0"). **No existing data is changed** — a stored "1.0"
   stays "1.0" until the next revision is approved under its new label.
 - `verify:docrevisions` (47 → 52).
+
+## D-281 — Part 11 check of document approvals and training sign-offs; the plan waits on one decision (30 Oct 2026)
+Read-only assessment in `docs/v2/part11-assessment-2026-10-30.md`: of the five points, none fully met across both
+areas. The worst gap is the drawn "Sign" on controlled documents: drawn once and copied onto every document, with no
+password, not tied to a revision, and deleted on revoke. Next worst: no password on the competence tick or on a
+document's first approval; printouts without date/time and meaning; `audit_log` not locked by triggers, with two boot
+steps rewriting old rows. Asked: could a drawn signature avoid "submitting to FDA"? The only submission is the
+one-time 11.100(c) certification letter (no FDA review). A signature drawn fresh each time is a handwritten signature
+under 11.3(b)(8) and avoids that letter, but 11.10 / 11.50 / 11.70 still apply, and drawing every sign-off is slower
+than the password already used on ~25 routes. Recommendation: password as the signature, send the letter, fix the
+drawn "Sign". **The plan (nine items) is not built until Lowry chooses.**
