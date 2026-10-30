@@ -534,6 +534,20 @@ export function threadReplyRecipients(db, channel, parentId, authorId, excludeUs
     && !!db.prepare('SELECT 1 FROM users WHERE id = ? AND is_active = 1').get(uid)
     && canAccess(db, channel, uid, false));
 }
+// Tell every follower's screen that a thread moved, so the Threads badge and
+// Activity refresh wherever they are. message:new only reaches the room of the
+// channel a screen has OPEN, so a reply in a DM or a channel you were not
+// looking at — or anything while a phone shows the channel list — never moved
+// the badge. Followers only, never the whole channel; DMs included (D-294).
+function emitThreadChanged(db, channel, parentId, authorId) {
+  try {
+    for (const uid of threadFollowers(db, parentId)) {
+      if (uid === authorId) continue;
+      if (!canAccess(db, channel, uid, false)) continue;
+      emitToUser(uid, 'threads:changed', { parent_id: parentId, channel_id: channel.id });
+    }
+  } catch { /* a badge nudge never fails a post */ }
+}
 function notifyThreadReply(db, channel, parentId, body, author, excludeUserIds = [], messageId = null) {
   if (!pushEnabled() || !body || channel.kind === 'dm') return [];
   const label = channel.kind === 'public' ? `#${channel.name}` : (channel.name || 'a channel');
@@ -636,6 +650,7 @@ export async function postMessageAs(db, channel, author, body, parentId = null) 
   // @mentions in system-posted messages (issue alerts, schedule updates) notify
   // like any other mention.
   const mentioned = recordMentions(db, channel, id, text, author);
+  if (parentId) emitThreadChanged(db, channel, parentId, author.id);
   notifyChannelMessage(db, channel, text, author, mentioned, id);
   embedMessage(db, id, channel.id, text);
   return message;
@@ -1812,16 +1827,19 @@ router.post('/channels/:id/messages', async (req, res) => {
   emitToChannel(channel.id, 'message:new', message);
   emitChannelsChanged(db, channel);
   const mentionedIds = recordMentions(db, channel, id, body, req.user) || [];
+  if (body && req.body?.parent_id) {
+    // Being @mentioned in a reply follows the thread again, even one you
+    // unfollowed — Slack's rule. In a group DM too (D-294).
+    const refollow = db.prepare(`INSERT INTO chat_thread_follows (user_id, parent_id, state, updated_at) VALUES (?, ?, 'following', datetime('now'))
+      ON CONFLICT(user_id, parent_id) DO UPDATE SET state = 'following', updated_at = excluded.updated_at`);
+    for (const uid of mentionedIds) refollow.run(uid, req.body.parent_id);
+  }
+  if (req.body?.parent_id) emitThreadChanged(db, channel, req.body.parent_id, req.user.id);
   // DMs push to the other participant(s) — everyone in the DM but the sender.
   if (channel.kind === 'dm' && body) {
     const recips = db.prepare('SELECT user_id FROM chat_channel_members WHERE channel_id = ? AND user_id != ?').all(channel.id, req.user.id);
     for (const r of recips) pushToUser(r.user_id, { title: `Message from ${shortNameOf(req.user)}`, body: body.slice(0, 140), tag: `dm-${channel.id}`, renotify: true, url: `/?c=${channel.id}&m=${id}` }).catch(() => {});
   } else if (body && req.body?.parent_id) {
-    // Being @mentioned in a reply follows the thread again, even one you
-    // unfollowed — Slack's rule; the mention itself has already been pushed.
-    const refollow = db.prepare(`INSERT INTO chat_thread_follows (user_id, parent_id, state, updated_at) VALUES (?, ?, 'following', datetime('now'))
-      ON CONFLICT(user_id, parent_id) DO UPDATE SET state = 'following', updated_at = excluded.updated_at`);
-    for (const uid of mentionedIds) refollow.run(uid, req.body.parent_id);
     // A reply notifies the thread's followers (D-190). Sent to the channel as
     // well, it is channel news too — for everyone not already told.
     const told = notifyThreadReply(db, channel, req.body.parent_id, body, req.user, mentionedIds, id);

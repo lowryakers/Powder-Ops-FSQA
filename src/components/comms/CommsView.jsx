@@ -2872,7 +2872,12 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
       }
     };
     s.on('mention', onMention);
-    return () => { s.off('mention', onMention); socketRef.current = null; };
+    // A thread this person follows moved somewhere (D-294) — in any channel or
+    // DM, open or not. message:new below only reaches the channel on screen.
+    let t = null;
+    const onThreads = () => { clearTimeout(t); t = setTimeout(() => setThreadTick(n => n + 1), 300); };
+    s.on('threads:changed', onThreads);
+    return () => { s.off('mention', onMention); s.off('threads:changed', onThreads); clearTimeout(t); socketRef.current = null; };
   }, []);
 
   // Realtime: join the active channel's room and react to pushed events (Phase 2,
@@ -3803,7 +3808,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
             {/* Replies no longer inflate the channel's count, so this badge is
                 the only place an unanswered thread shows up. */}
             {!!threadUnread?.total && !threadsOpen && (
-              <span className="ml-auto px-1.5 py-0.5 rounded-full bg-powder-600 text-white text-[10px] font-bold">{threadUnread.total}</span>
+              <span data-threads-badge="" className="ml-auto px-1.5 py-0.5 rounded-full bg-powder-600 text-white text-[10px] font-bold">{threadUnread.total}</span>
             )}
           </button>
           {/* Quick filter — type to filter channels & DMs, ↑/↓ + Enter to jump */}

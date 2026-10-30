@@ -6204,6 +6204,11 @@ must hit an index**; check `EXPLAIN QUERY PLAN` for `SCAN chat_messages`. `FOLLO
 on purpose (join order). `GET /comms/threads` returns `replies: [latest]` + `reply_count` + `replied_by_me`; the drawer
 fetches the full thread. **Never pass a refresh tick as a `useApiGet` dep** — call `refresh()`.
 
+## A thread reply nudges its followers' screens (D-294)
+`threads:changed` goes to each follower's own room on every reply (`emitThreadChanged`, both post paths, DMs too);
+the screen refreshes the Threads/Activity badges. **`message:new` only reaches the OPEN channel's room — never rely
+on it for a badge.** `verify:dmthreadbadge` (11).
+
 ## The Threads inbox is a list to choose from; a thread is read in the drawer (D-192)
 Every `ThreadInboxCard` is ONE collapsed card: channel, "N new", the starter's words (two lines), the latest
 reply and its time. Unread first. **Clicking opens `ThreadPanel`** (rendered by `ThreadsView` itself, with

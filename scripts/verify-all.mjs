@@ -188,6 +188,7 @@ const RUNS = [
   ['verify-unread-landing.mjs', 5114, {}, false],
   ['verify-threads.mjs', 5115, {}, false],
   ['verify-threads-inbox.mjs', 5116, {}, false],
+  ['verify-dm-thread-badge.mjs', 5172, {}, false],
   ['verify-signature-sweep.mjs', 5125, {}, false],
   ['verify-record-interface.mjs', 5126, {}, false],
   ['verify-food-safety-culture.mjs', 5127, { HOUSEKEEPING_MS: '0' }, false],
