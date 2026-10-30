@@ -164,6 +164,7 @@
     "report:routing": "node scripts/report-task-routing.mjs",
     "verify:threads": "node scripts/verify-threads.mjs",
     "verify:threadsinbox": "node scripts/verify-threads-inbox.mjs",
+    "verify:dmthreadbadge": "VERIFY_ONLY=verify-dm-thread-badge.mjs node scripts/verify-all.mjs",
     "verify:trainingassign": "node scripts/verify-training-assign.mjs",
     "verify:supplylists": "node scripts/verify-supply-lists.mjs",
     "verify:starterreview": "node scripts/verify-starter-review.mjs",

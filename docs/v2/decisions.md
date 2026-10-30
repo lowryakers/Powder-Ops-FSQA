@@ -9929,3 +9929,14 @@ now print the meaning too, and their times in plant time.
 - **Not covered:** production entries (not on the record interface yet) and `calibration_records`, which carry no
   signature. Fingerprints on these records (the rest of O-7) are not done.
 - `verify:sessionsec` (59, live + S3 stand-in + browser) covers D-290 – D-293.
+
+## D-294 — A reply in a thread you follow moves the Threads badge wherever you are (30 Oct 2026)
+**Reported by Lowry**: a reply in a thread on a group DM (Maria, Daniela, Carol) did not show on the Threads row.
+The server counted it correctly; the screen never heard about it. `message:new` goes only to the room of the channel
+a screen has OPEN, and the Threads badge refreshed only from that event — so a reply in any other conversation, or
+anything while a phone shows the channel list, left the badge stale until something else made it refetch.
+- `emitThreadChanged()` in `api/comms.js` sends `threads:changed` to each FOLLOWER's own room (never the whole
+  channel) on every reply, both post paths, DMs included. The screen refreshes the Threads and Activity badges
+  (debounced 300 ms).
+- Being @mentioned in a reply re-follows the thread in a group DM too (it was skipped on the DM branch).
+- Nothing about who follows a thread changed. `verify:dmthreadbadge` (11, browser at 1280 and 390; control fails 2).
