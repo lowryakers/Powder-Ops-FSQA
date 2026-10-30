@@ -9851,3 +9851,14 @@ will match.
   row in the requirement-to-test table. The package README lists what the SOP still leaves open (numbering, FORM 438-01,
   the SOP-438 vs ESIG-101 policy overlap).
 - Supersedes D-285's roles (Lowry executes; Daniela reviews; Maria approves the plan).
+
+## D-288 — Validation roles confirmed; SOP 444 keeps its number; one e-signature policy (30 Oct 2026)
+Lowry, after reading the package against the SOP 444 draft:
+- **Roles confirmed:** Daniela Servin executes the tests, Maria Servin is the QA approver, Carol Pierce reviews, Lowry
+  Akers approves and releases. D-287's "proposed" is dropped.
+- **The number stays SOP 444** — it is the number in the NSF corrective action (4990683-5).
+- **One e-signature policy document;** ESIG-101 is the course that teaches it. Daniela issues the policy's document
+  number and the authorization form's number (FORM 438-01 is already the grievance form). Until then the package writes
+  "SOP ___ / FORM ___ (to be issued)". The SOP 444 draft's SOP-438 reference points at it once numbered.
+- #100 merges after 5 PM MT today; next, the letter of guarantee PR, then backups / idle sign-out / reset password /
+  first signature / printouts.

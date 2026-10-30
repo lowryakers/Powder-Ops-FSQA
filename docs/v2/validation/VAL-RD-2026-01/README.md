@@ -41,7 +41,7 @@ this package was changed to match it before the plan is approved. What was chang
 | SOP 444 draft says | This package now |
 |---|---|
 | § 5.0 roles: Carol Pierce reviews, Lowry Akers approves the plan and the report; a QA approver signs the report for Quality | Plan §4 and every sign-off block use those roles |
-| § 6.8: nobody approves a report on tests they executed | Lowry (developer, approver) no longer executes; **Daniela Servin is the test executor** (proposed). Lowry supports but signs no test step |
+| § 6.8: nobody approves a report on tests they executed | Lowry (developer, approver) no longer executes; **Daniela Servin is the test executor** (confirmed 30 Oct). Lowry supports but signs no test step |
 | § 6.2 item 6: name the test environment | Plan §5: the live system with `TEST-VAL` records; automated tests on a fresh database |
 | § 6.2 item 7: interim controls until the report is approved | Plan §8 |
 | § 6.3: the plan copies Appendix A and fills in the evidence | Requirement-to-test table, second section, row by row |
@@ -59,11 +59,14 @@ this package was changed to match it before the plan is approved. What was chang
 | 14 Combined-batch rule | One password for a QA Review batch or a group session | Lowry, 30 Oct |
 | 15 Who reviews failed sign-ins and signatures | Quality, at the annual review (line 9) until O-10 alerts at the time | This package |
 
-**Still open, for Carol and Lowry** (the package uses the proposal in italics until they decide): § 9 item 1 (is the
-number 444), item 2 (FORM 438-01 clash — the e-signature authorization form needs its own number), item 5 *(QA approver:
-Maria Servin; test executor: Daniela Servin)*, item 7 *(PQ: two weeks, samples as in PQ-01 – 08)*, item 8 *(closed
+**Decided 30 Oct (Lowry):** item 1 — the number stays **SOP 444** (it is the number in the NSF corrective action);
+item 5 — Daniela Servin executes the tests, Maria Servin is the QA approver, Carol Pierce reviews, Lowry Akers approves
+and releases; item 2 — **one** e-signature policy document, taught by course ESIG-101, with its document number and the
+authorization form's number issued by Daniela (FORM 438-01 is taken). Until then the package writes **FORM ___ (to be
+issued)** and **SOP ___ (to be issued)**.
+
+**Still open, for Carol and Lowry** (the package uses the proposal in italics until they decide): item 7 *(PQ: two weeks, samples as in PQ-01 – 08)*, item 8 *(closed
 system)*, item 9 *(retention: life of the system plus 111.605(a); copy on the Quality shared drive)*, items 11–13, 16.
 
-**One difference to settle with Document Control:** SOP 444 cites the draft **SOP-438** as the e-signature policy; this
-package attaches a one-page policy taught as course ESIG-101. They should become one document — either SOP-438 takes
-the one-page text, or the one page becomes SOP-438's user summary.
+**The e-signature policy is one document** (decided 30 Oct): the attached policy is it, ESIG-101 is the course that
+teaches it, and the SOP 444 draft's reference to SOP-438 should point at it once Daniela issues its number.

@@ -49,16 +49,16 @@ controls); the Messages chat (not a GMP record); office finance screens.
 
 ## 4. Roles
 
-The roles are SOP 444 § 5.0's. **Nobody approves a report on tests they executed** (SOP 444 § 6.8), so the person who
+The roles are SOP 444 § 5.0's, confirmed by Lowry on 30 Oct 2026. **Nobody approves a report on tests they executed** (SOP 444 § 6.8), so the person who
 built ReadyDoc prepares the package and supports the tests but does not execute them.
 
 | SOP 444 role | Person | Here |
 |---|---|---|
 | Approver (management) | Lowry Akers | Approves this plan and the summary report; releases ReadyDoc for use |
 | Reviewer / Quality lead | Carol Pierce, Quality Technical Support Manager | Reviews this plan, the test results and the summary report |
-| QA approver of the summary report | Maria Servin, Quality Manager / SQF Practitioner *(proposed; SOP 444 § 9 item 5)* | Signs the summary report for Quality; decides on deviations |
+| QA approver of the summary report | Maria Servin, Quality Manager / SQF Practitioner | Signs the summary report for Quality; decides on deviations |
 | System owner and system administrator / developer | Lowry Akers | Prepares the package; keeps the system documentation and change history; supports the tests; **does not execute them** |
-| Test executor | Daniela Servin, Document Control Manager *(proposed)* | Runs the IQ, OQ and PQ exactly as written; records results, initials and dates each step when done |
+| Test executor | Daniela Servin, Document Control Manager | Runs the IQ, OQ and PQ exactly as written; records results, initials and dates each step when done |
 | Document Control | Daniela Servin | Files the package as controlled documents |
 | Users (PQ) | QA, supervisors, Document Control | Normal use during the PQ period |
 

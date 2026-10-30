@@ -74,5 +74,5 @@ Neither approver executed the tests (SOP 444 § 6.8).
 | Prepared by (system owner) | Lowry Akers | | |
 | Tests executed by | Daniela Servin, Document Control Manager | | |
 | Reviewed by (Quality lead) | Carol Pierce, Quality Technical Support Manager | | |
-| **Approved by (Quality — QA approver)** | **Maria Servin, Quality Manager / SQF Practitioner** *(proposed)* | | |
+| **Approved by (Quality — QA approver)** | **Maria Servin, Quality Manager / SQF Practitioner** | | |
 | **Approved and released for use (management)** | **Lowry Akers** | | |

@@ -1,7 +1,9 @@
 # Electronic signature policy
 
-**Draft 1 — pending Document Control.** Set up in ReadyDoc as training course **ESIG-101**: everyone reads it and passes
-a five-question check. Retrained yearly.
+**SOP ___ (number to be issued by Document Control) · Draft 1 — pending Document Control.** The one e-signature policy
+document; training course **ESIG-101** teaches it: everyone reads it and passes a five-question check. Retrained yearly.
+Each person who signs also completes the e-signature authorization form, **FORM ___ (number to be issued by Document
+Control; FORM 438-01 is already in use)**.
 
 **Purpose:** to make ReadyDoc signatures mean the same as handwritten ones (21 CFR Part 11).
 
@@ -11,7 +13,8 @@ a five-question check. Retrained yearly.
 2. **Your password is yours alone.** Never share it. Never let anyone sign in as you, never sign in for someone else,
    and never write it where others can see it. Nobody from the company, IT included, will ever ask for it.
 3. **Signing means what the screen says.** *Approved*: the document is correct and in force. *Trained and competent*:
-   you trained this person and they understand. *Verified* / *Reviewed*: you checked the record. Read before you sign.
+   you trained this person and they understand. *Recorded external training*: you entered training an outside trainer
+   gave, from its certificate. *Verified* / *Reviewed*: you checked the record. Read before you sign.
 4. **If you think someone knows your password,** change it straight away (Account menu → Change password) and tell
    your supervisor or QA.
 5. **A signature cannot be removed or edited.** A mistake is corrected by a new signed entry with a reason. The
