@@ -140,6 +140,7 @@
     "verify:receivingcoc": "VERIFY_ONLY=verify-receiving-coc.mjs node scripts/verify-all.mjs",
     "verify:attemptproof": "VERIFY_ONLY=verify-attempt-proof.mjs node scripts/verify-all.mjs",
     "verify:docrevisions": "VERIFY_ONLY=verify-doc-revisions.mjs node scripts/verify-all.mjs",
+    "verify:coursedrafts": "VERIFY_ONLY=verify-course-drafts.mjs node scripts/verify-all.mjs",
     "report:samename": "node scripts/report-same-name.mjs",
     "report:editfails": "node scripts/report-edit-failed-training.mjs",
     "check:useractivity": "node scripts/check-user-activity.mjs",

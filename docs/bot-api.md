@@ -648,3 +648,41 @@ The activity log (D-261): who signed in, signed out or timed out, which pages an
     "details": { "audit_action": "update", "changes": [ { "field": "status", "from": "active", "to": "out_of_service" } ] } } ],
   "total": 1, "limit": 200, "offset": 0 }
 ```
+
+## Training course drafts (D-278)
+
+The Quality bot stages a new version of a course as a **draft**: content, quiz in English and Spanish, and files (a training video up to 2 GB). A draft is never training — nobody is assigned it, nobody can take it, and it counts for nothing. Two people publish it in ReadyDoc, each with their password: Document Control confirms it matches the document, and a QA supervisor approves the food safety content. A bot can never sign, publish or discard a draft, and can never write to a live course, test, file, record or document.
+
+The three writes need a `write` token holding the **`course-drafts` grant** (Settings → Bot API tokens), and an account with Training edit access. Any other token is refused with `403 token_denied`.
+
+### `GET /api/training/drafts`
+
+Open drafts, newest first (`?status=published|discarded|all` for the others). Each row: `id`, `course_id` (null for a new course), `title`, `code`, `status`, `staged_by`, `staged_via_token`, `document` (number, title, `revision_in_force`), `built_from_revision`, `document_moved`, the two signers, `published_at`.
+
+- **Scope:** `read`. **Module:** Training.
+
+### `GET /api/training/drafts/:id`
+
+One draft: its content and quiz, `document` and `built_from_revision` (and `document_moved` when the document has since moved on — publishing is then refused), `diff` against the live course (fields, quiz question by question, files added and taken away), `staged_by`, `signatures`, `materials` (with short-lived URLs) and `live_materials`.
+
+- **Scope:** `read`. **Module:** Training.
+
+### `POST /api/training/drafts`
+
+Stage a draft. With `course_id` it starts as a copy of that live course (one open draft per course — a second is `409` naming the first); without it, a new course.
+
+- **Scope:** `write` + grant `course-drafts`.
+- **Body:** `course_id`, `title`, `code`, `category`, `description`, `retrain_months`, `passing_score`, `sop_id` (the document; defaults to the course's), `built_from_revision` (defaults to the document's revision in force), `change_note`, `questions`.
+- **`questions`:** a list of `{ type: multiple_choice | true_false | short_answer, prompt, prompt_es, options, options_es, correct_answer, points }`. The Spanish options match the English ones one for one. Absent or `null` keeps the live quiz.
+
+### `PUT /api/training/drafts/:id`
+
+Edit an open draft. An absent field is left alone; a blank one clears it. Also `remove_material_ids` (live files the draft takes away) and `remove_draft_material_ids` (files this draft added). **Any signature already given is cleared** and the response lists whose (`signatures_cleared`).
+
+- **Scope:** `write` + grant `course-drafts`. A published or discarded draft is refused.
+
+### `POST /api/training/drafts/:id/materials`
+
+Upload files to an open draft (multipart `files`, up to 5). Videos up to 2 GB; other files up to 25 MB. From a token: a video (mp4, mov, m4v, webm), pdf, png, jpg, docx or pptx. Clears any signature.
+
+- **Scope:** `write` + grant `course-drafts`. `503` when file storage is off.

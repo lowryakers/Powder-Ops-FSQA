@@ -97,6 +97,7 @@ import orgRoutes from './server/api/org.js';
 import disposalRoutes, { importDisposalLog } from './server/api/disposals.js';
 import { DISPOSAL_LOG_CSV } from './server/disposal-log-seed.js';
 import trainingRoutes from './server/api/training.js';
+import { DRAFT_SIGN_WRITES } from './server/course-drafts.js';
 import aiRoutes from './server/api/ai.js';
 import opsWebhookAdminRoutes from './server/api/ops-webhook-admin.js';
 import { initOpsWebhook } from './server/ops-webhook.js';
@@ -2216,7 +2217,7 @@ app.use('/api/safety', requireModuleWrite('safety'), safetyRoutes);
 // module its importer requires).
 app.use('/api/imports', importRoutes);
 // ReadyDoc feedback: anyone can file, admins triage (enforced in the router).
-app.use('/api/training', requireModuleWrite('training'), trainingRoutes);
+app.use('/api/training', requireModuleWrite('training', { taskWrites: DRAFT_SIGN_WRITES }), trainingRoutes);
 app.use('/api/certifications', requireModuleWrite('certifications'), certificationRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/comms', commsRoutes);

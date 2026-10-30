@@ -9662,3 +9662,43 @@ against text nobody had approved. Nothing ever assigned retraining. Courses did 
 - `verify:docrevisions` (47, live + a stand-in Quality bot + browser). Control: without the PUT guard the approved text is
   edited in place and the run fails from that check on.
 
+
+## D-278 — Course drafts: the Quality bot stages, two people publish (29 Oct 2026)
+
+Asked: the Quality bot's account can create and edit a DRAFT version of a course (content, quiz in English and Spanish,
+a video up to 2 GB); drafts are never visible to trainees and never count; publishing takes two people in the app —
+Document Control confirms it matches the document, Quality approves the food safety content; only signed-in people
+approve, a bot never does; each draft shows the document and revision it was built from, what changed and who staged
+it; the bot cannot edit or delete live courses, records or documents. The versioning half of the same ask was D-277.
+
+- **A draft is its own row** (`course_drafts`, `course_draft_materials`; `server/course-drafts.js`), never a status on
+  `training_courses`. Every reader of live training — matrix, By person, assignment, the Operator View, the course list —
+  reads `training_courses`, so a draft cannot be assigned, taken or counted by construction, not by a filter somebody
+  has to add to each. From a live course it starts as a copy; without one it is a new course. One open draft per course.
+- **The bot's door is a token GRANT, `course-drafts`** (`TOKEN_GRANTS`, ticked in Settings, never by a deploy), opening
+  three `WRITE_AREAS` entries only: stage, edit (while open), upload (while open). A token uploads only a video
+  (mp4/mov/m4v/webm, up to 2 GB), pdf, png, jpg, docx or pptx. Live courses, quizzes, files, records and documents are
+  on no list, so every token write to them stays refused (default-deny, D-164) — asserted route by route.
+- **Two signatures, two people, each with the password** (`POST /training/drafts/:id/sign/document|food_safety`,
+  `gateSignature`): `document` = Document Control or an admin; `food_safety` = a QA/quality supervisor or an admin.
+  Never the same person, never whoever staged it, never a bot account — refused through a token by the `sign` segment
+  (approve class) and refused for a bot account signed in as a session (`isBotAccount`: holds a token, ReadyBot, the
+  Test Runner, a `*` name). The two signatures are reachable at Training **view** (the mount's `taskWrites`), so the
+  signers need no course-edit access. Discarding is a person's act with a reason.
+- **An edit after a signature clears both** and the response names whose — they signed different content.
+- **The second signature publishes**, in the same request: the course content, a new quiz version (`sop_revision` =
+  the draft's revision), the draft's files onto the live course, the live files it takes away (object purged only when
+  nothing else points at it — the live material delete now follows the same rule). **Built on the document's new
+  revision, publishing is "course updated for revision N"** (`markCourseRevision`, D-277), the one door that assigns
+  retraining. **A draft built on a revision the document has since moved past is refused** (`409 DOCUMENT_MOVED`),
+  checked before the second signature is written.
+- **Each draft shows** the document and revision it was built from (and that the document has moved on), a diff against
+  the live course (fields, the quiz question by question, files added and taken away) and who staged it, with "bot token".
+- **A new course published from a draft has no audience** (no roles, departments or positions): nobody owes it until a
+  person sets who it is for. That stays a person's decision.
+- Screens: Training → **Course drafts** (`CourseDrafts.jsx`). Bot surface: five `BOT_ROUTES`, documented in
+  `docs/bot-api.md`, five MCP tools (`list_course_drafts`, `get_course_draft`, `stage_course_draft`,
+  `update_course_draft`, `upload_course_draft_files`).
+- **Touches records** (new tables; publishing writes live courses and assigns retraining). Opened for review (D-274).
+- `verify:coursedrafts` (56, live + S3 stand-in + browser). Control: without the three `course-drafts` WRITE_AREAS entries
+  the bot cannot stage anything and the run fails from its first upload.
