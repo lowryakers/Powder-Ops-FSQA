@@ -235,6 +235,15 @@ export const FORBIDDEN_KEYS = Object.freeze(new Set([
 const FORBIDDEN_SUFFIX = /(_hash|_secret|_encrypted|_enc|_cipher)$/;
 export const isForbiddenKey = (k) => FORBIDDEN_KEYS.has(k) || FORBIDDEN_SUFFIX.test(k);
 
+// A token is never told it may approve (D-279). A screen's `can_approve` /
+// `can_sign` flag is computed from the ACCOUNT's role and department, and a bot
+// filed under QA read "can_approve: true" on a document it can never approve —
+// the server refuses the act at the door. Every such flag a token is sent reads
+// false, so a bot cannot report a permission it does not have.
+export const APPROVE_FLAG = /^can_(approve|sign|verify|publish|release|settle|decide|countersign|signoff)(_|$)/;
+const falsify = (v) => (v && typeof v === 'object' && !Array.isArray(v))
+  ? Object.fromEntries(Object.keys(v).map(k => [k, false])) : false;
+
 export function stripForbidden(value, depth = 0) {
   if (depth > 12 || value == null || typeof value !== 'object') return value;
   if (Buffer.isBuffer(value)) return undefined;
@@ -242,6 +251,7 @@ export function stripForbidden(value, depth = 0) {
   const out = {};
   for (const [k, v] of Object.entries(value)) {
     if (isForbiddenKey(k)) continue;
+    if (APPROVE_FLAG.test(k) && (typeof v === 'boolean' || (v && typeof v === 'object' && !Array.isArray(v)))) { out[k] = falsify(v); continue; }
     out[k] = stripForbidden(v, depth + 1);
   }
   return out;

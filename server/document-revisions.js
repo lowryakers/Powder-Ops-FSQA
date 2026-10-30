@@ -21,7 +21,8 @@ import { v4 as uuid } from 'uuid';
 import { logAudit } from './db.js';
 import { readyDocOrigin } from './links.js';
 import { enqueueQualitySignal } from './ops-webhook.js';
-import { revisionKey, sameRevision, nextRevision, isApprovedStatus } from '../shared/document-revision.js';
+import { revisionKey, sameRevision, nextVRevision, isApprovedStatus } from '../shared/document-revision.js';
+import { revisionFromFilename } from './filename-meta.js';
 
 // The registry screen each document type lives on (App.jsx nav ids).
 const TAB_FOR_TYPE = { sop: 'sops', work_instruction: 'work-instructions', job_description: 'job-descriptions' };
@@ -46,12 +47,29 @@ function usedNumbers(db, doc) {
   return out;
 }
 
-/** The revision a new draft is offered: one past the highest number this document has used. */
+/**
+ * What else says which V the document is at (D-280). A document filed before
+ * revisions were controlled often carries the default "1.0" while its signed
+ * copy, its source file or its title says "V3" — that is the number to count on
+ * from. Read only; nothing is rewritten.
+ */
+function revisionEvidence(db, doc) {
+  const out = [];
+  try {
+    for (const a of db.prepare('SELECT revision, filename FROM document_attachments WHERE document_id = ?').all(doc.id)) {
+      if (a.revision) out.push(a.revision);
+      const f = revisionFromFilename(a.filename || ''); if (f) out.push(f);
+    }
+  } catch { /* no attachments table */ }
+  for (const name of [doc.source_file, doc.title]) {
+    const f = revisionFromFilename(String(name || '')); if (f) out.push(f);
+  }
+  return out;
+}
+
+/** The revision a new draft is offered: the next V number, never one already used (D-280). */
 export function suggestedRevision(db, doc) {
-  const used = usedNumbers(db, doc);
-  let next = nextRevision(doc.revision);
-  while (used.some(u => sameRevision(u, next))) next = nextRevision(next);
-  return next;
+  return nextVRevision(doc.revision, { evidence: revisionEvidence(db, doc), used: usedNumbers(db, doc) });
 }
 
 /** Why `revision` cannot be the number of a new approved revision, or null. */

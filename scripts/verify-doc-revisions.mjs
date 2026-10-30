@@ -203,5 +203,24 @@ t('marking it from the card says what was assigned', /Marked for rev V6/.test(aw
 await browser.close();
 
 hook.close();
+
+console.log('\n── V numbers (D-280) ──');
+{
+  // A document filed before revisions were controlled: the default "1.0", a signed copy that says V3.
+  let x = await call('POST', '/documents', { doc_type: 'work_instruction', doc_number: 'WI 008', title: 'Scale Cleaning', category: 'quality', revision: '1.0', status: 'active', content: 'x' }, tok);
+  const wi = x.json;
+  { const d = new Database(DBP); d.prepare(`INSERT INTO document_attachments (id, document_id, kind, filename, storage_key, revision) VALUES ('att-wi8', ?, 'signed_original', 'WI008_Scale_Cleaning_V3.pdf', 'k/wi8', 'V3')`).run(wi.id); d.close(); }
+  x = await call('GET', `/documents/${wi.id}/revisions`, null, tok);
+  t('WI 008 at "1.0" with a signed V3 copy is offered V4, not "2.0"', x.json?.suggested_revision === 'V4', x.json?.suggested_revision);
+  t('…and its stored revision is left as it was', q('SELECT revision FROM sop_documents WHERE id = ?', wi.id)[0].revision === '1.0');
+  x = await call('POST', '/documents', { doc_type: 'work_instruction', doc_number: 'WI 077', title: 'Plain', category: 'quality', revision: '1.0', status: 'active', content: 'x' }, tok);
+  const plain = (await call('GET', `/documents/${x.json.id}/revisions`, null, tok)).json;
+  t('a "1.0" document with nothing else to go on is offered V2', plain?.suggested_revision === 'V2', plain?.suggested_revision);
+  x = await call('POST', '/documents', { doc_type: 'work_instruction', doc_number: 'WI 078', title: 'Unnumbered', category: 'quality', content: 'x' }, tok);
+  t('a new document with no revision typed starts at V1', x.json?.revision === 'V1', x.json?.revision);
+  x = await call('POST', `/documents/${wi.id}/revisions`, { revision: 'V5' }, tok);
+  t('the person may type another label when starting (V5)', x.status === 201 && x.json?.revision === 'V5', `${x.status} ${x.json?.revision}`);
+}
+
 console.log(`\n${pass}/${pass + fail} assertions passed`);
 process.exit(fail ? 1 : 0);

@@ -20,6 +20,7 @@ export default function DocumentRevisions({ doc, canEdit, onChanged }) {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [label, setLabel] = useState(null); // null = the suggestion; a person may type another (D-280)
   if (!data) return null;
   const { draft, revisions, courses, in_force: inForce, suggested_revision: suggested, can_approve: canApprove } = data;
   const history = revisions.filter(r => r.status !== 'draft');
@@ -30,7 +31,8 @@ export default function DocumentRevisions({ doc, canEdit, onChanged }) {
     catch (e) { if (!e.cancelled) setError(e.message); }
     finally { setBusy(false); }
   };
-  const start = () => run(() => apiPost(`/documents/${doc.id}/revisions`, {}));
+  const startLabel = (label ?? suggested ?? '').trim();
+  const start = () => run(async () => { await apiPost(`/documents/${doc.id}/revisions`, { revision: startLabel }); setLabel(null); });
   const approve = () => run(() => withSignature(
     (extra) => apiPost(`/documents/${doc.id}/revisions/${draft.id}/approve`, extra),
     { title: `Approve revision ${draft.revision}`, detail: `${doc.doc_number || ''} ${doc.title}`.trim() }));
@@ -48,10 +50,16 @@ export default function DocumentRevisions({ doc, canEdit, onChanged }) {
           <span className="font-normal text-gray-500">· in force: rev {inForce.revision}{inForce.approved ? '' : ' (not approved yet)'}</span>
         </p>
         {canEdit && inForce.approved && !draft && doc.status !== 'archived' && (
-          <button type="button" onClick={start} disabled={busy} data-rev-start
-            className="px-2.5 py-1 text-xs font-semibold rounded-md bg-powder-600 text-white hover:bg-powder-700 disabled:opacity-50">
-            Start revision {suggested}
-          </button>
+          <div className="flex items-center gap-1.5">
+            <label htmlFor={`rev-label-${doc.id}`} className="text-xs text-gray-600">New revision</label>
+            <input id={`rev-label-${doc.id}`} value={label ?? suggested ?? ''} onChange={e => setLabel(e.target.value)}
+              data-rev-label maxLength={20} title={`Suggested: ${suggested}. Type another label if this revision needs one.`}
+              className="w-16 px-2 py-1 text-xs border border-gray-300 rounded-md" />
+            <button type="button" onClick={start} disabled={busy || !startLabel} data-rev-start
+              className="px-2.5 py-1 text-xs font-semibold rounded-md bg-powder-600 text-white hover:bg-powder-700 disabled:opacity-50">
+              Start revision {startLabel}
+            </button>
+          </div>
         )}
       </div>
 

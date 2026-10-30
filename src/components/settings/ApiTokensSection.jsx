@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useApiGet, apiPost } from '../../hooks/useApi';
+import { useApiGet, apiPost, apiFetch } from '../../hooks/useApi';
 import { KeyRound, Plus, AlertTriangle, ShieldCheck, Ban } from 'lucide-react';
 import { formatDateTime } from '../../lib/datetime.js';
 import CopyButton from '../common/CopyButton.jsx';
@@ -86,6 +86,8 @@ export default function ApiTokensSection() {
           {data?.limits && <div className="text-xs text-indigo-700">Limited to {data.limits.read} requests, {data.limits.write} writes and {data.limits.bulk} bulk writes a minute per token.</div>}
         </div>
       </div>
+
+      <ApprovalCheck />
 
       <section className="p-4 rounded-lg border border-gray-200 space-y-3">
         <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2"><Plus size={16} /> New token</h3>
@@ -195,5 +197,46 @@ export default function ApiTokensSection() {
         </ul>
       </section>
     </div>
+  );
+}
+
+// Has a bot ever approved anything (D-279)? Read-only: run on demand, writes nothing.
+function ApprovalCheck() {
+  const [report, setReport] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const run = async () => {
+    setBusy(true); setError('');
+    try { setReport(await apiFetch('/api-tokens/approval-check')); } catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
+  const found = report?.approvals_by_bots || [];
+  return (
+    <section className="p-4 rounded-lg border border-gray-200 space-y-2" data-bot-approval-check>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2"><ShieldCheck size={16} /> Bot approval check</h3>
+        <button type="button" onClick={run} disabled={busy} data-bot-approval-run
+          className="px-3 py-1.5 text-xs font-semibold rounded-md border border-gray-300 hover:bg-gray-50 disabled:opacity-50">
+          {busy ? 'Checking…' : report ? 'Check again' : 'Check every token and the audit log'}
+        </button>
+      </div>
+      <p className="text-xs text-gray-500">Lists every token and what it can approve, and every approval on file made by a bot account. Changes nothing.</p>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      {report && (
+        <div className="space-y-2 text-sm">
+          <p className={found.length ? 'text-red-700 font-semibold' : 'text-green-700 font-semibold'} data-bot-approval-verdict>{report.verdict}</p>
+          <p className="text-xs text-gray-600">{report.token_count} token{report.token_count === 1 ? '' : 's'} ({report.live_token_count} live). Each can approve: <strong>nothing</strong> — refused at the door.</p>
+          <ul className="text-xs text-gray-700 space-y-0.5">
+            {report.tokens.map(t => (
+              <li key={t.id}>{t.prefix} · {t.label} — {t.account || 'no account'} · {t.live ? 'live' : 'not live'} · {t.scopes.join(', ')}{t.grants.length ? ` · grants ${t.grants.join(', ')}` : ''} · can approve: no</li>
+            ))}
+          </ul>
+          {found.length > 0 && (
+            <ul className="text-xs text-red-800 space-y-0.5">
+              {found.map((f, i) => <li key={`${f.source}-${f.id}-${i}`}>{f.at ? formatDateTime(f.at) : ''} · {f.actor} · {f.action} · {f.record} ({f.source})</li>)}
+            </ul>
+          )}
+        </div>
+      )}
+    </section>
   );
 }

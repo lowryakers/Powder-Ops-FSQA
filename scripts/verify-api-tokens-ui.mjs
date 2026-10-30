@@ -88,6 +88,12 @@ for (const width of [1280, 390]) {
     t('Save sends scopes ["read","write"]', JSON.stringify(edited?.scopes) === '["read","write"]', JSON.stringify(edited));
     t('…and the row now reads "Scopes: read, write", same prefix, no new token shown', /Scopes: read, write/.test(await row.innerText()) && await page.locator('[data-api-token-issued]').count() === 0);
   }
+  // D-279: the read-only bot approval check.
+  await page.locator('[data-bot-approval-run]').click();
+  await page.waitForSelector('[data-bot-approval-verdict]', { timeout: 10000 }).catch(() => {});
+  const verdict = await page.locator('[data-bot-approval-verdict]').innerText().catch(() => '');
+  t('the bot approval check runs and finds no bot approval', /No approval on file was made by a bot account/.test(verdict), verdict);
+  t('…and lists each token as "can approve: no"', /can approve: no/.test(await page.locator('[data-bot-approval-check]').innerText()));
   await page.close();
 }
 await browser.close();

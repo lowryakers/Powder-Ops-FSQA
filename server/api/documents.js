@@ -15,6 +15,7 @@ import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage } from '..
 import { storageEnabled, putStream, presignGet, deleteObject } from '../storage.js';
 import { embedUnicodeFaces } from '../pdf-unicode.js';
 import { gateSignature } from '../signature.js';
+import { isBotAccount } from '../trainees.js';
 import { isApprovedStatus, sameRevision } from '../../shared/document-revision.js';
 import {
   RevisionError, listRevisions, draftOf, startDraft, saveDraft, discardDraft, recordApprovedRevision,
@@ -708,7 +709,7 @@ router.post('/bulk', (req, res) => {
       if (!d.title || !d.category) continue;
       const type = ['sop', 'work_instruction', 'job_description', 'policy', 'form'].includes(d.doc_type) ? d.doc_type : 'sop';
       const id = uuid();
-      insert.run(id, type, d.doc_number || '', d.title, d.category, d.revision || '1.0', d.owner || null, d.content || null, d.source_file || null);
+      insert.run(id, type, d.doc_number || '', d.title, d.category, d.revision || 'V1', d.owner || null, d.content || null, d.source_file || null);
       const created = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(id);
       insertVersion.run(uuid(), id, created.revision, req.user.name, 'Imported', JSON.stringify(created));
       count++;
@@ -830,7 +831,8 @@ router.get('/:id/revisions', (req, res) => {
     draft: draftOf(db, doc.id),
     suggested_revision: isApprovedStatus(doc.status) ? suggestedRevision(db, doc) : null,
     courses: linkedCourses(db, doc),
-    can_approve: canWetSign(req.user),
+    // A bot account is never offered the approval, whatever its department (D-279).
+    can_approve: canWetSign(req.user) && !isBotAccount(db, req.user),
   });
 });
 
@@ -922,7 +924,7 @@ router.post('/', (req, res) => {
   db.prepare(`INSERT INTO sop_documents
     (id, doc_type, doc_number, title, category, revision, effective_date, review_due, review_frequency, status, owner, description, source_file, approved_by, approved_at, equipment_id, equipment_ids)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-    id, type, doc_number || '', title, category, revision || '1.0',
+    id, type, doc_number || '', title, category, revision || 'V1',
     effective_date || null, reviewDue, reviewFrequency, st, owner || null,
     content || null, source_file || null, approvedBy, approvedAt,
     equipmentIds[0] || null, equipmentIds.length ? JSON.stringify(equipmentIds) : null
