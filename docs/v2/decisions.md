@@ -9821,3 +9821,33 @@ requirement-to-test table · summary report approved by Quality. `docs/v2/part11
   reset a password and sign as that person; the first signing of a session asks for the password only; other modules'
   printouts don't yet print the meaning. Twelve open items (O-1 … O-12) in the summary report, each for Quality to
   accept with an owner and a date.
+
+## D-286 — External training: the person entering it signs "Recorded external training", certificate required (30 Oct 2026)
+Lowry asked how training by an outside trainer (not in ReadyDoc) is signed, as the condition for merging #100. It was
+**not** handled: the signer was always written as the trainer with the meaning "Trained and competent", which for an
+outside course would have recorded the office as having trained and judged the person.
+- **"Outside trainer (not in ReadyDoc)" on the single training record.** The outside trainer or company is a FACT in the
+  trainer column, never a signer. The person entering it signs with their password, meaning **Recorded external
+  training**, statement `<name>: "I recorded external training given by <trainer>. The certificate is attached."`
+- **The certificate is required** (`EXTERNAL_INCOMPLETE`), and the signature's fingerprint covers it, the meaning and the
+  trainer; an edit cannot swap the certificate while signed (`COMPETENCE_SIGNED`). `training_records.competence_meaning`
+  holds the meaning; NULL = "Trained and competent", so every signature before this hashes and reads exactly as it did.
+- **Per person, never a group entry** (`EXTERNAL_PER_PERSON` on bulk-complete): each person's certificate is their own.
+- **Nobody records their own** (`SELF_COMPETENCE`), the same rule as a sign-off.
+- **Unchanged:** a quiz-passed record needs no signature; records from before #100 keep what they were filed with.
+- `verify:part11` 33 → 43.
+
+## D-287 — Revalidation on any change to signing, records, audit trail or access; one-page annual review; package follows SOP 444 (30 Oct 2026)
+Lowry decided SOP 444 § 9 item 10. **A change touching signing, records, the audit trail or access goes through the
+Change Register and re-runs its OQ tests, recorded, before use**; anything else is recorded "no revalidation needed"
+with the reason. **Once a year, one page** (`08-annual-review.md`, eleven questions answered from screens). The SOP
+will match.
+- Package checked against the Quality bot's SOP 444 draft (V1 DRAFT, 10/30/2026); **the SOP won** on every difference.
+  Roles are its § 5.0's: Carol Pierce reviews, **Lowry Akers approves the plan and releases for use**, a QA approver
+  signs the summary report. Because § 6.8 says nobody approves tests they executed, **Lowry no longer executes; Daniela
+  Servin is the proposed test executor** and Maria Servin the proposed QA approver (its § 9 item 5, still open).
+- Added: interim controls (plan §8), test environment, retention with a copy outside ReadyDoc (plan §10), build id and
+  user/token lists in the IQ, the restore checking `audit_log`, the SOP's three conclusions, and its Appendix A row by
+  row in the requirement-to-test table. The package README lists what the SOP still leaves open (numbering, FORM 438-01,
+  the SOP-438 vs ESIG-101 policy overlap).
+- Supersedes D-285's roles (Lowry executes; Daniela reviews; Maria approves the plan).

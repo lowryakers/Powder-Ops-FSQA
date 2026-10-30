@@ -45,16 +45,24 @@ controls); the Messages chat (not a GMP record); office finance screens.
   signatures (document approvals, training sign-offs, QA Review, QMS records), record retention and retrieval, copies
   for inspection, backup and restore.
 - **Functions covered by the automated suite** (`npm run verify:all`: 175 entries, run against a fresh test database; plus `npm run check`, 49 pure checks): the module-level behaviour of
-  every screen listed in §1. Its run on the release is recorded as evidence (OQ-14).
+  every screen listed in §1. Its run on the release is recorded as evidence (IQ-08).
 
 ## 4. Roles
 
-| Role | Person | Responsibility |
+The roles are SOP 444 § 5.0's. **Nobody approves a report on tests they executed** (SOP 444 § 6.8), so the person who
+built ReadyDoc prepares the package and supports the tests but does not execute them.
+
+| SOP 444 role | Person | Here |
 |---|---|---|
-| System owner | Lowry | Prepares the package, executes the IQ and OQ, writes the summary report |
-| Document Control | Daniela Servin, Document Control Manager | Reviews the package; second tester for the signature tests |
-| Quality | Maria Servin, Quality Manager / SQF Practitioner | Approves this plan, decides on deviations, approves the summary report |
+| Approver (management) | Lowry Akers | Approves this plan and the summary report; releases ReadyDoc for use |
+| Reviewer / Quality lead | Carol Pierce, Quality Technical Support Manager | Reviews this plan, the test results and the summary report |
+| QA approver of the summary report | Maria Servin, Quality Manager / SQF Practitioner *(proposed; SOP 444 § 9 item 5)* | Signs the summary report for Quality; decides on deviations |
+| System owner and system administrator / developer | Lowry Akers | Prepares the package; keeps the system documentation and change history; supports the tests; **does not execute them** |
+| Test executor | Daniela Servin, Document Control Manager *(proposed)* | Runs the IQ, OQ and PQ exactly as written; records results, initials and dates each step when done |
+| Document Control | Daniela Servin | Files the package as controlled documents |
 | Users (PQ) | QA, supervisors, Document Control | Normal use during the PQ period |
+
+Where a step needs two people (a second account, a phone and a computer), the executor names who helped.
 
 ## 5. Approach
 
@@ -65,9 +73,13 @@ Risk-based, as SOP 444 sets out:
 4. **PQ:** the system performs in normal use for two weeks.
 5. **Requirement-to-test table:** every requirement traces to a test, and every test to a requirement.
 
+**Test environment** (SOP 444 § 6.2 item 6): the live system, with every test record named `TEST-VAL` so it can never
+be mistaken for a GMP record, and retired at the end of the OQ (OQ-15). The automated suite runs against a fresh test
+database, never the live one.
+
 ## 6. Acceptance criteria
 
-- Every IQ, OQ and PQ step passes, or has a deviation that Quality has accepted.
+- Every IQ, OQ and PQ step passes, or has a deviation that the QA approver has accepted.
 - Every Part 11 clause is Meets or Not applicable. A clause marked Partly needs an open item with an owner and a date
   in the summary report, and Quality accepts it.
 - The automated suite passes on the release under test.
@@ -77,19 +89,49 @@ Risk-based, as SOP 444 sets out:
 A step that does not give the expected result is a **deviation**. The tester writes what happened, stops that test,
 and records it in the summary report. Quality decides the impact, the fix and whether to retest.
 
-## 8. Change control and revalidation
+## 8. Interim controls until the summary report is approved
 
-After approval, any change to ReadyDoc goes through the **Change Register** (Document Control → Change Register),
-which also records every software release. Quality decides whether a change needs retesting, and which tests.
+ReadyDoc is in use today (SOP 444 § 6.2 item 7). Until the summary report is approved:
+- Records keep being made in ReadyDoc; nothing goes back to paper.
+- Approvals and sign-offs made **before** the release under test (drawn signatures, typed approvers, unsigned competence
+  statements) are kept as filed and read as history. They are not re-signed or back-dated.
+- The FDA certification letter is not sent.
 
-## 9. Deliverables
+## 9. Change control and revalidation (SOP 444 § 6.11, decided 30 Oct 2026)
 
-The five parts of VAL-RD-2026-01 (see the package index), plus the attachments. They are kept as GMP records.
+After approval, every change to ReadyDoc goes through the **Change Register** (Document Control → Change Register),
+which also records every software release by commit. Each change is assessed before it goes live.
+
+**A change that touches any of these four is a revalidation change:**
+1. **Signing** — who can sign, how a signature is given, what it records or prints, its fingerprint.
+2. **Records** — how a GMP record is created, changed, kept, retired or printed, or a new GMP record type.
+3. **The audit trail** — what is logged, or how the log is protected.
+4. **Access** — sign-in, passwords, sessions, roles, module access, tokens.
+
+For a revalidation change, Quality records which rows of the requirement-to-test table it affects, and the OQ tests for
+those rows are **run again and recorded** before the change is used for GMP records (at minimum; Quality may add more).
+The automated suite runs on every release regardless. Replacing the hosting or the database, or a restore that loses
+records or audit trail, is a full revalidation under SOP 444 § 6.11.
+
+A change that touches none of the four (a screen layout, a report, a new non-GMP feature) is recorded in the Change
+Register with the decision **"no revalidation needed"** and the reason.
+
+**Annual review** (SOP 444 § 6.12): once a year, and after any significant incident, Quality completes the one-page
+review in [08-annual-review.md](08-annual-review.md). A gap it finds starts a revalidation change.
+
+## 10. Deliverables and retention
+
+The five parts of VAL-RD-2026-01 (see the package index), the executed test records, and the attachments. They are kept
+as controlled documents in ReadyDoc **and** as a copy outside ReadyDoc (the Quality shared drive), so the package that
+validates ReadyDoc does not depend only on ReadyDoc (SOP 444 § 6.13). Kept for the life of the system plus the record
+retention period of 21 CFR 111.605(a).
 
 ## Approval of this plan
 
+Approved **before** any test is run (SOP 444 § 6.2 item 8).
+
 | Role | Name | Signature | Date |
 |---|---|---|---|
-| Prepared by (system owner) | Lowry | | |
-| Reviewed by (Document Control) | Daniela Servin | | |
-| Approved by (Quality) | Maria Servin | | |
+| Prepared by (system owner) | Lowry Akers | | |
+| Reviewed by (Quality lead) | Carol Pierce | | |
+| **Approved by (management)** | **Lowry Akers** | | |

@@ -14,7 +14,7 @@ import { parseScanName, similarity, isScanEntry } from '../scanned-tests.js';
 import { extractInvoiceText } from '../invoice-text.js';
 import { requireRole } from '../middleware/auth.js';
 import { addMonths, dueDateFor, supersedeOlder, courseTrainingRevision, insertCompletion, gradeTestAttempt, attemptReview, attemptProblem,
-  competenceStamp, competenceSignatureState, isTraineeSelf, stampCompetenceSignature, COMPETENCE_SIGNED_FIELDS, COMPETENCE_MEANING } from '../training-records.js';
+  competenceStamp, competenceSignatureState, isTraineeSelf, stampCompetenceSignature, COMPETENCE_SIGNED_FIELDS, meaningOf } from '../training-records.js';
 import { assignTraining } from '../training-assign.js';
 import { tellAssignee, assignmentReach } from '../training-notify.js';
 import { trainingSnapshot, cellFor, personTraining, trainingRoster } from '../training-status.js';
@@ -27,7 +27,7 @@ import { renderTrainingRecordPdf } from '../training-record-pdf.js';
 import { plantDateOf } from '../plant-clock.js';
 import { markCourseRevision, stampLinkedRevision, CourseRevisionError, MARK_KINDS } from '../course-revision.js';
 import { isApprovedStatus, sameRevision } from '../../shared/document-revision.js';
-import { trainingFieldErrors, competenceStatement, competenceMissing, COMPETENCE_REQUIRED_MSG } from '../../shared/training-record-fields.js';
+import { trainingFieldErrors, competenceStatement, competenceMissing, COMPETENCE_REQUIRED_MSG, externalProblem, EXTERNAL_MEANING } from '../../shared/training-record-fields.js';
 import { renderCertificate } from '../certificate-pdf.js';
 import {
   CourseDraftError, SIGN_ROLES, createDraft, updateDraft, addDraftMaterials, getDraft, draftView, listDrafts,
@@ -179,21 +179,24 @@ router.get('/', (req, res) => {
 });
 
 // Every training record read carries whether its competence signature is intact (D-282).
-const withSignatureState = (r) => (r ? { ...r, competence_signature: competenceSignatureState(r), competence_meaning: r.competence_signed_at ? COMPETENCE_MEANING : null } : r);
+const withSignatureState = (r) => (r ? { ...r, competence_signature: competenceSignatureState(r), competence_meaning: meaningOf(r),
+  external_training: r.competence_meaning === EXTERNAL_MEANING } : r);
 
 /**
  * The competence tick is a signature (D-282). The signer is the signed-in
  * person; nobody signs off their own competence; the password is asked last.
  * Returns the stamp, or null after answering the request.
  */
-function signCompetenceOr(req, res, trainees) {
+function signCompetenceOr(req, res, trainees, { externalTrainer = null } = {}) {
   const self = trainees.filter(t => isTraineeSelf(req.user, t));
   if (self.length) {
-    res.status(400).json({ error: 'Nobody signs off their own competence — the trainer signs it.', code: 'SELF_COMPETENCE' });
+    res.status(400).json({ error: externalTrainer
+      ? 'Somebody else records your external training — nobody signs for their own training.'
+      : 'Nobody signs off their own competence — the trainer signs it.', code: 'SELF_COMPETENCE' });
     return null;
   }
-  if (!gateSignature(req, res, { action: 'training_competence' })) return null;
-  return competenceStamp(req.user);
+  if (!gateSignature(req, res, { action: externalTrainer ? 'training_external_recorded' : 'training_competence' })) return null;
+  return competenceStamp(req.user, { externalTrainer });
 }
 
 
@@ -366,14 +369,24 @@ router.post('/', (req, res) => {
   if (lacksCompetence({ status: 'completed', ...body }, passMarkOf(db, body.course_id))) {
     return res.status(400).json({ error: COMPETENCE_REQUIRED_MSG, code: 'COMPETENCE_REQUIRED' });
   }
+  // External training (D-286): an outside trainer named and its certificate
+  // attached, signed by the person entering it with its own meaning.
+  const extErr = externalProblem(body);
+  if (extErr) return res.status(400).json({ error: extErr, code: 'EXTERNAL_INCOMPLETE' });
+  if (body.external_training && !body.competence_confirmed) {
+    return res.status(400).json({ error: 'External training is signed by the person recording it — tick the statement.', code: 'COMPETENCE_REQUIRED' });
+  }
   let signed = null;
   if (body.competence_confirmed) {
-    signed = signCompetenceOr(req, res, [{ employee_user_id: body.employee_user_id, employee_name: body.employee_name }]);
+    signed = signCompetenceOr(req, res, [{ employee_user_id: body.employee_user_id, employee_name: body.employee_name }],
+      { externalTrainer: body.external_training ? body.external_trainer : null });
     if (!signed) return;
   }
   const rec = insertCompletion(db, { ...body, dcr_id: dcr.id, competence_signed: signed, ...recorder(req) });
   logAudit(req.user, 'training_created', 'training', rec.id, { employee_name: rec.employee_name, course_id: rec.course_id,
-    ...(signed ? { competence_signed: true, ...signatureEvidence() } : {}) }, null, null, rec.employee_name);
+    ...(signed ? { competence_signed: true, meaning: signed.meaning || 'Trained and competent',
+      ...(signed.external_trainer ? { external_trainer: signed.external_trainer, certificate: rec.document_url || rec.certificate_url } : {}),
+      ...signatureEvidence() } : {}) }, null, null, rec.employee_name);
   res.status(201).json(withSignatureState(rec));
 });
 
@@ -386,6 +399,10 @@ router.post('/bulk-complete', (req, res) => {
   const { course_id, training_date, completion_date, trainer, method, attendees, language, competence_confirmed, notes } = req.body;
   if (!course_id || !Array.isArray(attendees) || attendees.length === 0) {
     return res.status(400).json({ error: 'course_id and at least one attendee are required' });
+  }
+  // External training is recorded per person, from each person's certificate (D-286).
+  if (req.body.external_training) {
+    return res.status(400).json({ error: 'Record external training on each person\'s own record, with their certificate attached.', code: 'EXTERNAL_PER_PERSON' });
   }
   const errors = trainingFieldErrors(req.body, plantDateOf());
   if (errors.length) return res.status(400).json({ error: errors.join(' ') });
@@ -626,7 +643,9 @@ router.put('/:id', (req, res) => {
   // reason and a password (POST /:id/competence/withdraw).
   const blank = (v) => (v === undefined || v === null || v === '' ? null : String(v));
   if (existing.competence_signed_at) {
-    const moved = COMPETENCE_SIGNED_FIELDS.filter(k => b[k] !== undefined && blank(b[k]) !== blank(existing[k]));
+    const locked = existing.competence_meaning === EXTERNAL_MEANING
+      ? [...COMPETENCE_SIGNED_FIELDS, 'document_url', 'certificate_url'] : COMPETENCE_SIGNED_FIELDS;
+    const moved = locked.filter(k => b[k] !== undefined && blank(b[k]) !== blank(existing[k]));
     if (b.competence_confirmed === false || moved.length) {
       return res.status(409).json({ code: 'COMPETENCE_SIGNED',
         error: `This sign-off was signed by ${existing.competence_signed_by}. ${moved.length ? `The ${moved.map(k => k.replace(/_/g, ' ')).join(', ')} cannot change` : 'The tick cannot come off'} while it is signed — the signer or an admin withdraws the signature first, with a reason.` });
@@ -651,9 +670,15 @@ router.put('/:id', (req, res) => {
   }, passMarkOf(db, course_id))) {
     return res.status(400).json({ error: COMPETENCE_REQUIRED_MSG, code: 'COMPETENCE_REQUIRED' });
   }
+  const externalNow = signingNow && !!b.external_training;
+  if (externalNow) {
+    const extErr = externalProblem({ ...b, document_url: b.document_url ?? existing.document_url, certificate_url: b.certificate_url ?? existing.certificate_url });
+    if (extErr) return res.status(400).json({ error: extErr, code: 'EXTERNAL_INCOMPLETE' });
+  }
   let signed = null;
   if (signingNow) {
-    signed = signCompetenceOr(req, res, [{ employee_user_id: b.employee_user_id ?? existing.employee_user_id, employee_name: b.employee_name || existing.employee_name }]);
+    signed = signCompetenceOr(req, res, [{ employee_user_id: b.employee_user_id ?? existing.employee_user_id, employee_name: b.employee_name || existing.employee_name }],
+      { externalTrainer: externalNow ? b.external_trainer : null });
     if (!signed) return;
   }
   db.prepare(`UPDATE training_records SET employee_name=?, employee_id=?, employee_user_id=?, training_topic=?, course_id=?, sop_id=?,
@@ -670,7 +695,7 @@ router.put('/:id', (req, res) => {
     b.sop_revision !== undefined ? (b.sop_revision || null) : existing.sop_revision,
     b.language !== undefined ? (b.language || null) : existing.language, competence, dcr.id, req.params.id);
   if (signed) {
-    db.prepare('UPDATE training_records SET trainer = ? WHERE id = ?').run(signed.by, req.params.id);
+    db.prepare('UPDATE training_records SET trainer = ? WHERE id = ?').run(signed.external_trainer || signed.by, req.params.id);
     stampCompetenceSignature(db, req.params.id, signed);
   }
   supersedeOlder(db, b.employee_name || existing.employee_name, course_id, req.params.id, b.employee_user_id ?? existing.employee_user_id ?? null);
@@ -680,7 +705,7 @@ router.put('/:id', (req, res) => {
     if (existing[k] !== after[k]) changed[k] = { from: existing[k], to: after[k] };
   }
   logAudit(req.user, 'training_updated', 'training', req.params.id, { employee_name: after.employee_name, changed,
-    ...(signed ? { competence_signed: true, ...signatureEvidence() } : {}) }, null, null, after.employee_name);
+    ...(signed ? { competence_signed: true, meaning: signed.meaning || 'Trained and competent', ...signatureEvidence() } : {}) }, null, null, after.employee_name);
   res.json(withSignatureState(after));
 });
 
@@ -708,13 +733,13 @@ router.post('/:id/competence/withdraw', (req, res) => {
   const reason = String(req.body?.reason || '').trim();
   if (reason.length < 3) return res.status(400).json({ error: 'Say why the signature is being withdrawn.' });
   if (!gateSignature(req, res, { action: 'training_competence_withdraw' })) return;
-  const withdrawn = { statement: rec.competence_statement, signed_by: rec.competence_signed_by, signed_by_id: rec.competence_signed_by_id,
+  const withdrawn = { statement: rec.competence_statement, meaning: meaningOf(rec), signed_by: rec.competence_signed_by, signed_by_id: rec.competence_signed_by_id,
     signed_at: rec.competence_signed_at, withdrawn_by: req.user.name, withdrawn_by_id: req.user.id, withdrawn_at: new Date().toISOString(), reason };
   const stillCompetent = !lacksCompetence({ status: rec.status, passed: rec.passed, score: rec.score, test_attempt_id: rec.test_attempt_id, competence_statement: null },
     passMarkOf(db, rec.course_id));
   const status = rec.status === 'completed' && !stillCompetent ? 'in_progress' : rec.status;
   db.prepare(`UPDATE training_records SET competence_statement = NULL, competence_signed_by = NULL, competence_signed_by_id = NULL,
-    competence_signed_at = NULL, competence_hash = NULL, competence_withdrawn = ?, status = ?,
+    competence_signed_at = NULL, competence_hash = NULL, competence_meaning = NULL, competence_withdrawn = ?, status = ?,
     next_due_date = CASE WHEN ? = 'in_progress' THEN NULL ELSE next_due_date END, updated_at = datetime('now') WHERE id = ?`)
     .run(JSON.stringify(withdrawn), status, status, rec.id);
   const after = db.prepare('SELECT * FROM training_records WHERE id = ?').get(rec.id);

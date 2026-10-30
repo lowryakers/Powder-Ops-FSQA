@@ -7,7 +7,7 @@
 // every value comes from the record.
 import PDFDocument from 'pdfkit';
 import { embedUnicodeFaces } from './pdf-unicode.js';
-import { competenceSignatureState, COMPETENCE_MEANING } from './training-records.js';
+import { competenceSignatureState, meaningOf } from './training-records.js';
 import { methodLabel } from '../shared/training-record-fields.js';
 import { plantDateTime } from './plant-clock.js';
 
@@ -34,7 +34,8 @@ export function renderTrainingRecordPdf(res, rec, { course = null } = {}) {
     line('Completion date', rec.completion_date);
     line('Status', rec.status);
     line('How trained', methodLabel(rec.method));
-    line('Trainer', rec.trainer);
+    line(rec.competence_meaning === 'Recorded external training' ? 'Outside trainer (not a ReadyDoc signer)' : 'Trainer', rec.trainer);
+    if (rec.competence_meaning === 'Recorded external training') line('Certificate', rec.document_url || rec.certificate_url);
     line('Language', rec.language);
     if (rec.score != null) line('Score', rec.score);
     line('Recorded by', `${rec.recorded_by || '—'} · ${plantDateTime(rec.created_at)}`);
@@ -44,7 +45,7 @@ export function renderTrainingRecordPdf(res, rec, { course = null } = {}) {
     doc.moveDown(0.3);
     const state = competenceSignatureState(rec);
     if (rec.competence_signed_at) {
-      doc.fontSize(10).font('Helvetica-Bold').text(`${rec.competence_signed_by} — ${COMPETENCE_MEANING}`);
+      doc.fontSize(10).font('Helvetica-Bold').text(`${rec.competence_signed_by} — ${meaningOf(rec)}`);
       doc.font('Helvetica').fillColor('#374151').text(plantDateTime(rec.competence_signed_at));
       doc.text(rec.competence_statement || '');
       doc.fillColor(state === 'signed' ? '#166534' : '#b91c1c').text(state === 'signed'

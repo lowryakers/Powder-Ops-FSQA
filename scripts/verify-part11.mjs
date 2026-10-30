@@ -122,6 +122,40 @@ const w = JSON.parse(r.json?.competence_withdrawn || '{}');
 t('withdrawn: the record keeps who signed, when, who withdrew it and why; it is no longer complete', r.status === 200 && w.signed_by === 'Quinn Quality' && w.withdrawn_by === 'Quinn Quality'
   && w.reason === 'Signed against the wrong course' && r.json?.status === 'in_progress', JSON.stringify(r.json).slice(0, 160));
 
+console.log('\n── external training: the recorder signs, the certificate is attached (D-286) ──');
+const ext = { employee_name: 'Pia Line', employee_user_id: 'p11-op2', course_id: course.id, status: 'completed', training_date: '2026-10-18', completion_date: '2026-10-18',
+  method: 'hands_on', external_training: true, external_trainer: 'Valley Forklift School', competence_confirmed: true, signature_password: PW };
+r = await call('POST', '/training', { ...ext }, dc);
+t('external training without a certificate is refused', r.status === 400 && r.json?.code === 'EXTERNAL_INCOMPLETE', `${r.status} ${r.json?.error}`);
+r = await call('POST', '/training', { ...ext, external_trainer: '', document_url: '/uploads/cert-pia.pdf' }, dc);
+t('…and without the outside trainer named', r.status === 400 && r.json?.code === 'EXTERNAL_INCOMPLETE');
+r = await call('POST', '/training', { ...ext, document_url: '/uploads/cert-pia.pdf', signature_password: undefined }, dc);
+t('…and without the password', r.status === 403 && r.json?.signature_required === true);
+r = await call('POST', '/training', { ...ext, employee_user_id: 'p11-dc', employee_name: 'Dana Control', document_url: '/uploads/cert-dc.pdf' }, dc);
+t('nobody records (and signs for) their own external training', r.status === 400 && r.json?.code === 'SELF_COMPETENCE');
+r = await call('POST', '/training', { ...ext, document_url: '/uploads/cert-pia.pdf' }, dc);
+const ex = r.json;
+t('saved: signed by the person entering it, meaning "Recorded external training"; the outside trainer is a fact, not the signer',
+  r.status === 201 && ex?.competence_signed_by === 'Dana Control' && ex?.competence_meaning === 'Recorded external training'
+  && ex?.trainer === 'Valley Forklift School' && ex?.external_training === true && ex?.competence_signature === 'signed'
+  && /Dana Control: "I recorded external training given by Valley Forklift School/.test(ex?.competence_statement || ''), JSON.stringify(ex).slice(0, 240));
+r = await call('PUT', `/training/${ex.id}`, { ...ex, document_url: '/uploads/other.pdf' }, dc);
+t('the certificate it was signed over cannot be swapped by editing', r.status === 409 && r.json?.code === 'COMPETENCE_SIGNED', `${r.status}`);
+{ const d = new Database(DBP); d.prepare('UPDATE training_records SET document_url = ? WHERE id = ?').run('/uploads/swapped.pdf', ex.id); d.close(); }
+r = await call('GET', `/training/${ex.id}`, null, dc);
+t('a certificate swapped outside the app reads "changed since signed"', r.json?.competence_signature === 'changed');
+{ const d = new Database(DBP); d.prepare('UPDATE training_records SET document_url = ? WHERE id = ?').run('/uploads/cert-pia.pdf', ex.id); d.close(); }
+r = await call('GET', `/training/${ex.id}/pdf`, null, dc);
+const exPdf = pdfText(r.buf);
+t('the printout names the outside trainer, the certificate and the signer with the external meaning',
+  /Dana Control — Recorded external training/.test(exPdf) && /Outside trainer/.test(exPdf) && /Valley Forklift School/.test(exPdf), exPdf.slice(0, 300));
+r = await call('POST', '/training/bulk-complete', { course_id: course.id, training_date: '2026-10-22', method: 'verbal', external_training: true, external_trainer: 'X Co',
+  competence_confirmed: true, signature_password: PW, attendees: [{ employee_user_id: 'p11-op', employee_name: 'Otto Floor' }] }, qa);
+t('external training is per person, never a group entry', r.status === 400 && r.json?.code === 'EXTERNAL_PER_PERSON');
+r = await call('POST', '/training', { employee_name: 'Otto Floor', employee_user_id: 'p11-op', course_id: course.id, status: 'completed', training_date: '2026-10-19',
+  completion_date: '2026-10-19', method: 'quiz', score: 95 }, dc);
+t('a quiz-passed record still needs no signature and no password (unchanged)', r.status === 201 && !r.json?.competence_signed_at && r.json?.competence_meaning === null, `${r.status}`);
+
 console.log('\n── a group is one password ──');
 r = await call('POST', '/training/bulk-complete', { course_id: course.id, training_date: '2026-10-22', method: 'verbal', competence_confirmed: true,
   attendees: [{ employee_user_id: 'p11-op', employee_name: 'Otto Floor' }, { employee_user_id: 'p11-op2', employee_name: 'Pia Line' }] }, qa);

@@ -105,3 +105,24 @@ export function trainingFieldErrors(b, today) {
   }
   return out;
 }
+
+// ── External training (D-286) ─────────────────────────────────────────────────
+// Training given by somebody outside ReadyDoc — a fire company, a forklift
+// school, a supplier's course. The outside trainer cannot sign here, so the
+// person entering it signs instead, with a different meaning: not "I trained
+// this person and they are competent" but "I recorded this external training,
+// and its certificate is attached". The outside trainer's name is a FACT on the
+// record, never a signature. A certificate is required.
+export const EXTERNAL_MEANING = 'Recorded external training';
+export const EXTERNAL_TICK = 'I recorded this external training. The certificate is attached.';
+export function externalStatement(recorder, trainer) {
+  const who = String(recorder || '').trim() || 'The recorder';
+  return `${who}: "I recorded external training given by ${String(trainer || '').trim() || 'an outside trainer'}. The certificate is attached."`;
+}
+/** Why an external-training entry cannot be saved, in words, or null. */
+export function externalProblem(r) {
+  if (!r?.external_training) return null;
+  if (String(r.external_trainer || '').trim().length < 2) return 'Name the outside trainer or company that gave the training.';
+  if (!String(r.document_url || r.certificate_url || '').trim()) return 'Attach the certificate — external training is recorded from its certificate.';
+  return null;
+}

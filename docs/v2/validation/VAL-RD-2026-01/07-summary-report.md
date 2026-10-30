@@ -1,6 +1,7 @@
 # Summary report — VAL-RD-2026-01-SR
 
 **System:** ReadyDoc · **Release:** commit ________ · **Procedure:** SOP 444 · **CAR:** 4990683-5 (4.4.39)
+**Testing took place:** ________ to ________ (actual dates, SOP 444 § 6.8) · **Executed by:** Daniela Servin
 
 ## 1. What was done
 
@@ -14,7 +15,7 @@
 | Requirement-to-test table | VAL-RD-2026-01-TM | ________ | __ of 21 requirements met |
 
 **Automated evidence (IQ-08):** `npm run verify` and `npm run verify:all` on the release commit, ________ (date),
-______ passed, ______ failed. `npm run verify:part11`: 33 checks; last run 30 Oct 2026 on the branch, 33 passed,
+______ passed, ______ failed. `npm run verify:part11`: 43 checks; last run 30 Oct 2026 on the branch, 43 passed,
 0 failed. A control run with the password check removed fails it, which shows the tests can catch the fault.
 
 ## 2. Deviations
@@ -25,7 +26,12 @@ ______ passed, ______ failed. `npm run verify:part11`: 33 checks; last run 30 Oc
 
 ## 3. Open items (Part 11 "Partly" and "Missing")
 
-Found by the assessment before testing. Each needs an owner and a date, and Quality must accept each one for release.
+Found by the assessment before testing. Each needs an owner and a date, and the QA approver accepts each one for release.
+**Approved 30 Oct 2026 for the release after this one:** O-1 (daily full backup off the server, 30 daily + 12 monthly,
+quarterly restore test), O-3 (idle sign-out: 15 minutes on shared floor devices, 8 hours otherwise), O-7 (meaning
+printed on QA Review, QMS, COA and calibration printouts), O-8 (name and password on the first signature of a session),
+O-9 (a reset gives a temporary password that cannot sign). Each is a revalidation change (plan §9): its OQ tests are
+re-run and recorded before it is used.
 
 | # | Clause | Item | Proposed action | Owner | Due | Accepted (Quality initials) |
 |---|---|---|---|---|---|---|
@@ -44,21 +50,29 @@ Found by the assessment before testing. Each needs an owner and a date, and Qual
 
 ## 4. Conclusion
 
-Tick one:
+Tick one (SOP 444 § 6.8):
 
-- [ ] **Validated for GMP use.** All tests passed or their deviations are resolved; the open items above are accepted
-      with owners and dates. ReadyDoc is released for creating, signing and keeping the GMP records listed in the
-      plan.
-- [ ] **Validated with restrictions.** Released except for: ________________________________.
-- [ ] **Not validated.** Not released until the deviations are resolved and retested.
+- [ ] **Validated for intended use.** All tests passed or their deviations are resolved; the open items above are
+      accepted with owners and dates. ReadyDoc is released for creating, signing and keeping the GMP records listed
+      in the plan.
+- [ ] **Validated with stated conditions.** Released, on these conditions: ________________________________.
+- [ ] **Not validated.** Not used for GMP electronic records except under the plan's interim controls (plan §8) until
+      the deviations are resolved and retested.
 
-After approval, changes to ReadyDoc go through the Change Register, and Quality decides on retesting (plan §8).
-Management receives this approved package (CAR 4990683-5, preventive action).
+After approval, every change to ReadyDoc goes through the Change Register. A change touching signing, records, the
+audit trail or access re-runs its OQ tests before use; the rest are recorded "no revalidation needed" (plan §9). The
+validation is reviewed once a year on [08-annual-review.md](08-annual-review.md).
+Management receives this approved package, and that copy triggers implementation (CAR 4990683-5, preventive action).
+The release for use is recorded and signed by Lowry Akers below.
 
 ## 5. Approval
 
+Neither approver executed the tests (SOP 444 § 6.8).
+
 | Role | Name | Signature | Date |
 |---|---|---|---|
-| Prepared by (system owner) | Lowry | | |
-| Reviewed by (Document Control) | Daniela Servin, Document Control Manager | | |
-| **Approved by (Quality)** | **Maria Servin, Quality Manager / SQF Practitioner** | | |
+| Prepared by (system owner) | Lowry Akers | | |
+| Tests executed by | Daniela Servin, Document Control Manager | | |
+| Reviewed by (Quality lead) | Carol Pierce, Quality Technical Support Manager | | |
+| **Approved by (Quality — QA approver)** | **Maria Servin, Quality Manager / SQF Practitioner** *(proposed)* | | |
+| **Approved and released for use (management)** | **Lowry Akers** | | |

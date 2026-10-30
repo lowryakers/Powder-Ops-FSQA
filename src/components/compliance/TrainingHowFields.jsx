@@ -9,7 +9,7 @@ import { withSignature } from '../../lib/signature';
 import { useAuth } from '../../hooks/useAuth';
 import { Video, FileText } from 'lucide-react';
 import {
-  METHODS, LEGACY_METHODS, LANGUAGES, methodLabel, languageLabel, COMPETENCE_TICK,
+  METHODS, LEGACY_METHODS, LANGUAGES, methodLabel, languageLabel, COMPETENCE_TICK, EXTERNAL_TICK,
 } from '../../../shared/training-record-fields.js';
 import { formatDateTime } from '../../lib/datetime';
 
@@ -20,7 +20,7 @@ const inputCls = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm';
  * needed. `group` — the session form, where the tick covers each attendee
  * without a passing score.
  */
-export function HowTrainedFields({ value, onChange, legacyMethod = null, quizPassed = false, group = false, signedBy = null }) {
+export function HowTrainedFields({ value, onChange, legacyMethod = null, quizPassed = false, group = false, signedBy = null, external = false }) {
   const { user } = useAuth() || {};
   const set = (k, v) => onChange({ ...value, [k]: v });
   const { data: dcrs } = useApiGet('/training/change-requests');
@@ -44,7 +44,7 @@ export function HowTrainedFields({ value, onChange, legacyMethod = null, quizPas
       </div>
       {/* No typed trainer (D-282): the trainer who signs is whoever is signed in,
           and the password is the signature. An older record shows what it was filed with. */}
-      {value.trainer && value.trainer !== user?.name && (
+      {!external && value.trainer && value.trainer !== user?.name && (
         <p className="col-span-2 text-xs text-gray-500" data-field="trainer-filed">Trainer on file: {value.trainer}</p>
       )}
       <label className={`col-span-2 flex items-start gap-2 rounded-lg border p-2.5 text-sm text-gray-700 ${
@@ -52,12 +52,14 @@ export function HowTrainedFields({ value, onChange, legacyMethod = null, quizPas
         <input type="checkbox" className="mt-0.5 h-5 w-5 shrink-0" checked={!!value.competence_confirmed} disabled={!!signedBy}
           onChange={e => set('competence_confirmed', e.target.checked)} />
         <span>
-          <span className="font-medium">&ldquo;{COMPETENCE_TICK}&rdquo;</span>
+          <span className="font-medium">&ldquo;{external ? EXTERNAL_TICK : COMPETENCE_TICK}&rdquo;</span>
           <span className="block text-[11px] text-gray-600 mt-0.5" data-competence-signer>
             {signedBy ? `Signed by ${signedBy}. A signed sign-off cannot be changed by editing.` : `Signed by you${user?.name ? ` (${user.name})` : ''} with your password when you save.`}
           </span>
           <span className="block text-[11px] text-gray-500 mt-0.5">
-            {quizPassed
+            {external
+              ? 'You sign as the person recording it (meaning "Recorded external training"). The outside trainer is named on the record, not as a signer.'
+              : quizPassed
               ? 'Not needed — this record has a passed quiz.'
               : group
                 ? 'The trainer signs this. Required for everyone on this session who did not pass a quiz.'

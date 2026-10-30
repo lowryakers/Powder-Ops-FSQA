@@ -4870,6 +4870,9 @@ function runMigrations() {
   addColumnIfMissing('training_records', 'competence_signed_at', 'TEXT');
   addColumnIfMissing('training_records', 'competence_hash', 'TEXT');
   addColumnIfMissing('training_records', 'competence_withdrawn', 'TEXT');
+  // The meaning a competence signature was given with (D-286): NULL = 'Trained and
+  // competent' (every signature before this), or 'Recorded external training'.
+  addColumnIfMissing('training_records', 'competence_meaning', 'TEXT');
   db.exec(`CREATE TABLE IF NOT EXISTS training_sessions (
     id TEXT PRIMARY KEY,
     course_id TEXT NOT NULL,

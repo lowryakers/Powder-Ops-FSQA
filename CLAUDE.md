@@ -6308,6 +6308,12 @@ revoke by DELETE with a reason), `CrisisDrills.jsx`. SOP 501, SQF 2.6.4.2.
 - **`audit_log` refuses UPDATE and DELETE by trigger.** Never write a migration that rewrites audit rows.
 - A verify that files an approval or a competence tick must send `signature_password`. `verify:part11` (33).
 - The validation package is `docs/v2/validation/VAL-RD-2026-01/` (SOP 444, D-285): plan, Part 11 assessment, IQ/OQ/PQ,
+- **External training (D-286):** "Outside trainer (not in ReadyDoc)" on the single record. The outside trainer is a fact
+  (the trainer column), the person entering it signs with meaning **Recorded external training**, a certificate is
+  required and fingerprinted. Never a group entry; nobody records their own. `competence_meaning` NULL = "Trained and
+  competent". Read the meaning through `meaningOf()`.
+- **Revalidation (D-287):** a change touching signing, records, the audit trail or access re-runs its OQ tests before use;
+  one-page annual review (`08-annual-review.md`). Roles follow SOP 444 § 5.0: nobody approves tests they executed.
   requirement-to-test table, summary report; the e-signature policy (ESIG-101) and the unsent FDA letter are its attachments.
 
 ## A bot never approves, by token or by password; the check is read-only (D-279)

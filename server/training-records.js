@@ -12,7 +12,7 @@
 import { v4 as uuid } from 'uuid';
 import { createHash } from 'crypto';
 import { plantDateOf } from './plant-clock.js';
-import { competenceStatement } from '../shared/training-record-fields.js';
+import { competenceStatement, externalStatement, EXTERNAL_MEANING } from '../shared/training-record-fields.js';
 
 export const addMonths = (isoDate, months) => {
   if (!isoDate || !months) return null;
@@ -101,8 +101,14 @@ export function courseTrainingRevision(db, courseId) {
 export const COMPETENCE_MEANING = 'Trained and competent';
 const SIGNED_FIELDS = ['employee_name', 'employee_user_id', 'course_id', 'training_date', 'completion_date', 'competence_statement', 'competence_signed_by_id', 'competence_signed_at'];
 export function competenceHash(rec) {
-  return createHash('sha256').update(JSON.stringify(SIGNED_FIELDS.map(k => rec?.[k] ?? null))).digest('hex');
+  // An external-training signature also covers the certificate it was given
+  // over (D-286). Signatures before that carry no meaning and hash as they did.
+  const fields = rec?.competence_meaning === EXTERNAL_MEANING
+    ? [...SIGNED_FIELDS, 'competence_meaning', 'trainer', 'document_url', 'certificate_url'] : SIGNED_FIELDS;
+  return createHash('sha256').update(JSON.stringify(fields.map(k => rec?.[k] ?? null))).digest('hex');
 }
+/** The words a signature was given with. */
+export const meaningOf = (rec) => (rec?.competence_signed_at ? (rec.competence_meaning || COMPETENCE_MEANING) : null);
 /** 'signed' (intact) · 'changed' (a signed fact moved since) · null (no signature on this record). */
 export function competenceSignatureState(rec) {
   if (!rec?.competence_signed_at) return null;
@@ -119,8 +125,12 @@ export function isTraineeSelf(user, { employee_user_id, employee_name } = {}) {
 }
 
 /** The signature stamp for a person signing now (call after gateSignature). */
-export function competenceStamp(user) {
-  return { statement: competenceStatement(user.name), by: user.name, by_id: user.id, at: new Date().toISOString() };
+export function competenceStamp(user, { externalTrainer = null } = {}) {
+  if (externalTrainer) {
+    return { statement: externalStatement(user.name, externalTrainer), by: user.name, by_id: user.id, at: new Date().toISOString(),
+      meaning: EXTERNAL_MEANING, external_trainer: String(externalTrainer).trim() };
+  }
+  return { statement: competenceStatement(user.name), by: user.name, by_id: user.id, at: new Date().toISOString(), meaning: null };
 }
 
 export function insertCompletion(db, body) {
@@ -149,7 +159,8 @@ export function insertCompletion(db, body) {
     id, body.employee_name, body.employee_id || null, body.employee_user_id || null,
     body.training_topic || body.course_title || '', body.course_id || null, sopId,
     // The trainer who signs is the signed-in person (D-282); a typed name never stands for a signature.
-    signed ? signed.by : (body.trainer || null), body.method || null,
+    // External training (D-286): the outside trainer is a fact, and the recorder signs.
+    signed ? (signed.external_trainer || signed.by) : (body.trainer || null), body.method || null,
     body.training_date || plantDateOf(), completion,
     failed ? 'failed' : (body.status || (completion ? 'completed' : 'scheduled')),
     body.passed === undefined ? null : (body.passed ? 1 : 0), body.score ?? null, next_due,
@@ -165,7 +176,7 @@ export function insertCompletion(db, body) {
 /** Write the signature columns and the fingerprint over the record as it now stands. */
 export function stampCompetenceSignature(db, id, signed) {
   db.prepare(`UPDATE training_records SET competence_statement = ?, competence_signed_by = ?, competence_signed_by_id = ?,
-    competence_signed_at = ?, competence_withdrawn = NULL WHERE id = ?`).run(signed.statement, signed.by, signed.by_id, signed.at, id);
+    competence_signed_at = ?, competence_meaning = ?, competence_withdrawn = NULL WHERE id = ?`).run(signed.statement, signed.by, signed.by_id, signed.at, signed.meaning || null, id);
   const rec = db.prepare('SELECT * FROM training_records WHERE id = ?').get(id);
   db.prepare('UPDATE training_records SET competence_hash = ? WHERE id = ?').run(competenceHash(rec), id);
 }
