@@ -1,4 +1,5 @@
-import { logAudit } from '../db.js';
+import { logAudit, getDb } from '../db.js';
+import { isBotAccount } from '../trainees.js';
 
 // NOTHING A BOT HOLDS CAN APPROVE, SIGN, RELEASE OR SETTLE (D-161).
 //
@@ -38,6 +39,7 @@ export const APPROVE_SEGMENTS = Object.freeze([
 ]);
 const SEGMENT_SET = new Set(APPROVE_SEGMENTS);
 const ARTWORK_APPROVE_STATUSES = new Set(['approved', 'print_ready', 'released']);
+const APPROVED_DOC_STATUSES = new Set(['active', 'under_review', 'approved']);
 
 // Paths are relative to /api, the PUBLIC_ROUTES convention.
 export const APPROVE_ROUTES = Object.freeze([
@@ -55,6 +57,21 @@ export const APPROVE_ROUTES = Object.freeze([
   { method: 'POST', re: /^\/calibration\/incidents\/[^/]+\/return$/, label: 'POST /api/calibration/incidents/:id/return — QA returns a scale to use' },
   { method: 'POST', re: /^\/calibration\/records$/, label: 'POST /api/calibration/records carrying a product decision',
     when: (req) => !!req.body?.product_disposition?.disposition },
+  // D-279: approvals whose path does not say so. A document filed or moved into
+  // force, a paper revision applied, a training sign-off carrying the trainer's
+  // competence statement, and marking a course updated for a revision.
+  { method: 'POST', re: /^\/documents\/?$/, label: 'POST /api/documents filed as approved (status active / under review, or an approver named)',
+    when: (req) => APPROVED_DOC_STATUSES.has(String(req.body?.status || '')) || !!req.body?.approved_by },
+  { method: 'PUT', re: /^\/documents\/[^/]+$/, label: 'PUT /api/documents/:id carrying an approved status or an approver',
+    when: (req) => APPROVED_DOC_STATUSES.has(String(req.body?.status || '')) || !!req.body?.approved_by },
+  { method: 'POST', re: /^\/documents\/[^/]+\/apply-revision$/, label: 'POST /api/documents/:id/apply-revision — records an approved revision from the signed paper' },
+  { method: 'POST', re: /^\/documents\/revisions\/items\/[^/]+\/apply$/, label: 'POST /api/documents/revisions/items/:id/apply — records an approved revision from the signed paper' },
+  { method: 'POST', re: /^\/training\/?$/, label: 'POST /api/training carrying the trainer\'s competence statement',
+    when: (req) => !!req.body?.competence_confirmed },
+  { method: 'PUT', re: /^\/training\/[^/]+$/, label: 'PUT /api/training/:id carrying the trainer\'s competence statement',
+    when: (req) => !!req.body?.competence_confirmed },
+  { method: 'POST', re: /^\/training\/bulk-complete$/, label: 'POST /api/training/bulk-complete — a group sign-off' },
+  { method: 'POST', re: /^\/training\/courses\/[^/]+\/revision$/, label: 'POST /api/training/courses/:id/revision — a person says the course is updated for a revision' },
   // Who may sign the crisis drill's Management review (D-266) is a person's decision, never a token's.
   { method: 'PUT', re: /^\/safety\/drill-signers$/, label: 'PUT /api/safety/drill-signers — who signs the crisis drill for Management' },
 ]);
@@ -90,9 +107,34 @@ export function refuseTokenApprove(req, res, route) {
   });
 }
 
-/** Global guard: refuses a token on any APPROVE_ROUTES or TOKEN_DENY match. Mounted once in server.js. */
+/**
+ * A BOT ACCOUNT NEVER APPROVES, WHATEVER DOOR IT USES (D-279). A token is
+ * refused above; this is the same refusal for a bot account signed in with a
+ * password — any account that has ever held a token, ReadyBot, the Test Runner,
+ * a "*"-named account. Its role and department do not matter.
+ */
+export function refuseBotAccountApprove(req, res, route) {
+  try {
+    logAudit(req.user || 'system', 'bot_approve_blocked', 'user', req.user?.id || null,
+      { method: req.method, path: (req.baseUrl || '') + req.path, rule: route?.label || 'inline guard', via: 'session' },
+      null, null, req.user?.name || null);
+  } catch { /* the refusal stands even if the log write fails */ }
+  return res.status(403).json({
+    error: 'bot_account_cannot_approve',
+    message: 'This is a bot account. Approving, signing, verifying or publishing needs a person signed in with their own account.',
+  });
+}
+
+/** Global guard: refuses a token on any APPROVE_ROUTES or TOKEN_DENY match, and a bot account on any APPROVE_ROUTES match. Mounted once in server.js. */
 export function tokenApproveGuard(req, res, next) {
-  if (req.auth?.kind !== 'token') return next();
+  if (req.auth?.kind !== 'token') {
+    const route = req.user ? approveRouteFor(req) : null;
+    if (route) {
+      const bot = (() => { try { return isBotAccount(getDb(), req.user); } catch { return false; } })();
+      if (bot) return refuseBotAccountApprove(req, res, route);
+    }
+    return next();
+  }
   const route = approveRouteFor(req);
   if (route) return refuseTokenApprove(req, res, route);
   const deny = tokenDenyFor(req);

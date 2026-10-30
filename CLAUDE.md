@@ -6298,6 +6298,19 @@ revoke by DELETE with a reason), `CrisisDrills.jsx`. SOP 501, SQF 2.6.4.2.
   (`updated` / `no_change`) only. **That mark is the only thing that assigns retraining for a revision**, and until it
   the matrix measures against the course's revision, not the document's. `verify:docrevisions` (47).
 
+## A bot never approves, by token or by password; the check is read-only (D-279)
+- **`tokenApproveGuard` refuses a bot ACCOUNT on every `APPROVE_ROUTES` match** (`403 bot_account_cannot_approve`),
+  not only its token. A bot = `isBotAccount()` in `server/trainees.js` (ever held a token, ReadyBot, Test Runner, `*`
+  name) — never decided by role or department. **An approval whose path does not say so goes on `APPROVE_ROUTES`
+  with a `when`** (documents filed active, competence sign-offs, bulk-complete, course revision mark, paper revisions).
+- `stripForbidden` sends every `can_approve`/`can_sign`/… flag to a token as false.
+- `botApprovalReport()` (`server/bot-approval-report.js`, `GET /api/api-tokens/approval-check`,
+  `report:bot-approvals`) lists every token and every approval on file by a bot. SELECT-only. `verify:botnoapprove` (39).
+
+## A new revision is offered the next V number (D-280)
+`nextVRevision()` counts from the highest number on the document, its signed copies and file names, skips used ones,
+and writes `V<n>`; the person types the label. New documents default to `V1`. Existing revisions are never rewritten.
+
 ## Course drafts: the Quality bot stages, two people publish (D-278)
 `course_drafts` + `course_draft_materials`, `server/course-drafts.js` (`createDraft`, `updateDraft`, `draftDiff`, `draftView`,
 `signDraft`, `isBotAccount`, `purgeIfUnreferenced`), `/api/training/drafts…`, token grant `course-drafts`, `CourseDrafts.jsx`

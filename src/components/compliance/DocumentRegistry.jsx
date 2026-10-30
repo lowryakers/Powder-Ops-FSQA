@@ -184,7 +184,7 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
     doc_number: initial?.doc_number || '',
     title: initial?.title || '',
     category: initial?.category || 'quality',
-    revision: initial?.revision || '1.0',
+    revision: initial?.revision || 'V1',
     status: initial?.status || 'draft',
     owner: initial?.owner || '',
     effective_date: initial?.effective_date || '',

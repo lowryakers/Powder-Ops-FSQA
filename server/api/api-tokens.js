@@ -6,6 +6,7 @@ import {
 } from '../api-tokens.js';
 import { APPROVE_ROUTES, APPROVE_SEGMENTS, TOKEN_DENY } from '../middleware/no-token-approve.js';
 import { WRITE_AREAS } from '../bot-api.js';
+import { botApprovalReport } from '../bot-approval-report.js';
 
 // Managing the bots' API tokens (D-161). Admin-only throughout, and only from a
 // SESSION — a token can never mint or revoke a token (requireRole passes a
@@ -33,6 +34,10 @@ router.get('/', (_req, res) => {
     approve_guard: { segments: APPROVE_SEGMENTS, routes: APPROVE_ROUTES.map(r => r.label) },
   });
 });
+
+// Has a bot ever approved anything, and what can each token approve (D-279)?
+// Read-only: writes nothing, not even an audit row.
+router.get('/approval-check', (_req, res) => res.json(botApprovalReport(getDb())));
 
 router.post('/', (req, res) => {
   const db = getDb();

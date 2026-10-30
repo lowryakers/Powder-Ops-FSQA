@@ -210,3 +210,16 @@ export function auditorDuplicateText(r, source = '') {
   out.push(...(r.would_match_now.length ? r.would_match_now.map(w => `  ${w.name} — account ${w.id}${w.already_flagged ? ' (already flagged)' : ' (NOT flagged — the pass runs once)'}`) : ['  None.']));
   return out.join('\n');
 }
+
+/**
+ * True for a bot or system account (D-279): the request came through a token,
+ * the account has ever held a token, or it is ReadyBot / the Test Runner / a
+ * "*"-named account. Decided by what the account IS, never by a name list.
+ * A bot account never approves, signs, verifies or publishes anything.
+ */
+export function isBotAccount(db, user) {
+  if (!user?.id) return false;
+  if (user.via_token) return true;
+  try { if (db.prepare('SELECT 1 FROM api_tokens WHERE user_id = ? LIMIT 1').get(user.id)) return true; } catch { /* no table */ }
+  return botAccounts(db).some(b => b.id === user.id);
+}

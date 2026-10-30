@@ -9702,3 +9702,39 @@ it; the bot cannot edit or delete live courses, records or documents. The versio
 - **Touches records** (new tables; publishing writes live courses and assigns retraining). Opened for review (D-274).
 - `verify:coursedrafts` (56, live + S3 stand-in + browser). Control: without the three `course-drafts` WRITE_AREAS entries
   the bot cannot stage anything and the run fails from its first upload.
+
+## D-279 — A bot never approves, signs, verifies or publishes, whatever door it uses (30 Oct 2026)
+ReadyDoc showed the Quality bot's token "with approve permission" on WI008. **The token could not approve** — every
+approval route is refused to a token at the door (D-161) — but the screen's `can_approve` was worked out from the
+account's department alone, and the bot's account sits in QA. Two real gaps sat behind the wrong flag: a bot ACCOUNT
+signed in with a password was not refused at all (only its token was), and several approvals did not say so in their
+path, so the token guard could not see them.
+- **The global guard now refuses a bot account on every approval route too** (`403 bot_account_cannot_approve`, audited
+  `bot_approve_blocked`). A bot account is `isBotAccount()` (`server/trainees.js`): any account that has ever held a
+  token, ReadyBot, the Test Runner, a `*` name. Its role, department and module grants do not matter.
+- **Approvals whose path does not say so are now on `APPROVE_ROUTES`**: a document filed or moved into force (status
+  active / under review, or an approver named), a paper revision applied (both doors), a training sign-off carrying the
+  competence statement (POST and PUT), a group sign-off (`bulk-complete`), and "course updated for revision".
+- **No bot is told it may approve.** `stripForbidden` turns every `can_approve` / `can_sign` / `can_verify` /
+  `can_publish` … flag sent to a token into false, and the revisions endpoint answers false for a bot account by session.
+- **The check, read-only** (`server/bot-approval-report.js`): every token with its account, scopes, grants and "can
+  approve: no", and every approval on file that names a bot account — audit entries that are approvals by a bot account
+  or through a token, document signatures, approved revisions, course-draft signatures, competence sign-offs, document
+  approvers and QMS signatures. Settings reads it at `GET /api/api-tokens/approval-check` (admin session);
+  `npm run report:bot-approvals -- <db copy>` prints it. Writes nothing, not even an audit row.
+- **The 12 live tokens are not checked from this session** — it has no production access and must not mint or change a
+  token. Run the report on the live database (or a copy) to list them and confirm no bot approval exists.
+- Touches no record: refusals only. `verify:botnoapprove` (39). Control: without the bot-account branch the bot signed
+  in with a password signs training off, marks a course updated and signs in QA Review.
+
+## D-280 — A new revision is offered the next V number, and the person types the label (30 Oct 2026)
+"Start revision" offered WI008 at V3 the number "2.0". The documents are numbered V1, V2, V3; WI008 was filed before
+revisions were controlled and carried the old default revision "1.0", so the next-number rule counted on from 1.0.
+- **`nextVRevision()` (`shared/document-revision.js`)**: one past the highest whole number on any evidence — the
+  document's own revision, a signed copy's revision or filename, the V on its source file or title — skipping any number
+  already approved, always written `V<n>`. WI008 "1.0" with a signed V3 copy → V4; "1.0" with nothing else → V2.
+- **The label is typed**, prefilled with the suggestion, beside Start revision. The server still refuses a number already
+  used (D-277).
+- **A new document with no revision typed starts at V1** (was "1.0"). **No existing data is changed** — a stored "1.0"
+  stays "1.0" until the next revision is approved under its new label.
+- `verify:docrevisions` (47 → 52).

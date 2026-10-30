@@ -28,7 +28,7 @@
 // draft built on a revision the document has since moved past is refused.
 import { v4 as uuid } from 'uuid';
 import { logAudit } from './db.js';
-import { botAccounts } from './trainees.js';
+import { isBotAccount } from './trainees.js';
 import { deleteObject } from './storage.js';
 import { isVideo } from './media.js';
 import { markCourseRevision, docRevisionFor, CourseRevisionError } from './course-revision.js';
@@ -50,13 +50,7 @@ export const canConfirmDocument = (u) => u?.role === 'admin' || dept(u) === 'doc
 export const canApproveFoodSafety = (u) => u?.role === 'admin' || (u?.role === 'supervisor' && ['qa', 'quality'].includes(dept(u)));
 const CAN_SIGN = { document: canConfirmDocument, food_safety: canApproveFoodSafety };
 
-/** A bot or system account — by what it is (holds a token, ReadyBot, the Test Runner, "*" name), never by a name list. */
-export function isBotAccount(db, user) {
-  if (!user?.id) return false;
-  if (user.via_token) return true;
-  try { if (db.prepare('SELECT 1 FROM api_tokens WHERE user_id = ? LIMIT 1').get(user.id)) return true; } catch { /* no table */ }
-  return botAccounts(db).some(b => b.id === user.id);
-}
+export { isBotAccount };
 
 const QUESTION_TYPES = ['multiple_choice', 'true_false', 'short_answer'];
 const parse = (raw, fallback) => { if (raw == null) return fallback; try { return JSON.parse(raw); } catch { return fallback; } };

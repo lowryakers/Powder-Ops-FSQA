@@ -148,7 +148,7 @@ r = await call('POST', `/training/drafts/${draft?.id}/discard`, { reason: 'bot' 
 t('…nor discard', r.status === 403 && r.json?.error === 'token_denied');
 const botSess = (await signIn('cd-bot', '*Quality Bot'))?.token;
 r = await call('POST', `/training/drafts/${draft?.id}/sign/document`, { signature_password: PW }, botSess);
-t('the bot account signed in as a session cannot sign either', r.status === 403 && /bot account/.test(r.json?.error || ''), `${r.status} ${r.json?.error}`);
+t('the bot account signed in as a session cannot sign either', r.status === 403 && /bot.account/.test(r.json?.error || ''), `${r.status} ${r.json?.error}`);
 r = await call('POST', `/training/drafts/${draft?.id}/sign/document`, { signature_password: PW }, sup);
 t('a production supervisor cannot confirm the document', r.status === 403);
 r = await call('POST', `/training/drafts/${draft?.id}/sign/document`, { signature_password: PW }, qa);
