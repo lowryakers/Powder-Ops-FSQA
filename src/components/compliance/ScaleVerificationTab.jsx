@@ -1,4 +1,5 @@
 import { useState, Fragment } from 'react';
+import PrintRecordButton from '../common/PrintRecordButton';
 import { useApiGet, apiPut } from '../../hooks/useApi';
 import { DispositionChip, DispositionForm, DispositionReadback } from '../common/ProductDisposition.jsx';
 import { useTableSort } from '../../lib/useTableSort';
@@ -280,7 +281,7 @@ export default function ScaleVerificationTab({ canDecide = false, onDispositionC
                         <div className="mt-1"><DispositionChip row={r} /></div>
                       </td>
                       <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
-                        {r.verified_by ? `${r.verified_by} · ${fmt(r.verified_at)}` : <span className="text-amber-600">Pending</span>}
+                        {r.verified_by ? <>{`${r.verified_by} · ${fmt(r.verified_at)}`} <span onClick={stopRowClick}><PrintRecordButton type="scale" id={r.id} className="ml-1" /></span></> : <span className="text-amber-600">Pending</span>}
                       </td>
                       {canVerify && (
                         <td className="px-4 py-3 text-right whitespace-nowrap" onClick={stopRowClick}>

@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { User, KeyRound, Lock } from 'lucide-react';
+import { isSharedDevice, setSharedDevice, takeIdleNotice } from '../lib/idleSignOut';
+import { IDLE_MINUTES_SHARED, IDLE_MINUTES_PERSONAL, idleText } from '../../shared/session-policy.js';
 
 export default function LoginScreen({ onLogin, onLoginWithToken }) {
   const [name, setName] = useState('');
@@ -12,6 +14,8 @@ export default function LoginScreen({ onLogin, onLoginWithToken }) {
   const [currentPin, setCurrentPin] = useState('');
   const [setupCode, setSetupCode] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [shared, setShared] = useState(isSharedDevice);
+  const [idleNotice] = useState(takeIdleNotice);
   const nameRef = useRef(null);
   const suggestionsRef = useRef(null);
   const setupRef = useRef(null);
@@ -226,9 +230,23 @@ export default function LoginScreen({ onLogin, onLoginWithToken }) {
               <input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password"
                 className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl text-base" placeholder="Your password" />
             </div>
-            <p className="text-[11px] text-gray-400 mt-1 text-center">First time here, or an admin reset your password? Leave this blank and click Sign In to create your password.</p>
+            <p className="text-[11px] text-gray-400 mt-1 text-center">First time here? Leave this blank and click Sign In to create your password. If an admin reset it, type the temporary password they gave you.</p>
           </div>
 
+          {/* Remembered on this device. A shared tablet signs itself out after
+              fifteen minutes without use, so the next person never signs as the
+              last one (D-291). */}
+          <label className="flex items-start gap-2 text-sm text-gray-700" data-shared-device>
+            <input type="checkbox" className="h-4 w-4 shrink-0 mt-0.5" checked={shared}
+              onChange={(e) => { setShared(e.target.checked); setSharedDevice(e.target.checked); }} />
+            <span>This is a shared device
+              <span className="block text-[11px] text-gray-500">
+                Signs out after {idleText(shared ? IDLE_MINUTES_SHARED : IDLE_MINUTES_PERSONAL)} without use{shared ? '' : ' (tick for a floor tablet: 15 minutes)'}.
+              </span>
+            </span>
+          </label>
+
+          {idleNotice && !error && <p className="text-sm text-amber-700 text-center" data-idle-notice>{idleNotice}</p>}
           {error && <p className="text-sm text-red-600 text-center">{error}</p>}
 
           <button type="submit" disabled={loading}

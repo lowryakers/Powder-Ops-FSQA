@@ -152,6 +152,7 @@ const RUNS = [
   ['verify-bot-no-approve.mjs', 5168, {}, false],
   ['verify-part11.mjs', 5169, {}, false],
   ['verify-guarantee.mjs', 5170, {}, true],
+  ['verify-session-security.mjs', 5171, { SIGNATURE_NAME_OPTIONAL: '0' }, true],
   ['verify-doc-revisions.mjs', 5165, { QUALITY_WEBHOOK_ENABLED: '1', QUALITY_HOOK_PORT: '5166', QUALITY_WEBHOOK_URL: 'http://127.0.0.1:5166/quality', QUALITY_WEBHOOK_KEY: 'qual-key' }, false],
   ['verify-banned-check.mjs', 5122, {}, false],
   ['verify-partner-recon.mjs', 5123, { PARTNER_PORTAL_TODAY: '2026-10-23' }, true],
@@ -238,7 +239,7 @@ for (const [entry, port, extra = {}, needsS3 = false] of SELECTED) {
   if (absent) { results.push([script, `missing ${absent}`]); continue; }
   const db = join(TMP, `verify-all-${port}.db`);
   for (const f of [db, `${db}-wal`, `${db}-shm`]) if (existsSync(f)) unlinkSync(f);
-  const env = { DB_PATH: db, DBPATH: db, PORT: String(port), NODE_ENV: 'test', APP_BASE_URL: `http://localhost:${port}`, ...extra };
+  const env = { DB_PATH: db, DBPATH: db, PORT: String(port), NODE_ENV: 'test', SIGNATURE_NAME_OPTIONAL: '1', APP_BASE_URL: `http://localhost:${port}`, ...extra };
   if (needsS3) {
     if (!s3) { s3 = spawn('node', ['scripts/s3-stand-in.mjs'], { cwd: ROOT, env: { ...process.env, PORT: String(S3_PORT) }, stdio: 'ignore' }); await wait(800); }
     Object.assign(env, { R2_ENDPOINT: `http://localhost:${S3_PORT}`, R2_ACCOUNT_ID: 'x', R2_ACCESS_KEY_ID: 'x', R2_SECRET_ACCESS_KEY: 'x', R2_BUCKET: 'test' });

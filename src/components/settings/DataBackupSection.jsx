@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useApiGet, apiFetch, apiPost } from '../../hooks/useApi';
 import CopyButton from '../common/CopyButton';
+import { formatDateTime } from '../../lib/datetime';
 
 // Full data export, plus the automatic Friday copies. Moved out of the Settings
 // mega-render unchanged when Settings became a section list.
@@ -55,6 +56,75 @@ function AutoBackupList() {
   );
 }
 
+
+// The database itself, off the server, every day (D-290): the copy that can
+// bring the application back. Its health, a run on demand, and the quarterly
+// restore test that proves the copy actually opens.
+function DatabaseBackups() {
+  const { data, refresh } = useApiGet('/compliance/db-backups');
+  const [busy, setBusy] = useState('');
+  const [msg, setMsg] = useState(null);
+  const act = async (kind) => {
+    setBusy(kind); setMsg(null);
+    try {
+      const r = await apiPost(kind === 'run' ? '/compliance/db-backups/run' : '/compliance/db-backups/restore-test', {});
+      setMsg({ ok: true, text: kind === 'run' ? `Backup stored: ${r.key}` : `Restore test passed: ${r.tables} tables, ${r.rows?.toLocaleString()} rows, integrity ${r.integrity}.` });
+    } catch (e) { setMsg({ ok: false, text: e.message }); }
+    finally { setBusy(''); refresh(); }
+  };
+  if (!data) return null;
+  const last = data.last; const rt = data.restore_test;
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3" data-db-backups>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h3 className="font-semibold text-gray-900">Daily database backup</h3>
+          <p className="text-sm text-gray-500 max-w-xl">
+            The database itself is copied off the server every night after 1 AM. {data.rules.daily} daily and {data.rules.monthly} monthly
+            copies are kept. Restore one into a scratch copy at least once a quarter to prove it opens.
+          </p>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <button type="button" onClick={() => act('run')} disabled={!!busy} data-db-backup-run
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50">{busy === 'run' ? 'Backing up…' : 'Back up now'}</button>
+          <button type="button" onClick={() => act('restore')} disabled={!!busy} data-restore-test-run
+            className="px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700 disabled:opacity-50">{busy === 'restore' ? 'Restoring…' : 'Run restore test'}</button>
+        </div>
+      </div>
+      {!data.storage_on && <p className="text-sm text-red-700" data-db-backup-nostorage>Off-server storage (R2) is not configured, so no backup can leave the server.</p>}
+      <dl className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+        <div data-db-backup-last className={data.stale ? 'text-red-700' : 'text-gray-700'}>
+          <dt className="text-xs text-gray-500">Last good backup</dt>
+          <dd>{data.last_ok ? `${formatDateTime(data.last_ok.at)} · ${Math.round((data.last_ok.size || 0) / 1048576 * 10) / 10} MB` : 'None yet'}</dd>
+          {last && !last.ok && <dd className="text-xs text-red-700">Last attempt failed: {last.error}</dd>}
+        </div>
+        <div>
+          <dt className="text-xs text-gray-500">Copies kept</dt>
+          <dd data-db-backup-kept>{data.daily} daily · {data.monthly} monthly</dd>
+        </div>
+        <div data-restore-test-last className={data.restore_due ? 'text-amber-700' : 'text-gray-700'}>
+          <dt className="text-xs text-gray-500">Last restore test</dt>
+          <dd>{rt ? `${formatDateTime(rt.at)} · ${rt.ok ? 'passed' : 'FAILED'} · ${rt.by}` : 'Never run'}</dd>
+          {rt && !rt.ok && rt.error && <dd className="text-xs text-red-700">{rt.error}</dd>}
+          {data.restore_due && <dd className="text-xs">Due — once a quarter.</dd>}
+        </div>
+      </dl>
+      {msg && <p className={`text-sm ${msg.ok ? 'text-green-700' : 'text-red-700'}`} data-db-backup-msg>{msg.text}</p>}
+      {data.list.length > 0 && (
+        <details className="text-xs">
+          <summary className="cursor-pointer text-gray-600">Stored copies ({data.list.length})</summary>
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {data.list.map(b => (
+              <a key={b.key} href={b.url || undefined} data-new-tab className="px-2 py-1 rounded border border-gray-200 text-powder-700">
+                {b.kind === 'monthly' ? 'Month ' : ''}{b.period}
+              </a>
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
 
 // A read-only report run on the live database on demand (D-216, D-217). Nothing runs until asked, and
 // nothing is written; the text is for reading here and for pasting to whoever asked.
@@ -188,6 +258,7 @@ function routingSummary(r) {
 export default function DataBackupSection() {
   return (
     <div className="space-y-4">
+    <DatabaseBackups />
     <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>

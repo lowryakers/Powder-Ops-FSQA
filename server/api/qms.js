@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { plantDateTime } from '../plant-clock.js';
+import { signatureMeaning } from '../../shared/signature-meaning.js';
 import { v4 as uuid } from 'uuid';
 import crypto from 'crypto';
 import PDFDocument from 'pdfkit';
@@ -1565,11 +1567,13 @@ router.get('/:type/:id/pdf', (req, res) => {
     if (rec.paper_record) {
       pdf.font(UF.italic).text('Logged on paper — signatures on file on the original form.').font(UF.regular).moveDown(0.2);
     }
-    const sigDate = (s) => (s?.signed_at ? new Date(s.signed_at).toLocaleString() : '__________');
+    const sigDate = (s) => (s?.signed_at ? plantDateTime(s.signed_at) : '__________');
     for (const a of cfg.approvals) {
       const s = rec.approvals[a.key];
       pdf.font(UF.bold).text(`${a.label}${a.required ? ' *' : ''}: `, { continued: true })
         .font(UF.regular).text(`${s?.name || '__________________'}     Date: ${sigDate(s)}`);
+      // What the signature means, in words (D-293, 21 CFR 11.50).
+      if (s?.name) pdf.fontSize(8).text(`   Meaning: ${signatureMeaning('qms_approval', a.label)}`).fontSize(9);
       if (s?.attestation) {
         pdf.fontSize(8).font(UF.italic).text(`   "${s.attestation}"`).font(UF.regular).fontSize(9);
       }

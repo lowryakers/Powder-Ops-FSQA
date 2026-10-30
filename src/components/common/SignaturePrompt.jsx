@@ -18,15 +18,17 @@ import { SIGNATURE_EVENT } from '../../lib/signature';
 export default function SignaturePrompt() {
   const [req, setReq] = useState(null);
   const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
   const inputRef = useRef(null);
+  const nameRef = useRef(null);
 
   useEffect(() => {
-    const onAsk = (e) => { setPassword(''); setReq(e.detail); };
+    const onAsk = (e) => { setPassword(''); setName(''); setReq(e.detail); };
     window.addEventListener(SIGNATURE_EVENT, onAsk);
     return () => window.removeEventListener(SIGNATURE_EVENT, onAsk);
   }, []);
 
-  useEffect(() => { if (req) setTimeout(() => inputRef.current?.focus(), 30); }, [req]);
+  useEffect(() => { if (req) setTimeout(() => (req.needName ? nameRef : inputRef).current?.focus(), 30); }, [req]);
 
   if (!req) return null;
 
@@ -34,6 +36,7 @@ export default function SignaturePrompt() {
     const { resolve } = req;
     setReq(null);
     setPassword('');
+    setName('');
     resolve(value);
   };
 
@@ -44,7 +47,7 @@ export default function SignaturePrompt() {
     <div className="fixed inset-0 bg-black/40 z-[120] flex items-center justify-center p-4" data-signature-prompt
       onClick={() => finish(null)}>
       <form onClick={(e) => e.stopPropagation()}
-        onSubmit={(e) => { e.preventDefault(); if (password) finish(password); }}
+        onSubmit={(e) => { e.preventDefault(); if (password && (!req.needName || name.trim())) finish({ password, name: name.trim() }); }}
         className="bg-white rounded-xl shadow-xl w-full max-w-sm p-5 space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -60,9 +63,19 @@ export default function SignaturePrompt() {
           </button>
         </div>
 
+        {req.needName && (
+          <label className="block">
+            <span className="text-xs font-medium text-gray-600">Your sign-in name</span>
+            <input ref={nameRef} type="text" value={name} autoComplete="username" data-signature-name
+              onChange={(e) => setName(e.target.value)}
+              className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+            <span className="block text-[11px] text-gray-500 mt-1">Your first signature since you signed in needs your name as well as your password.</span>
+          </label>
+        )}
+
         <label className="block">
           <span className="text-xs font-medium text-gray-600">Your password</span>
-          <input ref={inputRef} type="password" value={password} autoComplete="current-password"
+          <input ref={inputRef} type="password" value={password} data-signature-password autoComplete="current-password"
             onChange={(e) => setPassword(e.target.value)}
             className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
         </label>
@@ -77,7 +90,7 @@ export default function SignaturePrompt() {
         </p>
 
         <div className="flex gap-2">
-          <button type="submit" disabled={!password}
+          <button type="submit" disabled={!password || (req.needName && !name.trim())} data-signature-submit
             className="px-4 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700 disabled:opacity-50">
             Sign
           </button>

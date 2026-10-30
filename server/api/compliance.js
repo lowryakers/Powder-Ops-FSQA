@@ -1,4 +1,6 @@
 import { openGuaranteeGaps } from '../supplier-guarantee.js';
+import * as backupModule from '../db-backup.js';
+import { storageEnabled as storageOn } from '../storage.js';
 import { Router } from 'express';
 import { canReviewCulture } from '../culture.js';
 import { openSuggestions } from './office.js';
@@ -366,6 +368,29 @@ router.post('/edit-failed-training/restore', requireRole('admin'), (req, res) =>
   const r = restoreEditFailed(getDb(), req.body?.ids, { actor: req.user, reason: req.body?.reason });
   if (r.error) return res.status(400).json({ error: r.error });
   res.json(r);
+});
+
+// The daily database backup (D-290): its health, a run on demand, and the
+// restore test. Admin only — the copies hold every record in the plant.
+router.get('/db-backups', requireRole('admin'), async (req, res) => {
+  const { storageEnabled, presignGet } = await import('../storage.js');
+  const { backupHealth } = await import('../db-backup.js');
+  const health = backupHealth(getDb(), { storageOn: storageEnabled() });
+  const list = [];
+  for (const b of health.list) list.push({ ...b, url: await presignGet(b.key, b.key.split('/').pop()).catch(() => null) });
+  res.json({ ...health, list });
+});
+router.post('/db-backups/run', requireRole('admin'), async (req, res) => {
+  const storage = await import('../storage.js');
+  const { runDbBackup } = await import('../db-backup.js');
+  const r = await runDbBackup(getDb(), storage, { actor: req.user });
+  res.status(r.ok ? 200 : 503).json(r);
+});
+router.post('/db-backups/restore-test', requireRole('admin'), async (req, res) => {
+  const storage = await import('../storage.js');
+  const { restoreTest } = await import('../db-backup.js');
+  const r = await restoreTest(getDb(), storage, { actor: req.user });
+  res.status(r.ok ? 200 : 409).json(r);
 });
 
 // Stored automatic backups (weekly Friday job writes them to R2 under backups/).
@@ -871,6 +896,16 @@ router.get('/notifications', (req, res) => {
           if (sugg.length) items.push({ id: 'supply-suggestions', tab: 'supply-orders', severity: 'info', count: sugg.length,
             label: `${sugg.length} item${sugg.length > 1 ? 's' : ''} reported used up — add to orders or dismiss` });
         } catch { /* table optional */ }
+      }
+      if (req.user.role === 'admin') {
+        try {
+          const { backupHealth } = backupModule;
+          const h = backupHealth(db, { storageOn: storageOn() });
+          if (h.stale) items.push({ id: 'db-backup', tab: 'settings', severity: 'warning', count: 1,
+            label: h.last_ok ? `No database backup has left the server in ${Math.round(h.hours_since_ok)} hours` : 'No database backup has been stored off the server yet' });
+          else if (h.restore_due) items.push({ id: 'restore-test', tab: 'settings', severity: 'info', count: 1,
+            label: 'A backup restore test is due (once a quarter) — Settings → Data backup' });
+        } catch { /* settings optional */ }
       }
       if (req.user.role === 'admin') {
         const { counts } = payActions(db);

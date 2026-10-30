@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { signatureMeaning } from '../../shared/signature-meaning.js';
 import { v4 as uuid } from 'uuid';
 import multer from 'multer';
 import path from 'path';
@@ -16,7 +17,7 @@ import { aiEnabled, readLabReport } from '../ai.js';
 import { composeSubmission, PROCESSING, processingLabel, PLANT_CONTACT } from '../coa-submission.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
 import { allocateCertNumber, snapshotFor, signRefusals, canonicalJson, sha256, isSigned, LOCKED_FIELDS, LOCKED_MESSAGE } from '../coa-certificate.js';
-import { plantDateOf } from '../plant-clock.js';
+import { plantDateOf, plantDateTime } from '../plant-clock.js';
 import { isQaReviewer } from '../qa-signing.js';
 import { labTestFor } from '../lab-test-items.js';
 import { lateLabResults } from '../coa-late-results.js';
@@ -2178,7 +2179,9 @@ router.get('/requests/:id/pdf', (req, res) => {
   doc.font('Helvetica-Bold').fontSize(8.5).fillColor(SLATE)
     .text(signer ? `${signer} — Quality` : 'Quality', lm, y + 27);
   doc.font('Helvetica').fontSize(8).fillColor('#666')
-    .text(r.qa_signed_at ? `Digitally signed ${fmtDate(r.qa_signed_at)}` : 'Powder Ops Quality Assurance', lm, y + 38);
+    .text(r.qa_signed_at ? `Digitally signed ${plantDateTime(r.qa_signed_at)}` : 'Powder Ops Quality Assurance', lm, y + 38);
+  // What the signature means, in words (D-293, 21 CFR 11.50).
+  if (r.qa_signed_at) doc.fontSize(7.5).text(`Meaning: ${signatureMeaning('coa_certify')}`, lm, y + 49, { width: sigW + 120 });
 
   doc.moveTo(lm + pageW - sigW, y + 22).lineTo(lm + pageW, y + 22).lineWidth(0.8).strokeColor('#999').stroke();
   doc.font('Helvetica-Bold').fontSize(8.5).fillColor(SLATE).text('Date of Issuance', lm + pageW - sigW, y + 27);

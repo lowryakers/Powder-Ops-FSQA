@@ -11,6 +11,7 @@
 import { Router } from 'express';
 import { getDb } from '../db.js';
 import { RECORD_TYPES, INTERFACE, canReadType, recordType, retrieveRecords } from '../record-interface.js';
+import { renderSignedRecord } from '../signed-record-pdf.js';
 
 const router = Router();
 
@@ -26,6 +27,16 @@ router.get('/', (req, res) => {
     return res.status(400).json({ error: `Unknown record type. Known: ${RECORD_TYPES.map(t => t.type).join(', ')}.` });
   }
   res.json(retrieveRecords(getDb(), req.user, req.query));
+});
+
+// One record printed, every signature with its meaning (D-293). The same
+// read rule as the description below.
+router.get('/:type/:id/pdf', (req, res) => {
+  const t = recordType(req.params.type);
+  if (!t || !canReadType(req.user, t)) return res.status(404).json({ error: 'Not found' });
+  const row = t.get(getDb(), req.params.id);
+  if (!row || !t.canRead(req.user, row)) return res.status(404).json({ error: 'Not found' });
+  renderSignedRecord(res, t.describe(row), { printedBy: req.user?.name });
 });
 
 // One record, described. 404 for a record the caller may not read — a 403
