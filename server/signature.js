@@ -76,7 +76,7 @@ export function requireSignature(req, { action = 'signature' } = {}) {
   if (!user?.id) return { status: 401, error: 'Sign in again to sign this record.' };
 
   const db = getDb();
-  const row = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(user.id);
+  const row = db.prepare('SELECT password_hash, must_change_password, name, username FROM users WHERE id = ?').get(user.id);
   // Everybody who can hold a session has a password — the PIN bridge sets one
   // before a session is ever issued — so this is a broken account, not a
   // routine state, and it must not silently wave the signature through.
@@ -84,12 +84,26 @@ export function requireSignature(req, { action = 'signature' } = {}) {
     return { status: 403, error: 'This account has no password set, so it cannot sign. Set one under your account first.' };
   }
 
+  // A temporary password from an admin reset cannot sign (D-292): the admin
+  // knows it. No signature_required flag, so the screen shows this sentence
+  // rather than asking for the password again.
+  if (row.must_change_password) {
+    return { status: 403, error: 'You signed in with a temporary password, and it cannot sign. Choose your own password first.', temporary_password: true };
+  }
+
   const tries = recentFailures(user.id).length;
   if (tries >= MAX_FAILURES) {
     return { status: 429, error: 'Too many incorrect passwords. Wait a few minutes and try again.' };
   }
 
+  // THE FIRST SIGNATURE OF A SESSION TAKES BOTH COMPONENTS (D-292, 21 CFR
+  // 11.200(a)(1)(i)): the sign-in name AND the password. Later signatures in
+  // the same session take the password alone. A token session never signs.
+  const firstOfSession = needsNameNow(user);
   const password = req.body?.signature_password;
+  if (firstOfSession && (!password || !req.body?.signature_name)) {
+    return { status: 403, error: 'This is your first signature since you signed in. Type your sign-in name and your password.', signature_required: true, signature_name_required: true };
+  }
   if (!password) {
     // 403, NOT 401, and this is load-bearing: the client clears the token and
     // logs out on any 401, so asking for a password that way would sign QA out
@@ -110,8 +124,41 @@ export function requireSignature(req, { action = 'signature' } = {}) {
     };
   }
 
+  if (firstOfSession && !nameMatches(req.body.signature_name, row)) {
+    const n = noteSignatureFailure(user.id);
+    logAudit(user, 'signature_failed', 'user', user.id, { action, attempt: n, reason: 'name' });
+    return { status: 403, error: 'That name is not the one you signed in with.', signature_required: true, signature_name_required: true };
+  }
+
   clearSignatureFailures(user.id);
+  if (firstOfSession && user.session?.id) {
+    const at = new Date().toISOString();
+    db.prepare('UPDATE sessions SET first_signed_at = ? WHERE id = ? AND first_signed_at IS NULL').run(at, user.session.id);
+    user.session.first_signed_at = at; // a batch in this request is one act
+  }
   return null;
+}
+
+const fold = (v) => String(v ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+/** The typed name is the account's sign-in name or its full name. */
+export function nameMatches(typed, row) {
+  const t = fold(typed);
+  return !!t && (t === fold(row?.username) || t === fold(row?.name));
+}
+
+/**
+ * Whether this signature must also carry the name. Only a session that has
+ * not signed yet. SIGNATURE_NAME_OPTIONAL is a TEST-ONLY switch, honoured only
+ * under NODE_ENV=test, so the older verifies that sign with a password alone
+ * keep testing what they test; verify:sessionsec runs with it
+ * off. The installation qualification confirms NODE_ENV is production.
+ */
+function needsNameNow(user) {
+  if (!user?.session) return false;
+  if (user.session.first_signed_at) return false;
+  if (process.env.NODE_ENV === 'test' && process.env.SIGNATURE_NAME_OPTIONAL === '1') return false;
+  return true;
 }
 
 /**

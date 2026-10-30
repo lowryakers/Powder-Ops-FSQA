@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, createContext, useContext } from 'react';
 import { setViewAsWriteGuard } from './useApi';
+import { activityHeaders, isSharedDevice, noteIdleSignOut, startIdleWatch } from '../lib/idleSignOut';
 
 const AuthContext = createContext(null);
 
@@ -15,7 +16,12 @@ export function AuthProvider({ children }) {
     const token = localStorage.getItem('auth_token');
     if (!token) { setLoading(false); return; }
     fetch('/api/users/me', { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => (r.ok ? r.json() : Promise.reject(new Error('rejected'))))
+      .then(async r => {
+        if (r.ok) return r.json();
+        const body = await r.json().catch(() => ({}));
+        if (body.idle_timeout) noteIdleSignOut(body.idle_minutes);
+        throw new Error('rejected');
+      })
       .then(u => {
         setUser(u);
         // Who you are, kept on the device, so opening the app in the warehouse
@@ -55,7 +61,8 @@ export function AuthProvider({ children }) {
     const res = await fetch('/api/users/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: nameOrEmail, password }),
+      // Whether this device is shared decides how long it may sit unused (D-291).
+      body: JSON.stringify({ name: nameOrEmail, password, shared_device: isSharedDevice() }),
     });
     const data = await res.json();
     if (data.needs_password_setup) throw new Error('PASSWORD_SETUP_REQUIRED');
@@ -75,6 +82,19 @@ export function AuthProvider({ children }) {
     setViewAsWriteGuard(null);
     setUser(null);
   }, []);
+
+  // Idle sign-out (D-291): the same limit the server enforces.
+  useEffect(() => {
+    if (!user?.idle_minutes) return undefined;
+    return startIdleWatch({
+      minutes: user.idle_minutes,
+      onIdle: () => { logout(); },
+      ping: () => {
+        const token = localStorage.getItem('auth_token');
+        if (token) fetch('/api/users/me', { headers: { Authorization: `Bearer ${token}`, ...activityHeaders() } }).catch(() => {});
+      },
+    });
+  }, [user?.idle_minutes, user?.id, logout]);
 
   const startViewAs = useCallback((target) => {
     if (!target || user?.role !== 'admin') return;

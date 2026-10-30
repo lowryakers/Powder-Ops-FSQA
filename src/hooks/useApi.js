@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { activityHeaders, noteIdleSignOut } from '../lib/idleSignOut';
 import { notifyDataChanged } from '../lib/dataChanged';
 import {
   isNetworkError, mayQueue, queueWrite, flushQueue, cacheRead, cachedRead,
@@ -41,6 +42,7 @@ async function apiFetch(path, options = {}) {
     'Content-Type': 'application/json',
     ...(token && { Authorization: `Bearer ${token}` }),
     ...(viewAsUser && { 'X-View-As': viewAsUser.id }),
+    ...activityHeaders(),
     ...options.headers,
   };
 
@@ -78,6 +80,8 @@ async function apiFetch(path, options = {}) {
 
   if (!res.ok) {
     if (res.status === 401) {
+      const body401 = await res.clone().json().catch(() => ({}));
+      if (body401.idle_timeout) noteIdleSignOut(body401.idle_minutes);
       localStorage.removeItem('auth_token');
       window.dispatchEvent(new CustomEvent('app-logout'));
     }

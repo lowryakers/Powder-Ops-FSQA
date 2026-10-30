@@ -30,7 +30,8 @@ Found by the assessment before testing. Each needs an owner and a date, and the 
 **Approved 30 Oct 2026 for the release after this one:** O-1 (daily full backup off the server, 30 daily + 12 monthly,
 quarterly restore test), O-3 (idle sign-out: 15 minutes on shared floor devices, 8 hours otherwise), O-7 (meaning
 printed on QA Review, QMS, COA and calibration printouts), O-8 (name and password on the first signature of a session),
-O-9 (a reset gives a temporary password that cannot sign). Each is a revalidation change (plan §9): its OQ tests are
+O-9 (a reset gives a temporary password that cannot sign). **All five are built (D-290 – D-293) and checked by
+`verify:sessionsec`; each closes when OQ-16 – OQ-19 pass on the release that carries them.** Each is a revalidation change (plan §9): its OQ tests are
 re-run and recorded before it is used.
 
 | # | Clause | Item | Proposed action | Owner | Due | Accepted (Quality initials) |

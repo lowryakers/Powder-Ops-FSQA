@@ -2,6 +2,7 @@
 // An hourly tick runs each job at most once per due period, tracked in
 // app_settings so restarts never double-run or skip.
 //
+//  - Daily from 1 AM: the SQLite database itself → R2, 30 daily + 12 monthly (D-290).
 //  - Friday: full data backup ZIP → R2 (backups/...), keep the last 8,
 //    announce in #document_control.
 //  - Monday: expiry digest → #quality (certifications expiring ≤30 days or
@@ -51,6 +52,15 @@ export async function runDue(db, deps, now = new Date()) {
   // month-end reminders and the holiday notice itself still run.
   const closedToday = !!holidayOn(db, ymdLocal(wall));
   const openWeekday = day >= 1 && day <= 5 && !closedToday;
+
+  // Daily full database backup (D-290): every day, holidays included, from
+  // 1 AM plant time. Its own status is recorded whether it works or not; the
+  // bell tells admins when no backup has succeeded in 36 hours.
+  if (deps.runDbBackup && wall.getHours() >= deps.BACKUP_HOUR && getFlag(db, 'last_db_backup_day') !== ymdLocal(wall)) {
+    setFlag(db, 'last_db_backup_day', ymdLocal(wall));
+    try { await deps.runDbBackup(db, { storageEnabled, putObject, deleteObject }, { now, ymd: ymdLocal(wall) }); }
+    catch (e) { console.warn('[jobs] daily database backup failed:', e.message); }
+  }
 
   // Weekly backup: due Friday; a boot on Sat/Sun still catches the missed run.
   if (day >= 5 || day === 0) {

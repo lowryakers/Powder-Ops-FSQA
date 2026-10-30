@@ -9881,3 +9881,51 @@ date, required for packaging / food-contact suppliers, gaps on the supplier list
   (approvers) and Purchasing. Nothing is gated: no receipt or approval is refused for a missing letter (the receiving
   CoC is D-275's separate rule).
 - `verify:guarantee` (30, live + browser at 1280 and 390; the control without the renewal-date rule fails 4).
+
+## D-290 — The database is copied off the server every day, and a restore test proves the copy opens (30 Oct 2026)
+**Decided by Lowry** (validation O-1). The weekly Friday export is a ZIP of CSVs: readable, but it cannot bring the
+application back. `server/db-backup.js` copies the live SQLite database every night from 1 AM plant time with
+SQLite's online backup, runs `quick_check` on the copy, and stores it in R2 at `backups/db/daily/` with its SHA-256;
+the first copy of each month also goes to `backups/db/monthly/`. The COA lab-report folder is zipped beside it.
+- **30 daily + 12 monthly**, pruned from the list the module keeps in `app_settings.db_backups` (`planRetention`, pure).
+- **Restore test** (Settings → Data backup → Run restore test, admin): downloads the newest daily copy into a scratch
+  file, checks its fingerprint, runs the full `integrity_check`, and compares each table's rows with the live
+  database. Due once a quarter. Nothing is restored over the live database.
+- **The bell tells an admin** when no backup has succeeded in 36 hours, or when a restore test is due. No storage
+  configured is reported as a failure, not as nothing to do.
+- Both acts are audited (`backup`, `restore_test`). Nothing here writes to a record table.
+
+## D-291 — Idle sign-out: 15 minutes on a shared device, 8 hours otherwise (30 Oct 2026)
+**Decided by Lowry** (O-3). The sign-in screen has "This is a shared device", remembered on the device; the session
+carries `shared_device` and `last_active_at`. `shared/session-policy.js` holds the two limits.
+- **Only a person's input moves the clock.** The browser marks a request with `X-User-Activity: 1` when there was
+  input in the last minute, and pings every two minutes while somebody reads; a badge refreshing on an unattended
+  tablet never keeps it signed in.
+- The server is the authority: a session past its limit is deleted on its next request (401 `idle_timeout`,
+  audited `logout` with reason `idle`). The screen runs the same clock and returns to sign-in, saying why.
+- The 30-day absolute session limit is unchanged.
+
+## D-292 — A reset gives a temporary password that cannot sign; a session's first signature asks for the name (30 Oct 2026)
+**Decided by Lowry** (O-8, O-9).
+- **Reset:** the admin is shown a 12-character temporary password once. It opens only the change-password screen
+  (`users.must_change_password`, the same allow list as the yearly expiry), cannot sign (`signature.js` refuses it),
+  expires in 3 days, and the reset signs the person out everywhere. It cannot be kept as the new password. Audited
+  as `password_reset` / `temporary_password`; the password is never stored in clear or logged. This replaces the
+  setup code a reset used to issue (setup codes for new accounts are unchanged).
+- **First signature:** `requireSignature` asks for `signature_name` (the sign-in name or full name, any case) with the
+  password while `sessions.first_signed_at` is empty, then stamps it; later signatures in that session take the
+  password alone. A wrong name counts as a failed attempt. 21 CFR 11.200(a)(1)(i).
+- **`SIGNATURE_NAME_OPTIONAL=1` is a test-only switch**, honoured only under `NODE_ENV=test`, so the 45 older verifies
+  that sign with a password alone keep testing what they test. `verify:sessionsec` runs with it off; IQ-09 confirms
+  production has neither `NODE_ENV=test` nor the switch.
+
+## D-293 — Printed signatures carry their meaning in words (30 Oct 2026)
+**Decided by Lowry** (O-7). `shared/signature-meaning.js` is the one list: QA verification, QA sign-off, the daily
+scale check, COA certification, and a QMS approval ("Approved as <role>"). `server/signed-record-pdf.js` prints any
+record on the record interface (sanitation and QA inspections, scale checks, every QMS form — what QA Review signs)
+with each signature's name, plant time and meaning: `GET /api/records/:type/:id/pdf`, the same read rule as the
+record, and a Print button on the sanitation record and the scale-check row. The QMS PDF and the COA certificate
+now print the meaning too, and their times in plant time.
+- **Not covered:** production entries (not on the record interface yet) and `calibration_records`, which carry no
+  signature. Fingerprints on these records (the rest of O-7) are not done.
+- `verify:sessionsec` (59, live + S3 stand-in + browser) covers D-290 – D-293.

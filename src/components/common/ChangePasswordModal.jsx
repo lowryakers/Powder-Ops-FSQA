@@ -8,7 +8,7 @@ import { KeyRound } from 'lucide-react';
 // the account menu inside Messages — which is the ONLY screen a client account
 // ever sees, so a password control that exists only beside the module list is
 // a control they cannot reach.
-export default function ChangePasswordModal({ onClose, forced = false }) {
+export default function ChangePasswordModal({ onClose, forced = false, temporary = false }) {
   const [cur, setCur] = useState('');
   const [nw, setNw] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -44,7 +44,9 @@ export default function ChangePasswordModal({ onClose, forced = false }) {
         </div>
         {forced && (
           <p className="text-[12px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg p-2.5 mt-2">
-            Passwords are changed at least once a year. Set a new one to carry on — you'll need your current password.
+            {temporary
+              ? 'You signed in with a temporary password from an admin. Choose your own now — type the temporary one as your current password. It cannot sign anything.'
+              : "Passwords are changed at least once a year. Set a new one to carry on — you'll need your current password."}
           </p>
         )}
         {done ? (

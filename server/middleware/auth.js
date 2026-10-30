@@ -7,9 +7,12 @@ import {
 } from '../api-tokens.js';
 import { approveRouteFor, refuseTokenApprove, tokenDenyFor, refuseTokenDenied } from './no-token-approve.js';
 import { stripForbidden } from '../bot-api.js';
+import { ACTIVITY_HEADER, idleMinutes, idleText } from '../../shared/session-policy.js';
 
 const SESSION_QUERY = `
-  SELECT u.id, u.name, u.role, u.department, u.module_access, u.is_active, u.is_external, u.password_changed_at
+  SELECT u.id, u.name, u.role, u.department, u.module_access, u.is_active, u.is_external, u.password_changed_at,
+         u.must_change_password,
+         s.id AS session_id, s.shared_device, s.last_active_at, s.created_at AS session_created_at, s.first_signed_at
   FROM sessions s
   JOIN users u ON s.user_id = u.id
   WHERE s.token = ? AND datetime(s.expires_at) > datetime('now') AND u.is_active = 1
@@ -203,7 +206,45 @@ function lookupSession(token) {
     // reaches) — and because the guard above reads it.
     is_external: !!row.is_external,
     password_changed_at: row.password_changed_at,
+    must_change_password: !!row.must_change_password,
+    // The session itself (D-291, D-292): which device kind it is, when a person
+    // last used it, and whether it has signed anything yet.
+    session: {
+      id: row.session_id,
+      shared_device: !!row.shared_device,
+      last_active_at: row.last_active_at || row.session_created_at,
+      first_signed_at: row.first_signed_at || null,
+    },
   };
+}
+
+const asInstant = (v) => {
+  if (!v) return null;
+  const t = Date.parse(/[zZ]|[+-]\d\d:?\d\d$/.test(v) ? v : `${String(v).replace(' ', 'T')}Z`);
+  return Number.isNaN(t) ? null : t;
+};
+
+/**
+ * Idle sign-out (D-291). Returns true when the session sat unused past its
+ * limit — it is then deleted and the caller answers 401. A request carrying
+ * ACTIVITY_HEADER (a person touched the screen in the last minute) moves the
+ * clock, written at most every 30 seconds.
+ */
+function idleExpired(req, user) {
+  const s = user.session;
+  const last = asInstant(s.last_active_at);
+  const now = Date.now();
+  const limit = idleMinutes(s.shared_device) * 60 * 1000;
+  const db = getDb();
+  if (last != null && now - last > limit) {
+    db.prepare('DELETE FROM sessions WHERE id = ?').run(s.id);
+    logAudit(user, 'logout', 'user', user.id, { reason: 'idle', idle_minutes: idleMinutes(s.shared_device), shared_device: s.shared_device }, null, null, user.name);
+    return true;
+  }
+  if (req.headers[ACTIVITY_HEADER.toLowerCase()] === '1' && (last == null || now - last > 30 * 1000)) {
+    db.prepare('UPDATE sessions SET last_active_at = ? WHERE id = ?').run(new Date(now).toISOString(), s.id);
+  }
+  return false;
 }
 
 export function authenticate(req, res, next) {
@@ -223,6 +264,21 @@ export function authenticate(req, res, next) {
 
   if (!user.is_active) {
     return res.status(403).json({ error: 'Account deactivated' });
+  }
+
+  if (idleExpired(req, user)) {
+    const mins = idleMinutes(user.session.shared_device);
+    return res.status(401).json({ error: `Signed out after ${idleText(mins)} without use. Sign in again.`, idle_timeout: true, idle_minutes: mins });
+  }
+
+  // A temporary password from an admin reset (D-292) opens one door: choosing
+  // a new password. The same allow list as the yearly expiry.
+  if (user.must_change_password
+      && !PASSWORD_EXPIRY_ALLOWED.some(r => r.method === req.method && r.path === req.path)) {
+    return res.status(403).json({
+      error: 'You signed in with a temporary password. Choose your own password before you continue.',
+      password_expired: true, temporary_password: true,
+    });
   }
 
   if (passwordExpired(user.password_changed_at)

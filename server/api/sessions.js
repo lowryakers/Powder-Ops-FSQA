@@ -8,6 +8,7 @@
 import crypto from 'crypto';
 import { v4 as uuid } from 'uuid';
 import { recordRevokedSessions } from '../user-activity.js';
+import { idleMinutes } from '../../shared/session-policy.js';
 import { passwordDaysLeft, passwordExpired } from '../password-policy.js';
 import { setFileCookie } from '../middleware/auth.js';
 import { disconnectUser } from '../realtime.js';
@@ -23,7 +24,7 @@ const SESSION_DAYS = 30;
 // needs it: a one-day pass that minted a thirty-day session made the `days`
 // on the pass decorative past the first redeem, and nothing later reconciled
 // the two. A session can never outlive the credential that opened it.
-export function issueSession(db, user, res = null, { notAfter = null } = {}) {
+export function issueSession(db, user, res = null, { notAfter = null, sharedDevice = false } = {}) {
   const token = crypto.randomBytes(32).toString('hex');
   const expires = new Date();
   expires.setDate(expires.getDate() + SESSION_DAYS);
@@ -33,8 +34,8 @@ export function issueSession(db, user, res = null, { notAfter = null } = {}) {
   const req = res?.req || null;
   const ip = req ? String(req.headers?.['x-forwarded-for'] || req.ip || '').split(',')[0].trim().slice(0, 64) || null : null;
   const ua = req ? String(req.headers?.['user-agent'] || '').slice(0, 300) || null : null;
-  db.prepare('INSERT INTO sessions (id, user_id, token, expires_at, ip, user_agent) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(uuid(), user.id, token, expires.toISOString(), ip, ua);
+  db.prepare('INSERT INTO sessions (id, user_id, token, expires_at, ip, user_agent, shared_device, last_active_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(uuid(), user.id, token, expires.toISOString(), ip, ua, sharedDevice ? 1 : 0, new Date().toISOString());
   setFileCookie(res, token, Math.max(1, Math.ceil((expires - Date.now()) / 86400000)));
 
   const moduleAccess = user.module_access ? JSON.parse(user.module_access) : null;
@@ -49,6 +50,9 @@ export function issueSession(db, user, res = null, { notAfter = null } = {}) {
       username: user.username || user.name,
       role: user.role,
       department: user.department || 'warehouse',
+      // How long this session may sit unused (D-291) — the screen runs the same clock.
+      shared_device: !!sharedDevice,
+      idle_minutes: idleMinutes(sharedDevice),
       // WHETHER THIS IS A CLIENT has to be on the FIRST user object the shell
       // sees, not only on /users/me afterwards (D-124). The shell decides the
       // guest layout and the default Operator View from it; without the field
@@ -60,7 +64,8 @@ export function issueSession(db, user, res = null, { notAfter = null } = {}) {
       home_workspace: user.home_workspace || 'fsqa',
       quick_tabs: quickTabs,
       password_days_left: passwordDaysLeft(user.password_changed_at),
-      password_expired: passwordExpired(user.password_changed_at),
+      password_expired: passwordExpired(user.password_changed_at) || !!user.must_change_password,
+      temporary_password: !!user.must_change_password,
     },
   };
 }

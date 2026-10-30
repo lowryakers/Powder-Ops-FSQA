@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
-import { getDb, logAudit, newSetupCode } from '../db.js';
+import { getDb, logAudit } from '../db.js';
 import crypto from 'crypto';
 import { requireRole, clearFileCookie } from '../middleware/auth.js';
 import { passwordDaysLeft, passwordExpired } from '../password-policy.js';
 import { isTestRunner } from '../test-runner.js';
 import { issueSession, revokeSessions } from './sessions.js';
+import { idleMinutes } from '../../shared/session-policy.js';
 import { OPT_IN_SET } from '../../shared/opt-in-modules.js';
 import { accessReview, dismissReview } from '../access-review.js';
 import { uniqueUsername, validateUsername, deriveUsername } from '../usernames.js';
@@ -119,7 +120,7 @@ router.get('/me', (req, res) => {
   const row = getDb().prepare('SELECT home_workspace, quick_tabs, username, password_changed_at, external_org FROM users WHERE id = ?').get(req.user.id) || {};
   let quickTabs;
   try { quickTabs = row.quick_tabs ? JSON.parse(row.quick_tabs) : null; } catch { quickTabs = null; }
-  res.json({ id: req.user.id, name: req.user.name, username: row.username || req.user.name, role: req.user.role, department: req.user.department, is_external: !!req.user.is_external, external_org: row.external_org || null, module_access: req.user.module_access, home_workspace: row.home_workspace || 'fsqa', quick_tabs: quickTabs, password_days_left: passwordDaysLeft(row.password_changed_at), password_expired: passwordExpired(row.password_changed_at) });
+  res.json({ id: req.user.id, name: req.user.name, username: row.username || req.user.name, role: req.user.role, department: req.user.department, is_external: !!req.user.is_external, external_org: row.external_org || null, module_access: req.user.module_access, home_workspace: row.home_workspace || 'fsqa', quick_tabs: quickTabs, password_days_left: passwordDaysLeft(row.password_changed_at), password_expired: passwordExpired(row.password_changed_at) || !!req.user.must_change_password, temporary_password: !!req.user.must_change_password, shared_device: !!req.user.session?.shared_device, idle_minutes: idleMinutes(!!req.user.session?.shared_device) });
 });
 
 // The caller's drawn signature — fetched only when a signing surface needs it,
@@ -179,7 +180,9 @@ router.post('/me/password', (req, res) => {
   const me = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.user.id);
   if (!me?.password_hash) return res.status(400).json({ error: 'No password set yet. Sign out and set one from the login screen.' });
   if (!verifyPassword(String(current_password || ''), me.password_hash)) return res.status(401).json({ error: 'Your current password is incorrect.' });
-  db.prepare("UPDATE users SET password_hash = ?, password_changed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(hashPassword(new_password), req.user.id);
+  if (String(new_password) === String(current_password || '')) return res.status(400).json({ error: 'Choose a new password — not the one you signed in with.' });
+  db.prepare(`UPDATE users SET password_hash = ?, password_changed_at = datetime('now'), must_change_password = 0,
+              temp_password_expires_at = NULL, updated_at = datetime('now') WHERE id = ?`).run(hashPassword(new_password), req.user.id);
   // Every OTHER device is signed out. Somebody changes a password because they
   // think it is known; a change that leaves the old sessions working has not
   // closed anything. The session doing the changing stays — signing the person
@@ -545,6 +548,15 @@ const failedLogins = new Map(); // name(lower) -> { count, lockedUntil }
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_MS = 15 * 60 * 1000;
 const MIN_PASSWORD = 8;
+const TEMP_PASSWORD_DAYS = 3;
+// Twelve characters from an alphabet with no look-alikes (no 0/O, 1/l/I), in
+// three groups so it can be read out across a desk.
+function temporaryPassword() {
+  const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  const bytes = crypto.randomBytes(12);
+  const chars = Array.from(bytes, (b) => abc[b % abc.length]).join('');
+  return `${chars.slice(0, 4)}-${chars.slice(4, 8)}-${chars.slice(8)}`;
+}
 
 router.post('/login', (req, res) => {
   const db = getDb();
@@ -591,8 +603,14 @@ router.post('/login', (req, res) => {
   }
   failedLogins.delete(key);
 
-  logAudit(user, 'login', 'user', user.id, null, null, null, user.name);
-  res.json(issueSession(db, user, res));
+  // A temporary password from an admin reset lasts three days (D-292).
+  if (user.must_change_password && user.temp_password_expires_at && Date.parse(user.temp_password_expires_at) < Date.now()) {
+    logAudit(user, 'login_failed', 'user', user.id, { reason: 'temporary_password_expired' }, null, null, user.name);
+    return res.status(401).json({ error: 'Your temporary password has expired. Ask an admin to reset it again.' });
+  }
+
+  logAudit(user, 'login', 'user', user.id, user.must_change_password ? { temporary_password: true } : null, null, null, user.name);
+  res.json(issueSession(db, user, res, { sharedDevice: !!req.body?.shared_device }));
 });
 
 // First-login / self-serve password set. A user transitioning from a PIN must
@@ -654,15 +672,20 @@ router.post('/:id/reset-password', requireRole('admin'), (req, res) => {
   const db = getDb();
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
-  // The reset hands back a code rather than leaving the account claimable by
-  // anyone who knows the name. Shown to the admin, given to the person.
-  const setupCode = newSetupCode();
-  db.prepare(`UPDATE users SET password_hash = NULL, pin = NULL, password_changed_at = NULL,
-              setup_code = ?, setup_code_expires_at = datetime('now', '+14 day'),
-              updated_at = datetime('now') WHERE id = ?`).run(setupCode, user.id);
-  db.prepare('DELETE FROM sessions WHERE user_id = ?').run(user.id); // force re-auth
-  logAudit(req.user, 'password_reset', 'user', user.id, { by_admin: true, mode: 'send_to_setup' }, null, null, user.name);
-  res.json({ ok: true, setup_code: setupCode, expires_in_days: 14 });
+  // A TEMPORARY PASSWORD (D-292). It signs the person in once, to one screen:
+  // choose your own password. It cannot sign a record (signature.js refuses
+  // while must_change_password is set), it lasts three days, and it is shown to
+  // the admin exactly once — never stored in clear, never logged.
+  const temp = temporaryPassword();
+  db.prepare(`UPDATE users SET password_hash = ?, pin = NULL, password_changed_at = NULL,
+              must_change_password = 1, temp_password_expires_at = ?,
+              setup_code = NULL, setup_code_expires_at = NULL,
+              updated_at = datetime('now') WHERE id = ?`)
+    .run(hashPassword(temp), new Date(Date.now() + TEMP_PASSWORD_DAYS * 864e5).toISOString(), user.id);
+  const signedOut = revokeSessions(db, user.id, { devices: false });
+  logAudit(req.user, 'password_reset', 'user', user.id,
+    { by_admin: true, mode: 'temporary_password', expires_in_days: TEMP_PASSWORD_DAYS, sessions_signed_out: signedOut }, null, null, user.name);
+  res.json({ ok: true, temporary_password: temp, expires_in_days: TEMP_PASSWORD_DAYS });
 });
 
 // ── The join link ────────────────────────────────────────────────────────────

@@ -395,7 +395,7 @@ function ModuleAccessEditor({ value, onChange, disabled, additive = false, role 
 function ResetPasswordControl({ userId, userName }) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState(null); // { setup_code, expires_in_days }
+  const [done, setDone] = useState(null); // { temporary_password, expires_in_days }
   const [err, setErr] = useState(null);
   const [copied, setCopied] = useState(false);
 
@@ -415,30 +415,30 @@ function ResetPasswordControl({ userId, userName }) {
   };
 
   if (done) {
+    const secret = done.temporary_password || done.setup_code;
     return (
-      <div className="mt-1.5 bg-green-50 border border-green-200 rounded-lg p-2.5 space-y-2">
+      <div className="mt-1.5 bg-green-50 border border-green-200 rounded-lg p-2.5 space-y-2" data-temp-password-done>
         <p className="text-[11px] text-green-800 leading-relaxed">
-          Password cleared for <span className="font-medium">{userName || 'this user'}</span>. Give them this
-          setup code — they’ll enter their name, click <span className="font-medium">Sign In</span>, type the
-          code and then choose their own password.
+          Give <span className="font-medium">{userName || 'this person'}</span> this temporary password. They sign in with
+          it once and must choose their own password straight away. It cannot sign a record (D-292).
         </p>
-        {done.setup_code && (
+        {secret && (
           <div className="flex items-center gap-2">
-            <code className="px-2 py-1 bg-white border border-green-300 rounded font-mono text-sm tracking-widest text-green-900">
-              {done.setup_code}
+            <code className="px-2 py-1 bg-white border border-green-300 rounded font-mono text-sm tracking-wider text-green-900" data-temp-password>
+              {secret}
             </code>
             <button type="button"
-              onClick={() => { navigator.clipboard?.writeText(done.setup_code); setCopied(true); }}
+              onClick={() => { navigator.clipboard?.writeText(secret); setCopied(true); }}
               className="text-[11px] font-medium text-green-800 hover:text-green-900 underline">
               {copied ? 'Copied' : 'Copy'}
             </button>
           </div>
         )}
-        {/* Said plainly, because this is the one thing that goes wrong: the code
-            is shown here once and is not recoverable from the roster. */}
+        {/* Said plainly, because this is the one thing that goes wrong: it is
+            shown here once and is not recoverable from the roster. */}
         <p className="text-[10px] text-green-700">
-          Single use, expires in {done.expires_in_days ?? 14} days, and it is not shown again — reset
-          again if it gets lost.
+          Expires in {done.expires_in_days ?? 3} days and is not shown again — reset again if it gets lost.
+          Every device they were signed in on has been signed out, and the reset is in the audit log.
         </p>
       </div>
     );
@@ -448,7 +448,7 @@ function ResetPasswordControl({ userId, userName }) {
     return (
       <div className="mt-1.5 bg-gray-50 border border-gray-200 rounded-lg p-2.5 space-y-2">
         <p className="text-[11px] text-gray-600 leading-relaxed">
-          Reset <span className="font-medium">{userName || 'this user'}</span>’s password? They’ll be signed out, and you’ll get a one-time setup code to give them so they can create a new password.
+          Reset <span className="font-medium">{userName || 'this user'}</span>’s password? They’ll be signed out, and you’ll get a temporary password to give them. It only lets them choose a new password; it cannot sign anything.
         </p>
         {err && <p className="text-[11px] text-red-600">{err}</p>}
         <div className="flex items-center gap-2">
@@ -469,7 +469,7 @@ function ResetPasswordControl({ userId, userName }) {
         className="flex items-center gap-1.5 text-xs font-medium text-powder-600 hover:text-powder-700">
         <KeyRound size={13} /> Reset password
       </button>
-      <p className="text-[10px] text-gray-400 mt-0.5">Clears it so they set a new one on next sign-in.</p>
+      <p className="text-[10px] text-gray-400 mt-0.5">Gives a temporary password that must be changed at sign-in.</p>
     </div>
   );
 }

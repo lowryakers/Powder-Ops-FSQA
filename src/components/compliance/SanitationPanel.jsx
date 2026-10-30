@@ -1,4 +1,5 @@
 import { useState, Fragment } from 'react';
+import PrintRecordButton from '../common/PrintRecordButton';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import RecordBackfillStrip from '../common/RecordBackfillStrip.jsx';
 import SwabStock from './SwabStock.jsx';
@@ -318,6 +319,9 @@ function SanitationDetail({ record, onClose, onEdit, onRevoke }) {
                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Verified At</p>
                 <p className="text-sm font-semibold text-gray-900">{formatDateTime(record.verified_at)}</p>
               </div>
+            )}
+            {record.verified_by && (
+              <div className="flex items-end"><PrintRecordButton type="sanitation" id={record.id} /></div>
             )}
           </div>
 

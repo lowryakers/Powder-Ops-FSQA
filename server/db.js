@@ -6201,6 +6201,10 @@ function runMigrations() {
   // authority invited them.
   addColumnIfMissing('users', 'setup_code', 'TEXT');
   addColumnIfMissing('users', 'setup_code_expires_at', 'TEXT');
+  // An admin reset hands out a TEMPORARY password (D-292): it signs in, it
+  // cannot sign anything, and it must be changed before anything else.
+  addColumnIfMissing('users', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('users', 'temp_password_expires_at', 'TEXT');
   // NOBODY IS STRANDED BY THE CHANGE. Every account that was claimable the
   // moment before this shipped gets a code, once, so an admin can read it out
   // of Settings and hand it over. Without this the fix would lock out everyone
@@ -7078,6 +7082,10 @@ function runMigrations() {
   // report. NULL on sessions opened before — reported as "device not recorded".
   addColumnIfMissing('sessions', 'ip', 'TEXT');
   addColumnIfMissing('sessions', 'user_agent', 'TEXT');
+  // Idle sign-out and the first signature of a session (D-291, D-292).
+  addColumnIfMissing('sessions', 'shared_device', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('sessions', 'last_active_at', 'TEXT');
+  addColumnIfMissing('sessions', 'first_signed_at', 'TEXT');
   // A session that ended before the log existed is not a timeout the log saw.
   if (addColumnIfMissing('sessions', 'activity_ended_at', 'TEXT')) {
     db.prepare(`UPDATE sessions SET activity_ended_at = 'before-activity-log'

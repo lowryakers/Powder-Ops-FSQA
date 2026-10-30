@@ -9,11 +9,11 @@ Fill in **Result** from the executed IQ/OQ/PQ.
 | R-01 | ReadyDoc runs on the described hosting, over HTTPS, as a closed system | Plan §2; 11.30 | N/A (closed) | IQ-01 | — | |
 | R-02 | The release in use is the release tested, recorded by commit | 11.10(k); CAR "software change control" | Meets | IQ-02, IQ-07 | — | |
 | R-03 | Configuration is as described, including the plant time zone | Plan §2 | — | IQ-03, IQ-04 | — | |
-| R-04 | Records can be backed up and restored | 11.10(c); CAR IQ "backup and a restore test" | Partly | IQ-05, IQ-06, PQ-07 | `verify:prodcopy` | |
+| R-04 | Records can be backed up and restored | 11.10(c); CAR IQ "backup and a restore test" | Yes once IQ-05/06 pass (D-290) | IQ-05, IQ-06, PQ-07 | `verify:sessionsec`, `verify:prodcopy` | |
 | R-05 | The automated suite passes on the release | Plan §3 | — | IQ-08 | `verify`, `verify:all` | |
 | R-06 | Each person signs in with their own account and password | 11.10(d), 11.300(a); CAR OQ "logins" | Meets | OQ-01 | `verify-auth.mjs` | |
 | R-07 | Passwords are protected, expire, lock out after failures, and lost credentials can be stopped | 11.300(b)(c)(d); 11.200(a)(3) | Meets / Partly | OQ-02 | `verify-auth.mjs`, `verify:sessions` | |
-| R-08 | People reach only what they are granted; only authorized roles approve | 11.10(d)(g); CAR OQ "access rights" | Partly (idle sign-out) | OQ-03, OQ-14 | `verify:accesssources`, `check:modaccess`, `verify:botnoapprove` | |
+| R-08 | People reach only what they are granted; only authorized roles approve | 11.10(d)(g); CAR OQ "access rights" | Yes once OQ-16 passes (D-291) | OQ-03, OQ-14, OQ-16, OQ-17 | `verify:accesssources`, `check:modaccess`, `verify:botnoapprove`, `verify:sessionsec` | |
 | R-09 | Every create, change and delete is in the audit trail, with who, when, before and after | 11.10(e); CAR OQ "audit-trail completeness" | Meets | OQ-04 | `verify:useractivity` | |
 | R-10 | The audit trail cannot be edited or deleted | 11.10(e); CAR OQ "protection from editing" | Meets | OQ-05 | `verify:part11` | |
 | R-11 | The signer is the signed-in person; nobody signs their own competence | 11.50(a)(1), 11.100(a) | Meets | OQ-06 | `verify:part11` | |
@@ -67,5 +67,5 @@ answer each row. A row with nothing that answers it is **Not met** and is in the
 | 11.300(e) token or card testing | Not applicable: no tokens or cards sign | N/A | — |
 
 **SOP 444 § 9 item 14 (combined-batch rule) — decided:** a QA Review batch or a group training session is one act and
-asks for the password once (OQ-07 steps 4 and 6). Until O-8 lands, the first signature of a session asks for the
-password only; the sign-in name comes from the open session.
+asks for the password once (OQ-07 steps 4 and 6). The first signature of a session also asks for the sign-in name
+(D-292, OQ-18); a batch that is a session's first signature asks for both once.

@@ -6325,6 +6325,20 @@ revoke by DELETE with a reason), `CrisisDrills.jsx`. SOP 501, SQF 2.6.4.2.
   one-page annual review (`08-annual-review.md`). Roles follow SOP 444 § 5.0: nobody approves tests they executed.
   requirement-to-test table, summary report; the e-signature policy (ESIG-101) and the unsent FDA letter are its attachments.
 
+## Backups, idle sign-out, temporary passwords, the first signature, printed meanings (D-290 – D-293)
+- **The database is copied off the server every night** (`server/db-backup.js`, 1 AM plant time): R2
+  `backups/db/daily|monthly/`, 30 + 12 kept, fingerprinted. Restore test = Settings → Data backup (admin), once a
+  quarter. The bell warns after 36 h without a backup. Never restore over the live database from the app.
+- **Idle sign-out** (`shared/session-policy.js`): 15 min on a device marked shared at sign-in, 8 h otherwise. Only
+  requests carrying `X-User-Activity: 1` move `sessions.last_active_at`; the server deletes an idle session (401
+  `idle_timeout`). A new client fetch outside `apiFetch` that a person triggers should add `activityHeaders()`.
+- **An admin reset gives a temporary password** (`users.must_change_password`, 3 days): it opens only the change
+  screen and cannot sign. Setup codes remain for new accounts only.
+- **A session's first signature needs `signature_name` + password** (`sessions.first_signed_at`). Verifies run with
+  `SIGNATURE_NAME_OPTIONAL=1` (test-only, ignored unless `NODE_ENV=test`); `verify:sessionsec` runs with it off.
+- **Printed meanings** come from `shared/signature-meaning.js`; print a record-interface record with
+  `GET /api/records/:type/:id/pdf` (`server/signed-record-pdf.js`, `PrintRecordButton`). `verify:sessionsec` (59).
+
 ## A bot never approves, by token or by password; the check is read-only (D-279)
 - **`tokenApproveGuard` refuses a bot ACCOUNT on every `APPROVE_ROUTES` match** (`403 bot_account_cannot_approve`),
   not only its token. A bot = `isBotAccount()` in `server/trainees.js` (ever held a token, ReadyBot, Test Runner, `*`

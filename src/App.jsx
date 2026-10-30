@@ -692,10 +692,10 @@ function PasswordExpiringBanner({ daysLeft }) {
   );
 }
 
-function PasswordExpiredGate() {
+function PasswordExpiredGate({ temporary = false }) {
   return (
-    <div className="min-h-screen bg-gray-50">
-      <ChangePasswordModal forced onClose={() => {}} />
+    <div className="min-h-screen bg-gray-50" data-password-gate>
+      <ChangePasswordModal forced temporary={temporary} onClose={() => {}} />
     </div>
   );
 }
@@ -1675,7 +1675,7 @@ function App() {
       );
     }
     if (!user) return <LoginScreen onLogin={login} onLoginWithToken={loginWithToken} />;
-    if (user.password_expired) return <PasswordExpiredGate />;
+    if (user.password_expired) return <PasswordExpiredGate temporary={!!user.temporary_password} />;
     return (
       <div className="min-h-screen bg-gray-50">
         <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
@@ -1722,7 +1722,7 @@ function App() {
         ? <LoginScreen onLogin={login} onLoginWithToken={loginWithToken} />
         : <AuditorLogin onLoginWithToken={loginWithToken} onStaffSignIn={() => setAuditorStaffLogin(true)} />;
     }
-    if (user.password_expired) return <PasswordExpiredGate />;
+    if (user.password_expired) return <PasswordExpiredGate temporary={!!user.temporary_password} />;
     return <><AuditorView /><UpdateBanner /></>;
   }
 
@@ -1758,7 +1758,7 @@ function App() {
       );
     }
     if (!user) return <LoginScreen onLogin={login} onLoginWithToken={loginWithToken} />;
-    if (user.password_expired) return <PasswordExpiredGate />;
+    if (user.password_expired) return <PasswordExpiredGate temporary={!!user.temporary_password} />;
     return (
       <div className="min-h-screen bg-gray-50">
         <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
@@ -1825,7 +1825,7 @@ function App() {
     return <LoginScreen onLogin={login} onLoginWithToken={loginWithToken} />;
   }
 
-  if (user.password_expired) return <PasswordExpiredGate />;
+  if (user.password_expired) return <PasswordExpiredGate temporary={!!user.temporary_password} />;
 
   // Auditors only ever see the read-only evidence binder — no matter which
   // URL they sign in from, and never the operating app or comms.

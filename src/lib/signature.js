@@ -16,8 +16,8 @@ const EVENT = 'readydoc-signature-request';
 /**
  * Run a request, and if the server asks for a password, ask and run it again.
  *
- * `send(extra)` is called with `{}` first and `{ signature_password }` on the
- * retry, so the caller keeps ownership of what it is sending.
+ * `send(extra)` is called with `{}` first and `{ signature_password }` (plus
+ * `signature_name` on a session's first signature) on the retry, so the caller keeps ownership of what it is sending.
  *
  * Cancelling throws with `cancelled: true` — a caller shows nothing for that,
  * because the person chose it and an error toast reads as a failure.
@@ -30,26 +30,32 @@ export async function withSignature(send, { title, detail } = {}) {
     // Keep asking while the password is wrong; the server does the rate
     // limiting, and a modal that closes on a typo loses the whole batch.
     let message = null;
+    // The first signature since signing in also asks for the sign-in name
+    // (D-292); the server says so and the prompt adds the box.
+    let needName = !!e.data?.signature_name_required;
     for (;;) {
       // eslint-disable-next-line no-await-in-loop
-      const password = await askForPassword({ title, detail, message });
-      if (password == null) {
+      const answer = await askForPassword({ title, detail, message, needName });
+      if (answer == null) {
         const cancelled = new Error('Signature cancelled.');
         cancelled.cancelled = true;
         throw cancelled;
       }
       try {
         // eslint-disable-next-line no-await-in-loop
-        return await send({ signature_password: password });
+        return await send(needName
+          ? { signature_password: answer.password, signature_name: answer.name }
+          : { signature_password: answer.password });
       } catch (e2) {
         if (!e2?.signatureRequired) throw e2;
         message = e2.message;
+        needName = !!e2.data?.signature_name_required;
       }
     }
   }
 }
 
-/** Resolves with the typed password, or null if the person cancelled. */
+/** Resolves with `{ password, name }` (name only when asked), or null if the person cancelled. */
 export function askForPassword(opts = {}) {
   return new Promise((resolve) => {
     window.dispatchEvent(new CustomEvent(EVENT, { detail: { ...opts, resolve } }));
