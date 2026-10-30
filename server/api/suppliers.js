@@ -61,6 +61,10 @@ import { FORM as Q_FORM, HEADER as Q_HEADER, QUESTIONS as Q_QUESTIONS, ANSWERS a
   SIGNATURE as Q_SIGNATURE, ATTACHMENT_KINDS as Q_ATTACH, normalizeAnswers, missingToSubmit, answersAsText } from '../supplier-questionnaire.js';
 import { embedUnicodeFaces } from '../pdf-unicode.js';
 
+import { withGuarantee, guaranteeFor } from '../supplier-guarantee.js';
+import { GUARANTEE_KIND, GUARANTEE_LABEL } from '../../shared/supplier-guarantee.js';
+import { plantDateOf } from '../plant-clock.js';
+
 const router = Router();
 
 // Filing and correcting a supplier record is a records act — the same ladder
@@ -95,7 +99,7 @@ function listSuppliers(db, { limit = 500 } = {}) {
          AND f.expires_on IS NOT NULL AND f.expires_on >= date('now')) AS next_expiry,
       (SELECT MAX(q.period_label) FROM supplier_qualifications q WHERE q.supplier_id = s.id) AS latest_period
     FROM suppliers s ORDER BY s.actively_using DESC, s.name COLLATE NOCASE LIMIT ?`).all(limit);
-  return rows.map(r => ({
+  return withGuarantee(db, rows).map(r => ({
     ...r,
     legacy_names: JSON.parse(r.legacy_names || '[]'),
     // DERIVED, and this is the number the register exists to surface.
@@ -127,6 +131,10 @@ router.get('/', (req, res) => {
       awaiting_disposition: suppliers.filter(s => s.awaiting_disposition).length,
       no_questionnaire: suppliers.filter(s => s.no_questionnaire).length,
       expired_documents: suppliers.reduce((n, s) => n + s.expired_files, 0),
+      // Packaging / food-contact suppliers we buy from with no current letter of
+      // guarantee (D-289): missing, no renewal date, or expired.
+      guarantee_gaps: suppliers.filter(s => s.guarantee?.gap).length,
+      guarantee_due_soon: suppliers.filter(s => s.guarantee?.required && s.guarantee.status === 'due_soon').length,
     },
   });
 });
@@ -176,6 +184,7 @@ router.get('/:id', (req, res) => {
     can_edit: canEdit(req.user),
 
     supplier: { ...s, legacy_names: JSON.parse(s.legacy_names || '[]') },
+    guarantee: guaranteeFor(db, s),
     contacts: db.prepare('SELECT * FROM supplier_contacts WHERE supplier_id = ? ORDER BY is_primary DESC, email').all(s.id),
     materials: db.prepare('SELECT * FROM supplier_materials WHERE supplier_id = ? ORDER BY item_description').all(s.id),
     qualifications: db.prepare(`SELECT * FROM supplier_qualifications WHERE supplier_id = ?
@@ -694,10 +703,13 @@ router.put('/:id', (req, res) => {
     website: 'website' in b ? clean(b.website) : s.website,
     address: 'address' in b ? clean(b.address, 500) : s.address,
     notes: 'notes' in b ? clean(b.notes, 2000) : s.notes,
+    // Supplies food-contact material: owes a letter of guarantee (D-289).
+    // true / false, or null for "nobody has said".
+    food_contact: 'food_contact' in b ? (b.food_contact === null || b.food_contact === '' ? null : (b.food_contact ? 1 : 0)) : s.food_contact,
   };
   db.prepare(`UPDATE suppliers SET vendor_type = ?, actively_using = ?, website = ?, address = ?,
-    notes = ?, updated_at = datetime('now') WHERE id = ?`)
-    .run(next.vendor_type, next.actively_using, next.website, next.address, next.notes, s.id);
+    notes = ?, food_contact = ?, updated_at = datetime('now') WHERE id = ?`)
+    .run(next.vendor_type, next.actively_using, next.website, next.address, next.notes, next.food_contact, s.id);
   logAudit(req.user, 'supplier_updated', 'supplier', s.id, null, s, { ...s, ...next }, s.name);
   res.json({ ok: true });
 });
@@ -1164,6 +1176,15 @@ router.post('/:id/files', fileUpload.array('files', 20), async (req, res) => {
     if (!supplier) return res.status(404).json({ error: 'No such supplier' });
     const files = req.files || [];
     if (!files.length) return res.status(400).json({ error: 'Attach at least one file' });
+    // A letter of guarantee is filed WITH its renewal date (D-289): one without
+    // a date is a letter nobody will chase when it lapses.
+    const renewal = req.body?.expires_on ? String(req.body.expires_on).slice(0, 10) : null;
+    if (renewal && !/^\d{4}-\d{2}-\d{2}$/.test(renewal)) return res.status(400).json({ error: 'The renewal date must be a date (YYYY-MM-DD).' });
+    const wantsLetter = req.body?.kind === GUARANTEE_KIND
+      || (!req.body?.kind && files.some(f => (classifyDocument(f.originalname) || {}).kind === GUARANTEE_KIND));
+    if (wantsLetter && !renewal && !files.every(f => expiryFromFilename(f.originalname))) {
+      return res.status(400).json({ code: 'RENEWAL_REQUIRED', error: `A ${GUARANTEE_LABEL.toLowerCase()} needs its renewal date.` });
+    }
 
     const ins = db.prepare(`INSERT INTO supplier_files
       (id, supplier_id, kind, expires_on, filename, storage_key, content_type, size,
@@ -1197,7 +1218,7 @@ router.post('/:id/files', fileUpload.array('files', 20), async (req, res) => {
       saved.push({ id, filename: f.originalname });
     }
     logAudit(req.user, 'supplier_files_added', 'supplier', supplier.id,
-      { count: saved.length, files: saved.map(s => s.filename) }, null, null, supplier.name);
+      { count: saved.length, files: saved.map(s => s.filename), kind: req.body?.kind || null, expires_on: renewal }, null, null, supplier.name);
     res.json({ saved });
   } catch (e) {
     res.status(400).json({ error: uploadErrorMessage(e) || e.message });
@@ -1231,6 +1252,23 @@ router.get('/files/:fileId/url', async (req, res) => {
   const f = db.prepare('SELECT filename, storage_key FROM supplier_files WHERE id = ?').get(req.params.fileId);
   if (!f || !f.storage_key) return res.status(404).json({ error: 'No stored file' });
   res.json({ url: await presignGet(f.storage_key, f.filename) });
+});
+
+// The renewal date on a letter of guarantee already on file (D-289) — one that
+// came in through the archive with no date in its name. Only that kind: other
+// documents' expiries are read from the document, never typed.
+router.put('/files/:fileId/renewal', (req, res) => {
+  if (!canEdit(req.user)) return res.status(403).json({ error: 'Not permitted' });
+  const db = getDb();
+  const f = db.prepare('SELECT id, supplier_id, kind, filename, expires_on FROM supplier_files WHERE id = ?').get(req.params.fileId);
+  if (!f) return res.status(404).json({ error: 'No such file' });
+  if (f.kind !== GUARANTEE_KIND) return res.status(400).json({ error: `Only a ${GUARANTEE_LABEL.toLowerCase()}'s renewal date is set here.` });
+  const date = String(req.body?.expires_on || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'The renewal date must be a date (YYYY-MM-DD).' });
+  db.prepare('UPDATE supplier_files SET expires_on = ? WHERE id = ?').run(date, f.id);
+  logAudit(req.user, 'supplier_guarantee_renewal_set', 'supplier_file', f.id,
+    { supplier_id: f.supplier_id, from: f.expires_on, to: date }, { expires_on: f.expires_on }, { expires_on: date }, f.filename);
+  res.json({ ok: true, expires_on: date, today: plantDateOf() });
 });
 
 // Removing the BYTES is not removing the record. The catalogue row survives

@@ -2741,6 +2741,15 @@ sheet that must open even with no R2 configured. The zone **item lists** it docu
 - **Sign-off is refused (`COC_REQUIRED`)** until each listed part is proved, and the form's CoC line must then be Yes.
 - The list is QA's (`canSetLabTests`), starts empty, part # only. Bell line `coc-missing`. `verify:receivingcoc` (38).
 
+## Packaging / food-contact suppliers owe a letter of guarantee with a renewal date (D-289)
+`shared/supplier-guarantee.js` (PURE: `guaranteeRequired`, `guaranteeStatus`), `server/supplier-guarantee.js`
+(`withGuarantee`, `guaranteeFor`, `openGuaranteeGaps`), `suppliers.food_contact`, supplier file kind `letter_of_guarantee`,
+`PUT /suppliers/files/:fileId/renewal`, `GuaranteeSection` in `SuppliersPanel.jsx`, bell line `guarantee-missing`.
+- **Owed while actively used, by `vendor_type` packaging or the person-set `food_contact` tick** — never by name.
+- **Filed with its renewal date** (`expires_on`); refused without one (`RENEWAL_REQUIRED`). Only this kind takes a typed date.
+- Missing / no renewal date / expired are gaps; renews within 30 days is a warning. Reported, never gated.
+- `verify:guarantee` (30).
+
 ## Receiving Inspection Checklist — FORM 204-01 V1
 `server/receiving-checklist.js` (the form, verbatim, typos included — "informm purchasing" stays) +
 `server/receiving-notify.js` + checklist routes in `api/receiving.js` + `ReceivingChecklist.jsx`.

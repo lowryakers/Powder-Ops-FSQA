@@ -2784,6 +2784,9 @@ function runMigrations() {
   // runs just before this, so the ALTER has a table to act on (the
   // migration-ordering rule).
   addColumnIfMissing('supplier_files', 'questionnaire_id', 'TEXT');
+  // Supplies food-contact material (D-289): owes a letter of guarantee whatever its
+  // vendor_type says. NULL = nobody has said; 1 = yes; 0 = no.
+  addColumnIfMissing('suppliers', 'food_contact', 'INTEGER');
   // The banned-substance check on a material (D-202). One row per check, never
   // edited; the latest per material is the answer, and the editions are frozen
   // from the annual review in force when it was made.
