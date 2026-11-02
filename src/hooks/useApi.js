@@ -206,8 +206,10 @@ export async function apiPut(path, body) {
   return apiFetch(path, { method: 'PUT', body });
 }
 
-export async function apiDelete(path) {
-  return apiFetch(path, { method: 'DELETE' });
+// A body is passed through when given: several deletes require a reason, and
+// a body dropped here reaches the server as "A reason is required" (D-295).
+export async function apiDelete(path, body) {
+  return apiFetch(path, body === undefined ? { method: 'DELETE' } : { method: 'DELETE', body });
 }
 
 // Pass onProgress to get 0-100 as the bytes go out. fetch() can't report

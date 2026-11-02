@@ -38,6 +38,7 @@ import { readTable } from '../tabular.js';
 import { mediaUpload, cleanupTemp, uploadErrorMessage, MAX_ARCHIVE_BYTES } from '../media.js';
 import { planSupplierImport, applySupplierImport } from '../supplier-import.js';
 import { DISPOSITIONS, RISK_CRITERIA } from '../supplier-sop.js';
+import { VENDOR_TYPES, cleanContact } from '../../shared/supplier-fields.js';
 import { BANNED_RESULTS, GATE_MODES as BANNED_GATE_MODES, bannedGateMode, materialChecks, bannedGaps, recordBannedCheck } from '../supplier-banned-check.js';
 import { currentListEditions } from '../check-records.js';
 import { BANNED_LISTS } from '../../shared/check-forms.js';
@@ -697,6 +698,22 @@ router.put('/:id', (req, res) => {
   if ('status' in b) {
     return res.status(400).json({ error: 'STATUS_OWNED: a supplier\'s status follows its disposition. Use /:id/disposition.' });
   }
+  // Type is a closed list (shared/supplier-fields.js): it decides who owes a
+  // letter of guarantee. A value already on file outside the list may be sent
+  // back unchanged; a NEW value must be one of the list or blank (D-295).
+  if ('vendor_type' in b) {
+    const v = clean(b.vendor_type, 40);
+    if (v && v !== s.vendor_type && !VENDOR_TYPES.some(t => t.value === v)) {
+      return res.status(400).json({ error: `Unknown type "${v}". Choose one of: ${VENDOR_TYPES.map(t => t.label).join(', ')}.` });
+    }
+  }
+  // Marking a supplier as no longer used takes it off "buying without
+  // qualification" and off the letter-of-guarantee list, so it says why.
+  const stopping = 'actively_using' in b && !b.actively_using && Number(s.actively_using) === 1;
+  const reason = clean(b.reason, 500);
+  if (stopping && (!reason || reason.length < 3)) {
+    return res.status(400).json({ error: 'REASON_REQUIRED: say why we no longer buy from this supplier.' });
+  }
   const next = {
     vendor_type: 'vendor_type' in b ? clean(b.vendor_type, 40) : s.vendor_type,
     actively_using: 'actively_using' in b ? (b.actively_using ? 1 : 0) : s.actively_using,
@@ -710,7 +727,54 @@ router.put('/:id', (req, res) => {
   db.prepare(`UPDATE suppliers SET vendor_type = ?, actively_using = ?, website = ?, address = ?,
     notes = ?, food_contact = ?, updated_at = datetime('now') WHERE id = ?`)
     .run(next.vendor_type, next.actively_using, next.website, next.address, next.notes, next.food_contact, s.id);
-  logAudit(req.user, 'supplier_updated', 'supplier', s.id, null, s, { ...s, ...next }, s.name);
+  logAudit(req.user, 'supplier_updated', 'supplier', s.id, reason ? { reason } : null, s, { ...s, ...next }, s.name);
+  res.json({ ok: true });
+});
+
+// ── Contacts (D-295) ────────────────────────────────────────────────────────
+// A contact is a detail about how to reach the supplier, not a compliance
+// record, so it is corrected in place and removed outright; every change is
+// audited with the before and the after.
+router.post('/:id/contacts', (req, res) => {
+  if (!canEdit(req.user)) return res.status(403).json({ error: 'Not permitted' });
+  const db = getDb();
+  const s = db.prepare('SELECT id, name FROM suppliers WHERE id = ?').get(req.params.id);
+  if (!s) return res.status(404).json({ error: 'Not found' });
+  const c = cleanContact(req.body);
+  if (c.error) return res.status(400).json({ error: c.error });
+  const id = uuid();
+  db.transaction(() => {
+    if (c.is_primary) db.prepare('UPDATE supplier_contacts SET is_primary = 0 WHERE supplier_id = ?').run(s.id);
+    db.prepare(`INSERT INTO supplier_contacts (id, supplier_id, name, email, phone, role, is_primary, notes)
+      VALUES (?,?,?,?,?,?,?,?)`).run(id, s.id, c.name, c.email, c.phone, c.role, c.is_primary, c.notes);
+  })();
+  logAudit(req.user, 'create', 'supplier_contact', id, { supplier_id: s.id }, null, c, `${s.name} — ${c.email || c.name || c.phone}`);
+  res.status(201).json({ id });
+});
+
+router.put('/contacts/:cid', (req, res) => {
+  if (!canEdit(req.user)) return res.status(403).json({ error: 'Not permitted' });
+  const db = getDb();
+  const old = db.prepare('SELECT * FROM supplier_contacts WHERE id = ?').get(req.params.cid);
+  if (!old) return res.status(404).json({ error: 'Not found' });
+  const c = cleanContact({ ...old, ...req.body });
+  if (c.error) return res.status(400).json({ error: c.error });
+  db.transaction(() => {
+    if (c.is_primary) db.prepare('UPDATE supplier_contacts SET is_primary = 0 WHERE supplier_id = ?').run(old.supplier_id);
+    db.prepare(`UPDATE supplier_contacts SET name = ?, email = ?, phone = ?, role = ?, is_primary = ?, notes = ? WHERE id = ?`)
+      .run(c.name, c.email, c.phone, c.role, c.is_primary, c.notes, old.id);
+  })();
+  logAudit(req.user, 'update', 'supplier_contact', old.id, { supplier_id: old.supplier_id }, old, { ...old, ...c }, old.email || old.name);
+  res.json({ ok: true });
+});
+
+router.delete('/contacts/:cid', (req, res) => {
+  if (!canEdit(req.user)) return res.status(403).json({ error: 'Not permitted' });
+  const db = getDb();
+  const old = db.prepare('SELECT * FROM supplier_contacts WHERE id = ?').get(req.params.cid);
+  if (!old) return res.status(404).json({ error: 'Not found' });
+  db.prepare('DELETE FROM supplier_contacts WHERE id = ?').run(old.id);
+  logAudit(req.user, 'delete', 'supplier_contact', old.id, { supplier_id: old.supplier_id }, old, null, old.email || old.name);
   res.json({ ok: true });
 });
 

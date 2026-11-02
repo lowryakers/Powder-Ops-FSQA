@@ -2750,6 +2750,14 @@ sheet that must open even with no R2 configured. The zone **item lists** it docu
 - Missing / no renewal date / expired are gaps; renews within 30 days is a warning. Reported, never gated.
 - `verify:guarantee` (30).
 
+## Purchasing edits a supplier's details and contacts (D-295)
+`EditDetails` + `ContactsSection` (SuppliersPanel.jsx), `shared/supplier-fields.js` (`VENDOR_TYPES`, `CONTACT_ROLES`,
+`cleanContact`), `POST /suppliers/:id/contacts`, `PUT|DELETE /suppliers/contacts/:cid`.
+- **Type is a closed list** (it decides the letter of guarantee); an imported odd value is kept until changed.
+- **In use → off needs a reason**, on the audit entry. Status is never edited here.
+- **`apiDelete(path, body)` sends a body when given** — the old one dropped it, so every delete that requires a
+  reason failed. `verify:supplieredit` (26).
+
 ## Receiving Inspection Checklist — FORM 204-01 V1
 `server/receiving-checklist.js` (the form, verbatim, typos included — "informm purchasing" stays) +
 `server/receiving-notify.js` + checklist routes in `api/receiving.js` + `ReceivingChecklist.jsx`.

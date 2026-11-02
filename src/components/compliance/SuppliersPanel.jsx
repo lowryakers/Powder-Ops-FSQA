@@ -14,10 +14,11 @@ import { formatDate } from '../../lib/datetime';
 import { downloadFile } from '../../lib/downloadFile.js';
 import {
   Building2, Search, AlertTriangle, Upload, Check, X, ShieldCheck,
-  CalendarClock, FileWarning, Link2, Loader2, Trash2,
+  CalendarClock, FileWarning, Link2, Loader2, Trash2, Pencil, Plus,
 } from 'lucide-react';
 import FrozenScroll from '../common/FrozenScroll';
 import { GUARANTEE_KIND, GUARANTEE_LABEL, GUARANTEE_STATUS_TEXT, DUE_SOON_DAYS } from '../../../shared/supplier-guarantee.js';
+import { VENDOR_TYPES, CONTACT_ROLES } from '../../../shared/supplier-fields.js';
 
 // The letter of guarantee chip (D-289). The server decides the state; this only draws it.
 const GUARANTEE_TONE = {
@@ -491,22 +492,13 @@ function SupplierDetail({ id, user, onDecide, onRemoved }) {
         </section>
       )}
 
-      <section>
-        <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Contacts</h4>
-        {contacts.length ? (
-          <ul className="space-y-0.5 text-sm">
-            {contacts.map(c => (
-              <li key={c.id} className="flex items-baseline gap-2">
-                <span className="truncate">{c.email || c.name}</span>
-                {/* No role is shown because none is guessed: only 4 of 179
-                    addresses are recognisably quality contacts, so the role is
-                    learned from whoever sends FORM 404-1. */}
-                {c.role && <span className="text-xs text-slate-400">{c.role}</span>}
-              </li>
-            ))}
-          </ul>
-        ) : <p className="text-sm text-slate-400">None recorded.</p>}
-      </section>
+      {data.can_edit && (
+        <section className="md:col-span-2">
+          <EditDetails supplier={supplier} onSaved={refresh} />
+        </section>
+      )}
+
+      <ContactsSection supplierId={id} contacts={contacts} canEdit={data.can_edit} onChanged={refresh} />
 
       <GuaranteeSection supplier={supplier} guarantee={data.guarantee} canEdit={data.can_edit} onChanged={refresh} />
 
@@ -622,6 +614,185 @@ function SupplierDetail({ id, user, onDecide, onRemoved }) {
         ) : <p className="text-sm text-slate-400">None.</p>}
       </section>
     </div>
+  );
+}
+
+// ── Edit details (D-295) ────────────────────────────────────────────────────
+// The register's own facts about a supplier: whether we still buy from it, what
+// kind of supplier it is, where it is. Type is a closed list because it decides
+// who owes a letter of guarantee. Turning "in use" off asks why. Qualification
+// is NOT here — that follows the disposition and nothing else.
+const inputCls = 'w-full rounded border border-slate-300 px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900';
+function EditDetails({ supplier, onSaved }) {
+  const blank = () => ({
+    actively_using: !!supplier.actively_using, vendor_type: supplier.vendor_type || '',
+    website: supplier.website || '', address: supplier.address || '', notes: supplier.notes || '', reason: '',
+  });
+  const [open, setOpen] = useState(false);
+  const [f, setF] = useState(blank);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const set = (k, v) => setF(x => ({ ...x, [k]: v }));
+  const stopping = !!supplier.actively_using && !f.actively_using;
+  const unlisted = supplier.vendor_type && !VENDOR_TYPES.some(t => t.value === supplier.vendor_type);
+  if (!open) {
+    return (
+      <button type="button" data-supplier-edit onClick={(e) => { stopRowClick(e); setF(blank()); setErr(null); setOpen(true); }}
+        className="inline-flex items-center gap-1.5 rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800">
+        <Pencil className="h-4 w-4" /> Edit details
+      </button>
+    );
+  }
+  const save = async (e) => {
+    stopRowClick(e);
+    setBusy(true); setErr(null);
+    try {
+      const body = {};
+      if (f.actively_using !== !!supplier.actively_using) body.actively_using = f.actively_using;
+      for (const k of ['vendor_type', 'website', 'address', 'notes']) if (f[k] !== (supplier[k] || '')) body[k] = f[k];
+      if (stopping) body.reason = f.reason;
+      if (Object.keys(body).length) await apiPut(`/suppliers/${supplier.id}`, body);
+      setOpen(false); onSaved?.();
+    } catch (x) { setErr(x.message || 'Could not save'); } finally { setBusy(false); }
+  };
+  return (
+    <div data-supplier-edit-form onClick={stopRowClick}
+      className="space-y-3 rounded border border-slate-200 p-3 dark:border-slate-700">
+      <h4 className="text-sm font-semibold">Edit details — {supplier.name}</h4>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="flex items-center gap-2 text-sm">
+          <input id={`sup-inuse-${supplier.id}`} type="checkbox" className="h-4 w-4 shrink-0" checked={f.actively_using}
+            onChange={e => set('actively_using', e.target.checked)} data-supplier-inuse />
+          We still buy from this supplier
+        </label>
+        <label className="text-sm">
+          <span className="mb-0.5 block text-xs text-slate-500">Type</span>
+          <select id={`sup-type-${supplier.id}`} className={inputCls} value={f.vendor_type}
+            onChange={e => set('vendor_type', e.target.value)} data-supplier-type>
+            <option value="">— not set —</option>
+            {unlisted && <option value={supplier.vendor_type}>{supplier.vendor_type} (as imported)</option>}
+            {VENDOR_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </select>
+          <span className="mt-0.5 block text-xs text-slate-500">Packaging suppliers owe a letter of guarantee.</span>
+        </label>
+        {stopping && (
+          <label className="text-sm sm:col-span-2">
+            <span className="mb-0.5 block text-xs font-medium text-rose-700 dark:text-rose-400">Why don’t we buy from them any more? (required)</span>
+            <input id={`sup-reason-${supplier.id}`} className={inputCls} value={f.reason}
+              onChange={e => set('reason', e.target.value)} data-supplier-reason placeholder="e.g. switched to another supplier in March 2026" />
+          </label>
+        )}
+        <label className="text-sm">
+          <span className="mb-0.5 block text-xs text-slate-500">Website</span>
+          <input id={`sup-web-${supplier.id}`} className={inputCls} value={f.website} onChange={e => set('website', e.target.value)} />
+        </label>
+        <label className="text-sm">
+          <span className="mb-0.5 block text-xs text-slate-500">Address</span>
+          <input id={`sup-addr-${supplier.id}`} className={inputCls} value={f.address} onChange={e => set('address', e.target.value)} />
+        </label>
+        <label className="text-sm sm:col-span-2">
+          <span className="mb-0.5 block text-xs text-slate-500">Notes</span>
+          <textarea id={`sup-notes-${supplier.id}`} rows={2} className={inputCls} value={f.notes} onChange={e => set('notes', e.target.value)} />
+        </label>
+      </div>
+      {err && <p className="text-sm text-rose-600 dark:text-rose-400">{err}</p>}
+      <div className="flex gap-2">
+        <button type="button" disabled={busy || (stopping && f.reason.trim().length < 3)} onClick={save} data-supplier-save
+          className="rounded bg-slate-800 px-3 py-1.5 text-sm text-white disabled:opacity-50 dark:bg-slate-200 dark:text-slate-900">
+          {busy ? 'Saving…' : 'Save'}
+        </button>
+        <button type="button" onClick={(e) => { stopRowClick(e); setOpen(false); }}
+          className="rounded border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600">Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+// ── Contacts (D-295) ────────────────────────────────────────────────────────
+// A role is what the person told us, never guessed. One contact may be marked
+// main; marking another moves it.
+function ContactForm({ initial, onSave, onCancel }) {
+  const [c, setC] = useState({ name: '', email: '', phone: '', role: '', is_primary: false, ...initial });
+  const [err, setErr] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const set = (k, v) => setC(x => ({ ...x, [k]: v }));
+  const key = initial?.id || 'new';
+  return (
+    <div data-contact-form onClick={stopRowClick} className="space-y-2 rounded border border-slate-200 p-2 dark:border-slate-700">
+      <div className="grid gap-2 sm:grid-cols-2">
+        <input id={`ct-name-${key}`} className={inputCls} placeholder="Name" value={c.name || ''} onChange={e => set('name', e.target.value)} data-contact-name />
+        <input id={`ct-email-${key}`} className={inputCls} placeholder="Email" value={c.email || ''} onChange={e => set('email', e.target.value)} data-contact-email />
+        <input id={`ct-phone-${key}`} className={inputCls} placeholder="Phone" value={c.phone || ''} onChange={e => set('phone', e.target.value)} />
+        <select id={`ct-role-${key}`} className={inputCls} value={c.role || ''} onChange={e => set('role', e.target.value)} data-contact-role>
+          <option value="">Role — not known</option>
+          {CONTACT_ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+        </select>
+      </div>
+      <label className="flex items-center gap-2 text-xs">
+        <input id={`ct-primary-${key}`} type="checkbox" className="h-4 w-4 shrink-0" checked={!!c.is_primary} onChange={e => set('is_primary', e.target.checked)} />
+        Main contact
+      </label>
+      {err && <p className="text-xs text-rose-600 dark:text-rose-400">{err}</p>}
+      <div className="flex gap-2">
+        <button type="button" disabled={busy} data-contact-save
+          onClick={async (e) => { stopRowClick(e); setBusy(true); setErr(null);
+            try { await onSave(c); } catch (x) { setErr(x.message || 'Could not save'); setBusy(false); } }}
+          className="rounded bg-slate-800 px-2.5 py-1 text-xs text-white disabled:opacity-50 dark:bg-slate-200 dark:text-slate-900">Save</button>
+        <button type="button" onClick={(e) => { stopRowClick(e); onCancel(); }}
+          className="rounded border border-slate-300 px-2.5 py-1 text-xs dark:border-slate-600">Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+function ContactsSection({ supplierId, contacts, canEdit, onChanged }) {
+  const [editing, setEditing] = useState(null); // contact id, 'new', or null
+  const roleLabel = (r) => CONTACT_ROLES.find(x => x.value === r)?.label || r;
+  const done = () => { setEditing(null); onChanged?.(); };
+  return (
+    <section data-supplier-contacts>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Contacts</h4>
+        {canEdit && editing !== 'new' && (
+          <button type="button" data-contact-add onClick={(e) => { stopRowClick(e); setEditing('new'); }}
+            className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline dark:text-blue-400">
+            <Plus className="h-3 w-3" /> Add contact
+          </button>
+        )}
+      </div>
+      {contacts.length ? (
+        <ul className="space-y-1 text-sm">
+          {contacts.map(c => editing === c.id ? (
+            <li key={c.id}>
+              <ContactForm initial={c} onCancel={() => setEditing(null)}
+                onSave={async (v) => { await apiPut(`/suppliers/contacts/${c.id}`, v); done(); }} />
+            </li>
+          ) : (
+            <li key={c.id} className="flex flex-wrap items-baseline gap-x-2" data-contact-row>
+              <span className="min-w-0 truncate">{[c.name, c.email].filter(Boolean).join(' · ') || c.phone}</span>
+              {c.role && <span className="text-xs text-slate-500">{roleLabel(c.role)}</span>}
+              {!!c.is_primary && <span className="text-xs text-emerald-700 dark:text-emerald-400">main</span>}
+              {canEdit && (
+                <span className="ml-auto flex gap-2 text-xs">
+                  <button type="button" onClick={(e) => { stopRowClick(e); setEditing(c.id); }} className="text-blue-600 hover:underline dark:text-blue-400">edit</button>
+                  <button type="button" onClick={async (e) => {
+                    stopRowClick(e);
+                    if (!window.confirm(`Remove ${c.email || c.name || 'this contact'}?`)) return;
+                    try { await apiDelete(`/suppliers/contacts/${c.id}`); onChanged?.(); } catch (x) { window.alert(x.message); }
+                  }} className="text-slate-400 hover:text-rose-600">remove</button>
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : <p className="text-sm text-slate-400">None recorded.</p>}
+      {editing === 'new' && (
+        <div className="mt-2">
+          <ContactForm onCancel={() => setEditing(null)}
+            onSave={async (v) => { await apiPost(`/suppliers/${supplierId}/contacts`, v); done(); }} />
+        </div>
+      )}
+    </section>
   );
 }
 
