@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { pdfViewerUrl } from '../lib/pdfUrl';
 import { fileKind } from '../lib/openFile';
 import { useCompactLayout } from '../lib/useCompactLayout';
@@ -17,6 +17,16 @@ export default function FilePreview({ items, index = 0, onClose, onNav }) {
   const item = list[Math.max(0, Math.min(index, list.length - 1))];
   const many = list.length > 1;
   const compact = useCompactLayout();
+  const boxRef = useRef(null);
+  // The browser's PDF viewer takes keyboard focus when it loads, and keys pressed
+  // inside a frame never reach this window — so Esc and the arrows went dead the
+  // moment a PDF finished loading. Focus starts on the overlay and is handed back
+  // to it when the frame grabs it on load.
+  const reclaimFocus = () => {
+    const box = boxRef.current;
+    if (box && (document.activeElement?.tagName === 'IFRAME' || !box.contains(document.activeElement))) box.focus({ preventScroll: true });
+  };
+  useEffect(() => { boxRef.current?.focus({ preventScroll: true }); }, []);
   const nav = (d) => { if (many && onNav) onNav((index + d + list.length) % list.length); };
 
   useEffect(() => {
@@ -39,7 +49,7 @@ export default function FilePreview({ items, index = 0, onClose, onNav }) {
   const isPdf = kind === 'pdf';
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-[100] flex flex-col" data-file-preview onClick={onClose}>
+    <div ref={boxRef} tabIndex={-1} className="fixed inset-0 bg-black/70 z-[100] flex flex-col outline-none" data-file-preview onClick={onClose}>
       <div className="flex items-center gap-2 px-4 py-2.5 text-white" onClick={e => e.stopPropagation()}>
         <FileText size={16} className="shrink-0 text-white/70" />
         <span className="text-sm font-medium truncate flex-1">{item.name || 'File'}</span>
@@ -73,7 +83,8 @@ export default function FilePreview({ items, index = 0, onClose, onNav }) {
             </div>
           </div>
         ) : isPdf ? (
-          <iframe src={pdfViewerUrl(item.url)} title={item.name || 'PDF'} className="w-full h-full bg-white rounded-lg" data-file-frame />
+          <iframe src={pdfViewerUrl(item.url)} title={item.name || 'PDF'} className="w-full h-full bg-white rounded-lg" data-file-frame
+            onLoad={() => { reclaimFocus(); setTimeout(reclaimFocus, 300); }} />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
             <div className="bg-white rounded-xl p-6 text-center max-w-xs">
