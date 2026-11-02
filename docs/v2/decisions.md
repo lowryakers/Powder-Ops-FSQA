@@ -9985,3 +9985,12 @@ reads "Allergen: Milk · Disposable gown: YES".
   audited (`mo_allergens`).
 - **Waits for review (D-274)**: it adds a table and writes records.
 - `verify:scheduleallergens` (29, live + browser at 1280 and 390; the control without the message line fails 4).
+
+## D-297 — The OQ is run live for nine tests; ten are verified by the automated suite plus an admin check (2 Nov 2026)
+**Asked by Lowry**, to start the OQ today. Daniela runs **OQ-01, 03, 04, 06, 07, 08, 09, 12, 15** live (OQ Part 1, full
+steps). **OQ-02, 05, 10, 11, 13, 14, 16, 17, 18, 19** are "verified by automated test (IQ-08) + admin check" (OQ Part 2):
+the named verify passes on the release commit inside IQ-08, and Lowry records one look in the live app; Daniela, as
+executor, signs that the evidence is attached. The full live steps for those ten are kept unchanged as **OQ Appendix A**
+in case Quality wants them run by hand later; running them needs no other change. The requirement-to-test table marks
+each OQ test **L** (live) or **A** (automated + admin check). **OQ-11 has the weakest automated cover** (a signed record
+refusing deletion, plus the IQ-06 restore); if Quality asks for one Appendix test by hand, it is that one.
