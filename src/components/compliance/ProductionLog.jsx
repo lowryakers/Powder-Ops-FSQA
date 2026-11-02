@@ -1,3 +1,4 @@
+import { MoAllergenLookup } from '../common/MoAllergens.jsx';
 import { useState, useMemo, Fragment } from 'react';
 import { useApiGet, apiFetch, apiPost, apiPut } from '../../hooks/useApi';
 import { ClipboardList, Plus, CheckCircle, Filter, Package, Hash, Clock, AlertCircle, X, ChevronUp, ChevronDown, Check, Undo2, Pencil, NotebookPen, PlayCircle } from 'lucide-react';
@@ -101,7 +102,7 @@ function RoomPicker({ value, onChange, rooms, className }) {
 
 // Repeatable MO editor: one card per manufacturing order worked in the shift.
 // Reused by the entry form and the amend modal so both build the same shape.
-function MoLinesField({ lines, setLines, defaultRoom = '', rooms = ROOMS }) {
+function MoLinesField({ lines, setLines, defaultRoom = '', rooms = ROOMS, team = '' }) {
   const setLine = (i, patch) => setLines(ls => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   // A new card starts in the room the last one was in. There is no shift-level
   // room to inherit any more, and most runs continue where the last one was —
@@ -141,6 +142,7 @@ function MoLinesField({ lines, setLines, defaultRoom = '', rooms = ROOMS }) {
               <label className="block text-[11px] text-gray-600 mb-0.5">MO #</label>
               <input value={l.mo_number} onChange={e => setLine(i, { mo_number: e.target.value })} className={cls} placeholder="MO #" />
             </div>
+            <div className="sm:col-span-2 empty:hidden"><MoAllergenLookup mo={l.mo_number} team={team} /></div>
             <div>
               <label className="block text-[11px] text-gray-600 mb-0.5">Lot #</label>
               <input value={l.lot_number} onChange={e => setLine(i, { lot_number: e.target.value })} className={cls} placeholder="Lot #" />
@@ -672,6 +674,7 @@ function EntryForm({ user, onSuccess, initial, dayLogId, onBackToDay }) {
             <label className="block text-xs font-medium text-gray-700 mb-1">MO # *</label>
             <input required value={form.mo_number} onChange={e => set('mo_number', e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Manufacturing order #" />
+            <MoAllergenLookup mo={form.mo_number} team={form.team} />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Lot # *</label>
@@ -741,7 +744,7 @@ function EntryForm({ user, onSuccess, initial, dayLogId, onBackToDay }) {
       {multiMo && (
         <div className="rounded-lg border border-powder-200 bg-powder-50/50 p-3">
           <p className="text-xs font-semibold text-powder-800 mb-2">MOs worked this shift</p>
-          <MoLinesField lines={moLines} setLines={setMoLines} />
+          <MoLinesField lines={moLines} setLines={setMoLines} team={form.team} />
         </div>
       )}
 
@@ -1105,7 +1108,7 @@ function AmendModal({ entry, onClose, onSaved }) {
           {multiMo && (
             <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-3">
               <p className="text-xs font-semibold text-gray-700 mb-2">MOs worked this shift</p>
-              <MoLinesField lines={moLines} setLines={setMoLines} />
+              <MoLinesField lines={moLines} setLines={setMoLines} team={entry.team} />
               <p className="text-xs font-semibold text-gray-700 mt-3 mb-1.5">Cleaning this shift</p>
               <CleaningEventsField events={cleans} setEvents={setCleans}
                 moOptions={moLines.map(l => l.mo_number).filter(Boolean)} />

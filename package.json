@@ -145,6 +145,7 @@
     "verify:part11": "VERIFY_ONLY=verify-part11.mjs node scripts/verify-all.mjs",
     "verify:guarantee": "VERIFY_ONLY=verify-guarantee.mjs node scripts/verify-all.mjs",
     "verify:supplieredit": "VERIFY_ONLY=verify-supplier-edit.mjs node scripts/verify-all.mjs",
+    "verify:scheduleallergens": "VERIFY_ONLY=verify-schedule-allergens.mjs node scripts/verify-all.mjs",
     "verify:sessionsec": "VERIFY_ONLY=verify-session-security.mjs node scripts/verify-all.mjs",
     "report:samename": "node scripts/report-same-name.mjs",
     "report:bot-approvals": "node scripts/report-bot-approvals.mjs",

@@ -954,6 +954,20 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_production_schedule_week ON production_schedule(week_start);
     CREATE INDEX IF NOT EXISTS idx_production_schedule_room ON production_schedule(room);
 
+    -- An MO's allergens and the teams whose step needs a disposable gown (D-296).
+    -- ONE row per MO (mo_key = the MO compared as a number), read by every
+    -- schedule cell naming it, the team messages and the end-of-day form.
+    CREATE TABLE IF NOT EXISTS schedule_mo_allergens (
+      mo_key TEXT PRIMARY KEY,
+      mo_number TEXT NOT NULL,
+      allergens TEXT NOT NULL DEFAULT '[]',
+      gown_teams TEXT NOT NULL DEFAULT '[]',
+      created_by TEXT,
+      updated_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     -- The plant's paid holidays are RULES in shared/plant-holidays.js (D-175);
     -- this holds the plant's correction to ONE year of one rule: observe it on
     -- another day, don't observe it, or turn a Monday's Tue–Fri shift off/on.

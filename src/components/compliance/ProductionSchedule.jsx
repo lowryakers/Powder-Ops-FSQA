@@ -8,6 +8,8 @@ import ScheduleProgressPanel from './ScheduleProgressPanel.jsx';
 import FrozenScroll from '../common/FrozenScroll';
 import { PRODUCTION_TEAMS as TEAMS, ROOM_GROUPS } from '../../constants/productionLines';
 import { roomLabel } from '../../../shared/rooms.js';
+import { moKey, allergenFormFrom } from '../../../shared/schedule-allergens.js';
+import { MoAllergenFields, MoAllergenChip } from '../common/MoAllergens.jsx';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
@@ -320,6 +322,21 @@ function CellModal({ cell, weekStart, nextWeekStart, nextWeekLabel, dayIndex, ro
   const [setupDownstream, setSetupDownstream] = useState(roomType === 'batching' && !cell?.id);
   const [saving, setSaving] = useState(false);
   const [flavorBusy, setFlavorBusy] = useState(false);
+  // The MO's allergen record (D-296) — owned by the MO, not this cell, so it is
+  // read from the server for whatever MO the box holds and saved beside it.
+  const [allergenForm, setAllergenForm] = useState(allergenFormFrom(null));
+  const [allergenTouched, setAllergenTouched] = useState(false);
+  const [allergenLoadedFor, setAllergenLoadedFor] = useState(null);
+  useEffect(() => {
+    const key = moKey(form.mo_number);
+    if (!key || allergenTouched) return undefined;
+    const t = setTimeout(() => {
+      apiFetch(`/production/mo-allergens?mo=${encodeURIComponent(form.mo_number)}`)
+        .then(rec => { setAllergenForm(allergenFormFrom(rec)); setAllergenLoadedFor(key); })
+        .catch(() => {});
+    }, cell?.mo_number && moKey(cell.mo_number) === key ? 0 : 400);
+    return () => clearTimeout(t);
+  }, [form.mo_number, allergenTouched, cell?.mo_number]);
 
   // Flavor sign-off on this MO — approving announces it in #batching and
   // #document_control; undo just clears the flag.
@@ -349,6 +366,10 @@ function CellModal({ cell, weekStart, nextWeekStart, nextWeekLabel, dayIndex, ro
 
   const handleSave = async (e) => {
     e.preventDefault();
+    if (allergenTouched && moKey(form.mo_number)) {
+      if (allergenForm.allergenOn && !allergenForm.allergens.length) { setSaveError('Choose at least one allergen, or untick "Contains an allergen".'); return; }
+      if (allergenForm.gownOn && !allergenForm.gown_teams.length) { setSaveError('Choose the teams that need a disposable gown, or untick "Disposable gown".'); return; }
+    }
     setSaving(true);
     try {
       const payload = {
@@ -374,6 +395,14 @@ function CellModal({ cell, weekStart, nextWeekStart, nextWeekLabel, dayIndex, ro
       }
       for (const d of repeatNextDays) {
         await apiPost('/production/schedule', { ...payload, week_start: nextWeekStart, day_of_week: d, append: true });
+      }
+      // Saved once, against the MO — every step of it reads the same record.
+      if (allergenTouched && moKey(form.mo_number)) {
+        await apiPut('/production/mo-allergens', {
+          mo_number: form.mo_number,
+          allergens: allergenForm.allergenOn ? allergenForm.allergens : [],
+          gown_teams: allergenForm.gownOn ? allergenForm.gown_teams : [],
+        });
       }
       onSaved();
       onClose();
@@ -486,6 +515,9 @@ function CellModal({ cell, weekStart, nextWeekStart, nextWeekLabel, dayIndex, ro
               </p>
             )}
           </div>
+          <MoAllergenFields moNumber={form.mo_number}
+            value={allergenLoadedFor === moKey(form.mo_number) || allergenTouched ? allergenForm : allergenFormFrom(null)}
+            onChange={v => { setAllergenForm(v); setAllergenTouched(true); }} />
           {saveError && <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2" data-cell-save-error>{saveError}</p>}
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Notes</label>
@@ -776,6 +808,7 @@ function DownstreamModal({ product, batchDay, weekStart, userName, nextSlotFor, 
   const [error, setError] = useState(null);
 
   const productLabel = [product.mo_number, product.product_name].filter(Boolean).join(' — ') || 'this product';
+  const { data: moRec } = useApiGet(product.mo_number ? `/production/mo-allergens?mo=${encodeURIComponent(product.mo_number)}` : null, [product.mo_number]);
 
   const handleConfirm = async () => {
     if (!pkgRoom) { setError('Pick a room for the packaging step.'); return; }
@@ -826,6 +859,17 @@ function DownstreamModal({ product, batchDay, weekStart, userName, nextSlotFor, 
             <X size={18} className="text-gray-500" />
           </button>
         </div>
+
+        {/* The MO's allergen record carries to every step — each shows its own gown answer (D-296). */}
+        {moRec && (moRec.allergens?.length || moRec.gown_teams?.length) ? (
+          <div className="space-y-1" data-downstream-allergen>
+            <p className="text-[11px] text-gray-500">These steps will show:</p>
+            <div className="grid grid-cols-2 gap-2">
+              <div><p className="text-[11px] font-medium text-gray-600 mb-0.5">{pkgTeam}</p><MoAllergenChip rec={moRec} team={pkgTeam} /></div>
+              {includeKitting && <div><p className="text-[11px] font-medium text-gray-600 mb-0.5">Kitting</p><MoAllergenChip rec={moRec} team="Kitting" /></div>}
+            </div>
+          </div>
+        ) : null}
 
         {/* Packaging step */}
         <div className="border border-gray-200 rounded-lg p-3 space-y-2">
@@ -930,7 +974,7 @@ function DayHolidayNote({ day }) {
   return null;
 }
 
-function MobileDayCards({ monday, assignmentMap, canEdit, onEditCell, initialDay, entryFor, cal = null }) {
+function MobileDayCards({ monday, assignmentMap, canEdit, onEditCell, initialDay, entryFor, cal = null, moAllergens = {} }) {
   const [day, setDay] = useState(initialDay);
   const go = (dir) => setDay(d => Math.min(4, Math.max(0, d + dir)));
   // Follow-the-finger day paging (same feel as the sidebar drawer).
@@ -990,6 +1034,7 @@ function MobileDayCards({ monday, assignmentMap, canEdit, onEditCell, initialDay
                           {a.mo_number && <div className="text-sm font-semibold text-gray-900">{a.mo_number}</div>}
                           {a.product_name && <div className="text-sm text-gray-600">{a.product_name}</div>}
                           {a.mmr_ref && <div className="text-[10px] text-gray-500" data-cell-mmr>MMR {a.mmr_ref}</div>}
+                          <MoAllergenChip rec={moAllergens?.[moKey(a.mo_number)]} team={a.team} />
                           {a.flavor_approved_at && (
                             <div className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-green-700 bg-green-50 border border-green-200 rounded px-1 py-px">
                               <Check size={9} /> Flavor approved
@@ -1137,6 +1182,7 @@ export default function ProductionSchedule({ user }) {
   // shared rules; the grid only draws it.
   const { data: cal } = useApiGet(`/plant-calendar/week?week_start=${weekStart}`, [weekStart]);
   const dayCal = (i) => cal?.days?.[i] || null;
+  const moAllergens = data?.mo_allergens || {};
 
   // Each cell can hold multiple entries (slots), e.g. several Kitting products on one day
   const assignmentMap = useMemo(() => {
@@ -1434,6 +1480,7 @@ export default function ProductionSchedule({ user }) {
                   {a.mo_number && <div className="font-semibold text-gray-900">{a.mo_number}</div>}
                   {a.product_name && <div className="text-gray-600">{a.product_name}</div>}
                   {a.mmr_ref && <div className="text-[10px] text-gray-500" data-cell-mmr>MMR {a.mmr_ref}</div>}
+                  <MoAllergenChip rec={moAllergens[moKey(a.mo_number)]} team={a.team} />
                   {a.flavor_approved_at && (
                     <div className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-green-700 bg-green-50 border border-green-200 rounded px-1 py-px" title={`Flavor approved by ${a.flavor_approved_by || ''}`}>
                       <Check size={9} className="shrink-0" /> Flavor
@@ -1637,7 +1684,7 @@ export default function ProductionSchedule({ user }) {
 
       {/* Mobile: swipeable one-day card view */}
       {!loading && !error && (
-        <MobileDayCards monday={monday} assignmentMap={assignmentMap} canEdit={canEdit} onEditCell={setEditCell}
+        <MobileDayCards monday={monday} assignmentMap={assignmentMap} canEdit={canEdit} onEditCell={setEditCell} moAllergens={moAllergens}
           initialDay={mobileInitialDay} entryFor={entryFor} cal={cal} />
       )}
 

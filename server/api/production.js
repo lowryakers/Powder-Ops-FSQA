@@ -8,6 +8,7 @@ import { getChannelByName, postMessageAs, getModuleLinks, botDm } from './comms.
 import { pushToUser } from '../push.js';
 import { readyDocOrigin } from '../links.js';
 import { roomLabel } from '../../shared/rooms.js';
+import { moKey as moNumKey, cleanMoAllergens, stepLine, hasFlags } from '../../shared/schedule-allergens.js';
 import { CLEAN_LEVEL_VALUES } from '../../shared/clean-levels.js';
 import { gradeAtp } from '../atp-limits.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
@@ -30,8 +31,14 @@ function schedRowsForTeam(assignments, team) {
     .filter(a => a.team === team && a.room_type !== 'cleaning')
     .sort((a, b) => (a.day_of_week - b.day_of_week) || String(a.room).localeCompare(String(b.room)) || ((a.slot || 0) - (b.slot || 0)));
 }
-function schedFingerprint(rows) {
-  return rows.map(a => `${a.day_of_week}|${a.room}|${a.slot || 0}|${a.mo_number || ''}|${a.product_name || ''}|${a.start_time || ''}|${a.notes || ''}`).join('\n');
+function schedFingerprint(rows, moFlags = {}) {
+  // The allergen line is part of what a team is told, so a change to it is a change for that team (D-296).
+  // Appended only when there is a line, so a run with no allergen keeps its
+  // old fingerprint and the first publish after this ships stays quiet.
+  return rows.map(a => {
+    const flags = stepLine(moFlags[moNumKey(a.mo_number)], a.team);
+    return `${a.day_of_week}|${a.room}|${a.slot || 0}|${a.mo_number || ''}|${a.product_name || ''}|${a.start_time || ''}|${a.notes || ''}${flags ? `|${flags}` : ''}`;
+  }).join('\n');
 }
 function fmtWeekLabel(weekStart) {
   try { return new Date(weekStart + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
@@ -74,7 +81,24 @@ function holidayBlock(cal) {
   return ['\uD83D\uDCC5 *Holiday this week*', ...weekSummaryLines(cal).map(l => `  ${l}`), ''];
 }
 
-function teamScheduleMessage(team, rows, weekStart, kind, cal = null) {
+// The allergen records for the MOs on these rows, keyed on moKey (D-296).
+export function moAllergensFor(db, rows) {
+  const keys = [...new Set(rows.map(r => moNumKey(r.mo_number)).filter(Boolean))];
+  const out = {};
+  if (!keys.length) return out;
+  const q = db.prepare('SELECT * FROM schedule_mo_allergens WHERE mo_key = ?');
+  for (const k of keys) {
+    const r = q.get(k);
+    if (r) out[k] = shapeMoAllergens(r);
+  }
+  return out;
+}
+export function shapeMoAllergens(r) {
+  const arr = (v) => { try { const x = JSON.parse(v || '[]'); return Array.isArray(x) ? x : []; } catch { return []; } };
+  return { mo_key: r.mo_key, mo_number: r.mo_number, allergens: arr(r.allergens), gown_teams: arr(r.gown_teams), updated_by: r.updated_by, updated_at: r.updated_at };
+}
+
+function teamScheduleMessage(team, rows, weekStart, kind, cal = null, moFlags = {}) {
   const head = `\uD83D\uDCCB *${team} \u2014 week of ${fmtWeekLabel(weekStart)}*${kind === 'new' ? '' : ' (updated)'}`;
   if (!rows.length) return [head, '', ...holidayBlock(cal), 'Nothing scheduled this week.'].join('\n');
   const byDay = {};
@@ -91,6 +115,9 @@ function teamScheduleMessage(team, rows, weekStart, kind, cal = null) {
         fmtSchedTime(a.start_time) || null,
       ].filter(Boolean).join(' \u00b7 ');
       lines.push(`  \u2022 ${roomLabel(a.room)}${detail ? ` \u2014 ${detail}` : ''}`);
+      // The MO's allergen record, worded for THIS team's step (D-296).
+      const flags = stepLine(moFlags[moNumKey(a.mo_number)], team);
+      if (flags) lines.push(`      \u26a0\ufe0f ${flags}`);
       if (a.notes) lines.push(`      \u21b3 ${a.notes}`);
     }
     lines.push('');
@@ -599,7 +626,7 @@ router.get('/entries/summary', (req, res) => {
  * MO DIGITS under a different string — which names the dirty data without
  * hiding the gap.
  */
-export const normalizeMo = (v) => String(v ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^(MO)+/, '');
+export const normalizeMo = moNumKey;
 const moDigits = (v) => String(v ?? '').replace(/\D/g, '');
 
 /**
@@ -1484,7 +1511,42 @@ router.get('/schedule', (req, res) => {
 
   const assignments = db.prepare('SELECT * FROM production_schedule WHERE week_start = ? ORDER BY day_of_week, room, slot').all(week_start);
   const cleaning_levels = db.prepare('SELECT * FROM production_cleaning_levels WHERE week_start = ? ORDER BY day_of_week, room').all(week_start);
-  res.json({ assignments, cleaning_levels });
+  res.json({ assignments, cleaning_levels, mo_allergens: moAllergensFor(db, assignments) });
+});
+
+// ── An MO's allergens and disposable-gown teams (D-296) ──────────────────────
+// ONE record per MO, read by every schedule cell that names it, the team
+// messages and the end-of-day form. GET ?mo= (null when nothing is recorded);
+// PUT replaces it. Empty lists clear it (the row is kept, so the audit trail
+// and "who cleared it" survive).
+router.get('/mo-allergens', (req, res) => {
+  const db = getDb();
+  const key = moNumKey(req.query.mo);
+  if (!key) return res.json(null);
+  const r = db.prepare('SELECT * FROM schedule_mo_allergens WHERE mo_key = ?').get(key);
+  res.json(r ? shapeMoAllergens(r) : null);
+});
+router.put('/mo-allergens', (req, res) => {
+  const db = getDb();
+  const mo = String(req.body?.mo_number || '').trim();
+  const key = moNumKey(mo);
+  if (!key) return res.status(400).json({ error: 'An MO # is needed — the allergen belongs to the MO, so every step of it shows the same answer.', code: 'MO_REQUIRED' });
+  const c = cleanMoAllergens(req.body);
+  if (c.error) return res.status(400).json({ error: c.error });
+  const before = db.prepare('SELECT * FROM schedule_mo_allergens WHERE mo_key = ?').get(key);
+  const who = req.user?.name || req.body?.updated_by || 'system';
+  if (!before && !hasFlags(c.value)) return res.json(null); // nothing recorded, nothing to say
+  const a = JSON.stringify(c.value.allergens), g = JSON.stringify(c.value.gown_teams);
+  if (before && before.allergens === a && before.gown_teams === g) return res.json(shapeMoAllergens(before));
+  if (before) {
+    db.prepare("UPDATE schedule_mo_allergens SET mo_number = ?, allergens = ?, gown_teams = ?, updated_by = ?, updated_at = datetime('now') WHERE mo_key = ?").run(mo, a, g, who, key);
+  } else {
+    db.prepare('INSERT INTO schedule_mo_allergens (mo_key, mo_number, allergens, gown_teams, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?)').run(key, mo, a, g, who, who);
+  }
+  const after = db.prepare('SELECT * FROM schedule_mo_allergens WHERE mo_key = ?').get(key);
+  logAudit(req.user || who, before ? 'update' : 'create', 'mo_allergens', key,
+    { mo_number: mo, allergens: c.value.allergens, gown_teams: c.value.gown_teams }, before || null, after, `MO ${mo}`);
+  res.json(shapeMoAllergens(after));
 });
 
 // ── The MMR gate (D-133, CAR 4990683-7) ──────────────────────────────────────
@@ -1870,9 +1932,10 @@ router.post('/schedule/notify', requireRole('admin'), async (req, res) => {
       const assignments = db.prepare('SELECT * FROM production_schedule WHERE week_start = ?').all(weekStart);
       const cal = (() => { try { return weekFor(db, weekStart); } catch { return null; } })();
       const changedTeams = [];
+      const moFlags = moAllergensFor(db, assignments);
       for (const { team, channel } of SCHEDULE_TEAM_CHANNELS) {
         const rows = schedRowsForTeam(assignments, team);
-        const fp = schedFingerprint(rows);
+        const fp = schedFingerprint(rows, moFlags);
         const key = `sched_fp_${weekStart}_${team}`;
         const prev = getSetting(db, key);
         setSetting(db, key, fp);
@@ -1880,7 +1943,7 @@ router.post('/schedule/notify', requireRole('admin'), async (req, res) => {
         if (!rows.length && !prev) continue;    // never had anything → nothing to announce
         changedTeams.push(team);
         const ch = getChannelByName(db, channel);
-        if (ch) { await postMessageAs(db, ch, req.user, teamScheduleMessage(team, rows, weekStart, kind, cal)); posted.push(team); }
+        if (ch) { await postMessageAs(db, ch, req.user, teamScheduleMessage(team, rows, weekStart, kind, cal, moFlags)); posted.push(team); }
       }
       // Combined summary goes to the admin-configured channel for the Schedule
       // module (Messages → module links); default #production_schedule.
