@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect, forwardRef, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import PlantHolidaysStrip from '../common/PlantHolidaysStrip';
+import ScheduleSeen from '../common/ScheduleSeen';
 import { ChevronLeft, ChevronRight, Calendar, Share2, Plus, X, ChevronDown, Check, Copy, GripVertical, FileText, Camera, Download, Bell, Clock, Columns2, CheckCircle2, CheckSquare, Square, ArrowRight } from 'lucide-react';
 import DiscussLink from '../DiscussLink.jsx';
 import { useDragPager } from '../../lib/useDragPager';
@@ -1530,6 +1531,7 @@ export default function ProductionSchedule({ user }) {
   return (
     <div className="space-y-4">
       <PlantHolidaysStrip days={60} alwaysShow />
+      <ScheduleSeen weekStart={weekStart} />
       {closedRuns.length > 0 && (
         <div data-closed-runs className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-rose-200 bg-white px-4 py-3 text-sm text-rose-900">
           <span>

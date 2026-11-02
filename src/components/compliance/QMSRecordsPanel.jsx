@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { withSignature } from '../../lib/signature';
+import { useFormDraft, confirmDiscard } from '../../lib/useFormDraft';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import { deptLabel } from '../../constants/departments';
@@ -307,33 +308,46 @@ function RecordForm({ cfg, initial, onSave, onCancel }) {
   // Sign-outs can check out several items at once — the item field becomes a
   // multi-pick and one record is created per item (create mode only).
   const multiItemKey = cfg.key === 'maintenance_sign_out' && !initial?.id ? 'item_description' : null;
-  const [form, setForm] = useState(() => {
+  // A DRAFT IS KEPT AS YOU TYPE (D-299): per person, per form (new) or record (edit).
+  const draft = useFormDraft(`qms:${cfg.key}:${initial?.id || 'new'}`, () => {
     const todayStr = new Date().toISOString().slice(0, 10);
     const base = { record_number: initial?.record_number || '', record_date: initial?.record_date || (initial?.id ? '' : todayStr), notes: initial?.notes || '', paper_record: !!initial?.paper_record, document_url: initial?.document_url || '', status: initial?.status || cfg.defaultStatus || '' };
     for (const f of cfg.fields) base[f.key] = initial?.[f.key] ?? (f.type === 'checkbox' ? false : (f.type === 'multiselect' || f.key === multiItemKey) ? [] : '');
     return base;
   });
+  const { value: form, restoredAt, touched } = draft;
+  const setForm = draft.set;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const clearDraft = draft.clear;
+  // Closing with something typed asks first; saying yes throws the draft away.
+  const cancel = () => { if (!confirmDiscard(touched)) return; clearDraft(); onCancel(); };
   const docFiles = form.document_url ? [{ url: form.document_url, originalName: 'Attached form' }] : [];
   // A refused save used to reject silently: the button un-greyed and nothing
   // else happened, which reads exactly like a broken app. The server sends a
   // sentence explaining the refusal — show it.
   const submit = async (e) => {
     e.preventDefault(); setSaving(true); setError('');
-    try { await onSave(form); }
+    try { await onSave(form); clearDraft(); }
     catch (err) { setError(err.message || 'Could not save this record.'); }
     finally { setSaving(false); }
   };
 
   return (
-    <div className="fixed inset-0 bg-black/30 z-50 flex items-start justify-center p-4 overflow-y-auto" onClick={onCancel}>
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-start justify-center p-4 overflow-y-auto" onClick={cancel}>
       <form onClick={e => e.stopPropagation()} onSubmit={submit} className="bg-white rounded-xl shadow-xl w-full max-w-3xl my-6 p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-gray-900">{initial?.id ? 'Edit' : 'New'} {cfg.singular} <span className="text-xs font-normal text-gray-400">({cfg.formCode})</span></h3>
-          <button type="button" onClick={onCancel} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
+          <button type="button" onClick={cancel} className="p-1 hover:bg-gray-100 rounded-lg" data-record-close><X size={18} className="text-gray-500" /></button>
         </div>
+        {restoredAt && (
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900" data-draft-restored>
+            <span>Restored what you typed earlier ({new Date(restoredAt).toLocaleString()}). Nothing is saved until you press Save.</span>
+            <button type="button" className="text-xs font-medium underline shrink-0" data-draft-discard
+              onClick={() => { if (window.confirm('Discard this draft and start again?')) { clearDraft(); onCancel(); } }}>Discard draft</button>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <div>
@@ -404,7 +418,7 @@ function RecordForm({ cfg, initial, onSave, onCancel }) {
 
         <div className="flex items-center gap-2 pt-1">
           <button type="submit" disabled={saving} className="flex-1 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">{saving ? 'Saving…' : `Save ${cfg.singular}`}</button>
-          <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Cancel</button>
+          <button type="button" onClick={cancel} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Cancel</button>
         </div>
       </form>
     </div>

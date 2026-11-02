@@ -13,6 +13,7 @@ import { CLEAN_LEVEL_VALUES } from '../../shared/clean-levels.js';
 import { gradeAtp } from '../atp-limits.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
 import { weekFor, holidayOn } from '../plant-calendar.js';
+import { plantDateOf } from '../plant-clock.js';
 import { weekSummaryLines } from '../../shared/plant-holidays.js';
 import { mmrGateMode, mmrGateCheck, mmrRef, mmrCoverage, MMR_GATE_MODES, MMR_GATE_KEY } from '../mmr-gate.js';
 import { productionDoor } from '../coa-lot-gate.js';
@@ -1921,6 +1922,8 @@ router.post('/schedule/notify', requireRole('admin'), async (req, res) => {
   setSetting(db, 'schedule_notified_at', at);
   setSetting(db, 'schedule_notify_kind', kind);
   if (weekStart) setSetting(db, 'schedule_notify_week', weekStart);
+  // When THIS week was last published — a "Seen" is against a publish, so an update asks again (D-298).
+  if (weekStart) setSetting(db, `sched_published_${weekStart}`, at);
   // The publisher has, by definition, already seen it.
   if (req.user?.id) db.prepare("UPDATE users SET schedule_seen_at = ? WHERE id = ?").run(at, req.user.id);
   logAudit(req.user || 'system', 'notify', 'production_schedule', weekStart || 'week', { kind, week_start: weekStart }, null, null);
@@ -1968,6 +1971,64 @@ router.get('/schedule/notify-status', (req, res) => {
   if (req.user?.id) seenAt = db.prepare('SELECT schedule_seen_at FROM users WHERE id = ?').get(req.user.id)?.schedule_seen_at || null;
   const unseen = !!notifiedAt && (!seenAt || notifiedAt > seenAt);
   res.json({ notified_at: notifiedAt, kind, week_start: week, seen_at: seenAt, unseen });
+});
+
+// ── Today's runs for one team, and who has seen the week (D-298) ────────────
+// The plant's day (plantDateOf), never the container's UTC date. Weekend = none.
+export function plantToday(now = new Date()) {
+  const date = plantDateOf(now);
+  const d = new Date(date + 'T00:00:00Z');
+  const dow = (d.getUTCDay() + 6) % 7; // Monday = 0
+  const monday = new Date(d.getTime() - dow * 86400000).toISOString().slice(0, 10);
+  return { date, week_start: monday, day_of_week: dow };
+}
+const SCHEDULE_TEAMS_FOR_DEPT = { batching: 'Batching', filling: 'Filling', kitting: 'Kitting' };
+
+router.get('/schedule/today', (req, res) => {
+  const db = getDb();
+  const raw = String(req.query.team || '').trim();
+  const team = SCHEDULE_TEAMS_FOR_DEPT[raw.toLowerCase()] || (TEAMS_FOR_TODAY.includes(raw) ? raw : null);
+  if (!team) return res.json({ team: null, runs: [] });
+  const t = plantToday();
+  if (t.day_of_week > 4) return res.json({ team, ...t, weekend: true, runs: [] });
+  const rows = db.prepare(`SELECT id, room, slot, team, mo_number, product_name, start_time, notes
+    FROM production_schedule WHERE week_start = ? AND day_of_week = ? AND team = ? AND room_type != 'cleaning'
+    ORDER BY room, slot`).all(t.week_start, t.day_of_week, team);
+  const flags = moAllergensFor(db, rows);
+  const closed = (() => { try { return holidayOn(db, t.date) || null; } catch { return null; } })();
+  res.json({ team, ...t, holiday: closed, runs: rows.map(r => ({
+    ...r, room_label: roomLabel(r.room), allergen_line: stepLine(flags[moNumKey(r.mo_number)], team) || null })) });
+});
+const TEAMS_FOR_TODAY = ['Batching', 'Filling', 'Kitting'];
+
+function seenView(db, weekStart, user) {
+  const published_at = getSetting(db, `sched_published_${weekStart}`) || '';
+  const seen = db.prepare(`SELECT user_name AS name, seen_at FROM schedule_acknowledgements
+    WHERE week_start = ? AND published_at = ? ORDER BY seen_at`).all(weekStart, published_at);
+  const mine = user?.id ? db.prepare(`SELECT seen_at FROM schedule_acknowledgements
+    WHERE week_start = ? AND published_at = ? AND user_id = ?`).get(weekStart, published_at, user.id) : null;
+  const earlier = !mine && user?.id ? db.prepare(`SELECT MAX(seen_at) s FROM schedule_acknowledgements
+    WHERE week_start = ? AND user_id = ?`).get(weekStart, user.id)?.s : null;
+  return { week_start: weekStart, published_at: published_at || null, seen, my_seen_at: mine?.seen_at || null,
+    updated_since_seen: !!earlier };
+}
+router.get('/schedule/seen', (req, res) => {
+  const w = String(req.query.week_start || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(w)) return res.status(400).json({ error: 'week_start is required' });
+  res.json(seenView(getDb(), w, req.user));
+});
+// Everyone can press it (a taskWrite on the mount): "I have seen this week's schedule."
+router.post('/schedule/acknowledge', (req, res) => {
+  const db = getDb();
+  const w = String(req.body?.week_start || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(w)) return res.status(400).json({ error: 'week_start is required' });
+  if (!req.user?.id) return res.status(401).json({ error: 'Not signed in' });
+  const published_at = getSetting(db, `sched_published_${w}`) || '';
+  const r = db.prepare(`INSERT OR IGNORE INTO schedule_acknowledgements (week_start, published_at, user_id, user_name)
+    VALUES (?, ?, ?, ?)`).run(w, published_at, req.user.id, req.user.name || '');
+  db.prepare("UPDATE users SET schedule_seen_at = strftime('%Y-%m-%d %H:%M:%f','now') WHERE id = ?").run(req.user.id);
+  if (r.changes) logAudit(req.user, 'acknowledge', 'production_schedule', w, { week_start: w, published_at: published_at || null }, null, null, `Schedule week of ${w}`);
+  res.json(seenView(db, w, req.user));
 });
 
 // POST /schedule/seen — mark the schedule as viewed by the current user

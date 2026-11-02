@@ -957,6 +957,17 @@ function initSchema() {
     -- An MO's allergens and the teams whose step needs a disposable gown (D-296).
     -- ONE row per MO (mo_key = the MO compared as a number), read by every
     -- schedule cell naming it, the team messages and the end-of-day form.
+    -- "I've seen this week's schedule" (D-298): one row per person per PUBLISH of
+    -- a week (published_at '' = never published), so an update asks again.
+    CREATE TABLE IF NOT EXISTS schedule_acknowledgements (
+      week_start TEXT NOT NULL,
+      published_at TEXT NOT NULL DEFAULT '',
+      user_id TEXT NOT NULL,
+      user_name TEXT,
+      seen_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
+      PRIMARY KEY (week_start, published_at, user_id)
+    );
+
     CREATE TABLE IF NOT EXISTS schedule_mo_allergens (
       mo_key TEXT PRIMARY KEY,
       mo_number TEXT NOT NULL,

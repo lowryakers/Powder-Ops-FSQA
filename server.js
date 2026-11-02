@@ -2225,7 +2225,9 @@ app.use('/api/comms', commsRoutes);
 app.use('/api/admin/ops-webhook', opsWebhookAdminRoutes);
 app.use('/api/admin/ops-monitor', opsMonitorAdminRoutes);
 app.use('/api/mock-recalls', requireModuleWrite('recall'), mockRecallRoutes);
-app.use('/api/production', requireModuleWrite('production-log', 'production-schedule', 'production-dashboard', 'operator'), productionRoutes);
+// Anyone who can read the schedule may say they have seen it (D-298).
+app.use('/api/production', requireModuleWrite('production-log', 'production-schedule', 'production-dashboard', 'operator',
+  { taskWrites: [/^POST \/schedule\/(seen|acknowledge)$/] }), productionRoutes);
 app.use('/api/coa', requireModuleWrite('coa'), coaRoutes);
 // The Artwork-Proofing feed is a service holding a token, not a person: it
 // carries no session, and requireModuleWrite 401s any request without one

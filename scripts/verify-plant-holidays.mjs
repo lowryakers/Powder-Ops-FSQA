@@ -154,7 +154,8 @@ t('THE RUN LEFT ON THANKSGIVING IS REPORTED', await banner.count() === 1 && /1 r
 await page.locator('td[data-closed-cell="1"]').filter({ hasNot: page.locator('text=MO-THANKS') }).first().click();
 const warn = page.locator('[data-cell-holiday]');
 t('THE EDITOR WARNS on a holiday — it does not refuse', await warn.waitFor({ timeout: 5000 }).then(() => true).catch(() => false) && /paid holiday/.test(await warn.innerText()));
-await page.mouse.click(5, 5);
+// A click beside a form no longer closes it (D-299) — close with Cancel.
+await page.locator('.fixed.inset-0 button').filter({ hasText: /^Cancel$/ }).first().click();
 await page.waitForTimeout(300);
 
 await page.locator('button[title="Next week"]').click();

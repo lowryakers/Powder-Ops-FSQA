@@ -2370,6 +2370,13 @@ the end-of-day form).
 - Each step prints its own gown answer (YES if its team is ticked). Nothing recorded ⇒ nothing printed.
 - The allergen line is in the team's publish fingerprint only when present. `verify:scheduleallergens` (29).
 
+## Today's runs on the Operator View; "I've seen this week's schedule" (D-298)
+`common/TodaySchedule.jsx` + `GET /production/schedule/today?team=` (plant day, `plantToday()`; Batching/Filling/Kitting
+only; shows the MO's `stepLine`). `common/ScheduleSeen.jsx` + `schedule_acknowledgements` + `GET /schedule/seen`,
+`POST /schedule/acknowledge` — **a Seen is per publish of the week** (`sched_published_<week>`); a new Notify asks again.
+The production mount's `taskWrites` allows only `POST /schedule/(seen|acknowledge)` to view-only accounts — **never add
+a schedule edit there**. `verify:scheduleseen` (22).
+
 ## Schedule: several items on one day, and moving them in bulk
 "It won't let me put two things on Thursday" was a client bug, not a server rule: `production_schedule`
 upserts on `(week_start, day_of_week, room, slot)`, and `handleSave`'s repeat loops reused the edited cell's
@@ -6246,6 +6253,12 @@ cards used to expand in place with every reply, so a reader scrolled the whole o
 - `[data-tip]::after` is generated on `:hover` only. An invisible tooltip box near the right edge panned the whole app.
   **Do not move `content:` back onto the resting rule.**
 - `verify:topbar` (67, browser, nine widths, docked and not).
+
+## A click beside a form never discards it; typing is kept as a draft (D-299)
+`src/lib/keepFormOpen.js` (window capture: a click ON a `fixed inset-0 bg-black/…` backdrop that holds a field is stopped)
+and `src/lib/useFormDraft.js` (`useFormDraft(name, initial)` → localStorage per person; `confirmDiscard(touched)`), used by
+the QMS `RecordForm` and the Flavor sensory evaluation. **A verify must close a form with Cancel/X, never a backdrop
+click.** A draft is never a record and never leaves the browser. `verify:formdrafts` (10).
 
 ## Scrolling: the page holds still behind a pop-up; boxes are measured, never guessed (D-255)
 - **Any `fixed inset-0` backdrop with a `bg-black/…` tint locks the page** (`html:has(...)` in `index.css`), and
