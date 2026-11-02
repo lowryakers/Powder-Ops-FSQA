@@ -7,6 +7,7 @@ import { localDateStr, daysAgoStr } from '../../utils/dates';
 import FileUpload from '../FileUpload';
 import PlantHolidaysStrip from '../common/PlantHolidaysStrip';
 import RaiseConcern from '../common/RaiseConcern';
+import TodaySchedule from '../common/TodaySchedule';
 import { createTranslator, formatDueLabelI18n } from '../../i18n/operatorStrings';
 import { canSeeQaReview } from '../../utils/permissions';
 import { formatDateTime, formatDate } from '../../lib/datetime.js';
@@ -1286,6 +1287,9 @@ export default function OperatorView() {
       </div>
 
       {/* Paid holidays in the next 60 days (D-175) — everybody has this screen. */}
+      {/* Today's runs for this team (D-298) — room, MO, start, allergen / gown. */}
+      <TodaySchedule department={viewDept} lang={lang} />
+
       <PlantHolidaysStrip days={60} lang={lang} />
 
       {/* Food safety culture (D-211): anybody can raise a concern, from the one

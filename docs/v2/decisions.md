@@ -9994,3 +9994,23 @@ executor, signs that the evidence is attached. The full live steps for those ten
 in case Quality wants them run by hand later; running them needs no other change. The requirement-to-test table marks
 each OQ test **L** (live) or **A** (automated + admin check). **OQ-11 has the weakest automated cover** (a signed record
 refusing deletion, plus the IQ-06 restore); if Quality asks for one Appendix test by hand, it is that one.
+
+## D-298 — Today's runs on the Operator View; "I've seen this week's schedule" for everyone (2 Nov 2026)
+**Asked by Lowry** (recommendations 1 and 5 after D-296), "information SIMPLY and clean".
+- **Today card** (`common/TodaySchedule.jsx`, `GET /production/schedule/today?team=`): on the Operator View, for the
+  screen's department when it is Batching, Filling or Kitting. One line per run — room, MO, product, start time — the
+  MO's allergen / gown line (`stepLine`, D-296) under it when there is one, and the run's note. "Nothing scheduled today"
+  when empty; a holiday says so; a weekend and any other department show nothing. The day is the plant's
+  (`plantToday()` from `plantDateOf`), never the container's UTC date.
+- **Seen** (`common/ScheduleSeen.jsx`, `schedule_acknowledgements`, `GET /production/schedule/seen`,
+  `POST /production/schedule/acknowledge`): a button on the schedule anyone can press, "Seen by N" with the names.
+  **A Seen is against a publish of the week** (`sched_published_<week>`, set by Notify), so publishing again brings the
+  button back with "Updated since you last saw it". One row per person per publish; a second press files nothing.
+  Audited once per publish. Opening the schedule still clears the badge as before; the button is the deliberate act.
+- **The production mount takes `taskWrites` for `POST /schedule/seen|acknowledge` only**, so an account with just the
+  default Operator View can press it; every other schedule write still needs edit (asserted).
+- **Recommendation 3 (post only what changed) mostly exists already**: Notify posts to a team only when that team's
+  runs changed (`schedFingerprint`), and stays silent otherwise. What it does not do is say *which* run changed — the
+  changed team gets its whole week again. Left as is.
+- Waits for review (D-274): it adds a table and writes records. `verify:scheduleseen` (22; control without the
+  allowance fails 9).
