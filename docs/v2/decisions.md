@@ -9940,3 +9940,22 @@ anything while a phone shows the channel list, left the badge stale until someth
   (debounced 300 ms).
 - Being @mentioned in a reply re-follows the thread in a group DM too (it was skipped on the DM branch).
 - Nothing about who follows a thread changed. `verify:dmthreadbadge` (11, browser at 1280 and 390; control fails 2).
+
+## D-295 — Purchasing corrects a supplier's details and contacts on the screen (2 Nov 2026)
+Jake was asked to clean up the Suppliers register. The server has accepted In use, Type, website, address and
+notes since the register shipped, but the screen offered only the food-contact tick, and contacts had no door at
+all. **Edit details** and **Contacts** on the supplier (`EditDetails`, `ContactsSection` in `SuppliersPanel.jsx`;
+`POST /suppliers/:id/contacts`, `PUT|DELETE /suppliers/contacts/:cid`), for anyone with `canEdit` (Purchasing,
+Quality, supervisors, the Suppliers edit grant).
+- **Type is a closed list** (`shared/supplier-fields.js`, `VENDOR_TYPES`) because `packaging` decides who owes a
+  letter of guarantee (D-289). An imported value outside the list is kept until somebody picks one; it is never
+  rewritten, and an unrelated edit does not refuse it.
+- **Turning "In use" off needs a reason** (`REASON_REQUIRED`), recorded on the audit entry. It takes the supplier
+  off "buying without qualification" and off the letter-of-guarantee list, so it says why.
+- **Qualification is still not here** — status follows the disposition only (`STATUS_OWNED`).
+- **Contacts are details, not compliance records**: corrected in place, removed outright, every change audited with
+  before and after. One main contact; marking another moves it. A role is what the person told us, never guessed.
+- **Found on the way: "Remove — filed by mistake" could never work.** It passed its reason to `apiDelete`, which
+  dropped every body, so the server answered "A reason is required" every time. `apiDelete(path, body)` now sends
+  the body when given.
+- `verify:supplieredit` (26, live + browser at 1280 and 390; the control with the old `apiDelete` fails 1).

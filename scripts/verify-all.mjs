@@ -152,6 +152,7 @@ const RUNS = [
   ['verify-bot-no-approve.mjs', 5168, {}, false],
   ['verify-part11.mjs', 5169, {}, false],
   ['verify-guarantee.mjs', 5170, {}, true],
+  ['verify-supplier-edit.mjs', 5173, {}, false],
   ['verify-session-security.mjs', 5171, { SIGNATURE_NAME_OPTIONAL: '0' }, true],
   ['verify-doc-revisions.mjs', 5165, { QUALITY_WEBHOOK_ENABLED: '1', QUALITY_HOOK_PORT: '5166', QUALITY_WEBHOOK_URL: 'http://127.0.0.1:5166/quality', QUALITY_WEBHOOK_KEY: 'qual-key' }, false],
   ['verify-banned-check.mjs', 5122, {}, false],
