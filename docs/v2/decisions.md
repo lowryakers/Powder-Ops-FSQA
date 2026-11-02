@@ -10014,3 +10014,22 @@ refusing deletion, plus the IQ-06 restore); if Quality asks for one Appendix tes
   changed team gets its whole week again. Left as is.
 - Waits for review (D-274): it adds a table and writes records. `verify:scheduleseen` (22; control without the
   allowance fails 9).
+
+## D-299 — A click beside a form no longer throws it away; what was typed is kept as a draft (2 Nov 2026)
+**Reported by Lowry**: Adam filled most of a Flavor Approval card, clicked just outside it, and the card closed with
+everything gone. **108 pop-ups** closed on a click on the dim backdrop, the QMS record form among them — and a text
+selection that starts in a box and ends outside the card lands its click on the backdrop too.
+- **One rule for every pop-up** (`src/lib/keepFormOpen.js`, installed once in `main.jsx`): a click whose target IS a dim
+  backdrop (`fixed inset-0 bg-black/…`) that contains a form field is stopped before React sees it (a window capture
+  listener runs ahead of React's root). X, Cancel and Save are untouched; a pop-up with nothing to type in still closes
+  on an outside click. **A new pop-up gets this by using the same backdrop classes**; never close a form from its backdrop.
+- **The typing is kept as a draft in this browser** (`src/lib/useFormDraft.js`, per person and per form or record): the
+  QMS record form (every QMS type — Flavor Approval, Deviation, Non-Conformance, …) and the Flavor Approval sensory
+  evaluation. Reopening offers it back with "Restored what you typed earlier — nothing is saved until you press Save".
+  Saving clears it. **Closing with something typed asks "Close without saving?"**; yes discards it.
+- **A draft is never a record**: it lives only in that browser, is never sent to the server and is not evidence of
+  anything. Shared tablets keep drafts per signed-in person.
+- Other forms still lose their typing if closed with X; they no longer close by accident. Extend `useFormDraft` to a
+  form when someone reports it.
+- `verify:formdrafts` (10; the control without the guard fails 1, the confirm alone still holding the card).
+  `verify-plant-holidays` closed the cell editor by clicking beside it and now presses Cancel.

@@ -4,6 +4,7 @@ import { Send, Copy, Check, MessageSquare, X, Trash2, Star, ClipboardList } from
 import QMSRecordsPanel from './QMSRecordsPanel.jsx';
 import { SENSORY_KEYS, sensoryNoteKey, sensoryComplete } from '../../../shared/sensory.js';
 import SensoryBlock from './SensoryBlock.jsx';
+import { useFormDraft, confirmDiscard } from '../../lib/useFormDraft';
 
 // Flavor Approvals: the log (generic QMS panel) plus "text it for approval".
 //
@@ -181,13 +182,18 @@ function SendModal({ onClose, onSend, sending, record }) {
  * this produces IS an organoleptic record. A new flavour with no specification
  * on file is described here and that description becomes its draft spec.
  */
-function SensoryModal({ record, onClose, onSaved }) {
-  const [values, setValues] = useState(() => {
+function SensoryModal({ record, onClose: close, onSaved }) {
+  // Kept as a draft while QA types (D-299): a slip outside the card, or a
+  // reload, no longer throws away a half-done tasting.
+  const draft = useFormDraft(`flavor-sensory:${record?.id}`, () => {
     const v = {};
     for (const k of SENSORY_KEYS) { v[k] = String(record?.[k] ?? '').toLowerCase(); v[sensoryNoteKey(k)] = record?.[sensoryNoteKey(k)] || ''; }
-    return v;
+    return { values: v, notes: record?.sensory_notes || '' };
   });
-  const [notes, setNotes] = useState(record?.sensory_notes || '');
+  const { values, notes } = draft.value;
+  const setValues = (fn) => draft.set(d => ({ ...d, values: typeof fn === 'function' ? fn(d.values) : fn }));
+  const setNotes = (n) => draft.set(d => ({ ...d, notes: n }));
+  const onClose = () => { if (!confirmDiscard(draft.touched)) return; draft.clear(); close(); };
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const complete = sensoryComplete(values);
@@ -197,6 +203,7 @@ function SensoryModal({ record, onClose, onSaved }) {
     setBusy(true); setError(null);
     try {
       await apiPost(`/qms/flavor_approval/${record.id}/sensory`, { ...values, sensory_notes: notes });
+      draft.clear();
       onSaved();
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   };
@@ -216,6 +223,11 @@ function SensoryModal({ record, onClose, onSaved }) {
           <button type="button" onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600"><X size={16} /></button>
         </div>
 
+        {draft.restoredAt && (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900" data-draft-restored>
+            Restored what you typed earlier ({new Date(draft.restoredAt).toLocaleString()}). Nothing is saved until you press Save.
+          </p>
+        )}
         <SensoryBlock product={record?.product_name} values={values} onChange={setValues} />
 
         <label className="block">

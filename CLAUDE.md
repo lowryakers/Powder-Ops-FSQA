@@ -6254,6 +6254,12 @@ cards used to expand in place with every reply, so a reader scrolled the whole o
   **Do not move `content:` back onto the resting rule.**
 - `verify:topbar` (67, browser, nine widths, docked and not).
 
+## A click beside a form never discards it; typing is kept as a draft (D-299)
+`src/lib/keepFormOpen.js` (window capture: a click ON a `fixed inset-0 bg-black/…` backdrop that holds a field is stopped)
+and `src/lib/useFormDraft.js` (`useFormDraft(name, initial)` → localStorage per person; `confirmDiscard(touched)`), used by
+the QMS `RecordForm` and the Flavor sensory evaluation. **A verify must close a form with Cancel/X, never a backdrop
+click.** A draft is never a record and never leaves the browser. `verify:formdrafts` (10).
+
 ## Scrolling: the page holds still behind a pop-up; boxes are measured, never guessed (D-255)
 - **Any `fixed inset-0` backdrop with a `bg-black/…` tint locks the page** (`html:has(...)` in `index.css`), and
   scrollers inside `fixed` elements stop at their own end. **A new pop-up must use that backdrop** or it is not covered.

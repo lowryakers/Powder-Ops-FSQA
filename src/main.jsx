@@ -4,6 +4,10 @@ import { AuthProvider } from './hooks/useAuth';
 import App from './App.jsx';
 import FileViewerHost from './components/common/FileViewerHost.jsx';
 import './index.css';
+import { installKeepFormOpen } from './lib/keepFormOpen.js';
+
+// A click beside a form never discards it (D-299).
+installKeepFormOpen();
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
