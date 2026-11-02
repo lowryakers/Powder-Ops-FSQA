@@ -9959,3 +9959,29 @@ Quality, supervisors, the Suppliers edit grant).
   dropped every body, so the server answered "A reason is required" every time. `apiDelete(path, body)` now sends
   the body when given.
 - `verify:supplieredit` (26, live + browser at 1280 and 390; the control with the old `apiDelete` fails 1).
+
+## D-296 — An MO says what allergens it carries and which steps need a disposable gown (2 Nov 2026)
+**Asked by Lowry**: on the schedule cell, a box for "contains an allergen" with a pick-several list, and one for
+"Disposable gown" with Batching / Filling / Kitting, carried through to the downstream steps so the Filling step
+reads "Allergen: Milk · Disposable gown: YES".
+- **THE ANSWER BELONGS TO THE MO, NOT TO A CELL.** One MO is blended, filled and kitted in three cells, often on
+  three days, and every one of them must say the same thing. So it is ONE row per MO (`schedule_mo_allergens`,
+  keyed on `moKey` — "MO76736", "76736" and "mo 76736" are one MO), and every cell, the team messages and the
+  end-of-day form read it. Copying it onto each cell (or into the downstream cells when they are created) is how
+  the Filling card ends up saying "no allergen" about an MO Batching marked as milk. The boxes are disabled until
+  the cell names an MO, and say the answer applies to every step.
+- **Each step is told its OWN gown answer**: YES when its team is ticked, NO otherwise. An MO with nothing recorded
+  prints nothing — a card reading "Allergen: none" on every run would be wallpaper. `stepLine()` in
+  `shared/schedule-allergens.js` is the one wording for the grid, the downstream setup, the team messages and the
+  end-of-day form.
+- **The list is the nine major food allergens in US law** (FALCPA + FASTER Act): Milk, Egg, Fish, Crustacean
+  shellfish, Tree nuts, Peanuts, Wheat, Soy, Sesame. The Pre-Op swab list (Milk, Nuts, Wheat, Gluten Free, Other) is
+  a different record and is untouched. If the plant wants its own list, it is one constant.
+- **Publishing**: a run's allergen line is part of what a team is told, so it is in the team's fingerprint — a
+  changed gown answer re-announces only the team it changed for. A run with no allergen keeps its old fingerprint, so
+  the first publish after this ships stays quiet.
+- **Display only on the end-of-day form.** Nothing is stamped onto the production entry and nothing is refused; the
+  MO record is the one owner. Clearing keeps the row with empty lists, so "who cleared it" survives. Every change is
+  audited (`mo_allergens`).
+- **Waits for review (D-274)**: it adds a table and writes records.
+- `verify:scheduleallergens` (29, live + browser at 1280 and 390; the control without the message line fails 4).

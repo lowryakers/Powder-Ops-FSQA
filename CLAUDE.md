@@ -2361,6 +2361,15 @@ row); the **EOD Templates** tab (log-editors/admins) is the field-list editor (`
 reorder typed fields, dropdown choices comma-separated, save per team). Switching team in the entry form
 resets the answers so a Batching answer never carries into a Filling report.
 
+## An MO's allergens and disposable-gown teams are one record per MO (D-296)
+`schedule_mo_allergens` (keyed on `moKey`), `shared/schedule-allergens.js` (`MAJOR_ALLERGENS`, `GOWN_TEAMS`, `moKey`,
+`cleanMoAllergens`, `stepLine`), `GET|PUT /production/mo-allergens`, `mo_allergens` on `GET /production/schedule`,
+`common/MoAllergens.jsx` (`MoAllergenFields` on the cell editor, `MoAllergenChip` on every card, `MoAllergenLookup` on
+the end-of-day form).
+- **Never copy it onto a schedule cell or a production entry** — every step of the MO reads the one row.
+- Each step prints its own gown answer (YES if its team is ticked). Nothing recorded ⇒ nothing printed.
+- The allergen line is in the team's publish fingerprint only when present. `verify:scheduleallergens` (29).
+
 ## Schedule: several items on one day, and moving them in bulk
 "It won't let me put two things on Thursday" was a client bug, not a server rule: `production_schedule`
 upserts on `(week_start, day_of_week, room, slot)`, and `handleSave`'s repeat loops reused the edited cell's
