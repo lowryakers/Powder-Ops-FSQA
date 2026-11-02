@@ -1285,10 +1285,10 @@ function MmrGateStrip({ isAdmin, refreshKey }) {
           <span data-mmr-named={data.runs_named}>{data.runs_named} of {data.runs_total} runs since {data.since} name their approved MMR</span>
           {' · '}<span data-mmr-unnamed={data.runs_unnamed}>{data.runs_unnamed} filed without one</span>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center gap-2">
           {isAdmin && (
             <select value={data.mode} onChange={e => setMode(e.target.value)} disabled={busy} data-mmr-gate-mode
-              className="px-2 py-1 border border-gray-300 rounded-lg text-xs bg-white text-gray-800">
+              className="min-w-0 max-w-full px-2 py-1 border border-gray-300 rounded-lg text-xs bg-white text-gray-800">
               <option value="off">Off</option>
               <option value="warn">Warn — file, record the gap</option>
               <option value="on">Enforce — refuse a run with no MMR</option>

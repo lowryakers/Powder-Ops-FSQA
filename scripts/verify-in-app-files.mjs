@@ -48,7 +48,16 @@ async function session(viewport) {
   const page = await ctx.newPage();
   page.on('pageerror', e => { console.log('  [pageerror]', e.message); fail++; });
   const popups = [];
-  ctx.on('page', p => { if (p !== page) popups.push(p.url()); });
+  // A new tab's address is about:blank (read as '') the instant it appears; the
+  // real one arrives on its first navigation. Record the slot at once so the count
+  // is right, and fill the address in when the tab commits to it.
+  ctx.on('page', p => {
+    if (p === page) return;
+    const i = popups.push(p.url()) - 1;
+    const fill = () => { if (p.url() && p.url() !== 'about:blank') popups[i] = p.url(); };
+    p.on('framenavigated', fill);
+    p.waitForLoadState('commit').then(fill, () => {});
+  });
   await page.goto(`${URL}/manifest.webmanifest`);
   await page.evaluate(([tk, u]) => { localStorage.setItem('auth_token', tk); localStorage.setItem('auth_user', JSON.stringify(u)); },
     [tok, { id: 'if-admin', name: 'Files Admin', role: 'admin', department: 'office' }]);
