@@ -10033,3 +10033,28 @@ selection that starts in a box and ends outside the card lands its click on the 
   form when someone reports it.
 - `verify:formdrafts` (10; the control without the guard fails 1, the confirm alone still holding the card).
   `verify-plant-holidays` closed the cell editor by clicking beside it and now presses Cancel.
+
+## D-300 — Personal devices stay signed in for 7 days; one idle clock for every open copy; a renewed phone subscription is handed over while signed out (3 Nov 2026)
+Reported: people are signed out too often, and get no message notifications until they sign back in. Three findings.
+- **8 hours (D-291) signed everyone out overnight.** A person's own phone or desk now stays signed in for **7 days
+  without use** (`IDLE_MINUTES_PERSONAL`). A shared device stays at **15 minutes**. Part 11's control on a personal
+  device is the signature: every signature asks for the password, and the first of a session also the name
+  (11.200(a)(1), D-293). The short timeout is what protects a shared tablet, and that is unchanged.
+- **Each open copy kept its own idle clock, and they share one sign-in.** A second tab, the docked Messages panel or
+  the pop-out that nobody touched ran out and signed the person out of the copy they were working in. Input is now
+  written to `localStorage` (`LAST_INPUT_KEY`, at most every 5 s) and every copy reads the later of its own and the
+  shared time (`lastInputAt()` in `src/lib/idleSignOut.js`). Opening a copy does not write the shared clock, so a tab
+  that reloads by itself cannot keep anyone signed in.
+- **The server still sends to a signed-out device** (tested: the send is attempted after logout). What was missing is
+  the phone's side. A browser renews its push subscription now and then and fires `pushsubscriptionchange`; nothing
+  listened, so the old address went dead (410, pruned) and only Messages, signed in, re-registered it. `public/sw.js`
+  now handles the event and posts the new subscription to the public **`POST /api/push-rotate`**, which accepts it
+  only with the OLD subscription's endpoint **and** auth secret (both held only by the server and that browser),
+  keeps the old row's person, refuses a deactivated account, answers 404 for any mismatch, is rate-limited, and
+  audits `push_subscription_renewed` without the endpoint. The page leaves endpoint + auth + server key in Cache
+  Storage `push-meta` (`src/lib/pushMemory.js`); the service worker's activate step keeps that cache.
+- **Not fixable here:** notifications switched off on the phone, or ReadyDoc removed from the home screen.
+- **Revalidation (D-287):** this touches access control. OQ-16 is re-run (its text now says 7 days) with
+  `verify:sessionsec` and the new `verify:signinclock`, and the change goes on the change register.
+- `verify:signinclock` (17; the control with the old per-copy clock fails 2 — the untouched tab signs the person out
+  and the server ends the session). `verify:sessionsec` now asserts 7 days (6 days in, 8 days out).

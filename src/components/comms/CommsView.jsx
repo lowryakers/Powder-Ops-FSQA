@@ -1,4 +1,5 @@
 import { flushSync } from 'react-dom';
+import { rememberPushSubscription } from '../../lib/pushMemory';
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
@@ -3504,6 +3505,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
     if (!key) return false; // server has no VAPID keys — nothing to subscribe to
     const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(key) });
     await apiPost('/comms/push/subscribe', { subscription: sub.toJSON() });
+    rememberPushSubscription(sub, key);
     setPushSubscribed(true);
     return true;
   }, []);
@@ -3537,6 +3539,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
         // when the row is already there, and repairs silent-notification loss
         // when it isn't.
         apiPost('/comms/push/subscribe', { subscription: sub.toJSON() }).catch(() => {});
+        apiFetch('/comms/push/key').then(({ key }) => rememberPushSubscription(sub, key)).catch(() => rememberPushSubscription(sub, null));
         return;
       }
       const optedOut = localStorage.getItem('comms_push_optout') === '1';

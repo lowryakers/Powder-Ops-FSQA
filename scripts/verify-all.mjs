@@ -9,6 +9,12 @@ import { tmpdir } from 'os';
 const ROOT = process.cwd();
 const TMP = process.env.VERIFY_TMP || tmpdir();
 const S3_PORT = 9099;
+// Throwaway VAPID keys for the checks that need push switched on (D-300). Made
+// per run, never stored.
+const TEST_VAPID = await import('web-push').then(({ default: w }) => {
+  const k = w.generateVAPIDKeys();
+  return { VAPID_PUBLIC_KEY: k.publicKey, VAPID_PRIVATE_KEY: k.privateKey, VAPID_SUBJECT: 'mailto:test@example.invalid' };
+});
 
 // [script, port, extra env, needsS3]
 const RUNS = [
@@ -157,6 +163,7 @@ const RUNS = [
   ['verify-schedule-seen.mjs', 5175, {}, false],
   ['verify-form-drafts.mjs', 5176, {}, false],
   ['verify-session-security.mjs', 5171, { SIGNATURE_NAME_OPTIONAL: '0' }, true],
+  ['verify-signin-clock.mjs', 5177, TEST_VAPID, false],
   ['verify-doc-revisions.mjs', 5165, { QUALITY_WEBHOOK_ENABLED: '1', QUALITY_HOOK_PORT: '5166', QUALITY_WEBHOOK_URL: 'http://127.0.0.1:5166/quality', QUALITY_WEBHOOK_KEY: 'qual-key' }, false],
   ['verify-banned-check.mjs', 5122, {}, false],
   ['verify-partner-recon.mjs', 5123, { PARTNER_PORTAL_TODAY: '2026-10-23' }, true],

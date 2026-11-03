@@ -2,7 +2,7 @@
 //   1. the daily database backup — stored off the server (the S3 stand-in),
 //      30 daily + 12 monthly retention, a restore test that downloads the copy
 //      and opens it, and the bell line while no backup has succeeded;
-//   2. idle sign-out — 15 minutes on a shared device, 8 hours otherwise, and
+//   2. idle sign-out — 15 minutes on a shared device, 7 days otherwise (D-300; was 8 hours), and
 //      only a person's input moves the clock;
 //   3. an admin reset gives a temporary password that opens one door (choose
 //      your own) and expires;
@@ -94,9 +94,9 @@ t('16 minutes unused on a shared device: signed out', r.status === 401 && body.i
 t('the session is gone', !db.prepare('SELECT 1 FROM sessions WHERE token = ?').get(s.token));
 t('the idle sign-out is in the audit log', !!db.prepare("SELECT 1 FROM audit_log WHERE action = 'logout' AND details LIKE '%idle%' AND entity_id = 'sec-op'").get());
 s = await login('Otto Floor', 'OttoSecret2026');
-t('a personal sign-in is told 8 hours', s.user?.idle_minutes === 480);
-setLast(s.token, ago(7 * 60));
-t('7 hours unused on a personal device: still signed in', (await req('/users/me', s.token)).status === 200);
+t('a personal sign-in is told 7 days', s.user?.idle_minutes === 7 * 24 * 60);
+setLast(s.token, ago(6 * 24 * 60));
+t('6 days unused on a personal device: still signed in', (await req('/users/me', s.token)).status === 200);
 setLast(s.token, ago(5));
 await req('/users/me', s.token);
 let last = db.prepare('SELECT last_active_at FROM sessions WHERE token = ?').get(s.token).last_active_at;
@@ -104,8 +104,8 @@ t('a request with no input behind it does not move the clock (a badge poll)', Da
 await req('/users/me', s.token, { headers: ACT });
 last = db.prepare('SELECT last_active_at FROM sessions WHERE token = ?').get(s.token).last_active_at;
 t('a request after a person touched the screen moves it', Date.parse(last) > Date.now() - 60000);
-setLast(s.token, ago(9 * 60));
-t('9 hours unused on a personal device: signed out', (await req('/users/me', s.token)).status === 401);
+setLast(s.token, ago(8 * 24 * 60));
+t('8 days unused on a personal device: signed out', (await req('/users/me', s.token)).status === 401);
 
 // ── 3. reset gives a temporary password ────────────────────────────────────
 console.log('\n── admin reset: a temporary password ──');

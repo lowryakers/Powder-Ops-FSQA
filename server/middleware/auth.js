@@ -122,6 +122,9 @@ const PUBLIC_ROUTES = [
   // closes (D-261). A beacon cannot carry an Authorization header, so the
   // session token rides in the body and the route checks it itself.
   { method: 'POST', path: '/user-activity/beacon' },
+  // A phone handing over its renewed push subscription (D-300). The service
+  // worker has no session; the route proves possession of the old subscription.
+  { method: 'POST', path: '/push-rotate' },
   { method: 'POST', path: '/sms/inbound' },   // Twilio — signature-checked in the handler
   { prefix: '/submit/' },                     // public kiosk forms (QR codes)
   // The partner reconciliation portal. Authenticated by a hashed token in the

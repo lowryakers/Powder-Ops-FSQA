@@ -17,7 +17,9 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.filter(k => k !== SHELL_CACHE).map(k => caches.delete(k)));
+    // 'push-meta' is not a cache of the site — it is what renews this device's
+    // notifications while nobody is signed in (D-300), and an update must not wipe it.
+    await Promise.all(keys.filter(k => k !== SHELL_CACHE && k !== 'push-meta').map(k => caches.delete(k)));
     await self.clients.claim();
   })());
 });
@@ -91,6 +93,49 @@ self.addEventListener('push', (event) => {
     data: { url: data.url || '/' },
   };
   event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// ── The browser renewed this device's push subscription (D-300) ─────────────
+// Without this the server kept the old address, the push service answered 410,
+// the row was pruned, and the phone got nothing until its person signed back in
+// and opened Messages. The worker has no session: it proves possession of the
+// OLD subscription (endpoint + auth secret, which the page left in Cache
+// Storage) to /api/push-rotate, and the new one keeps the same person.
+const PUSH_META = '/__push_meta';
+const b64ToBytes = (s) => {
+  const pad = '='.repeat((4 - (s.length % 4)) % 4);
+  const raw = atob((s + pad).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+};
+const bytesToB64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+self.addEventListener('pushsubscriptionchange', (event) => {
+  event.waitUntil((async () => {
+    let meta = {};
+    try {
+      const cache = await caches.open('push-meta');
+      const hit = await cache.match(PUSH_META);
+      if (hit) meta = await hit.json();
+    } catch { /* no memory of the old one */ }
+    const old = event.oldSubscription;
+    const oldEndpoint = (old && old.endpoint) || meta.endpoint;
+    const oldAuth = (old && old.getKey && old.getKey('auth') && bytesToB64(old.getKey('auth'))) || meta.auth;
+    if (!oldEndpoint || !oldAuth) return;
+    let sub = event.newSubscription;
+    if (!sub) {
+      const appKey = (old && old.options && old.options.applicationServerKey) || (meta.key ? b64ToBytes(meta.key) : null);
+      if (!appKey) return;
+      sub = await self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: appKey });
+    }
+    const res = await fetch('/api/push-rotate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ old_endpoint: oldEndpoint, old_auth: oldAuth, subscription: sub.toJSON() }),
+    });
+    if (res.ok) {
+      const j = sub.toJSON();
+      const cache = await caches.open('push-meta');
+      await cache.put(PUSH_META, new Response(JSON.stringify({ endpoint: j.endpoint, auth: j.keys && j.keys.auth, key: meta.key || null }), { headers: { 'Content-Type': 'application/json' } }));
+    }
+  })().catch(() => {}));
 });
 
 self.addEventListener('notificationclick', (event) => {

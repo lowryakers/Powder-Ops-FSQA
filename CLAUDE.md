@@ -6374,6 +6374,15 @@ revoke by DELETE with a reason), `CrisisDrills.jsx`. SOP 501, SQF 2.6.4.2.
 - **Printed meanings** come from `shared/signature-meaning.js`; print a record-interface record with
   `GET /api/records/:type/:id/pdf` (`server/signed-record-pdf.js`, `PrintRecordButton`). `verify:sessionsec` (59).
 
+## 7 days on a personal device; one idle clock for every open copy; a renewed phone subscription survives sign-out (D-300)
+- **`IDLE_MINUTES_PERSONAL` is 7 days; shared stays 15 minutes.** Signatures carry the Part 11 control (password every
+  time). Changing either number is an access-control change: re-run OQ-16 (D-287).
+- **Every tab, the docked Messages panel and the pop-out share ONE idle clock** (`LAST_INPUT_KEY` in localStorage,
+  `lastInputAt()`). Never give a copy of the app its own clock — they share one sign-in.
+- **`pushsubscriptionchange` in `public/sw.js` → public `POST /api/push-rotate`**, proven by the OLD endpoint + auth
+  secret (Cache Storage `push-meta`, written by `rememberPushSubscription`). The SW's activate keeps `push-meta`.
+- `verify:signinclock` (17; control fails 2).
+
 ## A bot never approves, by token or by password; the check is read-only (D-279)
 - **`tokenApproveGuard` refuses a bot ACCOUNT on every `APPROVE_ROUTES` match** (`403 bot_account_cannot_approve`),
   not only its token. A bot = `isBotAccount()` in `server/trainees.js` (ever held a token, ReadyBot, Test Runner, `*`
