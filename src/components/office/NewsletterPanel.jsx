@@ -1,4 +1,5 @@
 import { useState, useRef, useMemo } from 'react';
+import { printableImage } from '../../lib/printableImage';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import NewsletterBanner from './NewsletterBanner.jsx';
 import FormatBar from '../common/FormatBar.jsx';
@@ -231,7 +232,8 @@ function IssueEditor({ issue, canEdit, onChanged, onClose, tr = (x) => x, lang =
       });
       setDraft(saved);
       onChanged?.(saved);
-    } catch (e) { setError(e.message); } finally { setSaving(false); }
+      return true;
+    } catch (e) { setError(e.message); return false; } finally { setSaving(false); }
   };
 
   const attachImage = async (sectionId, files) => {
@@ -240,7 +242,7 @@ function IssueEditor({ issue, canEdit, onChanged, onClose, tr = (x) => x, lang =
     setUploadingFor(sectionId); setError('');
     try {
       const body = new FormData();
-      body.append('files', file);
+      body.append('files', await printableImage(file));
       body.append('issue_id', draft.id);
       const res = await fetch('/api/newsletter/images', {
         method: 'POST',
@@ -261,7 +263,7 @@ function IssueEditor({ issue, canEdit, onChanged, onClose, tr = (x) => x, lang =
     setUploadingFor('__banner__'); setError('');
     try {
       const body = new FormData();
-      body.append('files', file);
+      body.append('files', await printableImage(file));
       body.append('issue_id', draft.id);
       const res = await fetch('/api/newsletter/images', {
         method: 'POST',
@@ -286,7 +288,10 @@ function IssueEditor({ issue, canEdit, onChanged, onClose, tr = (x) => x, lang =
     } catch (e) { setError(e.message); } finally { setSharing(false); }
   };
 
-  const openPdf = () => {
+  const openPdf = async () => {
+    // The PDF is made from the SAVED issue, so save first — a photo just
+    // attached otherwise exists only on this screen and is missing from the PDF.
+    if (!locked && !(await save())) return;
     // Presigned-free: the endpoint streams the PDF for whoever can view it.
     fetch(`/api/newsletter/issues/${draft.id}/pdf?lang=${lang}`, { headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` } })
       .then(r => r.blob())

@@ -10058,3 +10058,18 @@ Reported: people are signed out too often, and get no message notifications unti
   `verify:sessionsec` and the new `verify:signinclock`, and the change goes on the change register.
 - `verify:signinclock` (17; the control with the old per-copy clock fails 2 — the untouched tab signs the person out
   and the server ends the session). `verify:sessionsec` now asserts 7 days (6 days in, 8 days out).
+
+## D-301 — A photo on a newsletter card reaches the PDF (3 Nov 2026)
+Marnee reported that photos she attached to newsletter cards showed in the editor and were missing from the preview
+PDF. Two causes, both fixed:
+- **The PDF is made from the SAVED issue, and the PDF button did not save first.** A photo just attached lived only on
+  the screen. The button now saves, then opens the PDF (a shared issue is locked and is not saved).
+- **The PDF library (pdfkit) draws JPEG and PNG only**, and skipped anything else without a word. It also ignores a
+  JPEG's rotation flag, so an upright phone photo can print on its side. There is no image library on the server, so
+  the editor redraws every photo in the browser (`src/lib/printableImage.js`) into an upright JPEG, at most 2,000 px
+  on its long side, before uploading. A small PNG is kept as it is (it may be a logo with transparency).
+- **The server refuses a photo the PDF cannot draw** (`415 IMAGE_NOT_PRINTABLE`, judged on the bytes, naming the
+  file), so this can never fail silently again.
+- Photos already uploaded in another format are not converted; re-attaching them fixes them.
+- `verify:newsletterphotos` (11; the code before this fails 4, among them "0 images in the PDF").
+
