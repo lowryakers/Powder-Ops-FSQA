@@ -10114,3 +10114,37 @@ Birthday Cake Hoodie.
   token rules see routes registered from another file.
 - `check:merch` (48, pure), `verify:merch` (101, live + browser at 1280 and 390). Controls: on `main` the first
   colour and style return 404 and `check:merch` cannot import `shared/merch.js`.
+
+## D-303 — The Quality bot stages SOP work with a `sops-edit` grant; owners approve (3 Nov 2026)
+
+Lowry approved (A-20261103-003, register R-0584) opening exactly the routes the Quality bot needs to stage 55 SOP
+changes. On 3 Nov its `POST /api/documents/:id/revisions` (SOP-202 V3) was refused `not_open_to_tokens`: no document
+route was on `WRITE_AREAS`, and its account held SOPs at view.
+
+- **Opened, to a `write` token holding the `sops-edit` grant only** (`server/bot-api.js`, area `sops`): file a DRAFT
+  SOP (`POST /documents`); edit a DRAFT SOP's fields and text from a fixed key list (`PUT /documents/:id`); start a new
+  revision of an APPROVED SOP (`POST /documents/:id/revisions`, keys `revision`, `change_summary`); edit that DRAFT
+  revision (`PUT /documents/:id/revisions/:rid`, the `saveDraft` keys); attach a PDF to an SOP
+  (`POST /documents/:id/attachments`). Each `when` refuses anything else and says why (`req.tokenWriteRefusal` →
+  the `reason` on the 403 and the `rule` on `api_token_write_blocked`). The account still needs SOPs edit.
+- **A grant, not a scope** — the D-171 / D-278 mechanism. `SCOPES` stays read + write; a grant is one token's extra
+  write area, needs write, is set only by an admin session, and never lifts the approve guard or `TOKEN_DENY`.
+- **Stays shut, unchanged and proven by test:** approving or signing (any route or status that does), making a
+  document effective (active / under review, apply-revision, the revision worklist, propose-revisions), deleting a
+  document, revision or attachment, withdrawing, reinstating, merging, and every bulk document route. No approve or
+  deny list was edited; `check:sopbot` pins their counts.
+- **A token attaches a PDF only** (`tokenSopAttachmentRefusal`): extension, declared type and `%PDF-` bytes agree, or
+  `415` naming the file and nothing in the batch stored. `kind` is `signed_original` or `attachment`. A person's upload
+  is unchanged.
+- **Audit:** `via_token` now carries the token's label (auth.js and `auditActorDetails`). Each successful bot write adds
+  one `bot_sop_write` row (kind, token id / prefix / label, bot name, method, path, document, number, revision, field
+  names changed; for an attach filename, size, SHA-256 and type). Written straight after the change — these handlers
+  have no transaction to share. Never the token, a file's bytes or the text; a person's write adds none.
+- **What a person still does:** owners approve each draft and revision with their password. Approval takes the
+  draft revision's effective date, else the document's, else today — so a date staged from the signed scan is kept.
+  Three staged rows on ACTIVE SOPs also change the document number (SOP-109 → SOP 105, SOP-111 → SOP 107,
+  SOP-204 → SOP 201); a revision does not carry the number and `PUT` on an active SOP is not opened, so those three
+  numbers are a person's edit in the UI.
+- `check:sopbot` (64, pure, in `npm run check`; self-test: the old `WRITE_AREAS` fails 9, the five routes opened with
+  no grant fail 28). `verify:sopbot` (66, live + S3 stand-in). Control: `main` before this fails 29 of 66, the first
+  grant-bearing call refused `not_open_to_tokens`.

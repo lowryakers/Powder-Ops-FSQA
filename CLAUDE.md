@@ -6419,6 +6419,16 @@ revoke by DELETE with a reason), `CrisisDrills.jsx`. SOP 501, SQF 2.6.4.2.
 `nextVRevision()` counts from the highest number on the document, its signed copies and file names, skips used ones,
 and writes `V<n>`; the person types the label. New documents default to `V1`. Existing revisions are never rewritten.
 
+## SOP staging: the Quality bot holds `sops-edit`; owners approve (D-303)
+`WRITE_AREAS` area `sops` (`server/bot-api.js`: the five entries, `SOP_*_KEYS`, `tokenSopAttachmentRefusal`), grant
+`sops-edit`, `botSopWrite()` in `api/documents.js`, `check:sopbot`, `verify:sopbot`, docs/bot-api.md "SOP staging".
+- **A draft SOP, a draft's listed fields, a new revision of an approved SOP and its draft, a PDF attached — nothing
+  else.** Approving, signing, making effective, deleting, withdrawing, reinstating and bulk routes stay refused; never
+  widen route `PUT /documents/:id` to an active SOP (a number change on an active SOP is a person's edit).
+- A `when` that refuses sets `req.tokenWriteRefusal`; auth.js logs it on `api_token_write_blocked` and returns it as
+  `reason`. Every successful bot write on the five adds one `bot_sop_write` row; `via_token` carries the token label.
+- The grant is ticked in Settings by an admin; the account needs SOPs edit. Nothing here sets either.
+
 ## Course drafts: the Quality bot stages, two people publish (D-278)
 `course_drafts` + `course_draft_materials`, `server/course-drafts.js` (`createDraft`, `updateDraft`, `draftDiff`, `draftView`,
 `signDraft`, `isBotAccount`, `purgeIfUnreferenced`), `/api/training/drafts…`, token grant `course-drafts`, `CourseDrafts.jsx`

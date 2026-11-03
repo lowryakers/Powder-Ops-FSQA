@@ -53,6 +53,12 @@ export const BOT_ROUTES = Object.freeze([
   { method: 'POST', path: '/api/training/drafts', module: 'training (edit)', scope: 'write' },
   { method: 'PUT', path: '/api/training/drafts/:id', module: 'training (edit)', scope: 'write' },
   { method: 'POST', path: '/api/training/drafts/:id/materials', module: 'training (edit)', scope: 'write' },
+  // D-303: SOP staging, with the sops-edit grant. Owners approve with their password.
+  { method: 'POST', path: '/api/documents', module: 'sops (edit)', scope: 'write' },
+  { method: 'PUT', path: '/api/documents/:id', module: 'sops (edit)', scope: 'write' },
+  { method: 'POST', path: '/api/documents/:id/revisions', module: 'sops (edit)', scope: 'write' },
+  { method: 'PUT', path: '/api/documents/:id/revisions/:rid', module: 'sops (edit)', scope: 'write' },
+  { method: 'POST', path: '/api/documents/:id/attachments', module: 'sops (edit)', scope: 'write' },
 ]);
 
 // ── What a `write` token may write (D-164) ──────────────────────────────────
@@ -86,6 +92,64 @@ const openDraft = (db, id) => {
   const d = db.prepare('SELECT status FROM course_drafts WHERE id = ?').get(id);
   return !d || d.status === 'draft'; // missing → the handler 404s
 };
+// SOP staging (D-303). Each `when` returns false — the token gets 403
+// not_open_to_tokens — unless every condition holds, and says WHY on
+// `req.tokenWriteRefusal`, which the refusal logs and returns. A document that
+// does not exist passes, so the handler answers 404 rather than a bare refusal.
+const SOP_SIBLINGS = '(?!(?:revisions|attachments|bulk|bulk-update|bulk-delete|pdf|extract|propose-revisions)(?:/|$))';
+export const SOP_DRAFT_EDIT_KEYS = Object.freeze(['doc_number', 'title', 'category', 'revision', 'effective_date', 'review_due',
+  'review_frequency', 'owner', 'content', 'content_es', 'source_file', '_change_summary', '_minor']);
+export const SOP_REVISION_START_KEYS = Object.freeze(['revision', 'change_summary']);
+export const SOP_REVISION_EDIT_KEYS = Object.freeze(['revision', 'title', 'description', 'description_es', 'effective_date', 'change_summary']);
+const sopRefuse = (req, why) => { req.tokenWriteRefusal = why; return false; };
+const sopDoc = (db, id) => db.prepare('SELECT id, doc_type, status FROM sop_documents WHERE id = ?').get(id);
+const extraKeys = (body, allowed) => Object.keys(body || {}).filter((k) => !allowed.includes(k));
+const approvalFields = (body) => ['approved_by', 'approved_at'].filter((k) => body?.[k] != null && body[k] !== '');
+function sopCreateOk(req) {
+  const b = req.body || {};
+  if (b.status != null && b.status !== 'draft') return sopRefuse(req, `A bot files a document as a draft only (status "${b.status}" refused).`);
+  if (approvalFields(b).length) return sopRefuse(req, `A bot never names an approver (${approvalFields(b).join(', ')} refused).`);
+  if (b.doc_type != null && b.doc_type !== 'sop') return sopRefuse(req, `The sops-edit grant covers SOPs only (doc_type "${b.doc_type}" refused).`);
+  return true;
+}
+function sopDraftEditOk(req, m, db) {
+  const d = sopDoc(db, m[1]);
+  if (!d) return true;
+  if (d.doc_type !== 'sop') return sopRefuse(req, 'The sops-edit grant covers SOPs only.');
+  if (d.status !== 'draft') return sopRefuse(req, `Only a draft SOP is edited by a bot; this one is ${d.status}. Start a new revision instead.`);
+  const b = req.body || {};
+  if (b.status != null && b.status !== 'draft') return sopRefuse(req, `A bot cannot move a document's status (status "${b.status}" refused).`);
+  if (approvalFields(b).length) return sopRefuse(req, `A bot never names an approver (${approvalFields(b).join(', ')} refused).`);
+  const extra = extraKeys(b, [...SOP_DRAFT_EDIT_KEYS, 'status']);
+  if (extra.length) return sopRefuse(req, `Fields not open to a bot: ${extra.join(', ')}.`);
+  return true;
+}
+function sopRevisionStartOk(req, m, db) {
+  const d = sopDoc(db, m[1]);
+  if (!d) return true;
+  if (d.doc_type !== 'sop') return sopRefuse(req, 'The sops-edit grant covers SOPs only.');
+  // A draft SOP passes here; the handler refuses it (409, edit it directly), which says more.
+  const extra = extraKeys(req.body, SOP_REVISION_START_KEYS);
+  if (extra.length) return sopRefuse(req, `Fields not open to a bot: ${extra.join(', ')}.`);
+  return true;
+}
+function sopRevisionEditOk(req, m, db) {
+  const d = sopDoc(db, m[1]);
+  if (!d) return true;
+  if (d.doc_type !== 'sop') return sopRefuse(req, 'The sops-edit grant covers SOPs only.');
+  const r = db.prepare('SELECT status FROM document_revisions WHERE id = ? AND document_id = ?').get(m[2], m[1]);
+  if (!r) return true; // the handler 404s: no such revision on this document
+  if (r.status !== 'draft') return sopRefuse(req, `Only a draft revision is edited by a bot; this one is ${r.status}.`);
+  const extra = extraKeys(req.body, SOP_REVISION_EDIT_KEYS);
+  if (extra.length) return sopRefuse(req, `Fields not open to a bot: ${extra.join(', ')}.`);
+  return true;
+}
+function sopAttachOk(req, m, db) {
+  const d = sopDoc(db, m[1]);
+  if (!d) return true;
+  if (d.doc_type !== 'sop') return sopRefuse(req, 'The sops-edit grant covers SOPs only.');
+  return true; // the file rules are the handler's (multipart): tokenSopAttachmentRefusal
+}
 export const WRITE_AREAS = Object.freeze([
   // products
   { area: 'products', method: 'POST', re: /^\/products\/?$/, label: 'POST /api/products' },
@@ -162,6 +226,14 @@ export const WRITE_AREAS = Object.freeze([
     when: (req, m, db) => openDraft(db, m[1]) },
   { area: 'course-drafts', grant: 'course-drafts', method: 'POST', re: /^\/training\/drafts\/([^/]+)\/materials$/, label: 'POST /api/training/drafts/:id/materials — files, a video up to 2 GB (while draft; course-drafts grant)',
     when: (req, m, db) => openDraft(db, m[1]) },
+  // The Quality bot's SOP staging (D-303) — only a token holding the
+  // `sops-edit` GRANT. Approving, signing, making effective, deleting,
+  // withdrawing and reinstating stay off this list and on the deny lists.
+  { area: 'sops', grant: 'sops-edit', method: 'POST', re: /^\/documents\/?$/, label: 'POST /api/documents — a draft SOP (sops-edit grant)', when: (req) => sopCreateOk(req) },
+  { area: 'sops', grant: 'sops-edit', method: 'PUT', re: new RegExp(`^/documents/${SOP_SIBLINGS}([^/]+)$`), label: 'PUT /api/documents/:id — a draft SOP\'s fields and text (sops-edit grant)', when: sopDraftEditOk },
+  { area: 'sops', grant: 'sops-edit', method: 'POST', re: new RegExp(`^/documents/${SOP_SIBLINGS}([^/]+)/revisions$`), label: 'POST /api/documents/:id/revisions — start a new revision of an approved SOP (sops-edit grant)', when: sopRevisionStartOk },
+  { area: 'sops', grant: 'sops-edit', method: 'PUT', re: new RegExp(`^/documents/${SOP_SIBLINGS}([^/]+)/revisions/([^/]+)$`), label: 'PUT /api/documents/:id/revisions/:rid — the draft revision (sops-edit grant)', when: sopRevisionEditOk },
+  { area: 'sops', grant: 'sops-edit', method: 'POST', re: new RegExp(`^/documents/${SOP_SIBLINGS}([^/]+)/attachments$`), label: 'POST /api/documents/:id/attachments — a PDF on an SOP (sops-edit grant)', when: sopAttachOk },
   // messages
   { area: 'messages', method: 'POST', re: /^\/comms\/channels\/[^/]+\/messages$/, label: 'POST /api/comms/channels/:id/messages' },
   { area: 'messages', method: 'POST', re: /^\/comms\/channels\/[^/]+\/attachments$/, label: 'POST /api/comms/channels/:id/attachments' },
@@ -298,6 +370,19 @@ const ALLOWED_NAMES = 'pdf, png, jpg, csv, xlsx or docx';
  * null when a token may attach this file; otherwise the reason, worded for the
  * caller. `head` is the file's first bytes (4 KB is plenty).
  */
+/**
+ * The SOP attach rule for a token (D-303): PDF only — the .pdf extension, the
+ * application/pdf type and the %PDF- bytes must all agree. null when allowed.
+ */
+export function tokenSopAttachmentRefusal({ filename, mimetype, head }) {
+  const name = String(filename || '');
+  if (!/\.pdf$/i.test(name)) return `${name || 'This file'}: a bot token may attach only a PDF to an SOP.`;
+  const mime = String(mimetype || '').toLowerCase().split(';')[0].trim();
+  if (mime !== 'application/pdf') return `${name}: declared as ${mime || 'no type'}, not application/pdf.`;
+  if (!MAGIC.pdf(Buffer.isBuffer(head) ? head : Buffer.alloc(0))) return `${name}: the contents are not a PDF.`;
+  return null;
+}
+
 export function tokenAttachmentRefusal({ filename, mimetype, head }) {
   const name = String(filename || '');
   const ext = (name.match(/\.([A-Za-z0-9]+)$/)?.[1] || '').toLowerCase();

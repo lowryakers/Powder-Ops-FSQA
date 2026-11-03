@@ -9,7 +9,9 @@ import PDFDocument from 'pdfkit';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { tableAt, drawTable } from '../pdf-table.js';
 import mammoth from 'mammoth';
-import { createReadStream } from 'fs';
+import { createReadStream, openSync, readSync, closeSync } from 'fs';
+import { createHash } from 'crypto';
+import { tokenSopAttachmentRefusal } from '../bot-api.js';
 import { getDb, logAudit } from '../db.js';
 import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { storageEnabled, putStream, presignGet, deleteObject } from '../storage.js';
@@ -24,6 +26,31 @@ import {
 } from '../document-revisions.js';
 
 const clean = (v, max = 300) => { const t = String(v ?? '').trim(); return t ? t.slice(0, max) : null; };
+
+// A BOT'S SOP WRITE IS NAMED AS ONE (D-303). One `bot_sop_write` row per
+// successful token write on the five sops-edit routes, carrying the token and
+// the bot's name; never the token, a file's bytes or a text body. A person's
+// write produces none. Written straight after the change it describes.
+function botSopWrite(req, kind, doc, extra = {}) {
+  if (req.auth?.kind !== 'token') return;
+  const docLabel = [doc?.doc_number, doc?.title].filter(Boolean).join(' ') || null;
+  logAudit(req.user, 'bot_sop_write', kind === 'new_revision' || kind === 'edit_revision' ? 'document_revision' : 'document',
+    extra.revision_id || doc?.id || null, {
+      kind, token_id: req.auth.tokenId, token_prefix: req.auth.prefix, token_label: req.auth.label || null,
+      bot_name: req.user?.name || null, method: req.method, path: (req.baseUrl || '') + req.path,
+      document_id: doc?.id || null, doc_number: doc?.doc_number || null, revision: extra.revision ?? doc?.revision ?? null,
+      ...extra,
+    }, null, null, docLabel);
+}
+
+const fileHead = (path, n = 8) => {
+  const fd = openSync(path, 'r');
+  try { const b = Buffer.alloc(n); const got = readSync(fd, b, 0, n, 0); return b.subarray(0, got); } finally { closeSync(fd); }
+};
+const sha256OfFile = (path) => new Promise((resolve, reject) => {
+  const h = createHash('sha256');
+  createReadStream(path).on('data', (c) => h.update(c)).on('error', reject).on('end', () => resolve(h.digest('hex')));
+});
 
 const router = Router();
 
@@ -808,8 +835,12 @@ router.get('/:id/revisions', (req, res) => {
 router.post('/:id/revisions', (req, res) => {
   const db = getDb();
   const doc = docOr404(db, req.params.id, res); if (!doc) return;
-  try { res.status(201).json(startDraft(db, doc, req.user, req.body || {})); }
-  catch (e) { revErr(res, e); }
+  try {
+    const draft = startDraft(db, doc, req.user, req.body || {});
+    botSopWrite(req, 'new_revision', doc, { revision_id: draft?.id || null, revision: draft?.revision ?? null,
+      fields_changed: Object.keys(req.body || {}) });
+    res.status(201).json(draft);
+  } catch (e) { revErr(res, e); }
 });
 
 const draftFor = (db, doc, rid, res) => {
@@ -822,8 +853,12 @@ router.put('/:id/revisions/:rid', (req, res) => {
   const db = getDb();
   const doc = docOr404(db, req.params.id, res); if (!doc) return;
   const draft = draftFor(db, doc, req.params.rid, res); if (!draft) return;
-  try { res.json(saveDraft(db, doc, draft, req.body || {}, req.user)); }
-  catch (e) { revErr(res, e); }
+  try {
+    const after = saveDraft(db, doc, draft, req.body || {}, req.user);
+    botSopWrite(req, 'edit_revision', doc, { revision_id: draft.id, revision: after?.revision ?? draft.revision,
+      fields_changed: Object.keys(req.body || {}).filter((k) => String(req.body[k] ?? '') !== String(draft[k] ?? '')) });
+    res.json(after);
+  } catch (e) { revErr(res, e); }
 });
 
 router.delete('/:id/revisions/:rid', (req, res) => {
@@ -912,6 +947,7 @@ router.post('/', (req, res) => {
   db.prepare('INSERT INTO sop_versions (id, sop_id, revision, changed_by, change_summary, snapshot) VALUES (?, ?, ?, ?, ?, ?)')
     .run(uuid(), id, created.revision, req.user.name, 'Created', JSON.stringify(created));
   logAudit(req.user, 'document_created', 'document', id, { doc_type: type, title, category });
+  botSopWrite(req, 'create_draft', created, { fields_changed: Object.keys(req.body || {}) });
   if (approving) {
     try {
       recordApprovedRevision(db, created, { revision: created.revision }, { source: 'first_approval', actor: req.user });
@@ -1045,6 +1081,10 @@ router.put('/:id', (req, res) => {
         AND ${TRAINEE_RECORD_SQL('tr')}`).get(req.params.id, trainingRevision).c;
   }
   logAudit(req.user, 'document_updated', 'document', req.params.id, { title: updated.title, material_change: materialChange, retraining_triggered }, existing, updated);
+  botSopWrite(req, 'edit_draft', updated, { fields_changed: Object.keys(req.body || {}).filter((k) => {
+    const col = { content: 'description', content_es: 'description_es' }[k] || k;
+    return !k.startsWith('_') && String(req.body[k] ?? '') !== String(existing[col] ?? '');
+  }) });
   res.json({ ...updated, retraining_triggered });
 });
 
@@ -1489,15 +1529,32 @@ router.post('/:id/attachments', uploadDocFiles, async (req, res) => {
   try {
     if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured on this server.' });
     const db = getDb();
-    const doc = db.prepare('SELECT id, doc_number, title FROM sop_documents WHERE id = ?').get(req.params.id);
+    const doc = db.prepare('SELECT id, doc_number, title, revision FROM sop_documents WHERE id = ?').get(req.params.id);
     if (!doc) return res.status(404).json({ error: 'Document not found' });
     if (!files.length) return res.status(400).json({ error: 'No files uploaded' });
     const tooBig = rejectOversize(files);
     if (tooBig) return res.status(413).json({ error: tooBig });
 
+    // A TOKEN ATTACHES A PDF AND NOTHING ELSE (D-303): extension, declared
+    // type and the %PDF- bytes must agree, and the kind is one of the two a
+    // person picks. Every file is checked before any is stored, so a refused
+    // batch stores nothing. A person's upload is unchanged.
+    const viaToken = req.auth?.kind === 'token';
+    let hashes = null;
+    if (viaToken) {
+      if (req.body?.kind != null && !['signed_original', 'attachment'].includes(req.body.kind)) {
+        return res.status(415).json({ error: 'unsupported_type', message: `kind "${req.body.kind}" is not open to a bot; use signed_original or attachment.` });
+      }
+      for (const f of files) {
+        const why = tokenSopAttachmentRefusal({ filename: f.originalname, mimetype: f.mimetype, head: fileHead(f.path) });
+        if (why) return res.status(415).json({ error: 'unsupported_type', message: why });
+      }
+      hashes = await Promise.all(files.map((f) => sha256OfFile(f.path)));
+    }
+
     const kind = req.body?.kind === 'signed_original' ? 'signed_original' : 'attachment';
     const out = [];
-    for (const f of files) {
+    for (const [i, f] of files.entries()) {
       const id = uuid();
       const safe = (f.originalname || 'file').replace(/[^\w.-]+/g, '_').slice(0, 120);
       const key = `documents/${doc.id}/${id}-${safe}`;
@@ -1509,6 +1566,11 @@ router.post('/:id/attachments', uploadDocFiles, async (req, res) => {
         (f.originalname || 'file').slice(0, 255), f.mimetype || null, f.size || null, key,
         (req.body?.revision || '').slice(0, 40) || null, req.user?.name || null);
       out.push({ id, filename: f.originalname, kind });
+      if (viaToken) {
+        botSopWrite(req, 'attach', doc, { attachment_id: id, attachment_kind: kind, filename: (f.originalname || 'file').slice(0, 255),
+          size_bytes: f.size || null, sha256: hashes[i], content_type: f.mimetype || null,
+          revision: (req.body?.revision || '').slice(0, 40) || null });
+      }
     }
     logAudit(req.user, 'attach', 'document', doc.id,
       { kind, files: out.map(o => o.filename) }, null, null, `${doc.doc_number} ${doc.title}`);
