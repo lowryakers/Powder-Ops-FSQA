@@ -14,7 +14,7 @@ import { gtinAssignRefusal } from '../../../shared/merch.js';
 const chip = (on) => `px-2 py-0.5 rounded-full text-[11px] font-medium ${on ? 'bg-amber-100 text-amber-900' : 'bg-green-100 text-green-800'}`;
 
 function ColorChip({ color }) {
-  if (!color) return <span className="text-xs text-gray-400">no colour</span>;
+  if (!color) return <span className="text-xs text-gray-400">no color</span>;
   return (
     <span className="inline-flex items-center gap-1.5 text-sm">
       {color.hex && <span className="h-3 w-3 rounded-full border border-gray-300" style={{ background: color.hex }} aria-hidden="true" />}
@@ -72,26 +72,26 @@ function ColorRegister({ colors, canEdit, onChanged }) {
   };
   return (
     <section className="border border-gray-200 rounded-lg p-3 space-y-2" data-merch-colors>
-      <h3 className="text-sm font-semibold text-gray-900">Colour register</h3>
-      <p className="text-xs text-gray-500">A colour starts as confirming. No GTIN is assigned to a variant until its colour is confirmed.</p>
+      <h3 className="text-sm font-semibold text-gray-900">Color register</h3>
+      <p className="text-xs text-gray-500">A color starts as confirming. No GTIN is assigned to a variant until its color is confirmed.</p>
       <ul className="divide-y divide-gray-100">
         {colors.map((c) => (
           <li key={c.code} className="flex flex-wrap items-center gap-2 py-1.5" data-color={c.code}>
             <ColorChip color={c} />
             {!c.confirming && <span className="text-[11px] text-gray-500">confirmed by {c.confirmed_by}</span>}
             {c.confirming && canEdit && (
-              <button type="button" onClick={() => confirm(c.code)} data-color-confirm={c.code} className="ml-auto text-xs px-2 py-1 border border-gray-300 rounded-lg hover:bg-gray-50">Confirm colour</button>
+              <button type="button" onClick={() => confirm(c.code)} data-color-confirm={c.code} className="ml-auto text-xs px-2 py-1 border border-gray-300 rounded-lg hover:bg-gray-50">Confirm color</button>
             )}
           </li>
         ))}
-        {!colors.length && <li className="py-1.5 text-xs text-gray-500">No colours yet.</li>}
+        {!colors.length && <li className="py-1.5 text-xs text-gray-500">No colors yet.</li>}
       </ul>
       {canEdit && (
         <div className="flex flex-wrap items-end gap-2">
           <label className="text-xs text-gray-600">Code<input value={form.code} maxLength={3} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} className="mt-1 block w-16 border border-gray-300 rounded-lg px-2 py-1 text-sm" /></label>
           <label className="text-xs text-gray-600">Name<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="mt-1 block w-32 border border-gray-300 rounded-lg px-2 py-1 text-sm" /></label>
           <label className="text-xs text-gray-600">Hex<input value={form.hex} onChange={(e) => setForm({ ...form, hex: e.target.value })} placeholder="#1F4E9D" className="mt-1 block w-24 border border-gray-300 rounded-lg px-2 py-1 text-sm" /></label>
-          <button type="button" onClick={add} className="px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs hover:bg-gray-50">Add colour</button>
+          <button type="button" onClick={add} className="px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs hover:bg-gray-50">Add color</button>
         </div>
       )}
       {error && <p className="text-xs text-red-700">{error}</p>}
@@ -140,13 +140,18 @@ function AddVariants({ style, colors, sizes, onDone }) {
   };
   return (
     <div className="border border-gray-200 rounded-lg p-3 space-y-2 bg-gray-50" data-merch-add-variants>
+      {!colors.length && (
+        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2" data-merch-no-colors>
+          Add colors in the color register below first. Each variant is one color × one size, so with no colors there is nothing to create.
+        </p>
+      )}
       <div className="flex flex-wrap gap-3 text-sm">
         {colors.map((c) => <label key={c.code} className="inline-flex items-center gap-1"><input type="checkbox" className="h-4 w-4 shrink-0" checked={pick.colors.includes(c.code)} onChange={() => flip('colors', c.code)} /> {c.name}</label>)}
       </div>
       <div className="flex flex-wrap gap-3 text-sm">
         {sizes.map((s) => <label key={s.code} className="inline-flex items-center gap-1"><input type="checkbox" className="h-4 w-4 shrink-0" checked={pick.sizes.includes(s.code)} onChange={() => flip('sizes', s.code)} /> {s.code}</label>)}
       </div>
-      <p className="text-[11px] text-gray-500">Each colour × size becomes a Draft variant with its SKU built for it. No GTIN is assigned here.</p>
+      <p className="text-[11px] text-gray-500">Each color × size becomes a Draft variant with its SKU built for it. No GTIN is assigned here.</p>
       {error && <p className="text-xs text-red-700">{error}</p>}
       <button type="button" onClick={save} disabled={!pick.colors.length || !pick.sizes.length} className="px-3 py-1.5 bg-powder-600 text-white rounded-lg text-sm disabled:opacity-50">
         Create {pick.colors.length * pick.sizes.length} variant{pick.colors.length * pick.sizes.length === 1 ? '' : 's'}
@@ -189,7 +194,7 @@ export default function MerchStyles({ canEdit, needle = '', onOpenSku, onChanged
               <span className="ml-auto flex flex-wrap items-center gap-1.5 text-[11px]">
                 <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 tabular-nums">{s.counts.variants} variants</span>
                 <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 tabular-nums">{s.counts.with_gtin} with GTIN</span>
-                {s.counts.confirming > 0 && <span className={chip(true)}>{s.counts.confirming} colour{s.counts.confirming === 1 ? '' : 's'} still confirming</span>}
+                {s.counts.confirming > 0 && <span className={chip(true)}>{s.counts.confirming} color{s.counts.confirming === 1 ? '' : 's'} still confirming</span>}
               </span>
             </button>
             {isOpen && (
@@ -210,7 +215,7 @@ export default function MerchStyles({ canEdit, needle = '', onOpenSku, onChanged
                 {panel?.kind === 'variants' && panel.code === s.style_code && <AddVariants style={s} colors={colors} sizes={data?.sizes || []} onDone={changed} />}
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead><tr className="text-left text-xs text-gray-500"><th className="py-1 pr-3">SKU</th><th className="py-1 pr-3">Colour</th><th className="py-1 pr-3">Size</th><th className="py-1 pr-3">GTIN</th><th className="py-1 pr-3">Status</th><th className="py-1">Ready</th></tr></thead>
+                    <thead><tr className="text-left text-xs text-gray-500"><th className="py-1 pr-3">SKU</th><th className="py-1 pr-3">Color</th><th className="py-1 pr-3">Size</th><th className="py-1 pr-3">GTIN</th><th className="py-1 pr-3">Status</th><th className="py-1">Ready</th></tr></thead>
                     <tbody>
                       {s.shown.map((v) => (
                         <tr key={v.sku} onClick={() => onOpenSku(v.sku)} data-merch-variant={v.sku} className="border-t border-gray-100 cursor-pointer hover:bg-gray-50">
@@ -235,7 +240,7 @@ export default function MerchStyles({ canEdit, needle = '', onOpenSku, onChanged
   );
 }
 
-/** The merch block of the product drawer: style, colour, size, recolour, GTIN. */
+/** The merch block of the product drawer: style, color, size, recolor, GTIN. */
 export function MerchVariantBlock({ p, canEdit, onChanged }) {
   const { data } = useApiGet('/products/merch');
   const [prefix, setPrefix] = useState('');
@@ -268,7 +273,7 @@ export function MerchVariantBlock({ p, canEdit, onChanged }) {
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
         <div><dt className="text-xs text-gray-500">Style</dt><dd><code>{p.style_code}</code> — {p.style_name}</dd></div>
         <div><dt className="text-xs text-gray-500">Size</dt><dd>{p.size ? `${p.size.code} (${p.size.label})` : <span className="text-amber-700 text-xs">no size</span>}</dd></div>
-        <div className="col-span-2"><dt className="text-xs text-gray-500">Colour</dt><dd><ColorChip color={p.color} /></dd></div>
+        <div className="col-span-2"><dt className="text-xs text-gray-500">Color</dt><dd><ColorChip color={p.color} /></dd></div>
         <div><dt className="text-xs text-gray-500">Supplier</dt><dd>{p.merch_supplier || <span className="text-amber-700 text-xs">not recorded on the style</span>}</dd></div>
         <div><dt className="text-xs text-gray-500">Decorator</dt><dd>{p.merch_decorator || <span className="text-amber-700 text-xs">not recorded on the style</span>}</dd></div>
       </dl>
@@ -306,13 +311,13 @@ export function MerchVariantBlock({ p, canEdit, onChanged }) {
 
       {canEdit && !p.gtin && (
         <div className="border-t border-gray-100 pt-2 flex flex-wrap items-end gap-2" data-merch-recolor>
-          <label className="text-xs text-gray-600">Change colour (rebuilds the SKU)
+          <label className="text-xs text-gray-600">Change color (rebuilds the SKU)
             <select value={recolor} onChange={(e) => setRecolor(e.target.value)} className="mt-1 block border border-gray-300 rounded-lg px-2 py-1 text-sm">
               <option value="">Choose…</option>
               {(data?.colors || []).filter((c) => c.code !== p.color_code).map((c) => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}
             </select>
           </label>
-          <button type="button" onClick={doRecolor} disabled={!recolor} className="px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs hover:bg-gray-50 disabled:opacity-50">Recolour</button>
+          <button type="button" onClick={doRecolor} disabled={!recolor} className="px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs hover:bg-gray-50 disabled:opacity-50">Recolor</button>
         </div>
       )}
       {msg && <p className="text-xs text-green-800">{msg}</p>}

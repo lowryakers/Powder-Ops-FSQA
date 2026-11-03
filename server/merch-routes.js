@@ -175,8 +175,8 @@ export function registerMerchRoutes(router, { getDb, canManage, hydrate, SELECT,
     const b = req.body || {};
     const code = String(b.code || '').trim().toUpperCase();
     const name = String(b.name || '').trim();
-    if (!COLOR_CODE_RE.test(code)) return res.status(400).json({ field: 'code', error: 'A colour code is three letters (BLU, BLK).' });
-    if (!name) return res.status(400).json({ field: 'name', error: 'A colour needs a name.' });
+    if (!COLOR_CODE_RE.test(code)) return res.status(400).json({ field: 'code', error: 'A color code is three letters (BLU, BLK).' });
+    if (!name) return res.status(400).json({ field: 'name', error: 'A color needs a name.' });
     const hex = b.hex ? String(b.hex).trim() : null;
     if (hex && !HEX_COLOR_RE.test(hex)) return res.status(400).json({ field: 'hex', error: 'Hex is six characters, 0-9 and A-F.' });
     if (db.prepare('SELECT 1 FROM merch_colors WHERE code = ?').get(code)) return res.status(409).json({ error: `${code} is already in the register.` });
@@ -192,16 +192,16 @@ export function registerMerchRoutes(router, { getDb, canManage, hydrate, SELECT,
     if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalog.' });
     const db = getDb();
     const before = db.prepare('SELECT * FROM merch_colors WHERE code = ?').get(req.params.code);
-    if (!before) return res.status(404).json({ error: 'No such colour.' });
+    if (!before) return res.status(404).json({ error: 'No such color.' });
     const b = req.body || {};
-    if (b.code !== undefined && String(b.code).toUpperCase() !== before.code) return res.status(400).json({ field: 'code', error: 'A colour code never changes. Add the new colour and recolour the variants.' });
+    if (b.code !== undefined && String(b.code).toUpperCase() !== before.code) return res.status(400).json({ field: 'code', error: 'A color code never changes. Add the new color and recolor the variants.' });
     // Once confirmed the colour's name and swatch are what GTINs were drawn
     // against; a change then is a new colour, not an edit.
     if (!before.confirming && (b.name !== undefined || b.hex !== undefined)) {
-      return res.status(409).json({ error: `${before.code} is confirmed. Its name and hex no longer change; add a new colour instead.` });
+      return res.status(409).json({ error: `${before.code} is confirmed. Its name and hex no longer change; add a new color instead.` });
     }
     const patch = {};
-    if (b.name !== undefined) { const n = String(b.name || '').trim(); if (!n) return res.status(400).json({ field: 'name', error: 'A colour needs a name.' }); patch.name = n; }
+    if (b.name !== undefined) { const n = String(b.name || '').trim(); if (!n) return res.status(400).json({ field: 'name', error: 'A color needs a name.' }); patch.name = n; }
     if (b.hex !== undefined) {
       const h = b.hex ? String(b.hex).trim() : null;
       if (h && !HEX_COLOR_RE.test(h)) return res.status(400).json({ field: 'hex', error: 'Hex is six characters, 0-9 and A-F.' });
@@ -225,7 +225,7 @@ export function registerMerchRoutes(router, { getDb, canManage, hydrate, SELECT,
     if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalog.' });
     const db = getDb();
     const before = db.prepare('SELECT * FROM merch_colors WHERE code = ?').get(req.params.code);
-    if (!before) return res.status(404).json({ error: 'No such colour.' });
+    if (!before) return res.status(404).json({ error: 'No such color.' });
     if (!before.confirming) return res.json({ ...before, confirming: false });
     db.prepare("UPDATE merch_colors SET confirming = 0, confirmed_by = ?, confirmed_at = datetime('now'), updated_at = datetime('now') WHERE code = ?")
       .run(req.user.name, before.code);
@@ -245,10 +245,10 @@ export function registerMerchRoutes(router, { getDb, canManage, hydrate, SELECT,
     if (reg.error) return res.status(400).json({ code: 'FLAVOR_NOT_REGISTERED', error: reg.error });
     const colors = [...new Set((req.body?.colors || []).map((c) => String(c).trim().toUpperCase()))];
     const sizes = [...new Set((req.body?.sizes || []).map((s) => String(s).trim().toUpperCase()))];
-    if (!colors.length || !sizes.length) return res.status(400).json({ error: 'Pick at least one colour and one size.' });
+    if (!colors.length || !sizes.length) return res.status(400).json({ error: 'Pick at least one color and one size.' });
     const register = colorsMap(db);
     const unknownColors = colors.filter((c) => !register.has(c));
-    if (unknownColors.length) return res.status(400).json({ field: 'colors', error: `Not in the colour register: ${unknownColors.join(', ')}. Add them first.` });
+    if (unknownColors.length) return res.status(400).json({ field: 'colors', error: `Not in the color register: ${unknownColors.join(', ')}. Add them first.` });
     const unknownSizes = sizes.filter((s) => !SIZE_BY_CODE[s]);
     if (unknownSizes.length) return res.status(400).json({ field: 'sizes', error: `Not a size: ${unknownSizes.join(', ')}. Sizes are ${MERCH_SIZES.map((s) => s.code).join(', ')}.` });
 
@@ -277,14 +277,14 @@ export function registerMerchRoutes(router, { getDb, canManage, hydrate, SELECT,
     const db = getDb();
     const v = db.prepare('SELECT * FROM products WHERE sku = ?').get(req.params.sku);
     if (!v || v.product_type !== 'merch') return res.status(404).json({ error: 'No such merch variant.' });
-    if (v.gtin) return res.status(409).json({ code: 'HAS_GTIN', error: `${v.sku} carries GTIN ${v.gtin}. A variant with a GTIN keeps its colour; make a new variant instead.` });
+    if (v.gtin) return res.status(409).json({ code: 'HAS_GTIN', error: `${v.sku} carries GTIN ${v.gtin}. A variant with a GTIN keeps its color; make a new variant instead.` });
     const color = String(req.body?.color || '').trim().toUpperCase();
     const reg = colorsMap(db).get(color);
-    if (!reg) return res.status(400).json({ field: 'color', error: `${color || 'That colour'} is not in the colour register.` });
+    if (!reg) return res.status(400).json({ field: 'color', error: `${color || 'That color'} is not in the color register.` });
     if (color === v.color_code) return res.json(v);
     const style = db.prepare('SELECT * FROM merch_styles WHERE style_code = ?').get(v.style_code);
     const next = buildMerchSku(v.style_code, color, v.size_code);
-    if (!next) return res.status(400).json({ error: 'That colour does not make a valid SKU.' });
+    if (!next) return res.status(400).json({ error: 'That color does not make a valid SKU.' });
     if (db.prepare('SELECT 1 FROM products WHERE sku = ?').get(next)) return res.status(409).json({ error: `${next} already exists.` });
     const title = variantTitle({ flavor: style?.flavor || v.base_flavor, garment: style?.garment || parseStyleCode(v.style_code)?.garment, colorName: reg.name, sizeCode: v.size_code });
     // The same row move a rename uses: every child table follows. A draft that
