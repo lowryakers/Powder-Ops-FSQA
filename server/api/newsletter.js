@@ -175,11 +175,25 @@ router.delete('/issues/:id', (req, res) => {
 
 // ── Images ───────────────────────────────────────────────────────────────────
 
+// pdfkit draws JPEG and PNG. Judged on the bytes, not the declared type.
+export function printableImageBytes(buf) {
+  if (!buf || buf.length < 8) return false;
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return true;                 // JPEG
+  return buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;        // PNG
+}
+
 router.post('/images', upload.array('files', 10), async (req, res) => {
   if (!requireAccess(req, res, 'edit')) return;
   if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured on this server.' });
   const files = (req.files || []).filter(f => /^image\//i.test(f.mimetype));
   if (!files.length) return res.status(400).json({ error: 'No images uploaded' });
+  // The PDF can draw JPEG and PNG only; anything else would show on screen
+  // and silently drop out of the PDF. The editor converts photos to JPEG
+  // before uploading, so this only refuses what slipped past that.
+  const unprintable = files.filter(f => !printableImageBytes(f.buffer));
+  if (unprintable.length) {
+    return res.status(415).json({ error: `${unprintable.map(f => f.originalname).join(', ')} can't go in the PDF. Use a JPEG or PNG photo.`, code: 'IMAGE_NOT_PRINTABLE' });
+  }
   const db = getDb();
   const ins = db.prepare('INSERT INTO newsletter_images (id, issue_id, filename, storage_key, content_type, size, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?)');
   const out = [];

@@ -5039,6 +5039,12 @@ setting one clears the other. Uploads reuse the existing `newsletter_images` + R
 returns a presigned `banner_image_url` because the editor needs something it can put in an `<img>`.
 `GET /newsletter/covers?month=` serves the gallery with shapes included.
 
+## A newsletter photo reaches the PDF (D-301)
+- **The PDF button saves first** — the PDF is made from the saved issue.
+- **The PDF draws JPEG and PNG only.** The editor turns every photo into an upright JPEG (`src/lib/printableImage.js`)
+  before upload; the server refuses anything else (`415 IMAGE_NOT_PRINTABLE`, by the bytes). A new image upload that
+  ends in a pdfkit PDF should go through the same helper. `verify:newsletterphotos` (11).
+
 ## Newsletter: a page people read, PDFs people print
 **A PDF cannot have a language toggle** — it's a static file, so whichever language it was rendered in is
 what every reader gets. The toggle is a *page* behaviour, so `/newsletter/<id>` (`NewsletterReader.jsx`,
