@@ -266,6 +266,28 @@ if (process.env.SKIP_BROWSER !== '1') {
       const wide = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
       t('no sideways scroll', !wide);
     }
+
+    // The Merch tab: its own Pipeline and Colors views, read off /products/merch.
+    const api = await page.evaluate(async (tok) => (await fetch('/api/products/merch', { headers: { Authorization: `Bearer ${tok}` } })).json(), A);
+    const total = api.styles.reduce((n, s2) => n + s2.variants.length, 0);
+    await page.goto(`${URL}/?tab=products&view=merch&merch=pipeline`);
+    const pipe = await page.waitForSelector('[data-merch-pipeline]', { timeout: 20000 }).then(() => true).catch(() => false);
+    t('the Merch tab opens its Pipeline', pipe);
+    if (pipe) {
+      const counts = await page.$$eval('[data-merch-step]', (els) => els.map((e) => Number(e.dataset.count)));
+      t('…seven columns (six steps and "every step holds")', counts.length === 7, JSON.stringify(counts));
+      t('…holding every variant exactly once', counts.reduce((a, b) => a + b, 0) === total, `${counts} vs ${total}`);
+      const colorCol = await page.locator('[data-merch-step="2"]').innerText();
+      t('…with variants on a confirming color waiting under "Color confirmed", saying why', /still being confirmed/.test(colorCol) || counts[0] + counts[1] > 0, colorCol.slice(0, 160));
+      const wide = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+      t('…and no sideways scroll', !wide);
+    }
+    await page.locator('[data-merch-subtab="colors"]').click();
+    const colors = await page.waitForSelector('[data-merch-colors-view] [data-color]', { timeout: 10000 }).then(() => true).catch(() => false);
+    t('the Colors view lists the register', colors && (await page.locator('[data-merch-colors-view] [data-color]').count()) === api.colors.length);
+    await page.locator('[data-merch-subtab="styles"]').click();
+    const stylesNoReg = await page.waitForSelector('[data-merch-style="MCH-HBDC"]', { timeout: 10000 }).then(() => true).catch(() => false);
+    t('the Styles view shows the styles without a second copy of the register', stylesNoReg && (await page.locator('[data-merch-colors]').count()) === 0);
     await page.close();
   }
   await browser.close();

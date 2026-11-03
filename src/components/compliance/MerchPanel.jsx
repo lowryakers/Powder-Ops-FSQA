@@ -9,7 +9,7 @@
 import { useMemo, useState } from 'react';
 import { ChevronRight, ChevronDown, Plus, CheckCircle2, AlertTriangle, Shirt } from 'lucide-react';
 import { useApiGet, apiFetch } from '../../hooks/useApi';
-import { gtinAssignRefusal } from '../../../shared/merch.js';
+import { gtinAssignRefusal, MERCH_STEPS, merchStepsOf } from '../../../shared/merch.js';
 
 const chip = (on) => `px-2 py-0.5 rounded-full text-[11px] font-medium ${on ? 'bg-amber-100 text-amber-900' : 'bg-green-100 text-green-800'}`;
 
@@ -59,7 +59,7 @@ function NewStyleForm({ onDone }) {
   );
 }
 
-function ColorRegister({ colors, canEdit, onChanged }) {
+export function ColorRegister({ colors, canEdit, onChanged }) {
   const [form, setForm] = useState({ code: '', name: '', hex: '' });
   const [error, setError] = useState('');
   const add = async () => {
@@ -130,7 +130,7 @@ function StyleEditor({ style, onDone }) {
   );
 }
 
-function AddVariants({ style, colors, sizes, onDone }) {
+function AddVariants({ style, colors, sizes, onDone, colorsWhere = 'in the color register below' }) {
   const [pick, setPick] = useState({ colors: [], sizes: [] });
   const [error, setError] = useState('');
   const flip = (k, v) => setPick((p) => ({ ...p, [k]: p[k].includes(v) ? p[k].filter((x) => x !== v) : [...p[k], v] }));
@@ -142,7 +142,7 @@ function AddVariants({ style, colors, sizes, onDone }) {
     <div className="border border-gray-200 rounded-lg p-3 space-y-2 bg-gray-50" data-merch-add-variants>
       {!colors.length && (
         <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2" data-merch-no-colors>
-          Add colors in the color register below first. Each variant is one color × one size, so with no colors there is nothing to create.
+          Add colors {colorsWhere} first. Each variant is one color × one size, so with no colors there is nothing to create.
         </p>
       )}
       <div className="flex flex-wrap gap-3 text-sm">
@@ -160,7 +160,7 @@ function AddVariants({ style, colors, sizes, onDone }) {
   );
 }
 
-export default function MerchStyles({ canEdit, needle = '', onOpenSku, onChanged }) {
+export default function MerchStyles({ canEdit, needle = '', onOpenSku, onChanged, showColors = true, colorsWhere }) {
   const { data, refresh, loading } = useApiGet('/products/merch');
   const [open, setOpen] = useState(() => new Set());
   const [panel, setPanel] = useState(null); // { kind, code }
@@ -212,7 +212,7 @@ export default function MerchStyles({ canEdit, needle = '', onOpenSku, onChanged
                   </div>
                 )}
                 {panel?.kind === 'edit' && panel.code === s.style_code && <StyleEditor style={s} onDone={changed} />}
-                {panel?.kind === 'variants' && panel.code === s.style_code && <AddVariants style={s} colors={colors} sizes={data?.sizes || []} onDone={changed} />}
+                {panel?.kind === 'variants' && panel.code === s.style_code && <AddVariants style={s} colors={colors} sizes={data?.sizes || []} onDone={changed} colorsWhere={showColors ? undefined : colorsWhere} />}
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead><tr className="text-left text-xs text-gray-500"><th className="py-1 pr-3">SKU</th><th className="py-1 pr-3">Color</th><th className="py-1 pr-3">Size</th><th className="py-1 pr-3">GTIN</th><th className="py-1 pr-3">Status</th><th className="py-1">Ready</th></tr></thead>
@@ -235,7 +235,7 @@ export default function MerchStyles({ canEdit, needle = '', onOpenSku, onChanged
           </section>
         );
       })}
-      <ColorRegister colors={colors} canEdit={canEdit} onChanged={changed} />
+      {showColors && <ColorRegister colors={colors} canEdit={canEdit} onChanged={changed} />}
     </div>
   );
 }
@@ -322,6 +322,83 @@ export function MerchVariantBlock({ p, canEdit, onChanged }) {
       )}
       {msg && <p className="text-xs text-green-800">{msg}</p>}
       {error && <p className="text-xs text-red-700">{error}</p>}
+    </div>
+  );
+}
+
+/** The Colors view of the Merch tab: the register on its own. */
+export function MerchColors({ canEdit, onChanged }) {
+  const { data, refresh, loading } = useApiGet('/products/merch');
+  if (loading && !data) return <p className="text-sm text-gray-500">Loading…</p>;
+  const colors = data?.colors || [];
+  const used = {};
+  for (const s of data?.styles || []) for (const v of s.variants) if (v.color_code) used[v.color_code] = (used[v.color_code] || 0) + 1;
+  return (
+    <div className="space-y-2" data-merch-colors-view>
+      <ColorRegister colors={colors} canEdit={canEdit} onChanged={() => { refresh(); onChanged?.(); }} />
+      {colors.length > 0 && (
+        <p className="text-xs text-gray-500">
+          In use: {colors.map((c) => `${c.name || c.code} on ${used[c.code] || 0} variant${used[c.code] === 1 ? '' : 's'}`).join(' · ')}.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The merch Pipeline: every variant in the column of its first step not yet
+ * done (shared/merch.js merchStepsOf). The steps are read off what the server
+ * returned; nothing here decides one.
+ */
+export function MerchPipeline({ onOpenSku }) {
+  const { data, loading } = useApiGet('/products/merch');
+  const [style, setStyle] = useState('');
+  const variants = useMemo(() => (data?.styles || [])
+    .filter((s) => !style || s.style_code === style)
+    .flatMap((s) => s.variants.map((v) => ({ ...v, style_name: s.name, flow: merchStepsOf(v) }))), [data, style]);
+  if (loading && !data) return <p className="text-sm text-gray-500" data-merch-pipeline-loading>Loading…</p>;
+  const columns = [...MERCH_STEPS.map((s, i) => ({ n: i, label: s.label, owner: s.owner })), { n: MERCH_STEPS.length, label: 'Every step holds', owner: null }];
+  const ready = variants.filter((v) => v.flow.step === MERCH_STEPS.length).length;
+  return (
+    <div className="space-y-3" data-merch-pipeline>
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="px-2.5 py-1 rounded-full border border-amber-300 bg-amber-50 text-amber-900" data-merch-pipeline-open={variants.length - ready}>{variants.length - ready} need work</span>
+        <span className="px-2.5 py-1 rounded-full border border-green-300 bg-green-50 text-green-800" data-merch-pipeline-ready={ready}>{ready} with every step holding</span>
+        <span className="ml-auto" />
+        <select value={style} onChange={(e) => setStyle(e.target.value)} data-merch-pipeline-style className="px-2 py-1 border border-gray-300 rounded-lg bg-white">
+          <option value="">All styles</option>
+          {(data?.styles || []).map((s) => <option key={s.style_code} value={s.style_code}>{s.name} ({s.style_code})</option>)}
+        </select>
+      </div>
+      <p className="text-xs text-gray-500">A variant sits under the first step it still owes. Food steps (formula, panel, artwork, packaging PO) do not apply to merch.</p>
+      {!variants.length && <p className="text-sm text-gray-500 border border-dashed border-gray-300 rounded-lg p-4">No merch variants yet. Create a style and add variants on the Styles view.</p>}
+      {variants.length > 0 && (
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+          {columns.map((c) => {
+            const items = variants.filter((v) => v.flow.step === c.n);
+            return (
+              <section key={c.n} data-merch-step={c.n} data-count={items.length} className="rounded-lg border border-gray-200 bg-gray-50/60 min-w-0">
+                <header className="px-2.5 py-2 border-b border-gray-200">
+                  <p className="text-xs font-semibold text-gray-800">{c.n < MERCH_STEPS.length ? `${c.n + 1}. ` : ''}{c.label}</p>
+                  <p className="text-[11px] text-gray-500">{items.length} variant{items.length === 1 ? '' : 's'}{c.owner ? ` · ${c.owner}` : ''}</p>
+                </header>
+                <ul className="p-1.5 space-y-1.5">
+                  {items.map((v) => (
+                    <li key={v.sku}>
+                      <button type="button" onClick={() => onOpenSku(v.sku)} data-merch-pipeline-variant={v.sku}
+                        className="w-full text-left bg-white border border-gray-200 rounded-md px-2 py-1.5 hover:border-powder-400">
+                        <code className="text-[11px] block truncate">{v.sku}</code>
+                        <span className="text-[11px] text-gray-600 block truncate">{v.color?.name || v.color_code} · {v.size_code}</span>
+                        {v.flow.next?.why && <span className="text-[11px] text-amber-800 block">{v.flow.next.why}</span>}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

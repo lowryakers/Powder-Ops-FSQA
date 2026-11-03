@@ -127,3 +127,43 @@ export function suggestNextGtin(prefix, taken, checkDigit) {
   }
   return null;
 }
+
+/**
+ * Where a merch variant is in its own flow (the Merch tab's Pipeline).
+ *
+ * Six steps, in the order the work happens. Every answer is READ off what the
+ * server already returned for the variant — its readiness steps (computed by
+ * shared/product-readiness.js) and its colour's confirming flag. Nothing here
+ * decides a rule; a step is done exactly when the server says so.
+ *
+ * The variant sits in the column of its FIRST step not yet done; `step` is 6
+ * when every step holds. A step met out of order is still shown as done in the
+ * list, it just does not move the variant past an earlier gap.
+ */
+export const MERCH_STEPS = [
+  { key: 'sku', label: 'SKU built', owner: 'Ops' },
+  { key: 'supplier', label: 'Supplier and decorator', owner: 'Purchasing' },
+  { key: 'color', label: 'Color confirmed', owner: 'Ops' },
+  { key: 'gtin', label: 'GTIN assigned', owner: 'Ops' },
+  { key: 'shopify', label: 'Listed in Shopify', owner: 'Ecommerce' },
+  { key: 'shiphero', label: 'Synced to ShipHero', owner: 'Ecommerce' },
+];
+
+export function merchStepsOf(v) {
+  const steps = Object.fromEntries((v?.readiness?.steps || []).map((s) => [s.key, s]));
+  const done = (key) => {
+    if (key === 'color') return !!(v?.color && !v.color.missing && !v.color.confirming);
+    return steps[key]?.state === 'done';
+  };
+  const why = (key) => {
+    if (key === 'color') {
+      if (!v?.color_code) return 'No color on the variant.';
+      if (!v?.color || v.color.missing) return `Color ${v.color_code} is not in the color register.`;
+      return `Color ${v.color.code} (${v.color.name}) is still being confirmed.`;
+    }
+    return steps[key]?.reason || steps[key]?.why || null;
+  };
+  const list = MERCH_STEPS.map((s, i) => ({ ...s, n: i + 1, done: done(s.key), why: done(s.key) ? null : why(s.key) }));
+  const first = list.find((s) => !s.done);
+  return { steps: list, step: first ? first.n - 1 : list.length, next: first || null };
+}
