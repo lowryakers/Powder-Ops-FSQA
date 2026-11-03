@@ -306,13 +306,13 @@ export default function AttachmentViewer({ atts, index, onNav, onClose, helpers,
         )}
       </div>
 
-      {/* prev / next — mouse users; touch swipes */}
+      {/* prev / next — on every screen; a phone can also swipe */}
       {atts.length > 1 && chrome && (
         <>
           <button type="button" onClick={e => { e.stopPropagation(); onNav(-1); }} aria-label="Previous"
-            className="hidden md:flex absolute left-3 top-1/2 -translate-y-1/2 z-20 p-3 rounded-full bg-white/10 text-white hover:bg-white/25"><ChevronLeft size={26} /></button>
+            data-viewer-prev className="flex absolute left-2 md:left-3 top-1/2 -translate-y-1/2 z-20 p-2 md:p-3 rounded-full bg-black/40 md:bg-white/10 text-white backdrop-blur-sm hover:bg-white/25 active:bg-white/30"><ChevronLeft size={24} /></button>
           <button type="button" onClick={e => { e.stopPropagation(); onNav(1); }} aria-label="Next"
-            className="hidden md:flex absolute right-3 top-1/2 -translate-y-1/2 z-20 p-3 rounded-full bg-white/10 text-white hover:bg-white/25"><ChevronRight size={26} /></button>
+            data-viewer-next className="flex absolute right-2 md:right-3 top-1/2 -translate-y-1/2 z-20 p-2 md:p-3 rounded-full bg-black/40 md:bg-white/10 text-white backdrop-blur-sm hover:bg-white/25 active:bg-white/30"><ChevronRight size={24} /></button>
         </>
       )}
 

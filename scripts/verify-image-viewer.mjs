@@ -52,6 +52,14 @@ const upp = await (await fetch(`${URL}/api/comms/channels/${ch.id}/attachments`,
 const pdfIds = (upp.attachments || upp || []).map(x => x.id).filter(Boolean);
 await post(`/comms/channels/${ch.id}/messages`, { body: `pdf target ${Date.now()}`, attachment_ids: pdfIds }, A);
 
+// Two photos posted together: the arrows move between them on a phone too.
+const fdb = new FormData();
+fdb.append('files', new Blob([png], { type: 'image/png' }), 'batch-a.png');
+fdb.append('files', new Blob([png], { type: 'image/png' }), 'batch-b.png');
+const upb = await (await fetch(`${URL}/api/comms/channels/${ch.id}/attachments`, { method: 'POST', headers: { Authorization: `Bearer ${auth.token}` }, body: fdb })).json();
+const batchIds = (upb.attachments || upb || []).map(x => x.id).filter(Boolean);
+await post(`/comms/channels/${ch.id}/messages`, { body: `batch target ${Date.now()}`, attachment_ids: batchIds }, A);
+
 const thumb = (page) => page.locator('img[alt="line-3-screenshot.png"]').last();
 async function signedIn(ctx) {
   const page = await ctx.newPage();
@@ -86,6 +94,7 @@ await page.waitForTimeout(500);
 t('THE VIEWER IS A DIRECT CHILD OF BODY, outside the message and the swipe pane', await viewer(page).count() === 1);
 t('it names the file', /line-3-screenshot\.png/.test(await viewer(page).innerText()));
 t('Copy is the first action', await viewer(page).locator('[data-action="copy"]').isVisible());
+t('ONE PHOTO ON ITS OWN SHOWS NO ARROWS', await viewer(page).locator('[data-viewer-prev], [data-viewer-next]').count() === 0);
 t('at fit nothing sits on the picture', await viewer(page).locator('[data-zoom-pill]').count() === 0);
 
 const box = await stageImg(page).boundingBox();
@@ -126,6 +135,25 @@ const closedBySwipe = await page.evaluate(() => new Promise(resolve => {
   setTimeout(step, 16);
 }));
 t('SWIPE DOWN CLOSES THE VIEWER', closedBySwipe === true, String(closedBySwipe));
+// Two photos sent together: arrows on a phone, and they page through.
+const batchThumb = page.locator('img[alt="batch-a.png"]').last();
+await batchThumb.scrollIntoViewIfNeeded();
+await batchThumb.tap();
+await page.waitForTimeout(500);
+t('TWO PHOTOS SENT TOGETHER SHOW A NEXT ARROW ON A PHONE', await viewer(page).locator('[data-viewer-next]').isVisible());
+t('...and a previous arrow', await viewer(page).locator('[data-viewer-prev]').isVisible());
+t('it opens on the first, "1 of 2"', /batch-a\.png/.test(await viewer(page).innerText()) && /1 of 2/.test(await viewer(page).innerText()));
+await viewer(page).locator('[data-viewer-next]').tap();
+await page.waitForTimeout(400);
+t('TAPPING > SHOWS THE NEXT PHOTO without closing', /batch-b\.png/.test(await viewer(page).innerText()) && /2 of 2/.test(await viewer(page).innerText()));
+await viewer(page).locator('[data-viewer-prev]').tap();
+await page.waitForTimeout(400);
+t('tapping < goes back', /batch-a\.png/.test(await viewer(page).innerText()));
+const arrowBox = await viewer(page).locator('[data-viewer-next]').boundingBox();
+t('the arrow sits inside the screen', arrowBox && arrowBox.x + arrowBox.width <= 390 && arrowBox.x >= 0, JSON.stringify(arrowBox));
+await viewer(page).locator('button[aria-label="Close"]').tap();
+await page.waitForTimeout(300);
+
 // The PDF card on a phone.
 const pdfBtn = page.getByText('FORM-431-01.pdf', { exact: false }).last();
 await pdfBtn.scrollIntoViewIfNeeded();
