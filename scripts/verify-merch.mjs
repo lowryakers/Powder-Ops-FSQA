@@ -250,7 +250,7 @@ if (process.env.SKIP_BROWSER !== '1') {
     t('the Merch view shows the hoodie as one style row', ok);
     if (ok) {
       const head = await page.locator('[data-merch-style="MCH-HBDC"]').first().innerText();
-      t('…named, with 12 variants and the colours still being confirmed (counted as colours)', /Birthday Cake Hoodie/.test(head) && /12 variants/.test(head) && /3 colours still confirming/.test(head), head.slice(0, 200));
+      t('…named, with 12 variants and the colours still being confirmed (counted as colours)', /Birthday Cake Hoodie/.test(head) && /12 variants/.test(head) && /3 colors still confirming/.test(head), head.slice(0, 200));
       await page.locator('[data-merch-toggle="MCH-HBDC"]').first().click();
       const n = await page.locator('[data-merch-variant]').count();
       t('expanding it lists the variants', n >= 12, `${n}`);
