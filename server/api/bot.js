@@ -17,6 +17,8 @@ router.get('/whoami', (req, res) => {
     auth: req.auth?.kind || 'session',
     user: { id: u.id, name: u.name, role: u.role, department: u.department, module_access: u.module_access || null },
     scopes: req.auth?.kind === 'token' ? req.auth.scopes : null,
+    // The token's grants (D-171), so a bot can check it holds the one it needs.
+    grants: req.auth?.kind === 'token' ? (req.auth.grants || []) : null,
     tokenPrefix: token?.token_prefix || null,
     label: token?.label || null,
     expires_at: token?.expires_at || null,

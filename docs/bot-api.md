@@ -115,6 +115,7 @@ A `write` token may write **only** to the routes below (`WRITE_AREAS` in `server
 | Partner reconciliation | `POST /api/partners/:id/documents`, `…/documents/scan`, `POST /api/partners/:id/credits`, `PUT /api/partners/:id` (office/admin accounts only); while the document is a **draft**: `PUT /api/partners/documents/:docId`, `…/category`, `…/file`, `…/read-lines`; bulk: `POST /api/partners/:id/documents/import` |
 | Nutrition panels | `POST /api/nfp` (always lands as a draft); while the panel is a **draft**: `PUT /api/nfp/:id`, `PUT /api/nfp/:id/panel` |
 | Nutrition panel PDF and values — **`nfp-panel` grant only** | `PUT /api/nfp/:id/panel-file`, `PUT /api/nfp/:id/panel-values` (a DRAFT only, every values write with `source_ref`) |
+| SOP staging — **`sops-edit` grant only** | `POST /api/documents` (a draft SOP), `PUT /api/documents/:id` (a draft SOP's fields and text), `POST /api/documents/:id/revisions` (a new revision of an approved SOP), `PUT /api/documents/:id/revisions/:rid` (that draft revision), `POST /api/documents/:id/attachments` (a PDF only). See [SOP staging](#sop-staging-sops-edit-grant). |
 | Messages | `POST /api/comms/channels/:id/messages`, `POST /api/comms/channels/:id/attachments` (pdf, png, jpg, csv, xlsx, docx only), `POST /api/comms/messages/:id/reactions`, `DELETE /api/comms/messages/:id/reactions/:emoji` (the bot's own reaction only) |
 
 ## Never via token
@@ -128,6 +129,8 @@ These are refused to every token, whatever its scope and whatever its account's 
 | `decision` | rejecting, dismissing, resolving, reopening, closing, reinstating, restoring, waiving, acknowledging; confirming a product readiness step; moving an AP Drop to paid / closed / in QuickBooks / in a payment run / not finance / receivable-other; artwork to rejected or superseded | `token_denied` |
 | `user_admin` | every write under `/api/users` (accounts, roles, module access, passwords, signatures), onboarding end-access, `/api/org` and `/api/comms/admin` writes | `token_denied` |
 | `token_admin` | `/api/api-tokens` and `/api/kiosk-tokens` (reads included), auditor passes, partner portal links | `token_denied` |
+
+**Controlled documents (SOPs) stay with a person.** Approving a document or a revision, signing, making a document effective (a status of active or under review, apply-revision, the revision worklist, propose-revisions), deleting a document, a revision or an attachment, withdrawing ("No longer in use"), reinstating, merging and every bulk document route are refused to every token, with or without the `sops-edit` grant. Owners approve with their own password.
 
 ## Using it from an MCP client
 
@@ -686,3 +689,47 @@ Edit an open draft. An absent field is left alone; a blank one clears it. Also `
 Upload files to an open draft (multipart `files`, up to 5). Videos up to 2 GB; other files up to 25 MB. From a token: a video (mp4, mov, m4v, webm), pdf, png, jpg, docx or pptx. Clears any signature.
 
 - **Scope:** `write` + grant `course-drafts`. `503` when file storage is off.
+
+## SOP staging (sops-edit grant)
+
+The Quality bot stages SOP work for the document owners (D-303): a new SOP as a draft, edits to a draft SOP, a new revision of an approved SOP, and the signed scan as a PDF. **It never approves.** Owners approve each draft and each revision in ReadyDoc with their own password, and the SOP in force does not change until they do.
+
+The five writes need a `write` token holding the **`sops-edit` grant** (Settings → Bot API tokens), and an account with **SOPs: edit**. Without the grant the answer is `403 token_denied` / `not_open_to_tokens`; without the module grant it is the account's own `403`. A refusal from one of the rules below carries a `reason` naming what was refused, and is audited as `api_token_write_blocked` with that reason.
+
+**Audit.** Each successful write adds one `bot_sop_write` row (entity `document`, or `document_revision` for a revision) with `kind` (`create_draft`, `edit_draft`, `new_revision`, `edit_revision`, `attach`), `token_id`, `token_prefix`, `token_label`, `bot_name`, `method`, `path`, `document_id`, `doc_number`, `revision` and `fields_changed` (field names only); an attach also carries `filename`, `size_bytes`, `sha256` and `content_type`. Never the token, a file's bytes or the text. A person's write adds none. Every audit entry a token causes also names the token's label in `via_token`.
+
+**Files.** A token attaches PDFs only: the `.pdf` extension, the `application/pdf` type and the file's first bytes (`%PDF-`) must all agree, or the answer is `415` naming the file and nothing in the batch is stored. Up to 10 files, the same size limit as a person. `kind` is `signed_original` or `attachment`.
+
+### `POST /api/documents`
+
+File a new SOP as a **draft**. Refused when `status` is anything but `draft` (an approved status is `approve_requires_human_session`), when `approved_by` or `approved_at` is sent, or when `doc_type` is anything but `sop`.
+
+- **Scope:** `write` + grant `sops-edit`. **Module:** SOPs (edit).
+- **Body:** `title` and `category` (required), `doc_number`, `revision`, `effective_date`, `review_due`, `review_frequency`, `owner`, `content`, `source_file`.
+
+### `PUT /api/documents/:id`
+
+Edit a **draft** SOP. Refused on an approved, under-review or withdrawn SOP (start a new revision instead), on a status move, on `approved_by` / `approved_at`, and on any field outside the list below. Writes a version row like a person's edit.
+
+- **Scope:** `write` + grant `sops-edit`. **Module:** SOPs (edit).
+- **Body:** `doc_number`, `title`, `category`, `revision`, `effective_date`, `review_due`, `review_frequency`, `owner`, `content`, `content_es`, `source_file`, `_change_summary`, `_minor`.
+
+### `POST /api/documents/:id/revisions`
+
+Start a draft revision of an **approved** SOP (active or under review). A draft SOP is `409` (edit it directly); a second open draft is `409`.
+
+- **Scope:** `write` + grant `sops-edit`. **Module:** SOPs (edit).
+- **Body:** `revision`, `change_summary` only.
+
+### `PUT /api/documents/:id/revisions/:rid`
+
+Edit that draft revision. The SOP in force is unchanged until an owner approves it. An approved revision is history and refused.
+
+- **Scope:** `write` + grant `sops-edit`. **Module:** SOPs (edit).
+- **Body:** `revision`, `title`, `description`, `description_es`, `effective_date`, `change_summary` only.
+
+### `POST /api/documents/:id/attachments`
+
+Attach PDFs to an SOP (multipart `files`, up to 10), draft or approved. Fields: `kind` (`signed_original` for the signed scan), `revision` (which revision the scan is of), `title`.
+
+- **Scope:** `write` + grant `sops-edit`. **Module:** SOPs (edit). `503` when file storage is off.

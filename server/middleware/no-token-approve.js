@@ -249,5 +249,6 @@ export function refuseTokenDenied(req, res, rule) {
       { method: req.method, path: (req.baseUrl || '') + req.path, category, rule: rule?.label || null, prefix: req.auth?.prefix },
       null, null, req.auth?.label || null);
   } catch { /* the refusal stands even if the log write fails */ }
-  return res.status(403).json({ error: 'token_denied', category, message: DENY_MESSAGES[category] || DENY_MESSAGES.not_open_to_tokens });
+  return res.status(403).json({ error: 'token_denied', category, message: DENY_MESSAGES[category] || DENY_MESSAGES.not_open_to_tokens,
+    ...(rule?.reason ? { reason: rule.reason } : {}) });
 }

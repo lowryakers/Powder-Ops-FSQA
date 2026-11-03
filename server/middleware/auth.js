@@ -360,7 +360,7 @@ function authenticateToken(token, req, res, next) {
     is_active: row.is_active,
     is_external: !!row.is_external,
     // Carried so every handler's own logAudit names the token (db.js).
-    via_token: { id: t.id, prefix: t.prefix },
+    via_token: { id: t.id, prefix: t.prefix, label: t.label || null },
   };
 
   if (user.is_external && !EXTERNAL_ALLOWED.some(re => re.test(req.path))) {
@@ -406,7 +406,9 @@ function authenticateToken(token, req, res, next) {
     return res.status(403).json({ error: 'token_scope', message: 'This token is read-only.' });
   }
   if (isWrite && !tokenWriteAllowed(req, t.scopes)) {
-    return refuseTokenDenied(req, res, null);
+    // A WRITE_AREAS `when` that refused says why (D-303); the reason is logged
+    // on api_token_write_blocked and returned to the bot.
+    return refuseTokenDenied(req, res, req.tokenWriteRefusal ? { label: req.tokenWriteRefusal, reason: req.tokenWriteRefusal } : null);
   }
 
   next();

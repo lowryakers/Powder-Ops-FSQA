@@ -44,9 +44,13 @@ const LEGACY_SCOPES = Object.freeze({ 'write-drafts': 'write' });
 //   nutrition panel, with a source reference. The Product Manager bot's.
 //   course-drafts — stage a DRAFT course: content, quiz (EN + ES) and files,
 //   a video up to 2 GB. The Quality bot's (D-278). Publishing takes two people.
+//   sops-edit — stage SOP work: a draft document, a draft's fields and text, a
+//   new revision of an approved SOP, a PDF attached. The Quality bot's (D-303).
+//   Owners approve with their own password.
 export const TOKEN_GRANTS = Object.freeze({
   'nfp-panel': 'Nutrition panels — upload the panel PDF and write panel values on a DRAFT panel, each write naming its source. Never approves.',
   'course-drafts': 'Training course drafts — stage and edit a DRAFT course (content, quiz in English and Spanish, files incl. a video up to 2 GB). Never touches a live course; two people publish it.',
+  'sops-edit': 'SOPs: stage draft documents, edit draft text and fields, start and edit a new revision, attach a PDF. Never approves, signs, makes effective, deletes, retires or merges.',
 });
 
 export function normalizeGrants(input) {
@@ -305,5 +309,5 @@ export function tokenWriteAllowed(req, scopes, db = getDb()) {
 /** For a handler that logs its own audit entry: the token behind the call, if any. */
 export function auditActorDetails(req, details = {}) {
   if (req?.auth?.kind !== 'token') return details;
-  return { ...details, via_token: { id: req.auth.tokenId, prefix: req.auth.prefix } };
+  return { ...details, via_token: { id: req.auth.tokenId, prefix: req.auth.prefix, label: req.auth.label || null } };
 }
