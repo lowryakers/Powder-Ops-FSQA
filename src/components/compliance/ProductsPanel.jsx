@@ -10,7 +10,7 @@ import ProductBarcodes from './ProductBarcodes.jsx';
 import ProductShelf from './ProductShelf.jsx';
 import ProductCompleteness from './ProductCompleteness.jsx';
 import ProductGrid from './ProductGrid.jsx';
-import MerchStyles, { MerchVariantBlock } from './MerchPanel.jsx';
+import MerchStyles, { MerchVariantBlock, MerchPipeline, MerchColors } from './MerchPanel.jsx';
 import ProductPipeline from './ProductPipeline.jsx';
 import NewProductFlow from './NewProductFlow.jsx';
 import ProductStagePanel, { PackagingPos } from './ProductStagePanel.jsx';
@@ -990,7 +990,10 @@ export default function ProductsPanel() {
   const [category, setCategory] = useState('');
   // Food or merch (D-302). The catalogue opens on food so its counts read as
   // they always have; merch is one tap away and counted on its chip.
-  const [kind, setKind] = useState(() => (getParam('type') === 'merch' ? 'merch' : getParam('type') === 'all' ? 'all' : 'food'));
+  // Merch has its own tab now (Styles / Pipeline / Colors); `?type=merch`
+  // still lands there, so an old link opens the same styles it always did.
+  const [kind, setKind] = useState(() => (getParam('type') === 'all' ? 'all' : 'food'));
+  const [merchView, setMerchView] = useState(() => getParam('merch') || 'styles');
   const [pack, setPack] = useState('');
   const [open, setOpen] = useState(null);
   // The gate a product was opened at — set by the Pipeline, cleared on close.
@@ -998,7 +1001,7 @@ export default function ProductsPanel() {
   const openAt = (sku, gate) => { setFocus(gate || null); setView('list'); setOpen(sku); };
   // `?tab=products&view=completeness` opens a tab directly (deepLink.js: a lazy
   // module mounts after App has consumed the query string).
-  const [view, setView] = useState(() => getParam('view') || 'list');
+  const [view, setView] = useState(() => getParam('view') || (getParam('type') === 'merch' ? 'merch' : 'list'));
   // The spec a link landed on (`?view=specs&spec=SPEC-BOTTLE`, the grid's Spec
   // cell, the drawer's Spec line, the importer's mismatch note — D-135).
   const [specFocus, setSpecFocus] = useState(() => getParam('spec') || null);
@@ -1062,6 +1065,9 @@ export default function ProductsPanel() {
         // No badge: nearly the whole catalog needs work today, and a permanent
         // number is wallpaper; the count is on the Pipeline itself.
         { id: 'pipeline', label: 'Pipeline', icon: ListChecks },
+        // Merch is its own section (D-302 follow-up): styles, its own six-step
+        // pipeline and the color register. Counted by variant.
+        { id: 'merch', label: 'Merch', icon: Shirt, badge: typeCounts.merch || undefined },
         // Panels waiting on somebody. Counted here rather than left to be found
         // in a product drawer, because "who still owes us an approval" is the
         // question that holds artwork up.
@@ -1100,6 +1106,29 @@ export default function ProductsPanel() {
       {/* The Pipeline is the FOOD new-product flow (D-302): merch has its own steps and stays off it. */}
       {view === 'pipeline' && <ProductPipeline products={foodProducts} loading={!data} onOpen={openAt} />}
       {view === 'new-product' && <NewProductFlow />}
+      {view === 'merch' && (
+        <div className="space-y-3" data-merch-tab>
+          <div className="flex gap-1 text-xs" role="group" aria-label="Merch view" data-merch-subtabs>
+            {[['styles', 'Styles'], ['pipeline', 'Pipeline'], ['colors', 'Colors']].map(([k, label]) => (
+              <button key={k} type="button" onClick={() => setMerchView(k)} data-merch-subtab={k} aria-pressed={merchView === k}
+                className={`px-2.5 py-1.5 rounded-full border ${merchView === k ? 'bg-powder-600 text-white border-powder-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {merchView === 'styles' && (<>
+            <div className="relative max-w-md">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search style, SKU, flavor, GTIN"
+                className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm" />
+            </div>
+            <MerchStyles canEdit={canEdit} needle={q} onOpenSku={setOpen} onChanged={refreshAll}
+              showColors={false} colorsWhere="on the Colors view" />
+          </>)}
+          {merchView === 'pipeline' && <MerchPipeline onOpenSku={setOpen} />}
+          {merchView === 'colors' && <MerchColors canEdit={canEdit} onChanged={refreshAll} />}
+        </div>
+      )}
 
       {view === 'completeness' && <ProductCompleteness canEdit={canEdit} onOpenSku={(sku) => { setView('list'); setOpen(sku); }} />}
 
@@ -1131,7 +1160,7 @@ export default function ProductsPanel() {
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex gap-1 text-xs" role="group" aria-label="Product type" data-type-filter>
           {[['food', 'Food'], ['merch', 'Merch'], ['all', 'All']].map(([k, label]) => (
-            <button key={k} type="button" onClick={() => setKind(k)} data-type-chip={k} aria-pressed={kind === k}
+            <button key={k} type="button" onClick={() => (k === 'merch' ? setView('merch') : setKind(k))} data-type-chip={k} aria-pressed={kind === k}
               className={`px-2.5 py-1.5 rounded-full border ${kind === k ? 'bg-powder-600 text-white border-powder-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}>
               {label} <span className="tabular-nums opacity-80">{typeCounts[k]}</span>
             </button>
@@ -1155,9 +1184,7 @@ export default function ProductsPanel() {
         </select>
       </div>
 
-      {kind === 'merch' ? (
-        <MerchStyles canEdit={canEdit} needle={q} onOpenSku={setOpen} onChanged={refreshAll} />
-      ) : (<>
+      {(<>
       <p className="text-xs text-gray-500 md:hidden">
         {sorted.length} of {products.length}
       </p>

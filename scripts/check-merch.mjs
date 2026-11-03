@@ -5,7 +5,7 @@
 // trips fail.
 import {
   MERCH_SKU_RE, buildStyleCode, buildMerchSku, parseMerchSku, parseStyleCode,
-  variantTitle, gtinAssignRefusal, suggestNextGtin,
+  variantTitle, gtinAssignRefusal, suggestNextGtin, MERCH_STEPS, merchStepsOf,
 } from '../shared/merch.js';
 import { buildSku, parseSku, preferredSku, LINE_CODES } from '../shared/sku-format.js';
 import { SKU_RE, validateField } from '../shared/product-fields.js';
@@ -81,6 +81,20 @@ t('merch stage: formula, fill, panel, artwork and PO are not applicable', ['form
 t('merch stage: the SKU gate holds on the merch rule, not the legacy one', gate.sku === 'done');
 const bogus = stageOf({ p: { ...merchRow, sku: 'MCH-HBDC-BLU', readiness: readinessOf(merchRow) } });
 t('…and does not hold for a malformed merch SKU', Object.fromEntries(bogus.gates.map((x) => [x.key, x.state])).sku !== 'done');
+
+console.log('── the merch pipeline (Merch tab) ──');
+t('six steps', MERCH_STEPS.length === 6);
+const mr = (over = {}) => ({ ...merchRow, merch_supplier: 'S', merch_decorator: 'D', color: { code: 'BLU', name: 'Blue', confirming: false }, ...over });
+const withR = (r) => ({ ...r, readiness: readinessOf(r) });
+let f = merchStepsOf(withR(mr({ merch_supplier: '' })));
+t('no supplier ⇒ waits at step 2 (index 1)', f.step === 1 && f.next.key === 'supplier', JSON.stringify(f.next));
+f = merchStepsOf(withR(mr({ color: { code: 'BLU', name: 'Blue', confirming: true } })));
+t('a confirming color ⇒ waits at "Color confirmed", saying so', f.step === 2 && /still being confirmed/.test(f.next.why));
+f = merchStepsOf(withR(mr()));
+t('color confirmed, no GTIN ⇒ waits at GTIN', f.step === 3 && f.next.key === 'gtin');
+f = merchStepsOf(withR(mr({ gtin: g('05'), gtin_valid: 1, shopify_listed_at: '2026-11-01', shiphero_synced_at: '2026-11-01' })));
+t('everything done ⇒ step 6, nothing next', f.step === 6 && f.next === null, JSON.stringify(f.steps.filter((x) => !x.done)));
+t('a row with no readiness reads as not started, never done', merchStepsOf({}).step === 0);
 
 console.log(`\n${pass} PASS / ${fail} FAIL`);
 process.exit(fail ? 1 : 0);

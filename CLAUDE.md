@@ -832,7 +832,10 @@ qms_record pre-filled from the message (body → description/reason, author, tim
   code and merch never mints one. `SKU_RE` stays food-only — do not loosen it. Recolour through the recolor route.
 - **A GTIN is never auto-assigned.** Suggest and reserve (a bot may); assign is a person's act, refused while the
   colour is confirming or a colour/size is missing, re-checked in the write. Reservations count everywhere a GTIN does.
-- `check:merch` (48), `verify:merch` (101). The hoodie exists only in test databases until Lowry creates it.
+- **Merch is its own Products tab** (Styles · Pipeline · Colors; `?view=merch&merch=pipeline`, `?type=merch` still lands
+  there). The Pipeline is `merchStepsOf()` in `shared/merch.js` — six steps READ off the server's readiness and the
+  color's confirming flag; nothing on the screen decides a step. The food Pipeline stays food-only.
+- `check:merch` (54), `verify:merch` (115). The hoodie exists only in test databases until Lowry creates it.
 
 ## Product management (Products · Artwork · the proofing loop)
 
