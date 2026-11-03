@@ -3801,6 +3801,59 @@ function runMigrations() {
   addColumnIfMissing('products', 'formula_fill_per_unit_g', 'REAL');
   addColumnIfMissing('products', 'formula_synced_at', 'TEXT');
 
+  // ── Merch (D-302) ──────────────────────────────────────────────────────────
+  // ADDITIVE ONLY. Every existing row reads `product_type = 'food'` — the column
+  // default does that on ADD COLUMN, and the UPDATE below catches only a NULL
+  // (none on a database this code created). Nothing else about an existing row
+  // is written. A merch VARIANT is an ordinary products row carrying its style,
+  // colour and size; the STYLE has no GTIN and lives in merch_styles.
+  addColumnIfMissing('products', 'product_type', "TEXT DEFAULT 'food'");
+  addColumnIfMissing('products', 'style_code', 'TEXT');
+  addColumnIfMissing('products', 'color_code', 'TEXT');
+  addColumnIfMissing('products', 'size_code', 'TEXT');
+  db.prepare("UPDATE products SET product_type = 'food' WHERE product_type IS NULL").run();
+  db.exec('CREATE INDEX IF NOT EXISTS idx_products_style ON products(style_code)');
+  db.exec(`CREATE TABLE IF NOT EXISTS merch_styles (
+    style_code TEXT PRIMARY KEY,           -- MCH-<garment><flavor code>, e.g. MCH-HBDC
+    flavor TEXT NOT NULL,                  -- the register flavour it came from, e.g. Birthday Cake
+    flavor_code TEXT NOT NULL,             -- that flavour's register code at minting (frozen)
+    garment TEXT NOT NULL,                 -- H hoodie · T tee · C cap
+    name TEXT NOT NULL,
+    supplier TEXT, blank_brand TEXT, blank_style TEXT,
+    decorator TEXT, decoration_method TEXT, decoration_art_url TEXT,
+    fabric TEXT, weight_gsm REAL, fit TEXT, care TEXT, country_of_origin TEXT,
+    unit_cost REAL, msrp REAL, moq INTEGER, lead_time_days INTEGER, shipping_weight_g REAL,
+    notes TEXT,
+    created_by TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_by TEXT, updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  // The colour register: three letters, a name, a hex, and whether the plant is
+  // still confirming it. A GTIN waits while a colour is being confirmed.
+  db.exec(`CREATE TABLE IF NOT EXISTS merch_colors (
+    code TEXT PRIMARY KEY,                 -- BLU, BLK, PNK, BRN
+    name TEXT NOT NULL,
+    hex TEXT,
+    confirming INTEGER NOT NULL DEFAULT 1,
+    note TEXT,
+    confirmed_by TEXT, confirmed_at TEXT,
+    created_by TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  // A GS1 number held before its product exists, or one already taken in the
+  // GS1 portal. Counted with products.gtin wherever "is this number free" is
+  // asked, and in each prefix's capacity. Stored in the 12-digit form.
+  db.exec(`CREATE TABLE IF NOT EXISTS gtin_reservations (
+    id TEXT PRIMARY KEY,
+    gtin TEXT NOT NULL UNIQUE,
+    prefix TEXT NOT NULL,
+    item TEXT NOT NULL,
+    reserved_for TEXT,
+    source TEXT NOT NULL DEFAULT 'readydoc',   -- 'readydoc' | 'gs1_portal'
+    note TEXT,
+    reserved_by TEXT, reserved_by_id TEXT,
+    reserved_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+
   // ── What the panel FILE says (D-174) ────────────────────────────────────────
   // Every panel file carries its SHA-256 and the name the designer gave it;
   // the stored name is <SKU>_<version>_<date>.<ext>, because designers reuse

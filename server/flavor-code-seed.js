@@ -144,7 +144,8 @@ export function repairBaseFlavors(db) {
 
 export function seedFlavorCodes(db) {
   const rows = db.prepare(
-    'SELECT sku, flavor, base_flavor FROM products'
+    // Merch rows are never read as flavour-code evidence (D-302).
+    "SELECT sku, flavor, base_flavor FROM products WHERE COALESCE(product_type, 'food') != 'merch'"
   ).all();
   if (!rows.length) return { skipped: 'no products yet' };
 

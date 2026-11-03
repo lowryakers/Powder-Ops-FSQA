@@ -97,6 +97,8 @@ export const WRITE_AREAS = Object.freeze([
   { area: 'products', method: 'POST', re: /^\/products\/import\/commit$/, label: 'POST /api/products/import/commit', bulk: true },
   { area: 'products', method: 'POST', re: /^\/products\/shelf\/[^/]+$/, label: 'POST /api/products/shelf/:slot' },
   { area: 'products', method: 'PUT', re: /^\/products\/shelf\/[^/]+$/, label: 'PUT /api/products/shelf/:slot' },
+  // D-302: holding a GS1 number is a bot's job; assigning it never is (APPROVE_ROUTES).
+  { area: 'products', method: 'POST', re: /^\/products\/merch\/gtin\/reserve$/, label: 'POST /api/products/merch/gtin/reserve' },
   { area: 'products', method: 'PUT', re: /^\/products\/[^/]+$/, label: 'PUT /api/products/:sku' },
   { area: 'products', method: 'PUT', re: /^\/products\/[^/]+\/colors$/, label: 'PUT /api/products/:sku/colors' },
   { area: 'products', method: 'POST', re: /^\/products\/[^/]+\/na$/, label: 'POST /api/products/:sku/na' },

@@ -529,6 +529,7 @@ router.get('/', (_req, res) => {
   const missing = db.prepare(`
     SELECT p.sku, p.flavor, p.category, p.pack FROM products p
     WHERE p.status != 'discontinued' AND p.nfp_approved_at IS NULL
+      AND COALESCE(p.product_type, 'food') != 'merch' -- merch carries no nutrition panel (D-302)
       AND NOT EXISTS (SELECT 1 FROM nfp_versions n WHERE n.sku = p.sku AND n.status IN ('draft','ready_for_review','sent','approved'))
     ORDER BY p.category, p.flavor`).all();
 
@@ -572,6 +573,7 @@ function reviewQueue(db) {
       (SELECT n.status FROM nfp_versions n WHERE n.sku = p.sku AND n.status IN ('draft','ready_for_review','sent','rejected') ORDER BY n.updated_at DESC LIMIT 1) AS open_status
     FROM products p
     WHERE p.status != 'discontinued'
+      AND COALESCE(p.product_type, 'food') != 'merch' -- merch carries no nutrition panel (D-302)
       AND NOT EXISTS (SELECT 1 FROM nfp_versions n WHERE n.sku = p.sku AND n.status = 'approved')
     ORDER BY p.category, p.base_flavor, p.sku`).all().map((p) => ({ ...p, family_key: familyKeyOf(p) }));
   const openDrafts = db.prepare(`SELECT n.sku, n.id, n.version, n.status, n.updated_at FROM nfp_versions n

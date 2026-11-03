@@ -40,6 +40,15 @@
 import { normalizeGtin } from './gtin.js';
 import { FILM_FIELDS, filmValueOf, filmCell, specFieldLabel } from './packaging-spec.js';
 
+// FOOD-ONLY STEPS DO NOT APPLY TO MERCH (D-302). A hoodie has no packaging
+// spec, formula, nutrition panel, film artwork or spot-colour slots, so those
+// steps leave its list and its denominator — the same `applies` rule Amazon
+// uses — rather than reading as work nobody will ever do. Branches on
+// product_type, never on a category string. Food rows are untouched: `applies`
+// is true for every row that is not merch.
+const foodOnly = (p) => p?.product_type !== 'merch';
+const merchOnly = (p) => p?.product_type === 'merch';
+
 export const FACTS = {
   sku: (p) => p.sku || '',
   // NORMALISED: a GTIN retyped in its padded form is the same number, and a
@@ -118,7 +127,23 @@ export const READINESS = [
     why: (p) => (!p.gtin ? 'No GS1 number on the row' : !p.gtin_valid ? `${p.gtin} fails its GS1 check digit` : `GTIN ${normalizeGtin(p.gtin)} passes its check digit`),
   },
   {
+    // MERCH ONLY (D-302): who makes the blank and who decorates it, recorded on
+    // the style. Read off the style (hydrated as merch_supplier /
+    // merch_decorator); a variant cannot be produced until both are known.
+    key: 'supplier', label: 'Supplier and decorator',
+    applies: merchOnly,
+    ok: (p) => !!String(p.merch_supplier || '').trim() && !!String(p.merch_decorator || '').trim(),
+    owns: [],
+    why: (p) => {
+      const sup = String(p.merch_supplier || '').trim(); const dec = String(p.merch_decorator || '').trim();
+      if (sup && dec) return `Blank from ${sup}; decorated by ${dec}`;
+      const gaps = [!sup && 'supplier', !dec && 'decorator'].filter(Boolean).join(' and ');
+      return `No ${gaps} recorded on style ${p.style_code || '(none)'}`;
+    },
+  },
+  {
     key: 'spec', label: 'Packaging spec',
+    applies: foodOnly,
     ok: (p) => !!p.spec_id && !!p.material_structure,
     owns: ['spec_id'],
     why: (p) => (!p.spec_id ? 'No packaging spec assigned' : !p.material_structure ? `${p.spec_id} has no material structure recorded` : `${p.spec_id} carries a material structure`),
@@ -128,6 +153,7 @@ export const READINESS = [
     // being replaced (MRPEasy → Keychain). What matters is that a recipe was
     // approved, wherever it lives.
     key: 'formula', label: 'Approved formula', tick: true,
+    applies: foodOnly,
     ok: (p) => !!p.formula_approved_at,
     owns: ['formula_approved_at', 'mrp_formula_id', 'formula_rev'],
     why: (p) => (p.formula_approved_at
@@ -136,6 +162,7 @@ export const READINESS = [
   },
   {
     key: 'nfp', label: 'NFP approved',
+    applies: foodOnly,
     ok: (p) => !!p.nfp_version && !!p.nfp_approved_at,
     owns: ['nfp_version', 'nfp_approved_at'],
     why: (p) => (p.nfp_version && p.nfp_approved_at ? `Panel ${p.nfp_version} approved ${String(p.nfp_approved_at).slice(0, 10)}`
@@ -146,6 +173,7 @@ export const READINESS = [
   },
   {
     key: 'artwork', label: 'Artwork print-ready',
+    applies: foodOnly,
     ok: (p) => p.artwork_status === 'print_ready',
     owns: ['artwork_status', 'artwork_version'],
     // DERIVED from the release on the Artwork board — the column is a mirror
@@ -161,6 +189,7 @@ export const READINESS = [
   },
   {
     key: 'colors', label: 'Brand colors',
+    applies: foodOnly,
     ok: (p) => (p.colors || []).length > 0,
     owns: [],
     why: (p) => ((p.colors || []).length ? `${p.colors.length} color slot${p.colors.length === 1 ? '' : 's'} on file` : 'No brand colors on file'),

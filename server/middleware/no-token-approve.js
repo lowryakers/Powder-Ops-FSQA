@@ -74,6 +74,10 @@ export const APPROVE_ROUTES = Object.freeze([
     when: (req) => !!req.body?.check?.competence_confirmed },
   { method: 'POST', re: /^\/training\/bulk-complete$/, label: 'POST /api/training/bulk-complete — a group sign-off' },
   { method: 'POST', re: /^\/training\/courses\/[^/]+\/revision$/, label: 'POST /api/training/courses/:id/revision — a person says the course is updated for a revision' },
+  // D-302: a GTIN goes on a pack, and confirming a merch colour is what lets one
+  // be drawn. A bot may suggest or reserve a number; only a person assigns it.
+  { method: 'POST', re: /^\/products\/merch\/variants\/[^/]+\/gtin$/, label: 'POST /api/products/merch/variants/:sku/gtin — a person assigns a GTIN' },
+  { method: 'POST', re: /^\/products\/merch\/colors\/[^/]+\/confirm$/, label: 'POST /api/products/merch/colors/:code/confirm — a person confirms a colour' },
   // Who may sign the crisis drill's Management review (D-266) is a person's decision, never a token's.
   { method: 'PUT', re: /^\/safety\/drill-signers$/, label: 'PUT /api/safety/drill-signers — who signs the crisis drill for Management' },
 ]);

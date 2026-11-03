@@ -45,6 +45,20 @@ export function scanRoutes(root = process.cwd(), { includeGet = false } = {}) {
       const sub = r[2] === '/' ? '' : r[2];
       routes.push({ method: r[1].toUpperCase(), path: prefix + sub, file: `server/api/${b.file}`, mount: prefix });
     }
+    // A router may hand itself to a helper that registers more routes on it
+    // (`registerMerchRoutes(router, …)`, D-302). Those routes are mounted on the
+    // same prefix and must be scanned too, or a token rule never sees them.
+    for (const call of src.matchAll(new RegExp(`\\b(register\\w*Routes)\\(\\s*${varName}\\b`, 'g'))) {
+      const imp = src.match(new RegExp(`import\\s*\\{[^}]*\\b${call[1]}\\b[^}]*\\}\\s*from\\s*'([^']+)'`));
+      if (!imp) continue;
+      const helper = join(root, 'server/api', imp[1]);
+      if (!existsSync(helper)) continue;
+      const hsrc = readFileSync(helper, 'utf8');
+      const hrx = new RegExp(`\\brouter\\.(${verbs})\\(\\s*['"\`]([^'"\`]+)['"\`]`, 'g');
+      for (const r of hsrc.matchAll(hrx)) {
+        routes.push({ method: r[1].toUpperCase(), path: prefix + (r[2] === '/' ? '' : r[2]), file: join('server/api', imp[1]).replace(/\\/g, '/'), mount: prefix });
+      }
+    }
   }
   for (const m of server.matchAll(new RegExp(`app\\.(${verbs})\\(\\s*'(\\/api[^']*)'`, 'g'))) {
     routes.push({ method: m[1].toUpperCase(), path: m[2], file: 'server.js', mount: m[2] });

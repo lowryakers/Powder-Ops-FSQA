@@ -66,6 +66,14 @@ const PROV_LABEL = { formula_ref: 'Panel formula ref', formula_version: 'Panel f
  * Each group's check returns `{ missing: [label], na?: [label] }` — the named
  * gaps, and the fields that do not apply to this SKU.
  */
+// FOOD GROUPS DO NOT APPLY TO MERCH (D-302): no spec, die line, eye mark,
+// formula, fill weight, shelf-life basis, panel, call-outs or film artwork. A
+// group that does not apply is left out of the row entirely — not "complete",
+// not a gap — so a hoodie never reads "No nutrition panel on file". Food rows
+// see exactly the groups they always did. Branches on product_type only.
+const foodOnly = (p) => p?.product_type !== 'merch';
+const merchOnly = (p) => p?.product_type === 'merch';
+
 export const GROUPS = [
   {
     key: 'identity', label: 'Identity',
@@ -81,7 +89,7 @@ export const GROUPS = [
     },
   },
   {
-    key: 'packaging', label: 'Packaging',
+    key: 'packaging', label: 'Packaging', applies: foodOnly,
     check: ({ p, spec, colors }) => {
       const missing = []; const na = [];
       if (!spec) {
@@ -108,7 +116,7 @@ export const GROUPS = [
     },
   },
   {
-    key: 'formula', label: 'Formula',
+    key: 'formula', label: 'Formula', applies: foodOnly,
     check: ({ p, shelf }) => {
       const missing = [];
       if (!present(p.mrp_formula_id)) missing.push('Formula ref');
@@ -126,7 +134,7 @@ export const GROUPS = [
     },
   },
   {
-    key: 'panel', label: 'Nutrition panel',
+    key: 'panel', label: 'Nutrition panel', applies: foodOnly,
     check: ({ panel }) => {
       if (!panel) return { missing: ['No nutrition panel on file'] };
       const missing = [];
@@ -138,7 +146,7 @@ export const GROUPS = [
     },
   },
   {
-    key: 'callouts', label: 'Front call-outs',
+    key: 'callouts', label: 'Front call-outs', applies: foodOnly,
     check: ({ panel }) => {
       if (!panel) return { missing: ['No nutrition panel on file'] };
       const c = panel.callouts || {};
@@ -148,19 +156,36 @@ export const GROUPS = [
     },
   },
   {
-    key: 'provenance', label: 'Provenance',
+    key: 'provenance', label: 'Provenance', applies: foodOnly,
     check: ({ panel }) => {
       if (!panel) return { missing: ['No nutrition panel on file'] };
       return { missing: provenanceMissing(panel.provenance).map((k) => PROV_LABEL[k]) };
     },
   },
   {
-    key: 'artwork', label: 'Artwork',
+    key: 'artwork', label: 'Artwork', applies: foodOnly,
     check: ({ artwork }) => {
       if (!artwork) return { missing: ['No artwork on file'] };
       const missing = [];
       if (artwork.panel_rev === null || artwork.panel_rev === undefined) missing.push('Panel version the artwork was proofed against');
       if (!present(artwork.proof_job_id)) missing.push('Proof job id');
+      return { missing };
+    },
+  },
+  {
+    // What a merch variant owes before it can be produced and labelled. The
+    // style carries the supplier and decorator; the colour carries whether it
+    // is still being confirmed (shared/merch.js).
+    key: 'merch', label: 'Merch style', applies: merchOnly,
+    check: ({ p, style, color }) => {
+      const missing = [];
+      if (!style) return { missing: ['No merch style on file'] };
+      if (!present(style.supplier)) missing.push('Supplier');
+      if (!present(style.decorator)) missing.push('Decorator');
+      if (!present(p.color_code)) missing.push('Color');
+      else if (!color) missing.push(`Color ${p.color_code} (not in the color register)`);
+      else if (color.confirming) missing.push(`Color ${color.code} confirmed`);
+      if (!present(p.size_code)) missing.push('Size');
       return { missing };
     },
   },
@@ -172,11 +197,12 @@ export const GROUPS = [
 const groupState = (r) => (r.missing.length ? 'incomplete' : 'complete');
 
 /** One SKU. Pure: every input is already fetched. */
-export function completenessOf({ p, spec, colors = [], panel = null, artwork = null, block = null, shelf = null }) {
+export function completenessOf({ p, spec, colors = [], panel = null, artwork = null, block = null, shelf = null, style = null, color = null }) {
   const groups = {};
   const missing = [];
   for (const g of GROUPS) {
-    const r = g.check({ p, spec, colors, panel, artwork, shelf });
+    if (g.applies && !g.applies(p)) continue;
+    const r = g.check({ p, spec, colors, panel, artwork, shelf, style, color });
     const res = { state: groupState(r), missing: r.missing, na: r.na || [] };
     groups[g.key] = res;
     for (const m of r.missing) missing.push(`${g.label}: ${m}`);
@@ -193,10 +219,12 @@ export function completenessOf({ p, spec, colors = [], panel = null, artwork = n
     state, groups, missing, gaps: missing.length, stale,
     // The date type and its basis, derived (server/stability.js), so the
     // screen can say "best by — no basis recorded" beside the gap.
-    shelf_life: { recorded: sl.recorded, basis_kind: sl.basis_kind, basis_label: sl.basis_kind ? BASIS_KIND_LABEL[sl.basis_kind] : null, date_type: sl.date_type, kind_missing: sl.kind_missing },
+    shelf_life: p.product_type === 'merch' ? null : { recorded: sl.recorded, basis_kind: sl.basis_kind, basis_label: sl.basis_kind ? BASIS_KIND_LABEL[sl.basis_kind] : null, date_type: sl.date_type, kind_missing: sl.kind_missing },
     na: naLabels, na_count: naLabels.length, na_fields: naOf(p),
     block: block ? { reason: block.reason, owner: block.owner, by: block.blocked_by, at: block.blocked_at } : null,
     panel_version: panel?.version || null, panel_status: panel?.status || null,
+    // Only on merch rows, so a food row's shape is exactly what it was.
+    ...(p.product_type === 'merch' ? { merch: true, style_code: p.style_code || null } : {}),
   };
 }
 
@@ -237,11 +265,17 @@ export function catalogueCompleteness(db) {
   const artwork = currentArtwork(db);
   const blocks = new Map(db.prepare('SELECT * FROM product_completeness_blocks').all().map((b) => [b.sku, b]));
   const shelf = shelfLifeBasis(db);
+  // Merch styles and the colour register, read once (D-302). Absent on a
+  // database that predates them, which has no merch either.
+  const styles = new Map((() => { try { return db.prepare('SELECT * FROM merch_styles').all(); } catch { return []; } })().map((s) => [s.style_code, s]));
+  const merchColors = new Map((() => { try { return db.prepare('SELECT * FROM merch_colors').all(); } catch { return []; } })().map((c) => [c.code, c]));
 
   const rows = products.map((p) => completenessOf({
     p, spec: specs.get(p.spec_id) || null, colors: colors.get(p.sku) || [],
     panel: panels.get(p.sku) || null, artwork: artwork.get(p.sku) || null, block: blocks.get(p.sku) || null,
     shelf: shelf.get(p.sku) || null,
+    style: p.style_code ? styles.get(p.style_code) || null : null,
+    color: p.color_code ? merchColors.get(p.color_code) || null : null,
   }));
 
   // Counts of things, never a ratio. Every figure is `.length` of the rows under it.
@@ -273,7 +307,8 @@ export function catalogueCompleteness(db) {
       na_skus: rows.filter((r) => Object.keys(r.na_fields).length).length,
       na_fields: rows.reduce((n, r) => n + Object.keys(r.na_fields).length, 0),
       // SKUs whose date rests on nothing recorded (D-133) — the 14 October punch list.
-      no_shelf_life_basis: rows.filter((r) => !r.shelf_life.recorded).length,
+      // Merch has no shelf life (D-302); it is never on this list.
+      no_shelf_life_basis: rows.filter((r) => r.shelf_life && !r.shelf_life.recorded).length,
     },
     groups: GROUPS.map((g) => ({ key: g.key, label: g.label })),
   };

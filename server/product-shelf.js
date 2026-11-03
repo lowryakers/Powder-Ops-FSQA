@@ -163,13 +163,39 @@ export function shelfState(db, { now = new Date() } = {}) {
  */
 export const PREFIX_WARN_FREE = 25;
 
+/**
+ * Every GS1 number already spoken for, in its 12-digit spelling: each product's
+ * GTIN in whatever form it was typed (padded 13/14-digit forms included), plus
+ * every reservation (D-302). The ONE answer to "is this number free" — the
+ * merch suggestion, the reservation and the assignment all read it.
+ */
+export function takenGtins(db) {
+  const out = new Set();
+  const rows = (() => {
+    try { return db.prepare("SELECT gtin FROM products WHERE gtin IS NOT NULL AND gtin != ''").all(); }
+    catch { return []; }
+  })();
+  const held = (() => {
+    try { return db.prepare('SELECT gtin FROM gtin_reservations').all(); }
+    catch { return []; }
+  })();
+  for (const r of [...rows, ...held]) out.add(normalizeGtin(r.gtin));
+  return out;
+}
+
 export function gtinPrefixes(db) {
   const rows = (() => {
     try { return db.prepare("SELECT sku, gtin FROM products WHERE gtin IS NOT NULL AND gtin != ''").all(); }
     catch { return []; }
   })();
+  // A reserved number is as used as one on a product: it cannot be handed out
+  // twice (D-302). Absent table on an old database = no reservations.
+  const held = (() => {
+    try { return db.prepare('SELECT gtin FROM gtin_reservations').all(); }
+    catch { return []; }
+  })();
   const byPrefix = new Map();
-  for (const r of rows) {
+  for (const r of [...rows, ...held]) {
     // Normalised first: a UPC-A written in its zero-padded GTIN-14 form is
     // the same number and has consumed the same allocation, and skipping it
     // made a used item code invisible to the capacity count.

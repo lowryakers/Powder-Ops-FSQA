@@ -10,6 +10,7 @@ import ProductBarcodes from './ProductBarcodes.jsx';
 import ProductShelf from './ProductShelf.jsx';
 import ProductCompleteness from './ProductCompleteness.jsx';
 import ProductGrid from './ProductGrid.jsx';
+import MerchStyles, { MerchVariantBlock } from './MerchPanel.jsx';
 import ProductPipeline from './ProductPipeline.jsx';
 import NewProductFlow from './NewProductFlow.jsx';
 import ProductStagePanel, { PackagingPos } from './ProductStagePanel.jsx';
@@ -23,7 +24,7 @@ import {
   Package, Search, X, AlertTriangle, CheckCircle2, Circle, Pencil, Stethoscope, Tag,
   Barcode, Upload, ExternalLink, RefreshCw, FolderOpen,
   FileText, Plus, Trash2, Palette,
-  ListChecks, Layers, ChevronDown,
+  ListChecks, Layers, ChevronDown, Shirt,
 } from 'lucide-react';
 import { openFile } from '../../lib/openFile';
 
@@ -222,6 +223,7 @@ const STEP_SECTION = {
   sku: 'identity', gtin: 'identity', formula: 'formula', nfp: 'panel',
   spec: 'packaging', colors: 'packaging', artwork: 'packaging',
   shopify: 'channels', shiphero: 'channels', amazon: 'channels',
+  supplier: 'merch',
 };
 
 function StepChecks({ steps, keys, sku, canEdit, onChanged }) {
@@ -654,6 +656,7 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
   const SECTION_KEYS = {
     identity: ['sku', 'gtin'], formula: ['formula'], panel: ['nfp'],
     packaging: ['spec', 'colors', 'artwork'], channels: ['shopify', 'shiphero', 'amazon'], pos: [], siblings: [],
+    merch: ['supplier'],
   };
   const SECTION_ANCHOR = { identity: 'sku gtin', formula: 'formula fill', panel: 'panel', packaging: 'artwork', channels: 'shopify shiphero', pos: 'po' };
   const isOpen = (id) => {
@@ -841,6 +844,15 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
                     has={p.has_barcode_image} stale={p.barcode_stale} forGtin={p.barcode_gtin} onChanged={changed} />
                 </Section>
 
+                {p.merch && (
+                  <Section {...sec('merch')} title="Merch style" icon={Shirt}
+                    summary={[p.style_code, p.color?.name, p.size?.code].filter(Boolean).join(' · ')}>
+                    <StepChecks steps={steps} keys={SECTION_KEYS.merch} sku={sku} canEdit={canEdit} onChanged={changed} />
+                    <MerchVariantBlock p={p} canEdit={canEdit} onChanged={changed} />
+                  </Section>
+                )}
+
+                {!p.merch && (<>
                 <Section {...sec('formula')} block title="Formula" icon={Layers}
                   summary={[p.mrp_formula_id, p.formula_rev && `v${p.formula_rev}`, p.fill_weight_g && `${p.fill_weight_g} g`].filter(Boolean).join(' · ') || 'nothing linked'}>
                   <StepChecks steps={steps} keys={SECTION_KEYS.formula} sku={sku} canEdit={canEdit} onChanged={changed} />
@@ -901,6 +913,7 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
                   </dl>
                   <p className="text-xs text-gray-500">Film facts belong to the spec and are edited there, for every product on it.</p>
                 </Section>
+                </>)}
 
                 <Section {...sec('channels')} block title="Channels" icon={ExternalLink}
                   summary={p.amazon_channel === 'listed' ? 'Shopify · ShipHero · Amazon' : 'Shopify · ShipHero'}>
@@ -921,13 +934,15 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
                   {p.notes && <p className="text-sm text-gray-700 whitespace-pre-line">{p.notes}</p>}
                 </Section>
 
+                {!p.merch && (
                 <Section {...sec('pos')} title="Packaging POs" icon={FolderOpen}
                   summary={(p.packaging_pos || []).length ? `${p.packaging_pos.length} recorded` : 'none recorded'}>
                   <PackagingPos p={p} sku={sku} canEdit={canEdit} onChanged={changed} />
                 </Section>
+                )}
 
                 {p.siblings?.length > 0 && (
-                  <Section {...sec('siblings')} title="Same flavor, other SKUs" icon={ListChecks}
+                  <Section {...sec('siblings')} title={p.merch ? 'Other variants of this style' : 'Same flavor, other SKUs'} icon={ListChecks}
                     summary={`${p.siblings.length} — a change here probably touches these`}>
                     <ul className="space-y-1">
                       {p.siblings.map((sb) => (
@@ -973,6 +988,9 @@ export default function ProductsPanel() {
   const { data: completeness, refresh: refreshCompleteness } = useApiGet('/products/completeness');
   const [q, setQ] = useState('');
   const [category, setCategory] = useState('');
+  // Food or merch (D-302). The catalogue opens on food so its counts read as
+  // they always have; merch is one tap away and counted on its chip.
+  const [kind, setKind] = useState(() => (getParam('type') === 'merch' ? 'merch' : getParam('type') === 'all' ? 'all' : 'food'));
   const [pack, setPack] = useState('');
   const [open, setOpen] = useState(null);
   // The gate a product was opened at — set by the Pipeline, cleared on close.
@@ -993,19 +1011,27 @@ export default function ProductsPanel() {
     ...p, readiness_done: p.readiness?.done ?? 0,
   })), [data]);
 
+  const foodProducts = useMemo(() => products.filter((p) => p.product_type !== 'merch'), [products]);
+  const typeCounts = useMemo(() => {
+    const merch = products.filter((p) => p.product_type === 'merch').length;
+    return { food: products.length - merch, merch, all: products.length };
+  }, [products]);
+
   const categories = useMemo(
     () => [...new Set(products.map((p) => p.category))].sort(), [products]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return products.filter((p) => {
+      if (kind === 'food' && p.product_type === 'merch') return false;
+      if (kind === 'merch' && p.product_type !== 'merch') return false;
       if (category && p.category !== category) return false;
       if (pack && p.pack !== pack) return false;
       if (!needle) return true;
       return [p.sku, p.legacy_sku, p.gtin, p.flavor, p.base_flavor, p.shopify_sku]
         .some((v) => (v || '').toLowerCase().includes(needle));
     });
-  }, [products, q, category, pack]);
+  }, [products, q, category, pack, kind]);
 
   const { sorted } = useTableSort(filtered, COLUMNS, 'sku', 'asc');
 
@@ -1071,7 +1097,8 @@ export default function ProductsPanel() {
         { id: 'new-product', label: 'New Product Creation', icon: FileText },
       ]} />
 
-      {view === 'pipeline' && <ProductPipeline products={products} loading={!data} onOpen={openAt} />}
+      {/* The Pipeline is the FOOD new-product flow (D-302): merch has its own steps and stays off it. */}
+      {view === 'pipeline' && <ProductPipeline products={foodProducts} loading={!data} onOpen={openAt} />}
       {view === 'new-product' && <NewProductFlow />}
 
       {view === 'completeness' && <ProductCompleteness canEdit={canEdit} onOpenSku={(sku) => { setView('list'); setOpen(sku); }} />}
@@ -1102,6 +1129,14 @@ export default function ProductsPanel() {
       )}
 
       <div className="flex flex-wrap items-center gap-2">
+        <div className="flex gap-1 text-xs" role="group" aria-label="Product type" data-type-filter>
+          {[['food', 'Food'], ['merch', 'Merch'], ['all', 'All']].map(([k, label]) => (
+            <button key={k} type="button" onClick={() => setKind(k)} data-type-chip={k} aria-pressed={kind === k}
+              className={`px-2.5 py-1.5 rounded-full border ${kind === k ? 'bg-powder-600 text-white border-powder-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}>
+              {label} <span className="tabular-nums opacity-80">{typeCounts[k]}</span>
+            </button>
+          ))}
+        </div>
         <div className="relative flex-1 min-w-[14rem]">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input value={q} onChange={(e) => setQ(e.target.value)}
@@ -1120,6 +1155,9 @@ export default function ProductsPanel() {
         </select>
       </div>
 
+      {kind === 'merch' ? (
+        <MerchStyles canEdit={canEdit} needle={q} onOpenSku={setOpen} onChanged={refreshAll} />
+      ) : (<>
       <p className="text-xs text-gray-500 md:hidden">
         {sorted.length} of {products.length}
       </p>
@@ -1151,6 +1189,7 @@ export default function ProductsPanel() {
         <ProductGrid products={filtered} completeness={completeness} canEdit={canEdit}
           onOpenSku={setOpen} onOpenSpec={openSpec} onChanged={refreshAll} />
       </div>
+      </>)}
 
       </>)}
 
