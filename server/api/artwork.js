@@ -434,6 +434,10 @@ ingestRouter.post('/', (req, res) => {
   if (!product) {
     return res.status(404).json({ error: 'No product matches that GTIN or SKU.', gtin: b.gtin, sku: b.sku });
   }
+  // Merch is not proofed (D-302): no film, no panel, no packaging spec.
+  if (product.product_type === 'merch') {
+    return res.status(409).json({ error: `${product.sku} is merch; artwork proofing covers food packaging only.`, code: 'MERCH_NOT_PROOFED', sku: product.sku });
+  }
 
   const component = (b.component || 'primary').trim();
   const existing = db.prepare(

@@ -820,6 +820,20 @@ qms_record pre-filled from the message (body → description/reason, author, tim
     `chat_messages.external_id` (Slack ts). Imported messages are FTS-searchable; embeddings backfill on next
     restart (if Voyage on). Verified on a synthetic export incl. re-import idempotency.
 
+## Merch: styles, variants, its own SKU rule, GTINs a person assigns (D-302)
+`shared/merch.js` (`MERCH_SKU_RE`, `buildMerchSku`, `parseMerchSku`, `gtinAssignRefusal`, `suggestNextGtin`),
+`server/merch-routes.js` (registered on the products router before `/:sku`), `products.product_type` / `style_code` /
+`color_code` / `size_code`, `merch_styles`, `merch_colors`, `gtin_reservations`, `takenGtins()` in `product-shelf.js`,
+`MerchPanel.jsx` (Products → Catalog → **Merch** chip; `?type=merch`).
+- **Branch on `product_type`, never the category.** A food-only step, gate or completeness group takes `applies`
+  (food) — merch must never read "missing panel" or "not started: formula". A new reader that groups or joins by
+  `base_flavor` must be scoped by `product_type`, and merch stays out of NFP, master.csv and artwork ingest.
+- **SKU: `MCH-<H|T|C><register code>-<COLOR3>-<SIZE>`, built, never typed**; the flavour part is an active register
+  code and merch never mints one. `SKU_RE` stays food-only — do not loosen it. Recolour through the recolor route.
+- **A GTIN is never auto-assigned.** Suggest and reserve (a bot may); assign is a person's act, refused while the
+  colour is confirming or a colour/size is missing, re-checked in the write. Reservations count everywhere a GTIN does.
+- `check:merch` (48), `verify:merch` (101). The hoodie exists only in test databases until Lowry creates it.
+
 ## Product management (Products · Artwork · the proofing loop)
 
 Finished goods — what we sell, its codes, and the film it prints on. **Distinct from

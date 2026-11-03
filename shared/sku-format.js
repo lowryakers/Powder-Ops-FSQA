@@ -18,6 +18,8 @@
 // import that has to recognise the shape all need the same vocabulary, and a
 // second copy is how one of them starts minting codes the others reject.
 
+import { MERCH_LINE, buildMerchSku, parseMerchSku } from './merch.js';
+
 /**
  * The first segment: the product line.
  *
@@ -59,6 +61,11 @@ export const LINE_CODES = {
   // codes are a choice, not read off film; agreed before the first SKU is minted.
   'Hydration': 'HYD',
   'Pre-Workout': 'PRE',
+  // Apparel (D-302). A merch SKU has its own four-part shape —
+  // MCH-<garment><flavor code>-<color>-<size> — and is built from its style,
+  // colour and size by shared/merch.js; it never goes through the food
+  // LINE-PACK-FLAVOR path below.
+  'Merch': 'MCH',
 };
 
 // The old name, kept because the bottling work reads it that way.
@@ -106,7 +113,13 @@ export const SKU_PART = /^[A-Z]{2,4}$/;
  * missing or malformed — a SKU is a join key, and a plausible-looking wrong one
  * is worse than none.
  */
-export function buildSku(protein, pack, flavorCode) {
+export function buildSku(protein, pack, flavorCode, size) {
+  // MERCH IS ITS OWN SHAPE (D-302): MCH-<style>-<color>-<size>, where the style
+  // is one garment letter plus a register code and the size can be one letter.
+  // Read as buildSku('MCH', 'HBDC', 'BLU', 'S'). No other line takes four parts.
+  if (String(protein ?? '').trim().toUpperCase() === MERCH_LINE) {
+    return buildMerchSku(`${MERCH_LINE}-${String(pack ?? '').trim().toUpperCase()}`, flavorCode, size);
+  }
   const head = [protein, pack].map(p => String(p ?? '').trim().toUpperCase());
   if (!head.every(p => SKU_PART.test(p))) return null;
   const flav = String(flavorCode ?? '').trim().toUpperCase();
@@ -186,6 +199,12 @@ export function preferredSku(product, codeByFlavor = {}) {
 /** The inverse, for reading a code back. Unknown parts come back as written. */
 export function parseSku(sku) {
   const parts = String(sku ?? '').trim().toUpperCase().split('-');
+  // A merch SKU is four parts and only ever on the MCH line (D-302). Every other
+  // line stays two or three: a four-part code anywhere else is refused.
+  if (parts[0] === MERCH_LINE) {
+    const m = parts.length === 4 ? parseMerchSku(sku) : null;
+    return m ? { protein: MERCH_LINE, pack: null, flavor: m.flavor_code, style: m.style_code, garment: m.garment, color: m.color, size: m.size, merch: true } : null;
+  }
   // Two parts is a flavourless product; three is the ordinary case.
   if (parts.length < 2 || parts.length > 3) return null;
   if (!parts.every(p => SKU_PART.test(p))) return null;

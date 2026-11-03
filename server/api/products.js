@@ -22,6 +22,8 @@ import { preferredSku, LINE_CODES, PACK_CODES } from '../../shared/sku-format.js
 import { READINESS, TICKABLE, readinessOf, nextBasis, FACTS, parseBasis } from '../../shared/product-readiness.js';
 import { shelfState, gtinPrefixes } from '../product-shelf.js';
 import { normalizeGtin, sameGtin, gtinValid } from '../../shared/gtin.js';
+import { GARMENTS, SIZE_BY_CODE } from '../../shared/merch.js';
+import { registerMerchRoutes } from '../merch-routes.js';
 import { validateField, FIELD_RULES, NA_FIELDS, naOf, looksLikeTypedNa, MASTER_CSV_SOURCES, PACKAGING_DERIVED } from '../../shared/product-fields.js';
 import { shelfLifeBasis, shelfLifeFor, NO_BASIS, BASIS_KIND_LABEL, DATE_TYPE_LABEL } from '../stability.js';
 import { stageInputs, stageFor } from '../product-stages.js';
@@ -104,6 +106,25 @@ export function stampReadiness(db, sku, before, changedColumns = [], who = null)
     .run(nextBasis(beforeWithColors, after, changedColumns, who), sku);
 }
 
+/**
+ * The style- and colour-level facts a merch variant reads (D-302). They are
+ * edited once on the style and once in the colour register; the variant row
+ * holds only its codes.
+ */
+function merchFacts(r, style, color) {
+  const size = SIZE_BY_CODE[r.size_code] || null;
+  return {
+    merch: true,
+    style: style ? { ...style, garment_label: GARMENTS[style.garment] || null } : null,
+    style_name: style?.name || r.family || null,
+    merch_supplier: style?.supplier || null,
+    merch_decorator: style?.decorator || null,
+    color: color ? { code: color.code, name: color.name, hex: color.hex, confirming: !!color.confirming, note: color.note }
+      : (r.color_code ? { code: r.color_code, name: null, hex: null, confirming: true, missing: true } : null),
+    size: size ? { code: size.code, label: size.label, sort: size.sort } : null,
+  };
+}
+
 function hydrate(rows, db) {
   if (!rows.length) return [];
   // The flavour register, read once for the whole list rather than per row.
@@ -121,13 +142,25 @@ function hydrate(rows, db) {
     if (!bySku.has(c.sku)) bySku.set(c.sku, []);
     bySku.get(c.sku).push(c);
   }
+  // Merch styles and the colour register, read once, only when a merch row is
+  // in the list (D-302). Food rows never gain a key from this.
+  const merchRows = rows.some((r) => r.product_type === 'merch');
+  const styleByCode = new Map();
+  const colorByCode = new Map();
+  if (merchRows) {
+    try { for (const s of db.prepare('SELECT * FROM merch_styles').all()) styleByCode.set(s.style_code, s); } catch { /* old db */ }
+    try { for (const c of db.prepare('SELECT * FROM merch_colors').all()) colorByCode.set(c.code, c); } catch { /* old db */ }
+  }
   return rows.map((r) => {
-    const withColors = { ...r, colors: bySku.get(r.sku) || [] };
+    const merch = r.product_type === 'merch';
+    const base = { ...r, colors: bySku.get(r.sku) || [] };
+    const withColors = merch ? { ...base, ...merchFacts(r, styleByCode.get(r.style_code), colorByCode.get(r.color_code)) } : base;
     // What this SKU would be under the new standard. Derived every read, never
     // stored: it depends on the flavour register, which moves as collisions
     // are broken. It is NOT this product's SKU — the existing catalogue keeps
     // its codes and the rename is its own project.
-    const pref = preferredSku({ ...withColors, product_line: withColors.category }, codeByFlavor);
+    // A merch SKU is minted in the merch standard already; its preview is itself.
+    const pref = merch ? { sku: r.sku, blocked_by: [] } : preferredSku({ ...withColors, product_line: withColors.category }, codeByFlavor);
     const readiness = readinessOf(withColors);
     return {
       ...withColors,
@@ -503,7 +536,9 @@ router.get('/flavor-codes', (req, res) => {
   // stored to-do list would go stale the moment somebody acted on it.
   let pending = [];
   try {
-    const products = db.prepare('SELECT sku, flavor, base_flavor FROM products').all();
+    // Merch rows carry a food flavour in base_flavor and a four-part SKU; they are
+    // never evidence for a flavour code and never a collision (D-302).
+    const products = db.prepare("SELECT sku, flavor, base_flavor FROM products WHERE COALESCE(product_type, 'food') != 'merch'").all();
     // The codes already on file are fed BACK IN, so a collision somebody has
     // broken stops being reported for the other side of it too.
     const issued = Object.fromEntries(rows.filter(r => r.is_active).map(r => [r.flavor, r.code]));
@@ -1146,7 +1181,9 @@ router.delete('/:sku/completeness-block', (req, res) => {
 
 router.get('/data-health', (_req, res) => {
   const db = getDb();
-  const products = db.prepare(`${SELECT}`).all();
+  // Food only: the packaging spec, brand colours and the flavour-code sweep are
+  // food facts. Merch has its own completeness group (D-302).
+  const products = db.prepare(`${SELECT} WHERE COALESCE(p.product_type, 'food') != 'merch'`).all();
   const colors = db.prepare('SELECT * FROM product_colors ORDER BY sku, slot').all();
 
   const bySku = new Map();
@@ -1375,6 +1412,9 @@ router.get('/data-health', (_req, res) => {
   });
 });
 
+// Merch (D-302): styles, colours, variants and GS1 numbers. Before `/:sku`.
+registerMerchRoutes(router, { getDb, canManage, hydrate, SELECT, moveProductRow, stampReadiness });
+
 router.get('/:sku', (req, res) => {
   const db = getDb();
   const row = db.prepare(`${SELECT} WHERE p.sku = ?`).get(req.params.sku);
@@ -1383,8 +1423,8 @@ router.get('/:sku', (req, res) => {
   // A change to one flavour usually touches the others. Danny says "blueberry";
   // that is a pouch and a stick.
   product.siblings = db
-    .prepare('SELECT sku, flavor, category, pack FROM products WHERE base_flavor = ? AND sku != ? ORDER BY sku')
-    .all(row.base_flavor, row.sku);
+    .prepare("SELECT sku, flavor, category, pack FROM products WHERE base_flavor = ? AND sku != ? AND COALESCE(product_type, 'food') = COALESCE(?, 'food') ORDER BY sku")
+    .all(row.base_flavor, row.sku, row.product_type);
   // What the date on the pack rests on, and which date it may therefore be
   // (D-133). Derived from the justification in force for the SKU on every
   // read; never a product column.
@@ -1439,6 +1479,17 @@ function buildPatch(db, existing, b) {
   if (ARTWORK_OWNED.some((c) => b[c] !== undefined)) {
     return { status: 400, code: 'ARTWORK_OWNED', error: 'Artwork status and version are set by releasing a version on the Artwork board, not by typing them.' };
   }
+  // A MERCH VARIANT'S IDENTITY IS BUILT, NOT TYPED (D-302). Its GTIN goes
+  // through the assignment route (a person, the colour confirmed, re-checked in
+  // the write); its flavour, title, line and style come from the style.
+  if (existing?.product_type === 'merch') {
+    const owned = MERCH_OWNED.filter((c) => b[c] !== undefined && String(b[c] ?? '') !== String(existing[c] ?? ''));
+    if (owned.length) {
+      return { status: 400, code: 'MERCH_OWNED', field: owned[0], error: owned.includes('gtin')
+        ? 'A merch GTIN is assigned from the variant (Products → the variant → GTIN), never typed.'
+        : `${owned.join(', ')} on a merch variant come${owned.length === 1 ? 's' : ''} from its style. Edit the style instead.` };
+    }
+  }
   const patch = {};
   for (const c of WRITABLE) if (b[c] !== undefined) patch[c] = b[c] === '' ? null : b[c];
 
@@ -1460,6 +1511,9 @@ function buildPatch(db, existing, b) {
     patch.gtin_valid = gtinValid(patch.gtin) ? 1 : 0;
     const clash = patch.gtin && db.prepare('SELECT sku FROM products WHERE gtin = ? AND sku != ?').get(patch.gtin, existing.sku);
     if (clash) return { status: 409, error: `${patch.gtin} is already on ${clash.sku}.` };
+    // A reserved number is spoken for (D-302): it cannot be typed onto another product.
+    const held = patch.gtin && gtinReservation(db, patch.gtin);
+    if (held) return { status: 409, code: 'GTIN_RESERVED', error: `${patch.gtin} is reserved${held.reserved_for ? ` for ${held.reserved_for}` : ''}. Release the reservation first.` };
   }
   if (patch.formula_source_system != null && !FORMULA_SOURCE_SYSTEMS.includes(String(patch.formula_source_system).toLowerCase())) {
     return { status: 400, field: 'formula_source_system', error: `Formula source is one of ${FORMULA_SOURCE_SYSTEMS.join(', ')}.` };
@@ -1493,6 +1547,16 @@ function buildPatch(db, existing, b) {
     patch.na_fields = Object.keys(na).length ? JSON.stringify(na) : null;
   }
   return { patch };
+}
+
+/** Columns a merch variant takes from its style or the GTIN route, never from an edit. */
+const MERCH_OWNED = ['gtin', 'category', 'pack', 'base_flavor', 'flavor', 'family', 'spec_id'];
+
+/** The reservation holding this number, in any spelling, or null. */
+function gtinReservation(db, gtin) {
+  const g = normalizeGtin(gtin);
+  if (!g) return null;
+  try { return db.prepare('SELECT * FROM gtin_reservations WHERE gtin = ?').get(g) || null; } catch { return null; }
 }
 
 /** Apply a patch built by `buildPatch`: one UPDATE, the readiness stamp, one audit entry. */
@@ -1587,6 +1651,11 @@ router.post('/:sku/confirm/:step', (req, res) => {
 router.post('/', (req, res) => {
   if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalog.' });
   const b = req.body || {};
+  // The MCH line is merch, and a merch SKU is built from its style, colour and
+  // size by POST /merch/styles/:code/variants — never typed here (D-302).
+  if (/^MCH-/i.test(String(b.sku || '').trim())) {
+    return res.status(400).json({ code: 'MERCH_SKU', error: 'MCH is the merch line. Merch variants are created from their style (Products → Merch), not typed.' });
+  }
   const skuCheck = validateField('sku', b.sku);
   const sku = skuCheck.ok ? skuCheck.value : null;
   if (!sku || !b.flavor?.trim() || !b.category?.trim() || !b.pack?.trim()) {
@@ -1607,6 +1676,9 @@ router.post('/', (req, res) => {
   if (gtin && !gtinValid(gtin)) return res.status(400).json({ error: `${gtin} fails its GS1 check digit.` });
   if (gtin && db.prepare('SELECT sku FROM products WHERE gtin = ?').get(gtin)) {
     return res.status(409).json({ error: `${gtin} is already on another product.` });
+  }
+  if (gtin && gtinReservation(db, gtin)) {
+    return res.status(409).json({ code: 'GTIN_RESERVED', error: `${gtin} is reserved. Release the reservation first.` });
   }
 
   const cols = ['sku', 'gtin', 'gtin_valid', 'created_by', ...WRITABLE.filter((c) => c !== 'gtin')];
@@ -1790,6 +1862,30 @@ router.put('/:sku/colors', (req, res) => {
  * as its own deliberate act in the audit log rather than hide inside a field
  * edit. legacy_sku is only ever set here, and never cleared.
  */
+/**
+ * Move a product row to a new SKU, with every child table that keys on it.
+ * Call inside a transaction. `extra` sets other columns in the same UPDATE;
+ * `legacy: false` skips recording the old code (a merch draft that never
+ * shipped has no code anything must still resolve, the D-081 realign rule).
+ */
+function moveProductRow(db, existing, next, user, { extra = {}, legacy = true } = {}) {
+  // Foreign keys are enforced app-wide (db.js sets foreign_keys = ON), so
+  // renaming the parent leaves the child rows pointing at a SKU that no
+  // longer exists for the instant between the statements. defer_foreign_keys
+  // moves the check to COMMIT, when both tables agree again. It is scoped to
+  // this transaction and resets itself — unlike foreign_keys = OFF, which
+  // would be a global switch flipped from inside a request handler.
+  db.pragma('defer_foreign_keys = ON');
+  const cols = Object.keys(extra);
+  const sets = cols.map((c) => `, ${c} = ?`).join('');
+  db.prepare(`UPDATE products SET sku = ?${legacy ? ', legacy_sku = COALESCE(legacy_sku, ?)' : ''}${sets}, updated_at = datetime('now') WHERE sku = ?`)
+    .run(next, ...(legacy ? [existing.sku] : []), ...cols.map((c) => extra[c]), existing.sku);
+  moveSkuChildren(db, existing.sku, next);
+  // The SKU is keyed into Shopify and ShipHero; those steps depend on it and
+  // must read stale after a rename rather than go on describing the old code.
+  stampReadiness(db, next, existing, ['sku', ...cols], user?.name);
+}
+
 router.post('/:sku/rename', (req, res) => {
   if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalog.' });
   const db = getDb();
@@ -1799,6 +1895,15 @@ router.post('/:sku/rename', (req, res) => {
   // The legacy shapes already on file are never re-tested — they are join keys.
   const typed = String(req.body?.sku || '').trim().toUpperCase();
   if (typed === existing.sku) return res.json(existing);
+  // MERCH SKUS ARE BUILT, NEVER TYPED (D-302). A merch variant changes colour
+  // through POST /merch/variants/:sku/recolor, which rebuilds its SKU through
+  // the same row move below; a food product never takes an MCH code.
+  if (existing.product_type === 'merch') {
+    return res.status(400).json({ code: 'MERCH_SKU', error: 'A merch SKU is built from its style, colour and size. Change the colour on the variant instead.' });
+  }
+  if (/^MCH-/.test(typed)) {
+    return res.status(400).json({ code: 'MERCH_SKU', error: 'MCH is the merch line; a food product cannot take an MCH code.' });
+  }
   // A code another row already holds is refused as TAKEN before its shape is
   // judged — the row is real whatever shape its code is.
   if (typed && db.prepare('SELECT 1 FROM products WHERE sku = ?').get(typed)) {
@@ -1809,21 +1914,7 @@ router.post('/:sku/rename', (req, res) => {
     return res.status(400).json({ error: nextCheck.error || 'A SKU is required.', expected: nextCheck.expected || FIELD_RULES.sku.expected });
   }
   const next = nextCheck.value;
-  db.transaction(() => {
-    // Foreign keys are enforced app-wide (db.js sets foreign_keys = ON), so
-    // renaming the parent leaves the child rows pointing at a SKU that no
-    // longer exists for the instant between the statements. defer_foreign_keys
-    // moves the check to COMMIT, when both tables agree again. It is scoped to
-    // this transaction and resets itself — unlike foreign_keys = OFF, which
-    // would be a global switch flipped from inside a request handler.
-    db.pragma('defer_foreign_keys = ON');
-    db.prepare('UPDATE products SET sku = ?, legacy_sku = COALESCE(legacy_sku, ?), updated_at = datetime(\'now\') WHERE sku = ?')
-      .run(next, existing.sku, existing.sku);
-    moveSkuChildren(db, existing.sku, next);
-    // The SKU is keyed into Shopify and ShipHero; those steps depend on it and
-    // must read stale after a rename rather than go on describing the old code.
-    stampReadiness(db, next, existing, ['sku'], req.user?.name);
-  })();
+  db.transaction(() => moveProductRow(db, existing, next, req.user))();
   logAudit(req.user, 'product_renamed', 'product', next, { from: existing.sku, to: next }, null, null, `${existing.sku} → ${next}`);
   res.json(db.prepare(`${SELECT} WHERE p.sku = ?`).get(next));
 });
@@ -1857,7 +1948,9 @@ export function masterCsv(req, res) {
   const auth = checkProofToken(req);
   if (!auth.ok) return refuseProofToken(res, auth, { text: true });
   const db = getDb();
-  const rows = hydrate(db.prepare(`${SELECT} WHERE p.status != 'discontinued' ORDER BY p.sku`).all(), db);
+  const rows = hydrate(db.prepare(`${SELECT} WHERE p.status != 'discontinued' AND COALESCE(p.product_type, 'food') != 'merch' ORDER BY p.sku`).all(), db);
+  // Merch is never in the proofer's feed (D-302): it has no film, no panel and
+  // no packaging spec, and the feed is a contract read by column name.
   // The date type per SKU, one walk (D-133). "best by" is also the answer for
   // a SKU with no basis recorded — the rule's own answer for no data.
   const shelf = shelfLifeBasis(db);

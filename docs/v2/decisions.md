@@ -10073,3 +10073,44 @@ PDF. Two causes, both fixed:
 - Photos already uploaded in another format are not converted; re-attaching them fixes them.
 - `verify:newsletterphotos` (11; the code before this fails 4, among them "0 images in the PDF").
 
+
+## D-302 — Merch in Products: styles, variants, a merch SKU rule and GTINs a person assigns (3 Nov 2026)
+ProDough is starting to sell apparel. Lowry asked for merch to be tracked in the existing Products module (SKU, GS1
+GTIN, status, Shopify / ShipHero / Amazon, audit), not in a second catalogue, and for the first style: the ProDough
+Birthday Cake Hoodie.
+- **`products.product_type` (`food` default; existing rows backfilled to `food`) decides what applies, never the
+  category string.** For merch the food-only requirements step aside through their `applies`: readiness drops the
+  panel, formula, spec, artwork and brand-colour steps and gains **Supplier and decorator**; the stage gates for
+  formula, fill, panel, artwork and PO read **not applicable** (`na`), never "not started"; completeness skips the
+  food groups and adds a **Merch style** group; the panels list, the review queue's "missing panel", data health,
+  master.csv and artwork ingest (409) leave merch out; the flavour register never reads a merch row as evidence or a
+  collision; a variant's "same flavour" siblings are merch only.
+- **A style is `merch_styles` (no GTIN); a variant is an ordinary `products` row** with `style_code`, `color_code`,
+  `size_code`, `family` = the style name, `base_flavor` = the real flavour, `flavor` = the variant title
+  ("Birthday Cake Hoodie - Blue / S"), `category` Merch, `pack` Apparel. Colours live in `merch_colors`, each
+  starting **confirming**; confirming is a person's act.
+- **Merch SKU: `MCH-<H|T|C><register code>-<COLOR>-<SIZE>`** (`shared/merch.js`, `MERCH_SKU_RE`). The flavour part
+  must be an ACTIVE code in the flavour register; the merch flow never mints or edits one. `SKU_RE` is unchanged, so
+  food stays LINE-PACK-FLAVOR; `parseSku` takes four parts only on the MCH line; the stage's SKU gate uses the merch
+  rule, not `LEGACY_SKU_RE`. A merch SKU is built, never typed: `POST /products` and the ordinary rename refuse MCH,
+  a food row cannot be renamed into it, and a colour change goes through `POST …/merch/variants/:sku/recolor`, which
+  uses the same row move as a rename (`moveProductRow`, child tables follow) and is refused once a GTIN exists.
+  **The only SKU split on "-" outside the shared definitions is `codesInUse`** (flavour-code resolution), so merch
+  rows are kept out of its input instead of changing it. No Shopify, ShipHero or MRPEasy mapping exists in the repo.
+- **GTINs: one GTIN-12 per variant, never auto-assigned.** `GET …/merch/gtin/suggest?prefix=` gives the lowest free
+  item on a prefix the catalogue already carries, compared normalised against every product GTIN and every
+  reservation (`takenGtins`). `gtin_reservations` holds a number before it is assigned (or one taken in the GS1
+  portal) and counts in uniqueness and in `gtinPrefixes()` capacity. **Assign is a person's act** (APPROVE_ROUTES,
+  also refused to a bot account by password); a bot may suggest and reserve (WRITE_AREAS). Assignment is refused with
+  no colour or size and while the colour is confirming, and re-checks inside an IMMEDIATE transaction. A merch GTIN
+  cannot be typed onto the row (`MERCH_OWNED`); a reserved number cannot be typed onto a food row. Warning at 25 or
+  fewer free.
+- **The hoodie (`MCH-HBDC`, 12 Draft variants, four colours confirming, no GTINs) is created only in the test
+  database by `verify:merch`.** Lowry creates it in production after review; nothing writes production data here.
+- **Food is unchanged, measured:** a snapshot of every food figure the Products screens show (counts, readiness,
+  stage, completeness, panels, barcodes, prefixes, data health, flavour codes, master.csv, per-SKU hash) is identical
+  on `main` and on this branch, and identical before and after the hoodie is created.
+- The route scanner (`scripts/lib/route-scan.mjs`) now follows a router's `register…Routes(router)` helper, so the
+  token rules see routes registered from another file.
+- `check:merch` (48, pure), `verify:merch` (101, live + browser at 1280 and 390). Controls: on `main` the first
+  colour and style return 404 and `check:merch` cannot import `shared/merch.js`.

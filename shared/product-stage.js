@@ -26,6 +26,15 @@
 import { normalizeGtin, gtinValid } from './gtin.js';
 import { SKU_RE, FORMULA_REF_RE } from './product-fields.js';
 import { fillWeightCheck } from './panel-provenance.js';
+import { MERCH_SKU_RE } from './merch.js';
+
+// FOOD GATES ARE NOT APPLICABLE TO MERCH (D-302). A hoodie has no formula, no
+// fill weight, no nutrition panel, no film artwork and no packaging PO, so for
+// a merch variant those five gates are MET AND MARKED NOT APPLICABLE — the flow
+// keeps its nine positions, nothing reads "Not started: formula", and the gates
+// that do apply (SKU, GTIN, Shopify, ShipHero) decide where it is. Branches on
+// product_type, never on a category string.
+const MERCH_NA = new Set(['formula', 'fill', 'panel', 'artwork', 'po']);
 
 const present = (v) => v !== null && v !== undefined && String(v).trim() !== '';
 
@@ -119,6 +128,7 @@ export const STAGE_BY_KEY = Object.fromEntries(STAGES.map((s) => [s.key, s]));
 function gates({ p, panel, artwork, po }) {
   const step = (k) => (p.readiness?.steps || []).find((s) => s.key === k) || null;
   const out = {};
+  const merch = p.product_type === 'merch';
 
   // 1 · Formula final
   if (!present(p.mrp_formula_id)) out.formula = { met: false, why: 'No formula named — the product does not say which formula it is made to.' };
@@ -137,7 +147,10 @@ function gates({ p, panel, artwork, po }) {
   // is another system's id. The SKU is the table's key, so it is unique by
   // construction.
   const sku = String(p.sku || '');
-  if (SKU_RE.test(sku)) out.sku = { met: true, why: `${sku} is in the naming standard.` };
+  // A merch variant is held to the merch rule only; LEGACY_SKU_RE would wave any
+  // dash-separated code through as "already on film".
+  if (merch) out.sku = MERCH_SKU_RE.test(sku) ? { met: true, why: `${sku} is in the merch standard (MCH-style-color-size).` } : { met: false, why: `${sku || 'This variant'} is not in the merch standard (MCH-style-color-size).` };
+  else if (SKU_RE.test(sku)) out.sku = { met: true, why: `${sku} is in the naming standard.` };
   else if (/^\d+$/.test(sku)) out.sku = { met: false, why: `${sku} is a number from another system, not a SKU — the product was created somewhere else first. Rename it to the standard.` };
   else if (LEGACY_SKU_RE.test(sku)) out.sku = { met: true, why: `${sku} is a legacy code already on film; the rename to the standard is its own project.` };
   else out.sku = { met: false, why: sku ? `${sku} is not in the naming standard (LINE-PACK-FLAVOR).` : 'No SKU.' };
@@ -190,6 +203,7 @@ function gates({ p, panel, artwork, po }) {
   out.po = !artwork ? { met: false, why: 'No released artwork for a PO to be placed against.' }
     : po ? { met: true, why: `PO ${po.po_number} placed against artwork V${artwork.version}${po.placed_on ? ` on ${po.placed_on}` : ''}.` }
       : { met: false, why: `No packaging PO recorded against artwork V${artwork.version}.` };
+  if (merch) for (const k of MERCH_NA) out[k] = { met: true, na: true, why: 'Not applicable to merch.' };
   return out;
 }
 
@@ -204,15 +218,22 @@ export function stageOf({ p, panel = null, artwork = null, po = null, block = nu
   for (const s of STAGES) { if (g[s.key].met) stage = s.n; else break; }
   const list = STAGES.map((s) => {
     const r = g[s.key];
-    const state = s.n <= stage ? 'done' : r.met ? 'held' : s.n === stage + 1 ? 'next' : 'todo';
-    return { n: s.n, key: s.key, label: s.label, owner: s.owner, met: r.met, state, why: r.why };
+    const state = r.na ? 'na' : s.n <= stage ? 'done' : r.met ? 'held' : s.n === stage + 1 ? 'next' : 'todo';
+    return { n: s.n, key: s.key, label: s.label, owner: s.owner, met: r.met, state, why: r.why, ...(r.na ? { na: true } : {}) };
   });
   const nextGate = stage < 9 ? list[stage] : null;
   const blocked = block ? { reason: block.reason, owner: block.owner, by: block.blocked_by || block.by || null, at: block.blocked_at || block.at || null } : null;
-  const label = stage === 0 ? 'Not started' : STAGES[stage - 1].label;
+  // A merch variant is named by the last gate that APPLIES to it — "Nutrition
+  // panel approved" on a hoodie would be a statement about nothing.
+  const reached = list.filter((x) => x.n <= stage && !x.na);
+  const anyNa = list.some((x) => x.na);
+  const label = stage === 0 ? 'Not started'
+    : anyNa ? (reached.length ? reached[reached.length - 1].label : 'Not started')
+      : STAGES[stage - 1].label;
   const summary = nextGate
     ? `Stage ${stage} · next: ${nextGate.label.toLowerCase()} — ${nextGate.why}`
-    : 'Stage 9 · every gate holds today. A new formula version sends it back through the flow.';
+    : anyNa ? 'Stage 9 · every gate that applies holds today.'
+      : 'Stage 9 · every gate holds today. A new formula version sends it back through the flow.';
   return {
     stage, label, gates: list,
     next: nextGate ? { n: nextGate.n, key: nextGate.key, label: nextGate.label, owner: nextGate.owner, why: nextGate.why } : null,
