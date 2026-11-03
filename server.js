@@ -189,6 +189,7 @@ import { applyTruckChecklists } from './server/truck-checklists.js';
 import { authenticate, isPublicPath, optionalAuth, sessionUser, readCookie, FILE_COOKIE } from './server/middleware/auth.js';
 import { activityMiddleware, startUserActivity, flushActivity } from './server/user-activity.js';
 import userActivityRoutes from './server/api/user-activity.js';
+import pushRotateRoutes from './server/api/push-rotate.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -2100,6 +2101,7 @@ app.use('/api/qa-review', qaReviewRoutes);
 app.use('/api/cleanup', cleanupRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/user-activity', userActivityRoutes);
+app.use('/api/push-rotate', pushRotateRoutes);
 // Which optional services are on. Admin-only, and it returns variable NAMES
 // only — never a value. The router guards each route itself.
 app.use('/api/integrations', integrationsRoutes);
