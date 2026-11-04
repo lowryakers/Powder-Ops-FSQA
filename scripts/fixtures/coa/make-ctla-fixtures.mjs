@@ -137,7 +137,46 @@ function writeMerged() {
   doc.end();
   console.log(`wrote ctla-merged-header.pdf to ${here}`);
 }
+// CTLA 183621, lot 101954 (D-308): the report the "<44" fix was re-checked
+// against in November. Synthetic, like the rest — same layout, MDL 4 beside a
+// result of <4, drawn so the old joined reader would glue them.
+// Run: node scripts/fixtures/coa/make-ctla-fixtures.mjs 183621
+function write183621() {
+  const doc = new PDFDocument({ size: 'LETTER', margin: 40 });
+  doc.pipe(createWriteStream(path.join(here, 'ctla-183621.pdf')));
+  doc.font('Helvetica-Bold').fontSize(14).text('Certificate of Analysis', 50, 50, { lineBreak: false });
+  doc.font('Helvetica').fontSize(9);
+  let y = 90;
+  for (const [label, value] of [['CTLA ID:', '183621'], ['Date Received:', '10/27/2026'], ['Sample Name:', 'Whey Protein Pouch (Vanilla)'], ['Lot Number:', '101954']]) {
+    doc.text(label, 50, y, { lineBreak: false });
+    doc.text(value, 150, y, { lineBreak: false });
+    y += 14;
+  }
+  y += 16;
+  doc.font('Helvetica-Bold');
+  for (const [k, label] of [['test', 'Analysis'], ['method', 'Method'], ['mdl', 'MDL'], ['spec', 'Specification'], ['result', 'Result'], ['unit', 'Units']]) {
+    doc.text(label, X[k], y, { lineBreak: false });
+  }
+  doc.font('Helvetica');
+  y += 16;
+  for (const [test, method, mdl, result, unit] of [
+    ['Total Aerobic Microbial Count (USP)', 'USP <2021>', '100', '<100', 'cfu/g'],
+    ['Lead', 'USP <233>', '0.005', '0.009', 'ppm'],
+    ['Gluten Allergen', 'ELISA', '4', '<4', 'ppm'],
+  ]) {
+    doc.text(test, X.test, y, { lineBreak: false });
+    doc.text('Report', X.spec, y, { lineBreak: false });
+    doc.text(method, X.method, y, { lineBreak: false });
+    doc.text(result, X.result, y, { lineBreak: false });
+    if (mdl) doc.text(mdl, X.mdl, y, { lineBreak: false });
+    if (unit) doc.text(unit, X.unit, y, { lineBreak: false });
+    y += 15;
+  }
+  doc.end();
+  console.log(`wrote ctla-183621.pdf to ${here}`);
+}
 if (process.argv[2] === 'merged') writeMerged();
+else if (process.argv[2] === '183621') write183621();
 else {
   writeAll();
 }

@@ -14,6 +14,8 @@
 import { readyDocOrigin } from './links.js';
 import { plantWallClock } from './plant-clock.js';
 import { holidayOn } from './plant-calendar.js';
+import { expireWindows } from './coa-correction-window.js';
+import { logAudit } from './db.js';
 
 export function startScheduledJobs(db, deps) {
   const tick = () => {
@@ -52,6 +54,15 @@ export async function runDue(db, deps, now = new Date()) {
   // month-end reminders and the holiday notice itself still run.
   const closedToday = !!holidayOn(db, ymdLocal(wall));
   const openWeekday = day >= 1 && day <= 5 && !closedToday;
+
+  // COA correction windows (D-307): a window past its end is marked expired and
+  // audited on the first tick after. Nothing depends on this having run — every
+  // un-sign checks the clock itself — so it is a record, not the control.
+  try {
+    for (const w of expireWindows(db, now)) {
+      logAudit('system', 'expire', 'coa_correction_window', w.id, { opened_by: w.opened_by, expires_at: w.expires_at }, w, { ...w, status: 'expired' }, 'COA correction window');
+    }
+  } catch (e) { console.warn('[jobs] correction window expiry failed:', e.message); }
 
   // Daily full database backup (D-290): every day, holidays included, from
   // 1 AM plant time. Its own status is recorded whether it works or not; the

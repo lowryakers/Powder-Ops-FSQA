@@ -122,6 +122,12 @@ function itemsNeedingSpecs(db, limit) {
 // a review queue nobody opens twice. The 50 items the lab sees most are where
 // auto-grading actually pays, and because this is idempotent, raising the
 // number later only files what's still missing.
+// D-308: the tests a draft may not be approved without a number — the ones the
+// seed leaves blank on purpose because the limit depends on the item.
+export const NEEDS_LIMIT_TESTS = Object.freeze(GENERIC_SPECS.filter(g => g.needs_limit).map(g => g.test_type));
+const norm = (t) => String(t || '').trim().toLowerCase();
+export const needsLimit = (testType) => NEEDS_LIMIT_TESTS.some(t => norm(t) === norm(testType));
+
 export function seedGenericSpecifications(db, { limit = 50 } = {}) {
   let items;
   try { items = itemsNeedingSpecs(db, limit); } catch { return 0; }

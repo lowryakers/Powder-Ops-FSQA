@@ -51,7 +51,11 @@ export const LOCKED_FIELDS = [...IDENTITY, 'tests_requested', 'certificate_numbe
  * exactly as they always did.
  */
 export const SNAPSHOT_VERSION = 2;
-export function snapshotFor(db, request, { certificate_number, date_of_issuance, signed_by = null, file_facts = {} }) {
+// Version 3 (D-307) is version 2 plus `corrected_from` — written only when a
+// certificate is re-signed after a correction, so every other certificate keeps
+// the shape it had.
+export const SNAPSHOT_VERSION_CORRECTED = 3;
+export function snapshotFor(db, request, { certificate_number, date_of_issuance, signed_by = null, file_facts = {}, corrected_from = null }) {
   const specs = db.prepare('SELECT * FROM coa_specifications WHERE item_number = ? AND is_active = 1').all(request.item_number);
   const byId = Object.fromEntries(specs.map(s => [s.id, s]));
   const index = specIndex(specs);
@@ -82,7 +86,8 @@ export function snapshotFor(db, request, { certificate_number, date_of_issuance,
     });
   const labFile = files.find(f => f.file_type === 'lab_results' && (f.lab_report_number || f.lab_report_date));
   return {
-    snapshot_version: SNAPSHOT_VERSION,
+    snapshot_version: corrected_from ? SNAPSHOT_VERSION_CORRECTED : SNAPSHOT_VERSION,
+    ...(corrected_from ? { corrected_from } : {}),
     request: Object.fromEntries(IDENTITY.map(k => [k, request[k] ?? null])),
     certificate_number, date_of_issuance, signed_by, results, files,
     lab_report_number: labFile?.lab_report_number || null, lab_report_date: labFile?.lab_report_date || null,

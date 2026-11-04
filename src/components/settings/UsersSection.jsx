@@ -97,6 +97,7 @@ const MODULE_GROUPS = [
     modules: [
       { id: 'qa-review', label: 'QA Review Center (auto for QA / quality)', note: 'The counter-signature queue: production entries, QA inspections, cleaning records, scale checks and sign-out returns. Signing a single module’s records is separately allowed by Edit on that module.' },
       { id: 'coa', label: 'COA / Lab Testing' },
+      { id: 'coa-prep', sub: true, label: 'COA prep only (fills in plans and products, never decides)', note: 'Narrows COA to preparing: the product list, draft test plans and an unsigned request’s fields. Approving a plan or a specification, results, files, signing and un-signing are refused, whatever the department. Give it with COA / Lab Testing at Edit. No effect on an admin.' },
       { id: 'quality-schedules', label: 'Quality Schedules (EMP swabs, water & air testing)', note: 'The recurring quality checks from FORM 604-01 — they generate QA tasks in the Task Center.' },
       { rule: 'food-safety-culture', label: 'Food Safety Culture', why: 'Not a tick here: QA / Document Control department, or any supervisor. Anyone can raise a concern from the Operator View.' },
       { id: 'hygienic', label: 'Hygienic Design' },

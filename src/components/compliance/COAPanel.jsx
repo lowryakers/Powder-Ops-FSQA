@@ -16,6 +16,8 @@ import { getParam, consumeParam } from '../../lib/deepLink.js';
 import { BATCH_STATE_LABEL } from '../../../shared/lot-model.js';
 import BrandReview from './BrandReview.jsx';
 import CoaRelease from './CoaRelease.jsx';
+import CoaSpecReports from './CoaSpecReports.jsx';
+import { WindowBanner, UnsignModal, SignatureHistory, SignFacts, CorrectionWindowsAdmin } from './CoaCorrectionWindow.jsx';
 
 // Typed-confirmation dialog for permanent, irreversible bulk deletion.
 function ConfirmDeleteModal({ count, onConfirm, onClose }) {
@@ -970,6 +972,7 @@ function SignCoaModal({ requestId, onSigned, onClose }) {
           <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 rounded"><X size={18} /></button>
         </div>
         <div className="p-5 space-y-3">
+          <SignFacts requestId={requestId} />
           {saved && (
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={useSaved} onChange={e => setUseSaved(e.target.checked)} className="rounded border-gray-300" />
@@ -1236,6 +1239,7 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
   const canSign = !!user && (['admin', 'supervisor'].includes(user.role) || user.department === 'qa');
   const canSetBrand = !!user && (user.role === 'admin' || user.department === 'qa');
   const [showSign, setShowSign] = useState(false);
+  const [showUnsign, setShowUnsign] = useState(false);
   const [editing, setEditing] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [showResults, setShowResults] = useState(false);
@@ -1279,16 +1283,9 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
   // What the server says this person may do to THIS request (D-236): an admin
   // as before, or Quality while a COA correction in QA Review asks for it.
   const correction = detail.correction || { unsign: false, delete: false };
-  const unsign = async () => {
-    const reason = prompt('Why is this signature being removed? The certificate number is voided and a new one is issued when it is signed again.');
-    if (!reason || reason.trim().length < 3) return;
-    try {
-      await withSignature((extra) => apiFetch(`/coa/requests/${requestId}/sign`, { method: 'DELETE', body: { reason: reason.trim(), ...extra } }),
-        { title: 'Remove the signature', detail: `${detail.item_description} · Lot ${detail.lot_number}` });
-      setGateMsg(null);
-    } catch (e) { if (e?.cancelled) return; setGateMsg(e.message); }
-    refreshDetail(); onRefresh();
-  };
+  // Un-signing asks for a reason and what will be corrected (D-307), in a
+  // dialog rather than a prompt, so a correction window's plan is captured.
+  const unsign = () => setShowUnsign(true);
   const deleteDuplicate = async () => {
     const reason = prompt('Why is this request being deleted? (It is an empty duplicate — say which request keeps the lab report.)');
     if (!reason || reason.trim().length < 3) return;
@@ -1458,9 +1455,17 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
             <Trash2 size={12} /> Delete this request
           </button>
         )}
+        <SignatureHistory history={detail.signature_history} reopened={!!detail.reopened_for_correction} supersedes={detail.supersedes_certificate_number} />
+        {detail.replaced_by_request_id && (
+          <p className="rounded-lg border border-gray-300 bg-gray-100 px-3 py-2 text-xs text-gray-700" data-replaced>
+            Replaced by a re-issued lab report on another request. This one is never signed or issued again.</p>
+        )}
+        {detail.replaces_request_id && <p className="text-xs text-gray-600" data-replaces>This request carries a re-issued lab report and replaces an earlier request.</p>}
         <CorrectionItems items={detail.correction_items} onChanged={refreshDetail} />
         <UnreadRows rows={detail.unread_rows} signed={!!detail.qa_signed_at} onChanged={refreshDetail} />
         {showSign && <SignCoaModal requestId={requestId} onClose={() => setShowSign(false)} onSigned={() => { setShowSign(false); refreshDetail(); onRefresh(); }} />}
+        {showUnsign && <UnsignModal detail={detail} correction={correction} onClose={() => setShowUnsign(false)}
+          onDone={() => { setShowUnsign(false); setGateMsg(null); refreshDetail(); onRefresh(); }} />}
 
         {/* Test Results */}
         <div>
@@ -1575,6 +1580,9 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
                   <a href={`/api/coa/files/${f.id}/download`} className="text-powder-600 hover:underline flex-1 truncate">{f.original_name}</a>
                   {/* Reading an already-attached report, so a file uploaded
                       before this existed doesn't have to be uploaded again. */}
+                  {/\.pdf$/i.test(f.original_name || '') && !(detail.results || detail.test_results || []).some(t => t.source_file_id === f.id) && (
+                    <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800" data-not-read>not read yet</span>
+                  )}
                   {/\.pdf$/i.test(f.original_name || '') && (
                     <button onClick={() => setScanFile(f.id)} className="text-powder-600 hover:underline">Read</button>
                   )}
@@ -1582,22 +1590,18 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
                 </div>
               ))}
               <div className="mt-2 flex items-center gap-3 flex-wrap">
-                <label className={`inline-flex items-center gap-1 text-xs text-powder-600 hover:text-powder-700 cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
-                  <Upload size={12} /> Upload Lab Results
-                  <input type="file" className="hidden" onChange={e => handleFileUpload(e, 'lab_results')} accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.doc,.docx" />
-                </label>
-                {/* Upload and read in one step — the common case. The file is
-                    attached first, so the report is on the record whether or
-                    not anything could be extracted from it. */}
-                <label className={`inline-flex items-center gap-1 text-xs text-powder-600 hover:text-powder-700 cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
-                  <FlaskConical size={12} /> Upload &amp; read results
-                  <input type="file" className="hidden" accept=".pdf"
+                {/* ONE BUTTON (D-312): upload, and read it when it is a PDF.
+                    The file is attached first, so the report is on the record
+                    whether or not anything could be read from it. */}
+                <label className={`inline-flex items-center gap-1 text-xs text-powder-600 hover:text-powder-700 cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`} data-upload-read>
+                  <Upload size={12} /> Upload and read
+                  <input type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.doc,.docx"
                     onChange={async e => {
                       const f = e.target.files?.[0];
                       e.target.value = '';
                       if (!f) return;
                       await handleFileUpload({ target: { files: [f], value: '' } }, 'lab_results');
-                      setScanFile(f);
+                      if (/\.pdf$/i.test(f.name)) setScanFile(f);
                     }} />
                 </label>
               </div>
@@ -1734,6 +1738,10 @@ function ScanReportPanel({ requestId, file, onClose, onApplied }) {
   const [pickHeader, setPickHeader] = useState({});
   const [pickResult, setPickResult] = useState({});
   const [showText, setShowText] = useState(false);
+  // A re-issued report (D-310): the server names the requests already carrying
+  // this CTLA ID and asks which one this replaces.
+  const [replaceAsk, setReplaceAsk] = useState(null);
+  const [replaces, setReplaces] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -1766,11 +1774,14 @@ function ScanReportPanel({ requestId, file, onClose, onApplied }) {
       const results = (scan.results || []).filter((_, i) => pickResult[i])
         .map(r => ({ test_type: r.test_type, result_value: r.result_value, unit: r.unit, method: r.method || undefined, mdl: r.mdl || undefined, stated_pass_fail: r.stated || undefined }));
       if (results.length || (scan.file_id && scan.unread?.length)) {
-        await apiPost(`/coa/requests/${requestId}/results`, { results, source_file_id: scan.file_id || undefined });
+        await apiPost(`/coa/requests/${requestId}/results`, { results, source_file_id: scan.file_id || undefined, replaces_request_id: replaces || undefined });
       }
       onApplied?.();
       onClose();
-    } catch (e) { setError(e.message); }
+    } catch (e) {
+      if (e?.data?.needs_replaces) { setReplaceAsk(e.data); setError(''); }
+      else setError(e.message);
+    }
     finally { setBusy(false); }
   };
 
@@ -1787,6 +1798,18 @@ function ScanReportPanel({ requestId, file, onClose, onApplied }) {
         <div className="p-4 space-y-4">
           {busy && !scan && <p className="text-sm text-gray-500">Reading the PDF…</p>}
           {error && <p className="text-sm text-red-600">{error}</p>}
+          {replaceAsk && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900 space-y-2" data-replaces-ask>
+              <p><b>This is a re-issued report.</b> {replaceAsk.error}</p>
+              {replaceAsk.candidates.map(c => (
+                <label key={c.id} className="flex items-center gap-2">
+                  <input type="radio" name="replaces" value={c.id} checked={replaces === c.id} onChange={() => setReplaces(c.id)} className="h-4 w-4 shrink-0" data-replaces-pick={c.id} />
+                  Lot {c.lot_number} · {c.item_number}{c.certificate_number ? ` · certificate ${c.certificate_number}` : ''}{c.signed ? ' (signed — un-sign it first)' : ''}
+                </label>
+              ))}
+              <p className="text-xs">Applying marks the chosen request replaced. It is kept, never signed or issued again.</p>
+            </div>
+          )}
 
           {/* A photograph of a report has nothing in it to read. Saying so beats
               reporting "0 fields found", which reads as an empty report. */}
@@ -1936,33 +1959,59 @@ function ScanReportPanel({ requestId, file, onClose, onApplied }) {
 // ──────── Specification Form ────────
 // New specs take one set of item details plus any number of test-type rows —
 // one spec record is saved per test. Editing an existing spec stays single-row.
-const BLANK_TEST = { test_type: '', specification: '', unit: '', min_value: '', max_value: '', method: '' };
+// ONE LIMIT BOX (D-309): "NMT 1.0", "< 10", "10–50", "Absent" — the server
+// parses it and says back what it means before saving. A new spec is saved as
+// a DRAFT (it grades nothing) unless "Save and approve" is pressed; editing an
+// approved spec makes a new draft version, with a reason.
+const BLANK_TEST = { test_type: '', limit: '', unit: '', method: '' };
+const limitOf = (s) => s.specification || (s.min_value != null && s.max_value != null ? `${s.min_value}–${s.max_value}`
+  : s.max_value != null ? `NMT ${s.max_value}` : s.min_value != null ? `NLT ${s.min_value}` : '');
+function LimitEcho({ limit }) {
+  const [echo, setEcho] = useState(null);
+  useEffect(() => {
+    if (!String(limit || '').trim()) return undefined;
+    let live = true;
+    const t = setTimeout(() => {
+      apiPost('/coa/specifications/parse-limit', { limit })
+        .then(p => { if (live) setEcho({ ...p, for: limit }); })
+        .catch(e => { if (live) setEcho({ ok: false, error: e.message, for: limit }); });
+    }, 300);
+    return () => { live = false; clearTimeout(t); };
+  }, [limit]);
+  if (!echo || echo.for !== limit || !String(limit || '').trim()) return null;
+  return <p className={`mt-1 text-[11px] ${echo.ok ? 'text-gray-600' : 'text-red-600'}`} data-limit-echo>{echo.ok ? echo.meaning : echo.error}</p>;
+}
 function SpecForm({ initial, onSave, onCancel }) {
   const editing = !!initial?.id;
+  const versioned = editing && initial.is_active && (initial.approval_status || 'approved') === 'approved';
   const [form, setForm] = useState(initial || { item_number: '', item_description: '', sku_number: '', vendor: '', revision: '' });
   const [tests, setTests] = useState(editing
-    ? [{ test_type: initial.test_type, specification: initial.specification || '', unit: initial.unit || '', min_value: initial.min_value ?? '', max_value: initial.max_value ?? '', method: initial.method || '' }]
+    ? [{ test_type: initial.test_type, limit: limitOf(initial), unit: initial.unit || '', method: initial.method || '' }]
     : [{ ...BLANK_TEST }]);
   const [saving, setSaving] = useState(false);
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState(null);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const setTest = (i, k, v) => setTests(ts => ts.map((t, j) => j === i ? { ...t, [k]: v } : t));
   const addTest = () => setTests(ts => [...ts, { ...BLANK_TEST }]);
   const removeTest = (i) => setTests(ts => ts.length > 1 ? ts.filter((_, j) => j !== i) : ts);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setSaving(true);
+  const submitWith = async (approveNow) => {
+    setSaving(true); setError(null);
     try {
-      const rows = tests.filter(t => t.test_type).map(t => ({
-        ...form,
-        ...t,
-        min_value: t.min_value !== '' && t.min_value != null ? parseFloat(t.min_value) : null,
-        max_value: t.max_value !== '' && t.max_value != null ? parseFloat(t.max_value) : null,
-      }));
+      // The limit travels as text; the server parses it into the min and max.
+      const rows = tests.filter(t => t.test_type).map(({ limit, ...t }) => {
+        const { specification: _s, min_value: _min, max_value: _max, ...rest } = form;
+        return { ...rest, ...t, limit: String(limit || '').trim() || undefined,
+          ...(String(limit || '').trim() ? {} : { specification: null, min_value: null, max_value: null }),
+          ...(versioned ? { change_reason: reason.trim() } : {}), ...(approveNow ? { approve_now: true } : {}) };
+      });
       if (editing) await onSave(rows[0]);
       else await onSave(rows);
-    } finally { setSaving(false); }
+    } catch (err) { setError(err.message); }
+    finally { setSaving(false); }
   };
+  const handleSubmit = (e) => { e.preventDefault(); submitWith(false); };
 
   const usedTypes = tests.map(t => t.test_type).filter(Boolean);
 
@@ -2039,20 +2088,11 @@ function SpecForm({ initial, onSave, onCancel }) {
                   </select>
                 </div>
               )}
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Specification</label>
-                <input value={t.specification} onChange={e => setTest(i, 'specification', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. NMT 1.0" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Min Value</label>
-                <input type="number" step="any" value={t.min_value ?? ''} onChange={e => setTest(i, 'min_value', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Max Value</label>
-                <input type="number" step="any" value={t.max_value ?? ''} onChange={e => setTest(i, 'max_value', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-gray-700 mb-1" htmlFor={`spec-limit-${i}`}>Limit</label>
+                <input id={`spec-limit-${i}`} value={t.limit} onChange={e => setTest(i, 'limit', e.target.value)} data-spec-limit
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="NMT 1.0 · < 10 · 10–50 · Absent" />
+                <LimitEcho limit={t.limit} />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Unit</label>
@@ -2081,12 +2121,26 @@ function SpecForm({ initial, onSave, onCancel }) {
         )}
       </div>
 
+      {versioned && (
+        <label className="block text-sm">
+          <span className="text-xs font-medium text-gray-700">Why is this specification changing? (at least 10 characters)</span>
+          <input id="spec-change-reason" value={reason} onChange={e => setReason(e.target.value)} data-spec-reason
+            className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Supplier tightened the lead limit" />
+          <span className="text-[11px] text-gray-500">Saving makes a new draft version. The current one keeps grading until the new one is approved.</span>
+        </label>
+      )}
+      {!editing && <p className="text-[11px] text-gray-500">A new specification is a draft and grades nothing until it is approved.</p>}
+      {error && <p className="text-sm text-red-600" data-spec-error>{error}</p>}
       <div className="flex gap-2 justify-end">
         <button type="button" onClick={onCancel} className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
-        <button type="submit" disabled={saving}
+        <button type="submit" disabled={saving || (versioned && reason.trim().length < 10)}
           className="px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">
-          {saving ? 'Saving...' : editing ? 'Save Specification' : `Save ${tests.filter(t => t.test_type).length || ''} Specification${tests.filter(t => t.test_type).length === 1 ? '' : 's'}`}
+          {saving ? 'Saving...' : versioned ? 'Save new version' : editing ? 'Save Specification' : `Save ${tests.filter(t => t.test_type).length || ''} as draft`}
         </button>
+        {!editing && (
+          <button type="button" disabled={saving} onClick={() => submitWith(true)} data-spec-approve-now
+            className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50">Save and approve</button>
+        )}
       </div>
     </form>
   );
@@ -2498,6 +2552,7 @@ function LabSubmissionModal({ ids, onClose, onSent }) {
 
 export default function COAPanel() {
   const { user } = useAuth() || {};
+  const [showWindows, setShowWindows] = useState(false);
   const canEdit = canEditModule(user, 'coa');
   const isAdmin = user?.role === 'admin';
   // Brand review is for an admin or a QA reviewer — the server's own rule (D-238).
@@ -2792,6 +2847,15 @@ export default function COAPanel() {
               rows that were never imported. Search and the status filter run
               server-side on the whole table, so narrowing finds the rest
               without loading everything. */}
+          {reqPayload?.window && <div className="mb-2"><WindowBanner window={reqPayload.window} /></div>}
+          {user?.role === 'admin' && (
+            <div className="mb-2">
+              <button onClick={() => setShowWindows(v => !v)} className="text-xs text-powder-700 hover:underline" data-window-toggle>
+                {showWindows ? 'Hide correction windows' : 'Correction windows…'}
+              </button>
+              {showWindows && <div className="mt-2"><CorrectionWindowsAdmin /></div>}
+            </div>
+          )}
           {reqTotal != null && reqShown != null && reqShown < reqTotal && (
             <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900" data-req-capped>
               Showing the {reqShown.toLocaleString()} most recent of {reqTotal.toLocaleString()} lab requests — the most the
@@ -2840,6 +2904,7 @@ export default function COAPanel() {
                     <BrandChip value={r.brand_owner} />
                     {r.date_sent && <span>Sent {r.date_sent}</span>}
                     {r.file_counts?.lab_results ? <span className="text-powder-600">{r.file_counts.lab_results} lab file{r.file_counts.lab_results > 1 ? 's' : ''}</span> : null}
+                    {r.unread_reports ? <span className="rounded bg-amber-100 px-1.5 text-amber-800" data-row-not-read>not read yet</span> : null}
                   </div>
                 </div>
               ))}
@@ -2898,7 +2963,8 @@ export default function COAPanel() {
                         <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">{r.date_sent || '-'}</td>
                         <td className="px-3 py-2.5">
                           {r.file_counts?.lab_results ? (
-                            <span className="text-xs text-powder-600">{r.file_counts.lab_results} lab</span>
+                            <span className="text-xs text-powder-600">{r.file_counts.lab_results} lab
+                              {r.unread_reports ? <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] text-amber-800" data-row-not-read>not read yet</span> : null}</span>
                           ) : <span className="text-gray-400">-</span>}
                         </td>
                       </tr>
@@ -2920,6 +2986,7 @@ export default function COAPanel() {
         <>
           <CoaTestPlans canEdit={user?.role === 'admin' || canSeeQaReview(user)} />
           <DraftSpecsReview />
+          <CoaSpecReports showGluten={user?.role === 'admin' || canSeeQaReview(user)} />
           <div className="flex justify-between items-center">
             <p className="text-sm text-gray-500">{specs?.length || 0} specifications on file</p>
             <div className="flex gap-2">

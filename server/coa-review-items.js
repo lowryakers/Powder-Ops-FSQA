@@ -20,6 +20,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { v4 as uuid } from 'uuid';
 import { isQaReviewer } from './qa-signing.js';
+import { activeWindowFor } from './coa-correction-window.js';
+import { isCoaPrepOnly } from './coa-prep.js';
 import { unreadRowsFor } from './coa-checks.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -321,9 +323,17 @@ export const pendingItems = (db) => openItems(db).filter(i => !i.progress.comple
  */
 export function coaCorrectionAllowed(db, user, requestId, action) {
   const item = itemFor(db, requestId, action);
-  if (user?.role === 'admin') return { admin: true, item };
-  if (!isQaReviewer(user) || !item) return false;
-  return { admin: false, item };
+  if (user?.role === 'admin') return { admin: true, item, window: null };
+  if (isCoaPrepOnly(user)) return false; // D-311: prep never un-signs or deletes
+  if (!isQaReviewer(user)) return false;
+  if (item) return { admin: false, item, window: null };
+  // D-307: an open, unexpired correction window naming this person lets them
+  // UN-SIGN (never delete). Expiry is checked here, against the clock.
+  if (action === 'unsign') {
+    const w = activeWindowFor(db, user);
+    if (w) return { admin: false, item: null, window: w.id, window_expires_at: w.expires_at };
+  }
+  return false;
 }
 
 function itemFor(db, requestId, action) {
@@ -336,7 +346,8 @@ function itemFor(db, requestId, action) {
 export function correctionFlags(db, user, requestId) {
   const u = coaCorrectionAllowed(db, user, requestId, 'unsign');
   const d = coaCorrectionAllowed(db, user, requestId, 'delete');
-  return { unsign: !!u, delete: !!d, item_key: (u && u.item?.item_key) || (d && d.item?.item_key) || null };
+  return { unsign: !!u, delete: !!d, item_key: (u && u.item?.item_key) || (d && d.item?.item_key) || null,
+    window_id: (u && u.window) || null, window_expires_at: (u && u.window_expires_at) || null };
 }
 
 /** Why a delete authorized by a DELETE_DUPLICATE item is refused; null when it may go ahead. */

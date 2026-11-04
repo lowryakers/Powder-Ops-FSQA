@@ -7,16 +7,22 @@ import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import { isQaReviewer } from '../qa-signing.js';
+import { hasCoaPrep, isCoaPrepOnly } from '../coa-prep.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
 import {
   getPlan, listPlans, cleanTest, planMissing, planApply, applyPlan, SLUG_RE, MAX_APPLY,
 } from '../coa-test-plans.js';
 import { coaReadiness } from '../coa-lot-gate.js';
 import { publicState } from '../coa-public-snapshot.js';
+import { reopenedRequests, REOPENED_STALE_DAYS } from '../coa-correction-window.js';
+import { cleanItemNumber } from '../coa-item-number.js';
 
 const router = Router();
 const QA_ONLY = 'Only Quality (a QA reviewer) or an admin can change test plans and COA products.';
-const mayEdit = (u) => u?.role === 'admin' || isQaReviewer(u);
+// Approving and applying are decisions: never the coa-prep grant (D-311).
+const mayEdit = (u) => !isCoaPrepOnly(u) && (u?.role === 'admin' || isQaReviewer(u));
+// Preparing a draft plan or the product list: Quality, or the coa-prep grant.
+const mayPrep = (u) => u?.role === 'admin' || isQaReviewer(u) || hasCoaPrep(u);
 
 // ── Test plans ─────────────────────────────────────────────────────────────
 router.get('/plans', (_req, res) => res.json({ plans: listPlans(getDb()) }));
@@ -28,7 +34,7 @@ router.get('/plans/:id', (req, res) => {
 });
 
 router.post('/plans', (req, res) => {
-  if (!mayEdit(req.user)) return res.status(403).json({ error: QA_ONLY });
+  if (!mayPrep(req.user)) return res.status(403).json({ error: QA_ONLY });
   const name = String(req.body?.name || '').replace(/\s+/g, ' ').trim();
   if (name.length < 3 || name.length > 80) return res.status(400).json({ error: 'Name the plan (3–80 characters).' });
   const db = getDb();
@@ -42,7 +48,7 @@ router.post('/plans', (req, res) => {
 
 // A DRAFT is edited in place; an approved plan never is.
 router.put('/plans/:id', (req, res) => {
-  if (!mayEdit(req.user)) return res.status(403).json({ error: QA_ONLY });
+  if (!mayPrep(req.user)) return res.status(403).json({ error: QA_ONLY });
   const db = getDb();
   const plan = getPlan(db, req.params.id);
   if (!plan) return res.status(404).json({ error: 'No such test plan.' });
@@ -79,7 +85,7 @@ router.put('/plans/:id', (req, res) => {
 
 // "Edit" on an approved plan: the next version, as a draft copy.
 router.post('/plans/:id/new-version', (req, res) => {
-  if (!mayEdit(req.user)) return res.status(403).json({ error: QA_ONLY });
+  if (!mayPrep(req.user)) return res.status(403).json({ error: QA_ONLY });
   const db = getDb();
   const plan = getPlan(db, req.params.id);
   if (!plan) return res.status(404).json({ error: 'No such test plan.' });
@@ -152,10 +158,85 @@ router.get('/products', (_req, res) => {
   res.json({ products, candidates });
 });
 
-router.put('/products/:item', (req, res) => {
+// ── Bulk register (D-310) ───────────────────────────────────────────────────
+// Puts several item codes on the COA product list under one brand (ProDough by
+// default) in one act. `dry_run` (the default) writes NOTHING and returns the
+// plan; the commit re-derives the same plan, so what was previewed is what is
+// written. An item already on the list is left alone and named — a brand is
+// never moved by a bulk act. An item with no lab request is refused by name.
+// Plans are not attached here: a plan is approved per product.
+export function planBulkRegister(db, { item_numbers, brand_owner = 'ProDough' }) {
+  const raw = Array.isArray(item_numbers) ? item_numbers : String(item_numbers || '').split(/[\n,;]/);
+  const codes = [...new Set(raw.map(cleanItemNumber).filter(Boolean))];
+  const brand = String(brand_owner || '').trim();
+  if (!codes.length) return { error: 'List at least one item code.' };
+  if (codes.length > 500) return { error: 'At most 500 item codes in one go.' };
+  if (!brand || brand === 'unassigned') return { error: 'Choose the brand the items are registered under.' };
+  if (!db.prepare('SELECT 1 FROM coa_brands WHERE name = ?').get(brand)) return { error: `"${brand}" is not on the brand list.` };
+  // Requests are matched on the CLEANED code, so a request filed as "100245\t"
+  // still counts as the item 100245.
+  const reqs = new Map();
+  for (const r of db.prepare('SELECT item_number, MAX(item_description) item_description, COUNT(*) n FROM coa_requests GROUP BY item_number').all()) {
+    const k = cleanItemNumber(r.item_number);
+    const cur = reqs.get(k);
+    reqs.set(k, { item_description: cur?.item_description || r.item_description, requests: (cur?.requests || 0) + r.n, stored_as: [...(cur?.stored_as || []), r.item_number] });
+  }
+  const register = [], already = [], unknown = [];
+  for (const code of codes) {
+    const on = db.prepare('SELECT item_number, brand_owner, plan_id FROM coa_products WHERE item_number = ?').get(code);
+    if (on) { already.push({ item_number: code, brand_owner: on.brand_owner, has_plan: !!on.plan_id }); continue; }
+    const r = reqs.get(code);
+    if (!r) { unknown.push({ item_number: code, reason: 'No lab request has this item code.' }); continue; }
+    register.push({ item_number: code, item_description: r.item_description, requests: r.requests,
+      untidy_spellings: r.stored_as.filter(x => x !== code) });
+  }
+  return { brand_owner: brand, register, already, unknown };
+}
+
+router.post('/products/bulk-register', (req, res) => {
   if (!mayEdit(req.user)) return res.status(403).json({ error: QA_ONLY });
   const db = getDb();
-  const item = String(req.params.item || '').trim();
+  const plan = planBulkRegister(db, req.body || {});
+  if (plan.error) return res.status(400).json({ error: plan.error });
+  const dry = req.body?.dry_run !== false;
+  if (dry) return res.json({ dry_run: true, ...plan });
+  const ins = db.prepare('INSERT INTO coa_products (item_number, display_name, brand_owner, created_by) VALUES (?, ?, ?, ?)');
+  db.transaction(() => {
+    for (const r of plan.register) {
+      ins.run(r.item_number, r.item_description || null, plan.brand_owner, req.user.name);
+      logAudit(req.user, 'create', 'coa_product', r.item_number, { bulk: true, brand_owner: plan.brand_owner }, null,
+        db.prepare('SELECT * FROM coa_products WHERE item_number = ?').get(r.item_number), r.item_number);
+    }
+  })();
+  logAudit(req.user, 'bulk_register', 'coa_product', null, { brand_owner: plan.brand_owner, registered: plan.register.length,
+    already: plan.already.length, unknown: plan.unknown.length });
+  res.json({ dry_run: false, ...plan, registered: plan.register.length });
+});
+
+// Items that have a lab report PDF on file and no approved test plan (D-310):
+// either not on the COA product list at all, or on it with no plan attached.
+// Read-only, for the plans screen.
+router.get('/products/no-plan', (_req, res) => {
+  const db = getDb();
+  const rows = db.prepare(`SELECT r.item_number, MAX(r.item_description) item_description, MAX(r.brand_owner) brand_owner,
+      COUNT(DISTINCT r.id) requests_with_pdf, MAX(f.created_at) last_pdf_at,
+      p.item_number AS product_item, p.plan_id, pl.status AS plan_status
+    FROM coa_requests r JOIN coa_files f ON f.request_id = r.id AND f.file_type = 'lab_results'
+    LEFT JOIN coa_products p ON p.item_number = r.item_number
+    LEFT JOIN coa_test_plans pl ON pl.id = p.plan_id
+    GROUP BY r.item_number
+    HAVING p.plan_id IS NULL OR pl.status IS NULL OR pl.status != 'approved'
+    ORDER BY MAX(CASE WHEN r.brand_owner = 'ProDough' THEN 0 ELSE 1 END), r.item_number LIMIT 2000`).all()
+    .map(r => ({ item_number: r.item_number, item_description: r.item_description, brand_owner: r.brand_owner,
+      requests_with_pdf: r.requests_with_pdf, last_pdf_at: r.last_pdf_at,
+      on_product_list: !!r.product_item, plan_state: !r.product_item ? 'not_registered' : (!r.plan_id ? 'no_plan' : (r.plan_status || 'missing')) }));
+  res.json({ items: rows, total: rows.length });
+});
+
+router.put('/products/:item', (req, res) => {
+  if (!mayPrep(req.user)) return res.status(403).json({ error: QA_ONLY });
+  const db = getDb();
+  const item = cleanItemNumber(req.params.item);
   const before = db.prepare('SELECT * FROM coa_products WHERE item_number = ?').get(item);
   const b = req.body || {};
   const pick = (k, cur) => (b[k] !== undefined ? (String(b[k] ?? '').trim() || null) : cur ?? null);
@@ -199,7 +280,17 @@ function readiness(db) {
   // Catalog products (ProDough) with no COA product linked — information only.
   const unlinked = db.prepare(`SELECT sku, category || ' · ' || flavor || ' · ' || pack AS name FROM products WHERE status = 'active'
     AND sku NOT IN (SELECT product_id FROM coa_products WHERE product_id IS NOT NULL) ORDER BY sku LIMIT 2000`).all();
-  return { ...report, catalog_without_coa_product: unlinked };
+  // D-307: a certificate reopened for correction and not re-signed within three
+  // days fails its own line, so a window that ran out is not forgotten.
+  const reopened = reopenedRequests(db);
+  const stale = reopened.filter(r => r.stale);
+  const lines = [...(report.lines || []), {
+    key: 'reopened_certificates', ok: stale.length === 0,
+    text: stale.length
+      ? `${stale.length} certificate${stale.length === 1 ? '' : 's'} reopened for correction > ${REOPENED_STALE_DAYS} days`
+      : `No certificate reopened for correction more than ${REOPENED_STALE_DAYS} days${reopened.length ? ` (${reopened.length} reopened, all recent)` : ''}`,
+  }];
+  return { ...report, lines, reopened_certificates: reopened, catalog_without_coa_product: unlinked };
 }
 const mayRead = (u) => u?.role === 'admin' || isQaReviewer(u);
 

@@ -10,7 +10,7 @@ import { embedUnicodeFaces } from '../pdf-unicode.js';
 import { readPdfColumns } from '../coa-pdf-text.js';
 import { getDb, logAudit, dataDir } from '../db.js';
 import { requireRole } from '../middleware/auth.js';
-import { gradeResult, specIndex } from '../coa-grade.js';
+import { gradeResult, specIndex, aliasKey } from '../coa-grade.js';
 import { releaseGate, GATE_MODES, specCoverage } from '../../shared/spec-coverage.js';
 import { parseColumnarCoa, foundSomething, displayMdl } from '../coa-parse.js';
 import { aiEnabled, readLabReport } from '../ai.js';
@@ -19,6 +19,9 @@ import { gateSignature, signatureEvidence } from '../signature.js';
 import { allocateCertNumber, snapshotFor, signRefusals, canonicalJson, sha256, isSigned, LOCKED_FIELDS, LOCKED_MESSAGE } from '../coa-certificate.js';
 import { plantDateOf, plantDateTime } from '../plant-clock.js';
 import { isQaReviewer } from '../qa-signing.js';
+import { glutenMisreadReport } from '../coa-gluten-report.js';
+import { isBotAccount } from '../trainees.js';
+import { cleanItemNumber } from '../coa-item-number.js';
 import { labTestFor } from '../lab-test-items.js';
 import { lateLabResults } from '../coa-late-results.js';
 import { coaCorrectionAllowed, correctionFlags, duplicateDeleteRefusal, coaSignHold, dismissItem, recordDuplicateDecision, DECISION as CORRECTION_DECISION, openItems, itemProgress, emptyDuplicatePlan } from '../coa-review-items.js';
@@ -27,7 +30,29 @@ import { splitLot } from '../../shared/lot-model.js';
 import { readLabFile, squash, MIN_EDIT_REASON, recordUnreadRows, unreadRowsFor, signChecks } from '../coa-checks.js';
 import coaPlansRouter from './coa-plans.js';
 import { gateMode, MODE_WORDS, signDoor } from '../coa-lot-gate.js';
+import { needsLimit } from '../spec-seed.js';
+import { parseLimit, textOnlySpecs } from '../coa-limit.js';
+import { isCoaPrepOnly, coaPrepGuard } from '../coa-prep.js';
 import coaPublishRouter from './coa-publish.js';
+import {
+  recordSignatureHistory, reopenedEditRefusal, signatureHistoryFor, UNSIGN_WINDOW_MIN_REASON,
+  listWindows, activeWindowFor, openWindow, openWindowRefusal, closeWindow, reopenedRequests, WINDOW_DEFAULT_HOURS, WINDOW_MAX_HOURS,
+} from '../coa-correction-window.js';
+
+// D-307: while a certificate is reopened for correction, every change to its
+// lot details, results or files writes a field-level audit row with the reason
+// it was reopened (and any note sent with the edit).
+function auditCorrection(req, request, entity, id, before, after) {
+  if (!request?.reopened_for_correction) return;
+  const fields = Object.keys(after || before || {}).filter(k => !['updated_at', 'edited_at'].includes(k)
+    && String((before || {})[k] ?? '') !== String((after || {})[k] ?? ''));
+  const changes = fields.map(f => ({ field: f, from: (before || {})[f] ?? null, to: (after || {})[f] ?? null }));
+  logAudit(req.user, 'correction', entity, id,
+    { request_id: request.id, reopened_reason: request.reopened_reason || null, window_id: request.reopened_window_id || null,
+      note: String(req.body?.correction_note || '').trim() || null, changes }, before || null, after || null,
+    `${request.item_description || ''} · Lot ${request.lot_number || ''}`);
+}
+
 
 // A drawn signature, as a data URL. One definition — the certificate sign-off
 // and the lab submission both validate against it.
@@ -73,6 +98,8 @@ const coaUpload = multer({
 
 const router = Router();
 // Test plans, COA products and the readiness report (D-244).
+// D-311: a coa-prep account prepares and never decides — checked before every route.
+router.use(coaPrepGuard);
 router.use(coaPlansRouter);
 router.use(coaPublishRouter);
 
@@ -163,7 +190,7 @@ router.get('/material-spec', (req, res) => {
 
 router.put('/material-spec', (req, res) => {
   const db = getDb();
-  const item_number = String(req.body?.item_number || '').trim();
+  const item_number = cleanItemNumber(req.body?.item_number);
   if (!item_number) return res.status(400).json({ error: 'item_number is required' });
   const cols = ['item_number', ...MATERIAL_SPEC_FIELDS, 'updated_by'];
   const vals = [item_number, ...MATERIAL_SPEC_FIELDS.map(f => req.body[f] ?? null), req.user.name];
@@ -184,6 +211,66 @@ router.get('/specifications', (req, res) => {
   sql += ' ORDER BY item_number, test_type';
   res.json(db.prepare(sql).all(...params));
 });
+
+// The single "limit" box (D-310), read server-side. Absent ⇒ the old
+// min/max/specification fields are used as sent.
+function limitFromBody(b) {
+  if (b?.limit === undefined || b?.limit === null || String(b.limit).trim() === '') return {};
+  const p = parseLimit(b.limit);
+  if (!p.ok) return { error: p.error };
+  return { specification: p.text, min_value: p.min_value, max_value: p.max_value };
+}
+
+// ── Approving specifications (D-308, D-309) ─────────────────────────────────
+// One routine for the drafts queue and for "save and approve" on a new spec.
+// A draft whose test needs a number (the heavy metals, seeded blank because
+// the limit depends on the item) is refused unless a min or max is on it after
+// the limits sent with the call. Refused as a whole: nothing is approved when
+// any row would be approved empty. A draft that is a new VERSION of an active
+// spec retires the one it replaces in the same transaction.
+const canApproveSpecs = (u) => !!u && !isCoaPrepOnly(u) && (['admin', 'supervisor'].includes(u.role) || isQaReviewer(u));
+function approveSpecDrafts(db, user, ids, limitsIn) {
+  const limits = limitsIn && typeof limitsIn === 'object' ? limitsIn : {};
+  const get = db.prepare("SELECT * FROM coa_specifications WHERE id = ? AND approval_status = 'draft'");
+  const num = (v) => (v === '' || v == null ? null : (Number.isFinite(Number(v)) ? Number(v) : null));
+  const plan = ids.map(id => get.get(id)).filter(Boolean).map(row => {
+    const l = limits[row.id];
+    const given = l && (l.min_value !== undefined || l.max_value !== undefined);
+    const min = given ? num(l.min_value) : row.min_value;
+    const max = given ? num(l.max_value) : row.max_value;
+    return { row, given, min, max };
+  });
+  const empty = plan.filter(p => needsLimit(p.row.test_type) && p.min == null && p.max == null);
+  if (empty.length) {
+    return { status: 400, needs_limit: empty.map(p => ({ id: p.row.id, item_number: p.row.item_number, test_type: p.row.test_type })),
+      error: `These need a number before they can be approved: ${empty.map(p => `${p.row.item_number} ${p.row.test_type}`).join('; ')}.` };
+  }
+  const setLimits = db.prepare('UPDATE coa_specifications SET min_value = ?, max_value = ? WHERE id = ?');
+  const approve = db.prepare(`UPDATE coa_specifications SET is_active = 1, approval_status = 'approved',
+    reviewed_by = ?, reviewed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`);
+  const retire = db.prepare(`UPDATE coa_specifications SET is_active = 0, approval_status = 'superseded', updated_at = datetime('now') WHERE id = ? AND is_active = 1`);
+  const approved = []; const superseded = [];
+  db.transaction(() => {
+    for (const p of plan) {
+      if (p.given) setLimits.run(p.min, p.max, p.row.id);
+      approve.run(user.name, p.row.id);
+      approved.push(p.row.id);
+      const after = db.prepare('SELECT * FROM coa_specifications WHERE id = ?').get(p.row.id);
+      logAudit(user, 'approve', 'coa_specification', p.row.id,
+        { item_number: p.row.item_number, test_type: p.row.test_type, from: 'draft', version: after.spec_version ?? null,
+          supersedes: p.row.supersedes_spec_id || null, change_reason: p.row.change_reason || null }, p.row, after, `${p.row.item_number} · ${p.row.test_type}`);
+      if (p.row.supersedes_spec_id) {
+        const old = db.prepare('SELECT * FROM coa_specifications WHERE id = ?').get(p.row.supersedes_spec_id);
+        if (old && retire.run(old.id).changes) {
+          superseded.push(old.id);
+          logAudit(user, 'retire', 'coa_specification', old.id, { superseded_by: p.row.id, reason: p.row.change_reason || null }, old,
+            { ...old, is_active: 0, approval_status: 'superseded' }, `${old.item_number} · ${old.test_type}`);
+        }
+      }
+    }
+  })();
+  return { approved, superseded };
+}
 
 // ── Draft specifications waiting on QA ──────────────────────────────────────
 //
@@ -213,36 +300,13 @@ router.get('/specifications/drafts', (req, res) => {
 // so a draft whose limit was left blank on purpose (the heavy metals) can be
 // given its number in the same call rather than approved empty and forgotten.
 router.post('/specifications/drafts/approve', (req, res) => {
+  if (!canApproveSpecs(req.user)) return res.status(403).json({ error: 'Only Quality, a supervisor or an admin approves specifications.' });
   const db = getDb();
   const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
   if (!ids.length) return res.status(400).json({ error: 'ids array is required' });
-  const limits = req.body?.limits && typeof req.body.limits === 'object' ? req.body.limits : {};
-
-  const get = db.prepare("SELECT * FROM coa_specifications WHERE id = ? AND approval_status = 'draft'");
-  const setLimits = db.prepare('UPDATE coa_specifications SET min_value = ?, max_value = ? WHERE id = ?');
-  const approve = db.prepare(`UPDATE coa_specifications SET is_active = 1, approval_status = 'approved',
-    reviewed_by = ?, reviewed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`);
-
-  const done = [];
-  const tx = db.transaction(() => {
-    for (const id of ids) {
-      const row = get.get(id);
-      if (!row) continue;
-      const l = limits[id];
-      if (l && (l.min_value !== undefined || l.max_value !== undefined)) {
-        const min = l.min_value === '' || l.min_value == null ? null : Number(l.min_value);
-        const max = l.max_value === '' || l.max_value == null ? null : Number(l.max_value);
-        setLimits.run(Number.isFinite(min) ? min : null, Number.isFinite(max) ? max : null, id);
-      }
-      approve.run(req.user.name, id);
-      done.push(id);
-      logAudit(req.user, 'approve', 'coa_specification', id,
-        { item_number: row.item_number, test_type: row.test_type, from: 'draft' },
-        row, db.prepare('SELECT * FROM coa_specifications WHERE id = ?').get(id), `${row.item_number} · ${row.test_type}`);
-    }
-  });
-  tx();
-  res.json({ approved: done.length });
+  const out = approveSpecDrafts(db, req.user, ids, req.body?.limits);
+  if (out.error) return res.status(out.status).json({ error: out.error, needs_limit: out.needs_limit });
+  res.json({ approved: out.approved.length, superseded: out.superseded });
 });
 
 // Discarding a draft does NOT delete the row — it stays as the record that
@@ -271,21 +335,46 @@ router.post('/specifications/drafts/discard', (req, res) => {
   res.json({ discarded: n });
 });
 
+// D-310: read a limit the way the server will, before saving — the form echoes
+// the meaning as it is typed. Writes nothing.
+router.post('/specifications/parse-limit', (req, res) => {
+  const p = parseLimit(req.body?.limit);
+  res.status(p.ok ? 200 : 400).json(p);
+});
+
+// Active specs that carry words and no number (grading nothing numeric). Listed
+// for QA to rewrite as a limit; never edited by the app.
+router.get('/specifications/text-only', (_req, res) => {
+  res.json({ specs: textOnlySpecs(getDb()) });
+});
+
 router.post('/specifications', (req, res) => {
   const db = getDb();
   const { item_number, item_description, test_type, specification, unit, min_value, max_value, method, sku_number, vendor, revision } = req.body;
   if (!item_number || !item_description || !test_type) {
     return res.status(400).json({ error: 'item_number, item_description, and test_type are required' });
   }
-
+  // One limit box (D-310): "NMT 1.0", "< 1.0", "range 10-20"… read into
+  // min/max here, and refused when it cannot be read.
+  const lim = limitFromBody(req.body);
+  if (lim.error) return res.status(400).json({ error: lim.error, limit_unreadable: true });
+  // A new specification is a DRAFT (D-309): it grades nothing until approved.
+  // "Save and approve" (approve_now) runs the same approval in the same call.
+  if (req.body.approve_now && !canApproveSpecs(req.user)) return res.status(403).json({ error: 'Only Quality, a supervisor or an admin approves specifications.' });
+  const item = cleanItemNumber(item_number);
   const id = uuid();
-  db.prepare(`INSERT INTO coa_specifications (id, item_number, item_description, test_type, specification, unit, min_value, max_value, method, sku_number, vendor, revision, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(id, item_number, item_description, test_type, specification || null, unit || null, min_value ?? null, max_value ?? null, method || null, sku_number || null, vendor || null, revision || null, req.user.name);
-
+  db.prepare(`INSERT INTO coa_specifications (id, item_number, item_description, test_type, specification, unit, min_value, max_value, method, sku_number, vendor, revision, created_by,
+      is_active, approval_status, spec_version, source)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'draft', 1, 'manual')`)
+    .run(id, item, item_description, test_type, lim.specification ?? specification ?? null, unit || null, lim.min_value ?? min_value ?? null, lim.max_value ?? max_value ?? null,
+      method || null, sku_number || null, vendor || null, revision || null, req.user.name);
   const created = db.prepare('SELECT * FROM coa_specifications WHERE id = ?').get(id);
   logAudit(req.user, 'create', 'coa_specification', id, req.body, null, created);
-  res.status(201).json(created);
+  if (req.body.approve_now) {
+    const out = approveSpecDrafts(db, req.user, [id], null);
+    if (out.error) return res.status(out.status).json({ error: out.error, needs_limit: out.needs_limit, saved_as_draft: true, id });
+  }
+  res.status(201).json(db.prepare('SELECT * FROM coa_specifications WHERE id = ?').get(id));
 });
 
 router.put('/specifications/:id', (req, res) => {
@@ -299,23 +388,51 @@ router.put('/specifications/:id', (req, res) => {
   if (req.body.is_active !== undefined) {
     return res.status(400).json({ error: 'A specification is activated by approving it and deactivated by retiring it, not by editing it.' });
   }
+  const lim = limitFromBody(req.body);
+  if (lim.error) return res.status(400).json({ error: lim.error, limit_unreadable: true });
+  const body = { ...req.body, ...(lim.specification !== undefined ? { specification: lim.specification, min_value: lim.min_value, max_value: lim.max_value } : {}) };
   const fields = ['item_number', 'item_description', 'test_type', 'specification', 'unit', 'min_value', 'max_value', 'method', 'sku_number', 'vendor', 'revision'];
+  const changed = fields.filter(f => body[f] !== undefined && String(body[f] ?? '') !== String(existing[f] ?? ''));
+  if (!fields.some(f => body[f] !== undefined)) return res.status(400).json({ error: 'No fields to update' });
+
+  // An edit to an ACTIVE spec is a new DRAFT version (D-309): the active one
+  // goes on grading until the new one is approved, then retires. A reason is
+  // required, because it is a change to what a result is graded against.
+  if (existing.is_active && existing.approval_status === 'approved') {
+    if (!changed.length) return res.json(existing);
+    const reason = String(req.body.change_reason || '').trim();
+    if (reason.length < 10) return res.status(400).json({ error: 'Say why this specification is changing (at least 10 characters). The change is saved as a new draft version for approval.', needs_reason: true });
+    const open = db.prepare("SELECT id FROM coa_specifications WHERE supersedes_spec_id = ? AND approval_status = 'draft'").get(existing.id);
+    if (open) return res.status(409).json({ error: 'A new version of this specification is already waiting for approval. Edit that draft instead.', draft_id: open.id });
+    const id = uuid();
+    const v = (Number(existing.spec_version) || 1) + 1;
+    const row = Object.fromEntries(fields.map(f => [f, body[f] !== undefined ? body[f] : existing[f]]));
+    db.prepare(`INSERT INTO coa_specifications (id, item_number, item_description, test_type, specification, unit, min_value, max_value, method, sku_number, vendor, revision,
+        created_by, is_active, approval_status, spec_version, supersedes_spec_id, change_reason, source, plan_id, plan_version)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'draft', ?, ?, ?, 'manual', ?, ?)`)
+      .run(id, row.item_number, row.item_description, row.test_type, row.specification ?? null, row.unit ?? null, row.min_value ?? null, row.max_value ?? null,
+        row.method ?? null, row.sku_number ?? null, row.vendor ?? null, row.revision ?? null, req.user.name, v, existing.id, reason,
+        existing.plan_id || null, existing.plan_version ?? null);
+    const draft = db.prepare('SELECT * FROM coa_specifications WHERE id = ?').get(id);
+    logAudit(req.user, 'create', 'coa_specification', id, { new_version_of: existing.id, version: v, change_reason: reason, changed }, null, draft,
+      `${draft.item_number} · ${draft.test_type} v${v}`);
+    return res.status(201).json({ ...draft, new_version: true });
+  }
+
   const updates = [];
   const values = [];
   for (const f of fields) {
-    if (req.body[f] !== undefined) {
+    if (body[f] !== undefined) {
       updates.push(`${f} = ?`);
-      values.push(req.body[f]);
+      values.push(body[f]);
     }
   }
-  if (updates.length === 0) return res.status(400).json({ error: 'No fields to update' });
-
   updates.push("updated_at = datetime('now')");
   values.push(req.params.id);
   db.prepare(`UPDATE coa_specifications SET ${updates.join(', ')} WHERE id = ?`).run(...values);
 
   const updated = db.prepare('SELECT * FROM coa_specifications WHERE id = ?').get(req.params.id);
-  logAudit(req.user, 'update', 'coa_specification', req.params.id, req.body, existing, updated);
+  logAudit(req.user, 'update', 'coa_specification', req.params.id, { ...req.body, change_reason: req.body.change_reason || null }, existing, updated);
   res.json(updated);
 });
 
@@ -514,14 +631,24 @@ router.get('/requests', (req, res) => {
   // which is exactly how it was reported ("were some left out of the Monday
   // export?"). Nothing was: the screen only ever asked for the first 500.
   const total = db.prepare(sql.replace('SELECT *', 'SELECT COUNT(*) c')).get(...params).c;
-  sql += ' ORDER BY date_sent DESC, created_at DESC LIMIT ?';
-  params.push(limit);
+  // Paging (D-312): `offset` lets the screen ask for the next page rather than
+  // raising the limit until the phone gives up.
+  const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+  sql += ' ORDER BY date_sent DESC, created_at DESC LIMIT ? OFFSET ?';
+  params.push(limit, offset);
   const requests = db.prepare(sql).all(...params);
 
   const fileCounts = requests.length > 0
     ? db.prepare('SELECT request_id, file_type, COUNT(*) as count FROM coa_files WHERE request_id IN (' + requests.map(() => '?').join(',') + ') GROUP BY request_id, file_type')
       .all(...requests.map(r => r.id))
     : [];
+  // A lab report attached and never applied reads "not read yet" (D-312): no
+  // result row names it as its source.
+  const unreadFiles = requests.length > 0
+    ? db.prepare(`SELECT f.request_id, COUNT(*) n FROM coa_files f WHERE f.file_type = 'lab_results' AND f.request_id IN (${requests.map(() => '?').join(',')})
+        AND NOT EXISTS (SELECT 1 FROM coa_test_results t WHERE t.source_file_id = f.id) GROUP BY f.request_id`).all(...requests.map(r => r.id))
+    : [];
+  const unreadMap = Object.fromEntries(unreadFiles.map(u => [u.request_id, u.n]));
   const fileMap = {};
   for (const fc of fileCounts) {
     if (!fileMap[fc.request_id]) fileMap[fc.request_id] = {};
@@ -541,14 +668,21 @@ router.get('/requests', (req, res) => {
       if (openIds.has(r.id)) flagged.set(r.id, correctionFlags(db, req.user, r.id));
     }
   }
-  const flagsFor = (id) => isAdmin ? { unsign: true, delete: true, item_key: null } : (flagged.get(id) || { unsign: false, delete: false, item_key: null });
+  // A correction window (D-307) lets the people it covers un-sign any signed
+  // certificate while it is open — never delete.
+  const win = isAdmin || isCoaPrepOnly(req.user) ? null : activeWindowFor(db, req.user);
+  const winFlags = win ? { unsign: true, delete: false, item_key: null, window_id: win.id, window_expires_at: win.expires_at } : null;
+  const flagsFor = (id) => isAdmin ? { unsign: true, delete: true, item_key: null } : (flagged.get(id) || winFlags || { unsign: false, delete: false, item_key: null });
   res.json({
     // The drawn signature and the signed snapshot are for the detail and the
     // PDF; a list of 1,500 rows does not carry them.
-    requests: requests.map(({ qa_signature, signed_snapshot: _snapshot, ...r }) => ({ ...r, signed: !!qa_signature, file_counts: fileMap[r.id] || {}, correction: flagsFor(r.id) })),
+    requests: requests.map(({ qa_signature, signed_snapshot: _snapshot, ...r }) => ({ ...r, signed: !!qa_signature, file_counts: fileMap[r.id] || {},
+      unread_reports: unreadMap[r.id] || 0, correction: flagsFor(r.id) })),
     total,
     shown: requests.length,
     limit,
+    offset,
+    window: win ? { id: win.id, expires_at: win.expires_at } : null,
   });
 });
 
@@ -857,7 +991,7 @@ router.get('/requests/:id', (req, res) => {
   const { suspect } = splitLot(request.lot_number);
   res.json({ ...request, files, test_results, specifications: specs, lot_suspect: suspect,
     correction: correctionFlags(db, req.user, request.id), correction_items: correctionItemsFor(db, request.id),
-    unread_rows: unreadRowsFor(db, request.id) });
+    unread_rows: unreadRowsFor(db, request.id), signature_history: signatureHistoryFor(db, request.id) });
 });
 
 // A line the reader could not read is answered one of two ways: add it as a
@@ -923,7 +1057,9 @@ router.get('/receiving-prefill/:id', (req, res) => {
 
 router.post('/requests', (req, res) => {
   const db = getDb();
-  const { item_number, item_description, lot_number, product_expiration, tests_requested, lab_id, date_sent, tat_days, expected_results_date, requested_by, notes, origin, supplier, product_code, manufacturer_lot, vendor_lot, received_date } = req.body;
+  const { item_description, lot_number, product_expiration, tests_requested, lab_id, date_sent, tat_days, expected_results_date, requested_by, notes, origin, supplier, product_code, manufacturer_lot, vendor_lot, received_date } = req.body;
+  // A tab or a trailing space in an item code makes a second item (D-310).
+  const item_number = cleanItemNumber(req.body.item_number);
 
   if (!item_number || !item_description || !lot_number || !tests_requested) {
     return res.status(400).json({ error: 'item_number, item_description, lot_number, and tests_requested are required' });
@@ -979,6 +1115,11 @@ router.put('/requests/:id', (req, res) => {
     const touched = LOCKED_FIELDS.filter(f => req.body[f] !== undefined && String(req.body[f] ?? '') !== String(existing[f] ?? ''));
     if (touched.length) return res.status(409).json({ error: LOCKED_MESSAGE, locked: true, fields: touched });
   }
+  if (existing.reopened_for_correction) {
+    const touched = LOCKED_FIELDS.filter(f => req.body[f] !== undefined && String(req.body[f] ?? '') !== String(existing[f] ?? ''));
+    const why = touched.length ? reopenedEditRefusal(db, req.user, existing) : null;
+    if (why) return res.status(403).json({ error: why, reopened: true, fields: touched });
+  }
 
   const updates = [];
   const values = [];
@@ -986,7 +1127,7 @@ router.put('/requests/:id', (req, res) => {
   for (const f of REQUEST_FIELDS) {
     if (req.body[f] !== undefined) {
       updates.push(`${f} = ?`);
-      values.push(req.body[f]);
+      values.push(f === 'item_number' ? cleanItemNumber(req.body[f]) : req.body[f]);
     }
   }
 
@@ -1017,10 +1158,17 @@ router.put('/requests/:id', (req, res) => {
 
   const updated = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id);
   logAudit(req.user, 'update', 'coa_request', req.params.id, req.body, existing, updated);
+  auditCorrection(req, existing, 'coa_request', req.params.id, existing, updated);
   res.json(updated);
 });
 
 // The gate itself: its mode, and what it has let through carrying gaps.
+// The gluten "<44" misread on signed certificates (D-308). Read-only.
+router.get('/reports/gluten-misread', (req, res) => {
+  if (!(req.user?.role === 'admin' || isQaReviewer(req.user))) return res.status(403).json({ error: 'Only Quality or an admin can read this report.' });
+  res.json(glutenMisreadReport(getDb()));
+});
+
 router.get('/release-gate', (req, res) => {
   const db = getDb();
   const mode = gateMode(db);
@@ -1084,7 +1232,11 @@ router.post('/requests/bulk-delete', (req, res) => {
   const all = db.prepare(`SELECT id, certificate_number, qa_signed_at, lot_number FROM coa_requests WHERE id IN (${ph})`).all(...ids);
   // A signed certificate is a record and is never deleted (D-224).
   const skipped_signed = all.filter(isSigned).map(r => ({ id: r.id, lot_number: r.lot_number }));
-  const found = all.filter(r => !isSigned(r));
+  // A certificate reopened for correction leaves that state only by being
+  // signed again (D-307), never by being deleted.
+  const reopenedIds = new Set(db.prepare(`SELECT id FROM coa_requests WHERE reopened_for_correction = 1 AND id IN (${ph})`).all(...ids).map(r => r.id));
+  const skipped_reopened = all.filter(r => !isSigned(r) && reopenedIds.has(r.id)).map(r => ({ id: r.id, lot_number: r.lot_number }));
+  const found = all.filter(r => !isSigned(r) && !reopenedIds.has(r.id));
   const del = found.map(r => r.id);
   const dph = del.map(() => '?').join(',');
   const tx = db.transaction(() => {
@@ -1100,7 +1252,7 @@ router.post('/requests/bulk-delete', (req, res) => {
       (reason || item) ? { ...(reason ? { reason } : {}), ...(item ? { authorized_by: item.item_key, decision: CORRECTION_DECISION } : {}),
         ...(req.user?.role !== 'admin' ? signatureEvidence() : {}) } : null, r, null);
   }
-  res.json({ deleted: found.length, skipped_signed });
+  res.json({ deleted: found.length, skipped_signed, skipped_reopened });
 });
 
 // D-256: delete every empty duplicate a COA correction names, in one act.
@@ -1244,6 +1396,7 @@ router.post('/requests/:id/results', async (req, res) => {
   if (!request) return res.status(404).json({ error: 'COA request not found' });
 
   if (isSigned(request)) return res.status(409).json({ error: LOCKED_MESSAGE, locked: true });
+  { const why = reopenedEditRefusal(db, req.user, request); if (why) return res.status(403).json({ error: why, reopened: true }); }
   const { results } = req.body;
   // A report whose every line was unread is applied with no rows ticked — the
   // lines still have to be stored and answered.
@@ -1263,6 +1416,33 @@ router.post('/requests/:id/results', async (req, res) => {
     if (r.hash_ok === false) return res.status(409).json({ error: 'That lab report has changed since it was attached. Attach it again.' });
     if (r.image || r.unreadable) return res.status(400).json({ error: 'That lab report is an image scan with no text, so results cannot be read from it. Type them by hand, or ask the lab for the original PDF.' });
     read = r.parsed; fileSha = r.sha256; readIdx = specIndex(read.test_results);
+  }
+
+  // A RE-ISSUED REPORT (D-310). The lab sometimes re-issues a report under the
+  // same CTLA ID with a corrected value. If that ID is already on another
+  // request, this one must say which request it replaces, and that request must
+  // not hold a live signature — a signed certificate leaves only through the
+  // correction path (un-sign inside a window, or as an admin). Applying then
+  // marks the old request replaced (its PDF is never issued again and it cannot
+  // be signed). Nothing is deleted.
+  let replaces = null;
+  if (read?.lab_report_number) {
+    const prior = db.prepare(`SELECT DISTINCT r.id, r.item_number, r.lot_number, r.certificate_number, r.qa_signed_at, r.reopened_for_correction, r.replaced_by_request_id
+      FROM coa_files f JOIN coa_requests r ON r.id = f.request_id
+      WHERE f.lab_report_number = ? AND r.id != ? AND r.replaced_by_request_id IS NULL`).all(read.lab_report_number, request.id);
+    if (prior.length) {
+      const wanted = String(req.body.replaces_request_id || '').trim();
+      const x = prior.find(p => p.id === wanted);
+      if (!x) {
+        return res.status(409).json({ error: `CTLA report ${read.lab_report_number} is already on ${prior.map(p => `lot ${p.lot_number}${p.certificate_number ? ` (certificate ${p.certificate_number})` : ''}`).join(', ')}. Say which request this re-issued report replaces.`,
+          needs_replaces: true, lab_report_number: read.lab_report_number,
+          candidates: prior.map(p => ({ id: p.id, item_number: p.item_number, lot_number: p.lot_number, certificate_number: p.certificate_number, signed: !!p.qa_signed_at })) });
+      }
+      if (x.qa_signed_at) {
+        return res.status(409).json({ error: `Lot ${x.lot_number} holds a signed certificate${x.certificate_number ? ` (${x.certificate_number})` : ''}. Un-sign it first — inside a correction window, or as an admin — then apply the re-issued report here.`, replaces_signed: true });
+      }
+      replaces = x;
+    }
   }
 
   // One grader, one spec lookup, shared with the scan preview and the edit
@@ -1313,6 +1493,10 @@ router.post('/requests/:id/results', async (req, res) => {
         x.handVerdict ? 1 : 0, x.reason, x.reason ? req.user.name : null, x.reason);
       created.push(db.prepare('SELECT * FROM coa_test_results WHERE id = ?').get(id));
     }
+    if (replaces) {
+      db.prepare("UPDATE coa_requests SET replaces_request_id = ?, updated_at = datetime('now') WHERE id = ?").run(replaces.id, request.id);
+      db.prepare("UPDATE coa_requests SET replaced_by_request_id = ?, reopened_for_correction = 0, updated_at = datetime('now') WHERE id = ?").run(request.id, replaces.id);
+    }
     // The report's own number and date, kept on the file (fills blanks only).
     if (file && read) {
       db.prepare('UPDATE coa_files SET lab_report_number = COALESCE(lab_report_number, ?), lab_report_date = COALESCE(lab_report_date, ?), text_layer = 1 WHERE id = ?')
@@ -1322,6 +1506,10 @@ router.post('/requests/:id/results', async (req, res) => {
   });
 
   const created = tx();
+  if (replaces) {
+    logAudit(req.user, 'void', 'coa_request', replaces.id, { replaced_by: request.id, lab_report_number: read.lab_report_number,
+      reason: 'Re-issued lab report applied to another request (D-310).' }, null, null, `lot ${replaces.lot_number}`);
+  }
   // Lines the reader could not read become a QA Review item (D-243).
   const unread = file && read ? recordUnreadRows(db, request, file, read.unread, logAudit, req.user) : { stored: 0 };
   rollUpRequestStatus(db, req.params.id);
@@ -1395,6 +1583,7 @@ router.put('/requests/:requestId/results/:id', (req, res) => {
   const request = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.requestId);
   if (!request) return res.status(404).json({ error: 'COA request not found' });
   if (isSigned(request)) return res.status(409).json({ error: LOCKED_MESSAGE, locked: true });
+  { const why = reopenedEditRefusal(db, req.user, request); if (why) return res.status(403).json({ error: why, reopened: true }); }
 
   const test_type = req.body.test_type !== undefined ? String(req.body.test_type || '').trim() : existing.test_type;
   if (!test_type) return res.status(400).json({ error: 'A test name is required.' });
@@ -1460,6 +1649,7 @@ router.put('/requests/:requestId/results/:id', (req, res) => {
   logAudit(req.user, 'update', 'coa_test_result', req.params.id,
     { test_type, changed_pass_fail: existing.pass_fail !== pass_fail, hand_verdict: handVerdict, hand_value: handValue, edit_reason: keepReason,
       flag_cleared: !flagged && !!(existing.verdict_manual || (existing.edit_reason && existing.source === 'pdf')) }, existing, updated);
+  auditCorrection(req, request, 'coa_test_result', req.params.id, existing, updated);
   res.json(updated);
 });
 
@@ -1467,11 +1657,14 @@ router.delete('/requests/:requestId/results/:id', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM coa_test_results WHERE id = ? AND request_id = ?').get(req.params.id, req.params.requestId);
   if (!existing) return res.status(404).json({ error: 'Test result not found' });
-  if (isSigned(db.prepare('SELECT qa_signed_at FROM coa_requests WHERE id = ?').get(req.params.requestId))) {
+  const parent = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.requestId);
+  if (isSigned(parent)) {
     return res.status(409).json({ error: LOCKED_MESSAGE, locked: true });
   }
+  { const why = reopenedEditRefusal(db, req.user, parent); if (why) return res.status(403).json({ error: why, reopened: true }); }
 
   db.prepare('DELETE FROM coa_test_results WHERE id = ?').run(req.params.id);
+  auditCorrection(req, parent, 'coa_test_result', req.params.id, existing, null);
   // The request's verdict is derived from its results, so removing one has to
   // re-derive it — otherwise a request keeps a 'fail' from a row that is gone.
   rollUpRequestStatus(db, req.params.requestId);
@@ -1801,6 +1994,7 @@ router.post('/requests/:id/files', upload.single('file'), (req, res) => {
   const refuse = (status, body) => { try { unlinkSync(req.file.path); } catch { /* already gone */ } return res.status(status).json(body); };
   if (!FILE_TYPES.includes(file_type)) return refuse(400, { error: `File type must be one of ${FILE_TYPES.join(', ')}.` });
   if (isSigned(request)) return refuse(409, { error: LOCKED_MESSAGE, locked: true });
+  { const why = reopenedEditRefusal(db, req.user, request); if (why) return refuse(403, { error: why, reopened: true }); }
 
   const id = uuid();
   const hash = sha256(readFileSync(req.file.path));
@@ -1809,6 +2003,7 @@ router.post('/requests/:id/files', upload.single('file'), (req, res) => {
 
   const created = db.prepare('SELECT * FROM coa_files WHERE id = ?').get(id);
   logAudit(req.user, 'upload', 'coa_file', id, { file_type, original_name: req.file.originalname }, null, created);
+  auditCorrection(req, request, 'coa_file', id, null, created);
   res.status(201).json(created);
 });
 
@@ -1832,9 +2027,12 @@ router.delete('/files/:id', (req, res) => {
   const db = getDb();
   const file = db.prepare('SELECT * FROM coa_files WHERE id = ?').get(req.params.id);
   if (!file) return res.status(404).json({ error: 'File not found' });
-  if (isSigned(db.prepare('SELECT qa_signed_at FROM coa_requests WHERE id = ?').get(file.request_id))) {
+  const owner = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(file.request_id);
+  if (isSigned(owner)) {
     return res.status(409).json({ error: LOCKED_MESSAGE, locked: true });
   }
+  { const why = reopenedEditRefusal(db, req.user, owner); if (why) return res.status(403).json({ error: why, reopened: true }); }
+  auditCorrection(req, owner, 'coa_file', req.params.id, file, null);
 
   const filePath = path.join(UPLOAD_DIR, file.filename);
   db.prepare('DELETE FROM coa_files WHERE id = ?').run(req.params.id);
@@ -1847,7 +2045,43 @@ router.delete('/files/:id', (req, res) => {
 // Maria (QA) signs the certificate in-app: the signature image (drawn once,
 // reusable) is snapshotted onto the request so the issued PDF carries it —
 // no print/sign/scan loop. Admins can remove a signature if signed in error.
-const canSignCoa = (u) => !!u && (['admin', 'supervisor'].includes(u.role) || u.department === 'qa');
+const canSignCoa = (u) => !!u && !isCoaPrepOnly(u) && (['admin', 'supervisor'].includes(u.role) || u.department === 'qa');
+
+// What the sign dialog shows beside each other (D-312): the value stored on
+// the request and the value the lab printed, for the facts a wrong certificate
+// is most often wrong about — date, lot, expiry and gluten. Read-only; the lab
+// report is read again here, never trusted from the browser.
+router.get('/requests/:id/sign-facts', async (req, res) => {
+  const db = getDb();
+  const r = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id);
+  if (!r) return res.status(404).json({ error: 'COA request not found' });
+  const files = db.prepare("SELECT * FROM coa_files WHERE request_id = ? AND file_type = 'lab_results' ORDER BY created_at").all(r.id);
+  let printed = null; let fileName = null;
+  for (const f of files) {
+    const x = await readLabFile(f, UPLOAD_DIR);
+    if (x.parsed) { printed = x.parsed; fileName = f.original_name; }
+  }
+  const gluten = db.prepare('SELECT test_type, result_value, unit FROM coa_test_results WHERE request_id = ?').all(r.id)
+    .find(t => aliasKey(t.test_type) === 'gluten');
+  const printedGluten = printed?.test_results?.find(t => aliasKey(t.test_type) === 'gluten');
+  const day = (v) => (v ? String(v).slice(0, 10) : null);
+  const squashV = (v) => String(v ?? '').replace(/\s+/g, '').toLowerCase();
+  const row = (key, label, stored, lab, cmp = (a, b) => squashV(a) === squashV(b)) => ({
+    key, label, stored: stored ?? null, printed: lab ?? null,
+    agree: stored == null || lab == null ? null : cmp(stored, lab),
+  });
+  res.json({
+    file: fileName,
+    lab_report_number: printed?.lab_report_number || null,
+    facts: [
+      row('date', 'Date received', day(r.received_date || r.date_sent), day(printed?.received_date)),
+      row('lot', 'Lot number', r.lot_number, printed?.lot_number),
+      row('expiry', 'Expiry', day(r.product_expiration), day(printed?.product_expiration)),
+      row('gluten', 'Gluten', gluten ? `${gluten.result_value ?? ''} ${gluten.unit || ''}`.trim() : null,
+        printedGluten ? `${printedGluten.result_value ?? ''} ${printedGluten.unit || ''}`.trim() : null),
+    ],
+  });
+});
 
 router.post('/requests/:id/sign', async (req, res) => {
   if (!canSignCoa(req.user)) return res.status(403).json({ error: 'Only admins, supervisors, or QA can sign certificates.' });
@@ -1858,6 +2092,7 @@ router.post('/requests/:id/sign', async (req, res) => {
   // NOT re-signed while its QA Review item is open.
   const hold = coaSignHold(db, r.id);
   if (hold) return res.status(409).json({ error: hold, held: true });
+  if (r.replaced_by_request_id) return res.status(409).json({ error: 'This request was replaced by a re-issued lab report on another request (D-310). Sign that one instead.', replaced: true, replaced_by: r.replaced_by_request_id });
 
   let sig = req.body?.signature || null;
   if (!sig) sig = db.prepare('SELECT signature_image FROM users WHERE id = ?').get(req.user.id)?.signature_image || null;
@@ -1905,8 +2140,14 @@ router.post('/requests/:id/sign', async (req, res) => {
     // the PDF view made up (D-228).
     const certNum = allocateCertNumber(db);
     const issued = plantDateOf();
+    // A certificate re-signed after a correction names the one it replaces
+    // (D-307): its number, when it was withdrawn and why.
+    const prior = fresh.reopened_for_correction
+      ? db.prepare('SELECT certificate_number, unsigned_at, reason FROM coa_signature_history WHERE request_id = ? ORDER BY unsigned_at DESC, rowid DESC LIMIT 1').get(fresh.id)
+      : null;
+    const corrected_from = prior ? { certificate_number: prior.certificate_number, date: String(prior.unsigned_at || '').slice(0, 10), reason: prior.reason } : null;
     const snapshot = snapshotFor(db, fresh, { certificate_number: certNum, date_of_issuance: issued, signed_by: req.user.name,
-      file_facts: Object.fromEntries(checks.reread.files.map(f => [f.id, f])) });
+      file_facts: Object.fromEntries(checks.reread.files.map(f => [f.id, f])), corrected_from });
     const json = canonicalJson(snapshot);
     const hash = sha256(json);
     db.prepare(`UPDATE coa_requests SET qa_signed_by = ?, qa_signed_by_id = ?, qa_signed_at = datetime('now'),
@@ -1916,14 +2157,61 @@ router.post('/requests/:id/sign', async (req, res) => {
                 updated_at = datetime('now') WHERE id = ?`)
       .run(req.user.name, req.user.id, sig, certNum, issued, json, hash,
         gate.mode === 'off' || gate.ok ? null : JSON.stringify(gate.gaps), gate.mode, req.params.id);
-    return { certNum, hash };
+    if (fresh.reopened_for_correction) {
+      db.prepare(`UPDATE coa_requests SET reopened_for_correction = 0, supersedes_certificate_number = ? WHERE id = ?`)
+        .run(corrected_from?.certificate_number || null, req.params.id);
+    }
+    return { certNum, hash, corrected_from };
   });
   const done = issue();
   if (done.already) return res.status(409).json({ error: 'This certificate is already signed.' });
   logAudit(req.user, 'sign', 'coa_request', req.params.id,
-    { certificate_number: done.certNum, content_sha256: done.hash, ...signatureEvidence(), attestation: 'I certify that the results on this Certificate of Analysis are true and accurate as obtained for the lot identified.' },
+    { certificate_number: done.certNum, content_sha256: done.hash, ...(done.corrected_from ? { supersedes_certificate_number: done.corrected_from.certificate_number, corrected_from: done.corrected_from } : {}), ...signatureEvidence(), attestation: 'I certify that the results on this Certificate of Analysis are true and accurate as obtained for the lot identified.' },
     null, null, `${r.item_description} · Lot ${r.lot_number}`);
   res.json(db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id));
+});
+
+// ──────────────── The correction window (D-307) ────────────────
+// An admin opens a temporary window naming the QA people who may un-sign a
+// certificate to correct it. Default 7 days, never more than 14; it ends on
+// its own. Reading the list is open to Quality and admins.
+router.get('/correction-window', (req, res) => {
+  if (!(req.user?.role === 'admin' || isQaReviewer(req.user))) return res.status(403).json({ error: 'Only Quality or an admin can see correction windows.' });
+  const db = getDb();
+  // Who a window may cover (admins only see it): active Quality reviewers, by
+  // the same test openWindow applies. Never a bot account.
+  const candidates = req.user?.role === 'admin'
+    ? db.prepare("SELECT id, name, role, department, module_access FROM users WHERE is_active = 1 AND role != 'admin' ORDER BY name").all()
+      .map(u => ({ ...u, module_access: (() => { try { return JSON.parse(u.module_access || 'null'); } catch { return null; } })() }))
+      .filter(u => isQaReviewer(u) && !isBotAccount(db, u)).map(({ id, name, department }) => ({ id, name, department }))
+    : [];
+  res.json({ windows: listWindows(db), reopened: reopenedRequests(db), default_hours: WINDOW_DEFAULT_HOURS, max_hours: WINDOW_MAX_HOURS, candidates,
+    mine: activeWindowFor(db, req.user) });
+});
+
+router.post('/correction-window', (req, res) => {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Only an admin opens a correction window.' });
+  const db = getDb();
+  const body = { user_ids: req.body?.user_ids, hours: req.body?.hours, reason: req.body?.reason };
+  // Validate before asking for the password: it is asked last.
+  const why = openWindowRefusal(body);
+  if (why) return res.status(400).json({ error: why });
+  if (!gateSignature(req, res, { action: 'coa_window_open' })) return;
+  const out = openWindow(db, req.user, body);
+  if (out.error) return res.status(out.status).json({ error: out.error });
+  logAudit(req.user, 'open', 'coa_correction_window', out.window.id,
+    { reason: out.window.reason, people: out.window.people.map(p => p.name), expires_at: out.window.expires_at, ...signatureEvidence() },
+    null, out.window, 'COA correction window');
+  res.status(201).json(out.window);
+});
+
+router.delete('/correction-window/:id', (req, res) => {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Only an admin closes a correction window.' });
+  const db = getDb();
+  const out = closeWindow(db, req.user, req.params.id, req.body?.reason);
+  if (out.error) return res.status(out.status).json({ error: out.error });
+  logAudit(req.user, 'close', 'coa_correction_window', req.params.id, { reason: out.window.close_reason || null }, out.before, out.window, 'COA correction window');
+  res.json(out.window);
 });
 
 // Un-signing is the one way back, and it says why (D-224). It clears the
@@ -1937,7 +2225,7 @@ router.post('/requests/:id/sign', async (req, res) => {
 router.delete('/requests/:id/sign', (req, res) => {
   const db = getDb();
   const allowed = coaCorrectionAllowed(db, req.user, req.params.id, 'unsign');
-  if (!allowed) return res.status(403).json({ error: 'Only an admin can un-sign a certificate, or Quality while a COA correction in QA Review asks for it.' });
+  if (!allowed) return res.status(403).json({ error: 'Only an admin can un-sign a certificate, or Quality while a COA correction in QA Review asks for it or an open correction window names them.' });
   const r = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id);
   if (!r) return res.status(404).json({ error: 'COA request not found' });
   if (!isSigned(r)) return res.status(409).json({ error: 'This certificate is not signed.' });
@@ -1946,17 +2234,37 @@ router.delete('/requests/:id/sign', (req, res) => {
   const live = db.prepare("SELECT public_id FROM coa_publications WHERE request_id = ? AND status = 'published'").get(r.id);
   if (live) return res.status(409).json({ error: 'This certificate is published on the public page. Withdraw the publication first, then un-sign.', published: true });
   const reason = String(req.body?.reason || '').trim();
-  if (reason.length < 3) return res.status(400).json({ error: 'Say why the signature is being removed.' });
+  const fieldPlan = String(req.body?.field_plan || '').trim() || null;
+  // Under a correction window (D-307) the bar is higher: a fuller reason and a
+  // plan of what will be corrected, and the person's password.
+  if (allowed.window) {
+    if (reason.length < UNSIGN_WINDOW_MIN_REASON) return res.status(400).json({ error: `Say why the signature is being removed (at least ${UNSIGN_WINDOW_MIN_REASON} characters).` });
+    if (!fieldPlan || fieldPlan.length < 3) return res.status(400).json({ error: 'Say what you will correct (for example "date sent typo; expiry 2026 to 2028").', needs_field_plan: true });
+  } else if (reason.length < 3) return res.status(400).json({ error: 'Say why the signature is being removed.' });
   if (!allowed.admin && !gateSignature(req, res, { action: 'coa_unsign' })) return;
-  db.prepare(`UPDATE coa_requests SET qa_signed_by = NULL, qa_signed_by_id = NULL, qa_signed_at = NULL, qa_signature = NULL,
-              certificate_number = NULL, date_of_issuance = NULL, signed_snapshot = NULL, signed_content_hash = NULL,
-              updated_at = datetime('now') WHERE id = ?`).run(req.params.id);
+  // The original is KEPT before anything is cleared: the signature image, the
+  // snapshot it covered, its hash and its number (D-307, a Part 11 gap).
+  let historyId = null;
+  db.transaction(() => {
+    historyId = recordSignatureHistory(db, r, { user: req.user, reason, field_plan: fieldPlan, window_id: allowed.window || null });
+    db.prepare(`UPDATE coa_requests SET qa_signed_by = NULL, qa_signed_by_id = NULL, qa_signed_at = NULL, qa_signature = NULL,
+                certificate_number = NULL, date_of_issuance = NULL, signed_snapshot = NULL, signed_content_hash = NULL,
+                updated_at = datetime('now') WHERE id = ?`).run(req.params.id);
+    // Un-signed under a window ⇒ reopened: it leaves that state only by being
+    // signed again. An admin's or a QA Review item's un-sign is unchanged.
+    if (allowed.window) {
+      db.prepare(`UPDATE coa_requests SET reopened_for_correction = 1, reopened_at = datetime('now'), reopened_window_id = ?,
+                  reopened_reason = ? WHERE id = ?`).run(allowed.window, reason, req.params.id);
+    }
+  })();
   logAudit(req.user, 'unsign', 'coa_request', req.params.id,
-    { reason, previous_signer: r.qa_signed_by, voided_certificate_number: r.certificate_number, voided_content_sha256: r.signed_content_hash,
+    { reason, field_plan: fieldPlan, previous_signer: r.qa_signed_by, voided_certificate_number: r.certificate_number, voided_content_sha256: r.signed_content_hash,
+      signature_history_id: historyId, kept_signature_image: !!r.qa_signature, kept_snapshot: !!r.signed_snapshot,
       ...(allowed.item ? { authorized_by: allowed.item.item_key, decision: CORRECTION_DECISION } : {}),
+      ...(allowed.window ? { authorized_by_window: allowed.window, reopened_for_correction: true } : {}),
       ...(!allowed.admin ? signatureEvidence() : {}) },
     null, null, `${r.item_description} · Lot ${r.lot_number}`);
-  res.json({ ok: true });
+  res.json({ ok: true, signature_history_id: historyId, reopened: !!allowed.window });
 });
 
 // ──────────────── PDF Export (Facility COA) ────────────────
@@ -1970,7 +2278,7 @@ router.get('/requests/:id/pdf', (req, res) => {
   // certificate number to any request it was opened on. A request that is not
   // a signed pass has no certificate: 409, unless an internal DRAFT preview is
   // asked for, which is watermarked and carries no number.
-  const issued = !!(isSigned(r) && r.status === 'pass' && r.certificate_number);
+  const issued = !!(isSigned(r) && r.status === 'pass' && r.certificate_number && !r.reopened_for_correction && !r.replaced_by_request_id);
   if (!issued && req.query.draft !== '1') {
     return res.status(409).json({ error: 'This request has no issued certificate. Only a signed pass is a Certificate of Analysis; a draft preview is available.', draft_available: true });
   }
@@ -2198,6 +2506,12 @@ router.get('/requests/:id/pdf', (req, res) => {
     doc.font('Helvetica').fontSize(6.8).fillColor('#888');
     doc.text('This Certificate of Analysis represents data for the sample submitted and does not constitute a guarantee of quality for the entire lot from which it was taken.', lm, fy + 6, { width: pageW, align: 'center', lineBreak: false });
     doc.text(`Powder Ops  ·  281 E 1600 N, Vineyard, UT 84059  ·  ${certNum}  ·  Page ${i - range.start + 1} of ${range.count}`, lm, fy + 18, { width: pageW, align: 'center', lineBreak: false });
+    // D-307: a certificate re-signed after a correction says which one it replaces.
+    if (snap.corrected_from?.certificate_number) {
+      const c = snap.corrected_from;
+      doc.font('Helvetica-Bold').fontSize(6.8).fillColor(ORANGE)
+        .text(`Corrected from certificate ${c.certificate_number} on ${fmtDate(c.date)}: ${String(c.reason || '').slice(0, 140)}`, lm, fy + 30, { width: pageW, align: 'center', lineBreak: false });
+    }
     doc.page.margins.bottom = keepBottom;
     if (!issued) {
       // The watermark: a draft must not be mistaken for the document.

@@ -322,7 +322,7 @@ const ALIASES = [
   ['cadmium', 'cadmium', 'cd', 'cadmium cd', 'cadmium nmt'],
   ['mercury', 'mercury', 'hg', 'mercury hg', 'mercury nmt'],
   ['lead', 'lead', 'pb', 'lead pb', 'lead nmt'],
-  ['gluten', 'gluten', 'gluten allergen', 'total gluten'],
+  ['gluten', 'gluten', 'gluten allergen', 'total gluten', 'gluten allergen reportelisa', 'gluten allergen report elisa', 'gluten allergen elisa'],
   ['gluten r5', 'gluten r5', 'r5 gluten', 'gluten allergen r5'],
   ['gluten g12', 'gluten g12', 'g12 gluten', 'gluten allergen g12'],
   ['gliadin', 'gliadin'],
