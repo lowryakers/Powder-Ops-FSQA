@@ -6311,6 +6311,11 @@ navigated that narrow column to the **whole app** — sidebar and all — inside
   `MODULE_GROUPS` entry in `UsersSection.jsx`**, or `check:modulelist` fails. Suppliers, Onboarding and Visitors had
   none for their whole life, so only admins could open them.
 
+## Settings → Users lists the sidebar, group by group (D-305)
+`MODULE_GROUPS` (UsersSection.jsx) mirrors `NAV_GROUPS`: a box (`id`), a `heading` for a screen opened by several boxes,
+a `rule` line (no box opens it; says who gets it) and an `admin` line. **A new sidebar entry needs its row in the same
+group, in the same place**, or `check:modulelist` fails.
+
 ## Bots are not trainees; accounts that share a name (D-262, `server/trainees.js`, `server/same-name-accounts.js`)
 - **`users.not_trainee` leaves an account out of EVERY training count, list and assignment** — read it through
   `TRAINEE_SQL` / `nonTraineeIds` / `nonTraineeNames`, never a name test. A new training count or pick list must use it.

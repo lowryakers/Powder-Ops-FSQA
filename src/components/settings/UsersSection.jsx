@@ -30,31 +30,36 @@ import { isFullAccess, fullAccessMap, noAccessMap, expandedMap, accessSummary, o
 import FrozenScroll from '../common/FrozenScroll';
 import { navAccessFor } from '../../lib/navAccess';
 
+// THE SIDEBAR, GROUP BY GROUP, IN ITS ORDER (D-305). Four kinds of entry:
+//   { id }                 — a box: None / View / Edit.
+//   { heading, nav }       — a sidebar entry that is several boxes (a screen with
+//                            tabs); the boxes follow it with `sub: true`.
+//   { rule, label, why }   — a sidebar entry no box opens (a department or role
+//                            rule). Shown, with the rule, so nobody hunts for it.
+//   { admin, label }       — a sidebar entry only admins have.
+// check:modulelist fails when a sidebar group and this list disagree.
 const MODULE_GROUPS = [
   {
     label: 'Overview',
     modules: [
       { id: 'dashboard', label: 'Dashboard' },
-      // Automatic for admins & supervisors; granting it here shares the
-      // Critical Tracking tab (program health) with someone else.
-      { id: 'critical-tracking', label: 'Critical Tracking (auto for supervisors)' },
+      { id: 'critical-tracking', sub: true, label: 'Critical Tracking (auto for supervisors)' },
       { id: 'operator', label: 'Operator View' },
     ],
   },
   {
-    label: 'Product',
+    label: 'Quick Forms',
     modules: [
-      { id: 'products', label: 'Products (master list)' },
-      { id: 'artwork', label: 'Artwork versions & proofing' },
+      { id: 'form-maintenance', label: 'Sign Out an Item (kiosk form)', note: 'The Quick Forms shortcut in the sidebar. Files into Sign In/Out → Equipment, Tools & Chemicals; grant this alone for people who only submit.' },
+      { id: 'form-knife', label: 'Knife Sign In/Out (kiosk form)', note: 'The Quick Forms shortcut in the sidebar. Files into Sign In/Out → Knives & Blades; grant this alone for people who only submit.' },
+      { id: 'form-components', label: 'Component Pull (kiosk form)', note: 'The Quick Forms shortcut in the sidebar. Files into Component Sign In/Out; grant this alone for people who only submit.' },
+      { id: 'form-scale', label: 'Scale Verification (kiosk form)', note: 'The Quick Forms shortcut in the sidebar. Files into Calibration → Scale Verification; grant this alone for people who only submit.' },
     ],
   },
   {
     label: 'Production',
     modules: [
       { id: 'production-log', label: 'Production Log' },
-      // Submitting the EOD entry form — separate from editing the log itself.
-      // Supervisors get the form automatically; edit on Production Log is what
-      // allows correcting entries afterwards.
       { id: 'production-eod', label: 'EOD entry form (auto for supervisors)', sub: true, note: 'Files into the Production Log. Correcting a filed entry needs Edit above.' },
       { id: 'production-schedule', label: 'Schedule' },
       { id: 'production-dashboard', label: 'Production KPIs' },
@@ -65,12 +70,10 @@ const MODULE_GROUPS = [
     modules: [
       { id: 'receiving-log', label: 'Receiving Log' },
       { id: 'component-signout', label: 'Component Sign In/Out' },
-      { id: 'form-components', label: 'Component Pull (kiosk form)', sub: true, note: 'The Quick Forms shortcut in the sidebar. Files into the log above — grant this alone for people who only submit.' },
-      { id: 'maintenance-signout', label: 'Equipment, Tools & Chemicals (Form 703-01)', note: 'A tab inside Sign In/Out.' },
-      { id: 'form-maintenance', label: 'Sign Out an Item (kiosk form)', sub: true, note: 'The Quick Forms shortcut in the sidebar. Files into the log above — grant this alone for people who only submit.' },
-      { id: 'knife-accountability', label: 'Knives & Blades (Form 440-02 / 440-01)', note: 'A tab inside Sign In/Out.' },
-      { id: 'form-knife', label: 'Knife Sign In/Out (kiosk form)', sub: true, note: 'The Quick Forms shortcut in the sidebar. Files into the log above — grant this alone for people who only submit.' },
+      { heading: 'Sign In/Out', nav: 'sign-out', note: 'One sidebar entry with tabs. It shows when any of the three below is set.' },
       { id: 'currently-out', label: 'Out now (summary view)', sub: true, note: 'The read-only "what is signed out right now" tab, across both forms. Grant this alone for someone who only needs the floor check.' },
+      { id: 'maintenance-signout', sub: true, label: 'Equipment, Tools & Chemicals (Form 703-01)', note: 'The Equipment, Tools & Chemicals tab.' },
+      { id: 'knife-accountability', sub: true, label: 'Knives & Blades (Form 440-02 / 440-01)', note: 'The Knives & Blades tab.' },
     ],
   },
   {
@@ -79,41 +82,40 @@ const MODULE_GROUPS = [
       { id: 'pm', label: 'Task Center' },
       { id: 'equipment', label: 'Equipment' },
       { id: 'calibration', label: 'Calibration' },
-      { id: 'form-scale', label: 'Scale Verification (kiosk form)', sub: true, note: 'The Quick Forms shortcut in the sidebar. Files into Calibration \u2192 Scale Verification \u2014 grant this alone for supervisors who only run the daily check.' },
       { id: 'loto', label: 'Lockout / Tagout' },
+    ],
+  },
+  {
+    label: 'Product',
+    modules: [
+      { id: 'products', label: 'Products (master list)' },
+      { id: 'artwork', label: 'Artwork versions & proofing' },
     ],
   },
   {
     label: 'Quality',
     modules: [
-      // Automatic for the QA/quality department and admins. Granting it here
-      // is how someone outside QA — a supervisor who genuinely counter-signs —
-      // gets the queue. Without this entry the rule had no checkbox at all,
-      // which is why every supervisor had it by role and Settings looked wrong.
       { id: 'qa-review', label: 'QA Review Center (auto for QA / quality)', note: 'The counter-signature queue: production entries, QA inspections, cleaning records, scale checks and sign-out returns. Signing a single module’s records is separately allowed by Edit on that module.' },
       { id: 'coa', label: 'COA / Lab Testing' },
+      { id: 'quality-schedules', label: 'Quality Schedules (EMP swabs, water & air testing)', note: 'The recurring quality checks from FORM 604-01 — they generate QA tasks in the Task Center.' },
+      { rule: 'food-safety-culture', label: 'Food Safety Culture', why: 'Not a tick here: QA / Document Control department, or any supervisor. Anyone can raise a concern from the Operator View.' },
       { id: 'hygienic', label: 'Hygienic Design' },
+      { id: 'facility-map', label: 'Facility Map (floor plan, cleaning status, pest, BP&G zones)' },
       { id: 'qa-inspections', label: 'QA Inspections (light, brittle plastic & glass)' },
+      { id: 'retention-samples', label: 'Retention Samples (retains, lab pulls, boxes)' },
+      { id: 'suppliers', label: 'Suppliers (qualification, questionnaires, certificates)', note: 'View reads the register. Edit adds suppliers, materials and documents and sends questionnaire links. Approving a supplier and recording a banned-list check stay with Quality leadership and admins.' },
       { id: 'organoleptic', label: 'Organoleptic Sensory' },
       { id: 'flavor-approvals', label: 'Flavor Approvals' },
       { id: 'capa', label: 'CAPA / Complaints' },
-      { id: 'deviations', label: 'Deviations' },
-      { id: 'non-conformance', label: 'Non-Conformance' },
-      { id: 'on-hold', label: 'On Hold' },
+      { heading: 'Quality Events', nav: 'quality-events', note: 'One sidebar entry with tabs. It shows when any of the three below is set.' },
+      { id: 'deviations', sub: true, label: 'Deviations' },
+      { id: 'non-conformance', sub: true, label: 'Non-Conformance' },
+      { id: 'on-hold', sub: true, label: 'On Hold' },
       { id: 'disposals', label: 'Disposals' },
       { id: 'recall', label: 'Mock Recall' },
       { id: 'meetings', label: 'Meetings (minutes, attendance, actions)' },
       { id: 'internal-audits', label: 'Internal Audits (Form 403-01)' },
       { id: 'safety', label: 'Safety (crisis contacts, evacuations, first aid)' },
-      { id: 'retention-samples', label: 'Retention Samples (retains, lab pulls, boxes)' },
-      // These three are ordinary nav modules with no special gating, and they
-      // simply had no checkbox — so there was no way to grant them to anybody
-      // and they read as missing. Quality Schedules is the one that surfaced it.
-      { id: 'quality-schedules', label: 'Quality Schedules (EMP swabs, water & air testing)', note: 'The recurring quality checks from FORM 604-01 — they generate QA tasks in the Task Center.' },
-      { id: 'facility-map', label: 'Facility Map (floor plan, cleaning status, pest, BP&G zones)' },
-      // Suppliers, Onboarding and Visitors had always needed a grant and never
-      // had a box here, so only an admin could ever open them (29 Oct 2026).
-      { id: 'suppliers', label: 'Suppliers (qualification, questionnaires, certificates)', note: 'View reads the register. Edit adds suppliers, materials and documents and sends questionnaire links. Approving a supplier and recording a banned-list check stay with Quality leadership and admins.' },
     ],
   },
   {
@@ -126,46 +128,55 @@ const MODULE_GROUPS = [
   {
     label: 'Document Control',
     modules: [
-      { id: 'sops', label: 'SOP Registry' },
-      { id: 'work-instructions', label: 'Work Instructions' },
-      { id: 'job-descriptions', label: 'Job Descriptions' },
+      { rule: 'doc-review', label: 'Doc Control Review', why: 'Not a tick here: admins, the Document Control department, and QA or Document Control supervisors.' },
+      { heading: 'Controlled Documents', nav: 'document-control', note: 'One sidebar entry with tabs. It shows when any of the three below is set; the Forms and Reference Library tabs come with SOP Registry.' },
+      { id: 'sops', sub: true, label: 'SOP Registry' },
+      { id: 'work-instructions', sub: true, label: 'Work Instructions' },
+      { id: 'job-descriptions', sub: true, label: 'Job Descriptions' },
       { id: 'training', label: 'Training Records' },
       { id: 'certifications', label: 'Certifications' },
       { id: 'dcr', label: 'Document Change Requests' },
+      { rule: 'controlled-changes', label: 'Controlled Changes', why: 'Not a tick here: admins and the Document Control department.' },
+      { rule: 'change-register', label: 'Change Register', why: 'Not a tick here: admins, the Document Control / QA departments, and any supervisor.' },
       { id: 'org-chart', label: 'Org Chart' },
-      { id: 'audit', label: 'Audit Log', note: 'Read-only history of every change: who did what, when, and what the value was before. What an auditor asks to see.' },
-      { id: 'user-activity', label: 'User Activity (bot read access)', note: "Lets this account's READ token pull the activity log (who signed in, pages, changes, downloads) from GET /api/user-activity. The screen itself stays admins-only; a person given this sees nothing new." },
     ],
   },
   {
     label: 'Office',
     modules: [
-      // Requests is automatic for every supervisor; granting it here extends
-      // the Supply Order + Time Tracking forms to a non-supervisor (e.g. office
-      // staff). The full Supply Orders / Time Tracking modules stay admin-only.
-      { id: 'supply-requests', label: 'Supply Order request form' },
-      { id: 'time-requests', label: 'Time Tracking request form' },
-      { id: 'partner-reconciliation', label: 'Partner Reconciliation (what we owe / are owed net)', note: 'View reads the number and the documents behind it; Edit adds and disputes documents. Approving one as final, settling a period and creating a partner link stay with admins and office supervisors whatever is granted here.' },
-      { id: 'reimbursements', label: 'Reimbursements (personal card spend)', note: 'A person with this only ever sees their OWN claims. Approving and marking paid is admin / office supervisor, whatever is granted here.' },
-      { id: 'ap-drop', label: 'AP Drop (finance intake queue)', note: 'The first tab of Accounting, and what puts Accounting in the sidebar. View lets the person drop a finance PDF and see their own drops. Edit is the finance flag: it opens the whole queue and lets the person move a drop past "new", correct what was read off the document, and mark one as not finance.' },
+      { heading: 'Requests', nav: 'office-requests', note: 'Every supervisor has this. For anyone else, either form below puts it in the sidebar.' },
+      { id: 'supply-requests', sub: true, label: 'Supply Order request form' },
+      { id: 'time-requests', sub: true, label: 'Time Tracking request form' },
+      { admin: 'supply-orders', label: 'Supply Orders', note: 'Admins only. Others order through the request form above.' },
+      { admin: 'time-tracking', label: 'Time Tracking', note: 'Admins only. Others ask through the request form above.' },
+      { heading: 'Accounting', nav: 'accounting', note: 'One sidebar entry with tabs. It shows when any of the three below is set, and for office / admin supervisors.' },
+      { id: 'ap-drop', sub: true, label: 'AP Drop (finance intake queue)', note: 'The first tab of Accounting, and what puts Accounting in the sidebar. View lets the person drop a finance PDF and see their own drops. Edit is the finance flag: it opens the whole queue and lets the person move a drop past "new", correct what was read off the document, and mark one as not finance.' },
+      { id: 'partner-reconciliation', sub: true, label: 'Partner Reconciliation (what we owe / are owed net)', note: 'View reads the number and the documents behind it; Edit adds and disputes documents. Approving one as final, settling a period and creating a partner link stay with admins and office supervisors whatever is granted here.' },
+      { id: 'reimbursements', sub: true, label: 'Reimbursements (personal card spend)', note: 'A person with this only ever sees their OWN claims. Approving and marking paid is admin / office supervisor, whatever is granted here.' },
       { id: 'procurement', label: 'Procurement & Demand Planning' },
       { id: 'newsletter', label: 'Newsletter' },
       { id: 'pay-tracking', label: 'Pay Tracking (evaluations; rates stay admin-only)' },
       { id: 'policies', label: 'Policies (handbook; edit = upload and publish)' },
       { id: 'onboarding', label: 'Onboarding (new-hire packets and employee documents)', note: 'Starts packets, sends links and keeps employee documents. Seeing the full SSN and bank numbers additionally needs the office / HR department (or admin) and a password at the moment of looking.' },
-      { id: 'visitors', label: 'Visitors (lobby sign in / out log)' },
       { id: 'candidates', label: 'People (who we would hire when the timing is right)', note: 'Personal contact details for people who do not work here, so the module carries a SECOND door: office / HR departments and admins only. Granting this to anyone else gives them nothing.' },
+      { id: 'visitors', label: 'Visitors (lobby sign in / out log)' },
     ],
   },
   {
     label: 'System',
     modules: [
-      { id: 'log-builder', label: 'Log Structure (edit form fields & dropdown lists in Settings)', note: 'Grant Edit to let someone add fields and list options to any log without a deploy. Changes the shape of records, so give it to leads you trust with document control.' },
+      { admin: 'ask-ai', label: 'Ask AI' },
+      { admin: 'team-activity', label: 'Team Activity' },
+      { admin: 'user-activity', label: 'User Activity', note: 'Admins only. The tick below lets a bot read it.' },
+      { id: 'user-activity', sub: true, label: 'User Activity (bot read access)', note: "Lets this account's READ token pull the activity log (who signed in, pages, changes, downloads) from GET /api/user-activity. The screen itself stays admins-only; a person given this sees nothing new." },
+      { id: 'audit', label: 'Audit Log', note: 'Read-only history of every change: who did what, when, and what the value was before. What an auditor asks to see.' },
+      { admin: 'settings', label: 'Settings', note: 'Admins only. The tick below opens one part of it.' },
+      { id: 'log-builder', sub: true, label: 'Log Structure (edit form fields & dropdown lists in Settings)', note: 'Grant Edit to let someone add fields and list options to any log without a deploy. Changes the shape of records, so give it to leads you trust with document control.' },
     ],
   },
 ];
 
-const ALL_MODULE_IDS = MODULE_GROUPS.flatMap(g => g.modules.map(m => m.id));
+const ALL_MODULE_IDS = MODULE_GROUPS.flatMap(g => g.modules.filter(m => m.id).map(m => m.id));
 
 // Normalize any stored form (null / legacy array / object) into a level map
 // The role-aware reading of a module map. See shared/module-access.js — an
@@ -260,15 +271,15 @@ function ModuleAccessEditor({ value, onChange, disabled, additive = false, role 
   // remaining columns stay short rather than leaving empty headings behind.
   const needle = q.trim().toLowerCase();
   const withoutOptIns = MODULE_GROUPS
-    .map(g => ({ ...g, modules: g.modules.filter(m => !OPT_IN_SET.has(m.id)) }))
-    .filter(g => g.modules.length);
+    .map(g => ({ ...g, modules: g.modules.filter(m => !m.id || !OPT_IN_SET.has(m.id)) }))
+    .filter(g => g.modules.some(m => m.id));
   const visibleGroups = needle
     ? withoutOptIns
-      .map(g => ({ ...g, modules: g.modules.filter(m => `${m.label} ${m.id} ${m.note || ''}`.toLowerCase().includes(needle)) }))
+      .map(g => ({ ...g, modules: g.modules.filter(m => `${m.label || m.heading} ${m.id || m.nav || m.rule || m.admin} ${m.note || ''} ${m.why || ''}`.toLowerCase().includes(needle)) }))
       .filter(g => g.modules.length)
     : withoutOptIns;
   const optInDefs = OPT_IN_MODULES.map(id =>
-    MODULE_GROUPS.flatMap(g => g.modules).find(m => m.id === id) || { id, label: id });
+    MODULE_GROUPS.flatMap(g => g.modules).find(m => m.id && m.id === id) || { id, label: id });
 
   const LEVELS = additive ? [
     { value: 'keep', label: 'Keep' },
@@ -345,17 +356,40 @@ function ModuleAccessEditor({ value, onChange, disabled, additive = false, role 
             <div key={group.label} className="space-y-1 break-inside-avoid mb-3">
               <div className="flex items-baseline justify-between gap-2 flex-wrap">
                 <div className="text-[10px] font-bold uppercase text-gray-500">{group.label}</div>
-                {!disabled && (
+                {!disabled && group.modules.some(m => m.id) && (
                   <div className="flex items-center gap-1 text-[10px] text-gray-400">
                     <span>set all:</span>
                     {LEVELS.map(l => (
-                      <button key={l.value} type="button" onClick={() => setGroup(group.modules.map(m => m.id), l.value)}
+                      <button key={l.value} type="button" onClick={() => setGroup(group.modules.filter(m => m.id).map(m => m.id), l.value)}
                         className="px-1.5 py-0.5 rounded border border-gray-200 bg-white hover:bg-gray-100 text-gray-500">{l.label}</button>
                     ))}
                   </div>
                 )}
               </div>
               {group.modules.map(mod => {
+                // A sidebar entry that is several boxes: its name, then the boxes.
+                if (mod.heading) {
+                  return (
+                    <div key={`h-${mod.nav}`} className="pl-1 pt-0.5" data-access-heading={mod.nav}>
+                      <span className="text-xs font-semibold text-gray-800">{mod.heading}</span>
+                      {mod.note && <span className="block text-[10px] text-gray-400">{mod.note}</span>}
+                    </div>
+                  );
+                }
+                // A sidebar entry no box opens: shown with the rule that does.
+                if (mod.rule || mod.admin) {
+                  return (
+                    <div key={`r-${mod.rule || mod.admin}`} className="flex items-start justify-between gap-2 pl-1" data-access-rule={mod.rule || mod.admin}>
+                      <span className="text-xs text-gray-500 min-w-0">
+                        {mod.label}
+                        {(mod.why || mod.note) && <span className="block text-[10px] text-gray-400">{mod.why || mod.note}</span>}
+                      </span>
+                      <span className={`shrink-0 px-1.5 py-0.5 rounded border text-[10px] font-medium ${mod.admin ? 'bg-indigo-50 text-indigo-800 border-indigo-200' : 'bg-amber-50 text-amber-900 border-amber-300'}`}>
+                        {mod.admin ? 'Admins only' : 'By rule'}
+                      </span>
+                    </div>
+                  );
+                }
                 const lvl = levelOf(mod.id);
                 return (
                   <div key={mod.id} className={`flex items-start justify-between gap-2 ${mod.sub ? 'pl-4 border-l-2 border-gray-200 ml-1' : 'pl-1'}`}>
