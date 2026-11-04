@@ -34,6 +34,20 @@ function Row({ item, source, checked, onToggle }) {
         <p className="text-sm font-medium text-gray-900 break-words">{item.title}</p>
         {item.subtitle && <p className="text-xs text-gray-500 break-words">{item.subtitle}</p>}
         {item.extra && <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{item.extra}</p>}
+        {item.link && (
+          <a href={item.link} data-doc-review-link
+            onClick={(e) => {
+              // Same arrangement as the Org Chart's JD link: stash the id, change
+              // tab in place; the registry opens it once its list has loaded.
+              if (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) return;
+              e.preventDefault();
+              try { localStorage.setItem('doc_focus', item.document_id); } catch { /* ignore */ }
+              openModule(item.tab || source.module);
+            }}
+            className="inline-flex items-center gap-1 mt-1 text-xs font-medium text-indigo-700 hover:underline">
+            Open to approve <ExternalLink size={11} />
+          </a>
+        )}
       </div>
       {item.date && (
         <span className={`text-xs whitespace-nowrap shrink-0 ${item.overdue ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>
@@ -96,6 +110,10 @@ function ConsistencyReview() {
                   )}
                   {['orphaned_wis', 'empty_shells', 'drafts', 'no_effective_date'].includes(sec.key) && docLine(it)}
                   {sec.key === 'past_review' && <>{docLine(it)} — review was due {it.review_due}</>}
+                  {sec.key === 'draft_revisions' && (
+                    <>{docLine(it)} — draft <span className="font-semibold">{it.draft_revision}</span> waiting (in force: {it.in_force || '—'})
+                      {it.staged_number && it.staged_number !== it.doc_number ? `, number → ${it.staged_number}` : ''}</>
+                  )}
                 </li>
               ))}
             </ul>

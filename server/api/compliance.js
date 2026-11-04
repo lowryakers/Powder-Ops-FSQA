@@ -17,6 +17,7 @@ import { hasExplicitGrant } from '../module-access.js';
 import { readinessReview } from '../audit-readiness.js';
 // One definition of "waiting on a signature" — see the sign-out badge note below.
 import { getSource, safeCount, isQaReviewer } from '../qa-review.js';
+import { isDocController, draftRevisionCount } from '../doc-review.js';
 // One definition of "completed PM" — the dashboard, the Task Center and the
 // auditor binder all read it from here.
 import { pmCompletion } from '../pm-completion.js';
@@ -791,6 +792,14 @@ router.get('/notifications', (req, res) => {
   if (chemMissingSDS > 0) items.push({ id: 'chem-sds', tab: 'chemicals', severity: 'warning', count: chemMissingSDS, label: `${chemMissingSDS} chemical${chemMissingSDS > 1 ? 's' : ''} missing SDS documentation` });
   if (flaggedIssues > 0) items.push({ id: 'flagged', tab: 'pm', severity: 'critical', count: flaggedIssues, label: `${flaggedIssues} flagged issue${flaggedIssues > 1 ? 's' : ''} requiring attention` });
   if (sopReviewDue > 0) items.push({ id: 'sop-review', tab: 'sops', severity: 'info', count: sopReviewDue, label: `${sopReviewDue} SOP${sopReviewDue > 1 ? 's' : ''} past review date` });
+  // A revision staged and not yet approved badges Doc Control Review (D-304) —
+  // the same count as its "Revisions waiting for approval" pile.
+  if (isDocController(req.user)) {
+    try {
+      const drafts = draftRevisionCount(db);
+      if (drafts > 0) items.push({ id: 'draft-revisions', tab: 'doc-review', severity: 'warning', count: drafts, label: `${drafts} revision${drafts > 1 ? 's' : ''} waiting for approval` });
+    } catch { /* table optional */ }
+  }
   // Points at QA Review, not the Production Log: signing is done in the review
   // queue now, and a notification that lands somewhere you can't act is noise.
   // COA corrections decided on 27 Oct (D-236) — Quality's to carry out.

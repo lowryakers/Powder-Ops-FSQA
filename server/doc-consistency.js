@@ -120,6 +120,18 @@ export function docConsistencyReview(db) {
     .filter(d => d.review_due && d.review_due < new Date().toISOString().slice(0, 10))
     .map(d => ({ ...brief(d), review_due: d.review_due }));
 
+  // ── 7. Revisions staged and not yet approved (D-304) ───────────────────────
+  // Same rule as the Doc Control Review pile `draft-revisions` (written out
+  // here rather than imported: doc-review.js imports this file's callers).
+  const draft_revisions = (() => { try {
+    return db.prepare(`SELECT d.id, d.doc_number, d.title, d.status, d.doc_type, d.revision AS in_force,
+        r.revision AS draft_revision, r.doc_number AS staged_number
+      FROM document_revisions r JOIN sop_documents d ON d.id = r.document_id
+      WHERE r.status = 'draft' AND d.status IN ('active', 'under_review')
+      ORDER BY d.doc_number`).all()
+      .map(r => ({ ...brief(r), in_force: r.in_force, draft_revision: r.draft_revision, staged_number: r.staged_number || null }));
+  } catch { return []; } })();
+
   const sections = [
     { key: 'duplicate_numbers', label: 'Two documents sharing one number', severity: 'critical', items: duplicate_numbers },
     { key: 'duplicate_titles', label: 'One title on two different numbers', severity: 'warning', items: duplicate_titles },
@@ -130,6 +142,7 @@ export function docConsistencyReview(db) {
     { key: 'drafts', label: 'Still in draft', severity: 'info', items: drafts },
     { key: 'no_effective_date', label: 'Active with no effective date', severity: 'warning', items: no_effective_date },
     { key: 'past_review', label: 'Past their review date', severity: 'info', items: past_review },
+    { key: 'draft_revisions', label: 'Revision drafts not yet approved', severity: 'info', items: draft_revisions },
   ];
 
   return {

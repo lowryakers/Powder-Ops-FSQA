@@ -385,6 +385,17 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
 // PAPER version each electronic document replaced — an auditor asks for the
 // last approved hard copy, so it's marked as its own kind rather than being one
 // more file in a pile.
+// A revision staged and not yet approved (D-304): the document in force is
+// unchanged, so its status still reads Active — this says something waits.
+function DraftPill({ d }) {
+  if (!d?.draft_revision || d.status === 'draft') return null;
+  return (
+    <span data-draft-pill className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-200 whitespace-nowrap">
+      Draft {d.draft_revision} waiting
+    </span>
+  );
+}
+
 function DocumentAttachments({ docId, canEdit }) {
   // `listError` matters: this list silently rendered empty whenever the fetch
   // failed, so an upload that worked looked like it had vanished. A list that
@@ -418,8 +429,14 @@ function DocumentAttachments({ docId, canEdit }) {
   };
 
   const loadFailed = listError && !files;
-  const signed = (files || []).filter(f => f.kind === 'signed_original');
-  const other = (files || []).filter(f => f.kind !== 'signed_original');
+  // Only files on the document IN FORCE are its attachments (D-304). A file
+  // filed against a draft revision waits in that draft's box; one whose draft
+  // was discarded is kept but never shown as the document's.
+  const current = (files || []).filter(f => !f.state || f.state === 'current');
+  const waiting = (files || []).filter(f => f.state === 'draft');
+  const discarded = (files || []).filter(f => f.state === 'discarded');
+  const signed = current.filter(f => f.kind === 'signed_original');
+  const other = current.filter(f => f.kind !== 'signed_original');
 
   const Row = ({ f }) => (
     <div className="flex items-center gap-2 py-1.5 border-b border-gray-50 last:border-0">
@@ -470,7 +487,25 @@ function DocumentAttachments({ docId, canEdit }) {
           {other.map(f => <Row key={f.id} f={f} />)}
         </div>
       )}
-      {!files?.length && <p className="text-xs text-gray-400 mb-2">No files attached.</p>}
+      {!current.length && <p className="text-xs text-gray-400 mb-2">No files attached.</p>}
+      {waiting.length > 0 && (
+        <p className="text-xs text-amber-800 mb-1.5" data-attach-waiting>
+          {waiting.length} file{waiting.length === 1 ? '' : 's'} waiting with draft {waiting[0].draft_label || ''} — shown in the draft box under Revisions.
+          {waiting.length === 1 ? ' It becomes' : ' They become'} this document&rsquo;s when the draft is approved.
+        </p>
+      )}
+      {discarded.length > 0 && (
+        <details className="mb-1.5" data-attach-discarded>
+          <summary className="text-[11px] text-gray-400 cursor-pointer">
+            {discarded.length} file{discarded.length === 1 ? '' : 's'} from a discarded draft (not part of this document)
+          </summary>
+          {discarded.map(f => (
+            <p key={f.id} className="text-[11px] text-gray-400 pl-3">
+              {f.filename}{f.discarded_revision ? ` — draft ${f.discarded_revision}, discarded` : ''}
+            </p>
+          ))}
+        </details>
+      )}
 
       {error && <p className="text-xs text-red-600 mb-1.5">{error}</p>}
 
@@ -1123,7 +1158,7 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
           {filtered.map(d => (
             <RecordCard key={d.id} onClick={() => setViewing(d)}
               title={<><span className="font-mono text-xs text-gray-600 mr-2">{d.doc_number || '—'}</span>{d.title}</>}
-              badge={<StatusBadge status={d.status} />}
+              badge={<span className="inline-flex items-center gap-1 flex-wrap"><StatusBadge status={d.status} /><DraftPill d={d} /></span>}
               stripe={selected.has(d.id) ? 'border-l-powder-500' : ''}
               fields={[
                 { label: 'Category', value: cap(d.category) },
@@ -1179,7 +1214,7 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
                     <td className="px-3 py-2.5 text-gray-900 font-medium w-full">{d.title}</td>
                     <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">{cap(d.category)}</td>
                     <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">{d.revision}</td>
-                    <td className="px-3 py-2.5 whitespace-nowrap"><StatusBadge status={d.status} /></td>
+                    <td className="px-3 py-2.5 whitespace-nowrap"><StatusBadge status={d.status} /><DraftPill d={d} /></td>
                     <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">{d.owner || '—'}</td>
                     <td className="px-3 py-2.5 text-gray-600 whitespace-nowrap">{d.review_due || '—'}</td>
                     <td className="px-3 py-2.5 whitespace-nowrap text-right" onClick={e => e.stopPropagation()}>

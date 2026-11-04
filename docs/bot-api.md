@@ -726,10 +726,13 @@ Start a draft revision of an **approved** SOP (active or under review). A draft 
 Edit that draft revision. The SOP in force is unchanged until an owner approves it. An approved revision is history and refused.
 
 - **Scope:** `write` + grant `sops-edit`. **Module:** SOPs (edit).
-- **Body:** `revision`, `title`, `description`, `description_es`, `effective_date`, `change_summary` only.
+- **Body:** `revision`, `title`, `description`, `description_es`, `effective_date`, `change_summary`, `doc_number` only.
+- **`doc_number` (D-304)** stages a new document number on the draft. The document keeps its number until a person approves the draft with their password; then the number moves with it. A number another document (or another open draft) holds is `409 DOC_NUMBER_USED`, naming that document. Sending the current number, or blank, clears the staged change.
 
 ### `POST /api/documents/:id/attachments`
 
-Attach PDFs to an SOP (multipart `files`, up to 10), draft or approved. Fields: `kind` (`signed_original` for the signed scan), `revision` (which revision the scan is of), `title`.
+Attach PDFs to an SOP (multipart `files`, up to 10), draft or approved. Fields: `kind` (`signed_original` for the signed scan), `revision` (which revision the scan is of), `title`, `revision_id`.
+
+**`revision_id` (D-304)** names an open draft revision of this SOP. The file then waits with the draft: it is listed in the draft box, not as the document's current signed copy, becomes current when a person approves the draft, and stays off the document if the draft is discarded. `revision` defaults to the draft's label. A `revision_id` that is not an open draft of this document is `400 NOT_A_DRAFT`. Attach the signed scan of a new revision this way, always.
 
 - **Scope:** `write` + grant `sops-edit`. **Module:** SOPs (edit). `503` when file storage is off.

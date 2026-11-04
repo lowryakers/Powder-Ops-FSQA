@@ -26,6 +26,28 @@ import { numberingWork } from './api/forms.js';
 import { zoneDrift, bpgDiagram } from './bpg-zones.js';
 import { GO_LIVE_DATE } from './db.js';
 
+// The registry tab each document type lives on — where "Open to approve" lands.
+const TAB_FOR_TYPE = { sop: 'sops', work_instruction: 'work-instructions', job_description: 'job-descriptions' };
+
+// ONE definition of "a revision waiting for approval" (D-304): an open draft on
+// a document that is in force (active or under review). A draft on an
+// archived document is not waiting on anybody; a draft DOCUMENT is the
+// `draft-documents` pile. The queue, its count, the consistency section and
+// the nav badge all read this.
+export const DRAFT_REVISION_WHERE = `r.status = 'draft' AND d.status IN ('active', 'under_review')`;
+export function draftRevisionCount(db) {
+  return db.prepare(`SELECT COUNT(*) c FROM document_revisions r JOIN sop_documents d ON d.id = r.document_id
+    WHERE ${DRAFT_REVISION_WHERE}`).get().c;
+}
+export function draftRevisionRows(db, limit = 200) {
+  return db.prepare(`SELECT r.id, r.document_id, r.revision, r.effective_date, r.created_by, r.created_at,
+      r.change_summary, r.doc_number AS staged_number,
+      d.doc_number, d.title, d.revision AS in_force, d.doc_type,
+      (SELECT COUNT(*) FROM document_attachments a WHERE a.revision_id = r.id AND a.kind = 'signed_original') AS signed_files
+    FROM document_revisions r JOIN sop_documents d ON d.id = r.document_id
+    WHERE ${DRAFT_REVISION_WHERE} ORDER BY r.created_at ASC LIMIT ?`).all(limit);
+}
+
 // Who is Document Control for the purposes of this screen. Matches the rule the
 // modules already apply, kept in one place so the queue can't offer someone a
 // button their module would refuse.
@@ -153,6 +175,38 @@ export const SOURCES = [
         overdue: false,
         extra: null,
       })),
+    canAct: isDocController,
+  },
+  // ── A revision staged and not yet approved (D-304). The document in force
+  // is still `active`, so `draft-documents` never saw it, and the draft sat
+  // inside the document's own Revisions box where only somebody who opened
+  // that document could find it. Not batchable: approving a revision is a
+  // password signature on that one document, so each row opens it.
+  {
+    key: 'draft-revisions',
+    label: 'Revisions waiting for approval',
+    module: 'document-control',
+    noun: 'revision',
+    plural: 'revisions',
+    help: 'A new revision of a document that is already in force, staged and not yet approved. The document in force does not change until a person approves the draft with their password. Open each one to approve or discard it.',
+    count: (db) => draftRevisionCount(db),
+    pending: (db, limit = LIMIT) => draftRevisionRows(db, limit).map(r => ({
+      id: r.id,
+      title: `${r.doc_number ? `${r.doc_number} — ` : ''}${r.title}`,
+      subtitle: [
+        `Draft ${r.revision || '(no number)'} (in force: ${r.in_force || '—'})`,
+        r.effective_date && `effective ${r.effective_date}`,
+        r.created_by && `started by ${r.created_by}`,
+        r.signed_files > 0 ? 'signed PDF attached' : 'no signed PDF',
+        r.staged_number && r.staged_number !== r.doc_number && `number ${r.doc_number || '(none)'} → ${r.staged_number}`,
+      ].filter(Boolean).join(' · '),
+      date: String(r.created_at || '').slice(0, 10),
+      overdue: false,
+      extra: r.change_summary || null,
+      link: `/?tab=${TAB_FOR_TYPE[r.doc_type] || 'sops'}&doc=${r.document_id}`,
+      document_id: r.document_id,
+      tab: TAB_FOR_TYPE[r.doc_type] || 'sops',
+    })),
     canAct: isDocController,
   },
   // ── Two piles that were already derived, on screens Document Control does

@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
-import { GitBranch, CheckCircle2, X, Edit2, Trash2, AlertTriangle } from 'lucide-react';
+import { useApiGet, apiPost, apiPut, apiFetch, apiUpload } from '../../hooks/useApi';
+import { GitBranch, CheckCircle2, X, Edit2, Trash2, AlertTriangle, Paperclip, FileText } from 'lucide-react';
 import { withSignature } from '../../lib/signature';
 import { formatDate, formatDateTime } from '../../lib/datetime.js';
 import DocumentBodyEditor from './DocumentBodyEditor.jsx';
@@ -70,7 +70,13 @@ export default function DocumentRevisions({ doc, canEdit, onChanged }) {
             <span className="font-normal text-amber-800"> — not in force. Rev {inForce.revision} stays approved until this is approved.</span>
           </p>
           {draft.change_summary && <p className="text-xs text-amber-900">What changed: {draft.change_summary}</p>}
-          <p className="text-[11px] text-amber-800">Started by {draft.created_by || '—'} · {formatDate(draft.created_at)}</p>
+          {draft.doc_number && draft.doc_number !== doc.doc_number && (
+            <p className="text-xs text-amber-900" data-rev-number-change>
+              Document number changes on approval: <span className="font-mono">{doc.doc_number || '(none)'}</span> → <span className="font-mono font-semibold">{draft.doc_number}</span>
+            </p>
+          )}
+          <p className="text-[11px] text-amber-800">Started by {draft.created_by || '—'} · {formatDate(draft.created_at)}{draft.effective_date ? ` · effective ${draft.effective_date}` : ''}</p>
+          <DraftFiles doc={doc} draft={draft} canEdit={canEdit} />
           <div className="flex flex-wrap gap-1.5 pt-0.5">
             {canEdit && (
               <button type="button" onClick={() => setEditing(true)} data-rev-edit
@@ -141,6 +147,7 @@ function DraftEditor({ doc, draft, onClose, onSaved }) {
   const [form, setForm] = useState({
     revision: draft.revision || '', change_summary: draft.change_summary || '', effective_date: draft.effective_date || '',
     description: draft.description || '', description_es: draft.description_es || '',
+    doc_number: draft.doc_number || doc.doc_number || '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -164,6 +171,13 @@ function DraftEditor({ doc, draft, onClose, onSaved }) {
         <p className="text-xs text-gray-600">
           Changes here stay in the draft. Revision {doc.revision} remains in force until the draft is approved.
         </p>
+        <label className="block">
+          <span className="block text-xs font-medium text-gray-700 mb-1">Document number</span>
+          <input value={form.doc_number} onChange={e => set('doc_number', e.target.value)} className={`${cls} sm:max-w-xs font-mono`} data-rev-docnumber />
+          <span className="block text-[11px] text-gray-500 mt-0.5">
+            Change this only when the new revision is issued under a new number. The document keeps {doc.doc_number || 'its number'} until the draft is approved.
+          </span>
+        </label>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
           <label className="block">
             <span className="block text-xs font-medium text-gray-700 mb-1">New revision #</span>
@@ -197,6 +211,56 @@ function DraftEditor({ doc, draft, onClose, onSaved }) {
           <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg">Cancel</button>
         </div>
       </form>
+    </div>
+  );
+}
+
+/**
+ * The files filed against this draft (D-304) — the signed scan of the new
+ * revision, usually. They wait here, not in the document's Attachments, and
+ * become the document's when the draft is approved.
+ */
+function DraftFiles({ doc, draft, canEdit }) {
+  const { data: files, refresh } = useApiGet(`/documents/${doc.id}/attachments`, [doc.id, draft.id]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const mine = (files || []).filter(f => f.state === 'draft' && f.revision_id === draft.id);
+  const signed = mine.some(f => f.kind === 'signed_original');
+  const upload = async (list) => {
+    const picked = Array.from(list || []);
+    if (!picked.length) return;
+    setBusy(true); setError('');
+    try {
+      const fd = new FormData();
+      picked.forEach(f => fd.append('files', f));
+      fd.append('kind', 'signed_original');
+      fd.append('revision_id', draft.id);
+      await apiUpload(`/documents/${doc.id}/attachments`, fd);
+      refresh();
+    } catch (e) { setError(e.message || 'Upload failed.'); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="text-xs space-y-1" data-rev-draft-files>
+      <p className={signed ? 'text-amber-900' : 'text-amber-800'} data-rev-signed={signed ? 'yes' : 'no'}>
+        {signed ? 'Signed PDF attached to this draft:' : 'No signed PDF attached to this draft yet.'}
+      </p>
+      {mine.map(f => (
+        <p key={f.id} className="flex items-center gap-1.5 pl-1" data-rev-draft-file={f.filename}>
+          <FileText size={12} className="text-amber-700 shrink-0" />
+          {f.url ? <a href={f.url} target="_blank" rel="noreferrer" className="text-amber-900 hover:underline truncate">{f.filename}</a>
+            : <span className="text-amber-900 truncate">{f.filename}</span>}
+          <span className="text-amber-700 shrink-0">{f.uploaded_by} · {formatDate(f.created_at)}</span>
+        </p>
+      ))}
+      {canEdit && (
+        <label className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-amber-400 bg-white text-amber-900 font-semibold cursor-pointer">
+          <Paperclip size={12} /> {busy ? 'Uploading…' : 'Attach signed PDF to this draft'}
+          <input type="file" accept="application/pdf,.pdf" multiple className="hidden" disabled={busy} data-rev-draft-upload
+            onChange={e => { upload(e.target.files); e.target.value = ''; }} />
+        </label>
+      )}
+      {error && <p className="text-red-700">{error}</p>}
     </div>
   );
 }
