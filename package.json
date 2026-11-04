@@ -5,7 +5,7 @@
   "type": "module",
   "description": "FSQA Compliance & Preventive Maintenance Platform — SQF/NSF audit-ready digital ledger for single-site food manufacturing",
   "engines": {
-    "node": ">=22"
+    "node": "22.x"
   },
   "scripts": {
     "dev": "vite",
