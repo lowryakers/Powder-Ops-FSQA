@@ -5,7 +5,7 @@ import {
   SCOPES, TOKEN_GRANTS, createToken, listTokens, revokeToken, updateScopes, updateGrants, ScopeError, rateLimits,
 } from '../api-tokens.js';
 import { APPROVE_ROUTES, APPROVE_SEGMENTS, TOKEN_DENY } from '../middleware/no-token-approve.js';
-import { WRITE_AREAS } from '../bot-api.js';
+import { WRITE_AREAS, areaGrants } from '../bot-api.js';
 import { botApprovalReport } from '../bot-approval-report.js';
 
 // Managing the bots' API tokens (D-161). Admin-only throughout, and only from a
@@ -29,7 +29,7 @@ router.get('/', (_req, res) => {
     scopes: SCOPES,
     grants: Object.entries(TOKEN_GRANTS).map(([key, description]) => ({ key, description })),
     limits: rateLimits(),
-    write_areas: WRITE_AREAS.map(r => ({ area: r.area, label: r.label, bulk: !!r.bulk, grant: r.grant || null })),
+    write_areas: WRITE_AREAS.map(r => ({ area: r.area, label: r.label, bulk: !!r.bulk, grant: areaGrants(r).join(' | ') || null })),
     token_deny: TOKEN_DENY.map(r => ({ category: r.category, label: r.label })),
     approve_guard: { segments: APPROVE_SEGMENTS, routes: APPROVE_ROUTES.map(r => r.label) },
   });

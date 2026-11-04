@@ -30,8 +30,13 @@ const DOCS = {
   'd-review': { id: 'd-review', doc_type: 'sop', status: 'under_review' },
   'd-archived': { id: 'd-archived', doc_type: 'sop', status: 'archived' },
   'd-wi': { id: 'd-wi', doc_type: 'work_instruction', status: 'draft' },
+  'd-wi-active': { id: 'd-wi-active', doc_type: 'work_instruction', status: 'active' },
+  'd-jd': { id: 'd-jd', doc_type: 'job_description', status: 'draft' },
+  'd-jd-active': { id: 'd-jd-active', doc_type: 'job_description', status: 'active' },
+  'd-policy': { id: 'd-policy', doc_type: 'policy', status: 'draft' },
 };
-const REVS = { 'r-draft': { document_id: 'd-active', status: 'draft' }, 'r-approved': { document_id: 'd-active', status: 'approved' } };
+const REVS = { 'r-draft': { document_id: 'd-active', status: 'draft' }, 'r-approved': { document_id: 'd-active', status: 'approved' },
+  'r-wi': { document_id: 'd-wi-active', status: 'draft' }, 'r-jd': { document_id: 'd-jd-active', status: 'draft' } };
 const db = {
   prepare(sql) {
     return {
@@ -51,7 +56,8 @@ function allowedBy(areas, r) {
   if (approveRouteFor(r) || tokenDenyFor(r)) return false;
   const a = areas.find((x) => x.method === r.method && x.re.test(r.path));
   if (!a) return false;
-  if (a.grant && !(r.auth?.grants || []).includes(a.grant)) return false;
+  const need = a.grants || (a.grant ? [a.grant] : []);
+  if (need.length && !need.some((g) => (r.auth?.grants || []).includes(g))) return false;
   if (!a.when) return true;
   try { return !!a.when(r, r.path.match(a.re), db); } catch { return false; }
 }
@@ -105,6 +111,47 @@ const NEVER = [
   ['a retire route, if one is added', req('POST', '/documents/d-active/retire', {})],
 ];
 
+// D-306: the same five writes for a Work Instruction (wi-edit) and a Job
+// Description (jd-edit). Each must open with its own grant and with no other.
+const wi = (m, p, b = {}) => req(m, p, b, ['wi-edit']);
+const jd = (m, p, b = {}) => req(m, p, b, ['jd-edit']);
+const OPEN_WI = [
+  ['create a draft WI', wi('POST', '/documents', { title: 'X', category: 'Q', doc_type: 'work_instruction' })],
+  ['edit a draft WI', wi('PUT', '/documents/d-wi', { title: 'Y', doc_number: 'WI 040' })],
+  ['start a revision on an active WI', wi('POST', '/documents/d-wi-active/revisions', { revision: 'V3' })],
+  ['edit the WI draft revision (doc_number staged)', wi('PUT', '/documents/d-wi-active/revisions/r-wi', { revision: 'V3', doc_number: 'WI 041' })],
+  ['attach to a WI', wi('POST', '/documents/d-wi-active/attachments')],
+];
+const OPEN_JD = [
+  ['create a draft JD', jd('POST', '/documents', { title: 'X', category: 'Q', doc_type: 'job_description' })],
+  ['edit a draft JD', jd('PUT', '/documents/d-jd', { title: 'Y' })],
+  ['start a revision on an active JD', jd('POST', '/documents/d-jd-active/revisions', { revision: 'V2' })],
+  ['edit the JD draft revision', jd('PUT', '/documents/d-jd-active/revisions/r-jd', { doc_number: 'JD 12' })],
+  ['attach to a JD', jd('POST', '/documents/d-jd-active/attachments')],
+];
+const NEVER_TYPED = [
+  ['wi-edit: create an SOP (no doc_type)', wi('POST', '/documents', { title: 'X', category: 'Q' })],
+  ['wi-edit: start a revision on an SOP', wi('POST', '/documents/d-active/revisions', { revision: 'V3' })],
+  ['wi-edit: attach to an SOP', wi('POST', '/documents/d-active/attachments')],
+  ['wi-edit: a JD revision', wi('POST', '/documents/d-jd-active/revisions', { revision: 'V2' })],
+  ['jd-edit: a WI revision', jd('POST', '/documents/d-wi-active/revisions', { revision: 'V3' })],
+  ['sops-edit: a WI revision', req('POST', '/documents/d-wi-active/revisions', { revision: 'V3' })],
+  ['sops-edit: a JD revision', req('POST', '/documents/d-jd-active/revisions', { revision: 'V2' })],
+  ['all three: a policy', req('PUT', '/documents/d-policy', { title: 'Y' }, ['sops-edit', 'wi-edit', 'jd-edit'])],
+  ['all three: create a policy', req('POST', '/documents', { title: 'X', category: 'Q', doc_type: 'policy' }, ['sops-edit', 'wi-edit', 'jd-edit'])],
+  ['wi-edit: approve a WI revision', wi('POST', '/documents/d-wi-active/revisions/r-wi/approve', {})],
+  ['wi-edit: sign a WI', wi('POST', '/documents/d-wi-active/sign', {})],
+  ['wi-edit: retire a WI (DELETE)', wi('DELETE', '/documents/d-wi-active', { reason: 'x' })],
+  ['wi-edit: reinstate a WI', wi('POST', '/documents/d-wi-active/reinstate', {})],
+  ['wi-edit: DELETE a WI revision', wi('DELETE', '/documents/d-wi-active/revisions/r-wi', { reason: 'x' })],
+  ['wi-edit: PUT an active WI', wi('PUT', '/documents/d-wi-active', { title: 'Y' })],
+  ['wi-edit: PUT a WI draft to active', wi('PUT', '/documents/d-wi', { status: 'active' })],
+  ['wi-edit: PUT a WI draft into an SOP', wi('PUT', '/documents/d-wi', { doc_type: 'sop' })],
+  ['jd-edit: approve a JD revision', jd('POST', '/documents/d-jd-active/revisions/r-jd/approve', {})],
+  ['jd-edit: retire a JD (DELETE)', jd('DELETE', '/documents/d-jd-active', { reason: 'x' })],
+  ['jd-edit: create filed as active', jd('POST', '/documents', { title: 'X', category: 'Q', doc_type: 'job_description', status: 'active' })],
+];
+
 const SIBLINGS = ['/documents/revisions/batch', '/documents/revisions/items/x/apply', '/documents/attachments/plan', '/documents/attachments/bulk',
   '/documents/bulk', '/documents/bulk-update', '/documents/bulk-delete', '/documents/pdf', '/documents/extract', '/documents/propose-revisions',
   '/documents/revisions/revisions', '/documents/attachments/attachments', '/documents/bulk/revisions/r1'];
@@ -114,12 +161,16 @@ function assertAll(areas) {
   const failed = [];
   const sops = areas.filter((a) => a.area === 'sops');
   if (sops.length !== 5) failed.push(`five sops entries (found ${sops.length})`);
-  if (!sops.every((a) => a.grant === 'sops-edit')) failed.push('every sops entry needs the sops-edit grant');
+  const g3 = (a) => JSON.stringify([...(a.grants || (a.grant ? [a.grant] : []))].sort()) === '["jd-edit","sops-edit","wi-edit"]';
+  if (!sops.every(g3)) failed.push('every sops entry opens to exactly sops-edit, wi-edit or jd-edit');
   if (!sops.every((a) => a.re.source.startsWith('^') && a.re.source.endsWith('$'))) failed.push('every sops regex is anchored');
   for (const [n, r] of OPEN) if (!allowedBy(areas, r)) failed.push(`open with the grant: ${n}`);
   for (const [n, r] of OPEN) if (allowedBy(areas, { ...r, auth: { kind: 'token', grants: [] } })) failed.push(`refused without the grant: ${n}`);
   for (const [n, r] of OPEN) if (allowedBy(areas, { ...r, auth: { kind: 'token', grants: ['course-drafts', 'nfp-panel'] } })) failed.push(`refused with another grant: ${n}`);
   for (const [n, r] of NEVER) if (allowedBy(areas, r)) failed.push(`never, even with the grant: ${n}`);
+  for (const [n, r] of [...OPEN_WI, ...OPEN_JD]) if (!allowedBy(areas, r)) failed.push(`open with its type's grant: ${n}`);
+  for (const [n, r] of [...OPEN_WI, ...OPEN_JD]) if (allowedBy(areas, { ...r, auth: { kind: 'token', grants: ['sops-edit'] } })) failed.push(`refused to an SOP-only token: ${n}`);
+  for (const [n, r] of NEVER_TYPED) if (allowedBy(areas, r)) failed.push(`never: ${n}`);
   for (const p of SIBLINGS) for (const m of ['POST', 'PUT']) {
     if (sops.some((a) => a.method === m && a.re.test(p))) failed.push(`a sops regex matches the sibling ${m} ${p}`);
   }
@@ -131,14 +182,26 @@ t('SCOPES is still exactly read + write', JSON.stringify(SCOPES) === '["read","w
 t('TOKEN_GRANTS has sops-edit', !!TOKEN_GRANTS['sops-edit']);
 t('…and it says it never approves, signs, makes effective, deletes, retires or merges',
   /Never approves, signs, makes effective, deletes, retires or merges/.test(TOKEN_GRANTS['sops-edit'] || ''));
-t('no other area uses the sops-edit grant', WRITE_AREAS.every((a) => a.grant !== 'sops-edit' || a.area === 'sops'));
+for (const g of ['wi-edit', 'jd-edit']) {
+  t(`TOKEN_GRANTS has ${g}`, !!TOKEN_GRANTS[g]);
+  t(`…and ${g} says it never approves, signs, makes effective, deletes, retires or merges`,
+    /Never approves, signs, makes effective, deletes, retires or merges/.test(TOKEN_GRANTS[g] || ''));
+}
+const usesG = (a, g) => (a.grants || (a.grant ? [a.grant] : [])).includes(g);
+for (const g of ['sops-edit', 'wi-edit', 'jd-edit']) t(`no other area uses the ${g} grant`, WRITE_AREAS.every((a) => !usesG(a, g) || a.area === 'sops'));
 t('no sops route is in the bulk rate bucket', WRITE_AREAS.filter((a) => a.area === 'sops').every((a) => !a.bulk));
 
 console.log('── the five routes, and everything that stays shut ──');
 const real = assertAll(WRITE_AREAS);
-t(`all ${OPEN.length * 3 + NEVER.length + SIBLINGS.length * 2 + 3} assertions hold on the code as it is`, real.length === 0, real.join('; '));
+t(`all ${OPEN.length * 3 + NEVER.length + (OPEN_WI.length + OPEN_JD.length) * 2 + NEVER_TYPED.length + SIBLINGS.length * 2 + 3} assertions hold on the code as it is`, real.length === 0, real.join('; '));
 for (const [n, r] of OPEN) t(`open with the grant: ${n}`, allowedBy(WRITE_AREAS, r));
 for (const [n, r] of NEVER) t(`never, even with the grant: ${n}`, !allowedBy(WRITE_AREAS, r));
+for (const [n, r] of [...OPEN_WI, ...OPEN_JD]) t(`open with its type's grant: ${n}`, allowedBy(WRITE_AREAS, r));
+for (const [n, r] of NEVER_TYPED) t(`never: ${n}`, !allowedBy(WRITE_AREAS, r));
+t('an SOP-only token on a WI is told it needs wi-edit', (() => {
+  const r = req('POST', '/documents/d-wi-active/revisions', { revision: 'V3' }); allowedBy(WRITE_AREAS, r);
+  return /sops-edit grant covers SOPs only; a Work Instruction needs the wi-edit grant/.test(r.tokenWriteRefusal || '');
+})(), 'reason was not as expected');
 t('a refusal from a condition says why (req.tokenWriteRefusal)', (() => {
   const r = req('PUT', '/documents/d-active', { title: 'Y' }); allowedBy(WRITE_AREAS, r); return /draft/.test(r.tokenWriteRefusal || '');
 })());
@@ -158,10 +221,15 @@ const OLD = WRITE_AREAS.filter((a) => a.area !== 'sops');
 const oldFailed = assertAll(OLD);
 t('the OLD WRITE_AREAS (no sops entries) FAILS', oldFailed.length > 0, 'it passed — the check proves nothing');
 console.log(`    (old code: ${oldFailed.length} assertions fail, e.g. "${oldFailed[0] || ''}")`);
-const OPENED = [...OLD, ...WRITE_AREAS.filter((a) => a.area === 'sops').map(({ grant: _g, when: _w, ...rest }) => rest)];
+const OPENED = [...OLD, ...WRITE_AREAS.filter((a) => a.area === 'sops').map(({ grant: _g, grants: _gs, when: _w, ...rest }) => rest)];
 const openedFailed = assertAll(OPENED);
 t('the five routes opened with no grant and no conditions FAILS', openedFailed.length > 0, 'it passed — the check proves nothing');
 console.log(`    (opened copy: ${openedFailed.length} assertions fail, e.g. "${openedFailed[0] || ''}")`);
+
+const SOP_ONLY = [...OLD, ...WRITE_AREAS.filter((a) => a.area === 'sops').map(({ grants: _gs, ...rest }) => ({ ...rest, grant: 'sops-edit' }))];
+const sopOnlyFailed = assertAll(SOP_ONLY);
+t('the D-303 shape (one sops-edit grant on all five) FAILS', sopOnlyFailed.length > 0, 'it passed — the check proves nothing');
+console.log(`    (sops-only copy: ${sopOnlyFailed.length} assertions fail, e.g. "${sopOnlyFailed[0] || ''}")`);
 
 console.log(`\n${pass} PASS / ${fail} FAIL`);
 process.exit(fail ? 1 : 0);

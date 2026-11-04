@@ -11,7 +11,7 @@ import { tableAt, drawTable } from '../pdf-table.js';
 import mammoth from 'mammoth';
 import { createReadStream, openSync, readSync, closeSync } from 'fs';
 import { createHash } from 'crypto';
-import { tokenSopAttachmentRefusal } from '../bot-api.js';
+import { tokenSopAttachmentRefusal, DOC_EDIT_GRANTS } from '../bot-api.js';
 import { getDb, logAudit } from '../db.js';
 import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { storageEnabled, putStream, presignGet, deleteObject } from '../storage.js';
@@ -28,7 +28,8 @@ import {
 const clean = (v, max = 300) => { const t = String(v ?? '').trim(); return t ? t.slice(0, max) : null; };
 
 // A BOT'S SOP WRITE IS NAMED AS ONE (D-303). One `bot_sop_write` row per
-// successful token write on the five sops-edit routes, carrying the token and
+// successful token write on the five staging routes (sops-edit, wi-edit,
+// jd-edit — D-306), carrying the token, the document type, the grant it used and
 // the bot's name; never the token, a file's bytes or a text body. A person's
 // write produces none. Written straight after the change it describes.
 function botSopWrite(req, kind, doc, extra = {}) {
@@ -39,6 +40,7 @@ function botSopWrite(req, kind, doc, extra = {}) {
       kind, token_id: req.auth.tokenId, token_prefix: req.auth.prefix, token_label: req.auth.label || null,
       bot_name: req.user?.name || null, method: req.method, path: (req.baseUrl || '') + req.path,
       document_id: doc?.id || null, doc_number: doc?.doc_number || null, revision: extra.revision ?? doc?.revision ?? null,
+      doc_type: doc?.doc_type || null, grant: DOC_EDIT_GRANTS[doc?.doc_type] || null,
       ...extra,
     }, null, null, docLabel);
 }
@@ -1540,7 +1542,7 @@ router.post('/:id/attachments', uploadDocFiles, async (req, res) => {
   try {
     if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured on this server.' });
     const db = getDb();
-    const doc = db.prepare('SELECT id, doc_number, title, revision FROM sop_documents WHERE id = ?').get(req.params.id);
+    const doc = db.prepare('SELECT id, doc_type, doc_number, title, revision FROM sop_documents WHERE id = ?').get(req.params.id);
     if (!doc) return res.status(404).json({ error: 'Document not found' });
     if (!files.length) return res.status(400).json({ error: 'No files uploaded' });
     const tooBig = rejectOversize(files);

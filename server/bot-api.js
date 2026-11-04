@@ -106,30 +106,50 @@ const sopRefuse = (req, why) => { req.tokenWriteRefusal = why; return false; };
 const sopDoc = (db, id) => db.prepare('SELECT id, doc_type, status FROM sop_documents WHERE id = ?').get(id);
 const extraKeys = (body, allowed) => Object.keys(body || {}).filter((k) => !allowed.includes(k));
 const approvalFields = (body) => ['approved_by', 'approved_at'].filter((k) => body?.[k] != null && body[k] !== '');
+
+// ONE GRANT PER DOCUMENT TYPE (D-306). The five staging routes are the same
+// for SOPs, Work Instructions and Job Descriptions; which grant a write needs is
+// decided by the DOCUMENT'S type, so an SOP-only token is refused on a WI. A
+// type with no grant here (policy, form) is never open to a token.
+export const DOC_EDIT_GRANTS = Object.freeze({ sop: 'sops-edit', work_instruction: 'wi-edit', job_description: 'jd-edit' });
+export const DOC_TYPE_LABELS = Object.freeze({ sop: 'SOP', work_instruction: 'Work Instruction', job_description: 'Job Description' });
+const DOC_GRANT_KEYS = Object.freeze(Object.values(DOC_EDIT_GRANTS));
+const typeLabel = (t) => DOC_TYPE_LABELS[t] || 'document';
+function docGrantOk(req, docType) {
+  const need = DOC_EDIT_GRANTS[docType];
+  if (!need) return sopRefuse(req, `A bot token stages SOPs, Work Instructions and Job Descriptions only (doc_type "${docType}" refused).`);
+  const held = (req.auth?.grants || []).filter((g) => DOC_GRANT_KEYS.includes(g));
+  if (held.includes(need)) return true;
+  const covers = held.map((g) => `${typeLabel(Object.keys(DOC_EDIT_GRANTS).find((k) => DOC_EDIT_GRANTS[k] === g))}s`).join(' and ');
+  return sopRefuse(req, held.length
+    ? `The ${held.join(' and ')} grant${held.length > 1 ? 's cover' : ' covers'} ${covers} only; a ${typeLabel(docType)} needs the ${need} grant.`
+    : `A ${typeLabel(docType)} needs the ${need} grant.`);
+}
 function sopCreateOk(req) {
   const b = req.body || {};
   if (b.status != null && b.status !== 'draft') return sopRefuse(req, `A bot files a document as a draft only (status "${b.status}" refused).`);
   if (approvalFields(b).length) return sopRefuse(req, `A bot never names an approver (${approvalFields(b).join(', ')} refused).`);
-  if (b.doc_type != null && b.doc_type !== 'sop') return sopRefuse(req, `The sops-edit grant covers SOPs only (doc_type "${b.doc_type}" refused).`);
-  return true;
+  // No doc_type files an SOP (the handler's default), so it needs sops-edit.
+  return docGrantOk(req, b.doc_type == null || b.doc_type === '' ? 'sop' : String(b.doc_type));
 }
 function sopDraftEditOk(req, m, db) {
   const d = sopDoc(db, m[1]);
   if (!d) return true;
-  if (d.doc_type !== 'sop') return sopRefuse(req, 'The sops-edit grant covers SOPs only.');
-  if (d.status !== 'draft') return sopRefuse(req, `Only a draft SOP is edited by a bot; this one is ${d.status}. Start a new revision instead.`);
+  if (!docGrantOk(req, d.doc_type)) return false;
+  if (d.status !== 'draft') return sopRefuse(req, `Only a draft ${typeLabel(d.doc_type)} is edited by a bot; this one is ${d.status}. Start a new revision instead.`);
   const b = req.body || {};
   if (b.status != null && b.status !== 'draft') return sopRefuse(req, `A bot cannot move a document's status (status "${b.status}" refused).`);
   if (approvalFields(b).length) return sopRefuse(req, `A bot never names an approver (${approvalFields(b).join(', ')} refused).`);
-  const extra = extraKeys(b, [...SOP_DRAFT_EDIT_KEYS, 'status']);
+  if (b.doc_type != null && b.doc_type !== d.doc_type) return sopRefuse(req, 'A bot cannot change a document\'s type.');
+  const extra = extraKeys(b, [...SOP_DRAFT_EDIT_KEYS, 'status', 'doc_type']);
   if (extra.length) return sopRefuse(req, `Fields not open to a bot: ${extra.join(', ')}.`);
   return true;
 }
 function sopRevisionStartOk(req, m, db) {
   const d = sopDoc(db, m[1]);
   if (!d) return true;
-  if (d.doc_type !== 'sop') return sopRefuse(req, 'The sops-edit grant covers SOPs only.');
-  // A draft SOP passes here; the handler refuses it (409, edit it directly), which says more.
+  if (!docGrantOk(req, d.doc_type)) return false;
+  // A draft document passes here; the handler refuses it (409, edit it directly), which says more.
   const extra = extraKeys(req.body, SOP_REVISION_START_KEYS);
   if (extra.length) return sopRefuse(req, `Fields not open to a bot: ${extra.join(', ')}.`);
   return true;
@@ -137,7 +157,7 @@ function sopRevisionStartOk(req, m, db) {
 function sopRevisionEditOk(req, m, db) {
   const d = sopDoc(db, m[1]);
   if (!d) return true;
-  if (d.doc_type !== 'sop') return sopRefuse(req, 'The sops-edit grant covers SOPs only.');
+  if (!docGrantOk(req, d.doc_type)) return false;
   const r = db.prepare('SELECT status FROM document_revisions WHERE id = ? AND document_id = ?').get(m[2], m[1]);
   if (!r) return true; // the handler 404s: no such revision on this document
   if (r.status !== 'draft') return sopRefuse(req, `Only a draft revision is edited by a bot; this one is ${r.status}.`);
@@ -148,8 +168,7 @@ function sopRevisionEditOk(req, m, db) {
 function sopAttachOk(req, m, db) {
   const d = sopDoc(db, m[1]);
   if (!d) return true;
-  if (d.doc_type !== 'sop') return sopRefuse(req, 'The sops-edit grant covers SOPs only.');
-  return true; // the file rules are the handler's (multipart): tokenSopAttachmentRefusal
+  return docGrantOk(req, d.doc_type); // the file rules are the handler's (multipart): tokenSopAttachmentRefusal
 }
 export const WRITE_AREAS = Object.freeze([
   // products
@@ -227,14 +246,17 @@ export const WRITE_AREAS = Object.freeze([
     when: (req, m, db) => openDraft(db, m[1]) },
   { area: 'course-drafts', grant: 'course-drafts', method: 'POST', re: /^\/training\/drafts\/([^/]+)\/materials$/, label: 'POST /api/training/drafts/:id/materials — files, a video up to 2 GB (while draft; course-drafts grant)',
     when: (req, m, db) => openDraft(db, m[1]) },
-  // The Quality bot's SOP staging (D-303) — only a token holding the
-  // `sops-edit` GRANT. Approving, signing, making effective, deleting,
-  // withdrawing and reinstating stay off this list and on the deny lists.
-  { area: 'sops', grant: 'sops-edit', method: 'POST', re: /^\/documents\/?$/, label: 'POST /api/documents — a draft SOP (sops-edit grant)', when: (req) => sopCreateOk(req) },
-  { area: 'sops', grant: 'sops-edit', method: 'PUT', re: new RegExp(`^/documents/${SOP_SIBLINGS}([^/]+)$`), label: 'PUT /api/documents/:id — a draft SOP\'s fields and text (sops-edit grant)', when: sopDraftEditOk },
-  { area: 'sops', grant: 'sops-edit', method: 'POST', re: new RegExp(`^/documents/${SOP_SIBLINGS}([^/]+)/revisions$`), label: 'POST /api/documents/:id/revisions — start a new revision of an approved SOP (sops-edit grant)', when: sopRevisionStartOk },
-  { area: 'sops', grant: 'sops-edit', method: 'PUT', re: new RegExp(`^/documents/${SOP_SIBLINGS}([^/]+)/revisions/([^/]+)$`), label: 'PUT /api/documents/:id/revisions/:rid — the draft revision (sops-edit grant)', when: sopRevisionEditOk },
-  { area: 'sops', grant: 'sops-edit', method: 'POST', re: new RegExp(`^/documents/${SOP_SIBLINGS}([^/]+)/attachments$`), label: 'POST /api/documents/:id/attachments — a PDF on an SOP (sops-edit grant)', when: sopAttachOk },
+  // The Quality bot's document staging (D-303, D-306) — only a token holding
+  // the grant for the DOCUMENT'S type: sops-edit (SOPs), wi-edit (Work
+  // Instructions), jd-edit (Job Descriptions). `grants` is any-of here; the
+  // `when` then demands the one the document's type needs. Approving, signing,
+  // making effective, deleting, withdrawing and reinstating stay off this list
+  // and on the deny lists.
+  { area: 'sops', grants: DOC_GRANT_KEYS, method: 'POST', re: /^\/documents\/?$/, label: 'POST /api/documents — a draft SOP, WI or JD (sops-edit / wi-edit / jd-edit grant)', when: (req) => sopCreateOk(req) },
+  { area: 'sops', grants: DOC_GRANT_KEYS, method: 'PUT', re: new RegExp(`^/documents/${SOP_SIBLINGS}([^/]+)$`), label: 'PUT /api/documents/:id — a draft\'s fields and text (grant for its type)', when: sopDraftEditOk },
+  { area: 'sops', grants: DOC_GRANT_KEYS, method: 'POST', re: new RegExp(`^/documents/${SOP_SIBLINGS}([^/]+)/revisions$`), label: 'POST /api/documents/:id/revisions — start a new revision of an approved document (grant for its type)', when: sopRevisionStartOk },
+  { area: 'sops', grants: DOC_GRANT_KEYS, method: 'PUT', re: new RegExp(`^/documents/${SOP_SIBLINGS}([^/]+)/revisions/([^/]+)$`), label: 'PUT /api/documents/:id/revisions/:rid — the draft revision (grant for its type)', when: sopRevisionEditOk },
+  { area: 'sops', grants: DOC_GRANT_KEYS, method: 'POST', re: new RegExp(`^/documents/${SOP_SIBLINGS}([^/]+)/attachments$`), label: 'POST /api/documents/:id/attachments — a PDF on a document (grant for its type)', when: sopAttachOk },
   // messages
   { area: 'messages', method: 'POST', re: /^\/comms\/channels\/[^/]+\/messages$/, label: 'POST /api/comms/channels/:id/messages' },
   { area: 'messages', method: 'POST', re: /^\/comms\/channels\/[^/]+\/attachments$/, label: 'POST /api/comms/channels/:id/attachments' },
@@ -243,6 +265,13 @@ export const WRITE_AREAS = Object.freeze([
   { area: 'messages', method: 'POST', re: /^\/comms\/messages\/[^/]+\/reactions$/, label: 'POST /api/comms/messages/:id/reactions' },
   { area: 'messages', method: 'DELETE', re: /^\/comms\/messages\/[^/]+\/reactions\/[^/]+$/, label: 'DELETE /api/comms/messages/:id/reactions/:emoji' },
 ]);
+
+/** The grants an entry needs, any-of: [] for an ungranted entry. */
+export const areaGrants = (r) => (r?.grants ? [...r.grants] : (r?.grant ? [r.grant] : []));
+export function holdsAreaGrant(r, held) {
+  const need = areaGrants(r);
+  return !need.length || need.some((g) => (held || []).includes(g));
+}
 
 /** The WRITE_AREAS entry this request's method + path names, before any `when`. */
 export function writeAreaFor(req) {
@@ -256,8 +285,9 @@ export function writeAreaFor(req) {
 export function writeAreaAllows(req, db) {
   const r = writeAreaFor(req);
   if (!r) return false;
-  // A GRANTED area opens only for a token holding that grant (D-171).
-  if (r.grant && !(req.auth?.grants || []).includes(r.grant)) return false;
+  // A GRANTED area opens only for a token holding that grant (D-171); `grants`
+  // is any-of (D-306), and the entry's `when` decides which one it needed.
+  if (!holdsAreaGrant(r, req.auth?.grants)) return false;
   if (!r.when) return true;
   try { return !!r.when(req, req.path.match(r.re), db); } catch { return false; }
 }
@@ -377,7 +407,7 @@ const ALLOWED_NAMES = 'pdf, png, jpg, csv, xlsx or docx';
  */
 export function tokenSopAttachmentRefusal({ filename, mimetype, head }) {
   const name = String(filename || '');
-  if (!/\.pdf$/i.test(name)) return `${name || 'This file'}: a bot token may attach only a PDF to an SOP.`;
+  if (!/\.pdf$/i.test(name)) return `${name || 'This file'}: a bot token may attach only a PDF to a document.`;
   const mime = String(mimetype || '').toLowerCase().split(';')[0].trim();
   if (mime !== 'application/pdf') return `${name}: declared as ${mime || 'no type'}, not application/pdf.`;
   if (!MAGIC.pdf(Buffer.isBuffer(head) ? head : Buffer.alloc(0))) return `${name}: the contents are not a PDF.`;

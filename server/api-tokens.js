@@ -47,10 +47,15 @@ const LEGACY_SCOPES = Object.freeze({ 'write-drafts': 'write' });
 //   sops-edit — stage SOP work: a draft document, a draft's fields and text, a
 //   new revision of an approved SOP, a PDF attached. The Quality bot's (D-303).
 //   Owners approve with their own password.
+//   wi-edit / jd-edit — exactly what sops-edit allows, for Work Instructions
+//   and Job Descriptions (D-306). Which grant a write needs is the document's
+//   type; an SOP-only token is refused on a WI.
 export const TOKEN_GRANTS = Object.freeze({
   'nfp-panel': 'Nutrition panels — upload the panel PDF and write panel values on a DRAFT panel, each write naming its source. Never approves.',
   'course-drafts': 'Training course drafts — stage and edit a DRAFT course (content, quiz in English and Spanish, files incl. a video up to 2 GB). Never touches a live course; two people publish it.',
   'sops-edit': 'SOPs: stage draft documents, edit draft text and fields, start and edit a new revision, attach a PDF. Never approves, signs, makes effective, deletes, retires or merges.',
+  'wi-edit': 'Work Instructions: stage draft documents, edit draft text and fields, start and edit a new revision, attach a PDF. Never approves, signs, makes effective, deletes, retires or merges.',
+  'jd-edit': 'Job Descriptions: stage draft documents, edit draft text and fields, start and edit a new revision, attach a PDF. Never approves, signs, makes effective, deletes, retires or merges.',
 });
 
 export function normalizeGrants(input) {

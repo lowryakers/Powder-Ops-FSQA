@@ -10208,3 +10208,23 @@ boxes beneath; a rule line for a screen no box opens (`rule`, `why`, chip "By ru
 "Admins only"). The set of boxes is unchanged (same 65 ids), so nobody's access moves. `check:modulelist` now also fails
 when a Settings group, its order, or any sidebar entry in it disagrees with the sidebar (control: the previous list fails
 7). Screen-only change, merged when green under D-274.
+
+## D-306 — One bot grant per document type: `wi-edit` and `jd-edit` beside `sops-edit` (4 Nov 2026)
+
+**Asked.** The Quality bot's call on WI005 (`POST /api/documents/:id/revisions`) was refused: *"The sops-edit grant covers SOPs only."* Lowry asked for Work Instructions and Job Descriptions to be grantable per type, with exactly what `sops-edit` allows for SOPs, and nothing more.
+
+**Decided.**
+- Two new grants, `wi-edit` and `jd-edit`, in `TOKEN_GRANTS`. They show as tick boxes in Settings → Bot API tokens with no screen change, because that screen draws the grant list from the server.
+- The five staging routes from D-303 stay the same routes. An entry now opens to any of the three grants (`grants`, any-of), and its `when` requires **the grant for the document's type** (`DOC_EDIT_GRANTS`: sop → `sops-edit`, work_instruction → `wi-edit`, job_description → `jd-edit`).
+  - `POST /api/documents` with no `doc_type` files an SOP, so it needs `sops-edit`.
+  - A policy or a form is never open to a token.
+  - A refusal names the missing grant.
+- The D-303 rules apply to every type: drafts only; no approver named; listed fields only (`doc_number` staged on a revision); a PDF only; a draft cannot change its type.
+- Approve, sign, make effective, retire (DELETE), reinstate, delete and the bulk routes stay on the deny lists for every token and every bot account. Nothing on those lists changed (`check:sopbot` asserts their counts).
+- The audit row stays `bot_sop_write`, so one query finds every bot document write. It now also carries `doc_type` and `grant`. Renaming the action would split the history.
+
+**Not done.** No grant was ticked on any real token. A deploy never sets a grant (D-171). Lowry ticks `wi-edit` and `jd-edit` on the Quality bot's token in Settings. Its account also needs edit on Work Instructions and Job Descriptions.
+
+**Verified.** `check:sopbot` passed 102/0. Its control, the D-303 shape (one `sops-edit` grant on all five routes), fails 11. `verify:docbot` passed 40/0 (live, S3 stand-in). Against `main` it fails from the grant catalog onward, and reproduces WI005's exact refusal. `verify:sopbot` and `verify:draftrevisions` still pass.
+
+**Validation (D-287).** This changes what a bot account may write, which is access control. The OQ tests for token access (`check:apitokens`, `check:sopbot`, `verify:sopbot`, `verify:docbot`) were re-run before merge.
