@@ -6429,6 +6429,17 @@ and writes `V<n>`; the person types the label. New documents default to `V1`. Ex
   `reason`. Every successful bot write on the five adds one `bot_sop_write` row; `via_token` carries the token label.
 - The grant is ticked in Settings by an admin; the account needs SOPs edit. Nothing here sets either.
 
+## A revision waiting for approval is seen; its files wait with it (D-304)
+`draft-revisions` pile in `server/doc-review.js` (`DRAFT_REVISION_WHERE`, `draftRevisionCount`, `draftRevisionRows`),
+`draft_revision` on the document list + the "Draft V3 waiting" pill, `document_attachments.revision_id` /
+`revision_discarded_at` / `discarded_revision`, `attachmentStateSql` / `currentAttachmentSql` and `docNumberProblem` in
+`server/document-revisions.js`, `document_revisions.doc_number`, `DraftFiles` in `DocumentRevisions.jsx`.
+- **A file's state is derived** (`current` · `draft` · `discarded`); anything asking "does this document have a signed
+  copy" reads current files only. Discard stamps and unties the files BEFORE deleting the draft row.
+- **A staged `doc_number` moves only on password approval**; a number held elsewhere is `409 DOC_NUMBER_USED`.
+- The bot sends `revision_id` on the attach and may stage `doc_number`; it never approves.
+- The SOP-202 scan is tied to its draft once by exact id (`tieKnownDraftAttachments`). `verify:draftrevisions` (47).
+
 ## Course drafts: the Quality bot stages, two people publish (D-278)
 `course_drafts` + `course_draft_materials`, `server/course-drafts.js` (`createDraft`, `updateDraft`, `draftDiff`, `draftView`,
 `signDraft`, `isBotAccount`, `purgeIfUnreferenced`), `/api/training/drafts…`, token grant `course-drafts`, `CourseDrafts.jsx`

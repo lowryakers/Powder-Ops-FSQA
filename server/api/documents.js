@@ -22,7 +22,7 @@ import { isBotAccount } from '../trainees.js';
 import { isApprovedStatus, sameRevision } from '../../shared/document-revision.js';
 import {
   RevisionError, listRevisions, draftOf, startDraft, saveDraft, discardDraft, recordApprovedRevision, approvalState,
-  linkedCourses, suggestedRevision, revisionNumberProblem,
+  linkedCourses, suggestedRevision, revisionNumberProblem, attachmentStateSql, currentAttachmentSql,
 } from '../document-revisions.js';
 
 const clean = (v, max = 300) => { const t = String(v ?? '').trim(); return t ? t.slice(0, max) : null; };
@@ -772,7 +772,10 @@ const SORTABLE = { doc_number: 'doc_number', title: 'title', category: 'category
 router.get('/', (req, res) => {
   const db = getDb();
   const { doc_type, category, status, sort, order, q } = req.query;
-  let sql = 'SELECT * FROM sop_documents WHERE 1=1';
+  // draft_revision: the label of a revision staged and not yet approved (D-304),
+  // so the list can say "Draft V3 waiting" beside a document still in force.
+  let sql = `SELECT d.*, (SELECT r.revision FROM document_revisions r WHERE r.document_id = d.id AND r.status = 'draft'
+    ORDER BY r.created_at DESC LIMIT 1) AS draft_revision FROM sop_documents d WHERE 1=1`;
   const params = [];
   if (doc_type) { sql += ' AND doc_type = ?'; params.push(doc_type); }
   if (category) { sql += ' AND category = ?'; params.push(category); }
@@ -1417,7 +1420,7 @@ export function planSignedAttachments(db, filenames = []) {
   const missing = db.prepare(`SELECT COUNT(*) AS c FROM sop_documents d
     WHERE d.status != 'archived'
       AND NOT EXISTS (SELECT 1 FROM document_attachments a
-        WHERE a.document_id = d.id AND a.kind = 'signed_original')`).get().c;
+        WHERE a.document_id = d.id AND a.kind = 'signed_original' AND ${currentAttachmentSql('a')})`).get().c;
 
   return {
     items,
@@ -1501,7 +1504,13 @@ router.post('/attachments/bulk', uploadSignedFiles, async (req, res) => {
 
 router.get('/:id/attachments', async (req, res) => {
   const db = getDb();
-  const rows = db.prepare('SELECT * FROM document_attachments WHERE document_id = ? ORDER BY created_at DESC').all(req.params.id);
+  // Each file says what it belongs to (D-304): `current` (on the document in
+  // force), `draft` (filed against a revision not yet approved — it becomes
+  // current when that revision is approved) or `discarded` (its draft was
+  // thrown away; kept, never shown as the document's).
+  const rows = db.prepare(`SELECT a.*, ${attachmentStateSql('a')} AS state,
+      (SELECT r.revision FROM document_revisions r WHERE r.id = a.revision_id) AS draft_label
+    FROM document_attachments a WHERE a.document_id = ? ORDER BY a.created_at DESC`).all(req.params.id);
   // ONE UNREADABLE FILE MUST NOT HIDE THE REST. Every row was presigned in a
   // single Promise.all, so a storage hiccup on one object rejected the whole
   // request and the attachments list came back empty — the file was uploaded,
@@ -1519,6 +1528,8 @@ router.get('/:id/attachments', async (req, res) => {
       id: a.id, kind: a.kind, title: a.title, filename: a.filename,
       content_type: a.content_type, size: a.size, revision: a.revision,
       uploaded_by: a.uploaded_by, created_at: a.created_at,
+      revision_id: a.revision_id || null, state: a.state, draft_label: a.state === 'draft' ? a.draft_label : null,
+      discarded_revision: a.discarded_revision || null,
       url, link_error,
     };
   })));
@@ -1552,6 +1563,18 @@ router.post('/:id/attachments', uploadDocFiles, async (req, res) => {
       hashes = await Promise.all(files.map((f) => sha256OfFile(f.path)));
     }
 
+    // A FILE FILED AGAINST A DRAFT REVISION WAITS WITH IT (D-304). revision_id
+    // must name an open draft of THIS document; the file is not the
+    // document's until that draft is approved, and never is if it is
+    // discarded. Its revision label defaults to the draft's.
+    let draft = null;
+    const revisionId = (req.body?.revision_id || '').trim();
+    if (revisionId) {
+      draft = db.prepare("SELECT id, revision FROM document_revisions WHERE id = ? AND document_id = ? AND status = 'draft'").get(revisionId, doc.id);
+      if (!draft) return res.status(400).json({ error: 'revision_id does not name an open draft revision of this document.', code: 'NOT_A_DRAFT' });
+    }
+    const revLabel = (req.body?.revision || '').slice(0, 40) || draft?.revision || null;
+
     const kind = req.body?.kind === 'signed_original' ? 'signed_original' : 'attachment';
     const out = [];
     for (const [i, f] of files.entries()) {
@@ -1560,20 +1583,21 @@ router.post('/:id/attachments', uploadDocFiles, async (req, res) => {
       const key = `documents/${doc.id}/${id}-${safe}`;
       await putStream(key, createReadStream(f.path), f.mimetype);
       db.prepare(`INSERT INTO document_attachments
-        (id, document_id, kind, title, filename, content_type, size, storage_key, revision, uploaded_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        (id, document_id, kind, title, filename, content_type, size, storage_key, revision, uploaded_by, revision_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         id, doc.id, kind, (req.body?.title || '').slice(0, 200) || null,
         (f.originalname || 'file').slice(0, 255), f.mimetype || null, f.size || null, key,
-        (req.body?.revision || '').slice(0, 40) || null, req.user?.name || null);
-      out.push({ id, filename: f.originalname, kind });
+        revLabel, req.user?.name || null, draft?.id || null);
+      out.push({ id, filename: f.originalname, kind, revision_id: draft?.id || null, state: draft ? 'draft' : 'current' });
       if (viaToken) {
         botSopWrite(req, 'attach', doc, { attachment_id: id, attachment_kind: kind, filename: (f.originalname || 'file').slice(0, 255),
           size_bytes: f.size || null, sha256: hashes[i], content_type: f.mimetype || null,
-          revision: (req.body?.revision || '').slice(0, 40) || null });
+          revision: revLabel, draft_revision_id: draft?.id || null });
       }
     }
     logAudit(req.user, 'attach', 'document', doc.id,
-      { kind, files: out.map(o => o.filename) }, null, null, `${doc.doc_number} ${doc.title}`);
+      { kind, files: out.map(o => o.filename), revision_id: draft?.id || null, draft_revision: draft?.revision || null },
+      null, null, `${doc.doc_number} ${doc.title}`);
     res.status(201).json(out);
   } finally {
     cleanupTemp(files);

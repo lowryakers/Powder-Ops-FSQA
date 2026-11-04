@@ -157,6 +157,7 @@ const RUNS = [
   ['verify-attempt-proof.mjs', 5164, {}, false],
   ['verify-course-drafts.mjs', 5167, {}, true],
   ['verify-sop-bot.mjs', 5183, {}, true],
+  ['verify-draft-revisions.mjs', 5184, {}, true],
   ['verify-bot-no-approve.mjs', 5168, {}, false],
   ['verify-part11.mjs', 5169, {}, false],
   ['verify-guarantee.mjs', 5170, {}, true],

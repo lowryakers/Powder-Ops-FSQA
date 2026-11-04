@@ -10148,3 +10148,47 @@ route was on `WRITE_AREAS`, and its account held SOPs at view.
 - `check:sopbot` (64, pure, in `npm run check`; self-test: the old `WRITE_AREAS` fails 9, the five routes opened with
   no grant fail 28). `verify:sopbot` (66, live + S3 stand-in). Control: `main` before this fails 29 of 66, the first
   grant-bearing call refused `not_open_to_tokens`.
+
+## D-304 — A revision waiting for approval is seen; its files wait with it; a new number moves on approval (4 Nov 2026)
+
+**Why.** On 3 Nov the Quality bot (D-303) staged new revisions of SOPs already in force and attached their signed
+scans. Nothing showed it. The document still read *Active*; Doc Control Review counted no drafts (`draft-documents`
+counts documents whose own status is draft, and an SOP with a staged revision is active); and the scan, filed under
+Attachments, looked like the current signed copy of the revision still in force. Three SOPs also needed a new number,
+which D-303 left as a person's edit because a revision did not carry one.
+
+**Decided.**
+- **Doc Control Review has a pile "Revisions waiting for approval"** (`draft-revisions`, right after the draft
+  documents). One rule, `DRAFT_REVISION_WHERE` in `server/doc-review.js`: an open draft revision on a document that is
+  active or under review. A draft on a withdrawn document is waiting on nobody and is not counted. Each line names the
+  document, "Draft V3 (in force: 1.0)", the effective date, who started it, whether a signed PDF is attached, and a
+  staged number change; it links to the document ("Open to approve"). Not batchable: approval is a password signature
+  per document. The same count badges Doc Control Review (a `warning` item, Document Control only), and the consistency
+  review lists them under "Revision drafts not yet approved".
+- **The list says it**: each document row carries `draft_revision`; the registry shows an amber "Draft V3 waiting"
+  pill beside Active.
+- **A file can belong to a draft.** `document_attachments.revision_id` names the open draft it was filed against. Its
+  state is DERIVED (`attachmentStateSql`): `draft` while that revision is a draft, `current` once approved,
+  `discarded` once the draft is thrown away. Discarding a draft DELETES the revision row (the status CHECK has no
+  discarded state), so the file is first stamped `revision_discarded_at` + `discarded_revision` and untied. A draft
+  file appears in the draft box (with "Attach signed PDF to this draft"), never as the document's; it becomes current
+  on approval; a discarded one is kept and listed apart, never shown as the document's. Everything that asks "does
+  this document have a signed copy" (the bulk planner's missing count, the suggested next revision) reads current
+  files only.
+- **A new document number is staged on the draft** (`document_revisions.doc_number`). Blank or the current number
+  stages nothing. A number another non-withdrawn document or another open draft holds (compared normalised) is
+  `409 DOC_NUMBER_USED`, naming it — at staging and again at approval. It moves onto the document only when a person
+  approves the draft with their password; the approval audit carries `from_doc_number` / `to_doc_number`. The
+  revision's signature fingerprint includes the staged number only when one is staged, so no existing fingerprint
+  changes.
+- **The bot**: `doc_number` joins `SOP_REVISION_EDIT_KEYS`; `revision_id` is accepted on the attach (an open draft of
+  that document, else `400 NOT_A_DRAFT`) and recorded on its `bot_sop_write` row. Still no approve, sign, delete or bulk
+  route for a token.
+- **One file filed before this existed** — the signed SOP-202 V3 scan (`e542c5b5…`) uploaded while the bot staged V3
+  (`a1fabff3…`) — is tied to that draft at boot by `tieKnownDraftAttachments`: exact ids only, only while the file is
+  untied and the revision is still an open draft of the same document; audited; idempotent. It does nothing on any
+  other database.
+- `verify:draftrevisions` (47, live + S3 stand-in, in `verify:all`). Control: `604b8de` (main before this) fails from
+  step 1 — the pile does not exist — through step 2, then stops.
+
+**Waits for review (D-274):** it migrates three columns and ties one production row.

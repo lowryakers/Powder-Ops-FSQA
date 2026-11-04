@@ -25,6 +25,7 @@ import { readyDocOrigin } from './links.js';
 import { enqueueQualitySignal } from './ops-webhook.js';
 import { revisionKey, sameRevision, nextVRevision, isApprovedStatus } from '../shared/document-revision.js';
 import { revisionFromFilename } from './filename-meta.js';
+import { normalizeDocNumber } from './doc-consistency.js';
 
 // The registry screen each document type lives on (App.jsx nav ids).
 const TAB_FOR_TYPE = { sop: 'sops', work_instruction: 'work-instructions', job_description: 'job-descriptions' };
@@ -40,6 +41,35 @@ export const listRevisions = (db, documentId) =>
 
 export const draftOf = (db, documentId) =>
   db.prepare("SELECT * FROM document_revisions WHERE document_id = ? AND status = 'draft'").get(documentId) || null;
+
+// ── A file belongs to the live document or to a draft (D-304) ────────────────
+// 'current'  — the live document's file (no draft link, or its revision approved)
+// 'draft'    — uploaded for a draft revision not yet approved
+// 'discarded'— uploaded for a draft that was thrown away; never the live document's
+export const attachmentStateSql = (a = 'a') => `CASE
+  WHEN ${a}.revision_discarded_at IS NOT NULL THEN 'discarded'
+  WHEN ${a}.revision_id IS NOT NULL AND EXISTS (SELECT 1 FROM document_revisions xr WHERE xr.id = ${a}.revision_id AND xr.status = 'draft') THEN 'draft'
+  ELSE 'current' END`;
+export const currentAttachmentSql = (a = 'a') => `(${attachmentStateSql(a)}) = 'current'`;
+
+/**
+ * Why `number` cannot be this document's new number, or null. Compared the way
+ * the consistency review compares ("SOP 105" = "SOP-105"): another live
+ * document, or another document's open draft, already carrying it.
+ */
+export function docNumberProblem(db, doc, number) {
+  const n = String(number || '').trim();
+  if (!n) return null;
+  const key = normalizeDocNumber(n);
+  const other = db.prepare("SELECT id, doc_number, title FROM sop_documents WHERE id != ? AND status != 'archived' AND doc_number IS NOT NULL AND doc_number != ''")
+    .all(doc.id).find(d => normalizeDocNumber(d.doc_number) === key);
+  if (other) return `${n} is already the number of "${other.title}" (${other.doc_number}). Pick another number, or correct that document first.`;
+  const drafted = db.prepare(`SELECT r.doc_number, d.title FROM document_revisions r JOIN sop_documents d ON d.id = r.document_id
+    WHERE r.status = 'draft' AND r.document_id != ? AND r.doc_number IS NOT NULL AND r.doc_number != ''`)
+    .all(doc.id).find(r => normalizeDocNumber(r.doc_number) === key);
+  if (drafted) return `${n} is already proposed by the draft revision of "${drafted.title}".`;
+  return null;
+}
 
 /** Every revision number this document has ever been APPROVED under, the one in force included. */
 function usedNumbers(db, doc) {
@@ -58,7 +88,8 @@ function usedNumbers(db, doc) {
 function revisionEvidence(db, doc) {
   const out = [];
   try {
-    for (const a of db.prepare('SELECT revision, filename FROM document_attachments WHERE document_id = ?').all(doc.id)) {
+    // A draft's or a discarded draft's file says nothing about the revision in force (D-304).
+    for (const a of db.prepare(`SELECT revision, filename FROM document_attachments a WHERE a.document_id = ? AND ${currentAttachmentSql('a')}`).all(doc.id)) {
       if (a.revision) out.push(a.revision);
       const f = revisionFromFilename(a.filename || ''); if (f) out.push(f);
     }
@@ -98,7 +129,7 @@ export function startDraft(db, doc, actor, { revision, change_summary } = {}) {
   return row;
 }
 
-const DRAFT_FIELDS = ['revision', 'title', 'description', 'description_es', 'effective_date', 'change_summary'];
+const DRAFT_FIELDS = ['revision', 'title', 'description', 'description_es', 'effective_date', 'change_summary', 'doc_number'];
 
 /** Edit the draft. The approved revision on the document row does not move. */
 export function saveDraft(db, doc, draft, body, actor) {
@@ -107,6 +138,15 @@ export function saveDraft(db, doc, draft, body, actor) {
   for (const k of DRAFT_FIELDS) {
     if (body[k] === undefined) continue;
     if (k === 'revision' && !String(body[k] || '').trim()) throw new RevisionError('A revision number is required.');
+    if (k === 'doc_number') {
+      // A corrected number rides the revision (D-304). The same number as now is
+      // no change; a number another document holds is refused by name.
+      const n = String(body[k] ?? '').trim();
+      if (!n || n === String(doc.doc_number || '').trim()) { sets.push('doc_number = ?'); vals.push(null); continue; }
+      const problem = docNumberProblem(db, doc, n);
+      if (problem) throw new RevisionError(problem, 409, { code: 'DOC_NUMBER_USED' });
+      sets.push('doc_number = ?'); vals.push(n); continue;
+    }
     sets.push(`${k} = ?`); vals.push(body[k] === '' ? null : body[k]);
   }
   if (!sets.length) return draft;
@@ -120,8 +160,16 @@ export function saveDraft(db, doc, draft, body, actor) {
 export function discardDraft(db, doc, draft, reason, actor) {
   if (draft.status !== 'draft') throw new RevisionError('Only a draft revision can be discarded.', 409);
   if (String(reason || '').trim().length < 3) throw new RevisionError('Say why the draft is being discarded.');
-  db.prepare('DELETE FROM document_revisions WHERE id = ?').run(draft.id);
-  logAudit(actor, 'delete', 'document_revision', draft.id, { document_id: doc.id, revision: draft.revision, reason: String(reason).trim() }, draft, null, `${doc.doc_number || doc.title} draft ${draft.revision}`);
+  // Its files never become the live document's (D-304): marked discarded, then
+  // unlinked so the draft row can go.
+  let filesKept = 0;
+  db.transaction(() => {
+    filesKept = db.prepare(`UPDATE document_attachments SET revision_discarded_at = datetime('now'), discarded_revision = ?, revision_id = NULL
+      WHERE revision_id = ?`).run(draft.revision, draft.id).changes;
+    db.prepare('DELETE FROM document_revisions WHERE id = ?').run(draft.id);
+  })();
+  logAudit(actor, 'delete', 'document_revision', draft.id, { document_id: doc.id, revision: draft.revision, reason: String(reason).trim(),
+    files_kept_off_document: filesKept || undefined }, draft, null, `${doc.doc_number || doc.title} draft ${draft.revision}`);
 }
 
 /** A course needs updating when the revision it was built on is not the document's approved one. */
@@ -150,6 +198,14 @@ export function recordApprovedRevision(db, doc, fields, { source, draftId = null
   const problem = wasApproved || db.prepare('SELECT 1 FROM document_revisions WHERE document_id = ? LIMIT 1').get(doc.id)
     ? revisionNumberProblem(db, doc, revision) : (revisionKey(revision) ? null : 'A revision number is required.');
   if (problem) throw new RevisionError(problem, 409, { code: 'REVISION_NUMBER_USED', suggested: suggestedRevision(db, doc) });
+  // A corrected number staged on the draft (D-304) moves with this approval, and
+  // is checked again: another document may have taken it since it was staged.
+  const stagedNumber = String(fields.doc_number || '').trim();
+  const newNumber = stagedNumber && stagedNumber !== String(doc.doc_number || '').trim() ? stagedNumber : null;
+  if (newNumber) {
+    const numProblem = docNumberProblem(db, doc, newNumber);
+    if (numProblem) throw new RevisionError(numProblem, 409, { code: 'DOC_NUMBER_USED' });
+  }
 
   const nowIso = new Date().toISOString();
   // The approver is the signed-in person (D-282), never a typed name.
@@ -189,8 +245,8 @@ export function recordApprovedRevision(db, doc, fields, { source, draftId = null
           actor?.name || null, actor?.id || null, approver, actor?.id || null, nowIso);
     }
     db.prepare(`UPDATE sop_documents SET revision = ?, title = ?, description = ?, description_es = ?, effective_date = ?,
-        approved_by = ?, approved_at = ?, training_revision = ?, status = 'active', updated_at = datetime('now') WHERE id = ?`)
-      .run(revision, next.title, next.description, next.description_es, next.effective_date, approver, nowIso, revision, doc.id);
+        approved_by = ?, approved_at = ?, training_revision = ?, status = 'active', doc_number = COALESCE(?, doc_number), updated_at = datetime('now') WHERE id = ?`)
+      .run(revision, next.title, next.description, next.description_es, next.effective_date, approver, nowIso, revision, newNumber, doc.id);
     const signedRow = db.prepare('SELECT * FROM document_revisions WHERE id = ?').get(revId);
     db.prepare('UPDATE document_revisions SET approved_meaning = ?, approved_hash = ? WHERE id = ?')
       .run(APPROVAL_MEANING[source] || 'Approved', revisionHash(signedRow), revId);
@@ -205,6 +261,7 @@ export function recordApprovedRevision(db, doc, fields, { source, draftId = null
   logAudit(actor, 'approve', 'document_revision', revId,
     // Every door into this writer asks for the approver's password first (D-282).
     { document_id: doc.id, from_revision: wasApproved ? doc.revision : null, to_revision: revision, source,
+      ...(newNumber ? { from_doc_number: doc.doc_number || null, to_doc_number: newNumber } : {}),
       meaning: APPROVAL_MEANING[source] || 'Approved', ...signatureEvidence(),
       courses_needing_update: courses.filter(c => c.needs_update).map(c => c.code || c.title) },
     doc, after, `${doc.doc_number || doc.title} rev ${revision}`);
@@ -223,7 +280,10 @@ export const APPROVAL_MEANING = {
   transcribed: 'Approved on paper — recorded from the signed original',
 };
 const HASHED = ['document_id', 'revision', 'title', 'description', 'description_es', 'effective_date', 'approved_by_id', 'approved_at'];
-export const revisionHash = (r) => createHash('sha256').update(JSON.stringify(HASHED.map(k => r?.[k] ?? null))).digest('hex');
+// A staged number change is part of what was signed (D-304). Added only when
+// present, so every fingerprint taken before it reads exactly as it did.
+export const revisionHash = (r) => createHash('sha256')
+  .update(JSON.stringify([...HASHED.map(k => r?.[k] ?? null), ...(r?.doc_number ? [r.doc_number] : [])])).digest('hex');
 /** 'signed' (intact) · 'changed' · 'not_recorded' (approved before fingerprints) · null (not approved). */
 export function approvalState(r) {
   if (!r || !['approved', 'superseded'].includes(r.status) || !r.approved_at) return null;
@@ -249,4 +309,30 @@ export function qualitySignalFor(doc, { from, to, approver, approvedAt, source, 
     linked_courses: courses.map(c => ({ id: c.id, code: c.code || null, title: c.title, built_on_revision: c.built_on_revision, needs_update: c.needs_update })),
     link: `${String(origin).replace(/\/+$/, '')}/?tab=${TAB_FOR_TYPE[doc.doc_type] || 'sops'}&doc=${doc.id}`,
   };
+}
+
+/**
+ * The one draft-tied file uploaded before files could be tied to a draft
+ * (D-304): the signed SOP-202 V3 scan, filed while the bot staged V3. Exact
+ * match only, so it is idempotent by construction and does nothing on any
+ * database where those two rows are not exactly as found: the attachment
+ * untied, the revision still an open draft of the same document.
+ */
+export const KNOWN_DRAFT_ATTACHMENTS = Object.freeze([
+  { attachment_id: 'e542c5b5-b482-4033-ab27-b1a2f8d3b238', revision_id: 'a1fabff3-eb54-4470-ad1d-988c5aef8f04' },
+]);
+export function tieKnownDraftAttachments(db) {
+  let tied = 0;
+  for (const k of KNOWN_DRAFT_ATTACHMENTS) {
+    try {
+      const a = db.prepare('SELECT id, document_id, revision_id, revision_discarded_at FROM document_attachments WHERE id = ?').get(k.attachment_id);
+      const r = db.prepare('SELECT id, document_id, status, revision FROM document_revisions WHERE id = ?').get(k.revision_id);
+      if (!a || !r || a.revision_id || a.revision_discarded_at || r.status !== 'draft' || r.document_id !== a.document_id) continue;
+      db.prepare('UPDATE document_attachments SET revision_id = ? WHERE id = ? AND revision_id IS NULL').run(r.id, a.id);
+      logAudit('system', 'update', 'document_attachment', a.id, { event: 'tied_to_draft_revision', revision_id: r.id, revision: r.revision, decision: 'D-304' });
+      tied++;
+    } catch (e) { console.warn('[doc-revisions] tieKnownDraftAttachments:', e.message); }
+  }
+  if (tied) console.log(`[doc-revisions] tied ${tied} attachment(s) to their draft revision (D-304)`);
+  return tied;
 }

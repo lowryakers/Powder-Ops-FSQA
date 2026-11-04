@@ -314,18 +314,20 @@ export const ROUTES = Object.freeze([
     properties: { id: str('The document id.'), revision: str('The new revision label, e.g. "V3".'), change_summary: str('What changes, in a line.') }, required: ['id'] },
   { tool: 'update_sop_revision', method: 'PUT', path: '/api/documents/:id/revisions/:rid',
     description: 'Edit an SOP\'s DRAFT revision: number, title, text, effective date. An approved revision is history and refused. Needs a write token with the sops-edit grant.',
-    body: ['revision', 'title', 'description', 'description_es', 'effective_date', 'change_summary'],
+    body: ['revision', 'title', 'description', 'description_es', 'effective_date', 'change_summary', 'doc_number'],
     properties: {
       id: str('The document id.'), rid: str('The draft revision id.'), revision: str('The revision label.'), title: str('The title.'),
+      doc_number: str('A new document number, staged on the draft; it moves onto the document only when a person approves the draft. A number another document holds is refused.'),
       description: str('The SOP text.'), description_es: str('The Spanish text.'), effective_date: str('YYYY-MM-DD, from the signed scan.'),
       change_summary: str('What changes, in a line.'),
     }, required: ['id', 'rid'] },
   { tool: 'attach_sop_pdf', method: 'POST', path: '/api/documents/:id/attachments',
     description: 'Attach a PDF (the signed scan) to an SOP. PDF only: the extension, type and contents must agree. Needs a write token with the sops-edit grant.',
-    body: ['kind', 'revision', 'title'], file: { arg: 'file_path', many: 'file_paths', max: 10, field: 'files', required: true, allow: ['.pdf'] },
+    body: ['kind', 'revision', 'title', 'revision_id'], file: { arg: 'file_path', many: 'file_paths', max: 10, field: 'files', required: true, allow: ['.pdf'] },
     properties: {
       id: str('The document id.'), kind: { type: 'string', enum: ['signed_original', 'attachment'], description: 'signed_original for the signed scan.' },
       revision: str('The revision the scan is of, e.g. "V3".'), title: str('A title (optional).'),
+      revision_id: str('The open DRAFT revision this scan belongs to. The file waits with the draft and becomes the document\'s only when a person approves it.'),
       file_path: filePath('PDF'), file_paths: { type: 'array', items: { type: 'string' }, maxItems: 10, description: 'Several PDFs (up to 10).' },
     }, required: ['id'] },
 ]);

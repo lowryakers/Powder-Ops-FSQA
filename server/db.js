@@ -5009,6 +5009,18 @@ function runMigrations() {
   // fingerprint of the exact revision approved. NULL on revisions approved before.
   addColumnIfMissing('document_revisions', 'approved_meaning', 'TEXT');
   addColumnIfMissing('document_revisions', 'approved_hash', 'TEXT');
+  // A draft revision may carry a corrected document number (D-304). NULL = the
+  // number does not change. It moves onto the document only when the revision
+  // is approved with a password.
+  addColumnIfMissing('document_revisions', 'doc_number', 'TEXT');
+  // A file uploaded FOR a draft revision belongs to that draft (D-304): it is not
+  // the live document's file until the draft is approved, and a discarded
+  // draft's file never becomes one. revision_id is nulled before a draft row is
+  // deleted (the FK would refuse otherwise) and revision_discarded_at says why.
+  addColumnIfMissing('document_attachments', 'revision_id', 'TEXT REFERENCES document_revisions(id)');
+  addColumnIfMissing('document_attachments', 'revision_discarded_at', 'TEXT');
+  addColumnIfMissing('document_attachments', 'discarded_revision', 'TEXT');
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_document_attachments_rev ON document_attachments(revision_id)'); } catch { /* ignore */ }
   // The revision of its document a course was built on (D-277), and who said so.
   addColumnIfMissing('training_courses', 'built_on_revision', 'TEXT');
   addColumnIfMissing('training_courses', 'built_on_kind', 'TEXT');      // updated | no_change | linked

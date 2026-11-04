@@ -100,7 +100,8 @@ const SOP_SIBLINGS = '(?!(?:revisions|attachments|bulk|bulk-update|bulk-delete|p
 export const SOP_DRAFT_EDIT_KEYS = Object.freeze(['doc_number', 'title', 'category', 'revision', 'effective_date', 'review_due',
   'review_frequency', 'owner', 'content', 'content_es', 'source_file', '_change_summary', '_minor']);
 export const SOP_REVISION_START_KEYS = Object.freeze(['revision', 'change_summary']);
-export const SOP_REVISION_EDIT_KEYS = Object.freeze(['revision', 'title', 'description', 'description_es', 'effective_date', 'change_summary']);
+// doc_number is STAGED on the draft (D-304) and moves onto the document only when a person approves it.
+export const SOP_REVISION_EDIT_KEYS = Object.freeze(['revision', 'title', 'description', 'description_es', 'effective_date', 'change_summary', 'doc_number']);
 const sopRefuse = (req, why) => { req.tokenWriteRefusal = why; return false; };
 const sopDoc = (db, id) => db.prepare('SELECT id, doc_type, status FROM sop_documents WHERE id = ?').get(id);
 const extraKeys = (body, allowed) => Object.keys(body || {}).filter((k) => !allowed.includes(k));
