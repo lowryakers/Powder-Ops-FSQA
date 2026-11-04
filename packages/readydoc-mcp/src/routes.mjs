@@ -288,19 +288,21 @@ export const ROUTES = Object.freeze([
       file_paths: { type: 'array', items: { type: 'string' }, description: 'Several files (up to 5).' } }, required: ['id'] },
 
   // D-303: the Quality bot's SOP staging. The writes need a token holding the
-  // `sops-edit` grant and an account with SOPs edit. Owners approve with their
+  // grant for the document's type (sops-edit / wi-edit / jd-edit, D-306) and an
+  // account with edit on that module. Owners approve with their
   // password in ReadyDoc; no tool approves, signs, deletes or withdraws.
   { tool: 'create_sop_draft', method: 'POST', path: '/api/documents',
-    description: 'File a NEW SOP as a draft. Never approved by this call; an owner approves it in ReadyDoc with their password. Needs a write token with the sops-edit grant.',
-    body: ['doc_number', 'title', 'category', 'revision', 'effective_date', 'review_due', 'review_frequency', 'owner', 'content', 'source_file'],
+    description: 'File a NEW SOP, Work Instruction or Job Description as a draft. Never approved by this call; an owner approves it in ReadyDoc with their password. Needs a write token with the grant for the document type: sops-edit (SOP), wi-edit (Work Instruction), jd-edit (Job Description).',
+    body: ['doc_type', 'doc_number', 'title', 'category', 'revision', 'effective_date', 'review_due', 'review_frequency', 'owner', 'content', 'source_file'],
     properties: {
+      doc_type: { type: 'string', enum: ['sop', 'work_instruction', 'job_description'], description: 'sop (default), work_instruction or job_description. The token needs that type\'s grant.' },
       doc_number: str('The document number, e.g. "SOP 429".'), title: str('The title.'), category: str('The category (required).'),
       revision: str('The revision label, e.g. "V1".'), effective_date: str('YYYY-MM-DD, from the signed scan.'),
       review_due: str('YYYY-MM-DD (optional).'), review_frequency: str('annual, biennial… (optional).'), owner: str('The owner (optional).'),
       content: str('The SOP text.'), source_file: str('The source file name (optional).'),
     }, required: ['title', 'category'] },
   { tool: 'update_sop_draft', method: 'PUT', path: '/api/documents/:id',
-    description: 'Edit a DRAFT SOP\'s fields and text. An approved SOP is refused: start a new revision instead. Needs a write token with the sops-edit grant.',
+    description: 'Edit a DRAFT SOP\'s fields and text. An approved SOP is refused: start a new revision instead. Needs a write token with the grant for the document type: sops-edit (SOP), wi-edit (Work Instruction), jd-edit (Job Description).',
     body: ['doc_number', 'title', 'category', 'revision', 'effective_date', 'review_due', 'review_frequency', 'owner', 'content', 'content_es', 'source_file', '_change_summary', '_minor'],
     properties: {
       id: str('The document id.'), doc_number: str('The document number.'), title: str('The title.'), category: str('The category.'),
@@ -309,11 +311,11 @@ export const ROUTES = Object.freeze([
       _change_summary: str('What changed, in a line.'), _minor: { type: 'boolean', description: 'A minor edit (does not ask for retraining).' },
     }, required: ['id'] },
   { tool: 'start_sop_revision', method: 'POST', path: '/api/documents/:id/revisions',
-    description: 'Start a new draft revision of an APPROVED SOP. The SOP in force does not change until an owner approves the revision. One open draft per SOP. Needs a write token with the sops-edit grant.',
+    description: 'Start a new draft revision of an APPROVED SOP. The SOP in force does not change until an owner approves the revision. One open draft per SOP. Needs a write token with the grant for the document type: sops-edit (SOP), wi-edit (Work Instruction), jd-edit (Job Description).',
     body: ['revision', 'change_summary'],
     properties: { id: str('The document id.'), revision: str('The new revision label, e.g. "V3".'), change_summary: str('What changes, in a line.') }, required: ['id'] },
   { tool: 'update_sop_revision', method: 'PUT', path: '/api/documents/:id/revisions/:rid',
-    description: 'Edit an SOP\'s DRAFT revision: number, title, text, effective date. An approved revision is history and refused. Needs a write token with the sops-edit grant.',
+    description: 'Edit an SOP\'s DRAFT revision: number, title, text, effective date. An approved revision is history and refused. Needs a write token with the grant for the document type: sops-edit (SOP), wi-edit (Work Instruction), jd-edit (Job Description).',
     body: ['revision', 'title', 'description', 'description_es', 'effective_date', 'change_summary', 'doc_number'],
     properties: {
       id: str('The document id.'), rid: str('The draft revision id.'), revision: str('The revision label.'), title: str('The title.'),
@@ -322,7 +324,7 @@ export const ROUTES = Object.freeze([
       change_summary: str('What changes, in a line.'),
     }, required: ['id', 'rid'] },
   { tool: 'attach_sop_pdf', method: 'POST', path: '/api/documents/:id/attachments',
-    description: 'Attach a PDF (the signed scan) to an SOP. PDF only: the extension, type and contents must agree. Needs a write token with the sops-edit grant.',
+    description: 'Attach a PDF (the signed scan) to an SOP. PDF only: the extension, type and contents must agree. Needs a write token with the grant for the document type: sops-edit (SOP), wi-edit (Work Instruction), jd-edit (Job Description).',
     body: ['kind', 'revision', 'title', 'revision_id'], file: { arg: 'file_path', many: 'file_paths', max: 10, field: 'files', required: true, allow: ['.pdf'] },
     properties: {
       id: str('The document id.'), kind: { type: 'string', enum: ['signed_original', 'attachment'], description: 'signed_original for the signed scan.' },

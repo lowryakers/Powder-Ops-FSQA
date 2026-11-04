@@ -115,7 +115,7 @@ A `write` token may write **only** to the routes below (`WRITE_AREAS` in `server
 | Partner reconciliation | `POST /api/partners/:id/documents`, `…/documents/scan`, `POST /api/partners/:id/credits`, `PUT /api/partners/:id` (office/admin accounts only); while the document is a **draft**: `PUT /api/partners/documents/:docId`, `…/category`, `…/file`, `…/read-lines`; bulk: `POST /api/partners/:id/documents/import` |
 | Nutrition panels | `POST /api/nfp` (always lands as a draft); while the panel is a **draft**: `PUT /api/nfp/:id`, `PUT /api/nfp/:id/panel` |
 | Nutrition panel PDF and values — **`nfp-panel` grant only** | `PUT /api/nfp/:id/panel-file`, `PUT /api/nfp/:id/panel-values` (a DRAFT only, every values write with `source_ref`) |
-| SOP staging — **`sops-edit` grant only** | `POST /api/documents` (a draft SOP), `PUT /api/documents/:id` (a draft SOP's fields and text), `POST /api/documents/:id/revisions` (a new revision of an approved SOP), `PUT /api/documents/:id/revisions/:rid` (that draft revision), `POST /api/documents/:id/attachments` (a PDF only). See [SOP staging](#sop-staging-sops-edit-grant). |
+| Document staging — **`sops-edit` (SOPs), `wi-edit` (Work Instructions), `jd-edit` (Job Descriptions) grants only** | `POST /api/documents` (a draft SOP), `PUT /api/documents/:id` (a draft SOP's fields and text), `POST /api/documents/:id/revisions` (a new revision of an approved SOP), `PUT /api/documents/:id/revisions/:rid` (that draft revision), `POST /api/documents/:id/attachments` (a PDF only). The grant is decided by the document's type (D-306). See [Document staging](#document-staging-sops-edit-wi-edit-jd-edit-grants). |
 | Messages | `POST /api/comms/channels/:id/messages`, `POST /api/comms/channels/:id/attachments` (pdf, png, jpg, csv, xlsx, docx only), `POST /api/comms/messages/:id/reactions`, `DELETE /api/comms/messages/:id/reactions/:emoji` (the bot's own reaction only) |
 
 ## Never via token
@@ -130,7 +130,7 @@ These are refused to every token, whatever its scope and whatever its account's 
 | `user_admin` | every write under `/api/users` (accounts, roles, module access, passwords, signatures), onboarding end-access, `/api/org` and `/api/comms/admin` writes | `token_denied` |
 | `token_admin` | `/api/api-tokens` and `/api/kiosk-tokens` (reads included), auditor passes, partner portal links | `token_denied` |
 
-**Controlled documents (SOPs) stay with a person.** Approving a document or a revision, signing, making a document effective (a status of active or under review, apply-revision, the revision worklist, propose-revisions), deleting a document, a revision or an attachment, withdrawing ("No longer in use"), reinstating, merging and every bulk document route are refused to every token, with or without the `sops-edit` grant. Owners approve with their own password.
+**Controlled documents (SOPs) stay with a person.** Approving a document or a revision, signing, making a document effective (a status of active or under review, apply-revision, the revision worklist, propose-revisions), deleting a document, a revision or an attachment, withdrawing ("No longer in use"), reinstating, merging and every bulk document route are refused to every token, with or without the `sops-edit`, `wi-edit` or `jd-edit` grant. Owners approve with their own password.
 
 ## Using it from an MCP client
 
@@ -690,7 +690,9 @@ Upload files to an open draft (multipart `files`, up to 5). Videos up to 2 GB; o
 
 - **Scope:** `write` + grant `course-drafts`. `503` when file storage is off.
 
-## SOP staging (sops-edit grant)
+## Document staging (sops-edit, wi-edit, jd-edit grants)
+
+**One grant per document type (D-306).** The five writes below are the same for SOPs, Work Instructions and Job Descriptions; which grant a write needs is the **document's type**: `sops-edit` for an SOP (and for `POST /api/documents` with no `doc_type`), `wi-edit` for a `work_instruction`, `jd-edit` for a `job_description`. A token holding only `sops-edit` is refused on a WI with `403 token_denied` / `not_open_to_tokens` and the reason *"The sops-edit grant covers SOPs only; a Work Instruction needs the wi-edit grant."* A policy or form is never open to a token. Everything below written about an SOP applies the same way to a WI or a JD; the account needs edit on that module (SOPs, Work Instructions or Job Descriptions). The audit row adds `doc_type` and `grant` (the one used).
 
 The Quality bot stages SOP work for the document owners (D-303): a new SOP as a draft, edits to a draft SOP, a new revision of an approved SOP, and the signed scan as a PDF. **It never approves.** Owners approve each draft and each revision in ReadyDoc with their own password, and the SOP in force does not change until they do.
 
@@ -702,30 +704,30 @@ The five writes need a `write` token holding the **`sops-edit` grant** (Settings
 
 ### `POST /api/documents`
 
-File a new SOP as a **draft**. Refused when `status` is anything but `draft` (an approved status is `approve_requires_human_session`), when `approved_by` or `approved_at` is sent, or when `doc_type` is anything but `sop`.
+File a new SOP as a **draft**. Refused when `status` is anything but `draft` (an approved status is `approve_requires_human_session`), when `approved_by` or `approved_at` is sent, or when `doc_type` names a type the token holds no grant for (no `doc_type` = an SOP; `policy` and `form` are never open).
 
-- **Scope:** `write` + grant `sops-edit`. **Module:** SOPs (edit).
+- **Scope:** `write` + the grant for the document's type (`sops-edit` / `wi-edit` / `jd-edit`). **Module:** SOPs, Work Instructions or Job Descriptions (edit).
 - **Body:** `title` and `category` (required), `doc_number`, `revision`, `effective_date`, `review_due`, `review_frequency`, `owner`, `content`, `source_file`.
 
 ### `PUT /api/documents/:id`
 
 Edit a **draft** SOP. Refused on an approved, under-review or withdrawn SOP (start a new revision instead), on a status move, on `approved_by` / `approved_at`, and on any field outside the list below. Writes a version row like a person's edit.
 
-- **Scope:** `write` + grant `sops-edit`. **Module:** SOPs (edit).
+- **Scope:** `write` + the grant for the document's type (`sops-edit` / `wi-edit` / `jd-edit`). **Module:** SOPs, Work Instructions or Job Descriptions (edit).
 - **Body:** `doc_number`, `title`, `category`, `revision`, `effective_date`, `review_due`, `review_frequency`, `owner`, `content`, `content_es`, `source_file`, `_change_summary`, `_minor`.
 
 ### `POST /api/documents/:id/revisions`
 
 Start a draft revision of an **approved** SOP (active or under review). A draft SOP is `409` (edit it directly); a second open draft is `409`.
 
-- **Scope:** `write` + grant `sops-edit`. **Module:** SOPs (edit).
+- **Scope:** `write` + the grant for the document's type (`sops-edit` / `wi-edit` / `jd-edit`). **Module:** SOPs, Work Instructions or Job Descriptions (edit).
 - **Body:** `revision`, `change_summary` only.
 
 ### `PUT /api/documents/:id/revisions/:rid`
 
 Edit that draft revision. The SOP in force is unchanged until an owner approves it. An approved revision is history and refused.
 
-- **Scope:** `write` + grant `sops-edit`. **Module:** SOPs (edit).
+- **Scope:** `write` + the grant for the document's type (`sops-edit` / `wi-edit` / `jd-edit`). **Module:** SOPs, Work Instructions or Job Descriptions (edit).
 - **Body:** `revision`, `title`, `description`, `description_es`, `effective_date`, `change_summary`, `doc_number` only.
 - **`doc_number` (D-304)** stages a new document number on the draft. The document keeps its number until a person approves the draft with their password; then the number moves with it. A number another document (or another open draft) holds is `409 DOC_NUMBER_USED`, naming that document. Sending the current number, or blank, clears the staged change.
 
@@ -735,4 +737,4 @@ Attach PDFs to an SOP (multipart `files`, up to 10), draft or approved. Fields: 
 
 **`revision_id` (D-304)** names an open draft revision of this SOP. The file then waits with the draft: it is listed in the draft box, not as the document's current signed copy, becomes current when a person approves the draft, and stays off the document if the draft is discarded. `revision` defaults to the draft's label. A `revision_id` that is not an open draft of this document is `400 NOT_A_DRAFT`. Attach the signed scan of a new revision this way, always.
 
-- **Scope:** `write` + grant `sops-edit`. **Module:** SOPs (edit). `503` when file storage is off.
+- **Scope:** `write` + the grant for the document's type (`sops-edit` / `wi-edit` / `jd-edit`). **Module:** SOPs, Work Instructions or Job Descriptions (edit). `503` when file storage is off.

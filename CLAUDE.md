@@ -6434,6 +6434,12 @@ and writes `V<n>`; the person types the label. New documents default to `V1`. Ex
   `reason`. Every successful bot write on the five adds one `bot_sop_write` row; `via_token` carries the token label.
 - The grant is ticked in Settings by an admin; the account needs SOPs edit. Nothing here sets either.
 
+## Bot document grants are per type: sops-edit, wi-edit, jd-edit (D-306)
+`DOC_EDIT_GRANTS` / `docGrantOk` in `server/bot-api.js`; the five D-303 entries carry `grants` (any-of) and each `when`
+demands the grant for the DOCUMENT'S type. **A WRITE_AREAS entry may carry `grants` (any-of) instead of `grant`** —
+read it through `areaGrants` / `holdsAreaGrant`, never `r.grant` alone. No `doc_type` on create = an SOP. Policy and form
+are never open. The audit row stays `bot_sop_write` and adds `doc_type` + `grant`. `verify:docbot` (40), `check:sopbot` (102).
+
 ## A revision waiting for approval is seen; its files wait with it (D-304)
 `draft-revisions` pile in `server/doc-review.js` (`DRAFT_REVISION_WHERE`, `draftRevisionCount`, `draftRevisionRows`),
 `draft_revision` on the document list + the "Draft V3 waiting" pill, `document_attachments.revision_id` /
