@@ -10228,3 +10228,57 @@ when a Settings group, its order, or any sidebar entry in it disagrees with the 
 **Verified.** `check:sopbot` passed 102/0. Its control, the D-303 shape (one `sops-edit` grant on all five routes), fails 11. `verify:docbot` passed 40/0 (live, S3 stand-in). Against `main` it fails from the grant catalog onward, and reproduces WI005's exact refusal. `verify:sopbot` and `verify:draftrevisions` still pass.
 
 **Validation (D-287).** This changes what a bot account may write, which is access control. The OQ tests for token access (`check:apitokens`, `check:sopbot`, `verify:sopbot`, `verify:docbot`) were re-run before merge.
+
+## D-307 — A COA correction window: Quality un-signs for a while, the original signature is kept, re-signing names what it corrects (4 Nov 2026)
+
+**Asked.** Lowry's developer prompt (Nov 2026, "temporary QA correction window + the other fixes"). Signed certificates carry wrong dates, lots, expiries and misread results. Only an admin could un-sign one (D-224), or Quality while a QA Review item named it (D-236). Un-signing simply NULLed the signature, the snapshot and the number.
+
+**Decided.**
+- **An admin opens a window** (`coa_correction_windows`): the Quality reviewers it covers, a reason of 20+ characters, 1–336 hours (default 168), with the admin's password (`coa_window_open`). It covers active Quality reviewers only, never a bot account. An admin closes it early; it lists for Quality and admins.
+- **Inside the window** the people it names may un-sign a signed certificate: a reason of 10+ characters, "what will you correct" (`field_plan`), and their own password. **Deleting is never widened.** A published certificate is still withdrawn first.
+- **Expiry is checked on the clock at every call.** The nightly pass (`expireWindows`) only marks rows and audits them.
+- **The original signature is kept** in `coa_signature_history` (image, snapshot, hash, number, date, who removed it and why), append-only by trigger. Every un-sign now writes a row, not only window un-signs.
+- **A window un-sign REOPENS the request** (`reopened_for_correction`). While reopened: its PDF is not issued; only an admin or a covered reviewer (window still open) changes its locked fields, results and files; each change is audited as `correction` with old and new values. It leaves that state only by being signed again. An admin's or a QA Review item's un-sign is unchanged (no reopened flag), so the hold on 8afd7fbe (D-240) is untouched.
+- **Re-signing draws a new number** (as always) and stores `supersedes_certificate_number`. The snapshot is version 3 only when it corrects one (`corrected_from`: number, when withdrawn, why). The PDF footer prints "Corrected from certificate X on date: reason". Every other certificate stays version 2.
+- **A certificate reopened more than 3 days** fails its own line on the readiness report.
+
+**Verified.** `verify:coawindow` (82 live, port 5187). Control: `main` fails 13 and cannot continue (no such table `coa_signature_history`).
+
+**Validation (D-287).** This changes who may remove a signature and what is kept when one is removed. Signing and records OQ tests (`verify:coa`, `verify:coa2`, `verify:coa2b`, `verify:part11`) re-run before use.
+
+## D-308 — A heavy metal is never approved without a number; the gluten "<44" misread is listed, not edited (4 Nov 2026)
+
+**Decided.**
+- **Approving a specification for Arsenic, Cadmium, Mercury or Lead with no min and no max is refused**, in the drafts queue and in "Save and approve". The limits may be sent with the approval. A batch with one such row approves nothing (`needs_limit` names them).
+- **The reader already reads "<4" with MDL 4** (D-221). The joined name "Gluten Allergen ReportELISA <" now means gluten (alias). A regression fixture for CTLA 183621, lot 101954, is synthetic like the rest (`make-ctla-fixtures.mjs 183621`).
+- **`GET /coa/reports/gluten-misread`** lists signed certificates whose gluten result is "<44" or carries the joined name. Quality and admins; read-only (SELECT). The signed ones are corrected **inside a correction window**; nothing is changed by code.
+
+## D-309 — One Limit box; a new specification is a draft; editing an active one is a new version (4 Nov 2026)
+
+**Decided.**
+- **One Limit box** replaces Specification / Min / Max on the form. `parseLimit()` (`server/coa-limit.js`) reads NMT/≤/max, </below, NLT/≥/min, >, ranges and absent/negative; the screen shows what it means as you type (`POST /coa/specifications/parse-limit`). An unreadable limit is refused in words.
+- **POST /coa/specifications files a DRAFT** (inactive, grades nothing). "Save and approve" (`approve_now`) runs the same approval in the same call, for those who may approve. The item code is trimmed.
+- **PUT on an active approved spec makes a new draft version** (`spec_version + 1`, `supersedes_spec_id`, `change_reason` of 10+ characters). The active one goes on grading. Approving the new version retires the old (`approval_status = 'superseded'`). A second open draft of the same spec is refused (409).
+- **Text-only specs** (words, no number) are listed (`GET /coa/specifications/text-only`), never edited by the app.
+- The existing verifies that filed a spec and expected it to grade now send `approve_now`; that is the change in behaviour, not a test fix.
+
+## D-310 — Item codes trimmed, bulk register as ProDough, and a re-issued report names what it replaces (4 Nov 2026)
+
+**Decided.**
+- **`cleanItemNumber()`** (tabs, non-breaking spaces, runs of space) on every request and spec write. Nothing already stored is rewritten; the bulk planner matches on the cleaned code and reports the untidy spellings.
+- **`POST /coa/products/bulk-register`** (Quality/admin): a list of codes and a brand (ProDough by default). The dry run is the default and writes nothing. The commit re-derives the same plan. An item already on the list is left as it is and named; one with no lab request is refused by name. No plan is attached. **The whey codes are not seeded**: Maria pastes them after checking the batch records.
+- **`GET /coa/products/no-plan`**: items with a lab report PDF and no approved plan. The plans screen has a whey filter.
+- **A re-issued report.** Applying results from a PDF whose CTLA ID is already on another request **for the same lot** needs `replaces_request_id`. That request must not hold a live signature: it is un-signed through the correction path first. Applying then marks it replaced (`replaced_by_request_id`), audited as `void`; it is never signed or issued again. Nothing is deleted. Two batches of one lot that carry one PDF in a test are not a re-issue, which is why the lot is part of the match.
+
+## D-311 — The `coa-prep` grant prepares COA work and never decides it (4 Nov 2026)
+
+**Decided.** A Settings box under COA / Lab Testing. A non-admin holding it (with COA at Edit) may write only: the COA product list, a new draft plan, a draft plan, a draft of a plan's next version, and an unsigned request's fields (never its status). Every other COA write is refused: approving a plan or a spec, filing a spec, results, files, signing, un-signing, deleting, bulk register. It never makes anyone a QA reviewer. No effect on an admin. `coaPrepGuard` is the one list (`COA_PREP_ALLOWED`).
+
+## D-312 — Paging, "not read yet", and the sign dialog compares stored with printed (4 Nov 2026)
+
+**Decided.**
+- `GET /coa/requests` takes `offset`. The screen still loads its bounded list at once.
+- A lab report attached and not applied (no result names it as source) reads **"not read yet"** on the list and the request. The two upload buttons are one: **Upload and read** (a PDF is read after it is attached; anything else is attached).
+- **The sign dialog shows stored beside printed** for date received, lot, expiry and gluten (`GET /coa/requests/:id/sign-facts`, re-reading the file on the server). A disagreement is red. It informs; it blocks nothing beyond D-243's re-read.
+
+**Merging (D-274).** D-307 to D-312 change records (signatures, specs, request links), so the PR waits for Lowry's review whatever the tests say.

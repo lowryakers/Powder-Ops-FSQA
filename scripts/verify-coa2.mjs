@@ -124,7 +124,7 @@ try {
   t('… a slug another product holds is a 409', (await call('PUT', '/coa/products/PD-WAFFLE', { slug: 'pancake-mix' })).s === 409);
   await call('PUT', '/coa/products/PD-WAFFLE', { display_name: 'Waffle Mix', slug: 'waffle-mix' });
   // The waffle already has a Lead limit on file, approved outside any plan.
-  await call('POST', '/coa/specifications', { item_number: 'PD-WAFFLE', item_description: 'Waffle', test_type: 'Lead', max_value: 2, unit: 'ppm' }, A);
+  await call('POST', '/coa/specifications', { approve_now: true, item_number: 'PD-WAFFLE', item_description: 'Waffle', test_type: 'Lead', max_value: 2, unit: 'ppm' }, A);
   const specsBefore = all('SELECT id FROM coa_specifications').length;
   r = await call('POST', `/coa/plans/${pd.id}/apply`, { item_numbers: ['PD-PANCAKE', 'PD-WAFFLE', 'NOT-ON-LIST'] });
   const prev = Object.fromEntries((r.j.products || []).map(p => [p.item_number, p]));
@@ -155,7 +155,7 @@ try {
   // ── 3. Unread lines ───────────────────────────────────────────────────────
   console.log('\n── the lines the reader could not read (D-243)');
   const u1 = await req('PD-UNREAD', '101902');
-  await call('POST', '/coa/specifications', { item_number: 'PD-UNREAD', item_description: 'Unread', test_type: 'Lead', max_value: 0.5, unit: 'ppm' }, A);
+  await call('POST', '/coa/specifications', { approve_now: true, item_number: 'PD-UNREAD', item_description: 'Unread', test_type: 'Lead', max_value: 0.5, unit: 'ppm' }, A);
   r = await upload(`/coa/requests/${u1.id}/files`, golden('synthetic-11-unreadable-row'), 'ctla-190011.pdf', { file_type: 'lab_results' });
   const uFile = r.j;
   r = await scanFile(u1.id, uFile.id);

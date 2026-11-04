@@ -91,7 +91,7 @@ try {
     && r.j.results?.find(x => x.test_type === 'Milk Allergen')?.result_value === '<0.4');
 
   console.log('\n── grading (D-222)');
-  await call('POST', '/coa/specifications', { item_number: 'COA-U', item_description: 'Unit check', test_type: 'Lead', max_value: 500, unit: 'ppb' });
+  await call('POST', '/coa/specifications', { approve_now: true, item_number: 'COA-U', item_description: 'Unit check', test_type: 'Lead', max_value: 500, unit: 'ppb' });
   const u1 = await req('COA-U', 'U-1');
   r = await call('POST', `/coa/requests/${u1.id}/results`, { results: [{ test_type: 'Lead', result_value: '2', unit: 'ppm' }] });
   t('2 ppm against a 500 ppb limit FAILS (units normalised)', r.s === 201 && r.j[0].pass_fail === 'fail', JSON.stringify(r.j));
@@ -105,7 +105,7 @@ try {
   t('… and cannot be signed even when marked pass by hand (D-228)', r.s === 409 && /no result passed/.test(r.j.error) && !row(na.id).certificate_number, r.j.error);
 
   console.log('\n── numbers read in full, units stated (D-227, D-229)');
-  await call('POST', '/coa/specifications', { item_number: 'COA-U', item_description: 'Unit check', test_type: 'Total Aerobic Plate Count', max_value: 10000, unit: 'cfu/g' });
+  await call('POST', '/coa/specifications', { approve_now: true, item_number: 'COA-U', item_description: 'Unit check', test_type: 'Total Aerobic Plate Count', max_value: 10000, unit: 'cfu/g' });
   const sci = await req('COA-U', 'SCI-1');
   r = await call('POST', `/coa/requests/${sci.id}/results`, { results: [
     { test_type: 'Total Aerobic Plate Count', result_value: '1.3e5', unit: 'cfu/g' }] });
@@ -126,13 +126,17 @@ try {
   const sp = (await call('GET', '/coa/specifications?item_number=COA-U')).j[0];
   r = await call('PUT', `/coa/specifications/${sp.id}`, { is_active: 0 });
   t('is_active cannot be flipped by an ordinary edit', r.s === 400);
+  // An edit to an ACTIVE spec is a new draft version with a reason (D-309).
   r = await call('PUT', `/coa/specifications/${sp.id}`, { method: 'ICP-MS' });
-  t('other fields still edit', r.s === 200 && r.j.method === 'ICP-MS');
+  t('editing an active spec without a reason is refused', r.s === 400 && r.j.needs_reason === true);
+  r = await call('PUT', `/coa/specifications/${sp.id}`, { method: 'ICP-MS', change_reason: 'Lab switched to ICP-MS' });
+  t('with a reason it is saved as a new draft version; the active one is unchanged', r.s === 201 && r.j.approval_status === 'draft' && r.j.method === 'ICP-MS'
+    && r.j.supersedes_spec_id === sp.id, JSON.stringify(r.j).slice(0, 200));
 
   console.log('\n── the certificate is not issued by reading it (D-223)');
-  await call('POST', '/coa/specifications', { item_number: 'COA-C', item_description: 'Cert check', test_type: 'Arsenic', max_value: 0.5, unit: 'ppm' });
+  await call('POST', '/coa/specifications', { approve_now: true, item_number: 'COA-C', item_description: 'Cert check', test_type: 'Arsenic', max_value: 0.5, unit: 'ppm' });
   const c1 = await req('COA-R', 'C-1');
-  await call('POST', '/coa/specifications', { item_number: 'COA-R', item_description: 'Report check', test_type: 'Arsenic', max_value: 0.5, unit: 'ppm' });
+  await call('POST', '/coa/specifications', { approve_now: true, item_number: 'COA-R', item_description: 'Report check', test_type: 'Arsenic', max_value: 0.5, unit: 'ppm' });
   r = await upload(`/coa/requests/${c1.id}/files`, fixture('176906'), 'report.pdf', { file_type: 'lab_report' });
   t('a file type outside the list is a 400, and the file is not left behind', r.s === 400 && filesOnDisk() === 0, `${r.s} files=${filesOnDisk()}`);
   r = await upload(`/coa/requests/${c1.id}/files`, fixture('176906'), 'report.pdf', { file_type: 'lab_results' });
@@ -142,7 +146,7 @@ try {
   // holds exactly what the report says, applied from the file.
   for (const [test_type, extra] of [['Total Aerobic Microbial Count (USP)', { max_value: 10000, unit: 'cfu/g' }], ['Total Yeast and Mold (USP)', { max_value: 1000, unit: 'cfu/g' }],
     ['E.Coli BAM (MOD)', { specification: 'Absent' }], ['Salmonella', { specification: 'Absent' }], ['Lead', { max_value: 0.5, unit: 'ppm' }], ['Gluten Allergen', { max_value: 20, unit: 'ppm' }]]) {
-    await call('POST', '/coa/specifications', { item_number: 'COA-R', item_description: 'Report check', test_type, ...extra });
+    await call('POST', '/coa/specifications', { approve_now: true, item_number: 'COA-R', item_description: 'Report check', test_type, ...extra });
   }
   r = await call('POST', `/coa/requests/${c1.id}/results`, { source_file_id: fileRow.id, results: [
     { test_type: 'Total Aerobic Microbial Count (USP)', result_value: '<100', unit: 'cfu/g' }, { test_type: 'Total Yeast and Mold (USP)', result_value: '<10', unit: 'cfu/g' },
@@ -230,7 +234,7 @@ try {
   const sheetText = r.s === 200 ? (await readPdfColumns(r.j)).text : '';
   t('the spec sheet prints "≤ 0.5" too', /≤ 0\.5/.test(sheetText), sheetText.split('\n').find(l => /Arsenic/.test(l)) || '');
   // The other symbols a specification is written with (D-239).
-  await call('POST', '/coa/specifications', { item_number: 'COA-G', item_description: 'Glyph check', test_type: 'Lead', specification: '≥ 0.1 µg/g <4 °C™', unit: 'ppm' }, A);
+  await call('POST', '/coa/specifications', { approve_now: true, item_number: 'COA-G', item_description: 'Glyph check', test_type: 'Lead', specification: '≥ 0.1 µg/g <4 °C™', max_value: 4, unit: 'ppm' }, A);
   const gx = await req('COA-G', 'G-1');
   await call('POST', `/coa/requests/${gx.id}/results`, { results: [{ test_type: 'Lead', result_value: '0.2', unit: 'ppm' }] });
   r = await call('GET', `/coa/requests/${gx.id}/pdf?draft=1`);

@@ -203,7 +203,7 @@ try {
   const nx = await req('PD-NOPLAN', '102100');
   await call('PUT', '/coa/products/PD-NOPLAN', { display_name: 'No Plan Mix', slug: 'no-plan-mix', brand_owner: 'ProDough' });
   for (const [tt, extra] of [['Identity (FTIR)', {}], ['Purity', {}], ['Assay potency', {}], ['Moisture', {}], ['Lead', { max_value: 1, unit: 'ppm' }]]) {
-    await call('POST', '/coa/specifications', { item_number: 'PD-NOPLAN', item_description: 'No Plan Mix', test_type: tt, ...extra }, A);
+    await call('POST', '/coa/specifications', { approve_now: true, item_number: 'PD-NOPLAN', item_description: 'No Plan Mix', test_type: tt, ...extra }, A);
   }
   r = await call('POST', `/coa/requests/${nx.id}/results`, { results: [
     { test_type: 'Identity (FTIR)', result_value: 'Conforms', pass_fail: 'pass', edit_reason: 'Typed from the paper report' },

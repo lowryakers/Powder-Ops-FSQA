@@ -4053,6 +4053,27 @@ Specifications tab), `UnreadRows` on a request.
   counted apart, never late. ReadyBot to QA once an open weekday from 9am, only when late (`coa_late_results_recipients`).
 - `verify:coaworklist` (52; control fails 16 of the first 23). Instructions: `docs/lab-request-from-receiving.md`.
 
+## COA corrections: a window, kept signatures, spec drafts, coa-prep (D-307 … D-312)
+`server/coa-correction-window.js`, `coa_correction_windows`, `coa_signature_history` (append-only by trigger),
+`coa_requests.reopened_*` / `supersedes_certificate_number` / `replaced_by_request_id` / `replaces_request_id`,
+`server/coa-limit.js` (`parseLimit`), `server/coa-prep.js`, `server/coa-item-number.js`, `server/coa-gluten-report.js`,
+`CoaCorrectionWindow.jsx`, `CoaSpecReports.jsx`.
+- **An admin opens a window with a password; the Quality reviewers it names un-sign with a reason, "what will you
+  correct" and their password.** Never delete. Expiry is checked on the clock at every call.
+- **Every un-sign keeps the original in `coa_signature_history`** before clearing. A window un-sign REOPENS the request:
+  PDF not issued, edits audited as `correction`, it leaves only by being signed again (new number, `supersedes_…`,
+  snapshot v3 with `corrected_from`). Other certificates stay snapshot v2.
+- **A new spec is a draft; `approve_now` approves in the same call. PUT on an active spec is a new draft version with
+  a reason.** A heavy metal (As, Cd, Hg, Pb) is never approved without a number. A verify that files a spec and expects
+  it to grade must send `approve_now: true`.
+- **One Limit box**, parsed on the server and said back. Text-only specs are listed, never rewritten by the app.
+- **`coa-prep`** opens only `COA_PREP_ALLOWED` (product list, draft plans, an unsigned request's fields). Add a prep
+  route there, never by loosening `isQaReviewer`.
+- **A re-issued report (same CTLA ID, same lot)** needs `replaces_request_id`; the old request is un-signed through the
+  correction path first and is then never signed again.
+- The gluten "<44" report is read-only; signed ones are corrected inside a window. Whey codes are NOT seeded.
+- `verify:coawindow` (82; control fails 13 then stops).
+
 ## COA item specification sheet
 The Specifications tab stores one row per test (right for auto pass/fail, hard to eyeball). "View item & all
 specs" (`ItemSpecSummaryModal` in COAPanel.jsx) regroups the rows under an item — the old paper spec sheet —

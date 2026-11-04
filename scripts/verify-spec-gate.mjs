@@ -32,7 +32,7 @@ const gapsOf = (r) => JSON.parse(r.release_gaps || 'null');
 // A 1×1 PNG — the sign route wants a real data URL.
 const SIG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
-const spec = (item, test, extra = {}) => call('POST', '/coa/specifications', { item_number: item, item_description: `Gate test ${item}`, test_type: test, ...extra }, Q);
+const spec = (item, test, extra = {}) => call('POST', '/coa/specifications', { approve_now: true, item_number: item, item_description: `Gate test ${item}`, test_type: test, ...extra }, Q);
 const request = (item, lot) => call('POST', '/coa/requests', { item_number: item, item_description: `Gate test ${item}`, lot_number: lot, tests_requested: 'HM & Micro', date_sent: '2026-09-01' }, Q).then(r => r.json());
 const results = (id, rows) => call('POST', `/coa/requests/${id}/results`, { results: rows }, Q);
 

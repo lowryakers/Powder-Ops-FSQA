@@ -1420,7 +1420,7 @@ router.post('/requests/:id/results', async (req, res) => {
 
   // A RE-ISSUED REPORT (D-310). The lab sometimes re-issues a report under the
   // same CTLA ID with a corrected value. If that ID is already on another
-  // request, this one must say which request it replaces, and that request must
+  // request FOR THE SAME LOT (a re-issue is the same sample), this one must say which request it replaces, and that request must
   // not hold a live signature — a signed certificate leaves only through the
   // correction path (un-sign inside a window, or as an admin). Applying then
   // marks the old request replaced (its PDF is never issued again and it cannot
@@ -1429,7 +1429,8 @@ router.post('/requests/:id/results', async (req, res) => {
   if (read?.lab_report_number) {
     const prior = db.prepare(`SELECT DISTINCT r.id, r.item_number, r.lot_number, r.certificate_number, r.qa_signed_at, r.reopened_for_correction, r.replaced_by_request_id
       FROM coa_files f JOIN coa_requests r ON r.id = f.request_id
-      WHERE f.lab_report_number = ? AND r.id != ? AND r.replaced_by_request_id IS NULL`).all(read.lab_report_number, request.id);
+      WHERE f.lab_report_number = ? AND r.id != ? AND r.replaced_by_request_id IS NULL
+        AND LOWER(TRIM(r.lot_number)) = LOWER(TRIM(?))`).all(read.lab_report_number, request.id, request.lot_number || '');
     if (prior.length) {
       const wanted = String(req.body.replaces_request_id || '').trim();
       const x = prior.find(p => p.id === wanted);
