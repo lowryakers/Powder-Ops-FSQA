@@ -83,7 +83,8 @@ function writeTests(db, planId, tests) {
 export function getPlan(db, id) {
   const plan = db.prepare('SELECT * FROM coa_test_plans WHERE id = ?').get(id);
   if (!plan) return null;
-  return { ...plan, tests: db.prepare('SELECT * FROM coa_test_plan_tests WHERE plan_id = ? ORDER BY sort, test_type').all(id) };
+  const proposed = (() => { try { return plan.proposed_items ? JSON.parse(plan.proposed_items) : []; } catch { return []; } })();
+  return { ...plan, proposed, tests: db.prepare('SELECT * FROM coa_test_plan_tests WHERE plan_id = ? ORDER BY sort, test_type').all(id) };
 }
 
 export function listPlans(db) {

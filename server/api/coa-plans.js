@@ -23,6 +23,33 @@ const QA_ONLY = 'Only Quality (a QA reviewer) or an admin can change test plans 
 const mayEdit = (u) => !isCoaPrepOnly(u) && (u?.role === 'admin' || isQaReviewer(u));
 // Preparing a draft plan or the product list: Quality, or the coa-prep grant.
 const mayPrep = (u) => u?.role === 'admin' || isQaReviewer(u) || hasCoaPrep(u);
+// A bot token holding the coa-prep TOKEN grant (D-313). Which writes it may make
+// is WRITE_AREAS' job (server/bot-api.js); here it only stands in for the grant.
+const botPrep = (req) => req.auth?.kind === 'token' && (req.auth.grants || []).includes('coa-prep');
+const mayPrepReq = (req) => botPrep(req) || mayPrep(req.user);
+const botLabel = (req) => req.auth?.label || req.auth?.prefix || 'bot token';
+// One `bot_coa_write` row per successful bot write: the token's name, the old
+// value and the new value. A person's write produces none.
+function botCoaWrite(req, entity, id, label, before, after, extra = {}) {
+  if (req.auth?.kind !== 'token') return;
+  logAudit(req.user, 'bot_coa_write', entity, id, {
+    token_id: req.auth.tokenId, token_prefix: req.auth.prefix, token_label: req.auth.label || null,
+    bot_name: req.user?.name || null, grant: 'coa-prep', method: req.method, path: (req.baseUrl || '') + req.path, ...extra,
+  }, before ?? null, after ?? null, label);
+}
+const planTestView = (t) => ({ test_type: t.test_type, evaluation: t.evaluation, comparator: t.comparator, min_value: t.min_value, max_value: t.max_value, unit: t.unit, method: t.method, required: t.required, specification: t.specification });
+const testKey = (t) => String(t.test_type || '').toLowerCase();
+const sameTest = (a, b) => ['evaluation', 'comparator', 'min_value', 'max_value', 'unit', 'method', 'required', 'specification', 'public']
+  .every(k => (a[k] ?? null) === (b[k] ?? null) || (k === 'public' && !!a[k] === !!b[k]) || (k === 'required' && !!a[k] === !!b[k]));
+/** A draft plan's proposed products: trimmed, de-duplicated item numbers, each one a COA item. */
+function cleanItems(db, raw) {
+  const list = (Array.isArray(raw) ? raw : String(raw || '').split(/[\n,;]/)).map(cleanItemNumber).filter(Boolean);
+  const uniq = [...new Set(list)];
+  if (uniq.length > MAX_APPLY) return [null, `At most ${MAX_APPLY} products on a plan at a time.`];
+  const unknown = uniq.filter(i => !db.prepare('SELECT 1 FROM coa_products WHERE item_number = ? UNION SELECT 1 FROM coa_requests WHERE item_number = ? LIMIT 1').get(i, i));
+  if (unknown.length) return [null, `No lab request or COA product has the item number ${unknown.map(u => `"${u}"`).join(', ')}.`];
+  return [uniq, null];
+}
 
 // ── Test plans ─────────────────────────────────────────────────────────────
 router.get('/plans', (_req, res) => res.json({ plans: listPlans(getDb()) }));
@@ -48,7 +75,7 @@ router.post('/plans', (req, res) => {
 
 // A DRAFT is edited in place; an approved plan never is.
 router.put('/plans/:id', (req, res) => {
-  if (!mayPrep(req.user)) return res.status(403).json({ error: QA_ONLY });
+  if (!mayPrepReq(req)) return res.status(403).json({ error: QA_ONLY });
   const db = getDb();
   const plan = getPlan(db, req.params.id);
   if (!plan) return res.status(404).json({ error: 'No such test plan.' });
@@ -65,7 +92,19 @@ router.put('/plans/:id', (req, res) => {
     const dup = names.find((n, i) => names.indexOf(n) !== i);
     if (dup) return res.status(400).json({ error: `"${dup}" is in the plan twice.` });
   }
+  let items = null;
+  if (req.body?.items !== undefined) {
+    const [list, err] = cleanItems(db, req.body.items);
+    if (err) return res.status(400).json({ error: err });
+    items = list;
+  }
+  const bot = req.auth?.kind === 'token';
+  // What the plan has now, by test name: a bot cannot move `public`, a person's
+  // edit keeps the bot mark on a test it did not change (D-313).
+  const prior = new Map(plan.tests.map(t => [testKey(t), t]));
+  if (bot && Array.isArray(req.body?.tests)) for (const t of tests) t.public = prior.get(testKey(t))?.public ? 1 : 0;
   db.transaction(() => {
+    if (items !== null) db.prepare('UPDATE coa_test_plans SET proposed_items = ? WHERE id = ?').run(items.length ? JSON.stringify(items) : null, plan.id);
     if (req.body?.notes !== undefined || req.body?.brand_owner !== undefined) {
       db.prepare('UPDATE coa_test_plans SET notes = ?, brand_owner = ? WHERE id = ?').run(
         req.body.notes !== undefined ? (String(req.body.notes || '').trim() || null) : plan.notes,
@@ -73,13 +112,26 @@ router.put('/plans/:id', (req, res) => {
     }
     if (Array.isArray(req.body?.tests)) {
       db.prepare('DELETE FROM coa_test_plan_tests WHERE plan_id = ?').run(plan.id);
-      const ins = db.prepare(`INSERT INTO coa_test_plan_tests (id, plan_id, test_type, evaluation, comparator, min_value, max_value, unit, method, required, specification, sort, public)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-      tests.forEach((t, i) => ins.run(uuid(), plan.id, t.test_type, t.evaluation, t.comparator, t.min_value, t.max_value, t.unit, t.method, t.required, t.specification, i, t.public ? 1 : 0));
+      const ins = db.prepare(`INSERT INTO coa_test_plan_tests (id, plan_id, test_type, evaluation, comparator, min_value, max_value, unit, method, required, specification, sort, public, bot_prepared_at, bot_prepared_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+      tests.forEach((t, i) => {
+        const was = prior.get(testKey(t));
+        const unchanged = was && sameTest(was, t);
+        // A bot's changed or new test is marked; an unchanged one keeps its mark;
+        // a person's change is the person's value and carries none.
+        const mark = bot ? (unchanged ? [was.bot_prepared_at, was.bot_prepared_by] : [new Date().toISOString(), botLabel(req)])
+          : (unchanged ? [was.bot_prepared_at, was.bot_prepared_by] : [null, null]);
+        ins.run(uuid(), plan.id, t.test_type, t.evaluation, t.comparator, t.min_value, t.max_value, t.unit, t.method, t.required, t.specification, i, t.public ? 1 : 0, mark[0] ?? null, mark[1] ?? null);
+      });
     }
+    if (bot) db.prepare('UPDATE coa_test_plans SET bot_prepared_at = ?, bot_prepared_by = ? WHERE id = ?').run(new Date().toISOString(), botLabel(req), plan.id);
   })();
   const after = getPlan(db, plan.id);
-  logAudit(req.user, 'update', 'coa_test_plan', plan.id, { name: plan.name, version: plan.version }, plan, after, `${plan.name} v${plan.version}`);
+  logAudit(req.user, 'update', 'coa_test_plan', plan.id, { name: plan.name, version: plan.version, ...(bot ? { via_bot: botLabel(req) } : {}) }, plan, after, `${plan.name} v${plan.version}`);
+  botCoaWrite(req, 'coa_test_plan', plan.id, `${plan.name} v${plan.version}`,
+    { tests: plan.tests.map(planTestView), proposed_items: plan.proposed, notes: plan.notes },
+    { tests: after.tests.map(planTestView), proposed_items: after.proposed, notes: after.notes },
+    { plan_name: plan.name, plan_version: plan.version });
   res.json({ ...after, missing: planMissing(after.tests) });
 });
 
@@ -95,8 +147,8 @@ router.post('/plans/:id/new-version', (req, res) => {
   const version = (db.prepare('SELECT MAX(version) v FROM coa_test_plans WHERE name = ?').get(plan.name).v || plan.version) + 1;
   const id = uuid();
   db.transaction(() => {
-    db.prepare(`INSERT INTO coa_test_plans (id, name, brand_owner, version, status, supersedes_id, notes, created_by) VALUES (?, ?, ?, ?, 'draft', ?, ?, ?)`)
-      .run(id, plan.name, plan.brand_owner, version, plan.id, plan.notes, req.user.name);
+    db.prepare(`INSERT INTO coa_test_plans (id, name, brand_owner, version, status, supersedes_id, notes, created_by, proposed_items) VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?)`)
+      .run(id, plan.name, plan.brand_owner, version, plan.id, plan.notes, req.user.name, plan.proposed_items || null);
     const ins = db.prepare(`INSERT INTO coa_test_plan_tests (id, plan_id, test_type, evaluation, comparator, min_value, max_value, unit, method, required, specification, sort, public)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     for (const t of plan.tests) ins.run(uuid(), id, t.test_type, t.evaluation, t.comparator, t.min_value, t.max_value, t.unit, t.method, t.required, t.specification, t.sort, t.public ? 1 : 0);
@@ -115,13 +167,15 @@ router.post('/plans/:id/approve', (req, res) => {
   if (missing.length) return res.status(400).json({ error: `This plan cannot be approved yet: ${missing.join(' ')}`, missing });
   if (!gateSignature(req, res, { action: 'coa_plan_approve' })) return;
   db.transaction(() => {
-    db.prepare("UPDATE coa_test_plans SET status = 'approved', approved_by = ?, approved_at = datetime('now') WHERE id = ?").run(req.user.name, plan.id);
+    db.prepare("UPDATE coa_test_plans SET status = 'approved', approved_by = ?, approved_at = datetime('now'), bot_prepared_at = NULL, bot_prepared_by = NULL WHERE id = ?").run(req.user.name, plan.id);
+    // A person approving the plan is the review of every value a bot prepared on it (D-313).
+    db.prepare('UPDATE coa_test_plan_tests SET bot_prepared_at = NULL, bot_prepared_by = NULL WHERE plan_id = ?').run(plan.id);
     // The version it replaces stops being the one in force. Products keep
     // their specifications until the new version is applied to them.
     db.prepare("UPDATE coa_test_plans SET status = 'retired' WHERE name = ? AND status = 'approved' AND id != ?").run(plan.name, plan.id);
   })();
   logAudit(req.user, 'approve', 'coa_test_plan', plan.id, { name: plan.name, version: plan.version, tests: plan.tests.map(t => t.test_type), ...signatureEvidence() },
-    { status: 'draft' }, { status: 'approved' }, `${plan.name} v${plan.version}`);
+    { status: 'draft', bot_prepared: !!plan.bot_prepared_at || plan.tests.some(t => t.bot_prepared_at) }, { status: 'approved' }, `${plan.name} v${plan.version}`);
   res.json(getPlan(db, plan.id));
 });
 
@@ -234,7 +288,7 @@ router.get('/products/no-plan', (_req, res) => {
 });
 
 router.put('/products/:item', (req, res) => {
-  if (!mayPrep(req.user)) return res.status(403).json({ error: QA_ONLY });
+  if (!mayPrepReq(req)) return res.status(403).json({ error: QA_ONLY });
   const db = getDb();
   const item = cleanItemNumber(req.params.item);
   const before = db.prepare('SELECT * FROM coa_products WHERE item_number = ?').get(item);
@@ -267,8 +321,40 @@ router.put('/products/:item', (req, res) => {
     db.prepare('INSERT INTO coa_products (item_number, display_name, slug, brand_owner, gf_claim, product_id, public_note, aliases, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .run(item, row.display_name, row.slug, row.brand_owner, row.gf_claim, row.product_id, row.public_note, row.aliases, req.user.name);
   }
+  // Bot-prepared (D-313): the fields a bot changed read "needs review" until a
+  // person saves the product or marks it reviewed. A person's save is that review.
+  const BOT_FIELDS = ['display_name', 'brand_owner', 'aliases'];
+  const changed = BOT_FIELDS.filter(k => (before?.[k] ?? null) !== (row[k] ?? null));
+  if (req.auth?.kind === 'token') {
+    if (!before || changed.length) {
+      const prev = before?.bot_prepared_fields ? JSON.parse(before.bot_prepared_fields) : [];
+      const fields = [...new Set([...prev, ...(before ? changed : ['registered', ...changed])])];
+      db.prepare('UPDATE coa_products SET bot_prepared_at = ?, bot_prepared_by = ?, bot_prepared_fields = ? WHERE item_number = ?')
+        .run(new Date().toISOString(), botLabel(req), JSON.stringify(fields), item);
+    }
+  } else if (before?.bot_prepared_at) {
+    db.prepare('UPDATE coa_products SET bot_prepared_at = NULL, bot_prepared_by = NULL, bot_prepared_fields = NULL WHERE item_number = ?').run(item);
+  }
   const after = db.prepare('SELECT * FROM coa_products WHERE item_number = ?').get(item);
-  logAudit(req.user, before ? 'update' : 'create', 'coa_product', item, { gf_claim_changed: !!before && before.gf_claim !== after.gf_claim }, before || null, after, item);
+  logAudit(req.user, before ? 'update' : 'create', 'coa_product', item, { gf_claim_changed: !!before && before.gf_claim !== after.gf_claim, ...(req.auth?.kind === 'token' ? { via_bot: botLabel(req) } : {}) }, before || null, after, item);
+  const view = (r) => r ? Object.fromEntries(BOT_FIELDS.map(k => [k, r[k] ?? null])) : null;
+  botCoaWrite(req, 'coa_product', item, item, view(before), view(after), { registered: !before, changed });
+  res.json(after);
+});
+
+// A person marks a bot-prepared product reviewed (D-313). "acknowledge" is a
+// decision segment, so a token is refused here whatever its grants.
+router.post('/products/:item/acknowledge', (req, res) => {
+  if (!mayEdit(req.user)) return res.status(403).json({ error: QA_ONLY });
+  const db = getDb();
+  const item = cleanItemNumber(req.params.item);
+  const before = db.prepare('SELECT * FROM coa_products WHERE item_number = ?').get(item);
+  if (!before) return res.status(404).json({ error: 'No such COA product.' });
+  if (!before.bot_prepared_at) return res.json(before);
+  db.prepare('UPDATE coa_products SET bot_prepared_at = NULL, bot_prepared_by = NULL, bot_prepared_fields = NULL WHERE item_number = ?').run(item);
+  const after = db.prepare('SELECT * FROM coa_products WHERE item_number = ?').get(item);
+  logAudit(req.user, 'update', 'coa_product', item, { reviewed_bot_prep: true, fields: JSON.parse(before.bot_prepared_fields || '[]'), prepared_by: before.bot_prepared_by },
+    { bot_prepared_at: before.bot_prepared_at }, { bot_prepared_at: null }, item);
   res.json(after);
 });
 

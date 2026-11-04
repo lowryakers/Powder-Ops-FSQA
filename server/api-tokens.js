@@ -56,6 +56,7 @@ export const TOKEN_GRANTS = Object.freeze({
   'sops-edit': 'SOPs: stage draft documents, edit draft text and fields, start and edit a new revision, attach a PDF. Never approves, signs, makes effective, deletes, retires or merges.',
   'wi-edit': 'Work Instructions: stage draft documents, edit draft text and fields, start and edit a new revision, attach a PDF. Never approves, signs, makes effective, deletes, retires or merges.',
   'jd-edit': 'Job Descriptions: stage draft documents, edit draft text and fields, start and edit a new revision, attach a PDF. Never approves, signs, makes effective, deletes, retires or merges.',
+  'coa-prep': 'COA: edit a DRAFT test plan (limits, units, judging rules, the products it is meant for) and register or alias a COA product and set its brand. Every value it saves reads "bot-prepared, needs review" until a person approves. Never approves, applies, signs, unsigns, deletes or edits anything approved or signed.',
 });
 
 export function normalizeGrants(input) {

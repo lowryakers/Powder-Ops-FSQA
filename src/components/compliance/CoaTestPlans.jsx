@@ -14,16 +14,28 @@ import { withSignature } from '../../lib/signature';
 const COMPARE = [
   ['', 'Choose…'], ['<', 'below (<)'], ['<=', 'at or below (≤)'], ['>', 'above (>)'], ['>=', 'at or above (≥)'], ['range', 'a range'], ['absent', 'absent'],
 ];
+// A value a bot token saved under the coa-prep grant (D-313). It reads this way
+// until a person approves the plan, saves the product, or marks it reviewed.
+function BotChip({ by, at, fields, small }) {
+  const when = at ? new Date(at).toLocaleDateString() : '';
+  return (
+    <span data-bot-prepared title={`Saved by ${by || 'a bot token'}${when ? ` on ${when}` : ''}${fields?.length ? ` (${fields.join(', ')})` : ''}. A person reviews it before it counts.`}
+      className={`inline-block rounded bg-violet-50 text-violet-800 border border-violet-200 font-semibold ${small ? 'text-[9px] px-1 ml-1' : 'text-[10px] px-1.5 py-0.5'}`}>
+      {small ? 'bot' : 'Bot-prepared, needs review'}
+    </span>
+  );
+}
 const STATUS_STYLE = { draft: 'bg-amber-50 text-amber-800', approved: 'bg-green-50 text-green-800', retired: 'bg-gray-100 text-gray-500' };
 
 function PlanEditor({ plan, onSaved, onClose }) {
   const [tests, setTests] = useState(() => plan.tests.map(t => ({ ...t, min_value: t.min_value ?? '', max_value: t.max_value ?? '' })));
+  const [items, setItems] = useState(() => (plan.proposed || []).join('; '));
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const set = (i, k, v) => setTests(ts => ts.map((t, j) => (j === i ? { ...t, [k]: v } : t)));
   const save = async () => {
     setBusy(true); setError('');
-    try { await apiPut(`/coa/plans/${plan.id}`, { tests }); onSaved(); }
+    try { await apiPut(`/coa/plans/${plan.id}`, { tests, items: items.split(/[\n,;]/).map(x => x.trim()).filter(Boolean) }); onSaved(); }
     catch (e) { setError(e.message); }
     finally { setBusy(false); }
   };
@@ -68,6 +80,11 @@ function PlanEditor({ plan, onSaved, onClose }) {
           </tbody>
         </table>
       </div>
+      <label className="block text-xs text-gray-700">
+        Products this plan is meant for <span className="text-gray-400">(item numbers, separated by ;) — a proposal; Apply is still done after approval</span>
+        <input id={`plan-items-${plan.id}`} value={items} onChange={e => setItems(e.target.value)} data-plan-items
+          className="mt-1 block w-full px-1.5 py-1 border border-gray-300 rounded" placeholder="10234; 10235" />
+      </label>
       {error && <p className="text-xs text-red-600">{error}</p>}
       <div className="flex gap-2">
         <button onClick={() => setTests(ts => [...ts, { test_type: '', evaluation: 'limit', comparator: null, min_value: '', max_value: '', unit: '', method: '', specification: '', required: 1 }])}
@@ -82,7 +99,8 @@ function PlanEditor({ plan, onSaved, onClose }) {
 
 function ApplyPanel({ plan, products, onDone, onClose }) {
   const eligible = products.map(p => p.item_number);
-  const [picked, setPicked] = useState(() => new Set(products.filter(p => p.plan_name === plan.name).map(p => p.item_number)));
+  const [picked, setPicked] = useState(() => new Set([...products.filter(p => p.plan_name === plan.name).map(p => p.item_number),
+    ...(plan.proposed || []).filter(i => eligible.includes(i))]));
   const [preview, setPreview] = useState(null);
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
@@ -151,6 +169,7 @@ function ApplyPanel({ plan, products, onDone, onClose }) {
   );
 }
 
+const botFields = (p) => { try { return JSON.parse(p.bot_prepared_fields || '[]'); } catch { return []; } };
 const aliasList = (p) => { try { return JSON.parse(p.aliases || '[]'); } catch { return []; } };
 
 function ProductRow({ p, brands, canEdit, onSaved }) {
@@ -161,17 +180,24 @@ function ProductRow({ p, brands, canEdit, onSaved }) {
     try { await apiPut(`/coa/products/${encodeURIComponent(p.item_number)}`, form); setForm(null); onSaved(); }
     catch (e) { setError(e.message); }
   };
+  const reviewed = async () => {
+    setError('');
+    try { await apiPost(`/coa/products/${encodeURIComponent(p.item_number)}/acknowledge`, {}); onSaved(); }
+    catch (e) { setError(e.message); }
+  };
   if (!form) {
     return (
       <tr className="border-t border-gray-100" data-coa-product={p.item_number}>
         <td className="py-1.5 pr-2 font-medium">{p.item_number}</td>
         <td className="pr-2">{p.display_name || <span className="text-gray-400">—</span>}
-          {aliasList(p).length > 0 && <span className="block text-[11px] text-gray-500" data-coa-aliases>also: {aliasList(p).join('; ')}</span>}</td>
+          {aliasList(p).length > 0 && <span className="block text-[11px] text-gray-500" data-coa-aliases>also: {aliasList(p).join('; ')}</span>}
+          {p.bot_prepared_at && <span className="block mt-0.5"><BotChip by={p.bot_prepared_by} at={p.bot_prepared_at} fields={botFields(p)} /></span>}</td>
         <td className="pr-2">{p.brand_owner || '—'}</td>
         <td className="pr-2 font-mono text-[11px]">{p.slug || <span className="text-gray-400">—</span>}</td>
         <td className="pr-2">{p.gf_claim ? 'Gluten-free claim' : '—'}</td>
         <td className="pr-2">{p.plan_name ? `${p.plan_name} v${p.plan_version}` : <span className="text-gray-400">none</span>}</td>
-        <td>{canEdit && <button onClick={() => setForm({ display_name: p.display_name || '', slug: p.slug || '', brand_owner: p.brand_owner || '', gf_claim: !!p.gf_claim, product_id: p.product_id || '', aliases: aliasList(p).join('; ') })} className="text-powder-600 hover:underline">Edit</button>}</td>
+        <td className="whitespace-nowrap">{canEdit && p.bot_prepared_at && <button onClick={reviewed} data-bot-reviewed className="text-violet-700 hover:underline mr-2">Mark reviewed</button>}
+          {canEdit && <button onClick={() => setForm({ display_name: p.display_name || '', slug: p.slug || '', brand_owner: p.brand_owner || '', gf_claim: !!p.gf_claim, product_id: p.product_id || '', aliases: aliasList(p).join('; ') })} className="text-powder-600 hover:underline">Edit</button>}</td>
       </tr>
     );
   }
@@ -311,6 +337,7 @@ export default function CoaTestPlans({ canEdit }) {
                   <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${STATUS_STYLE[p.status]}`}>{p.status}</span>
                   <span className="text-xs text-gray-500">{p.tests.length} tests · {p.products} product{p.products === 1 ? '' : 's'}</span>
                   {p.approved_by && <span className="text-xs text-gray-500">approved by {p.approved_by}</span>}
+                  {p.status === 'draft' && (p.bot_prepared_at || p.tests.some(t => t.bot_prepared_at)) && <BotChip by={p.bot_prepared_by} at={p.bot_prepared_at} />}
                   <div className="flex-1" />
                   {canEdit && p.status === 'draft' && <button onClick={() => setEditing(editing === p.id ? null : p.id)} className="text-xs text-powder-600 hover:underline">Edit</button>}
                   {canEdit && p.status === 'draft' && <button onClick={() => approve(p)} disabled={p.missing.length > 0} title={p.missing.join(' ')} className="text-xs px-2 py-0.5 rounded bg-powder-600 text-white disabled:opacity-40">Approve</button>}
@@ -319,9 +346,11 @@ export default function CoaTestPlans({ canEdit }) {
                 </div>
                 <ul className="mt-1 text-[11px] text-gray-600 flex flex-wrap gap-x-3">
                   {p.tests.map(t => (
-                    <li key={t.id}>{t.test_type}{t.evaluation === 'report_only' ? ' (reported)' : t.specification ? `: ${t.specification}` : t.comparator ? `: ${t.comparator} ${t.max_value ?? t.min_value ?? ''} ${t.unit || ''}` : ': no limit yet'}</li>
+                    <li key={t.id}>{t.test_type}{t.evaluation === 'report_only' ? ' (reported)' : t.specification ? `: ${t.specification}` : t.comparator ? `: ${t.comparator} ${t.max_value ?? t.min_value ?? ''} ${t.unit || ''}` : ': no limit yet'}
+                      {t.bot_prepared_at && <BotChip small by={t.bot_prepared_by} at={t.bot_prepared_at} />}</li>
                   ))}
                 </ul>
+                {p.proposed?.length > 0 && <p className="mt-1 text-[11px] text-gray-600" data-plan-proposed>Meant for: {p.proposed.join(', ')}</p>}
                 {p.status === 'draft' && p.missing.length > 0 && <p className="mt-1 text-[11px] text-amber-800">Before it can be approved: {p.missing.join(' ')}</p>}
                 {editing === p.id && <PlanEditor plan={p} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload(); }} />}
                 {applying === p.id && (

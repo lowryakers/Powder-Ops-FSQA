@@ -45,6 +45,21 @@ export function scanRoutes(root = process.cwd(), { includeGet = false } = {}) {
       const sub = r[2] === '/' ? '' : r[2];
       routes.push({ method: r[1].toUpperCase(), path: prefix + sub, file: `server/api/${b.file}`, mount: prefix });
     }
+    // A router may mount another router file on itself (`router.use(coaPlansRouter)`,
+    // `router.use('/x', sub)` — D-313). Those routes sit under the same prefix
+    // and must be scanned too; the COA test-plan routes were invisible before.
+    for (const use of src.matchAll(new RegExp(`\\b${varName}\\.use\\(\\s*(?:['"\`]([^'"\`]+)['"\`]\\s*,\\s*)?([A-Za-z_$][\\w$]*)\\s*\\)`, 'g'))) {
+      const imp = src.match(new RegExp(`import\\s+${use[2]}\\s+from\\s*'(\\.\\/[^']+)'`));
+      if (!imp) continue;
+      const sub = join(root, 'server/api', imp[1]);
+      if (!existsSync(sub)) continue;
+      const ssrc = readFileSync(sub, 'utf8');
+      const sVar = ssrc.match(/export\s+default\s+([A-Za-z_$][\w$]*)/)?.[1] || 'router';
+      const pre = prefix + (use[1] && use[1] !== '/' ? use[1] : '');
+      for (const r of ssrc.matchAll(new RegExp(`\\b${sVar}\\.(${verbs})\\(\\s*['"\`]([^'"\`]+)['"\`]`, 'g'))) {
+        routes.push({ method: r[1].toUpperCase(), path: pre + (r[2] === '/' ? '' : r[2]), file: join('server/api', imp[1]).replace(/\\/g, '/'), mount: pre });
+      }
+    }
     // A router may hand itself to a helper that registers more routes on it
     // (`registerMerchRoutes(router, …)`, D-302). Those routes are mounted on the
     // same prefix and must be scanned too, or a token rule never sees them.
