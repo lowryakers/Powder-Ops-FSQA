@@ -107,6 +107,49 @@ const sopDoc = (db, id) => db.prepare('SELECT id, doc_type, status FROM sop_docu
 const extraKeys = (body, allowed) => Object.keys(body || {}).filter((k) => !allowed.includes(k));
 const approvalFields = (body) => ['approved_by', 'approved_at'].filter((k) => body?.[k] != null && body[k] !== '');
 
+// COA preparation by a bot token (D-313). Each `when` returns false with the
+// reason on req.tokenWriteRefusal; a plan or product that does not exist passes
+// (the handler answers 404, or a product is registered).
+export const COA_PLAN_BOT_KEYS = Object.freeze(['tests', 'items', 'notes']);
+export const COA_TEST_BOT_KEYS = Object.freeze(['test_type', 'evaluation', 'comparator', 'min_value', 'max_value', 'unit', 'method', 'required', 'specification', 'public', 'id', 'sort', 'plan_id']);
+export const COA_PRODUCT_BOT_KEYS = Object.freeze(['brand_owner', 'aliases', 'display_name']);
+function coaPlanBotOk(req, m, db) {
+  const plan = db.prepare('SELECT id, name, version, status FROM coa_test_plans WHERE id = ?').get(m[1]);
+  if (!plan) return true;
+  if (plan.status !== 'draft') return sopRefuse(req, `"${plan.name}" v${plan.version} is ${plan.status}. A bot edits a draft plan only; an approved plan is changed by a person making a new version.`);
+  const b = req.body || {};
+  const extra = extraKeys(b, COA_PLAN_BOT_KEYS);
+  if (extra.length) return sopRefuse(req, `A bot sets a draft plan's tests, proposed products and notes only (${extra.join(', ')} refused).`);
+  if (b.tests !== undefined) {
+    if (!Array.isArray(b.tests)) return sopRefuse(req, 'tests must be a list.');
+    const pub = new Map(db.prepare('SELECT test_type, public FROM coa_test_plan_tests WHERE plan_id = ?').all(plan.id)
+      .map(t => [String(t.test_type).toLowerCase(), t.public ? 1 : 0]));
+    for (const t of b.tests) {
+      const bad = extraKeys(t, COA_TEST_BOT_KEYS);
+      if (bad.length) return sopRefuse(req, `A test carries limits, units and judging rules only (${bad.join(', ')} refused).`);
+      // What the public certificate shows is a publishing decision, a person's.
+      if (t.public !== undefined) {
+        const want = t.public === true || t.public === 1 ? 1 : 0;
+        const now = pub.get(String(t.test_type || '').replace(/\s+/g, ' ').trim().toLowerCase()) ?? 0;
+        if (want !== now) return sopRefuse(req, `Whether "${t.test_type}" shows on the public certificate is a person's decision (public refused).`);
+      }
+    }
+  }
+  return true;
+}
+function coaProductBotOk(req, m, db) {
+  const b = req.body || {};
+  const extra = extraKeys(b, COA_PRODUCT_BOT_KEYS);
+  if (extra.length) return sopRefuse(req, `A bot registers a COA product, its aliases and its brand only (${extra.join(', ')} refused).`);
+  let item = m[1];
+  try { item = decodeURIComponent(item); } catch { /* the handler answers */ }
+  item = item.replace(/[\s\u00a0\u200b]+/g, ' ').trim();
+  const row = db.prepare(`SELECT p.item_number, pl.status, pl.name, pl.version FROM coa_products p
+    LEFT JOIN coa_test_plans pl ON pl.id = p.plan_id WHERE p.item_number = ?`).get(item);
+  if (row?.status === 'approved') return sopRefuse(req, `${row.item_number} has the approved plan "${row.name}" v${row.version} applied. A person changes it.`);
+  return true;
+}
+
 // ONE GRANT PER DOCUMENT TYPE (D-306). The five staging routes are the same
 // for SOPs, Work Instructions and Job Descriptions; which grant a write needs is
 // decided by the DOCUMENT'S type, so an SOP-only token is refused on a WI. A
@@ -257,6 +300,13 @@ export const WRITE_AREAS = Object.freeze([
   { area: 'sops', grants: DOC_GRANT_KEYS, method: 'POST', re: new RegExp(`^/documents/${SOP_SIBLINGS}([^/]+)/revisions$`), label: 'POST /api/documents/:id/revisions — start a new revision of an approved document (grant for its type)', when: sopRevisionStartOk },
   { area: 'sops', grants: DOC_GRANT_KEYS, method: 'PUT', re: new RegExp(`^/documents/${SOP_SIBLINGS}([^/]+)/revisions/([^/]+)$`), label: 'PUT /api/documents/:id/revisions/:rid — the draft revision (grant for its type)', when: sopRevisionEditOk },
   { area: 'sops', grants: DOC_GRANT_KEYS, method: 'POST', re: new RegExp(`^/documents/${SOP_SIBLINGS}([^/]+)/attachments$`), label: 'POST /api/documents/:id/attachments — a PDF on a document (grant for its type)', when: sopAttachOk },
+  // The Quality bot's COA preparation (D-313) — only a token holding the
+  // `coa-prep` grant. A DRAFT test plan's tests and proposed products, and a COA
+  // product's registration, aliases and brand. Approving a plan or a spec,
+  // applying, signing, unsigning and deleting are refused by segment or by
+  // APPROVE_ROUTES; editing an approved plan is refused here, by name.
+  { area: 'coa-prep', grant: 'coa-prep', method: 'PUT', re: /^\/coa\/plans\/([^/]+)$/, label: 'PUT /api/coa/plans/:id — a DRAFT plan\'s tests and proposed products (coa-prep grant)', when: coaPlanBotOk },
+  { area: 'coa-prep', grant: 'coa-prep', method: 'PUT', re: /^\/coa\/products\/([^/]+)$/, label: 'PUT /api/coa/products/:item — register or alias a COA product, set its brand (coa-prep grant)', when: coaProductBotOk },
   // messages
   { area: 'messages', method: 'POST', re: /^\/comms\/channels\/[^/]+\/messages$/, label: 'POST /api/comms/channels/:id/messages' },
   { area: 'messages', method: 'POST', re: /^\/comms\/channels\/[^/]+\/attachments$/, label: 'POST /api/comms/channels/:id/attachments' },

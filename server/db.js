@@ -4536,6 +4536,13 @@ function runMigrations() {
   // Names a production entry may use for a COA product (exact match, never a
   // substring), and a report-only test the plan shows publicly (D-246, D-247).
   addColumnIfMissing('coa_products', 'aliases', 'TEXT');
+  // A bot token holding the coa-prep grant PREPARES (D-313): what it saved reads
+  // "bot-prepared, needs review" until a person approves the plan or marks the
+  // product reviewed. proposed_items is a draft plan's list of the products it
+  // is meant for — a proposal only; Apply is still a person's act.
+  for (const [tb, c] of [['coa_test_plans', 'proposed_items'], ['coa_test_plans', 'bot_prepared_at'], ['coa_test_plans', 'bot_prepared_by'],
+    ['coa_test_plan_tests', 'bot_prepared_at'], ['coa_test_plan_tests', 'bot_prepared_by'],
+    ['coa_products', 'bot_prepared_at'], ['coa_products', 'bot_prepared_by'], ['coa_products', 'bot_prepared_fields']]) addColumnIfMissing(tb, c, 'TEXT');
   addColumnIfMissing('coa_test_plan_tests', 'public', 'INTEGER NOT NULL DEFAULT 0');
   db.prepare("INSERT OR IGNORE INTO coa_settings (key, value, updated_by) VALUES ('public_coa_enabled', 'off', 'system')").run();
   db.prepare("INSERT OR IGNORE INTO coa_settings (key, value, updated_by) VALUES ('public_coa_indexable', 'off', 'system')").run();

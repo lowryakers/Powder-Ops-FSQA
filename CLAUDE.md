@@ -4074,6 +4074,15 @@ Specifications tab), `UnreadRows` on a request.
 - The gluten "<44" report is read-only; signed ones are corrected inside a window. Whey codes are NOT seeded.
 - `verify:coawindow` (82; control fails 13 then stops).
 
+## A bot token with `coa-prep` prepares COA drafts; a person decides (D-313)
+- Token grant `coa-prep` opens `PUT /coa/plans/:id` (a DRAFT plan's `tests`, `items` = proposed products, `notes`) and
+  `PUT /coa/products/:item` (register, `aliases`, `display_name`, `brand_owner`) — `coaPlanBotOk` / `coaProductBotOk` in
+  `server/bot-api.js` refuse anything else by name. Never a test's `public` flag, a claim/slug, or a product whose approved plan is applied.
+- **Approve, Apply (`APPROVE_ROUTES`), sign/unsign, delete, `/acknowledge` stay refused to every token.**
+- `bot_prepared_*` on plans, tests and products reads "Bot-prepared, needs review" until plan approval / a person's save /
+  Mark reviewed. One `bot_coa_write` audit row per bot write (token label, old, new).
+- `scripts/lib/route-scan.mjs` now follows `router.use(sub)`. `verify:coaprepbot` (36; control fails 20).
+
 ## COA item specification sheet
 The Specifications tab stores one row per test (right for auto pass/fail, hard to eyeball). "View item & all
 specs" (`ItemSpecSummaryModal` in COAPanel.jsx) regroups the rows under an item — the old paper spec sheet —

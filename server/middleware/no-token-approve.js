@@ -80,6 +80,9 @@ export const APPROVE_ROUTES = Object.freeze([
   { method: 'POST', re: /^\/products\/merch\/colors\/[^/]+\/confirm$/, label: 'POST /api/products/merch/colors/:code/confirm — a person confirms a colour' },
   // Who may sign the crisis drill's Management review (D-266) is a person's decision, never a token's.
   { method: 'PUT', re: /^\/safety\/drill-signers$/, label: 'PUT /api/safety/drill-signers — who signs the crisis drill for Management' },
+  // D-313: "Apply to products" writes live specifications from an approved
+  // plan — a password-signed act. A coa-prep token prepares the plan; a person applies it.
+  { method: 'POST', re: /^\/coa\/plans\/[^/]+\/apply$/, label: 'POST /api/coa/plans/:id/apply — "Apply to products" writes live specifications; a person does it' },
 ]);
 
 const segmentsOf = (path) => String(path || '').split('/').filter(Boolean).map(s => s.toLowerCase());
@@ -110,6 +113,7 @@ export function refuseTokenApprove(req, res, route) {
   return res.status(403).json({
     error: 'approve_requires_human_session',
     message: 'Approving, signing or releasing needs a person signed in. A bot token can never do it.',
+    reason: route?.label || null,
   });
 }
 

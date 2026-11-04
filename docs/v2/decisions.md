@@ -10282,3 +10282,21 @@ when a Settings group, its order, or any sidebar entry in it disagrees with the 
 - **The sign dialog shows stored beside printed** for date received, lot, expiry and gluten (`GET /coa/requests/:id/sign-facts`, re-reading the file on the server). A disagreement is red. It informs; it blocks nothing beyond D-243's re-read.
 
 **Merging (D-274).** D-307 to D-312 change records (signatures, specs, request links), so the PR waits for Lowry's review whatever the tests say.
+
+## D-313 — A bot token with the `coa-prep` grant prepares draft plans and the product list; a person decides (4 Nov 2026)
+
+**Why.** The Quality bot got 403 "not open to bot tokens" on `PUT /api/coa/plans/:id` and `PUT /api/coa/products/:item` while it was setting up the whey test plans. D-311's coa-prep is a box on a person's account; a token needs its own grant.
+
+**Decided.**
+- **`coa-prep` is a token grant** (`TOKEN_GRANTS`), ticked in Settings → Bot API tokens. Two `WRITE_AREAS` entries open with it, each with a `when` that names its refusal:
+  - `PUT /coa/plans/:id` on a **draft** plan only: `tests` (limits, units, how each is judged, method, wording, required), `items` (the products the plan is meant for) and `notes`. A test's `public` flag may not move; that is a publishing decision.
+  - `PUT /coa/products/:item`: register the code, `aliases`, `display_name`, `brand_owner`. Never the gluten-free claim, slug, catalog link or public note, and never a product whose approved plan is applied.
+- **A draft plan's products are a proposal**: `coa_test_plans.proposed_items`. Apply still writes `plan_id` and is a person's password-signed act. The Apply panel pre-ticks the proposal; a new version copies it.
+- **Always refused to a token**, with the reason: approving a plan or spec (segment), "Apply to products" (now on `APPROVE_ROUTES`, whose refusal also returns `reason`), signing or un-signing (segment), deleting (`TOKEN_DENY`), editing anything approved (the `when`), marking a product reviewed (`/acknowledge`, a decision segment).
+- **Bot-prepared, needs review.** `bot_prepared_at` / `_by` on the plan and on each test the bot changed, `bot_prepared_*` + `_fields` on a product. Plan approval by a person clears every mark on that plan. A person's save of a product, or **Mark reviewed** (`POST /coa/products/:item/acknowledge`, Quality/admin), clears the product's. A person editing a draft plan keeps the mark on tests they did not change.
+- **Audit**: one `bot_coa_write` row per successful bot write with the token's id, prefix and label, the grant, and the old and new values (tests, proposed products and notes, or name, brand and aliases). The usual `update` row also carries `via_bot`.
+- **The route scanner follows `router.use(sub)`.** `check:apitokens` had never seen the routers mounted inside the COA router (test plans, publishing), so an approve-named route there could have slipped by unchecked. It sees them now.
+
+**Not done here: turning the grant on.** Minting or editing a real token is a person's job, so this release does not set the grant on READYDOC_TOKEN_QUALITY. Lowry ticks **coa-prep** on that token in Settings → Bot API tokens. The bot's account also needs COA at Edit.
+
+**Merging (D-274).** This writes records (plans, products, audit), so the PR waits for Lowry's review.

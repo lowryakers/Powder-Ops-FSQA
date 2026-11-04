@@ -208,7 +208,7 @@ t('a refusal from a condition says why (req.tokenWriteRefusal)', (() => {
 
 console.log('── the deny lists did not shrink (counts at the base commit) ──');
 t('APPROVE_SEGMENTS is 31', APPROVE_SEGMENTS.length === 31, String(APPROVE_SEGMENTS.length));
-t('APPROVE_ROUTES is 22', APPROVE_ROUTES.length === 22, String(APPROVE_ROUTES.length));
+t('APPROVE_ROUTES is 23', APPROVE_ROUTES.length === 23, String(APPROVE_ROUTES.length));
 t('DELETE_SEGMENTS is 15', DELETE_SEGMENTS.length === 15, String(DELETE_SEGMENTS.length));
 t('DECISION_SEGMENTS is 9', DECISION_SEGMENTS.length === 9, String(DECISION_SEGMENTS.length));
 t('TOKEN_DENY is 12', TOKEN_DENY.length === 12, String(TOKEN_DENY.length));
