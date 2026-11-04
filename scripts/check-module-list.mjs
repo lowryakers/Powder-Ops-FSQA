@@ -62,5 +62,35 @@ for (const id of [...asked].sort()) {
 }
 for (const id of Object.keys(NOT_A_BOX)) t(`the "${id}" exception still names a real mount`, asked.has(id) || items.some(i => i.id === id));
 
+console.log('── Settings follows the sidebar, group by group (D-305) ──');
+// The sidebar's groups, in order, each with its item ids in order.
+const navGroups = nav.split(/\n  \{\n(?:\s*\/\/.*\n)*\s*label: /).slice(1).map(g => ({
+  label: g.match(/^'([^']+)'/)[1],
+  ids: [...g.matchAll(/\{ id: '([^']+)'/g)].map(m => m[1]),
+}));
+// Settings' groups, each reduced to the sidebar entries it names, in order:
+// a heading's `nav`, a rule line, an admin line, or a box whose id is a
+// sidebar item. Extra boxes (a form, a tab, a bot grant) sit between them.
+const mgText = us.slice(mgStart, us.indexOf('\n];', mgStart));
+const setGroups = mgText.split(/\n  \{\n\s*label: /).slice(1).map(g => {
+  const label = g.match(/^'([^']+)'/)[1];
+  const anchors = [];
+  for (const m of g.matchAll(/\{ (?:heading: '[^']*', nav|rule|admin|id): '([^']+)'/g)) {
+    if (anchors[anchors.length - 1] !== m[1]) anchors.push(m[1]);
+  }
+  return { label, anchors };
+});
+t(`found the sidebar's groups (${navGroups.length})`, navGroups.length >= 10);
+t('Settings lists the same groups in the same order as the sidebar',
+  JSON.stringify(setGroups.map(g => g.label)) === JSON.stringify(navGroups.map(g => g.label)),
+  `sidebar: ${navGroups.map(g => g.label).join(', ')} · Settings: ${setGroups.map(g => g.label).join(', ')}`);
+for (const ng of navGroups) {
+  const sg = setGroups.find(g => g.label === ng.label);
+  const named = (sg?.anchors || []).filter(id => ng.ids.includes(id));
+  t(`"${ng.label}": every sidebar entry is in Settings, in sidebar order`,
+    JSON.stringify(named) === JSON.stringify(ng.ids),
+    `sidebar: ${ng.ids.join(', ')} · Settings: ${named.join(', ')}`);
+}
+
 console.log(`\n${pass} PASS / ${fail} FAIL`);
 process.exit(fail ? 1 : 0);

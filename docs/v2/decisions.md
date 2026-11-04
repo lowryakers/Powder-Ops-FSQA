@@ -10192,3 +10192,19 @@ which D-303 left as a person's edit because a revision did not carry one.
   step 1 — the pile does not exist — through step 2, then stops.
 
 **Waits for review (D-274):** it migrates three columns and ties one production row.
+
+## D-305 — Settings → Users lists the sidebar, group by group, in its order (4 Nov 2026)
+
+**Why.** Lowry asked why Module access did not match the sidebar. The two were built from different things: the
+sidebar lists screens, Settings listed grants. They differed in four ways: one screen opened by several grants
+(Controlled Documents, Sign In/Out, Quality Events, Accounting, Requests); screens no grant opens (Doc Control Review,
+Controlled Changes, Change Register, Food Safety Culture: a department or role rule); admin-only screens absent from
+Settings; and grants filed under a different group from their screen (Audit Log and User Activity under Document
+Control, the Quick Forms under the logs they file into, Product before Production).
+
+**Decided.** `MODULE_GROUPS` in `UsersSection.jsx` follows `NAV_GROUPS`: same groups, same order, every sidebar entry in
+its place. Four kinds of row: a box (`id`); a heading for a screen opened by several boxes (`heading`, `nav`), with its
+boxes beneath; a rule line for a screen no box opens (`rule`, `why`, chip "By rule"); and an admin line (`admin`, chip
+"Admins only"). The set of boxes is unchanged (same 65 ids), so nobody's access moves. `check:modulelist` now also fails
+when a Settings group, its order, or any sidebar entry in it disagrees with the sidebar (control: the previous list fails
+7). Screen-only change, merged when green under D-274.
