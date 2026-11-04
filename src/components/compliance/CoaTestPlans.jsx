@@ -200,6 +200,65 @@ function ProductRow({ p, brands, canEdit, onSaved }) {
   );
 }
 
+// Several item codes onto the COA product list at once (D-310). Preview first:
+// it names what would be added, what is already there (left alone) and what
+// has no lab request. Nothing is written until "Register".
+function BulkRegister({ brands, onDone }) {
+  const [text, setText] = useState('');
+  const [brand, setBrand] = useState('ProDough');
+  const [plan, setPlan] = useState(null);
+  const [error, setError] = useState('');
+  const run = async (dry) => {
+    setError('');
+    try {
+      const out = await apiPost('/coa/products/bulk-register', { item_numbers: text, brand_owner: brand, dry_run: dry });
+      if (dry) setPlan(out); else { setPlan(null); setText(''); onDone(out); }
+    } catch (e) { setError(e.message); }
+  };
+  return (
+    <div data-bulk-register className="rounded-lg border border-gray-200 p-3 space-y-2">
+      <p className="text-xs font-semibold text-gray-800">Register several items at once</p>
+      <textarea id="bulk-register-items" value={text} onChange={e => { setText(e.target.value); setPlan(null); }} rows={3}
+        placeholder="One item code per line (or separated by commas)" className="w-full px-2 py-1 border border-gray-300 rounded text-xs font-mono" />
+      <div className="flex flex-wrap items-center gap-2">
+        <select id="bulk-register-brand" value={brand} onChange={e => { setBrand(e.target.value); setPlan(null); }} className="px-2 py-1 border border-gray-300 rounded text-xs">
+          {brands.map(b => <option key={b} value={b}>{b}</option>)}
+        </select>
+        <button onClick={() => run(true)} disabled={!text.trim()} className="px-3 py-1 text-xs rounded border border-gray-300 disabled:opacity-40" data-bulk-preview>Preview</button>
+        {plan && plan.register.length > 0 && (
+          <button onClick={() => run(false)} className="px-3 py-1 text-xs rounded bg-powder-600 text-white" data-bulk-commit>Register {plan.register.length}</button>
+        )}
+      </div>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      {plan && (
+        <div className="text-[11px] text-gray-700 space-y-0.5" data-bulk-plan>
+          <p><b>{plan.register.length}</b> to register as {plan.brand_owner}{plan.register.length ? `: ${plan.register.map(r => r.item_number).join(', ')}` : ''}</p>
+          {plan.already.length > 0 && <p>{plan.already.length} already on the list (left as they are): {plan.already.map(a => `${a.item_number} (${a.brand_owner || 'no brand'})`).join(', ')}</p>}
+          {plan.unknown.length > 0 && <p className="text-amber-800">{plan.unknown.length} with no lab request: {plan.unknown.map(u => u.item_number).join(', ')}</p>}
+          {plan.register.some(r => r.untidy_spellings?.length) && <p className="text-gray-500">Some requests carry the code with stray spaces or tabs; they are counted as the same item.</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Items with a lab report on file and no approved plan (D-310). Read-only.
+function NoPlanList({ filter }) {
+  const { data } = useApiGet('/coa/products/no-plan');
+  const items = (data?.items || []).filter(filter);
+  if (!data) return null;
+  const label = { not_registered: 'not on the product list', no_plan: 'no plan', draft: 'plan is a draft', retired: 'plan retired', missing: 'plan missing' };
+  return (
+    <div data-no-plan className="rounded-lg border border-gray-200 p-3">
+      <p className="text-xs font-semibold text-gray-800">Have a lab report PDF but no approved plan ({items.length})</p>
+      <ul className="mt-1 text-[11px] text-gray-700 max-h-48 overflow-y-auto">
+        {items.map(i => <li key={i.item_number} data-no-plan-item={i.item_number}>{i.item_number} · {i.item_description || '—'} · {label[i.plan_state] || i.plan_state} · {i.requests_with_pdf} report{i.requests_with_pdf === 1 ? '' : 's'}</li>)}
+        {!items.length && <li className="text-gray-500">None.</li>}
+      </ul>
+    </div>
+  );
+}
+
 export default function CoaTestPlans({ canEdit }) {
   const { data, refresh } = useApiGet('/coa/plans');
   const { data: brandRows } = useApiGet('/coa/brands');
@@ -211,8 +270,11 @@ export default function CoaTestPlans({ canEdit }) {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [addItem, setAddItem] = useState('');
+  // A whey filter (D-310): the whey products are the ones being registered now.
+  const [wheyOnly, setWheyOnly] = useState(false);
+  const isWhey = (x) => /\bwhey\b/i.test(`${x.item_description || ''} ${x.display_name || ''} ${x.plan_name || ''}`);
   const plans = data?.plans || [];
-  const products = prod?.products || [];
+  const products = (prod?.products || []).filter(p => !wheyOnly || isWhey(p));
   const reload = () => { refresh(); refreshProducts(); };
 
   const act = async (fn) => { setError(''); setMessage(''); try { await fn(); reload(); } catch (e) { if (!e?.cancelled) setError(e.message); } };
@@ -270,6 +332,12 @@ export default function CoaTestPlans({ canEdit }) {
             ))}
           </div>
 
+          <label className="inline-flex items-center gap-1.5 text-xs text-gray-700">
+            <input id="coa-whey-only" type="checkbox" checked={wheyOnly} onChange={e => setWheyOnly(e.target.checked)} className="h-4 w-4 shrink-0" data-whey-filter />
+            Whey only
+          </label>
+          <NoPlanList filter={(i) => !wheyOnly || isWhey(i)} />
+          {canEdit && <BulkRegister brands={brands.length ? brands : ['ProDough']} onDone={(out) => { setMessage(`Registered ${out.registered} item${out.registered === 1 ? '' : 's'} as ${out.brand_owner}.`); reload(); }} />}
           <div>
             <p className="text-xs font-semibold text-gray-800 mb-1">COA products</p>
             <div className="overflow-x-auto">

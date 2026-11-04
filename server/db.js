@@ -4549,6 +4549,56 @@ function runMigrations() {
   addColumnIfMissing('coa_requests', 'receiving_log_id', 'TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS idx_coa_requests_receiving ON coa_requests(receiving_log_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_coa_requests_base_lot ON coa_requests(base_lot)');
+  // D-307: a temporary, admin-opened window in which named QA people may
+  // un-sign a certificate to correct it. Every un-sign keeps the original
+  // signature and snapshot in coa_signature_history, which is never deleted.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS coa_correction_windows (
+      id TEXT PRIMARY KEY,
+      opened_by TEXT NOT NULL,
+      opened_by_id TEXT,
+      opened_at TEXT NOT NULL DEFAULT (datetime('now')),
+      expires_at TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      scope TEXT NOT NULL DEFAULT '[]',
+      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','expired','closed')),
+      closed_by TEXT,
+      closed_at TEXT,
+      close_reason TEXT
+    );
+    CREATE TABLE IF NOT EXISTS coa_signature_history (
+      id TEXT PRIMARY KEY,
+      request_id TEXT NOT NULL,
+      certificate_number TEXT,
+      date_of_issuance TEXT,
+      qa_signed_by TEXT,
+      qa_signed_by_id TEXT,
+      qa_signed_at TEXT,
+      qa_signature TEXT,
+      signed_snapshot TEXT,
+      signed_content_hash TEXT,
+      unsigned_by TEXT NOT NULL,
+      unsigned_by_id TEXT,
+      unsigned_at TEXT NOT NULL DEFAULT (datetime('now')),
+      reason TEXT NOT NULL,
+      field_plan TEXT,
+      window_id TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_coa_sig_history_request ON coa_signature_history(request_id);
+    CREATE TRIGGER IF NOT EXISTS coa_signature_history_no_update BEFORE UPDATE ON coa_signature_history
+      BEGIN SELECT RAISE(ABORT, 'coa_signature_history is append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS coa_signature_history_no_delete BEFORE DELETE ON coa_signature_history
+      BEGIN SELECT RAISE(ABORT, 'coa_signature_history is append-only'); END;
+  `);
+  addColumnIfMissing('coa_requests', 'reopened_for_correction', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('coa_requests', 'reopened_at', 'TEXT');
+  addColumnIfMissing('coa_requests', 'reopened_window_id', 'TEXT');
+  addColumnIfMissing('coa_requests', 'reopened_reason', 'TEXT');
+  addColumnIfMissing('coa_requests', 'supersedes_certificate_number', 'TEXT');
+  // D-310: a re-issued lab report (same CTLA ID, coa_files.lab_report_number)
+  // on a second request names the request it replaces.
+  addColumnIfMissing('coa_requests', 'replaced_by_request_id', 'TEXT');
+  addColumnIfMissing('coa_requests', 'replaces_request_id', 'TEXT');
   db.prepare("INSERT OR IGNORE INTO coa_brands (id, name, public_publish_allowed) VALUES ('brand-prodough', 'ProDough', 0)").run();
   db.prepare("INSERT OR IGNORE INTO coa_settings (key, value, updated_by) VALUES ('evidence_disclosure_mode', 'never', 'system')").run();
   db.prepare("INSERT OR IGNORE INTO coa_settings (key, value, updated_by) VALUES ('public_nonclaim_gluten_display', 'hidden', 'system')").run();
@@ -4591,6 +4641,10 @@ function runMigrations() {
   addColumnIfMissing('coa_specifications', 'source', 'TEXT');
   addColumnIfMissing('coa_specifications', 'reviewed_by', 'TEXT');
   addColumnIfMissing('coa_specifications', 'reviewed_at', 'TEXT');
+  // D-309: an edit to an ACTIVE spec is a new draft version naming the one it
+  // will replace; the old one grades until the new one is approved.
+  addColumnIfMissing('coa_specifications', 'supersedes_spec_id', 'TEXT');
+  addColumnIfMissing('coa_specifications', 'change_reason', 'TEXT');
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_coa_specs_approval ON coa_specifications(approval_status)'); } catch { /* ignore */ }
 
   // Document review scheduling: each controlled document gets a review frequency

@@ -12,7 +12,7 @@ const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'fixtu
 const read = async (id) => parseColumnarCoa((await readPdfColumns(readFileSync(path.join(dir, `ctla-${id}.pdf`)))).text);
 const row = (parsed, name) => parsed.test_results.find(r => r.test_type === name);
 
-for (const id of ['176906', '176905', '176901', '180953']) {
+for (const id of ['176906', '176905', '176901', '180953', '183621']) {
   test(`CTLA ${id}: gluten reads <4 ppm with MDL 4, never <44`, async () => {
     const p = await read(id);
     const g = row(p, 'Gluten Allergen');
@@ -25,6 +25,18 @@ for (const id of ['176906', '176905', '176901', '180953']) {
     assert.ok(!p.test_results.some(r => /44/.test(r.result_value)), 'no merged <44');
   });
 }
+
+test('CTLA 183621 (lot 101954): the lot is read and gluten is <4 (D-308 regression)', async () => {
+  const p = await read('183621');
+  assert.equal(p.lot_number, '101954');
+  assert.equal(row(p, 'Gluten Allergen').result_value, '<4');
+});
+
+test('the old joined name "Gluten Allergen ReportELISA <" means gluten (D-308)', async () => {
+  const { aliasKey } = await import('../../server/coa-grade.js');
+  assert.equal(aliasKey('Gluten Allergen ReportELISA <'), 'gluten');
+  assert.equal(aliasKey('Gluten Allergen'), 'gluten');
+});
 
 test('CTLA 180953 (Alkify): soy <0.04 and milk <0.4, never doubled', async () => {
   const p = await read('180953');
