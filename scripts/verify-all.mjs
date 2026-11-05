@@ -223,6 +223,7 @@ const RUNS = [
   ['verify-coa-prep-bot.mjs', 5188, {}, false],
   // Boots and reboots its own server (on INSPNO_PORT); the one started here idles.
   ['verify-inspection-no.mjs', 5191, { INSPNO_PORT: '5192' }, false],
+  ['verify-missed-older.mjs', 5194, { MISSOLD_PORT: '5195' }, false],
 ];
 
 // VERIFY_ONLY=verify-auth.mjs,verify-swab-stock.mjs runs just the entries that

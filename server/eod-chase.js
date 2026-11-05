@@ -162,6 +162,11 @@ export function renderEodDigest(d, { base = '' } = {}) {
       + `differently written MO — those are a typo to correct, not a report to write.`);
   }
   for (const u of d.unowned || []) {
+    if (u.team === '—') {
+      lines.push(`*${u.count} with no team on the schedule* — set the team on those cells, or dismiss them, `
+        + 'so they reach a supervisor.');
+      continue;
+    }
     lines.push(`*${u.team}: ${u.count} with no supervisor to tell* — nobody set as a ${u.team} supervisor in Settings, `
       + 'so these reach only this message.');
   }

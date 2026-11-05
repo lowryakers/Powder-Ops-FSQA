@@ -1327,21 +1327,39 @@ function MissedReports({ from, to, user }) {
   // even once every active callout has been cleared.
   const { data: missed, refresh } = useApiGet(
     `/production/missed-reports?from=${from}&to=${to}${canManage ? '&include_dismissed=1' : ''}`, [from, to]);
-  const rows = missed || [];
+  // Outstanding runs dated BEFORE the dates on screen (D-315). The chase counts
+  // every unfiled run; without this line the banner said 4 while ReadyBot said 60.
+  const dayBefore = (d) => new Date(new Date(`${d}T00:00:00Z`).getTime() - 86400000).toISOString().slice(0, 10);
+  const { data: olderData, refresh: refreshOlder } = useApiGet(`/production/missed-reports?to=${dayBefore(from)}`, [from]);
+  const older = olderData || [];
+  const [showOlder, setShowOlder] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [clearReason, setClearReason] = useState('');
+  const [clearBusy, setClearBusy] = useState(false);
+  const inWindow = missed || [];
+  const rows = showOlder ? [...inWindow, ...older] : inWindow;
   const active = rows.filter(r => !r.dismissed);
   const dismissedRows = rows.filter(r => r.dismissed);
   const activeCount = active.length;
-  if (rows.length === 0) return null;
+  if (inWindow.length === 0 && older.length === 0) return null;
   const displayRows = showDismissed ? rows : active;
+  const clearOlder = async () => {
+    setClearBusy(true);
+    try {
+      await apiPost('/production/missed-reports/dismiss-older', { before: from, reason: clearReason });
+      setClearing(false); setClearReason(''); setShowOlder(false); refresh(); refreshOlder();
+    } catch (e) { alert(e.message || 'Could not dismiss'); }
+    finally { setClearBusy(false); }
+  };
 
   const doDismiss = async (m) => {
     try { await apiPost('/production/missed-reports/dismiss', { date: m.date, room: m.room, mo_number: m.mo_number, team: m.team, reason }); }
     catch (e) { alert(e.message || 'Could not dismiss'); return; }
-    setDismissing(null); setReason(''); refresh();
+    setDismissing(null); setReason(''); refresh(); refreshOlder();
   };
   const doRestore = async (m) => {
     try { await apiPost('/production/missed-reports/restore', { dismiss_key: m.dismiss_key }); } catch { /* ignore */ }
-    refresh();
+    refresh(); refreshOlder();
   };
   const colSpan = canManage ? 6 : 5;
 
@@ -1367,6 +1385,32 @@ function MissedReports({ from, to, user }) {
         </span>
         {open ? <ChevronUp size={15} className="ml-auto text-amber-600" /> : <ChevronDown size={15} className="ml-auto text-amber-600" />}
       </button>
+      {older.length > 0 && (
+        <div data-missed-older className="border-t border-amber-200 px-4 py-2 text-sm text-amber-900 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <span><b>{older.length}</b> more from before {formatDate(from)} — outside the dates shown.</span>
+          <button type="button" onClick={() => { setShowOlder(v => !v); setOpen(true); }} className="text-xs text-amber-800 underline">
+            {showOlder ? 'Hide them' : 'Show them'}
+          </button>
+          {canManage && !clearing && (
+            <button type="button" data-missed-clear onClick={() => setClearing(true)} className="text-xs text-red-700 underline">
+              Dismiss all {older.length} from before {formatDate(from)}…
+            </button>
+          )}
+          {canManage && clearing && (
+            <div className="w-full flex flex-wrap items-center gap-2">
+              <input data-missed-clear-reason value={clearReason} onChange={e => setClearReason(e.target.value)} autoFocus
+                placeholder="Reason (e.g. runs before go-live, never going to be filed)…"
+                className="flex-1 min-w-[12rem] px-2 py-1 border border-amber-300 rounded text-sm" />
+              <button type="button" data-missed-clear-confirm disabled={clearBusy || clearReason.trim().length < 3} onClick={clearOlder}
+                className="px-2.5 py-1 bg-amber-600 text-white rounded text-xs font-medium disabled:opacity-50 hover:bg-amber-700">
+                {clearBusy ? 'Dismissing…' : `Dismiss ${older.length}`}
+              </button>
+              <button type="button" onClick={() => { setClearing(false); setClearReason(''); }} className="px-2 py-1 text-gray-500 text-xs hover:text-gray-700">Cancel</button>
+              <span className="w-full text-xs text-amber-800">Each one is dismissed with this reason and your name, and can be restored. Nothing is deleted.</span>
+            </div>
+          )}
+        </div>
+      )}
       {open && (
         <div className="border-t border-amber-200">
           {canManage && dismissedRows.length > 0 && (

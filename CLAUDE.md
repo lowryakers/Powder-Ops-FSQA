@@ -698,6 +698,11 @@ scanning, not for reading a paragraph.
   source for literal names, so `line-clamp-${n}` yields a class in the markup and nothing in the stylesheet.
 - Measured, not eyeballed: tallest Disposals row 177px → 77px against a 57px median.
 
+### Older unfiled runs are named on the banner and dismissed at once (D-315)
+The banner reads the dates on screen; the chase reads every unfiled run. `[data-missed-older]` names the runs before the
+first date shown; `POST /production/missed-reports/dismiss-older` (admin/supervisor, reason required, `preview` writes
+nothing) dismisses them as ordinary dismissals, audited per run. Never auto-dismissed. `verify:missedolder` (15).
+
 ### Three things that sat on a screen nobody was looking at (D-083, D-084, D-085)
 Reported together on 14 September, and they are one defect in three places: **an ask that lives only on a
 banner reaches whoever opens that screen, which is never the person who has to act.**
