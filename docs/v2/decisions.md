@@ -10318,3 +10318,22 @@ not exist, and the signed one counted none. The checklist's own Start/Open box t
 - `verify:inspectionno` (14; the control on `main` fails 10, reproducing the report).
 
 **Merging (D-274).** The boot pass rewrites the number on existing receiving lines, so the PR waits for Lowry's review.
+
+## D-315 — Older unfiled runs: the banner names them, a supervisor dismisses them at once (5 Nov 2026)
+
+**Reported.** ReadyBot's chase said "60 scheduled runs with no end-of-day report" while the Production Log banner said 4.
+Both were right: the banner reads the dates on screen (the last 30 days by default), the chase reads every unfiled run
+since July. Nothing on the screen said the other 56 existed, so they could only be cleared by widening the date filter
+and dismissing them one by one.
+
+**Decided.**
+- The banner adds a line under its count: "N more from before <date> — outside the dates shown", with **Show them**.
+- An admin or supervisor can **dismiss all of them at once** with one reason (`POST /production/missed-reports/dismiss-older`,
+  `before` = the first date on screen, `preview: true` writes nothing). Each run gets an ordinary dismissal with the
+  reason and the person's name and its own audit row (`bulk: true`), plus one summary row. **Nothing is deleted and each
+  can be restored.** Nothing is dismissed automatically: the chase keeps counting until a person decides.
+- The chase's "no supervisor to tell" line for runs with **no team on the schedule** now says so ("9 with no team on the
+  schedule") instead of "nobody set as a — supervisor".
+- `verify:missedolder` (15, live + browser; the control on `main` fails from the preview).
+
+**Merging (D-274).** It adds a write path for dismissals, so the PR waits for Lowry's review.

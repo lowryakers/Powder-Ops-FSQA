@@ -728,6 +728,38 @@ router.post('/missed-reports/dismiss', requireRole('admin', 'supervisor'), (req,
   res.json({ ok: true, dismiss_key: key });
 });
 
+// Dismiss every outstanding callout dated BEFORE a day, with one reason (D-315).
+// The chase reads every unfiled run since July; the banner reads the dates on
+// screen, so the two disagreed (60 vs 4). Old runs that were never going to be
+// filed are cleared here deliberately, by a supervisor, with a reason on each.
+// Nothing is deleted: each row is an ordinary dismissal (Restore undoes it).
+// `preview: true` writes nothing and returns exactly what would be dismissed.
+router.post('/missed-reports/dismiss-older', requireRole('admin', 'supervisor'), (req, res) => {
+  const db = getDb();
+  const { before, reason, preview } = req.body || {};
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(before || ''))) return res.status(400).json({ error: 'before must be a date (YYYY-MM-DD)' });
+  const to = new Date(new Date(`${before}T00:00:00Z`).getTime() - 86400000).toISOString().slice(0, 10);
+  const rows = missedReports(db, { to });
+  if (preview) return res.json({ count: rows.length, before, rows });
+  const why = String(reason || '').trim();
+  if (why.length < 3) return res.status(400).json({ error: 'A reason is required (at least 3 characters).' });
+  const ins = db.prepare(`INSERT INTO production_missed_dismissals (id, dismiss_key, sched_date, room, mo_number, team, reason, dismissed_by, dismissed_by_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(dismiss_key) DO NOTHING`);
+  let dismissed = 0;
+  db.transaction(() => {
+    for (const m of rows) {
+      const info = ins.run(uuid(), m.dismiss_key, m.date, m.room, m.mo_number || null, m.team || null, why.slice(0, 500), req.user.name, req.user.id);
+      if (!info.changes) continue;
+      dismissed++;
+      logAudit(req.user, 'dismiss', 'production_missed_report', m.dismiss_key,
+        { date: m.date, room: m.room, mo_number: m.mo_number, team: m.team, reason: why, bulk: true, before }, null, null, `${m.room} · ${m.date}`);
+    }
+    logAudit(req.user, 'dismiss', 'production_missed_report', `before:${before}`,
+      { bulk: true, before, reason: why, dismissed }, null, null, `Missed reports before ${before}`);
+  })();
+  res.json({ ok: true, dismissed, before });
+});
+
 // Undo a dismissal — the callout returns to the active list.
 router.post('/missed-reports/restore', requireRole('admin', 'supervisor'), (req, res) => {
   const db = getDb();
