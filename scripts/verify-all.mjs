@@ -221,6 +221,8 @@ const RUNS = [
   // Boots its own server (on COA_WINDOW_PORT); the one started here idles.
   ['verify-coa-window.mjs', 5186, { COA_WINDOW_PORT: '5187' }, false],
   ['verify-coa-prep-bot.mjs', 5188, {}, false],
+  // Boots and reboots its own server (on INSPNO_PORT); the one started here idles.
+  ['verify-inspection-no.mjs', 5191, { INSPNO_PORT: '5192' }, false],
 ];
 
 // VERIFY_ONLY=verify-auth.mjs,verify-swab-stock.mjs runs just the entries that

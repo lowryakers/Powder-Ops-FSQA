@@ -16,7 +16,7 @@ import {
 } from '../receiving-checklist.js';
 import { sendEscalation } from '../receiving-notify.js';
 import { FILM_REVISION } from '../film-pouch-checklist.js';
-import { nextInspectionNo } from '../inspection-no.js';
+import { nextInspectionNo, cleanInspectionNo } from '../inspection-no.js';
 import { labTestFor, alertDetail, itemKey } from '../lab-test-items.js';
 import { readFileSync } from 'fs';
 import { createHash } from 'crypto';
@@ -26,6 +26,9 @@ import { cocSignRefusals, isCocCategory, onFileCurrent, COC_CATEGORIES } from '.
 import { cocState } from '../coc-state.js';
 
 const router = Router();
+// Every /checklist/:inspectionNo route reads the number in its one spelling
+// (D-314), so a link carrying a stray space still opens the right checklist.
+router.param('inspectionNo', (req, _res, next, v) => { req.params.inspectionNo = cleanInspectionNo(v) || ''; next(); });
 const MODULE = 'receiving-log';
 
 // Warehouse files receipts; admins and explicit edit grants can correct them.
@@ -77,6 +80,9 @@ function readBody(body) {
     else if (NUMS.has(k)) { const n = Number(body[k]); out[k] = Number.isFinite(n) ? n : null; }
     else out[k] = body[k] === '' ? null : body[k];
   }
+  // One spelling of the number (D-314): a trailing space made a line point at a
+  // checklist that does not exist.
+  if (out.inspection_no !== undefined) out.inspection_no = cleanInspectionNo(out.inspection_no);
   return out;
 }
 
@@ -307,7 +313,7 @@ router.post('/checklist', async (req, res) => {
   // receiving lines join it later — the order the warehouse actually works in.
   // A number supplied explicitly is someone resuming a checklist, or keying in
   // one already written on a paper form.
-  const no = String(req.body?.inspection_no || '').trim() || nextInspectionNo(db);
+  const no = cleanInspectionNo(req.body?.inspection_no) || nextInspectionNo(db);
 
   let row = db.prepare('SELECT * FROM receiving_checklists WHERE inspection_no = ?').get(no);
   if (!row) {

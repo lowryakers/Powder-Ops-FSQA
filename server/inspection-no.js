@@ -36,3 +36,17 @@ export function nextInspectionNo(db) {
   }
   return INSPECTION_PREFIX + String(max + 1).padStart(4, '0');
 }
+
+/**
+ * ONE SPELLING OF AN INSPECTION NUMBER (D-314). A number typed or pasted into a
+ * box arrives with trailing spaces, a non-breaking space or a zero-width
+ * character, and every lookup here is an exact match — so `A-100-6338 ` on a
+ * receiving line pointed at a checklist that did not exist (it opened blank)
+ * while the signed checklist `A-100-6338` counted 0 lines. Trimmed, inner runs
+ * of whitespace folded to one space. Case is left as typed.
+ */
+export function cleanInspectionNo(v) {
+  if (v == null) return v;
+  const s = String(v).replace(/(?:\s|\u00a0|\u200b|\u200c|\u200d|\ufeff)+/g, ' ').trim();
+  return s || null;
+}
