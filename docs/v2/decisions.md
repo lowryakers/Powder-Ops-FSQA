@@ -10337,3 +10337,20 @@ and dismissing them one by one.
 - `verify:missedolder` (15, live + browser; the control on `main` fails from the preview).
 
 **Merging (D-274).** It adds a write path for dismissals, so the PR waits for Lowry's review.
+
+## D-316 — FORM 431-01 is a form, not an SOP (5 Nov 2026)
+
+**Reported.** The Brittle Plastic & Glass diagram (FORM 431-01) showed on the SOPs tab. The boot seed inserted it into
+`sop_documents` without `doc_type`, so the column default `'sop'` applied, and nothing in the app can change `doc_type`
+(the document PUT ignores it).
+
+**Decided.**
+- The seed lives in `server/form-431-seed.js` (`seedForm431`) and files it with `doc_type = 'form'`. Still insert-only.
+- `fixForm431DocType` runs at boot: `UPDATE … SET doc_type = 'form' WHERE doc_number = 'FORM 431-01' AND doc_type = 'sop'`.
+  Idempotent by construction, one log line with the count, one audit row per row (system, reason "seeded with wrong
+  doc_type"). Nothing else moves: not the id, status, revision, owner or content. Nothing is deleted or retired.
+- The `controlled_forms` row (the Forms tab entry) is untouched.
+- `check:form431` (12, in `npm run check`) runs the real seed and repair on a temporary database; with `doc_type` dropped
+  from the seed it fails 2.
+
+**Merging.** It rewrites one column on one existing row. Lowry asked for it to merge once clean (5 Nov 2026).
