@@ -146,6 +146,7 @@ import nfpRoutes, { linkRouter as nfpLinkRoutes } from './server/api/nfp.js';
 import productFileImportRoutes from './server/api/product-file-import.js';
 import { seedProducts } from './server/products-seed.js';
 import { repairPaddedGtins } from './server/gtin-repair.js';
+import { seedForm431, fixForm431DocType } from './server/form-431-seed.js';
 import { repairInspectionNumbers } from './server/inspection-no-repair.js';
 import { repairProductColors } from './server/product-color-repair.js';
 import { adoptFilmBasis } from './server/readiness-film-adopt.js';
@@ -1608,26 +1609,10 @@ try {
 // date. The FILE stays where it is on purpose — it must open even with no R2
 // configured — and this is the registry row that governs it.
 {
-  const hasBpg = db.prepare("SELECT COUNT(*) as c FROM sop_documents WHERE doc_number = 'FORM 431-01'").get().c;
-  if (hasBpg === 0) {
-    try {
-      db.prepare(`INSERT INTO sop_documents (id, doc_number, title, category, revision, effective_date, review_due, owner, description, source_file)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(uuid(), 'FORM 431-01', 'Brittle Plastic and Glass Diagram', 'quality', 'V5',
-          '2026-08-19', '2027-08-19', 'Daniela Servin',
-          `Facility diagram identifying every zone covered by the monthly Brittle Plastic & Glass inspection (Form 431-02), with the items in each zone and their material.
-
-The diagram itself is at /forms/FORM-431-01-V5-Brittle-Plastic-and-Glass-Diagram.pdf and is linked from the QA Inspections BPG filter and from every BPG inspection record.
-
-The ITEM LISTS this diagram documents are maintained in the app, one schedule per zone (QA Inspections → Brittle Plastic & Glass), in the form item | qty | material. The zone names come from the "bpg_zones" managed list in Settings → Log Structure. Changing an item list there is what keeps this document and the inspections in step; re-issue the diagram through Document Control when the drawing itself changes.
-
-V5 renumbers the floor: production rooms are 1–8 and batching rooms 1–3, and Room 0 no longer exists. Plastic pallet quantities vary with shipments and are used interchangeably between the production and warehouse zones.`,
-          '/forms/FORM-431-01-V5-Brittle-Plastic-and-Glass-Diagram.pdf');
-      console.log('[seed] Created FORM 431-01 — Brittle Plastic and Glass Diagram');
-    } catch (e) {
-      console.error('[seed] Error seeding FORM 431-01 (non-fatal):', e.message);
-    }
-  }
+  // The seed files it as a FORM, never an SOP (D-316), and the repair moves the
+  // row an earlier seed filed with the column default.
+  try { seedForm431(db); } catch (e) { console.error('[seed] Error seeding FORM 431-01 (non-fatal):', e.message); }
+  try { fixForm431DocType(db); } catch (e) { console.error('[repair] Error fixing FORM 431-01 doc_type (non-fatal):', e.message); }
   // ISSUE V5 ON A DATABASE THAT ALREADY HAS V4. The seed above is insert-only
   // (rightly — it must never overwrite an edit somebody made), so on every
   // deployed instance the registry would keep pointing at the V4 drawing and
