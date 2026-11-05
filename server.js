@@ -146,6 +146,7 @@ import nfpRoutes, { linkRouter as nfpLinkRoutes } from './server/api/nfp.js';
 import productFileImportRoutes from './server/api/product-file-import.js';
 import { seedProducts } from './server/products-seed.js';
 import { repairPaddedGtins } from './server/gtin-repair.js';
+import { repairInspectionNumbers } from './server/inspection-no-repair.js';
 import { repairProductColors } from './server/product-color-repair.js';
 import { adoptFilmBasis } from './server/readiness-film-adopt.js';
 import { migrateServingSizes } from './server/nfp-serving-migrate.js';
@@ -1254,6 +1255,9 @@ try {
   // afterwards. Skipped and reported, never collided, if the bare form is
   // already on another SKU.
   try { repairPaddedGtins(db); } catch (e) { console.warn('[seed] Could not normalise GTINs:', e.message); }
+  // A receiving line saved with a stray space in its inspection number joins its
+  // checklist (D-314). Idempotent: only a number whose clean spelling differs moves.
+  try { repairInspectionNumbers(db); } catch (e) { console.warn('[repair] Could not respell inspection numbers:', e.message); }
   // What is actually in the bag, for the ten SKUs that have been weighed. The
   // proofing service's Net Weight check has no other way to learn it — every
   // other input is printed on the artwork, which is why a label can be

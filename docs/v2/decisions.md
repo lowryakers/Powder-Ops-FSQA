@@ -10300,3 +10300,21 @@ when a Settings group, its order, or any sidebar entry in it disagrees with the 
 **Not done here: turning the grant on.** Minting or editing a real token is a person's job, so this release does not set the grant on READYDOC_TOKEN_QUALITY. Lowry ticks **coa-prep** on that token in Settings → Bot API tokens. The bot's account also needs COA at Edit.
 
 **Merging (D-274).** This writes records (plans, products, audit), so the PR waits for Lowry's review.
+
+## D-314 — An inspection number has one spelling; a line typed with a stray space joins its checklist (5 Nov 2026)
+
+**Reported.** Receiving: A-100-6338 was signed off reading "0 lines filed", while its line on the Receiving Log opened a
+blank checklist. The link read "Inspection checklist (A-100-6338 )" — the line was filed as `A-100-6338 ` (a trailing
+space, or an invisible character from a paste). Every lookup is an exact match, so the line pointed at a checklist that did
+not exist, and the signed one counted none. The checklist's own Start/Open box trimmed; the receiving-line form did not.
+
+**Decided.**
+- `cleanInspectionNo()` (`server/inspection-no.js`) is the one spelling: trimmed, whitespace including non-breaking and
+  zero-width characters folded to one space, case kept. The receiving-line write path, the checklist POST and every
+  `/checklist/:inspectionNo` route (`router.param`) read it.
+- `repairInspectionNumbers()` (boot, idempotent by construction) respells receiving lines, checklists and CoC proofs whose
+  number differs from its clean spelling, audited per row. **A checklist whose clean twin already exists is left alone and
+  reported** — two checklists for one delivery is a person's call. No answer, signature or other field moves.
+- `verify:inspectionno` (14; the control on `main` fails 10, reproducing the report).
+
+**Merging (D-274).** The boot pass rewrites the number on existing receiving lines, so the PR waits for Lowry's review.

@@ -2839,6 +2839,12 @@ Not user-editable: changing what a receiving inspection asks is a Document Chang
 - The allergen line has an instruction ("print placards"), not a person to tell, so it carries a `note` and
   no `notify`. Six escalate, not seven.
 
+## An inspection number has one spelling (D-314)
+`cleanInspectionNo()` in `server/inspection-no.js` — every receiving write and `/checklist/:inspectionNo` route
+(`router.param`) reads it; `repairInspectionNumbers()` (boot) respells lines filed as `A-100-6338 `, leaving a checklist
+whose clean twin exists for a person. A new table keyed on the inspection number must store the clean spelling.
+`verify:inspectionno` (14; control fails 10).
+
 ## QA clearing a machine needs to see what was done
 The hygiene-clearance card showed a title, a machine and a name. Deciding whether a food-contact machine is
 fit to run again from that means knowing the daily and weekly procedures by heart or opening the Equipment
