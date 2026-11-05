@@ -45,7 +45,7 @@ function Row({ item, source, checked, onToggle }) {
               openModule(item.tab || source.module);
             }}
             className="inline-flex items-center gap-1 mt-1 text-xs font-medium text-indigo-700 hover:underline">
-            Open to approve <ExternalLink size={11} />
+            {item.link_label || 'Open to approve'} <ExternalLink size={11} />
           </a>
         )}
       </div>

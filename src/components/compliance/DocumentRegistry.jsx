@@ -17,6 +17,7 @@ import DocumentRevisions from './DocumentRevisions.jsx';
 import { getParam, consumeParam } from '../../lib/deepLink';
 import { withSignature } from '../../lib/signature';
 import { isApprovedStatus } from '../../../shared/document-revision.js';
+import { RETYPE_TARGETS, TYPE_LABELS, typeFromNumber } from '../../../shared/document-type.js';
 
 /**
  * Drawn signatures recorded before D-282, shown as history only. Signing a
@@ -584,7 +585,52 @@ function WithdrawForm({ doc, onCancel, onConfirm }) {
   );
 }
 
-function DocumentViewer({ doc, typeLabel, canEdit, onEdit, onArchive, onReinstate, onClose, onChanged }) {
+/* ───────── Changing a document's type (D-317) ───────── */
+// The type decides which tab lists the document. A reason is asked for and the
+// change is audited; nothing else about the document moves.
+function ChangeTypeForm({ doc, onDone, onCancel }) {
+  const current = doc.doc_type || 'sop';
+  const suggested = typeFromNumber(doc.doc_number);
+  const [to, setTo] = useState(suggested && suggested !== current ? suggested : (RETYPE_TARGETS.find(t => t.value !== current)?.value || 'sop'));
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const target = RETYPE_TARGETS.find(t => t.value === to);
+  const save = async () => {
+    setBusy(true); setError(null);
+    try { await apiPost(`/documents/${doc.id}/type`, { doc_type: to, reason }); onDone(to); }
+    catch (e) { setError(e.message || 'Could not change the type'); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div data-change-type className="mx-5 mt-3 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-3 space-y-2">
+      <p className="text-sm font-medium text-indigo-900">Change type — filed as {TYPE_LABELS[current] || current}</p>
+      {suggested && suggested !== current && (
+        <p className="text-xs text-indigo-800">The number {doc.doc_number} says {TYPE_LABELS[suggested]}.</p>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <select data-change-type-to value={to} onChange={e => setTo(e.target.value)} className="px-2 py-1 border border-indigo-200 rounded text-sm bg-white">
+          {RETYPE_TARGETS.filter(t => t.value !== current).map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+        </select>
+        <input data-change-type-reason value={reason} onChange={e => setReason(e.target.value)} placeholder="Why (e.g. seeded with the wrong type)"
+          className="flex-1 min-w-[12rem] px-2 py-1 border border-indigo-200 rounded text-sm bg-white" />
+      </div>
+      <p className="text-xs text-indigo-800">
+        {target?.tab ? `It will be listed on the ${target.tab} tab.` : 'A form is not listed on these tabs; its home is the form register on the Forms tab.'}
+        {' '}Nothing else changes: status, revision, number and text stay as they are.
+      </p>
+      {error && <p className="text-xs text-red-700">{error}</p>}
+      <div className="flex gap-2">
+        <button type="button" data-change-type-save disabled={busy || reason.trim().length < 3} onClick={save}
+          className="px-3 py-1 bg-indigo-600 text-white text-xs font-medium rounded disabled:opacity-50 hover:bg-indigo-700">{busy ? 'Saving…' : 'Change type'}</button>
+        <button type="button" onClick={onCancel} className="px-3 py-1 text-xs text-gray-600 hover:text-gray-800">Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+function DocumentViewer({ doc, typeLabel, canEdit, canRetype, onEdit, onArchive, onReinstate, onClose, onChanged, onRetyped }) {
+  const [retyping, setRetyping] = useState(false);
   const { data: versions } = useApiGet(`/documents/${doc.id}/versions`, [doc.id]);
   const [showVersions, setShowVersions] = useState(false);
   const [lang, setLang] = useState('en');
@@ -646,6 +692,10 @@ function DocumentViewer({ doc, typeLabel, canEdit, onEdit, onArchive, onReinstat
             className="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 flex items-center gap-1.5">
             <History size={14} /> History ({versions?.length || 0})
           </button>
+          {canRetype && doc.doc_type !== 'reference' && doc.status !== 'archived' && !retyping && (
+            <button data-change-type-open onClick={() => setRetyping(true)}
+              className="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Change type</button>
+          )}
           <div className="flex-1" />
           {canEdit && (
             <>
@@ -664,6 +714,8 @@ function DocumentViewer({ doc, typeLabel, canEdit, onEdit, onArchive, onReinstat
             </>
           )}
         </div>
+
+        {retyping && <ChangeTypeForm doc={doc} onCancel={() => setRetyping(false)} onDone={(to) => { setRetyping(false); onRetyped(to); }} />}
 
         {showVersions && (
           <div className="px-5 py-3 border-t border-gray-100 max-h-48 overflow-y-auto">
@@ -725,7 +777,7 @@ function BulkImportModal({ defaultDocType, onImported, onClose }) {
       const res = await apiUpload('/documents/extract', fd);
       const ok = (res.documents || []).filter(d => d.ok).map(d => ({
         include: true,
-        doc_type: defaultDocType,
+        doc_type: d.doc_type || defaultDocType,
         category: 'quality',
         doc_number: d.doc_number || '',
         // The version the filename names (D-264) — it used to be dropped, so every import read 1.0.
@@ -979,6 +1031,9 @@ function ConfirmDeleteModal({ count, onConfirm, onClose }) {
 export default function DocumentRegistry({ docType, moduleId, title, typeLabel }) {
   const { user } = useAuth() || {};
   const canEdit = canEditModule(user, moduleId);
+  // Same people the server lets change a type: QA, Document Control, supervisors, admins.
+  const canRetype = canEdit && (user?.role === 'admin' || user?.role === 'supervisor'
+    || ['qa', 'quality', 'document_control'].includes(String(user?.department || '').toLowerCase()));
   const [sortField, setSortField] = useState('doc_number');
   const [sortOrder, setSortOrder] = useState('asc');
   const [search, setSearch] = useState('');
@@ -1240,7 +1295,8 @@ export default function DocumentRegistry({ docType, moduleId, title, typeLabel }
         <DocumentEditor docType={docType} typeLabel={typeLabel} initial={editing} onSave={handleUpdate} onCancel={() => setEditing(null)} />
       )}
       {viewing && !editing && (
-        <DocumentViewer doc={viewing} typeLabel={typeLabel} canEdit={canEdit}
+        <DocumentViewer doc={viewing} typeLabel={typeLabel} canEdit={canEdit} canRetype={canRetype}
+          onRetyped={() => { refresh(); setViewing(null); }}
           onEdit={(d) => { setViewing(null); setEditing(d); }}
           onArchive={(d) => setWithdrawing(d)}
           onReinstate={handleReinstate}

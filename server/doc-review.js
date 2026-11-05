@@ -25,6 +25,7 @@ import { recomputeDocumentReview } from './api/documents.js';
 import { numberingWork } from './api/forms.js';
 import { zoneDrift, bpgDiagram } from './bpg-zones.js';
 import { GO_LIVE_DATE } from './db.js';
+import { typeFromNumber, TYPE_LABELS } from '../shared/document-type.js';
 
 // The registry tab each document type lives on — where "Open to approve" lands.
 const TAB_FOR_TYPE = { sop: 'sops', work_instruction: 'work-instructions', job_description: 'job-descriptions' };
@@ -46,6 +47,29 @@ export function draftRevisionRows(db, limit = 200) {
       (SELECT COUNT(*) FROM document_attachments a WHERE a.revision_id = r.id AND a.kind = 'signed_original') AS signed_files
     FROM document_revisions r JOIN sop_documents d ON d.id = r.document_id
     WHERE ${DRAFT_REVISION_WHERE} ORDER BY r.created_at ASC LIMIT ?`).all(limit);
+}
+
+// Documents filed under a type their number contradicts, or under a type no
+// Document Control list shows (D-317). Derived on every read, so changing a
+// document's type clears it. A `form` document is fine while the Forms tab has
+// a register entry for its number — that entry is its home.
+export function documentTypeProblems(db) {
+  const docs = db.prepare(`SELECT id, doc_number, title, doc_type, status FROM sop_documents
+    WHERE COALESCE(doc_type, 'sop') != 'reference' AND status != 'archived' ORDER BY doc_number`).all();
+  const forms = new Set(db.prepare('SELECT code FROM controlled_forms').all().map(f => String(f.code || '').trim().toUpperCase()));
+  const out = [];
+  for (const d of docs) {
+    const type = d.doc_type || 'sop';
+    const suggested = typeFromNumber(d.doc_number);
+    if (suggested && suggested !== type) {
+      out.push({ ...d, type, suggested, why: `The number says ${TYPE_LABELS[suggested]}; it is filed as ${TYPE_LABELS[type] || type}.` });
+    } else if (type === 'policy') {
+      out.push({ ...d, type, suggested: 'sop', why: 'Filed as Policy, which no Document Control tab lists.' });
+    } else if (type === 'form' && !forms.has(String(d.doc_number || '').trim().toUpperCase())) {
+      out.push({ ...d, type, suggested: null, why: 'Filed as Form, and the Forms tab has no register entry for this number.' });
+    }
+  }
+  return out;
 }
 
 // Who is Document Control for the purposes of this screen. Matches the rule the
@@ -206,6 +230,27 @@ export const SOURCES = [
       link: `/?tab=${TAB_FOR_TYPE[r.doc_type] || 'sops'}&doc=${r.document_id}`,
       document_id: r.document_id,
       tab: TAB_FOR_TYPE[r.doc_type] || 'sops',
+    })),
+    canAct: isDocController,
+  },
+  // ── Documents filed under the wrong type (D-317). Not batchable: each is
+  // fixed on the document with Change type, which asks for a reason.
+  {
+    key: 'document-type',
+    label: 'Documents filed under the wrong type',
+    module: 'document-control',
+    noun: 'document',
+    plural: 'documents',
+    help: 'The type decides which tab a document is listed on. These are filed under a type their number contradicts, or under a type no tab lists. Open each one and use Change type; it asks for a reason and moves nothing else.',
+    count: (db) => documentTypeProblems(db).length,
+    pending: (db, limit = LIMIT) => documentTypeProblems(db).slice(0, limit).map(d => ({
+      id: d.id,
+      title: `${d.doc_number ? `${d.doc_number} — ` : ''}${d.title}`,
+      subtitle: d.suggested ? `Filed as ${TYPE_LABELS[d.type] || d.type} · suggested ${TYPE_LABELS[d.suggested]}` : `Filed as ${TYPE_LABELS[d.type] || d.type}`,
+      date: null,
+      overdue: false,
+      extra: d.why,
+      ...(TAB_FOR_TYPE[d.type] ? { link: `/?tab=${TAB_FOR_TYPE[d.type]}&doc=${d.id}`, link_label: 'Open', document_id: d.id, tab: TAB_FOR_TYPE[d.type] } : {}),
     })),
     canAct: isDocController,
   },

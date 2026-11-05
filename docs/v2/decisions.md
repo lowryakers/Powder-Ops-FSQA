@@ -10354,3 +10354,26 @@ and dismissing them one by one.
   from the seed it fails 2.
 
 **Merging.** It rewrites one column on one existing row. Lowry asked for it to merge once clean (5 Nov 2026).
+
+## D-317 — A document filed under the wrong type is listed, and Document Control can move it (5 Nov 2026)
+
+**Asked.** After D-316: are there other documents like FORM 431-01? Nothing in the app could change a document's type,
+and a document's type decides which tab lists it (SOPs, Work Instructions, Job Descriptions). A document of type
+`policy` is listed on no tab at all. Lowry agreed to the simple fixes that serve the single spine.
+
+**Decided.**
+- `shared/document-type.js` is the ONE reading of a number: `WI` → Work Instruction, `JD` → Job Description, `FORM` →
+  Form, `SOP` → SOP. **POLICY is deliberately not mapped** — no tab lists `policy`, so suggesting it would hide a document.
+- **A Doc Control Review pile, "Documents filed under the wrong type"** (`documentTypeProblems`, derived on read): the
+  number says a different type; filed as Policy; or filed as Form with no entry on the Forms register. Reference Library
+  and withdrawn documents are left out. It reports; it changes nothing. It clears itself as documents are moved.
+- **`POST /documents/:id/type`** moves the type only, to SOP / Work Instruction / Job Description / Form. QA, Document
+  Control, supervisors and admins (`canWetSign`); a reason is required; audited with from, to and the reason. Refused:
+  a Reference Library document, the same type, any other type. A bot token cannot reach it (not on `WRITE_AREAS`).
+  **Change type** on the document's own screen suggests the type its number reads as.
+- **The importer reads the type from the number**, falling back to the tab it was opened on.
+- **No new tab for forms or policies.** A form's home is its Forms-tab register entry; a `sop_documents` copy of a form is
+  a duplicate, which is why "form with no register entry" is on the pile.
+- `verify:doctype` (26, live + browser at 1280). The control on `main` fails from the first pile assertion.
+
+**Merging (D-274).** It adds a path that changes a record, so the PR waits for Lowry's review.

@@ -6461,6 +6461,14 @@ revoke by DELETE with a reason), `CrisisDrills.jsx`. SOP 501, SQF 2.6.4.2.
 - `botApprovalReport()` (`server/bot-approval-report.js`, `GET /api/api-tokens/approval-check`,
   `report:bot-approvals`) lists every token and every approval on file by a bot. SELECT-only. `verify:botnoapprove` (39).
 
+## A document's type is moved on purpose, never left to the default (D-316, D-317)
+`shared/document-type.js` (`typeFromNumber`, `RETYPE_TARGETS`) is the one reading of a number (WI / JD / FORM / SOP;
+POLICY is not mapped). Doc Control Review's **"Documents filed under the wrong type"** (`documentTypeProblems`) lists a
+number that disagrees with its type, a Policy (no tab lists it) and a Form with no Forms-register entry. **Change type**
+(`POST /documents/:id/type`, reason required, audited, not for Reference Library) is the only way a type moves; the
+document PUT still ignores `doc_type`. The importer suggests the type from the number. A seed that files a
+`sop_documents` row must set `doc_type` (FORM 431-01 went to the SOPs tab without it). `verify:doctype` (26).
+
 ## A new revision is offered the next V number (D-280)
 `nextVRevision()` counts from the highest number on the document, its signed copies and file names, skips used ones,
 and writes `V<n>`; the person types the label. New documents default to `V1`. Existing revisions are never rewritten.

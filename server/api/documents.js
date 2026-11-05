@@ -1,3 +1,4 @@
+import { typeFromNumber, RETYPE_VALUES, TYPE_LABELS } from '../../shared/document-type.js';
 import { Router } from 'express';
 import { TRAINEE_RECORD_SQL } from '../trainees.js';
 import { isoDay, nextReviewDue } from '../review-cadence.js';
@@ -354,7 +355,9 @@ function guessMeta(filename, text) {
   title = stripRevisionSuffix(title);
   // …and the version it names is KEPT (D-264). It was stripped and thrown away,
   // so every imported document read "1.0" whatever its file said.
-  return { doc_number, title: title.slice(0, 120), revision: revisionFromFilename(filename) || null };
+  // The number names the kind of document when its prefix says one thing (D-317);
+  // otherwise the importer keeps the tab's type.
+  return { doc_number, title: title.slice(0, 120), revision: revisionFromFilename(filename) || null, doc_type: typeFromNumber(doc_number) };
 }
 
 // POST /extract — parse uploaded documents into draft candidates (does not
@@ -367,10 +370,10 @@ router.post('/extract', receiveImportFiles, async (req, res) => {
   for (const f of req.files) {
     try {
       const { text, pages, isMarkdown } = await extractDocText(f);
-      const { doc_number, title, revision } = guessMeta(f.originalname, text);
+      const { doc_number, title, revision, doc_type } = guessMeta(f.originalname, text);
       // mammoth/Markdown sources already carry structure — don't re-mangle them.
       const content = isMarkdown ? text : textToMarkdown(text);
-      out.push({ filename: f.originalname, doc_number, title, revision, content, pages, ok: true });
+      out.push({ filename: f.originalname, doc_number, title, revision, doc_type, content, pages, ok: true });
     } catch (err) {
       out.push({ filename: f.originalname, ok: false, error: err.message });
     }
@@ -1148,6 +1151,30 @@ router.post('/:id/reinstate', (req, res) => {
     { title: existing.title, was_withdrawn: existing.archived_at, prior_reason: existing.archive_reason },
     existing, updated);
   res.json({ success: true, document: updated });
+});
+
+// POST /:id/type — file a document under a different type (D-317). A deliberate
+// act with a reason, never a field on the ordinary edit: the type decides which
+// tab the document is listed on, and a document filed under the wrong one was
+// stuck there (FORM 431-01, D-316). Only the type moves; status, revision,
+// number, owner and text are untouched, and a signed revision stays signed.
+router.post('/:id/type', (req, res) => {
+  const db = getDb();
+  if (!canWetSign(req.user)) return res.status(403).json({ error: 'Changing a document\'s type is for QA, Document Control, supervisors and admins.' });
+  const existing = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+  if (existing.doc_type === 'reference') return res.status(400).json({ error: 'Reference Library documents are seeded from the standards and keep their type.' });
+  const to = String(req.body?.doc_type || '');
+  if (!RETYPE_VALUES.has(to)) return res.status(400).json({ error: 'Pick SOP, Work Instruction, Job Description or Form.' });
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 3) return res.status(400).json({ error: 'Say why the type is changing (at least 3 characters).', code: 'REASON_REQUIRED' });
+  if (to === existing.doc_type) return res.status(409).json({ error: `It is already filed as ${TYPE_LABELS[to] || to}.` });
+  db.prepare("UPDATE sop_documents SET doc_type = ?, updated_at = datetime('now') WHERE id = ?").run(to, existing.id);
+  const updated = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(existing.id);
+  logAudit(req.user, 'update', 'document', existing.id,
+    { change: 'doc_type', from: existing.doc_type, to, reason, decision: 'D-317' },
+    { doc_type: existing.doc_type }, { doc_type: to }, existing.doc_number || existing.title);
+  res.json({ ok: true, document: updated });
 });
 
 // Bulk permanent delete — removes documents (and their version history) for
