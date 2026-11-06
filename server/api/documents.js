@@ -1,3 +1,4 @@
+import { typeFromNumber, RETYPE_VALUES, TYPE_LABELS } from '../../shared/document-type.js';
 import { Router } from 'express';
 import { TRAINEE_RECORD_SQL } from '../trainees.js';
 import { isoDay, nextReviewDue } from '../review-cadence.js';
@@ -5,9 +6,8 @@ import { cleanFilename, stripRevisionSuffix, revisionFromFilename } from '../fil
 import { orderWorklist, worklistProgress } from '../doc-worklist.js';
 import { v4 as uuid } from 'uuid';
 import multer from 'multer';
-import PDFDocument from 'pdfkit';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { tableAt, drawTable } from '../pdf-table.js';
+import { printableCopy, renderDocumentsPdf } from '../document-pdf.js';
 import mammoth from 'mammoth';
 import { createReadStream, openSync, readSync, closeSync } from 'fs';
 import { createHash } from 'crypto';
@@ -15,9 +15,7 @@ import { tokenSopAttachmentRefusal, DOC_EDIT_GRANTS } from '../bot-api.js';
 import { getDb, logAudit } from '../db.js';
 import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { storageEnabled, putStream, presignGet, deleteObject } from '../storage.js';
-import { embedUnicodeFaces } from '../pdf-unicode.js';
 import { gateSignature } from '../signature.js';
-import { plantDateTime } from '../plant-clock.js';
 import { isBotAccount } from '../trainees.js';
 import { isApprovedStatus, sameRevision } from '../../shared/document-revision.js';
 import {
@@ -354,7 +352,9 @@ function guessMeta(filename, text) {
   title = stripRevisionSuffix(title);
   // …and the version it names is KEPT (D-264). It was stripped and thrown away,
   // so every imported document read "1.0" whatever its file said.
-  return { doc_number, title: title.slice(0, 120), revision: revisionFromFilename(filename) || null };
+  // The number names the kind of document when its prefix says one thing (D-317);
+  // otherwise the importer keeps the tab's type.
+  return { doc_number, title: title.slice(0, 120), revision: revisionFromFilename(filename) || null, doc_type: typeFromNumber(doc_number) };
 }
 
 // POST /extract — parse uploaded documents into draft candidates (does not
@@ -367,10 +367,10 @@ router.post('/extract', receiveImportFiles, async (req, res) => {
   for (const f of req.files) {
     try {
       const { text, pages, isMarkdown } = await extractDocText(f);
-      const { doc_number, title, revision } = guessMeta(f.originalname, text);
+      const { doc_number, title, revision, doc_type } = guessMeta(f.originalname, text);
       // mammoth/Markdown sources already carry structure — don't re-mangle them.
       const content = isMarkdown ? text : textToMarkdown(text);
-      out.push({ filename: f.originalname, doc_number, title, revision, content, pages, ok: true });
+      out.push({ filename: f.originalname, doc_number, title, revision, doc_type, content, pages, ok: true });
     } catch (err) {
       out.push({ filename: f.originalname, ok: false, error: err.message });
     }
@@ -760,13 +760,6 @@ router.post('/bulk', (req, res) => {
 // Supported controlled-document types. The registry (sop_documents table) is
 // shared; doc_type separates SOPs, Work Instructions, Job Descriptions, etc.
 const DOC_TYPES = new Set(['sop', 'work_instruction', 'job_description', 'policy', 'form']);
-const TYPE_LABEL = {
-  sop: 'SOP',
-  work_instruction: 'Work Instruction',
-  job_description: 'Job Description',
-  policy: 'Policy',
-  form: 'Form',
-};
 
 const SORTABLE = { doc_number: 'doc_number', title: 'title', category: 'category', revision: 'revision', status: 'status', review_due: 'review_due', owner: 'owner', updated_at: 'updated_at' };
 
@@ -1150,6 +1143,30 @@ router.post('/:id/reinstate', (req, res) => {
   res.json({ success: true, document: updated });
 });
 
+// POST /:id/type — file a document under a different type (D-317). A deliberate
+// act with a reason, never a field on the ordinary edit: the type decides which
+// tab the document is listed on, and a document filed under the wrong one was
+// stuck there (FORM 431-01, D-316). Only the type moves; status, revision,
+// number, owner and text are untouched, and a signed revision stays signed.
+router.post('/:id/type', (req, res) => {
+  const db = getDb();
+  if (!canWetSign(req.user)) return res.status(403).json({ error: 'Changing a document\'s type is for QA, Document Control, supervisors and admins.' });
+  const existing = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+  if (existing.doc_type === 'reference') return res.status(400).json({ error: 'Reference Library documents are seeded from the standards and keep their type.' });
+  const to = String(req.body?.doc_type || '');
+  if (!RETYPE_VALUES.has(to)) return res.status(400).json({ error: 'Pick SOP, Work Instruction, Job Description or Form.' });
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 3) return res.status(400).json({ error: 'Say why the type is changing (at least 3 characters).', code: 'REASON_REQUIRED' });
+  if (to === existing.doc_type) return res.status(409).json({ error: `It is already filed as ${TYPE_LABELS[to] || to}.` });
+  db.prepare("UPDATE sop_documents SET doc_type = ?, updated_at = datetime('now') WHERE id = ?").run(to, existing.id);
+  const updated = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(existing.id);
+  logAudit(req.user, 'update', 'document', existing.id,
+    { change: 'doc_type', from: existing.doc_type, to, reason, decision: 'D-317' },
+    { doc_type: existing.doc_type }, { doc_type: to }, existing.doc_number || existing.title);
+  res.json({ ok: true, document: updated });
+});
+
 // Bulk permanent delete — removes documents (and their version history) for
 // good. Admin only, since this is not reversible.
 router.post('/bulk-delete', (req, res) => {
@@ -1185,15 +1202,21 @@ router.post('/bulk-update', (req, res) => {
   res.json({ updated: info.changes });
 });
 
-// PDF — single or multiple
+// PDF — single or multiple. The renderer and the identity on every page live in
+// server/document-pdf.js (D-318). `?copy=approved` (default) is the document in
+// force; `?copy=draft` or `?revision_id=<draft id>` is the pending revision,
+// stamped DRAFT on every page and never labelled approved.
 router.get('/:id/pdf', (req, res) => {
   const db = getDb();
   const doc = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id);
   if (!doc) return res.status(404).json({ error: 'Not found' });
-  const sigs = db.prepare('SELECT * FROM document_signatures WHERE document_id = ? ORDER BY signed_at').all(doc.id);
-  generatePDF(res, [doc], { [doc.id]: sigs }, { [doc.id]: approvalsFor(db, doc) });
+  const picked = printableCopy(db, doc, { copy: req.query.copy ? String(req.query.copy) : undefined,
+    revisionId: req.query.revision_id ? String(req.query.revision_id) : undefined });
+  if (picked.error) return res.status(picked.status).json({ error: picked.error, code: picked.code });
+  renderDocumentsPdf(res, [picked]);
 });
 
+// Several documents in one file: always the copies in force.
 router.post('/pdf', (req, res) => {
   const db = getDb();
   const { ids } = req.body;
@@ -1201,149 +1224,8 @@ router.post('/pdf', (req, res) => {
   const placeholders = ids.map(() => '?').join(',');
   const docs = db.prepare(`SELECT * FROM sop_documents WHERE id IN (${placeholders}) ORDER BY category, doc_number`).all(...ids);
   if (!docs.length) return res.status(404).json({ error: 'No documents found' });
-  const sigsByDoc = {};
-  const approvalsByDoc = {};
-  for (const d of docs) {
-    sigsByDoc[d.id] = db.prepare('SELECT * FROM document_signatures WHERE document_id = ? ORDER BY signed_at').all(d.id);
-    approvalsByDoc[d.id] = approvalsFor(db, d);
-  }
-  generatePDF(res, docs, sigsByDoc, approvalsByDoc);
+  renderDocumentsPdf(res, docs.map(d => printableCopy(db, d, { copy: 'approved' })));
 });
-
-// The approvals of the revision a printout shows (D-282).
-const approvalsFor = (db, doc) => db.prepare(`SELECT * FROM document_revisions WHERE document_id = ?
-  AND status IN ('approved','superseded') AND approved_at IS NOT NULL ORDER BY approved_at`).all(doc.id)
-  .filter(r => sameRevision(r.revision, doc.revision));
-
-const STATUS_LABEL = { draft: 'Draft', under_review: 'In Review', active: 'Approved / Effective', superseded: 'Superseded', archived: 'Archived' };
-
-function generatePDF(res, docs, sigsByDoc = null, approvalsByDoc = null) {
-  const LEFT = 72;
-  const RIGHT = 540;
-  const BODY_W = RIGHT - LEFT;
-  const BULLET_LEFT = LEFT + 18;
-  const BULLET_W = RIGHT - BULLET_LEFT;
-  const PAGE_BOTTOM = 720;
-
-  const pdf = new PDFDocument({ size: 'LETTER', margins: { top: 72, bottom: 72, left: LEFT, right: 72 } });
-  embedUnicodeFaces(pdf); // embedded Unicode faces, so ≤, µ and accented text print (D-235)
-  res.setHeader('Content-Type', 'application/pdf');
-  const typeLabel = TYPE_LABEL[docs[0].doc_type] || 'Document';
-  const title = docs.length === 1 ? `${docs[0].doc_number || typeLabel} - ${docs[0].title}` : `${typeLabel}_${docs.length}_docs`;
-  const safeName = (title || 'document').replace(/[^a-zA-Z0-9_-]/g, '_');
-  res.setHeader('Content-Disposition', `attachment; filename="${safeName}.pdf"`);
-  pdf.pipe(res);
-
-  const footerText = `Generated ${new Date().toLocaleDateString()} — Powder Ops FSQA`;
-  const ensureSpace = (needed) => { if (pdf.y > PAGE_BOTTOM - needed) pdf.addPage(); };
-
-  docs.forEach((doc, idx) => {
-    if (idx > 0) pdf.addPage();
-
-    pdf.save();
-    pdf.rect(LEFT, 50, BODY_W, 36).fill('#1e40af');
-    pdf.fillColor('#ffffff').fontSize(16).font('Helvetica-Bold').text(doc.title, LEFT + 12, 59, { width: BODY_W - 24 });
-    pdf.restore();
-
-    pdf.y = 104;
-    pdf.x = LEFT;
-    pdf.fontSize(9);
-    const meta = [
-      ['Type', TYPE_LABEL[doc.doc_type] || 'Document'],
-      ['Document #', doc.doc_number || '—'],
-      ['Category', (doc.category || '').charAt(0).toUpperCase() + (doc.category || '').slice(1)],
-      ['Revision', doc.revision || '—'],
-      ['Status', STATUS_LABEL[doc.status] || doc.status || '—'],
-      ['Owner', doc.owner || '—'],
-      ['Approved By', doc.approved_by || '—'],
-      ['Approved At', doc.approved_at ? plantDateTime(doc.approved_at) : 'not recorded'],
-      ['Effective Date', doc.effective_date || '—'],
-      ['Review Due', doc.review_due || '—'],
-    ];
-    for (const [label, value] of meta) {
-      pdf.font('Helvetica-Bold').fillColor('#374151').text(label + ':  ', LEFT, pdf.y, { continued: true });
-      pdf.font('Helvetica').text(value);
-    }
-
-    pdf.y += 10;
-    pdf.moveTo(LEFT, pdf.y).lineTo(RIGHT, pdf.y).strokeColor('#d1d5db').stroke();
-    pdf.y += 16;
-
-    if (doc.description) {
-      pdf.fillColor('#111827').fontSize(10).font('Helvetica');
-      const bodyLines = doc.description.split('\n');
-      for (let li = 0; li < bodyLines.length; li++) {
-        const raw = bodyLines[li];
-        const trimmed = raw.trim();
-        if (!trimmed) { pdf.y += 6; continue; }
-        // A TABLE IS DRAWN AS A TABLE. Without this branch a pipe row fell
-        // through to plain text, which is why an SOP full of tables printed as
-        // a page of pipe characters.
-        const table = tableAt(bodyLines, li);
-        if (table) {
-          pdf.y += 4;
-          drawTable(pdf, table, { left: LEFT, width: BODY_W, pageBottom: PAGE_BOTTOM });
-          li = table.next - 1;
-          continue;
-        }
-        ensureSpace(30);
-        // Strip inline markdown emphasis markers for print
-        const clean = (s) => s.replace(/\*\*(.+?)\*\*/g, '$1').replace(/(?<!\*)\*(?!\*)(.+?)\*/g, '$1');
-        if (/^#{1,2}\s+/.test(trimmed)) {
-          const level = trimmed.startsWith('## ') ? 2 : 1;
-          const text = trimmed.replace(/^#{1,2}\s+/, '');
-          pdf.y += 4;
-          pdf.font('Helvetica-Bold').fontSize(level === 1 ? 12 : 11).text(clean(text), LEFT, pdf.y, { width: BODY_W, lineGap: 2 });
-          pdf.font('Helvetica').fontSize(10);
-        } else if (/^[-*•]\s+/.test(trimmed)) {
-          pdf.text('•  ' + clean(trimmed.replace(/^[-*•]\s+/, '')), BULLET_LEFT, pdf.y, { width: BULLET_W, lineGap: 2 });
-        } else if (/^\d+\.\s+/.test(trimmed)) {
-          pdf.text(clean(trimmed), BULLET_LEFT, pdf.y, { width: BULLET_W, lineGap: 2 });
-        } else {
-          pdf.text(clean(trimmed), LEFT, pdf.y, { width: BODY_W, lineGap: 2 });
-        }
-      }
-    } else {
-      pdf.fillColor('#9ca3af').fontSize(10).font('Helvetica-Oblique').text('No content yet.', LEFT, pdf.y, { width: BODY_W });
-    }
-
-    // Signatures (D-282). Every approval of this revision, printed as
-    // name · date and time (plant time) · meaning · whether the fingerprint
-    // still matches the text. Signatures drawn before D-282 follow as history.
-    const approvals = (approvalsByDoc && approvalsByDoc[doc.id]) || [];
-    const sigs = (sigsByDoc && sigsByDoc[doc.id]) || [];
-    if (approvals.length || sigs.length) {
-      ensureSpace(60 + (approvals.length + sigs.length) * 30);
-      pdf.moveDown(1.5);
-      pdf.fillColor('#111827').fontSize(11).font('Helvetica-Bold').text('Signatures', LEFT, pdf.y, { width: BODY_W });
-      pdf.moveDown(0.4);
-      for (const a of approvals) {
-        ensureSpace(32);
-        const state = approvalState(a);
-        const seal = state === 'signed' ? 'Electronically signed (password) · fingerprint matches this revision'
-          : state === 'changed' ? 'WARNING: this revision changed after it was signed'
-          : 'Signed before fingerprints were recorded';
-        pdf.fillColor('#111827').fontSize(10).font('Helvetica-Bold').text(`${a.approved_by || '—'} — ${a.approved_meaning || 'Approved'} (rev ${a.revision})`, LEFT, pdf.y, { width: BODY_W });
-        pdf.fillColor('#4b5563').fontSize(9).font('Helvetica').text(`${plantDateTime(a.approved_at)} · ${seal}`, LEFT, pdf.y, { width: BODY_W });
-        pdf.moveDown(0.5);
-      }
-      for (const s of sigs) {
-        ensureSpace(30);
-        pdf.fillColor('#6b7280').fontSize(9).font('Helvetica')
-          .text(`${s.name} · ${s.capacity} · ${plantDateTime(s.signed_at)} · drawn signature recorded before D-282 (history)`, LEFT, pdf.y, { width: BODY_W });
-        pdf.moveDown(0.3);
-      }
-    }
-
-    pdf.save();
-    pdf.fillColor('#9ca3af').fontSize(7).font('Helvetica');
-    pdf.page.margins.bottom = 0;
-    pdf.text(footerText, LEFT, 745, { width: BODY_W, align: 'center', lineBreak: false });
-    pdf.restore();
-  });
-
-  pdf.end();
-}
 
 /* ── Attachments (signed paper originals + supporting files) ─────────────── */
 // The migration case: each controlled document keeps its last approved PAPER

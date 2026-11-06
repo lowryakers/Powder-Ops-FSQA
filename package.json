@@ -152,6 +152,8 @@
     "verify:inspectionno": "VERIFY_ONLY=verify-inspection-no.mjs node scripts/verify-all.mjs",
     "check:form431": "node scripts/check-form-431-doctype.mjs",
     "verify:missedolder": "VERIFY_ONLY=verify-missed-older.mjs node scripts/verify-all.mjs",
+    "verify:doctype": "VERIFY_ONLY=verify-document-type.mjs node scripts/verify-all.mjs",
+    "verify:docpdf": "VERIFY_ONLY=verify-document-pdf.mjs node scripts/verify-all.mjs",
     "verify:botnoapprove": "VERIFY_ONLY=verify-bot-no-approve.mjs node scripts/verify-all.mjs",
     "verify:part11": "VERIFY_ONLY=verify-part11.mjs node scripts/verify-all.mjs",
     "verify:guarantee": "VERIFY_ONLY=verify-guarantee.mjs node scripts/verify-all.mjs",

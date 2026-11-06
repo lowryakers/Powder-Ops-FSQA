@@ -10354,3 +10354,58 @@ and dismissing them one by one.
   from the seed it fails 2.
 
 **Merging.** It rewrites one column on one existing row. Lowry asked for it to merge once clean (5 Nov 2026).
+
+## D-317 — A document filed under the wrong type is listed, and Document Control can move it (5 Nov 2026)
+
+**Asked.** After D-316: are there other documents like FORM 431-01? Nothing in the app could change a document's type,
+and a document's type decides which tab lists it (SOPs, Work Instructions, Job Descriptions). A document of type
+`policy` is listed on no tab at all. Lowry agreed to the simple fixes that serve the single spine.
+
+**Decided.**
+- `shared/document-type.js` is the ONE reading of a number: `WI` → Work Instruction, `JD` → Job Description, `FORM` →
+  Form, `SOP` → SOP. **POLICY is deliberately not mapped** — no tab lists `policy`, so suggesting it would hide a document.
+- **A Doc Control Review pile, "Documents filed under the wrong type"** (`documentTypeProblems`, derived on read): the
+  number says a different type; filed as Policy; or filed as Form with no entry on the Forms register. Reference Library
+  and withdrawn documents are left out. It reports; it changes nothing. It clears itself as documents are moved.
+- **`POST /documents/:id/type`** moves the type only, to SOP / Work Instruction / Job Description / Form. QA, Document
+  Control, supervisors and admins (`canWetSign`); a reason is required; audited with from, to and the reason. Refused:
+  a Reference Library document, the same type, any other type. A bot token cannot reach it (not on `WRITE_AREAS`).
+  **Change type** on the document's own screen suggests the type its number reads as.
+- **The importer reads the type from the number**, falling back to the tab it was opened on.
+- **No new tab for forms or policies.** A form's home is its Forms-tab register entry; a `sop_documents` copy of a form is
+  a duplicate, which is why "form with no register entry" is on the pile.
+- `verify:doctype` (26, live + browser at 1280). The control on `main` fails from the first pile assertion.
+
+**Merging (D-274).** It adds a path that changes a record, so the PR waits for Lowry's review.
+
+## D-318 — Every page of a controlled-document PDF says which document it is (6 Nov 2026, R-0621 / A-20261106-002)
+
+**Reported (verified live 6 Nov, 10:43–10:46 AM MT).** `GET /api/documents/:id/pdf` for SOP-106, SOP-104, SOP-406, WI005
+and JD-500-10 printed the document number, revision and status on page 1 only. No page carried a repeated identifier,
+"page x of y" or CONFIDENTIAL; the last page had only "Generated … — Powder Ops FSQA". The signed Word originals repeat
+the title, number, revision and page x of y at the top of every page and the identifier and CONFIDENTIAL at the bottom.
+A document with a pending revision exported its in-force copy with nothing to say a newer draft existed (SOP-104 →
+V3, not the pending V4; WI005 → 1.0, not the pending V3), and Word-converted contents lists printed page numbers that
+pointed at the wrong pages.
+
+**Decided.**
+- **One renderer, `server/document-pdf.js`** (`renderDocumentsPdf`, `printableCopy`, `pageChrome`,
+  `softenTocPageNumbers`), for every controlled document type: the single and the batch export, and the Auditor View's
+  Print (which now opens the same PDF rather than an HTML window).
+- **The identity is drawn by the renderer on every page, never written into the body.** Pages are buffered and the
+  header (`<number> · Rev <rev> · <short title>`, `Page x of y`) and footer (`<number> · Rev <rev> · <status>`,
+  `CONFIDENTIAL`, generated date / uncontrolled when printed) are drawn last. Page numbers restart per document in a batch.
+- **Two copies, named.** `?copy=approved` (default) is the document in force, unchanged. `?copy=draft` or
+  `?revision_id=<draft id>` is the pending revision: its own text and revision, "DRAFT — not approved" in the status
+  and footer of every page, a faint DRAFT mark, the revision in force named, no approvals or signatures. A non-draft
+  revision id is refused (400 `NOT_A_DRAFT`); no draft is 404 `NO_DRAFT`; an unknown copy 400 `BAD_COPY`.
+  `X-Document-Copy` names what was sent. The batch export is always the copies in force. The viewer offers
+  "PDF (in force Vn)" and, when a draft is pending, "PDF (draft Vm)".
+- **Contents page numbers are dropped at print time only**: a dot-leader line anywhere, a trailing number on a line in a
+  "Table of Contents"/"Contents" section, and a contents table's Page column; a note says why. The stored body is untouched.
+- A withdrawn document prints its "NO LONGER IN USE" line under the metadata (it was the Auditor View print's banner).
+- **Out of scope, unchanged:** approving, publishing, retiring, unlocking, body and history-table content, numbering.
+- `verify:docpdf` (30, live, reads every page with pdfjs). The control on `main` fails 22, the first being no page
+  carrying "Page x of y".
+
+**Merging (D-274).** It changes no records, but the user asked for it to wait for Lowry's review.

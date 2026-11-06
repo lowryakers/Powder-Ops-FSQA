@@ -2,6 +2,7 @@ import { useState, useRef, useMemo } from 'react';
 import { useApiGet } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import MarkdownView from '../common/MarkdownView.jsx';
+import { openFile } from '../../lib/openFile.js';
 import ProcessFlows from './ProcessFlows.jsx';
 import {
   Shield, Wrench, Thermometer, Droplets, CheckCircle, AlertTriangle, Download, LogOut,
@@ -102,50 +103,16 @@ function QmsSection({ type }) {
 // asking someone to fetch it on another screen is the moment the binder stops
 // being self-service.
 //
-// Printing opens a clean window rather than styling the app for print: an
-// auditor asking for a paper copy should get the document, not a screenshot of
-// software. The header carries the number, revision and effective date so the
-// paper says which version it is.
-function printDocument(doc, bodyEl) {
-  const w = window.open('', '_blank', 'width=820,height=1000');
-  if (!w) return;
-  const meta = [
-    doc.doc_number && `Document #: ${doc.doc_number}`,
-    doc.revision && `Revision: ${doc.revision}`,
-    doc.effective_date && `Effective: ${doc.effective_date}`,
-    doc.status && `Status: ${doc.status}`,
-    doc.owner && `Owner: ${doc.owner}`,
-  ].filter(Boolean).join(' &nbsp;·&nbsp; ');
-  // A withdrawn document must never print looking current. The banner goes at
-  // the top of the paper, not only in the footer stamp — somebody reading a
-  // printout of a Work Instruction has to know at a glance that it no longer
-  // applies, and why.
-  const withdrawn = doc.status === 'archived' ? `
-    <div class="withdrawn">
-      <strong>NO LONGER IN USE</strong>
-      ${doc.archived_at ? ` — withdrawn ${doc.archived_at}` : ''}${doc.archived_by ? ` by ${doc.archived_by}` : ''}.
-      ${doc.archive_reason ? `<br>${doc.archive_reason}` : ''}
-      <br>Do not work to this document. Check the registry for the current one.
-    </div>` : '';
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${doc.doc_number || ''} ${doc.title}</title>
-    <style>
-      body { font: 12pt/1.5 Georgia, serif; margin: 0.75in; color: #111; }
-      h1 { font-size: 16pt; margin: 0 0 4px; }
-      .meta { font: 9pt/1.4 Helvetica, Arial, sans-serif; color: #444; border-bottom: 1px solid #999; padding-bottom: 8px; margin-bottom: 16px; }
-      .withdrawn { font: 10pt/1.45 Helvetica, Arial, sans-serif; border: 2px solid #b91c1c; color: #7f1d1d; padding: 8px 10px; margin: 0 0 16px; }
-      .foot { position: fixed; bottom: 0.4in; left: 0.75in; right: 0.75in; font: 8pt Helvetica, Arial, sans-serif; color: #777; border-top: 1px solid #ccc; padding-top: 4px; }
-      table { border-collapse: collapse; } td, th { border: 1px solid #999; padding: 4px 6px; font-size: 10pt; }
-      h3, h4, h5 { margin: 12px 0 4px; } p { margin: 6px 0; } ul, ol { margin: 6px 0 6px 20px; }
-    </style></head><body>
-    <h1>${doc.title}</h1>
-    <div class="meta">${meta}</div>
-    ${withdrawn}
-    <div>${bodyEl ? bodyEl.innerHTML : ''}</div>
-    <div class="foot">Printed from ReadyDoc ${new Date().toLocaleString()} — uncontrolled when printed. Verify the revision against the registry.</div>
-    </body></html>`);
-  w.document.close();
-  w.focus();
-  setTimeout(() => w.print(), 250);
+// Printing opens the same PDF the registry exports (D-318): one renderer, so
+// the paper an auditor is handed carries the document number, revision, status,
+// page x of y and CONFIDENTIAL on every page, exactly like the registry's copy.
+// It is the copy in force; a pending draft is never what an auditor prints.
+async function printDocument(doc) {
+  const token = localStorage.getItem('auth_token');
+  const res = await fetch(`/api/documents/${doc.id}/pdf?copy=approved`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) return;
+  const url = URL.createObjectURL(await res.blob());
+  openFile({ url, name: `${doc.doc_number || 'document'} ${doc.title}.pdf` });
 }
 
 function DocumentViewer({ id, onClose }) {
@@ -165,7 +132,7 @@ function DocumentViewer({ id, onClose }) {
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {doc && (
-              <button onClick={() => printDocument(doc, bodyRef.current)}
+              <button onClick={() => printDocument(doc)} data-auditor-print
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-200">
                 <Printer size={14} /> Print
               </button>
