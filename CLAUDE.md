@@ -6469,6 +6469,14 @@ number that disagrees with its type, a Policy (no tab lists it) and a Form with 
 document PUT still ignores `doc_type`. The importer suggests the type from the number. A seed that files a
 `sop_documents` row must set `doc_type` (FORM 431-01 went to the SOPs tab without it). `verify:doctype` (26).
 
+## Every page of a document PDF carries its identity; the draft is its own export (D-318)
+`server/document-pdf.js` is the ONE renderer for controlled-document PDFs (single, batch, Auditor View Print). Header and
+footer are drawn on buffered pages, never written into the body: number · Rev · short title · Page x of y, and
+number · Rev · status · CONFIDENTIAL. `?copy=approved` (default) is the copy in force; `?copy=draft` /
+`?revision_id=` is the pending revision, "DRAFT — not approved" on every page. A new export of a document must go through
+`printableCopy` + `renderDocumentsPdf`, never its own pdfkit loop. Contents page numbers are dropped at print time only
+(`softenTocPageNumbers`). `verify:docpdf` (30; control fails 22).
+
 ## A new revision is offered the next V number (D-280)
 `nextVRevision()` counts from the highest number on the document, its signed copies and file names, skips used ones,
 and writes `V<n>`; the person types the label. New documents default to `V1`. Existing revisions are never rewritten.

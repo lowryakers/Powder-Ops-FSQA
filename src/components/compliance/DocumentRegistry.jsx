@@ -85,9 +85,11 @@ function SortHeader({ label, field, sortField, sortOrder, onSort, className = ''
 }
 
 
-async function downloadDocPdf(id, filename) {
+// `copy` is 'approved' (the document in force — the default) or 'draft' (the
+// pending revision, stamped DRAFT on every page). D-318.
+async function downloadDocPdf(id, filename, copy = 'approved') {
   const token = localStorage.getItem('auth_token');
-  const res = await fetch(`/api/documents/${id}/pdf`, { headers: { Authorization: `Bearer ${token}` } });
+  const res = await fetch(`/api/documents/${id}/pdf?copy=${copy}`, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) return;
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
@@ -632,6 +634,9 @@ function ChangeTypeForm({ doc, onDone, onCancel }) {
 function DocumentViewer({ doc, typeLabel, canEdit, canRetype, onEdit, onArchive, onReinstate, onClose, onChanged, onRetyped }) {
   const [retyping, setRetyping] = useState(false);
   const { data: versions } = useApiGet(`/documents/${doc.id}/versions`, [doc.id]);
+  const { data: revData } = useApiGet(`/documents/${doc.id}/revisions`, [doc.id]);
+  const pendingDraft = (revData?.revisions || []).find(r => r.status === 'draft') || null;
+  const pdfName = (suffix = '') => `${(doc.doc_number || typeLabel)}_${doc.title}${suffix}`.replace(/[^a-zA-Z0-9_-]/g, '_') + '.pdf';
   const [showVersions, setShowVersions] = useState(false);
   const [lang, setLang] = useState('en');
   const hasEs = !!(doc.description_es && doc.description_es.trim());
@@ -684,10 +689,18 @@ function DocumentViewer({ doc, typeLabel, canEdit, canRetype, onEdit, onArchive,
         </div>
 
         <div className="flex items-center gap-2 px-5 py-3 border-t border-gray-200 flex-wrap">
-          <button onClick={() => downloadDocPdf(doc.id, `${(doc.doc_number || typeLabel)}_${doc.title}`.replace(/[^a-zA-Z0-9_-]/g, '_') + '.pdf')}
+          <button onClick={() => downloadDocPdf(doc.id, pdfName(), 'approved')} data-pdf-approved
+            title={doc.status === 'draft' ? 'The document as it stands (not yet approved)' : 'The revision in force'}
             className="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 flex items-center gap-1.5">
-            <Download size={14} /> PDF
+            <Download size={14} /> PDF{doc.status === 'draft' ? '' : ` (in force${doc.revision ? ` ${doc.revision}` : ''})`}
           </button>
+          {pendingDraft && doc.status !== 'draft' && (
+            <button onClick={() => downloadDocPdf(doc.id, pdfName(`_DRAFT_${pendingDraft.revision}`), 'draft')} data-pdf-draft
+              title="The pending revision, stamped DRAFT on every page"
+              className="px-3 py-1.5 bg-amber-50 text-amber-800 border border-amber-200 text-sm font-medium rounded-lg hover:bg-amber-100 flex items-center gap-1.5">
+              <Download size={14} /> PDF (draft {pendingDraft.revision})
+            </button>
+          )}
           <button onClick={() => setShowVersions(v => !v)}
             className="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 flex items-center gap-1.5">
             <History size={14} /> History ({versions?.length || 0})

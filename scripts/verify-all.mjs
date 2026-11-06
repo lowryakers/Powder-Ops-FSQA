@@ -226,6 +226,8 @@ const RUNS = [
   ['verify-missed-older.mjs', 5194, { MISSOLD_PORT: '5195' }, false],
   // Boots its own server (on DOCTYPE_PORT); the one started here idles.
   ['verify-document-type.mjs', 5196, { DOCTYPE_PORT: '5197' }, false],
+  // Boots its own server (on DOCPDF_PORT); the one started here idles.
+  ['verify-document-pdf.mjs', 5198, { DOCPDF_PORT: '5199' }, false],
 ];
 
 // VERIFY_ONLY=verify-auth.mjs,verify-swab-stock.mjs runs just the entries that
