@@ -879,7 +879,10 @@ router.put('/schedules/:id', (req, res) => {
   // like it did more than it did.
   const open_work = openWorkFor(db, req.params.id);
   logAudit(req.user, 'update', 'pm_schedule', req.params.id,
-    pausing ? { paused: true, closed_work: closed.cancelled, open_work_left: open_work } : null, existing, updated);
+    pausing ? { paused: true, closed_work: closed.cancelled, open_work_left: open_work } : null, existing, updated,
+    // The schedule's NAME, so the Audit Log row reads "Breakroom/Lobby/Office Daily Cleaning" rather than
+    // "pm_schedule #429b0568" — a pause nobody can identify without expanding it is one nobody can explain.
+    updated?.title || existing.title);
   res.json({ ...updated, open_work, closed_work: closed.cancelled });
 });
 
