@@ -228,6 +228,8 @@ const RUNS = [
   ['verify-document-type.mjs', 5196, { DOCTYPE_PORT: '5197' }, false],
   // Boots its own server (on DOCPDF_PORT); the one started here idles.
   ['verify-document-pdf.mjs', 5198, { DOCPDF_PORT: '5199' }, false],
+  ['verify-doc-qa-review.mjs', 5202, { DOCQA_PORT: '5203' }, false],
+  ['verify-pto-plan.mjs', 5204],
 ];
 
 // VERIFY_ONLY=verify-auth.mjs,verify-swab-stock.mjs runs just the entries that

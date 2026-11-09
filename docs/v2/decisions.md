@@ -10409,3 +10409,48 @@ pointed at the wrong pages.
   carrying "Page x of y".
 
 **Merging (D-274).** It changes no records, but the user asked for it to wait for Lowry's review.
+
+## D-319 — A controlled document carries three verifications: owner, QA review, approval (9 Nov 2026)
+
+Daniela asked whether the Author / Dept. Approval / QA Approval row on SOP-106 could be changed, because the plant
+needs three verifications: the **owner** (Carol Pierce), a **QA department review**, and the **approval** (Daniela,
+Document Control). Lowry: build it; QA review is given by **anyone in QA with supervisor rights**.
+
+**Requirement or preference.** QA's sign-off is a requirement — 21 CFR 111.105(a): the quality unit approves or
+rejects written procedures that can affect product quality; SQF 2.2.1 asks that documents be approved by authorised
+people before use. The exact three-line layout is the plant's own (its document-control SOP); no regulation sets it.
+
+- **A draft revision is reviewed by QA before Document Control can approve it.** `POST /documents/:id/revisions/:rid/qa-signoff`,
+  password asked last, meaning *Reviewed and accepted by Quality*, audited `sign` with the password check. Approve is
+  `409 QA_REVIEW_REQUIRED` until it is there. `canQaReview`: department `qa`/`quality` AND role supervisor/admin;
+  never a bot account (`qa-signoff` is an approve-class segment, and the account is refused by `isBotAccount`).
+- **Three people.** The document's owner cannot give the QA review (`QA_REVIEW_OWNER`); the QA reviewer cannot approve
+  (`QA_REVIEWER_CANNOT_APPROVE`).
+- **What QA reviewed is fingerprinted** — the title and the text (`qaReviewHash`). An edit to either takes the review off
+  (audited `qa_review_cleared`). The revision number and a staged document number are Document Control's, so
+  renumbering keeps it.
+- **Withdrawing** is the reviewer's or an admin's, with a reason, before approval only. Audited `revoke`.
+- The approved revision row keeps the review. The PDF header prints **Owner · QA Review (name, date) · Approved By**;
+  a revision approved before this reads *QA Review: not recorded*, a draft *not reviewed yet*. Nothing is backfilled.
+- QA Review has an action source `doc-qa-review` (*Document revisions to review*) that opens the document; nothing is
+  signed from the list.
+- **Not gated:** a document's first move to Approved (filed straight into force) and a paper revision recorded from the
+  signed original (`transcribed`). Whether a brand-new document must also wait for QA is an open question for Lowry.
+- The yellow Author/Dept/QA row on SOP-106 is text inside the document body; Daniela removes it in her draft. The app
+  does not rewrite document text.
+- `verify:docqareview` (34; control — main before this — fails 29). The other document verifies mark the review with
+  `scripts/lib/qa-review-fixture.mjs` (same fingerprint); a verify that approves a draft revision must do the same.
+
+## D-320 — Pay Tracking says who is due for the 4-hour PTO plan (9 Nov 2026)
+
+Marnee asked for a "Due" notice, like pay increases, for when somebody should move to the 4-hour PTO plan so it can be
+changed in ADP. Policy: the 4-hour plan applies once somebody **is a supervisor or has been here two years**.
+
+- `ptoPlanState(row)` in `api/pay.js` is the one rule, **derived on every read, never stored**: `due` (supervisor — the
+  linked account's role, the `withLinkedNames` rule — or hire date + 2 years reached), `soon` (two years within 14 days),
+  `not_yet`, `on_plan` (PTO plan reads "4 hr"), or nothing for a 1099 contractor.
+- A new `pto` kind in `payActions` — the list the Pay Tracking strip, the ReadyBot reminder and the admin bell all read.
+  **It stays until the roster's PTO plan reads "4 hr"**; the office records it there once ADP is changed. Nothing here
+  writes to ADP or changes a plan.
+- The roster's PTO column carries a *4 hr due* / *4 hr soon* chip; the employee drawer says what to do.
+- `verify:ptoplan` (17, live + browser; control fails). `verify:payactions` counts the seeded PTO lines as baseline.

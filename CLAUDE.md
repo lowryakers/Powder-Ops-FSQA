@@ -6477,6 +6477,22 @@ number · Rev · status · CONFIDENTIAL. `?copy=approved` (default) is the copy 
 `printableCopy` + `renderDocumentsPdf`, never its own pdfkit loop. Contents page numbers are dropped at print time only
 (`softenTocPageNumbers`). `verify:docpdf` (30; control fails 22).
 
+## A document revision is reviewed by QA before it is approved (D-319)
+`canQaReview`, `qaReviewRefusal`, `qaReviewDraft`, `withdrawQaReview`, `approvalNeedsQa`, `qaReviewHash` in
+`server/document-revisions.js`; `POST|DELETE /documents/:id/revisions/:rid/qa-signoff`; QA Review source `doc-qa-review`.
+- **Three verifications: owner, QA review (a QA supervisor's password), approval.** Approve is `409 QA_REVIEW_REQUIRED`
+  until QA has reviewed; the owner cannot review, the reviewer cannot approve. Never a bot.
+- An edit to the title or text takes the review off; a new revision/document number does not.
+- The PDF header prints Owner · QA Review · Approved By. A brand-new document filed straight into force and a paper
+  revision are not gated (open question).
+- **A verify that approves a draft revision must mark it reviewed** (`markQaReviewed` in `scripts/lib/qa-review-fixture.mjs`).
+  `verify:docqareview` (34).
+
+## Pay Tracking: due for the 4-hour PTO plan (D-320)
+`ptoPlanState` in `api/pay.js` (supervisor, or two years here; `soon` 14 days ahead; contractors none) and the `pto` kind
+in `payActions` — strip, ReadyBot reminder and bell. Cleared only by setting the PTO plan to "4 hr" (after ADP). Never
+stored. `verify:ptoplan` (17).
+
 ## A new revision is offered the next V number (D-280)
 `nextVRevision()` counts from the highest number on the document, its signed copies and file names, skips used ones,
 and writes `V<n>`; the person types the label. New documents default to `V1`. Existing revisions are never rewritten.

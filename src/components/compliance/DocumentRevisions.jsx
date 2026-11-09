@@ -22,7 +22,8 @@ export default function DocumentRevisions({ doc, canEdit, onChanged }) {
   const [error, setError] = useState('');
   const [label, setLabel] = useState(null); // null = the suggestion; a person may type another (D-280)
   if (!data) return null;
-  const { draft, revisions, courses, in_force: inForce, suggested_revision: suggested, can_approve: canApprove } = data;
+  const { draft, revisions, courses, in_force: inForce, suggested_revision: suggested, can_approve: canApprove,
+    can_qa_review: canQaReview, owner } = data;
   const history = revisions.filter(r => r.status !== 'draft');
 
   const run = async (fn) => {
@@ -36,6 +37,16 @@ export default function DocumentRevisions({ doc, canEdit, onChanged }) {
   const approve = () => run(() => withSignature(
     (extra) => apiPost(`/documents/${doc.id}/revisions/${draft.id}/approve`, extra),
     { title: `Approve revision ${draft.revision}`, detail: `${doc.doc_number || ''} ${doc.title}`.trim() }));
+  // QA's review comes before the approval (D-319): a QA supervisor's password.
+  const qaReview = () => run(() => withSignature(
+    (extra) => apiPost(`/documents/${doc.id}/revisions/${draft.id}/qa-signoff`, extra),
+    { title: `QA review of revision ${draft.revision}`, detail: `${doc.doc_number || ''} ${doc.title}`.trim() }));
+  const withdrawQa = () => {
+    const reason = window.prompt('Why is the QA review being withdrawn?');
+    if (reason == null) return;
+    run(() => apiFetch(`/documents/${doc.id}/revisions/${draft.id}/qa-signoff`, { method: 'DELETE', body: { reason } }));
+  };
+  const qaSigned = draft?.qa_review_state === 'signed';
   const discard = () => {
     const reason = window.prompt('Why is this draft revision being discarded?');
     if (reason == null) return;
@@ -76,6 +87,7 @@ export default function DocumentRevisions({ doc, canEdit, onChanged }) {
             </p>
           )}
           <p className="text-[11px] text-amber-800">Started by {draft.created_by || '—'} · {formatDate(draft.created_at)}{draft.effective_date ? ` · effective ${draft.effective_date}` : ''}</p>
+          <QaReviewLine draft={draft} owner={owner} />
           <DraftFiles doc={doc} draft={draft} canEdit={canEdit} />
           <div className="flex flex-wrap gap-1.5 pt-0.5">
             {canEdit && (
@@ -84,8 +96,21 @@ export default function DocumentRevisions({ doc, canEdit, onChanged }) {
                 <Edit2 size={12} /> Edit draft
               </button>
             )}
+            {canQaReview && !qaSigned && (
+              <button type="button" onClick={qaReview} disabled={busy} data-rev-qa-review
+                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-md bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-50">
+                <CheckCircle2 size={12} /> QA review
+              </button>
+            )}
+            {draft.qa_reviewed_at && (canQaReview || canApprove) && (
+              <button type="button" onClick={withdrawQa} disabled={busy} data-rev-qa-withdraw
+                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-md text-teal-800 hover:bg-teal-50">
+                Withdraw QA review
+              </button>
+            )}
             {canApprove && (
-              <button type="button" onClick={approve} disabled={busy} data-rev-approve
+              <button type="button" onClick={approve} disabled={busy || !qaSigned} data-rev-approve
+                title={qaSigned ? '' : 'QA reviews the draft first.'}
                 className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50">
                 <CheckCircle2 size={12} /> Approve revision {draft.revision}
               </button>
@@ -127,6 +152,7 @@ export default function DocumentRevisions({ doc, canEdit, onChanged }) {
                 {r.change_summary && r.source !== 'baseline' ? ` · ${r.change_summary}` : ''}
               </span>
               <span className="text-gray-500 shrink-0 text-right" data-rev-signature={r.approval_state || ''}>
+                {r.qa_reviewed_by && <span data-rev-qa-history>QA: {r.qa_reviewed_by} · {formatDateTime(r.qa_reviewed_at)} · </span>}
                 {r.approved_by || '—'}{r.approved_at ? ` · ${formatDateTime(r.approved_at)}` : ''}{r.approved_meaning ? ` · ${r.approved_meaning}` : ''}
                 {r.approval_state === 'signed' && <span className="ml-1 text-green-700">· signed</span>}
                 {r.approval_state === 'changed' && <span className="ml-1 text-red-700 font-semibold">· changed since signed</span>}
@@ -261,6 +287,29 @@ function DraftFiles({ doc, draft, canEdit }) {
         </label>
       )}
       {error && <p className="text-red-700">{error}</p>}
+    </div>
+  );
+}
+
+/**
+ * The three verifications on a draft (D-319): who owns it, QA's review, and the
+ * approval still to come. QA's line says plainly whether it is done, missing,
+ * or was taken off by an edit made after it.
+ */
+function QaReviewLine({ draft, owner }) {
+  const state = draft.qa_review_state;
+  return (
+    <div className="text-xs space-y-0.5" data-rev-qa-state={state || 'none'}>
+      <p className="text-amber-900">Owner: {owner || 'not set'}</p>
+      {state === 'signed' ? (
+        <p className="text-teal-800 font-semibold">
+          QA review: {draft.qa_reviewed_by} · {formatDateTime(draft.qa_reviewed_at)} · {draft.qa_review_meaning}
+        </p>
+      ) : state === 'changed' ? (
+        <p className="text-red-700 font-semibold">QA review: the draft changed after {draft.qa_reviewed_by} reviewed it — QA reviews it again.</p>
+      ) : (
+        <p className="text-amber-900 font-semibold">QA review: not yet — a QA supervisor reviews the draft before it can be approved.</p>
+      )}
     </div>
   );
 }

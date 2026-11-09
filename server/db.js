@@ -5074,6 +5074,14 @@ function runMigrations() {
   // number does not change. It moves onto the document only when the revision
   // is approved with a password.
   addColumnIfMissing('document_revisions', 'doc_number', 'TEXT');
+  // QA's review of a draft revision (D-319): a QA supervisor signs with their
+  // password before Document Control approves. A fingerprint of what was
+  // reviewed; an edit to the draft clears the review. NULL on everything before.
+  addColumnIfMissing('document_revisions', 'qa_reviewed_by', 'TEXT');
+  addColumnIfMissing('document_revisions', 'qa_reviewed_by_id', 'TEXT');
+  addColumnIfMissing('document_revisions', 'qa_reviewed_at', 'TEXT');
+  addColumnIfMissing('document_revisions', 'qa_review_meaning', 'TEXT');
+  addColumnIfMissing('document_revisions', 'qa_review_hash', 'TEXT');
   // A file uploaded FOR a draft revision belongs to that draft (D-304): it is not
   // the live document's file until the draft is approved, and a discarded
   // draft's file never becomes one. revision_id is nulled before a draft row is

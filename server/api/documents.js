@@ -21,6 +21,7 @@ import { isApprovedStatus, sameRevision } from '../../shared/document-revision.j
 import {
   RevisionError, listRevisions, draftOf, startDraft, saveDraft, discardDraft, recordApprovedRevision, approvalState,
   linkedCourses, suggestedRevision, revisionNumberProblem, attachmentStateSql, currentAttachmentSql,
+  canQaReview, qaReviewState, qaReviewRefusal, qaReviewDraft, withdrawQaReview, approvalNeedsQa,
 } from '../document-revisions.js';
 
 const clean = (v, max = 300) => { const t = String(v ?? '').trim(); return t ? t.slice(0, max) : null; };
@@ -821,12 +822,15 @@ router.get('/:id/revisions', (req, res) => {
   const doc = docOr404(db, req.params.id, res); if (!doc) return;
   res.json({
     in_force: { revision: doc.revision, status: doc.status, approved: isApprovedStatus(doc.status), approved_by: doc.approved_by, approved_at: doc.approved_at },
-    revisions: listRevisions(db, doc.id).map(r => ({ ...r, approval_state: approvalState(r) })),
-    draft: draftOf(db, doc.id),
+    revisions: listRevisions(db, doc.id).map(r => ({ ...r, approval_state: approvalState(r), qa_review_state: qaReviewState(r) })),
+    draft: (() => { const d = draftOf(db, doc.id); return d ? { ...d, qa_review_state: qaReviewState(d) } : null; })(),
     suggested_revision: isApprovedStatus(doc.status) ? suggestedRevision(db, doc) : null,
     courses: linkedCourses(db, doc),
     // A bot account is never offered the approval, whatever its department (D-279).
     can_approve: canWetSign(req.user) && !isBotAccount(db, req.user),
+    // QA's review comes before Document Control's approval (D-319).
+    can_qa_review: canQaReview(req.user) && !isBotAccount(db, req.user),
+    owner: doc.owner || null,
   });
 });
 
@@ -877,6 +881,9 @@ router.post('/:id/revisions/:rid/approve', (req, res) => {
   if (!String(draft.description || '').trim()) return res.status(400).json({ error: 'The draft has no text to approve.' });
   const numberProblem = revisionNumberProblem(db, doc, draft.revision);
   if (numberProblem) return res.status(409).json({ error: numberProblem, code: 'REVISION_NUMBER_USED', suggested: suggestedRevision(db, doc) });
+  // QA reviews before Document Control approves, and they are two people (D-319).
+  const needsQa = approvalNeedsQa(draft, req.user);
+  if (needsQa) return res.status(needsQa.status).json({ error: needsQa.error, code: needsQa.code });
   // The password is asked last, once the revision is otherwise approvable.
   if (!gateSignature(req, res)) return;
   try {
@@ -884,6 +891,29 @@ router.post('/:id/revisions/:rid/approve', (req, res) => {
       { source: 'draft', draftId: draft.id, actor: req.user });
     res.json(out);
   } catch (e) { revErr(res, e); }
+});
+
+// QA's review of a draft revision (D-319): a QA supervisor, with their password,
+// asked last. `qa-signoff` is an approve-class path segment, so no token reaches it;
+// a bot ACCOUNT is refused here as well.
+router.post('/:id/revisions/:rid/qa-signoff', (req, res) => {
+  const db = getDb();
+  const doc = docOr404(db, req.params.id, res); if (!doc) return;
+  const draft = draftFor(db, doc, req.params.rid, res); if (!draft) return;
+  if (isBotAccount(db, req.user)) return res.status(403).json({ error: 'A bot account cannot give a QA review.', code: 'bot_account_cannot_approve' });
+  if (doc.status === 'archived') return res.status(409).json({ error: 'This document is no longer in use — reinstate it first.' });
+  const refusal = qaReviewRefusal(doc, draft, req.user);
+  if (refusal) return res.status(refusal.status).json({ error: refusal.error, code: refusal.code });
+  if (!gateSignature(req, res, { action: 'document_qa_review' })) return;
+  res.json({ ...qaReviewDraft(db, doc, draft, req.user), qa_review_state: 'signed' });
+});
+
+router.delete('/:id/revisions/:rid/qa-signoff', (req, res) => {
+  const db = getDb();
+  const doc = docOr404(db, req.params.id, res); if (!doc) return;
+  const draft = draftFor(db, doc, req.params.rid, res); if (!draft) return;
+  try { res.json(withdrawQaReview(db, doc, draft, req.user, req.body?.reason)); }
+  catch (e) { revErr(res, e); }
 });
 
 router.get('/:id', (req, res) => {

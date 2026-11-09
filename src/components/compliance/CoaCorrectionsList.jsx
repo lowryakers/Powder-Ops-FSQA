@@ -49,7 +49,11 @@ function Evidence({ evidence }) {
 // One correction. Not a signature: the work is done on the request itself, so
 // the row says what to do, why, what proves it, and ticks its own steps.
 export function ActionRow({ r }) {
-  const openLink = () => window.dispatchEvent(new CustomEvent('app-navigate', { detail: r.link }));
+  const openLink = () => {
+    // A document link opens that document on its registry (the doc_focus hand-off).
+    if (r.link?.doc) { try { localStorage.setItem('doc_focus', r.link.doc); } catch { /* ignore */ } }
+    window.dispatchEvent(new CustomEvent('app-navigate', { detail: r.link }));
+  };
   const done = r.steps.filter(s => s.done).length;
   return (
     <li className="px-3 py-3" data-review-row={r.id} data-action-row={r.action_kind}>
@@ -71,7 +75,7 @@ export function ActionRow({ r }) {
           {r.link && !r.request_id ? (
             <button onClick={openLink} data-open-link={r.link.view}
               className="px-2.5 py-1 bg-powder-600 text-white text-xs font-semibold rounded-md inline-flex items-center gap-1">
-              Open COA <ExternalLink size={11} />
+              {r.open_label || 'Open COA'} <ExternalLink size={11} />
             </button>
           ) : (
             <button onClick={() => openRequest(r.request_id)} data-open-request={r.request_id}

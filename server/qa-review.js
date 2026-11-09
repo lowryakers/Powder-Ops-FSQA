@@ -45,6 +45,7 @@ import { getType } from './qms-config.js';
 import { hasExplicitEdit } from './module-access.js';
 import { pendingItems, reviewRow } from './coa-review-items.js';
 import { readinessActions } from './coa-lot-gate.js';
+import { qaReviewState } from './document-revisions.js';
 // The signing predicates live in qa-signing.js so the modules' OWN Verify
 // routes can apply the same rule without importing this file back — see the
 // note there. Re-exported because this module's public surface already
@@ -58,6 +59,16 @@ export { isQaReviewer };
 // Oldest first everywhere: the point of the queue is that nothing ages out of
 // sight, so the top of the list is always the thing that has waited longest.
 const LIMIT = 200;
+
+// Draft revisions QA has not reviewed, or reviewed before an edit (D-319).
+const DOC_TAB = { sop: 'sops', work_instruction: 'work-instructions', job_description: 'job-descriptions' };
+function draftsAwaitingQa(db) {
+  return db.prepare(`SELECT r.*, d.doc_number AS cur_number, d.doc_type, d.owner, d.title AS doc_title
+      FROM document_revisions r JOIN sop_documents d ON d.id = r.document_id
+     WHERE r.status = 'draft' AND d.status != 'archived' ORDER BY COALESCE(r.updated_at, r.created_at)`).all()
+    .filter(r => qaReviewState(r) !== 'signed')
+    .map(r => ({ ...r, doc_number: r.doc_number || r.cur_number, title: r.title || r.doc_title }));
+}
 
 // The sign-out logs, driven off one shared definition. Each is a qms_record
 // type whose required QA approval is a counter-signature, so signing goes
@@ -325,6 +336,34 @@ export const SOURCES = [
     })),
     canSign: () => false,
     sign: () => ({ error: 'COA readiness is worked on the COA screen, not signed from this list.', status: 400 }),
+  },
+  // Draft revisions of controlled documents waiting for QA's review (D-319).
+  // Reviewed on the document itself with the reviewer's password; Document
+  // Control cannot approve until it is there. Not signed from this list.
+  {
+    key: 'doc-qa-review',
+    label: 'Document revisions to review',
+    form: null,
+    module: 'sops',
+    kind: 'action',
+    noun: 'revision',
+    plural: 'revisions',
+    count: (db) => draftsAwaitingQa(db).length,
+    pending: (db, limit = LIMIT) => draftsAwaitingQa(db).slice(0, limit).map(r => ({
+      id: r.id, request_id: null,
+      title: `${r.doc_number || ''} ${r.title || ''}`.trim(),
+      subtitle: `Draft ${r.revision}`, action_kind: 'DOC_QA_REVIEW',
+      by: r.created_by || null, date: (r.updated_at || r.created_at || '').slice(0, 10), result: null, extra: null,
+      recommended_action: r.qa_reviewed_at
+        ? `The draft changed after ${r.qa_reviewed_by} reviewed it. Open it, read it, and give QA review again.`
+        : 'Open the document, read the draft revision, and give QA review with your password.',
+      reason: `Owner: ${r.owner || 'not set'}. Document Control cannot approve revision ${r.revision} until QA has reviewed it.`,
+      note: null, evidence: [], steps: [], blocked_by: null, decision_ref: 'D-319',
+      open_label: 'Open document',
+      link: { tab: DOC_TAB[r.doc_type] || 'sops', doc: r.document_id },
+    })),
+    canSign: () => false,
+    sign: () => ({ error: 'A document revision is reviewed on the document itself, not signed from this list.', status: 400 }),
   },
   signOutSource({ key: 'sign-out-equipment', type: 'maintenance_sign_out',
     label: 'Equipment / Tool / Chemical sign-outs', form: '703-01', module: 'maintenance-signout',

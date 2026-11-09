@@ -20,6 +20,7 @@
 // Control: run against `main` before D-306. The wi-edit grant does not exist,
 // so the token cannot be given it, and the first WI revision is 403.
 import Database from 'better-sqlite3';
+import { markQaReviewed } from './lib/qa-review-fixture.mjs';
 
 const PORT = Number(process.env.PORT || 5185);
 const URL = `http://localhost:${PORT}`;
@@ -146,6 +147,7 @@ const jrev = r.json;
 t('starts a V2 draft revision of JD 07', r.status === 201 && jrev?.status === 'draft', `${r.status} ${JSON.stringify(r.json).slice(0, 160)}`);
 r = await call('PUT', `/documents/${jdDoc.id}/revisions/${jrev?.id}`, { description: 'JD text V2.' }, JD.plain);
 t('edits the JD draft revision', r.status === 200 && r.json?.description === 'JD text V2.', `${r.status} ${JSON.stringify(r.json).slice(0, 160)}`);
+markQaReviewed(DBP, jrev.id); // QA reviewed it first (D-319)
 r = await call('POST', `/documents/${jdDoc.id}/revisions/${jrev.id}/approve`, { signature_password: PW }, JD.plain);
 t('refused: approve the JD revision', r.status === 403, JSON.stringify(r.json));
 r = await call('DELETE', `/documents/${jdDoc.id}`, { reason: 'x' }, JD.plain);
@@ -154,6 +156,7 @@ r = await call('PUT', `/documents/${wiDoc.id}/revisions/${rev.id}`, { descriptio
 t('refused: the jd-edit token on the WI draft revision, naming wi-edit', r.status === 403 && /needs the wi-edit grant/.test(r.json?.reason || ''), JSON.stringify(r.json));
 
 console.log('\n── a person approves the WI ──');
+markQaReviewed(DBP, rev.id); // QA reviewed it first (D-319)
 r = await call('POST', `/documents/${wiDoc.id}/revisions/${rev.id}/approve`, { signature_password: PW }, qa);
 t('the QA supervisor approves V3 with their password', r.status === 200, `${r.status} ${JSON.stringify(r.json)}`);
 const after = one('SELECT doc_number, revision, approved_by FROM sop_documents WHERE id = ?', wiDoc.id);

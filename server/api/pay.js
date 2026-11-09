@@ -84,10 +84,41 @@ function reviewState(row) {
   return { since: last, days, status: days >= DUE_DAYS ? 'due' : days >= SOON_DAYS ? 'soon' : 'ok' };
 }
 
+// THE 4-HOUR PTO PLAN (D-320). The plant's policy: the 4-hour plan applies
+// once somebody is a supervisor or has been here two years. ADP is where the
+// plan is changed; this says WHO is due, and goes on saying it until the
+// roster's PTO plan reads "4 hr" — the office records the change here once it
+// is made in ADP. Derived on every read, never stored: a promotion or an
+// anniversary moves it by itself. A contractor has no PTO plan.
+export const PTO_FOUR_HOUR = /^\s*4\s*h/i;
+export const PTO_LEAD_DAYS = 14;
+const addYears = (d, n) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || ''));
+  if (!m) return null;
+  const y = Number(m[1]) + n;
+  // 29 Feb on a non-leap year is 1 Mar, never an invalid date.
+  const dt = new Date(Date.UTC(y, Number(m[2]) - 1, Number(m[3])));
+  return dt.toISOString().slice(0, 10);
+};
+/** null (no plan applies) · {status:'on_plan'} · {status:'due'|'soon'|'not_yet', reasons, two_years_on}. */
+export function ptoPlanState(row, now = today()) {
+  if (!row || row.worker_type === 'contractor' || /1099/.test(String(row.pto_plan || ''))) return null;
+  if (PTO_FOUR_HOUR.test(String(row.pto_plan || ''))) return { status: 'on_plan', reasons: [], two_years_on: null };
+  const twoYears = row.hire_date ? addYears(row.hire_date, 2) : null;
+  const reasons = [];
+  if (row.is_supervisor) reasons.push('supervisor');
+  if (twoYears && twoYears <= now) reasons.push('two_years');
+  if (reasons.length) return { status: 'due', reasons, two_years_on: twoYears };
+  // A fortnight's warning before the anniversary, so ADP is changed on time.
+  if (twoYears && twoYears <= addDays(now, PTO_LEAD_DAYS)) return { status: 'soon', reasons: ['two_years'], two_years_on: twoYears };
+  return { status: 'not_yet', reasons: [], two_years_on: twoYears };
+}
+
 const decorate = (row) => ({
   ...row,
   annual: row.pay_rate != null ? row.pay_rate * HOURS_PER_YEAR : null,
   review: reviewState(row),
+  pto: ptoPlanState(row),
 });
 
 // Once a roster row is linked to a person, THE LINK IS THE IDENTITY and the
@@ -1070,9 +1101,19 @@ export function payActions(db) {
       is_supervisor: isSupervisorRow(db, e) ? 1 : 0 });
   }
 
-  const order = { decide: 0, starter: 1, chase: 2, assign: 3 };
+  // pto — due for the 4-hour PTO plan (supervisor, or two years here) and the
+  // roster does not say "4 hr" yet (D-320). Cleared by recording the plan.
+  for (const e of roster) {
+    const p = ptoPlanState(e, now);
+    if (!p || (p.status !== 'due' && p.status !== 'soon')) continue;
+    items.push({ kind: 'pto', employee_id: e.id, employee_name: e.name, team: e.team,
+      pto_plan: e.pto_plan || null, reasons: p.reasons, two_years_on: p.two_years_on, hire_date: e.hire_date || null,
+      soon: p.status === 'soon', days: p.two_years_on && p.status === 'due' ? daysSince(p.two_years_on) : 0 });
+  }
+
+  const order = { decide: 0, starter: 1, chase: 2, assign: 3, pto: 4 };
   items.sort((a, b) => order[a.kind] - order[b.kind] || (b.waiting_days ?? b.overdue_days ?? b.days ?? 0) - (a.waiting_days ?? a.overdue_days ?? a.days ?? 0));
-  const counts = { decide: 0, starter: 0, chase: 0, assign: 0 };
+  const counts = { decide: 0, starter: 0, chase: 0, assign: 0, pto: 0 };
   for (const i of items) counts[i.kind]++;
   return { items, counts: { ...counts, total: items.length }, as_of: now };
 }
@@ -1083,6 +1124,15 @@ export function payActions(db) {
  * active admins plus the office / HR / admin departments — never nobody, since
  * a reminder configured to reach no one is indistinguishable from a broken job.
  */
+/** Why a person is on the PTO list, in words. */
+export function ptoReasonText(i) {
+  const bits = [];
+  if (i.reasons?.includes('supervisor')) bits.push('supervisor');
+  if (i.reasons?.includes('two_years')) bits.push(`two years on ${i.two_years_on}`);
+  const why = i.soon ? `reaches two years on ${i.two_years_on}` : bits.join(' and ');
+  return `${why} · plan now: ${i.pto_plan || 'not set'}`;
+}
+
 export function payActionRecipients(db) {
   let ids = null;
   try { ids = JSON.parse(db.prepare("SELECT value FROM app_settings WHERE key = 'pay_action_recipients'").get()?.value || 'null'); } catch { ids = null; }
@@ -1164,6 +1214,12 @@ export async function payReviewNudges(db) {
     parts.push(...assign.slice(0, 8).map(i => `• ${i.employee_name} — ${i.days} days since the last raise or review`));
     if (assign.length > 8) parts.push(`  …and ${assign.length - 8} more`);
   }
+  const pto = items.filter(i => i.kind === 'pto');
+  if (pto.length) {
+    parts.push(`*${pto.length} due for the 4-hour PTO plan — change it in ADP, then set the PTO plan to "4 hr" in Pay Tracking:*`);
+    parts.push(...pto.slice(0, 8).map(i => `• ${i.employee_name} — ${ptoReasonText(i)}`));
+    if (pto.length > 8) parts.push(`  …and ${pto.length - 8} more`);
+  }
   parts.push(`These stay on the list until you act on them: [Open Pay Tracking](${readyDocOrigin()}/?tab=pay-tracking).`);
   const body = parts.join('\n');
 
@@ -1171,7 +1227,7 @@ export async function payReviewNudges(db) {
   for (const u of office) {
     await dm(db, u.id, body, {
       title: `Pay reviews: ${counts.total} waiting on you`,
-      body: `${counts.decide} to decide · ${counts.chase} overdue · ${counts.assign} unassigned`,
+      body: `${counts.decide} to decide · ${counts.chase} overdue · ${counts.assign} unassigned${counts.pto ? ` · ${counts.pto} PTO plan` : ''}`,
       tag: 'pay-reviews-office', renotify: true, url: '/?tab=pay-tracking',
     });
     sent.office++;

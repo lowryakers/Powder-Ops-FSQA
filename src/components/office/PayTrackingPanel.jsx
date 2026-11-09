@@ -508,6 +508,12 @@ function PersonDrawer({ id, onClose, onChanged, onAssign, tr }) {
             ))}
           </div>
 
+          {(data.pto?.status === 'due' || data.pto?.status === 'soon') && (
+            <p className="text-xs rounded-lg border border-violet-300 bg-violet-50 text-violet-900 px-3 py-2" data-pto-drawer={data.pto.status}>
+              {tr('Due for the 4-hour plan — change it in ADP, then set the PTO plan to "4 hr" under Details.')}
+            </p>
+          )}
+
           {/* THE 30- AND 90-DAY CHECKS, WHERE A NEW STARTER IS ACTUALLY LOOKED
               AT. The Assignments tab could always raise one; this is the screen
               somebody opens the day a new person is added, and from here there
@@ -964,6 +970,10 @@ const PAGE_STRINGS = [
   'Pay Tracking', 'Roster', 'Evaluation', 'Vision & Values', 'Sync with Settings',
   'Employee', 'Team', 'Rate', 'Annual', 'Hired', 'Last raise', 'Last review', 'Days', 'Review',
   'Due', 'Soon', 'OK', 'Supervisor', 'Salaried', 'No team',
+  'PTO plan', 'Due for the 4-hour PTO plan', 'reaches two years on', 'supervisor', 'two years on', 'and',
+  '4-hour plan', 'plan now', 'not set', 'change it in ADP, then set the PTO plan to "4 hr" here', 'Open and set the plan',
+  '4 hr due', '4 hr soon', 'Due for the 4-hour PTO plan (supervisor, or two years here). Change it in ADP, then set the PTO plan to "4 hr".',
+  'Due for the 4-hour plan — change it in ADP, then set the PTO plan to "4 hr" under Details.',
   'Submitting saves this review for the admin.',
   'Your scores and notes go to the admin, who reads every review — including a second reviewer’s — before deciding any increase. Nothing here shows or asks for anyone’s pay.',
   'Select an employee…', 'Last raise or review', 'days ago',
@@ -1029,7 +1039,18 @@ const KIND = {
   // stakes, and a queue that calls them both "assign a reviewer" tells the
   // office nothing about which one cannot wait.
   starter: { label: 'Starter', tone: 'border-blue-400 bg-blue-50', chip: 'bg-blue-100 text-blue-800', what: 'A new starter\u2019s 30- or 90-day check is coming due' },
+  // The 4-hour PTO plan (D-320): a supervisor, or two years here. Changed in
+  // ADP; the line leaves once the PTO plan below reads "4 hr".
+  pto: { label: 'PTO plan', tone: 'border-violet-400 bg-violet-50', chip: 'bg-violet-100 text-violet-800', what: 'Due for the 4-hour PTO plan' },
 };
+// Why somebody is due for the 4-hour plan, in words.
+function ptoWhy(i, tr) {
+  if (i.soon) return `${tr('reaches two years on')} ${fmtDate(i.two_years_on)}`;
+  const bits = [];
+  if (i.reasons?.includes('supervisor')) bits.push(tr('supervisor'));
+  if (i.reasons?.includes('two_years')) bits.push(`${tr('two years on')} ${fmtDate(i.two_years_on)}`);
+  return bits.join(` ${tr('and')} `);
+}
 function ActionQueue({ tick, tr, onDecide, onAssign, onChase }) {
   const { data, refresh } = useApiGet('/pay/actions', [tick]);
   const { data: reviewers } = useApiGet('/pay/reviewers');
@@ -1087,11 +1108,14 @@ function ActionQueue({ tick, tr, onDecide, onAssign, onChase }) {
                 ? `${i.reviewer_name || tr('reviewer')} was due ${fmtDate(i.due_date)} · ${i.overdue_days} day${i.overdue_days === 1 ? '' : 's'} over`
                 : i.kind === 'starter'
                   ? `${i.occasion_label} · ${tr('due')} ${fmtDate(i.due_date)}${i.overdue_days > 0 ? ` · ${i.overdue_days} ${tr('days over')}` : ''}`
-                  : `${i.days} ${tr('days since the last raise or review')}`;
-            const act = i.kind === 'decide' ? onDecide : i.kind === 'chase' ? onChase : onAssign;
+                  : i.kind === 'pto'
+                    ? `${tr('4-hour plan')}: ${ptoWhy(i, tr)} · ${tr('plan now')}: ${i.pto_plan || tr('not set')} — ${tr('change it in ADP, then set the PTO plan to "4 hr" here')}`
+                    : `${i.days} ${tr('days since the last raise or review')}`;
+            const act = i.kind === 'decide' || i.kind === 'pto' ? onDecide : i.kind === 'chase' ? onChase : onAssign;
             const actLabel = i.kind === 'decide' ? tr('Open and decide')
               : i.kind === 'chase' ? tr('See assignment')
-                : i.kind === 'starter' ? tr('Assign the check') : tr('Assign a reviewer');
+                : i.kind === 'pto' ? tr('Open and set the plan')
+                  : i.kind === 'starter' ? tr('Assign the check') : tr('Assign a reviewer');
             return (
               <li key={`${i.kind}-${i.employee_id}-${i.assignment_id || ''}`} className={`flex items-center gap-2 flex-wrap text-sm border-l-4 rounded-r-lg pl-2 pr-2 py-1.5 ${k.tone}`} data-action={i.kind}>
                 <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${k.chip}`}>{tr(k.label)}</span>
@@ -1179,7 +1203,18 @@ export default function PayTrackingPanel() {
     { key: 'annual', label: tr('Annual'), type: 'money', align: 'right',
       render: r => (r.annual == null ? <span className="text-gray-300">—</span> : money0(r.annual)) },
     { key: 'hire_date', label: tr('Hired'), render: r => fmtDate(r.hire_date) },
-    { key: 'pto_plan', label: tr('PTO'), filter: true, render: r => r.pto_plan || <span className="text-gray-300">—</span> },
+    { key: 'pto_plan', label: tr('PTO'), filter: true,
+      render: r => (
+        <span className="inline-flex items-center gap-1 whitespace-nowrap">
+          {r.pto_plan || <span className="text-gray-300">—</span>}
+          {(r.pto?.status === 'due' || r.pto?.status === 'soon') && (
+            <span data-pto-due={r.pto.status} title={tr('Due for the 4-hour PTO plan (supervisor, or two years here). Change it in ADP, then set the PTO plan to "4 hr".')}
+              className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${r.pto.status === 'due' ? 'bg-violet-100 text-violet-800' : 'bg-violet-50 text-violet-700'}`}>
+              {r.pto.status === 'due' ? tr('4 hr due') : tr('4 hr soon')}
+            </span>
+          )}
+        </span>
+      ) },
     { key: 'last_increase_at', label: tr('Last raise'), render: r => fmtDate(r.last_increase_at) },
     { key: 'last_reviewed_at', label: tr('Last review'), render: r => fmtDate(r.last_reviewed_at) },
     { key: 'review_days', label: tr('Days'), type: 'number', align: 'right', render: r => r.review?.days ?? '—' },
