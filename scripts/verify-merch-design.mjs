@@ -101,6 +101,23 @@ try {
   await page.locator('[data-merch-create-style]').click();
   await page.waitForTimeout(1500);
   t('creating it from the screen makes MCH-HLFT', q("SELECT style_kind, design_name FROM merch_styles WHERE style_code = 'MCH-HLFT'")[0]?.design_name === 'Lift');
+
+  console.log('\n── a GTIN picked on the GS1 site is pasted in (D-325) ──');
+  await call('POST', '/products/merch/colors/BLK/confirm', {}, A);
+  const prefix = (await call('GET', '/products/merch', null, A)).json?.prefixes?.[0];
+  const pick = (await call('GET', `/products/merch/gtin/suggest?prefix=${prefix}`, null, A)).json?.suggestion;
+  await page.goto(`${URL}/?tab=products&type=merch`);
+  await page.locator(`[data-merch-toggle="MCH-H${CODE}"]`).click();
+  await page.locator(`[data-merch-variant="MCH-H${CODE}-BLK-M"]`).click();
+  await page.waitForSelector('[data-merch-gtin]', { timeout: 15000 });
+  t('the GTIN box asks for the number from the GS1 site', await page.locator('[data-gtin-input]').count() === 1
+    && /GS1 site/.test(await page.locator('[data-merch-gtin]').innerText()));
+  t('…and Suggest / Hold sit behind "Haven\'t picked one?"', !(await page.locator('[data-gtin-suggest]').isVisible()));
+  await page.locator('[data-gtin-input]').fill(` ${pick.slice(0, 6)} ${pick.slice(6)} `);
+  await page.locator('[data-gtin-assign]').click();
+  await page.waitForTimeout(1500);
+  t(`pasting ${pick} (spaces and all) and pressing Assign gives the variant its GTIN`, q('SELECT gtin FROM products WHERE sku = ?', `MCH-H${CODE}-BLK-M`)[0]?.gtin === pick);
+  t('…with no reservation needed', !q('SELECT 1 FROM gtin_reservations WHERE gtin = ?', pick).length);
 } finally { await browser.close(); }
 
 console.log(`\n${pass} passed, ${fail} failed`);

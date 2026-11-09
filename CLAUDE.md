@@ -835,7 +835,8 @@ qms_record pre-filled from the message (body → description/reason, author, tim
   `base_flavor` must be scoped by `product_type`, and merch stays out of NFP, master.csv and artwork ingest.
 - **SKU: `MCH-<H|T|C><register code>-<COLOR3>-<SIZE>`, built, never typed**; the flavour part is an active register
   code and merch never mints one. `SKU_RE` stays food-only — do not loosen it. Recolour through the recolor route.
-- **A GTIN is never auto-assigned.** Suggest and reserve (a bot may); assign is a person's act, refused while the
+- **A GTIN is never auto-assigned. The person picks it on the GS1 site and pastes it (D-325)**; suggest and reserve are
+  the fallback behind a fold (a bot may reserve); assign is a person's act, refused while the
   colour is confirming or a colour/size is missing, re-checked in the write. Reservations count everywhere a GTIN does.
 - **Merch is its own Products tab** (Styles · Pipeline · Colors; `?view=merch&merch=pipeline`, `?type=merch` still lands
   there). The Pipeline is `merchStepsOf()` in `shared/merch.js` — six steps READ off the server's readiness and the

@@ -10509,3 +10509,13 @@ Asked by Lowry: a hoodie line with "Protein" embroidered on it belongs to no fla
   audit entry keeps the whole row and its colours.
 - **Copy buttons** beside the SKU and the GTIN on the catalog grid and the merch variant table; they never open the
   drawer or start an edit. `verify:skuretire` (27).
+
+## D-325 — A merch GTIN is picked on the GS1 site and pasted in (9 Nov 2026)
+Lowry: ReadyDoc was asking him to "reserve" a GTIN, but the plant picks the number on the GS1 site and pastes it in.
+- The variant's GTIN block now leads with **"GTIN from the GS1 site"** and **Assign**. Spaces in a pasted number are
+  dropped. The server already accepted a typed number and still checks the check digit and that no other product or
+  reservation holds it.
+- "Suggest next free" and "Hold it for this variant" move behind **"Haven't picked one on the GS1 site yet?"**. They
+  still work; nothing is reserved on the main path.
+- The drawer's Merch section stays open while the variant has no GTIN. It folded once the supplier was recorded, which
+  hid the box. `verify:merchdesign` (25).
