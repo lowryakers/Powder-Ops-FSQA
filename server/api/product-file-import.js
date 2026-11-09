@@ -35,7 +35,7 @@ const withUpload = (req, res, next) => upload(req, res, (err) => {
 const canManage = (u) => u && (u.role === 'admin' || u.role === 'supervisor' || u.department === 'qa');
 
 const catalogue = (db) => db.prepare(
-  "SELECT sku, legacy_sku, gtin, flavor, base_flavor, category, pack FROM products WHERE status != 'discontinued'"
+  "SELECT sku, legacy_sku, gtin, flavor, base_flavor, category, pack FROM products WHERE status NOT IN ('discontinued','not_launching')"
 ).all();
 
 /* ── The two targets ──────────────────────────────────────────────────────── */

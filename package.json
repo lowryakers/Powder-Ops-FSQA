@@ -18,6 +18,7 @@
     "check:skuformat": "node scripts/check-sku-format.mjs",
     "check:merch": "node scripts/check-merch.mjs",
     "verify:merch": "node scripts/verify-merch.mjs",
+    "verify:merchdesign": "VERIFY_ONLY=verify-merch-design.mjs node scripts/verify-all.mjs",
     "check:holidays": "node scripts/check-plant-holidays.mjs",
     "verify:holidays": "VERIFY_ONLY=verify-plant-holidays.mjs node scripts/verify-all.mjs",
     "verify:holidayquiet": "VERIFY_ONLY=verify-holiday-quiet.mjs node scripts/verify-all.mjs",
@@ -265,7 +266,8 @@
     "verify:mockrecalltask": "node scripts/verify-mock-recall-task.mjs",
     "verify:docattach": "node scripts/verify-doc-attach.mjs",
     "verify:calsummary": "node scripts/verify-cal-summary.mjs",
-    "s3:stand-in": "node scripts/s3-stand-in.mjs"
+    "s3:stand-in": "node scripts/s3-stand-in.mjs",
+    "verify:skuretire": "VERIFY_ONLY=verify-sku-retire.mjs node scripts/verify-all.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",

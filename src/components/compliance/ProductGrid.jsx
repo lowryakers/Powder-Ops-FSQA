@@ -27,14 +27,15 @@ import { apiFetch, apiPut } from '../../hooks/useApi';
 import { useTableSort } from '../../lib/useTableSort';
 import SortHeader from '../common/SortHeader';
 import { FIELD_RULES, NA_FIELDS, fieldState, PACKAGING_DERIVED, isRollFed } from '../../../shared/product-fields.js';
-import { ChevronDown, ChevronRight, Download, Upload, X, AlertTriangle } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, Upload, X, AlertTriangle, Copy, Check } from 'lucide-react';
+import { copyText } from '../../lib/clipboard.js';
+import { statusLabel } from '../../../shared/product-status.js';
 import FrozenScroll from '../common/FrozenScroll';
 
 const PACK_LABEL = {
   PLG: 'Pouch — large', PSM: 'Pouch — small', STK: 'Stick', BOX: 'Carton', CUP: 'Cup', BTL: 'Bottle',
 };
 const STATUSES = ['active', 'in_development', 'concept', 'on_hold', 'discontinued'];
-const pretty = (s) => (s || '').replace(/_/g, ' ');
 
 const joinSlots = (colors, k) => (colors || []).filter((c) => c[k]).map((c) => c[k]).join(' | ');
 const splitSlots = (v) => String(v || '').split('|').map((x) => x.trim()).filter(Boolean);
@@ -70,7 +71,7 @@ const GROUPS = [
     { key: 'hex', label: 'Hex spot colors', edit: 'colors', get: (p) => joinSlots(p.colors, 'hex') },
   ] },
   { key: 'channels', label: 'Channels', columns: [
-    { key: 'status', label: 'Status', edit: 'select', options: STATUSES, render: pretty },
+    { key: 'status', label: 'Status', edit: 'select', options: STATUSES, render: statusLabel },
     { key: 'shopify_sku', label: 'Shopify SKU', edit: 'text' },
     { key: 'shopify_listed_at', label: 'Shopify', get: (p) => stepReason(p, 'shopify') },
     { key: 'shiphero_synced_at', label: 'ShipHero', get: (p) => stepReason(p, 'shiphero') },
@@ -108,6 +109,26 @@ function download(name, text) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
+
+/**
+ * Copy one value without opening anything (D-324). It sits in the cell, so it
+ * stops the click before the cell starts editing or the row opens.
+ */
+export function CopyValue({ value, what }) {
+  const [done, setDone] = useState(false);
+  if (!value) return null;
+  return (
+    <button type="button" title={`Copy ${what}`} aria-label={`Copy ${what} ${value}`} data-copy={what}
+      onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+      onClick={async (e) => {
+        e.stopPropagation();
+        if (await copyText(String(value))) { setDone(true); setTimeout(() => setDone(false), 1500); }
+      }}
+      className={`ml-1 inline-flex align-middle p-0.5 rounded hover:bg-gray-200 ${done ? 'text-green-600' : 'text-gray-400 hover:text-gray-700'}`}>
+      {done ? <Check size={12} /> : <Copy size={12} />}
+    </button>
+  );
+}
 
 /** Whether a derived packaging column applies to this row's pack format. */
 const applies = (p, key) => !(['wind_direction', 'eyemark_color'].includes(key) && p.spec_format && !isRollFed(p.spec_format));
@@ -478,6 +499,7 @@ export default function ProductGrid({ products, completeness, canEdit, onOpenSku
                           <button type="button" onClick={() => onOpenSku?.(p.sku)} className="hover:underline" data-open-row>
                             <code className="text-gray-900">{p.sku}</code>
                           </button>
+                          <CopyValue value={p.sku} what="SKU" />
                         </td>
                       );
                     }
@@ -523,7 +545,7 @@ export default function ProductGrid({ products, completeness, canEdit, onOpenSku
                             data-spec-link={rawOf(p, c)} className="not-italic text-powder-700 hover:underline font-mono">{value}</button>
                         ) : st === 'na' ? <span className="inline-block px-1.5 rounded bg-gray-100 text-gray-500 border border-gray-200" data-na>NA</span>
                           : notApplicable ? <span className="text-gray-300" title="Does not apply to this pack format">n/a by format</span>
-                            : value !== '' ? value : <span className="text-gray-300">—</span>}
+                            : value !== '' ? <>{value}{c.key === 'gtin' && <CopyValue value={rawOf(p, c)} what="GTIN" />}</> : <span className="text-gray-300">—</span>}
                         {err && <span className="block text-[10px] text-red-700 whitespace-normal" data-cell-error>{err}</span>}
                       </td>
                     );

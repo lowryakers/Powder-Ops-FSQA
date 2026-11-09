@@ -116,7 +116,7 @@ router.get('/', (req, res) => {
   // that only lists what exists cannot tell you what is missing.
   const missing = db.prepare(`
     SELECT p.sku, p.flavor, p.category, p.pack FROM products p
-    WHERE p.status != 'discontinued'
+    WHERE p.status NOT IN ('discontinued','not_launching')
       AND NOT EXISTS (SELECT 1 FROM artwork_versions v WHERE v.sku = p.sku)
     ORDER BY p.category, p.flavor
   `).all();

@@ -42,6 +42,16 @@ export const MERCH_SIZES = [
 ];
 export const SIZE_BY_CODE = Object.fromEntries(MERCH_SIZES.map((s) => [s.code, s]));
 
+// A style is cut for a FLAVOR (its code is the flavor register's) or for a
+// DESIGN that names no flavor — the "Protein" hoodie (D-323). A design code is
+// two or three letters the person chooses; it is never a flavor register code
+// (active, retired or legacy) and the register never issues one already used
+// by a design, so a code in a merch SKU means exactly one thing.
+export const STYLE_KINDS = { flavor: 'Flavor', design: 'Design (no flavor)' };
+export const DESIGN_CODE_RE = /^[A-Z]{2,3}$/;
+/** What the style is called in a title: the design's name, else the flavor. */
+export const styleLabel = (s) => String((s?.style_kind === 'design' ? s?.design_name : s?.flavor) || s?.design_name || s?.flavor || '').trim();
+
 export const STYLE_CODE_RE = /^MCH-([HTC])([A-Z]{2,3})$/;
 export const MERCH_SKU_RE = /^MCH-[HTC][A-Z]{2,3}-[A-Z]{3}-(?:XS|S|M|L|XL|XXL|OS)$/;
 export const COLOR_CODE_RE = /^[A-Z]{3}$/;

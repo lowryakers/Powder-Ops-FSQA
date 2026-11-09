@@ -841,6 +841,17 @@ qms_record pre-filled from the message (body → description/reason, author, tim
   there). The Pipeline is `merchStepsOf()` in `shared/merch.js` — six steps READ off the server's readiness and the
   color's confirming flag; nothing on the screen decides a step. The food Pipeline stays food-only.
 - `check:merch` (54), `verify:merch` (115). The hoodie exists only in test databases until Lowry creates it.
+- **A style can be a DESIGN with no flavor (D-323)** — `style_kind 'design'`, `design_name`, its own 2–3 letter code in
+  `flavor_code`; never a flavor register code (active, retired or legacy), and the register refuses a design's code.
+  `verify:merchdesign` (21).
+
+## A SKU that won't go live: hidden with a reason, deleted only if it was never anywhere (D-324)
+`shared/product-status.js` (`NOT_LAUNCHING`, `OFF_CATALOG`), `POST /products/:sku/not-launching` (reason; `undo`),
+`deleteRefusals` + `DELETE /products/:sku` (admin, reason) + `GET /:sku/delete-check`, `LaunchControls` in the drawer.
+- **`not_launching` is never typed** (400 `NOT_LAUNCHING_OWNED` on PUT, fill-down, CSV). A new "live catalog" reader
+  must exclude both `OFF_CATALOG` statuses, not only `discontinued`.
+- Delete refuses a SKU with a GTIN, barcode, legacy code, artwork, proof, panel, packaging PO, reservation or stability
+  record, by name. `CopyValue` (ProductGrid.jsx) copies SKU/GTIN in a table cell. `verify:skuretire` (27).
 
 ## Product management (Products · Artwork · the proofing loop)
 

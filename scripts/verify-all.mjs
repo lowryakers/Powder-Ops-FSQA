@@ -127,6 +127,8 @@ const RUNS = [
   ['verify-mmr-gate.mjs', 5049, { PRODUCT_MASTER_TOKEN: 'mmr-token' }],
   ['verify-product-stage.mjs', 5050, {}],
   ['verify-merch.mjs', 5182, { PRODUCT_MASTER_TOKEN: 'merch-proof-token' }],
+  ['verify-merch-design.mjs', 5205],
+  ['verify-sku-retire.mjs', 5206],
   ['verify-packaging-specs.mjs', 5051, { PRODUCT_MASTER_TOKEN: 'spec-token' }],
   ['verify-artwork-film.mjs', 5052, {}],
   ['verify-pay-reviews.mjs', 5053, {}],

@@ -16,6 +16,7 @@ import NewProductFlow from './NewProductFlow.jsx';
 import ProductStagePanel, { PackagingPos } from './ProductStagePanel.jsx';
 import PackagingSpecsPanel from './PackagingSpecsPanel.jsx';
 import { getParam } from '../../lib/deepLink.js';
+import { NOT_LAUNCHING, statusLabel } from '../../../shared/product-status.js';
 import NfpBoard, { NfpForSku } from './NfpPanel.jsx';
 import NfpReviewQueue from './NfpReviewQueue.jsx';
 import { hexDigits, pmsValid, hexValid, colorIssues, isBlankSlot } from '../../../shared/product-colors.js';
@@ -24,7 +25,7 @@ import {
   Package, Search, X, AlertTriangle, CheckCircle2, Circle, Pencil, Stethoscope, Tag,
   Barcode, Upload, ExternalLink, RefreshCw, FolderOpen,
   FileText, Plus, Trash2, Palette,
-  ListChecks, Layers, ChevronDown, Shirt,
+  ListChecks, Layers, ChevronDown, Shirt, EyeOff,
 } from 'lucide-react';
 import { openFile } from '../../lib/openFile';
 
@@ -201,8 +202,9 @@ const STATUS_STYLE = {
   concept: 'bg-gray-100 text-gray-700',
   on_hold: 'bg-amber-100 text-amber-800',
   discontinued: 'bg-red-100 text-red-800',
+  not_launching: 'bg-gray-200 text-gray-600',
 };
-const pretty = (s) => (s || '').replace(/_/g, ' ');
+const pretty = (s) => (s === NOT_LAUNCHING ? statusLabel(s) : (s || '').replace(/_/g, ' '));
 
 /**
  * The readiness steps, each shown ONCE, in the section of the drawer where
@@ -580,6 +582,100 @@ const Block = ({ title, note, children, id, anchor }) => (
 // Opening a product from the Pipeline lands on its first unmet gate.
 const FOCUS_RING = ['ring-2', 'ring-amber-400'];
 
+/**
+ * A SKU that will not go live (D-324). "Won't launch" hides it with a reason
+ * and can be undone; Delete is for a SKU that has never been anywhere and is
+ * an admin's act — the server names every reason it refuses.
+ */
+function LaunchControls({ p, canEdit, onChanged, onDeleted }) {
+  const { user } = useAuth();
+  const [mode, setMode] = useState(null); // 'hide' | 'delete'
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [check, setCheck] = useState(null);
+  const hidden = p.status === NOT_LAUNCHING;
+  const isAdmin = user?.role === 'admin';
+
+  const open = async (m) => {
+    setMode(m); setReason(''); setErr(''); setCheck(null);
+    if (m === 'delete') {
+      try { setCheck(await apiFetch(`/products/${encodeURIComponent(p.sku)}/delete-check`)); } catch (e) { setErr(e.message); }
+    }
+  };
+  const run = async (fn) => {
+    setBusy(true); setErr('');
+    try { await fn(); setMode(null); } catch (e) { setErr(e.message); }
+    setBusy(false);
+  };
+  const hide = () => run(async () => { await apiFetch(`/products/${encodeURIComponent(p.sku)}/not-launching`, { method: 'POST', body: { reason } }); onChanged(); });
+  const bringBack = () => run(async () => { await apiFetch(`/products/${encodeURIComponent(p.sku)}/not-launching`, { method: 'POST', body: { undo: true } }); onChanged(); });
+  const del = () => run(async () => { await apiDelete(`/products/${encodeURIComponent(p.sku)}`, { reason }); onDeleted(); });
+
+  return (
+    <div className="space-y-2" data-launch-controls>
+      {hidden && (
+        <div className="text-sm bg-gray-50 border border-gray-300 rounded-lg p-3 flex flex-wrap items-start gap-2" data-not-launching>
+          <EyeOff size={15} className="mt-0.5 shrink-0 text-gray-500" />
+          <span className="flex-1 min-w-[12rem]">
+            <strong>Won&apos;t launch.</strong> {p.not_launching_reason}
+            <span className="block text-xs text-gray-500">
+              {p.not_launching_by || 'Someone'}{p.not_launching_at ? `, ${String(p.not_launching_at).slice(0, 10)}` : ''} · hidden from the catalog, the proofer feed and Completeness
+            </span>
+          </span>
+          {canEdit && (
+            <button type="button" onClick={bringBack} disabled={busy} data-bring-back
+              className="px-2.5 py-1 rounded-lg border border-gray-300 bg-white text-xs font-medium hover:bg-gray-100 disabled:opacity-50">Bring it back</button>
+          )}
+        </div>
+      )}
+      {canEdit && !mode && (
+        <div className="flex flex-wrap gap-2 text-xs">
+          {!hidden && (
+            <button type="button" onClick={() => open('hide')} data-not-launching-open
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-gray-300 hover:bg-gray-50"><EyeOff size={12} /> Won&apos;t launch…</button>
+          )}
+          {isAdmin && p.status !== 'active' && (
+            <button type="button" onClick={() => open('delete')} data-delete-open
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-red-200 text-red-700 hover:bg-red-50"><Trash2 size={12} /> Delete…</button>
+          )}
+        </div>
+      )}
+      {mode && (
+        <div className={`border rounded-lg p-3 space-y-2 text-sm ${mode === 'delete' ? 'border-red-200 bg-red-50/40' : 'border-gray-300 bg-gray-50'}`} data-launch-form={mode}>
+          {mode === 'hide' ? (
+            <p className="text-gray-700">This SKU will be hidden from the catalog, the proofer feed and Completeness. It keeps its history, and &ldquo;Bring it back&rdquo; restores it.</p>
+          ) : check?.refusals?.length ? (
+            <div className="text-red-800" data-delete-refusals>
+              <p className="font-medium">{p.sku} can&apos;t be deleted:</p>
+              <ul className="list-disc ml-5 text-xs">{check.refusals.map((r) => <li key={r}>{r}</li>)}</ul>
+              <p className="text-xs mt-1 text-gray-700">Use &ldquo;Won&apos;t launch&rdquo; instead — it hides the SKU and keeps everything that points at it.</p>
+            </div>
+          ) : check ? (
+            <p className="text-red-800">Delete {p.sku} for good. It has never had a GS1 number, artwork, a panel or a PO, so nothing points at it.</p>
+          ) : <p className="text-gray-500">Checking…</p>}
+          {(mode === 'hide' || (check && !check.refusals?.length)) && (
+            <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder={mode === 'hide' ? "Why it won't launch" : 'Why it is being deleted'}
+              data-launch-reason className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm" />
+          )}
+          {err && <p className="text-xs text-red-700" data-launch-error>{err}</p>}
+          <div className="flex gap-2">
+            {mode === 'hide' && (
+              <button type="button" onClick={hide} disabled={busy || reason.trim().length < 3} data-not-launching-save
+                className="px-3 py-1.5 rounded-lg bg-gray-800 text-white text-xs font-medium disabled:opacity-50">Mark won&apos;t launch</button>
+            )}
+            {mode === 'delete' && check && !check.refusals?.length && (
+              <button type="button" onClick={del} disabled={busy || reason.trim().length < 3} data-delete-save
+                className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-medium disabled:opacity-50">Delete SKU</button>
+            )}
+            <button type="button" onClick={() => setMode(null)} className="text-xs text-gray-600 hover:underline">Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
   const { data, refresh } = useApiGet(`/products/${encodeURIComponent(sku)}`);
   const drawerRef = useRef(null);
@@ -714,6 +810,7 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
               </p>
             )}
             {error && <p className="text-sm text-red-700 bg-red-50 rounded p-2" data-drawer-error>{error}</p>}
+            <LaunchControls p={p} canEdit={canEdit && !editing} onChanged={() => { refresh(); onSaved?.(); }} onDeleted={() => { onSaved?.(); onClose(); }} />
 
             {editing ? (
               <div className="space-y-3">
@@ -771,8 +868,15 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
                 </Block>
                 <Block id="channels" title="Channels">
                   <Field k="status" label="Status" form={form} set={set} p={p}>
-                    <select value={form.status} onChange={set('status')} className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                      {Object.keys(STATUS_STYLE).map((s) => <option key={s} value={s}>{pretty(s)}</option>)}
+                    {/* "Won't launch" is set and cleared by its own button, with a
+                        reason (D-324) — never from this list. A status the list
+                        does not carry (a merch Draft) stays selected rather than
+                        falling back to the first option. */}
+                    <select value={form.status} onChange={set('status')} disabled={form.status === NOT_LAUNCHING}
+                      className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50">
+                      {[...Object.keys(STATUS_STYLE).filter((s) => s !== NOT_LAUNCHING || form.status === NOT_LAUNCHING),
+                        ...(form.status && !STATUS_STYLE[form.status] ? [form.status] : [])]
+                        .map((s) => <option key={s} value={s}>{pretty(s)}</option>)}
                     </select>
                   </Field>
                   <Field k="shopify_sku" label="Shopify SKU" form={form} set={set} p={p} onNa={onNa} hint="Only when Shopify calls it something other than this product's SKU." />
@@ -1015,6 +1119,9 @@ export default function ProductsPanel() {
   })), [data]);
 
   const foodProducts = useMemo(() => products.filter((p) => p.product_type !== 'merch'), [products]);
+  // D-324: a SKU marked Won't launch is off the list unless asked for.
+  const [showHidden, setShowHidden] = useState(false);
+  const hiddenCount = useMemo(() => products.filter((p) => p.status === NOT_LAUNCHING).length, [products]);
   const typeCounts = useMemo(() => {
     const merch = products.filter((p) => p.product_type === 'merch').length;
     return { food: products.length - merch, merch, all: products.length };
@@ -1026,6 +1133,7 @@ export default function ProductsPanel() {
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return products.filter((p) => {
+      if (!showHidden && p.status === NOT_LAUNCHING) return false;
       if (kind === 'food' && p.product_type === 'merch') return false;
       if (kind === 'merch' && p.product_type !== 'merch') return false;
       if (category && p.category !== category) return false;
@@ -1034,7 +1142,7 @@ export default function ProductsPanel() {
       return [p.sku, p.legacy_sku, p.gtin, p.flavor, p.base_flavor, p.shopify_sku]
         .some((v) => (v || '').toLowerCase().includes(needle));
     });
-  }, [products, q, category, pack, kind]);
+  }, [products, q, category, pack, kind, showHidden]);
 
   const { sorted } = useTableSort(filtered, COLUMNS, 'sku', 'asc');
 
@@ -1182,6 +1290,12 @@ export default function ProductsPanel() {
           <option value="">All packs</option>
           {Object.entries(PACK_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
+        {hiddenCount > 0 && (
+          <button type="button" onClick={() => setShowHidden((v) => !v)} aria-pressed={showHidden} data-show-hidden={hiddenCount}
+            className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full border text-xs ${showHidden ? 'bg-gray-700 text-white border-gray-700' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
+            <EyeOff size={12} /> {showHidden ? 'Hide' : 'Show'} {hiddenCount} won&apos;t launch
+          </button>
+        )}
       </div>
 
       {(<>

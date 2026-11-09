@@ -35,6 +35,7 @@ import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { storageEnabled, putStream, presignGet, deleteObject } from '../storage.js';
 import fs from 'fs';
 import { extractInvoiceText } from '../invoice-text.js';
+import { NOT_LAUNCHING, statusLabel } from '../../shared/product-status.js';
 
 const barcodeUpload = mediaUpload({ files: 1 }).array('files', 1);
 
@@ -574,6 +575,12 @@ router.post('/flavor-codes', (req, res) => {
     return res.status(409).json({
       error: `"${code}" is already ${byCode.flavor}${byCode.is_active ? '' : ' (retired — a code is never reissued)'}. Pick a different abbreviation.`,
     });
+  }
+
+  // A code a merch DESIGN style already carries is taken (D-323).
+  const byDesign = db.prepare("SELECT style_code, design_name FROM merch_styles WHERE style_kind = 'design' AND flavor_code = ?").get(code);
+  if (byDesign) {
+    return res.status(409).json({ error: `"${code}" is the merch design ${byDesign.design_name} (${byDesign.style_code}). Pick a different abbreviation.` });
   }
 
   const id = uuid();
@@ -1384,7 +1391,7 @@ router.get('/data-health', (_req, res) => {
   // WHICH PRODUCTS ARE ON AMAZON AT ALL is a decision, not a defect, so it is
   // counted here rather than shown as an outstanding readiness step on every
   // product. Active rows only — a discontinued SKU owes no channel decision.
-  const live = products.filter((p) => p.status !== 'discontinued');
+  const live = products.filter((p) => !['discontinued', 'not_launching'].includes(p.status));
   const amazon = {
     listed: live.filter((p) => p.amazon_channel === 'listed').length,
     not_sold: live.filter((p) => p.amazon_channel === 'not_sold').length,
@@ -1489,6 +1496,16 @@ function buildPatch(db, existing, b) {
         ? 'A merch GTIN is assigned from the variant (Products → the variant → GTIN), never typed.'
         : `${owned.join(', ')} on a merch variant come${owned.length === 1 ? 's' : ''} from its style. Edit the style instead.` };
     }
+  }
+  // "Won't launch" is a DECISION with a reason (D-324), set by its own route —
+  // never typed into the status cell, a fill-down or a CSV. Leaving it through
+  // an ordinary edit is refused too, so the reason is cleared by the same act.
+  if (b.status !== undefined && String(b.status) !== String(existing?.status ?? '')
+    && (b.status === NOT_LAUNCHING || existing?.status === NOT_LAUNCHING)) {
+    return { status: 400, code: 'NOT_LAUNCHING_OWNED', field: 'status',
+      error: existing?.status === NOT_LAUNCHING
+        ? "This SKU is marked Won't launch. Open it and press \"Bring it back\"."
+        : "Use \"Won't launch…\" on the product — it asks for the reason." };
   }
   const patch = {};
   for (const c of WRITABLE) if (b[c] !== undefined) patch[c] = b[c] === '' ? null : b[c];
@@ -1710,6 +1727,92 @@ router.put('/:sku', (req, res) => {
   if (!Object.keys(built.patch).length) return res.json(existing);
   applyPatch(db, existing, built.patch, req.user);
   res.json(hydrate([db.prepare(`${SELECT} WHERE p.sku = ?`).get(existing.sku)], db)[0]);
+});
+
+/* ── A SKU that will not go live (D-324) ──────────────────────────────────
+ *
+ * "Won't launch" HIDES: the row stays, with the reason and who decided, out of
+ * the catalog list (a toggle shows it), the proofer feed, Completeness and the
+ * NFP / artwork worklists. `undo` puts back the status it held before.
+ *
+ * DELETE removes a SKU that has never been anywhere — and only that. A GTIN,
+ * a barcode, a legacy code, an artwork version or proof, a nutrition panel, a
+ * packaging PO, a GTIN reservation or a stability record means the code has
+ * reached something outside this row, and deleting it would leave that thing
+ * pointing at nothing. Those are refused BY NAME and pointed at Won't launch.
+ */
+export function deleteRefusals(db, p) {
+  const out = [];
+  if (p.status === 'active') out.push('it is Active — mark it Won\'t launch first');
+  if (p.gtin) out.push(`it has a GS1 number (${p.gtin})`);
+  if (p.barcode_key) out.push('it has a barcode image');
+  if (p.legacy_sku) out.push(`it was renamed from ${p.legacy_sku}, which shipped`);
+  const count = (sql, ...a) => { try { return db.prepare(sql).get(...a)?.n || 0; } catch { return 0; } };
+  const tables = [['artwork_versions', 'artwork version'], ['artwork_snapshots', 'proofing run'],
+    ['nfp_versions', 'nutrition panel'], ['packaging_po_records', 'packaging PO']];
+  for (const [t, label] of tables) {
+    const n = count(`SELECT COUNT(*) n FROM ${t} WHERE sku = ?`, p.sku);
+    if (n) out.push(`it has ${n} ${label}${n === 1 ? '' : 's'}`);
+  }
+  const res = (() => { try { return db.prepare('SELECT gtin FROM gtin_reservations WHERE reserved_for = ?').get(p.sku); } catch { return null; } })();
+  if (res) out.push(`GTIN ${res.gtin} is reserved for it`);
+  const inStudy = count(`SELECT COUNT(*) n FROM stability_studies s, json_each(s.product_skus) j WHERE j.value = ?`, p.sku)
+    + count(`SELECT COUNT(*) n FROM stability_justifications s, json_each(s.product_skus) j WHERE j.value = ?`, p.sku);
+  if (inStudy) out.push('a stability record names it');
+  return out;
+}
+
+router.post('/:sku/not-launching', (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalog.' });
+  const db = getDb();
+  const p = db.prepare('SELECT * FROM products WHERE sku = ?').get(req.params.sku);
+  if (!p) return res.status(404).json({ error: 'No such SKU' });
+  const undo = !!req.body?.undo;
+  if (undo) {
+    if (p.status !== NOT_LAUNCHING) return res.status(409).json({ error: "This SKU is not marked Won't launch." });
+    // Back to the status it held when it was hidden.
+    const prev = p.not_launching_from;
+    const to = prev && prev !== NOT_LAUNCHING ? prev : (p.product_type === 'merch' ? 'Draft' : 'in_development');
+    db.prepare('UPDATE products SET status = ?, not_launching_reason = NULL, not_launching_by = NULL, not_launching_at = NULL, not_launching_from = NULL WHERE sku = ?').run(to, p.sku);
+    logAudit(req.user, 'not_launching_undone', 'product', p.sku, { status: to }, { status: p.status, reason: p.not_launching_reason }, { status: to }, `${p.sku} — back as ${statusLabel(to)}`);
+  } else {
+    const reason = String(req.body?.reason || '').trim();
+    if (reason.length < 3) return res.status(400).json({ error: "Say why it won't launch.", field: 'reason' });
+    if (p.status === NOT_LAUNCHING) return res.status(409).json({ error: "Already marked Won't launch." });
+    db.prepare(`UPDATE products SET status = ?, not_launching_reason = ?, not_launching_by = ?, not_launching_at = datetime('now'), not_launching_from = ? WHERE sku = ?`)
+      .run(NOT_LAUNCHING, reason, req.user?.name || null, p.status, p.sku);
+    logAudit(req.user, 'not_launching', 'product', p.sku, { reason }, { status: p.status }, { status: NOT_LAUNCHING, reason }, `${p.sku} — won't launch`);
+  }
+  res.json(hydrate([db.prepare(`${SELECT} WHERE p.sku = ?`).get(p.sku)], db)[0]);
+});
+
+router.get('/:sku/delete-check', (req, res) => {
+  const db = getDb();
+  const p = db.prepare('SELECT * FROM products WHERE sku = ?').get(req.params.sku);
+  if (!p) return res.status(404).json({ error: 'No such SKU' });
+  res.json({ sku: p.sku, refusals: deleteRefusals(db, p), can_delete: req.user?.role === 'admin' });
+});
+
+router.delete('/:sku', (req, res) => {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Only an admin can delete a SKU. Mark it Won\'t launch instead — it is hidden and can come back.' });
+  const db = getDb();
+  const p = db.prepare('SELECT * FROM products WHERE sku = ?').get(req.params.sku);
+  if (!p) return res.status(404).json({ error: 'No such SKU' });
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 3) return res.status(400).json({ error: 'Say why it is being deleted.', field: 'reason' });
+  const refusals = deleteRefusals(db, p);
+  if (refusals.length) {
+    return res.status(409).json({ code: 'SKU_IN_USE', refusals,
+      error: `${p.sku} cannot be deleted: ${refusals.join('; ')}. Mark it Won't launch instead — it leaves the catalog and the proofer feed and keeps its history.` });
+  }
+  const colors = db.prepare('SELECT * FROM product_colors WHERE sku = ?').all(p.sku);
+  db.transaction(() => {
+    db.prepare('DELETE FROM product_colors WHERE sku = ?').run(p.sku);
+    db.prepare('DELETE FROM product_completeness_blocks WHERE sku = ?').run(p.sku);
+    db.prepare('DELETE FROM products WHERE sku = ?').run(p.sku);
+  })();
+  logAudit(req.user, 'product_deleted', 'product', p.sku, { reason }, { ...p, colors }, null, `${p.sku} — ${p.flavor || ''}`);
+  res.json({ deleted: p.sku });
 });
 
 /**
@@ -1948,7 +2051,7 @@ export function masterCsv(req, res) {
   const auth = checkProofToken(req);
   if (!auth.ok) return refuseProofToken(res, auth, { text: true });
   const db = getDb();
-  const rows = hydrate(db.prepare(`${SELECT} WHERE p.status != 'discontinued' AND COALESCE(p.product_type, 'food') != 'merch' ORDER BY p.sku`).all(), db);
+  const rows = hydrate(db.prepare(`${SELECT} WHERE p.status NOT IN ('discontinued','not_launching') AND COALESCE(p.product_type, 'food') != 'merch' ORDER BY p.sku`).all(), db);
   // Merch is never in the proofer's feed (D-302): it has no film, no panel and
   // no packaging spec, and the feed is a contract read by column name.
   // The date type per SKU, one walk (D-133). "best by" is also the answer for
