@@ -25,6 +25,7 @@
 //
 // Caller sets PORT + DBPATH and the S3 stand-in (verify-all does).
 import Database from 'better-sqlite3';
+import { markQaReviewed } from './lib/qa-review-fixture.mjs';
 
 const PORT = Number(process.env.PORT || 5184);
 const URL = `http://localhost:${PORT}`;
@@ -154,6 +155,7 @@ t('the bot cannot approve the draft', r.status === 403, `${r.status} ${JSON.stri
 
 // ── 5 ──
 console.log('\n── 5. a person approves with the password ──');
+markQaReviewed(DBP, draft.id); // QA reviewed it first (D-319)
 r = await call('POST', `/documents/${doc.id}/revisions/${draft.id}/approve`, {}, dc);
 t('approving without the password is refused', r.status === 403 && r.json?.signature_required, `${r.status}`);
 r = await call('POST', `/documents/${doc.id}/revisions/${draft.id}/approve`, { signature_password: PW }, dc);

@@ -18,6 +18,7 @@
 // Control: remove the PUT guard in api/documents.js — "an approved document's
 // text cannot be edited in place" fails, and the draft no longer stands apart.
 import http from 'http';
+import { markQaReviewed } from './lib/qa-review-fixture.mjs';
 import Database from 'better-sqlite3';
 
 // Signing asks for the signer's password (D-282). Everyone in this script has
@@ -104,6 +105,7 @@ t('…and the approved document still reads V3 with the old text', r.json?.revis
 
 console.log('\n── approving: a new number, with a password ──');
 await call('PUT', `/documents/${doc.id}/revisions/${draft.id}`, { revision: 'v3' }, tok);
+markQaReviewed(DBP, draft.id); // QA reviewed it first (D-319)
 r = await call('POST', `/documents/${doc.id}/revisions/${draft.id}/approve`, {}, tok);
 t('a number already used ("v3" is V3) is refused, before any password', r.status === 409 && r.json?.code === 'REVISION_NUMBER_USED' && r.json?.suggested === 'V4', `${r.status} ${r.json?.error}`);
 await call('PUT', `/documents/${doc.id}/revisions/${draft.id}`, { revision: 'V4' }, tok);
@@ -184,7 +186,7 @@ await waitFor(3);
 t('its first approval is recorded and signalled', r.status === 200 && r.json?.status === 'active' && received[2]?.body?.new_revision === '1.1' && received[2]?.body?.old_revision === null);
 
 console.log('\n── the screens ──');
-await call('POST', `/documents/${doc.id}/revisions`, { change_summary: 'Browser draft' }, tok);
+const v6 = (await call('POST', `/documents/${doc.id}/revisions`, { change_summary: 'Browser draft' }, tok)).json;
 await call('POST', '/training/courses', { code: 'SOP900B', title: 'Allergen Changeover Refresher', sop_id: doc.id }, tok);
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
@@ -195,6 +197,12 @@ await page.goto(`${URL}/?tab=sops&doc=${doc.id}`);
 await page.waitForSelector('[data-doc-revisions]', { timeout: 15000 }).catch(() => {});
 t('the document opens from ?doc= with its revisions panel', await page.locator('[data-doc-revisions]').count() === 1);
 t('the draft V6 is shown apart from V5 in force', await page.locator('[data-rev-draft="V6"]').count() === 1);
+t('Approve waits for QA review (D-319)', await page.locator('[data-rev-approve]').isDisabled()
+  && await page.locator('[data-rev-qa-state="none"]').count() === 1);
+markQaReviewed(DBP, v6.id);
+await page.goto(`${URL}/?tab=sops&doc=${doc.id}`);
+await page.waitForSelector('[data-rev-qa-state="signed"]', { timeout: 15000 }).catch(() => {});
+t('…and once QA has reviewed it the panel says so', /QA review: QA Review Fixture/.test(await page.locator('[data-rev-qa-state]').innerText().catch(() => '')));
 await page.locator('[data-rev-approve]').click();
 const pw = page.locator('input[type="password"]').last();
 await pw.waitFor({ timeout: 5000 }).catch(() => {});

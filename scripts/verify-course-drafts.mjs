@@ -20,6 +20,7 @@
 // Control: drop the `course-drafts` entries from WRITE_AREAS — the bot cannot
 // stage anything and the run stops at the first draft.
 import Database from 'better-sqlite3';
+import { markQaReviewed } from './lib/qa-review-fixture.mjs';
 
 // Signing asks for the signer's password (D-282). Everyone in this script has
 // the one password it set, so a write carries it — as a person re-entering it would.
@@ -85,6 +86,7 @@ t('a live course on SOP 950 V1 with a one-question quiz, and Otto trained on it'
 // The document moves to V2: the course needs an update.
 const dr = (await call('POST', `/documents/${doc.id}/revisions`, {}, admin)).json;
 await call('PUT', `/documents/${doc.id}/revisions/${dr.id}`, { description: 'Wash for 30 seconds.', change_summary: '30 s' }, admin);
+markQaReviewed(DBP, dr.id); // QA reviewed it first (D-319)
 r = await call('POST', `/documents/${doc.id}/revisions/${dr.id}/approve`, { signature_password: PW }, admin);
 t('SOP 950 is approved at V2', r.status === 200 && q('SELECT revision FROM sop_documents WHERE id = ?', doc.id)[0].revision === 'V2', `${r.status} ${r.json?.error}`);
 
@@ -195,6 +197,7 @@ await call('POST', `/training/drafts/${fresh.id}/sign/document`, { signature_pas
 r = await call('POST', `/training/drafts/${fresh.id}/sign/food_safety`, { signature_password: PW }, admin);
 t('one admin cannot give both signatures', r.status === 403 && /two different people/.test(r.json?.error || ''));
 const dr3 = (await call('POST', `/documents/${doc.id}/revisions`, {}, admin)).json;
+markQaReviewed(DBP, dr3.id); // QA reviewed it first (D-319)
 await call('POST', `/documents/${doc.id}/revisions/${dr3.id}/approve`, { signature_password: PW }, admin);
 r = await call('POST', `/training/drafts/${fresh.id}/sign/food_safety`, { signature_password: PW }, qa);
 t('the document moved to V3: publishing is refused, naming both revisions', r.status === 409 && r.json?.code === 'DOCUMENT_MOVED' && /V3/.test(r.json?.error) && /V2/.test(r.json?.error), `${r.status} ${r.json?.error}`);

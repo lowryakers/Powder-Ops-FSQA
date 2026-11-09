@@ -17,6 +17,7 @@
 // 403 token_denied / not_open_to_tokens, the exact refusal Quality hit on
 // 3 Nov, and the run fails from there.
 import Database from 'better-sqlite3';
+import { markQaReviewed } from './lib/qa-review-fixture.mjs';
 
 const PORT = Number(process.env.PORT || 5183);
 const URL = `http://localhost:${PORT}`;
@@ -191,6 +192,7 @@ for (const [n, m, p, b] of [
 t('…and nothing moved', snap() === snapBefore, `${snap()} vs ${snapBefore}`);
 
 console.log('\n── a person approves ──');
+markQaReviewed(DBP, rev.id); // QA reviewed it first (D-319)
 r = await call('POST', `/documents/${active.id}/revisions/${rev.id}/approve`, { signature_password: PW }, qa);
 t('the QA supervisor approves V3 with their password', r.status === 200, `${r.status} ${JSON.stringify(r.json)}`);
 const after = activeRow();

@@ -151,9 +151,98 @@ export function saveDraft(db, doc, draft, body, actor) {
   }
   if (!sets.length) return draft;
   db.prepare(`UPDATE document_revisions SET ${sets.join(', ')}, updated_at = datetime('now') WHERE id = ?`).run(...vals, draft.id);
-  const after = db.prepare('SELECT * FROM document_revisions WHERE id = ?').get(draft.id);
-  logAudit(actor, 'update', 'document_revision', draft.id, { document_id: doc.id, fields: Object.keys(body).filter(k => DRAFT_FIELDS.includes(k)) }, draft, after, `${doc.doc_number || doc.title} draft ${after.revision}`);
+  let after = db.prepare('SELECT * FROM document_revisions WHERE id = ?').get(draft.id);
+  // QA reviewed the draft as it WAS (D-319). A change to what was reviewed takes
+  // the review off; a save that changed nothing QA read leaves it.
+  let qaCleared = false;
+  if (after.qa_reviewed_at && qaReviewHash(after) !== after.qa_review_hash) {
+    db.prepare(`UPDATE document_revisions SET qa_reviewed_by = NULL, qa_reviewed_by_id = NULL, qa_reviewed_at = NULL,
+      qa_review_meaning = NULL, qa_review_hash = NULL WHERE id = ?`).run(draft.id);
+    after = db.prepare('SELECT * FROM document_revisions WHERE id = ?').get(draft.id);
+    qaCleared = true;
+  }
+  logAudit(actor, 'update', 'document_revision', draft.id, { document_id: doc.id, fields: Object.keys(body).filter(k => DRAFT_FIELDS.includes(k)),
+    ...(qaCleared ? { qa_review_cleared: true, qa_reviewed_by: draft.qa_reviewed_by } : {}) }, draft, after, `${doc.doc_number || doc.title} draft ${after.revision}`);
   return after;
+}
+
+// ── QA's review of a draft revision (D-319) ──────────────────────────────────
+// Three verifications on a controlled document: the owner wrote it, QA reviewed
+// it (21 CFR 111.105(a) — the quality unit approves or rejects written
+// procedures), Document Control approved it. QA's is a password signature by a
+// QA supervisor, given on the draft as it stands; Document Control's approval is
+// refused until it is there. The reviewer may not be the document's owner or
+// the person who approves it, so the three are three people.
+export const QA_REVIEW_MEANING = 'Reviewed and accepted by Quality';
+const QA_DEPTS = new Set(['qa', 'quality']);
+/** A QA supervisor (or an admin in QA). Never decided by name. */
+export const canQaReview = (u) => !!u && QA_DEPTS.has(String(u.department || '').toLowerCase())
+  && ['supervisor', 'admin'].includes(u.role);
+// What QA reads: the title and the text. The revision NUMBER and a staged
+// document number are Document Control's, so renumbering does not undo QA's review.
+const QA_HASHED = ['document_id', 'title', 'description', 'description_es'];
+export const qaReviewHash = (r) => createHash('sha256').update(JSON.stringify(QA_HASHED.map(k => r?.[k] ?? null))).digest('hex');
+/** null (not reviewed) · 'signed' (the draft is still what QA reviewed) · 'changed'. Approved rows keep 'signed'. */
+export function qaReviewState(r) {
+  if (!r?.qa_reviewed_at) return null;
+  if (r.status !== 'draft') return 'signed';
+  return r.qa_review_hash === qaReviewHash(r) ? 'signed' : 'changed';
+}
+const sameName = (a, b) => !!a && !!b && String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
+
+/** Why this person cannot give QA's review on this draft, or null. Checked before the password. */
+export function qaReviewRefusal(doc, draft, actor) {
+  if (draft.status !== 'draft') return { status: 409, error: 'Only a draft revision is reviewed. This one is already history.' };
+  if (!canQaReview(actor)) return { status: 403, error: 'QA review is given by a supervisor in Quality.', code: 'QA_REVIEW_NOT_ALLOWED' };
+  if (!String(draft.description || '').trim()) return { status: 400, error: 'The draft has no text to review.' };
+  if (qaReviewState(draft) === 'signed') return { status: 409, error: `QA review was already given by ${draft.qa_reviewed_by}.`, code: 'QA_REVIEW_DONE' };
+  if (sameName(doc.owner, actor.name)) {
+    return { status: 409, error: `${actor.name} owns this document. QA review has to come from somebody else in Quality.`, code: 'QA_REVIEW_OWNER' };
+  }
+  return null;
+}
+
+/** Record QA's review. The route has already checked the password. */
+export function qaReviewDraft(db, doc, draft, actor) {
+  const at = new Date().toISOString();
+  const hash = qaReviewHash(draft);
+  db.prepare(`UPDATE document_revisions SET qa_reviewed_by = ?, qa_reviewed_by_id = ?, qa_reviewed_at = ?, qa_review_meaning = ?,
+    qa_review_hash = ?, updated_at = datetime('now') WHERE id = ?`).run(actor.name, actor.id || null, at, QA_REVIEW_MEANING, hash, draft.id);
+  const after = db.prepare('SELECT * FROM document_revisions WHERE id = ?').get(draft.id);
+  logAudit(actor, 'sign', 'document_revision', draft.id,
+    { event: 'qa_review', document_id: doc.id, revision: draft.revision, meaning: QA_REVIEW_MEANING, hash, ...signatureEvidence() },
+    draft, after, `${doc.doc_number || doc.title} draft ${draft.revision} — QA review`);
+  return after;
+}
+
+/** Take QA's review back before approval: the reviewer, or an admin. A reason is required. */
+export function withdrawQaReview(db, doc, draft, actor, reason) {
+  if (draft.status !== 'draft') throw new RevisionError('An approved revision\'s QA review is history and cannot be withdrawn.', 409);
+  if (!draft.qa_reviewed_at) throw new RevisionError('This draft has no QA review to withdraw.', 409);
+  const mine = (draft.qa_reviewed_by_id && draft.qa_reviewed_by_id === actor?.id) || sameName(draft.qa_reviewed_by, actor?.name);
+  if (!mine && actor?.role !== 'admin') throw new RevisionError('Only the person who gave the QA review, or an admin, can withdraw it.', 403);
+  if (String(reason || '').trim().length < 3) throw new RevisionError('Say why the QA review is being withdrawn.');
+  db.prepare(`UPDATE document_revisions SET qa_reviewed_by = NULL, qa_reviewed_by_id = NULL, qa_reviewed_at = NULL,
+    qa_review_meaning = NULL, qa_review_hash = NULL, updated_at = datetime('now') WHERE id = ?`).run(draft.id);
+  const after = db.prepare('SELECT * FROM document_revisions WHERE id = ?').get(draft.id);
+  logAudit(actor, 'revoke', 'document_revision', draft.id,
+    { event: 'qa_review_withdrawn', document_id: doc.id, revision: draft.revision, reviewed_by: draft.qa_reviewed_by, reason: String(reason).trim() },
+    draft, after, `${doc.doc_number || doc.title} draft ${draft.revision} — QA review`);
+  return after;
+}
+
+/** Why Document Control cannot approve this draft yet because of QA's review, or null. */
+export function approvalNeedsQa(draft, actor) {
+  const state = qaReviewState(draft);
+  if (state !== 'signed') {
+    return { status: 409, code: 'QA_REVIEW_REQUIRED', error: state === 'changed'
+      ? 'The draft changed after QA reviewed it. QA has to review it again before it can be approved.'
+      : 'QA has not reviewed this draft yet. A QA supervisor reviews it first, then it can be approved.' };
+  }
+  if ((draft.qa_reviewed_by_id && draft.qa_reviewed_by_id === actor?.id) || sameName(draft.qa_reviewed_by, actor?.name)) {
+    return { status: 409, code: 'QA_REVIEWER_CANNOT_APPROVE', error: `${draft.qa_reviewed_by} gave the QA review. The approval has to come from somebody else.` };
+  }
+  return null;
 }
 
 /** Throw the draft away. Kept out of the history it never joined; audited with a reason. */

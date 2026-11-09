@@ -22,7 +22,7 @@ import { tableAt, drawTable } from './pdf-table.js';
 import { embedUnicodeFaces } from './pdf-unicode.js';
 import { plantDateTime, plantDateOf } from './plant-clock.js';
 import { sameRevision } from '../shared/document-revision.js';
-import { approvalState, draftOf } from './document-revisions.js';
+import { approvalState, draftOf, qaReviewHash } from './document-revisions.js';
 
 export const TYPE_LABEL = {
   sop: 'SOP', work_instruction: 'Work Instruction', job_description: 'Job Description',
@@ -70,7 +70,10 @@ export function printableCopy(db, doc, { copy, revisionId } = {}) {
       AND status IN ('approved','superseded') AND approved_at IS NOT NULL ORDER BY approved_at`).all(doc.id)
       .filter(r => sameRevision(r.revision, doc.revision));
     const sigs = db.prepare('SELECT * FROM document_signatures WHERE document_id = ? ORDER BY signed_at').all(doc.id);
-    return { doc: { ...doc, print_copy: 'approved' }, approvals, sigs };
+    // QA's review of the revision in force (D-319), from the revision row that
+    // approved it. A revision approved before QA review existed has none.
+    const inForce = approvals[approvals.length - 1];
+    return { doc: { ...doc, print_copy: 'approved', qa_reviewed_by: inForce?.qa_reviewed_by || null, qa_reviewed_at: inForce?.qa_reviewed_at || null }, approvals, sigs };
   }
   const draft = revisionId
     ? db.prepare('SELECT * FROM document_revisions WHERE id = ? AND document_id = ?').get(revisionId, doc.id)
@@ -89,6 +92,9 @@ export function printableCopy(db, doc, { copy, revisionId } = {}) {
       doc_number: draft.doc_number || doc.doc_number,
       effective_date: draft.effective_date || null,
       approved_by: null, approved_at: null,
+      // QA may already have reviewed the draft (D-319); an edit since then took it off.
+      qa_reviewed_by: draft.qa_reviewed_at && draft.qa_review_hash === qaReviewHash(draft) ? draft.qa_reviewed_by : null,
+      qa_reviewed_at: draft.qa_reviewed_at && draft.qa_review_hash === qaReviewHash(draft) ? draft.qa_reviewed_at : null,
     },
     // A draft has no approval, and the in-force revision's signatures are not its.
     approvals: [], sigs: [],
@@ -194,7 +200,11 @@ export function renderDocumentsPdf(res, items, { now = new Date() } = {}) {
       ['Revision', doc.revision || '—'],
       ['Status', statusLabel(doc)],
       ...(isDraft ? [['Revision in force', doc.in_force_revision || 'none — never approved']] : []),
+      // Three verifications (D-319): the owner, QA's review, the approval.
       ['Owner', doc.owner || '—'],
+      ['QA Review', doc.qa_reviewed_by
+        ? `${doc.qa_reviewed_by} · ${plantDateTime(doc.qa_reviewed_at)}`
+        : (isDraft ? 'not reviewed yet' : 'not recorded')],
       ['Approved By', isDraft ? 'not approved' : (doc.approved_by || '—')],
       ['Approved At', isDraft ? 'not approved' : (doc.approved_at ? plantDateTime(doc.approved_at) : 'not recorded')],
       ['Effective Date', doc.effective_date || '—'],

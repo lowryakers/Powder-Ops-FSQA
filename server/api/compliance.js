@@ -920,7 +920,7 @@ router.get('/notifications', (req, res) => {
         const { counts } = payActions(db);
         if (counts.total > 0) {
           items.push({ id: 'pay-actions', tab: 'pay-tracking', severity: counts.decide ? 'warning' : 'info', count: counts.total,
-            label: `${counts.total} pay review item${counts.total > 1 ? 's' : ''} waiting on you (${counts.decide} to decide · ${counts.chase} to chase · ${counts.assign} to assign)` });
+            label: `${counts.total} pay review item${counts.total > 1 ? 's' : ''} waiting on you (${counts.decide} to decide · ${counts.chase} to chase · ${counts.assign} to assign${counts.pto ? ` · ${counts.pto} PTO plan to change` : ''})` });
         }
       }
     }

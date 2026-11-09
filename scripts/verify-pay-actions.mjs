@@ -32,7 +32,9 @@ let acts = await (await call('GET', '/pay/actions', null, A)).json();
 // A fresh database seeds a roster whose review clocks have already run out, so
 // the honest opening state is "N to assign, nothing to decide or chase" — and
 // every count below is relative to that baseline.
-const base = acts.counts?.assign || 0;
+// The seeded roster also carries people due for the 4-hour PTO plan (D-320); they are baseline too.
+const baseAssign = acts.counts?.assign || 0;
+const base = baseAssign + (acts.counts?.pto || 0);
 t('a fresh roster has nothing to decide or chase, only the seeded people to assign', acts.counts?.decide === 0 && acts.counts?.chase === 0 && acts.counts?.total === base, JSON.stringify(acts.counts));
 t('reminders default to admins plus the office/HR/admin departments', acts.recipients_source === 'default' && acts.recipients.some(r => r.name === 'Lowry Test') && acts.recipients.some(r => r.name === 'Marnee Test'));
 t('a supervisor is refused the list', (await call('GET', '/pay/actions', null, S)).status === 403);
@@ -63,7 +65,7 @@ t('an employee with an open review is not ALSO listed as unassigned', acts.items
 console.log('\n── the bell and the reminder read the same list ──');
 const notif = await (await call('GET', '/compliance/notifications', null, A)).json();
 const badge = (notif.items || []).find(i => i.id === 'pay-actions');
-t('the admin bell carries the same count', badge?.count === base + 3 && new RegExp(`1 to decide · 1 to chase · ${base + 1} to assign`).test(badge.label), JSON.stringify(badge));
+t('the admin bell carries the same count', badge?.count === base + 3 && new RegExp(`1 to decide · 1 to chase · ${baseAssign + 1} to assign`).test(badge.label), JSON.stringify(badge));
 const supNotif = await (await call('GET', '/compliance/notifications', null, S)).json();
 t('a supervisor bell does not carry the office item', !(supNotif.items || []).some(i => i.id === 'pay-actions'));
 {

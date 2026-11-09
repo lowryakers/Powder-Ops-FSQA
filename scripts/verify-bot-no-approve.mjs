@@ -21,6 +21,7 @@ const SIGN_PW = 'NoBotSign2026!';
 const SIGNED_PATHS = /^\/(documents(\/[^/]+)?|documents\/[^/]+\/apply-revision|documents\/revisions\/items\/[^/]+\/apply|training(\/[^/]+)?|training\/bulk-complete|pm\/work-orders\/[^/]+\/complete-and-recur)$/;
 const signed = (b, m, p) => (m !== 'GET' && SIGNED_PATHS.test(String(p).split('?')[0]) && b && typeof b === 'object' && !Array.isArray(b) && b.signature_password === undefined && !('password' in b) ? { ...b, signature_password: SIGN_PW } : b);
 import Database from 'better-sqlite3';
+import { markQaReviewed } from './lib/qa-review-fixture.mjs';
 
 const PORT = Number(process.env.PORT || 5168);
 const URL = `http://localhost:${PORT}`;
@@ -110,6 +111,7 @@ r = await call('GET', `/documents/${doc.id}/revisions`, null, botSession);
 t('session: can_approve is false on WI 908', r.status === 200 && r.json?.can_approve === false, `${r.status} ${JSON.stringify(r.json?.can_approve)}`);
 r = await call('GET', `/documents/${doc.id}/revisions`, null, qa);
 t('a person in the same department and role: can_approve is true', r.json?.can_approve === true);
+markQaReviewed(DBP, draft.id); // QA reviewed it first (D-319)
 r = await call('POST', `/documents/${doc.id}/revisions/${draft.id}/approve`, { signature_password: PW }, qa);
 t('…and that person approves WI 908 V4', r.status === 200 && q('SELECT revision FROM sop_documents WHERE id = ?', doc.id)[0].revision === 'V4', `${r.status} ${r.json?.error}`);
 
