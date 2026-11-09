@@ -151,5 +151,33 @@ const pd = await fetch(`${BASE}/documents/${DOC_ID}/pdf?copy=draft`, { headers: 
 const dpage = (await (await (await getDocument({ data: new Uint8Array(await pd.arrayBuffer()) }).promise).getPage(1)).getTextContent()).items.map(i => i.str).join(' ');
 t('the draft copy reads "QA Review: not reviewed yet"', /QA Review:\s*not reviewed yet/.test(dpage.replace(/\s+/g, ' ')));
 
+console.log('\n── 6. a NEW document waits for QA review too (D-321) ──');
+r = await call('POST', '/documents', { doc_type: 'sop', doc_number: 'SOP-107', title: 'New Procedure', category: 'quality', revision: 'V1', owner: 'Carla Owner', content: 'Text.', status: 'active', signature_password: PW }, 'Dana Control');
+t('filing a new document straight into force is refused', r.status === 409 && r.json?.code === 'QA_REVIEW_REQUIRED', `${r.status}`);
+r = await call('POST', '/documents', { doc_type: 'sop', doc_number: 'SOP-107', title: 'New Procedure', category: 'quality', revision: 'V1', owner: 'Carla Owner', content: 'Text.' }, 'Dana Control');
+const nd = r.json;
+r = await call('PUT', `/documents/${nd.id}`, { status: 'active', signature_password: PW }, 'Dana Control');
+t('approving it before QA review is refused', r.status === 409 && r.json?.code === 'QA_REVIEW_REQUIRED', `${r.status}`);
+r = await call('POST', `/documents/${nd.id}/qa-signoff`, { signature_password: PW }, 'Carla Owner');
+t('its owner cannot give the QA review', r.status === 409 && r.json?.code === 'QA_REVIEW_OWNER', `${r.status}`);
+r = await call('POST', `/documents/${nd.id}/qa-signoff`, { signature_password: PW }, '*Quality Bot');
+t('a bot cannot', r.status === 403);
+r = await call('POST', `/documents/${nd.id}/qa-signoff`, { signature_password: PW }, 'Quinn Assurance');
+t('the QA supervisor reviews it, with the password', r.status === 200 && r.json?.qa_reviewed_by === 'Quinn Assurance', `${r.status} ${r.json?.error}`);
+r = await call('PUT', `/documents/${nd.id}`, { status: 'active', signature_password: PW }, 'Quinn Assurance');
+t('the reviewer cannot also approve it', r.status === 409 && r.json?.code === 'QA_REVIEWER_CANNOT_APPROVE', `${r.status} ${r.json?.code}`);
+r = await call('PUT', `/documents/${nd.id}`, { content: 'Text, changed.' }, 'Dana Control');
+r = await call('GET', `/documents/${nd.id}/revisions`, null, 'Dana Control');
+t('an edit after the review takes it off', r.json?.first_review?.qa_review_state === null, JSON.stringify(r.json?.first_review));
+await call('POST', `/documents/${nd.id}/qa-signoff`, { signature_password: PW }, 'Quinn Assurance');
+r = await call('PUT', `/documents/${nd.id}`, { status: 'active', signature_password: PW }, 'Dana Control');
+t('reviewed again, Document Control approves it', r.status === 200 && r.json?.status === 'active', `${r.status} ${r.json?.error}`);
+r = await call('GET', `/documents/${nd.id}/revisions`, null, 'Dana Control');
+const v1 = (r.json?.revisions || []).find(x => x.revision === 'V1');
+t('the approved V1 carries the QA review (Quinn) and the approval (Dana)', v1?.qa_reviewed_by === 'Quinn Assurance' && v1?.approved_by === 'Dana Control');
+const npd = await fetch(`${BASE}/documents/${nd.id}/pdf`, { headers: { Authorization: `Bearer ${tok['Dana Control']}` } });
+const npage = (await (await (await getDocument({ data: new Uint8Array(await npd.arrayBuffer()) }).promise).getPage(1)).getTextContent()).items.map(i => i.str).join(' ');
+t('its PDF header names the QA reviewer', /QA Review:\s*Quinn Assurance/.test(npage.replace(/\s+/g, ' ')), npage.slice(0, 200));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

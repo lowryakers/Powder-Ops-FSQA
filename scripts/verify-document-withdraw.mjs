@@ -1,3 +1,4 @@
+import { fileApprovedDoc, markDocQaReviewed } from './lib/qa-review-fixture.mjs';
 // Withdrawn is a door, not a dropdown value — executed against a live server.
 //
 // The registry's edit form filtered "No longer in use" out of its status
@@ -38,7 +39,8 @@ t('signed in', !!token);
 const status = (id) => { const d = new Database(process.env.DBPATH, { readonly: true }); const r = d.prepare('SELECT status, archived_at, archive_reason FROM sop_documents WHERE id = ?').get(id); d.close(); return r; };
 
 console.log('\nA document, withdrawn with a reason');
-const doc = await J(await post('/documents', { doc_number: 'SOP 999', title: 'Withdraw test', category: 'quality', revision: 'V1', status: 'active' }));
+const send = async (m, p, b) => J(await (m === 'POST' ? post : put)(p, b));
+const doc = await fileApprovedDoc(send, process.env.DBPATH, { doc_number: 'SOP 999', title: 'Withdraw test', category: 'quality', revision: 'V1' });
 t('created active', !!doc?.id && status(doc?.id)?.status === 'active', JSON.stringify(doc || {}).slice(0, 100));
 {
   const r = await del(`/documents/${doc.id}`, { reason: 'superseded by SOP 998' });
@@ -73,6 +75,7 @@ console.log('\nThe doors still work, and are the only way across the line');
   const b2 = await J(r2);
   t('PUT status=archived on a live document is refused — withdrawing needs a reason', r2.status === 400 && b2?.use === 'withdraw', `got ${r2.status}`);
   // Approving it again is a NEW approved revision (D-277/D-282): V1 was already approved once.
+  markDocQaReviewed(process.env.DBPATH, doc.id); // QA reviews it first (D-321)
   const r3 = await put(`/documents/${doc.id}`, { status: 'active', revision: 'V2' });
   t('an ordinary status change (draft → active) still works, under a new number', r3.ok && status(doc.id)?.status === 'active', `got ${r3.status}`);
 }

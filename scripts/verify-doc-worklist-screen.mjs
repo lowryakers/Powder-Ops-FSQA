@@ -1,3 +1,4 @@
+import { markDocQaReviewed } from './lib/qa-review-fixture.mjs';
 import { chromium } from 'playwright-core';
 const APP = process.env.APP || 'http://localhost:4882';
 let pass=0,fail=0; const t=(n,c,d='')=>{if(c){pass++;console.log('  ✓ '+n)}else{fail++;console.log('  ✗ '+n+(d?' — '+d:''))}};
@@ -22,8 +23,13 @@ fs.writeFileSync('/tmp/SOP-777_Browser_Test_V9.md','# Browser Test Procedure\n\n
 // the document must exist to match
 await p.evaluate(async () => {
   await fetch('/api/documents', { method:'POST', headers:{'Content-Type':'application/json',Authorization:'Bearer '+localStorage.getItem('auth_token')},
-    body: JSON.stringify({ doc_type:'sop', doc_number:'SOP 777', title:'Browser Test Procedure', category:'quality', revision:'V1', status:'active', content:'old body', signature_password:'DocSecret2026' }) });
+    body: JSON.stringify({ doc_type:'sop', doc_number:'SOP 777', title:'Browser Test Procedure', category:'quality', revision:'V1', content:'old body' }) });
 });
+// QA reviews it, then it is approved (D-321).
+const docId = await p.evaluate(async () => (await (await fetch('/api/documents', { headers:{Authorization:'Bearer '+localStorage.getItem('auth_token')} })).json()).find(d => d.doc_number === 'SOP 777')?.id);
+markDocQaReviewed(process.env.DBPATH, docId);
+await p.evaluate(async (id) => { await fetch('/api/documents/'+id, { method:'PUT', headers:{'Content-Type':'application/json',Authorization:'Bearer '+localStorage.getItem('auth_token')},
+  body: JSON.stringify({ status:'active', signature_password:'DocSecret2026' }) }); }, docId);
 await fileInput.setInputFiles('/tmp/SOP-777_Browser_Test_V9.md');
 await p.waitForTimeout(4000);
 const after=await p.locator('body').innerText();
@@ -33,14 +39,13 @@ t('the proposed change is shown with both values', /V1\s*→\s*V9/.test(after.re
 const apply=p.locator('button',{hasText:/Apply \d+ change/});
 t('an Apply button naming the count is offered', await apply.count()>=1, await apply.first().innerText().catch(()=>''));
 await apply.first().click();
-// On an approved document, applying records an approved revision: the password prompt (D-282).
-await p.waitForSelector('[data-signature-prompt] input[type=password]', { timeout: 10000 }).catch(() => {});
-t('applying to an approved document asks for the password', await p.locator('[data-signature-prompt]').count() === 1);
-await p.locator('[data-signature-prompt] input[type=password]').click().catch(() => {});
-await p.keyboard.type('DocSecret2026');
-await p.locator('[data-signature-prompt] button[type=submit]').click().catch(() => {});
+// On an approved document, applying STAGES a draft revision for QA (D-321): no password here.
+await p.waitForTimeout(500);
+t('applying to an approved document asks no password', await p.locator('[data-signature-prompt]').count() === 0);
 await p.waitForTimeout(3000);
 const done=await p.locator('body').innerText();
+const revs = await p.evaluate(async (id) => (await fetch('/api/documents/'+id+'/revisions', { headers:{Authorization:'Bearer '+localStorage.getItem('auth_token')} })).json(), docId);
+t('it was staged as draft V9, and V1 stays in force until QA reviews and it is approved', revs?.draft?.revision === 'V9' && revs?.in_force?.revision === 'V1', JSON.stringify({ d: revs?.draft?.revision, f: revs?.in_force?.revision }));
 t('applying clears it from the queue', !/SOP-777_Browser_Test_V9\.md/.test(done), done.slice(-200));
 // Not a fixed number — this DB may already carry items from the API check.
 // What matters is that everything filed is now handled.

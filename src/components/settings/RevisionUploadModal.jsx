@@ -33,7 +33,7 @@ function FileResult({ file, onApplied }) {
         if (!picked.has(c.field)) continue;
         fields[c.field] = c.field === 'description' ? c.content : c.to;
       }
-      await withSignature((extra) => apiPost(`/documents/${file.document.id}/apply-revision`, { fields, filename: file.filename, ...extra }), { title: 'Record this revision', detail: 'On an approved document this records an approved revision — your password is your signature' });
+      await withSignature((extra) => apiPost(`/documents/${file.document.id}/apply-revision`, { fields, filename: file.filename, ...extra }), { title: 'Apply this revision', detail: 'On an approved document this stages a draft revision — QA reviews it, then it is approved' });
       setDone(true);
       onApplied?.();
     } catch (e) { if (!e.cancelled) setError(e.message); }

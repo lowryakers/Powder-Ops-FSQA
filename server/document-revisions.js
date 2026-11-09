@@ -245,6 +245,57 @@ export function approvalNeedsQa(draft, actor) {
   return null;
 }
 
+// ── QA's review of a NEW document, before its first approval (D-321) ────────
+// A document that has never been approved has no draft revision: it is edited
+// in place. QA's review sits on the document row, fingerprinted the same way,
+// and the first approval is refused without it, exactly as for a draft.
+/** The document row seen as a draft, so the draft rules above apply to it unchanged. */
+export const docAsDraft = (doc) => ({ ...doc, document_id: doc.id, status: isApprovedStatus(doc.status) || doc.status === 'archived' ? 'closed' : 'draft' });
+const CLEAR_DOC_QA = `UPDATE sop_documents SET qa_reviewed_by = NULL, qa_reviewed_by_id = NULL, qa_reviewed_at = NULL,
+  qa_review_meaning = NULL, qa_review_hash = NULL WHERE id = ?`;
+
+export function qaReviewDocument(db, doc, actor) {
+  const at = new Date().toISOString();
+  const hash = qaReviewHash(docAsDraft(doc));
+  db.prepare(`UPDATE sop_documents SET qa_reviewed_by = ?, qa_reviewed_by_id = ?, qa_reviewed_at = ?, qa_review_meaning = ?,
+    qa_review_hash = ? WHERE id = ?`).run(actor.name, actor.id || null, at, QA_REVIEW_MEANING, hash, doc.id);
+  const after = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(doc.id);
+  logAudit(actor, 'sign', 'document', doc.id,
+    { event: 'qa_review', first_approval: true, revision: doc.revision, meaning: QA_REVIEW_MEANING, hash, ...signatureEvidence() },
+    doc, after, `${doc.doc_number || doc.title} rev ${doc.revision} — QA review`);
+  return after;
+}
+
+export function withdrawDocQaReview(db, doc, actor, reason) {
+  if (isApprovedStatus(doc.status)) throw new RevisionError('This document is approved. Its QA review is history and cannot be withdrawn.', 409);
+  if (!doc.qa_reviewed_at) throw new RevisionError('This document has no QA review to withdraw.', 409);
+  const mine = (doc.qa_reviewed_by_id && doc.qa_reviewed_by_id === actor?.id) || sameName(doc.qa_reviewed_by, actor?.name);
+  if (!mine && actor?.role !== 'admin') throw new RevisionError('Only the person who gave the QA review, or an admin, can withdraw it.', 403);
+  if (String(reason || '').trim().length < 3) throw new RevisionError('Say why the QA review is being withdrawn.');
+  db.prepare(CLEAR_DOC_QA).run(doc.id);
+  const after = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(doc.id);
+  logAudit(actor, 'revoke', 'document', doc.id,
+    { event: 'qa_review_withdrawn', first_approval: true, reviewed_by: doc.qa_reviewed_by, reason: String(reason).trim() },
+    doc, after, `${doc.doc_number || doc.title} — QA review`);
+  return after;
+}
+
+/** After an edit to an unapproved document: a change to what QA read takes the review off. */
+export function clearDocQaIfChanged(db, before, actor) {
+  const after = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(before.id);
+  if (!after?.qa_reviewed_at || qaReviewHash(docAsDraft(after)) === after.qa_review_hash) return false;
+  db.prepare(CLEAR_DOC_QA).run(after.id);
+  logAudit(actor, 'update', 'document', after.id, { event: 'qa_review_cleared', first_approval: true, qa_reviewed_by: after.qa_reviewed_by },
+    after, db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(after.id), `${after.doc_number || after.title} — QA review`);
+  return true;
+}
+
+/** The QA review fields to carry onto the first approved revision, or null. */
+export const docQaFields = (doc) => (doc.qa_reviewed_at ? {
+  qa_reviewed_by: doc.qa_reviewed_by, qa_reviewed_by_id: doc.qa_reviewed_by_id, qa_reviewed_at: doc.qa_reviewed_at,
+  qa_review_meaning: doc.qa_review_meaning, qa_review_hash: doc.qa_review_hash,
+} : null);
+
 /** Throw the draft away. Kept out of the history it never joined; audited with a reason. */
 export function discardDraft(db, doc, draft, reason, actor) {
   if (draft.status !== 'draft') throw new RevisionError('Only a draft revision can be discarded.', 409);
@@ -332,6 +383,12 @@ export function recordApprovedRevision(db, doc, fields, { source, draftId = null
         .run(revId, doc.id, revision, source || 'draft', next.title, next.description, next.description_es,
           next.effective_date, fields.change_summary || null, wasApproved ? doc.revision : null,
           actor?.name || null, actor?.id || null, approver, actor?.id || null, nowIso);
+    }
+    if (fields.qa && !draftId) {
+      db.prepare(`UPDATE document_revisions SET qa_reviewed_by = ?, qa_reviewed_by_id = ?, qa_reviewed_at = ?, qa_review_meaning = ?,
+        qa_review_hash = ? WHERE id = ?`).run(fields.qa.qa_reviewed_by, fields.qa.qa_reviewed_by_id, fields.qa.qa_reviewed_at,
+        fields.qa.qa_review_meaning, fields.qa.qa_review_hash, revId);
+      db.prepare(CLEAR_DOC_QA).run(doc.id);
     }
     db.prepare(`UPDATE sop_documents SET revision = ?, title = ?, description = ?, description_es = ?, effective_date = ?,
         approved_by = ?, approved_at = ?, training_revision = ?, status = 'active', doc_number = COALESCE(?, doc_number), updated_at = datetime('now') WHERE id = ?`)

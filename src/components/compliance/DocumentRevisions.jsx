@@ -23,7 +23,7 @@ export default function DocumentRevisions({ doc, canEdit, onChanged }) {
   const [label, setLabel] = useState(null); // null = the suggestion; a person may type another (D-280)
   if (!data) return null;
   const { draft, revisions, courses, in_force: inForce, suggested_revision: suggested, can_approve: canApprove,
-    can_qa_review: canQaReview, owner } = data;
+    can_qa_review: canQaReview, owner, first_review: firstReview } = data;
   const history = revisions.filter(r => r.status !== 'draft');
 
   const run = async (fn) => {
@@ -47,6 +47,19 @@ export default function DocumentRevisions({ doc, canEdit, onChanged }) {
     run(() => apiFetch(`/documents/${doc.id}/revisions/${draft.id}/qa-signoff`, { method: 'DELETE', body: { reason } }));
   };
   const qaSigned = draft?.qa_review_state === 'signed';
+  // A NEW document's first approval waits for QA's review too (D-321).
+  const firstSigned = firstReview?.qa_review_state === 'signed';
+  const firstQa = () => run(() => withSignature(
+    (extra) => apiPost(`/documents/${doc.id}/qa-signoff`, extra),
+    { title: `QA review of ${doc.doc_number || doc.title}`, detail: `Revision ${doc.revision}` }));
+  const firstWithdraw = () => {
+    const reason = window.prompt('Why is the QA review being withdrawn?');
+    if (reason == null) return;
+    run(() => apiFetch(`/documents/${doc.id}/qa-signoff`, { method: 'DELETE', body: { reason } }));
+  };
+  const firstApprove = () => run(() => withSignature(
+    (extra) => apiPut(`/documents/${doc.id}`, { status: 'active', ...extra }),
+    { title: `Approve ${doc.doc_number || doc.title}`, detail: `Revision ${doc.revision} — your password is your signature` }));
   const discard = () => {
     const reason = window.prompt('Why is this draft revision being discarded?');
     if (reason == null) return;
@@ -73,6 +86,38 @@ export default function DocumentRevisions({ doc, canEdit, onChanged }) {
           </div>
         )}
       </div>
+
+      {firstReview && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 space-y-1.5" data-first-approval>
+          <p className="text-sm font-semibold text-amber-900">
+            Not approved yet
+            <span className="font-normal text-amber-800"> — QA reviews this document, then it is approved.</span>
+          </p>
+          <QaReviewLine draft={firstReview} owner={owner} noun="document" />
+          <div className="flex flex-wrap gap-1.5 pt-0.5">
+            {canQaReview && !firstSigned && firstReview.has_text && (
+              <button type="button" onClick={firstQa} disabled={busy} data-first-qa-review
+                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-md bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-50">
+                <CheckCircle2 size={12} /> QA review
+              </button>
+            )}
+            {firstReview.qa_reviewed_at && (canQaReview || canApprove) && (
+              <button type="button" onClick={firstWithdraw} disabled={busy} data-first-qa-withdraw
+                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-md text-teal-800 hover:bg-teal-50">
+                Withdraw QA review
+              </button>
+            )}
+            {canApprove && (
+              <button type="button" onClick={firstApprove} disabled={busy || !firstSigned} data-first-approve
+                title={firstSigned ? '' : 'QA reviews the document first.'}
+                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50">
+                <CheckCircle2 size={12} /> Approve revision {doc.revision}
+              </button>
+            )}
+          </div>
+          {!firstReview.has_text && <p className="text-xs text-amber-900">Add the document's text before QA can review it.</p>}
+        </div>
+      )}
 
       {draft && (
         <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 space-y-1.5" data-rev-draft={draft.revision}>
@@ -296,7 +341,7 @@ function DraftFiles({ doc, draft, canEdit }) {
  * approval still to come. QA's line says plainly whether it is done, missing,
  * or was taken off by an edit made after it.
  */
-function QaReviewLine({ draft, owner }) {
+function QaReviewLine({ draft, owner, noun = 'draft' }) {
   const state = draft.qa_review_state;
   return (
     <div className="text-xs space-y-0.5" data-rev-qa-state={state || 'none'}>
@@ -306,9 +351,9 @@ function QaReviewLine({ draft, owner }) {
           QA review: {draft.qa_reviewed_by} · {formatDateTime(draft.qa_reviewed_at)} · {draft.qa_review_meaning}
         </p>
       ) : state === 'changed' ? (
-        <p className="text-red-700 font-semibold">QA review: the draft changed after {draft.qa_reviewed_by} reviewed it — QA reviews it again.</p>
+        <p className="text-red-700 font-semibold">QA review: the {noun} changed after {draft.qa_reviewed_by} reviewed it — QA reviews it again.</p>
       ) : (
-        <p className="text-amber-900 font-semibold">QA review: not yet — a QA supervisor reviews the draft before it can be approved.</p>
+        <p className="text-amber-900 font-semibold">QA review: not yet — a QA supervisor reviews the {noun} before it can be approved.</p>
       )}
     </div>
   );

@@ -42,7 +42,7 @@ function Item({ item, onDone }) {
     setBusy(true); setError(null);
     try {
       if (what === 'apply') {
-        await withSignature((extra) => apiPost(`/documents/revisions/items/${item.id}/apply`, { fields: [...picked], ...extra }), { title: 'Record this revision', detail: 'On an approved document this records an approved revision — your password is your signature' });
+        await withSignature((extra) => apiPost(`/documents/revisions/items/${item.id}/apply`, { fields: [...picked], ...extra }), { title: 'Apply this revision', detail: 'On an approved document this stages a draft revision — QA reviews it, then it is approved' });
       } else {
         const reason = window.prompt(`Skip ${item.filename}?\n\nThe row stays, with your reason on it.\n\nWhy?`);
         if (!reason) { setBusy(false); return; }

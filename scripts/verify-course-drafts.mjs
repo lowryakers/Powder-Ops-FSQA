@@ -20,7 +20,7 @@
 // Control: drop the `course-drafts` entries from WRITE_AREAS — the bot cannot
 // stage anything and the run stops at the first draft.
 import Database from 'better-sqlite3';
-import { markQaReviewed } from './lib/qa-review-fixture.mjs';
+import { markQaReviewed, fileApprovedDoc } from './lib/qa-review-fixture.mjs';
 
 // Signing asks for the signer's password (D-282). Everyone in this script has
 // the one password it set, so a write carries it — as a person re-entering it would.
@@ -57,6 +57,9 @@ const call = async (m, p, b, tok, form) => {
   return { status: r.status, json };
 };
 const PW = 'Drafts2026!!';
+
+// File a document into force the D-321 way: draft → QA review marked → approved with a password.
+const fileDoc = async (body, tok) => ({ status: 201, json: await fileApprovedDoc((m, p, b) => call(m, p, b, tok), DBP, { signature_password: PW, ...body }) });
 const signIn = async (id, name) => {
   await call('POST', '/users/set-password', { user_id: id, password: PW, setup_code: `SC-${id}` });
   const r = await call('POST', '/users/login', { name, password: PW });
@@ -71,7 +74,7 @@ const sup = (await signIn('cd-sup', 'Sam Production'))?.token;
 t('four people signed in', !!admin && !!dc && !!qa && !!sup);
 
 // An approved SOP at V1, a course built on it with a quiz, and Otto trained on V1.
-let r = await call('POST', '/documents', { doc_type: 'sop', doc_number: 'SOP 950', title: 'Hand Washing', category: 'quality', revision: 'V1', status: 'active', content: 'Wash for 20 seconds.' }, admin);
+let r = await fileDoc({ doc_type: 'sop', doc_number: 'SOP 950', title: 'Hand Washing', category: 'quality', revision: 'V1', content: 'Wash for 20 seconds.' }, admin);
 const doc = r.json;
 r = await call('POST', '/training/courses', { code: 'SOP950', title: 'Hand Washing Training', description: 'Old content.', sop_id: doc.id, retrain_on_doc_change: true }, admin);
 const course = r.json;

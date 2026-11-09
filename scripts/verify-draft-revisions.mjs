@@ -25,12 +25,15 @@
 //
 // Caller sets PORT + DBPATH and the S3 stand-in (verify-all does).
 import Database from 'better-sqlite3';
-import { markQaReviewed } from './lib/qa-review-fixture.mjs';
+import { markQaReviewed, fileApprovedDoc } from './lib/qa-review-fixture.mjs';
 
 const PORT = Number(process.env.PORT || 5184);
 const URL = `http://localhost:${PORT}`;
 const DBP = process.env.DBPATH || process.env.DB_PATH;
 const PW = 'DraftRev2026!!';
+
+// File a document into force the D-321 way: draft → QA review marked → approved with a password.
+const fileDoc = async (body, tok) => ({ status: 201, json: await fileApprovedDoc((m, p, b) => call(m, p, b, tok), DBP, { signature_password: PW, ...body }) });
 let pass = 0, fail = 0;
 const t = (n, ok, d = '') => { if (ok) { pass++; console.log(`  ✓ ${n}`); } else { fail++; console.log(`  ✗ ${n}${d ? ' — ' + d : ''}`); } };
 const q = (sql, ...a) => { const d = new Database(DBP, { readonly: true }); try { return d.prepare(sql).all(...a); } finally { d.close(); } };
@@ -85,8 +88,8 @@ const files = async (id) => (await call('GET', `/documents/${id}/attachments`, n
 
 // ── 1 ──
 console.log('\n── 1. an active SOP, nothing staged ──');
-let r = await call('POST', '/documents', { doc_type: 'sop', doc_number: 'SOP-T1', title: 'Test Procedure', category: 'quality',
-  revision: '1.0', status: 'active', content: 'Version one.', signature_password: PW }, admin);
+let r = await fileDoc({ doc_type: 'sop', doc_number: 'SOP-T1', title: 'Test Procedure', category: 'quality',
+  revision: '1.0', content: 'Version one.' }, admin);
 const doc = r.json;
 t('SOP-T1 is active at rev 1.0', r.status === 201 && doc?.status === 'active' && doc?.revision === '1.0', `${r.status} ${r.json?.error}`);
 let src = await pile('draft-revisions');
@@ -136,8 +139,8 @@ t('step 4: a token on a non-Document-Control account gets 403', r.status === 403
 
 // ── document number staged on the draft ──
 console.log('\n── + a document number staged on the draft ──');
-r = await call('POST', '/documents', { doc_type: 'sop', doc_number: 'SOP-T9', title: 'Another Procedure', category: 'quality',
-  revision: '2.0', status: 'active', content: 'Other.', signature_password: PW }, admin);
+r = await fileDoc({ doc_type: 'sop', doc_number: 'SOP-T9', title: 'Another Procedure', category: 'quality',
+  revision: '2.0', content: 'Other.' }, admin);
 const other = r.json;
 r = await call('PUT', `/documents/${doc.id}/revisions/${draft.id}`, { doc_number: 'SOP-T9' }, dc);
 t('a number another document holds is refused, naming it', r.status === 409 && r.json?.code === 'DOC_NUMBER_USED' && /Another Procedure|SOP-T9/.test(r.json?.error || ''), JSON.stringify(r.json));

@@ -17,12 +17,15 @@
 // 403 token_denied / not_open_to_tokens, the exact refusal Quality hit on
 // 3 Nov, and the run fails from there.
 import Database from 'better-sqlite3';
-import { markQaReviewed } from './lib/qa-review-fixture.mjs';
+import { markQaReviewed, fileApprovedDoc } from './lib/qa-review-fixture.mjs';
 
 const PORT = Number(process.env.PORT || 5183);
 const URL = `http://localhost:${PORT}`;
 const DBP = process.env.DBPATH || process.env.DB_PATH;
 const PW = 'SopBot2026!!';
+
+// File a document into force the D-321 way: draft → QA review marked → approved with a password.
+const fileDoc = async (body, tok) => ({ status: 201, json: await fileApprovedDoc((m, p, b) => call(m, p, b, tok), DBP, { signature_password: PW, ...body }) });
 let pass = 0, fail = 0;
 const t = (n, ok, d = '') => { if (ok) { pass++; console.log(`  ✓ ${n}`); } else { fail++; console.log(`  ✗ ${n}${d ? ' — ' + d : ''}`); } };
 const q = (sql, ...a) => { const d = new Database(DBP, { readonly: true }); try { return d.prepare(sql).all(...a); } finally { d.close(); } };
@@ -73,8 +76,8 @@ const READ = await mint('sb-bot', 'Quality bot (read)', ['read']);
 t('test tokens minted on the fresh database', [A, B, C, D, NOGRANT, VIEW, READ].every((x) => x.plain && x.id));
 
 // Documents a person filed: SOP-202 approved at V2, a draft SOP, a draft WI.
-let r = await call('POST', '/documents', { doc_type: 'sop', doc_number: 'SOP-202', title: 'Glass and Brittle Plastic', category: 'quality',
-  revision: 'V2', status: 'active', content: 'Version two text.', signature_password: PW }, admin);
+let r = await fileDoc({ doc_type: 'sop', doc_number: 'SOP-202', title: 'Glass and Brittle Plastic', category: 'quality',
+  revision: 'V2', content: 'Version two text.' }, admin);
 const active = r.json;
 t('SOP-202 is approved at V2 (a person, with a password)', r.status === 201 && active?.status === 'active' && active?.revision === 'V2', `${r.status} ${r.json?.error}`);
 r = await call('POST', '/documents', { doc_type: 'sop', doc_number: 'SOP 435', title: 'Draft SOP', category: 'quality', revision: 'V1', content: 'Draft text.' }, admin);
