@@ -47,6 +47,8 @@ t('the paused schedule reports no leftover work on the list', row.is_active === 
   const a = db.prepare("SELECT details FROM audit_log WHERE entity_type = 'pm_schedule' AND entity_id = ? AND action = 'update' ORDER BY rowid DESC LIMIT 1").get(sched.id);
   const det = a?.details ? JSON.parse(a.details) : {};
   t('the audit entry records the pause, what it closed and what it left', det.paused === true && det.closed_work === 2 && det.open_work_left === 0, JSON.stringify(det));
+  const lbl = db.prepare("SELECT entity_label FROM audit_log WHERE entity_type = 'pm_schedule' AND entity_id = ? AND action = 'update' ORDER BY rowid DESC LIMIT 1").get(sched.id);
+  t('the pause audit entry names the schedule', lbl?.entity_label === sched.title, lbl?.entity_label);
   const cards = db.prepare("SELECT status, notes FROM work_orders WHERE pm_schedule_id = ?").all(sched.id);
   t('both cards are CANCELLED, not deleted, with who paused it on each', cards.length === 2 && cards.every(c => c.status === 'cancelled' && /paused by Plant Admin/.test(c.notes || '')));
   db.close(); }
