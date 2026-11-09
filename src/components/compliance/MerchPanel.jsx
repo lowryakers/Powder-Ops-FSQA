@@ -7,6 +7,8 @@
 // being confirmed; this screen shows the same refusal (shared/merch.js) so a
 // button is never offered that the server would refuse.
 import { useMemo, useState } from 'react';
+import { CopyValue } from './ProductGrid.jsx';
+import { statusLabel } from '../../../shared/product-status.js';
 import { ChevronRight, ChevronDown, Plus, CheckCircle2, AlertTriangle, Shirt } from 'lucide-react';
 import { useApiGet, apiFetch } from '../../hooks/useApi';
 import { gtinAssignRefusal, MERCH_STEPS, merchStepsOf } from '../../../shared/merch.js';
@@ -27,34 +29,56 @@ function ColorChip({ color }) {
 
 function NewStyleForm({ onDone }) {
   const { data: fc } = useApiGet('/products/flavor-codes');
-  const [form, setForm] = useState({ garment: 'H', flavor: '', name: '' });
+  const [form, setForm] = useState({ garment: 'H', style_kind: 'flavor', flavor: '', design_name: '', design_code: '', name: '' });
+  const design = form.style_kind === 'design';
+  const ready = design ? form.design_name.trim() && /^[A-Za-z]{2,3}$/.test(form.design_code.trim()) : !!form.flavor;
   const [error, setError] = useState('');
   const flavors = (fc?.codes || []).filter((c) => c.is_active).sort((a, b) => a.flavor.localeCompare(b.flavor));
   const save = async () => {
     setError('');
-    try { await apiFetch('/products/merch/styles', { method: 'POST', body: form }); onDone(); } catch (e) { setError(e.message); }
+    const body = design
+      ? { garment: form.garment, style_kind: 'design', design_name: form.design_name, design_code: form.design_code.trim().toUpperCase(), name: form.name }
+      : { garment: form.garment, flavor: form.flavor, name: form.name };
+    try { await apiFetch('/products/merch/styles', { method: 'POST', body }); onDone(); } catch (e) { setError(e.message); }
   };
   return (
     <div className="border border-gray-200 rounded-lg p-3 space-y-2 bg-gray-50" data-merch-new-style>
+      <div className="flex flex-wrap gap-4 text-sm" role="radiogroup" aria-label="What the style is for">
+        <label className="flex items-center gap-1.5"><input type="radio" name="style-kind" checked={!design} onChange={() => setForm({ ...form, style_kind: 'flavor' })} data-style-kind="flavor" /> A flavor</label>
+        <label className="flex items-center gap-1.5"><input type="radio" name="style-kind" checked={design} onChange={() => setForm({ ...form, style_kind: 'design' })} data-style-kind="design" /> A design, no flavor (e.g. Protein)</label>
+      </div>
       <div className="grid gap-2 sm:grid-cols-3">
         <label className="text-xs text-gray-600">Garment
           <select value={form.garment} onChange={(e) => setForm({ ...form, garment: e.target.value })} className="mt-1 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm">
             <option value="H">Hoodie (H)</option><option value="T">Tee (T)</option><option value="C">Cap (C)</option>
           </select>
         </label>
-        <label className="text-xs text-gray-600">Flavor (from the flavor register)
-          <select value={form.flavor} onChange={(e) => setForm({ ...form, flavor: e.target.value })} className="mt-1 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm">
-            <option value="">Choose…</option>
-            {flavors.map((f) => <option key={f.code} value={f.flavor}>{f.flavor} ({f.code})</option>)}
-          </select>
-        </label>
+        {design ? (
+          <div className="grid grid-cols-[1fr_5rem] gap-2">
+            <label className="text-xs text-gray-600">Design
+              <input value={form.design_name} onChange={(e) => setForm({ ...form, design_name: e.target.value })} placeholder="Protein" data-design-name className="mt-1 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm" />
+            </label>
+            <label className="text-xs text-gray-600">Code
+              <input value={form.design_code} onChange={(e) => setForm({ ...form, design_code: e.target.value.toUpperCase().slice(0, 3) })} placeholder="PRT" data-design-code className="mt-1 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm font-mono uppercase" />
+            </label>
+          </div>
+        ) : (
+          <label className="text-xs text-gray-600">Flavor (from the flavor register)
+            <select value={form.flavor} onChange={(e) => setForm({ ...form, flavor: e.target.value })} className="mt-1 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm">
+              <option value="">Choose…</option>
+              {flavors.map((f) => <option key={f.code} value={f.flavor}>{f.flavor} ({f.code})</option>)}
+            </select>
+          </label>
+        )}
         <label className="text-xs text-gray-600">Name
           <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="ProDough … Hoodie" className="mt-1 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm" />
         </label>
       </div>
-      <p className="text-[11px] text-gray-500">The style code is the garment letter plus the flavor&apos;s register code. A flavor with no code is issued on the Flavor codes tab first.</p>
+      <p className="text-[11px] text-gray-500">{design
+        ? <>The style code is the garment letter plus your two- or three-letter design code{form.design_code ? <> — <code>MCH-{form.garment}{form.design_code.toUpperCase()}</code></> : null}. It cannot be a code a flavor already uses.</>
+        : <>The style code is the garment letter plus the flavor&apos;s register code. A flavor with no code is issued on the Flavor codes tab first.</>}</p>
       {error && <p className="text-xs text-red-700">{error}</p>}
-      <button type="button" onClick={save} disabled={!form.flavor} className="px-3 py-1.5 bg-powder-600 text-white rounded-lg text-sm disabled:opacity-50">Create style</button>
+      <button type="button" onClick={save} disabled={!ready} data-merch-create-style className="px-3 py-1.5 bg-powder-600 text-white rounded-lg text-sm disabled:opacity-50">Create style</button>
     </div>
   );
 }
@@ -190,7 +214,7 @@ export default function MerchStyles({ canEdit, needle = '', onOpenSku, onChanged
               <Shirt size={15} className="text-gray-400" />
               <span className="text-sm font-semibold text-gray-900">{s.name}</span>
               <code className="text-xs text-gray-500">{s.style_code}</code>
-              <span className="text-xs text-gray-500">{s.flavor} · {s.garment_label}</span>
+              <span className="text-xs text-gray-500">{s.label || s.flavor}{s.style_kind === 'design' ? ' (design)' : ''} · {s.garment_label}</span>
               <span className="ml-auto flex flex-wrap items-center gap-1.5 text-[11px]">
                 <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 tabular-nums">{s.counts.variants} variants</span>
                 <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 tabular-nums">{s.counts.with_gtin} with GTIN</span>
@@ -219,11 +243,11 @@ export default function MerchStyles({ canEdit, needle = '', onOpenSku, onChanged
                     <tbody>
                       {s.shown.map((v) => (
                         <tr key={v.sku} onClick={() => onOpenSku(v.sku)} data-merch-variant={v.sku} className="border-t border-gray-100 cursor-pointer hover:bg-gray-50">
-                          <td className="py-1.5 pr-3 whitespace-nowrap"><code>{v.sku}</code></td>
+                          <td className="py-1.5 pr-3 whitespace-nowrap"><code>{v.sku}</code><CopyValue value={v.sku} what="SKU" /></td>
                           <td className="py-1.5 pr-3 whitespace-nowrap"><ColorChip color={v.color} /></td>
                           <td className="py-1.5 pr-3">{v.size_code}</td>
-                          <td className="py-1.5 pr-3 tabular-nums">{v.gtin || <span className="text-xs text-gray-400">none</span>}</td>
-                          <td className="py-1.5 pr-3">{v.status}</td>
+                          <td className="py-1.5 pr-3 tabular-nums">{v.gtin ? <>{v.gtin}<CopyValue value={v.gtin} what="GTIN" /></> : <span className="text-xs text-gray-400">none</span>}</td>
+                          <td className="py-1.5 pr-3">{statusLabel(v.status)}</td>
                           <td className="py-1.5 tabular-nums text-xs">{v.readiness?.done}/{v.readiness?.total}</td>
                         </tr>
                       ))}

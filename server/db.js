@@ -3515,6 +3515,12 @@ function runMigrations() {
   // `{ field: { by, at } }` — a state set by a control, never typed, and
   // counted as done rather than as a gap (shared/product-fields.js, D-131).
   addColumnIfMissing('products', 'na_fields', 'TEXT');
+  // D-324: a SKU that will not go live. Set and cleared only by
+  // POST /products/:sku/not-launching, with the reason and who decided.
+  addColumnIfMissing('products', 'not_launching_reason', 'TEXT');
+  addColumnIfMissing('products', 'not_launching_by', 'TEXT');
+  addColumnIfMissing('products', 'not_launching_at', 'TEXT');
+  addColumnIfMissing('products', 'not_launching_from', 'TEXT');
 
   // The confirmation backfill needs app_settings for its done-marker, so it
   // runs further down, directly after that table is created.
@@ -3827,6 +3833,11 @@ function runMigrations() {
     created_by TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_by TEXT, updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`);
+  // A style for a DESIGN with no flavor (D-323): style_kind 'design', its name in
+  // design_name, its chosen code in flavor_code (the column is "the code in the
+  // SKU"), flavor ''. Every existing style reads 'flavor'.
+  addColumnIfMissing('merch_styles', 'style_kind', "TEXT NOT NULL DEFAULT 'flavor'");
+  addColumnIfMissing('merch_styles', 'design_name', 'TEXT');
   // The colour register: three letters, a name, a hex, and whether the plant is
   // still confirming it. A GTIN waits while a colour is being confirmed.
   db.exec(`CREATE TABLE IF NOT EXISTS merch_colors (

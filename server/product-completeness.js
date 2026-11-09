@@ -254,7 +254,7 @@ function currentArtwork(db) {
 
 /** The whole catalogue, one walk, with the roll-up by line. */
 export function catalogueCompleteness(db) {
-  const products = db.prepare('SELECT * FROM products ORDER BY category, pack, flavor').all();
+  const products = db.prepare("SELECT * FROM products WHERE status != 'not_launching' ORDER BY category, pack, flavor").all();
   const specs = new Map(db.prepare('SELECT * FROM packaging_specs').all().map((s) => [s.spec_id, s]));
   const colors = new Map();
   for (const c of db.prepare('SELECT sku, pms, hex FROM product_colors').all()) {

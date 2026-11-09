@@ -21,7 +21,7 @@ import { logAudit } from './db.js';
 import {
   MERCH_LINE, MERCH_CATEGORY, MERCH_PACK, GARMENTS, MERCH_SIZES, SIZE_BY_CODE,
   COLOR_CODE_RE, HEX_COLOR_RE, buildStyleCode, parseStyleCode, buildMerchSku,
-  variantTitle, gtinAssignRefusal, suggestNextGtin,
+  variantTitle, gtinAssignRefusal, suggestNextGtin, DESIGN_CODE_RE, styleLabel,
 } from '../shared/merch.js';
 import { checkDigit, gtinValid, normalizeGtin } from '../shared/gtin.js';
 import { gtinPrefixes, takenGtins } from './product-shelf.js';
@@ -68,6 +68,22 @@ function registerCode(db, { flavor, flavor_code: code }) {
   return { row };
 }
 
+/**
+ * Why this code cannot be a design style's code, or null (D-323). A design code
+ * never collides with the flavor register — an active, retired or legacy code —
+ * so a code in a merch SKU means one thing.
+ */
+export function designCodeRefusal(db, code) {
+  if (!DESIGN_CODE_RE.test(code)) return 'A design code is two or three letters (it goes in the SKU).';
+  const reg = db.prepare('SELECT flavor, is_active FROM flavor_codes WHERE code = ?').get(code);
+  if (reg) return `${code} is ${reg.flavor} in the flavor register${reg.is_active ? '' : ' (retired)'}. Pick a code no flavor uses.`;
+  for (const r of db.prepare("SELECT flavor, legacy_codes FROM flavor_codes WHERE legacy_codes IS NOT NULL AND legacy_codes != ''").all()) {
+    const list = (() => { try { return JSON.parse(r.legacy_codes) || []; } catch { return String(r.legacy_codes).split(/[,\s]+/); } })();
+    if (list.map((x) => String(x).trim().toUpperCase()).includes(code)) return `${code} is an older code for ${r.flavor} (still on film). Pick a code no flavor uses.`;
+  }
+  return null;
+}
+
 const colorsMap = (db) => new Map(db.prepare('SELECT * FROM merch_colors').all().map((c) => [c.code, c]));
 
 /** Every prefix this catalogue already draws from. A merch GTIN uses one of these, never a new one. */
@@ -98,7 +114,7 @@ export function registerMerchRoutes(router, { getDb, canManage, hydrate, SELECT,
       styles: styles.map((s) => {
         const vs = (byStyle.get(s.style_code) || []).sort((a, b) => String(a.color_code).localeCompare(String(b.color_code)) || sizeSort(a) - sizeSort(b));
         return {
-          ...s, garment_label: GARMENTS[s.garment] || null, variants: vs,
+          ...s, garment_label: GARMENTS[s.garment] || null, label: styleLabel(s), variants: vs,
           counts: { variants: vs.length, with_gtin: vs.filter((v) => v.gtin).length, confirming: new Set(vs.filter((v) => v.color?.confirming).map((v) => v.color_code)).size },
         };
       }),
@@ -117,6 +133,26 @@ export function registerMerchRoutes(router, { getDb, canManage, hydrate, SELECT,
     const b = req.body || {};
     const garment = String(b.garment || '').trim().toUpperCase();
     if (!GARMENTS[garment]) return res.status(400).json({ field: 'garment', error: `Garment is one of ${Object.entries(GARMENTS).map(([k, v]) => `${k} (${v})`).join(', ')}.` });
+    // A DESIGN style names no flavor: its own name and a code the person picks (D-323).
+    if (b.style_kind === 'design') {
+      const design = String(b.design_name || '').trim().slice(0, 80);
+      if (!design) return res.status(400).json({ field: 'design_name', error: 'Name the design, e.g. Protein.' });
+      const code = String(b.design_code || '').trim().toUpperCase();
+      const refusal = designCodeRefusal(db, code);
+      if (refusal) return res.status(400).json({ field: 'design_code', code: 'DESIGN_CODE', error: refusal });
+      const styleCode = buildStyleCode(garment, code);
+      if (db.prepare('SELECT 1 FROM merch_styles WHERE style_code = ?').get(styleCode)) return res.status(409).json({ field: 'design_code', error: `${styleCode} already exists.` });
+      const clean = cleanStyleFields(b);
+      if (clean.error) return res.status(400).json(clean);
+      const f = { ...clean.fields, name: clean.fields.name || `ProDough ${design} ${GARMENTS[garment]}` };
+      const cols = Object.keys(f);
+      db.prepare(`INSERT INTO merch_styles (style_code, flavor, flavor_code, garment, style_kind, design_name, ${cols.join(', ')}, created_by)
+                  VALUES (?, '', ?, ?, 'design', ?, ${cols.map(() => '?').join(', ')}, ?)`)
+        .run(styleCode, code, garment, design, ...cols.map((c) => f[c]), req.user.name);
+      const row = db.prepare('SELECT * FROM merch_styles WHERE style_code = ?').get(styleCode);
+      logAudit(req.user, 'merch_style_created', 'merch_style', styleCode, { style_kind: 'design', design_name: design, code }, null, row, f.name);
+      return res.status(201).json(row);
+    }
     const reg = registerCode(db, b);
     if (reg.error) return res.status(400).json({ field: 'flavor', code: 'FLAVOR_NOT_REGISTERED', error: reg.error });
     const styleCode = buildStyleCode(garment, reg.row.code);
@@ -144,7 +180,7 @@ export function registerMerchRoutes(router, { getDb, canManage, hydrate, SELECT,
     const before = db.prepare('SELECT * FROM merch_styles WHERE style_code = ?').get(req.params.code);
     if (!before) return res.status(404).json({ error: 'No such style.' });
     const b = req.body || {};
-    for (const k of ['style_code', 'garment', 'flavor', 'flavor_code']) {
+    for (const k of ['style_code', 'garment', 'flavor', 'flavor_code', 'style_kind', 'design_name']) {
       if (b[k] !== undefined && String(b[k]) !== String(before[k])) {
         return res.status(400).json({ field: k, error: 'A style\'s code, garment and flavor are its identity. Open a new style instead.' });
       }
@@ -240,9 +276,12 @@ export function registerMerchRoutes(router, { getDb, canManage, hydrate, SELECT,
     const db = getDb();
     const style = db.prepare('SELECT * FROM merch_styles WHERE style_code = ?').get(req.params.code);
     if (!style) return res.status(404).json({ error: 'No such style.' });
-    // The flavour must still be live in the register when variants are minted.
-    const reg = registerCode(db, { flavor_code: style.flavor_code });
-    if (reg.error) return res.status(400).json({ code: 'FLAVOR_NOT_REGISTERED', error: reg.error });
+    // A flavor style's flavour must still be live in the register when variants
+    // are minted. A design style names no flavor (D-323).
+    if (style.style_kind !== 'design') {
+      const reg = registerCode(db, { flavor_code: style.flavor_code });
+      if (reg.error) return res.status(400).json({ code: 'FLAVOR_NOT_REGISTERED', error: reg.error });
+    }
     const colors = [...new Set((req.body?.colors || []).map((c) => String(c).trim().toUpperCase()))];
     const sizes = [...new Set((req.body?.sizes || []).map((s) => String(s).trim().toUpperCase()))];
     if (!colors.length || !sizes.length) return res.status(400).json({ error: 'Pick at least one color and one size.' });
@@ -262,8 +301,8 @@ export function registerMerchRoutes(router, { getDb, canManage, hydrate, SELECT,
         if (!sku) continue;
         const have = db.prepare('SELECT sku, product_type FROM products WHERE sku = ?').get(sku);
         if (have) { existing.push(sku); continue; }
-        const title = variantTitle({ flavor: style.flavor, garment: style.garment, colorName: register.get(c).name, sizeCode: s });
-        insert.run(sku, MERCH_CATEGORY, MERCH_PACK, title, style.flavor, style.name, style.style_code, c, s, req.user.name);
+        const title = variantTitle({ flavor: styleLabel(style), garment: style.garment, colorName: register.get(c).name, sizeCode: s });
+        insert.run(sku, MERCH_CATEGORY, MERCH_PACK, title, styleLabel(style), style.name, style.style_code, c, s, req.user.name);
         stampReadiness(db, sku, null, [], req.user.name);
         created.push(sku);
       }
@@ -286,7 +325,7 @@ export function registerMerchRoutes(router, { getDb, canManage, hydrate, SELECT,
     const next = buildMerchSku(v.style_code, color, v.size_code);
     if (!next) return res.status(400).json({ error: 'That color does not make a valid SKU.' });
     if (db.prepare('SELECT 1 FROM products WHERE sku = ?').get(next)) return res.status(409).json({ error: `${next} already exists.` });
-    const title = variantTitle({ flavor: style?.flavor || v.base_flavor, garment: style?.garment || parseStyleCode(v.style_code)?.garment, colorName: reg.name, sizeCode: v.size_code });
+    const title = variantTitle({ flavor: (style && styleLabel(style)) || v.base_flavor, garment: style?.garment || parseStyleCode(v.style_code)?.garment, colorName: reg.name, sizeCode: v.size_code });
     // The same row move a rename uses: every child table follows. A draft that
     // never shipped records no legacy code (the D-081 realign rule).
     db.transaction(() => moveProductRow(db, v, next, req.user, { extra: { color_code: color, flavor: title }, legacy: false }))();
@@ -405,7 +444,7 @@ export function registerMerchRoutes(router, { getDb, canManage, hydrate, SELECT,
 
 /** Rebuild the variant titles after a colour's name changes. */
 function retitleVariants(db, { color }) {
-  const rows = db.prepare("SELECT p.sku, p.size_code, s.flavor, s.garment, c.name AS color_name FROM products p JOIN merch_styles s ON s.style_code = p.style_code JOIN merch_colors c ON c.code = p.color_code WHERE p.product_type = 'merch' AND p.color_code = ?").all(color);
+  const rows = db.prepare("SELECT p.sku, p.size_code, s.flavor, s.style_kind, s.design_name, s.garment, c.name AS color_name FROM products p JOIN merch_styles s ON s.style_code = p.style_code JOIN merch_colors c ON c.code = p.color_code WHERE p.product_type = 'merch' AND p.color_code = ?").all(color);
   const upd = db.prepare("UPDATE products SET flavor = ?, updated_at = datetime('now') WHERE sku = ?");
-  for (const r of rows) upd.run(variantTitle({ flavor: r.flavor, garment: r.garment, colorName: r.color_name, sizeCode: r.size_code }), r.sku);
+  for (const r of rows) upd.run(variantTitle({ flavor: styleLabel(r), garment: r.garment, colorName: r.color_name, sizeCode: r.size_code }), r.sku);
 }

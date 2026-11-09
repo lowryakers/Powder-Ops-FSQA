@@ -10486,3 +10486,26 @@ Settings…").
 - **The PTO plan is a dropdown: 3 hr plan / 4 hr plan** (plus "Not set"), on Details and Add someone. Stored "3 hr" /
   "4 hr" (`ptoPlanValue`); "4 hr plan", "4hr" are read as the plan; anything else is refused, except a value already on
   file, which stays until somebody picks a plan. `verify:ptoplan` (24).
+
+## D-323 — A merch style can be a design with no flavor (9 Nov 2026)
+Asked by Lowry: a hoodie line with "Protein" embroidered on it belongs to no flavor.
+- **`merch_styles.style_kind`** `flavor` (default, unchanged) or `design`. A design style has `design_name` and a chosen
+  2–3 letter code, stored in `flavor_code`, with `flavor = ''`. The SKU shape is unchanged: `MCH-<G><CODE>-<COLOR>-<SIZE>`.
+- **A design code can never be a flavor code** — active, retired or one still on film (`legacy_codes`) — and the flavor
+  register refuses to issue a code a design already uses (409, naming the design). One code, one meaning.
+- Variants of a design style read "Protein Hoodie - Black / S" and carry the design name in `base_flavor` (NOT NULL);
+  merch is kept out of every food reader by `product_type`, as before. The design name is identity and is not edited.
+- `verify:merchdesign` (21; the control — `main` before this — fails).
+
+## D-324 — A SKU that won't go live is hidden or deleted; the grid copies SKU and GTIN (9 Nov 2026)
+- **Status `not_launching` ("Won't launch")**, set and cleared only by `POST /products/:sku/not-launching` (reason
+  required; `undo` restores the status it had, kept in `not_launching_from`). Typing it into the status cell, a
+  fill-down or a CSV is 400 `NOT_LAUNCHING_OWNED`, and so is leaving it that way. Supervisors/QA/admins.
+- It leaves the catalog list (a "Show N won't launch" chip brings them back), the proofer feed, Completeness and the
+  NFP / artwork worklists — `shared/product-status.js` `OFF_CATALOG`. `discontinued` keeps its old behaviour.
+- **Delete (`DELETE /products/:sku`, admin, reason) only for a SKU that has never been anywhere**: not Active, no GTIN,
+  barcode, legacy code, artwork version, proof, nutrition panel, packaging PO, GTIN reservation or stability record
+  (`deleteRefusals`, also `GET /:sku/delete-check`). A refusal names every reason and points at Won't launch. The
+  audit entry keeps the whole row and its colours.
+- **Copy buttons** beside the SKU and the GTIN on the catalog grid and the merch variant table; they never open the
+  drawer or start an edit. `verify:skuretire` (27).
