@@ -22,6 +22,7 @@ import {
   RevisionError, listRevisions, draftOf, startDraft, saveDraft, discardDraft, recordApprovedRevision, approvalState,
   linkedCourses, suggestedRevision, revisionNumberProblem, attachmentStateSql, currentAttachmentSql,
   canQaReview, qaReviewState, qaReviewRefusal, qaReviewDraft, withdrawQaReview, approvalNeedsQa,
+  docAsDraft, qaReviewDocument, withdrawDocQaReview, clearDocQaIfChanged, docQaFields,
 } from '../document-revisions.js';
 
 const clean = (v, max = 300) => { const t = String(v ?? '').trim(); return t ? t.slice(0, max) : null; };
@@ -529,22 +530,25 @@ router.post('/propose-revisions', receiveImportFiles, async (req, res) => {
 // screen — including the version snapshot and the audit entry. A second copy is
 // how one of them quietly stops writing history.
 export function applyRevision(db, doc, fields, { actor, filename }) {
-  // An APPROVED document's revision is recorded through the one writer (D-277):
-  // a paper revision applied from the worklist is an approved revision with a
-  // new number, kept beside the one it replaces, and it signals the Quality bot.
-  // Its text cannot move without a new number.
+  // An APPROVED document's text cannot move without a new revision number, and
+  // a new number from a paper upload is staged as a draft revision for QA's
+  // review and Document Control's approval (D-321) — never approved from here.
   if (isApprovedStatus(doc.status)) {
     const moved = fields.revision && !sameRevision(fields.revision, doc.revision);
     const textMoved = (fields.description !== undefined && fields.description !== null && fields.description !== '' && fields.description !== doc.description);
     if (!moved && textMoved) return { error: 'This document is approved. A change to its text needs a new revision number — tick the revision too, or start a draft revision on the document.' };
     if (moved) {
+      // A paper revision waits for QA's review like any other (D-321): it is
+      // STAGED as the document's draft revision, never approved from here.
+      // QA reviews the draft, then Document Control approves it with a password.
+      if (draftOf(db, doc.id)) return { error: 'A draft revision is already open for this document. Approve or discard it before staging another from a file.' };
       try {
-        recordApprovedRevision(db, doc, {
-          revision: fields.revision, title: fields.title || undefined, description: textMoved ? fields.description : undefined,
-          effective_date: fields.effective_date || undefined, change_summary: `Applied from an uploaded revision (${filename || 'file'})`,
-        }, { source: 'transcribed', actor });
-        if (filename) db.prepare('UPDATE sop_documents SET source_file = ? WHERE id = ?').run(filename, doc.id);
-        return { document: db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(doc.id), applied: Object.keys(fields) };
+        const draft = startDraft(db, doc, actor, { revision: fields.revision, change_summary: `Staged from an uploaded revision (${filename || 'file'})` });
+        const staged = saveDraft(db, doc, draft, {
+          ...(fields.title ? { title: fields.title } : {}), ...(textMoved ? { description: fields.description } : {}),
+          ...(fields.effective_date ? { effective_date: fields.effective_date } : {}),
+        }, actor);
+        return { document: db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(doc.id), applied: Object.keys(fields), staged };
       } catch (e) {
         if (e instanceof RevisionError) return { error: e.message };
         throw e;
@@ -587,14 +591,12 @@ router.post('/:id/apply-revision', (req, res) => {
   const db = getDb();
   const doc = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id);
   if (!doc) return res.status(404).json({ error: 'Not found' });
-  // On an approved document this records an approved revision from the signed
-  // paper (D-282): the person recording it signs with their password.
-  if (isApprovedStatus(doc.status) && !canWetSign(req.user)) return res.status(403).json({ error: 'Recording an approved revision is for QA, Document Control, supervisors and admins.' });
-  if (isApprovedStatus(doc.status) && !gateSignature(req, res, { action: 'document_revision_recorded' })) return;
+  // On an approved document a new revision number is STAGED as a draft (D-321);
+  // the signature comes later, at QA's review and at the approval.
   const r = applyRevision(db, doc, req.body?.fields || {},
     { actor: req.user, filename: req.body?.filename });
   if (r.error) return res.status(400).json({ error: r.error });
-  res.json(r.document);
+  res.json(r.staged ? { ...r.document, staged_revision: r.staged } : r.document);
 });
 
 // ── The worklist: the same proposals, kept ──────────────────────────────────
@@ -702,14 +704,12 @@ router.post('/revisions/items/:id/apply', (req, res) => {
     fields[c.field] = c.field === 'description' ? extracted.content : c.to;
   }
 
-  if (isApprovedStatus(doc.status) && !canWetSign(req.user)) return res.status(403).json({ error: 'Recording an approved revision is for QA, Document Control, supervisors and admins.' });
-  if (isApprovedStatus(doc.status) && !gateSignature(req, res, { action: 'document_revision_recorded' })) return;
   const r = applyRevision(db, doc, fields, { actor: req.user, filename: item.filename });
   if (r.error) return res.status(400).json({ error: r.error });
   db.prepare(`UPDATE document_revision_items SET state = 'applied', applied_fields = ?,
     decided_by = ?, decided_at = datetime('now') WHERE id = ?`)
     .run(JSON.stringify(Object.keys(fields)), req.user.name, item.id);
-  res.json({ ok: true, document: r.document, applied: r.applied });
+  res.json({ ok: true, document: r.document, applied: r.applied, staged_revision: r.staged || null });
 });
 
 // POST /revisions/items/:id/skip — a decision, with a reason, not a delete.
@@ -831,7 +831,35 @@ router.get('/:id/revisions', (req, res) => {
     // QA's review comes before Document Control's approval (D-319).
     can_qa_review: canQaReview(req.user) && !isBotAccount(db, req.user),
     owner: doc.owner || null,
+    // A document never approved has no draft revision; QA's review of it sits on
+    // the document until its first approval (D-321).
+    first_review: isApprovedStatus(doc.status) || doc.status === 'archived' ? null : {
+      qa_reviewed_by: doc.qa_reviewed_by, qa_reviewed_at: doc.qa_reviewed_at, qa_review_meaning: doc.qa_review_meaning,
+      qa_review_state: qaReviewState(docAsDraft(doc)), has_text: !!String(doc.description || '').trim(),
+    },
   });
+});
+
+// QA's review of a NEW document before its first approval (D-321). The same
+// rules as a draft revision's: a QA supervisor, not the owner, their password asked last.
+router.post('/:id/qa-signoff', (req, res) => {
+  const db = getDb();
+  const doc = docOr404(db, req.params.id, res); if (!doc) return;
+  if (isBotAccount(db, req.user)) return res.status(403).json({ error: 'A bot account cannot give a QA review.', code: 'bot_account_cannot_approve' });
+  if (doc.status === 'archived') return res.status(409).json({ error: 'This document is no longer in use — reinstate it first.' });
+  if (isApprovedStatus(doc.status)) return res.status(409).json({ error: 'This document is approved. A change to it is a draft revision, and QA reviews the draft.', use: 'draft_revision' });
+  const refusal = qaReviewRefusal(doc, docAsDraft(doc), req.user);
+  if (refusal) return res.status(refusal.status).json({ error: refusal.error.replace(/draft/g, 'document'), code: refusal.code });
+  if (!gateSignature(req, res, { action: 'document_qa_review' })) return;
+  const after = qaReviewDocument(db, doc, req.user);
+  res.json({ ...withEquipment(after), qa_review_state: 'signed' });
+});
+
+router.delete('/:id/qa-signoff', (req, res) => {
+  const db = getDb();
+  const doc = docOr404(db, req.params.id, res); if (!doc) return;
+  try { res.json(withEquipment(withdrawDocQaReview(db, doc, req.user, req.body?.reason))); }
+  catch (e) { revErr(res, e); }
 });
 
 router.post('/:id/revisions', (req, res) => {
@@ -944,7 +972,12 @@ router.post('/', (req, res) => {
     return res.status(400).json({ error: 'The approver is the person signing. A typed approver name is not accepted.', code: 'TYPED_APPROVER' });
   }
   if (approving && !canWetSign(req.user)) return res.status(403).json({ error: 'Approving a controlled document is for QA, Document Control, supervisors and admins.' });
-  if (approving && !gateSignature(req, res, { action: 'document_approve' })) return;
+  // QA reviews a document before it is approved (D-321): a new document is
+  // filed as a draft, a QA supervisor reviews it, then it is approved.
+  if (approving) {
+    return res.status(409).json({ code: 'QA_REVIEW_REQUIRED', use: 'file_as_draft',
+      error: 'A new document is filed as a draft first. A QA supervisor reviews it, then it can be approved.' });
+  }
   const approvedBy = null;
   const approvedAt = null;
 
@@ -1058,6 +1091,13 @@ router.put('/:id', (req, res) => {
     return res.status(400).json({ error: 'The approver is the person signing. A typed approver name is not accepted.', code: 'TYPED_APPROVER' });
   }
   if (becomingApproved && !canWetSign(req.user)) return res.status(403).json({ error: 'Approving a controlled document is for QA, Document Control, supervisors and admins.' });
+  // The first approval waits for QA's review of the text as it will be approved (D-321).
+  if (becomingApproved) {
+    const projected = docAsDraft({ ...existing, title: title || existing.title,
+      description: content ?? existing.description, description_es: content_es !== undefined ? content_es : existing.description_es });
+    const needsQa = approvalNeedsQa(projected, req.user);
+    if (needsQa) return res.status(needsQa.status).json({ error: needsQa.error.replace(/draft/g, 'document'), code: needsQa.code });
+  }
   if (becomingApproved && !gateSignature(req, res, { action: 'document_approve' })) return;
   const approvedBy = existing.approved_by;
   const approvedAt = existing.approved_at;
@@ -1089,13 +1129,15 @@ router.put('/:id', (req, res) => {
     .run(uuid(), req.params.id, updated.revision, req.user.name, _change_summary || (isMinor ? 'Minor edit' : 'Updated'), JSON.stringify(updated), isMinor ? 1 : 0);
   if (becomingApproved) {
     try {
-      recordApprovedRevision(db, updated, { revision: updated.revision, change_summary: _change_summary || null },
+      recordApprovedRevision(db, updated, { revision: updated.revision, change_summary: _change_summary || null, qa: docQaFields(updated) },
         { source: 'first_approval', actor: req.user });
       if (newStatus === 'under_review') db.prepare("UPDATE sop_documents SET status = 'under_review' WHERE id = ?").run(req.params.id);
     } catch (e) {
       if (e instanceof RevisionError) return res.status(e.status).json({ error: e.message, ...e.extra });
       throw e;
     }
+    updated = withEquipment(db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id));
+  } else if (!isApprovedStatus(existing.status) && clearDocQaIfChanged(db, existing, req.user)) {
     updated = withEquipment(db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(req.params.id));
   }
 

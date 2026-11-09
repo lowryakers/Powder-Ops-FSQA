@@ -360,6 +360,21 @@ function ReviewCard({ r, tr }) {
 
 // Details an admin can correct: the review clock (a test review logged by
 // mistake), hire date, PTO plan, team. Every save is the audited PUT.
+// The plant's two PTO plans (D-322), picked from a list. A value already on
+// file that is neither stays selectable so opening the form does not change it.
+function PtoPlanSelect({ id, value, onChange, tr }) {
+  const odd = value && !['3 hr', '4 hr'].includes(value);
+  return (
+    <select id={id} value={value} onChange={e => onChange(e.target.value)} data-pto-plan-select
+      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+      <option value="">{tr('Not set')}</option>
+      <option value="3 hr">{tr('3 hr plan')}</option>
+      <option value="4 hr">{tr('4 hr plan')}</option>
+      {odd && <option value={value}>{value}</option>}
+    </select>
+  );
+}
+
 function DetailsEditor({ data, onSaved, tr }) {
   const [form, setForm] = useState({
     team: data.team || '', hire_date: data.hire_date || '',
@@ -374,9 +389,10 @@ function DetailsEditor({ data, onSaved, tr }) {
   const save = async () => {
     setBusy(true); setError('');
     try {
+      // A linked row's team and supervisor flag come from Settings: not sent (D-322).
       await apiPut(`/pay/employees/${data.id}`, {
-        team: form.team || null, hire_date: form.hire_date || null,
-        pto_plan: form.pto_plan || null, is_supervisor: form.is_supervisor,
+        ...(data.linked ? {} : { team: form.team || null, is_supervisor: form.is_supervisor }),
+        hire_date: form.hire_date || null, pto_plan: form.pto_plan || null,
         active: form.active, last_reviewed_at: form.last_reviewed_at || null,
         last_increase_at: form.last_increase_at || null, notes: form.notes || null,
       });
@@ -396,9 +412,19 @@ function DetailsEditor({ data, onSaved, tr }) {
   return (
     <div className="space-y-2">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        {field(tr('Team'), 'team')}
+        {data.linked ? (
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">{tr('Team')}</label>
+            <p className="px-3 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg bg-gray-50" data-team-from-settings>
+              {data.team || '—'} <span className="text-[11px]">({tr('follows their department in Settings')})</span>
+            </p>
+          </div>
+        ) : field(tr('Team'), 'team')}
         {field(tr('Hire date'), 'hire_date', 'date')}
-        {field(tr('PTO plan'), 'pto_plan', 'text', tr('e.g. 3 hr / 4 hr'))}
+        <div>
+          <label htmlFor={`pto-${data.id}`} className="block text-xs font-medium text-gray-700 mb-1">{tr('PTO plan')}</label>
+          <PtoPlanSelect id={`pto-${data.id}`} value={form.pto_plan} onChange={v => set('pto_plan', v)} tr={tr} />
+        </div>
         {field(tr('Last review'), 'last_reviewed_at', 'date')}
         {field(tr('Last raise'), 'last_increase_at', 'date')}
         <div className="flex items-end gap-4 pb-1">
@@ -420,7 +446,7 @@ function DetailsEditor({ data, onSaved, tr }) {
       <input value={form.notes} onChange={e => set('notes', e.target.value)} placeholder={tr('Notes')}
         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
       {error && <p className="text-xs text-red-600">{error}</p>}
-      <button onClick={save} disabled={busy}
+      <button onClick={save} disabled={busy} data-details-save
         className="px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-semibold hover:bg-powder-700 disabled:opacity-50">
         {busy ? tr('Saving…') : tr('Save details')}
       </button>
@@ -870,9 +896,8 @@ function AddPersonModal({ onClose, onAdded, tr }) {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder={tr('blank = salaried')} />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">{tr('PTO plan')}</label>
-            <input value={form.pto_plan} onChange={e => set('pto_plan', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder={tr('e.g. 3 hr / 4 hr')} />
+            <label htmlFor="pto-new" className="block text-xs font-medium text-gray-700 mb-1">{tr('PTO plan')}</label>
+            <PtoPlanSelect id="pto-new" value={form.pto_plan} onChange={v => set('pto_plan', v)} tr={tr} />
           </div>
         </div>
         <label className="flex items-center gap-1.5 text-sm text-gray-700">
@@ -970,7 +995,7 @@ const PAGE_STRINGS = [
   'Pay Tracking', 'Roster', 'Evaluation', 'Vision & Values', 'Sync with Settings',
   'Employee', 'Team', 'Rate', 'Annual', 'Hired', 'Last raise', 'Last review', 'Days', 'Review',
   'Due', 'Soon', 'OK', 'Supervisor', 'Salaried', 'No team',
-  'PTO plan', 'Due for the 4-hour PTO plan', 'reaches two years on', 'supervisor', 'two years on', 'and',
+  'PTO plan', 'Not set', '3 hr plan', '4 hr plan', 'follows their department in Settings', 'Due for the 4-hour PTO plan', 'reaches two years on', 'supervisor', 'two years on', 'and',
   '4-hour plan', 'plan now', 'not set', 'change it in ADP, then set the PTO plan to "4 hr" here', 'Open and set the plan',
   '4 hr due', '4 hr soon', 'Due for the 4-hour PTO plan (supervisor, or two years here). Change it in ADP, then set the PTO plan to "4 hr".',
   'Due for the 4-hour plan — change it in ADP, then set the PTO plan to "4 hr" under Details.',

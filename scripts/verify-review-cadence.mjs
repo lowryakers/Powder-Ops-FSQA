@@ -1,3 +1,4 @@
+import { fileApprovedDoc } from './lib/qa-review-fixture.mjs';
 // The three "date from now" ratchets, executed against a live server.
 //
 // Document review, supplier annual review and the daily checklists each
@@ -44,8 +45,10 @@ const docRow = (id) => { const d = DB(); const r = d.prepare('SELECT review_due,
 const setDue = (id, due) => { const d = DB(); d.prepare('UPDATE sop_documents SET review_due = ? WHERE id = ?').run(due, id); d.close(); };
 
 console.log('\nDocument review from the Review Center (reviewed early)');
-const doc = await J(await post('/documents', { doc_number: 'SOP 901', title: 'Cadence test', category: 'quality', revision: 'V1',
-  status: 'active', review_frequency: 'annual', review_due: day(20) }));
+const put = (p, b) => req(p, { method: 'PUT', body: JSON.stringify(b) });
+const send = async (m, p, b) => J(await (m === 'POST' ? post : put)(p, b));
+const doc = await fileApprovedDoc(send, process.env.DBPATH, { doc_number: 'SOP 901', title: 'Cadence test', category: 'quality', revision: 'V1',
+  review_frequency: 'annual', review_due: day(20) });
 t('document created with a review due in 20 days', doc?.id && docRow(doc.id)?.review_due === day(20), JSON.stringify(doc).slice(0, 120));
 let r = await J(await post('/doc-review/act', { source: 'document-review', ids: [doc.id] }));
 t('marked reviewed', r?.done?.includes(doc.id), JSON.stringify(r));

@@ -20,12 +20,15 @@
 // Control: run against `main` before D-306. The wi-edit grant does not exist,
 // so the token cannot be given it, and the first WI revision is 403.
 import Database from 'better-sqlite3';
-import { markQaReviewed } from './lib/qa-review-fixture.mjs';
+import { markQaReviewed, fileApprovedDoc } from './lib/qa-review-fixture.mjs';
 
 const PORT = Number(process.env.PORT || 5185);
 const URL = `http://localhost:${PORT}`;
 const DBP = process.env.DBPATH || process.env.DB_PATH;
 const PW = 'DocBot2026!!';
+
+// File a document into force the D-321 way: draft → QA review marked → approved with a password.
+const fileDoc = async (body, tok) => ({ status: 201, json: await fileApprovedDoc((m, p, b) => call(m, p, b, tok), DBP, { signature_password: PW, ...body }) });
 let pass = 0, fail = 0;
 const t = (n, ok, d = '') => { if (ok) { pass++; console.log(`  ✓ ${n}`); } else { fail++; console.log(`  ✗ ${n}${d ? ' — ' + d : ''}`); } };
 const q = (sql, ...a) => { const d = new Database(DBP, { readonly: true }); try { return d.prepare(sql).all(...a); } finally { d.close(); } };
@@ -77,7 +80,7 @@ t('an SOP-only, a wi-edit and a jd-edit token minted on the fresh database', [SO
 t('the wi-edit and jd-edit grants were accepted', WI.gstatus === 200 && JD.gstatus === 200, `${WI.gstatus} ${JD.gstatus}`);
 
 // Documents a person filed and approved with a password.
-const file = async (body) => (await call('POST', '/documents', { category: 'quality', status: 'active', signature_password: PW, ...body }, admin)).json;
+const file = async (body) => (await fileDoc({ category: 'quality', ...body }, admin)).json;
 const wiDoc = await file({ doc_type: 'work_instruction', doc_number: 'WI005', title: 'Hand Filling', revision: 'V2', content: 'WI text V2.' });
 const jdDoc = await file({ doc_type: 'job_description', doc_number: 'JD 07', title: 'Batching Lead', revision: 'V1', content: 'JD text V1.' });
 const sopDoc = await file({ doc_type: 'sop', doc_number: 'SOP-202', title: 'Glass', revision: 'V2', content: 'SOP text.' });

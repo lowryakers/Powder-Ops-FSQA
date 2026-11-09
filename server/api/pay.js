@@ -247,6 +247,19 @@ const SETTINGS_OWNED = ['name', 'team', 'is_supervisor'];
 
 export const WORKER_TYPES = ['employee', 'contractor'];
 
+// The plant has TWO PTO plans (D-322): 3 hr and 4 hr. Picked from a list, never
+// typed. "3 hr plan", "3hr", "4 Hr" all mean the plan and are stored as "3 hr" /
+// "4 hr" (the spelling ptoPlanState and the org-chart import already use). A
+// value already on file that is neither is kept as it is until somebody picks a plan.
+export const PTO_PLANS = ['3 hr', '4 hr'];
+export function ptoPlanValue(raw, existing) {
+  if (raw === null || raw === undefined || String(raw).trim() === '') return { value: null };
+  const m = String(raw).match(/^\s*([34])\s*h/i);
+  if (m) return { value: `${m[1]} hr` };
+  if (existing != null && String(raw) === String(existing)) return { value: existing };
+  return { error: 'The PTO plan is 3 hr or 4 hr.' };
+}
+
 /**
  * What a review is FOR.
  *
@@ -287,6 +300,8 @@ router.post('/employees', (req, res) => {
     return res.status(409).json({ error: `${name} is already on the roster.` });
   }
   const workerType = WORKER_TYPES.includes(req.body?.worker_type) ? req.body.worker_type : 'employee';
+  const plan = ptoPlanValue(req.body?.pto_plan, null);
+  if (plan.error) return res.status(400).json({ error: plan.error });
   const id = uuid();
   db.prepare(`INSERT INTO pay_employees (id, user_id, name, team, is_supervisor, pay_rate, hire_date, pto_plan,
     worker_type, contractor_company, ends_on)
@@ -294,7 +309,7 @@ router.post('/employees', (req, res) => {
     id, req.body?.user_id || null, name, req.body?.team || null,
     req.body?.is_supervisor ? 1 : 0,
     req.body?.pay_rate != null && req.body.pay_rate !== '' ? Number(req.body.pay_rate) : null,
-    req.body?.hire_date || null, req.body?.pto_plan || null,
+    req.body?.hire_date || null, plan.value,
     workerType, req.body?.contractor_company || null, req.body?.ends_on || null);
   const created = db.prepare('SELECT * FROM pay_employees WHERE id = ?').get(id);
   logAudit(req.user, 'create', 'pay_employee', id, { name }, null, created, name);
@@ -316,6 +331,12 @@ router.put('/employees/:id', (req, res) => {
   // show the account's department back on the next read, which reads as the
   // save having failed for no reason anybody can see.
   if (existing.user_id) {
+    // The SAME value Settings already gives is not a change, so it is dropped,
+    // not refused (D-322): the Details form sends the team and supervisor flag it
+    // was shown, and refusing them blocked every save on a linked row.
+    const current = withLinkedNames(db, [existing])[0];
+    const sameAs = (f, v) => (f === 'is_supervisor' ? !!v === !!current[f] : String(v ?? '').trim() === String(current[f] ?? '').trim());
+    for (const f of SETTINGS_OWNED) if (req.body[f] !== undefined && sameAs(f, req.body[f])) delete req.body[f];
     const owned = SETTINGS_OWNED.filter(f => req.body[f] !== undefined);
     if (owned.length) {
       return res.status(400).json({
@@ -323,6 +344,11 @@ router.put('/employees/:id', (req, res) => {
         settings_owned: owned,
       });
     }
+  }
+  if (req.body.pto_plan !== undefined) {
+    const plan = ptoPlanValue(req.body.pto_plan, existing.pto_plan);
+    if (plan.error) return res.status(400).json({ error: plan.error });
+    req.body.pto_plan = plan.value;
   }
   const updates = [];
   const values = [];

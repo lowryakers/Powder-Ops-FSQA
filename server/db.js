@@ -5082,6 +5082,10 @@ function runMigrations() {
   addColumnIfMissing('document_revisions', 'qa_reviewed_at', 'TEXT');
   addColumnIfMissing('document_revisions', 'qa_review_meaning', 'TEXT');
   addColumnIfMissing('document_revisions', 'qa_review_hash', 'TEXT');
+  // A NEW document's first approval waits for QA's review too (D-321). The review
+  // sits on the document row until the first approval, which copies it onto the
+  // approved revision and clears it here.
+  for (const c of ['qa_reviewed_by', 'qa_reviewed_by_id', 'qa_reviewed_at', 'qa_review_meaning', 'qa_review_hash']) addColumnIfMissing('sop_documents', c, 'TEXT');
   // A file uploaded FOR a draft revision belongs to that draft (D-304): it is not
   // the live document's file until the draft is approved, and a discarded
   // draft's file never becomes one. revision_id is nulled before a draft row is

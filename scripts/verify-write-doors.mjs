@@ -106,7 +106,8 @@ t('QA decides it with their password', r.status === 200, String(r.status));
   t('and the record names the CALLER, not the body', d?.approved_by === 'Doors Admin', d?.approved_by); }
 
 console.log('\nA version row means one thing whichever door wrote it');
-const doc = await J(await post('/documents', { doc_number: 'SOP 777', title: 'Doors procedure', category: 'quality', revision: 'V1', status: 'active' }));
+// Not approved yet, so a paper revision edits it in place (an approved one stages a draft for QA, D-321).
+const doc = await J(await post('/documents', { doc_number: 'SOP 777', title: 'Doors procedure', category: 'quality', revision: 'V1' }));
 const versions = () => { const db = DB(); const v = db.prepare('SELECT revision, snapshot, change_summary FROM sop_versions WHERE sop_id = ? ORDER BY rowid').all(doc.id); db.close(); return v.map(x => ({ ...x, snapshot: JSON.parse(x.snapshot) })); };
 const before = versions();
 r = await post(`/documents/${doc.id}/apply-revision`, { fields: { revision: 'V2' }, filename: 'SOP_777_V2.pdf' });

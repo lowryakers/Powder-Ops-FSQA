@@ -16,6 +16,7 @@
 // Caller sets PORT + DBPATH (verify-all does).
 // Control: drop the competence password gate (signCompetenceOr) — a tick saves with no password.
 import Database from 'better-sqlite3';
+import { markDocQaReviewed } from './lib/qa-review-fixture.mjs';
 import { execFileSync } from 'child_process';
 import { writeFileSync, mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
@@ -62,15 +63,23 @@ const pdfText = (buf) => {
 };
 
 console.log('\n── 1–3. a controlled document is approved with a password ──');
-let r = await call('POST', '/documents', { doc_type: 'work_instruction', doc_number: 'WI 008', title: 'Scale Cleaning', category: 'quality', revision: 'V3', status: 'active', content: 'Wipe the pan.' }, dc);
-t('filing a document as approved without a password is refused', r.status === 403 && r.json?.signature_required === true, `${r.status}`);
-r = await call('POST', '/documents', { doc_type: 'work_instruction', doc_number: 'WI 008', title: 'Scale Cleaning', category: 'quality', revision: 'V3', status: 'active', content: 'Wipe the pan.', approved_by: 'Somebody Else', signature_password: PW }, dc);
+const wi = { doc_type: 'work_instruction', doc_number: 'WI 008', title: 'Scale Cleaning', category: 'quality', revision: 'V3', content: 'Wipe the pan.' };
+let r = await call('POST', '/documents', { ...wi, status: 'active', signature_password: PW }, dc);
+t('filing a NEW document straight into force is refused — QA reviews it first (D-321)', r.status === 409 && r.json?.code === 'QA_REVIEW_REQUIRED', `${r.status}`);
+r = await call('POST', '/documents', wi, dc);
+let doc = r.json;
+r = await call('PUT', `/documents/${doc.id}`, { status: 'active', signature_password: PW }, dc);
+t('approving it before QA has reviewed it is refused', r.status === 409 && r.json?.code === 'QA_REVIEW_REQUIRED', `${r.status}`);
+markDocQaReviewed(DBP, doc.id);
+r = await call('PUT', `/documents/${doc.id}`, { status: 'active' }, dc);
+t('approving a document without a password is refused', r.status === 403 && r.json?.signature_required === true, `${r.status}`);
+r = await call('PUT', `/documents/${doc.id}`, { status: 'active', approved_by: 'Somebody Else', signature_password: PW }, dc);
 t('a typed approver name is refused', r.status === 400 && r.json?.code === 'TYPED_APPROVER', `${r.status}`);
-r = await call('POST', '/documents', { doc_type: 'work_instruction', doc_number: 'WI 008', title: 'Scale Cleaning', category: 'quality', revision: 'V3', status: 'active', content: 'Wipe the pan.', signature_password: PW }, op);
+r = await call('PUT', `/documents/${doc.id}`, { status: 'active', signature_password: PW }, op);
 t('an operator cannot approve a document, even with a password', r.status === 403, `${r.status}`);
-r = await call('POST', '/documents', { doc_type: 'work_instruction', doc_number: 'WI 008', title: 'Scale Cleaning', category: 'quality', revision: 'V3', status: 'active', content: 'Wipe the pan.', signature_password: PW }, dc);
-const doc = r.json;
-t('with the password it is approved, and the approver is the person signed in', r.status === 201 && doc?.status === 'active' && doc?.approved_by === 'Dana Control', `${r.status} ${doc?.approved_by}`);
+r = await call('PUT', `/documents/${doc.id}`, { status: 'active', signature_password: PW }, dc);
+doc = r.json;
+t('with the password it is approved, and the approver is the person signed in', r.status === 200 && doc?.status === 'active' && doc?.approved_by === 'Dana Control', `${r.status} ${doc?.approved_by}`);
 r = await call('GET', `/documents/${doc.id}/revisions`, null, dc);
 const v3 = r.json?.revisions?.find(x => x.revision === 'V3');
 t('the approval stores name, date and time, and meaning', v3?.approved_by === 'Dana Control' && /T\d\d:\d\d/.test(v3?.approved_at || '') && v3?.approved_meaning === 'Approved');

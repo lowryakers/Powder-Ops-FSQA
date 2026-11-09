@@ -18,7 +18,7 @@
 // Control: remove the PUT guard in api/documents.js — "an approved document's
 // text cannot be edited in place" fails, and the draft no longer stands apart.
 import http from 'http';
-import { markQaReviewed } from './lib/qa-review-fixture.mjs';
+import { markQaReviewed, markDocQaReviewed, fileApprovedDoc } from './lib/qa-review-fixture.mjs';
 import Database from 'better-sqlite3';
 
 // Signing asks for the signer's password (D-282). Everyone in this script has
@@ -64,14 +64,16 @@ const call = async (m, p, b, tok) => {
   let json = null; try { json = await r.json(); } catch { /* not json */ }
   return { status: r.status, json };
 };
+// File a document into force the D-321 way: draft → QA review marked → approved (call() signs).
+const fileDoc = async (body, tok) => ({ status: 201, json: await fileApprovedDoc((m, p, b) => call(m, p, b, tok), DBP, body) });
 await call('POST', '/users/set-password', { user_id: 'dr-dc', password: 'Control2026!!', setup_code: 'SC-dr-dc' });
 const login = await call('POST', '/users/login', { name: 'Dana Control', password: 'Control2026!!' });
 const tok = login.json?.token;
 t('Document Control signed in', !!tok);
 
 // An approved SOP at V3, a course built on it, and one person trained on V3.
-let r = await call('POST', '/documents', { doc_type: 'sop', doc_number: 'SOP 900', title: 'Allergen Changeover', category: 'quality',
-  revision: 'V3', status: 'active', content: '# Purpose\nOld text.' }, tok);
+let r = await fileDoc({ doc_type: 'sop', doc_number: 'SOP 900', title: 'Allergen Changeover', category: 'quality',
+  revision: 'V3', content: '# Purpose\nOld text.' }, tok);
 const doc = r.json;
 t('an approved SOP at V3', r.status === 201 && doc.status === 'active' && doc.revision === 'V3');
 r = await call('POST', '/training/courses', { code: 'SOP900', title: 'Allergen Changeover Training', sop_id: doc.id, retrain_on_doc_change: true }, tok);
@@ -171,9 +173,18 @@ console.log('\n── the revision worklist goes through the same writer ──'
 r = await call('POST', `/documents/${doc.id}/apply-revision`, { fields: { description: 'Text changed with no new number' } }, tok);
 t('new text with no new number is refused', r.status === 400 && /new revision number/.test(r.json?.error || ''));
 r = await call('POST', `/documents/${doc.id}/apply-revision`, { fields: { revision: 'V5', description: '# Purpose\nV5 from paper.' }, filename: 'SOP_900_V5.pdf' }, tok);
-t('a paper revision with a new number is recorded', r.status === 200 && r.json?.revision === 'V5');
+t('a paper revision with a new number is STAGED as a draft, not approved (D-321)', r.status === 200 && r.json?.revision === 'V4' && r.json?.staged_revision?.revision === 'V5' && r.json?.staged_revision?.status === 'draft', JSON.stringify(r.json).slice(0, 160));
+t('…carrying the paper\'s text', r.json?.staged_revision?.description === '# Purpose\nV5 from paper.');
+const staged = r.json.staged_revision;
+r = await call('POST', `/documents/${doc.id}/apply-revision`, { fields: { revision: 'V6' }, filename: 'SOP_900_V6.pdf' }, tok);
+t('a second paper revision while one is staged is refused', r.status === 400 && /already open/.test(r.json?.error || ''));
+r = await call('POST', `/documents/${doc.id}/revisions/${staged.id}/approve`, {}, tok);
+t('the staged paper revision cannot be approved before QA review', r.status === 409 && r.json?.code === 'QA_REVIEW_REQUIRED');
+markQaReviewed(DBP, staged.id);
+r = await call('POST', `/documents/${doc.id}/revisions/${staged.id}/approve`, { signature_password: 'Control2026!!' }, tok);
+t('after QA review it is approved', r.status === 200 && r.json?.document?.revision === 'V5', `${r.status} ${r.json?.error}`);
 await waitFor(2);
-t('…and signals the Quality bot too', received[1]?.body?.new_revision === 'V5' && received[1]?.body?.old_revision === 'V4' && received[1]?.body?.source === 'transcribed');
+t('…and signals the Quality bot too', received[1]?.body?.new_revision === 'V5' && received[1]?.body?.old_revision === 'V4');
 const rows = (await call('GET', `/documents/${doc.id}/revisions`, null, tok)).json.revisions.slice().reverse();
 t('history: V3 and V4 superseded, V5 in force', rows.map(x => `${x.revision}:${x.status}`).join(',') === 'V3:superseded,V4:superseded,V5:approved', JSON.stringify(rows));
 
@@ -181,6 +192,14 @@ console.log('\n── a document not yet approved edits freely, and its first ap
 const fresh = (await call('POST', '/documents', { doc_type: 'sop', doc_number: 'SOP 901', title: 'Glass Policy', category: 'quality', revision: '1', status: 'draft', content: 'Draft.' }, tok)).json;
 r = await call('PUT', `/documents/${fresh.id}`, { content: 'Draft, edited.', revision: '1.1' }, tok);
 t('a draft document edits in place', r.status === 200 && r.json?.revision === '1.1');
+r = await call('POST', '/documents', { doc_type: 'sop', doc_number: 'SOP 902', title: 'Straight in', category: 'quality', revision: '1', status: 'active', content: 'x' }, tok);
+t('a new document cannot be filed straight into force (D-321)', r.status === 409 && r.json?.code === 'QA_REVIEW_REQUIRED');
+r = await call('PUT', `/documents/${fresh.id}`, { status: 'active' }, tok);
+t('its first approval waits for QA review', r.status === 409 && r.json?.code === 'QA_REVIEW_REQUIRED');
+markDocQaReviewed(DBP, fresh.id);
+r = await call('PUT', `/documents/${fresh.id}`, { content: 'Draft, edited again.' }, tok);
+t('an edit after QA review takes the review off', q('SELECT qa_reviewed_at FROM sop_documents WHERE id = ?', fresh.id)[0].qa_reviewed_at === null);
+markDocQaReviewed(DBP, fresh.id);
 r = await call('PUT', `/documents/${fresh.id}`, { status: 'active' }, tok);
 await waitFor(3);
 t('its first approval is recorded and signalled', r.status === 200 && r.json?.status === 'active' && received[2]?.body?.new_revision === '1.1' && received[2]?.body?.old_revision === null);
@@ -212,6 +231,26 @@ await page.keyboard.press('Enter');
 await page.waitForTimeout(1500);
 t('approving through the password prompt puts V6 in force', q('SELECT revision FROM sop_documents WHERE id = ?', doc.id)[0]?.revision === 'V6');
 t('the panel shows the history', await page.locator('[data-rev-history] li').count() >= 4);
+
+// A NEW document: QA reviews it on the document, then it is approved (D-321).
+const nd = (await call('POST', '/documents', { doc_type: 'sop', doc_number: 'SOP 903', title: 'Brand New', category: 'quality', revision: 'V1', content: 'New text.' }, tok)).json;
+await page.goto(`${URL}/?tab=sops&doc=${nd.id}`);
+await page.waitForSelector('[data-first-approval]', { timeout: 15000 }).catch(() => {});
+t('a new document shows "Not approved yet", QA review not done', await page.locator('[data-first-approval] [data-rev-qa-state="none"]').count() === 1);
+t('…and its Approve waits for QA review', await page.locator('[data-first-approve]').isDisabled());
+markDocQaReviewed(DBP, nd.id);
+await page.goto(`${URL}/?tab=sops&doc=${nd.id}`);
+await page.waitForSelector('[data-first-approval] [data-rev-qa-state="signed"]', { timeout: 15000 }).catch(() => {});
+await page.locator('[data-first-approve]').click();
+const pw2 = page.locator('input[type="password"]').last();
+await pw2.waitFor({ timeout: 5000 }).catch(() => {});
+await pw2.click();
+await page.keyboard.type('Control2026!!');
+await page.keyboard.press('Enter');
+await page.waitForTimeout(1500);
+const ndRow = q('SELECT status FROM sop_documents WHERE id = ?', nd.id)[0];
+const ndRev = q("SELECT qa_reviewed_by FROM document_revisions WHERE document_id = ? AND status = 'approved'", nd.id)[0];
+t('once QA has reviewed it, Approve puts it in force, and the approval carries the QA review', ndRow?.status === 'active' && ndRev?.qa_reviewed_by === 'QA Review Fixture', JSON.stringify({ ndRow, ndRev }));
 await page.goto(`${URL}/?tab=training&view=courses`);
 await page.waitForTimeout(2500);
 t('the course card shows "Needs update" for V6', await page.locator('[data-course-rev="SOP900"] [data-course-needs-update]').count() === 1);
@@ -226,13 +265,13 @@ hook.close();
 console.log('\n── V numbers (D-280) ──');
 {
   // A document filed before revisions were controlled: the default "1.0", a signed copy that says V3.
-  let x = await call('POST', '/documents', { doc_type: 'work_instruction', doc_number: 'WI 008', title: 'Scale Cleaning', category: 'quality', revision: '1.0', status: 'active', content: 'x' }, tok);
+  let x = await fileDoc({ doc_type: 'work_instruction', doc_number: 'WI 008', title: 'Scale Cleaning', category: 'quality', revision: '1.0', content: 'x' }, tok);
   const wi = x.json;
   { const d = new Database(DBP); d.prepare(`INSERT INTO document_attachments (id, document_id, kind, filename, storage_key, revision) VALUES ('att-wi8', ?, 'signed_original', 'WI008_Scale_Cleaning_V3.pdf', 'k/wi8', 'V3')`).run(wi.id); d.close(); }
   x = await call('GET', `/documents/${wi.id}/revisions`, null, tok);
   t('WI 008 at "1.0" with a signed V3 copy is offered V4, not "2.0"', x.json?.suggested_revision === 'V4', x.json?.suggested_revision);
   t('…and its stored revision is left as it was', q('SELECT revision FROM sop_documents WHERE id = ?', wi.id)[0].revision === '1.0');
-  x = await call('POST', '/documents', { doc_type: 'work_instruction', doc_number: 'WI 077', title: 'Plain', category: 'quality', revision: '1.0', status: 'active', content: 'x' }, tok);
+  x = await fileDoc({ doc_type: 'work_instruction', doc_number: 'WI 077', title: 'Plain', category: 'quality', revision: '1.0', content: 'x' }, tok);
   const plain = (await call('GET', `/documents/${x.json.id}/revisions`, null, tok)).json;
   t('a "1.0" document with nothing else to go on is offered V2', plain?.suggested_revision === 'V2', plain?.suggested_revision);
   x = await call('POST', '/documents', { doc_type: 'work_instruction', doc_number: 'WI 078', title: 'Unnumbered', category: 'quality', content: 'x' }, tok);

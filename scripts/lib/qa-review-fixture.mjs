@@ -21,3 +21,35 @@ export function markQaReviewed(dbPath, revisionId, { by = 'QA Review Fixture', b
       .run(by, byId, new Date().toISOString(), hash, revisionId);
   } finally { db.close(); }
 }
+
+// A NEW document QA has reviewed before its first approval (D-321): the review
+// sits on the document row until the approval copies it onto the revision.
+export function markDocQaReviewed(dbPath, docId, { by = 'QA Review Fixture', byId = 'qa-review-fixture' } = {}) {
+  const db = new Database(dbPath);
+  try {
+    const d = db.prepare('SELECT * FROM sop_documents WHERE id = ?').get(docId);
+    if (!d) throw new Error(`markDocQaReviewed: no document ${docId}`);
+    const row = { ...d, document_id: d.id };
+    const hash = createHash('sha256').update(JSON.stringify(QA_HASHED.map(k => row[k] ?? null))).digest('hex');
+    db.prepare(`UPDATE sop_documents SET qa_reviewed_by = ?, qa_reviewed_by_id = ?, qa_reviewed_at = ?,
+      qa_review_meaning = 'Reviewed and accepted by Quality', qa_review_hash = ? WHERE id = ?`)
+      .run(by, byId, new Date().toISOString(), hash, docId);
+  } finally { db.close(); }
+}
+
+/**
+ * File a document straight into force the way the plant now must (D-321): as a
+ * draft, QA's review marked, then moved into force with the approver's password.
+ * `send(method, path, body)` resolves to the parsed JSON body (or { status, json }).
+ */
+export async function fileApprovedDoc(send, dbPath, body) {
+  const { status = 'active', signature_password, signature_name, ...rest } = body;
+  const unwrap = (r) => (r && r.json !== undefined && r.status !== undefined ? r.json : r);
+  const created = unwrap(await send('POST', '/documents', { ...rest, status: 'draft' }));
+  if (!created?.id) throw new Error(`fileApprovedDoc: create failed ${JSON.stringify(created)}`);
+  markDocQaReviewed(dbPath, created.id);
+  const pw = signature_password ? { signature_password, ...(signature_name ? { signature_name } : {}) } : {};
+  const approved = unwrap(await send('PUT', `/documents/${created.id}`, { status, ...pw }));
+  if (approved?.status !== status && approved?.status !== 'active') throw new Error(`fileApprovedDoc: approval failed ${JSON.stringify(approved)}`);
+  return approved;
+}

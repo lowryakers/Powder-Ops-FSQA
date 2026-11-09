@@ -11,6 +11,8 @@ const t = (n, c, d = '') => { if (c) { pass++; console.log('  ✓ ' + n); } else
 const { default: Database } = await import('better-sqlite3');
 const dbPath = process.env.DBPATH;
 { const db = new Database(dbPath);
+  // A supervisor WITH a ReadyDoc account, linked to the roster (Ricardo's case, D-322).
+  db.prepare(`INSERT OR REPLACE INTO users (id,name,username,role,department,is_active) VALUES ('pt-rick','Rick Linked','Rick Linked','supervisor','maintenance',1)`).run();
   db.prepare(`INSERT OR REPLACE INTO users (id,name,username,role,department,is_active,setup_code,setup_code_expires_at,module_access)
     VALUES ('pt-admin','Lowry Pto','Lowry Pto','admin','executive',1,'SC-pt',datetime('now','+7 day'),?)`).run(JSON.stringify({ 'pay-tracking': 'edit' }));
   db.close(); }
@@ -30,7 +32,7 @@ const sup = await mk({ name: 'Sam Supervisor', hire_date: day(-100), pto_plan: '
 const soon = await mk({ name: 'Nora Soon', hire_date: yearsAgo(2, 10), pto_plan: '3 hr' });
 const newbie = await mk({ name: 'Ned New', hire_date: day(-200), pto_plan: '3 hr' });
 const onPlan = await mk({ name: 'Olga Onplan', hire_date: yearsAgo(3), pto_plan: '4 hr' });
-const contractor = await mk({ name: 'Cal Contract', hire_date: yearsAgo(3), pto_plan: '1099' });
+const contractor = await mk({ name: 'Cal Contract', hire_date: yearsAgo(3), worker_type: 'contractor' });
 t('six people filed', [twoYears, sup, soon, newbie, onPlan, contractor].every(e => e?.id));
 
 console.log('\n── who is due ──');
@@ -60,6 +62,19 @@ r = await call('PUT', `/pay/employees/${twoYears.id}`, { pto_plan: '4 hr' }, A);
 acts = await (await call('GET', '/pay/actions', null, A)).json();
 t('recording "4 hr" clears it', r.status === 200 && !acts.items.some(i => i.kind === 'pto' && i.employee_id === twoYears.id));
 
+console.log('\n── a linked person saves; the plan is 3 hr or 4 hr (D-322) ──');
+const rick = await mk({ name: 'Rick Linked', user_id: 'pt-rick', hire_date: day(-400), pto_plan: '3 hr' });
+r = await call('PUT', `/pay/employees/${rick.id}`, { team: 'maintenance', is_supervisor: true, hire_date: day(-400), pto_plan: '4 hr plan', notes: 'x' }, A);
+let body = await r.json();
+t('saving a linked person with the team and supervisor flag Settings already gives is accepted', r.status === 200, `${r.status} ${body?.error}`);
+t('"4 hr plan" is stored as "4 hr"', body?.pto_plan === '4 hr', body?.pto_plan);
+r = await call('PUT', `/pay/employees/${rick.id}`, { team: 'Filling' }, A);
+t('a DIFFERENT team on a linked person is still refused (Settings owns it)', r.status === 400);
+r = await call('PUT', `/pay/employees/${rick.id}`, { pto_plan: 'five hours' }, A);
+t('a plan that is not 3 hr or 4 hr is refused', r.status === 400);
+r = await call('POST', '/pay/employees', { name: 'Typo Plan', pto_plan: 'lots' }, A);
+t('…on a new person too', r.status === 400);
+
 console.log('\n── the screen ──');
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
@@ -76,6 +91,15 @@ t('the roster\'s PTO column marks who is due', await page.locator('[data-pto-due
 await page.locator('[data-action="pto"]', { hasText: 'Sam Supervisor' }).getByRole('button').click();
 await page.waitForSelector('[data-pto-drawer]', { timeout: 10000 }).catch(() => {});
 t('"Open and set the plan" opens the person, saying what to do', await page.locator('[data-pto-drawer="due"]').count() === 1);
+await page.locator('button', { hasText: /^\s*Edit\s*$/ }).first().click();
+const sel = page.locator('[data-pto-plan-select]').first();
+await sel.waitFor({ timeout: 10000 }).catch(() => {});
+t('Details offers the PTO plan as a list: 3 hr plan / 4 hr plan', (await sel.locator('option').allInnerTexts()).join('|').includes('3 hr plan|4 hr plan'), (await sel.locator('option').allInnerTexts().catch(() => [])).join('|'));
+await sel.selectOption('4 hr');
+await page.locator('[data-details-save]').click();
+await page.waitForTimeout(1500);
+const samRow = (await (await call('GET', '/pay/employees', null, A)).json()).find(x => x.id === sup.id);
+t('picking "4 hr plan" and saving sets it', samRow?.pto_plan === '4 hr', samRow?.pto_plan);
 await browser.close();
 
 console.log(`\n${pass} passed, ${fail} failed`);

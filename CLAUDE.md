@@ -6483,15 +6483,19 @@ number · Rev · status · CONFIDENTIAL. `?copy=approved` (default) is the copy 
 - **Three verifications: owner, QA review (a QA supervisor's password), approval.** Approve is `409 QA_REVIEW_REQUIRED`
   until QA has reviewed; the owner cannot review, the reviewer cannot approve. Never a bot.
 - An edit to the title or text takes the review off; a new revision/document number does not.
-- The PDF header prints Owner · QA Review · Approved By. A brand-new document filed straight into force and a paper
-  revision are not gated (open question).
+- The PDF header prints Owner · QA Review · Approved By.
+- **Every door waits for QA (D-321).** A new document is filed as a draft (`POST` into force is 409); QA reviews it on the
+  document (`/documents/:id/qa-signoff`, review on `sop_documents.qa_reviewed_*`), then the first approval. A paper
+  revision on an approved document is STAGED as its draft revision, never approved from the upload/worklist. A verify
+  that needs an approved document uses `fileApprovedDoc` from `scripts/lib/qa-review-fixture.mjs`.
 - **A verify that approves a draft revision must mark it reviewed** (`markQaReviewed` in `scripts/lib/qa-review-fixture.mjs`).
   `verify:docqareview` (34).
 
 ## Pay Tracking: due for the 4-hour PTO plan (D-320)
 `ptoPlanState` in `api/pay.js` (supervisor, or two years here; `soon` 14 days ahead; contractors none) and the `pto` kind
 in `payActions` — strip, ReadyBot reminder and bell. Cleared only by setting the PTO plan to "4 hr" (after ADP). Never
-stored. `verify:ptoplan` (17).
+stored. **The PTO plan is a dropdown, 3 hr / 4 hr (D-322)**; a linked person's team and supervisor flag are never sent
+from Details (Settings owns them; the same value is dropped, a different one refused). `verify:ptoplan` (24).
 
 ## A new revision is offered the next V number (D-280)
 `nextVRevision()` counts from the highest number on the document, its signed copies and file names, skips used ones,

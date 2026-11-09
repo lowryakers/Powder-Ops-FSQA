@@ -10454,3 +10454,35 @@ changed in ADP. Policy: the 4-hour plan applies once somebody **is a supervisor 
   writes to ADP or changes a plan.
 - The roster's PTO column carries a *4 hr due* / *4 hr soon* chip; the employee drawer says what to do.
 - `verify:ptoplan` (17, live + browser; control fails). `verify:payactions` counts the seeded PTO lines as baseline.
+
+## D-321 — A new document and a paper revision wait for QA review too (9 Nov 2026)
+
+Lowry answered D-319's open question: **yes — every door into force waits for QA's review.**
+
+- **A brand-new document is filed as a draft.** `POST /documents` with an approved status is `409 QA_REVIEW_REQUIRED`;
+  the editor no longer offers Approved for a document never approved. QA's review of it sits on the document row
+  (`sop_documents.qa_reviewed_*`, same fingerprint), given through `POST|DELETE /documents/:id/qa-signoff` with the
+  same rules as a draft revision (QA supervisor, not the owner, never a bot, password last). The first approval
+  (`PUT` into force) is refused until it is there and checks the text as it will be approved; an edit after the review
+  takes it off. The approval copies the review onto the approved revision and clears the document row, so the PDF
+  header names the QA reviewer. Screen: "Not approved yet" block on the document (`data-first-approval`).
+- **A paper revision is STAGED as the document's draft revision**, never approved from the upload or the worklist.
+  Applying a new revision number to an approved document starts a draft carrying the file's revision, title, text and
+  date (`staged_revision` on the response); QA reviews it and Document Control approves it like any draft. No password
+  at staging — the signatures come at the review and the approval. A draft already open refuses a second staging.
+- Nothing already approved is touched; nothing is backfilled. The `transcribed` approval meaning stays for history.
+- Fixtures: `fileApprovedDoc` / `markDocQaReviewed` in `scripts/lib/qa-review-fixture.mjs`. **A verify that needs an
+  approved document files it as draft, marks QA's review, then approves.** `verify:docqareview` (44),
+  `verify:docrevisions` (65).
+
+## D-322 — Pay Tracking: a linked person saves; the PTO plan is a list (9 Nov 2026)
+
+Marnee could not save Ricardo's details: the Details form sent the team and supervisor flag it was showing, and for
+anybody with a ReadyDoc account those come from Settings, so the save was refused ("team, is_supervisor are set in
+Settings…").
+- The form no longer sends them for a linked person (the team shows read-only, "follows their department in Settings"),
+  and the server **drops** an owned field whose value equals what Settings already gives. A different value is still
+  refused.
+- **The PTO plan is a dropdown: 3 hr plan / 4 hr plan** (plus "Not set"), on Details and Add someone. Stored "3 hr" /
+  "4 hr" (`ptoPlanValue`); "4 hr plan", "4hr" are read as the plan; anything else is refused, except a value already on
+  file, which stays until somebody picks a plan. `verify:ptoplan` (24).

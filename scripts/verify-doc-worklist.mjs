@@ -34,7 +34,9 @@ const before = await J(await req('/documents', { method: 'POST', body: JSON.stri
   // The create endpoint calls the body `content`; it lands in `description`.
   // The first version of this check sent `description`, which was ignored — so
   // the assertion below passed against a body that had never been stored.
-  revision: 'V1', status: 'active', content: 'The original body on file.' }) }));
+  // Not approved yet: the worklist edits it in place. An approved document's
+  // paper revision is staged as a draft for QA (D-321), tested in verify:docrevisions.
+  revision: 'V1', content: 'The original body on file.' }) }));
 t('a document exists to revise', !!before?.id, JSON.stringify(before).slice(0, 120));
 
 console.log('\n── filing a batch writes nothing to any document ──');

@@ -21,7 +21,7 @@ const SIGN_PW = 'NoBotSign2026!';
 const SIGNED_PATHS = /^\/(documents(\/[^/]+)?|documents\/[^/]+\/apply-revision|documents\/revisions\/items\/[^/]+\/apply|training(\/[^/]+)?|training\/bulk-complete|pm\/work-orders\/[^/]+\/complete-and-recur)$/;
 const signed = (b, m, p) => (m !== 'GET' && SIGNED_PATHS.test(String(p).split('?')[0]) && b && typeof b === 'object' && !Array.isArray(b) && b.signature_password === undefined && !('password' in b) ? { ...b, signature_password: SIGN_PW } : b);
 import Database from 'better-sqlite3';
-import { markQaReviewed } from './lib/qa-review-fixture.mjs';
+import { markQaReviewed, fileApprovedDoc } from './lib/qa-review-fixture.mjs';
 
 const PORT = Number(process.env.PORT || 5168);
 const URL = `http://localhost:${PORT}`;
@@ -50,6 +50,9 @@ const call = async (m, p, b, tok) => {
   return { status: r.status, json };
 };
 const PW = 'NoBotSign2026!';
+
+// File a document into force the D-321 way: draft → QA review marked → approved with a password.
+const fileDoc = async (body, tok) => ({ status: 201, json: await fileApprovedDoc((m, p, b) => call(m, p, b, tok), DBP, { signature_password: PW, ...body }) });
 const signIn = async (id, name) => {
   await call('POST', '/users/set-password', { user_id: id, password: PW, setup_code: `SC-${id}` });
   return (await call('POST', '/users/login', { name, password: PW })).json?.token;
@@ -68,7 +71,7 @@ r = await call('POST', `/api-tokens/${tokenId}/grants`, { grants }, admin);
 t(`…and every grant there is (${grants.join(', ') || 'none'})`, r.status === 200 || grants.length === 0, `${r.status} ${r.json?.error}`);
 
 // A document at V1 with a V2 draft, a course on it, a training record.
-r = await call('POST', '/documents', { doc_type: 'wi', doc_number: 'WI 908', title: 'Auger Changeover', category: 'quality', revision: 'V3', status: 'active', content: 'Step one.' }, admin);
+r = await fileDoc({ doc_type: 'wi', doc_number: 'WI 908', title: 'Auger Changeover', category: 'quality', revision: 'V3', content: 'Step one.' }, admin);
 const doc = r.json;
 const draft = (await call('POST', `/documents/${doc.id}/revisions`, {}, admin)).json;
 await call('PUT', `/documents/${doc.id}/revisions/${draft.id}`, { change_summary: 'New step' }, admin);

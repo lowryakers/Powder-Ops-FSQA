@@ -214,9 +214,14 @@ function DocumentEditor({ docType, typeLabel, initial, onSave, onCancel }) {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-100 disabled:text-gray-500">
               {(form.status === 'archived' ? STATUSES
                 : locked ? STATUSES.filter(s => isApprovedStatus(s.value))
-                : STATUSES.filter(s => s.value !== 'archived'))
+                // Approving a NEW document happens on the document itself, after
+                // QA's review (D-321) — never by picking a status here.
+                : STATUSES.filter(s => s.value !== 'archived' && (s.value === form.status || !isApprovedStatus(s.value))))
                 .map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
+            {!locked && form.status !== 'archived' && (
+              <p className="mt-1 text-[11px] text-gray-500" data-doc-approve-note>Save it as a draft. A QA supervisor reviews it on the document, then it is approved there.</p>
+            )}
             {form.status === 'archived' && (
               <p className="mt-1 text-[11px] text-gray-500">Withdrawn. Use Reinstate to bring it back to draft; the status cannot be edited here.</p>
             )}
