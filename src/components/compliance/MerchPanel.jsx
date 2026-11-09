@@ -310,25 +310,37 @@ export function MerchVariantBlock({ p, canEdit, onChanged }) {
           <>
             {refusal && <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2 flex gap-1.5" data-gtin-refusal><AlertTriangle size={13} className="mt-0.5 shrink-0" />{refusal}</p>}
             {held && <p className="text-xs text-gray-600">Reserved for this variant: <strong>{held.gtin}</strong>.</p>}
+            {/* THE NUMBER COMES FROM THE GS1 SITE (D-325). The plant picks the
+                GTIN there and pastes it here, so pasting is the main path; the
+                suggester and the reservation are for when nobody has picked one. */}
             {canEdit && (
               <div className="flex flex-wrap items-end gap-2">
-                <label className="text-xs text-gray-600">Prefix
-                  <select value={prefix} onChange={(e) => setPrefix(e.target.value)} className="mt-1 block border border-gray-300 rounded-lg px-2 py-1 text-sm" data-gtin-prefix>
-                    <option value="">Choose…</option>
-                    {(data?.prefixes || []).map((x) => <option key={x} value={x}>{x}</option>)}
-                  </select>
+                <label className="text-xs text-gray-600">GTIN from the GS1 site
+                  <input value={gtin} onChange={(e) => setGtin(e.target.value.replace(/\D/g, ''))} inputMode="numeric"
+                    placeholder={held?.gtin || 'Paste the 12-digit number'} data-gtin-input
+                    className="mt-1 block w-44 border border-gray-300 rounded-lg px-2 py-1 text-sm tabular-nums" />
                 </label>
-                <button type="button" onClick={suggest} disabled={!prefix} data-gtin-suggest className="px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs hover:bg-gray-50 disabled:opacity-50">Suggest next free</button>
-                <label className="text-xs text-gray-600">Number
-                  <input value={gtin} onChange={(e) => setGtin(e.target.value.replace(/\D/g, ''))} inputMode="numeric" className="mt-1 block w-36 border border-gray-300 rounded-lg px-2 py-1 text-sm tabular-nums" />
-                </label>
-                <button type="button" onClick={reserve} disabled={!gtin} className="px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs hover:bg-gray-50 disabled:opacity-50">Reserve</button>
                 <button type="button" onClick={assign} disabled={!!refusal || !(gtin || held)} data-gtin-assign className="px-2.5 py-1.5 bg-powder-600 text-white rounded-lg text-xs disabled:opacity-50">Assign</button>
               </div>
             )}
-            {sugg && <p className="text-xs text-gray-600">Suggested {sugg.suggestion} — {sugg.free} free on {sugg.prefix}. {sugg.note}</p>}
-            {sugg?.warning && <p className="text-xs text-amber-800">{sugg.warning}</p>}
-            <p className="text-[11px] text-gray-500">A suggestion is only a suggestion. Check the number against the GS1 portal before assigning it; the assignment re-checks that nobody else holds it.</p>
+            {canEdit && <p className="text-[11px] text-gray-500">ReadyDoc checks the check digit and that no other product holds the number.</p>}
+            {canEdit && (
+              <details className="text-xs" data-gtin-helper>
+                <summary className="cursor-pointer text-gray-600 hover:text-gray-800">Haven&apos;t picked one on the GS1 site yet?</summary>
+                <div className="mt-2 flex flex-wrap items-end gap-2">
+                  <label className="text-xs text-gray-600">Prefix
+                    <select value={prefix} onChange={(e) => setPrefix(e.target.value)} className="mt-1 block border border-gray-300 rounded-lg px-2 py-1 text-sm" data-gtin-prefix>
+                      <option value="">Choose…</option>
+                      {(data?.prefixes || []).map((x) => <option key={x} value={x}>{x}</option>)}
+                    </select>
+                  </label>
+                  <button type="button" onClick={suggest} disabled={!prefix} data-gtin-suggest className="px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs hover:bg-gray-50 disabled:opacity-50">Suggest next free</button>
+                  <button type="button" onClick={reserve} disabled={!gtin} data-gtin-reserve className="px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs hover:bg-gray-50 disabled:opacity-50">Hold it for this variant</button>
+                </div>
+                {sugg && <p className="mt-1 text-gray-600">Suggested {sugg.suggestion} — {sugg.free} free on {sugg.prefix}. Check it on the GS1 site before assigning.</p>}
+                {sugg?.warning && <p className="text-amber-800">{sugg.warning}</p>}
+              </details>
+            )}
           </>
         )}
       </div>

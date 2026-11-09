@@ -762,6 +762,8 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
     if (id === 'siblings') return false;
     // The barcode image is identity's; a stale one is a relabel waiting to happen.
     if (id === 'identity' && (p?.barcode_stale || (p?.gtin && !p?.gtin_valid))) return true;
+    // A merch variant's GTIN is entered in this section, so it stays open until one is (D-325).
+    if (id === 'merch' && p?.merch && !p?.gtin) return true;
     return owes(SECTION_KEYS[id] || []);
   };
   const toggle = (id) => setOpenMap((m) => ({ ...m, [id]: !isOpen(id) }));
