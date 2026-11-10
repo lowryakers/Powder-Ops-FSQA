@@ -853,6 +853,22 @@ qms_record pre-filled from the message (body → description/reason, author, tim
   `flavor_code`; never a flavor register code (active, retired or legacy), and the register refuses a design's code.
   `verify:merchdesign` (21).
 
+## Artwork: retire from draft or review; a token may supersede and reject, never approve (D-330)
+`FLOW` in `server/api/artwork.js` (and its copy in `ArtworkPanel.jsx`): draft / in_review → superseded. The one status
+route takes `superseded_by` (same SKU + component, else 400; defaults to the current version) and, for rejected, a
+required `reason` (`rejected_reason` / `_by` / `_at`). Releasing supersedes draft and in-review siblings too, each audited.
+- **`ARTWORK_TOKEN_STATUSES` = draft, in_review, superseded, rejected — never add approved, print_ready or released.**
+- **`productWrite()` decides the product row**: a non-current version never touches it; retiring the current one with a
+  live film on file points the row back at that film; a blank status stays blank.
+- Never add a `/retire` or `/reject` route (TOKEN_DENY segments). `verify:artworkretire` (37).
+- **The Artwork board filters by pack and category (D-331)**; `PACK_LABEL` lives in `shared/pack-labels.js`.
+
+## FORM 418-01 V2: bottle sleeves, parked for Document Control (D-332)
+`server/film-pouch-checklist.js` carries V2 (kinds film / pouch / sleeve, a BOTTLE SLEEVE section, `sleeve_layflat` /
+`sleeve_length`, `material_kind`); controlled.js `film:FORM 418-01`, baseline V1. Until approved the app serves V1.
+- **Read `sectionsFor(kind)` / `allItems(kind)`, never `FILM_SECTIONS` directly**; stamp `FILM_CHECKLIST.revision`, never
+  the constant. The sleeve lines are DRAFTED (DCR `docs/v2/queued/dcr-form-418-01-v2.md`). `verify:filmsleeve` (24).
+
 ## A SKU that won't go live: hidden with a reason, deleted only if it was never anywhere (D-324)
 `shared/product-status.js` (`NOT_LAUNCHING`, `OFF_CATALOG`), `POST /products/:sku/not-launching` (reason; `undo`),
 `deleteRefusals` + `DELETE /products/:sku` (admin, reason) + `GET /:sku/delete-check`, `LaunchControls` in the drawer.

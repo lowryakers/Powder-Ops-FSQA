@@ -134,6 +134,8 @@ const RUNS = [
   ['verify-single-spine.mjs', 5209],
   ['verify-packaging-specs.mjs', 5051, { PRODUCT_MASTER_TOKEN: 'spec-token' }],
   ['verify-artwork-film.mjs', 5052, {}],
+  ['verify-artwork-retire.mjs', 5071, {}],
+  ['verify-film-sleeve.mjs', 5072, {}],
   ['verify-pay-reviews.mjs', 5053, {}],
   ['verify-checklist-overlap.mjs', 5054, {}],
   ['verify-scale-pm-retire.mjs', 5055, {}],
