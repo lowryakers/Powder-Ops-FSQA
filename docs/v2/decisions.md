@@ -10573,3 +10573,25 @@ text had to be found and edited place by place, and nothing tied a recurring tas
 - Writes task records and controlled values on approval, so it is a records change (D-274); merged on Lowry's "merge
   them when ready". `verify:singlespine` (50, live + a reboot + browser; the control — `main` — fails from the first
   rename).
+
+## D-329 — AP Drop links a ledger invoice by its folded number; Paid waits for the Partner Rec settlement (10 Nov 2026)
+Pack A-20261110-001. Jake's drop of `INV-1589 (1).pdf` filed a second payable ($43,582.34) beside the portal's `1589`:
+AP Drop matched the ledger on the exact number string. Marking that drop Paid then changed only `ap_drops` — the
+ledger still counted both as owed. **Code only: the live 1589 / 1590 rows are left for the office (SEC hold R-0564).**
+- **`existingPartnerDoc` compares `normDocNumber`**, same partner, void left out, a settled match preferred, and links only
+  when the amount agrees within half a cent — stricter than the importer's `findExistingDoc`, because a link is a silent
+  ledger write. Stored numbers are never rewritten.
+- **Same number, different (or unread) amount: neither linked nor filed.** The drop parks as `needs_info` "Possible
+  duplicate: …", `partner_route.number_conflict` names the document, event `possible_number_duplicate`. The office
+  corrects the amount (then it links) or files a separate document (`confirm_new_document` on route-partner — a person's
+  act; a token's flag is ignored). Jake's 15¢ near-duplicate pair now needs that flag too.
+- **`normDocNumber` folds leading zeros on an all-digit number only** (`01589` = `1589`); `I0123`, `I123` and internal
+  hyphens (`M4-2210`) are untouched.
+- **`POST /ap-drop/:id/status` refuses `paid` (409 `SETTLE_ON_PARTNER_REC`) while the linked ledger document has no
+  `settlement_id`**; once it is settled, Paid is housekeeping. This path never writes `settlement_id`; `classify()` is
+  unchanged and still ignores AP Drop status. The drawer disables Paid and says so beside "Open Partner Reconciliation".
+- **Partner Rec lists, read-only, two final unsettled documents sharing a folded number and amount** (`open_twins`). No
+  Void or edit there.
+- `check:docnumber` (8), `verify:apdrop` (131), `verify:apdropui` (33), `verify:partnerrecon` (120). Control: `main`
+  fails 9 of the AP Drop checks and the zero-folding check.
+- Changes how records are written, so it waits for Lowry's review (D-274).

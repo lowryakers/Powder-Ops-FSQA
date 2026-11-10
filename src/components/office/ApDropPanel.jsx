@@ -410,7 +410,8 @@ function DrawerBody({ d, canWork, compact, refresh, onChanged, onPreview }) {
   // Which way the money goes is the office's answer, never assumed (D-160).
   const routePartner = async (direction) => {
     setBusy(true); setErr('');
-    try { await apiPost(`/ap-drop/${id}/route-partner`, { direction }); refresh(); onChanged(); } catch (ex) { setErr(ex.message); } finally { setBusy(false); }
+    // A refusal (a possible duplicate) is written on the drop too, so refresh either way.
+    try { await apiPost(`/ap-drop/${id}/route-partner`, { direction }); refresh(); onChanged(); } catch (ex) { setErr(ex.message); refresh(); } finally { setBusy(false); }
   };
   const [arReason, setArReason] = useState('');
   const markReceivableOther = async () => {
@@ -428,6 +429,14 @@ function DrawerBody({ d, canWork, compact, refresh, onChanged, onPreview }) {
   );
   const openLedger = () => window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab: 'partner-reconciliation' } }));
   const route = d.partner_route;
+  // On the partner ledger and not yet settled: Paid here would settle nothing,
+  // so the server refuses it and the picker does not offer it.
+  const paidWaitsForLedger = !!(d.partner_document && !d.partner_document.settlement_id);
+  const numberConflict = !d.partner_document ? route?.number_conflict : null;
+  const fileSeparately = async () => {
+    setBusy(true); setErr('');
+    try { await apiPost(`/ap-drop/${id}/route-partner`, { direction: route?.direction || null, partner_id: route?.partner?.id || null, confirm_new_document: true }); refresh(); onChanged(); } catch (ex) { setErr(ex.message); } finally { setBusy(false); }
+  };
 
   const isPdf = PDF_RE.test(d.filename || '');
   const isImg = IMG_RE.test(d.filename || '');
@@ -457,7 +466,28 @@ function DrawerBody({ d, canWork, compact, refresh, onChanged, onPreview }) {
                   </div>
                   {route && <div className="text-xs text-indigo-700 mt-1">{route.forced ? 'Routed by the office.' : route.reason} {route.direction_reason || ''}</div>}
                   <div className="text-xs text-indigo-700 mt-1">Approving it as final, disputing or settling happens on the ledger, not here.</div>
+                  {paidWaitsForLedger && (
+                    <div className="mt-2 p-2 rounded bg-amber-50 border border-amber-200 text-xs text-amber-900" data-ap-paid-guard>
+                      <strong>Not paid until it is settled.</strong> Marking this drop paid does not settle the invoice — it still counts as owed on the {d.partner_document.partner_name} ledger. Settle it on Partner Reconciliation; then it can be marked paid here.
+                    </div>
+                  )}
                   <button type="button" onClick={openLedger} className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-indigo-700 hover:underline"><ExternalLink size={12} /> Open Partner Reconciliation</button>
+                </div>
+              </div>
+            )}
+            {numberConflict && (
+              <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-900 flex items-start gap-2" data-ap-number-conflict>
+                <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+                <div className="min-w-0 flex-1">
+                  <div><strong>Possible duplicate.</strong> {route?.partner?.name || 'The partner'} ledger already has invoice <strong>#{numberConflict.doc_number}</strong> for {money(numberConflict.amount)} ({numberConflict.status}{numberConflict.settled ? ', settled' : ''}). This drop reads #{d.invoice_number || '—'} for {money(d.amount, d.currency)}. Nothing was added to the ledger.</div>
+                  <div className="text-xs text-amber-800 mt-1">Same invoice? Correct the amount below and route it again — it links to the one already there. A different document with the same number? File it separately.</div>
+                  {canWork && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button type="button" onClick={openLedger} className="inline-flex items-center gap-1 text-xs font-medium text-amber-800 hover:underline"><ExternalLink size={12} /> Open Partner Reconciliation</button>
+                      <button type="button" onClick={fileSeparately} disabled={busy || !route?.direction} data-ap-file-separately
+                        className="px-3 py-1.5 rounded-lg border border-amber-300 bg-white text-amber-900 text-xs font-medium hover:bg-amber-100 disabled:opacity-50">File as a separate document</button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -512,7 +542,7 @@ function DrawerBody({ d, canWork, compact, refresh, onChanged, onPreview }) {
                 {d.parse_status === 'failed' && <span className="text-xs text-red-600 flex items-center gap-1"><AlertTriangle size={12} /> nothing readable — a scan with no text layer, most likely</span>}
                 {canWork && <button type="button" onClick={reparse} disabled={busy} className="ml-auto text-xs text-powder-700 flex items-center gap-1"><RefreshCw size={12} /> Re-read (fills blanks only)</button>}
                 {canWork && !d.partner_document && route?.confidence !== 'low' && (
-                  <button type="button" onClick={routePartner} disabled={busy} data-ap-route-hand className="text-xs text-indigo-700 flex items-center gap-1" title="Put this drop on the partner reconciliation ledger as a draft"><Handshake size={12} /> Route to partner ledger</button>
+                  <button type="button" onClick={() => routePartner(route?.direction || undefined)} disabled={busy} data-ap-route-hand className="text-xs text-indigo-700 flex items-center gap-1" title="Put this drop on the partner reconciliation ledger as a draft"><Handshake size={12} /> Route to partner ledger</button>
                 )}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -567,7 +597,11 @@ function DrawerBody({ d, canWork, compact, refresh, onChanged, onPreview }) {
                 <h3 className="text-sm font-semibold text-gray-800 mb-2">Status</h3>
                 <div className="flex flex-wrap gap-2 items-center">
                   <select value={status} onChange={e => setStatus(e.target.value)} className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm bg-white" data-ap-status>
-                    {Object.keys(STATUS_LABEL).filter(s => !ROUTING_ONLY.has(s) || s === d.status).map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+                    {Object.keys(STATUS_LABEL).filter(s => !ROUTING_ONLY.has(s) || s === d.status).map(s => (
+                      <option key={s} value={s} disabled={s === 'paid' && paidWaitsForLedger && d.status !== 'paid'}>
+                        {STATUS_LABEL[s]}{s === 'paid' && paidWaitsForLedger && d.status !== 'paid' ? ' — settle on Partner Reconciliation first' : ''}
+                      </option>
+                    ))}
                   </select>
                   <input value={reason} onChange={e => setReason(e.target.value)} placeholder={needsReason ? 'Why — required, shows on the queue' : 'Reason (optional)'}
                     className="flex-1 min-w-[200px] px-2 py-1.5 border border-gray-300 rounded-lg text-sm" data-ap-reason />
@@ -621,6 +655,7 @@ function describeEvent(e) {
     case 'needs_direction': return `— reader asked: ${dt.partner} document, receivable or payable?`;
     case 'near_duplicate': return `— reader flagged a near-duplicate of ${String(dt.duplicate_of || '').slice(0, 8)} (same reference, ${dt.minutes_apart} min apart)`;
     case 'due_date_corrected': return `— the printed due date ${dt.parsed} is before the invoice date; the ledger copy uses ${dt.terms_days}-day terms (${dt.used})`;
+    case 'possible_number_duplicate': return `— reader found ${dt.partner} invoice #${dt.doc_number} already on the ledger (${dt.how}); nothing was added`;
     case 'vendor_cleared': return `— cleared the vendor "${dt.was}" (not a company)`;
     default: return e.kind;
   }

@@ -43,7 +43,7 @@ import { storageEnabled, putObject, presignGet, getObjectBuffer } from '../stora
 import { extractInvoiceText } from '../invoice-text.js';
 import { parseFinanceDocument, notAVendor } from '../ap-drop-parse.js';
 import { detectPartner } from '../ap-drop-route.js';
-import { dueDateFor } from '../partner-recon.js';
+import { dueDateFor, normDocNumber } from '../partner-recon.js';
 import { moduleLevel } from '../module-access.js';
 
 const router = Router();
@@ -187,19 +187,31 @@ function activePartners(db) {
 // The ledger document this drop should attach to, if one already exists. The
 // same bytes dropped twice — by two people, or forwarded again next month —
 // must not put the same invoice on the ledger twice: that doubles what is
-// owed, with a plausible number nobody catches. Same rule the partner
-// importer applies on number + amount (`findExistingDoc` there).
+// owed, with a plausible number nobody catches.
+//
+// The number is compared FOLDED (`normDocNumber`: "INV-1589", "Invoice #1589",
+// "01589" and "1589" are one invoice), on the same partner, void documents left
+// out, a settled one preferred. Auto-linking also needs the AMOUNT to agree
+// within half a cent — stricter than the importer's `findExistingDoc`, which
+// treats a different amount as a hit to refuse: linking is a silent ledger
+// write, so both facts must match. Same number with a different (or unread)
+// amount is returned as `conflict` — not linked, and not filed a second time.
+// Stored numbers are never rewritten; folding is for the comparison only.
 function existingPartnerDoc(db, row, partnerId) {
   const viaHash = db.prepare(`SELECT d.* FROM ap_drops a JOIN partner_documents d ON d.id = a.partner_document_id
       WHERE a.content_sha256 = ? AND a.id != ? AND d.partner_id = ? AND d.status != 'void' ORDER BY a.created_at ASC LIMIT 1`)
     .get(row.content_sha256, row.id, partnerId);
   if (viaHash) return { doc: viaHash, how: 'same file' };
-  if (row.invoice_number && row.amount != null) {
-    const viaNumber = db.prepare(`SELECT * FROM partner_documents WHERE partner_id = ? AND doc_number = ? AND ABS(amount - ?) < 0.005 AND status != 'void' LIMIT 1`)
-      .get(partnerId, String(row.invoice_number), Number(row.amount));
-    if (viaNumber) return { doc: viaNumber, how: 'same number and amount' };
-  }
-  return null;
+  const key = normDocNumber(row.invoice_number);
+  if (!key) return null;
+  const hits = db.prepare(`SELECT * FROM partner_documents WHERE partner_id = ? AND status != 'void' AND doc_number IS NOT NULL ORDER BY created_at ASC`)
+    .all(partnerId).filter(d => normDocNumber(d.doc_number) === key);
+  if (!hits.length) return null;
+  hits.sort((x, y) => (y.settlement_id ? 1 : 0) - (x.settlement_id ? 1 : 0));
+  const amt = row.amount == null || row.amount === '' || !Number.isFinite(Number(row.amount)) ? null : Number(row.amount);
+  const same = amt == null ? null : hits.find(d => Math.abs(Number(d.amount) - amt) < 0.005);
+  if (same) return { doc: same, how: 'same number and amount' };
+  return { conflict: hits[0], how: amt == null ? 'same number, amount not read' : 'same number, different amount' };
 }
 
 // ── Near-duplicates (D-160) ─────────────────────────────────────────────────
@@ -346,7 +358,25 @@ export async function routeToPartner(db, id, { buffer = null, user = null, force
   }
 
   // High confidence: link what is already on the ledger, or file a draft.
-  const existing = existingPartnerDoc(db, row, partner.id);
+  const found = existingPartnerDoc(db, row, partner.id);
+  // Same invoice number already on this partner's ledger, but the amount does
+  // not agree: neither link nor file a second document — that second document
+  // is how one invoice came to be owed twice (1589 / INV-1589). The office
+  // corrects the amount (then it links) or says it really is a separate
+  // document (`confirm_new_document` on route-partner).
+  if (found?.conflict && !force?.confirm_new_document) {
+    const c = found.conflict;
+    const conflict = { document_id: c.id, doc_number: c.doc_number, amount: c.amount, status: c.status, settled: !!c.settlement_id, how: found.how };
+    db.prepare('UPDATE ap_drops SET partner_route = ? WHERE id = ?').run(JSON.stringify({ ...verdict, number_conflict: conflict }), id);
+    const reason = `Possible duplicate: ${partner.name} already has invoice #${c.doc_number} for $${Number(c.amount).toFixed(2)} (${found.how}). Correct the amount if it is the same invoice, or file it as a separate document.`;
+    const cur = loadDrop(db, id);
+    if (!TERMINAL.has(cur.status) && cur.status !== 'duplicate_suspect' && cur.status_reason !== reason) {
+      db.prepare("UPDATE ap_drops SET status = 'needs_info', status_reason = ?, updated_at = datetime('now') WHERE id = ?").run(reason, id);
+    }
+    event(db, id, user, 'possible_number_duplicate', { partner: partner.name, ...conflict, drop_number: row.invoice_number, drop_amount: row.amount });
+    return { routed: false, reason: 'possible duplicate', possible_duplicate: conflict, partner: partner.name };
+  }
+  const existing = found?.doc ? found : null;
   let docId, created = false, how = existing?.how || null, dueCorrected = null;
   if (existing) {
     docId = existing.doc.id;
@@ -572,6 +602,20 @@ router.post('/:id/status', (req, res) => {
   if (NEEDS_REASON.has(status) && reason.length < 3) return res.status(400).json({ error: `Say why it is ${status.replace(/_/g, ' ')} — the reason shows on the queue.` });
   if (status === row.status && !reason) return res.json(shape(row, req.user));
   const db = getDb();
+  // Paid on a drop that is on the partner ledger settles nothing: the ledger
+  // document still counts as owed until it is in a Partner Reconciliation
+  // settlement. So `paid` waits for that settlement; once the document is
+  // settled, marking the drop paid is housekeeping. This path never writes
+  // `settlement_id`. Every caller (screen, Bot API) comes through here.
+  if (status === 'paid' && row.partner_document_id) {
+    const doc = db.prepare('SELECT id, partner_id, doc_number, settlement_id FROM partner_documents WHERE id = ?').get(row.partner_document_id);
+    if (doc && !doc.settlement_id) {
+      return res.status(409).json({
+        error: `This drop is invoice #${doc.doc_number || '-'} on the partner ledger. Marking it paid here does not settle it: it is still owed until it is settled on Partner Reconciliation. Settle it there; then it can be marked paid here.`,
+        code: 'SETTLE_ON_PARTNER_REC', partner_document_id: doc.id, partner_id: doc.partner_id,
+      });
+    }
+  }
   db.transaction(() => {
     db.prepare(`UPDATE ap_drops SET status = ?, status_reason = ?, closed_at = ?, updated_at = datetime('now') WHERE id = ?`)
       .run(status, reason || null, TERMINAL.has(status) ? new Date().toISOString() : null, row.id);
@@ -600,8 +644,8 @@ router.post('/:id/route-partner', async (req, res) => {
   const db = getDb();
   const dir = req.body?.direction;
   if (dir != null && dir !== '' && !['receivable', 'payable'].includes(dir)) return res.status(400).json({ error: 'Direction is "receivable" or "payable".' });
-  const r = await routeToPartner(db, row.id, { user: req.user, force: { partner_id: req.body?.partner_id || null, direction: dir || null } });
-  if (!r.routed) return res.status(400).json({ error: `Could not route it: ${r.reason}.`, needs_direction: !!r.needs_direction });
+  const r = await routeToPartner(db, row.id, { user: req.user, force: { partner_id: req.body?.partner_id || null, direction: dir || null, confirm_new_document: req.body?.confirm_new_document === true && !req.user?.via_token } });
+  if (!r.routed) return res.status(400).json({ error: `Could not route it: ${r.reason}.`, needs_direction: !!r.needs_direction, possible_duplicate: r.possible_duplicate || null });
   // A drop parked as "M4 partner?" / "Receivable or payable?" is answered by
   // routing it, and a confirmed near-duplicate likewise; a row the office
   // routed by hand from `new` moves on to triaged, since somebody just looked

@@ -202,7 +202,7 @@ router.get('/:id/documents', (req, res) => {
     documents: listDocuments(db, req.params.id, req.query),
     gaps: documentGaps(db, req.params.id),
     // Office-only: voiding is theirs, so the list of copies to look at is too.
-    ...(canSettle(req.user) ? { settled_twins: settledTwins(db, req.params.id) } : {}),
+    ...(canSettle(req.user) ? { settled_twins: settledTwins(db, req.params.id), open_twins: openTwins(db, req.params.id) } : {}),
   });
 });
 
@@ -361,6 +361,28 @@ function duplicateNote(dup, amount) {
  * repair list for copies like the 12 Oct import. DERIVED on every read, so a
  * person voiding the copy clears it; nothing is deleted or voided here.
  */
+/**
+ * Two (or more) FINAL, unsettled, non-void documents on one partner that carry
+ * the same number once folded (`normDocNumber`: 1589 = INV-1589) and the same
+ * amount to the cent. Both count in the balance today — the 1589 / INV-1589
+ * shape. READ-ONLY: derived on every read, listed for a person to look at;
+ * nothing here voids or edits, and the screen offers no button that does.
+ */
+function openTwins(db, partnerId) {
+  const rows = db.prepare(`SELECT id, doc_number, amount, direction, status, source, created_at, created_by
+    FROM partner_documents WHERE partner_id = ? AND status = 'final' AND settlement_id IS NULL AND doc_number IS NOT NULL
+    ORDER BY created_at ASC`).all(partnerId);
+  const groups = new Map();
+  for (const r of rows) {
+    const key = normDocNumber(r.doc_number);
+    if (!key) continue;
+    const k = `${key}|${Math.round(Number(r.amount) * 100)}`;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(r);
+  }
+  return [...groups.values()].filter(g => g.length > 1).map(g => ({ number: normDocNumber(g[0].doc_number), amount: g[0].amount, documents: g }));
+}
+
 function settledTwins(db, partnerId) {
   const rows = db.prepare(`SELECT d.id, d.doc_number, d.amount, d.direction, d.status, d.source,
       d.created_at, d.created_by, d.settlement_id, s.period_end AS settled_period
