@@ -10639,3 +10639,21 @@ length recorded as values (`sleeve_layflat`, `sleeve_length`; `material_kind` on
   never the constant); a V1 sheet still open after approval is asked its kind before sign-off.
 - `verify:filmsleeve` (24).
 - D-330 and D-332 change how records are written, so the PR waits for Lowry's review (D-274).
+
+## D-333 — AP Drop takes source=email; the same message + the same file is a no-op (10 Nov 2026)
+Pack A-20261110-006, slice 1 of ap@ → AP Drop. Controller's monitor will file ap@ attachments through `POST /api/ap-drop`
+several times a weekday, and a retry used to file a second `duplicate_suspect` row.
+- **`source` = `drop` (default) or `email`**; anything else is 400. With `email`, the request's `email_message_id`
+  (trimmed, one pair of `<>` removed, blank → NULL, max 240), `email_from` and `email_subject` are stored on each new row.
+  With `drop` they are ignored. New nullable columns, in the CREATE and via `addColumnIfMissing`; no backfill.
+- **Same message id + same file hash:** nothing is stored, read, routed or audited again; the existing row comes back with
+  `reused: true`. A unique partial index on `(email_message_id, content_sha256)` makes it race-safe (the losing insert
+  returns the winner). **200** when every file was reused, **201** when anything was filed.
+- **Same message id, different file:** a new row. **Same file, different or no message id:** today's `duplicate_suspect`
+  within 30 days, linked — Jake forwarding an invoice ap@ already has is still flagged.
+- `ap_drop.created` is unchanged for the drop door; an emailed drop adds `source` and `email_message_id` to its details.
+- The queue shows "via email from X" on the row, card and drawer. The copy still says "forward it to ap@" and promises no
+  automatic filing; ReadyDoc does not read the mailbox.
+- **A write token on a queue account can already set `qbo_bill_id`** (`EDITABLE`, `canWorkQueue`, `PUT /ap-drop/:id` on
+  `WRITE_AREAS`) — now asserted with a real token. Status `in_qbo` stays refused to tokens (slice 2).
+- `verify:apdrop` (145; `main` fails 10), `verify:apdropui` (39).

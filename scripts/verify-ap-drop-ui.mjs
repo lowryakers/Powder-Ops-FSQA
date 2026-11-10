@@ -144,6 +144,31 @@ t('the queue row shows the new status and the blocker', true);
   await page.waitForSelector(`[data-ap-row="${dq.id}"]`, { timeout: 20000 });
   t('the Receivables filter lists it with its label', /Receivable → Partner Recon/.test(await page.textContent(`[data-ap-row="${dq.id}"]`)));
 }
+// D-333: a drop filed through the email door reads "via email from …" on the
+// row and in the drawer; an ordinary drop does not.
+let emailedId = null;
+{
+  const buf = await new Promise(res => { const doc = new PDFDocument(); const c = []; doc.on('data', x => c.push(x)); doc.on('end', () => res(Buffer.concat(c)));
+    ['Sierra Packaging Co', 'INVOICE', 'Invoice No: SPC-9001', 'Amount Due $410.00'].forEach(l => doc.text(l)); doc.end(); });
+  const fd = new FormData(); fd.append('files', new Blob([buf], { type: 'application/pdf' }), 'spc-9001.pdf');
+  for (const [k, v] of Object.entries({ source: 'email', email_message_id: '<ui-msg-1@mail.example>', email_from: 'avery@sierrapack.example', email_subject: 'Invoice SPC-9001' })) fd.append(k, v);
+  const r = await fetch(`${URL}/api/ap-drop`, { method: 'POST', headers: { Authorization: `Bearer ${office.token}` }, body: fd });
+  emailedId = (await r.json()).drops?.[0]?.id;
+  t('an emailed invoice is filed through the email door', r.status === 201 && !!emailedId);
+  await page.selectOption('[data-ap-status-filter]', 'all').catch(() => {});
+  await page.reload();
+  await page.waitForSelector(`[data-ap-row="${emailedId}"]`, { timeout: 20000 });
+  const rowText = await page.textContent(`[data-ap-row="${emailedId}"] [data-ap-via-email]`).catch(() => '');
+  t('its row reads "via email from avery@sierrapack.example"', rowText === 'via email from avery@sierrapack.example', rowText);
+  const viaRows = await page.$$eval('[data-ap-row]', rows => rows.filter(r => r.querySelector('[data-ap-via-email]')).map(r => r.getAttribute('data-ap-row')));
+  t('…and no other row does (the ordinary drops read "drop")', viaRows.length === 1 && viaRows[0] === emailedId, JSON.stringify(viaRows));
+  await page.click(`[data-ap-row="${emailedId}"]`);
+  await page.waitForSelector('[data-ap-drawer] [data-ap-via-email]', { timeout: 20000 });
+  t('the drawer byline says it came via email from the sender', /via email from avery@sierrapack\.example/.test(await page.textContent('[data-ap-drawer] [data-ap-via-email]')));
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => !document.querySelector('[data-ap-drawer]'));
+  t('the page copy promises no automatic mailbox filing', !/appears here automatically|automatically filed/i.test(await page.textContent('body')));
+}
 await page.selectOption('[data-ap-status-filter]', 'paid');
 await page.waitForSelector('[data-ap-empty]');
 t('an empty filter reads the empty-state line', /Drop it here or forward it to ap@powder-ops\.com/.test(await page.textContent('[data-ap-empty]')));
@@ -155,6 +180,7 @@ await page.close();
 page = await asUser(office, 360);
 await page.waitForSelector('[data-ap-cards]', { timeout: 20000 });
 t('at 360px the queue renders as cards', await page.isVisible('[data-ap-cards]'));
+t('…and the emailed card reads "via email from …"', /via email from avery@sierrapack\.example/.test(await page.textContent('[data-ap-cards] [data-ap-via-email]').catch(() => '')));
 t('no horizontal page overflow at 360', !(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)));
 await page.close();
 await browser.close();

@@ -571,9 +571,13 @@ Removing or editing an attachment or a message stays person-only: every `DELETE`
 
 - **Scope:** `write`.
 - **Grant:** any account with modules set up (the intake is open to everyone signed in).
-- **Body:** `multipart/form-data` with up to 10 `files` (PDF or photo) and optional typed fields: `vendor_name`, `po_or_co_ref`, `amount`, `due_date`, `notes`.
-- **Returns:** **201** with the drops filed. The file is stored and hashed first and the reader runs after; a failed read still files the drop.
-- **Errors:** 400 with nothing attached; 503 when file storage is not configured.
+- **Body:** `multipart/form-data` with up to 10 `files` (PDF or photo) and optional typed fields: `vendor_name`, `po_or_co_ref`, `amount`, `due_date`, `notes`, `submitter`.
+- **The email door (D-333):** `source` is `drop` (the default) or `email`. With `source=email`, the request-level `email_message_id`, `email_from` and `email_subject` are stored on every new row (the message id is trimmed and loses one pair of `<>`; a blank one is stored as nothing). With `source=drop` or no `source`, those fields are ignored. Same grant as any upload — no module needed.
+  - **Same message id + same file** as a drop already on the queue: nothing is filed, stored, read or routed again; that drop is returned with `reused: true`.
+  - **Same message id + a different file:** a new drop.
+  - **Same file from a different message, or with no message id,** within 30 days: a new drop marked `duplicate_suspect` and linked to the first, as for any upload.
+- **Returns:** **201** with the drops when anything was filed; **200** when every file was already on the queue (all `reused`). The file is stored and hashed first and the reader runs after; a failed read still files the drop. Every drop carries `source`, `email_message_id`, `email_from`, `email_subject` (null on the drop door).
+- **Errors:** 400 with nothing attached, or a `source` other than `drop` / `email`; 503 when file storage is not configured.
 
 ### `POST /api/ap-drop/:id/notes`
 
