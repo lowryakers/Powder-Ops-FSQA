@@ -2,7 +2,10 @@ import { resolve, byNames, byDept } from '../readybot-recipients.js';
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
-import { syncDefinitions, approveDefinition, rejectDefinition, diffSnapshots, pendingCount } from '../controlled.js';
+import { syncDefinitions, approveDefinition, rejectDefinition, diffSnapshots, pendingCount, registry, hashOf } from '../controlled.js';
+import { editableFields, buildProposal } from '../controlled-edit.js';
+import { gateSignature } from '../signature.js';
+import { canQaReview } from '../document-revisions.js';
 import { postMessageAs, botDm } from './comms.js';
 import { getType } from '../qms-config.js';
 
@@ -19,6 +22,13 @@ function requireReviewer(req, res) {
   if (!mayReview(req.user)) { res.status(403).json({ error: 'Only Document Control or an admin can review controlled changes.' }); return false; }
   return true;
 }
+// A QA supervisor reads the screen too: a value proposed in the app waits for
+// QA's review before it can be approved (D-328).
+function requireReader(req, res) {
+  if (!mayReview(req.user) && !canQaReview(req.user)) { res.status(403).json({ error: 'Only Document Control, a QA supervisor or an admin can see controlled changes.' }); return false; }
+  return true;
+}
+const entryFor = (row) => registry().find(e => e.scope === row.scope && e.key === row.key) || null;
 
 const parse = (raw) => { try { return JSON.parse(raw || 'null'); } catch { return null; } };
 
@@ -32,13 +42,18 @@ function shape(row) {
     pending_seen_at: row.pending_seen_at, pending_dcr_id: row.pending_dcr_id,
     rejected_at: row.rejected_at, rejected_by: row.rejected_by, rejected_reason: row.rejected_reason,
     changes: pending ? diffSnapshots(approved, pending) : [],
+    // D-328: changed in the app, not only in code.
+    editable: typeof entryFor(row)?.editable === 'function',
+    pending_source: row.status === 'pending' || row.status === 'rejected' ? (row.pending_source || 'code') : null,
+    proposed_by: row.proposed_by, proposed_by_id: row.proposed_by_id, proposed_at: row.proposed_at, proposed_reason: row.proposed_reason,
+    qa_reviewed_by: row.qa_reviewed_by, qa_reviewed_by_id: row.qa_reviewed_by_id, qa_reviewed_at: row.qa_reviewed_at,
   };
 }
 
 // Everything, so Document Control can see what the app is currently serving
 // and not only what's waiting.
 router.get('/', (req, res) => {
-  if (!requireReviewer(req, res)) return;
+  if (!requireReader(req, res)) return;
   const rows = getDb().prepare('SELECT * FROM controlled_definitions ORDER BY status DESC, label').all();
   res.json(rows.map(shape));
 });
@@ -49,14 +64,86 @@ router.get('/pending', (req, res) => {
   res.json(rows.map(shape));
 });
 
+// ── D-328: Document Control changes a value in the app ──────────────────────
+// Propose (Document Control) → QA review (a QA supervisor, password, not the
+// proposer) → approve (Document Control or an admin, password, not the QA
+// reviewer). The same three steps as an SOP revision (D-319).
+
+router.get('/:id/edit', (req, res) => {
+  if (!requireReader(req, res)) return;
+  const row = getDb().prepare('SELECT * FROM controlled_definitions WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  const entry = entryFor(row);
+  if (typeof entry?.editable !== 'function') return res.status(400).json({ error: 'This definition is changed in code, not here.', code: 'NOT_EDITABLE' });
+  const approved = parse(row.approved_snapshot);
+  const proposed = row.status === 'pending' && row.pending_source === 'app' ? parse(row.pending_snapshot) : null;
+  res.json({ id: row.id, label: row.label, fields: editableFields(entry, approved), proposed: proposed ? editableFields(entry, proposed) : null });
+});
+
+router.post('/:id/propose', (req, res) => {
+  if (!requireReviewer(req, res)) return;
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM controlled_definitions WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  const entry = entryFor(row);
+  if (typeof entry?.editable !== 'function') return res.status(400).json({ error: 'This definition is changed in code, not here.', code: 'NOT_EDITABLE' });
+  if (row.status === 'pending' && row.pending_source !== 'app') {
+    return res.status(409).json({ error: 'A deployed change to this definition is waiting. Approve or deny it first.', code: 'CODE_CHANGE_WAITING' });
+  }
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 3) return res.status(400).json({ error: 'Say why it is changing (for example, the DCR number).', code: 'REASON_REQUIRED' });
+  const approved = parse(row.approved_snapshot);
+  const { snapshot, changes, errors } = buildProposal(entry, approved, req.body?.values || {});
+  if (errors.length) return res.status(400).json({ error: errors.join(' '), errors, code: 'INVALID' });
+  if (!changes.length) return res.status(400).json({ error: 'Nothing was changed.', code: 'NO_CHANGE' });
+  db.prepare(`UPDATE controlled_definitions SET pending_hash = ?, pending_snapshot = ?, pending_seen_at = datetime('now'),
+      status = 'pending', pending_source = 'app', pending_dcr_id = NULL,
+      proposed_by = ?, proposed_by_id = ?, proposed_at = datetime('now'), proposed_reason = ?,
+      qa_reviewed_by = NULL, qa_reviewed_by_id = NULL, qa_reviewed_at = NULL,
+      rejected_at = NULL, rejected_by = NULL, rejected_reason = NULL
+    WHERE id = ?`).run(hashOf(snapshot), JSON.stringify(snapshot), req.user.name, req.user.id, reason, row.id);
+  const after = db.prepare('SELECT * FROM controlled_definitions WHERE id = ?').get(row.id);
+  logAudit(req.user, 'update', 'controlled_definition', row.id,
+    { proposed: true, reason, changes, scope: row.scope, key: row.key }, row, after, row.label);
+  res.json(shape(after));
+});
+
+router.post('/:id/qa-review', (req, res) => {
+  const db = getDb();
+  const row = db.prepare('SELECT * FROM controlled_definitions WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  if (!canQaReview(req.user)) return res.status(403).json({ error: 'QA review is given by a supervisor in Quality.', code: 'QA_REVIEW_NOT_ALLOWED' });
+  if (row.status !== 'pending' || row.pending_source !== 'app') return res.status(400).json({ error: 'Nothing proposed in the app is waiting on this definition.' });
+  if (row.proposed_by_id && row.proposed_by_id === req.user.id) return res.status(403).json({ error: 'The person who proposed the change cannot also review it.', code: 'SELF_REVIEW' });
+  if (row.qa_reviewed_at) return res.status(409).json({ error: `Already reviewed by ${row.qa_reviewed_by}.` });
+  if (!gateSignature(req, res)) return;
+  db.prepare(`UPDATE controlled_definitions SET qa_reviewed_by = ?, qa_reviewed_by_id = ?, qa_reviewed_at = datetime('now') WHERE id = ?`)
+    .run(req.user.name, req.user.id, row.id);
+  const after = db.prepare('SELECT * FROM controlled_definitions WHERE id = ?').get(row.id);
+  logAudit(req.user, 'sign', 'controlled_definition', row.id,
+    { qa_review: true, signature_verified: true, meaning: 'Reviewed by QA', scope: row.scope, key: row.key }, row, after, row.label);
+  res.json(shape(after));
+});
+
 router.post('/:id/approve', (req, res) => {
   if (!requireReviewer(req, res)) return;
   const db = getDb();
   const before = db.prepare('SELECT * FROM controlled_definitions WHERE id = ?').get(req.params.id);
+  if (!before) return res.status(404).json({ error: 'Not found' });
+  // A value typed in the app is approved like an SOP revision: QA has reviewed
+  // it, the QA reviewer is not the approver, and the approver signs.
+  const fromApp = before.pending_source === 'app' && ['pending', 'rejected'].includes(before.status);
+  if (fromApp) {
+    if (!before.qa_reviewed_at) return res.status(409).json({ error: 'QA has not reviewed this change yet.', code: 'QA_REVIEW_REQUIRED' });
+    if (before.qa_reviewed_by_id && before.qa_reviewed_by_id === req.user.id) {
+      return res.status(403).json({ error: 'The person who gave QA review cannot also approve.', code: 'REVIEWER_CANNOT_APPROVE' });
+    }
+    if (!gateSignature(req, res)) return;
+  }
   const out = approveDefinition(db, req.params.id, req.user);
   if (out.error) return res.status(400).json({ error: out.error });
   logAudit(req.user, 'update', 'controlled_definition', req.params.id,
-    { approved: true, scope: before.scope, key: before.key, version: out.row.version },
+    { approved: true, scope: before.scope, key: before.key, version: out.row.version, from_app: fromApp, ...(fromApp ? { signature_verified: true, meaning: 'Approved' } : {}) },
     before, out.row, before.label);
   res.json(shape(out.row));
 });

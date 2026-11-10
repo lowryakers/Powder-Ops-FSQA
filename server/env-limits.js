@@ -116,6 +116,18 @@ export function envControlledEntry() {
       document: ENV_SOURCE.document,
       revision: ENV_SOURCE.revision,
     }),
+    // D-328: changed on the Controlled Changes screen, not in code.
+    editable: () => [
+      { path: 'humidity.procedureLimit', label: 'Humidity limit (must stay below)', type: 'number', unit: '%' },
+      { path: 'humidity.alertAtOrAbove', label: 'Humidity warning at', type: 'number', unit: '%' },
+      { path: 'temperature.procedureLimit', label: 'Temperature limit (must stay below)', type: 'number', unit: '°F' },
+      { path: 'temperature.alertAtOrAbove', label: 'Temperature warning at', type: 'number', unit: '°F' },
+      { path: 'document', label: 'Document', type: 'text' },
+      { path: 'revision', label: 'Revision', type: 'text' },
+    ],
+    validate: (s) => ['humidity', 'temperature']
+      .filter(k => s[k] && s[k].alertAtOrAbove > s[k].procedureLimit)
+      .map(k => `The ${k} warning must be at or below its limit.`),
     apply: (snap) => {
       for (const key of ['humidity', 'temperature']) {
         const s = snap?.[key];

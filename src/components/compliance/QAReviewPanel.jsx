@@ -183,6 +183,8 @@ export default function QAReviewPanel() {
               <div className="px-3 py-2 border-b border-gray-100 bg-gray-50 text-xs text-gray-500">
                 {current.key === 'doc-qa-review'
                   ? <>{current.count} draft {current.count === 1 ? 'revision' : 'revisions'} waiting for QA review — reviewed on each document with your password, not signed here.</>
+                  : current.key === 'controlled-qa-review'
+                  ? <>{current.count} controlled {current.count === 1 ? 'value' : 'values'} changed in the app — reviewed on Controlled Changes with your password, not signed here.</>
                   : <>{current.count} {current.count === 1 ? current.noun : current.plural} to make — done on each request, not signed here.
                     Each step ticks itself when the request changes.</>}
               </div>

@@ -70,6 +70,13 @@ function draftsAwaitingQa(db) {
     .map(r => ({ ...r, doc_number: r.doc_number || r.cur_number, title: r.title || r.doc_title }));
 }
 
+function controlledAwaitingQa(db) {
+  try {
+    return db.prepare(`SELECT * FROM controlled_definitions WHERE status = 'pending' AND pending_source = 'app'
+      AND qa_reviewed_at IS NULL ORDER BY proposed_at`).all();
+  } catch { return []; }
+}
+
 // The sign-out logs, driven off one shared definition. Each is a qms_record
 // type whose required QA approval is a counter-signature, so signing goes
 // through the record interface to signQmsApproval — the same function the
@@ -364,6 +371,30 @@ export const SOURCES = [
     })),
     canSign: () => false,
     sign: () => ({ error: 'A document revision is reviewed on the document itself, not signed from this list.', status: 400 }),
+  },
+  {
+    // D-328: a controlled value Document Control changed in the app waits for
+    // QA's review before it can be approved.
+    key: 'controlled-qa-review',
+    label: 'Controlled values to review',
+    form: null,
+    module: 'controlled-changes',
+    kind: 'action',
+    noun: 'change',
+    plural: 'changes',
+    count: (db) => controlledAwaitingQa(db).length,
+    pending: (db, limit = LIMIT) => controlledAwaitingQa(db).slice(0, limit).map(r => ({
+      id: r.id, request_id: null, title: r.label,
+      subtitle: 'Changed in the app', action_kind: 'CONTROLLED_QA_REVIEW',
+      by: r.proposed_by || null, date: (r.proposed_at || '').slice(0, 10), result: null, extra: null,
+      recommended_action: 'Open Controlled Changes, read the change, and give QA review with your password.',
+      reason: `Reason given: ${r.proposed_reason || 'none'}. Document Control cannot approve it until QA has reviewed it.`,
+      note: null, evidence: [], steps: [], blocked_by: null, decision_ref: 'D-328',
+      open_label: 'Open Controlled Changes',
+      link: { tab: 'controlled-changes' },
+    })),
+    canSign: () => false,
+    sign: () => ({ error: 'A controlled value is reviewed on Controlled Changes, not signed from this list.', status: 400 }),
   },
   signOutSource({ key: 'sign-out-equipment', type: 'maintenance_sign_out',
     label: 'Equipment / Tool / Chemical sign-outs', form: '703-01', module: 'maintenance-signout',

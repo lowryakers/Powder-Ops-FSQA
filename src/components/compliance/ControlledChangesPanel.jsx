@@ -1,6 +1,76 @@
 import { useState } from 'react';
 import { useApiGet, apiPost } from '../../hooks/useApi';
-import { ShieldCheck, Clock, Check, X, AlertTriangle, FileText } from 'lucide-react';
+import { useAuth } from '../../hooks/useAuth';
+import { withSignature } from '../../lib/signature';
+import { ShieldCheck, Clock, Check, X, AlertTriangle, FileText, Pencil, UserCheck } from 'lucide-react';
+
+const isDc = (u) => u?.role === 'admin' || (u?.department || '').toLowerCase() === 'document_control';
+const isQaSup = (u) => !!u && ['qa', 'quality'].includes((u.department || '').toLowerCase()) && ['supervisor', 'admin'].includes(u.role);
+
+// D-328: Document Control types the new value here. It is a proposal until a QA
+// supervisor reviews it and it is approved with a password — the same steps as an
+// SOP revision. The server owns every rule; this form only collects the values.
+function ProposeForm({ row, onDone, onCancel }) {
+  const { data, loading, error: loadError } = useApiGet(`/controlled/${row.id}/edit`);
+  const [values, setValues] = useState({});
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  if (loading && !data) return <p className="text-xs text-gray-400">Loading…</p>;
+  if (loadError) return <p className="text-xs text-red-700">{loadError.message || String(loadError)}</p>;
+  const fields = data?.fields || [];
+  const start = Object.fromEntries((data?.proposed || fields).map(f => [f.path, f.value ?? '']));
+  const val = (f) => (Object.prototype.hasOwnProperty.call(values, f.path) ? values[f.path] : (start[f.path] ?? ''));
+  const groups = [];
+  for (const f of fields) {
+    const g = f.group || '';
+    let bucket = groups.find(x => x.name === g);
+    if (!bucket) { bucket = { name: g, fields: [] }; groups.push(bucket); }
+    bucket.fields.push(f);
+  }
+  const submit = async () => {
+    setBusy(true); setError('');
+    try {
+      const all = Object.fromEntries(fields.map(f => [f.path, val(f)]));
+      await apiPost(`/controlled/${row.id}/propose`, { values: all, reason });
+      onDone();
+    } catch (e) { setError(e.message || 'Could not save the change.'); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="space-y-3 bg-white rounded-lg border border-gray-200 p-3" data-propose-form={row.key}>
+      {groups.map(g => (
+        <fieldset key={g.name} className="space-y-2">
+          {g.name && <legend className="text-xs font-semibold text-gray-700">{g.name}</legend>}
+          <div className="grid gap-2 sm:grid-cols-2">
+            {g.fields.map(f => (
+              <label key={f.path} className="block text-xs text-gray-600">
+                {f.label}{f.unit ? ` (${f.unit})` : ''}{f.optional ? ' — optional' : ''}
+                <input value={val(f) ?? ''} inputMode={f.type === 'number' ? 'decimal' : undefined}
+                  data-field={f.path}
+                  onChange={e => setValues(v => ({ ...v, [f.path]: e.target.value }))}
+                  className="mt-0.5 w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm" />
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      ))}
+      <label className="block text-xs text-gray-600">Why is it changing? (for example, the DCR number)
+        <input value={reason} onChange={e => setReason(e.target.value)} data-propose-reason
+          className="mt-0.5 w-full px-2 py-1.5 border border-gray-300 rounded-md text-sm" />
+      </label>
+      {error && <p className="text-xs text-red-700">{error}</p>}
+      <p className="text-[11px] text-gray-500">Nothing changes on the floor yet. A QA supervisor reviews it, then it is approved with a password and goes into use.</p>
+      <div className="flex gap-2">
+        <button type="button" onClick={submit} disabled={busy} data-propose-submit
+          className="px-3 py-1.5 bg-powder-600 text-white rounded-lg text-xs font-medium hover:bg-powder-700 disabled:opacity-50">
+          Send for QA review
+        </button>
+        <button type="button" onClick={onCancel} className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium">Cancel</button>
+      </div>
+    </div>
+  );
+}
 
 // Controlled Changes — what Document Control has approved the app to serve.
 //
@@ -48,11 +118,15 @@ function ChangeRow({ c }) {
 }
 
 export default function ControlledChangesPanel() {
+  const { user } = useAuth();
   const { data, loading, refresh } = useApiGet('/controlled');
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [denying, setDenying] = useState(null); // row id
   const [reason, setReason] = useState('');
+  const [editing, setEditing] = useState(null); // row id
+  const dc = isDc(user);
+  const qa = isQaSup(user);
 
   const rows = data || [];
   const waiting = rows.filter(r => r.status === 'pending');
@@ -61,10 +135,14 @@ export default function ControlledChangesPanel() {
   const act = async (row, kind) => {
     setBusy(row.id); setError('');
     try {
-      await apiPost(`/controlled/${row.id}/${kind}`, kind === 'reject' ? { reason } : {});
+      if (kind === 'reject') await apiPost(`/controlled/${row.id}/reject`, { reason });
+      else if (kind === 'qa-review' || (kind === 'approve' && row.pending_source === 'app')) {
+        await withSignature((extra) => apiPost(`/controlled/${row.id}/${kind}`, extra),
+          { title: kind === 'approve' ? `Approve: ${row.label}` : `QA review: ${row.label}`, detail: row.proposed_reason || '' });
+      } else await apiPost(`/controlled/${row.id}/${kind}`, {});
       setDenying(null); setReason('');
       refresh();
-    } catch (e) { setError(e.message || 'Could not record that.'); }
+    } catch (e) { if (!e.cancelled) setError(e.message || 'Could not record that.'); }
     finally { setBusy(''); }
   };
 
@@ -76,8 +154,10 @@ export default function ControlledChangesPanel() {
         <h3 className="font-semibold text-gray-900 flex items-center gap-2"><ShieldCheck size={16} /> Controlled Changes</h3>
         <p className="text-xs text-gray-500 mt-0.5 max-w-2xl">
           Form definitions and acceptance criteria only take effect once Document Control approves them.
-          A change that has been deployed is <span className="font-medium">not in use</span> until it is approved here —
-          the app keeps serving the approved version. Dropdown lists and custom fields are not controlled and stay self-serve.
+          A change is <span className="font-medium">not in use</span> until it is approved here — the app keeps serving
+          the approved version. Limits and the dilution checks marked <span className="font-medium">Change</span> are changed
+          right here: Document Control types the new value, a QA supervisor reviews it, and it is approved with a password.
+          Dropdown lists and custom fields are not controlled and stay self-serve.
         </p>
       </div>
 
@@ -112,6 +192,16 @@ export default function ControlledChangesPanel() {
             )}
           </div>
 
+          {r.pending_source === 'app' && (
+            <p className="text-xs text-gray-700" data-proposal={r.key}>
+              Changed in the app by <span className="font-medium">{r.proposed_by}</span>
+              {r.proposed_at ? ` on ${r.proposed_at.slice(0, 10)}` : ''} — {r.proposed_reason}.{' '}
+              {r.qa_reviewed_at
+                ? <span className="text-emerald-700 font-medium inline-flex items-center gap-1"><UserCheck size={12} /> QA reviewed by {r.qa_reviewed_by}</span>
+                : <span className="text-amber-800 font-medium">Waiting for QA review.</span>}
+            </p>
+          )}
+
           {r.changes.length > 0 && (
             <ul className="space-y-1 bg-white/70 rounded-lg px-3 py-2">
               {r.changes.map((c, i) => <ChangeRow key={i} c={c} />)}
@@ -133,8 +223,21 @@ export default function ControlledChangesPanel() {
               </div>
             </div>
           ) : (
-            <div className="flex items-center gap-2">
-              <button onClick={() => act(r, 'approve')} disabled={busy === r.id}
+            <div className="flex items-center gap-2 flex-wrap">
+              {r.pending_source === 'app' && !r.qa_reviewed_at && qa && r.proposed_by_id !== user?.id && (
+                <button onClick={() => act(r, 'qa-review')} disabled={busy === r.id} data-qa-review={r.key}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-medium hover:bg-emerald-700 disabled:opacity-50">
+                  <UserCheck size={13} /> Give QA review
+                </button>
+              )}
+              {r.pending_source === 'app' && dc && (
+                <button onClick={() => setEditing(editing === r.id ? null : r.id)} disabled={busy === r.id}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white text-gray-700 border border-gray-300 rounded-lg text-xs font-medium hover:bg-gray-50">
+                  <Pencil size={13} /> Edit the change
+                </button>
+              )}
+              {dc && (r.pending_source !== 'app' || r.qa_reviewed_at) && <>
+              <button onClick={() => act(r, 'approve')} disabled={busy === r.id} data-approve={r.key}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-powder-600 text-white rounded-lg text-xs font-medium hover:bg-powder-700 disabled:opacity-50">
                 <Check size={13} /> Approve — put in use
               </button>
@@ -142,8 +245,10 @@ export default function ControlledChangesPanel() {
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white text-gray-700 border border-gray-300 rounded-lg text-xs font-medium hover:bg-gray-50 disabled:opacity-50">
                 <X size={13} /> Deny
               </button>
+              </>}
             </div>
           )}
+          {editing === r.id && <ProposeForm row={r} onCancel={() => setEditing(null)} onDone={() => { setEditing(null); refresh(); }} />}
         </div>
       ))}
 
@@ -160,13 +265,21 @@ export default function ControlledChangesPanel() {
                 <span className="ml-auto text-[11px] text-gray-500 shrink-0">
                   v{r.version} · {r.approved_by === 'baseline' ? 'baseline' : r.approved_by}
                 </span>
+                {r.editable && dc && (
+                  <button onClick={() => setEditing(editing === r.id ? null : r.id)} data-change={r.key}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 border border-gray-300 rounded-md text-[11px] text-gray-700 hover:bg-gray-50 shrink-0">
+                    <Pencil size={11} /> Change
+                  </button>
+                )}
                 {r.status === 'rejected' && (
                   <span className="px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 text-[10px] font-bold shrink-0" title={r.rejected_reason || ''}>
                     denied
                   </span>
                 )}
               </li>
-            ))}
+            )).flatMap((li, i) => (editing === settled[i].id
+              ? [li, <li key={`${settled[i].id}-edit`} className="px-4 py-3"><ProposeForm row={settled[i]} onCancel={() => setEditing(null)} onDone={() => { setEditing(null); refresh(); }} /></li>]
+              : [li]))}
           </ul>
         </div>
       )}

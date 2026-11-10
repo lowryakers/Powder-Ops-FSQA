@@ -2872,6 +2872,11 @@ function runMigrations() {
   // D-327: which FORM 106-01 dilution a schedule checks — the identity, so an
   // approved rename of the chemical does not orphan the schedule or its cards.
   addColumnIfMissing('pm_schedules', 'dilution_key', 'TEXT');
+  // D-328: the controlled document a recurring task follows, and the revision of
+  // it the task was last checked against. A newer approved revision lists the
+  // task on Doc Control Review until somebody looks at it.
+  addColumnIfMissing('pm_schedules', 'document_id', 'TEXT');
+  addColumnIfMissing('pm_schedules', 'document_revision_checked', 'TEXT');
   addColumnIfMissing('work_orders', 'task_group', "TEXT DEFAULT 'warehouse'");
 
   // Flavor approval on a scheduled manufacturing order
@@ -6594,6 +6599,15 @@ function runMigrations() {
   } catch (e) {
     console.warn('[db] controlled_definitions unavailable:', e.message);
   }
+  // D-328: a controlled value can be PROPOSED in the app (Document Control types
+  // the new value) as well as parked from code. `code_hash` is the code version
+  // last seen at boot, so an in-app approval that differs from the code is not
+  // re-parked as a "change" on every deploy; only a change to the code is.
+  for (const [col, def] of [
+    ['code_hash', 'TEXT'], ['pending_source', 'TEXT'], ['proposed_by', 'TEXT'], ['proposed_by_id', 'TEXT'],
+    ['proposed_at', 'TEXT'], ['proposed_reason', 'TEXT'], ['qa_reviewed_by', 'TEXT'], ['qa_reviewed_by_id', 'TEXT'],
+    ['qa_reviewed_at', 'TEXT'], ['approved_by_id', 'TEXT'], ['approved_source', 'TEXT'],
+  ]) { try { addColumnIfMissing('controlled_definitions', col, def); } catch { /* table unavailable */ } }
 
   // ── The change register (CAR 4990683-4; the software half of 4990683-5) ──
   // One register for every kind of change 21 CFR 111.130(e) names — equipment,

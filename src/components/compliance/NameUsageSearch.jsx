@@ -1,11 +1,77 @@
 import { useState } from 'react';
-import { apiFetch } from '../../hooks/useApi';
-import { Search, ExternalLink, Loader2 } from 'lucide-react';
+import { apiFetch, apiPost } from '../../hooks/useApi';
+import { Search, ExternalLink, Loader2, Replace } from 'lucide-react';
 
 // "Where is this name used?" (D-326). Type a chemical, a machine, a person's
 // title — anything that changed — and see every document, recurring task,
 // register entry and built-in definition that still says it, with who changes
 // each one. READ-ONLY: the server only searches.
+// D-328: rename it in the plain places in one act — recurring tasks and their
+// open cards, quality schedules, the chemical list and the sign-out catalogue.
+// Documents, forms and courses change by their own revision; the dilution checks
+// in Controlled Changes. Preview first; the apply writes exactly what was shown.
+function RenameBox({ from, onDone }) {
+  const [to, setTo] = useState('');
+  const [reason, setReason] = useState('');
+  const [plan, setPlan] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [done, setDone] = useState(null);
+  const call = async (preview) => {
+    setBusy(true); setError('');
+    try {
+      const r = await apiPost('/doc-review/name-usage/rename', { from, to, reason, preview });
+      if (preview) setPlan(r); else { setDone(r); setPlan(null); onDone?.(); }
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  };
+  if (done) return <p className="text-sm text-emerald-700" data-rename-done={done.renamed}>Renamed in {done.renamed} place{done.renamed === 1 ? '' : 's'}.</p>;
+  return (
+    <div className="border border-powder-200 bg-powder-50/40 rounded-lg p-3 space-y-2" data-rename-box>
+      <p className="text-sm font-semibold text-gray-800 flex items-center gap-1.5"><Replace size={14} /> Rename &ldquo;{from}&rdquo; everywhere it can be</p>
+      <p className="text-[11px] text-gray-500">Changes recurring tasks and the cards already open, quality schedules, the chemical list and the sign-out catalogue.
+        Filed records are never changed. Documents, forms and courses change through their own revision; the dilution checks in Controlled Changes.</p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <label className="text-xs text-gray-600">New name
+          <input value={to} onChange={e => { setTo(e.target.value); setPlan(null); }} data-rename-to
+            className="mt-0.5 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm" />
+        </label>
+        <label className="text-xs text-gray-600">Why (for example, the DCR number)
+          <input value={reason} onChange={e => setReason(e.target.value)} data-rename-reason
+            className="mt-0.5 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm" />
+        </label>
+      </div>
+      {error && <p className="text-xs text-red-700">{error}</p>}
+      {!plan ? (
+        <button type="button" disabled={busy || !to.trim()} onClick={() => call(true)} data-rename-preview
+          className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-medium disabled:opacity-50">Preview the changes</button>
+      ) : (
+        <div className="space-y-2" data-rename-plan={plan.total}>
+          <p className="text-xs text-gray-700"><strong>{plan.total}</strong> place{plan.total === 1 ? '' : 's'} would change.
+            {plan.kept?.dilution_checks ? ` ${plan.kept.dilution_checks} dilution check(s) are left for Controlled Changes.` : ''}</p>
+          <ul className="max-h-64 overflow-y-auto divide-y divide-gray-100 bg-white rounded-lg border border-gray-200 text-xs">
+            {plan.rows.map(r => (
+              <li key={`${r.target}-${r.id}`} className="px-2 py-1.5">
+                <span className="text-gray-500">{r.label}:</span> <span className="font-medium">{r.name}</span>
+                {r.changes.filter(c => c.field !== 'procedure_steps').map(c => (
+                  <span key={c.field} className="block text-gray-500">{c.field}: <span className="line-through">{c.from}</span> → <span className="text-gray-800">{c.to}</span></span>
+                ))}
+                {r.changes.some(c => c.field === 'procedure_steps') && <span className="block text-gray-500">steps updated</span>}
+              </li>
+            ))}
+          </ul>
+          <div className="flex gap-2">
+            <button type="button" disabled={busy || !plan.total || reason.trim().length < 3} onClick={() => call(false)} data-rename-apply
+              className="px-3 py-1.5 bg-powder-600 text-white rounded-lg text-xs font-medium disabled:opacity-50">Rename {plan.total} place{plan.total === 1 ? '' : 's'}</button>
+            <button type="button" onClick={() => setPlan(null)} className="px-3 py-1.5 bg-gray-100 rounded-lg text-xs">Back</button>
+          </div>
+          {reason.trim().length < 3 && <p className="text-[11px] text-amber-700">Say why before renaming.</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function NameUsageSearch() {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
@@ -73,6 +139,7 @@ export default function NameUsageSearch() {
                   </ul>
                 </section>
               ))}
+              {result.total > 0 && <RenameBox key={result.term} from={result.term} onDone={() => run()} />}
               {missing.length > 0 && (
                 <p className="text-xs text-gray-500">Not found in: {missing.map((s) => s.label).join(' · ')}.</p>
               )}

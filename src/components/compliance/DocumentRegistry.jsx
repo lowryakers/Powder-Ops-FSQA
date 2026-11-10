@@ -14,6 +14,7 @@ import SearchSelect from '../common/SearchSelect.jsx';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 import FrozenScroll from '../common/FrozenScroll';
 import DocumentRevisions from './DocumentRevisions.jsx';
+import DocumentTasks from './DocumentTasks.jsx';
 import { getParam, consumeParam } from '../../lib/deepLink';
 import { withSignature } from '../../lib/signature';
 import { isApprovedStatus } from '../../../shared/document-revision.js';
@@ -750,6 +751,8 @@ function DocumentViewer({ doc, typeLabel, canEdit, canRetype, onEdit, onArchive,
         <DocumentRevisions doc={doc} canEdit={canEdit} onChanged={onChanged} />
 
         <DocumentAttachments docId={doc.id} canEdit={canEdit} />
+
+        <DocumentTasks doc={doc} />
 
         <DocumentSignatures doc={doc} />
 

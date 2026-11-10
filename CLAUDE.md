@@ -6496,6 +6496,16 @@ it. **SELECT-only; it renames nothing.** A new place a name lives gets a section
 - The sync rewrites only schedules still holding what it last wrote; a hand-edited one is reported, never overwritten.
 - `verify:dilutioncontrol` (23).
 
+## Single spine: values, names and tasks (D-328)
+- **A controlled value is changed in the app** — Controlled Changes → Change: Document Control proposes (reason), a QA
+  supervisor reviews (password, not the proposer), Document Control approves (password, not the QA reviewer).
+  `server/controlled-edit.js`; an entry opts in with `editable(snap)` (fields `{path,label,type,optional,group}`, path
+  `a.b` / `items[key]`) and `validate(snap)`. **Never re-park an app approval**: only a change in `code_hash` parks.
+- **Rename from the name search** (`server/name-rename.js`): tasks + open cards, quality schedules, chemical list,
+  sign-out catalogue; preview first, reason required, one audit per row. Filed records and documents are never renamed.
+- **A recurring task follows its SOP/WI** (`pm_schedules.document_id`, `server/schedule-documents.js`); a newer revision
+  lists it on Doc Control Review until marked checked. `verify:singlespine` (50).
+
 ## Every page of a document PDF carries its identity; the draft is its own export (D-318)
 `server/document-pdf.js` is the ONE renderer for controlled-document PDFs (single, batch, Auditor View Print). Header and
 footer are drawn on buffered pages, never written into the body: number · Rev · short title · Page x of y, and

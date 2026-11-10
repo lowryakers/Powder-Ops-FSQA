@@ -70,6 +70,31 @@ export function dilutionControlledEntry() {
       }
     },
     afterApply: (db) => syncDilutionTasks(db),
+    // D-328: Document Control changes a chemical, its range or the revision on
+    // the Controlled Changes screen. A blank min and max is a mixing ratio.
+    editable: (snap) => [
+      { path: 'revision', label: 'Form revision', type: 'text' },
+      ...(snap.items || []).flatMap(it => {
+        const g = it.chemical || it.key;
+        return [
+          { path: `items[${it.key}].chemical`, label: 'Chemical name', group: g, type: 'text' },
+          { path: `items[${it.key}].registry_name`, label: 'Name on the approved chemical list', group: g, type: 'text', optional: true },
+          { path: `items[${it.key}].target`, label: 'Target (as printed on the form)', group: g, type: 'text' },
+          { path: `items[${it.key}].min`, label: 'Lowest reading', group: g, type: 'number', optional: true },
+          { path: `items[${it.key}].max`, label: 'Highest reading', group: g, type: 'number', optional: true },
+          { path: `items[${it.key}].unit`, label: 'Unit (blank for a mixing ratio)', group: g, type: 'text', optional: true },
+        ];
+      }),
+    ],
+    validate: (snap) => (snap.items || []).flatMap(it => {
+      const name = it.chemical || it.key;
+      const hasMin = it.min !== null && it.min !== undefined;
+      const hasMax = it.max !== null && it.max !== undefined;
+      if (hasMin !== hasMax) return [`${name}: give both the lowest and highest reading, or neither (a mixing ratio).`];
+      if (hasMin && it.min > it.max) return [`${name}: the lowest reading is above the highest.`];
+      if (hasMin && !it.unit) return [`${name}: a measured range needs its unit.`];
+      return [];
+    }),
   };
 }
 

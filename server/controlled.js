@@ -103,6 +103,16 @@ function scaleEntries() {
     // so the deployed unit is adopted into the stored snapshot silently rather
     // than parking all five forms over a shape change nobody made.
     upgrade: (snap) => (snap && Array.isArray(snap.points) && !snap.unit ? { ...snap, unit: form.unit } : null),
+    // D-328: changed on the Controlled Changes screen, not in code.
+    editable: (snap) => [
+      { path: 'unit', label: 'Unit', type: 'text' },
+      ...(snap.points || []).flatMap((p, i) => [
+        { path: `points[${i}].nominal`, label: `Weight ${i + 1}`, group: `Weight ${i + 1}`, type: 'number' },
+        { path: `points[${i}].tolerance`, label: `Tolerance ±`, group: `Weight ${i + 1}`, type: 'number' },
+      ]),
+    ],
+    validate: (snap) => (snap.points || []).flatMap((p, i) =>
+      (p.nominal > 0 && p.tolerance > 0 ? [] : [`Weight ${i + 1}: the weight and tolerance must be more than 0.`])),
   }));
 }
 
@@ -163,7 +173,9 @@ export function syncDefinitions(db) {
     (id, scope, key, label, approved_hash, approved_snapshot, approved_at, approved_by, version, status)
     VALUES (?, ?, ?, ?, ?, ?, datetime('now'), 'baseline', 1, 'approved')`);
   const setPending = db.prepare(`UPDATE controlled_definitions
-    SET pending_hash = ?, pending_snapshot = ?, pending_seen_at = datetime('now'), status = 'pending', label = ?
+    SET pending_hash = ?, pending_snapshot = ?, pending_seen_at = datetime('now'), status = 'pending', label = ?,
+      pending_source = 'code', proposed_by = NULL, proposed_by_id = NULL, proposed_at = NULL, proposed_reason = NULL,
+      qa_reviewed_by = NULL, qa_reviewed_by_id = NULL, qa_reviewed_at = NULL
     WHERE id = ?`);
   const touchLabel = db.prepare('UPDATE controlled_definitions SET label = ? WHERE id = ?');
 
@@ -191,9 +203,17 @@ export function syncDefinitions(db) {
         row = db.prepare(SELECT).get(entry.scope, entry.key);
       } else {
         ins.run(uuid(), entry.scope, entry.key, entry.label, hash, JSON.stringify(snapshot));
+        db.prepare('UPDATE controlled_definitions SET code_hash = ? WHERE scope = ? AND key = ?').run(hash, entry.scope, entry.key);
         continue;
       }
     }
+
+    // D-328: the code version seen at the LAST boot. A definition approved in the
+    // app differs from the code on purpose; only a change to the CODE is a new
+    // thing for Document Control to look at. A row with no record (written before
+    // this column) behaves as before.
+    const lastCode = row.code_hash;
+    db.prepare('UPDATE controlled_definitions SET code_hash = ? WHERE id = ?').run(hash, row.id);
 
     // Let the entry reconcile a snapshot stored before a field came under
     // control. The upgraded snapshot replaces the stored one silently — its new
@@ -213,7 +233,8 @@ export function syncDefinitions(db) {
     if (row.approved_hash === hash) {
       // The code matches what's approved. Nothing to serve from the snapshot,
       // but clear any stale pending row left by a reverted deploy.
-      if (row.status === 'pending') {
+      // An app proposal is left alone: it is a person's change, not a reverted deploy.
+      if (row.status === 'pending' && row.pending_source !== 'app') {
         db.prepare("UPDATE controlled_definitions SET pending_hash = NULL, pending_snapshot = NULL, pending_seen_at = NULL, pending_dcr_id = NULL, status = 'approved' WHERE id = ?").run(row.id);
       }
       if (row.label !== entry.label) touchLabel.run(entry.label, row.id);
@@ -222,7 +243,11 @@ export function syncDefinitions(db) {
 
     // Changed. Serve the approved version and park this one.
     try { entry.apply(JSON.parse(row.approved_snapshot)); } catch { /* keep code as-is if unreadable */ }
-    if (row.pending_hash !== hash) {
+    // A value approved IN THE APP differs from the code on purpose: it is not
+    // re-parked while the code is the version already seen. Anything else that
+    // differs (a code change, or an approval recorded outside the app) parks.
+    const appApprovedOverSameCode = row.approved_source === 'app' && lastCode === hash;
+    if (row.pending_hash !== hash && !appApprovedOverSameCode) {
       setPending.run(hash, JSON.stringify(snapshot), entry.label, row.id);
       newlyPending.push({ ...entry, id: row.id, hash, snapshot, approved: safeParse(row.approved_snapshot) });
     }
@@ -243,10 +268,10 @@ export function approveDefinition(db, id, user) {
   }
   const snapshot = safeParse(row.pending_snapshot);
   db.prepare(`UPDATE controlled_definitions SET approved_hash = pending_hash, approved_snapshot = pending_snapshot,
-      approved_at = datetime('now'), approved_by = ?, version = version + 1,
+      approved_at = datetime('now'), approved_by = ?, approved_by_id = ?, approved_source = pending_source, version = version + 1,
       pending_hash = NULL, pending_snapshot = NULL, pending_seen_at = NULL, status = 'approved',
       rejected_at = NULL, rejected_by = NULL, rejected_reason = NULL
-    WHERE id = ?`).run(user?.name || 'system', id);
+    WHERE id = ?`).run(user?.name || 'system', user?.id || null, id);
   const entry = registry().find(e => e.scope === row.scope && e.key === row.key);
   if (entry && snapshot) { try { entry.apply(snapshot); } catch { /* next boot will settle it */ } }
   // An entry whose definition drives records (D-327: the dilution tasks) moves

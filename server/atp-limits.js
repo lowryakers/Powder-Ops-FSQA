@@ -204,6 +204,13 @@ export function atpControlledEntry() {
       if (snap?.document) ATP_LIMIT.document = snap.document;
       if (snap?.revision) ATP_LIMIT.revision = snap.revision;
     },
+    // D-328: changed on the Controlled Changes screen, not in code.
+    editable: () => [
+      { path: 'max', label: 'Critical limit', type: 'number', unit: 'RLU' },
+      { path: 'document', label: 'Document', type: 'text' },
+      { path: 'revision', label: 'Revision', type: 'text' },
+    ],
+    validate: (s) => (s.max > 0 ? [] : ['The critical limit must be more than 0.']),
     upgrade: (snap) => {
       if (!snap || typeof snap.max !== 'number') return null;
       const missing = ['unit', 'document', 'revision'].filter(k => snap[k] === undefined);
