@@ -487,14 +487,40 @@ A token can never approve a panel, send it for approval, send it back, acknowled
 - **Returns:** the parent message and its replies.
 
 ```json
-{ "parent": { "id": "5354…", "user_name": "Catalog Bot", "body": "Proof run finished for the pouch." }, "replies": [] }
+{ "parent": { "id": "5354…", "user_name": "Catalog Bot", "body": "Proof run finished for the pouch." }, "replies": [], "asks": [] }
+```
+
+`asks` lists the approval asks in the thread, in the same shape as `GET /api/comms/messages/:id/ask-status` (D-336).
+
+### `GET /api/comms/messages/:id/ask-status`
+
+- **Scope:** `read`.
+- **Grant:** membership of the message's channel. Not a member: **404**.
+- **`:id`:** an ask message, or the top-level message of the thread the ask is in.
+- **Returns:** `{ message_id, channel_id, approver_configured, asks: [ … ] }`. Each ask carries `ask_id`, `message_id`, `thread_id`, `channel_id`, `category`, `excluded`, `status` (`open` · `recognized` · `voided` · `deleted`), `approved`, `reason` (`excluded_category` · `ask_deleted` · `approver_not_configured` · null), and, once answered, `recognized_at`, `recognized_by` (a user id), `reply_message_id`, `reply_text`, `voided_at`, `void_reason` (`edited` · `deleted` · `ask_deleted`).
+- **`approved` is true only** while the recognition stands: the reply has not been edited or deleted since, the ask has not been deleted, and the category is not excluded. It is re-checked on every read.
+- **Read only.** No route creates, confirms or forces a recognition. A token posting "approve" posts an ordinary message.
+
+How a recognition happens, all on the server:
+- The ask was posted with `approval_ask` (below) in #ops-requests or #ops-requests-test.
+- The approver set in ReadyDoc (a user id, `ops_thread_approver_user_id`, else `OPS_THREAD_APPROVER_USER_ID`) replies in that thread, from a person's session — never a token, even one on the approver's own account.
+- The reply, lowercased with punctuation dropped, is exactly `approve`, `approved` or `yes approve`. "not approved", "please approve", "i approve", "ok" and a reaction do not count.
+- It answers the **latest** ask in the thread. If that ask is already recognized or excluded, nothing is recorded; an earlier ask is never approved by a reply aimed at a newer one — ask again.
+- Only the first valid reply counts. Editing or deleting it voids the recognition; a fresh, unedited reply can then recognize the ask again.
+
+```json
+{ "message_id": "7c1e…", "channel_id": "eb09…", "approver_configured": true,
+  "asks": [ { "ask_id": "a41f…", "message_id": "7c1e…", "thread_id": "5354…", "category": "code", "excluded": false,
+              "status": "recognized", "approved": true, "reason": null, "recognized_by": "u-…",
+              "reply_message_id": "9d02…", "reply_text": "Approved.", "void_reason": null } ] }
 ```
 
 ### `POST /api/comms/channels/:id/messages`
 
 - **Scope:** `write`.
 - **Grant:** membership of the channel.
-- **Body:** `{ body?, parent_id?, attachment_ids? }`. Set `parent_id` to reply in a thread. A message needs `body`, `attachment_ids`, or both.
+- **Body:** `{ body?, parent_id?, attachment_ids?, approval_ask? }`. Set `parent_id` to reply in a thread. A message needs `body`, `attachment_ids`, or both.
+- **`approval_ask` (D-336):** `{ "category": "code" }` makes the message an approval ask. Only a bot posts one, only in #ops-requests or #ops-requests-test, never in a DM, and `parent_id` (if sent) must be a top-level message in that channel — otherwise **400**. Categories: `ops`, `code`, `process`, `staffing`, `training`, `artwork`, `internal`; and `money`, `payment`, `qbo`, `bill_pay`, `outside_party`, which are **excluded** — they can be asked and are never recognized. An unknown category is **400**, and so is sending `excluded` at all: the server decides it. The 201 carries `approval_ask: { ask_id, category, excluded, thread_id, status, approved }`; the ask id is the server's.
 - **Attachments.** `attachment_ids` are ids returned by `POST /api/comms/channels/:id/attachments` for **this** channel, uploaded by **this** account and not yet on a message. Any other id is ignored. Each attachment in the reply carries `download_url`.
 - **Returns:** **201** with the message.
 - **Attribution.** The message is the bot account's: `user_id` and `user_name` are that account, never a person's. The audit entry carries the token prefix.

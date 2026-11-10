@@ -5372,6 +5372,41 @@ function runMigrations() {
   addColumnIfMissing('chat_messages', 'pinned_by', 'TEXT');
   // D-190: a thread reply that ALSO goes to the channel is one row, read in both places.
   addColumnIfMissing('chat_messages', 'also_in_channel', 'INTEGER NOT NULL DEFAULT 0');
+  // D-336: how a message was posted — 'session' (a person) or 'token' (a bot).
+  // NULL on everything older; nothing reads a NULL as a person (no back-compute).
+  addColumnIfMissing('chat_messages', 'posted_via', 'TEXT');
+  // D-336: a bot's structured approval ask in #ops-requests, and the approver's
+  // recognised reply. The ask id is the server's; `excluded` is set from the
+  // category by the server. A recognition is voided, never deleted, when its
+  // reply is edited or deleted; at most one live recognition per ask.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS chat_approval_asks (
+      id TEXT PRIMARY KEY,
+      message_id TEXT NOT NULL UNIQUE,
+      channel_id TEXT NOT NULL,
+      thread_id TEXT NOT NULL,
+      category TEXT NOT NULL,
+      excluded INTEGER NOT NULL DEFAULT 0,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      via_token INTEGER NOT NULL DEFAULT 0,
+      token_label TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_approval_asks_thread ON chat_approval_asks (channel_id, thread_id, created_at);
+    CREATE TABLE IF NOT EXISTS chat_approval_recognitions (
+      id TEXT PRIMARY KEY,
+      ask_id TEXT NOT NULL REFERENCES chat_approval_asks(id),
+      reply_message_id TEXT NOT NULL,
+      recognized_by TEXT NOT NULL,
+      recognized_at TEXT NOT NULL,
+      reply_text TEXT,
+      status TEXT NOT NULL DEFAULT 'recognized' CHECK (status IN ('recognized','voided')),
+      voided_at TEXT,
+      void_reason TEXT
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_approval_live ON chat_approval_recognitions (ask_id) WHERE status = 'recognized';
+    CREATE INDEX IF NOT EXISTS idx_chat_approval_reply ON chat_approval_recognitions (reply_message_id);
+  `);
   // D-190: following a thread is derived (you started it, replied, were named);
   // a row here OVERRIDES that — 'following' adds a thread you never touched,
   // 'muted' takes one off your Threads list and stops its reply notifications.

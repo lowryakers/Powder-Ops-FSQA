@@ -132,6 +132,7 @@ const RUNS = [
   ['verify-name-usage.mjs', 5207],
   ['verify-dilution-control.mjs', 5208],
   ['verify-single-spine.mjs', 5209],
+  ['verify-ops-thread-asks.mjs', 5210, { API_TOKEN_WRITE_RPM: '200', API_TOKEN_RPM: '400' }, false],
   ['verify-packaging-specs.mjs', 5051, { PRODUCT_MASTER_TOKEN: 'spec-token' }],
   ['verify-artwork-film.mjs', 5052, {}],
   ['verify-artwork-retire.mjs', 5071, {}],

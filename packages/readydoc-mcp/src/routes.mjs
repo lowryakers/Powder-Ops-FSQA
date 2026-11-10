@@ -176,14 +176,20 @@ export const ROUTES = Object.freeze([
   { tool: 'read_thread', method: 'GET', path: '/api/comms/messages/:message_id/thread',
     description: 'A message and its thread replies.',
     properties: { message_id: str('The parent message id.') }, required: ['message_id'] },
+  { tool: 'read_ops_ask_status', method: 'GET', path: '/api/comms/messages/:message_id/ask-status',
+    description: 'The state of the approval asks on an #ops-requests message or thread: open, recognized (the approver replied from a person\'s session), voided or deleted. Read only.',
+    properties: { message_id: str('The ask message id, or the thread\'s top-level message id.') }, required: ['message_id'] },
   { tool: 'post_channel_message', method: 'POST', path: '/api/comms/channels/:channel_id/messages',
     description: 'Post a message in a channel or DM the account is a member of, as the bot account. No @channel/@here/@everyone. '
       + 'To attach files give file_path (or file_paths, up to 10): they are uploaded first and linked to the message; body is then optional. '
       + 'Needs a write token; account must be a channel member; pdf/png/jpg/csv/xlsx/docx only.',
-    body: ['body', 'parent_id'],
+    body: ['body', 'parent_id', 'approval_ask'],
     upload: { path: '/api/comms/channels/:channel_id/attachments', ...CHAT_FILES, ids: 'attachment_ids' },
     properties: {
       channel_id: str('The channel id.'), body: str('The message text. Optional when a file is attached.'), parent_id: str('Reply in this thread.'),
+      approval_ask: { type: 'object', properties: { category: { type: 'string', enum: ['ops', 'code', 'process', 'staffing', 'training', 'artwork', 'internal', 'money', 'payment', 'qbo', 'bill_pay', 'outside_party'] } },
+        required: ['category'], additionalProperties: false,
+        description: 'Make this an approval ask (#ops-requests / #ops-requests-test only). money, payment, qbo, bill_pay and outside_party are never recognized.' },
       file_path: filePath('file to attach (pdf, png, jpg, csv, xlsx or docx)'),
       file_paths: { type: 'array', items: { type: 'string' }, maxItems: 10, description: 'Up to 10 files to attach (pdf, png, jpg, csv, xlsx or docx), paths on this machine.' },
     },

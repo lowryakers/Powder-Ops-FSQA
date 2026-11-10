@@ -10677,3 +10677,36 @@ A-20261110-011, slice 2 of the AP Drop email work.
   read as no number.
 - The two live Vestis drops are not re-read and no data is fixed. The office re-reads them if it wants.
 - `check:apdrop` (45; `main` fails 4), `check:apitokens` (158; `main` fails 2), `verify:apdrop` (151; `main` fails 6).
+
+## D-336 — A bot's approval ask in #ops-requests, and the approver's session reply that answers it (10 Nov 2026)
+A bot asking Lowry for approval in an #ops-requests thread had no server-side way to know his reply was one. Matching
+words on the bot's side gets the display name, substrings, edits, reactions and the wrong thread wrong. So the server
+records it.
+- **A structured ask.** `approval_ask: { category }` on `POST /api/comms/channels/:id/messages` writes a
+  `chat_approval_asks` row. The ask id is the server's (uuid). Only a bot posts one (a token, or `isBotAuthor`), only in
+  `OPS_CHANNELS` by the channel's current name, never in a DM; `parent_id` must be a top-level message there. A person,
+  another channel, a bad parent, an unknown category, or a caller sending `excluded` at all: **400**, nothing written.
+- **Categories are a closed list** (`shared/ops-asks.js`). `money`, `payment`, `qbo`, `bill_pay`, `outside_party` can be
+  asked and are never recognized; `excluded` is set from the category on the server.
+- **A recognition is a side effect of the approver's own reply**, never a route. It is recorded when, together: the
+  channel is an ops channel; the reply is in the ask's thread; the author's id equals `ops_thread_approver_user_id`
+  (app_settings), else `OPS_THREAD_APPROVER_USER_ID` (never a name; unset recognizes nothing); the reply came from a
+  person's session — not a token (even on the approver's account), not a "view as" preview; and the reply is exactly
+  `approve`, `approved` or `yes approve` after lowercasing and dropping punctuation. `isBotAccount` is deliberately not
+  the person test: it is true for any account that ever held a token.
+- **A reply answers the LATEST ask in its thread** (not deleted). If that ask is recognized or excluded, nothing is
+  recorded; an earlier ask is never approved by a reply aimed at a newer one — the bot asks again.
+- **Only the first valid reply counts** (one live recognition per ask, a unique index). **Editing or deleting it voids it**
+  (`chat_approval_recognitions.status = 'voided'`, reason, time; never deleted); a fresh, unedited reply can then recognize
+  the ask again. Deleting the ask voids its recognition and closes it. A drift the hooks missed is voided on read.
+- **Reactions never count.** The reactions routes are untouched.
+- **Read:** `GET /api/comms/messages/:id/ask-status` (members only, 404 otherwise; on `BOT_ROUTES`, MCP tool
+  `read_ops_ask_status`) and `asks` on the thread read, `approval_ask` on each ask message. `approved` is true only while
+  the recognition stands and the category is not excluded.
+- **`chat_messages.posted_via`** (`session` | `token`) is stamped on new posts and forwards. Older rows stay NULL; nothing
+  back-computes from them.
+- `GET|PUT /api/comms/ops-thread-settings` sets the approver: admin session only, refused to tokens.
+- **Not in this change:** APPROVALS.md, stamps, A- numbers, the bot-side script, OPERATING-SYSTEM.md. That document's
+  section 9 names approval phrases and roles that this code does not follow (it recognizes one configured approver and
+  three phrases); a later approved update reconciles them.
+- `verify:opsthreadasks` (81; `main` fails at the first read of the asks table).
