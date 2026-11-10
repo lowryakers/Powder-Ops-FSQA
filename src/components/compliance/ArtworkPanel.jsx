@@ -7,6 +7,7 @@ import {
   FileText, Upload, ExternalLink, ShieldAlert,
 } from 'lucide-react';
 import { openFile } from '../../lib/openFile';
+import { PACK_LABEL } from '../../../shared/pack-labels.js';
 
 /**
  * Artwork — what is on the pack, which revision it is, and whether it checks out.
@@ -136,11 +137,12 @@ function CheckRow({ check, canEdit, onChanged }) {
   );
 }
 
+// Mirrors FLOW in server/api/artwork.js (the server decides; this only offers).
 const FLOW = {
-  draft: ['in_review', 'rejected'],
-  in_review: ['approved', 'rejected', 'draft'],
+  draft: ['in_review', 'rejected', 'superseded'],
+  in_review: ['approved', 'rejected', 'draft', 'superseded'],
   approved: ['print_ready', 'rejected'],
-  print_ready: [],
+  print_ready: ['superseded'],
   rejected: ['draft'],
   superseded: [],
 };
@@ -159,9 +161,23 @@ function VersionDetail({ sku, onClose, onChanged }) {
   const product = data?.product;
 
   const move = async (v, status) => {
+    const body = { status };
+    if (status === 'rejected') {
+      // The reason stays on the version (D-330); the server refuses a blank one.
+      const reason = window.prompt(`Why is version ${v.version} rejected?`);
+      if (reason == null) return;
+      if (!reason.trim()) { setError('Say why this version is rejected.'); return; }
+      body.reason = reason.trim();
+    }
+    if (status === 'superseded') {
+      // Retired in favour of the current version of the same pack; the server
+      // defaults to the same one when this is omitted.
+      const current = versions.filter((x) => x.component === v.component).sort((a, b) => b.version - a.version)[0];
+      if (current && current.id !== v.id) body.superseded_by = current.id;
+    }
     setBusy(true); setError('');
     try {
-      await apiFetch(`/artwork/versions/${v.id}/status`, { method: 'POST', body: { status } });
+      await apiFetch(`/artwork/versions/${v.id}/status`, { method: 'POST', body });
       refresh(); onChanged?.();
     } catch (e) { setError(e.message); }
     setBusy(false);
@@ -300,6 +316,16 @@ function VersionDetail({ sku, onClose, onChanged }) {
                 </div>
               )}
 
+              {v.status === 'rejected' && v.rejected_reason && (
+                <p className="text-xs text-red-700" data-artwork-rejected-reason>
+                  Rejected{v.rejected_by ? ` by ${v.rejected_by}` : ''}{v.rejected_at ? ` on ${v.rejected_at.slice(0, 10)}` : ''}: {v.rejected_reason}
+                </p>
+              )}
+              {v.status === 'superseded' && v.superseded_by && (
+                <p className="text-xs text-gray-500" data-artwork-superseded-by>
+                  Replaced by version {versions.find((x) => x.id === v.superseded_by)?.version ?? '—'}
+                </p>
+              )}
               {v.approved_by && (
                 <p className="text-xs text-gray-500">
                   {v.status === 'print_ready' ? 'Released' : 'Approved'} by {v.approved_by}
@@ -319,6 +345,8 @@ export default function ArtworkPanel() {
   const { data, refresh } = useApiGet('/artwork');
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('');
+  const [pack, setPack] = useState('');
+  const [category, setCategory] = useState('');
   const [open, setOpen] = useState(null);
   const [showMissing, setShowMissing] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -329,14 +357,26 @@ export default function ArtworkPanel() {
   const packs = useMemo(() => data?.packs || [], [data]);
   const missing = useMemo(() => data?.missing || [], [data]);
 
+  // Pack type and product line, the Products catalog's two filters (D-331), so
+  // QA can open only the pouches, the sticks or the bottle sleeves.
+  const categories = useMemo(() => [...new Set([...packs, ...missing].map((v) => v.category).filter(Boolean))].sort(), [packs, missing]);
+  const packCodes = useMemo(() => {
+    const seen = new Set([...packs, ...missing].map((v) => v.pack).filter(Boolean));
+    return [...Object.keys(PACK_LABEL).filter((k) => seen.has(k)), ...[...seen].filter((k) => !PACK_LABEL[k]).sort()];
+  }, [packs, missing]);
+  const typeMatch = (v) => (!pack || v.pack === pack) && (!category || v.category === category);
+
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return packs.filter((v) => {
       if (status && v.status !== status) return false;
+      if (pack && v.pack !== pack) return false;
+      if (category && v.category !== category) return false;
       if (!needle) return true;
       return [v.sku, v.flavor, v.gtin, v.category].some((x) => (x || '').toLowerCase().includes(needle));
     });
-  }, [packs, q, status]);
+  }, [packs, q, status, pack, category]);
+  const missingShown = missing.filter(typeMatch);
 
   const failing = packs.filter((v) => v.failures > 0).length;
 
@@ -384,23 +424,33 @@ export default function ArtworkPanel() {
           <option value="">All statuses</option>
           {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </select>
+        <select value={pack} onChange={(e) => setPack(e.target.value)} data-artwork-pack-filter
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+          <option value="">All packs</option>
+          {packCodes.map((k) => <option key={k} value={k}>{PACK_LABEL[k] || k}</option>)}
+        </select>
+        <select value={category} onChange={(e) => setCategory(e.target.value)} data-artwork-category-filter
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+          <option value="">All categories</option>
+          {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
         {missing.length > 0 && (
           <button onClick={() => setShowMissing((v) => !v)}
             className={`px-3 py-2 rounded-lg text-sm font-medium border ${showMissing
               ? 'bg-amber-100 border-amber-300 text-amber-900'
               : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}>
-            No artwork on file <span className="tabular-nums">{missing.length}</span>
+            No artwork on file <span className="tabular-nums">{missingShown.length}</span>
           </button>
         )}
       </div>
 
       {showMissing ? (
         <div className="border border-gray-200 rounded-lg divide-y divide-gray-100">
-          {missing.map((p) => (
+          {missingShown.map((p) => (
             <button key={p.sku} onClick={() => setOpen(p.sku)}
               className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center justify-between gap-3">
               <span><code className="text-gray-900">{p.sku}</code> <span className="text-gray-600">{p.flavor}</span></span>
-              <span className="text-xs text-gray-400">{p.category}</span>
+              <span className="text-xs text-gray-400">{p.category}{p.pack ? ` · ${PACK_LABEL[p.pack] || p.pack}` : ''}</span>
             </button>
           ))}
         </div>
@@ -420,6 +470,7 @@ export default function ArtworkPanel() {
                   <div className="p-2.5 space-y-1">
                     <p className="text-sm font-medium text-gray-900 leading-tight line-clamp-2">{v.flavor}</p>
                     <code className="text-xs text-gray-500 block">{v.sku}</code>
+                    {v.pack && <span className="text-xs text-gray-500 block" data-artwork-pack={v.pack}>{PACK_LABEL[v.pack] || v.pack}</span>}
                     <div className="flex items-center justify-between gap-1 pt-0.5">
                       <span className={`text-xs px-1.5 py-0.5 rounded-full ${STATUS[v.status]?.style}`}>
                         {STATUS[v.status]?.label} · v{v.version}

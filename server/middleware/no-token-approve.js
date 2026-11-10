@@ -187,8 +187,11 @@ const DECISION_SET = new Set(DECISION_SEGMENTS);
 // AP Drop moves a token may make: triage. Paid, closed, in QuickBooks, in a
 // payment run, not finance — the office's statements about money — are not.
 export const AP_DROP_TOKEN_STATUSES = Object.freeze(['new', 'triaged', 'matched', 'needs_info', 'duplicate_suspect']);
-// Artwork moves a token may make: put a draft up for review, or back to draft.
-export const ARTWORK_TOKEN_STATUSES = Object.freeze(['draft', 'in_review']);
+// Artwork moves a token may make: put a draft up for review or back to draft,
+// retire a version a newer one replaced (superseded), or reject one with a
+// stated reason (D-330). NEVER approved, print_ready or released — those are the
+// approve class above and are refused before this list is read.
+export const ARTWORK_TOKEN_STATUSES = Object.freeze(['draft', 'in_review', 'superseded', 'rejected']);
 
 const nonGet = (req) => !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
 
@@ -229,7 +232,7 @@ export const TOKEN_DENY = Object.freeze([
     label: 'POST /api/ap-drop/:id/status to anything but a triage move' },
   { category: 'decision', test: (req) => req.method === 'POST' && /^\/artwork\/versions\/[^/]+\/status$/.test(req.path)
       && !ARTWORK_TOKEN_STATUSES.includes(String(req.body?.status || '')),
-    label: 'POST /api/artwork/versions/:id/status to rejected / superseded (approved and print-ready are the approve class)' },
+    label: 'POST /api/artwork/versions/:id/status to anything but draft / in_review / superseded / rejected (approved and print-ready are the approve class)' },
 ]);
 
 /** The TOKEN_DENY entry this request falls under, or null. Applies to every method. */

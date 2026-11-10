@@ -23,7 +23,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import Database from 'better-sqlite3';
 import { SCOPES, FORBIDDEN_SCOPES, normalizeScopes, rateKindOf } from '../server/api-tokens.js';
-import { approveRouteFor, APPROVE_SEGMENTS, tokenDenyFor, DELETE_SEGMENTS, TOKEN_DELETE_EXEMPT } from '../server/middleware/no-token-approve.js';
+import { approveRouteFor, APPROVE_SEGMENTS, tokenDenyFor, DELETE_SEGMENTS, TOKEN_DELETE_EXEMPT, ARTWORK_TOKEN_STATUSES } from '../server/middleware/no-token-approve.js';
 import { WRITE_AREAS, writeAreaFor } from '../server/bot-api.js';
 import { isPublicPath } from '../server/middleware/auth.js';
 import { scanRoutes, concretePath, namesApproval } from './lib/route-scan.mjs';
@@ -70,6 +70,9 @@ const PACK = [
 const packMissing = PACK.filter(([m, p, b]) => !approveRouteFor(fakeReq(m, p, b || {})));
 t(`all ${PACK.length} routes named in the pack are guarded`, packMissing.length === 0, packMissing.map(x => x.join(' ')).join('; '));
 t('a draft artwork status move is NOT an approval', !approveRouteFor(fakeReq('POST', '/api/artwork/versions/x/status', { status: 'in_review' })));
+t('retiring or rejecting artwork is NOT an approval (D-330)', ['superseded', 'rejected'].every(st => !approveRouteFor(fakeReq('POST', '/api/artwork/versions/x/status', { status: st }))));
+t('artwork approved / print_ready / released stay the approve class (D-330 widened nothing there)',
+  ['approved', 'print_ready', 'released'].every(st => approveRouteFor(fakeReq('POST', '/api/artwork/versions/x/status', { status: st }))));
 t('an ordinary NFP draft create is NOT an approval', !approveRouteFor(fakeReq('POST', '/api/nfp', { sku: 'X', version: 'V1' })));
 t('a visitor sign-out is NOT an approval', !approveRouteFor(fakeReq('POST', '/api/visitors/visits/x/sign-out')));
 t('GET is never an approval', !approveRouteFor(fakeReq('GET', '/api/qms/deviation/x/approve')));
@@ -107,7 +110,7 @@ const AMBIG = [
   ['POST', '/api/ap-drop/x/status', { status: 'in_qbo' }, 'decision'],
   ['POST', '/api/ap-drop/x/status', { status: 'not_finance' }, 'decision'],
   ['POST', '/api/artwork/checks/x/dismiss', {}, 'decision'],
-  ['POST', '/api/artwork/versions/x/status', { status: 'rejected' }, 'decision'],
+  ['POST', '/api/artwork/versions/x/status', { status: 'not-a-status' }, 'decision'],
   ['POST', '/api/partners/documents/x/void', {}, 'delete'],
   ['POST', '/api/partners/documents/x/dispute', {}, 'delete'],
   ['POST', '/api/qms/deviation/bulk-delete', {}, 'delete'],
@@ -117,6 +120,10 @@ const AMBIG = [
 ];
 const ambigMiss = AMBIG.filter(([m, p, b, c]) => tokenDenyFor(fakeReq(m, p, b))?.category !== c);
 t(`the ${AMBIG.length} explicit decisions (confirm step, AP status, checks dismiss, void, cleanup…) deny as decided`, ambigMiss.length === 0, ambigMiss.map(x => `${x[0]} ${x[1]}`).join('; '));
+t('artwork moves to superseded and rejected are NOT denied (D-330)',
+  ['superseded', 'rejected'].every(st => !tokenDenyFor(fakeReq('POST', '/api/artwork/versions/x/status', { status: st }))));
+t('the artwork token allow list is exactly draft / in_review / superseded / rejected',
+  JSON.stringify([...ARTWORK_TOKEN_STATUSES].sort()) === JSON.stringify(['draft', 'in_review', 'rejected', 'superseded']));
 t('an AP Drop triage move (needs_info) and an artwork move to in_review are NOT denied',
   !tokenDenyFor(fakeReq('POST', '/api/ap-drop/x/status', { status: 'needs_info' })) && !tokenDenyFor(fakeReq('POST', '/api/artwork/versions/x/status', { status: 'in_review' })));
 

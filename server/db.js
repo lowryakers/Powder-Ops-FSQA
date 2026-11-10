@@ -3936,6 +3936,11 @@ function runMigrations() {
   // NULL on every version filed before the proofer sent one, which reads as
   // "not checked against a panel" and never as "checked against rev 0".
   addColumnIfMissing('artwork_versions', 'panel_rev', 'INTEGER');
+  // Why a version was rejected, by whom, when (D-330). NULL on every version
+  // filed before; nothing is backfilled.
+  addColumnIfMissing('artwork_versions', 'rejected_reason', 'TEXT');
+  addColumnIfMissing('artwork_versions', 'rejected_by', 'TEXT');
+  addColumnIfMissing('artwork_versions', 'rejected_at', 'TEXT');
 
   // Post-repair hygiene clearance
   addColumnIfMissing('work_orders', 'clearance_required', 'INTEGER DEFAULT 0');
