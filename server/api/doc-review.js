@@ -11,6 +11,8 @@ import { getDb, logAudit } from '../db.js';
 import { SOURCES, getSource, safeCount, safePending, isDocController } from '../doc-review.js';
 import { docConsistencyReview } from '../doc-consistency.js';
 import { nameUsage } from '../name-usage.js';
+import { planRename, applyRename } from '../name-rename.js';
+import { schedulesForDocument, linkSchedule, unlinkSchedule, findSchedules } from '../schedule-documents.js';
 
 const router = Router();
 
@@ -27,6 +29,53 @@ router.get('/consistency', (req, res) => {
 
 // Where a name is used (D-326): every document, task, register entry and
 // built-in definition that carries a term, and who changes each. READ-ONLY.
+// D-328: the recurring tasks that follow a document. Linked from the document
+// (Document Control works there); a newer approved revision lists them on the
+// "Recurring tasks to check" pile above.
+router.get('/document-tasks/:docId', (req, res) => {
+  if (!isDocController(req.user)) return res.status(403).json({ error: 'Document Control review is for Document Control, QA supervisors and admins.' });
+  res.json(schedulesForDocument(getDb(), req.params.docId));
+});
+router.get('/schedules', (req, res) => {
+  if (!isDocController(req.user)) return res.status(403).json({ error: 'Document Control review is for Document Control, QA supervisors and admins.' });
+  res.json(findSchedules(getDb(), req.query.q));
+});
+router.post('/document-tasks/:docId', (req, res) => {
+  if (!isDocController(req.user)) return res.status(403).json({ error: 'Document Control review is for Document Control, QA supervisors and admins.' });
+  const db = getDb();
+  const out = linkSchedule(db, req.body?.schedule_id, req.params.docId);
+  if (out.error) return res.status(out.status || 400).json({ error: out.error });
+  logAudit(req.user, 'update', 'pm_schedule', req.body.schedule_id, { follows_document: req.params.docId, previous: out.previous });
+  res.json(schedulesForDocument(db, req.params.docId));
+});
+router.delete('/document-tasks/:docId/:scheduleId', (req, res) => {
+  if (!isDocController(req.user)) return res.status(403).json({ error: 'Document Control review is for Document Control, QA supervisors and admins.' });
+  const db = getDb();
+  const out = unlinkSchedule(db, req.params.scheduleId, req.params.docId);
+  if (out.error) return res.status(out.status || 400).json({ error: out.error });
+  logAudit(req.user, 'update', 'pm_schedule', req.params.scheduleId, { unfollows_document: req.params.docId });
+  res.json(schedulesForDocument(db, req.params.docId));
+});
+
+// D-328: rename it everywhere it can be renamed, in one act. `preview: true`
+// writes nothing; the apply re-plans on the server, so it writes what was shown.
+router.post('/name-usage/rename', (req, res) => {
+  if (!isDocController(req.user)) return res.status(403).json({ error: 'Document Control review is for Document Control, QA supervisors and admins.' });
+  const db = getDb();
+  const plan = planRename(db, req.body?.from, req.body?.to);
+  if (plan.error) return res.status(400).json({ error: plan.error });
+  const summary = { from: plan.from, to: plan.to, total: plan.rows.length, by_target: plan.by_target, kept: plan.kept,
+    rows: plan.rows.map(r => ({ target: r.target, label: r.label, id: r.id, name: r.name,
+      changes: Object.entries(r.fields).map(([f, v]) => ({ field: f, from: v.from, to: v.to })) })) };
+  if (req.body?.preview) return res.json({ ...summary, preview: true });
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 3) return res.status(400).json({ error: 'Say why (for example, the DCR number).', code: 'REASON_REQUIRED' });
+  if (!plan.rows.length) return res.status(400).json({ error: 'Nothing to rename.', code: 'NOTHING_TO_RENAME' });
+  const n = applyRename(db, plan, { actor: req.user, reason, logAudit });
+  logAudit(req.user, 'update', 'name_rename', null, { from: plan.from, to: plan.to, reason, rows: n, by_target: plan.by_target }, null, null, `${plan.from} → ${plan.to}`);
+  res.json({ ...summary, renamed: n });
+});
+
 router.get('/name-usage', (req, res) => {
   if (!isDocController(req.user)) {
     return res.status(403).json({ error: 'Document Control review is for Document Control, QA supervisors and admins.' });
@@ -97,7 +146,7 @@ router.post('/act', (req, res) => {
     catch (e) { result = { error: e.message || 'Could not complete this one.' }; }
     if (result?.error) { failed.push({ id, error: result.error }); continue; }
     done.push(id);
-    logAudit(req.user, 'update', 'document', id, { doc_review: source.key, action: source.action?.done || 'actioned' });
+    logAudit(req.user, 'update', source.entity || 'document', id, { doc_review: source.key, action: source.action?.done || 'actioned' });
   }
 
   res.json({ done, failed, remaining: safeCount(source, db) });

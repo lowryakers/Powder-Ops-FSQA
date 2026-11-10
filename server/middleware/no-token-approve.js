@@ -74,6 +74,8 @@ export const APPROVE_ROUTES = Object.freeze([
     when: (req) => !!req.body?.check?.competence_confirmed },
   { method: 'POST', re: /^\/training\/bulk-complete$/, label: 'POST /api/training/bulk-complete — a group sign-off' },
   { method: 'POST', re: /^\/training\/courses\/[^/]+\/revision$/, label: 'POST /api/training/courses/:id/revision — a person says the course is updated for a revision' },
+  // D-328: QA's password-signed review of a controlled value typed in the app.
+  { method: 'POST', re: /^\/controlled\/[^/]+\/qa-review$/, label: 'POST /api/controlled/:id/qa-review — QA reviews a controlled value' },
   // D-302: a GTIN goes on a pack, and confirming a merch colour is what lets one
   // be drawn. A bot may suggest or reserve a number; only a person assigns it.
   { method: 'POST', re: /^\/products\/merch\/variants\/[^/]+\/gtin$/, label: 'POST /api/products/merch/variants/:sku/gtin — a person assigns a GTIN' },

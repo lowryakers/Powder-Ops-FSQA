@@ -10551,3 +10551,25 @@ matched) and seeded a second schedule beside the old one.
 - **No value was changed.** J-512's range is not known; it arrives as a code change Document Control approves.
 - This writes task records (titles/steps of open cards) when Document Control approves, so it waits for Lowry's review
   (D-274). `verify:dilutioncontrol` (23 + a reboot; the control without the approval hook fails 4).
+
+## D-328 — A controlled value is changed in the app; a name is renamed in one act; a task follows its document (10 Nov 2026)
+Lowry, on renaming Sani-512 to J-512: "I thought this was the single spine / nothing in 2 places model we had moved to
+already." Signatures and records were single-spine. Three things were not: a controlled value (the dilution ranges, the
+ATP and temperature/humidity limits, the scale tolerances) could only be changed by a developer, a name living in task
+text had to be found and edited place by place, and nothing tied a recurring task to the SOP it came from.
+- **A controlled value is changed on Controlled Changes** (`server/controlled-edit.js`, entries declare `editable` +
+  `validate`). Document Control proposes with a reason; a QA supervisor reviews with a password (never the proposer);
+  Document Control approves with a password (never the QA reviewer) and it is in use at once — the D-319 pattern. The
+  proposal waits in QA Review (`controlled-qa-review`).
+- **`controlled_definitions.code_hash`** remembers the last code version seen. Only a CODE change parks a pending change,
+  so a value approved in the app is not re-parked at the next boot. A code change still waits for Document Control as
+  before; a proposal is refused while one is waiting.
+- **"Where is a name used?" can now rename** (`server/name-rename.js`, `POST /doc-review/name-usage/rename`): recurring
+  tasks and their open cards, quality schedules, the chemical list and the sign-out catalogue. Preview writes nothing;
+  apply needs a reason and audits each row. Never filed records, completed cards, controlled documents (revised) or the
+  dilution checks (Controlled Changes).
+- **A recurring task follows a document** (`pm_schedules.document_id` + `document_revision_checked`, linked on the
+  document). A newer revision lists it on Doc Control Review ("Recurring tasks to check") until marked checked.
+- Writes task records and controlled values on approval, so it is a records change (D-274); merged on Lowry's "merge
+  them when ready". `verify:singlespine` (50, live + a reboot + browser; the control — `main` — fails from the first
+  rename).

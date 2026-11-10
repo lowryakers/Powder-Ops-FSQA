@@ -24,7 +24,7 @@ const compact = (col) => `REPLACE(REPLACE(REPLACE(LOWER(COALESCE(${col},'')),'-'
 export const compactTerm = (s) => String(s || '').toLowerCase().replace(/[\s\-_]+/g, '');
 
 // The JS half: the same match, so a snippet can show where the hit is.
-function matcher(term) {
+export function matcher(term) {
   const chars = [...compactTerm(term)].map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   return new RegExp(chars.join('[\\s\\-_]*'), 'i');
 }

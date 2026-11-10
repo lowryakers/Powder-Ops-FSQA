@@ -232,7 +232,7 @@ const NAV_GROUPS = [
       // Deployed changes to controlled definitions waiting on DC. Lives here,
       // not in Settings — Settings is admin-only, and this is Document
       // Control's own queue, not an admin toggle.
-      { id: 'controlled-changes', label: 'Controlled Changes', icon: ShieldCheck, visible: (u) => u?.role === 'admin' || (u?.department || '').toLowerCase() === 'document_control' },
+      { id: 'controlled-changes', label: 'Controlled Changes', icon: ShieldCheck, visible: (u) => u?.role === 'admin' || (u?.department || '').toLowerCase() === 'document_control' || (u?.role === 'supervisor' && ['qa', 'quality'].includes((u?.department || '').toLowerCase())) },
       // One register for every kind of change 21 CFR 111.130(e) names; Quality
       // signs the approval, so QA sees it as well as Document Control.
       { id: 'change-register', label: 'Change Register', icon: ShieldCheck, keywords: 'change control request impact assessment quality approval software release equipment process utility facility',
@@ -839,7 +839,7 @@ const RULE_WHY = {
   'office-requests': 'Every supervisor',
   'qa-review': 'QA / Quality department',
   'doc-review': 'Document Control, or a QA / Document Control supervisor',
-  'controlled-changes': 'Document Control department',
+  'controlled-changes': 'Document Control department, or a QA supervisor (to review a value changed in the app)',
   'change-register': 'Document Control / QA department, or any supervisor',
   'food-safety-culture': 'QA / Document Control department, or any supervisor',
   accounting: 'Office / admin supervisor (AP Drop queue)',

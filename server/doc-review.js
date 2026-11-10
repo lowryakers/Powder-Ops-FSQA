@@ -21,6 +21,7 @@
 // counts with a way through to where the work is actually done — which is the
 // same reasoning that keeps deviations out of QA Review.
 
+import { schedulesToCheck, markScheduleChecked } from './schedule-documents.js';
 import { recomputeDocumentReview } from './api/documents.js';
 import { numberingWork } from './api/forms.js';
 import { zoneDrift, bpgDiagram } from './bpg-zones.js';
@@ -275,6 +276,29 @@ export const SOURCES = [
         extra: i.action || null,
       })),
     canAct: isDocController,
+  },
+  {
+    // D-328: a recurring task follows a document; a newer approved revision of
+    // that document lists the task here until somebody checks it.
+    key: 'tasks-to-check',
+    label: 'Recurring tasks to check after a revision',
+    module: 'document-control',
+    noun: 'task',
+    plural: 'tasks',
+    entity: 'pm_schedule',
+    action: { verb: 'Mark checked', done: 'checked against the new revision' },
+    help: 'Each of these recurring tasks follows a document that has a newer approved revision. Open the task, make sure its steps match the new revision (edit them if not), then mark it checked.',
+    count: (db) => schedulesToCheck(db, 100000).length,
+    pending: (db, limit = LIMIT) => schedulesToCheck(db, limit).map(s => ({
+      id: s.id,
+      title: s.title,
+      subtitle: `Follows ${[s.doc_number, s.document_title].filter(Boolean).join(' — ')} · now ${s.document_revision || '—'}${s.document_revision_checked ? `, checked against ${s.document_revision_checked}` : ''}`,
+      date: null,
+      overdue: false,
+      extra: s.task_group || null,
+    })),
+    canAct: isDocController,
+    act: (db, user, id) => markScheduleChecked(db, id),
   },
   {
     key: 'bpg-zone-drift',

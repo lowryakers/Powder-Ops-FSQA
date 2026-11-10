@@ -269,7 +269,8 @@
     "s3:stand-in": "node scripts/s3-stand-in.mjs",
     "verify:skuretire": "VERIFY_ONLY=verify-sku-retire.mjs node scripts/verify-all.mjs",
     "verify:nameusage": "VERIFY_ONLY=verify-name-usage.mjs node scripts/verify-all.mjs",
-    "verify:dilutioncontrol": "VERIFY_ONLY=verify-dilution-control.mjs node scripts/verify-all.mjs"
+    "verify:dilutioncontrol": "VERIFY_ONLY=verify-dilution-control.mjs node scripts/verify-all.mjs",
+    "verify:singlespine": "VERIFY_ONLY=verify-single-spine.mjs node scripts/verify-all.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",
