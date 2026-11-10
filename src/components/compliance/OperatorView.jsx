@@ -12,7 +12,8 @@ import { createTranslator, formatDueLabelI18n } from '../../i18n/operatorStrings
 import { canSeeQaReview } from '../../utils/permissions';
 import { formatDateTime, formatDate } from '../../lib/datetime.js';
 import { onDataChanged } from '../../lib/dataChanged';
-import { formFromTitle, gradeDilution, isMeasured } from '../../../shared/dilution-forms.js';
+import { formForTask, gradeDilution, isMeasured } from '../../../shared/dilution-forms.js';
+import useDilutionForms from '../../lib/useDilutionForms.js';
 import FormChip from '../common/FormChip';
 import RuleTip from '../common/RuleTip.jsx';
 import CheckFields from '../common/CheckFields.jsx';
@@ -94,7 +95,10 @@ function TaskCard({ task, onComplete, onTestPassed, onFlagIssue, onSkipNA, onAss
 
   // Which dilution this task is, when it is one of the four per-chemical
   // schedules. Null for the legacy lumped task, which keeps the old form.
-  const dilutionForm = formFromTitle(task.title);
+  // The server stamps the dilution IN FORCE on the task (D-327); the title
+  // is only the fallback for a payload that predates it.
+  const dilutionForm = formForTask(task);
+  const servedDilutions = useDilutionForms(taskType === 'chemical_dilution' && !dilutionForm);
 
   const updateReading = (key, val) => setReadings(prev => ({ ...prev, [key]: val }));
   const toggleStep = (i) => setStepChecks(prev => {
@@ -530,10 +534,9 @@ function TaskCard({ task, onComplete, onTestPassed, onFlagIssue, onSkipNA, onAss
                     <select value={readings.chemical_name || ''} onChange={e => updateReading('chemical_name', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" autoFocus>
                       <option value="">{t('select_chemical')}</option>
-                      <option value="Sani-512">Sani-512 (200-250 ppm)</option>
-                      <option value="Chlorine">Chlorine (100-200 ppm)</option>
-                      <option value="Dawn">Dawn Dish Soap</option>
-                      <option value="Simple Green">Simple Green</option>
+                      {(servedDilutions?.dilutions || []).map(d => (
+                        <option key={d.key} value={d.chemical}>{d.chemical}{d.target ? ` (${d.target})` : ''}</option>
+                      ))}
                       <option value="Other">Other</option>
                     </select>
                   </div>

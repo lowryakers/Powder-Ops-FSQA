@@ -65,6 +65,7 @@ import facilityRoutes from './server/api/facility.js';
 import plantCalendarRoutes from './server/api/plant-calendar.js';
 import { atpLimitInForce } from './server/atp-limits.js';
 import { envLimitsInForce } from './server/env-limits.js';
+import { dilutionFormsInForce, syncDilutionTasks } from './server/dilution-control.js';
 import { sendHolidayNotices } from './server/plant-calendar.js';
 import supplierRoutes, { questionnaireLinkRouter } from './server/api/suppliers.js';
 import retentionRoutes from './server/api/retention.js';
@@ -1320,6 +1321,15 @@ runControlledSync(db).catch(err =>
   // The swab sheet's limits, re-graded against the limit the sync just decided
   // is in force (D-182) — the import ran before it.
   .then(() => {
+    // The dilution tasks follow the definition the sync just decided is in
+    // force (D-327); a hand-edited schedule is named, never overwritten.
+    try {
+      const d = syncDilutionTasks(db);
+      if (d.schedules) console.log(`[dilution] ${d.schedules} schedule(s) and ${d.cards} open card(s) brought to the approved FORM 106-01`);
+      if (d.hand_edited.length) console.warn(`[dilution] left as edited by hand: ${d.hand_edited.map(h => h.title).join('; ')}`);
+    } catch (e) { console.warn('[dilution] sync failed:', e.message); }
+  })
+  .then(() => {
     try {
       const out = restampSwabSheet(db);
       if (out.changed) console.log(`[swab-sheet] re-graded ${out.changed} swabs against the limit in force`);
@@ -2139,6 +2149,8 @@ app.get('/api/atp-limit', (req, res) => res.json(atpLimitInForce()));
 // The temperature and humidity limits in force (D-201) — read by the Operator
 // View's PASS / FAIL line, which used to carry its own copy of the rule.
 app.get('/api/env-limits', (req, res) => res.json(envLimitsInForce()));
+// FORM 106-01 as Document Control approved it (D-327) — the screens read this, never the bundle.
+app.get('/api/dilution-forms', (req, res) => res.json(dilutionFormsInForce()));
 app.use('/api/retention', requireModuleWrite('retention-samples'), retentionRoutes);
 // Stability studies live beside the retention library their pulls come from.
 app.use('/api/stability', requireModuleWrite('retention-samples'), stabilityRoutes);

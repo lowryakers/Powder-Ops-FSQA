@@ -25,6 +25,7 @@ import { QMS_TYPES } from './qms-config.js';
 import { SCALE_FORMS } from './scale-forms.js';
 import { atpControlledEntry } from './atp-limits.js';
 import { envControlledEntry } from './env-limits.js';
+import { dilutionControlledEntry } from './dilution-control.js';
 import { empControlledEntry } from './emp-results.js';
 import { SCALE_CAUTION } from '../shared/scale-incident.js';
 import { checklistSnapshot, checklistBaseline, applyChecklistSnapshot, CHECKLIST_FORM_CODE, CHECKLIST_TITLE } from './receiving-checklist.js';
@@ -139,7 +140,7 @@ function cautionEntries() {
 }
 
 export function registry() {
-  return [...qmsEntries(), ...scaleEntries(), atpControlledEntry(), envControlledEntry(), empControlledEntry(), ...checklistEntries(), ...cautionEntries()];
+  return [...qmsEntries(), ...scaleEntries(), atpControlledEntry(), envControlledEntry(), empControlledEntry(), dilutionControlledEntry(), ...checklistEntries(), ...cautionEntries()];
 }
 
 // ── Boot: baseline, detect, gate ────────────────────────────────────────────
@@ -248,6 +249,9 @@ export function approveDefinition(db, id, user) {
     WHERE id = ?`).run(user?.name || 'system', id);
   const entry = registry().find(e => e.scope === row.scope && e.key === row.key);
   if (entry && snapshot) { try { entry.apply(snapshot); } catch { /* next boot will settle it */ } }
+  // An entry whose definition drives records (D-327: the dilution tasks) moves
+  // them now, on the approval, not at the next deploy.
+  if (entry?.afterApply) { try { entry.afterApply(db); } catch (e) { console.warn('[controlled] after-approve:', e.message); } }
   return { ok: true, row: db.prepare('SELECT * FROM controlled_definitions WHERE id = ?').get(id) };
 }
 
