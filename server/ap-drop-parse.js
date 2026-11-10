@@ -48,11 +48,17 @@ const CURRENCY = [
 const lines = (text) => String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
 
 /** The invoice (or credit memo) number, with its line. */
+// A table row read off a PDF puts the label and the value in two cells —
+// "| INVOICE NUMBER | 4583686771 |" — so the line is also tried with the pipes
+// as spaces (D-335). The evidence is still the line as read.
 export function findInvoiceNumber(text) {
   for (const line of lines(text)) {
-    for (const re of INVOICE_NO) {
-      const m = line.match(re);
-      if (m && !NOT_A_NUMBER.test(m[1]) && /\d/.test(m[1])) return { value: m[1].replace(/[.,:;]+$/, ''), evidence: line };
+    const tries = line.includes('|') ? [line, line.replace(/\|/g, ' ').replace(/\s+/g, ' ').trim()] : [line];
+    for (const candidate of tries) {
+      for (const re of INVOICE_NO) {
+        const m = candidate.match(re);
+        if (m && !NOT_A_NUMBER.test(m[1]) && /\d/.test(m[1])) return { value: m[1].replace(/[.,:;]+$/, ''), evidence: line };
+      }
     }
   }
   return null;

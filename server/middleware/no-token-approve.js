@@ -184,9 +184,11 @@ export const DECISION_SEGMENTS = Object.freeze([
 ]);
 const DELETE_SET = new Set(DELETE_SEGMENTS);
 const DECISION_SET = new Set(DECISION_SEGMENTS);
-// AP Drop moves a token may make: triage. Paid, closed, in QuickBooks, in a
-// payment run, not finance — the office's statements about money — are not.
-export const AP_DROP_TOKEN_STATUSES = Object.freeze(['new', 'triaged', 'matched', 'needs_info', 'duplicate_suspect']);
+// AP Drop moves a token may make: triage, and in_qbo (D-335) — the route
+// refuses a token's in_qbo unless a QuickBooks bill id is sent or already
+// stored. Paid, closed, in a payment run, not finance, receivable-other — the
+// office's statements about money — are not.
+export const AP_DROP_TOKEN_STATUSES = Object.freeze(['new', 'triaged', 'matched', 'needs_info', 'duplicate_suspect', 'in_qbo']);
 // Artwork moves a token may make: put a draft up for review or back to draft,
 // retire a version a newer one replaced (superseded), or reject one with a
 // stated reason (D-330). NEVER approved, print_ready or released — those are the
@@ -229,7 +231,7 @@ export const TOKEN_DENY = Object.freeze([
     label: 'POST /api/products/:sku/confirm/:step — a person attesting to work in another system' },
   { category: 'decision', test: (req) => req.method === 'POST' && /^\/ap-drop\/[^/]+\/status$/.test(req.path)
       && !AP_DROP_TOKEN_STATUSES.includes(String(req.body?.status || '')),
-    label: 'POST /api/ap-drop/:id/status to anything but a triage move' },
+    label: 'POST /api/ap-drop/:id/status to anything but a triage move or in_qbo (in_qbo needs a bill id — the route checks)' },
   { category: 'decision', test: (req) => req.method === 'POST' && /^\/artwork\/versions\/[^/]+\/status$/.test(req.path)
       && !ARTWORK_TOKEN_STATUSES.includes(String(req.body?.status || '')),
     label: 'POST /api/artwork/versions/:id/status to anything but draft / in_review / superseded / rejected (approved and print-ready are the approve class)' },

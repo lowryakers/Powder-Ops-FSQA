@@ -10662,3 +10662,18 @@ several times a weekday, and a retry used to file a second `duplicate_suspect` r
 On Artwork the pack filter and each card name the printed piece, and a bottle's printed piece is its shrink sleeve.
 `ARTWORK_PACK_LABEL` in `shared/pack-labels.js` overrides BTL only; the Products catalog still says "Bottle" (that is
 the product's pack). Screen only.
+
+## D-335 — A bot may mark a drop "in QuickBooks" with the bill id; Vestis invoice numbers read from table cells (10 Nov 2026)
+A-20261110-011, slice 2 of the AP Drop email work.
+- **`in_qbo` joins `AP_DROP_TOKEN_STATUSES`.** `POST /api/ap-drop/:id/status` asks a token's `in_qbo` for the QuickBooks
+  bill id. The id can come from `qbo_bill_id` in the same body, or one already stored. With neither (blank counts as
+  none) the answer is 400 `QBO_BILL_ID_REQUIRED` and the row is unchanged.
+- A new or different id in the body is stored in the same transaction as the move. A blank one never clears a stored id.
+- A person's session is not asked for the id.
+- Paid, closed, in a payment run, not finance and receivable-other stay refused to tokens (403 `token_denied`).
+- **`findInvoiceNumber` also tries a table row with its pipes read as spaces**, so `| INVOICE NUMBER | 4583686771 |`
+  reads the number (Vestis). The evidence is still the row as read. `INVOICE_NO` is not loosened, the reader never looks
+  at the next line, and nothing names Vestis. "Invoice Date" and `| INVOICE | CUSTOMER SERVICE | (866) … |` still
+  read as no number.
+- The two live Vestis drops are not re-read and no data is fixed. The office re-reads them if it wants.
+- `check:apdrop` (45; `main` fails 4), `check:apitokens` (158; `main` fails 2), `verify:apdrop` (151; `main` fails 6).

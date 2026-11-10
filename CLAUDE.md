@@ -267,6 +267,11 @@ an Accounting tab, so it survives the AP/AR pages being slimmed. `ap@powder-ops.
   200 if all reused)**; a different message with the same bytes is still `duplicate_suspect`. Unique partial index
   `idx_ap_drops_email_sha`. ReadyDoc never reads ap@ itself — never write copy that says it does.
 
+### A bot may set in_qbo with the bill id; a table row's invoice number is read (D-335)
+- A token's `in_qbo` needs `qbo_bill_id`, sent in the body or already stored (else 400 `QBO_BILL_ID_REQUIRED`); a blank
+  never clears one. Sessions are not asked. Paid / closed / payment run / not finance stay token-denied.
+- `findInvoiceNumber` retries a `|` row with pipes as spaces; never loosen `INVOICE_NO` or special-case a vendor.
+
 ### A drop links a ledger invoice by its folded number; Paid waits for the settlement (D-329)
 - **`existingPartnerDoc` matches `normDocNumber` (INV-1589 = 1589 = 01589) + amount within half a cent, same partner.**
   Same number, different amount: not linked, not filed — `needs_info` "Possible duplicate", `confirm_new_document` on

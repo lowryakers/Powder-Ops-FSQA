@@ -90,4 +90,24 @@ t('I136: bill-to M4 and the amount are read', /M4/.test(r.fields.bill_to || '') 
 r = parseFinanceDocument(INVOICE);
 t('regression: a third-party invoice is unchanged (vendor, due date, not ours)', r.fields.vendor === 'Mountain Flavor Supply' && r.fields.due_date === '2026-09-27' && r.fields.vendor_ours === null && !r.notes);
 
+// Vestis (D-335): the reader hands the number back as a table row, label and
+// value in two cells. The pipes are read as spaces; the evidence is the row.
+const VESTIS_ROWS = ['|  | INVOICE NUMBER | 4583686771 |', '|  |  |  |  | INVOICE NUMBER |  | 4583683676 |', '| POWDER OPS |  | INVOICE NUMBER | 4583686771 |'];
+const vr = VESTIS_ROWS.map(findInvoiceNumber);
+t('Vestis: a table row "| INVOICE NUMBER | 4583686771 |" reads the number', vr[0]?.value === '4583686771' && vr[0]?.evidence === VESTIS_ROWS[0], JSON.stringify(vr[0]));
+t('Vestis: …with empty cells between label and value', vr[1]?.value === '4583683676', JSON.stringify(vr[1]));
+t('Vestis: …with our name in the first cell', vr[2]?.value === '4583686771', JSON.stringify(vr[2]));
+t('a table "| INVOICE DATE | 11/03/2026 |" is never the number', findInvoiceNumber('| INVOICE DATE | 11/03/2026 |') === null);
+t('"| INVOICE | CUSTOMER SERVICE | (866) 837-8471 |" is never the number', findInvoiceNumber('| INVOICE | CUSTOMER SERVICE | (866) 837-8471 |') === null);
+t('plain "Invoice No: MFS-10442" still reads', findInvoiceNumber('Invoice No: MFS-10442')?.value === 'MFS-10442');
+t('plain "Invoice Date 11/03/2026" is still not a number', findInvoiceNumber('Invoice Date 11/03/2026') === null);
+const VESTIS = `| VESTIS |  |  |
+| INVOICE | CUSTOMER SERVICE | (866) 837-8471 |
+| INVOICE DATE | 11/03/2026 |
+|  | INVOICE NUMBER | 4583686771 |
+| BILL TO | POWDER OPS |
+TOTAL  $627.70`;
+r = parseFinanceDocument(VESTIS);
+t('Vestis document: invoice_number is 4583686771 — not the date, not the total', r.fields.invoice_number === '4583686771' && r.fields.total === 627.7, JSON.stringify(r.fields));
+
 console.log(`\n${pass}/${pass + fail} assertions passed`); process.exit(fail ? 1 : 0);

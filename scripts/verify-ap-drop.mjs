@@ -468,7 +468,22 @@ t('7 …with exactly the keys it always had', created.every(a => JSON.stringify(
   let pq = await call('PUT', `/ap-drop/${m3.id}`, { qbo_bill_id: 'QBO-2210' }, minted);
   t('9.9 a write token on a queue account sets qbo_bill_id', !!minted && pq.status === 200 && (pq.body?.drop || pq.body)?.qbo_bill_id === 'QBO-2210', `${pq.status} ${JSON.stringify(pq.body).slice(0, 120)}`);
   pq = await call('POST', `/ap-drop/${m3.id}/status`, { status: 'in_qbo' }, minted);
-  t('9.9 …and still cannot move it to in_qbo (403 token_denied; slice 2)', pq.status === 403 && pq.body?.error === 'token_denied');
+  t('9.9 …and with the bill id stored, moves it to in_qbo (D-335)', pq.status === 200 && (pq.body?.drop || pq.body)?.status === 'in_qbo', `${pq.status} ${JSON.stringify(pq.body).slice(0, 120)}`);
+  const stAt = (id) => db.prepare('SELECT status, qbo_bill_id FROM ap_drops WHERE id = ?').get(id);
+  const stBefore = stAt(m1.id);
+  pq = await call('POST', `/ap-drop/${m1.id}/status`, { status: 'in_qbo', qbo_bill_id: '   ' }, minted);
+  t('9.10 a token in_qbo with no bill id (blank counts) is 400 and changes nothing', pq.status === 400 && pq.body?.code === 'QBO_BILL_ID_REQUIRED' && JSON.stringify(stAt(m1.id)) === JSON.stringify(stBefore), `${pq.status} ${JSON.stringify(pq.body).slice(0, 120)}`);
+  pq = await call('POST', `/ap-drop/${m1.id}/status`, { status: 'in_qbo', qbo_bill_id: ' QBO-3301 ' }, minted);
+  t('9.10 …with qbo_bill_id in the body it is 200 and the id is stored', pq.status === 200 && stAt(m1.id).status === 'in_qbo' && stAt(m1.id).qbo_bill_id === 'QBO-3301', `${pq.status} ${JSON.stringify(stAt(m1.id))}`);
+  pq = await call('POST', `/ap-drop/${m3.id}/status`, { status: 'triaged' }, minted);
+  pq = await call('POST', `/ap-drop/${m3.id}/status`, { status: 'in_qbo', qbo_bill_id: '' }, minted);
+  t('9.10 a blank body id never clears a stored one', pq.status === 200 && stAt(m3.id).qbo_bill_id === 'QBO-2210', JSON.stringify(stAt(m3.id)));
+  for (const st of ['paid', 'closed']) {
+    pq = await call('POST', `/ap-drop/${m3.id}/status`, { status: st }, minted);
+    t(`9.10 a token move to ${st} is still 403 token_denied`, pq.status === 403 && pq.body?.error === 'token_denied' && stAt(m3.id).status === 'in_qbo', `${pq.status} ${JSON.stringify(pq.body).slice(0, 100)}`);
+  }
+  pq = await call('POST', `/ap-drop/${d1.id}/status`, { status: 'in_qbo' }, admin);
+  t('9.10 a person\'s session may still mark in_qbo without a bill id', pq.status === 200, `${pq.status}`);
 }
 
 db.close();

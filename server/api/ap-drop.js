@@ -644,7 +644,15 @@ router.post('/:id/status', (req, res) => {
   if (!STATUSES.includes(status)) return res.status(400).json({ error: `Unknown status "${status}".` });
   if (ROUTING_ONLY.has(status)) return res.status(400).json({ error: 'A drop moves to Partner Recon by being routed there as a receivable, not by picking the status.' });
   if (NEEDS_REASON.has(status) && reason.length < 3) return res.status(400).json({ error: `Say why it is ${status.replace(/_/g, ' ')} — the reason shows on the queue.` });
-  if (status === row.status && !reason) return res.json(shape(row, req.user));
+  // A token may say a drop is in QuickBooks only with the bill id that proves
+  // it (D-335): sent here, or already stored. A blank one never clears a stored
+  // id. A person's session is not asked — the office may know before the id.
+  const sentBill = typeof req.body?.qbo_bill_id === 'string' ? req.body.qbo_bill_id.trim().slice(0, 200) : '';
+  const newBill = sentBill && sentBill !== (row.qbo_bill_id || '') ? sentBill : null;
+  if (req.auth?.kind === 'token' && status === 'in_qbo' && !sentBill && !String(row.qbo_bill_id || '').trim()) {
+    return res.status(400).json({ error: 'A bot can mark a drop as in QuickBooks only with the QuickBooks bill id. Send qbo_bill_id, or set it first.', code: 'QBO_BILL_ID_REQUIRED' });
+  }
+  if (status === row.status && !reason && !newBill) return res.json(shape(row, req.user));
   const db = getDb();
   // Paid on a drop that is on the partner ledger settles nothing: the ledger
   // document still counts as owed until it is in a Partner Reconciliation
@@ -663,9 +671,10 @@ router.post('/:id/status', (req, res) => {
   db.transaction(() => {
     db.prepare(`UPDATE ap_drops SET status = ?, status_reason = ?, closed_at = ?, updated_at = datetime('now') WHERE id = ?`)
       .run(status, reason || null, TERMINAL.has(status) ? new Date().toISOString() : null, row.id);
-    event(db, row.id, req.user, 'status_changed', { from: row.status, to: status, reason: reason || null });
+    if (newBill) db.prepare("UPDATE ap_drops SET qbo_bill_id = ? WHERE id = ?").run(newBill, row.id);
+    event(db, row.id, req.user, 'status_changed', { from: row.status, to: status, reason: reason || null, ...(newBill ? { qbo_bill_id: newBill } : {}) });
   })();
-  logAudit(req.user, 'ap_drop_status', 'ap_drop', row.id, { from: row.status, to: status, reason: reason || null }, row, loadDrop(db, row.id), row.filename);
+  logAudit(req.user, 'ap_drop_status', 'ap_drop', row.id, { from: row.status, to: status, reason: reason || null, ...(newBill ? { qbo_bill_id: newBill } : {}) }, row, loadDrop(db, row.id), row.filename);
   res.json(shape(loadDrop(db, row.id), req.user));
 });
 
