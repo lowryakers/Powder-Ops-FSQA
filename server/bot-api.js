@@ -235,7 +235,7 @@ export const WRITE_AREAS = Object.freeze([
   { area: 'artwork', method: 'POST', re: /^\/artwork\/?$/, label: 'POST /api/artwork' },
   { area: 'artwork', method: 'POST', re: /^\/artwork\/versions\/[^/]+\/files$/, label: 'POST /api/artwork/versions/:id/files' },
   { area: 'artwork', method: 'POST', re: /^\/artwork\/versions\/[^/]+\/checks$/, label: 'POST /api/artwork/versions/:id/checks' },
-  { area: 'artwork', method: 'POST', re: /^\/artwork\/versions\/[^/]+\/status$/, label: 'POST /api/artwork/versions/:id/status (to draft / in review only)' },
+  { area: 'artwork', method: 'POST', re: /^\/artwork\/versions\/[^/]+\/status$/, label: 'POST /api/artwork/versions/:id/status (to draft / in review / superseded / rejected only — never approved or print-ready)' },
   // supply orders (Procurement)
   { area: 'supply-orders', method: 'POST', re: /^\/procurement\/pos$/, label: 'POST /api/procurement/pos' },
   { area: 'supply-orders', method: 'PUT', re: /^\/procurement\/pos\/bulk$/, label: 'PUT /api/procurement/pos/bulk', bulk: true },

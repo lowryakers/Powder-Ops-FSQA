@@ -23,6 +23,7 @@
 // filter, the same order — never a second endpoint. The import shows its diff
 // before anything is committed and is refused whole while any cell is invalid.
 import { useMemo, useRef, useState } from 'react';
+import { PACK_LABEL } from '../../../shared/pack-labels.js';
 import { apiFetch, apiPut } from '../../hooks/useApi';
 import { useTableSort } from '../../lib/useTableSort';
 import SortHeader from '../common/SortHeader';
@@ -32,9 +33,6 @@ import { copyText } from '../../lib/clipboard.js';
 import { statusLabel } from '../../../shared/product-status.js';
 import FrozenScroll from '../common/FrozenScroll';
 
-const PACK_LABEL = {
-  PLG: 'Pouch — large', PSM: 'Pouch — small', STK: 'Stick', BOX: 'Carton', CUP: 'Cup', BTL: 'Bottle',
-};
 const STATUSES = ['active', 'in_development', 'concept', 'on_hold', 'discontinued'];
 
 const joinSlots = (colors, k) => (colors || []).filter((c) => c[k]).map((c) => c[k]).join(' | ');

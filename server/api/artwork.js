@@ -305,14 +305,42 @@ router.post('/checks/:id/dismiss', (req, res) => {
  * into the old app and never built; a pack going to film against a stale
  * nutrition panel is a relabel at best.
  */
+// draft and in_review may be RETIRED (superseded) directly: an old proofing
+// draft that a newer one replaced is not "approved and then released", and the
+// only other road to superseded ran through print_ready, which must never be
+// walked to tidy up. approved → superseded stays the auto-supersede's job.
 const FLOW = {
-  draft: ['in_review', 'rejected'],
-  in_review: ['approved', 'rejected', 'draft'],
+  draft: ['in_review', 'rejected', 'superseded'],
+  in_review: ['approved', 'rejected', 'draft', 'superseded'],
   approved: ['print_ready', 'rejected'],
   print_ready: ['superseded'],
   rejected: ['draft'],
   superseded: [],
 };
+
+/**
+ * What a primary-component move below print_ready does to the product's
+ * `artwork_status` / `artwork_version` (D-330). The product row describes the
+ * pack's CURRENT artwork, so:
+ *  - a version that is not the current one (an older proofing draft being
+ *    retired) never touches it → null;
+ *  - retiring or rejecting the current version while a released or approved
+ *    film is still on file points the row back at THAT film (its status and
+ *    version) — the product still has it → { status, version };
+ *  - retiring or rejecting the current version of a product whose status is
+ *    blank leaves it blank: a draft nobody released, now dropped, is not a
+ *    product whose artwork was "rejected" → null;
+ *  - any other move of the current version writes as it always has → { status }.
+ */
+function productWrite(db, v, next, isCurrent) {
+  if (!isCurrent) return null;
+  if (next !== 'rejected' && next !== 'superseded') return { status: next };
+  const live = db.prepare(`SELECT status, version FROM artwork_versions WHERE sku = ? AND component = ? AND id != ?
+    AND status IN ('print_ready','approved') ORDER BY version DESC LIMIT 1`).get(v.sku, v.component, v.id);
+  if (live) return { status: live.status, version: String(live.version) };
+  const p = db.prepare('SELECT artwork_status FROM products WHERE sku = ?').get(v.sku);
+  return p?.artwork_status ? { status: next } : null;
+}
 
 router.post('/versions/:id/status', (req, res) => {
   const db = getDb();
@@ -331,6 +359,37 @@ router.post('/versions/:id/status', (req, res) => {
     return res.status(403).json({ error: 'Only QA or an admin releases artwork to print.' });
   }
   if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage artwork.' });
+
+  // The current version of this pack is the highest number on file for the
+  // SKU + component — the board's own rule, not a stored flag.
+  const currentId = db.prepare(`SELECT id FROM artwork_versions WHERE sku = ? AND component = ?
+    ORDER BY version DESC LIMIT 1`).get(v.sku, v.component)?.id || null;
+  const isCurrent = currentId === v.id;
+
+  // Retiring names what replaced it: a sibling on the SAME pack, never this
+  // row and never another SKU. Omitted, it is the current version — unless
+  // this row IS the current version, which then retires with nothing named.
+  let supersededBy = null;
+  if (next === 'superseded') {
+    const asked = req.body?.superseded_by;
+    if (asked != null && asked !== '') {
+      const target = db.prepare('SELECT id, sku, component FROM artwork_versions WHERE id = ?').get(String(asked));
+      if (!target || target.sku !== v.sku || target.component !== v.component || target.id === v.id) {
+        return res.status(400).json({
+          error: 'superseded_by must be another version of the same SKU and component.',
+          code: 'SUPERSEDED_BY_INVALID',
+        });
+      }
+      supersededBy = target.id;
+    } else if (!isCurrent) {
+      supersededBy = currentId;
+    }
+  }
+  // A rejection says why, in words that stay on the version (D-330).
+  const rejectReason = next === 'rejected' ? String(req.body?.reason ?? '').trim() : null;
+  if (next === 'rejected' && !rejectReason) {
+    return res.status(400).json({ error: 'Say why this version is rejected.', code: 'REASON_REQUIRED' });
+  }
 
   if (next === 'print_ready') {
     const open = db.prepare(
@@ -356,16 +415,29 @@ router.post('/versions/:id/status', (req, res) => {
       approved_at = CASE WHEN ? IN ('approved','print_ready') THEN ? ELSE approved_at END,
       effective_date = CASE WHEN ? = 'print_ready' THEN ? ELSE effective_date END
       WHERE id = ?`).run(next, next, req.user.name, next, now, next, now.slice(0, 10), v.id);
+    if (next === 'superseded') {
+      db.prepare('UPDATE artwork_versions SET superseded_by = ? WHERE id = ?').run(supersededBy, v.id);
+    }
+    if (next === 'rejected') {
+      db.prepare('UPDATE artwork_versions SET rejected_reason = ?, rejected_by = ?, rejected_at = ? WHERE id = ?')
+        .run(rejectReason, req.user.name, now, v.id);
+    }
 
     if (next === 'print_ready') {
       // Exactly one live version per component. Superseding the others here
-      // rather than trusting a later edit is what keeps "current" meaningful.
-      const others = db.prepare(`SELECT id FROM artwork_versions
-        WHERE sku = ? AND component = ? AND id != ? AND status IN ('print_ready','approved')`)
+      // rather than trusting a later edit is what keeps "current" meaningful —
+      // drafts and versions still in review included (D-330): an old proofing
+      // draft left in review beside a released film is a second "live" pack.
+      // Rejected and already-superseded rows are left as they are.
+      const others = db.prepare(`SELECT id, status FROM artwork_versions
+        WHERE sku = ? AND component = ? AND id != ? AND status IN ('print_ready','approved','in_review','draft')`)
         .all(v.sku, v.component, v.id);
       for (const o of others) {
         db.prepare("UPDATE artwork_versions SET status = 'superseded', superseded_by = ?, updated_at = datetime('now') WHERE id = ?")
           .run(v.id, o.id);
+        logAudit(req.user, 'artwork_status_changed', 'artwork', o.id,
+          { sku: v.sku, component: v.component, from: o.status, to: 'superseded', superseded_by: v.id, auto: true },
+          null, null, `${v.sku} → superseded by v${v.version}`);
       }
       // The product's own summary fields follow the released version, so the
       // catalogue and the readiness checklist cannot disagree with this table.
@@ -379,15 +451,26 @@ router.post('/versions/:id/status', (req, res) => {
       // needs instead of showing a green tick over a pack that must not print.
       if (before) stampReadiness(db, v.sku, before, ['artwork_status', 'artwork_version'], req.user?.name);
     } else if (v.component === 'primary') {
-      const before = db.prepare('SELECT * FROM products WHERE sku = ?').get(v.sku);
-      db.prepare("UPDATE products SET artwork_status = ?, updated_at = datetime('now') WHERE sku = ?")
-        .run(next, v.sku);
-      if (before) stampReadiness(db, v.sku, before, ['artwork_status'], req.user?.name);
+      const w = productWrite(db, v, next, isCurrent);
+      const before = w ? db.prepare('SELECT * FROM products WHERE sku = ?').get(v.sku) : null;
+      if (w?.version) {
+        db.prepare("UPDATE products SET artwork_status = ?, artwork_version = ?, updated_at = datetime('now') WHERE sku = ?")
+          .run(w.status, w.version, v.sku);
+      } else if (w) {
+        db.prepare("UPDATE products SET artwork_status = ?, updated_at = datetime('now') WHERE sku = ?")
+          .run(w.status, v.sku);
+      }
+      if (before && (before.artwork_status !== w.status || (w.version && before.artwork_version !== w.version))) {
+        stampReadiness(db, v.sku, before, w.version ? ['artwork_status', 'artwork_version'] : ['artwork_status'], req.user?.name);
+      }
     }
   })();
 
   logAudit(req.user, 'artwork_status_changed', 'artwork', v.id,
-    { sku: v.sku, from: v.status, to: next }, null, null, `${v.sku} v${v.version} → ${next}`);
+    { sku: v.sku, from: v.status, to: next,
+      ...(next === 'superseded' ? { superseded_by: supersededBy } : {}),
+      ...(next === 'rejected' ? { reason: rejectReason } : {}) },
+    null, null, `${v.sku} v${v.version} → ${next}`);
   res.json(hydrate(db, [db.prepare('SELECT * FROM artwork_versions WHERE id = ?').get(v.id)])[0]);
 });
 

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { PACK_LABEL } from '../../../shared/pack-labels.js';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 import { useApiGet, apiFetch, apiUpload, apiDelete } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
@@ -192,9 +193,6 @@ const COLUMNS = [
   { width: '2rem' },
 ];
 
-const PACK_LABEL = {
-  PLG: 'Pouch — large', PSM: 'Pouch — small', STK: 'Stick', BOX: 'Carton', CUP: 'Cup', BTL: 'Bottle',
-};
 
 const STATUS_STYLE = {
   active: 'bg-green-100 text-green-800',

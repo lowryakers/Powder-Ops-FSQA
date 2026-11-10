@@ -90,6 +90,7 @@ export default function FilmPouchInspection({ id, onClose, canInspect }) {
       ...Object.fromEntries((form?.header || []).map(h => [h.key, rec?.[h.key] ?? ''])),
       wind_direction: rec?.wind_direction ?? '',
       film_width: rec?.film_width ?? '',
+      material_kind: rec?.material_kind ?? '',
     });
   }, [data, rec, form]);
 
@@ -169,6 +170,12 @@ export default function FilmPouchInspection({ id, onClose, canInspect }) {
   };
 
   const exNo = rec?.exceptions?.no || [];
+  // V2 (D-332): the sheet says what it inspects and asks only that section.
+  // While the served form is V1 there are no kinds and every section shows.
+  const kinds = form?.kinds || [];
+  const kind = header.material_kind || '';
+  const sectionShown = (section) => !kinds.length || !kind || !section.applies_to || section.applies_to.includes(kind);
+  const headerShown = (h) => !h.kinds || (kinds.length && h.kinds.includes(kind));
 
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex justify-end" onClick={onClose}>
@@ -205,7 +212,15 @@ export default function FilmPouchInspection({ id, onClose, canInspect }) {
               )}
 
               <div className="p-3 grid grid-cols-1 sm:grid-cols-2 gap-2 border-b border-gray-100">
-                {(form?.header || []).map(h => (
+                {kinds.length > 0 && (
+                  <div className="sm:col-span-2" data-film-kind>
+                    <CircleOne label="What is inspected on this sheet" disabled={locked}
+                      options={kinds.map(k => k.label)}
+                      value={kinds.find(k => k.key === kind)?.label || ''}
+                      onPick={label => pickCircle('material_kind', kinds.find(k => k.label === label)?.key || '')} />
+                  </div>
+                )}
+                {(form?.header || []).filter(headerShown).map(h => (
                   <label key={h.key} className="block">
                     <span className="text-[11px] font-medium text-gray-600">{h.label}</span>
                     {/* The inspection # is the delivery's identity — shown, never
@@ -228,7 +243,7 @@ export default function FilmPouchInspection({ id, onClose, canInspect }) {
                 ))}
               </div>
 
-              {(form?.sections || []).map(section => (
+              {(form?.sections || []).filter(sectionShown).map(section => (
                 <div key={section.key}>
                   <p className="px-3 py-1.5 bg-gray-50 text-[11px] font-bold uppercase tracking-wider text-gray-600 border-y border-gray-100">
                     {section.title}

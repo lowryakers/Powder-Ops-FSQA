@@ -10595,3 +10595,47 @@ ledger still counted both as owed. **Code only: the live 1589 / 1590 rows are le
 - `check:docnumber` (8), `verify:apdrop` (131), `verify:apdropui` (33), `verify:partnerrecon` (120). Control: `main`
   fails 9 of the AP Drop checks and the zero-folding check.
 - Changes how records are written, so it waits for Lowry's review (D-274).
+
+## D-330 — An artwork version is retired from draft or review; a token may supersede and reject, never approve (10 Nov 2026)
+Pack A-20261110-005. 240 old proofing versions on 38 bottle packs sat `in_review` with no way out but print_ready, and
+a bot could neither retire nor reject.
+- **`FLOW` adds draft → superseded and in_review → superseded** (server and the screen's copy, which also gained
+  print_ready → superseded to match the server). approved → superseded stays the auto-supersede's job; superseded is
+  still terminal; every other illegal move is still 400 "Cannot go from…".
+- **The existing status route, not a /retire or /reject route** — `retire` and `reject` are TOKEN_DENY segments, and
+  the status route is already on WRITE_AREAS.
+- **`superseded_by`**: optional on the request; must be another version of the same SKU + component (400
+  `SUPERSEDED_BY_INVALID`); omitted, it is the current (highest) version; the current version itself retires with
+  none named.
+- **Releasing a version supersedes its draft and in-review siblings too**, each audited (`auto: true`). Rejected and
+  already-superseded rows are left.
+- **A rejection needs a reason** (400 `REASON_REQUIRED`), stored as `artwork_versions.rejected_reason` / `rejected_by`
+  / `rejected_at` (addColumnIfMissing, no backfill) and audited.
+- **`ARTWORK_TOKEN_STATUSES` = draft, in_review, superseded, rejected.** approved / print_ready / released stay the
+  approve class (403 `approve_requires_human_session`, inline guard kept); DELETE stays token_denied.
+- **The product row (`productWrite`)**: a non-current version never touches it. Retiring or rejecting the current
+  version while a print_ready/approved film is on file points `artwork_status` / `artwork_version` back at that film
+  (a current draft sent for review had already moved the row to "in review"). With no film and a blank status, the
+  status stays blank — the Plant-draft shape is not "rejected". Otherwise unchanged.
+- No data touched: the 240 versions and the four Plant drafts are retired by hand after deploy (SEC hold R-0564).
+- `verify:artworkretire` (37; `main` fails 20, the first being the reported 400), `check:apitokens` (156),
+  `smoke:botapi` gains print_ready and superseded probes (not run here — it mints a real token).
+
+## D-331 — The Artwork board filters by pack and category, like Products (10 Nov 2026)
+QA will use the board for ProDough's film / pouch / sleeve inspections. **All packs** and **All categories** selects
+beside the status filter, the pack named on each card, and the "No artwork on file" list follows both. `PACK_LABEL`
+moved to `shared/pack-labels.js`; Products and the grid import it (Pipeline keeps its own longer labels). Screen only.
+
+## D-332 — FORM 418-01 V2 adds bottle sleeves; it waits for Document Control (10 Nov 2026)
+`server/film-pouch-checklist.js` carries V2: "What is inspected on this sheet" (film rolls / pouches / bottle sleeves),
+each section asked only for its kind, and a **BOTTLE SLEEVE** section — the film section's six material checks plus
+type/thickness, seam, perforation, lay-flat, cut length, barcode and a shrink test — with lay-flat width and cut
+length recorded as values (`sleeve_layflat`, `sleeve_length`; `material_kind` on the sheet; no backfill).
+- **Controlled like FORM 204-01 V2 and 106-01:** `film:FORM 418-01` in controlled.js, baseline V1. A database seeing
+  it for the first time records V1 as approved and parks V2; the app serves V1 (both sections, every line, no kind)
+  until Document Control approves V2 in Controlled Changes, then serves V2 with no restart.
+- **The sleeve lines are DRAFTED, not transcribed** — no V2 paper exists. The DCR is
+  `docs/v2/queued/dcr-form-418-01-v2.md`. A sheet stamps the revision it was started under (`FILM_CHECKLIST.revision`,
+  never the constant); a V1 sheet still open after approval is asked its kind before sign-off.
+- `verify:filmsleeve` (24).
+- D-330 and D-332 change how records are written, so the PR waits for Lowry's review (D-274).

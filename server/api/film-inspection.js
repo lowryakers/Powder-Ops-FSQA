@@ -28,8 +28,8 @@ import { nextInspectionNo } from '../inspection-no.js';
 import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { storageEnabled, putStream, presignGet, deleteObject } from '../storage.js';
 import {
-  FILM_CHECKLIST, FILM_REVISION, FILM_DECISIONS,
-  allItems, exceptions, normalizeAnswers, unanswered,
+  FILM_CHECKLIST, FILM_DECISIONS,
+  allItems, exceptions, normalizeAnswers, unanswered, asksKind, isKind,
 } from '../film-pouch-checklist.js';
 
 const router = Router();
@@ -50,6 +50,7 @@ const DENIED = 'A film/pouch inspection is QA\'s record — it needs QA Inspecti
 const HEADER_COLS = [
   'vendor', 'part_no', 'inspection_date', 'roll_count', 'vendor_lot',
   'qa_lead', 'assistant', 'wind_direction', 'film_width', 'issue_notes',
+  'material_kind', 'sleeve_layflat', 'sleeve_length',
 ];
 const NUMS = new Set(['roll_count']);
 
@@ -62,10 +63,10 @@ const shape = (r) => {
     // Derived on every read, never stored: correct a mis-tap and the exception
     // list moves with it. See the doctrine note in film-pouch-checklist.js —
     // these are an AID to QA's decision, not the decision.
-    exceptions: exceptions(answers),
-    unanswered: unanswered(answers),
-    answered: Object.keys(answers).length,
-    total: allItems().length,
+    exceptions: exceptions(answers, r.material_kind),
+    unanswered: unanswered(answers, r.material_kind),
+    answered: allItems(r.material_kind).filter(i => answers[i.key]).length,
+    total: allItems(r.material_kind).length,
   };
 };
 
@@ -169,7 +170,7 @@ router.post('/', (req, res) => {
     db.prepare(`INSERT INTO film_pouch_inspections
       (id, inspection_no, flavor, checklist_revision, inspection_date, qa_lead, created_by)
       VALUES (?, ?, ?, ?, COALESCE(?, date('now')), ?, ?)`).run(
-      uuid(), no, flavor, FILM_REVISION, req.body?.inspection_date || null,
+      uuid(), no, flavor, FILM_CHECKLIST.revision, req.body?.inspection_date || null,
       req.body?.qa_lead || req.user.name, req.user.name);
     row = db.prepare('SELECT * FROM film_pouch_inspections WHERE inspection_no = ? AND flavor = ?').get(no, flavor);
     // DELIBERATELY FALLS THROUGH to the patch below. "Answers save as they are
@@ -191,6 +192,10 @@ router.post('/', (req, res) => {
       .get(row.inspection_no, flavor, row.id);
     if (clash) return res.status(409).json({ error: `A sheet for "${flavor || '(no flavor)'}" already exists on ${row.inspection_no} — open that one instead.` });
     patch.flavor = flavor;
+  }
+  if (req.body?.material_kind !== undefined && req.body.material_kind !== '' && req.body.material_kind !== null
+      && !isKind(String(req.body.material_kind))) {
+    return res.status(400).json({ error: `Say what the sheet inspects: ${(FILM_CHECKLIST.kinds || []).map(k => k.label).join(', ') || 'this revision of the form does not ask'}.` });
   }
   for (const c of HEADER_COLS) {
     if (req.body?.[c] === undefined) continue;
@@ -241,8 +246,12 @@ router.post('/:id/review', (req, res) => {
   if (!FILM_DECISIONS[decision]) {
     return res.status(400).json({ error: 'Record the decision the form asks for: accepted or rejected.' });
   }
+  // V2 asks what the sheet inspects; the sections it must answer follow from it.
+  if (asksKind() && !isKind(row.material_kind)) {
+    return res.status(400).json({ error: `Say what this sheet inspects (${FILM_CHECKLIST.kinds.map(k => k.label).join(', ')}) before signing it off.`, code: 'KIND_REQUIRED' });
+  }
   const answers = parseJson(row.answers, {}) || {};
-  const blanks = unanswered(answers);
+  const blanks = unanswered(answers, row.material_kind);
   if (blanks.length) {
     return res.status(400).json({
       error: `${blanks.length} question${blanks.length === 1 ? '' : 's'} still blank. A checklist filed with blanks reads later as if those checks passed.`,

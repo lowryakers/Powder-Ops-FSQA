@@ -90,7 +90,7 @@ t('…and leaves no live token behind', tokensFor('bm-bot').length === 1 && toke
 t('…and wrote no NFP draft and no message', db.prepare('SELECT COUNT(*) n FROM nfp_versions').get().n === 0
   && db.prepare("SELECT COUNT(*) n FROM chat_messages WHERE user_id = 'bm-bot'").get().n === 0);
 const blocked = db.prepare("SELECT COUNT(*) n FROM audit_log WHERE action = 'api_token_approve_blocked' AND actor_id = 'bm-bot'").get().n;
-t('…and both approve attempts are in the audit log as blocked', blocked === 2, `blocked=${blocked}`);
+t('…and the three approve attempts (NFP decide, artwork approve, artwork release) are in the audit log as blocked', blocked === 3, `blocked=${blocked}`);
 const wblocked = db.prepare("SELECT details FROM audit_log WHERE action = 'api_token_write_blocked' AND actor_id = 'bm-bot'").all().map(r => JSON.parse(r.details).category).sort();
 t('…and the delete and the token listing are in the audit log as api_token_write_blocked', JSON.stringify(wblocked) === '["delete","token_admin"]', JSON.stringify(wblocked));
 

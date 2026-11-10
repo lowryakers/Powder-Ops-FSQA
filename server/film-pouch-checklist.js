@@ -28,9 +28,31 @@
 // reasoning that made FORM 204-01 one checklist per inspection rather than per
 // line, applied one level down.
 
+// ── V2 (D-332): bottle sleeves ──────────────────────────────────────────────
+// The bottling line's printed packaging is a shrink sleeve, and QA inspects it
+// on arrival the way it inspects film and pouches. V2 adds a BOTTLE SLEEVE
+// section and asks the inspector what the sheet is for (film, pouches or bottle
+// sleeves), so a sheet asks only that section. The V1 lines are untouched.
+//
+// THE SLEEVE LINES ARE DRAFTED, NOT TRANSCRIBED. No V2 paper exists: they follow
+// the film section's own material checks line for line, plus what a sleeve has
+// that a roll of film does not (lay-flat width, cut length, seam, perforation,
+// a shrink test on a bottle). Document Control issues V2 — until then the
+// app serves V1 (controlled.js parks the code; `filmChecklistBaseline()`), and
+// the DCR is docs/v2/queued/dcr-form-418-01-v2.md. Do not tidy the sleeve
+// wording without telling Document Control.
 export const FILM_FORM_CODE = 'FORM 418-01';
-export const FILM_REVISION = 'V1';
-export const FILM_TITLE = 'QA Film/Pouch Inspection Checklist';
+export const FILM_REVISION = 'V2';
+export const FILM_PREVIOUS_REVISION = 'V1';
+export const FILM_TITLE = 'QA Film/Pouch/Bottle Sleeve Inspection Checklist';
+const FILM_PREVIOUS_TITLE = 'QA Film/Pouch Inspection Checklist';
+
+/** What a sheet inspects (V2). Each section names the kind it applies to. */
+export const FILM_KINDS = [
+  { key: 'film', label: 'Film (rolls)' },
+  { key: 'pouch', label: 'Pouches' },
+  { key: 'sleeve', label: 'Bottle sleeves' },
+];
 
 /** The answers the paper offers. */
 export const FILM_ANSWERS = ['yes', 'no', 'na'];
@@ -55,7 +77,13 @@ export const FILM_HEADER = [
   { key: 'qa_lead', label: 'Name (QA Lead)', type: 'text' },
   { key: 'flavor', label: 'Flavor', type: 'text', required: true },
   { key: 'assistant', label: 'Assistant Name', type: 'text' },
+  // V2, bottle sleeves only: the two measurements the sleeve's dimension lines
+  // are judged against, recorded as values for the same reason as the film's
+  // CIRCLE ONE rows — "lay-flat width correct: yes" says nothing afterwards.
+  { key: 'sleeve_layflat', label: 'Sleeve lay-flat width (mm)', type: 'text', kinds: ['sleeve'] },
+  { key: 'sleeve_length', label: 'Sleeve cut length (mm)', type: 'text', kinds: ['sleeve'] },
 ];
+const NEW_HEADER_IN_V2 = ['sleeve_layflat', 'sleeve_length'];
 
 /** The CIRCLE ONE options, exactly as printed. */
 export const WIND_DIRECTIONS = ['#1', '#2', '#3', '#4', '#5', '#6', '#7', '#8', '#9', '#10'];
@@ -67,6 +95,7 @@ export const FILM_SECTIONS = [
   {
     key: 'film',
     title: 'FILM Inspection',
+    applies_to: ['film'],
     items: [
       // The wind direction itself is recorded in the header (CIRCLE ONE #1–#10).
       I('wind_direction_correct', 'Wind direction is correct', 'Record which direction above'),
@@ -99,6 +128,7 @@ export const FILM_SECTIONS = [
     key: 'pouch',
     title: 'POUCH Inspection',
     note: '*Pull 3 pouches from 4 random boxes per pallet',
+    applies_to: ['pouch'],
     items: [
       I('pouch_artwork_centered', 'Artwork centered'),
       I('pouch_dimensions', 'Dimensions correct'),
@@ -112,7 +142,39 @@ export const FILM_SECTIONS = [
       I('pouch_edge_lines', 'Silver or other lines on edges'),
     ],
   },
+  {
+    // V2 (D-332) — DRAFTED for Document Control; see the note at the top.
+    key: 'sleeve',
+    title: 'BOTTLE SLEEVE Inspection',
+    note: '*Pull 3 sleeves from 4 random rolls or boxes per pallet',
+    applies_to: ['sleeve'],
+    items: [
+      I('sleeve_roll_tightness', 'Roll tightness acceptable (not loose/crushed)', 'N/A if delivered as cut sleeves'),
+      I('sleeve_core_damage', 'Damage to cores, boxes or outer wrap'),
+      I('sleeve_eye_mark', 'Eye Mark / cut mark - present and consistent'),
+      I('sleeve_layflat_correct', 'Dimensions - lay-flat width matches specification', 'Record the width above'),
+      I('sleeve_length_correct', 'Dimensions - cut length matches specification', 'Record the length above'),
+      I('sleeve_seam', 'Seam - straight, fully sealed, no gaps or solvent marks'),
+      I('sleeve_perforation', 'Perforation / tamper band - present and correct', 'N/A if the specification has none'),
+      I('sleeve_artwork_position', 'Artwork - Text and logos centered / correct position'),
+      I('sleeve_artwork_grammar', 'Artwork - Grammar/spelling correct'),
+      I('sleeve_artwork_nfp', 'Artwork - Nutrition Facts Panel correct'),
+      I('sleeve_barcode', 'Artwork - Barcode present and scans to the product\'s GTIN'),
+      I('sleeve_approved_colors', 'Color - Only approved artwork colors'),
+      I('sleeve_color_hex', 'Color - Hex color matches standard'),
+      I('sleeve_color_impression', 'Color - Visible impression variance'),
+      I('sleeve_material_type', 'Material - Type and thickness match specification', '*e.g. PETG, microns, as on the PO / spec'),
+      I('sleeve_material_discoloration', 'Material - Discoloration or bubbles'),
+      I('sleeve_material_wrinkles', 'Material - Wrinkles, scratches or surface defects'),
+      I('sleeve_material_feel', 'Material - Feel / texture acceptable'),
+      I('sleeve_material_odor', 'Material - Unusual odor present'),
+      I('sleeve_material_foreign', 'Material - Dust, oil, or foreign material present'),
+      I('sleeve_material_pinholes', 'Material - Pinholes or thin spots', '*Flashlight Test if applicable'),
+      I('sleeve_shrink_test', 'Shrink test - sleeve applied to a sample bottle shrinks evenly, no distortion of text or NFP'),
+    ],
+  },
 ];
+const NEW_SECTIONS_IN_V2 = ['sleeve'];
 
 /**
  * The instruction printed above the notes box, kept because it tells the
@@ -128,12 +190,27 @@ export const FILM_DECISIONS = {
   rejected: 'REJECTED - Notify Admin / Do not receive',
 };
 
-export function allItems() {
-  return FILM_SECTIONS.flatMap(s => s.items.map(i => ({ ...i, section: s.key, section_title: s.title })));
+/**
+ * The sections a sheet asks (V2). The served form names its kinds; a sheet
+ * that has said what it inspects asks only the sections for that kind. A sheet
+ * that has not said — or any sheet while the served form is V1, which has no
+ * kinds — asks every section, which is what V1 has always done.
+ */
+export function sectionsFor(kind) {
+  if (!FILM_CHECKLIST.kinds?.length || !kind) return FILM_SECTIONS;
+  return FILM_SECTIONS.filter(s => !s.applies_to || s.applies_to.includes(kind));
+}
+
+/** Whether the served form asks what a sheet inspects (V2 approved). */
+export const asksKind = () => !!FILM_CHECKLIST.kinds?.length;
+export const isKind = (k) => (FILM_CHECKLIST.kinds || []).some(x => x.key === k);
+
+export function allItems(kind) {
+  return sectionsFor(kind).flatMap(s => s.items.map(i => ({ ...i, section: s.key, section_title: s.title })));
 }
 
 export function normalizeAnswers(input = {}) {
-  const known = new Set(allItems().map(i => i.key));
+  const known = new Set(FILM_SECTIONS.flatMap(s => s.items.map(i => i.key)));
   const out = {};
   for (const [k, v] of Object.entries(input || {})) {
     if (!known.has(k)) continue;
@@ -144,8 +221,8 @@ export function normalizeAnswers(input = {}) {
 }
 
 /** Unanswered items, in print order. Sign-off is refused while any remain. */
-export function unanswered(answers = {}) {
-  return allItems().filter(i => !answers[i.key])
+export function unanswered(answers = {}, kind = null) {
+  return allItems(kind).filter(i => !answers[i.key])
     .map(i => ({ key: i.key, text: i.text, section: i.section_title }));
 }
 
@@ -168,8 +245,8 @@ export function unanswered(answers = {}) {
  * N/A, so whoever signs is looking at the exceptions rather than re-reading
  * thirty rows. That is an aid to the decision, not the decision.
  */
-export function exceptions(answers = {}) {
-  const items = allItems();
+export function exceptions(answers = {}, kind = null) {
+  const items = allItems(kind);
   return {
     no: items.filter(i => answers[i.key] === 'no').map(i => ({ key: i.key, text: i.text })),
     na: items.filter(i => answers[i.key] === 'na').map(i => ({ key: i.key, text: i.text })),
@@ -180,6 +257,7 @@ export const FILM_CHECKLIST = {
   form_code: FILM_FORM_CODE,
   revision: FILM_REVISION,
   title: FILM_TITLE,
+  kinds: FILM_KINDS,
   header: FILM_HEADER,
   sections: FILM_SECTIONS,
   answers: FILM_ANSWERS,
@@ -189,3 +267,34 @@ export const FILM_CHECKLIST = {
   failure_instruction: FILM_FAILURE_INSTRUCTION,
   sheet_rule: '1 SHEET PER FLAVOR',
 };
+
+// ── Under change control (D-332) ─────────────────────────────────────────────
+// The form is a controlled definition (scope 'checklist', key 'film:FORM 418-01').
+// `filmChecklistSnapshot()` is what the CODE says (V2); `filmChecklistBaseline()`
+// is the revision the approved paper carries (V1: no kinds, no sleeve section,
+// no sleeve header lines, every section asked on every sheet). A database seeing
+// this definition for the first time records V1 as approved and parks V2 for
+// Document Control. `applyFilmChecklistSnapshot()` puts an approved snapshot
+// back over the live objects in place, so the served form, unanswered() and
+// sign-off all follow it with no further wiring.
+const clone = (x) => JSON.parse(JSON.stringify(x));
+// Frozen at module load — before controlled.js can have applied anything.
+const CODE = Object.freeze(clone({ revision: FILM_REVISION, title: FILM_TITLE, kinds: FILM_KINDS, header: FILM_HEADER, sections: FILM_SECTIONS }));
+export function filmChecklistSnapshot() { return clone(CODE); }
+export function filmChecklistBaseline() {
+  return {
+    revision: FILM_PREVIOUS_REVISION,
+    title: FILM_PREVIOUS_TITLE,
+    kinds: [],
+    header: CODE.header.filter(h => !NEW_HEADER_IN_V2.includes(h.key)),
+    sections: CODE.sections.filter(s => !NEW_SECTIONS_IN_V2.includes(s.key)).map(s => { const c = clone(s); delete c.applies_to; return c; }),
+  };
+}
+export function applyFilmChecklistSnapshot(snap) {
+  if (!snap || !Array.isArray(snap.sections) || !Array.isArray(snap.header)) return;
+  FILM_SECTIONS.splice(0, FILM_SECTIONS.length, ...clone(snap.sections));
+  FILM_HEADER.splice(0, FILM_HEADER.length, ...clone(snap.header));
+  FILM_CHECKLIST.kinds = Array.isArray(snap.kinds) ? clone(snap.kinds) : [];
+  if (typeof snap.revision === 'string') FILM_CHECKLIST.revision = snap.revision;
+  if (typeof snap.title === 'string') FILM_CHECKLIST.title = snap.title;
+}

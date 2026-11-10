@@ -15,7 +15,7 @@ import {
   CHECKLIST, getItem, normalizeAnswers, triggeredEscalations, unanswered,
 } from '../receiving-checklist.js';
 import { sendEscalation } from '../receiving-notify.js';
-import { FILM_REVISION } from '../film-pouch-checklist.js';
+import { FILM_CHECKLIST } from '../film-pouch-checklist.js';
 import { nextInspectionNo, cleanInspectionNo } from '../inspection-no.js';
 import { labTestFor, alertDetail, itemKey } from '../lab-test-items.js';
 import { readFileSync } from 'fs';
@@ -262,7 +262,7 @@ export function ensureFilmDraft(db, checklistRow, user) {
     db.prepare(`INSERT INTO film_pouch_inspections
       (id, inspection_no, flavor, checklist_revision, vendor, vendor_lot, inspection_date, created_by)
       VALUES (?, ?, '', ?, ?, ?, COALESCE(?, date('now')), ?)`).run(
-      id, checklistRow.inspection_no, FILM_REVISION,
+      id, checklistRow.inspection_no, FILM_CHECKLIST.revision,
       checklistRow.vendor || null, checklistRow.vendor_lot || null,
       checklistRow.inspection_date || null, user.name);
     logAudit(user, 'film_inspection_created', 'film_inspection', id,
