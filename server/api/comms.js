@@ -19,6 +19,7 @@ import { requireRole } from '../middleware/auth.js';
 import { getType } from '../qms-config.js';
 import { readyDocOrigin, appOrigins } from '../links.js';
 import { enqueueOpsWebhook } from '../ops-webhook.js';
+import { checkAsk, recordAsk, maybeRecognize, voidForMessage, asksFor, askOnMessage, approverId, APPROVER_SETTING } from '../ops-thread-asks.js';
 
 const router = Router();
 
@@ -1326,6 +1327,8 @@ function flattenMessage(db, m) {
     // A reply also sent to the channel shows there with what it answered.
     also_in_channel: !!m.also_in_channel,
     parent_preview: m.parent_id && m.also_in_channel ? parentPreview(db, m.parent_id) : null,
+    // A bot's approval ask in #ops-requests carries its state (D-336).
+    approval_ask: askOnMessage(db, m.id),
     attachments: [],
   };
 }
@@ -1757,7 +1760,49 @@ router.get('/messages/:id/thread', async (req, res) => {
     // they follow it (D-190).
     read_marker: threadMarkers(db, parent.id, req.user.id).effective,
     following: f.following, follow_explicit: f.explicit,
+    // The approval asks in this thread and their state (D-336) — the same
+    // derivation as GET /messages/:id/ask-status.
+    asks: asksFor(db, parent.id),
   });
+});
+
+// GET /messages/:id/ask-status (D-336) — :id is an ask message or the thread it
+// heads. Read-only: there is no route that creates or confirms a recognition.
+// Membership of the channel, 404 otherwise (a token as a MEMBER, D-166).
+router.get('/messages/:id/ask-status', (req, res) => {
+  const db = getDb();
+  const m = db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(req.params.id);
+  const channel = m ? getChannel(db, m.channel_id) : null;
+  if (!m || !channel || !canAccess(db, channel, req.user.id, req.user.role === 'admin')
+      || (req.auth?.kind === 'token' && !isMember(db, channel.id, req.user.id))) {
+    return res.status(404).json({ error: 'Message not found' });
+  }
+  res.json({ message_id: m.id, channel_id: channel.id, approver_configured: !!approverId(db), asks: asksFor(db, m.id) });
+});
+
+// Who answers #ops-requests asks (D-336): a user id, set by an admin in a person's
+// session. Tokens never reach this (not on WRITE_AREAS).
+router.get('/ops-thread-settings', (req, res) => {
+  if (req.user.role !== 'admin' || req.auth?.kind !== 'session') return res.status(404).json({ error: 'Not found' });
+  const db = getDb();
+  const stored = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(APPROVER_SETTING)?.value || null;
+  const id = approverId(db);
+  const u = id ? db.prepare('SELECT id, name FROM users WHERE id = ?').get(id) : null;
+  res.json({ approver_user_id: id, approver_name: u?.name || null, source: stored ? 'setting' : id ? 'environment' : null });
+});
+router.put('/ops-thread-settings', (req, res) => {
+  if (req.user.role !== 'admin' || req.auth?.kind !== 'session') return res.status(404).json({ error: 'Not found' });
+  const db = getDb();
+  const id = req.body?.approver_user_id ? String(req.body.approver_user_id).trim() : '';
+  if (id) {
+    const u = db.prepare('SELECT id, is_active FROM users WHERE id = ?').get(id);
+    if (!u || !u.is_active) return res.status(400).json({ error: 'approver_user_id must be an active account.' });
+  }
+  const before = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(APPROVER_SETTING)?.value || null;
+  if (id) db.prepare(`INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(APPROVER_SETTING, id);
+  else db.prepare('DELETE FROM app_settings WHERE key = ?').run(APPROVER_SETTING);
+  logAudit(req.user, 'update', 'app_setting', APPROVER_SETTING, { from: before, to: id || null }, { value: before }, { value: id || null }, 'Ops thread approver');
+  res.json({ approver_user_id: approverId(db) });
 });
 
 // Follow or unfollow a thread (D-190). state: 'following' | 'muted' | null
@@ -1795,6 +1840,9 @@ router.post('/channels/:id/messages', async (req, res) => {
   if (req.auth?.kind === 'token' && isBroadcastMention(body)) {
     return res.status(403).json({ error: 'token_scope', message: 'A bot token cannot use @channel, @here or @everyone. Mention the people it is for.' });
   }
+  // A structured approval ask (D-336) is checked before anything is written.
+  const ask = checkAsk(db, req, channel);
+  if (ask?.error) return res.status(ask.error.status).json(ask.error.body);
   const id = uuid();
   // Millisecond-precision created_at (not the second-precision datetime('now')
   // column default) so unread ordering is exact — a message that arrives in the
@@ -1803,8 +1851,16 @@ router.post('/channels/:id/messages', async (req, res) => {
   const now = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS t").get().t;
   // "Also send to #channel" (D-190): ONE row, read in the thread and the channel.
   const alsoInChannel = req.body?.parent_id && req.body?.also_to_channel ? 1 : 0;
-  db.prepare('INSERT INTO chat_messages (id, channel_id, user_id, body, parent_id, created_at, also_in_channel) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(id, channel.id, req.user.id, body || null, req.body?.parent_id || null, now, alsoInChannel);
+  db.prepare('INSERT INTO chat_messages (id, channel_id, user_id, body, parent_id, created_at, also_in_channel, posted_via) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(id, channel.id, req.user.id, body || null, req.body?.parent_id || null, now, alsoInChannel, req.auth?.kind === 'token' ? 'token' : 'session');
+  // The ask row, or — for a reply in an ops thread — the approver's recognition.
+  // Never fails the post (D-336).
+  const inserted = { id, parent_id: req.body?.parent_id || null, user_id: req.user.id, body: body || null, created_at: now };
+  if (ask) {
+    try { recordAsk(db, req, channel, inserted, ask); } catch (e) { console.warn('[ops-thread-asks] ask not recorded:', e.message); }
+  } else {
+    maybeRecognize(db, req, channel, inserted);
+  }
   // Link only the caller's own still-unattached uploads for this channel.
   const link = db.prepare('UPDATE chat_attachments SET message_id = ? WHERE id = ? AND channel_id = ? AND user_id = ? AND message_id IS NULL');
   for (const aid of attachmentIds) link.run(id, aid, channel.id, req.user.id);
@@ -1953,6 +2009,7 @@ router.put('/messages/:id', async (req, res) => {
   const body = (req.body?.body || '').trim();
   if (!body) return res.status(400).json({ error: 'Message body is required' });
   db.prepare("UPDATE chat_messages SET body = ?, edited_at = datetime('now') WHERE id = ?").run(body, ctx.m.id);
+  voidForMessage(db, ctx.m.id, 'edited', req.user); // an edited approval no longer counts (D-336)
   db.prepare('DELETE FROM chat_message_translations WHERE message_id = ?').run(ctx.m.id); // stale after edit
   db.prepare('DELETE FROM chat_mentions WHERE message_id = ?').run(ctx.m.id);
   recordMentions(db, ctx.channel, ctx.m.id, body, req.user); // re-detect after edit
@@ -1975,6 +2032,7 @@ router.delete('/messages/:id', async (req, res) => {
   // be questioned six months later.
   db.prepare("UPDATE chat_messages SET deleted_at = datetime('now'), deleted_by = ?, body = NULL WHERE id = ?")
     .run(req.user.id, ctx.m.id);
+  voidForMessage(db, ctx.m.id, 'deleted', req.user); // a deleted reply or ask is no approval (D-336)
   logAudit(req.user, 'delete', 'chat_message', ctx.m.id,
     { channel: ctx.channel.name || ctx.channel.id, author_id: ctx.m.user_id },
     { body: ctx.m.body }, null, `Message in ${ctx.channel.name || 'a conversation'}`);
@@ -2027,8 +2085,8 @@ router.post('/messages/:id/forward', async (req, res) => {
 
   const id = uuid();
   const now = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS t").get().t;
-  db.prepare('INSERT INTO chat_messages (id, channel_id, user_id, body, created_at) VALUES (?, ?, ?, ?, ?)')
-    .run(id, target.id, req.user.id, body, now);
+  db.prepare('INSERT INTO chat_messages (id, channel_id, user_id, body, created_at, posted_via) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(id, target.id, req.user.id, body, now, req.auth?.kind === 'token' ? 'token' : 'session');
 
   // Re-reference the source attachments: new rows in the target channel
   // pointing at the SAME storage objects — no copy in R2, no second upload.

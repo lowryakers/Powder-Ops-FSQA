@@ -78,6 +78,11 @@ try {
   const sup = await call('POST', '/api/artwork/versions/smoke-no-such-version/status', tok, { status: 'superseded' });
   record('artwork superseded → not a token guard refusal', [403, 404].includes(sup.status) && !['token_denied', 'approve_requires_human_session'].includes(sup.body?.error), `${sup.status} ${sup.body?.error || ''}`);
 
+  // The approval-ask status is a READ open to a token (D-336): a missing id is a
+  // plain 404, never a token guard refusal. Nothing is posted.
+  const ask = await call('GET', '/api/comms/messages/smoke-no-such-message/ask-status', tok);
+  record('GET /api/comms/messages/:id/ask-status (missing) → 404, not a token refusal', ask.status === 404 && !['token_denied', 'approve_requires_human_session'].includes(ask.body?.error), `${ask.status} ${ask.body?.error || ''}`);
+
   const del = await call('DELETE', '/api/procurement/pos/smoke-no-such-po', tok);
   record('DELETE /api/procurement/pos/:id → 403 token_denied (delete)', del.status === 403 && del.body?.error === 'token_denied' && del.body?.category === 'delete', `${del.status} ${del.body?.error || ''} ${del.body?.category || ''}`);
   const list = await call('GET', '/api/api-tokens', tok);

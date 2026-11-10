@@ -446,6 +446,14 @@ limit), `authenticateToken` in `middleware/auth.js`, `server/middleware/no-token
   Procurement like a person's. Known by `app_settings.test_runner_user_id`, never its name. Its token is minted by an
   admin in Settings. `check:opswebhook` (51), `verify:testrunner` (23).
 
+## A bot's approval ask in #ops-requests is answered by the approver's session reply (D-336)
+`shared/ops-asks.js` (categories, phrases), `server/ops-thread-asks.js` (`checkAsk`, `recordAsk`, `maybeRecognize`,
+`voidForMessage`, `asksFor`), `chat_approval_asks` + `chat_approval_recognitions`, `GET /comms/messages/:id/ask-status`.
+- **No route creates a recognition — never add one.** It is a side effect of the approver's own session reply in the
+  ask's thread: id from `ops_thread_approver_user_id` (never a name), exact phrase, not a token, latest ask only.
+- Excluded categories (money, payment, qbo, bill_pay, outside_party) are never recognized. An edit or delete voids.
+- `verify:opsthreadasks` (81).
+
 ## ReadyDoc tells Lowry when the #ops-requests bots stop (D-259)
 `server/ops-monitor.js` (`startOpsMonitor`, `tickOpsMonitor`, `webhookCheck`, `silenceCheck`, `botSignals`, `resolveRecipient`,
 `ensureAlertsChannel`, `opsMonitorStatus`), the `ops_monitor_incidents` table, `GET /api/admin/ops-monitor/status` (admin session

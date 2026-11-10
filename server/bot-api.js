@@ -34,6 +34,7 @@ export const BOT_ROUTES = Object.freeze([
   { method: 'GET', path: '/api/comms/channels', module: null, scope: 'read', paged: true },
   { method: 'GET', path: '/api/comms/channels/:id/messages', module: null, scope: 'read' },
   { method: 'GET', path: '/api/comms/messages/:id/thread', module: null, scope: 'read' },
+  { method: 'GET', path: '/api/comms/messages/:id/ask-status', module: null, scope: 'read' },
   { method: 'POST', path: '/api/comms/channels/:id/messages', module: null, scope: 'write' },
   { method: 'POST', path: '/api/comms/channels/:id/attachments', module: null, scope: 'write' },
   { method: 'POST', path: '/api/comms/messages/:id/reactions', module: null, scope: 'write' },
