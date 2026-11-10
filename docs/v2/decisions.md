@@ -10657,3 +10657,8 @@ several times a weekday, and a retry used to file a second `duplicate_suspect` r
 - **A write token on a queue account can already set `qbo_bill_id`** (`EDITABLE`, `canWorkQueue`, `PUT /ap-drop/:id` on
   `WRITE_AREAS`) — now asserted with a real token. Status `in_qbo` stays refused to tokens (slice 2).
 - `verify:apdrop` (145; `main` fails 10), `verify:apdropui` (39).
+
+## D-334 — The Artwork board says "Bottle sleeve", not "Bottle" (10 Nov 2026)
+On Artwork the pack filter and each card name the printed piece, and a bottle's printed piece is its shrink sleeve.
+`ARTWORK_PACK_LABEL` in `shared/pack-labels.js` overrides BTL only; the Products catalog still says "Bottle" (that is
+the product's pack). Screen only.
