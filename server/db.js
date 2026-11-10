@@ -2563,6 +2563,11 @@ function initSchema() {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+  // FORM 418-01 V2 (D-332): what the sheet inspects (film / pouch / sleeve) and
+  // the two sleeve measurements. NULL on every sheet filed before; no backfill.
+  addColumnIfMissing('film_pouch_inspections', 'material_kind', 'TEXT');
+  addColumnIfMissing('film_pouch_inspections', 'sleeve_layflat', 'TEXT');
+  addColumnIfMissing('film_pouch_inspections', 'sleeve_length', 'TEXT');
 
   // A claim over $100 alerts the office once, as it is filed (D-254). After the
   // reimbursements CREATE above — a column migration before its table kills a

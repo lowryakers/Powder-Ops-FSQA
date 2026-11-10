@@ -25,6 +25,7 @@ import { QMS_TYPES } from './qms-config.js';
 import { SCALE_FORMS } from './scale-forms.js';
 import { atpControlledEntry } from './atp-limits.js';
 import { envControlledEntry } from './env-limits.js';
+import { filmChecklistSnapshot, filmChecklistBaseline, applyFilmChecklistSnapshot, FILM_FORM_CODE } from './film-pouch-checklist.js';
 import { dilutionControlledEntry } from './dilution-control.js';
 import { empControlledEntry } from './emp-results.js';
 import { SCALE_CAUTION } from '../shared/scale-incident.js';
@@ -129,6 +130,16 @@ function checklistEntries() {
     current: checklistSnapshot,
     apply: applyChecklistSnapshot,
     baseline: checklistBaseline,
+  }, {
+    // FORM 418-01 (D-332): V2 adds bottle sleeves. The code carries V2 and the
+    // baseline is V1, so a database seeing this for the first time serves V1
+    // and parks V2 for Document Control.
+    scope: 'checklist',
+    key: `film:${FILM_FORM_CODE}`,
+    label: `${FILM_FORM_CODE} QA Film/Pouch/Bottle Sleeve Inspection Checklist — questions`,
+    current: filmChecklistSnapshot,
+    apply: applyFilmChecklistSnapshot,
+    baseline: filmChecklistBaseline,
   }];
 }
 
