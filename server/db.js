@@ -6606,7 +6606,7 @@ function runMigrations() {
   for (const [col, def] of [
     ['code_hash', 'TEXT'], ['pending_source', 'TEXT'], ['proposed_by', 'TEXT'], ['proposed_by_id', 'TEXT'],
     ['proposed_at', 'TEXT'], ['proposed_reason', 'TEXT'], ['qa_reviewed_by', 'TEXT'], ['qa_reviewed_by_id', 'TEXT'],
-    ['qa_reviewed_at', 'TEXT'], ['approved_by_id', 'TEXT'],
+    ['qa_reviewed_at', 'TEXT'], ['approved_by_id', 'TEXT'], ['approved_source', 'TEXT'],
   ]) { try { addColumnIfMissing('controlled_definitions', col, def); } catch { /* table unavailable */ } }
 
   // ── The change register (CAR 4990683-4; the software half of 4990683-5) ──

@@ -243,7 +243,11 @@ export function syncDefinitions(db) {
 
     // Changed. Serve the approved version and park this one.
     try { entry.apply(JSON.parse(row.approved_snapshot)); } catch { /* keep code as-is if unreadable */ }
-    if (row.pending_hash !== hash && lastCode !== hash) {
+    // A value approved IN THE APP differs from the code on purpose: it is not
+    // re-parked while the code is the version already seen. Anything else that
+    // differs (a code change, or an approval recorded outside the app) parks.
+    const appApprovedOverSameCode = row.approved_source === 'app' && lastCode === hash;
+    if (row.pending_hash !== hash && !appApprovedOverSameCode) {
       setPending.run(hash, JSON.stringify(snapshot), entry.label, row.id);
       newlyPending.push({ ...entry, id: row.id, hash, snapshot, approved: safeParse(row.approved_snapshot) });
     }
@@ -264,7 +268,7 @@ export function approveDefinition(db, id, user) {
   }
   const snapshot = safeParse(row.pending_snapshot);
   db.prepare(`UPDATE controlled_definitions SET approved_hash = pending_hash, approved_snapshot = pending_snapshot,
-      approved_at = datetime('now'), approved_by = ?, approved_by_id = ?, version = version + 1,
+      approved_at = datetime('now'), approved_by = ?, approved_by_id = ?, approved_source = pending_source, version = version + 1,
       pending_hash = NULL, pending_snapshot = NULL, pending_seen_at = NULL, status = 'approved',
       rejected_at = NULL, rejected_by = NULL, rejected_reason = NULL
     WHERE id = ?`).run(user?.name || 'system', user?.id || null, id);
