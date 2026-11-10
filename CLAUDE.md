@@ -6481,6 +6481,12 @@ number that disagrees with its type, a Policy (no tab lists it) and a Form with 
 document PUT still ignores `doc_type`. The importer suggests the type from the number. A seed that files a
 `sop_documents` row must set `doc_type` (FORM 431-01 went to the SOPs tab without it). `verify:doctype` (26).
 
+## "Where is a name used?" — Doc Control Review (D-326)
+`server/name-usage.js` (`nameUsage`, `compactTerm`), `GET /api/doc-review/name-usage?q=`, `NameUsageSearch.jsx`. A renamed
+chemical, machine or title is listed everywhere it is still written (documents, draft revisions, forms, schedules,
+one-off tasks, chemicals, sign-out items, courses, questions, EOD templates, built-in definitions), each with who changes
+it. **SELECT-only; it renames nothing.** A new place a name lives gets a section there. `verify:nameusage` (17).
+
 ## Every page of a document PDF carries its identity; the draft is its own export (D-318)
 `server/document-pdf.js` is the ONE renderer for controlled-document PDFs (single, batch, Auditor View Print). Header and
 footer are drawn on buffered pages, never written into the body: number · Rev · short title · Page x of y, and
