@@ -24,18 +24,18 @@ const addDays = (iso, n) => {
 };
 
 /**
- * The state of a supplier's letter of guarantee on `today` (YYYY-MM-DD).
- * `files` are its supplier_files rows of the guarantee kind (removed ones left out).
+ * The state of a document a supplier owes that carries a date by which it must
+ * be renewed (the letter of guarantee, D-289; the third-party GMP certificate,
+ * D-337). `files` are that supplier's rows of `kind`.
  *   not_required · missing · no_renewal_date · expired · due_soon · current
- * The letter that counts is the one renewing LAST; a letter with no renewal date
- * counts only when there is no dated one, because a gap is not a pass.
+ * The one that counts is the one dated LAST; one with no date counts only when
+ * there is no dated one, because a gap is not a pass.
  * `gap` is true for missing / no_renewal_date / expired. due_soon is a warning, not a gap.
  */
-export function guaranteeStatus(s, files = [], today) {
-  const required = guaranteeRequired(s);
-  const letters = files.filter(f => f && f.kind === GUARANTEE_KIND);
-  const dated = letters.filter(f => f.expires_on).sort((a, b) => String(b.expires_on).localeCompare(String(a.expires_on)));
-  const file = dated[0] || letters[0] || null;
+export function renewableDocStatus(required, files = [], kind, today) {
+  const docs = files.filter(f => f && f.kind === kind);
+  const dated = docs.filter(f => f.expires_on).sort((a, b) => String(b.expires_on).localeCompare(String(a.expires_on)));
+  const file = dated[0] || docs[0] || null;
   let status;
   if (!file) status = 'missing';
   else if (!file.expires_on) status = 'no_renewal_date';
@@ -46,6 +46,11 @@ export function guaranteeStatus(s, files = [], today) {
     return { required: false, status: file ? status : 'not_required', gap: false, file, renews_on: file?.expires_on || null };
   }
   return { required: true, status, gap: ['missing', 'no_renewal_date', 'expired'].includes(status), file, renews_on: file?.expires_on || null };
+}
+
+/** The state of a supplier's letter of guarantee on `today` (YYYY-MM-DD). */
+export function guaranteeStatus(s, files = [], today) {
+  return renewableDocStatus(guaranteeRequired(s), files, GUARANTEE_KIND, today);
 }
 
 export const GUARANTEE_STATUS_TEXT = {

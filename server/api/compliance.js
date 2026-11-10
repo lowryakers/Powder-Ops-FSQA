@@ -1,4 +1,5 @@
 import { openGuaranteeGaps } from '../supplier-guarantee.js';
+import { openGmpCertGaps } from '../supplier-gmp-cert.js';
 import * as backupModule from '../db-backup.js';
 import { storageEnabled as storageOn } from '../storage.js';
 import { Router } from 'express';
@@ -704,6 +705,14 @@ router.get('/notifications', (req, res) => {
     try {
       const gaps = openGuaranteeGaps(db);
       if (gaps.length) items.push({ id: 'guarantee-missing', tab: 'suppliers', severity: 'warning', count: gaps.length, label: `${gaps.length} packaging / food-contact supplier${gaps.length > 1 ? 's' : ''} with no current letter of guarantee` });
+    } catch { /* optional */ }
+  }
+  // Raw-material and packaging suppliers with no current third-party GMP
+  // certificate (D-337). The same two people.
+  if (isApprover || dept === 'purchasing') {
+    try {
+      const gaps = openGmpCertGaps(db);
+      if (gaps.length) items.push({ id: 'gmp-cert-missing', tab: 'suppliers', severity: 'warning', count: gaps.length, label: `${gaps.length} raw-material / packaging supplier${gaps.length > 1 ? 's' : ''} with no current third-party GMP certificate` });
     } catch { /* optional */ }
   }
   // The specification release gate (CAR 4990683-3): lots the gate is holding,
