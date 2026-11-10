@@ -304,7 +304,9 @@ t('4 control: 25 hours apart → not flagged', y.status === 'new', y.status);
 t('4 control: a different ref (one a prefix of the other) → not flagged', y.status === 'new', y.status);
 t('4 nothing is deleted: both of Jake\'s rows and files are still there', db.prepare('SELECT COUNT(*) c FROM ap_drops WHERE id IN (?, ?)').get(j1.id, j2.id).c === 2);
 r = await call('POST', `/ap-drop/${j2.id}/route-partner`, { direction: 'payable' }, office);
-t('4 the office can still confirm the second (route-partner) — a deliberate act', r.status === 200 && r.body?.drop?.status === 'triaged', JSON.stringify(r.body).slice(0, 120));
+t('4 confirming the second without saying it is a separate document is refused: same number, different amount (400)', r.status === 400 && !!r.body?.possible_duplicate, JSON.stringify(r.body).slice(0, 120));
+r = await call('POST', `/ap-drop/${j2.id}/route-partner`, { direction: 'payable', confirm_new_document: true }, office);
+t('4 the office can still confirm the second (route-partner, "file as a separate document") — a deliberate act', r.status === 200 && r.body?.drop?.status === 'triaged', JSON.stringify(r.body).slice(0, 120));
 
 // 5. A payable is unchanged end to end: still on the AP track.
 r = await call('GET', `/ap-drop/${dM4.id}`, null, admin);
@@ -321,6 +323,89 @@ r = await call('POST', `/ap-drop/${x.id}/receivable-other`, { reason: 'Gym clien
 t('6 with a reason: terminal, out of Outstanding, one audit row', r.status === 200 && r.body?.status === 'receivable_other' && r.body?.outstanding === false && audits(x.id, 'ap_drop.receivable_other') === 1 && !(await outstandingIds()).includes(x.id));
 r = await call('POST', `/ap-drop/${dM4.id}/receivable-other`, { reason: 'not really' }, office);
 t('6 refused on a drop that is on the partner ledger (409)', r.status === 409);
+
+// 8. Invoice numbers folded on the link (INV-1589 = 1589), the amount must
+// agree, and Paid waits for a Partner Rec settlement. Fixtures only.
+{
+  const { classify, normDocNumber } = await import('../server/partner-recon.js');
+  const addDoc = (pid, num, amount, extra = {}) => {
+    const id = `fx-${num}-${Math.random().toString(36).slice(2, 8)}`;
+    db.prepare(`INSERT INTO partner_documents (id, partner_id, direction, doc_type, doc_number, amount, status, issued_date, terms_days, due_date, source, created_by, settlement_id)
+      VALUES (?,?,?,'invoice',?,?,?,?,30,?,?,'fixture',?)`).run(id, pid, extra.direction || 'payable', num, amount, extra.status || 'final',
+      '2026-09-01', '2026-10-01', extra.source || 'partner-portal', extra.settlement_id || null);
+    return id;
+  };
+  const count = (pid, key) => db.prepare('SELECT doc_number FROM partner_documents WHERE partner_id = ? AND status != \'void\'').all(pid)
+    .filter(x => normDocNumber(x.doc_number) === key).length;
+  const m4drop = async (num, amount, name) => (await drop(op, await pdf(['M4 Dynamics', '88 Formulation Drive', 'INVOICE', `Invoice No: ${num}`, 'Invoice Date: 09/30/2026', 'Bill To: Powder Ops LLC', `Amount Due $${amount}`]), name)).body?.drops?.[0];
+
+  const portal1589 = addDoc(m4.id, '1589', 43582.34);
+  const a = await m4drop('INV-1589', '43,582.34', 'INV-1589 (1).pdf');
+  t('8.1 a drop read as INV-1589 links the portal document 1589 (same amount) — no second document', a?.invoice_number === 'INV-1589' && a?.partner_document_id === portal1589 && count(m4.id, '1589') === 1, JSON.stringify({ n: a?.invoice_number, p: a?.partner_document_id, c: count(m4.id, '1589') }));
+  t('8.1 …the link says it was found by number and amount', events(a.id, 'routed_partner') === 1 && db.prepare("SELECT detail FROM ap_drop_events WHERE drop_id = ? AND kind = 'routed_partner'").get(a.id).detail.includes('same number and amount'));
+  t('8.1 …and the stored numbers are not rewritten', db.prepare('SELECT doc_number FROM partner_documents WHERE id = ?').get(portal1589).doc_number === '1589' && a.invoice_number === 'INV-1589');
+
+  const portal1600 = addDoc(m4.id, '1600', 1200);
+  // The reader does not read "Invoice #1600" as a number, so the office types it
+  // on a drop the reader did not route, then routes it by hand.
+  let b2 = (await drop(op, await pdf(['Some Stationer', 'INVOICE', 'Bill To: Powder Ops LLC', 'Amount Due $1,200.00']), 'stationer.pdf')).body?.drops?.[0];
+  await call('PUT', `/ap-drop/${b2.id}`, { invoice_number: 'Invoice #1600', amount: '1200' }, office);
+  b2 = (await call('POST', `/ap-drop/${b2.id}/route-partner`, { direction: 'payable', partner_id: m4.id }, office)).body?.drop;
+  t('8.2 "Invoice #1600" links 1600', b2?.partner_document_id === portal1600 && count(m4.id, '1600') === 1, JSON.stringify({ n: b2?.invoice_number, p: b2?.partner_document_id }));
+  const portal1601 = addDoc(m4.id, '1601', 990);
+  const b3 = await m4drop('01601', '990.00', 'inv-01601.pdf');
+  t('8.3 "01601" (leading zero) links 1601', b3?.partner_document_id === portal1601 && count(m4.id, '1601') === 1, JSON.stringify({ n: b3?.invoice_number, p: b3?.partner_document_id }));
+
+  const other = 'fx-partner-b';
+  db.prepare("INSERT OR IGNORE INTO partner_accounts (id, name, code, terms_days) VALUES (?, 'Other Partner Co', 'OPC', 30)").run(other);
+  const b1777 = addDoc(other, '1777', 500);
+  const c = await m4drop('INV-1777', '500.00', 'inv-1777.pdf');
+  t('8.4 another partner\'s 1777 is never linked: M4 gets its own draft, the other ledger is untouched', !!c?.partner_document_id && c.partner_document_id !== b1777 && count(other, '1777') === 1 && count(m4.id, '1777') === 1, JSON.stringify({ p: c?.partner_document_id }));
+
+  const before1589 = db.prepare('SELECT * FROM partner_documents WHERE id = ?').get(portal1589);
+  const dDiff = await m4drop('INV-1589', '100.00', 'inv-1589-wrong.pdf');
+  t('8.5 same number, different amount: not linked, and no second document filed', !dDiff?.partner_document_id && count(m4.id, '1589') === 1, JSON.stringify({ p: dDiff?.partner_document_id, c: count(m4.id, '1589') }));
+  t('8.5 …the drop says so: needs_info "Possible duplicate", the conflict on its verdict, one event', dDiff?.status === 'needs_info' && /^Possible duplicate: M4 Dynamics already has invoice #1589/.test(dDiff?.status_reason || '') && dDiff?.partner_route?.number_conflict?.document_id === portal1589 && events(dDiff.id, 'possible_number_duplicate') === 1, JSON.stringify({ s: dDiff?.status, r: dDiff?.status_reason }));
+  t('8.5 …and the ledger row is unchanged', JSON.stringify(db.prepare('SELECT * FROM partner_documents WHERE id = ?').get(portal1589)) === JSON.stringify(before1589));
+  r = await call('POST', `/ap-drop/${dDiff.id}/route-partner`, { direction: 'payable' }, office);
+  t('8.5 routing it by hand is refused the same way (400, names the document)', r.status === 400 && r.body?.possible_duplicate?.document_id === portal1589 && count(m4.id, '1589') === 1);
+  r = await call('PUT', `/ap-drop/${dDiff.id}`, { amount: '43582.34' }, office);
+  r = await call('POST', `/ap-drop/${dDiff.id}/route-partner`, { direction: 'payable' }, office);
+  t('8.5 corrected to the right amount, it links the one already there', r.status === 200 && r.body?.created === false && r.body?.document_id === portal1589 && count(m4.id, '1589') === 1, JSON.stringify(r.body).slice(0, 160));
+  const dSep = await m4drop('INV-1600', '50.00', 'inv-1600-credit.pdf');
+  r = await call('POST', `/ap-drop/${dSep.id}/route-partner`, { direction: 'payable', confirm_new_document: true }, office);
+  t('8.5 "File as a separate document" is the office\'s deliberate act: a second draft, not final', r.status === 200 && r.body?.created === true && count(m4.id, '1600') === 2 && db.prepare('SELECT status FROM partner_documents WHERE id = ?').get(r.body.document_id).status === 'draft');
+
+  t('8.6 the exact-string M4-2299 and same-bytes links still hold', db.prepare("SELECT COUNT(*) c FROM partner_documents WHERE partner_id = ? AND doc_number = 'M4-2299'").get(m4.id).c === 1 && db.prepare("SELECT COUNT(*) c FROM partner_documents WHERE partner_id = ? AND doc_number = 'M4-2210'").get(m4.id).c === 1);
+
+  const plain = await drop(op, await pdf(['Mountain Flavor Supply', 'INVOICE', 'Invoice No: MFS-20001', 'Bill To: Powder Ops LLC', 'Amount Due $12.00']), 'mfs-20001.pdf');
+  r = await call('POST', `/ap-drop/${plain.body.drops[0].id}/status`, { status: 'paid' }, admin);
+  t('8.7 a drop that is not on a partner ledger is still marked paid, closed_at stamped', r.status === 200 && r.body?.status === 'paid' && !!r.body?.closed_at);
+
+  const settlementsBefore = db.prepare('SELECT COUNT(*) c FROM partner_settlements').get().c;
+  const paidEventsBefore = db.prepare("SELECT COUNT(*) c FROM ap_drop_events WHERE drop_id = ? AND kind = 'status_changed'").get(a.id).c;
+  const statusBefore = db.prepare('SELECT status FROM ap_drops WHERE id = ?').get(a.id).status;
+  r = await call('POST', `/ap-drop/${a.id}/status`, { status: 'paid', reason: 'September settlement' }, admin);
+  t('8.8 Paid on a drop routed to an unsettled ledger document is refused (409, points at Partner Rec)', r.status === 409 && r.body?.code === 'SETTLE_ON_PARTNER_REC' && /Partner Reconciliation/.test(r.body?.error || '') && r.body?.partner_document_id === portal1589 && r.body?.partner_id === m4.id, JSON.stringify(r.body).slice(0, 200));
+  t('8.8 …nothing moved: status, settlement_id, settlements, events', db.prepare('SELECT status FROM ap_drops WHERE id = ?').get(a.id).status === statusBefore
+    && db.prepare('SELECT settlement_id FROM partner_documents WHERE id = ?').get(portal1589).settlement_id === null
+    && db.prepare('SELECT COUNT(*) c FROM partner_settlements').get().c === settlementsBefore
+    && db.prepare("SELECT COUNT(*) c FROM ap_drop_events WHERE drop_id = ? AND kind = 'status_changed'").get(a.id).c === paidEventsBefore);
+  r = await call('POST', `/ap-drop/${a.id}/status`, { status: 'in_qbo', reason: 'Bill 1589' }, admin);
+  t('8.8 other moves on a routed drop are unchanged (in_qbo)', r.status === 200 && r.body?.status === 'in_qbo');
+  t('8.10 classify() still counts the ledger document: the AP Drop status means nothing to it', classify(db.prepare('SELECT * FROM partner_documents WHERE id = ?').get(portal1589), '2026-12-31').included === true);
+
+  db.prepare("INSERT INTO partner_settlements (id, partner_id, period_end, owed_to, status) VALUES ('fx-settle-1', ?, '2026-10-31', 'them', 'open')").run(m4.id);
+  db.prepare("UPDATE partner_documents SET settlement_id = 'fx-settle-1' WHERE id = ?").run(portal1589);
+  r = await call('POST', `/ap-drop/${a.id}/status`, { status: 'paid', reason: 'Settled on Partner Rec' }, admin);
+  t('8.9 once the ledger document is settled, Paid on the drop is housekeeping (200) and writes no settlement', r.status === 200 && r.body?.status === 'paid' && db.prepare('SELECT settlement_id FROM partner_documents WHERE id = ?').get(portal1589).settlement_id === 'fx-settle-1');
+
+  // Partner Rec: two FINAL unsettled documents with one folded number + amount → the read-only list.
+  addDoc(m4.id, '2001', 77.5); addDoc(m4.id, 'INV-2001', 77.5); addDoc(m4.id, 'INV-2001', 78);
+  r = await call('GET', `/partners/${m4.id}/documents`, null, admin);
+  const twin = (r.body?.open_twins || []).find(g => g.number === '2001');
+  t('8.11 Partner Rec lists 2001 and INV-2001 at the same amount as possibly on the ledger twice (not the 78.00 one)', twin?.documents?.length === 2 && twin.documents.every(x => x.amount === 77.5), JSON.stringify(r.body?.open_twins));
+}
 
 // 7. The Controller's contract: one ap_drop.created per drop, shape unchanged.
 const created = db.prepare("SELECT action, details FROM audit_log WHERE entity_type = 'ap_drop' AND details LIKE '%ap_drop.created%'").all();

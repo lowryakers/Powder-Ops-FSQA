@@ -88,6 +88,7 @@ await page.fill('[data-ap-field="vendor_name"]', 'Blue Sky Labels, Inc.');
 await page.click('[data-ap-save]');
 await page.waitForFunction(() => document.querySelector('[data-ap-value="vendor_name"]')?.textContent === 'Blue Sky Labels, Inc.');
 t('a corrected vendor sticks', true);
+t('an ordinary drop can still be marked paid (the option is offered)', await page.$eval('[data-ap-status]', el => [...el.options].some(o => o.value === 'paid' && !o.disabled)));
 await page.keyboard.press('Escape');
 await page.waitForFunction(() => !document.querySelector('[data-ap-drawer]'));
 await page.waitForFunction(() => /Needs info/.test(document.querySelector('[data-ap-table]')?.textContent || '') && /PO 5120/.test(document.querySelector('[data-ap-table]')?.textContent || ''));
@@ -110,6 +111,8 @@ t('the queue row shows the new status and the blocker', true);
   const block = await page.textContent('[data-ap-partner="routed"]');
   t('the drawer says it is a draft payable on the M4 Dynamics ledger, with the number and amount', /M4 Dynamics/.test(block) && /draft/.test(block) && /payable/.test(block) && /M4-3301/.test(block) && /2,000\.00/.test(block), block.slice(0, 200));
   t('…and offers the way through to Partner Reconciliation', /Open Partner Reconciliation/.test(block));
+  t('…says Paid waits for the settlement on Partner Reconciliation, beside that link', /Not paid until it is settled/.test(await page.textContent('[data-ap-paid-guard]')) && /Partner Reconciliation/.test(await page.textContent('[data-ap-paid-guard]')));
+  t('…and the status picker does not offer Paid on it', await page.$eval('[data-ap-status]', el => [...el.options].some(o => o.value === 'paid' && o.disabled && /settle on Partner Reconciliation first/.test(o.textContent))));
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => !document.querySelector('[data-ap-drawer]'));
 }

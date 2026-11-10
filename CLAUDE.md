@@ -261,6 +261,13 @@ an Accounting tab, so it survives the AP/AR pages being slimmed. `ap@powder-ops.
 - `npm run report:apdrop-ar` is read-only.
 - `verify:apdropreport` (17) proves the report writes nothing and the migration keeps every event.
 
+### A drop links a ledger invoice by its folded number; Paid waits for the settlement (D-329)
+- **`existingPartnerDoc` matches `normDocNumber` (INV-1589 = 1589 = 01589) + amount within half a cent, same partner.**
+  Same number, different amount: not linked, not filed — `needs_info` "Possible duplicate", `confirm_new_document` on
+  route-partner (person only) files it anyway. Never a second document on a guess.
+- **Paid on a drop whose ledger document is unsettled is 409 `SETTLE_ON_PARTNER_REC`.** Never write `settlement_id` from
+  AP Drop, and never teach `classify()` about AP Drop status. Partner Rec's `open_twins` list is read-only.
+
 ## A private channel for a client, and everything that follows from its name (D-080)
 `shared/client-channels.js` (`isClientChannel`, `WIP_DEFINITION`, the guide text — imported by BOTH
 `src/lib/taskIntent.js` and `server/api/comms.js`), `server/client-channel-seed.js`, runbook in

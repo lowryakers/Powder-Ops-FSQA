@@ -350,6 +350,20 @@ await page.waitForSelector('[data-choose-docs]', { timeout: 8000 }).catch(() => 
 t('the Balance tab has "Choose documents" listing 1589 and 1590 to tick', (await page.locator('[data-choose-row="1589"]').count()) === 1 && (await page.locator('[data-choose-row="1590"]').count()) === 1);
 await page.waitForSelector('[data-choose-who]', { timeout: 8000 }).catch(() => {});
 t('…and the selected total shows before Mark PAID', /\$/.test(await page.locator('[data-choose-who]').innerText().catch(() => '')) && /Mark PAID — \$/.test(await page.locator('[data-choose-settle]').innerText().catch(() => '')));
+// Two FINAL, unsettled documents with one folded number and amount (3001 /
+// INV-3001): the Documents tab lists them read-only — no Void, no edit there.
+for (const [id, num] of [['pr-ot-1', '3001'], ['pr-ot-2', 'INV-3001']]) {
+  db.prepare(`INSERT INTO partner_documents (id, partner_id, direction, doc_type, doc_number, amount, status, issued_date, terms_days, due_date, source)
+    VALUES (?, ?, 'payable', 'invoice', ?, 640.25, 'final', '2026-10-02', 30, '2026-11-01', 'partner-portal')`).run(id, PID, num);
+}
+await page.goto(`${BASE}/?tab=partner-reconciliation`);
+await page.waitForTimeout(1200);
+await page.getByRole('tab', { name: /Documents/ }).first().click().catch(() => {});
+await page.waitForSelector('[data-open-twins]', { timeout: 8000 }).catch(() => {});
+const ot = await page.locator('[data-open-twins]').innerText().catch(() => '');
+t('Partner Rec lists 3001 and INV-3001 as possibly on the ledger twice', /on the ledger twice/.test(ot) && /3001/.test(ot) && /INV-3001/.test(ot), ot.slice(0, 200));
+t('…read-only: the list has no button (no Void, no edit)', (await page.locator('[data-open-twins] button').count()) === 0);
+db.prepare("DELETE FROM partner_documents WHERE id IN ('pr-ot-1','pr-ot-2')").run();
 // A settled document cannot take a new file, so the fixture gives I123 one directly.
 db.prepare("UPDATE partner_documents SET storage_key = 'partners/test/I123.pdf', filename = 'I123.pdf' WHERE id = ?").run(ids.I123);
 const ppage = await browser.newPage({ viewport: { width: 390, height: 900 } });

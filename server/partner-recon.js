@@ -275,6 +275,10 @@ export function normDocNumber(v) {
   if (!s) return null;
   s = s.replace(/^(?:INVOICE|INV)(?=[\s#:.\d-]|$)(?:\s*(?:NO\.?|NUMBER))?/, '');
   s = s.replace(/^[\s#:.-]+/, '').replace(/\s+/g, '');
+  // A purely numeric number drops its leading zeros (01589 is 1589). Only an
+  // all-digit remainder: "I0123" keeps its letter and its zero, and an internal
+  // hyphen ("M4-2210") is part of the identity and is never touched.
+  if (/^\d+$/.test(s)) s = s.replace(/^0+(?=\d)/, '');
   return s || null;
 }
 

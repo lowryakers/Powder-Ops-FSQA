@@ -1176,6 +1176,34 @@ function SettledTwins({ rows, onVoid, busy }) {
 }
 
 /**
+ * Two final, unsettled documents with the same invoice number (folded: 1589 =
+ * INV-1589) and the same amount — both counting in the balance. READ-ONLY on
+ * purpose: no Void or edit here. A person opens each document and decides.
+ */
+function OpenTwins({ groups }) {
+  if (!groups?.length) return null;
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3" data-open-twins>
+      <p className="text-sm font-semibold text-amber-900">
+        {groups.length} invoice{groups.length === 1 ? '' : 's'} may be on the ledger twice
+      </p>
+      <p className="text-xs text-amber-800 mt-0.5">
+        These final, unsettled documents share an invoice number and amount, so each counts in the balance. Check them
+        against the partner's invoice before anything is settled.
+      </p>
+      <ul className="mt-2 space-y-1">
+        {groups.map(g => (
+          <li key={`${g.number}-${g.amount}`} data-open-twin={g.number} className="text-xs text-amber-900 bg-white/70 rounded px-2 py-1">
+            <span className="font-medium">#{g.number}</span> {money(g.amount)}:{' '}
+            {g.documents.map(d => `${d.doc_number} (${d.direction}, ${d.source || 'entered'}, added ${(d.created_at || '').slice(0, 10)}, ${String(d.id).slice(0, 8)})`).join(' · ')}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
  * What the partner raised on their link — "This doesn't look right" on a
  * document or a whole month end. Shown above the tabs while anything is open,
  * because the office has to answer it wherever they happen to be looking. A
@@ -1438,6 +1466,7 @@ export default function PartnerReconPanel({ user }) {
               list to exactly those rows — a count you cannot act on is the
               same as no count. */}
           <ReadyToShare gaps={docData?.gaps} active={gap} onPick={setGap} />
+          <OpenTwins groups={docData?.open_twins} />
           <SettledTwins rows={docData?.settled_twins} busy={busy}
             onVoid={(r) => {
               if (window.confirm(`Void ${r.doc_number} (${money(r.amount)})? It leaves the balance; the row stays on record as void.`)) {
