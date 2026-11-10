@@ -413,5 +413,63 @@ const nDrops = db.prepare('SELECT COUNT(*) c FROM ap_drops').get().c;
 t('7 one ap_drop.created audit row per drop, action create', created.length === nDrops && created.every(a => a.action === 'create'), `${created.length} vs ${nDrops}`);
 t('7 …with exactly the keys it always had', created.every(a => JSON.stringify(Object.keys(JSON.parse(a.details)).sort()) === JSON.stringify(['duplicate_of', 'event', 'filename', 'sha256', 'size', 'status'])), created[0]?.details);
 
+
+// 9. The email door (D-333): source=email records the message; the same
+// message + the same file is a no-op; a different message is still a duplicate.
+{
+  const rows = () => db.prepare('SELECT COUNT(*) c FROM ap_drops').get().c;
+  const auditCreates = (id) => db.prepare("SELECT COUNT(*) c FROM audit_log WHERE entity_type = 'ap_drop' AND entity_id = ? AND details LIKE '%ap_drop.created%'").get(id).c;
+  const evCount = (id, kind) => db.prepare('SELECT COUNT(*) c FROM ap_drop_events WHERE drop_id = ? AND kind = ?').get(id, kind).c;
+  const mailA = await pdf(['Sierra Packaging Co', 'INVOICE', 'Invoice No: SPC-7781', 'Bill To: Powder Ops LLC', 'Amount Due $1,240.00']);
+  const mailB = await pdf(['Sierra Packaging Co', 'INVOICE', 'Invoice No: SPC-7782', 'Bill To: Powder Ops LLC', 'Amount Due $310.00']);
+  const MSG = '<CAF+abc123@mail.gmail.com>';
+  const em = { source: 'email', email_message_id: `  ${MSG} `, email_from: 'avery@sierrapack.example', email_subject: 'Invoice SPC-7781' };
+
+  let e1 = await drop(op, mailA, 'spc-7781.pdf', em);
+  const m1 = e1.body?.drops?.[0];
+  t('9.1 source=email files a new drop (201) from the email door, the message id normalised', e1.status === 201 && m1?.source === 'email' && m1?.status === 'new'
+    && m1?.email_message_id === 'CAF+abc123@mail.gmail.com' && m1?.email_from === 'avery@sierrapack.example' && m1?.email_subject === 'Invoice SPC-7781', JSON.stringify(m1).slice(0, 200));
+  const before = rows();
+  const parsesBefore = evCount(m1.id, 'parsed') + evCount(m1.id, 'parse_failed');
+  let e2 = await drop(op, mailA, 'spc-7781-again.pdf', { ...em, email_message_id: 'CAF+abc123@mail.gmail.com' });
+  t('9.2 the same message + the same file again returns the SAME drop (200, reused), no second row', e2.status === 200 && e2.body?.drops?.[0]?.id === m1.id && e2.body?.drops?.[0]?.reused === true && rows() === before, `${e2.status} rows ${before}->${rows()}`);
+  t('9.2 …no second ap_drop.created, no second upload or read event', auditCreates(m1.id) === 1 && evCount(m1.id, 'uploaded') === 1 && evCount(m1.id, 'parsed') + evCount(m1.id, 'parse_failed') === parsesBefore);
+  let e3 = await drop(op, mailB, 'spc-7782.pdf', em);
+  const m3 = e3.body?.drops?.[0];
+  t('9.3 the same message + a different file is a new drop, not a duplicate', e3.status === 201 && m3?.id !== m1.id && m3?.source === 'email' && m3?.email_message_id === m1.email_message_id && m3?.status !== 'duplicate_suspect'
+    && db.prepare('SELECT COUNT(*) c FROM ap_drops WHERE email_message_id = ?').get(m1.email_message_id).c === 2);
+  let e4 = await drop(op, mailA, 'fwd-spc-7781.pdf', { ...em, email_message_id: '<other-message@mail.example>' });
+  const m4d = e4.body?.drops?.[0];
+  t('9.4 the same file from a DIFFERENT message is still filed as duplicate_suspect, linked to the first (Jake forwarding)', e4.status === 201 && m4d?.status === 'duplicate_suspect' && m4d?.duplicate_of === m1.id);
+  let e4b = await drop(op, mailA, 'spc-7781-hand.pdf', {});
+  t('9.4 …and dropped by hand with no message id, the same', e4b.status === 201 && e4b.body?.drops?.[0]?.status === 'duplicate_suspect' && e4b.body?.drops?.[0]?.source === 'drop' && e4b.body?.drops?.[0]?.email_message_id === null);
+  let e5 = await drop(op, mailB, 'not-email.pdf', { email_message_id: 'ignored@x', email_from: 'x@y' });
+  t('9.5 email fields without source=email are ignored: a plain drop', e5.status === 201 && e5.body?.drops?.[0]?.source === 'drop' && e5.body?.drops?.[0]?.email_message_id === null && e5.body?.drops?.[0]?.email_from === null);
+  const mailC = await pdf(['Sierra Packaging Co', 'INVOICE', 'Invoice No: SPC-7790', 'Amount Due $55.00']);
+  let e6 = await drop(op, mailC, 'blank-id.pdf', { source: 'email', email_message_id: '   ', email_from: 'avery@sierrapack.example' });
+  let e6b = await drop(op, mailC, 'blank-id-2.pdf', { source: 'email', email_message_id: '' });
+  t('9.6 source=email with a blank message id files (stored as null), and the same file again is a duplicate, not a silent no-op',
+    e6.status === 201 && e6.body?.drops?.[0]?.email_message_id === null && e6.body?.drops?.[0]?.source === 'email'
+    && e6b.status === 201 && e6b.body?.drops?.[0]?.status === 'duplicate_suspect' && e6b.body?.drops?.[0]?.id !== e6.body?.drops?.[0]?.id);
+  const n7 = rows();
+  let e7 = await drop(op, mailC, 'fax.pdf', { source: 'fax' });
+  t('9.7 an unknown source is 400 and files nothing', e7.status === 400 && rows() === n7);
+  let g = await call('GET', '/ap-drop?status=all', null, admin);
+  const listed = (g.body?.drops || g.body || []).find?.(x => x.id === m1.id);
+  t('9.8 the list carries source and the three email fields', listed?.source === 'email' && listed?.email_message_id === 'CAF+abc123@mail.gmail.com' && listed?.email_from === 'avery@sierrapack.example' && listed?.email_subject === 'Invoice SPC-7781', JSON.stringify(listed || g.body).slice(0, 160));
+  g = await call('GET', `/ap-drop/${m1.id}`, null, admin);
+  const one = g.body?.drop || g.body;
+  t('9.8 …and so does GET /ap-drop/:id', one?.source === 'email' && one?.email_message_id === 'CAF+abc123@mail.gmail.com' && 'email_subject' in (one || {}));
+  const plain = await call('GET', `/ap-drop/${d1.id}`, null, admin);
+  t('9.8 …a drop-door row reads null for them', (plain.body?.drop || plain.body)?.email_from === null);
+  // A token whose account works the queue (ap-drop edit) can already write
+  // qbo_bill_id: PUT /ap-drop/:id is on WRITE_AREAS and EDITABLE has it.
+  const minted = (await call('POST', '/api-tokens', { user_id: 'ap-flag', label: 'Controller (verify)', scopes: ['read', 'write'] }, admin)).body?.plaintext;
+  let pq = await call('PUT', `/ap-drop/${m3.id}`, { qbo_bill_id: 'QBO-2210' }, minted);
+  t('9.9 a write token on a queue account sets qbo_bill_id', !!minted && pq.status === 200 && (pq.body?.drop || pq.body)?.qbo_bill_id === 'QBO-2210', `${pq.status} ${JSON.stringify(pq.body).slice(0, 120)}`);
+  pq = await call('POST', `/ap-drop/${m3.id}/status`, { status: 'in_qbo' }, minted);
+  t('9.9 …and still cannot move it to in_qbo (403 token_denied; slice 2)', pq.status === 403 && pq.body?.error === 'token_denied');
+}
+
 db.close();
 console.log(`\n${pass}/${pass + fail} assertions passed`); process.exit(fail ? 1 : 0);

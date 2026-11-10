@@ -6273,7 +6273,10 @@ function runMigrations() {
         qbo_bill_id        TEXT,
         payment_run_id     TEXT,
         external_ref       TEXT,
-        closed_at          TEXT
+        closed_at          TEXT,
+        email_message_id   TEXT,
+        email_from         TEXT,
+        email_subject      TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_ap_drops_status ON ap_drops(status, created_at);
       CREATE INDEX IF NOT EXISTS idx_ap_drops_sha ON ap_drops(content_sha256, created_at);
@@ -6321,6 +6324,15 @@ function runMigrations() {
         console.log('[migrate] ap_drops.status now accepts to_partner_ar and receivable_other (D-160)');
       } finally { db.pragma('foreign_keys = ON'); }
     }
+    // The email door (D-333): which message a drop came in on. Nullable, no
+    // backfill — every row filed before is a drop. One row per (message, file):
+    // a retry of the same attachment returns the row already filed. Blank ids
+    // are NULL and never collide.
+    addColumnIfMissing('ap_drops', 'email_message_id', 'TEXT');
+    addColumnIfMissing('ap_drops', 'email_from', 'TEXT');
+    addColumnIfMissing('ap_drops', 'email_subject', 'TEXT');
+    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_ap_drops_email_sha ON ap_drops(email_message_id, content_sha256)
+      WHERE email_message_id IS NOT NULL AND email_message_id != ''`);
   } catch (e) {
     console.warn('[db] ap_drops unavailable:', e.message);
   }

@@ -65,6 +65,9 @@ const PartnerChip = ({ r }) => {
   return null;
 };
 
+/** Where a drop came in (D-333): "via email from X" for the email door. */
+const viaLabel = (r) => (r?.source === 'email' ? `via email${r.email_from ? ` from ${r.email_from}` : ''}` : null);
+
 export default function ApDropPanel({ user }) {
   const { data: meta, refresh: refreshMeta } = useApiGet('/ap-drop/meta');
   // The landing tab depends on who is asking (the office → the queue, anyone
@@ -297,7 +300,7 @@ function DropTable({ rows, onOpen, compact, canWork }) {
               <span className={r.overdue ? 'text-red-600 font-medium' : ''}>due {formatDate(r.due_date)}</span>
               <span>{r.age_days}d</span>
             </div>
-            <div className="text-xs text-gray-500 mt-1 truncate">{r.filename} · {r.submitter}{r.status_reason ? ` · ${r.status_reason}` : ''}</div>
+            <div className="text-xs text-gray-500 mt-1 truncate">{r.filename} · {r.submitter}{viaLabel(r) ? <span data-ap-via-email> · {viaLabel(r)}</span> : null}{r.status_reason ? ` · ${r.status_reason}` : ''}</div>
           </li>
         ))}
       </ul>
@@ -326,7 +329,7 @@ function DropTable({ rows, onOpen, compact, canWork }) {
               <td className={`px-3 py-2 whitespace-nowrap ${r.overdue ? 'text-red-600 font-medium' : ''}`}>{formatDate(r.due_date)}{r.overdue ? ' ⚠' : ''}</td>
               <td className="px-3 py-2 text-right tabular-nums">{r.age_days}d</td>
               <td className="px-3 py-2"><StatusChip status={r.status} /></td>
-              <td className="px-3 py-2 text-gray-500">{r.source}</td>
+              <td className="px-3 py-2 text-gray-500">{viaLabel(r) ? <span data-ap-via-email>{viaLabel(r)}</span> : r.source}</td>
               <td className="px-3 py-2"><TextCell value={r.po_or_co_ref || ''} width={140} lines={1} /></td>
               <td className="px-3 py-2"><TextCell value={r.status_reason || ''} width={220} lines={2} /></td>
             </tr>
@@ -364,7 +367,7 @@ function DropDrawer({ id, canWork, onClose, onChanged, compact }) {
           <FileText size={16} className="text-powder-600 shrink-0" />
           <div className="min-w-0 flex-1">
             <div className="font-medium text-gray-900 truncate">{d?.filename || 'Loading…'}</div>
-            {d && <div className="text-xs text-gray-500">Dropped {formatDateTime(d.created_at)} by {d.submitter} · {d.source} · {PARSE_LABEL[d.parse_status] || d.parse_status}</div>}
+            {d && <div className="text-xs text-gray-500">Dropped {formatDateTime(d.created_at)} by {d.submitter} · {viaLabel(d) ? <span data-ap-via-email>{viaLabel(d)}</span> : d.source} · {PARSE_LABEL[d.parse_status] || d.parse_status}</div>}
           </div>
           {d && <StatusChip status={d.status} />}
           <button type="button" onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-900" aria-label="Close"><X size={18} /></button>

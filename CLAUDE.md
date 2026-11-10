@@ -261,6 +261,12 @@ an Accounting tab, so it survives the AP/AR pages being slimmed. `ap@powder-ops.
 - `npm run report:apdrop-ar` is read-only.
 - `verify:apdropreport` (17) proves the report writes nothing and the migration keeps every event.
 
+### The email door: source=email, and a retried message is a no-op (D-333)
+- `POST /api/ap-drop` takes `source` (`drop` | `email`) and, for email, `email_message_id` / `email_from` / `email_subject`
+  (`normMessageId`: trim, one `<>` pair, blank → NULL). **Same message id + same hash returns the existing row (`reused`,
+  200 if all reused)**; a different message with the same bytes is still `duplicate_suspect`. Unique partial index
+  `idx_ap_drops_email_sha`. ReadyDoc never reads ap@ itself — never write copy that says it does.
+
 ### A drop links a ledger invoice by its folded number; Paid waits for the settlement (D-329)
 - **`existingPartnerDoc` matches `normDocNumber` (INV-1589 = 1589 = 01589) + amount within half a cent, same partner.**
   Same number, different amount: not linked, not filed — `needs_info` "Possible duplicate", `confirm_new_document` on

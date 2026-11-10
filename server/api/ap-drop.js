@@ -3,7 +3,10 @@
 // Any signed-in person can DROP (a vendor invoice somebody emailed them, a
 // credit memo, a remittance, an M4 invoice pack); the office WORKS the queue.
 // The email box ap@powder-ops.com is the parallel front door and this is its
-// in-app twin — same row, same statuses, `source` says which door.
+// in-app twin — same row, same statuses, `source` says which door. ReadyDoc
+// does NOT read that mailbox: the office's monitor files ap@ attachments here
+// with `source=email` and the message id (D-333), which makes a retry of the
+// same attachment a no-op.
 //
 // Three rules that shape it:
 //
@@ -39,7 +42,7 @@ import multer from 'multer';
 import { createHash } from 'crypto';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
-import { storageEnabled, putObject, presignGet, getObjectBuffer } from '../storage.js';
+import { storageEnabled, putObject, presignGet, getObjectBuffer, deleteObject } from '../storage.js';
 import { extractInvoiceText } from '../invoice-text.js';
 import { parseFinanceDocument, notAVendor } from '../ap-drop-parse.js';
 import { detectPartner } from '../ap-drop-route.js';
@@ -82,6 +85,16 @@ const today = () => new Date().toISOString().slice(0, 10);
 const daysBetween = (a, b) => Math.floor((Date.parse(b) - Date.parse(a)) / 86400000);
 const num = (v) => { if (v === '' || v == null) return null; const n = Number(String(v).replace(/[$,\s]/g, '')); return Number.isFinite(n) ? n : null; };
 const isoDate = (v) => (v && /^\d{4}-\d{2}-\d{2}/.test(String(v)) ? String(v).slice(0, 10) : null);
+// The email door (D-333). A message id is trimmed and loses ONE pair of
+// wrapping angle brackets ("<abc@x>" = "abc@x"); a blank one is NULL, never ''
+// — blanks must not collapse together. Case is kept.
+export const normMessageId = (v) => {
+  let s = String(v ?? '').trim();
+  if (s.startsWith('<') && s.endsWith('>')) s = s.slice(1, -1).trim();
+  return s ? s.slice(0, 240) : null;
+};
+const SOURCES = ['drop', 'email'];
+const clip = (v, n) => { const s = String(v ?? '').trim(); return s ? s.slice(0, n) : null; };
 
 function event(db, dropId, user, kind, detail) {
   db.prepare('INSERT INTO ap_drop_events (id, drop_id, by_user_id, by_name, kind, detail) VALUES (?, ?, ?, ?, ?, ?)')
@@ -436,10 +449,26 @@ router.post('/', upload.array('files', 10), async (req, res) => {
   if (!files.length) return res.status(400).json({ error: 'Nothing was attached. Drop a PDF or photograph of the document.' });
   const db = getDb();
   const b = req.body || {};
+  // Which door (D-333). Omitted or 'drop' is today's upload whatever else is
+  // sent; 'email' records the message it came in on, so the office's ap@
+  // monitor can file the same attachment again without a second row.
+  const source = b.source == null || b.source === '' ? 'drop' : String(b.source).trim().toLowerCase();
+  if (!SOURCES.includes(source)) return res.status(400).json({ error: `source must be "drop" or "email", not "${String(b.source).slice(0, 40)}".` });
+  const email = source === 'email'
+    ? { message_id: normMessageId(b.email_message_id), from: clip(b.email_from, 300), subject: clip(b.email_subject, 300) }
+    : { message_id: null, from: null, subject: null };
   const created = [];
+  let inserted = 0;
   for (const f of files) {
-    const id = uuid();
     const hash = sha256(f.buffer);
+    // The same attachment on the same message is a retry, not a second
+    // invoice: return the row already filed and do nothing else — no second
+    // file, no second read, no second route, no second ap_drop.created.
+    if (email.message_id) {
+      const same = db.prepare('SELECT id FROM ap_drops WHERE email_message_id = ? AND content_sha256 = ? ORDER BY created_at ASC LIMIT 1').get(email.message_id, hash);
+      if (same) { created.push({ ...shape(loadDrop(db, same.id), req.user), reused: true }); continue; }
+    }
+    const id = uuid();
     const key = `ap-drop/${id}-${(f.originalname || 'file').replace(/[^\w.-]+/g, '_')}`;
     await putObject(key, f.buffer, f.mimetype);
     // The same bytes handed in twice within the window is almost always the
@@ -449,13 +478,15 @@ router.post('/', upload.array('files', 10), async (req, res) => {
     const prior = db.prepare(`SELECT id FROM ap_drops WHERE content_sha256 = ? AND created_at >= datetime('now', ?) ORDER BY created_at ASC LIMIT 1`)
       .get(hash, `-${DUPLICATE_WINDOW_DAYS} day`);
     const status = prior ? 'duplicate_suspect' : 'new';
+    try {
     db.transaction(() => {
       db.prepare(`INSERT INTO ap_drops (id, created_by_user_id, submitter, source, filename, storage_key, size, content_type, content_sha256,
-          vendor_name, po_or_co_ref, amount, due_date, notes, status, status_reason, duplicate_of)
-        VALUES (?, ?, ?, 'drop', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(id, req.user.id, String(b.submitter || req.user.name).slice(0, 120), f.originalname || 'file', key, f.size, f.mimetype, hash,
+          vendor_name, po_or_co_ref, amount, due_date, notes, status, status_reason, duplicate_of, email_message_id, email_from, email_subject)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(id, req.user.id, String(b.submitter || req.user.name).slice(0, 120), source, f.originalname || 'file', key, f.size, f.mimetype, hash,
           String(b.vendor_name || '').trim() || null, String(b.po_or_co_ref || '').trim() || null, num(b.amount), isoDate(b.due_date),
-          String(b.notes || '').trim() || null, status, prior ? `Same file was dropped on an earlier row (${prior.id.slice(0, 8)})` : null, prior?.id || null);
+          String(b.notes || '').trim() || null, status, prior ? `Same file was dropped on an earlier row (${prior.id.slice(0, 8)})` : null, prior?.id || null,
+          email.message_id, email.from, email.subject);
       event(db, id, req.user, 'uploaded', {
         filename: f.originalname, size: f.size, duplicate_of: prior?.id || null,
         // What the person wrote, as opposed to what the reader will fill in —
@@ -464,10 +495,22 @@ router.post('/', upload.array('files', 10), async (req, res) => {
       });
       if (prior) event(db, prior.id, req.user, 'duplicate_dropped', { again_as: id });
     })();
+    } catch (err) {
+      // Two retries of one message racing: the unique index on (message id,
+      // file hash) lets one in; the other returns that row, as the SELECT would.
+      const same = email.message_id && /UNIQUE/i.test(err.message)
+        ? db.prepare('SELECT id FROM ap_drops WHERE email_message_id = ? AND content_sha256 = ?').get(email.message_id, hash) : null;
+      if (!same) throw err;
+      deleteObject(key).catch(() => {});
+      created.push({ ...shape(loadDrop(db, same.id), req.user), reused: true });
+      continue;
+    }
+    inserted++;
     // `event: 'ap_drop.created'` is what outside automation polls the audit
     // log for; the canonical action is `create` on entity `ap_drop`.
     logAudit(req.user, 'ap_drop_created', 'ap_drop', id,
-      { event: 'ap_drop.created', filename: f.originalname, size: f.size, sha256: hash, status, duplicate_of: prior?.id || null },
+      { event: 'ap_drop.created', filename: f.originalname, size: f.size, sha256: hash, status, duplicate_of: prior?.id || null,
+        ...(source === 'email' ? { source, email_message_id: email.message_id } : {}) },
       null, null, f.originalname);
 
     // The reader runs now but the upload does not wait on it forever: a scan
@@ -479,7 +522,8 @@ router.post('/', upload.array('files', 10), async (req, res) => {
     await Promise.race([reading, new Promise(r => setTimeout(r, PARSE_WAIT_MS))]);
     created.push(shape(loadDrop(db, id), req.user));
   }
-  res.status(201).json({ drops: created });
+  // 201 when anything was filed; 200 when every file was already on the queue.
+  res.status(inserted ? 201 : 200).json({ drops: created });
 });
 
 // ── Queue ────────────────────────────────────────────────────────────────────
