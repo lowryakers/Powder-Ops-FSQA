@@ -250,7 +250,7 @@ export const WRITE_AREAS = Object.freeze([
   { area: 'ap-drop', method: 'POST', re: /^\/ap-drop\/[^/]+\/notes$/, label: 'POST /api/ap-drop/:id/notes' },
   { area: 'ap-drop', method: 'POST', re: /^\/ap-drop\/[^/]+\/reparse$/, label: 'POST /api/ap-drop/:id/reparse' },
   { area: 'ap-drop', method: 'POST', re: /^\/ap-drop\/[^/]+\/route-partner$/, label: 'POST /api/ap-drop/:id/route-partner (files a DRAFT on the ledger)' },
-  { area: 'ap-drop', method: 'POST', re: /^\/ap-drop\/[^/]+\/status$/, label: 'POST /api/ap-drop/:id/status (triage moves only)' },
+  { area: 'ap-drop', method: 'POST', re: /^\/ap-drop\/[^/]+\/status$/, label: 'POST /api/ap-drop/:id/status (triage moves, and in_qbo with a QuickBooks bill id)' },
   // partner reconciliation — documents stay drafts while a token touches them
   { area: 'partner-recon', method: 'POST', re: /^\/partners\/[^/]+\/documents$/, label: 'POST /api/partners/:id/documents' },
   { area: 'partner-recon', method: 'POST', re: /^\/partners\/[^/]+\/documents\/scan$/, label: 'POST /api/partners/:id/documents/scan' },

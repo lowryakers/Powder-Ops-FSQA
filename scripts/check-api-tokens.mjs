@@ -23,7 +23,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import Database from 'better-sqlite3';
 import { SCOPES, FORBIDDEN_SCOPES, normalizeScopes, rateKindOf } from '../server/api-tokens.js';
-import { approveRouteFor, APPROVE_SEGMENTS, tokenDenyFor, DELETE_SEGMENTS, TOKEN_DELETE_EXEMPT, ARTWORK_TOKEN_STATUSES } from '../server/middleware/no-token-approve.js';
+import { approveRouteFor, APPROVE_SEGMENTS, tokenDenyFor, DELETE_SEGMENTS, TOKEN_DELETE_EXEMPT, ARTWORK_TOKEN_STATUSES, AP_DROP_TOKEN_STATUSES } from '../server/middleware/no-token-approve.js';
 import { WRITE_AREAS, writeAreaFor } from '../server/bot-api.js';
 import { isPublicPath } from '../server/middleware/auth.js';
 import { scanRoutes, concretePath, namesApproval } from './lib/route-scan.mjs';
@@ -107,7 +107,9 @@ t('GET /api/users (a read) is not denied', !tokenDenyFor(fakeReq('GET', '/api/us
 const AMBIG = [
   ['POST', '/api/products/x/confirm/shopify', {}, 'decision'],
   ['POST', '/api/ap-drop/x/status', { status: 'paid' }, 'decision'],
-  ['POST', '/api/ap-drop/x/status', { status: 'in_qbo' }, 'decision'],
+  ['POST', '/api/ap-drop/x/status', { status: 'closed' }, 'decision'],
+  ['POST', '/api/ap-drop/x/status', { status: 'in_payment_run' }, 'decision'],
+  ['POST', '/api/ap-drop/x/status', { status: 'receivable_other' }, 'decision'],
   ['POST', '/api/ap-drop/x/status', { status: 'not_finance' }, 'decision'],
   ['POST', '/api/artwork/checks/x/dismiss', {}, 'decision'],
   ['POST', '/api/artwork/versions/x/status', { status: 'not-a-status' }, 'decision'],
@@ -124,6 +126,9 @@ t('artwork moves to superseded and rejected are NOT denied (D-330)',
   ['superseded', 'rejected'].every(st => !tokenDenyFor(fakeReq('POST', '/api/artwork/versions/x/status', { status: st }))));
 t('the artwork token allow list is exactly draft / in_review / superseded / rejected',
   JSON.stringify([...ARTWORK_TOKEN_STATUSES].sort()) === JSON.stringify(['draft', 'in_review', 'rejected', 'superseded']));
+t('an AP Drop move to in_qbo is NOT denied (D-335 — the route asks for the bill id)', !tokenDenyFor(fakeReq('POST', '/api/ap-drop/x/status', { status: 'in_qbo' })));
+t('the AP Drop token allow list is exactly the triage moves plus in_qbo',
+  JSON.stringify([...AP_DROP_TOKEN_STATUSES].sort()) === JSON.stringify(['duplicate_suspect', 'in_qbo', 'matched', 'needs_info', 'new', 'triaged']));
 t('an AP Drop triage move (needs_info) and an artwork move to in_review are NOT denied',
   !tokenDenyFor(fakeReq('POST', '/api/ap-drop/x/status', { status: 'needs_info' })) && !tokenDenyFor(fakeReq('POST', '/api/artwork/versions/x/status', { status: 'in_review' })));
 
