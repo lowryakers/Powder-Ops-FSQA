@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useApiGet, apiPost } from '../../hooks/useApi';
 import DocRevisionWorklist from './DocRevisionWorklist.jsx';
+import NameUsageSearch from './NameUsageSearch.jsx';
 import {
   FileCheck2, AlertTriangle, CheckCircle2, ExternalLink, Loader2, Info,
 } from 'lucide-react';
@@ -177,6 +178,8 @@ export default function DocReviewPanel() {
           {data?.total ? <> <span className="font-semibold text-gray-700">{data.total}</span> outstanding.</> : ' Nothing outstanding.'}
         </p>
       </div>
+
+      <NameUsageSearch />
 
       <div className="flex gap-1 bg-gray-100 rounded-lg p-1 flex-wrap w-fit">
         {sources.map(s => (

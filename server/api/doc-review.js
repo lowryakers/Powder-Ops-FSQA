@@ -10,6 +10,7 @@ import { Router } from 'express';
 import { getDb, logAudit } from '../db.js';
 import { SOURCES, getSource, safeCount, safePending, isDocController } from '../doc-review.js';
 import { docConsistencyReview } from '../doc-consistency.js';
+import { nameUsage } from '../name-usage.js';
 
 const router = Router();
 
@@ -22,6 +23,15 @@ router.get('/consistency', (req, res) => {
     return res.status(403).json({ error: 'Document Control review is for Document Control, QA supervisors and admins.' });
   }
   res.json(docConsistencyReview(getDb()));
+});
+
+// Where a name is used (D-326): every document, task, register entry and
+// built-in definition that carries a term, and who changes each. READ-ONLY.
+router.get('/name-usage', (req, res) => {
+  if (!isDocController(req.user)) {
+    return res.status(403).json({ error: 'Document Control review is for Document Control, QA supervisors and admins.' });
+  }
+  res.json(nameUsage(getDb(), req.query.q));
 });
 
 // GET / — counts for every source, plus the rows for the one being looked at.

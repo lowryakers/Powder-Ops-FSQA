@@ -10519,3 +10519,15 @@ Lowry: ReadyDoc was asking him to "reserve" a GTIN, but the plant picks the numb
   still work; nothing is reserved on the main path.
 - The drawer's Merch section stays open while the variant has no GTIN. It folded once the supplier was recorded, which
   hid the box. `verify:merchdesign` (25).
+
+## D-326 — "Where is a name used?" on Doc Control Review (10 Nov 2026)
+Maria asked for Sani-512 to become "J-512 TM/MC Sanitizer" everywhere. Daniela's DCR changes the SOPs and WIs, but the
+same name is also written in recurring task titles and steps, the chemical register, sign-out items, courses and test
+questions, and in the built-in FORM 106-01 dilution checks. Nothing showed her that list.
+- **Doc Control Review → "Where is a name used?"** (`server/name-usage.js`, `GET /api/doc-review/name-usage?q=`,
+  `NameUsageSearch.jsx`). Same door as the rest of the screen: admin, Document Control, or a QA/DC supervisor.
+- Each section says **who changes it and where**. The built-in dilution checks are a code change approved in Controlled
+  Changes (D-327).
+- Capitals, spaces, `-` and `_` are ignored ("sani 512" = "Sani-512"); at least three letters or numbers.
+- **SELECT-only, 200 rows per section.** It renames nothing; each place is changed through its own screen.
+- `verify:nameusage` (17; checks every table's row count before and after).
