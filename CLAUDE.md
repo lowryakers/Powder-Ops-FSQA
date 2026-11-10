@@ -867,7 +867,7 @@ required `reason` (`rejected_reason` / `_by` / `_at`). Releasing supersedes draf
 - **`productWrite()` decides the product row**: a non-current version never touches it; retiring the current one with a
   live film on file points the row back at that film; a blank status stays blank.
 - Never add a `/retire` or `/reject` route (TOKEN_DENY segments). `verify:artworkretire` (37).
-- **The Artwork board filters by pack and category (D-331)**; `PACK_LABEL` lives in `shared/pack-labels.js`.
+- **The Artwork board filters by pack and category (D-331)**; `PACK_LABEL` lives in `shared/pack-labels.js`. Artwork reads `ARTWORK_PACK_LABEL`: BTL is "Bottle sleeve" there (D-334).
 
 ## FORM 418-01 V2: bottle sleeves, parked for Document Control (D-332)
 `server/film-pouch-checklist.js` carries V2 (kinds film / pouch / sleeve, a BOTTLE SLEEVE section, `sleeve_layflat` /

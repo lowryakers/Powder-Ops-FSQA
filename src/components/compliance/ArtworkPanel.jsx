@@ -7,7 +7,7 @@ import {
   FileText, Upload, ExternalLink, ShieldAlert,
 } from 'lucide-react';
 import { openFile } from '../../lib/openFile';
-import { PACK_LABEL } from '../../../shared/pack-labels.js';
+import { ARTWORK_PACK_LABEL as PACK_LABEL } from '../../../shared/pack-labels.js';
 
 /**
  * Artwork — what is on the pack, which revision it is, and whether it checks out.
