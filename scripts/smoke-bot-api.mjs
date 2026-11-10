@@ -72,10 +72,11 @@ try {
   record('artwork approve → 403 approve_requires_human_session', art.status === 403 && art.body?.error === 'approve_requires_human_session', `${art.status} ${art.body?.error || ''}`);
   const rel = await call('POST', '/api/artwork/versions/smoke-no-such-version/status', tok, { status: 'print_ready' });
   record('artwork print_ready → 403 approve_requires_human_session', rel.status === 403 && rel.body?.error === 'approve_requires_human_session', `${rel.status} ${rel.body?.error || ''}`);
-  // Retiring is open to a token (D-330): on an id that does not exist the guard
-  // must let it through to the handler, which answers 404. Nothing is written.
+  // Retiring is open to a token (D-330): the token guard must let it through.
+  // What answers next is the account's own access — 404 (no such version) with
+  // artwork edit, or "view-only" without it. Either way nothing is written.
   const sup = await call('POST', '/api/artwork/versions/smoke-no-such-version/status', tok, { status: 'superseded' });
-  record('artwork superseded on a missing id → not a token guard refusal (404)', sup.status === 404 && !['token_denied', 'approve_requires_human_session'].includes(sup.body?.error), `${sup.status} ${sup.body?.error || ''}`);
+  record('artwork superseded → not a token guard refusal', [403, 404].includes(sup.status) && !['token_denied', 'approve_requires_human_session'].includes(sup.body?.error), `${sup.status} ${sup.body?.error || ''}`);
 
   const del = await call('DELETE', '/api/procurement/pos/smoke-no-such-po', tok);
   record('DELETE /api/procurement/pos/:id → 403 token_denied (delete)', del.status === 403 && del.body?.error === 'token_denied' && del.body?.category === 'delete', `${del.status} ${del.body?.error || ''} ${del.body?.category || ''}`);
