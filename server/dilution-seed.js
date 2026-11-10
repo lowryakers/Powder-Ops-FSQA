@@ -23,28 +23,24 @@
 // only what is missing, the same arrangement as seedWorkInstructionCourses().
 
 import { randomUUID as uuid } from 'crypto';
-import { DILUTIONS, dilutionTitle, FORM_REVISION, isMeasured } from '../shared/dilution-forms.js';
+import { DILUTIONS, dilutionTitle, dilutionRevision, dilutionScheduleText, dilutionCardDescription } from '../shared/dilution-forms.js';
 
 const LUMPED_TITLE = 'Chemical Dilution Verification';
 const ZONE_ASSET_ID = 'QA-CL-004'; // the Chemical Station zone
-
-function steps(form) {
-  return [
-    isMeasured(form)
-      ? `Test ${form.chemical} with a test strip — verify ${form.target}`
-      : `Verify ${form.chemical} is mixed to ${form.target}`,
-    'Record the dilution or test strip lot number and expiration date',
-  ];
-}
 
 export function seedDilutionSchedules(db) {
   const zone = db.prepare('SELECT id FROM equipment WHERE asset_id = ?').get(ZONE_ASSET_ID);
   if (!zone) return 0; // the cleaning seed has not run — nothing to hang these on
 
-  const findSched = db.prepare('SELECT id, is_active FROM pm_schedules WHERE title = ?');
+  const findSched = db.prepare('SELECT id, is_active, title, description, procedure_steps FROM pm_schedules WHERE title = ?');
+  // D-327: a schedule is found by its dilution KEY, so a chemical renamed by an
+  // approved revision is the same schedule, not a second one beside it. A
+  // schedule seeded before the key existed is adopted by its title, once.
+  const findByKey = db.prepare('SELECT id, is_active, title, description, procedure_steps FROM pm_schedules WHERE dilution_key = ? ORDER BY is_active DESC, created_at LIMIT 1');
+  const setKey = db.prepare('UPDATE pm_schedules SET dilution_key = ? WHERE id = ?');
   const insertPM = db.prepare(`
-    INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, is_active, task_group)
-    VALUES (?, ?, ?, ?, 'daily', 1, ?, 1, 'cleaning')
+    INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, is_active, task_group, dilution_key)
+    VALUES (?, ?, ?, ?, 'daily', 1, ?, 1, 'cleaning', ?)
   `);
   const openWo = db.prepare(
     "SELECT id FROM work_orders WHERE pm_schedule_id = ? AND status IN ('open','in_progress','overdue','missed') LIMIT 1");
@@ -59,21 +55,26 @@ export function seedDilutionSchedules(db) {
   db.transaction(() => {
     for (const form of DILUTIONS) {
       const title = dilutionTitle(form);
-      // A title that already exists is left COMPLETELY alone — an edited
+      // A schedule that already exists is left COMPLETELY alone — an edited
       // cadence, a reassigned team or a schedule somebody deactivated are
       // decisions, and a seeder that undoes them on every deploy is how people
       // stop trusting a setting.
-      let sched = findSched.get(title);
+      let sched = findByKey.get(form.key);
+      if (!sched) {
+        sched = findSched.get(title);
+        if (sched) setKey.run(form.key, sched.id);
+      }
       if (!sched) {
         const id = uuid();
-        insertPM.run(id, zone.id, title,
-          `${FORM_REVISION} — daily ${isMeasured(form) ? 'test strip verification' : 'mixing ratio verification'}. Target: ${form.target}.`,
-          JSON.stringify(steps(form)));
-        sched = { id, is_active: 1 };
+        const text = dilutionScheduleText(form);
+        insertPM.run(id, zone.id, text.title, text.description, JSON.stringify(text.steps), form.key);
+        sched = { id, is_active: 1, title: text.title, procedure_steps: JSON.stringify(text.steps) };
         created++;
       }
+      // Today's card copies the SCHEDULE as it stands (a hand-edited schedule
+      // keeps its words), not the code's.
       if (sched.is_active && !openWo.get(sched.id)) {
-        insertWO.run(uuid(), sched.id, zone.id, title, `Target: ${form.target}.`, today, JSON.stringify(steps(form)));
+        insertWO.run(uuid(), sched.id, zone.id, sched.title, dilutionCardDescription(form), today, sched.procedure_steps);
       }
     }
 
@@ -91,6 +92,6 @@ export function seedDilutionSchedules(db) {
     }
   })();
 
-  if (created > 0) console.log(`[seed] Chemical dilution schedules: created ${created} (one per chemical, ${FORM_REVISION})`);
+  if (created > 0) console.log(`[seed] Chemical dilution schedules: created ${created} (one per chemical, ${dilutionRevision()})`);
   return created;
 }

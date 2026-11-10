@@ -10531,3 +10531,23 @@ questions, and in the built-in FORM 106-01 dilution checks. Nothing showed her t
 - Capitals, spaces, `-` and `_` are ignored ("sani 512" = "Sani-512"); at least three letters or numbers.
 - **SELECT-only, 200 rows per section.** It renames nothing; each place is changed through its own screen.
 - `verify:nameusage` (17; checks every table's row count before and after).
+
+## D-327 — FORM 106-01's dilutions are a controlled definition; approving one moves the tasks (10 Nov 2026)
+The four daily dilution checks took their chemical names, ranges and targets from `shared/dilution-forms.js`, and
+a task was matched to its chemical by its exact TITLE. So Daniela approving "Sani-512 → J-512 TM/MC Sanitizer" in an
+SOP changed nothing on the floor, and editing the code would have stopped the check grading (the title no longer
+matched) and seeded a second schedule beside the old one.
+- **The list is registered with `controlled.js`** (key `dilution:FORM 106-01`, `server/dilution-control.js`): a change
+  in code parks until Document Control approves it; the app serves the approved list (`GET /api/dilution-forms`, the
+  `dilution_form` stamped on each task). The ATP / env / EMP arrangement.
+- **A schedule is identified by `pm_schedules.dilution_key`**, adopted once from the title. Grading and filing read the
+  key; a renamed chemical keeps answering to its former name (`former`).
+- **Approving runs `syncDilutionTasks` at once** (a new `afterApply` hook on a controlled entry), and so does every boot.
+  It rewrites each UNTOUCHED schedule's title, description and steps, and its open cards, to the definition in force.
+  "Untouched" = still what the sync last wrote (`app_settings.dilution_tasks_applied`). **A schedule edited by hand is
+  named in the boot log and left alone.** Filed records are never rewritten; new ones carry the approved name and
+  revision.
+- The legacy chemical picker reads the served list instead of four hard-coded options.
+- **No value was changed.** J-512's range is not known; it arrives as a code change Document Control approves.
+- This writes task records (titles/steps of open cards) when Document Control approves, so it waits for Lowry's review
+  (D-274). `verify:dilutioncontrol` (23 + a reboot; the control without the approval hook fails 4).

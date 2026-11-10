@@ -21,6 +21,16 @@ export const FORM_CODE = 'FORM 106-01';
 export const FORM_REVISION = 'FORM 106-01 V3';
 
 /**
+ * The form and revision IN FORCE (D-327). The list below is a controlled
+ * definition: `server/dilution-control.js` registers it with `controlled.js`,
+ * so a change here is parked until Document Control approves it, and approving
+ * rewrites these objects in place. Read the revision through
+ * `dilutionRevision()`, never `FORM_REVISION`, which is only the code's copy.
+ */
+export const DILUTION_SOURCE = { code: FORM_CODE, revision: 'V3' };
+export const dilutionRevision = () => `${DILUTION_SOURCE.code} ${DILUTION_SOURCE.revision}`;
+
+/**
  * `min`/`max` present ⇒ the reading is a NUMBER and the range decides.
  * Absent ⇒ it is a mixing ratio, confirmed by the person who mixed it.
  *
@@ -71,6 +81,29 @@ export const DILUTION_BY_KEY = Object.fromEntries(DILUTIONS.map(d => [d.key, d])
 /** Whether the range decides the result, or a person does. */
 export const isMeasured = (form) => Number.isFinite(form?.min) && Number.isFinite(form?.max);
 
+/**
+ * What a recurring dilution task says: its title, description and steps, built
+ * from the definition in force. The seeder writes it, and the sync in
+ * `server/dilution-control.js` rewrites an untouched task to it when Document
+ * Control approves a change (D-327) — one builder, so the two cannot disagree.
+ */
+export function dilutionSteps(form) {
+  return [
+    isMeasured(form)
+      ? `Test ${form.chemical} with a test strip — verify ${form.target}`
+      : `Verify ${form.chemical} is mixed to ${form.target}`,
+    'Record the dilution or test strip lot number and expiration date',
+  ];
+}
+export function dilutionScheduleText(form) {
+  return {
+    title: dilutionTitle(form),
+    description: `${dilutionRevision()} — daily ${isMeasured(form) ? 'test strip verification' : 'mixing ratio verification'}. Target: ${form.target}.`,
+    steps: dilutionSteps(form),
+  };
+}
+export const dilutionCardDescription = (form) => `Target: ${form.target}.`;
+
 /** The schedule/work-order title for one dilution. The seeder writes it and
  *  formFromTitle() reads it back, so the mapping lives in exactly one place. */
 export function dilutionTitle(form) {
@@ -85,9 +118,19 @@ export function dilutionTitle(form) {
  * single lumped task did ask, which is how a check of four chemicals closed
  * having recorded one.
  */
-export function formFromTitle(title) {
+export function formFromTitle(title, list = DILUTIONS) {
   const t = String(title || '');
-  return DILUTIONS.find(d => t === dilutionTitle(d)) || null;
+  // A chemical renamed by an approved revision keeps answering to its former
+  // titles (`former`), so a card raised before the rename still grades.
+  return list.find(d => t === dilutionTitle(d) || (d.former || []).some(n => t === `Chemical Dilution — ${n}`)) || null;
+}
+
+/** A task's dilution: by the schedule's key when it has one (the server stamps
+ *  `dilution_form`), otherwise by its title. */
+export function formForTask(task, list = DILUTIONS) {
+  if (task?.dilution_form) return task.dilution_form;
+  if (task?.dilution_key) return list.find(d => d.key === task.dilution_key) || null;
+  return formFromTitle(task?.title, list);
 }
 
 /**

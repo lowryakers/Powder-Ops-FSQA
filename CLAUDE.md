@@ -6487,6 +6487,15 @@ chemical, machine or title is listed everywhere it is still written (documents, 
 one-off tasks, chemicals, sign-out items, courses, questions, EOD templates, built-in definitions), each with who changes
 it. **SELECT-only; it renames nothing.** A new place a name lives gets a section there. `verify:nameusage` (17).
 
+## FORM 106-01's dilutions are controlled; approving moves the tasks (D-327)
+`server/dilution-control.js` (`dilutionControlledEntry`, `syncDilutionTasks`, `attachDilutionForms`, `dilutionForWorkOrder`,
+`dilutionFormsInForce`), `pm_schedules.dilution_key`, `GET /api/dilution-forms`, `src/lib/useDilutionForms.js`.
+- **Never match a dilution task by its title.** Read `dilution_key` (server) or `formForTask(task)` (screen). Read the
+  revision through `dilutionRevision()`, never `FORM_REVISION`.
+- A controlled entry may carry **`afterApply(db)`**, run by `approveDefinition` — use it when a definition owns records.
+- The sync rewrites only schedules still holding what it last wrote; a hand-edited one is reported, never overwritten.
+- `verify:dilutioncontrol` (23).
+
 ## Every page of a document PDF carries its identity; the draft is its own export (D-318)
 `server/document-pdf.js` is the ONE renderer for controlled-document PDFs (single, batch, Auditor View Print). Header and
 footer are drawn on buffered pages, never written into the body: number · Rev · short title · Page x of y, and

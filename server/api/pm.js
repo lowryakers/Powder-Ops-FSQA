@@ -18,7 +18,8 @@ import { getChannelByName, postMessageAs, botDm } from './comms.js';
 import { periodically, resetHousekeeping } from '../housekeeping.js';
 import { pushToUser } from '../push.js';
 import { environmentalBreaches, isEnvironmentalCheck, gradeEnvironment } from '../env-limits.js';
-import { formFromTitle, gradeDilution, isMeasured, FORM_REVISION as DILUTION_REVISION } from '../../shared/dilution-forms.js';
+import { gradeDilution, isMeasured, dilutionRevision } from '../../shared/dilution-forms.js';
+import { dilutionForWorkOrder, attachDilutionForms } from '../dilution-control.js';
 import { pmCompletion } from '../pm-completion.js';
 import { recordGroupFor, recordAreaForTask } from '../qa-records.js';
 import { checkFormFor, attachCheckForms, fileCheckRecord, missingForCheck } from '../check-records.js';
@@ -60,7 +61,7 @@ function fileDilutionRecord(db, { form, grade, readings, notes, by, workOrderId 
   const r = readings || {};
   const id = uuid();
   const detail = [
-    `${DILUTION_REVISION} — target ${form.target}.`,
+    `${dilutionRevision()} — target ${form.target}.`,
     grade?.reason ? `Result: ${grade.reason}.` : null,
     r.lot_number ? `Lot #${r.lot_number}.` : null,
     r.expiration_date ? `Expires ${r.expiration_date}.` : null,
@@ -1223,7 +1224,7 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
   // A chemical dilution check is graded by its RANGE, not by the operator's
   // tap — the same rule the scale forms follow. It was previously possible to
   // enter 300 ppm, press Pass, and have the record say pass.
-  const dilution = formFromTitle(existing.title);
+  const dilution = dilutionForWorkOrder(db, existing);
   const graded = dilution ? gradeDilution(dilution, dilutionValue(dilution, readings)) : null;
 
   // A dilution check with no reading cannot be completed. The reading IS the
@@ -1963,7 +1964,7 @@ router.get('/search', (req, res) => {
     LIMIT 100
   `).all(like, like, like, like, like, like);
 
-  res.json(attachSwabPlans(attachCheckForms(db, rows)).map(r => ({ ...r, procedure_steps: safeParse(r.pm_steps || r.procedure_steps) })));
+  res.json(attachDilutionForms(db, attachSwabPlans(attachCheckForms(db, rows))).map(r => ({ ...r, procedure_steps: safeParse(r.pm_steps || r.procedure_steps) })));
 });
 
 router.get('/by-frequency', (req, res) => {
@@ -2010,7 +2011,7 @@ router.get('/by-frequency', (req, res) => {
   // a fortnight puts fourteen identical rows behind the live card. One card
   // carrying `missed_count` / `missed_since` says "you are behind" without
   // handing somebody the same job fourteen times.
-  const rows = attachSwabPlans(attachCheckForms(db, collapseMissed(db.prepare(sql).all(...params))));
+  const rows = attachDilutionForms(db, attachSwabPlans(attachCheckForms(db, collapseMissed(db.prepare(sql).all(...params)))));
 
   const grouped = {};
   for (const r of rows) {
@@ -2262,7 +2263,7 @@ router.get('/operator-tasks', (req, res) => {
   //
   // This screen is now only work orders: something to go and do, one at a
   // time. Signing is a review, and reviews happen in QA Review.
-  res.json(attachSwabPlans(attachCheckForms(db, collapseMissed(rows))).map(r => ({ ...r, procedure_steps: safeParse(r.procedure_steps) })));
+  res.json(attachDilutionForms(db, attachSwabPlans(attachCheckForms(db, collapseMissed(rows)))).map(r => ({ ...r, procedure_steps: safeParse(r.procedure_steps) })));
 });
 
 router.put('/schedules/:id/items', (req, res) => {

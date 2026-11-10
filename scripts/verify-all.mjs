@@ -130,6 +130,7 @@ const RUNS = [
   ['verify-merch-design.mjs', 5205],
   ['verify-sku-retire.mjs', 5206],
   ['verify-name-usage.mjs', 5207],
+  ['verify-dilution-control.mjs', 5208],
   ['verify-packaging-specs.mjs', 5051, { PRODUCT_MASTER_TOKEN: 'spec-token' }],
   ['verify-artwork-film.mjs', 5052, {}],
   ['verify-pay-reviews.mjs', 5053, {}],

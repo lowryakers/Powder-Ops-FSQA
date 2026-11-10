@@ -2869,6 +2869,9 @@ function runMigrations() {
   // raise resolves the CURRENT name from the id.
   addColumnIfMissing('pm_schedules', 'assigned_to', 'TEXT');
   addColumnIfMissing('pm_schedules', 'assigned_to_id', 'TEXT');
+  // D-327: which FORM 106-01 dilution a schedule checks — the identity, so an
+  // approved rename of the chemical does not orphan the schedule or its cards.
+  addColumnIfMissing('pm_schedules', 'dilution_key', 'TEXT');
   addColumnIfMissing('work_orders', 'task_group', "TEXT DEFAULT 'warehouse'");
 
   // Flavor approval on a scheduled manufacturing order
