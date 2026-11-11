@@ -2871,6 +2871,14 @@ sheet that must open even with no R2 configured. The zone **item lists** it docu
   `scripts/supplier-contacts-repair.mjs` fills blanks from a mapping: dry run first, never overwrites, never deletes.
   `verify:suppliertoken` (51).
 
+## A product reads its supplier documents through its recipe; a customer pack is a read (D-340)
+`product_recipe_lines` (not `procurement_boms`), `server/product-recipes.js` (`recipeRollup`, `docStatus`),
+`server/customer-pack.js`, `GET /products/customer-pack`, `writeXlsx` in `server/tabular.js`, `scripts/recipe-import.mjs`,
+`ProductSupplierDocs.jsx`.
+- **Never copy a supplier document onto a product**; the rollup joins by (system, part_number) and lists by file id.
+- The pack writes no row anywhere. The import is dry run first, never overwrites a differing line, never uses
+  "Yes" as a formula id. `verify:productrollup` (31).
+
 ## Purchasing edits a supplier's details and contacts (D-295)
 `EditDetails` + `ContactsSection` (SuppliersPanel.jsx), `shared/supplier-fields.js` (`VENDOR_TYPES`, `CONTACT_ROLES`,
 `cleanContact`), `POST /suppliers/:id/contacts`, `PUT|DELETE /suppliers/contacts/:cid`.

@@ -2855,6 +2855,27 @@ function runMigrations() {
   );
   CREATE INDEX IF NOT EXISTS idx_supplier_material_parts_number ON supplier_material_parts(system, part_number);`);
   addColumnIfMissing('supplier_materials', 'current_part_system', 'TEXT');
+  // A product's compliance recipe (D-340): what goes into a SKU, by part number,
+  // so its supplier documents can be reached without a second copy on the
+  // product. NOT procurement_boms (the Procurement planning seed). Lines are
+  // retired (retired_at), never deleted, so an import that drops one keeps it.
+  db.exec(`CREATE TABLE IF NOT EXISTS product_recipe_lines (
+    id TEXT PRIMARY KEY,
+    sku TEXT NOT NULL,
+    part_source_system TEXT NOT NULL,
+    part_number TEXT NOT NULL,
+    description TEXT,
+    qty REAL,
+    uom TEXT,
+    sort INTEGER NOT NULL DEFAULT 0,
+    source TEXT,
+    import_ref TEXT,
+    retired_at TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE (sku, part_source_system, part_number)
+  );
+  CREATE INDEX IF NOT EXISTS idx_product_recipe_lines_part ON product_recipe_lines(part_source_system, part_number);`);
   // A receipt records that QA was told a lab sample was due, and who was told.
   // Stamped on the LINE rather than kept only in the audit log: "was anybody
   // asked to pull a sample off that pallet" is a question about the receipt,
