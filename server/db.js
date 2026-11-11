@@ -2840,6 +2840,21 @@ function runMigrations() {
   // when the decision was made, and the gate's mode at the time.
   addColumnIfMissing('supplier_qualifications', 'gmp_cert_gaps', 'TEXT');
   addColumnIfMissing('supplier_qualifications', 'gmp_gate_mode', 'TEXT');
+  // An ingredient's part numbers, one per system (D-338): MRPEasy and Keychain
+  // both live during dual entry, and the cutover is a config change plus a data
+  // copy. Updated in place, never deleted. `current_part_system` says which one
+  // is in force (NULL = the app_settings default).
+  db.exec(`CREATE TABLE IF NOT EXISTS supplier_material_parts (
+    id TEXT PRIMARY KEY,
+    material_id TEXT NOT NULL REFERENCES supplier_materials(id),
+    system TEXT NOT NULL,
+    part_number TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE (material_id, system)
+  );
+  CREATE INDEX IF NOT EXISTS idx_supplier_material_parts_number ON supplier_material_parts(system, part_number);`);
+  addColumnIfMissing('supplier_materials', 'current_part_system', 'TEXT');
   // A receipt records that QA was told a lab sample was due, and who was told.
   // Stamped on the LINE rather than kept only in the audit log: "was anybody
   // asked to pull a sample off that pallet" is a question about the receipt,

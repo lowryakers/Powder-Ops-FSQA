@@ -35,9 +35,15 @@
 // having no expiry, which is indistinguishable from a certificate that never
 // had one.
 const MONTHS = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
-const EXP_NUMERIC = /\bexp\.?(?:ir(?:es|y|ation))?\.?\s*:?\s*\(?\s*(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})/i;
-const EXP_WORDY   = /\bexp\.?(?:ir(?:es|y|ation))?\.?\s*:?\s*\(?\s*(\d{1,2})\s+([a-z]{3})[a-z]*\.?\s+(\d{4})/i;
-const EXP_MONTHYR = /\bexp\.?(?:ir(?:es|y|ation))?\.?\s*:?\s*\(?\s*(\d{1,2})[-/.](\d{4})\b/i;
+// `(?<![a-z])exp`, not `\bexp`: an underscore is a word character, so `\b` did
+// not fire in "26v4_exp. 12.31.2026" and that certificate read as undated (D-338).
+const EXP = String.raw`(?<![a-z])exp\.?(?:ir(?:es|y|ation))?\.?\s*:?\s*\(?\s*`;
+const EXP_NUMERIC = new RegExp(EXP + String.raw`(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})`, 'i');
+const EXP_WORDY   = new RegExp(EXP + String.raw`(\d{1,2})\s+([a-z]{3})[a-z]*\.?\s+(\d{4})`, 'i');
+const EXP_MONTHYR = new RegExp(EXP + String.raw`(\d{1,2})[-/.](\d{4})\b`, 'i');
+// "BCM GMP Cert_Exp 022424": month, day, year run together with no separator.
+// Six or eight digits exactly, so "Exp 2025" (a year) is never read as a date.
+const EXP_COMPACT = new RegExp(EXP + String.raw`(\d{2})(\d{2})(\d{4}|\d{2})(?!\d)`, 'i');
 
 const iso = (y, m, d) => {
   if (y < 100) y += 2000;
@@ -67,6 +73,8 @@ export function expiryFromFilename(name) {
   }
   m = EXP_NUMERIC.exec(n);
   if (m) return iso(Number(m[3]), Number(m[1]), Number(m[2]));
+  m = EXP_COMPACT.exec(n);
+  if (m) return iso(Number(m[3]), Number(m[1]), Number(m[2]));
   m = EXP_MONTHYR.exec(n);
   if (m) {
     const mo = Number(m[1]), yr = Number(m[2]);
@@ -87,13 +95,24 @@ const KINDS = [
   { kind: 'audit_report',         re: /\baudit\s*report\b/i },
   // The packaging / food-contact letter of guarantee (D-289). Before the
   // certificate and statement rules: "Continuing Guarantee 2026.pdf" is neither.
-  { kind: 'letter_of_guarantee',  re: /\bletter\s*of\s*(guarantee|guaranty|warranty)\b|\bcontinuing\s*(guarantee|guaranty)\b|\b(guarantee|guaranty)\s*letter\b|\bfood\s*contact\s*(guarantee|guaranty|letter)\b/i },
+  // "Continuing letter of pure Food Guarantee" (National Measures) puts words
+  // between "continuing" and "guarantee"; the gap is bounded so a long name
+  // that merely contains both words is not swept in (D-338).
+  { kind: 'letter_of_guarantee',  re: /\bletter\s*of\s*(guarantee|guaranty|warranty)\b|\bcontinuing\s*(guarantee|guaranty)\b|\bcontinuing\b.{0,40}\b(guarantee|guaranty)\b|\b(guarantee|guaranty)\s*letter\b|\bfood\s*contact\s*(guarantee|guaranty|letter)\b/i },
+  // First-class kinds a customer pack asks for by name (D-338). Before the
+  // certificate and statement rules, which used to swallow them.
+  { kind: 'certificate_of_insurance', re: /\bcertificate\s*of\s*(liability\s*)?insurance\b|\binsurance\s*cert(ificate)?\b|\bcoi\b/i },
+  { kind: 'w9',                   re: /(?<![a-z0-9])w-?9(?![a-z0-9])/i },
+  { kind: 'fsvp',                 re: /\bfsvp\b|\bforeign\s*supplier\s*verification\b/i },
+  // A natural-flavor DECLARATION, not any file about a natural flavor: "Natural
+  // Vanilla Flavor Spec.pdf" is still a specification.
+  { kind: 'natural_flavor',       re: /\bnatural\s*flavou?rs?\b.{0,30}\b(statement|statment|declaration|letter|compliance|certification)\b|\bnatural\s*flavou?r\s*(statement|declaration)\b/i },
   // A CERTIFICATE IS OFTEN NAMED BY ITS TOPIC AND NEVER SAYS "certificate".
   // "Kosher Exp. 12.31.2025.pdf", "IM Non-GMO (Exp 8.20.25).pdf", "BRCGS EN
   // (Exp 7.2.2025).pdf" — 52 of the archive's files. Requiring the word
   // reported every one of them as unreadable.
-  { kind: 'certificate',          re: /\b(kosher|halal|organic|non.?gmo|gluten.?free|brcgs|brc|sqf|fssc|iso\s*\d{4,5}|gmp|nsf|utz|rainforest|fair.?trade|bioterrorism)\b/i },
-  { kind: 'audit_certificate',    re: /\b(brc|sqf|fssc|gfsi|iso\s*22000)\b.*\bcertificate\b|\baudit\s*certificate\b/i },
+  { kind: 'certificate',          re: /\b(kosher|halal|organic|non.?gmo|gluten.?free|brcgs|brcs?|sqf|fssc|iso\s*\d{4,5}|gmp|nsf|utz|rainforest|fair.?trade|bioterrorism)(?![a-z])/i },
+  { kind: 'audit_certificate',    re: /\b(brcs?|sqf|fssc|gfsi|iso\s*22000)\b.*\bcertificate\b|\baudit\s*certificate\b/i },
   { kind: 'certificate',          re: /\b(certificate|certification)\b/i },
   { kind: 'registration',         re: /\b(fda\s*registration|registration)\b/i },
   // A vendor's OWN quality system, sent wholesale. Bio-Cat supplied 32 files of
@@ -114,7 +133,7 @@ const KINDS = [
   // `statm?ent` is deliberate: the plant's own file is "Prayon Gluten
   // Statment.pdf". A classifier that refuses a typo is one that reports a real
   // gluten statement as unreadable, which is worse than tolerating the spelling.
-  { kind: 'statement',            re: /\bstat[e]?m[e]?nt\b|\bprop\s*65\b|\bcountry\s*of\s*origin\b|\bcomposition\b|\bmatrix\b|\bassurance\b|\bexplanation\b|\bsop\b|\bw-?9\b|\borganizational\s*chart\b|\bcontact\s*list\b/i },
+  { kind: 'statement',            re: /\bstat[e]?m[e]?nt\b|\bprop\s*65\b|\bcountry\s*of\s*origin\b|\bcomposition\b|\bmatrix\b|\bassurance\b|\bexplanation\b|\bsop\b|\borganizational\s*chart\b|\bcontact\s*list\b/i },
   // A contaminants declaration often names the contaminants instead of calling
   // itself a statement — "Phosphate Product Impurities Melamine, Sludge,
   // Pesticides.pdf" is one of AIFI's.

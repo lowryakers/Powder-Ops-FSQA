@@ -519,13 +519,14 @@ function QuestionnaireLinks({ supplierId, list, form, canEdit, onChanged }) {
 
 function SupplierDetail({ id, user, onDecide, onRemoved }) {
   const { data, loading, refresh } = useApiGet(`/suppliers/${id}`);
+  const [editing, setEditing] = useState(null);
   if (loading || !data) return <div className="py-4 text-sm text-slate-500">Loading…</div>;
   const { supplier, contacts, materials, qualifications, files } = data;
   const canDecide = user?.role === 'admin'
     || (['qa', 'quality'].includes((user?.department || '').toLowerCase()) && user?.role === 'supervisor');
 
   return (
-    <div className="grid gap-4 py-2 md:grid-cols-2">
+    <div className="grid grid-cols-1 gap-4 py-2 md:grid-cols-2 [&>*]:min-w-0">
       {/* Why the supplier is in the state it is in. A status with no reason
           beside it is the thing somebody has to go and ask about. */}
       {(supplier.status_reason || supplier.notes) && (
@@ -552,6 +553,9 @@ function SupplierDetail({ id, user, onDecide, onRemoved }) {
       <GuaranteeSection supplier={supplier} guarantee={data.guarantee} canEdit={data.can_edit} onChanged={refresh} />
 
       <GmpCertSection supplier={supplier} gmp={data.gmp_cert} canEdit={data.can_edit} onChanged={refresh} />
+
+      <IngredientsSection supplierId={id} materials={materials} systems={data.part_systems || []}
+        defaultSystem={data.default_part_system} canEdit={data.can_edit} onChanged={refresh} />
 
       <MaterialChecks supplierId={id} materials={data.material_checks || materials} banned={data.banned}
         canDecide={data.can_decide} onChanged={refresh} />
@@ -633,9 +637,10 @@ function SupplierDetail({ id, user, onDecide, onRemoved }) {
             <table className="w-full text-xs">
               <tbody>
                 {files.map(f => (
-                  <tr key={f.id} className="border-b border-slate-100 last:border-0 dark:border-slate-800">
+                  <Fragment key={f.id}>
+                  <tr className="border-b border-slate-100 last:border-0 dark:border-slate-800">
                     <td className="px-2 py-1 text-slate-500">{f.period_label || '—'}</td>
-                    <td className="px-2 py-1 text-slate-500">{f.kind.replace(/_/g, ' ')}</td>
+                    <td className="px-2 py-1 text-slate-500" data-file-kind={f.kind}>{kindLabel(data.file_kinds, f.kind)}</td>
                     <td className="px-2 py-1">
                       {f.stored
                         ? <button type="button" onClick={e => { stopRowClick(e); downloadSupplierFile(f); }}
@@ -657,7 +662,26 @@ function SupplierDetail({ id, user, onDecide, onRemoved }) {
                           </span>
                         : ''}
                     </td>
+                    <td className="px-2 py-1 text-slate-500" data-file-material={f.material_id || ''}>
+                      {f.material_label || ''}{f.lot_number ? <span className="ml-1">· lot {f.lot_number}</span> : null}
+                    </td>
+                    <td className="px-2 py-1 text-right">
+                      {data.can_edit && (
+                        <button type="button" data-file-edit={f.id} title="Correct what this document is"
+                          onClick={e => { stopRowClick(e); setEditing(editing === f.id ? null : f.id); }}
+                          className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </td>
                   </tr>
+                  {editing === f.id && (
+                    <tr><td colSpan={7} className="bg-slate-50 px-2 py-2 dark:bg-slate-800/50">
+                      <FileMetaEditor file={f} kinds={data.file_kinds || []} materials={materials}
+                        onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); refresh(); }} />
+                    </td></tr>
+                  )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -985,6 +1009,161 @@ const BANNED_CHIP = {
   none: ['Not checked', 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'],
   listed: ['ON A BANNED LIST', 'bg-rose-100 text-rose-800 dark:bg-rose-950/50 dark:text-rose-300'],
 };
+
+const kindLabel = (kinds, k) => (kinds || []).find(x => x.value === k)?.label || String(k || '').replace(/_/g, ' ');
+
+// ── Ingredients and their part numbers (D-338) ──────────────────────────────
+// One part number per system, so the MRPEasy and Keychain numbers sit side by
+// side during dual entry. Retire, never delete: a retired ingredient leaves the
+// banned-list checks and new document links, and keeps its history.
+function IngredientForm({ initial, systems, defaultSystem, onSave, onCancel }) {
+  const [f, setF] = useState(() => ({
+    item_description: initial?.item_description || '',
+    manufacturer_name: initial?.manufacturer_name || '',
+    current_part_system: initial?.current_part_system || '',
+    parts: Object.fromEntries(systems.map(sy => [sy.value, initial?.parts?.find(p => p.system === sy.value)?.part_number || ''])),
+  }));
+  const [err, setErr] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setBusy(true); setErr(null);
+    try {
+      // Only systems with a number, or ones already on file (so a number can be cleared).
+      const parts = systems.map(sy => ({ system: sy.value, part_number: f.parts[sy.value] }))
+        .filter(p => p.part_number.trim() || initial?.parts?.some(x => x.system === p.system));
+      await onSave({ item_description: f.item_description, manufacturer_name: f.manufacturer_name,
+        current_part_system: f.current_part_system, parts });
+    } catch (e) { setErr(e.message || 'Could not save'); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div data-ingredient-form className="space-y-1.5 rounded border border-slate-200 p-2 dark:border-slate-700">
+      <input id={`ing-desc-${initial?.id || 'new'}`} className={inputCls} placeholder="Ingredient (as the supplier sells it)"
+        value={f.item_description} onChange={e => setF({ ...f, item_description: e.target.value })} data-ingredient-desc />
+      <input id={`ing-mfr-${initial?.id || 'new'}`} className={inputCls} placeholder="Made by (if not the supplier)"
+        value={f.manufacturer_name} onChange={e => setF({ ...f, manufacturer_name: e.target.value })} />
+      <div className="grid gap-1.5 sm:grid-cols-2">
+        {systems.map(sy => (
+          <label key={sy.value} className="text-xs text-slate-500">{sy.label} part #
+            <input id={`ing-part-${sy.value}-${initial?.id || 'new'}`} className={inputCls} data-ingredient-part={sy.value}
+              value={f.parts[sy.value]} onChange={e => setF({ ...f, parts: { ...f.parts, [sy.value]: e.target.value } })} />
+          </label>
+        ))}
+      </div>
+      <label className="block text-xs text-slate-500">Part number in use
+        <select id={`ing-current-${initial?.id || 'new'}`} className={inputCls} value={f.current_part_system}
+          onChange={e => setF({ ...f, current_part_system: e.target.value })}>
+          <option value="">The plant default ({systems.find(s => s.value === defaultSystem)?.label || defaultSystem})</option>
+          {systems.map(sy => <option key={sy.value} value={sy.value}>{sy.label}</option>)}
+        </select>
+      </label>
+      {err && <p className="text-xs text-rose-600">{err}</p>}
+      <div className="flex gap-2">
+        <button type="button" disabled={busy || !f.item_description.trim()} onClick={save} data-ingredient-save
+          className="rounded bg-slate-800 px-3 py-1 text-xs text-white disabled:opacity-40 dark:bg-slate-200 dark:text-slate-900">Save</button>
+        <button type="button" onClick={onCancel} className="rounded border border-slate-300 px-3 py-1 text-xs dark:border-slate-600">Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+function IngredientsSection({ supplierId, materials, systems, defaultSystem, canEdit, onChanged }) {
+  const [editing, setEditing] = useState(null);   // material id, or 'new'
+  const label = sys => systems.find(s => s.value === sys)?.label || sys;
+  const act = async (fn) => { await fn(); setEditing(null); onChanged?.(); };
+  return (
+    <section data-ingredients className="md:col-span-2">
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Ingredients ({materials.filter(m => m.is_active).length})</h4>
+        {canEdit && editing !== 'new' && (
+          <button type="button" data-ingredient-add onClick={e => { stopRowClick(e); setEditing('new'); }}
+            className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline dark:text-blue-400">
+            <Plus className="h-3.5 w-3.5" /> Add an ingredient
+          </button>
+        )}
+      </div>
+      {editing === 'new' && (
+        <IngredientForm systems={systems} defaultSystem={defaultSystem} onCancel={() => setEditing(null)}
+          onSave={body => act(() => apiPost(`/suppliers/${supplierId}/materials`, body))} />
+      )}
+      {materials.length ? (
+        <ul className="space-y-1 text-sm">
+          {materials.map(m => editing === m.id ? (
+            <li key={m.id}><IngredientForm initial={m} systems={systems} defaultSystem={defaultSystem}
+              onCancel={() => setEditing(null)} onSave={body => act(() => apiPut(`/suppliers/materials/${m.id}`, body))} /></li>
+          ) : (
+            <li key={m.id} data-ingredient={m.id} className={`flex flex-wrap items-baseline gap-x-2 ${m.is_active ? '' : 'text-slate-400'}`}>
+              <span>{m.item_description}</span>
+              {m.manufacturer_name && <span className="text-xs text-slate-500">made by {m.manufacturer_name}</span>}
+              {m.parts.filter(p => p.part_number).map(p => (
+                <span key={p.system} data-ingredient-number={`${p.system}:${p.part_number}`}
+                  className={`rounded px-1.5 py-0.5 font-mono text-[11px] ${p.system === m.current_system ? 'bg-slate-200 dark:bg-slate-700' : 'bg-slate-100 text-slate-500 dark:bg-slate-800'}`}>
+                  {label(p.system)} {p.part_number}
+                </span>
+              ))}
+              {!m.is_active && <span className="text-xs">retired</span>}
+              {canEdit && (
+                <span className="flex gap-2 text-xs">
+                  <button type="button" onClick={e => { stopRowClick(e); setEditing(m.id); }} className="text-blue-600 hover:underline dark:text-blue-400">Edit</button>
+                  <button type="button" data-ingredient-toggle={m.id}
+                    onClick={e => { stopRowClick(e); act(() => apiPut(`/suppliers/materials/${m.id}`, { is_active: !m.is_active })); }}
+                    className="text-slate-500 hover:underline">{m.is_active ? 'Retire' : 'Back in use'}</button>
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : <p className="text-sm text-slate-400">None recorded yet.</p>}
+    </section>
+  );
+}
+
+// Correcting what a filed document IS (D-338): kind, expiry, ingredient, lot.
+// The file itself is never touched.
+function FileMetaEditor({ file, kinds, materials, onSaved, onCancel }) {
+  const [f, setF] = useState({ kind: file.kind, expires_on: file.expires_on || '', material_id: file.material_id || '', lot_number: file.lot_number || '' });
+  const [err, setErr] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setBusy(true); setErr(null);
+    try { await apiPut(`/suppliers/files/${file.id}`, f); onSaved?.(); }
+    catch (e) { setErr(e.message || 'Could not save'); }
+    finally { setBusy(false); }
+  };
+  const usable = materials.filter(m => m.is_active || m.id === file.material_id);
+  return (
+    <div data-file-meta={file.id} className="grid gap-1.5 sm:grid-cols-4">
+      <label className="text-xs text-slate-500">What it is
+        <select id={`fm-kind-${file.id}`} className={inputCls} value={f.kind} data-file-meta-kind
+          onChange={e => setF({ ...f, kind: e.target.value })}>
+          {kinds.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}
+        </select>
+      </label>
+      <label className="text-xs text-slate-500">Expires
+        <input id={`fm-exp-${file.id}`} type="date" className={inputCls} value={f.expires_on} data-file-meta-expiry
+          onChange={e => setF({ ...f, expires_on: e.target.value })} />
+      </label>
+      <label className="text-xs text-slate-500">Ingredient
+        <select id={`fm-mat-${file.id}`} className={inputCls} value={f.material_id} data-file-meta-material
+          onChange={e => setF({ ...f, material_id: e.target.value })}>
+          <option value="">— whole supplier —</option>
+          {usable.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+        </select>
+      </label>
+      <label className="text-xs text-slate-500">Lot number
+        <input id={`fm-lot-${file.id}`} className={inputCls} value={f.lot_number} data-file-meta-lot
+          onChange={e => setF({ ...f, lot_number: e.target.value })} />
+      </label>
+      {err && <p className="text-xs text-rose-600 sm:col-span-4">{err}</p>}
+      <div className="flex gap-2 sm:col-span-4">
+        <button type="button" disabled={busy} onClick={save} data-file-meta-save
+          className="rounded bg-slate-800 px-3 py-1 text-xs text-white disabled:opacity-40 dark:bg-slate-200 dark:text-slate-900">Save</button>
+        <button type="button" onClick={onCancel} className="rounded border border-slate-300 px-3 py-1 text-xs dark:border-slate-600">Cancel</button>
+        <span className="self-center text-[11px] text-slate-500">The file itself is not changed.</span>
+      </div>
+    </div>
+  );
+}
 
 function MaterialChecks({ supplierId, materials, banned, canDecide, onChanged }) {
   const [busy, setBusy] = useState(null);
