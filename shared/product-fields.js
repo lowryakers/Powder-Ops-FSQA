@@ -60,9 +60,11 @@ export const FIELD_RULES = {
   },
   gtin: {
     label: 'GTIN',
-    expected: 'a 12-digit UPC-A with a valid GS1 check digit (a 13- or 14-digit padded form is accepted and stored as the 12)',
+    expected: 'a 12-digit UPC-A with a valid GS1 check digit (a 13- or 14-digit padded form is accepted and stored as the 12; a GTIN-14 starting 1–8 is a case or inner code, not the unit)',
     normalize: (v) => normalizeGtin(v) || '',
-    test: (v) => gtinValid(v),
+    // A GTIN-14 whose indicator is 1–8 survives normalizeGtin and is a case or
+    // inner code — a different number. It belongs in gtin_case / gtin_inner (R-0645).
+    test: (v) => gtinValid(v) && v.length <= 13,
     unique: true,
   },
   mrp_formula_id: {
@@ -138,6 +140,15 @@ export function validateField(field, raw) {
 export const NA_FIELDS = [
   'legacy_sku', 'protein_type', 'pack_count', 'eyemark_color',
   'shopify_sku', 'shopify_variant_id', 'amazon_sku', 'amazon_asin', 'drive_url',
+  // R-0645 (D-342): a pack level that does not exist, a dimension a product
+  // does not have, a price not quoted. Marking N/A takes the field out of the
+  // distributor-sheet readiness step. Marking a PRICE or ITEM-NUMBER N/A is
+  // gated like writing one (the configured editor only).
+  'gtin_inner', 'gtin_case', 'unit_size', 'units_per_inner', 'units_per_case', 'inners_per_case',
+  'case_l', 'case_w', 'case_h', 'case_cube', 'case_weight', 'ti', 'hi', 'pallet_qty',
+  'shelf_life_months_commercial',
+  'price_fob_case', 'price_fob_unit', 'price_wholesale_case', 'price_wholesale_unit', 'price_srp',
+  'distributor_item_no', 'wholesale_item_no',
 ];
 
 /** The NA map on a row: `{ field: { by, at } }`. Tolerates the column being absent or unreadable. */

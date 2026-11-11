@@ -10808,3 +10808,45 @@ way back was mint, edit scopes, tick each grant again, and revoke the old one: f
 - **Replace** on each live row in Settings → Bot API tokens; the one-time box says which token it replaces and that it
   no longer works.
 - `verify:apitokensui` (30 → 42; the ten new API assertions include the old token answering 401 and the new one 200).
+## D-342 — The product record is the source of truth, part A: five statuses, the Active gate, prices and GTINs gated (11 Nov 2026)
+R-0645 PR A (decision A-20261110-021). The product row becomes the one place a distributor sheet, a retailer form and a
+GS1 check are read from. This part adds the columns and the rules; the drawer sections and filters are PR B, the
+exports and the GS1 backfill PR C.
+- **Five statuses, stored as slugs** — `draft`, `ready`, `active`, `hold`, `discontinued` — with labels from
+  `STATUS_LABEL` (`shared/product-status.js`). Slugs, not Title Case: dozens of compares already read `active`.
+  `not_launching` is kept and still set only by its own route. An older spelling a client sends (`Draft`,
+  `in_development`, `on_hold`) lands on its slug through `LEGACY_STATUS`; anything else is refused by name. A new
+  product starts `draft` (also the column default on a fresh database) and **cannot be created Active**.
+- **Stored rows move only by `scripts/product-status-migrate.mjs`**: dry run by default, `--apply` backs up and
+  audits each product, idempotent, `--undo` puts back only rows still holding what it wrote. It touches
+  `status` and `not_launching_from` and nothing else — never a GTIN. Lowry runs it after merge.
+- **Active is a gate** (`server/product-sot-gate.js`, `writeGate`, inside `buildPatch`, so the PUT, the fill-down
+  and the CSV import all reach it; create refuses Active outright). Only the person whose user id is in
+  `product_sot.active_approver_user_id`, in their own session, and only when every checklist step that applies is
+  done or marked N/A (`400 READINESS_OPEN` names them). A token is refused before the handler
+  (`APPROVE_ROUTES`, `approve_requires_human_session`); a bot account's own session is refused too, even on the
+  approver's account. The move is audited `product_status_activated` (actor id, from/to); a refusal
+  `product_status_activation_refused`.
+- **Prices (FOB case/unit, wholesale case/unit, SRP) and distributor/wholesale item numbers** are written only by
+  the person in `product_sot.price_editor_user_id` (`item_no_editor_user_id`, unset ⇒ the price editor). Marking
+  one N/A is behind the same gate. Tokens and bots never.
+- **No name in source.** The three ids are chosen by an admin in **Settings → Products** (`GET|PUT
+  /products/sot-settings`; a guest or bot account cannot be chosen; each change audited). **Unset is a 403 that
+  names the setting** — never a fallback to "any admin". Lowry's id goes in the approver box; Shalee has no
+  account yet, so prices stay refused until she does.
+- **GTINs are copied, never built.** A token or bot writes none of `gtin`, `gtin_inner`, `gtin_case`. A person
+  pastes an inner or case code already allocated in GS1; `shared/level-gtin.js` only CHECKS it: 14 digits, check
+  digit, the same middle twelve digits as the unit, and the indicator policy (Each 0, Inner 3, Case 1 — `reject`
+  for a new paste). A refusal says to copy the code from the GS1 Data Hub. Nothing computes a check digit or
+  derives an inner or case from the unit; a code already on another product at any level is a 409.
+- **New columns** (all `addColumnIfMissing`): `brand` (default ProDough), `gtin_inner`, `gtin_case`,
+  `gtin_case_source`, unit size, units per inner/case, inners per case, case L/W/H, cube, weight, Ti, Hi, pallet
+  quantity, shelf life (sell-sheet months), the five prices, two item numbers; tables `product_barcodes` (inner/case
+  images, PR B) and `product_saved_views` (PR B).
+- **Three new checklist steps**: inner GTIN (owed when an inner count is set), case GTIN (owed when a case count
+  is set), and the distributor sheet (food: the pack facts and FOB/SRP, each a value or N/A). **Every existing
+  food product now shows "Distributor sheet" outstanding** — that is the punch list, not a fault.
+- **Pre-existing conflict, named and left alone:** the merch route `GET /products/merch/gtin/suggest` (D-302)
+  suggests the next free GTIN. It is out of this pack's scope and is not used by anything here.
+- `verify:productsot` (60, fresh database; tests 1–14 of the pack). The control is `main` before this change:
+  there is no `/products/sot-settings` and the first assertion fails.

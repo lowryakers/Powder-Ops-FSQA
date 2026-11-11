@@ -18,7 +18,7 @@ import NewProductFlow from './NewProductFlow.jsx';
 import ProductStagePanel, { PackagingPos } from './ProductStagePanel.jsx';
 import PackagingSpecsPanel from './PackagingSpecsPanel.jsx';
 import { getParam } from '../../lib/deepLink.js';
-import { NOT_LAUNCHING, statusLabel } from '../../../shared/product-status.js';
+import { NOT_LAUNCHING, EDITABLE_STATUSES, normalizeStatus, statusLabel } from '../../../shared/product-status.js';
 import NfpBoard, { NfpForSku } from './NfpPanel.jsx';
 import NfpReviewQueue from './NfpReviewQueue.jsx';
 import { hexDigits, pmsValid, hexValid, colorIssues, isBlankSlot } from '../../../shared/product-colors.js';
@@ -195,15 +195,19 @@ const COLUMNS = [
 ];
 
 
-const STATUS_STYLE = {
+// The five statuses (R-0645) plus Won't launch. A stored older spelling
+// (`Draft`, `in_development`) is read through normalizeStatus, so it styles
+// and reads as its slug.
+const STATUS_STYLE_BY_SLUG = {
+  draft: 'bg-gray-100 text-gray-700',
+  ready: 'bg-blue-100 text-blue-800',
   active: 'bg-green-100 text-green-800',
-  in_development: 'bg-blue-100 text-blue-800',
-  concept: 'bg-gray-100 text-gray-700',
-  on_hold: 'bg-amber-100 text-amber-800',
+  hold: 'bg-amber-100 text-amber-800',
   discontinued: 'bg-red-100 text-red-800',
   not_launching: 'bg-gray-200 text-gray-600',
 };
-const pretty = (s) => (s === NOT_LAUNCHING ? statusLabel(s) : (s || '').replace(/_/g, ' '));
+const statusStyle = (s) => STATUS_STYLE_BY_SLUG[normalizeStatus(s)] || 'bg-gray-100 text-gray-700';
+const pretty = (s) => statusLabel(s);
 
 /**
  * The readiness steps, each shown ONCE, in the section of the drawer where
@@ -221,7 +225,7 @@ const pretty = (s) => (s === NOT_LAUNCHING ? statusLabel(s) : (s || '').replace(
  * done. A done step is one quiet line; only an open one carries its reason.
  */
 const STEP_SECTION = {
-  sku: 'identity', gtin: 'identity', formula: 'formula', nfp: 'panel',
+  sku: 'identity', gtin: 'identity', gtin_inner: 'identity', gtin_case: 'identity', distributor: 'channels', formula: 'formula', nfp: 'panel',
   spec: 'packaging', colors: 'packaging', artwork: 'packaging',
   shopify: 'channels', shiphero: 'channels', amazon: 'channels',
   supplier: 'merch',
@@ -697,7 +701,7 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
   const startEdit = () => {
     setForm({
       gtin: p.gtin || '', flavor: p.flavor || '', base_flavor: p.base_flavor || '', category: p.category || '',
-      pack: p.pack || 'PLG', status: p.status || 'active', legacy_sku: p.legacy_sku || '',
+      pack: p.pack || 'PLG', status: normalizeStatus(p.status) || 'draft', legacy_sku: p.legacy_sku || '',
       eyemark_color: p.eyemark_color || '', dieline_required: p.dieline_required ? '1' : '0',
       spec_id: p.spec_id || '',
       drive_url: p.drive_url || '', notes: p.notes || '',
@@ -748,11 +752,11 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
   const [openMap, setOpenMap] = useState({});
   const steps = p?.readiness?.steps || [];
   const owes = (keys) => keys.some((k) => { const x = steps.find((y) => y.key === k); return x && x.state !== 'done'; });
-  const SECTION_KEYS = {
-    identity: ['sku', 'gtin'], formula: ['formula'], panel: ['nfp'],
-    packaging: ['spec', 'colors', 'artwork'], channels: ['shopify', 'shiphero', 'amazon'], pos: [], siblings: [],
-    merch: ['supplier'],
-  };
+  // Derived from STEP_SECTION, so a step added there lands in its section
+  // without a second list to remember (R-0645 added three).
+  const SECTION_KEYS = Object.entries(STEP_SECTION).reduce((acc, [step, sec]) => {
+    (acc[sec] ||= []).push(step); return acc;
+  }, { pos: [], siblings: [] });
   const SECTION_ANCHOR = { identity: 'sku gtin', formula: 'formula fill', panel: 'panel', packaging: 'artwork', channels: 'shopify shiphero', pos: 'po' };
   const isOpen = (id) => {
     if (openMap[id] !== undefined) return openMap[id];
@@ -788,7 +792,7 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
               <h3 className="text-lg font-bold text-gray-900 leading-tight">{p?.flavor || sku}</h3>
               <div className="mt-0.5 flex flex-wrap items-center gap-2">
                 <code className="text-sm text-gray-600">{sku}</code>
-                {p && <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium capitalize ${STATUS_STYLE[p.status] || 'bg-gray-100 text-gray-700'}`} data-drawer-status>{pretty(p.status)}</span>}
+                {p && <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium capitalize ${statusStyle(p.status)}`} data-drawer-status>{pretty(p.status)}</span>}
               </div>
             </div>
             <div className="flex items-center gap-1 shrink-0">
@@ -876,8 +880,11 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
                         falling back to the first option. */}
                     <select value={form.status} onChange={set('status')} disabled={form.status === NOT_LAUNCHING}
                       className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50">
-                      {[...Object.keys(STATUS_STYLE).filter((s) => s !== NOT_LAUNCHING || form.status === NOT_LAUNCHING),
-                        ...(form.status && !STATUS_STYLE[form.status] ? [form.status] : [])]
+                      {/* Active is offered only to the configured approver, or
+                          when the product already is Active (R-0645). The
+                          server decides; the list does not offer what it refuses. */}
+                      {[...EDITABLE_STATUSES.filter((s) => s !== 'active' || p.sot_permissions?.can_activate || normalizeStatus(p.status) === 'active'),
+                        ...(form.status === NOT_LAUNCHING ? [NOT_LAUNCHING] : [])]
                         .map((s) => <option key={s} value={s}>{pretty(s)}</option>)}
                     </select>
                   </Field>
@@ -1320,7 +1327,7 @@ export default function ProductsPanel() {
         {sorted.map((p) => (
           <RecordCard key={p.sku} onClick={() => setOpen(p.sku)}
             title={<code>{p.sku}</code>} subtitle={p.flavor}
-            badge={<span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_STYLE[p.status] || 'bg-gray-100 text-gray-700'}`}>{pretty(p.status)}</span>}
+            badge={<span className={`text-xs px-2 py-0.5 rounded-full ${statusStyle(p.status)}`}>{pretty(p.status)}</span>}
             fields={[
               { label: 'New standard', value: p.preferred_sku
                 ? <code className="text-gray-500">{p.preferred_sku}</code>

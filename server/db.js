@@ -3337,7 +3337,9 @@ function runMigrations() {
       -- What joins a flavour across formats. "Double Chocolate" is five SKUs.
       base_flavor TEXT NOT NULL,
       flavor_code TEXT,
-      status TEXT NOT NULL DEFAULT 'active',
+      -- A new product starts as a Draft (R-0645, D-342). Only the configured
+      -- approver moves it to Active (server/product-sot-gate.js).
+      status TEXT NOT NULL DEFAULT 'draft',
       spec_id TEXT,
       eyemark_color TEXT,
       dieline_required INTEGER NOT NULL DEFAULT 1,
@@ -3870,6 +3872,64 @@ function runMigrations() {
   addColumnIfMissing('products', 'style_code', 'TEXT');
   addColumnIfMissing('products', 'color_code', 'TEXT');
   addColumnIfMissing('products', 'size_code', 'TEXT');
+  // THE PRODUCT RECORD AS SOURCE OF TRUTH (R-0645, D-342). One record per SKU:
+  // brand, the inner and case GS1 codes (copied from the GS1 Data Hub, NEVER
+  // generated), pack and shipping facts, prices and external item numbers.
+  // pack_count is NOT reused for these — it is a different, older field.
+  // The unit GTIN-14 is display only (`00` + the stored UPC-12): no column.
+  addColumnIfMissing('products', 'brand', 'TEXT');
+  addColumnIfMissing('products', 'gtin_inner', 'TEXT');
+  addColumnIfMissing('products', 'gtin_case', 'TEXT');
+  // Which GS1 case row was attached and why — written by the backfill or a
+  // person, never a generated GTIN.
+  addColumnIfMissing('products', 'gtin_case_source', 'TEXT');
+  addColumnIfMissing('products', 'unit_size', 'TEXT');
+  addColumnIfMissing('products', 'units_per_inner', 'INTEGER');
+  addColumnIfMissing('products', 'units_per_case', 'INTEGER');
+  addColumnIfMissing('products', 'inners_per_case', 'INTEGER');
+  addColumnIfMissing('products', 'case_l', 'REAL');
+  addColumnIfMissing('products', 'case_w', 'REAL');
+  addColumnIfMissing('products', 'case_h', 'REAL');
+  addColumnIfMissing('products', 'case_cube', 'REAL');
+  addColumnIfMissing('products', 'case_weight', 'REAL');
+  addColumnIfMissing('products', 'ti', 'INTEGER');
+  addColumnIfMissing('products', 'hi', 'INTEGER');
+  addColumnIfMissing('products', 'pallet_qty', 'INTEGER');
+  addColumnIfMissing('products', 'shelf_life_months_commercial', 'INTEGER');
+  addColumnIfMissing('products', 'price_fob_case', 'REAL');
+  addColumnIfMissing('products', 'price_fob_unit', 'REAL');
+  addColumnIfMissing('products', 'price_wholesale_case', 'REAL');
+  addColumnIfMissing('products', 'price_wholesale_unit', 'REAL');
+  addColumnIfMissing('products', 'price_srp', 'REAL');
+  addColumnIfMissing('products', 'distributor_item_no', 'TEXT');
+  addColumnIfMissing('products', 'wholesale_item_no', 'TEXT');
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_products_gtin_inner ON products(gtin_inner);
+    CREATE INDEX IF NOT EXISTS idx_products_gtin_case ON products(gtin_case);
+    CREATE INDEX IF NOT EXISTS idx_products_brand ON products(brand);
+    -- Barcode images for the inner and case levels. The UNIT image stays in the
+    -- products.barcode_* columns; this is the same doctrine one level up: the
+    -- image encodes ONE number (barcode_gtin) and reads stale when it moves.
+    CREATE TABLE IF NOT EXISTS product_barcodes (
+      sku TEXT NOT NULL,
+      level TEXT NOT NULL CHECK (level IN ('inner','case')),
+      storage_key TEXT NOT NULL,
+      barcode_gtin TEXT NOT NULL,
+      filename TEXT, content_type TEXT, size INTEGER,
+      uploaded_by TEXT, uploaded_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (sku, level)
+    );
+    -- A named filter + column set on the catalogue, reopenable by its owner or,
+    -- when shared, by everyone who can open Products.
+    CREATE TABLE IF NOT EXISTS product_saved_views (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      filters TEXT NOT NULL DEFAULT '{}',
+      columns TEXT NOT NULL DEFAULT '[]',
+      shared INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );`);
   db.prepare("UPDATE products SET product_type = 'food' WHERE product_type IS NULL").run();
   db.exec('CREATE INDEX IF NOT EXISTS idx_products_style ON products(style_code)');
   db.exec(`CREATE TABLE IF NOT EXISTS merch_styles (

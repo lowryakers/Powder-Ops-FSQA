@@ -39,7 +39,11 @@ import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { storageEnabled, putStream, presignGet, deleteObject, getObjectBuffer } from '../storage.js';
 import fs from 'fs';
 import { extractInvoiceText } from '../invoice-text.js';
-import { NOT_LAUNCHING, statusLabel } from '../../shared/product-status.js';
+import { NOT_LAUNCHING, DRAFT, EDITABLE_STATUSES, STATUS_LABEL, normalizeStatus, isActiveStatus, statusLabel } from '../../shared/product-status.js';
+import { SOT_COLUMNS, ITEM_NO_FIELDS, LEVEL_GTIN_FIELDS, INTEGER_FIELDS, DECIMAL_FIELDS, FIELD_LABEL as SOT_LABEL, BRAND_DEFAULT, SOT_SETTINGS, SOT_SETTING_LABEL } from '../../shared/product-sot-config.js';
+import { checkLevelGtin } from '../../shared/level-gtin.js';
+import { writeGate, fieldGate, movesToActive, sotPeople, sotPermissions } from '../product-sot-gate.js';
+import { isBotAccount } from '../trainees.js';
 
 const barcodeUpload = mediaUpload({ files: 1 }).array('files', 1);
 
@@ -651,7 +655,7 @@ router.post('/flavor-codes', (req, res) => {
  * The bottling line, as rows in the catalogue rather than a spreadsheet. One
  * draft per protein flavour that already has an agreed code.
  *
- * DRAFTS, NOT PRODUCTS. `status = 'Draft'` and no GTIN: the GS1 numbers are
+ * DRAFTS, NOT PRODUCTS. `status = 'draft'` and no GTIN: the GS1 numbers are
  * being allocated by hand and a barcode invented here would be a barcode
  * printed. Readiness already reports "no GS1 barcode", so each draft arrives
  * carrying its own punch list.
@@ -716,7 +720,7 @@ router.post('/bottle-drafts', (req, res) => {
     (sku, gtin, gtin_valid, category, protein_type, pack, flavor, base_flavor, flavor_code,
      status, spec_id, dieline_required, notes, created_by)
     VALUES (@sku, NULL, 0, @category, @protein_type, @pack, @flavor, @base_flavor, @flavor_code,
-     'Draft', 'SPEC-BOTTLE', 1, @notes, @created_by)`);
+     'draft', 'SPEC-BOTTLE', 1, @notes, @created_by)`);
   const by = req.user?.name || null;
   const tx = db.transaction(() => {
     for (const p of plan) {
@@ -831,7 +835,7 @@ router.get('/drafts/realign/preview', (req, res) => {
  *
  * A new table keyed on the SKU goes in this list, or a rename loses it.
  */
-const SKU_CHILD_TABLES = ['product_colors', 'artwork_versions', 'artwork_snapshots', 'nfp_versions', 'product_completeness_blocks', 'packaging_po_records'];
+const SKU_CHILD_TABLES = ['product_colors', 'artwork_versions', 'artwork_snapshots', 'nfp_versions', 'product_completeness_blocks', 'packaging_po_records', 'product_barcodes'];
 
 function moveSkuChildren(db, from, to) {
   for (const t of SKU_CHILD_TABLES) {
@@ -939,7 +943,7 @@ router.delete('/flavor-codes/:id', (req, res) => {
 /** The fields a fill-down may set. Never an identifier — filling a GTIN or a seller SKU down ten rows is ten collisions. */
 // A function, not a constant: WRITABLE is declared further down the file and
 // a top-level read here is a temporal-dead-zone error at boot.
-const bulkFields = () => WRITABLE.filter((c) => !['gtin', 'legacy_sku', 'shopify_sku', 'shopify_variant_id', 'amazon_sku', 'amazon_asin'].includes(c));
+const bulkFields = () => WRITABLE.filter((c) => !['gtin', 'legacy_sku', 'shopify_sku', 'shopify_variant_id', 'amazon_sku', 'amazon_asin', ...LEVEL_GTIN_FIELDS, ...ITEM_NO_FIELDS].includes(c));
 
 router.post('/bulk-edit', (req, res) => {
   if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalog.' });
@@ -958,8 +962,8 @@ router.post('/bulk-edit', (req, res) => {
   // not the seventh is a screen that lies about what it did.
   const plans = [];
   for (const existing of rows) {
-    const built = buildPatch(db, existing, { [field]: value ?? '' });
-    if (built.error) return res.status(built.status).json({ error: `${existing.sku}: ${built.error}`, field: built.field, expected: built.expected });
+    const built = buildPatch(db, existing, { [field]: value ?? '' }, { req });
+    if (built.error) return res.status(built.status).json({ error: `${existing.sku}: ${built.error}`, code: built.code, field: built.field, expected: built.expected, setting: built.setting, open: built.open });
     plans.push([existing, built.patch]);
   }
   db.transaction(() => {
@@ -999,6 +1003,10 @@ const IMPORT_COLUMNS = [
   ['notes', ['notes']],
   ['pms', ['pms', 'pms spot colors', 'pms spot colours']],
   ['hex', ['hex', 'hex spot colors', 'hex spot colours']],
+  // R-0645: the source-of-truth columns import under their own names. Prices,
+  // item numbers and the inner/case GTINs go through the same gates as the
+  // drawer (buildPatch), so a file is never a way round them.
+  ...SOT_COLUMNS.filter((c) => c !== 'gtin_case_source').map((c) => [c, [c, String(SOT_LABEL[c] || c).toLowerCase()]]),
 ];
 /**
  * THE PACKAGING SPEC'S COLUMNS ARE RECOGNISED AND NOT WRITTEN (D-133).
@@ -1044,7 +1052,7 @@ const splitSlots = (v) => String(v || '').split('|').map((x) => x.trim()).filter
  * cell the field rules refuse. Writes nothing. Preview and commit both call it,
  * so what is on the screen is what lands.
  */
-function planImport(db, csvText) {
+function planImport(db, csvText, ctx = {}) {
   const grid = parseDelimited(String(csvText || '')).filter((r) => r.some((c) => String(c ?? '').trim() !== ''));
   if (!grid.length) return { error: 'The file is empty.' };
   const headers = grid[0].map((h) => String(h ?? '').trim());
@@ -1115,7 +1123,7 @@ function planImport(db, csvText) {
     }
     let patch = {};
     if (Object.keys(body).length) {
-      const built = buildPatch(db, existing, body);
+      const built = buildPatch(db, existing, body, { req: ctx.req, audit: ctx.audit });
       if (built.error) changes.push({ field: built.field || 'row', from: '', to: '', error: built.error });
       else patch = built.patch;
     }
@@ -1137,7 +1145,7 @@ const publicPlan = (plan) => ({ ...plan, rows: plan.rows.map(({ _existing, _patc
 
 router.post('/import/preview', (req, res) => {
   if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalog.' });
-  const plan = planImport(getDb(), req.body?.csv);
+  const plan = planImport(getDb(), req.body?.csv, { req, audit: false });
   if (plan.error) return res.status(400).json({ error: plan.error });
   res.json(publicPlan(plan));
 });
@@ -1150,7 +1158,7 @@ router.post('/import/preview', (req, res) => {
 router.post('/import/commit', (req, res) => {
   if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalog.' });
   const db = getDb();
-  const plan = planImport(db, req.body?.csv);
+  const plan = planImport(db, req.body?.csv, { req });
   if (plan.error) return res.status(400).json({ error: plan.error });
   if (plan.counts.errors) {
     return res.status(400).json({ error: `${plan.counts.errors} cell${plan.counts.errors === 1 ? '' : 's'} refused — fix the file and preview again. Nothing was written.`, ...publicPlan(plan) });
@@ -1169,6 +1177,59 @@ router.post('/import/commit', (req, res) => {
   })();
   logAudit(req.user, 'product_import', 'product', 'csv', { skus: applied, changes: plan.counts.changes, unknown_skus: plan.unknown_skus }, null, null, `${applied} SKUs from a CSV`);
   res.json({ applied, ...publicPlan(plan) });
+});
+
+// ── Who moves a product to Active, who edits prices (R-0645, D-342) ──────────
+// User ids in app_settings, chosen here by an admin — never a name in source.
+// Declared before `/:sku`.
+router.get('/sot-settings', (req, res) => {
+  const db = getDb();
+  const people = sotPeople(db);
+  const named = (id) => (id ? db.prepare('SELECT id, name, role, is_active FROM users WHERE id = ?').get(id) || { id, name: null, missing: true } : null);
+  const raw = Object.fromEntries(Object.keys(SOT_SETTINGS).map((k) => [k, (() => {
+    try { return db.prepare('SELECT value FROM app_settings WHERE key = ?').get(SOT_SETTINGS[k])?.value || null; } catch { return null; }
+  })()]));
+  res.json({
+    settings: Object.keys(SOT_SETTINGS).map((k) => ({
+      key: k, setting: SOT_SETTINGS[k], label: SOT_SETTING_LABEL[k],
+      user: named(raw[k]),
+      // The item-number editor falls back to the price editor when unset.
+      effective: named(people[k]),
+      falls_back: k === 'item_no_editor' && !raw[k] && !!people[k],
+    })),
+    permissions: sotPermissions(db, req),
+    can_edit: req.user?.role === 'admin' && !req.user?.via_token,
+  });
+});
+
+router.put('/sot-settings', (req, res) => {
+  if (req.user?.role !== 'admin' || req.user?.via_token) return res.status(403).json({ error: 'Only an admin, in their own session, chooses these people.' });
+  const db = getDb();
+  const b = req.body || {};
+  const changes = [];
+  for (const k of Object.keys(SOT_SETTINGS)) {
+    if (b[k] === undefined) continue;
+    const id = b[k] ? String(b[k]) : null;
+    if (id) {
+      const u = db.prepare('SELECT id, name, is_active, is_external FROM users WHERE id = ?').get(id);
+      if (!u || !u.is_active) return res.status(400).json({ field: k, error: 'Pick an active account.' });
+      if (u.is_external) return res.status(400).json({ field: k, error: `${u.name} is a guest account and cannot hold this.` });
+      if (isBotAccount(db, u)) return res.status(400).json({ field: k, error: `${u.name} is a bot account. A person holds this.` });
+    }
+    const before = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(SOT_SETTINGS[k])?.value || null;
+    if (before === id) continue;
+    changes.push({ key: k, setting: SOT_SETTINGS[k], before, after: id });
+  }
+  if (!changes.length) return res.json({ changed: 0 });
+  db.transaction(() => {
+    for (const c of changes) {
+      if (c.after) db.prepare("INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(c.setting, c.after);
+      else db.prepare('DELETE FROM app_settings WHERE key = ?').run(c.setting);
+      logAudit(req.user, 'product_sot_setting_changed', 'app_setting', c.setting, { label: SOT_SETTING_LABEL[c.key] },
+        { user_id: c.before }, { user_id: c.after }, SOT_SETTING_LABEL[c.key]);
+    }
+  })();
+  res.json({ changed: changes.length });
 });
 
 router.get('/completeness', (_req, res) => {
@@ -1490,6 +1551,8 @@ router.get('/:sku', (req, res) => {
   // The recipe and the supplier documents it reaches (D-340). Read-only; an
   // empty rollup when no recipe is on file.
   product.recipe = recipeRollup(db, row.sku);
+  // What this person may do with the gated fields (R-0645). The drawer renders it.
+  product.sot_permissions = sotPermissions(db, req);
   product.packaging_pos = db.prepare(`SELECT r.*, a.version AS artwork_version FROM packaging_po_records r
     LEFT JOIN artwork_versions a ON a.id = r.artwork_version_id WHERE r.sku = ? ORDER BY r.recorded_at DESC LIMIT 50`).all(row.sku);
   res.json(product);
@@ -1510,6 +1573,13 @@ const WRITABLE = [
   // the per-unit fill came from. No integration writes these; a bot does,
   // through this route, and a Keychain sync has somewhere to stamp.
   'family', 'formula_source_system', 'formula_fill_per_unit_g', 'formula_synced_at',
+  // R-0645 (D-342): the brand, the pack and shipping facts, and three gated
+  // groups — prices and item numbers (the configured editor only) and the
+  // inner/case GTINs (a person pasting a GS1 code; never a token). The gates
+  // are in server/product-sot-gate.js and run inside buildPatch, so the PUT,
+  // the fill-down and the CSV import are all behind them. `gtin_case_source`
+  // is NOT here: the backfill and a person's paste set it.
+  ...SOT_COLUMNS.filter((c) => c !== 'gtin_case_source'),
 ];
 // One list with a supplier material's part-number systems (D-338).
 const FORMULA_SOURCE_SYSTEMS = SOURCE_SYSTEMS;
@@ -1533,7 +1603,7 @@ const ARTWORK_OWNED = ['artwork_status', 'artwork_version'];
  *
  * Returns `{ patch }` or `{ status, error }`. Nothing is written here.
  */
-function buildPatch(db, existing, b) {
+function buildPatch(db, existing, b, ctx = {}) {
   if (NFP_OWNED.some((c) => b[c] !== undefined)) {
     return { status: 400, code: 'NFP_OWNED', error: 'The NFP version and its approval date are set by approving a panel, not by typing them. Open the product\'s NFP panels.' };
   }
@@ -1564,6 +1634,19 @@ function buildPatch(db, existing, b) {
   const patch = {};
   for (const c of WRITABLE) if (b[c] !== undefined) patch[c] = b[c] === '' ? null : b[c];
 
+  // FIVE STATUSES (R-0645). An old spelling a client still sends lands on its
+  // slug; anything else is refused by name. Active is a gate, checked below.
+  if (patch.status !== undefined) {
+    if (patch.status === null) return { status: 400, field: 'status', error: 'A product always has a status.' };
+    const st = normalizeStatus(patch.status);
+    if (!EDITABLE_STATUSES.includes(st)) {
+      return { status: 400, code: 'STATUS_UNKNOWN', field: 'status', error: `Status is one of ${EDITABLE_STATUSES.map((x) => STATUS_LABEL[x]).join(', ')}.` };
+    }
+    if (st === normalizeStatus(existing?.status)) delete patch.status; else patch.status = st;
+  }
+  const sot = sotFieldChecks(db, existing?.sku, patch, patch.gtin !== undefined ? patch.gtin : existing?.gtin);
+  if (sot) return sot;
+
   // VALIDATED AT THE FIELD, REFUSED ON SAVE (shared/product-fields.js). The
   // refusal names the expected format, so "Yes" in the formula ref comes back
   // as "F- followed by five digits" rather than as a saved lie.
@@ -1580,7 +1663,7 @@ function buildPatch(db, existing, b) {
   }
   if (patch.gtin !== undefined) {
     patch.gtin_valid = gtinValid(patch.gtin) ? 1 : 0;
-    const clash = patch.gtin && db.prepare('SELECT sku FROM products WHERE gtin = ? AND sku != ?').get(patch.gtin, existing.sku);
+    const clash = patch.gtin && db.prepare('SELECT sku FROM products WHERE (gtin = ? OR gtin_inner = ? OR gtin_case = ?) AND sku != ?').get(patch.gtin, patch.gtin, patch.gtin, existing.sku);
     if (clash) return { status: 409, error: `${patch.gtin} is already on ${clash.sku}.` };
     // A reserved number is spoken for (D-302): it cannot be typed onto another product.
     const held = patch.gtin && gtinReservation(db, patch.gtin);
@@ -1609,6 +1692,26 @@ function buildPatch(db, existing, b) {
   if (patch.amazon_channel === 'not_sold' && existing.amazon_listed_at) {
     patch.amazon_listed_at = null; patch.amazon_listed_by = null;
   }
+  // WHO MAY WRITE THE GATED FIELDS (server/product-sot-gate.js): Active only
+  // by the configured approver with the checklist done; prices and item
+  // numbers only by the configured editor; GTINs never by a token or bot.
+  const gate = writeGate(db, ctx.req, existing, patch, {
+    readinessAfter: (row) => {
+      const live = db.prepare(`${SELECT} WHERE p.sku = ?`).get(existing.sku) || existing;
+      return hydrate([{ ...live, ...row, ...patch }], db)[0]?.readiness;
+    },
+  });
+  if (gate) {
+    if (gate.field === 'status' && ctx.audit !== false) {
+      logAudit(ctx.req?.user || 'system', 'product_status_activation_refused', 'product', existing.sku,
+        { code: gate.code, open: gate.open || null, via_token: !!ctx.req?.user?.via_token }, null, null, `${existing.sku} — Active refused`);
+    }
+    return gate;
+  }
+  // A case GTIN a person pasted says so; the GS1 backfill stamps its own source.
+  if (patch.gtin_case !== undefined && String(patch.gtin_case ?? '') !== String(existing?.gtin_case ?? '')) {
+    patch.gtin_case_source = patch.gtin_case ? 'manual' : null;
+  }
   // A VALUE WRITTEN INTO A FIELD CLEARS ITS "NOT APPLICABLE". The two cannot
   // both be true, and the value is the later statement.
   const na = naOf(existing);
@@ -1618,6 +1721,47 @@ function buildPatch(db, existing, b) {
     patch.na_fields = Object.keys(na).length ? JSON.stringify(na) : null;
   }
   return { patch };
+}
+
+/**
+ * The source-of-truth columns' own rules (R-0645). Mutates `patch` to the
+ * stored form and returns a refusal, or null. Whole numbers and decimals are
+ * never negative; the brand and unit size are trimmed text; an inner or case
+ * GTIN is CHECKED — never built — and may not be on another product at any
+ * level.
+ */
+function sotFieldChecks(db, sku, patch, unitGtin) {
+  for (const c of [...INTEGER_FIELDS, ...DECIMAL_FIELDS]) {
+    if (patch[c] === undefined || patch[c] === null) continue;
+    const raw = String(patch[c]).trim().replace(/^\$/, '').replace(/,/g, '');
+    const n = Number(raw);
+    const whole = INTEGER_FIELDS.includes(c);
+    if (raw === '' || !Number.isFinite(n) || n < 0 || (whole && !Number.isInteger(n))) {
+      return { status: 400, code: 'FIELD_FORMAT', field: c, expected: whole ? 'a whole number, 0 or more' : 'a number, 0 or more',
+        error: `${SOT_LABEL[c] || c} "${String(patch[c]).trim()}" is not ${whole ? 'a whole number' : 'a number'} of 0 or more.` };
+    }
+    patch[c] = n;
+  }
+  for (const c of ['brand', 'unit_size', ...ITEM_NO_FIELDS]) {
+    if (patch[c] === undefined || patch[c] === null) continue;
+    const t = String(patch[c]).trim();
+    patch[c] = t || null;
+  }
+  for (const c of LEVEL_GTIN_FIELDS) {
+    if (patch[c] === undefined) continue;
+    const r = checkLevelGtin(c === 'gtin_inner' ? 'inner' : 'case', patch[c], { unit: unitGtin });
+    if (!r.ok) return { status: 400, code: 'LEVEL_GTIN', field: c, error: r.error, expected: r.expected };
+    patch[c] = r.value;
+    if (r.value) {
+      const clash = db.prepare('SELECT sku FROM products WHERE (gtin = ? OR gtin_inner = ? OR gtin_case = ?) AND sku != ?')
+        .get(r.value, r.value, r.value, sku || '');
+      if (clash) return { status: 409, code: 'GTIN_IN_USE', field: c, error: `${r.value} is already on ${clash.sku}.` };
+    }
+  }
+  if (patch.gtin_inner && patch.gtin_case && patch.gtin_inner === patch.gtin_case) {
+    return { status: 400, code: 'LEVEL_GTIN', field: 'gtin_case', error: 'The inner and the case cannot carry the same GTIN.' };
+  }
+  return null;
 }
 
 /** Columns a merch variant takes from its style or the GTIN route, never from an edit. */
@@ -1643,6 +1787,10 @@ function applyPatch(db, existing, patch, user, detail = {}) {
   // the old one and comes back onto the punch list saying so.
   stampReadiness(db, existing.sku, existing, cols, user?.name);
   logAudit(user, 'product_updated', 'product', existing.sku, { changed: cols, ...detail }, null, null, existing.sku);
+  if (movesToActive(existing, patch)) {
+    logAudit(user, 'product_status_activated', 'product', existing.sku,
+      { from: normalizeStatus(existing.status), to: 'active', ...detail }, { status: existing.status }, { status: 'active' }, `${existing.sku} — Active`);
+  }
   return db.prepare('SELECT * FROM products WHERE sku = ?').get(existing.sku);
 }
 
@@ -1745,14 +1893,35 @@ router.post('/', (req, res) => {
   }
   const gtin = storedGtin(b.gtin);
   if (gtin && !gtinValid(gtin)) return res.status(400).json({ error: `${gtin} fails its GS1 check digit.` });
-  if (gtin && db.prepare('SELECT sku FROM products WHERE gtin = ?').get(gtin)) {
+  // R-0645: a new product starts Draft (or Ready / Hold); Active is reached by
+  // the configured approver once its checklist is done, never at creation.
+  if (b.status !== undefined && b.status !== null && b.status !== '') {
+    const st = normalizeStatus(b.status);
+    if (st === 'active') return res.status(400).json({ code: 'ACTIVE_ON_CREATE', field: 'status', error: 'A new product starts as Draft. Move it to Active once its checklist is done.' });
+    if (!EDITABLE_STATUSES.includes(st)) return res.status(400).json({ code: 'STATUS_UNKNOWN', field: 'status', error: `Status is one of ${EDITABLE_STATUSES.map((x) => STATUS_LABEL[x]).join(', ')}.` });
+    b.status = st;
+  } else {
+    b.status = DRAFT;
+  }
+  if (b.brand === undefined || b.brand === null || String(b.brand).trim() === '') b.brand = BRAND_DEFAULT;
+  {
+    const sotPatch = {};
+    for (const c of SOT_COLUMNS) if (b[c] !== undefined && b[c] !== '' && c !== 'gtin_case_source') sotPatch[c] = b[c];
+    const bad = sotFieldChecks(db, sku, sotPatch, gtin);
+    if (bad) return res.status(bad.status).json(bad);
+    const gate = writeGate(db, req, {}, { ...sotPatch, ...(gtin ? { gtin } : {}) });
+    if (gate) return res.status(gate.status).json(gate);
+    Object.assign(b, sotPatch);
+    if (sotPatch.gtin_case) b.gtin_case_source = 'manual';
+  }
+  if (gtin && db.prepare('SELECT sku FROM products WHERE gtin = ? OR gtin_inner = ? OR gtin_case = ?').get(gtin, gtin, gtin)) {
     return res.status(409).json({ error: `${gtin} is already on another product.` });
   }
   if (gtin && gtinReservation(db, gtin)) {
     return res.status(409).json({ code: 'GTIN_RESERVED', error: `${gtin} is reserved. Release the reservation first.` });
   }
 
-  const cols = ['sku', 'gtin', 'gtin_valid', 'created_by', ...WRITABLE.filter((c) => c !== 'gtin')];
+  const cols = ['sku', 'gtin', 'gtin_valid', 'created_by', 'gtin_case_source', ...WRITABLE.filter((c) => c !== 'gtin')];
   const vals = cols.map((c) => {
     if (c === 'sku') return sku;
     if (c === 'gtin') return gtin;
@@ -1776,8 +1945,8 @@ router.put('/:sku', (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM products WHERE sku = ?').get(req.params.sku);
   if (!existing) return res.status(404).json({ error: 'No such SKU' });
-  const built = buildPatch(db, existing, req.body || {});
-  if (built.error) return res.status(built.status).json({ error: built.error, code: built.code, field: built.field, expected: built.expected });
+  const built = buildPatch(db, existing, req.body || {}, { req });
+  if (built.error) return res.status(built.status).json({ error: built.error, code: built.code, field: built.field, expected: built.expected, setting: built.setting, open: built.open });
   if (!Object.keys(built.patch).length) return res.json(existing);
   applyPatch(db, existing, built.patch, req.user);
   res.json(hydrate([db.prepare(`${SELECT} WHERE p.sku = ?`).get(existing.sku)], db)[0]);
@@ -1797,7 +1966,7 @@ router.put('/:sku', (req, res) => {
  */
 export function deleteRefusals(db, p) {
   const out = [];
-  if (p.status === 'active') out.push('it is Active — mark it Won\'t launch first');
+  if (isActiveStatus(p.status)) out.push('it is Active — mark it Won\'t launch first');
   if (p.gtin) out.push(`it has a GS1 number (${p.gtin})`);
   if (p.barcode_key) out.push('it has a barcode image');
   if (p.legacy_sku) out.push(`it was renamed from ${p.legacy_sku}, which shipped`);
@@ -1826,7 +1995,7 @@ router.post('/:sku/not-launching', (req, res) => {
     if (p.status !== NOT_LAUNCHING) return res.status(409).json({ error: "This SKU is not marked Won't launch." });
     // Back to the status it held when it was hidden.
     const prev = p.not_launching_from;
-    const to = prev && prev !== NOT_LAUNCHING ? prev : (p.product_type === 'merch' ? 'Draft' : 'in_development');
+    const to = prev && prev !== NOT_LAUNCHING ? normalizeStatus(prev) : DRAFT;
     db.prepare('UPDATE products SET status = ?, not_launching_reason = NULL, not_launching_by = NULL, not_launching_at = NULL, not_launching_from = NULL WHERE sku = ?').run(to, p.sku);
     logAudit(req.user, 'not_launching_undone', 'product', p.sku, { status: to }, { status: p.status, reason: p.not_launching_reason }, { status: to }, `${p.sku} — back as ${statusLabel(to)}`);
   } else {
@@ -1884,6 +2053,10 @@ router.post('/:sku/na', (req, res) => {
   const existing = db.prepare('SELECT * FROM products WHERE sku = ?').get(req.params.sku);
   if (!existing) return res.status(404).json({ error: 'No such SKU' });
   const field = String(req.body?.field || '');
+  // Marking a price, an item number or a GTIN "not applicable" is a statement
+  // about that field, so it is behind the same gate as writing it.
+  const naGate = fieldGate(db, req, field);
+  if (naGate) return res.status(naGate.status).json(naGate);
   if (!NA_FIELDS.includes(field)) {
     return res.status(400).json({ error: `${field || 'That field'} cannot be marked not applicable. It can be: ${NA_FIELDS.join(', ')}.`, na_fields: NA_FIELDS });
   }

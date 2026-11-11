@@ -1,5 +1,5 @@
 import { useAuth } from '../../hooks/useAuth';
-import { QrCode, Users, Sliders, Database, Sparkles, Link2, Plug, Bot, KeyRound, CalendarHeart } from 'lucide-react';
+import { QrCode, Users, Sliders, Database, Sparkles, Link2, Plug, Bot, KeyRound, CalendarHeart, Package } from 'lucide-react';
 import SettingsShell from '../settings/SettingsShell.jsx';
 import UsersSection from '../settings/UsersSection.jsx';
 import DataBackupSection from '../settings/DataBackupSection.jsx';
@@ -11,6 +11,7 @@ import CleanupReviewPanel from '../settings/CleanupReviewPanel.jsx';
 import IntegrationsSection from '../settings/IntegrationsSection.jsx';
 import NotificationsSection from '../settings/NotificationsSection.jsx';
 import PlantHolidaysSection from '../settings/PlantHolidaysSection.jsx';
+import ProductPeopleSection from '../settings/ProductPeopleSection.jsx';
 
 // Settings is a REGISTRY, not a page.
 //
@@ -79,6 +80,15 @@ const SECTIONS = [
         icon: CalendarHeart,
         visible: isAdmin,
         Component: PlantHolidaysSection,
+      },
+      {
+        id: 'products',
+        label: 'Products',
+        description: 'Who moves a product to Active, and who edits prices and item numbers',
+        keywords: 'products active approver price editor srp fob wholesale distributor item number source of truth',
+        icon: Package,
+        visible: isAdmin,
+        Component: ProductPeopleSection,
       },
       {
         id: 'log-structure',

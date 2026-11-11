@@ -18,6 +18,12 @@ const full = () => ({
   shopify_listed_at: '2026-09-01T00:00:00.000Z',
   shiphero_synced_at: '2026-09-01T00:00:00.000Z',
   readiness_basis: null,
+  // R-0645: the distributor sheet's facts (the `distributor` step).
+  unit_size: '1.18 OZ', units_per_case: 72, case_l: 16, case_w: 10, case_h: 7, case_weight: 7.2,
+  ti: 8, hi: 4, pallet_qty: 32, shelf_life_months_commercial: 24,
+  price_fob_case: 120.24, price_fob_unit: 1.67, price_srp: 3.99,
+  // A case count makes the case GTIN owed; here it is marked not applicable.
+  na_fields: JSON.stringify({ gtin_case: { by: 'fixture', at: '2026-11-10' } }),
 });
 
 console.log('\n── the steps ──');
@@ -25,7 +31,10 @@ let r = readinessOf(full());
 t('everything satisfied reads complete', r.done === r.total, `${r.done}/${r.total}`);
 t('nothing is outstanding', r.missing.length === 0);
 t('the step order is stable', r.steps.map((s) => s.key).join(',')
-  === 'sku,gtin,spec,formula,nfp,artwork,colors,shopify,shiphero', r.steps.map((s) => s.key).join(','));
+  === 'sku,gtin,distributor,spec,formula,nfp,artwork,colors,shopify,shiphero', r.steps.map((s) => s.key).join(','));
+t('a case count with no case GTIN (and no N/A) owes the case step', step(readinessOf({ ...full(), na_fields: null }), 'gtin_case')?.state === 'todo');
+t('no case count, no case step', !step(readinessOf({ ...full(), units_per_case: null, na_fields: null }), 'gtin_case'));
+t('the distributor step names a missing price', /SRP/.test(step(readinessOf({ ...full(), price_srp: null }), 'distributor')?.reason || ''));
 t('three steps are ticked by a person', r.steps.filter((s) => s.tick).map((s) => s.key).join(',') === 'formula,shopify,shiphero');
 // The screenshot's own row: a numeric Shopify variant id is not a SKU.
 t('a bare Shopify variant id is not a SKU', step(readinessOf({ ...full(), sku: '42224277651538' }), 'sku').state === 'todo');

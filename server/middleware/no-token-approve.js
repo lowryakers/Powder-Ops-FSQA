@@ -1,5 +1,6 @@
 import { logAudit, getDb } from '../db.js';
 import { isBotAccount } from '../trainees.js';
+import { isActiveStatus } from '../../shared/product-status.js';
 
 // NOTHING A BOT HOLDS CAN APPROVE, SIGN, RELEASE OR SETTLE (D-161).
 //
@@ -85,6 +86,16 @@ export const APPROVE_ROUTES = Object.freeze([
   // be drawn. A bot may suggest or reserve a number; only a person assigns it.
   { method: 'POST', re: /^\/products\/merch\/variants\/[^/]+\/gtin$/, label: 'POST /api/products/merch/variants/:sku/gtin — a person assigns a GTIN' },
   { method: 'POST', re: /^\/products\/merch\/colors\/[^/]+\/confirm$/, label: 'POST /api/products/merch/colors/:code/confirm — a person confirms a colour' },
+  // R-0645 (D-342): moving a product to Active is the one commercial gate, and
+  // only the configured approver makes it, in a person's own session. A token
+  // or a bot account is refused here, before the handler, even on that
+  // person's account; the handler checks it again (server/product-sot-gate.js).
+  { method: 'PUT', re: /^\/products\/[^/]+$/, label: 'PUT /api/products/:sku moving the status to Active',
+    when: (req) => isActiveStatus(req.body?.status) },
+  { method: 'POST', re: /^\/products\/?$/, label: 'POST /api/products created as Active',
+    when: (req) => isActiveStatus(req.body?.status) },
+  { method: 'POST', re: /^\/products\/bulk-edit$/, label: 'POST /api/products/bulk-edit setting status to Active',
+    when: (req) => req.body?.field === 'status' && isActiveStatus(req.body?.value) },
   // Who may sign the crisis drill's Management review (D-266) is a person's decision, never a token's.
   { method: 'PUT', re: /^\/safety\/drill-signers$/, label: 'PUT /api/safety/drill-signers — who signs the crisis drill for Management' },
   // D-313: "Apply to products" writes live specifications from an approved
