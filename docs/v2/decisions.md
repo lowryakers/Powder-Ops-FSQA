@@ -10773,3 +10773,26 @@ A-20261111-004 step 1, PR B.
   
   BOT_ROUTES, `docs/bot-api.md` and the MCP tools list them too. **A disposition and a banned-list check are explicit `APPROVE_ROUTES`** (`approve_requires_human_session`), since neither path names an approve word. Every DELETE stays `token_denied`. Gate modes, questionnaire send and revoke, imports and name links are not on the list. `can_edit` on `GET /:id` is true for a token only when the token holds the grant. The grant is ticked in Settings by an admin; this change ticks nothing.
 - `verify:suppliertoken` (51).
+
+## D-340 — A product reads its supplier documents through its recipe; a customer pack is a read (11 Nov 2026)
+
+A-20261111-004 step 1, PR C.
+
+- **`product_recipe_lines` (sku, part_source_system, part_number, description, qty, uom, sort)** is the compliance recipe. **It is not `procurement_boms`**, which is the Procurement planning seed and is keyed by product_number. Lines are retired, never deleted.
+- **`GET /products/:sku` carries `recipe`, a rollup that is only read:**
+  - each line;
+  - every in-use ingredient carrying that (system, part number), from every supplier (a manufacturer and a distributor both show);
+  - that ingredient's documents;
+  - each supplier's supplier-level documents (GMP certificate, letter of guarantee, COI, W-9 …), labelled as such.
+  
+  Each document appears once, by file id, with a status: current, expiring (within 30 days), expired or no date. A COA shows its lot number. **No document is copied onto the product.** The drawer's "Supplier documents" section has no upload, and it is hidden when the product has no recipe (so a merch item without a recipe never shows it).
+- **`GET /products/customer-pack?skus=&preset=whole-foods-natural-flavor&format=zip|xlsx|csv|json`** builds the v2 gap-list sheet. The zip also holds copies of the files the sheet names. **It writes nothing.** GRAS, non-GMO and origin have no document kind, so those columns list files whose name says so.
+- **`server/tabular.js` gains `writeXlsx`** (adm-zip, inline strings). No new dependency.
+- **`scripts/recipe-import.mjs`** reads an MRPEasy BOM export.
+  - A dry run is the default. `--apply` backs up first, audits each product and is idempotent.
+  - A product is matched by SKU, then legacy SKU, then a real `mrp_formula_id`. "Yes" is reported, never used.
+  - A differing line is a conflict and is not overwritten. A line missing from the export is reported and kept.
+  - `formula_source_system` is filled only when blank. `mrp_formula_id` is never touched.
+  - **The 10/21 export was not available when this was written.** The column names are read from a list of common spellings, and an unrecognised column is reported. Run the dry run on that export before applying.
+- master.csv is unchanged (asserted).
+- `verify:productrollup` (31). `verify:mmrgate` already times out on its Completeness browser step on `main` before this change.

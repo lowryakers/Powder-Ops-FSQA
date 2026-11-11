@@ -173,6 +173,7 @@ const RUNS = [
   ['verify-gmp-cert.mjs', 5211, {}, true],
   ['verify-supplier-materials.mjs', 5212, {}, true],
   ['verify-supplier-token.mjs', 5214, {}, false],
+  ['verify-product-rollup.mjs', 5215, { PRODUCT_MASTER_TOKEN: 'rollup-test-token' }, true],
   ['verify-supplier-edit.mjs', 5173, {}, false],
   ['verify-schedule-allergens.mjs', 5174, {}, false],
   ['verify-schedule-seen.mjs', 5175, {}, false],

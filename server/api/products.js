@@ -29,11 +29,14 @@ import { validateField, FIELD_RULES, NA_FIELDS, naOf, looksLikeTypedNa, MASTER_C
 import { shelfLifeBasis, shelfLifeFor, NO_BASIS, BASIS_KIND_LABEL, DATE_TYPE_LABEL } from '../stability.js';
 import { stageInputs, stageFor } from '../product-stages.js';
 import { buildSpecPatch, SPEC_ID_RE } from '../../shared/packaging-spec.js';
-import { parseDelimited } from '../tabular.js';
+import { parseDelimited, writeXlsx } from '../tabular.js';
+import AdmZip from 'adm-zip';
+import { recipeRollup } from '../product-recipes.js';
+import { buildPack, packCsv } from '../customer-pack.js';
 import { pmsValid, hexValid, colorIssues, isBlankSlot, conflictSeverity }
   from '../../shared/product-colors.js';
 import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
-import { storageEnabled, putStream, presignGet, deleteObject } from '../storage.js';
+import { storageEnabled, putStream, presignGet, deleteObject, getObjectBuffer } from '../storage.js';
 import fs from 'fs';
 import { extractInvoiceText } from '../invoice-text.js';
 import { NOT_LAUNCHING, statusLabel } from '../../shared/product-status.js';
@@ -521,6 +524,52 @@ router.post('/:sku/artwork/film-check', (req, res) => {
 // The handler and its helpers live at the bottom of the file with the rest of
 // the proofing-feed code; only the registration has to be up here.
 router.get('/master.csv', (req, res) => masterCsv(req, res));
+
+// A customer's document pack (D-340). A READ: the sheet, and a zip of COPIES of
+// the supplier files the sheet names. Nothing is filed on the product and no
+// supplier_files row is written. Declared before /:sku for the router's sake.
+//   ?skus=A,B&preset=whole-foods-natural-flavor&format=csv|xlsx|zip|json
+router.get('/customer-pack', async (req, res) => {
+  const db = getDb();
+  const skus = String(req.query.skus || '').split(',').map(x => x.trim()).filter(Boolean).slice(0, 200);
+  if (!skus.length) return res.status(400).json({ error: 'Name at least one SKU (?skus=A,B).' });
+  let pack;
+  try { pack = buildPack(db, skus, String(req.query.preset || 'whole-foods-natural-flavor')); }
+  catch (e) { return res.status(400).json({ error: e.message }); }
+  const format = String(req.query.format || 'zip');
+  const stamp = new Date().toISOString().slice(0, 10);
+  const base = `${pack.preset}-${stamp}`;
+  if (format === 'json') return res.json(pack);
+  if (format === 'csv') {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${base}.csv"`);
+    return res.send(packCsv(pack));
+  }
+  const xlsx = writeXlsx(pack.columns, pack.rows, 'Summary');
+  if (format === 'xlsx') {
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${base}.xlsx"`);
+    return res.send(xlsx);
+  }
+  const zip = new AdmZip();
+  zip.addFile('summary.csv', Buffer.from(packCsv(pack)));
+  zip.addFile('summary.xlsx', xlsx);
+  const notStored = [];
+  const supplierName = db.prepare('SELECT name FROM suppliers WHERE id = ?');
+  const safe = (v) => String(v || '').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 120);
+  for (const f of pack.files) {
+    const row = db.prepare('SELECT storage_key FROM supplier_files WHERE id = ?').get(f.id);
+    if (!row?.storage_key || !storageEnabled()) { notStored.push(f.filename); continue; }
+    try {
+      zip.addFile(`files/${safe(supplierName.get(f.supplier_id)?.name)}/${safe(f.filename)}`, await getObjectBuffer(row.storage_key));
+    } catch { notStored.push(f.filename); }
+  }
+  if (notStored.length) zip.addFile('NOT-INCLUDED.txt', Buffer.from(
+    `These documents are on the register but their files could not be read, so they are not in this pack:\n${notStored.join('\n')}\n`));
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="${base}.zip"`);
+  res.send(zip.toBuffer());
+});
 
 /* ── Flavour codes ─────────────────────────────────────────────────────────
  *
@@ -1438,6 +1487,9 @@ router.get('/:sku', (req, res) => {
   // read; never a product column.
   const shelf = shelfLifeFor(db, row.sku);
   product.shelf_life = { ...shelf, basis_label: shelf.basis_kind ? BASIS_KIND_LABEL[shelf.basis_kind] : null, date_type_label: DATE_TYPE_LABEL[shelf.date_type] };
+  // The recipe and the supplier documents it reaches (D-340). Read-only; an
+  // empty rollup when no recipe is on file.
+  product.recipe = recipeRollup(db, row.sku);
   product.packaging_pos = db.prepare(`SELECT r.*, a.version AS artwork_version FROM packaging_po_records r
     LEFT JOIN artwork_versions a ON a.id = r.artwork_version_id WHERE r.sku = ? ORDER BY r.recorded_at DESC LIMIT 50`).all(row.sku);
   res.json(product);

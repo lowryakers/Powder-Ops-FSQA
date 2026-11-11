@@ -165,6 +165,7 @@
     "verify:gmpcert": "VERIFY_ONLY=verify-gmp-cert.mjs node scripts/verify-all.mjs",
     "verify:suppliermaterials": "VERIFY_ONLY=verify-supplier-materials.mjs node scripts/verify-all.mjs",
     "verify:suppliertoken": "VERIFY_ONLY=verify-supplier-token.mjs node scripts/verify-all.mjs",
+    "verify:productrollup": "VERIFY_ONLY=verify-product-rollup.mjs node scripts/verify-all.mjs",
     "verify:supplieredit": "VERIFY_ONLY=verify-supplier-edit.mjs node scripts/verify-all.mjs",
     "verify:formdrafts": "VERIFY_ONLY=verify-form-drafts.mjs node scripts/verify-all.mjs",
     "verify:scheduleseen": "VERIFY_ONLY=verify-schedule-seen.mjs node scripts/verify-all.mjs",

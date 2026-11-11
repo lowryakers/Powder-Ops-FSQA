@@ -13,6 +13,7 @@ import ProductCompleteness from './ProductCompleteness.jsx';
 import ProductGrid from './ProductGrid.jsx';
 import MerchStyles, { MerchVariantBlock, MerchPipeline, MerchColors } from './MerchPanel.jsx';
 import ProductPipeline from './ProductPipeline.jsx';
+import ProductSupplierDocs from './ProductSupplierDocs.jsx';
 import NewProductFlow from './NewProductFlow.jsx';
 import ProductStagePanel, { PackagingPos } from './ProductStagePanel.jsx';
 import PackagingSpecsPanel from './PackagingSpecsPanel.jsx';
@@ -758,6 +759,7 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
     if (focus && (SECTION_ANCHOR[id] || '').split(' ').includes(focus)) return true;
     if (id === 'pos') return p?.stage?.next?.key === 'po';
     if (id === 'siblings') return false;
+    if (id === 'suppliers') return false;
     // The barcode image is identity's; a stale one is a relabel waiting to happen.
     if (id === 'identity' && (p?.barcode_stale || (p?.gtin && !p?.gtin_valid))) return true;
     // A merch variant's GTIN is entered in this section, so it stays open until one is (D-325).
@@ -1043,6 +1045,15 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
                   summary={(p.packaging_pos || []).length ? `${p.packaging_pos.length} recorded` : 'none recorded'}>
                   <PackagingPos p={p} sku={sku} canEdit={canEdit} onChanged={changed} />
                 </Section>
+                )}
+
+                {/* What the recipe reaches on the supplier register (D-340). Hidden
+                    with no recipe on file — a merch item without one never shows it. */}
+                {(p.recipe?.lines || []).length > 0 && (
+                  <Section {...sec('suppliers')} title="Supplier documents" icon={FileText}
+                    summary={`${p.recipe.lines.length} ingredient line${p.recipe.lines.length === 1 ? '' : 's'}`}>
+                    <ProductSupplierDocs recipe={p.recipe} sku={sku} />
+                  </Section>
                 )}
 
                 {p.siblings?.length > 0 && (
