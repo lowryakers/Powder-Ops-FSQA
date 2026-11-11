@@ -29,6 +29,7 @@
 //  4. IDEMPOTENT. Re-running produces updates, not duplicates: a supplier is
 //     its name key, a file is (supplier, source_path).
 
+import { CONTACT_ROLES } from '../shared/supplier-fields.js';
 import { readSupplierArchive } from './supplier-archive.js';
 import { reconcileSuppliers, nameKey } from './supplier-reconcile.js';
 
@@ -55,6 +56,35 @@ export function splitContacts(raw) {
       seen.add(k);
       return true;
     });
+}
+
+const ROLE_WORDS = new Map(CONTACT_ROLES.flatMap(r => [[r.value, r.value], [r.label.toLowerCase(), r.value]]));
+const listOf = (v) => String(v ?? '').split(/[,;]/).map(x => x.trim());
+
+/**
+ * The contacts in one tracker row, with a name, a role and the primary one
+ * WHEN THE SOURCE SAYS SO (D-339). Optional columns: "Contact Name",
+ * "Contact Role", "Primary Contact". A name or role is attached only where the
+ * source lines it up with an address — one of each, or the same number of each
+ * in the same order. Nothing is guessed: a generic inbox (orders@, help@) stays
+ * nameless unless the source names it, and an unknown role is dropped.
+ */
+export function contactsFromRow(row) {
+  const contacts = splitContacts(row?.Contact).map(c => ({ ...c, role: null, is_primary: 0 }));
+  const names = listOf(cell(row, 'Contact Name')).filter(Boolean);
+  const roles = listOf(cell(row, 'Contact Role')).filter(Boolean);
+  const align = (vals) => vals.length && (vals.length === contacts.length) ? vals : null;
+  const named = align(names);
+  if (named) contacts.forEach((c, i) => { if (!c.name) c.name = named[i]; });
+  const roled = align(roles);
+  if (roled) contacts.forEach((c, i) => { c.role = ROLE_WORDS.get(roled[i].toLowerCase()) || null; });
+  const primary = cell(row, 'Primary Contact');
+  if (primary) {
+    const hit = contacts.find(c => c.email && c.email.toLowerCase() === primary.toLowerCase());
+    if (hit) hit.is_primary = 1;
+    else if (/^(y|yes|true|1|x)$/i.test(primary) && contacts.length === 1) contacts[0].is_primary = 1;
+  }
+  return contacts;
 }
 
 /** The vendor type a name plainly announces. A SUGGESTION; never stored blind. */
@@ -147,7 +177,7 @@ export function planSupplierImport({ trackerRows = [], archiveEntries = [], reso
       status: 'unqualified',
       notes: v.notes || null,
       source: 'import',
-      contacts: splitContacts(row?.Contact),
+      contacts: contactsFromRow(row),
       qualifications,
       files: files.map(f => ({
         kind: f.kind, period_label: f.period, expires_on: f.expires_on,
@@ -201,7 +231,11 @@ export function applySupplierImport(db, plan, { actor = 'import', logAudit = nul
     VALUES (?, ?, ?, ?, ?, 'unqualified', ?, ?, ?)`);
   const updSupplier = db.prepare(`UPDATE suppliers SET vendor_type = COALESCE(?, vendor_type),
     actively_using = ?, notes = COALESCE(?, notes), updated_at = datetime('now') WHERE id = ?`);
-  const insContact = db.prepare(`INSERT INTO supplier_contacts (id, supplier_id, name, email) VALUES (?, ?, ?, ?)`);
+  // Name, role and primary travel with the address when the source has them
+  // (D-339); they used to be dropped here. One primary per supplier: a source
+  // primary is set only where the supplier has none yet.
+  const insContact = db.prepare(`INSERT INTO supplier_contacts (id, supplier_id, name, email, role, is_primary) VALUES (?, ?, ?, ?, ?, ?)`);
+  const hasPrimary = db.prepare('SELECT 1 FROM supplier_contacts WHERE supplier_id = ? AND is_primary = 1');
   const hasContact = db.prepare('SELECT 1 FROM supplier_contacts WHERE supplier_id = ? AND IFNULL(email, name) = ?');
   const findQual = db.prepare(
     `SELECT id FROM supplier_qualifications WHERE supplier_id = ? AND IFNULL(period_label, '') = IFNULL(?, '')`);
@@ -231,7 +265,7 @@ export function applySupplierImport(db, plan, { actor = 'import', logAudit = nul
       for (const c of s.contacts) {
         const k = c.email || c.name;
         if (!k || hasContact.get(sid, k)) continue;
-        insContact.run(id(), sid, c.name, c.email);
+        insContact.run(id(), sid, c.name, c.email, c.role || null, c.is_primary && !hasPrimary.get(sid) ? 1 : 0);
         result.contacts += 1;
       }
       const qualId = new Map();

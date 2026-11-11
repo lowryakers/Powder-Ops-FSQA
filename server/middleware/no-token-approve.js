@@ -53,6 +53,11 @@ export const APPROVE_ROUTES = Object.freeze([
     when: (req) => ARTWORK_APPROVE_STATUSES.has(String(req.body?.status || '')) },
   { method: 'POST', re: /^\/partners\/settlements\/[^/]+\/proof$/, label: 'POST /api/partners/settlements/:id/proof — evidence of a settlement' },
   // A product decision and a scale's return to use are password-signed by a person (D-194, D-195).
+  // A supplier's disposition (SOP 404 § V.C.III) and a material's banned-list
+  // check are Quality's decisions (D-339). Neither path names an approve word,
+  // so they are listed here, not left to WRITE_AREAS staying narrow.
+  { method: 'POST', re: /^\/suppliers\/[^/]+\/disposition$/, label: 'POST /api/suppliers/:id/disposition — the qualification decision' },
+  { method: 'POST', re: /^\/suppliers\/[^/]+\/materials\/[^/]+\/banned-check$/, label: 'POST /api/suppliers/:id/materials/:mid/banned-check — a banned-list decision' },
   { method: 'POST', re: /^\/calibration\/dispositions\/[^/]+\/[^/]+$/, label: 'POST /api/calibration/dispositions/:source/:id — a signed product decision' },
   { method: 'POST', re: /^\/calibration\/incidents\/[^/]+\/return$/, label: 'POST /api/calibration/incidents/:id/return — QA returns a scale to use' },
   { method: 'POST', re: /^\/calibration\/records$/, label: 'POST /api/calibration/records carrying a product decision',

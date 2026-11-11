@@ -239,6 +239,59 @@ Run this checklist once after a release that touches the bot surface, and once a
 - **Refused fields:** `nfp_version` / `nfp_approved_at` (`NFP_OWNED`) and `artwork_status` / `artwork_version` (`ARTWORK_OWNED`) answer **400** — those move only through their own approval flows. Renaming a SKU is a separate act and not open to tokens.
 - **Returns:** **200** with the product.
 
+## Suppliers (D-339)
+
+Reads need the account's `suppliers` access. **Every write needs a `write` token holding the `suppliers-edit` grant**, and the account must be able to edit suppliers. A disposition, a banned-list check, a gate mode, a questionnaire send or revoke, an import and every DELETE are a person's: a disposition or a banned-list check answers **403 `approve_requires_human_session`**, a delete **403 `token_denied`**, anything else not listed here **403** as not open to tokens. `can_edit` on `GET /api/suppliers/:id` is false for a token without the grant; `can_decide` is always false for a token.
+
+### `GET /api/suppliers`
+
+- **Scope:** `read`. **Returns:** `{ suppliers, summary, dispositions, risk_criteria }` — each supplier with its gaps (no questionnaire, GMP certificate, letter of guarantee).
+
+### `GET /api/suppliers/documents/expiring`
+
+- **Scope:** `read`. **Query:** `days` (default 90, at most 365). **Returns:** `{ expired, expiring }`, each document with `material_label` and `material_part_number`.
+
+### `GET /api/suppliers/:id`
+
+- **Scope:** `read`. **Returns:** the supplier, contacts, `materials` (each with `parts` [{system, part_number}] and `current_part_number`), files (with `material_id`, `material_label`, `lot_number`), `gmp_cert`, `guarantee`, `can_edit`.
+
+### `PUT /api/suppliers/:id`
+
+- **Scope:** `write` + `suppliers-edit`. **Body:** `vendor_type`, `actively_using`, `website`, `address`, `notes`, `food_contact`, `reason`. An absent field is left alone.
+- **400:** `status` is never set here (`STATUS_OWNED`); a supplier we buy from needs a type (`VENDOR_TYPE_REQUIRED`); turning `actively_using` off needs a `reason`.
+
+### `POST /api/suppliers/:id/contacts`
+
+- **Scope:** `write` + `suppliers-edit`. **Body:** `name`, `email`, `phone`, `role` (quality / orders / sales / admin), `notes`, `is_primary`. One primary per supplier.
+
+### `PUT /api/suppliers/contacts/:cid`
+
+- **Scope:** `write` + `suppliers-edit`. Same body. Removing a contact is not open to tokens.
+
+### `POST /api/suppliers/:id/materials`
+
+- **Scope:** `write` + `suppliers-edit`. **Body:** `item_description` (required), `manufacturer_name`, `item_number`, `parts` [{system, part_number}] or `part_number` + `part_source_system`, `current_part_system`. **Returns:** **201** with the ingredient.
+
+### `PUT /api/suppliers/materials/:mid`
+
+- **Scope:** `write` + `suppliers-edit`. Same body; a part number is set per system, in place. `is_active: false` retires the ingredient. There is no delete.
+
+### `POST /api/suppliers/:id/files`
+
+- **Scope:** `write` + `suppliers-edit`. Multipart `files`, with `kind`, `expires_on`, `material_id`, `lot_number`. A GMP certificate needs `expires_on` (`EXPIRY_REQUIRED`), a letter of guarantee its renewal date (`RENEWAL_REQUIRED`). The ingredient must be this supplier's and in use.
+
+### `PUT /api/suppliers/files/:fileId`
+
+- **Scope:** `write` + `suppliers-edit`. **Body:** `kind`, `expires_on`, `material_id`, `lot_number`. Audited with the before and the after. The file's bytes and name never change.
+
+### `PUT /api/suppliers/files/:fileId/renewal`
+
+- **Scope:** `write` + `suppliers-edit`. **Body:** `expires_on`. Only on a letter of guarantee or a GMP certificate.
+
+### `PUT /api/suppliers/files/:fileId/gmp-certificate`
+
+- **Scope:** `write` + `suppliers-edit`. **Body:** `expires_on` (needed when the file has none). Only a file catalogued as a certificate.
+
 ## Nutrition panels (NFP)
 
 ### `GET /api/nfp`

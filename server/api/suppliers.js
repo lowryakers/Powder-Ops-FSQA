@@ -89,6 +89,8 @@ const canDecide = (u) => u?.role === 'admin'
 
 const clean = (v, max = 300) => { const s = String(v ?? '').trim(); return s ? s.slice(0, max) : null; };
 const today = () => new Date().toISOString().slice(0, 10);
+const canEditHere = (req) => canEdit(req.user)
+  && (req.auth?.kind !== 'token' || (req.auth.grants || []).includes('suppliers-edit'));
 
 /** The register, with the derived state that makes it worth reading. */
 function listSuppliers(db, { limit = 500 } = {}) {
@@ -210,7 +212,9 @@ router.get('/:id', (req, res) => {
   res.json({
     // The client renders what it is told. A second copy of canEdit in the
     // drawer is how the button and the 403 start disagreeing.
-    can_edit: canEdit(req.user),
+    // A token writes here only through the suppliers-edit grant (D-339), so
+    // its can_edit says so; a session keeps the account rule.
+    can_edit: canEditHere(req),
 
     supplier: { ...s, legacy_names: JSON.parse(s.legacy_names || '[]') },
     guarantee: guaranteeFor(db, s),
@@ -753,8 +757,17 @@ router.put('/:id', (req, res) => {
   if (stopping && (!reason || reason.length < 3)) {
     return res.status(400).json({ error: 'REASON_REQUIRED: say why we no longer buy from this supplier.' });
   }
+  // A supplier we buy from has a type (D-339): the type decides which documents
+  // it owes. Checked on the row as it WOULD be, so a typeless supplier still in
+  // use is asked for one on its next save; nothing is backfilled.
+  const nextType = 'vendor_type' in b ? clean(b.vendor_type, 40) : s.vendor_type;
+  const nextUsing = 'actively_using' in b ? (b.actively_using ? 1 : 0) : Number(s.actively_using);
+  if (nextUsing === 1 && !nextType) {
+    return res.status(400).json({ code: 'VENDOR_TYPE_REQUIRED',
+      error: `A supplier we buy from needs a type. Choose one of: ${VENDOR_TYPES.map(t => t.label).join(', ')}.` });
+  }
   const next = {
-    vendor_type: 'vendor_type' in b ? clean(b.vendor_type, 40) : s.vendor_type,
+    vendor_type: nextType,
     actively_using: 'actively_using' in b ? (b.actively_using ? 1 : 0) : s.actively_using,
     website: 'website' in b ? clean(b.website) : s.website,
     address: 'address' in b ? clean(b.address, 500) : s.address,

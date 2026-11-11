@@ -10747,3 +10747,29 @@ A-20261111-004 step 1, PR A. The live register held 0 ingredients and 0 part num
 - **`GET /files/coverage` lists every catalogued file with no bytes, by id** (`missing`). A diagnosis only.
 - Fixed in passing: the supplier drawer ran wider than a phone screen (a grid item's min-width was its documents table).
 - `verify:suppliermaterials` (43, live through the S3 stand-in + browser at 1280 and 390).
+
+## D-339 — A supplier we buy from needs a type; the import keeps contact names; the Quality bot's `suppliers-edit` grant edits and never decides (11 Nov 2026)
+
+A-20261111-004 step 1, PR B.
+
+- **`PUT /suppliers/:id` refuses a row that would be in use with no type** (`400 VENDOR_TYPE_REQUIRED`, naming the list). The check is on the row as it would be saved, so each of the 67 typeless suppliers is asked for a type on its next save. **Nothing is backfilled.** A supplier we no longer buy from may stay typeless. The letter of guarantee is still owed only for packaging or a food-contact tick. Typing a supplier Ingredient makes it owe a GMP certificate.
+- **Who would newly owe a GMP certificate once step 2's map (C1) is applied:** the 35 typeless active raw-material suppliers, typed Ingredient, and National Measures, typed Packaging. That is on top of Boxt, Casepak, Nu Packaging and Traco. Cary and Webstaurant stay Supplies and owe none.
+- **The import keeps a contact's name, role and primary flag** when the tracker carries "Contact Name", "Contact Role" or "Primary Contact" (`contactsFromRow`).
+  - A name or role is attached only when the source lines it up with an address.
+  - A primary is set only where the supplier has none.
+  - **`scripts/supplier-contacts-repair.mjs`** fills empty name, role and primary fields from a mapping file Lowry approves.
+    - A dry run is the default.
+    - `--apply` backs up first and audits each contact.
+    - It never overwrites a field that already has a value, never creates a contact and never deletes one.
+    - It has not been run against production.
+- **Token grant `suppliers-edit`** (WRITE_AREAS area `suppliers`) opens nine routes:
+  - supplier details;
+  - adding and editing a contact;
+  - adding and editing an ingredient;
+  - filing a document;
+  - the document edit;
+  - the renewal date;
+  - the GMP mark.
+  
+  BOT_ROUTES, `docs/bot-api.md` and the MCP tools list them too. **A disposition and a banned-list check are explicit `APPROVE_ROUTES`** (`approve_requires_human_session`), since neither path names an approve word. Every DELETE stays `token_denied`. Gate modes, questionnaire send and revoke, imports and name links are not on the list. `can_edit` on `GET /:id` is true for a token only when the token holds the grant. The grant is ticked in Settings by an admin; this change ticks nothing.
+- `verify:suppliertoken` (51).

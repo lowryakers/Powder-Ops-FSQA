@@ -31,6 +31,9 @@ const filePath = (what) => str(`Path to the ${what} on this machine. It is uploa
 const PRODUCT_FIELDS = ['gtin', 'category', 'protein_type', 'pack', 'pack_count', 'flavor', 'base_flavor',
   'flavor_code', 'status', 'spec_id', 'eyemark_color', 'dieline_required', 'shopify_sku', 'shopify_variant_id',
   'mrp_formula_id', 'formula_rev', 'amazon_channel', 'amazon_sku', 'amazon_asin', 'drive_url', 'notes', 'fill_weight_g'];
+const SUPPLIER_FIELDS = ['vendor_type', 'actively_using', 'website', 'address', 'notes', 'food_contact', 'reason'];
+const CONTACT_FIELDS = ['name', 'email', 'phone', 'role', 'notes', 'is_primary'];
+const MATERIAL_FIELDS = ['item_description', 'manufacturer_name', 'item_number', 'risk_notes', 'is_active', 'current_part_system', 'parts'];
 const PO_FIELDS = ['po_number', 'vendor', 'part_no', 'description', 'qty', 'uom', 'unit_price', 'order_date',
   'expected_date', 'received_date', 'status', 'urgent', 'notes', 'quarter'];
 const PARTNER_DOC_FIELDS = ['direction', 'doc_type', 'doc_number', 'reference', 'description', 'issued_date',
@@ -70,6 +73,50 @@ export const ROUTES = Object.freeze([
     description: "Edit a product's catalog fields. Send only the fields to change; a blank value clears one. NFP and artwork status move only through their approval flows. Needs a write token and an account that manages the catalog.",
     body: PRODUCT_FIELDS,
     properties: { sku: str('The product SKU.'), ...anyProps(PRODUCT_FIELDS) }, required: ['sku'] },
+
+  // Suppliers (D-339). The edits need a write token holding the suppliers-edit
+  // grant. A disposition, a banned-list check, a gate mode and every delete are
+  // a person's and have no tool.
+  { tool: 'list_suppliers', method: 'GET', path: '/api/suppliers',
+    description: 'The supplier register with qualification status, gaps and counts.',
+    properties: {}, required: [] },
+  { tool: 'list_expiring_supplier_documents', method: 'GET', path: '/api/suppliers/documents/expiring',
+    description: 'Supplier documents that have expired or expire within `days` (default 90), with the ingredient each is about.',
+    query: ['days'], properties: { days: num('Look-ahead in days (at most 365).') }, required: [] },
+  { tool: 'get_supplier', method: 'GET', path: '/api/suppliers/:id',
+    description: 'One supplier: contacts, ingredients and part numbers, documents, GMP certificate and letter-of-guarantee state.',
+    properties: { id: str('The supplier id.') }, required: ['id'] },
+  { tool: 'update_supplier', method: 'PUT', path: '/api/suppliers/:id',
+    description: "Edit a supplier's details. A supplier we buy from needs a vendor type. Status is never set here. Turning actively_using off needs a reason.",
+    body: SUPPLIER_FIELDS, properties: { id: str('The supplier id.'), ...anyProps(SUPPLIER_FIELDS) }, required: ['id'] },
+  { tool: 'add_supplier_contact', method: 'POST', path: '/api/suppliers/:id/contacts',
+    description: 'Add a contact. Role is quality, orders, sales or admin; is_primary makes it the one primary contact.',
+    body: CONTACT_FIELDS, properties: { id: str('The supplier id.'), ...anyProps(CONTACT_FIELDS) }, required: ['id'] },
+  { tool: 'update_supplier_contact', method: 'PUT', path: '/api/suppliers/contacts/:cid',
+    description: 'Edit a contact (never removes one).',
+    body: CONTACT_FIELDS, properties: { cid: str('The contact id.'), ...anyProps(CONTACT_FIELDS) }, required: ['cid'] },
+  { tool: 'add_supplier_material', method: 'POST', path: '/api/suppliers/:id/materials',
+    description: 'Add an ingredient with its part number(s). `parts` is a list of {system, part_number}; system is mrpeasy, keychain, manual or genesis.',
+    body: MATERIAL_FIELDS, properties: { id: str('The supplier id.'), ...anyProps(MATERIAL_FIELDS, { parts: { type: 'array', description: 'Part numbers: [{system, part_number}].' } }) }, required: ['id'] },
+  { tool: 'update_supplier_material', method: 'PUT', path: '/api/suppliers/materials/:mid',
+    description: 'Edit an ingredient or its part numbers. is_active false retires it; nothing is deleted.',
+    body: MATERIAL_FIELDS, properties: { mid: str('The ingredient id.'), ...anyProps(MATERIAL_FIELDS, { parts: { type: 'array', description: 'Part numbers: [{system, part_number}].' } }) }, required: ['mid'] },
+  { tool: 'add_supplier_document', method: 'POST', path: '/api/suppliers/:id/files',
+    description: 'File a document for a supplier. A GMP certificate or letter of guarantee needs expires_on.',
+    body: ['kind', 'expires_on', 'material_id', 'lot_number'], file: { arg: 'file_path', field: 'files', required: true },
+    properties: { id: str('The supplier id.'), file_path: filePath('document'), kind: str('Document kind.'), expires_on: str('Expiry date, YYYY-MM-DD.'),
+      material_id: str('The ingredient it is about.'), lot_number: str('Lot number (a COA).') }, required: ['id', 'file_path'] },
+  { tool: 'update_supplier_document', method: 'PUT', path: '/api/suppliers/files/:fileId',
+    description: "Correct a filed document's kind, expiry, ingredient or lot. The file itself is never changed.",
+    body: ['kind', 'expires_on', 'material_id', 'lot_number'],
+    properties: { fileId: str('The file id.'), kind: str('Document kind.'), expires_on: str('YYYY-MM-DD, or blank to clear.'),
+      material_id: str('The ingredient, or blank for the whole supplier.'), lot_number: str('Lot number.') }, required: ['fileId'] },
+  { tool: 'set_supplier_document_renewal', method: 'PUT', path: '/api/suppliers/files/:fileId/renewal',
+    description: "Set the date on a letter of guarantee or GMP certificate already on file.",
+    body: ['expires_on'], properties: { fileId: str('The file id.'), expires_on: str('YYYY-MM-DD.') }, required: ['fileId', 'expires_on'] },
+  { tool: 'mark_supplier_gmp_certificate', method: 'PUT', path: '/api/suppliers/files/:fileId/gmp-certificate',
+    description: 'Mark a general certificate on file as the supplier\'s third-party GMP certificate, with its expiry.',
+    body: ['expires_on'], properties: { fileId: str('The file id.'), expires_on: str('YYYY-MM-DD.') }, required: ['fileId'] },
 
   { tool: 'list_nfp', method: 'GET', path: '/api/nfp', paged: true,
     description: 'Every nutrition panel version, and products with no panel. Paged on versions.',

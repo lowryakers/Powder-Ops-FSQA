@@ -39,7 +39,7 @@ const LEGACY_SCOPES = Object.freeze({ 'write-drafts': 'write' });
 
 // GRANTS (D-171): named extra write areas an admin gives ONE token, on top of
 // `write`. A grant opens only the WRITE_AREAS entries that name it, and never
-// lifts TOKEN_DENY or the approve guard. Two grants exist:
+// lifts TOKEN_DENY or the approve guard. The grants:
 //   nfp-panel — upload the panel PDF and write panel values on a DRAFT
 //   nutrition panel, with a source reference. The Product Manager bot's.
 //   course-drafts — stage a DRAFT course: content, quiz (EN + ES) and files,
@@ -50,12 +50,17 @@ const LEGACY_SCOPES = Object.freeze({ 'write-drafts': 'write' });
 //   wi-edit / jd-edit — exactly what sops-edit allows, for Work Instructions
 //   and Job Descriptions (D-306). Which grant a write needs is the document's
 //   type; an SOP-only token is refused on a WI.
+//   coa-prep — prepare COA drafts (D-313).
+//   suppliers-edit — edit a supplier's details, contacts, ingredients and the
+//   facts about a filed document (D-339). The Quality bot's. Never a
+//   disposition, a banned-list check, a delete, a gate mode or a questionnaire.
 export const TOKEN_GRANTS = Object.freeze({
   'nfp-panel': 'Nutrition panels — upload the panel PDF and write panel values on a DRAFT panel, each write naming its source. Never approves.',
   'course-drafts': 'Training course drafts — stage and edit a DRAFT course (content, quiz in English and Spanish, files incl. a video up to 2 GB). Never touches a live course; two people publish it.',
   'sops-edit': 'SOPs: stage draft documents, edit draft text and fields, start and edit a new revision, attach a PDF. Never approves, signs, makes effective, deletes, retires or merges.',
   'wi-edit': 'Work Instructions: stage draft documents, edit draft text and fields, start and edit a new revision, attach a PDF. Never approves, signs, makes effective, deletes, retires or merges.',
   'jd-edit': 'Job Descriptions: stage draft documents, edit draft text and fields, start and edit a new revision, attach a PDF. Never approves, signs, makes effective, deletes, retires or merges.',
+  'suppliers-edit': 'Suppliers: edit a supplier\'s details, contacts, ingredients and part numbers, file a document and correct its kind, expiry, ingredient or lot. Never approves or records a disposition, never records a banned-list check, never deletes, never changes a gate mode, never sends or revokes a questionnaire.',
   'coa-prep': 'COA: edit a DRAFT test plan (limits, units, judging rules, the products it is meant for) and register or alias a COA product and set its brand. Every value it saves reads "bot-prepared, needs review" until a person approves. Never approves, applies, signs, unsigns, deletes or edits anything approved or signed.',
 });
 

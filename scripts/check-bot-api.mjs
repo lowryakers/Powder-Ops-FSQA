@@ -145,10 +145,14 @@ r = await call('POST', '/api/nfp', { sku, version: 'BOTAPI-PAPER', source: 'pape
 t('a paper panel from a token is refused', r.status === 403 && r.body?.error === 'approve_requires_human_session');
 
 console.log('\n── every documented GET answers a read token, and leaks nothing ──');
+// A supplier to read (D-339).
+const supplierFixture = 'ba-supplier';
+db.prepare("INSERT OR IGNORE INTO suppliers (id, name, vendor_type, actively_using) VALUES ('ba-supplier', 'Bot API Supplier Co', 'ingredient', 1)").run();
 const fill = (p) => p.replace(':sku', encodeURIComponent(sku)).replace('/artwork/versions/:id', `/artwork/versions/${art.id}`)
   .replace('/partners/:id', `/partners/${partner.id}`).replace('/channels/:id', `/channels/${channel.id}`)
   .replace('/messages/:id', `/messages/${msg?.id}`).replace('/nfp/:id', `/nfp/${nfpFixture?.id}`)
-  .replace('/training/drafts/:id', `/training/drafts/${courseDraft?.id}`);
+  .replace('/training/drafts/:id', `/training/drafts/${courseDraft?.id}`)
+  .replace('/suppliers/:id', `/suppliers/${supplierFixture}`);
 const leaks = (v, path = '$', out = []) => {
   if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) { if (isForbiddenKey(k)) out.push(`${path}.${k}`); leaks(x, `${path}.${k}`, out); }
   return out;

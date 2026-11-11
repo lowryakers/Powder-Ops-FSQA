@@ -2862,6 +2862,15 @@ sheet that must open even with no R2 configured. The zone **item lists** it docu
 - **Already-filed rows keep their kind** when the filename reader improves; never re-kind them at boot.
   `verify:suppliermaterials` (43).
 
+## A supplier we buy from needs a type; the Quality bot's `suppliers-edit` grant edits, never decides (D-339)
+- `PUT /suppliers/:id` 400s `VENDOR_TYPE_REQUIRED` when the saved row would be in use with no type. Never backfill types.
+- **`suppliers-edit` opens edit routes only** (WRITE_AREAS area `suppliers`). Disposition and banned-check are explicit
+  `APPROVE_ROUTES`; never put a supplier DELETE, gate mode, questionnaire send/revoke or import on the grant.
+  `can_edit` for a token = account canEdit AND the grant (`canEditHere`).
+- The import keeps contact name/role/primary only when the source lines them up (`contactsFromRow`).
+  `scripts/supplier-contacts-repair.mjs` fills blanks from a mapping: dry run first, never overwrites, never deletes.
+  `verify:suppliertoken` (51).
+
 ## Purchasing edits a supplier's details and contacts (D-295)
 `EditDetails` + `ContactsSection` (SuppliersPanel.jsx), `shared/supplier-fields.js` (`VENDOR_TYPES`, `CONTACT_ROLES`,
 `cleanContact`), `POST /suppliers/:id/contacts`, `PUT|DELETE /suppliers/contacts/:cid`.
