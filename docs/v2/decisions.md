@@ -10796,3 +10796,15 @@ A-20261111-004 step 1, PR C.
   - **The 10/21 export was not available when this was written.** The column names are read from a list of common spellings, and an unrecognised column is reported. Run the dry run on that export before applying.
 - master.csv is unchanged (asserted).
 - `verify:productrollup` (31). `verify:mmrgate` already times out on its Completeness browser step on `main` before this change.
+## D-341 — A lost bot token is replaced in one act (11 Nov 2026)
+A bot lost the token Lowry had minted for it. **A token cannot be shown again** — only its SHA-256 hash is kept — so the
+way back was mint, edit scopes, tick each grant again, and revoke the old one: four steps, any of which could be missed.
+- **`replaceToken()` (`server/api-tokens.js`) + `POST /api/api-tokens/:id/replace`**: a new token on the same account
+  with the same label, scopes, grants and expiry, and the old token revoked, in ONE transaction. The new clear text is
+  returned once (the only other response that ever carries it is minting).
+- **Only a live token can be replaced** (400 otherwise) — replacing a revoked or expired one would bring a dead token
+  back with the same powers. Admin session only; a token never reaches the route (the router guard + TOKEN_DENY).
+- Audited `api_token_replaced` on the OLD token with both ids and prefixes, never the clear text.
+- **Replace** on each live row in Settings → Bot API tokens; the one-time box says which token it replaces and that it
+  no longer works.
+- `verify:apitokensui` (30 → 42; the ten new API assertions include the old token answering 401 and the new one 200).

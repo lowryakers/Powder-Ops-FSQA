@@ -228,6 +228,37 @@ export function revokeToken(db, id, actor) {
 }
 
 /**
+ * Replace a live token in one act (D-341): a NEW token on the same account with
+ * the same label, scopes, grants and expiry, and the old one revoked in the same
+ * transaction. For a bot that has lost its token — the clear text is stored
+ * only as a hash, so a lost token cannot be shown again; this is the way back.
+ * The old token stops working the moment this returns. Admin session only (the
+ * router's guard); refused for a token that is not live, because replacing a
+ * revoked or expired token would quietly bring a dead one back.
+ */
+export function replaceToken(db, id, actor) {
+  const t = getToken(db, id);
+  if (!t) return null;
+  if (t.state !== 'live') {
+    const why = { revoked: 'it has been revoked', expired: 'it has expired',
+      account_inactive: 'its account is deactivated', account_is_admin: 'its account is now an admin' }[t.state] || 'it is not live';
+    throw new ScopeError(`This token cannot be replaced: ${why}. Mint a new one instead.`);
+  }
+  let out;
+  db.transaction(() => {
+    out = createToken(db, { userId: t.user_id, label: t.label, scopes: t.scopes, expiresAt: t.expires_at || null }, actor);
+    if (t.grants.length) db.prepare('UPDATE api_tokens SET grants = ? WHERE id = ?').run(JSON.stringify(t.grants), out.token.id);
+    db.prepare("UPDATE api_tokens SET revoked_at = datetime('now'), revoked_by = ? WHERE id = ?").run(actor?.name || 'system', id);
+    logAudit(actor, 'api_token_replaced', 'api_token', id,
+      { old_token_id: id, new_token_id: out.token.id, old_prefix: t.token_prefix, new_prefix: out.token.token_prefix,
+        label: t.label, for: t.user_name, scopes: t.scopes, grants: t.grants, expires_at: t.expires_at || null },
+      null, null, t.label);
+  })();
+  tokenUse.delete(id);
+  return { token: getToken(db, out.token.id), plaintext: out.plaintext, replaced: getToken(db, id) };
+}
+
+/**
  * Resolve a presented token to { token, user } or null. Refuses a malformed,
  * unknown, revoked or expired token, and one whose account is inactive or has
  * since become an admin — a promotion must not quietly hand a bot admin rights.
