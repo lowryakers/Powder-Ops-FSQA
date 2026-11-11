@@ -171,6 +171,7 @@ const RUNS = [
   ['verify-part11.mjs', 5169, {}, false],
   ['verify-guarantee.mjs', 5170, {}, true],
   ['verify-gmp-cert.mjs', 5211, {}, true],
+  ['verify-supplier-materials.mjs', 5212, {}, true],
   ['verify-supplier-edit.mjs', 5173, {}, false],
   ['verify-schedule-allergens.mjs', 5174, {}, false],
   ['verify-schedule-seen.mjs', 5175, {}, false],

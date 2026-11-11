@@ -67,6 +67,8 @@ import { GUARANTEE_KIND, GUARANTEE_LABEL } from '../../shared/supplier-guarantee
 import { withGmpCert, gmpCertFor, gmpGaps, gmpGateMode, GMP_GATE_MODES } from '../supplier-gmp-cert.js';
 import { GMP_CERT_KIND, GMP_CERT_LABEL } from '../../shared/supplier-gmp-cert.js';
 import { plantDateOf } from '../plant-clock.js';
+import { FILE_KIND_VALUES, FILE_KIND_LABEL, DATED_KINDS, SOURCE_SYSTEMS, SOURCE_SYSTEM_LABEL, cleanFileMeta } from '../../shared/supplier-documents.js';
+import { materialsFor, materialLabels, createMaterial, updateMaterial, MaterialError, defaultPartSystem } from '../supplier-materials.js';
 
 const router = Router();
 
@@ -156,9 +158,14 @@ router.get('/documents/expiring', (req, res) => {
     FROM supplier_files f JOIN suppliers s ON s.id = f.supplier_id
     WHERE f.expires_on IS NOT NULL AND f.expires_on <= date('now', '+' || ? || ' days')
     ORDER BY f.expires_on LIMIT 500`).all(withinDays);
+  // Which ingredient a document is about, when it is about one (D-338).
+  const mats = materialLabels(getDb(), rows.map(r => r.material_id));
+  const shaped = rows.map(({ extracted_text: _t, ...r }) => ({ ...r,
+    material_label: mats.get(r.material_id)?.label || null,
+    material_part_number: mats.get(r.material_id)?.current_part_number || null }));
   res.json({
-    expired: rows.filter(r => r.expires_on < today()),
-    expiring: rows.filter(r => r.expires_on >= today()),
+    expired: shaped.filter(r => r.expires_on < today()),
+    expiring: shaped.filter(r => r.expires_on >= today()),
   });
 });
 
@@ -209,15 +216,25 @@ router.get('/:id', (req, res) => {
     guarantee: guaranteeFor(db, s),
     gmp_cert: { ...gmpCertFor(db, s), mode: gmpGateMode(db), gaps: gmpGaps(db, s) },
     contacts: db.prepare('SELECT * FROM supplier_contacts WHERE supplier_id = ? ORDER BY is_primary DESC, email').all(s.id),
-    materials: db.prepare('SELECT * FROM supplier_materials WHERE supplier_id = ? ORDER BY item_description').all(s.id),
+    // Ingredients with their part numbers, one per system (D-338).
+    materials: materialsFor(db, s.id),
+    part_systems: SOURCE_SYSTEMS.map(v => ({ value: v, label: SOURCE_SYSTEM_LABEL[v] })),
+    default_part_system: defaultPartSystem(db),
+    file_kinds: FILE_KIND_VALUES.map(v => ({ value: v, label: FILE_KIND_LABEL[v] })),
     qualifications: db.prepare(`SELECT * FROM supplier_qualifications WHERE supplier_id = ?
       ORDER BY IFNULL(period_label, '') DESC`).all(s.id),
     // `stored` says whether the BYTES are here, which is a different fact from
     // the row existing. extracted_text is searched, never shipped.
-    files: db.prepare(`SELECT id, kind, period_label, expires_on, filename, source_path, lot_number, size,
-      CASE WHEN expires_on IS NOT NULL AND expires_on < date('now') THEN 1 ELSE 0 END AS expired,
-      CASE WHEN storage_key IS NOT NULL THEN 1 ELSE 0 END AS stored, text_status
-      FROM supplier_files WHERE supplier_id = ? ORDER BY period_label DESC, kind, filename`).all(s.id),
+    files: (() => {
+      const rows = db.prepare(`SELECT id, kind, period_label, expires_on, filename, source_path, lot_number, size, material_id,
+        CASE WHEN expires_on IS NOT NULL AND expires_on < date('now') THEN 1 ELSE 0 END AS expired,
+        CASE WHEN storage_key IS NOT NULL THEN 1 ELSE 0 END AS stored, text_status
+        FROM supplier_files WHERE supplier_id = ? ORDER BY period_label DESC, kind, filename`).all(s.id);
+      const mats = materialLabels(db, rows.map(r => r.material_id));
+      return rows.map(r => ({ ...r,
+        material_label: mats.get(r.material_id)?.label || null,
+        material_part_number: mats.get(r.material_id)?.current_part_number || null }));
+    })(),
     questionnaires: questionnairesFor(db, s.id),
     questionnaire_form: { code: Q_FORM.code, revision: Q_FORM.revision },
     // The banned-list check per material (D-202): derived on every read, so a
@@ -757,6 +774,25 @@ router.put('/:id', (req, res) => {
 // A contact is a detail about how to reach the supplier, not a compliance
 // record, so it is corrected in place and removed outright; every change is
 // audited with the before and the after.
+// ── Ingredients (D-338) ─────────────────────────────────────────────────────
+// Create and edit only. There is no DELETE: a material is retired with
+// is_active = 0, which drops it from the banned-list checks and from new
+// document links and leaves every filed document pointing at it.
+router.post('/:id/materials', (req, res) => {
+  if (!canEdit(req.user)) return res.status(403).json({ error: 'Not permitted' });
+  const db = getDb();
+  const supplier = db.prepare('SELECT id, name FROM suppliers WHERE id = ?').get(req.params.id);
+  if (!supplier) return res.status(404).json({ error: 'No such supplier' });
+  try { res.status(201).json({ material: createMaterial(db, supplier, req.body || {}, req.user) }); }
+  catch (e) { if (e instanceof MaterialError) return res.status(e.status).json({ error: e.message }); throw e; }
+});
+
+router.put('/materials/:mid', (req, res) => {
+  if (!canEdit(req.user)) return res.status(403).json({ error: 'Not permitted' });
+  try { res.json({ material: updateMaterial(getDb(), req.params.mid, req.body || {}, req.user) }); }
+  catch (e) { if (e instanceof MaterialError) return res.status(e.status).json({ error: e.message }); throw e; }
+});
+
 router.post('/:id/contacts', (req, res) => {
   if (!canEdit(req.user)) return res.status(403).json({ error: 'Not permitted' });
   const db = getDb();
@@ -1276,6 +1312,18 @@ router.post('/:id/files', fileUpload.array('files', 20), async (req, res) => {
     // A letter of guarantee is filed WITH its renewal date (D-289): one without
     // a date is a letter nobody will chase when it lapses.
     const renewal = req.body?.expires_on ? String(req.body.expires_on).slice(0, 10) : null;
+    // A kind sent is from the closed list (D-338); an ingredient sent belongs to
+    // THIS supplier and is still in use; a lot number is kept as typed.
+    if (req.body?.kind && !FILE_KIND_VALUES.includes(req.body.kind)) {
+      return res.status(400).json({ error: `Unknown document kind "${req.body.kind}".` });
+    }
+    const materialId = req.body?.material_id ? String(req.body.material_id) : null;
+    if (materialId) {
+      const m = db.prepare('SELECT supplier_id, is_active FROM supplier_materials WHERE id = ?').get(materialId);
+      if (!m || m.supplier_id !== supplier.id) return res.status(400).json({ code: 'MATERIAL_NOT_THIS_SUPPLIER', error: 'That ingredient is not one of this supplier\'s.' });
+      if (!m.is_active) return res.status(400).json({ code: 'MATERIAL_RETIRED', error: 'That ingredient is retired; new documents are not linked to it.' });
+    }
+    const lotNumber = clean(req.body?.lot_number, 80);
     if (renewal && !/^\d{4}-\d{2}-\d{2}$/.test(renewal)) return res.status(400).json({ error: 'The renewal date must be a date (YYYY-MM-DD).' });
     const wantsLetter = req.body?.kind === GUARANTEE_KIND
       || (!req.body?.kind && files.some(f => (classifyDocument(f.originalname) || {}).kind === GUARANTEE_KIND));
@@ -1291,8 +1339,8 @@ router.post('/:id/files', fileUpload.array('files', 20), async (req, res) => {
 
     const ins = db.prepare(`INSERT INTO supplier_files
       (id, supplier_id, kind, expires_on, filename, storage_key, content_type, size,
-       extracted_text, text_status, source_path, uploaded_by)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
+       extracted_text, text_status, source_path, uploaded_by, material_id, lot_number)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
 
     const saved = [];
     for (const f of files) {
@@ -1317,11 +1365,12 @@ router.post('/:id/files', fileUpload.array('files', 20), async (req, res) => {
         req.body?.expires_on || classified.expires_on || expiryFromFilename(f.originalname) || null,
         f.originalname, key, type, f.size,
         text || null, text ? 'ok' : (text === null ? 'failed' : 'empty'),
-        `uploaded/${f.originalname}`, req.user.name);
+        `uploaded/${f.originalname}`, req.user.name, materialId, lotNumber);
       saved.push({ id, filename: f.originalname });
     }
     logAudit(req.user, 'supplier_files_added', 'supplier', supplier.id,
-      { count: saved.length, files: saved.map(s => s.filename), kind: req.body?.kind || null, expires_on: renewal }, null, null, supplier.name);
+      { count: saved.length, files: saved.map(s => s.filename), kind: req.body?.kind || null, expires_on: renewal,
+        material_id: materialId, lot_number: lotNumber }, null, null, supplier.name);
     res.json({ saved });
   } catch (e) {
     res.status(400).json({ error: uploadErrorMessage(e) || e.message });
@@ -1355,6 +1404,42 @@ router.get('/files/:fileId/url', async (req, res) => {
   const f = db.prepare('SELECT filename, storage_key FROM supplier_files WHERE id = ?').get(req.params.fileId);
   if (!f || !f.storage_key) return res.status(404).json({ error: 'No stored file' });
   res.json({ url: await presignGet(f.storage_key, f.filename) });
+});
+
+// Correcting what a filed document IS (D-338): its kind, its expiry, the
+// ingredient it is about, and a COA's lot number. Audited with the before and
+// the after. It never deletes the file and never touches the bytes, the stored
+// name or the storage key — re-labelling is not a rename. A letter of guarantee
+// or a GMP certificate still has to carry its date.
+router.put('/files/:fileId', (req, res) => {
+  if (!canEdit(req.user)) return res.status(403).json({ error: 'Not permitted' });
+  const db = getDb();
+  const f = db.prepare('SELECT id, supplier_id, kind, expires_on, material_id, lot_number, filename FROM supplier_files WHERE id = ?')
+    .get(req.params.fileId);
+  if (!f) return res.status(404).json({ error: 'No such file' });
+  const c = cleanFileMeta(req.body || {});
+  if (c.error) return res.status(400).json({ error: c.error });
+  const patch = c.data;
+  if (patch.material_id) {
+    const m = db.prepare('SELECT supplier_id, is_active FROM supplier_materials WHERE id = ?').get(patch.material_id);
+    if (!m || m.supplier_id !== f.supplier_id) return res.status(400).json({ code: 'MATERIAL_NOT_THIS_SUPPLIER', error: 'That ingredient is not one of this supplier\'s.' });
+    if (!m.is_active && patch.material_id !== f.material_id) return res.status(400).json({ code: 'MATERIAL_RETIRED', error: 'That ingredient is retired; new documents are not linked to it.' });
+  }
+  const next = { ...f, ...patch };
+  if (DATED_KINDS.includes(next.kind) && !next.expires_on) {
+    return next.kind === GMP_CERT_KIND
+      ? res.status(400).json({ code: 'EXPIRY_REQUIRED', error: `A ${GMP_CERT_LABEL.toLowerCase()} needs its expiry date.` })
+      : res.status(400).json({ code: 'RENEWAL_REQUIRED', error: `A ${GUARANTEE_LABEL.toLowerCase()} needs its renewal date.` });
+  }
+  const cols = Object.keys(patch).filter(k => (patch[k] ?? null) !== (f[k] ?? null));
+  if (!cols.length) return res.json({ ok: true, unchanged: true, file: f });
+  db.prepare(`UPDATE supplier_files SET ${cols.map(k => `${k} = ?`).join(', ')} WHERE id = ?`)
+    .run(...cols.map(k => patch[k]), f.id);
+  const before = Object.fromEntries(cols.map(k => [k, f[k] ?? null]));
+  const after = Object.fromEntries(cols.map(k => [k, patch[k] ?? null]));
+  logAudit(req.user, cols.includes('kind') ? 'supplier_file_relabelled' : 'supplier_file_updated', 'supplier_file', f.id,
+    { supplier_id: f.supplier_id, fields: cols }, before, after, f.filename);
+  res.json({ ok: true, file: db.prepare('SELECT id, supplier_id, kind, expires_on, material_id, lot_number, filename FROM supplier_files WHERE id = ?').get(f.id) });
 });
 
 // The renewal date on a letter of guarantee already on file (D-289) — one that
@@ -1426,9 +1511,14 @@ router.get('/files/coverage', (req, res) => {
   const gaps = db.prepare(`SELECT s.id, s.name, COUNT(*) AS missing
     FROM supplier_files f JOIN suppliers s ON s.id = f.supplier_id
     WHERE f.storage_key IS NULL GROUP BY s.id, s.name ORDER BY missing DESC LIMIT 100`).all();
+  // Each catalogue row with no bytes behind it, by id (D-338). A diagnosis:
+  // nothing here removes the row — "we held this and it went missing" is a fact.
+  const missing = db.prepare(`SELECT f.id, f.supplier_id, s.name AS supplier_name, f.filename, f.source_path, f.kind
+    FROM supplier_files f JOIN suppliers s ON s.id = f.supplier_id
+    WHERE f.storage_key IS NULL ORDER BY s.name COLLATE NOCASE, f.filename LIMIT 500`).all();
   res.json({
     total: row?.total || 0, stored: row?.stored || 0, bytes: row?.bytes || 0,
-    storage_enabled: storageEnabled(), gaps,
+    storage_enabled: storageEnabled(), gaps, missing,
   });
 });
 

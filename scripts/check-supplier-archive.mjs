@@ -65,6 +65,26 @@ t('a typo\'d "Specificationn" still classifies as a specification',
   r.files.some(f=>/Specificationn/.test(f.filename)&&f.kind==='specification'));
 t('expiry parsed with a dot: "exp. 01-11-2027"', expiryFromFilename('X Certificate exp. 01-11-2027')==='2027-01-11');
 t('expiry parsed single-digit: "exp 7-11-2027"', expiryFromFilename('Y exp 7-11-2027')==='2027-07-11');
+// D-338: the live misses, by their real filenames.
+t('"26v4_exp. 12.31.2026": an underscore before exp no longer hides the date',
+  expiryFromFilename('26v4_exp. 12.31.2026')==='2026-12-31');
+t('"BCM GMP Cert_Exp 022424": compact MMDDYY is read',
+  expiryFromFilename('BCM GMP Cert_Exp 022424.pdf')==='2024-02-24');
+t('"Exp 2025" (a year) is never read as a compact date',
+  expiryFromFilename('Exp 2025 notes.pdf')===null);
+t('"KOSHER2025 (Exp 2.28.26)" is a certificate and dated',
+  classifyDocument('KOSHER2025 (Exp 2.28.26).pdf').kind==='certificate' && expiryFromFilename('KOSHER2025 (Exp 2.28.26).pdf')==='2026-02-28');
+t('"BRCS CERT2025 Exp. 10-03-26": BRCS reads as a certificate, never as the GMP certificate',
+  classifyDocument('BRCS CERT2025 Exp. 10-03-26.pdf').kind==='certificate' && expiryFromFilename('BRCS CERT2025 Exp. 10-03-26.pdf')==='2026-10-03');
+t('FSVP statement is its own kind', classifyDocument('FSVP Statement 2025.pdf').kind==='fsvp');
+t('a natural-flavor statement is its own kind', classifyDocument('Natural Flavor Statement Vanilla.pdf').kind==='natural_flavor');
+t('a natural-flavor SPEC stays a specification', classifyDocument('Natural Vanilla Flavor Spec.pdf').kind==='specification');
+t('W-9 is its own kind', classifyDocument('W-9 2025.pdf').kind==='w9' && classifyDocument('W9_Acme.pdf').kind==='w9');
+t('certificate of insurance is its own kind', classifyDocument('Certificate of Insurance 2026.pdf').kind==='certificate_of_insurance');
+t('"Continuing letter of pure Food Guarantee" is a letter of guarantee',
+  classifyDocument('Continuing letter of pure Food Guarantee.pdf').kind==='letter_of_guarantee');
+t('no GMP-named file is classified as the GMP certificate by itself',
+  classifyDocument('BCM GMP Cert_Exp 022424.pdf').kind!=='gmp_certificate');
 t('no expiry invented when the filename has none', expiryFromFilename('Potassium Citrate SDS')===null);
 t('five certificates on file have already expired', r.expired.length===5, `got ${r.expired.length}`);
 // The rule CHANGED once the full archive arrived: 228 of 836 files have no

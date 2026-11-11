@@ -10733,3 +10733,17 @@ a GMP certificate only (a GFSI certificate alone does not count).
   (`gmp-cert-missing`, Quality and Purchasing).
 - No form or SOP text changed. Which SOP 404 revision states the requirement is Document Control's.
 - `verify:gmpcert` (47, live + browser at 1280 and 390).
+
+## D-338 — Ingredients carry part numbers by system; a filed document's kind, expiry, ingredient and lot are corrected in the app (11 Nov 2026)
+
+A-20261111-004 step 1, PR A. The live register held 0 ingredients and 0 part numbers, 419 documents filed as "unknown", 47 COAs with no lot, and M4's signed questionnaire filed as unknown, so the register said M4 had no questionnaire.
+
+- **A part number is (system, number), one row per system** in `supplier_material_parts`. The systems are the same list as a product's `formula_source_system` (`SOURCE_SYSTEMS` in `shared/supplier-documents.js`, now imported by `api/products.js`). MRPEasy and Keychain numbers sit side by side during dual entry. `supplier_materials.current_part_system` points at the one in force; NULL means the app_settings key `supplier_materials.default_part_system` (fallback `mrpeasy`). A cutover is a config change plus a data copy. A child table was chosen over two columns because a third system would otherwise be a schema change.
+- **`POST /suppliers/:id/materials`, `PUT /suppliers/materials/:mid`.** There is no DELETE. `is_active = 0` retires an ingredient: it leaves the banned-list checks and new document links, and the documents already linked to it keep the link.
+- **`PUT /suppliers/files/:fileId` corrects kind, expires_on, material_id and lot_number**, audited as `supplier_file_relabelled` / `supplier_file_updated` with the before and the after. It never touches the bytes, the stored name or the storage key, and never deletes. The kind is the closed list `FILE_KINDS`. A letter of guarantee or a GMP certificate still has to carry its date. An ingredient must belong to the same supplier and still be in use. The renewal route and the GMP convenience route are unchanged.
+- **Re-labelling a signed questionnaire as `questionnaire` clears "no questionnaire"**: the flag already counted kind, not filename, so nothing about it changed.
+- **Upload takes `material_id`, `lot_number` and a checked `kind`.** GET `/:id` files and `/documents/expiring` return the ingredient id, label and part number.
+- **The filename reader**: `exp` after an underscore (`26v4_exp. 12.31.2026`), compact `Exp 022424`, `KOSHER2025`, BRCS read as a certificate (never the GMP certificate), and four new kinds — `natural_flavor`, `fsvp`, `w9`, `certificate_of_insurance` — plus "Continuing letter of pure Food Guarantee". **Rows already filed keep their kind**; re-labelling is a person's act or a reviewed preview/apply, never a boot pass.
+- **`GET /files/coverage` lists every catalogued file with no bytes, by id** (`missing`). A diagnosis only.
+- Fixed in passing: the supplier drawer ran wider than a phone screen (a grid item's min-width was its documents table).
+- `verify:suppliermaterials` (43, live through the S3 stand-in + browser at 1280 and 390).

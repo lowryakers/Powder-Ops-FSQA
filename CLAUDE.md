@@ -2851,6 +2851,17 @@ sheet that must open even with no R2 configured. The zone **item lists** it docu
   to a person to count. `renewableDocStatus` is the one rule for this and the letter of guarantee.
 - **Gate on "approved"** off / warn (default) / on, admin only; warn stamps `gmp_cert_gaps`. `verify:gmpcert` (47).
 
+## Ingredients carry part numbers by system; a document's kind, expiry, ingredient and lot are edited (D-338)
+`shared/supplier-documents.js` (`SOURCE_SYSTEMS`, `FILE_KINDS`, `DATED_KINDS`, `cleanMaterial`, `cleanFileMeta`),
+`server/supplier-materials.js`, `supplier_material_parts` (one row per system) + `supplier_materials.current_part_system`,
+`POST /suppliers/:id/materials`, `PUT /suppliers/materials/:mid`, `PUT /suppliers/files/:fileId`, `IngredientsSection` +
+`FileMetaEditor` in `SuppliersPanel.jsx`.
+- **A part number is (system, number); the default system is app_settings `supplier_materials.default_part_system`.**
+  Never add a column per system. No DELETE: an ingredient is retired with `is_active = 0`.
+- **The file edit never touches bytes, name or storage key, and never deletes.** Dated kinds still need their date.
+- **Already-filed rows keep their kind** when the filename reader improves; never re-kind them at boot.
+  `verify:suppliermaterials` (43).
+
 ## Purchasing edits a supplier's details and contacts (D-295)
 `EditDetails` + `ContactsSection` (SuppliersPanel.jsx), `shared/supplier-fields.js` (`VENDOR_TYPES`, `CONTACT_ROLES`,
 `cleanContact`), `POST /suppliers/:id/contacts`, `PUT|DELETE /suppliers/contacts/:cid`.

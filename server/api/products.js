@@ -10,6 +10,7 @@
 //     sixteen lowercased headers its _fetch_sheet_rows() matches on. That
 //     function is the contract: renaming a column here breaks proofing there,
 //     silently, because its parser skips headers it does not recognise.
+import { SOURCE_SYSTEMS } from '../../shared/supplier-documents.js';
 import { Router } from 'express';
 import { pageList } from '../bot-api.js';
 import { randomUUID as uuid } from 'crypto';
@@ -1458,7 +1459,8 @@ const WRITABLE = [
   // through this route, and a Keychain sync has somewhere to stamp.
   'family', 'formula_source_system', 'formula_fill_per_unit_g', 'formula_synced_at',
 ];
-const FORMULA_SOURCE_SYSTEMS = ['mrpeasy', 'keychain', 'manual', 'genesis'];
+// One list with a supplier material's part-number systems (D-338).
+const FORMULA_SOURCE_SYSTEMS = SOURCE_SYSTEMS;
 
 /**
  * `artwork_status` and `artwork_version` are NOT in WRITABLE either (D-131).
