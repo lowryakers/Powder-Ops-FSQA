@@ -64,6 +64,8 @@ import { embedUnicodeFaces } from '../pdf-unicode.js';
 
 import { withGuarantee, guaranteeFor } from '../supplier-guarantee.js';
 import { GUARANTEE_KIND, GUARANTEE_LABEL } from '../../shared/supplier-guarantee.js';
+import { withGmpCert, gmpCertFor, gmpGaps, gmpGateMode, GMP_GATE_MODES } from '../supplier-gmp-cert.js';
+import { GMP_CERT_KIND, GMP_CERT_LABEL } from '../../shared/supplier-gmp-cert.js';
 import { plantDateOf } from '../plant-clock.js';
 
 const router = Router();
@@ -100,7 +102,7 @@ function listSuppliers(db, { limit = 500 } = {}) {
          AND f.expires_on IS NOT NULL AND f.expires_on >= date('now')) AS next_expiry,
       (SELECT MAX(q.period_label) FROM supplier_qualifications q WHERE q.supplier_id = s.id) AS latest_period
     FROM suppliers s ORDER BY s.actively_using DESC, s.name COLLATE NOCASE LIMIT ?`).all(limit);
-  return withGuarantee(db, rows).map(r => ({
+  return withGmpCert(db, withGuarantee(db, rows)).map(r => ({
     ...r,
     legacy_names: JSON.parse(r.legacy_names || '[]'),
     // DERIVED, and this is the number the register exists to surface.
@@ -136,6 +138,10 @@ router.get('/', (req, res) => {
       // guarantee (D-289): missing, no renewal date, or expired.
       guarantee_gaps: suppliers.filter(s => s.guarantee?.gap).length,
       guarantee_due_soon: suppliers.filter(s => s.guarantee?.required && s.guarantee.status === 'due_soon').length,
+      // Raw-material and packaging suppliers we buy from with no current
+      // third-party GMP certificate (D-337).
+      gmp_cert_gaps: suppliers.filter(s => s.gmp_cert?.gap).length,
+      gmp_cert_due_soon: suppliers.filter(s => s.gmp_cert?.required && s.gmp_cert.status === 'due_soon').length,
     },
   });
 });
@@ -172,6 +178,21 @@ router.put('/banned-gate', requireRole('admin'), (req, res) => {
   res.json({ mode });
 });
 
+// The third-party GMP certificate gate on "approved" (D-337). Before `/:id`.
+router.get('/gmp-gate', (req, res) => {
+  if (!canRead(req.user)) return res.status(403).json({ error: 'Not permitted' });
+  res.json({ mode: gmpGateMode(getDb()), modes: GMP_GATE_MODES });
+});
+router.put('/gmp-gate', requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const mode = req.body?.mode;
+  if (!GMP_GATE_MODES.includes(mode)) return res.status(400).json({ error: `Mode must be one of ${GMP_GATE_MODES.join(', ')}.` });
+  const before = gmpGateMode(db);
+  db.prepare("INSERT INTO app_settings (key, value) VALUES ('supplier_gmp_gate', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(mode);
+  logAudit(req.user, 'supplier_gmp_gate_changed', 'app_setting', 'supplier_gmp_gate', { from: before, to: mode });
+  res.json({ mode });
+});
+
 // DECLARED BEFORE `/:id` — Express matches in declaration order and
 // "documents" is a perfectly good :id. Same trap as /products/master.csv.
 router.get('/:id', (req, res) => {
@@ -186,6 +207,7 @@ router.get('/:id', (req, res) => {
 
     supplier: { ...s, legacy_names: JSON.parse(s.legacy_names || '[]') },
     guarantee: guaranteeFor(db, s),
+    gmp_cert: { ...gmpCertFor(db, s), mode: gmpGateMode(db), gaps: gmpGaps(db, s) },
     contacts: db.prepare('SELECT * FROM supplier_contacts WHERE supplier_id = ? ORDER BY is_primary DESC, email').all(s.id),
     materials: db.prepare('SELECT * FROM supplier_materials WHERE supplier_id = ? ORDER BY item_description').all(s.id),
     qualifications: db.prepare(`SELECT * FROM supplier_qualifications WHERE supplier_id = ?
@@ -805,9 +827,18 @@ router.post('/:id/disposition', (req, res) => {
   // gaps; on refuses, naming each material; off stamps nothing.
   const gateMode = bannedGateMode(db);
   const gaps = disposition === 'approved' && gateMode !== 'off' ? bannedGaps(db, s.id) : [];
-  if (gateMode === 'on' && gaps.length) {
-    return res.status(409).json({ error: `Not approved: the banned-list check is not complete — ${gaps.map(g => g.reason).join('; ')}.`,
-      banned_gaps: gaps, banned_gate_mode: gateMode });
+  // THE THIRD-PARTY GMP CERTIFICATE GATE (D-337), the same shape: only
+  // "approved", warn stamps, on refuses. Both gates are read before either
+  // refuses, so a refusal names everything that is missing at once.
+  const gmpMode = gmpGateMode(db);
+  const gmp = disposition === 'approved' && gmpMode !== 'off' ? gmpGaps(db, s) : [];
+  const refusals = [
+    gateMode === 'on' && gaps.length ? `the banned-list check is not complete — ${gaps.map(g => g.reason).join('; ')}` : null,
+    gmpMode === 'on' && gmp.length ? gmp.map(g => g.reason).join('; ') : null,
+  ].filter(Boolean);
+  if (refusals.length) {
+    return res.status(409).json({ error: `Not approved: ${refusals.join('. ')}.`,
+      banned_gaps: gaps, banned_gate_mode: gateMode, gmp_cert_gaps: gmp, gmp_gate_mode: gmpMode });
   }
 
   const prev = { status: s.status };
@@ -829,9 +860,10 @@ router.post('/:id/disposition', (req, res) => {
     const nextDue = nextReviewDue({ due: anchor, doneOn: new Date(), months: 12 });
     db.prepare(`UPDATE supplier_qualifications SET disposition = ?, disposition_notes = ?,
       risk_criteria = ?, decided_by = ?, decided_at = datetime('now'),
-      next_review_due = ?, banned_check_gaps = ?, banned_gate_mode = ?, updated_at = datetime('now') WHERE id = ?`)
+      next_review_due = ?, banned_check_gaps = ?, banned_gate_mode = ?, gmp_cert_gaps = ?, gmp_gate_mode = ?,
+      updated_at = datetime('now') WHERE id = ?`)
       .run(disposition, clean(notes, 1000), JSON.stringify(risk_criteria), req.user.name, nextDue,
-        gaps.length ? JSON.stringify(gaps) : null, gateMode, qid);
+        gaps.length ? JSON.stringify(gaps) : null, gateMode, gmp.length ? JSON.stringify(gmp) : null, gmpMode, qid);
     // The supplier's status MIRRORS the decision and is written nowhere else —
     // the same doctrine as knife_accountability.status and products.nfp_version.
     db.prepare(`UPDATE suppliers SET status = ?, status_reason = ?, status_set_by = ?,
@@ -840,8 +872,9 @@ router.post('/:id/disposition', (req, res) => {
   })();
 
   logAudit(req.user, 'supplier_disposition_set', 'supplier', s.id,
-    { disposition, period_label, banned_gate_mode: gateMode, banned_gaps: gaps.length || undefined }, prev, { status: disposition }, s.name);
-  res.json({ ok: true, banned_gaps: gaps, banned_gate_mode: gateMode });
+    { disposition, period_label, banned_gate_mode: gateMode, banned_gaps: gaps.length || undefined,
+      gmp_gate_mode: gmpMode, gmp_cert_gaps: gmp.length ? gmp.map(g => g.state) : undefined }, prev, { status: disposition }, s.name);
+  res.json({ ok: true, banned_gaps: gaps, banned_gate_mode: gateMode, gmp_cert_gaps: gmp, gmp_gate_mode: gmpMode });
 });
 
 // ── The bytes behind the catalogue ──────────────────────────────────────────
@@ -1249,6 +1282,12 @@ router.post('/:id/files', fileUpload.array('files', 20), async (req, res) => {
     if (wantsLetter && !renewal && !files.every(f => expiryFromFilename(f.originalname))) {
       return res.status(400).json({ code: 'RENEWAL_REQUIRED', error: `A ${GUARANTEE_LABEL.toLowerCase()} needs its renewal date.` });
     }
+    // A third-party GMP certificate is filed WITH its expiry date (D-337), for
+    // the same reason. Only when it is filed as one: the kind is never read
+    // from a filename, because "GMP" in a name is a guess (see gmpCertCandidate).
+    if (req.body?.kind === GMP_CERT_KIND && !renewal) {
+      return res.status(400).json({ code: 'EXPIRY_REQUIRED', error: `A ${GMP_CERT_LABEL.toLowerCase()} needs its expiry date.` });
+    }
 
     const ins = db.prepare(`INSERT INTO supplier_files
       (id, supplier_id, kind, expires_on, filename, storage_key, content_type, size,
@@ -1326,13 +1365,36 @@ router.put('/files/:fileId/renewal', (req, res) => {
   const db = getDb();
   const f = db.prepare('SELECT id, supplier_id, kind, filename, expires_on FROM supplier_files WHERE id = ?').get(req.params.fileId);
   if (!f) return res.status(404).json({ error: 'No such file' });
-  if (f.kind !== GUARANTEE_KIND) return res.status(400).json({ error: `Only a ${GUARANTEE_LABEL.toLowerCase()}'s renewal date is set here.` });
+  if (f.kind !== GUARANTEE_KIND && f.kind !== GMP_CERT_KIND) {
+    return res.status(400).json({ error: `Only a ${GUARANTEE_LABEL.toLowerCase()}'s renewal date or a ${GMP_CERT_LABEL.toLowerCase()}'s expiry date is set here.` });
+  }
   const date = String(req.body?.expires_on || '').slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'The renewal date must be a date (YYYY-MM-DD).' });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'The date must be a date (YYYY-MM-DD).' });
   db.prepare('UPDATE supplier_files SET expires_on = ? WHERE id = ?').run(date, f.id);
-  logAudit(req.user, 'supplier_guarantee_renewal_set', 'supplier_file', f.id,
+  logAudit(req.user, f.kind === GMP_CERT_KIND ? 'supplier_gmp_cert_expiry_set' : 'supplier_guarantee_renewal_set', 'supplier_file', f.id,
     { supplier_id: f.supplier_id, from: f.expires_on, to: date }, { expires_on: f.expires_on }, { expires_on: date }, f.filename);
   res.json({ ok: true, expires_on: date, today: plantDateOf() });
+});
+
+// A certificate already on file IS the third-party GMP certificate (D-337).
+// The archive walk catalogues "NSF GMP Exp 2026.pdf" as a general certificate;
+// a person says that it is the one this supplier owes. Only that move: from
+// "certificate" to the GMP kind, never back and never from any other kind,
+// and only with an expiry date (on file, or given now).
+router.put('/files/:fileId/gmp-certificate', (req, res) => {
+  if (!canEdit(req.user)) return res.status(403).json({ error: 'Not permitted' });
+  const db = getDb();
+  const f = db.prepare('SELECT id, supplier_id, kind, filename, expires_on FROM supplier_files WHERE id = ?').get(req.params.fileId);
+  if (!f) return res.status(404).json({ error: 'No such file' });
+  if (f.kind !== 'certificate') return res.status(400).json({ error: `Only a file catalogued as a certificate can be counted as the ${GMP_CERT_LABEL.toLowerCase()}.` });
+  const given = req.body?.expires_on ? String(req.body.expires_on).slice(0, 10) : null;
+  if (given && !/^\d{4}-\d{2}-\d{2}$/.test(given)) return res.status(400).json({ error: 'The expiry date must be a date (YYYY-MM-DD).' });
+  const expires = given || f.expires_on;
+  if (!expires) return res.status(400).json({ code: 'EXPIRY_REQUIRED', error: `A ${GMP_CERT_LABEL.toLowerCase()} needs its expiry date.` });
+  db.prepare('UPDATE supplier_files SET kind = ?, expires_on = ? WHERE id = ?').run(GMP_CERT_KIND, expires, f.id);
+  logAudit(req.user, 'supplier_file_counted_gmp_cert', 'supplier_file', f.id,
+    { supplier_id: f.supplier_id, expires_on: expires }, { kind: f.kind, expires_on: f.expires_on }, { kind: GMP_CERT_KIND, expires_on: expires }, f.filename);
+  res.json({ ok: true, kind: GMP_CERT_KIND, expires_on: expires });
 });
 
 // Removing the BYTES is not removing the record. The catalogue row survives

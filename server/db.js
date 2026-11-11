@@ -2836,6 +2836,10 @@ function runMigrations() {
   CREATE INDEX IF NOT EXISTS idx_supplier_banned_checks ON supplier_banned_checks(material_id, checked_at);`);
   addColumnIfMissing('supplier_qualifications', 'banned_check_gaps', 'TEXT');
   addColumnIfMissing('supplier_qualifications', 'banned_gate_mode', 'TEXT');
+  // The third-party GMP certificate gate on "approved" (D-337): what was missing
+  // when the decision was made, and the gate's mode at the time.
+  addColumnIfMissing('supplier_qualifications', 'gmp_cert_gaps', 'TEXT');
+  addColumnIfMissing('supplier_qualifications', 'gmp_gate_mode', 'TEXT');
   // A receipt records that QA was told a lab sample was due, and who was told.
   // Stamped on the LINE rather than kept only in the audit log: "was anybody
   // asked to pull a sample off that pallet" is a question about the receipt,

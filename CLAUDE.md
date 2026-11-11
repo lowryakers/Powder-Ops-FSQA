@@ -2842,6 +2842,15 @@ sheet that must open even with no R2 configured. The zone **item lists** it docu
 - Missing / no renewal date / expired are gaps; renews within 30 days is a warning. Reported, never gated.
 - `verify:guarantee` (30).
 
+## Raw-material and packaging suppliers owe a third-party GMP certificate (D-337)
+`shared/supplier-gmp-cert.js` (PURE: `gmpCertRequired`, `gmpCertStatus`, `gmpCertCandidate`), `server/supplier-gmp-cert.js`
+(`withGmpCert`, `gmpCertFor`, `gmpGaps`, `gmpGateMode`, `openGmpCertGaps`), file kind `gmp_certificate`, `GET|PUT
+/suppliers/gmp-gate`, `PUT /suppliers/files/:id/gmp-certificate`, `GmpCertSection` + `GmpGateControl`, bell `gmp-cert-missing`.
+- **Owed by `ingredient` / `packaging` while actively used; a GMP certificate only** (GFSI alone does not count).
+- Filed with its expiry (`EXPIRY_REQUIRED`). **Never read from a filename** — a GMP-named general certificate is offered
+  to a person to count. `renewableDocStatus` is the one rule for this and the letter of guarantee.
+- **Gate on "approved"** off / warn (default) / on, admin only; warn stamps `gmp_cert_gaps`. `verify:gmpcert` (47).
+
 ## Purchasing edits a supplier's details and contacts (D-295)
 `EditDetails` + `ContactsSection` (SuppliersPanel.jsx), `shared/supplier-fields.js` (`VENDOR_TYPES`, `CONTACT_ROLES`,
 `cleanContact`), `POST /suppliers/:id/contacts`, `PUT|DELETE /suppliers/contacts/:cid`.

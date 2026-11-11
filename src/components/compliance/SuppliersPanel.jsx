@@ -19,6 +19,7 @@ import {
 import FrozenScroll from '../common/FrozenScroll';
 import { GUARANTEE_KIND, GUARANTEE_LABEL, GUARANTEE_STATUS_TEXT, DUE_SOON_DAYS } from '../../../shared/supplier-guarantee.js';
 import { VENDOR_TYPES, CONTACT_ROLES } from '../../../shared/supplier-fields.js';
+import { GMP_CERT_KIND, GMP_CERT_LABEL, GMP_CERT_STATUS_TEXT } from '../../../shared/supplier-gmp-cert.js';
 
 // The letter of guarantee chip (D-289). The server decides the state; this only draws it.
 const GUARANTEE_TONE = {
@@ -34,6 +35,18 @@ const GuaranteeChip = ({ g }) => {
     <span data-guarantee={g.status} className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${GUARANTEE_TONE[g.status] || ''}`}>
       {g.status === 'missing' ? 'Missing' : g.status === 'no_renewal_date' ? 'No renewal date'
         : `${g.status === 'expired' ? 'Expired' : 'Renews'} ${formatDate(g.renews_on)}`}
+    </span>
+  );
+};
+
+// The third-party GMP certificate chip (D-337). Same states, same tones; the
+// date is an expiry, not a renewal.
+const GmpCertChip = ({ g }) => {
+  if (!g?.required) return <span className="text-slate-400">—</span>;
+  return (
+    <span data-gmp-cert={g.status} className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${GUARANTEE_TONE[g.status] || ''}`}>
+      {g.status === 'missing' ? 'Missing' : g.status === 'no_renewal_date' ? 'No expiry date'
+        : `${g.status === 'expired' ? 'Expired' : 'Expires'} ${formatDate(g.renews_on)}`}
     </span>
   );
 };
@@ -77,6 +90,7 @@ const COLUMNS = [
   { key: 'file_count', label: 'Files', type: 'number' },
   { key: 'expired_files', label: 'Expired', type: 'number' },
   { key: 'guarantee_order', label: 'Letter of guarantee', type: 'number' },
+  { key: 'gmp_order', label: 'GMP certificate', type: 'number' },
   { key: 'next_expiry', label: 'Next expiry', type: 'date' },
 ];
 
@@ -120,6 +134,8 @@ export default function SuppliersPanel({ user }) {
     ...s,
     guarantee_order: !s.guarantee?.required ? 9
       : ({ missing: 0, expired: 1, no_renewal_date: 2, due_soon: 3, current: 4 })[s.guarantee.status] ?? 9,
+    gmp_order: !s.gmp_cert?.required ? 9
+      : ({ missing: 0, expired: 1, no_renewal_date: 2, due_soon: 3, current: 4 })[s.gmp_cert.status] ?? 9,
   })), [data]);
   const summary = data?.summary || {};
 
@@ -131,6 +147,7 @@ export default function SuppliersPanel({ user }) {
       if (only === 'active' && !s.actively_using) return false;
       if (only === 'expired' && !s.expired_files) return false;
       if (only === 'guarantee' && !s.guarantee?.gap) return false;
+      if (only === 'gmp' && !s.gmp_cert?.gap) return false;
       if (!needle) return true;
       return [s.name, s.vendor_type, ...(s.legacy_names || [])]
         .filter(Boolean).some(v => String(v).toLowerCase().includes(needle));
@@ -160,13 +177,14 @@ export default function SuppliersPanel({ user }) {
           <p className="text-xs text-slate-500 dark:text-slate-400">SOP 404 V4 · FORM 404-1, 404-2</p>
         </div>
         {user?.role === 'admin' && <BannedGateControl />}
+        {user?.role === 'admin' && <GmpGateControl />}
       </header>
 
       <ModuleTabs tabs={tabs} value={tab} onChange={setTab} />
 
       {tab === 'register' && (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             <Stat value={summary.active ?? 0} label="Actively used"
               onClick={() => setOnly(only === 'active' ? null : 'active')} active={only === 'active'} />
             {/* TWO GAPS, NOT ONE. "Awaiting a disposition" is Quality's queue
@@ -204,7 +222,23 @@ export default function SuppliersPanel({ user }) {
               onClick={summary.guarantee_gaps ? () => setOnly(only === 'guarantee' ? null : 'guarantee') : undefined}
               active={only === 'guarantee'}
             />
+            {/* Raw-material and packaging suppliers with no current third-party GMP certificate (D-337). */}
+            <Stat
+              value={summary.gmp_cert_gaps ?? 0}
+              label="No current GMP certificate"
+              tone={summary.gmp_cert_gaps ? 'text-rose-600 dark:text-rose-400' : ''}
+              onClick={summary.gmp_cert_gaps ? () => setOnly(only === 'gmp' ? null : 'gmp') : undefined}
+              active={only === 'gmp'}
+            />
           </div>
+
+          {only === 'gmp' && (
+            <div data-gmp-note className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
+              <FileWarning className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>Raw-material and packaging suppliers we buy from owe a current third-party GMP certificate. These have
+                none on file, one with no expiry date, or one that has expired. Open a supplier and attach the certificate.</span>
+            </div>
+          )}
 
           {only === 'guarantee' && (
             <div data-guarantee-note className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
@@ -254,6 +288,7 @@ export default function SuppliersPanel({ user }) {
                   { label: 'Expired', value: s.expired_files ? <span className="font-medium text-rose-600">{s.expired_files}</span> : null },
                   { label: 'Next expiry', value: s.next_expiry ? formatDate(s.next_expiry) : null },
                   { label: 'Letter of guarantee', value: s.guarantee?.required ? <GuaranteeChip g={s.guarantee} /> : null },
+                  { label: 'GMP certificate', value: s.gmp_cert?.required ? <GmpCertChip g={s.gmp_cert} /> : null },
                 ]}>
                 {expand.isExpanded(s.id) && (
                   <div className="mt-3 border-t border-slate-100 pt-3" onClick={e => e.stopPropagation()}>
@@ -295,6 +330,7 @@ export default function SuppliersPanel({ user }) {
                           : '—'}
                       </td>
                       <td className="px-3 py-2"><GuaranteeChip g={s.guarantee} /></td>
+                      <td className="px-3 py-2"><GmpCertChip g={s.gmp_cert} /></td>
                       <td className="px-3 py-2 text-slate-500">{s.next_expiry ? formatDate(s.next_expiry) : '—'}</td>
                     </tr>
                     {expand.isExpanded(s.id) && (
@@ -349,7 +385,10 @@ export default function SuppliersPanel({ user }) {
 // archive walk uses, so a file attached by hand is catalogued exactly as one
 // that arrived in the zip — and if the name says nothing it lands as "other",
 // visibly, rather than being guessed at.
-function AttachSupplierFiles({ supplierId, onDone, letter = false }) {
+// `letter` files a letter of guarantee with its renewal date (D-289); `gmp`
+// files a third-party GMP certificate with its expiry date (D-337).
+function AttachSupplierFiles({ supplierId, onDone, letter = false, gmp = false }) {
+  const dated = letter || gmp;
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
   const [renewal, setRenewal] = useState('');
@@ -363,6 +402,7 @@ function AttachSupplierFiles({ supplierId, onDone, letter = false }) {
       const fd = new FormData();
       for (const f of picked) fd.append('files', f);
       if (letter) { fd.append('kind', GUARANTEE_KIND); fd.append('expires_on', renewal); }
+      if (gmp) { fd.append('kind', GMP_CERT_KIND); fd.append('expires_on', renewal); }
       const r = await apiUpload(`/suppliers/${supplierId}/files`, fd, 'POST');
       const n = r?.saved?.length || 0;
       setMsg({ ok: true, text: `${n} document${n === 1 ? '' : 's'} attached.` });
@@ -389,14 +429,23 @@ function AttachSupplierFiles({ supplierId, onDone, letter = false }) {
             data-guarantee-renewal className="rounded border border-slate-300 px-1.5 py-0.5 text-xs dark:border-slate-600 dark:bg-slate-900" />
         </label>
       )}
-      <input ref={inputRef} type="file" multiple={!letter} className="hidden"
+      {gmp && (
+        <label className="flex items-center gap-1 text-xs text-slate-600 dark:text-slate-300">
+          Expires on
+          <input type="date" value={renewal} onChange={e => setRenewal(e.target.value)} onClick={stopRowClick}
+            data-gmp-expiry className="rounded border border-slate-300 px-1.5 py-0.5 text-xs dark:border-slate-600 dark:bg-slate-900" />
+        </label>
+      )}
+      <input ref={inputRef} type="file" multiple={!dated} className="hidden"
         accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.zip"
         onChange={e => send(e.target.files)} />
-      <button type="button" disabled={busy || (letter && !renewal)} data-guarantee-attach={letter ? '' : undefined}
-        title={letter && !renewal ? 'Enter the renewal date first' : undefined}
+      <button type="button" disabled={busy || (dated && !renewal)} data-guarantee-attach={letter ? '' : undefined}
+        data-gmp-attach={gmp ? '' : undefined}
+        title={dated && !renewal ? `Enter the ${gmp ? 'expiry' : 'renewal'} date first` : undefined}
         onClick={e => { stopRowClick(e); inputRef.current?.click(); }}
         className="inline-flex items-center gap-1 rounded border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800">
-        <Upload size={12} /> {busy ? 'Attaching…' : letter ? `Attach ${GUARANTEE_LABEL.toLowerCase()}` : 'Attach documents'}
+        <Upload size={12} /> {busy ? 'Attaching…' : letter ? `Attach ${GUARANTEE_LABEL.toLowerCase()}`
+          : gmp ? 'Attach GMP certificate' : 'Attach documents'}
       </button>
     </div>
   );
@@ -501,6 +550,8 @@ function SupplierDetail({ id, user, onDecide, onRemoved }) {
       <ContactsSection supplierId={id} contacts={contacts} canEdit={data.can_edit} onChanged={refresh} />
 
       <GuaranteeSection supplier={supplier} guarantee={data.guarantee} canEdit={data.can_edit} onChanged={refresh} />
+
+      <GmpCertSection supplier={supplier} gmp={data.gmp_cert} canEdit={data.can_edit} onChanged={refresh} />
 
       <MaterialChecks supplierId={id} materials={data.material_checks || materials} banned={data.banned}
         canDecide={data.can_decide} onChanged={refresh} />
@@ -857,6 +908,74 @@ function GuaranteeSection({ supplier, guarantee, canEdit, onChanged }) {
   );
 }
 
+// ── The third-party GMP certificate (D-337) ─────────────────────────────────
+// Owed by a raw-material or packaging supplier while we buy from it. Only a GMP
+// certificate counts. Filed with its expiry date; a general certificate already
+// on file with GMP in its name is OFFERED, never counted by itself.
+function GmpCertSection({ supplier, gmp, canEdit, onChanged }) {
+  const [busy, setBusy] = useState(false);
+  const [date, setDate] = useState('');
+  const [error, setError] = useState(null);
+  const g = gmp || {};
+  if (!g.required && !g.file) return null;
+  const act = async (fn) => {
+    setBusy(true); setError(null);
+    try { await fn(); setDate(''); onChanged?.(); } catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
+  const setExpiry = () => act(() => apiPut(`/suppliers/files/${g.file.id}/renewal`, { expires_on: date }));
+  const count = (f) => act(() => apiPut(`/suppliers/files/${f.id}/gmp-certificate`, f.expires_on ? {} : { expires_on: date }));
+  return (
+    <section data-gmp-section={g.status || 'not_required'} className="md:col-span-2 rounded border border-slate-200 p-2 dark:border-slate-700">
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{GMP_CERT_LABEL}</h4>
+        {g.required && <GmpCertChip g={g} />}
+      </div>
+      <p className="text-sm text-slate-600 dark:text-slate-300">
+        {g.required
+          ? <>{GMP_CERT_STATUS_TEXT[g.status]}{g.file ? <> — <span className="text-slate-500">{g.file.filename}</span></> : null}.
+              {g.status === 'due_soon' && ' Expires within 30 days; ask the supplier for the new certificate.'}</>
+          : 'Not required while we are not buying from this supplier.'}
+        {g.required && g.mode === 'on' && g.gap && <b className="text-rose-600 dark:text-rose-400"> This supplier cannot be approved until it is current.</b>}
+      </p>
+      {canEdit && (
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          {g.status === 'no_renewal_date' && g.file && (
+            <span className="flex items-center gap-1 text-xs">
+              Expiry date for this certificate
+              <input type="date" value={date} onChange={e => setDate(e.target.value)} onClick={stopRowClick}
+                data-gmp-set-date className="rounded border border-slate-300 px-1.5 py-0.5 text-xs dark:border-slate-600 dark:bg-slate-900" />
+              <button type="button" disabled={busy || !date} onClick={e => { stopRowClick(e); setExpiry(); }}
+                className="rounded border border-slate-300 px-2 py-0.5 text-xs disabled:opacity-50 dark:border-slate-600">Save</button>
+            </span>
+          )}
+          {g.required && <AttachSupplierFiles supplierId={supplier.id} onDone={onChanged} gmp />}
+        </div>
+      )}
+      {canEdit && !!(g.candidates || []).length && (
+        <div data-gmp-candidates className="mt-2 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+          <p className="font-medium">Already on file as a certificate — is one of these the third-party GMP certificate?</p>
+          <ul className="mt-1 space-y-1">
+            {g.candidates.map(f => (
+              <li key={f.id} className="flex flex-wrap items-center gap-2">
+                <span>{f.filename}</span>
+                <span className="text-amber-700 dark:text-amber-300">{f.expires_on ? `expires ${formatDate(f.expires_on)}` : 'no expiry date'}</span>
+                {!f.expires_on && (
+                  <input type="date" value={date} onChange={e => setDate(e.target.value)} onClick={stopRowClick}
+                    className="rounded border border-amber-300 px-1.5 py-0.5 dark:bg-slate-900" />
+                )}
+                <button type="button" data-gmp-count={f.id} disabled={busy || (!f.expires_on && !date)}
+                  onClick={e => { stopRowClick(e); count(f); }}
+                  className="rounded border border-amber-400 px-2 py-0.5 font-medium disabled:opacity-50">Count it as the GMP certificate</button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {error && <p className="mt-1 text-xs text-rose-600">{error}</p>}
+    </section>
+  );
+}
+
 // ── The banned-list check, per material (D-202, CAR 4990682-3 (a)) ──────────
 // The editions are the latest annual review's, read by the server and frozen
 // on the check; nothing here is typed except the answer and a note.
@@ -942,6 +1061,24 @@ function BannedGateControl() {
         className="rounded border border-slate-300 px-1.5 py-1 text-xs dark:border-slate-600 dark:bg-slate-800">
         <option value="off">Off</option>
         <option value="warn">Warn — record gaps</option>
+        <option value="on">On — refuse approval</option>
+      </select>
+    </label>
+  );
+}
+
+/** Admin: the third-party GMP certificate gate on approval (D-337). */
+function GmpGateControl() {
+  const { data, refresh } = useApiGet('/suppliers/gmp-gate');
+  if (!data) return null;
+  return (
+    <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300" data-gmp-gate-control>
+      GMP certificate on approval
+      <select id="supplier-gmp-gate" value={data.mode}
+        onChange={async (e) => { await apiPut('/suppliers/gmp-gate', { mode: e.target.value }); refresh(); }}
+        className="rounded border border-slate-300 px-1.5 py-1 text-xs dark:border-slate-600 dark:bg-slate-800">
+        <option value="off">Off</option>
+        <option value="warn">Warn — record the gap</option>
         <option value="on">On — refuse approval</option>
       </select>
     </label>
@@ -1443,7 +1580,11 @@ function DispositionModal({ supplier, data, onClose, onSaved, queue = [], onAdva
   const banned = detail?.banned;
   const bannedGaps = disposition === 'approved' && banned && banned.mode !== 'off' ? banned.gaps || [] : [];
   const bannedBlocks = banned?.mode === 'on' && bannedGaps.length > 0;
-  const ready = disposition && !unanswered.length && (!needsReason || notes.trim().length > 2) && !bannedBlocks;
+  // The third-party GMP certificate gate (D-337), the same way.
+  const gmp = detail?.gmp_cert;
+  const gmpGaps = disposition === 'approved' && gmp && gmp.mode !== 'off' ? gmp.gaps || [] : [];
+  const gmpBlocks = gmp?.mode === 'on' && gmpGaps.length > 0;
+  const ready = disposition && !unanswered.length && (!needsReason || notes.trim().length > 2) && !bannedBlocks && !gmpBlocks;
 
   const save = async (advance) => {
     setBusy(true); setError(null);
@@ -1566,6 +1707,17 @@ function DispositionModal({ supplier, data, onClose, onSaved, queue = [], onAdva
               ? 'Cannot be approved yet — the banned-list check is not complete:'
               : 'The banned-list check is not complete. Approving now records these gaps on the decision:'}</p>
             <ul className="mt-1 list-disc pl-5 text-xs">{bannedGaps.map((g, i) => <li key={g.material_id || i}>{g.reason}</li>)}</ul>
+          </div>
+        )}
+
+        {gmpGaps.length > 0 && (
+          <div data-gmp-gaps={gmp.mode} className={`mb-3 rounded border p-2 text-sm ${gmpBlocks
+            ? 'border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-200'
+            : 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200'}`}>
+            <p className="font-medium">{gmpBlocks
+              ? 'Cannot be approved yet:'
+              : 'Approving now records this gap on the decision:'}</p>
+            <ul className="mt-1 list-disc pl-5 text-xs">{gmpGaps.map((g, i) => <li key={i}>{g.reason}</li>)}</ul>
           </div>
         )}
 

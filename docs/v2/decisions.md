@@ -10710,3 +10710,26 @@ records it.
   section 9 names approval phrases and roles that this code does not follow (it recognizes one configured approver and
   three phrases); a later approved update reconciles them.
 - `verify:opsthreadasks` (81; `main` fails at the first read of the asks table).
+
+## D-337 — Raw-material and packaging suppliers owe a current third-party GMP certificate (10 Nov 2026)
+Asked by Quality (Carol): "we need a prompt that requires a 3rd party GMP certificate for the supplier." Lowry
+answered the three open points the same day: raw-material and packaging suppliers; report it and gate approval;
+a GMP certificate only (a GFSI certificate alone does not count).
+- **The letter-of-guarantee shape (D-289), a second document.** `shared/supplier-gmp-cert.js` (PURE) owns who owes one
+  (`ingredient` or `packaging`, while actively used; "Raw Material" and similar imported spellings read the same) and
+  the state. `renewableDocStatus` in `shared/supplier-guarantee.js` is now the one rule for both documents; the
+  guarantee's behaviour is unchanged and asserted.
+- **Filed with its expiry date** (kind `gmp_certificate`, `400 EXPIRY_REQUIRED` without one). Missing, no expiry date
+  and expired are gaps; expiring within 30 days is a warning. An undated one takes its date through the existing
+  `PUT /suppliers/files/:id/renewal`.
+- **The kind is never read from a filename.** A general certificate already on file with GMP in its name is OFFERED
+  ("Count it as the GMP certificate", `PUT /suppliers/files/:id/gmp-certificate`, certificate → GMP kind only, with an
+  expiry, audited before/after). Nothing is converted by itself, at boot or on read.
+- **The gate on "approved" is the D-202 shape**: `app_settings.supplier_gmp_gate` off / warn (default) / on, admin only.
+  Warn approves and stamps `supplier_qualifications.gmp_cert_gaps` / `gmp_gate_mode`; on refuses (409) naming the
+  gap; conditional and not-approved are never gated. Both gates are read before either refuses. A deploy never turns
+  it on.
+- Seen in: the register (count card, filter, column), each supplier's section, the disposition window, and the bell
+  (`gmp-cert-missing`, Quality and Purchasing).
+- No form or SOP text changed. Which SOP 404 revision states the requirement is Document Control's.
+- `verify:gmpcert` (47, live + browser at 1280 and 390).
