@@ -11,6 +11,18 @@
 export const BOT_ROUTES = Object.freeze([
   { method: 'GET', path: '/api/bot/whoami', module: null, scope: 'read' },
   { method: 'GET', path: '/api/products', module: 'products', scope: 'read', paged: true },
+  { method: 'GET', path: '/api/suppliers', module: 'suppliers', scope: 'read' },
+  { method: 'GET', path: '/api/suppliers/documents/expiring', module: 'suppliers', scope: 'read' },
+  { method: 'GET', path: '/api/suppliers/:id', module: 'suppliers', scope: 'read' },
+  { method: 'PUT', path: '/api/suppliers/:id', module: 'suppliers (edit)', scope: 'write' },
+  { method: 'POST', path: '/api/suppliers/:id/contacts', module: 'suppliers (edit)', scope: 'write' },
+  { method: 'PUT', path: '/api/suppliers/contacts/:cid', module: 'suppliers (edit)', scope: 'write' },
+  { method: 'POST', path: '/api/suppliers/:id/materials', module: 'suppliers (edit)', scope: 'write' },
+  { method: 'PUT', path: '/api/suppliers/materials/:mid', module: 'suppliers (edit)', scope: 'write' },
+  { method: 'POST', path: '/api/suppliers/:id/files', module: 'suppliers (edit)', scope: 'write' },
+  { method: 'PUT', path: '/api/suppliers/files/:fileId', module: 'suppliers (edit)', scope: 'write' },
+  { method: 'PUT', path: '/api/suppliers/files/:fileId/renewal', module: 'suppliers (edit)', scope: 'write' },
+  { method: 'PUT', path: '/api/suppliers/files/:fileId/gmp-certificate', module: 'suppliers (edit)', scope: 'write' },
   { method: 'GET', path: '/api/products/:sku', module: 'products', scope: 'read' },
   { method: 'GET', path: '/api/nfp', module: 'products', scope: 'read', paged: true },
   { method: 'GET', path: '/api/nfp/sku/:sku', module: 'products', scope: 'read' },
@@ -306,6 +318,19 @@ export const WRITE_AREAS = Object.freeze([
   // product's registration, aliases and brand. Approving a plan or a spec,
   // applying, signing, unsigning and deleting are refused by segment or by
   // APPROVE_ROUTES; editing an approved plan is refused here, by name.
+  // Suppliers — the `suppliers-edit` grant (D-339). EDIT ONLY: details,
+  // contacts, ingredients, filing a document and correcting its facts. A
+  // disposition, a banned-list check, a gate mode, a questionnaire send or
+  // revoke, an import and every DELETE stay off this list on purpose.
+  { area: 'suppliers', grant: 'suppliers-edit', method: 'PUT', re: /^\/suppliers\/(?!banned-gate$|gmp-gate$|documents$|files$|import$|questionnaires$|materials$|contacts$|link-name-by-name$)[^/]+$/, label: 'PUT /api/suppliers/:id — details (never status; suppliers-edit grant)' },
+  { area: 'suppliers', grant: 'suppliers-edit', method: 'POST', re: /^\/suppliers\/(?!banned-gate$|gmp-gate$|documents$|files$|import$|questionnaires$|materials$|contacts$|link-name-by-name$)[^/]+\/contacts$/, label: 'POST /api/suppliers/:id/contacts (suppliers-edit grant)' },
+  { area: 'suppliers', grant: 'suppliers-edit', method: 'PUT', re: /^\/suppliers\/contacts\/[^/]+$/, label: 'PUT /api/suppliers/contacts/:cid (suppliers-edit grant)' },
+  { area: 'suppliers', grant: 'suppliers-edit', method: 'POST', re: /^\/suppliers\/(?!banned-gate$|gmp-gate$|documents$|files$|import$|questionnaires$|materials$|contacts$|link-name-by-name$)[^/]+\/materials$/, label: 'POST /api/suppliers/:id/materials — an ingredient (suppliers-edit grant)' },
+  { area: 'suppliers', grant: 'suppliers-edit', method: 'PUT', re: /^\/suppliers\/materials\/[^/]+$/, label: 'PUT /api/suppliers/materials/:mid (suppliers-edit grant)' },
+  { area: 'suppliers', grant: 'suppliers-edit', method: 'POST', re: /^\/suppliers\/(?!banned-gate$|gmp-gate$|documents$|files$|import$|questionnaires$|materials$|contacts$|link-name-by-name$)[^/]+\/files$/, label: 'POST /api/suppliers/:id/files — file a document (suppliers-edit grant)' },
+  { area: 'suppliers', grant: 'suppliers-edit', method: 'PUT', re: /^\/suppliers\/files\/[^/]+$/, label: 'PUT /api/suppliers/files/:fileId — kind, expiry, ingredient, lot (suppliers-edit grant)' },
+  { area: 'suppliers', grant: 'suppliers-edit', method: 'PUT', re: /^\/suppliers\/files\/[^/]+\/renewal$/, label: 'PUT /api/suppliers/files/:fileId/renewal (suppliers-edit grant)' },
+  { area: 'suppliers', grant: 'suppliers-edit', method: 'PUT', re: /^\/suppliers\/files\/[^/]+\/gmp-certificate$/, label: 'PUT /api/suppliers/files/:fileId/gmp-certificate (suppliers-edit grant)' },
   { area: 'coa-prep', grant: 'coa-prep', method: 'PUT', re: /^\/coa\/plans\/([^/]+)$/, label: 'PUT /api/coa/plans/:id — a DRAFT plan\'s tests and proposed products (coa-prep grant)', when: coaPlanBotOk },
   { area: 'coa-prep', grant: 'coa-prep', method: 'PUT', re: /^\/coa\/products\/([^/]+)$/, label: 'PUT /api/coa/products/:item — register or alias a COA product, set its brand (coa-prep grant)', when: coaProductBotOk },
   // messages
