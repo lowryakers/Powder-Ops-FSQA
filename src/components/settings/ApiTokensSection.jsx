@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useApiGet, apiPost, apiFetch } from '../../hooks/useApi';
-import { KeyRound, Plus, AlertTriangle, ShieldCheck, Ban } from 'lucide-react';
+import { KeyRound, Plus, AlertTriangle, ShieldCheck, Ban, RefreshCw } from 'lucide-react';
 import { formatDateTime } from '../../lib/datetime.js';
 import CopyButton from '../common/CopyButton.jsx';
 
@@ -60,6 +60,20 @@ export default function ApiTokensSection() {
     if (!window.confirm(`Revoke "${t.label}"? The bot holding it stops working immediately.`)) return;
     setError('');
     try { await apiPost(`/api-tokens/${t.id}/revoke`, {}); refresh(); } catch (e) { setError(e.message); }
+  };
+
+  // A bot lost its token (D-341). Only a hash is kept, so the old one cannot be
+  // shown again: a new token on the same account, label, scopes and grants, the
+  // old one revoked in the same act.
+  const replace = async (t) => {
+    if (!window.confirm(`Replace "${t.label}"? A new token is shown once, with the same account, scopes and grants. The current token stops working immediately — paste the new one into the bot.`)) return;
+    setError('');
+    try {
+      const r = await apiPost(`/api-tokens/${t.id}/replace`, {});
+      setIssued({ ...r, replacedLabel: t.label, replacedPrefix: t.token_prefix });
+      setEditing(null);
+      refresh();
+    } catch (e) { setError(e.message); }
   };
 
   const saveScopes = async () => {
@@ -126,6 +140,11 @@ export default function ApiTokensSection() {
       {issued && (
         <div className="p-4 rounded-lg bg-amber-50 border border-amber-300 space-y-2" data-api-token-issued>
           <div className="text-sm font-semibold text-amber-900 flex items-center gap-2"><AlertTriangle size={16} /> Copy this token now — it will not be shown again</div>
+          {issued.replacedLabel && (
+            <div className="text-xs text-amber-900" data-api-token-replaced>
+              Replaces "{issued.replacedLabel}" ({issued.replacedPrefix}…). That token no longer works — paste this one into the bot.
+            </div>
+          )}
           <code className="block p-2 bg-white border border-amber-200 rounded text-xs break-all select-all" data-api-token-plaintext>{issued.plaintext}</code>
           <div className="flex flex-wrap gap-2 items-center">
             <CopyButton getText={issued.plaintext} label="Copy token" />
@@ -154,7 +173,12 @@ export default function ApiTokensSection() {
                     </button>
                   )}
                   {t.state === 'live' && (
-                    <button type="button" onClick={() => revoke(t)} className={`${editing?.id === t.id ? 'ml-auto ' : ''}inline-flex items-center gap-1 px-2 py-1 rounded border border-red-200 text-red-700 text-xs hover:bg-red-50`} data-api-token-revoke>
+                    <button type="button" onClick={() => replace(t)} className={`${editing?.id === t.id ? 'ml-auto ' : ''}inline-flex items-center gap-1 px-2 py-1 rounded border border-gray-300 text-gray-700 text-xs hover:bg-gray-50`} data-api-token-replace>
+                      <RefreshCw size={12} /> Replace
+                    </button>
+                  )}
+                  {t.state === 'live' && (
+                    <button type="button" onClick={() => revoke(t)} className={`inline-flex items-center gap-1 px-2 py-1 rounded border border-red-200 text-red-700 text-xs hover:bg-red-50`} data-api-token-revoke>
                       <Ban size={12} /> Revoke
                     </button>
                   )}

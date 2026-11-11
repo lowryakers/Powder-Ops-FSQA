@@ -30,6 +30,34 @@ await post('/users/set-password', { user_id: 'ui-admin', password: 'Tokens2026!!
 const auth = await (await post('/users/login', { name: 'Token Office', password: 'Tokens2026!!' })).json();
 t('signed in as an admin', !!auth?.token);
 
+// D-341: Replace a live token — same account, label, scopes and grants; a new
+// clear text once; the old one stops working in the same act.
+{
+  const A = { ...H, Authorization: `Bearer ${auth.token}` };
+  const api = (p, b, h = A) => fetch(`${URL}/api${p}`, { method: b === undefined ? 'GET' : 'POST', headers: h, body: b === undefined ? undefined : JSON.stringify(b) });
+  const minted = await (await api('/api-tokens', { user_id: 'ui-bot', label: 'Lost bot', scopes: ['read', 'write'] })).json();
+  await api(`/api-tokens/${minted.token.id}/grants`, { grants: ['nfp-panel'] });
+  const who = (tok) => fetch(`${URL}/api/bot/whoami`, { headers: { Authorization: `Bearer ${tok}` } }).then(r => r.status);
+  t('replace: the original token works before', await who(minted.plaintext) === 200);
+  const rr = await api(`/api-tokens/${minted.token.id}/replace`, {});
+  const rep = await rr.json();
+  t('replace: 201 with a new clear text, different from the old', rr.status === 201 && /^rdk_/.test(rep.plaintext || '') && rep.plaintext !== minted.plaintext, JSON.stringify(rep).slice(0, 160));
+  t('replace: same account, label, scopes and grants', rep.token?.user_id === 'ui-bot' && rep.token?.label === 'Lost bot'
+    && JSON.stringify(rep.token?.scopes) === '["read","write"]' && JSON.stringify(rep.token?.grants) === '["nfp-panel"]', JSON.stringify(rep.token));
+  t('replace: the old token is revoked and refused', rep.replaced?.state === 'revoked' && await who(minted.plaintext) === 401);
+  t('replace: the new token works', await who(rep.plaintext) === 200);
+  const again = await api(`/api-tokens/${minted.token.id}/replace`, {});
+  t('replace: a revoked token cannot be replaced (400)', again.status === 400, String(again.status));
+  const byToken = await api(`/api-tokens/${rep.token.id}/replace`, {}, { ...H, Authorization: `Bearer ${rep.plaintext}` });
+  t('replace: a token cannot replace a token', byToken.status === 401 || byToken.status === 403, String(byToken.status));
+  const list = await (await api('/api-tokens')).json();
+  t('replace: the new token is still live after the token tried', list.tokens.find(x => x.id === rep.token.id)?.state === 'live');
+  const db = new Database(process.env.DBPATH, { readonly: true });
+  const audit = db.prepare("SELECT details FROM audit_log WHERE entity_type = 'api_token' AND entity_id = ? AND details LIKE '%new_token_id%'").get(minted.token.id);
+  db.close();
+  t('replace: audited with the old and new token ids, never the clear text', !!audit && audit.details.includes(rep.token.id) && !audit.details.includes(rep.plaintext));
+}
+
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
 for (const width of [1280, 390]) {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
@@ -87,6 +115,15 @@ for (const width of [1280, 390]) {
     await page.waitForFunction(() => [...document.querySelectorAll('[data-api-token-row]')].some(r => /Catalog bot — read/.test(r.innerText) && /Scopes: read, write/.test(r.innerText)), null, { timeout: 10000 }).catch(() => {});
     t('Save sends scopes ["read","write"]', JSON.stringify(edited?.scopes) === '["read","write"]', JSON.stringify(edited));
     t('…and the row now reads "Scopes: read, write", same prefix, no new token shown', /Scopes: read, write/.test(await row.innerText()) && await page.locator('[data-api-token-issued]').count() === 0);
+    // D-341: Replace from the screen.
+    page.once('dialog', d => d.accept());
+    await row.locator('[data-api-token-replace]').click();
+    await page.waitForSelector('[data-api-token-issued]', { timeout: 10000 }).catch(() => {});
+    const issuedText = await page.locator('[data-api-token-issued]').innerText().catch(() => '');
+    t('Replace shows the new token once and says which token it replaces', /Replaces "Catalog bot — read"/.test(issuedText) && /rdk_/.test(issuedText), issuedText.slice(0, 200));
+    await page.waitForFunction(() => [...document.querySelectorAll('[data-api-token-row]')].filter(r => /Catalog bot — read/.test(r.innerText)).length === 2, null, { timeout: 10000 }).catch(() => {});
+    const pair = await page.locator('[data-api-token-row]').filter({ hasText: 'Catalog bot — read' }).allInnerTexts();
+    t('…the list has the new live token and the old one revoked, both read, write', pair.length === 2 && pair.some(r => /Live/.test(r)) && pair.some(r => /Revoked/.test(r)) && pair.every(r => /Scopes: read, write/.test(r)), pair.join(' | ').replace(/\s+/g, ' ').slice(0, 300));
   }
   // D-279: the read-only bot approval check.
   await page.locator('[data-bot-approval-run]').click();
