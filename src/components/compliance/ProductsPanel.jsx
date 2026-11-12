@@ -11,6 +11,7 @@ import ProductBarcodes from './ProductBarcodes.jsx';
 import ProductShelf from './ProductShelf.jsx';
 import ProductCompleteness from './ProductCompleteness.jsx';
 import ProductGrid from './ProductGrid.jsx';
+import { GRID_GROUP_KEYS, DEFAULT_COLLAPSED } from '../../lib/productGridGroups.js';
 import MerchStyles, { MerchVariantBlock, MerchPipeline, MerchColors } from './MerchPanel.jsx';
 import ProductPipeline from './ProductPipeline.jsx';
 import ProductSupplierDocs from './ProductSupplierDocs.jsx';
@@ -23,6 +24,10 @@ import NfpBoard, { NfpForSku } from './NfpPanel.jsx';
 import NfpReviewQueue from './NfpReviewQueue.jsx';
 import { hexDigits, pmsValid, hexValid, colorIssues, isBlankSlot } from '../../../shared/product-colors.js';
 import { FIELD_RULES, NA_FIELDS, fieldState, PACKAGING_DERIVED, isRollFed } from '../../../shared/product-fields.js';
+import { PACK_FIELDS, PRICE_FIELDS, ITEM_NO_FIELDS, FIELD_LABEL as SOT_LABEL } from '../../../shared/product-sot-config.js';
+import { checkLevelGtin, unitGtin14, groupGtin14, sameItem } from '../../../shared/level-gtin.js';
+import { CHANNELS, matchesFilters } from '../../../shared/product-filters.js';
+import SavedViews from './ProductSavedViews.jsx';
 import {
   Package, Search, X, AlertTriangle, CheckCircle2, Circle, Pencil, Stethoscope, Tag,
   Barcode, Upload, ExternalLink, RefreshCw, FolderOpen,
@@ -225,7 +230,7 @@ const pretty = (s) => statusLabel(s);
  * done. A done step is one quiet line; only an open one carries its reason.
  */
 const STEP_SECTION = {
-  sku: 'identity', gtin: 'identity', gtin_inner: 'identity', gtin_case: 'identity', distributor: 'channels', formula: 'formula', nfp: 'panel',
+  sku: 'identity', gtin: 'barcodes', gtin_inner: 'barcodes', gtin_case: 'barcodes', distributor: 'channels', formula: 'formula', nfp: 'panel',
   spec: 'packaging', colors: 'packaging', artwork: 'packaging',
   shopify: 'channels', shiphero: 'channels', amazon: 'channels',
   supplier: 'merch',
@@ -527,6 +532,170 @@ function FilmCheck({ sku, steps, canEdit, onDone, onOpenSpec, specId }) {
 }
 
 /**
+ * An inner or case barcode image (R-0645 PR B) — the unit image's doctrine one
+ * level up: it encodes ONE number and says so when that number has moved. A
+ * replacement keeps the earlier file; there is no Remove here.
+ */
+function LevelBarcodeImage({ sku, level, code, info, canEdit, onChanged }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const upload = async (e) => {
+    const files = [...(e.target.files || [])];
+    e.target.value = '';
+    if (!files.length) return;
+    setBusy(true); setError('');
+    try {
+      const fd = new FormData();
+      fd.append('files', files[0]);
+      await apiUpload(`/products/${encodeURIComponent(sku)}/barcode/${level}`, fd);
+      onChanged?.();
+    } catch (err) { setError(err.message); }
+    setBusy(false);
+  };
+  const view = async () => {
+    setError('');
+    try {
+      const r = await apiFetch(`/products/${encodeURIComponent(sku)}/barcode/${level}`);
+      openFile({ url: r.url, name: r.filename });
+    } catch (err) { setError(err.message); }
+  };
+  if (!code && !info) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs" data-level-image={level}>
+      {info?.stale && (
+        <span className="text-red-800 bg-red-50 border border-red-200 rounded px-2 py-0.5" data-level-image-stale={level}>
+          Image is for {info.barcode_gtin}, not {code}
+        </span>
+      )}
+      {info && (
+        <button type="button" onClick={view} className="inline-flex items-center gap-1 px-2 py-1 border border-gray-300 rounded-lg hover:bg-gray-50">
+          <ExternalLink size={12} /> View image
+        </button>
+      )}
+      {canEdit && code && (
+        <label className="inline-flex items-center gap-1 px-2 py-1 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
+          <Upload size={12} /> {busy ? 'Uploading…' : info ? 'Replace image' : 'Attach image'}
+          <input type="file" className="hidden" accept="image/*,application/pdf" onChange={upload} data-level-image-input={level} />
+        </label>
+      )}
+      {!info && <span className="text-gray-500">No image on file.</span>}
+      {error && <span className="text-red-600">{error}</span>}
+    </div>
+  );
+}
+
+/**
+ * The three pack levels, each in GTIN-14 typography (3-5-5-1). The unit's
+ * GTIN-14 is the stored UPC-12 padded — display only, the same number. Inner
+ * and case show what a person pasted from GS1 or the backfill loaded; a level
+ * with nothing pasted says so. NOTHING HERE SUGGESTS OR FILLS A CODE.
+ */
+function BarcodeLevels({ p, canEdit, onChanged }) {
+  const unit14 = unitGtin14(p.gtin);
+  const caseFrom = p.gtin_case_source === 'gs1_export' ? 'from the GS1 export' : p.gtin_case_source ? "from a person's paste" : null;
+  const rows = [
+    { level: 'unit', label: 'Unit (each)', code: unit14, extra: p.gtin ? `UPC-12 ${p.gtin}` : null },
+    { level: 'inner', label: 'Inner pack', code: p.gtin_inner || null },
+    { level: 'case', label: 'Case', code: p.gtin_case || null, extra: p.gtin_case ? caseFrom : null },
+  ];
+  return (
+    <dl className="space-y-2 text-sm" data-barcode-levels>
+      {rows.map((r) => {
+        const mismatch = r.level !== 'unit' && r.code && p.gtin && sameItem(r.code, p.gtin) === false;
+        return (
+          <div key={r.level} data-barcode-level={r.level} className="space-y-1">
+            <dt className="text-xs text-gray-500">{r.label}</dt>
+            <dd className="flex flex-wrap items-baseline gap-x-2">
+              {r.code
+                ? <code className="text-gray-900 tabular-nums" data-gtin14={r.level}>{groupGtin14(r.code)}</code>
+                : <span className="text-gray-400 italic" data-gtin14-missing={r.level}>none pasted — copy it from the GS1 Data Hub</span>}
+              {r.extra && <span className="text-xs text-gray-500">{r.extra}</span>}
+              {mismatch && <span className="text-xs text-red-700">does not share the unit&apos;s twelve middle digits</span>}
+            </dd>
+            {r.level !== 'unit' && (
+              <LevelBarcodeImage sku={p.sku} level={r.level} code={r.code} info={p.level_barcodes?.[r.level]} canEdit={canEdit} onChanged={onChanged} />
+            )}
+          </div>
+        );
+      })}
+    </dl>
+  );
+}
+
+/**
+ * Pasting an inner or case code on the edit form. Checked as you type by the
+ * same `checkLevelGtin` the server stores with — check digit, indicator policy,
+ * same item as the unit. It never proposes a number.
+ */
+function LevelGtinField({ k, level, form, set, unit }) {
+  const v = form[k] || '';
+  const chk = v.trim() ? checkLevelGtin(level, v, { unit }) : null;
+  return (
+    <label className="block" data-field={k} data-gtin-paste={level}>
+      <span className="text-xs font-medium text-gray-600">{SOT_LABEL[k]}</span>
+      <input value={v} onChange={set(k)} inputMode="numeric" autoComplete="off" placeholder="Paste the GTIN-14 from the GS1 Data Hub"
+        className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono" />
+      {chk && !chk.ok && <span className="mt-1 block text-[11px] text-red-700" data-gtin-paste-error={level}>{chk.error}</span>}
+      {chk?.ok && <span className="mt-1 block text-[11px] text-green-700" data-gtin-paste-ok={level}>Check digit and indicator are good{chk.warning ? ` — ${chk.warning}` : ''}.</span>}
+      {!chk && <span className="mt-1 block text-[11px] text-gray-500">Indicator {level === 'inner' ? '3' : '1'} first. ReadyDoc checks the code; it never makes one.</span>}
+    </label>
+  );
+}
+
+/**
+ * The Label section's read of the current APPROVED panel — key facts, the
+ * front callouts and the allergen statement — straight off the NFP version.
+ * It is edited in the NFP module; nothing here writes.
+ */
+function LabelFacts({ label }) {
+  const a = label?.approved;
+  if (!a) {
+    return (
+      <p className="text-sm text-gray-500" data-label-none>
+        No panel approved yet{label?.pending ? ` — V${label.pending.version} is ${label.pending.status.replace(/_/g, ' ')}` : ''}.
+      </p>
+    );
+  }
+  const openPanel = async () => {
+    try { const r = await apiFetch(`/nfp/files/${a.file_id}`); openFile({ url: r.url, name: r.filename }); } catch { /* the board has it */ }
+  };
+  return (
+    <div className="space-y-2" data-label-facts data-label-version={a.version}>
+      <p className="text-xs text-gray-600">
+        Approved panel <strong>V{a.version}</strong>{a.approved_by ? ` · ${a.approved_by}` : ''}{a.approved_at ? ` · ${String(a.approved_at).slice(0, 10)}` : ''}
+        {a.file_id && <> · <button type="button" onClick={openPanel} className="text-powder-700 hover:underline" data-label-file>open the panel</button></>}
+      </p>
+      {a.facts.length > 0 && (
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+          {a.facts.map((f) => (
+            <div key={f.key} data-label-fact={f.key}><dt className="text-xs text-gray-500">{f.label}</dt><dd className="text-gray-900">{String(f.value)}</dd></div>
+          ))}
+        </dl>
+      )}
+      <div>
+        <p className="text-xs text-gray-500">Front of pack claims</p>
+        <ul className="flex flex-wrap gap-1.5 mt-1">
+          {a.callouts.map((c) => (
+            <li key={c.key} data-label-callout={c.key} data-callout-state={c.state}
+              className={`rounded-full border px-2 py-0.5 text-xs ${c.state === 'claimed' ? 'border-gray-300 text-gray-900' : 'border-dashed border-gray-200 text-gray-400'}`}>
+              {c.label}: {c.state === 'claimed' ? c.value : c.state === 'not_claimed' ? 'not claimed' : 'not answered'}
+            </li>
+          ))}
+        </ul>
+      </div>
+      <div data-label-allergens>
+        <p className="text-xs text-gray-500">Allergens</p>
+        <p className="text-sm text-gray-900">{a.allergen_statement || <span className="text-gray-400 italic">no allergen statement on the panel</span>}</p>
+      </div>
+      <p className="text-[11px] text-gray-500">Read from the approved panel. Changes go through the nutrition panel below — a new version, approved.</p>
+    </div>
+  );
+}
+
+const hasAny = (p, fields) => fields.some((f) => p?.[f] !== null && p?.[f] !== undefined && p?.[f] !== '');
+const money = (v) => (v === null || v === undefined || v === '' ? null : `$${Number(v).toFixed(2)}`);
+
+/**
  * A section of the drawer that folds. Its body stays in the page when folded
  * (hidden, not removed), so a deep link can still find the gate it names and
  * the section opens itself when that happens. A folded section says in its
@@ -715,6 +884,13 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
       // Blank is a real answer here — "nobody has said yet" — so it is an
       // option in the select rather than an absence.
       amazon_channel: p.amazon_channel || '', amazon_sku: p.amazon_sku || '', amazon_asin: p.amazon_asin || '',
+      // R-0645: brand, the inner and case codes (pasted, never suggested), and
+      // the pack and shipping facts. Prices and item numbers are on the form
+      // only for the person allowed to write them — nobody else sends them.
+      brand: p.brand || '', gtin_inner: p.gtin_inner || '', gtin_case: p.gtin_case || '',
+      ...Object.fromEntries(PACK_FIELDS.map((f) => [f, p[f] ?? ''])),
+      ...(p.sot_permissions?.can_edit_prices ? Object.fromEntries(PRICE_FIELDS.map((f) => [f, p[f] ?? ''])) : {}),
+      ...(p.sot_permissions?.can_edit_item_nos ? Object.fromEntries(ITEM_NO_FIELDS.map((f) => [f, p[f] ?? ''])) : {}),
     });
     setEditing(true);
   };
@@ -727,6 +903,15 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
     setSaving(true); setError('');
     try {
       const body = { ...form, dieline_required: form.dieline_required === '1' ? 1 : 0 };
+      // A blank number box means "not known" — sent as null, never as "" (the
+      // server refuses "" as a number). Only boxes that changed are sent for
+      // the pack facts, so an untouched blank is never a write.
+      for (const f of [...PACK_FIELDS, ...PRICE_FIELDS, ...ITEM_NO_FIELDS]) {
+        if (!(f in body)) continue;
+        if (String(body[f] ?? '') === String(p[f] ?? '')) delete body[f];
+        else if (String(body[f]).trim() === '') body[f] = null;
+      }
+      for (const f of ['gtin_inner', 'gtin_case']) if (String(body[f] ?? '') === String(p[f] ?? '')) delete body[f];
       // A field marked NA is not sent: it is disabled on the form and a blank
       // would read as "clear it", which it is not.
       for (const k of Object.keys(body)) if (fieldState(p, k) === 'na') delete body[k];
@@ -757,15 +942,17 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
   const SECTION_KEYS = Object.entries(STEP_SECTION).reduce((acc, [step, sec]) => {
     (acc[sec] ||= []).push(step); return acc;
   }, { pos: [], siblings: [] });
-  const SECTION_ANCHOR = { identity: 'sku gtin', formula: 'formula fill', panel: 'panel', packaging: 'artwork', channels: 'shopify shiphero', pos: 'po' };
+  const SECTION_ANCHOR = { identity: 'sku', barcodes: 'gtin', formula: 'formula fill', panel: 'panel', packaging: 'artwork', channels: 'shopify shiphero', pos: 'po' };
   const isOpen = (id) => {
     if (openMap[id] !== undefined) return openMap[id];
     if (focus && (SECTION_ANCHOR[id] || '').split(' ').includes(focus)) return true;
     if (id === 'pos') return p?.stage?.next?.key === 'po';
     if (id === 'siblings') return false;
     if (id === 'suppliers') return false;
-    // The barcode image is identity's; a stale one is a relabel waiting to happen.
-    if (id === 'identity' && (p?.barcode_stale || (p?.gtin && !p?.gtin_valid))) return true;
+    // The barcode images are the Barcodes section's; a stale one is a relabel waiting to happen.
+    if (id === 'barcodes' && (p?.barcode_stale || (p?.gtin && !p?.gtin_valid)
+      || p?.level_barcodes?.inner?.stale || p?.level_barcodes?.case?.stale)) return true;
+    if (id === 'shipping' || id === 'pricing') return false;
     // A merch variant's GTIN is entered in this section, so it stays open until one is (D-325).
     if (id === 'merch' && p?.merch && !p?.gtin) return true;
     return owes(SECTION_KEYS[id] || []);
@@ -820,10 +1007,25 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
 
             {editing ? (
               <div className="space-y-3">
-                <Block id="identity" title="Identity">
+                <Block id="identity" title="Basics">
                   <Field k="flavor" label="Product name" form={form} set={set} p={p} />
                   <Field k="base_flavor" label="Base flavor" form={form} set={set} p={p} hint="What joins a flavor across formats; the flavor register keys on it." />
-                  <Field k="gtin" label="GTIN" form={form} set={set} p={p} />
+                  <Field k="brand" label="Brand" form={form} set={set} p={p} hint="ProDough unless this product is sold under another brand." />
+                  <Field k="status" label="Status" form={form} set={set} p={p}>
+                    {/* "Won't launch" is set and cleared by its own button, with a
+                        reason (D-324) — never from this list. A status the list
+                        does not carry (a merch Draft) stays selected rather than
+                        falling back to the first option. */}
+                    <select value={form.status} onChange={set('status')} disabled={form.status === NOT_LAUNCHING}
+                      className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50">
+                      {/* Active is offered only to the configured approver, or
+                          when the product already is Active (R-0645). The
+                          server decides; the list does not offer what it refuses. */}
+                      {[...EDITABLE_STATUSES.filter((s) => s !== 'active' || p.sot_permissions?.can_activate || normalizeStatus(p.status) === 'active'),
+                        ...(form.status === NOT_LAUNCHING ? [NOT_LAUNCHING] : [])]
+                        .map((s) => <option key={s} value={s}>{pretty(s)}</option>)}
+                    </select>
+                  </Field>
                   <Field k="category" label="Line" form={form} set={set} p={p} hint="The product line, e.g. Whey Protein." />
                   <Field k="pack" label="Pack format" form={form} set={set} p={p} hint="Decides which packaging fields apply: film fed off a roll carries a wind direction and an eye mark; a carton or cup has neither.">
                     <select value={form.pack} onChange={set('pack')} className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
@@ -833,7 +1035,37 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
                   <Field k="legacy_sku" label="Legacy SKU" form={form} set={set} p={p} onNa={onNa} hint="Set by a rename, never cleared; a two-year-old PO must still resolve." />
                   <Field k="family" label="Product family" form={form} set={set} p={p} hint='Optional. Groups the stick, pouch and bottle of one flavor together in the review queue, e.g. "ProDough Apple Pie Whey". Blank falls back to line · base flavor.' />
                 </Block>
-                <Block id="formula" title="Formula link" note="The formula lives in Keychain. These three say which one this product is made to today (D-128).">
+                <Block title="Barcodes" note="Each code is copied from the GS1 Data Hub. ReadyDoc checks the check digit and the indicator; it never makes or suggests a code.">
+                  <Field k="gtin" label="Unit GTIN (UPC-12)" form={form} set={set} p={p} />
+                  <LevelGtinField k="gtin_inner" level="inner" form={form} set={set} unit={form.gtin || p.gtin} />
+                  <LevelGtinField k="gtin_case" level="case" form={form} set={set} unit={form.gtin || p.gtin} />
+                </Block>
+                <Block title="Pack and shipping" note="What the distributor sheet carries. A blank box is not known yet.">
+                  <div className="grid grid-cols-2 gap-3">
+                    {PACK_FIELDS.map((f) => (
+                      <label key={f} className="block" data-field={f}>
+                        <span className="text-xs font-medium text-gray-600">{SOT_LABEL[f]}</span>
+                        <input value={form[f] ?? ''} onChange={set(f)} inputMode={f === 'unit_size' ? 'text' : 'decimal'}
+                          className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                      </label>
+                    ))}
+                  </div>
+                </Block>
+                {p.can_see_prices && (
+                  <Block title="Pricing" note={p.sot_permissions?.can_edit_prices ? 'You are the price editor.' : p.sot_permissions?.price_editor_set ? 'Read only — prices are edited by the person set as the price editor.' : 'Read only — no price editor is set yet (Settings → Products).'}>
+                    <div className="grid grid-cols-2 gap-3">
+                      {PRICE_FIELDS.map((f) => (
+                        <label key={f} className="block" data-field={f}>
+                          <span className="text-xs font-medium text-gray-600">{SOT_LABEL[f]}</span>
+                          {p.sot_permissions?.can_edit_prices
+                            ? <input value={form[f] ?? ''} onChange={set(f)} inputMode="decimal" className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                            : <span className="mt-1 block text-sm text-gray-700" data-price-readonly={f}>{money(p[f]) || '—'}</span>}
+                        </label>
+                      ))}
+                    </div>
+                  </Block>
+                )}
+                <Block id="formula" title="MRPEasy BOM reference" note="The formula lives in Keychain. These three say which one this product is made to today (D-128).">
                   <Field k="mrp_formula_id" label="Formula ref (current)" form={form} set={set} p={p} />
                   <Field k="formula_rev" label="Formula version (current)" form={form} set={set} p={p} />
                   {/* What the pack actually HOLDS, in grams — the proofer's Net
@@ -873,22 +1105,15 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
                   </Field>
                 </Block>
                 <Block id="channels" title="Channels">
-                  <Field k="status" label="Status" form={form} set={set} p={p}>
-                    {/* "Won't launch" is set and cleared by its own button, with a
-                        reason (D-324) — never from this list. A status the list
-                        does not carry (a merch Draft) stays selected rather than
-                        falling back to the first option. */}
-                    <select value={form.status} onChange={set('status')} disabled={form.status === NOT_LAUNCHING}
-                      className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50">
-                      {/* Active is offered only to the configured approver, or
-                          when the product already is Active (R-0645). The
-                          server decides; the list does not offer what it refuses. */}
-                      {[...EDITABLE_STATUSES.filter((s) => s !== 'active' || p.sot_permissions?.can_activate || normalizeStatus(p.status) === 'active'),
-                        ...(form.status === NOT_LAUNCHING ? [NOT_LAUNCHING] : [])]
-                        .map((s) => <option key={s} value={s}>{pretty(s)}</option>)}
-                    </select>
-                  </Field>
                   <Field k="shopify_sku" label="Shopify SKU" form={form} set={set} p={p} onNa={onNa} hint="Only when Shopify calls it something other than this product's SKU." />
+                  {ITEM_NO_FIELDS.map((f) => (
+                    <label key={f} className="block" data-field={f}>
+                      <span className="text-xs font-medium text-gray-600">{SOT_LABEL[f]}</span>
+                      {p.sot_permissions?.can_edit_item_nos
+                        ? <input value={form[f] ?? ''} onChange={set(f)} className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                        : <span className="mt-1 block text-sm text-gray-700" data-item-no-readonly={f}>{p[f] || '—'} <span className="text-[11px] text-gray-500">· edited by the item-number editor</span></span>}
+                    </label>
+                  ))}
                   <div className="border border-gray-200 rounded-lg p-3 space-y-3" data-amazon-edit>
                     <label className="block">
                       <span className="text-xs font-medium text-gray-600">Sold on Amazon?</span>
@@ -938,21 +1163,34 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
                 <ProductStagePanel p={p} sku={sku} canEdit={canEdit} onChanged={changed} />
                 <NeedsAttention readiness={p.readiness} onGo={goTo} />
 
-                <Section {...sec('identity')} block title="Identity" icon={Tag}
-                  summary={[p.gtin && `GTIN ${p.gtin}`, p.base_flavor].filter(Boolean).join(' · ')}>
+                {/* R-0645: the product page in eight sections — Basics, Barcodes, Pack
+                    and shipping, Pricing, Label, Artwork, MRPEasy BOM reference,
+                    Channels. A section with no values and no checklist line is
+                    hidden; on merch, Label and the BOM reference are food-only and
+                    are not drawn. Each readiness line is still in one section. */}
+                <Section {...sec('identity')} block title="Basics" icon={Tag}
+                  summary={[p.preferred_sku, p.brand, p.base_flavor].filter(Boolean).join(' · ')}>
                   <StepChecks steps={steps} keys={SECTION_KEYS.identity} sku={sku} canEdit={canEdit} onChanged={changed} />
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                     {[
-                      ['GTIN', p.gtin], ['Base flavor', p.base_flavor],
-                      ['Pack format', PACK_LABEL[p.pack] || p.pack], ['Line', p.category],
+                      ['SKU', p.sku], ['New standard SKU', p.preferred_sku],
+                      ['Name', p.flavor], ['Brand', p.brand],
+                      ['Line', p.category], ['Base flavor', p.base_flavor],
+                      ['Pack format', PACK_LABEL[p.pack] || p.pack], ['Status', statusLabel(p.status)],
                       ['Legacy SKU', fieldState(p, 'legacy_sku') === 'na' ? 'NA' : p.legacy_sku],
                       ['Protein', fieldState(p, 'protein_type') === 'na' ? 'NA' : p.protein_type],
                       ['Pack count', fieldState(p, 'pack_count') === 'na' ? 'NA' : p.pack_count],
                       ['Family', p.family],
                     ].filter(([, v]) => v !== null && v !== undefined && v !== '').map(([label, v]) => (
-                      <div key={label}><dt className="text-xs text-gray-500">{label}</dt><dd className="text-gray-900 break-words">{v}</dd></div>
+                      <div key={label} data-basics={label}><dt className="text-xs text-gray-500">{label}</dt><dd className="text-gray-900 break-words">{v}</dd></div>
                     ))}
                   </dl>
+                </Section>
+
+                <Section {...sec('barcodes')} title="Barcodes" icon={Barcode}
+                  summary={[p.gtin && `GTIN ${p.gtin}`, p.gtin_inner && 'inner', p.gtin_case && 'case'].filter(Boolean).join(' · ') || 'no GTIN yet'}>
+                  <StepChecks steps={steps} keys={SECTION_KEYS.barcodes} sku={sku} canEdit={canEdit} onChanged={changed} />
+                  <BarcodeLevels p={p} canEdit={canEdit} onChanged={changed} />
                   <BarcodeImage sku={sku} gtin={p.gtin} canEdit={canEdit}
                     has={p.has_barcode_image} stale={p.barcode_stale} forGtin={p.barcode_gtin} onChanged={changed} />
                 </Section>
@@ -965,20 +1203,18 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
                   </Section>
                 )}
 
-                {!p.merch && (<>
-                <Section {...sec('formula')} block title="Formula" icon={Layers}
-                  summary={[p.mrp_formula_id, p.formula_rev && `v${p.formula_rev}`, p.fill_weight_g && `${p.fill_weight_g} g`].filter(Boolean).join(' · ') || 'nothing linked'}>
-                  <StepChecks steps={steps} keys={SECTION_KEYS.formula} sku={sku} canEdit={canEdit} onChanged={changed} />
-                  <dl className="grid grid-cols-3 gap-x-4 gap-y-2 text-sm">
-                    <div><dt className="text-xs text-gray-500">Formula ref</dt><dd data-value="mrp_formula_id">{p.mrp_formula_id || <span className="text-amber-700 text-xs">empty</span>}</dd></div>
-                    <div><dt className="text-xs text-gray-500">Version</dt><dd data-value="formula_rev">{p.formula_rev || <span className="text-amber-700 text-xs">empty</span>}</dd></div>
-                    <div><dt className="text-xs text-gray-500">Fill weight</dt><dd data-value="fill_weight_g">{p.fill_weight_g ? `${p.fill_weight_g} g` : <span className="text-amber-700 text-xs">empty</span>}</dd></div>
-                    {/* The source beside the numbers (D-173). */}
-                    <div className="col-span-3 text-xs text-gray-500" data-value="formula_source">
-                      From {p.formula_source_system ? (sourceName[p.formula_source_system] || p.formula_source_system) : <span className="text-amber-700">source not recorded</span>}
-                      {p.formula_fill_per_unit_g != null && ` · ${p.formula_fill_per_unit_g} g per unit`}
-                      {p.formula_synced_at && ` · synced ${String(p.formula_synced_at).slice(0, 10)}`}
-                    </div>
+                {(!p.merch || hasAny(p, PACK_FIELDS)) && (
+                <Section {...sec('shipping')} title="Pack and shipping" icon={Package}
+                  summary={[p.unit_size, p.units_per_case && `${p.units_per_case} per case`, p.ti && p.hi && `Ti/Hi ${p.ti}/${p.hi}`].filter(Boolean).join(' · ') || 'nothing recorded yet'}>
+                  {hasAny(p, PACK_FIELDS) ? (
+                    <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm" data-pack-facts>
+                      {PACK_FIELDS.filter((f) => p[f] !== null && p[f] !== undefined && p[f] !== '').map((f) => (
+                        <div key={f} data-pack-fact={f}><dt className="text-xs text-gray-500">{SOT_LABEL[f]}</dt><dd className="text-gray-900">{String(p[f])}</dd></div>
+                      ))}
+                    </dl>
+                  ) : <p className="text-xs text-gray-500">No pack or shipping facts recorded yet — Edit to add the case, pallet and shelf-life figures.</p>}
+                  {!p.merch && (
+                  <dl className="text-sm">
                     {/* DERIVED from the shelf-life basis in force (Retention Samples → Stability), never typed here (D-133). */}
                     <div className="col-span-3" title="Derived from stability_justifications.basis_kind">
                       <dt className="text-xs text-gray-500">Date on pack</dt>
@@ -989,19 +1225,42 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
                       </dd>
                     </div>
                   </dl>
+                  )}
                 </Section>
+                )}
 
-                <Section {...sec('panel')} title="Nutrition panel" icon={FileText}
-                  summary={p.nfp_version ? `V${p.nfp_version} approved${p.nfp_approved_at ? ` ${String(p.nfp_approved_at).slice(0, 10)}` : ''}` : 'none approved'}>
+                {p.can_see_prices && hasAny(p, PRICE_FIELDS) && (
+                  <Section {...sec('pricing')} title="Pricing" icon={Tag}
+                    summary={[money(p.price_fob_case) && `FOB ${money(p.price_fob_case)}`, money(p.price_srp) && `SRP ${money(p.price_srp)}`].filter(Boolean).join(' · ')}>
+                    <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm" data-prices>
+                      {PRICE_FIELDS.filter((f) => p[f] !== null && p[f] !== undefined && p[f] !== '').map((f) => (
+                        <div key={f} data-price={f}><dt className="text-xs text-gray-500">{SOT_LABEL[f]}</dt><dd className="text-gray-900 tabular-nums">{money(p[f])}</dd></div>
+                      ))}
+                    </dl>
+                    <p className="text-[11px] text-gray-500">{p.sot_permissions?.can_edit_prices ? 'You edit these.' : 'Read only. Prices are edited by the person set as the price editor.'}</p>
+                  </Section>
+                )}
+
+                {!p.merch && (
+                <Section {...sec('panel')} title="Label" icon={FileText}
+                  summary={p.label?.approved ? `V${p.label.approved.version} approved${p.label.approved.allergen_statement ? ' · allergens stated' : ''}` : 'no panel approved'}>
                   <StepChecks steps={steps} keys={SECTION_KEYS.panel} sku={sku} canEdit={canEdit} onChanged={changed} />
+                  <LabelFacts label={p.label} />
                   {/* The panel workflow lives beside the product; the refresh carries
                       back up so the stage moves the moment a panel is approved. */}
                   <NfpForSku sku={sku} formulaRev={p.formula_rev} canEdit={canEdit} heading={false} onChanged={changed} />
                 </Section>
+                )}
 
-                <Section {...sec('packaging')} block title="Packaging & artwork" icon={Package}
-                  summary={[p.spec_id, p.artwork_version ? `artwork V${p.artwork_version}` : null].filter(Boolean).join(' · ') || 'no spec assigned'}>
+                {(!p.merch || p.spec_id || p.artwork_version || (p.colors || []).length > 0) && (
+                <Section {...sec('packaging')} block title="Artwork" icon={Palette}
+                  summary={[p.artwork_version ? `V${p.artwork_version}${p.artwork_status ? ` ${p.artwork_status.replace(/_/g, ' ')}` : ''}` : 'no artwork released', p.spec_id].filter(Boolean).join(' · ')}>
                   <StepChecks steps={steps} keys={SECTION_KEYS.packaging} sku={sku} canEdit={canEdit} onChanged={changed} />
+                  {p.artwork_version && (
+                    <p className="text-sm text-gray-700" data-artwork-current>
+                      Current artwork <strong>V{p.artwork_version}</strong>{p.artwork_status ? ` — ${p.artwork_status.replace(/_/g, ' ')}` : ''}. Files are on the Artwork board.
+                    </p>
+                  )}
                   <FilmCheck sku={sku} steps={steps} canEdit={canEdit} specId={p.spec_id} onOpenSpec={onOpenSpec} onDone={changed} />
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm" data-packaging-derived>
                     <Derived label="Spec" source="products.spec_id"
@@ -1026,7 +1285,26 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
                   </dl>
                   <p className="text-xs text-gray-500">Film facts belong to the spec and are edited there, for every product on it.</p>
                 </Section>
-                </>)}
+                )}
+
+                {!p.merch && (
+                <Section {...sec('formula')} block title="MRPEasy BOM reference" icon={Layers}
+                  summary={[p.mrp_formula_id, p.formula_rev && `v${p.formula_rev}`, p.fill_weight_g && `${p.fill_weight_g} g`].filter(Boolean).join(' · ') || 'nothing linked'}>
+                  <StepChecks steps={steps} keys={SECTION_KEYS.formula} sku={sku} canEdit={canEdit} onChanged={changed} />
+                  <dl className="grid grid-cols-3 gap-x-4 gap-y-2 text-sm">
+                    <div><dt className="text-xs text-gray-500">Formula ref</dt><dd data-value="mrp_formula_id">{p.mrp_formula_id || <span className="text-amber-700 text-xs">empty</span>}</dd></div>
+                    <div><dt className="text-xs text-gray-500">Version</dt><dd data-value="formula_rev">{p.formula_rev || <span className="text-amber-700 text-xs">empty</span>}</dd></div>
+                    <div><dt className="text-xs text-gray-500">Fill weight</dt><dd data-value="fill_weight_g">{p.fill_weight_g ? `${p.fill_weight_g} g` : <span className="text-amber-700 text-xs">empty</span>}</dd></div>
+                    {/* The source beside the numbers (D-173). */}
+                    <div className="col-span-3 text-xs text-gray-500" data-value="formula_source">
+                      From {p.formula_source_system ? (sourceName[p.formula_source_system] || p.formula_source_system) : <span className="text-amber-700">source not recorded</span>}
+                      {p.formula_fill_per_unit_g != null && ` · ${p.formula_fill_per_unit_g} g per unit`}
+                      {p.formula_synced_at && ` · synced ${String(p.formula_synced_at).slice(0, 10)}`}
+                    </div>
+                  </dl>
+                  <p className="text-[11px] text-gray-500">The BOM itself stays in MRPEasy; this is the pointer to it.</p>
+                </Section>
+                )}
 
                 <Section {...sec('channels')} block title="Channels" icon={ExternalLink}
                   summary={p.amazon_channel === 'listed' ? 'Shopify · ShipHero · Amazon' : 'Shopify · ShipHero'}>
@@ -1040,6 +1318,7 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
                         ? `Listed${p.amazon_sku && p.amazon_sku !== p.sku ? ` — seller SKU ${p.amazon_sku}` : ''}${p.amazon_asin ? ` · ${p.amazon_asin}` : ''}`
                         : p.amazon_channel === 'not_sold' ? 'Not sold on Amazon' : 'Not decided yet'],
                       ['Drive link', fieldState(p, 'drive_url') === 'na' ? 'NA' : p.drive_url],
+                      ['Distributor item no', p.distributor_item_no], ['Wholesale item no', p.wholesale_item_no],
                     ].filter(([, v]) => v !== null && v !== undefined && v !== '').map(([label, v]) => (
                       <div key={label}><dt className="text-xs text-gray-500">{label}</dt><dd className="text-gray-900 break-words">{v}</dd></div>
                     ))}
@@ -1147,20 +1426,27 @@ export default function ProductsPanel() {
 
   const categories = useMemo(
     () => [...new Set(products.map((p) => p.category))].sort(), [products]);
+  // R-0645: brand, channel and status beside line and pack. One rule for every
+  // filter (shared/product-filters.js), so a saved view reopens to the same rows.
+  const [brand, setBrand] = useState('');
+  const [channel, setChannel] = useState('');
+  const [status, setStatus] = useState('');
+  const brands = useMemo(() => [...new Set(products.map((p) => p.brand).filter(Boolean))].sort(), [products]);
+  const [collapsed, setCollapsed] = useState(() => new Set(DEFAULT_COLLAPSED));
+  const [viewId, setViewId] = useState(null);
+  const filters = { q, kind, category, pack, brand, channel, status, showHidden };
+  const openColumns = GRID_GROUP_KEYS.filter((k) => !collapsed.has(k));
+  const applyView = (v) => {
+    setViewId(v?.id || null);
+    if (!v) return;
+    const f = v.filters || {};
+    setQ(f.q || ''); setKind(f.kind === 'merch' ? 'food' : (f.kind || 'food')); setCategory(f.category || ''); setPack(f.pack || '');
+    setBrand(f.brand || ''); setChannel(f.channel || ''); setStatus(f.status || ''); setShowHidden(!!f.showHidden);
+    if ((v.columns || []).length) setCollapsed(new Set(GRID_GROUP_KEYS.filter((k) => !v.columns.includes(k))));
+  };
 
-  const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    return products.filter((p) => {
-      if (!showHidden && p.status === NOT_LAUNCHING) return false;
-      if (kind === 'food' && p.product_type === 'merch') return false;
-      if (kind === 'merch' && p.product_type !== 'merch') return false;
-      if (category && p.category !== category) return false;
-      if (pack && p.pack !== pack) return false;
-      if (!needle) return true;
-      return [p.sku, p.legacy_sku, p.gtin, p.flavor, p.base_flavor, p.shopify_sku]
-        .some((v) => (v || '').toLowerCase().includes(needle));
-    });
-  }, [products, q, category, pack, kind, showHidden]);
+  const filtered = useMemo(() => products.filter((p) => matchesFilters(p, { q, kind, category, pack, brand, channel, status, showHidden }, { notLaunching: NOT_LAUNCHING })),
+    [products, q, category, pack, kind, showHidden, brand, channel, status]);
 
   const { sorted } = useTableSort(filtered, COLUMNS, 'sku', 'asc');
 
@@ -1308,6 +1594,21 @@ export default function ProductsPanel() {
           <option value="">All packs</option>
           {Object.entries(PACK_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
+        <select value={brand} onChange={(e) => setBrand(e.target.value)} data-filter="brand" aria-label="Brand"
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+          <option value="">All brands</option>
+          {brands.map((b) => <option key={b} value={b}>{b}</option>)}
+        </select>
+        <select value={channel} onChange={(e) => setChannel(e.target.value)} data-filter="channel" aria-label="Channel"
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+          <option value="">All channels</option>
+          {CHANNELS.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+        </select>
+        <select value={status} onChange={(e) => setStatus(e.target.value)} data-filter="status" aria-label="Status"
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+          <option value="">All statuses</option>
+          {EDITABLE_STATUSES.map((st) => <option key={st} value={st}>{statusLabel(st)}</option>)}
+        </select>
         {hiddenCount > 0 && (
           <button type="button" onClick={() => setShowHidden((v) => !v)} aria-pressed={showHidden} data-show-hidden={hiddenCount}
             className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full border text-xs ${showHidden ? 'bg-gray-700 text-white border-gray-700' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
@@ -1315,6 +1616,8 @@ export default function ProductsPanel() {
           </button>
         )}
       </div>
+
+      <SavedViews current={{ filters, columns: openColumns }} activeId={viewId} onApply={applyView} />
 
       {(<>
       <p className="text-xs text-gray-500 md:hidden">
@@ -1346,6 +1649,7 @@ export default function ProductsPanel() {
           spreadsheet. */}
       <div className="hidden md:block">
         <ProductGrid products={filtered} completeness={completeness} canEdit={canEdit}
+          collapsed={collapsed} onCollapsedChange={setCollapsed}
           onOpenSku={setOpen} onOpenSpec={openSpec} onChanged={refreshAll} />
       </div>
       </>)}

@@ -319,7 +319,9 @@ try {
   await page.locator(`[data-grid-row="${S1}"] [data-open-row]`).click();
   await page.waitForSelector('[data-product-drawer] [data-block="channels"]', { timeout: 8000 }).catch(() => {});
   const blocks = await page.locator('[data-product-drawer] [data-block]').evaluateAll(els => els.map(e => e.getAttribute('data-block')));
-  t('(3) the record page is four blocks in order: identity, formula, packaging, channels', blocks.join(',') === 'identity,formula,packaging,channels', blocks.join(','));
+  // R-0645 regrouped the page into eight sections; the four D-131 blocks are
+  // still there, now in the page's order: Basics, Artwork, the BOM reference, Channels.
+  t('(3) the record page carries the four D-131 blocks in order: identity, packaging, formula, channels', blocks.join(',') === 'identity,packaging,formula,channels', blocks.join(','));
   t('…the packaging block derives material from the spec and says so', await page.locator('[data-packaging-derived] [data-derived="packaging_specs.material_structure"]').count() === 1);
   t('…and the pms slots from product_colors', await page.locator('[data-packaging-derived] [data-derived^="product_colors.pms"]').count() === 1);
   const artLine = await page.locator('[data-step-line="artwork"]').innerText().catch(() => '');

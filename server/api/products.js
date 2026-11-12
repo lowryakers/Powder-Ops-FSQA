@@ -44,6 +44,7 @@ import { SOT_COLUMNS, ITEM_NO_FIELDS, LEVEL_GTIN_FIELDS, INTEGER_FIELDS, DECIMAL
 import { checkLevelGtin } from '../../shared/level-gtin.js';
 import { writeGate, fieldGate, movesToActive, sotPeople, sotPermissions } from '../product-sot-gate.js';
 import { isBotAccount } from '../trainees.js';
+import { stripPrices, approvedLabel, levelBarcodes, listViews, getView, cleanViewBody } from '../product-sot-read.js';
 
 const barcodeUpload = mediaUpload({ files: 1 }).array('files', 1);
 
@@ -202,7 +203,9 @@ function hydrate(rows, db) {
 
 router.get('/', (_req, res) => {
   const db = getDb();
-  const rows = hydrate(db.prepare(`${SELECT} ORDER BY p.sku`).all(), db);
+  // Prices travel only to canManage readers (R-0645 PR B).
+  const rows = hydrate(db.prepare(`${SELECT} ORDER BY p.sku`).all(), db)
+    .map((r) => (canManage(_req.user) ? r : stripPrices(r)));
   const specs = db.prepare('SELECT * FROM packaging_specs ORDER BY spec_id').all();
   res.json({ products: pageList(_req, res, rows), specs, readinessSteps: READINESS.map((s) => ({ key: s.key, label: s.label })) });
 });
@@ -883,6 +886,61 @@ router.get('/:sku/barcode', async (req, res) => {
   });
 });
 
+/* ── The inner and case barcode images (R-0645 PR B) ───────────────────────
+ * Same doctrine as the unit image one level up: the image encodes ONE number
+ * (barcode_gtin) and reads stale when that level's GTIN moves. Nothing here
+ * makes a code: an image is refused for a level that has no GTIN pasted. A
+ * replacement keeps the earlier object (no deletes while R-0564 holds).
+ * Session-only: not on WRITE_AREAS, so a token is refused by default-deny.
+ */
+const BARCODE_LEVELS = ['inner', 'case'];
+router.post('/:sku/barcode/:level', barcodeUpload, async (req, res) => {
+  const files = req.files || [];
+  try {
+    if (!canManage(req.user)) return res.status(403).json({ error: 'Only QA, a supervisor or an admin can change the catalog.' });
+    const level = req.params.level;
+    if (!BARCODE_LEVELS.includes(level)) return res.status(404).json({ error: 'The level is inner or case.' });
+    const db = getDb();
+    const p = db.prepare('SELECT * FROM products WHERE sku = ?').get(req.params.sku);
+    if (!p) return res.status(404).json({ error: 'Product not found.' });
+    const code = p[`gtin_${level}`];
+    if (!code) return res.status(400).json({ error: `This product has no ${level} GTIN yet — paste the code from the GS1 Data Hub first.` });
+    if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured — set the R2 variables.' });
+    if (!files.length) return res.status(400).json({ error: 'No file received.' });
+    const f = files[0];
+    const filename = (f.originalname || `${code}.png`).slice(0, 255);
+    const key = `barcodes/${p.sku}/${level}-${code}-${filename.replace(/[^\w.-]+/g, '_')}`;
+    await putStream(key, fs.createReadStream(f.path), f.mimetype || null);
+    db.prepare(`INSERT INTO product_barcodes (sku, level, storage_key, barcode_gtin, filename, content_type, size, uploaded_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(sku, level) DO UPDATE SET storage_key = excluded.storage_key, barcode_gtin = excluded.barcode_gtin,
+        filename = excluded.filename, content_type = excluded.content_type, size = excluded.size,
+        uploaded_by = excluded.uploaded_by, uploaded_at = datetime('now')`)
+      .run(p.sku, level, key, code, filename, f.mimetype || null, f.size || null, req.user?.name || null);
+    logAudit(req.user, 'update', 'product', p.sku, { action: 'barcode_image', level, filename, gtin: code }, null, null, p.sku);
+    res.status(201).json({ ok: true, level, filename, gtin: code });
+  } catch (err) {
+    res.status(500).json({ error: uploadErrorMessage(err) });
+  } finally {
+    cleanupTemp(files);
+  }
+});
+
+router.get('/:sku/barcode/:level', async (req, res) => {
+  const level = req.params.level;
+  if (!BARCODE_LEVELS.includes(level)) return res.status(404).json({ error: 'The level is inner or case.' });
+  const db = getDb();
+  const p = db.prepare('SELECT * FROM products WHERE sku = ?').get(req.params.sku);
+  if (!p) return res.status(404).json({ error: 'Product not found.' });
+  const r = db.prepare('SELECT * FROM product_barcodes WHERE sku = ? AND level = ?').get(p.sku, level);
+  if (!r) return res.status(404).json({ error: `No ${level} barcode image on file.` });
+  const url = await presignGet(r.storage_key, r.filename);
+  if (!url) return res.status(503).json({ error: 'File storage unavailable.' });
+  const current = p[`gtin_${level}`] || null;
+  res.json({ url, filename: r.filename, content_type: r.content_type, gtin: r.barcode_gtin,
+    uploaded_at: r.uploaded_at, uploaded_by: r.uploaded_by, stale: !!current && !sameGtin(r.barcode_gtin, current), current_gtin: current });
+});
+
 router.delete('/:sku/barcode', async (req, res) => {
   if (!canManage(req.user)) return res.status(403).json({ error: 'Only QA, a supervisor or an admin can change the catalog.' });
   const db = getDb();
@@ -1232,6 +1290,41 @@ router.put('/sot-settings', (req, res) => {
   res.json({ changed: changes.length });
 });
 
+// ── Saved views on the catalogue (R-0645 PR B). Declared before `/:sku`. ─────
+// A named filter + column set. Everyone who can open Products may save their
+// own; a shared view is read by everyone and changed only by its owner. Tokens
+// are not on WRITE_AREAS for these (session-only, default-deny).
+router.get('/views', (req, res) => {
+  res.json({ views: listViews(getDb(), req.user?.id) });
+});
+
+router.post('/views', (req, res) => {
+  if (!req.user?.id) return res.status(401).json({ error: 'Sign in to save a view.' });
+  const body = cleanViewBody(req.body);
+  if (body.error) return res.status(400).json({ error: body.error });
+  const db = getDb();
+  if (db.prepare('SELECT 1 FROM product_saved_views WHERE user_id = ? AND name = ? COLLATE NOCASE').get(req.user.id, body.name)) {
+    return res.status(409).json({ error: `You already have a view called "${body.name}". Pick another name or delete that one first.` });
+  }
+  const id = uuid();
+  db.prepare(`INSERT INTO product_saved_views (id, user_id, name, filters, columns, shared) VALUES (?, ?, ?, ?, ?, ?)`)
+    .run(id, req.user.id, body.name, JSON.stringify(body.filters), JSON.stringify(body.columns), body.shared);
+  logAudit(req.user, 'create', 'product_saved_view', id, { name: body.name, shared: !!body.shared, filters: body.filters, columns: body.columns }, null, null, body.name);
+  res.status(201).json({ view: getView(db, id, req.user.id) });
+});
+
+router.delete('/views/:id', (req, res) => {
+  const db = getDb();
+  const r = db.prepare('SELECT * FROM product_saved_views WHERE id = ?').get(req.params.id);
+  if (!r) return res.status(404).json({ error: 'No such view.' });
+  // Only the owner removes a view — a shared one included. It is a saved
+  // filter, not a record; the audit entry keeps what it was.
+  if (r.user_id !== req.user?.id) return res.status(403).json({ error: 'Only the person who saved this view can delete it.' });
+  db.prepare('DELETE FROM product_saved_views WHERE id = ?').run(r.id);
+  logAudit(req.user, 'delete', 'product_saved_view', r.id, { name: r.name }, { name: r.name, filters: r.filters, columns: r.columns, shared: r.shared }, null, r.name);
+  res.json({ ok: true });
+});
+
 router.get('/completeness', (_req, res) => {
   res.json(catalogueCompleteness(getDb()));
 });
@@ -1555,7 +1648,12 @@ router.get('/:sku', (req, res) => {
   product.sot_permissions = sotPermissions(db, req);
   product.packaging_pos = db.prepare(`SELECT r.*, a.version AS artwork_version FROM packaging_po_records r
     LEFT JOIN artwork_versions a ON a.id = r.artwork_version_id WHERE r.sku = ? ORDER BY r.recorded_at DESC LIMIT 50`).all(row.sku);
-  res.json(product);
+  // The Label section: a READ of the current approved panel (R-0645 PR B).
+  product.label = approvedLabel(db, row.sku);
+  // The inner and case barcode images, each against the number it encodes.
+  product.level_barcodes = levelBarcodes(db, row);
+  product.can_see_prices = !!canManage(req.user);
+  res.json(product.can_see_prices ? product : stripPrices(product));
 });
 
 const WRITABLE = [
@@ -1734,6 +1832,9 @@ function sotFieldChecks(db, sku, patch, unitGtin) {
   for (const c of [...INTEGER_FIELDS, ...DECIMAL_FIELDS]) {
     if (patch[c] === undefined || patch[c] === null) continue;
     const raw = String(patch[c]).trim().replace(/^\$/, '').replace(/,/g, '');
+    // A blank box clears the figure (the grid and the drawer send ""); it is
+    // "not known", never a zero.
+    if (raw === '') { patch[c] = null; continue; }
     const n = Number(raw);
     const whole = INTEGER_FIELDS.includes(c);
     if (raw === '' || !Number.isFinite(n) || n < 0 || (whole && !Number.isInteger(n))) {
