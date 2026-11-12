@@ -10919,6 +10919,18 @@ R-0645 PR C. The exports read the row; the backfill copies GS1's codes onto it. 
 - **Pre-existing conflict, named and left alone:** `GET /products/merch/gtin/suggest` (D-302).
 - `verify:productexports` (52; pack tests 21–27, live on a fresh database with a fixture export built by the
   test). The control is `main` before this change: `/products/export` is read as a SKU.
+## D-346 — QA Review names the runs with no end-of-day report, and whom to tell (12 Nov 2026)
+Asked by Lowry: the Production Log banner and the ReadyBot chase showed 8 Filling runs with no end-of-day report, and
+QA Review showed nothing — it lists records waiting on a signature, and an unfiled report has no record. Maria wants
+the notice so she can tell the supervisor to file.
+- **A notice, never a pile.** `GET /qa-review` carries `missed_eod` (total, oldest, per team: count, supervisors, up
+  to 50 runs); nothing on it can be signed and the signature total is unchanged. `MissedEodNotice` sits above the
+  piles and shows even when nothing waits on a signature.
+- **One walk.** It reads `eodMissedDigest` → `missedReports`, the banner's and the chase's function, so the three
+  cannot disagree; the verify opens the Production Log from the notice and finds the same count on its banner.
+- **The supervisor comes from `teamSupervisors`** (D-127). A team with none says "no supervisor set up", never a guess.
+- `verify:qaeodnotice` (21, live + browser at 1280 and 390). The control (main's `qa-review.js`) does not get past
+  the first assertion.
 ## D-345 — A COA edit sends the whole request; only a change to the issued fields is refused (12 Nov 2026)
 Reported by Lowry: inside a correction window Maria un-signed certificates, edited them, pressed **Update** — the button
 flashed and nothing saved — and she could not delete a duplicate; Lowry, as admin, got the same.

@@ -764,6 +764,8 @@ banner reaches whoever opens that screen, which is never the person who has to a
   department `production` (legacy, D-094), so the Filling / Batching / Kitting supervisors who file the
   reports were never told. `departmentForTeam()` + `teamSupervisors()` in `eod-chase.js`; always sent
   whatever the stored list says (the actor rule); a team with no supervisor is named on the summary.
+- **QA Review carries a notice of the same runs (D-346)** — `missed_eod` on `GET /qa-review`, per team with its
+  supervisor; read through `eodMissedDigest`, never a second query. Not a source: nothing to sign. `verify:qaeodnotice` (21).
 - **All three: DM plus push, recipients in `app_settings` and listed under Settings → ReadyBot messages,
   unset falls back to real people and never to nobody, fire-and-forget per recipient, and quiet when
   there is nothing to say.**
