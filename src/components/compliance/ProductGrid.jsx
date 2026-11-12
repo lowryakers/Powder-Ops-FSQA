@@ -30,10 +30,12 @@ import SortHeader from '../common/SortHeader';
 import { FIELD_RULES, NA_FIELDS, fieldState, PACKAGING_DERIVED, isRollFed } from '../../../shared/product-fields.js';
 import { ChevronDown, ChevronRight, Download, Upload, X, AlertTriangle, Copy, Check } from 'lucide-react';
 import { copyText } from '../../lib/clipboard.js';
-import { statusLabel } from '../../../shared/product-status.js';
+import { statusLabel, EDITABLE_STATUSES } from '../../../shared/product-status.js';
 import FrozenScroll from '../common/FrozenScroll';
 
-const STATUSES = ['active', 'in_development', 'concept', 'on_hold', 'discontinued'];
+// R-0645: the five a person picks. Active is refused by the server unless the
+// configured approver sets it with the checklist done; the refusal shows in the cell.
+const STATUSES = EDITABLE_STATUSES;
 
 const joinSlots = (colors, k) => (colors || []).filter((c) => c[k]).map((c) => c[k]).join(' | ');
 const splitSlots = (v) => String(v || '').split('|').map((x) => x.trim()).filter(Boolean);

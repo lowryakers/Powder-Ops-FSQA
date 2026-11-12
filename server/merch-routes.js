@@ -294,7 +294,7 @@ export function registerMerchRoutes(router, { getDb, canManage, hydrate, SELECT,
     const created = []; const existing = [];
     const insert = db.prepare(`INSERT INTO products (sku, gtin, gtin_valid, category, pack, flavor, base_flavor, family, status,
         product_type, style_code, color_code, size_code, created_by)
-      VALUES (?, NULL, 0, ?, ?, ?, ?, ?, 'Draft', 'merch', ?, ?, ?, ?)`);
+      VALUES (?, NULL, 0, ?, ?, ?, ?, ?, 'draft', 'merch', ?, ?, ?, ?)`);
     db.transaction(() => {
       for (const c of colors) for (const s of sizes) {
         const sku = buildMerchSku(style.style_code, c, s);

@@ -63,7 +63,7 @@ t('it leaves Completeness', !compRows.includes(DRAFT));
 r = await call('GET', '/products', null, A);
 t('the catalog still returns it (the screen hides it)', (r.json?.products || []).some((p) => p.sku === DRAFT));
 r = await call('POST', `/products/${DRAFT}/not-launching`, { undo: true }, Q);
-t('Bring it back restores the status it had (concept)', r.status === 200 && r.json?.status === 'concept' && !r.json?.not_launching_reason);
+t('Bring it back restores the status it had (ready)', r.status === 200 && r.json?.status === 'ready' && !r.json?.not_launching_reason);
 r = await call('POST', `/products/${DRAFT}/not-launching`, { reason: 'Dropped for good' }, Q);
 t('hidden again', r.json?.status === 'not_launching');
 const audits = q("SELECT action FROM audit_log WHERE entity_type = 'product' AND entity_id = ? ORDER BY rowid", DRAFT).map((a) => a.action);

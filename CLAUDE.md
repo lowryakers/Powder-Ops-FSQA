@@ -890,6 +890,19 @@ required `reason` (`rejected_reason` / `_by` / `_at`). Releasing supersedes draf
 - **Read `sectionsFor(kind)` / `allItems(kind)`, never `FILM_SECTIONS` directly**; stamp `FILM_CHECKLIST.revision`, never
   the constant. The sleeve lines are DRAFTED (DCR `docs/v2/queued/dcr-form-418-01-v2.md`). `verify:filmsleeve` (24).
 
+## Products: five statuses, the Active gate, prices and GTINs gated (D-342, R-0645 PR A)
+`shared/product-status.js` (slugs + `LEGACY_STATUS`), `shared/product-sot-config.js` (the settings keys, field lists,
+indicator policy), `shared/level-gtin.js` (checks only), `server/product-sot-gate.js` (`writeGate`, `fieldGate`,
+`sotPermissions`), `GET|PUT /products/sot-settings`, Settings → **Products**, `scripts/product-status-migrate.mjs`.
+- **Statuses are slugs** (`draft`/`ready`/`active`/`hold`/`discontinued`, plus `not_launching`); compare through
+  `normalizeStatus` / `isActiveStatus`. New rows start `draft`. Stored rows move only by the migration script.
+- **Active, prices and item numbers are gated inside `buildPatch`** — a new write path for products must go
+  through `buildPatch(db, existing, body, { req })` or it is outside the gate. The people are USER IDS in
+  app_settings; unset = 403 naming the setting. Never put a name in source, never fall back to "any admin".
+- **Never build a GTIN.** No check-digit computation, no inner/case derived from the unit, no suggest route on this
+  surface. `checkLevelGtin` validates a pasted code; tokens/bots write no GTIN at all.
+- `verify:productsot` (60).
+
 ## A SKU that won't go live: hidden with a reason, deleted only if it was never anywhere (D-324)
 `shared/product-status.js` (`NOT_LAUNCHING`, `OFF_CATALOG`), `POST /products/:sku/not-launching` (reason; `undo`),
 `deleteRefusals` + `DELETE /products/:sku` (admin, reason) + `GET /:sku/delete-check`, `LaunchControls` in the drawer.

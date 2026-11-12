@@ -37,8 +37,11 @@
  * time. Keep them cheap — they are computed for every step of every product on
  * every read of the catalogue.
  */
-import { normalizeGtin } from './gtin.js';
+import { normalizeGtin, gtinValid } from './gtin.js';
 import { FILM_FIELDS, filmValueOf, filmCell, specFieldLabel } from './packaging-spec.js';
+import { naOf } from './product-fields.js';
+import { sameItem } from './level-gtin.js';
+import { DISTRIBUTOR_REQUIRED, FIELD_LABEL } from './product-sot-config.js';
 
 // FOOD-ONLY STEPS DO NOT APPLY TO MERCH (D-302). A hoodie has no packaging
 // spec, formula, nutrition panel, film artwork or spot-colour slots, so those
@@ -48,6 +51,19 @@ import { FILM_FIELDS, filmValueOf, filmCell, specFieldLabel } from './packaging-
 // is true for every row that is not merch.
 const foodOnly = (p) => p?.product_type !== 'merch';
 const merchOnly = (p) => p?.product_type === 'merch';
+
+// INNER AND CASE CODES ARE OWED ONLY WHEN THAT PACK LEVEL EXISTS (R-0645,
+// D-342). A level exists once its count is recorded; marking the code N/A says
+// GS1 has none for this product (most dry mixes have no inner). A code that is
+// on file but fails its check digit or belongs to another unit is not done.
+const hasValue = (v) => v !== null && v !== undefined && String(v).trim() !== '';
+const isNa = (p, f) => !!naOf(p)[f];
+const levelOk = (p, f) => hasValue(p[f]) && gtinValid(String(p[f])) && sameItem(p[f], p.gtin) !== false;
+const levelWhy = (p, f, name) => (!hasValue(p[f]) ? `No ${name} GTIN on file — copy it from the GS1 Data Hub, or mark it N/A`
+  : !gtinValid(String(p[f])) ? `${p[f]} fails its GS1 check digit`
+    : sameItem(p[f], p.gtin) === false ? `${p[f]} does not share the unit GTIN's twelve middle digits` : `${name[0].toUpperCase()}${name.slice(1)} GTIN ${p[f]}`);
+/** The distributor-sheet fields still empty and not marked N/A. */
+export const distributorGaps = (p) => DISTRIBUTOR_REQUIRED.filter((f) => !hasValue(p?.[f]) && !isNa(p, f));
 
 export const FACTS = {
   sku: (p) => p.sku || '',
@@ -125,6 +141,32 @@ export const READINESS = [
     ok: (p) => !!p.gtin && !!p.gtin_valid,
     owns: ['gtin'],
     why: (p) => (!p.gtin ? 'No GS1 number on the row' : !p.gtin_valid ? `${p.gtin} fails its GS1 check digit` : `GTIN ${normalizeGtin(p.gtin)} passes its check digit`),
+  },
+  {
+    key: 'gtin_inner', label: 'Inner GS1 barcode',
+    applies: (p) => (hasValue(p.units_per_inner) || hasValue(p.inners_per_case)) && !isNa(p, 'gtin_inner'),
+    ok: (p) => levelOk(p, 'gtin_inner'),
+    owns: ['gtin_inner'],
+    why: (p) => levelWhy(p, 'gtin_inner', 'inner pack'),
+  },
+  {
+    key: 'gtin_case', label: 'Case GS1 barcode',
+    applies: (p) => hasValue(p.units_per_case) && !isNa(p, 'gtin_case'),
+    ok: (p) => levelOk(p, 'gtin_case'),
+    owns: ['gtin_case'],
+    why: (p) => levelWhy(p, 'gtin_case', 'case'),
+  },
+  {
+    // WHAT THE DISTRIBUTOR SHEET NEEDS (R-0645): the pack and shipping facts
+    // and the FOB / SRP prices, each a value or marked N/A. Food only.
+    key: 'distributor', label: 'Distributor sheet',
+    applies: foodOnly,
+    ok: (p) => distributorGaps(p).length === 0,
+    owns: [],
+    why: (p) => {
+      const gaps = distributorGaps(p);
+      return gaps.length ? `Still empty: ${gaps.map((f) => FIELD_LABEL[f] || f).join(', ')}` : 'Every distributor-sheet field is filled or N/A';
+    },
   },
   {
     // MERCH ONLY (D-302): who makes the blank and who decorates it, recorded on

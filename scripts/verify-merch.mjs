@@ -79,7 +79,7 @@ t('12 variants created, each with its final SKU', r.status === 201 && r.json?.cr
 r = await call('POST', '/products/merch/styles/MCH-HBDC/variants', { colors: ['BLU', 'BLK', 'PNK', 'BRN'], sizes: ['S', 'M', 'L'] }, A);
 t('…a second run creates nothing (idempotent)', r.status === 200 && r.json?.created?.length === 0 && r.json?.existing?.length === 12);
 const rows = q("SELECT * FROM products WHERE style_code = 'MCH-HBDC' ORDER BY sku");
-t('12 rows in products, all Draft, all product_type merch', rows.length === 12 && rows.every((x) => x.status === 'Draft' && x.product_type === 'merch'));
+t('12 rows in products, all Draft, all product_type merch', rows.length === 12 && rows.every((x) => x.status === 'draft' && x.product_type === 'merch'));
 t('NO GTIN on any variant', rows.every((x) => !x.gtin));
 t('base_flavor is the real flavour, flavor is the variant title', rows.every((x) => x.base_flavor === 'Birthday Cake') && rows.some((x) => x.flavor === 'Birthday Cake Hoodie - Blue / S'), rows[0]?.flavor);
 t('family is the style name', rows.every((x) => x.family === 'ProDough Birthday Cake Hoodie'));

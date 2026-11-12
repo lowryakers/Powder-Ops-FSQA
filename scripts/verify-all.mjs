@@ -129,6 +129,7 @@ const RUNS = [
   ['verify-merch.mjs', 5182, { PRODUCT_MASTER_TOKEN: 'merch-proof-token' }],
   ['verify-merch-design.mjs', 5205],
   ['verify-sku-retire.mjs', 5206],
+  ['verify-product-sot.mjs', 5021],
   ['verify-name-usage.mjs', 5207],
   ['verify-dilution-control.mjs', 5208],
   ['verify-single-spine.mjs', 5209],

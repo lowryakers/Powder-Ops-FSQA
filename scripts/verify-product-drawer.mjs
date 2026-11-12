@@ -90,7 +90,7 @@ if (await pack.getAttribute('data-open') === '0') {
   if (key) { await D.locator(`[data-attention="${key}"]`).click(); await page.waitForTimeout(300); }
 }
 const chipKey = openSteps[0].key;
-const sectionOf = { sku: 'identity', gtin: 'identity', formula: 'formula', nfp: 'panel', spec: 'packaging', colors: 'packaging', artwork: 'packaging', shopify: 'channels', shiphero: 'channels', amazon: 'channels' }[chipKey];
+const sectionOf = { sku: 'identity', gtin: 'identity', formula: 'formula', nfp: 'panel', spec: 'packaging', colors: 'packaging', artwork: 'packaging', shopify: 'channels', shiphero: 'channels', amazon: 'channels', distributor: 'channels', gtin_inner: 'identity', gtin_case: 'identity' }[chipKey];
 await D.locator(`[data-section="${sectionOf}"] [data-section-toggle]`).click(); // fold it first
 await page.waitForTimeout(200);
 if (await D.locator(`[data-section="${sectionOf}"]`).getAttribute('data-open') === '1') await D.locator(`[data-section="${sectionOf}"] [data-section-toggle]`).click();
