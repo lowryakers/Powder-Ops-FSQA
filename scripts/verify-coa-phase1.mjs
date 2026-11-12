@@ -186,8 +186,9 @@ try {
   t('a QA reviewer sees "COA corrections" with 43, as an action source', r.s === 200 && src?.count === 43 && src?.kind === 'action' && src?.can_sign === false, JSON.stringify({ count: src?.count, kind: src?.kind }));
   t('… counted in the QA Review total', r.j.total >= 43);
   const SHAPE = ['can_sign', 'count', 'form', 'items', 'key', 'label', 'module', 'noun', 'plural', 'view'].join();
-  // The action piles carry `kind` (COA corrections, and COA readiness since D-246); every signing source keeps its old shape.
-  const ACTION = new Set(['coa-corrections', 'coa-readiness']);
+  // The action piles carry `kind` (COA corrections, COA readiness since D-246, document QA review D-319, controlled-change QA
+  // review D-328); every signing source keeps its old shape.
+  const ACTION = new Set(['coa-corrections', 'coa-readiness', 'doc-qa-review', 'controlled-qa-review']);
   t('every signing source keeps exactly its old JSON shape (no `kind`)', r.j.sources.filter(s => !ACTION.has(s.key)).every(s => Object.keys(s).sort().join() === SHAPE),
     r.j.sources.filter(s => !ACTION.has(s.key)).map(s => Object.keys(s).sort().join()).find(k => k !== SHAPE) || '');
   t('the operator gets 403', (await call('GET', '/qa-review', null, O)).s === 403);

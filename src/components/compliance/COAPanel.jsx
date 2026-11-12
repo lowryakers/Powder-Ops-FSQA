@@ -1287,18 +1287,26 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
   // dialog rather than a prompt, so a correction window's plan is captured.
   const unsign = () => setShowUnsign(true);
   const deleteDuplicate = async () => {
-    const reason = prompt('Why is this request being deleted? (It is an empty duplicate — say which request keeps the lab report.)');
+    const reason = prompt(detail.reopened_for_correction
+      ? 'Why is this reopened certificate being deleted? Say which request keeps the lab report. (Its signed original stays in the signature history.)'
+      : 'Why is this request being deleted? (It is an empty duplicate — say which request keeps the lab report.)');
     if (!reason || reason.trim().length < 3) return;
+    let res;
     try {
-      await withSignature((extra) => apiPost('/coa/requests/bulk-delete', { ids: [requestId], reason: reason.trim(), ...extra }),
+      res = await withSignature((extra) => apiPost('/coa/requests/bulk-delete', { ids: [requestId], reason: reason.trim(), ...extra }),
         { title: 'Delete this duplicate', detail: `${detail.item_description} · Lot ${detail.lot_number}` });
     } catch (e) { if (e?.cancelled) return; setGateMsg(e.message); return; }
+    // Nothing deleted is said, never a silent close (D-345).
+    if (!res?.deleted) { setGateMsg(res?.not_deleted || 'This request was not deleted.'); return; }
     onRefresh(); onClose();
   };
 
+  // A refusal is THROWN back to the form, which says it (D-345). Setting
+  // gateMsg alone hid it: the message box is not drawn while the form is open,
+  // so a refused Update only flashed the button.
   const handleUpdate = async (form) => {
-    try { await apiPut(`/coa/requests/${requestId}`, form); setGateMsg(null); }
-    catch (e) { setGateMsg(e.message); return; }
+    await apiPut(`/coa/requests/${requestId}`, form);
+    setGateMsg(null);
     setEditing(false);
     refreshDetail();
     onRefresh();
@@ -2707,7 +2715,7 @@ export default function COAPanel() {
       res = await withSignature((extra) => apiPost('/coa/requests/bulk-delete', { ids: [...selected], ...(reason ? { reason: reason.trim() } : {}), ...extra }),
         { title: `Delete ${selected.size} request${selected.size === 1 ? '' : 's'}` });
     } catch (e) { setConfirmDelete(false); if (!e?.cancelled) flash(e.message); return; }
-    setConfirmDelete(false); clearSelection(); flash(`Permanently deleted ${res.deleted} request${res.deleted === 1 ? '' : 's'}.`); refreshReqs(); refreshSummary();
+    setConfirmDelete(false); clearSelection(); flash(`Permanently deleted ${res.deleted} request${res.deleted === 1 ? '' : 's'}.${res.not_deleted ? ` ${res.not_deleted}` : ''}`); refreshReqs(); refreshSummary();
   };
 
   const handleCreateSpec = async (form) => {
