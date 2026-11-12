@@ -141,6 +141,7 @@ const RUNS = [
   ['verify-artwork-film.mjs', 5052, {}],
   ['verify-artwork-retire.mjs', 5071, {}],
   ['verify-film-sleeve.mjs', 5072, {}],
+  ['verify-inspection-reference.mjs', 5217, {}, true],
   ['verify-pay-reviews.mjs', 5053, {}],
   ['verify-checklist-overlap.mjs', 5054, {}],
   ['verify-scale-pm-retire.mjs', 5055, {}],

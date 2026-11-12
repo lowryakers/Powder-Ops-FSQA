@@ -31,6 +31,7 @@ import {
   FILM_CHECKLIST, FILM_DECISIONS,
   allItems, exceptions, normalizeAnswers, unanswered, asksKind, isKind,
 } from '../film-pouch-checklist.js';
+import { findProducts, inspectionReference, productLabel } from '../inspection-reference.js';
 
 const router = Router();
 
@@ -51,6 +52,7 @@ const HEADER_COLS = [
   'vendor', 'part_no', 'inspection_date', 'roll_count', 'vendor_lot',
   'qa_lead', 'assistant', 'wind_direction', 'film_width', 'issue_notes',
   'material_kind', 'sleeve_layflat', 'sleeve_length',
+  'bottle_height', 'bottle_diameter', 'bottle_capacity', 'bottle_neck', 'sku',
 ];
 const NUMS = new Set(['roll_count']);
 
@@ -122,6 +124,25 @@ router.get('/status/:inspectionNo', (req, res) => {
   });
 });
 
+// ── The product's spec and artwork beside the sheet (D-348) ─────────────────
+// Read-only, QA's door (see server/inspection-reference.js). Declared before
+// '/:id', or Express reads "products" as an inspection id.
+router.get('/products', (req, res) => {
+  if (!canInspect(req.user)) return res.status(403).json({ error: DENIED });
+  res.json(findProducts(getDb(), req.query.q, String(req.query.kind || '')));
+});
+
+router.get('/:id/reference', async (req, res) => {
+  if (!canInspect(req.user)) return res.status(403).json({ error: DENIED });
+  const db = getDb();
+  const row = db.prepare('SELECT id, sku FROM film_pouch_inspections WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  if (!row.sku) return res.json({ sku: null });
+  const ref = await inspectionReference(db, row.sku);
+  if (!ref) return res.json({ sku: row.sku, missing: true });
+  res.json({ sku: row.sku, ...ref });
+});
+
 router.get('/:id', async (req, res) => {
   const db = getDb();
   const row = db.prepare('SELECT * FROM film_pouch_inspections WHERE id = ?').get(req.params.id);
@@ -131,7 +152,9 @@ router.get('/:id', async (req, res) => {
   for (const p of photos) {
     withUrls.push({ ...p, url: storageEnabled() ? await presignGet(p.storage_key, p.filename) : null });
   }
-  res.json({ inspection: shape(row), photos: withUrls, form: FILM_CHECKLIST });
+  const prod = row.sku ? db.prepare('SELECT sku, flavor, category, pack FROM products WHERE sku = ?').get(row.sku) : null;
+  res.json({ inspection: shape(row), photos: withUrls, form: FILM_CHECKLIST,
+    product: prod ? { sku: prod.sku, label: productLabel(prod) } : null });
 });
 
 /**
@@ -147,6 +170,11 @@ router.get('/:id', async (req, res) => {
 router.post('/', (req, res) => {
   if (!canInspect(req.user)) return res.status(403).json({ error: DENIED });
   const db = getDb();
+  // The product is a pointer into the catalog, so it must be one that exists.
+  if (req.body?.sku !== undefined && req.body.sku !== '' && req.body.sku !== null
+      && !db.prepare('SELECT 1 FROM products WHERE sku = ?').get(String(req.body.sku))) {
+    return res.status(400).json({ error: `No product with SKU "${req.body.sku}".`, code: 'UNKNOWN_SKU' });
+  }
   // FLAVOR IS NO LONGER REQUIRED (user decision 2026-08-14): a coffee acid
   // reducer has no flavor, and a form that demands one gets "N/A" typed into a
   // field that then reads as a flavor called N/A. A blank flavor is a valid

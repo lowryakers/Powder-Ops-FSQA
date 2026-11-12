@@ -891,6 +891,10 @@ required `reason` (`rejected_reason` / `_by` / `_at`). Releasing supersedes draf
 `sleeve_length`, `material_kind`); controlled.js `film:FORM 418-01`, baseline V1. Until approved the app serves V1.
 - **Read `sectionsFor(kind)` / `allItems(kind)`, never `FILM_SECTIONS` directly**; stamp `FILM_CHECKLIST.revision`, never
   the constant. The sleeve lines are DRAFTED (DCR `docs/v2/queued/dcr-form-418-01-v2.md`). `verify:filmsleeve` (24).
+- **V2 also inspects the BOTTLES (D-348)** — kind `bottle`, a BOTTLE section and four bottle header values, drafted
+  in the same DCR. **A sheet names its product (`sku`, a pointer) and the drawer shows its spec, colors, released
+  artwork and approved panel beside the checklist** (`server/inspection-reference.js`, `GET /film-inspection/:id/reference`,
+  QA's door only). Never copy those facts onto the inspection. `verify:inspectionref` (34).
 
 ## Products: five statuses, the Active gate, prices and GTINs gated (D-342, R-0645 PR A)
 `shared/product-status.js` (slugs + `LEGACY_STATUS`), `shared/product-sot-config.js` (the settings keys, field lists,

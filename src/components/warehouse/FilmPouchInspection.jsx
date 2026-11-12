@@ -1,9 +1,12 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useApiGet, apiPost, apiFetch, apiUpload } from '../../hooks/useApi';
 import {
-  ScanLine, X, CheckCircle2, XCircle, RotateCcw, Plus, Camera, Trash2, AlertTriangle,
+  ScanLine, X, CheckCircle2, XCircle, RotateCcw, Plus, Trash2, AlertTriangle, PanelRightOpen, PanelRightClose,
 } from 'lucide-react';
 import { formatDateTime } from '../../lib/datetime.js';
+import useCompactLayout from '../../lib/useCompactLayout';
+import PhotoPicker from '../common/PhotoPicker';
+import InspectionReference, { ProductPicker } from './InspectionReference';
 
 /**
  * FORM 418-01 — the QA Film/Pouch Inspection Checklist, at the pallet.
@@ -72,7 +75,12 @@ export default function FilmPouchInspection({ id, onClose, canInspect }) {
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const fileRef = useRef(null);
+  // D-348: the product's spec and artwork beside the sheet. Wide screens show
+  // both columns; a phone switches between them, and the checklist stays
+  // mounted underneath so nothing typed is lost.
+  const compact = useCompactLayout();
+  const [showRef, setShowRef] = useState(true);
+  const [pane, setPane] = useState('checklist');
 
   const rec = data?.inspection;
   const form = data?.form;
@@ -148,7 +156,7 @@ export default function FilmPouchInspection({ id, onClose, canInspect }) {
       await apiUpload(`/film-inspection/${id}/photos`, fd);
       refresh();
     } catch (e) { setError(e.message); }
-    finally { setBusy(false); if (fileRef.current) fileRef.current.value = ''; }
+    finally { setBusy(false); }
   };
 
   const removePhoto = async (photoId) => {
@@ -170,6 +178,8 @@ export default function FilmPouchInspection({ id, onClose, canInspect }) {
   };
 
   const exNo = rec?.exceptions?.no || [];
+  const sku = rec?.sku || '';
+  const refOpen = !!sku && (compact ? pane === 'reference' : showRef);
   // V2 (D-332): the sheet says what it inspects and asks only that section.
   // While the served form is V1 there are no kinds and every section shows.
   const kinds = form?.kinds || [];
@@ -179,7 +189,8 @@ export default function FilmPouchInspection({ id, onClose, canInspect }) {
 
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex justify-end" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="bg-white w-full max-w-2xl h-full flex flex-col shadow-xl">
+      <div onClick={e => e.stopPropagation()} data-inspection-drawer={refOpen && !compact ? 'wide' : 'narrow'}
+        className={`bg-white w-full ${refOpen && !compact ? 'max-w-7xl' : 'max-w-2xl'} h-full flex flex-col shadow-xl`}>
         <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-gray-200">
           <div className="min-w-0">
             <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
@@ -190,10 +201,28 @@ export default function FilmPouchInspection({ id, onClose, canInspect }) {
               {form ? ` · ${form.form_code} ${rec?.checklist_revision || form.revision}` : ''}
             </p>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 shrink-0"><X size={20} /></button>
+          <div className="flex items-center gap-2 shrink-0">
+            {sku && !compact && (
+              <button type="button" onClick={() => setShowRef(v => !v)} data-ref-toggle
+                className="inline-flex items-center gap-1 px-2 py-1 border border-gray-300 rounded-md text-xs text-gray-700 hover:border-powder-400">
+                {showRef ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />} {showRef ? 'Hide specs & artwork' : 'Specs & artwork'}
+              </button>
+            )}
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-700"><X size={20} /></button>
+          </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        {sku && compact && (
+          <div className="flex border-b border-gray-200 text-sm" data-ref-tabs>
+            {[['checklist', 'Checklist'], ['reference', 'Specs & artwork']].map(([k, l]) => (
+              <button key={k} type="button" onClick={() => setPane(k)} data-ref-tab={k}
+                className={`flex-1 py-2 font-semibold border-b-2 ${pane === k ? 'border-powder-600 text-powder-700' : 'border-transparent text-gray-500'}`}>{l}</button>
+            ))}
+          </div>
+        )}
+
+        <div className="flex-1 min-h-0 flex">
+        <div className={`flex-1 min-w-0 overflow-y-auto ${compact && refOpen ? 'hidden' : ''}`}>
           {!data ? <p className="p-4 text-sm text-gray-400">Loading…</p> : (
             <>
               {rec.reviewed_at && (
@@ -212,6 +241,13 @@ export default function FilmPouchInspection({ id, onClose, canInspect }) {
               )}
 
               <div className="p-3 grid grid-cols-1 sm:grid-cols-2 gap-2 border-b border-gray-100">
+                <div className="sm:col-span-2" data-ref-product-box>
+                  <span className="text-[11px] font-medium text-gray-600">Product (shows its specs and artwork)</span>
+                  <div className="mt-0.5">
+                    <ProductPicker value={sku} label={data.product?.label || ''} kind={kind} disabled={locked}
+                      onPick={async (v) => { await save({ sku: v }); setShowRef(true); refresh(); }} />
+                  </div>
+                </div>
                 {kinds.length > 0 && (
                   <div className="sm:col-span-2" data-film-kind>
                     <CircleOne label="What is inspected on this sheet" disabled={locked}
@@ -252,7 +288,7 @@ export default function FilmPouchInspection({ id, onClose, canInspect }) {
                   {section.items.map(item => {
                     const circle = circleFor(item.key);
                     return (
-                      <div key={item.key} className="px-3 py-2.5 border-b border-gray-100 last:border-0">
+                      <div key={item.key} data-film-item={item.key} data-answer={answers[item.key] || ''} className="px-3 py-2.5 border-b border-gray-100 last:border-0">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <p className="text-sm text-gray-900">{item.text}</p>
@@ -297,21 +333,23 @@ export default function FilmPouchInspection({ id, onClose, canInspect }) {
                     </div>
                   ))}
                   {!locked && (
-                    <>
-                      {/* capture="environment" so a phone opens the camera — this
-                          is filled in standing at the pallet. */}
-                      <input ref={fileRef} type="file" accept="image/*" capture="environment" multiple
-                        className="hidden" onChange={e => addPhotos(Array.from(e.target.files || []))} />
-                      <button type="button" onClick={() => fileRef.current?.click()} disabled={busy}
-                        className="h-24 w-24 rounded-md border-2 border-dashed border-gray-300 text-gray-500 hover:border-powder-400 hover:text-powder-700 flex flex-col items-center justify-center gap-1 text-[11px] disabled:opacity-50">
-                        <Camera size={18} /> Add photo
-                      </button>
-                    </>
+                    // Two inputs: take one now, or choose one already taken
+                    // (one capture input on iOS can only open the camera).
+                    // Array.from BEFORE the value is cleared (the AP Drop rule).
+                    <PhotoPicker name="film-inspection" busy={busy} className="self-center"
+                      onChange={e => { const f = Array.from(e.target.files || []); e.target.value = ''; addPhotos(f); }} />
                   )}
                 </div>
               </div>
             </>
           )}
+        </div>
+        {refOpen && (
+          <aside className={compact ? 'flex-1 min-w-0 overflow-y-auto' : 'w-[46%] shrink-0 border-l border-gray-200 overflow-y-auto bg-white'}
+            data-ref-panel>
+            <InspectionReference inspectionId={id} sku={sku} />
+          </aside>
+        )}
         </div>
 
         <div className="border-t border-gray-200 p-3 space-y-2">
