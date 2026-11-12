@@ -10890,3 +10890,16 @@ is spread across the pack's eight sections, and nothing that already worked move
 - `verify:productsotpage` (50, fresh database + browser at 1280 and 390; pack tests 15–19). `verify:productdrawer`
   (24) and `verify:productgrid` (100; test 20) stay green, updated for the new section order. The control is `main`
   before this change: `/products/views` is read as a SKU and the first assertion fails.
+
+## D-346 — QA Review names the runs with no end-of-day report, and whom to tell (12 Nov 2026)
+Asked by Lowry: the Production Log banner and the ReadyBot chase showed 8 Filling runs with no end-of-day report, and
+QA Review showed nothing — it lists records waiting on a signature, and an unfiled report has no record. Maria wants
+the notice so she can tell the supervisor to file.
+- **A notice, never a pile.** `GET /qa-review` carries `missed_eod` (total, oldest, per team: count, supervisors, up
+  to 50 runs); nothing on it can be signed and the signature total is unchanged. `MissedEodNotice` sits above the
+  piles and shows even when nothing waits on a signature.
+- **One walk.** It reads `eodMissedDigest` → `missedReports`, the banner's and the chase's function, so the three
+  cannot disagree; the verify opens the Production Log from the notice and finds the same count on its banner.
+- **The supervisor comes from `teamSupervisors`** (D-127). A team with none says "no supervisor set up", never a guess.
+- `verify:qaeodnotice` (21, live + browser at 1280 and 390). The control (main's `qa-review.js`) does not get past
+  the first assertion.

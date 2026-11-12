@@ -80,6 +80,7 @@ const RUNS = [
   ['verify-qa-correction-notify.mjs', 4997, {}, false],
   ['verify-cleanup-digest.mjs', 4998, {}, false],
   ['verify-eod-chase.mjs', 4996, {}, false],
+  ['verify-qa-eod-notice.mjs', 5216, {}, false],
   ['verify-readybot-audience.mjs', 4994, {}, false],
   ['verify-client-channel.mjs', 4996, {}, true],
   ['verify-client-invite.mjs', 4988, {}, false],
