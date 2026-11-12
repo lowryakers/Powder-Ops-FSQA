@@ -162,6 +162,16 @@ try {
   r = await call('PUT', `/coa/requests/${s1.id}`, { product_expiration: '2028-10-31' }, W);
   t('Wren corrects the expiry', r.s === 200 && row(s1.id).product_expiration === '2028-10-31');
   t('the field change is audited as a correction, old and new', !!one("SELECT 1 x FROM audit_log WHERE entity_id = ? AND action = 'correction'", s1.id));
+  // D-345: the edit form sends the WHOLE request back, certificate_number and
+  // date_of_issuance included (blank while reopened). That must save.
+  { const whole = (await call('GET', `/coa/requests/${s1.id}`, null, W)).j;
+    r = await call('PUT', `/coa/requests/${s1.id}`, { ...whole, supplier: 'Corrected Supplier Co' }, W);
+    t('D-345: the screen\'s whole-request Update saves while reopened', r.s === 200 && row(s1.id).supplier === 'Corrected Supplier Co', JSON.stringify(r.j).slice(0, 200));
+    r = await call('PUT', `/coa/requests/${s1.id}`, { ...whole, certificate_number: 'TYPED-1' }, A);
+    t('D-345: a typed certificate number is still refused', r.s === 400 && /set by signing/.test(r.j.error || ''));
+    r = await call('POST', '/coa/requests/bulk-delete', { ids: [s1.id] }, A);
+    t('D-345: deleting a reopened certificate says why nothing was deleted', r.s === 200 && r.j.deleted === 0 && /reopened for correction/.test(r.j.not_deleted || ''), JSON.stringify(r.j));
+    t('… and the request is still there', !!row(s1.id)); }
 
   console.log('\n── C1: re-signing');
   r = await call('POST', `/coa/requests/${s1.id}/sign`, { signature: SIG, signature_password: 'Wren-Win-2026' }, W);

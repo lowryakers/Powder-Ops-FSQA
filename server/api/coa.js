@@ -1108,8 +1108,13 @@ router.put('/requests/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'COA request not found' });
   if (badStatus(req.body.status)) return res.status(400).json({ error: `Status must be one of ${STATUSES.join(', ')}.` });
-  if (req.body.certificate_number !== undefined || req.body.date_of_issuance !== undefined) {
-    return res.status(400).json({ error: 'The certificate number and date of issuance are set by signing, not by editing.' });
+  // The edit form sends the whole request back, these two included (blank on
+  // an unsigned or reopened request). Only a CHANGE to either is refused —
+  // refusing the field name made every edit from the screen fail (D-345).
+  const issuedChanged = ['certificate_number', 'date_of_issuance']
+    .filter(f => req.body[f] !== undefined && String(req.body[f] ?? '') !== String(existing[f] ?? ''));
+  if (issuedChanged.length) {
+    return res.status(400).json({ error: 'The certificate number and date of issuance are set by signing, not by editing.', fields: issuedChanged });
   }
   if (isSigned(existing)) {
     const touched = LOCKED_FIELDS.filter(f => req.body[f] !== undefined && String(req.body[f] ?? '') !== String(existing[f] ?? ''));
@@ -1252,7 +1257,12 @@ router.post('/requests/bulk-delete', (req, res) => {
       (reason || item) ? { ...(reason ? { reason } : {}), ...(item ? { authorized_by: item.item_key, decision: CORRECTION_DECISION } : {}),
         ...(req.user?.role !== 'admin' ? signatureEvidence() : {}) } : null, r, null);
   }
-  res.json({ deleted: found.length, skipped_signed, skipped_reopened });
+  // Say in words what was not deleted, so a screen never reports nothing (D-345).
+  const notes = [];
+  if (skipped_signed.length) notes.push(`${skipped_signed.length} signed certificate${skipped_signed.length === 1 ? ' is' : 's are'} a record and cannot be deleted`);
+  if (skipped_reopened.length) notes.push(`${skipped_reopened.length} certificate${skipped_reopened.length === 1 ? ' is' : 's are'} reopened for correction and leave${skipped_reopened.length === 1 ? 's' : ''} that state only by being signed again, never by being deleted`);
+  const not_deleted = notes.length ? `Not deleted: ${notes.join('; ')}.` : null;
+  res.json({ deleted: found.length, skipped_signed, skipped_reopened, not_deleted });
 });
 
 // D-256: delete every empty duplicate a COA correction names, in one act.
