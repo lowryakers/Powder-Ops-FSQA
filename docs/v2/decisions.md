@@ -10850,3 +10850,43 @@ exports and the GS1 backfill PR C.
   suggests the next free GTIN. It is out of this pack's scope and is not used by anything here.
 - `verify:productsot` (60, fresh database; tests 1–14 of the pack). The control is `main` before this change:
   there is no `/products/sot-settings` and the first assertion fails.
+
+## D-343 — The product record is the source of truth, part B: eight sections, the label read off the approved panel, filters and saved views (12 Nov 2026)
+R-0645 PR B. The drawer was regrouped, not rebuilt: today's Identity / Formula / Packaging / Channels content
+is spread across the pack's eight sections, and nothing that already worked moved owner.
+- **Eight sections, in this order: Basics · Barcodes · Pack and shipping · Pricing · Label · Artwork ·
+  MRPEasy BOM reference · Channels.** The section ids that verifies and deep links read are kept
+  (`identity` = Basics, `panel` = Label, `packaging` = Artwork, `formula` = BOM reference); the new ones are
+  `barcodes`, `shipping`, `pricing`. The four D-131 blocks are still `data-block`, now in page order
+  identity · packaging · formula · channels. Packaging POs, supplier documents and siblings stay below.
+- **The hiding rule, as built:** a section is drawn when it holds a value or owns a checklist line. So Pricing is
+  hidden while no price is recorded, and on merch an empty Pack and shipping is hidden. On merch, Label and the BOM
+  reference are never drawn (food-only), and Artwork only when it has a spec, colours or a release. Empty new
+  fields show only on the edit form.
+- **Every checklist line is still in exactly one section** — `STEP_SECTION` is the one map; the unit, inner and
+  case GTIN steps moved from Basics to Barcodes. `verify:productdrawer` asserts it, now against Barcodes.
+- **Label is a READ of the current approved panel** (`approvedLabel` in `server/product-sot-read.js`, on
+  `GET /products/:sku` as `label`): key facts, the four callouts in their three states, the allergen statement,
+  a link to the approved file. A draft is never shown there — it is named as pending. The NFP module's own
+  component stays in the section for the workflow; there is no second editor.
+- **Barcodes shows unit, inner and case in GTIN-14 typography (3-5-5-1)**; the unit's GTIN-14 is the stored
+  UPC-12 padded, display only. Inner and case images (`product_barcodes`, `POST|GET /products/:sku/barcode/:level`)
+  each record the code they encode and read stale when it moves; an image is refused for a level with no code
+  pasted, and a replacement keeps the earlier file (no deletes while R-0564 holds). The paste box on the edit form
+  checks as you type with the same `checkLevelGtin` the server stores with. **Nothing suggests or fills a code.**
+- **Prices are stripped** from every row a non-canManage reader receives (list and drawer, `prices_hidden`).
+  canManage readers see them; only the configured price editor gets inputs.
+- **A blank number box clears the figure** (null, "not known") instead of being refused, so the grid and the
+  drawer can empty a pack fact. A number is still refused when it is not one.
+- **Filters: brand, line, pack, channel, status** beside search and won't launch, all through `matchesFilters`
+  (`shared/product-filters.js`). **A channel is read off what is recorded**: Shopify/ShipHero = the readiness
+  step is done, Amazon = `amazon_channel` listed, distributor/wholesale = an item number on file, or "no channel
+  yet".
+- **Saved views** (`product_saved_views`, `GET|POST /products/views`, `DELETE /products/views/:id`): a name, the
+  filters (`cleanFilters` keeps known keys only) and the grid's open column groups. Shared views are read by
+  everyone who can open Products; only the owner deletes a view. Session-only: not on `WRITE_AREAS`, so a token is
+  refused. The grid gained a Brand column and a Pack and shipping group that starts folded.
+- **Pre-existing conflict, named and left alone (again):** `GET /products/merch/gtin/suggest` (D-302).
+- `verify:productsotpage` (50, fresh database + browser at 1280 and 390; pack tests 15–19). `verify:productdrawer`
+  (24) and `verify:productgrid` (100; test 20) stay green, updated for the new section order. The control is `main`
+  before this change: `/products/views` is read as a SKU and the first assertion fails.

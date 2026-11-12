@@ -903,6 +903,19 @@ indicator policy), `shared/level-gtin.js` (checks only), `server/product-sot-gat
   surface. `checkLevelGtin` validates a pasted code; tokens/bots write no GTIN at all.
 - `verify:productsot` (60).
 
+## Products: eight sections, the label read off the approved panel, filters and saved views (D-343, R-0645 PR B)
+`server/product-sot-read.js` (`approvedLabel`, `levelBarcodes`, `stripPrices`, saved views), `shared/product-filters.js`
+(`matchesFilters`, `channelsOf`, `cleanFilters`), `src/lib/productGridGroups.js`, `ProductSavedViews.jsx`, the
+`/products/views` and `/products/:sku/barcode/:level` routes.
+- **Eight sections: Basics · Barcodes · Pack and shipping · Pricing · Label · Artwork · MRPEasy BOM reference ·
+  Channels.** Ids kept for the old four (`identity`, `panel`, `packaging`, `formula`). A section shows when it has a
+  value or owns a checklist line; merch never draws Label or the BOM reference. **`STEP_SECTION` stays the one map.**
+- **Label reads the APPROVED panel only** (a draft is named as pending, never shown). It is not an editor.
+- **Barcodes: GTIN-14 typography, inner/case images per level, a paste box that checks.** Never suggest or fill a code.
+- **Prices go only to canManage readers** (`stripPrices` on list and drawer). A blank number box clears to null.
+- **A channel is read off the record** (confirmed step, `amazon_channel`, an item number), never typed.
+- **Saved views are session-only** (not on `WRITE_AREAS`); only the owner deletes one. `verify:productsotpage` (50).
+
 ## A SKU that won't go live: hidden with a reason, deleted only if it was never anywhere (D-324)
 `shared/product-status.js` (`NOT_LAUNCHING`, `OFF_CATALOG`), `POST /products/:sku/not-launching` (reason; `undo`),
 `deleteRefusals` + `DELETE /products/:sku` (admin, reason) + `GET /:sku/delete-check`, `LaunchControls` in the drawer.

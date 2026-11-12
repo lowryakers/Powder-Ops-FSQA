@@ -76,10 +76,12 @@ const chips = D.locator('[data-attention]');
 t(`"${openSteps.length} still outstanding", one chip each`, await chips.count() === openSteps.length
   && new RegExp(`${openSteps.length} still outstanding`).test(await D.locator('[data-needs-attention]').innerText()));
 
-const doneIdentity = ['sku', 'gtin'].every((k) => steps.find((s) => s.key === k)?.state === 'done');
+const doneIdentity = steps.find((s) => s.key === 'gtin')?.state === 'done'
+  && ['gtin_inner', 'gtin_case'].every((k) => { const x = steps.find((s) => s.key === k); return !x || x.state === 'done'; });
 if (doneIdentity) {
-  const id = D.locator('[data-section="identity"]');
-  t('A SECTION WITH NOTHING OUTSTANDING STARTS FOLDED (Identity)', await id.getAttribute('data-open') === '0');
+  // R-0645: the GTIN lines moved to the Barcodes section; Basics keeps the SKU.
+  const id = D.locator('[data-section="barcodes"]');
+  t('A SECTION WITH NOTHING OUTSTANDING STARTS FOLDED (Barcodes)', await id.getAttribute('data-open') === '0');
   t('…and its header still says what is in it (the GTIN)', new RegExp(prod.gtin).test(await id.locator('[data-section-toggle]').innerText()));
   await id.locator('[data-section-toggle]').click();
   t('…one click opens it', await id.getAttribute('data-open') === '1' && await id.locator('[data-step-line="gtin"]').isVisible());
@@ -90,7 +92,7 @@ if (await pack.getAttribute('data-open') === '0') {
   if (key) { await D.locator(`[data-attention="${key}"]`).click(); await page.waitForTimeout(300); }
 }
 const chipKey = openSteps[0].key;
-const sectionOf = { sku: 'identity', gtin: 'identity', formula: 'formula', nfp: 'panel', spec: 'packaging', colors: 'packaging', artwork: 'packaging', shopify: 'channels', shiphero: 'channels', amazon: 'channels', distributor: 'channels', gtin_inner: 'identity', gtin_case: 'identity' }[chipKey];
+const sectionOf = { sku: 'identity', gtin: 'barcodes', formula: 'formula', nfp: 'panel', spec: 'packaging', colors: 'packaging', artwork: 'packaging', shopify: 'channels', shiphero: 'channels', amazon: 'channels', distributor: 'channels', gtin_inner: 'barcodes', gtin_case: 'barcodes' }[chipKey];
 await D.locator(`[data-section="${sectionOf}"] [data-section-toggle]`).click(); // fold it first
 await page.waitForTimeout(200);
 if (await D.locator(`[data-section="${sectionOf}"]`).getAttribute('data-open') === '1') await D.locator(`[data-section="${sectionOf}"] [data-section-toggle]`).click();

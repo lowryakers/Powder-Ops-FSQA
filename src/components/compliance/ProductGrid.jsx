@@ -31,7 +31,9 @@ import { FIELD_RULES, NA_FIELDS, fieldState, PACKAGING_DERIVED, isRollFed } from
 import { ChevronDown, ChevronRight, Download, Upload, X, AlertTriangle, Copy, Check } from 'lucide-react';
 import { copyText } from '../../lib/clipboard.js';
 import { statusLabel, EDITABLE_STATUSES } from '../../../shared/product-status.js';
+import { PACK_FIELDS, FIELD_LABEL as SOT_LABEL } from '../../../shared/product-sot-config.js';
 import FrozenScroll from '../common/FrozenScroll';
+import { DEFAULT_COLLAPSED } from '../../lib/productGridGroups.js';
 
 // R-0645: the five a person picks. Active is refused by the server unless the
 // configured approver sets it with the checklist done; the refusal shows in the cell.
@@ -52,6 +54,7 @@ const GROUPS = [
     { key: 'flavor', label: 'Product name', edit: 'text' },
     { key: 'base_flavor', label: 'Base flavor', edit: 'text' },
     { key: 'category', label: 'Line', edit: 'text' },
+    { key: 'brand', label: 'Brand', edit: 'text' },
     { key: 'pack', label: 'Pack', edit: 'select', options: Object.keys(PACK_LABEL), render: (v) => PACK_LABEL[v] || v },
     { key: 'gtin', label: 'GTIN', edit: 'text' },
     { key: 'legacy_sku', label: 'Legacy SKU', edit: 'text' },
@@ -70,6 +73,10 @@ const GROUPS = [
     { key: 'pms', label: 'PMS spot colors', edit: 'colors', get: (p) => joinSlots(p.colors, 'pms') },
     { key: 'hex', label: 'Hex spot colors', edit: 'colors', get: (p) => joinSlots(p.colors, 'hex') },
   ] },
+  // R-0645: the distributor sheet's pack and shipping facts. Starts folded.
+  { key: 'shipping', label: 'Pack and shipping', columns: PACK_FIELDS.map((f) => ({
+    key: f, label: SOT_LABEL[f], edit: 'text', type: f === 'unit_size' ? undefined : 'number',
+  })) },
   { key: 'channels', label: 'Channels', columns: [
     { key: 'status', label: 'Status', edit: 'select', options: STATUSES, render: statusLabel },
     { key: 'shopify_sku', label: 'Shopify SKU', edit: 'text' },
@@ -264,9 +271,15 @@ function ImportModal({ onClose, onDone, onOpenSpec }) {
   );
 }
 
-export default function ProductGrid({ products, completeness, canEdit, onOpenSku, onOpenSpec, onChanged }) {
+export default function ProductGrid({ products, completeness, canEdit, onOpenSku, onOpenSpec, onChanged, collapsed: collapsedProp, onCollapsedChange }) {
   const [filter, setFilter] = useState('all');
-  const [collapsed, setCollapsed] = useState(() => new Set());
+  // The column set is the parent's when it passes one (saved views), else local.
+  const [collapsedLocal, setCollapsedLocal] = useState(() => new Set(DEFAULT_COLLAPSED));
+  const collapsed = collapsedProp || collapsedLocal;
+  const setCollapsed = (fn) => {
+    const next = typeof fn === 'function' ? fn(collapsed) : fn;
+    if (onCollapsedChange) onCollapsedChange(next); else setCollapsedLocal(next);
+  };
   const [editing, setEditing] = useState(null); // { sku, field }
   const [draft, setDraft] = useState('');
   const [cellError, setCellError] = useState(null); // { sku, field, message }

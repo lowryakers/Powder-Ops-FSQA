@@ -130,6 +130,7 @@ const RUNS = [
   ['verify-merch-design.mjs', 5205],
   ['verify-sku-retire.mjs', 5206],
   ['verify-product-sot.mjs', 5021],
+  ['verify-product-sot-page.mjs', 5023],
   ['verify-name-usage.mjs', 5207],
   ['verify-dilution-control.mjs', 5208],
   ['verify-single-spine.mjs', 5209],
