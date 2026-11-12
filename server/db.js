@@ -2568,6 +2568,14 @@ function initSchema() {
   addColumnIfMissing('film_pouch_inspections', 'material_kind', 'TEXT');
   addColumnIfMissing('film_pouch_inspections', 'sleeve_layflat', 'TEXT');
   addColumnIfMissing('film_pouch_inspections', 'sleeve_length', 'TEXT');
+  // D-348: the bottle measurements, and the product a sheet is for. `sku` is a
+  // POINTER — the inspection reads the product's spec and artwork through it and
+  // never copies them; the flavour stays the sheet's own identity (one per flavour).
+  addColumnIfMissing('film_pouch_inspections', 'bottle_height', 'TEXT');
+  addColumnIfMissing('film_pouch_inspections', 'bottle_diameter', 'TEXT');
+  addColumnIfMissing('film_pouch_inspections', 'bottle_capacity', 'TEXT');
+  addColumnIfMissing('film_pouch_inspections', 'bottle_neck', 'TEXT');
+  addColumnIfMissing('film_pouch_inspections', 'sku', 'TEXT');
 
   // A claim over $100 alerts the office once, as it is filed (D-254). After the
   // reimbursements CREATE above — a column migration before its table kills a

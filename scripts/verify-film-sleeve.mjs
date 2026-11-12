@@ -57,22 +57,22 @@ r = await call('POST', `/controlled/${def.id}/approve`, {}, DC);
 t('approved in Controlled Changes', r.status === 200, `${r.status} ${r.json?.error || ''}`);
 r = await call('GET', '/film-inspection/form', null, QA);
 const form = r.json;
-t('the served form is now V2 with film, pouch and bottle sleeve sections', form?.revision === 'V2' && form?.sections?.map(s => s.key).join(',') === 'film,pouch,sleeve'
-  && form?.kinds?.map(k => k.key).join(',') === 'film,pouch,sleeve', JSON.stringify({ rev: form?.revision, s: form?.sections?.map(s => s.key) }));
+t('the served form is now V2 with film, pouch, bottle sleeve and bottle sections (D-348)', form?.revision === 'V2' && form?.sections?.map(s => s.key).join(',') === 'film,pouch,sleeve,bottle'
+  && form?.kinds?.map(k => k.key).join(',') === 'film,pouch,sleeve,bottle', JSON.stringify({ rev: form?.revision, s: form?.sections?.map(s => s.key) }));
 const sleeve = form.sections.find(s => s.key === 'sleeve');
 const film = form.sections.find(s => s.key === 'film');
 t('the sleeve section carries the film section\'s material checks', ['discoloration', 'wrinkles', 'feel', 'odor', 'foreign', 'pinholes'].every(k => sleeve.items.some(i => i.key === `sleeve_material_${k}`))
   && film.items.filter(i => i.key.startsWith('material_')).length === 6);
 t('…and the sleeve\'s own: type/thickness, seam, perforation, lay-flat, cut length, barcode, shrink test',
   ['sleeve_material_type', 'sleeve_seam', 'sleeve_perforation', 'sleeve_layflat_correct', 'sleeve_length_correct', 'sleeve_barcode', 'sleeve_shrink_test'].every(k => sleeve.items.some(i => i.key === k)));
-t('the V1 film and pouch lines are unchanged', JSON.stringify(form.sections.filter(s => s.key !== 'sleeve').map(s => s.items.map(i => [i.key, i.text]))) === JSON.stringify(JSON.parse(def.approved_snapshot).sections.map(s => s.items.map(i => [i.key, i.text]))));
+t('the V1 film and pouch lines are unchanged', JSON.stringify(form.sections.filter(s => !['sleeve', 'bottle'].includes(s.key)).map(s => s.items.map(i => [i.key, i.text]))) === JSON.stringify(JSON.parse(def.approved_snapshot).sections.map(s => s.items.map(i => [i.key, i.text]))));
 t('the header adds the two sleeve measurements, for sleeves only', ['sleeve_layflat', 'sleeve_length'].every(k => form.header.find(h => h.key === k)?.kinds?.[0] === 'sleeve'));
 
 console.log('\n── a bottle sleeve sheet ──');
 r = await call('POST', '/film-inspection', { inspection_no: 'A-100-0902', flavor: 'Blueberry Muffin' }, QA);
 const sheet = r.json;
 t('a new sheet is stamped V2', r.status === 201 && sheet?.checklist_revision === 'V2');
-r = await call('POST', '/film-inspection', { id: sheet.id, material_kind: 'bottle' }, QA);
+r = await call('POST', '/film-inspection', { id: sheet.id, material_kind: 'carton' }, QA);
 t('an unknown kind is refused', r.status === 400);
 r = await call('POST', `/film-inspection/${sheet.id}/review`, { decision: 'accepted' }, QA);
 t('sign-off is refused until the sheet says what it inspects', r.status === 400 && r.json?.code === 'KIND_REQUIRED', JSON.stringify(r.json));
