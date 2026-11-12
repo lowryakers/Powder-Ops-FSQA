@@ -10890,7 +10890,6 @@ is spread across the pack's eight sections, and nothing that already worked move
 - `verify:productsotpage` (50, fresh database + browser at 1280 and 390; pack tests 15–19). `verify:productdrawer`
   (24) and `verify:productgrid` (100; test 20) stay green, updated for the new section order. The control is `main`
   before this change: `/products/views` is read as a SKU and the first assertion fails.
-<<<<<<< HEAD
 
 ## D-344 — The product record is the source of truth, part C: preset exports and the one-time GS1 inner/case backfill (12 Nov 2026)
 R-0645 PR C. The exports read the row; the backfill copies GS1's codes onto it. Neither makes a code.
@@ -10920,5 +10919,3 @@ R-0645 PR C. The exports read the row; the backfill copies GS1's codes onto it. 
 - **Pre-existing conflict, named and left alone:** `GET /products/merch/gtin/suggest` (D-302).
 - `verify:productexports` (52; pack tests 21–27, live on a fresh database with a fixture export built by the
   test). The control is `main` before this change: `/products/export` is read as a SKU.
-=======
->>>>>>> origin/main

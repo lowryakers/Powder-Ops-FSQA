@@ -45,11 +45,8 @@ import { checkLevelGtin } from '../../shared/level-gtin.js';
 import { writeGate, fieldGate, movesToActive, sotPeople, sotPermissions } from '../product-sot-gate.js';
 import { isBotAccount } from '../trainees.js';
 import { stripPrices, approvedLabel, levelBarcodes, listViews, getView, cleanViewBody } from '../product-sot-read.js';
-<<<<<<< HEAD
 import { buildExport, toCsv, PRESETS } from '../../shared/product-exports.js';
 import { matchesFilters, cleanFilters } from '../../shared/product-filters.js';
-=======
->>>>>>> origin/main
 
 const barcodeUpload = mediaUpload({ files: 1 }).array('files', 1);
 
@@ -1295,7 +1292,6 @@ router.put('/sot-settings', (req, res) => {
   res.json({ changed: changes.length });
 });
 
-<<<<<<< HEAD
 // ── Exports of the filtered catalogue (R-0645 PR C). Declared before `/:sku`. ──
 // GET /products/export?preset=full|shalee|retailer|gs1&format=csv|xlsx&filters=<json>
 // The filters are the catalogue's own (shared/product-filters.js), so the file
@@ -1332,8 +1328,6 @@ router.get('/export', (req, res) => {
   res.type('text/csv; charset=utf-8').send(toCsv(out));
 });
 
-=======
->>>>>>> origin/main
 // ── Saved views on the catalogue (R-0645 PR B). Declared before `/:sku`. ─────
 // A named filter + column set. Everyone who can open Products may save their
 // own; a shared view is read by everyone and changed only by its owner. Tokens
