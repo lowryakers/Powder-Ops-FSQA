@@ -3920,6 +3920,14 @@ function runMigrations() {
     );
     -- A named filter + column set on the catalogue, reopenable by its owner or,
     -- when shared, by everyone who can open Products.
+    -- The last GS1 Data Hub export loaded by scripts/gs1-backfill.mjs --apply
+    -- (R-0645 PR C). Read by the GS1-check export preset. Replaced whole on each
+    -- load; a copy of GS1, never a source a person edits.
+    CREATE TABLE IF NOT EXISTS gs1_export_rows (
+      gtin TEXT PRIMARY KEY,
+      level TEXT, status TEXT, description TEXT,
+      source_file TEXT, loaded_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
     CREATE TABLE IF NOT EXISTS product_saved_views (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
