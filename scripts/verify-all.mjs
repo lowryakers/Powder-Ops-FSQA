@@ -131,6 +131,7 @@ const RUNS = [
   ['verify-sku-retire.mjs', 5206],
   ['verify-product-sot.mjs', 5021],
   ['verify-product-sot-page.mjs', 5023],
+  ['verify-product-exports.mjs', 5025, { PRODUCT_MASTER_TOKEN: 'export-token' }],
   ['verify-name-usage.mjs', 5207],
   ['verify-dilution-control.mjs', 5208],
   ['verify-single-spine.mjs', 5209],
