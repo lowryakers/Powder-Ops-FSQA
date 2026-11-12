@@ -36,8 +36,7 @@ import { isCoaPrepOnly, coaPrepGuard } from '../coa-prep.js';
 import coaPublishRouter from './coa-publish.js';
 import {
   recordSignatureHistory, reopenedEditRefusal, signatureHistoryFor, UNSIGN_WINDOW_MIN_REASON,
-  listWindows, activeWindowFor, openWindow, openWindowRefusal, closeWindow, reopenedRequests, WINDOW_DEFAULT_HOURS, WINDOW_MAX_HOURS,
-} from '../coa-correction-window.js';
+  listWindows, activeWindowFor, openWindow, openWindowRefusal, closeWindow, reopenedRequests, WINDOW_DEFAULT_HOURS, WINDOW_MAX_HOURS, reopenedDeleteAllowed } from '../coa-correction-window.js';
 
 // D-307: while a certificate is reopened for correction, every change to its
 // lot details, results or files writes a field-level audit row with the reason
@@ -672,12 +671,14 @@ router.get('/requests', (req, res) => {
   // certificate while it is open — never delete.
   const win = isAdmin || isCoaPrepOnly(req.user) ? null : activeWindowFor(db, req.user);
   const winFlags = win ? { unsign: true, delete: false, item_key: null, window_id: win.id, window_expires_at: win.expires_at } : null;
-  const flagsFor = (id) => isAdmin ? { unsign: true, delete: true, item_key: null } : (flagged.get(id) || winFlags || { unsign: false, delete: false, item_key: null });
+  const baseFlags = (id) => isAdmin ? { unsign: true, delete: true, item_key: null } : (flagged.get(id) || winFlags || { unsign: false, delete: false, item_key: null });
+  // A reopened certificate may be deleted by whoever the window covers (D-345).
+  const flagsFor = (id, r) => (!isAdmin && win && r?.reopened_for_correction && !r.qa_signed_at) ? { ...baseFlags(id), delete: true } : baseFlags(id);
   res.json({
     // The drawn signature and the signed snapshot are for the detail and the
     // PDF; a list of 1,500 rows does not carry them.
     requests: requests.map(({ qa_signature, signed_snapshot: _snapshot, ...r }) => ({ ...r, signed: !!qa_signature, file_counts: fileMap[r.id] || {},
-      unread_reports: unreadMap[r.id] || 0, correction: flagsFor(r.id) })),
+      unread_reports: unreadMap[r.id] || 0, correction: flagsFor(r.id, r) })),
     total,
     shown: requests.length,
     limit,
@@ -979,6 +980,11 @@ router.get('/submissions/:id/pdf', (req, res) => {
   doc.end();
 });
 
+// The detail's flags, plus the D-345 delete of a reopened certificate.
+function withReopenedDelete(db, user, request, flags) {
+  return reopenedDeleteAllowed(db, user, request) ? { ...flags, delete: true } : flags;
+}
+
 router.get('/requests/:id', (req, res) => {
   const db = getDb();
   const request = db.prepare('SELECT * FROM coa_requests WHERE id = ?').get(req.params.id);
@@ -990,7 +996,7 @@ router.get('/requests/:id', (req, res) => {
 
   const { suspect } = splitLot(request.lot_number);
   res.json({ ...request, files, test_results, specifications: specs, lot_suspect: suspect,
-    correction: correctionFlags(db, req.user, request.id), correction_items: correctionItemsFor(db, request.id),
+    correction: withReopenedDelete(db, req.user, request, correctionFlags(db, req.user, request.id)), correction_items: correctionItemsFor(db, request.id),
     unread_rows: unreadRowsFor(db, request.id), signature_history: signatureHistoryFor(db, request.id) });
 });
 
@@ -1219,8 +1225,18 @@ router.post('/requests/bulk-delete', (req, res) => {
   const { ids } = req.body;
   if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array is required' });
   const auth = new Map();
+  // A request reopened for correction (D-345): an admin, or a Quality reviewer
+  // an open window covers, may delete it — with a reason. Its signed original
+  // stays in coa_signature_history.
+  const reopenedRows = new Map(db.prepare(`SELECT * FROM coa_requests WHERE reopened_for_correction = 1 AND id IN (${ids.map(() => '?').join(',')})`).all(...ids).map(r => [r.id, r]));
+  const reopenedOk = new Map();
+  for (const [id, r] of reopenedRows) { const a = reopenedDeleteAllowed(db, req.user, r); if (a) reopenedOk.set(id, a); }
+  if (reopenedOk.size && String(req.body?.reason || '').trim().length < 3) {
+    return res.status(400).json({ error: 'Say why this reopened certificate is being deleted (which request keeps the lab report).', reason_required: true });
+  }
   if (req.user?.role !== 'admin') {
     for (const id of ids) {
+      if (reopenedOk.has(id)) continue;
       const a = coaCorrectionAllowed(db, req.user, id, 'delete');
       if (!a) return res.status(403).json({ error: 'Only an admin can delete lab requests, or Quality for an empty duplicate a COA correction in QA Review names.', id });
       const refusal = duplicateDeleteRefusal(db, id, a.item);
@@ -1239,7 +1255,8 @@ router.post('/requests/bulk-delete', (req, res) => {
   const skipped_signed = all.filter(isSigned).map(r => ({ id: r.id, lot_number: r.lot_number }));
   // A certificate reopened for correction leaves that state only by being
   // signed again (D-307), never by being deleted.
-  const reopenedIds = new Set(db.prepare(`SELECT id FROM coa_requests WHERE reopened_for_correction = 1 AND id IN (${ph})`).all(...ids).map(r => r.id));
+  // …unless this person may delete it (D-345, reopenedDeleteAllowed above).
+  const reopenedIds = new Set([...reopenedRows.keys()].filter(id => !reopenedOk.has(id)));
   const skipped_reopened = all.filter(r => !isSigned(r) && reopenedIds.has(r.id)).map(r => ({ id: r.id, lot_number: r.lot_number }));
   const found = all.filter(r => !isSigned(r) && !reopenedIds.has(r.id));
   const del = found.map(r => r.id);
@@ -1253,8 +1270,10 @@ router.post('/requests/bulk-delete', (req, res) => {
   tx();
   for (const r of found) {
     const item = auth.get(r.id);
+    const ro = reopenedOk.get(r.id);
     logAudit(req.user, 'delete', 'coa_request', r.id,
-      (reason || item) ? { ...(reason ? { reason } : {}), ...(item ? { authorized_by: item.item_key, decision: CORRECTION_DECISION } : {}),
+      (reason || item || ro) ? { ...(reason ? { reason } : {}), ...(item ? { authorized_by: item.item_key, decision: CORRECTION_DECISION } : {}),
+        ...(ro ? { reopened_certificate: true, authorized_by_window: ro.window, signature_history_kept: true } : {}),
         ...(req.user?.role !== 'admin' ? signatureEvidence() : {}) } : null, r, null);
   }
   // Say in words what was not deleted, so a screen never reports nothing (D-345).

@@ -149,3 +149,18 @@ export function reopenedEditRefusal(db, user, request, now = new Date()) {
   if (!request.reopened_window_id && isQaReviewer(user)) return null;
   return 'This certificate is reopened for correction. Only an admin, or a Quality reviewer the correction window covers, may change it while it is open.';
 }
+
+/**
+ * May this person delete a certificate reopened for correction (D-345)? An
+ * admin; or a Quality reviewer an open correction window covers. Only while it
+ * is still un-signed. The signed original stays in coa_signature_history (no
+ * foreign key), so deleting the duplicate never loses the certificate that was
+ * issued. Returns { window } (null for an admin) or null.
+ */
+export function reopenedDeleteAllowed(db, user, request, now = new Date()) {
+  if (!request?.reopened_for_correction || request.qa_signed_at) return null;
+  if (user?.role === 'admin') return { window: null };
+  if (!isQaReviewer(user) || isBotAccount(db, user)) return null;
+  const w = activeWindowFor(db, user, now);
+  return w ? { window: w.id } : null;
+}

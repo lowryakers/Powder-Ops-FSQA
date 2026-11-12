@@ -10942,4 +10942,9 @@ flashed and nothing saved — and she could not delete a duplicate; Lowry, as ad
 - **Delete.** A certificate reopened for correction leaves that state only by being signed again (D-307), so
   `bulk-delete` skipped it — and answered 200 `deleted: 0`, which the request screen read as success and closed. The
   rule is unchanged; the answer now carries `not_deleted` in words and both screens show it.
-- `verify:coawindow` (+4). The control (main's `coa.js`) fails 2: the screen's Update and the silent delete.
+- **Then, on Lowry's word the same day: a reopened (un-signed) duplicate may be deleted** by an admin, or by a Quality
+  reviewer an open correction window covers (`reopenedDeleteAllowed` in `server/coa-correction-window.js`). A reason is
+  always required; the reviewer also gives the password. This narrows D-307's "never delete" to: never delete a SIGNED
+  certificate. The signed original survives in `coa_signature_history` (no foreign key) and the audit row says
+  `reopened_certificate` with the window. Anyone else still gets `not_deleted` in words.
+- `verify:coawindow` (95; +13). The control (main's `coa.js`) fails the screen's Update and the silent delete.

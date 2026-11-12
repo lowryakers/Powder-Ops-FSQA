@@ -1287,7 +1287,9 @@ function RequestDetail({ requestId, labs, onClose, onRefresh }) {
   // dialog rather than a prompt, so a correction window's plan is captured.
   const unsign = () => setShowUnsign(true);
   const deleteDuplicate = async () => {
-    const reason = prompt('Why is this request being deleted? (It is an empty duplicate — say which request keeps the lab report.)');
+    const reason = prompt(detail.reopened_for_correction
+      ? 'Why is this reopened certificate being deleted? Say which request keeps the lab report. (Its signed original stays in the signature history.)'
+      : 'Why is this request being deleted? (It is an empty duplicate — say which request keeps the lab report.)');
     if (!reason || reason.trim().length < 3) return;
     let res;
     try {
