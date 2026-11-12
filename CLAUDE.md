@@ -4213,6 +4213,10 @@ Specifications tab), `UnreadRows` on a request.
   correction path first and is then never signed again.
 - The gluten "<44" report is read-only; signed ones are corrected inside a window. Whey codes are NOT seeded.
 - `verify:coawindow` (82; control fails 13 then stops).
+- **The edit form sends the WHOLE request (D-345)**: a guard must refuse a *changed* value, never a field's presence.
+  A refusal is thrown back to the form; `bulk-delete` says what it did not delete (`not_deleted`).
+  **A reopened (un-signed) certificate may be deleted** by an admin or a window-covered Quality reviewer, reason required
+  (`reopenedDeleteAllowed`); its signed original stays in `coa_signature_history`. A SIGNED certificate is never deleted.
 
 ## A bot token with `coa-prep` prepares COA drafts; a person decides (D-313)
 - Token grant `coa-prep` opens `PUT /coa/plans/:id` (a DRAFT plan's `tests`, `items` = proposed products, `notes`) and

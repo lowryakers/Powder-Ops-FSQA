@@ -162,6 +162,16 @@ try {
   r = await call('PUT', `/coa/requests/${s1.id}`, { product_expiration: '2028-10-31' }, W);
   t('Wren corrects the expiry', r.s === 200 && row(s1.id).product_expiration === '2028-10-31');
   t('the field change is audited as a correction, old and new', !!one("SELECT 1 x FROM audit_log WHERE entity_id = ? AND action = 'correction'", s1.id));
+  // D-345: the edit form sends the WHOLE request back, certificate_number and
+  // date_of_issuance included (blank while reopened). That must save.
+  { const whole = (await call('GET', `/coa/requests/${s1.id}`, null, W)).j;
+    r = await call('PUT', `/coa/requests/${s1.id}`, { ...whole, supplier: 'Corrected Supplier Co' }, W);
+    t('D-345: the screen\'s whole-request Update saves while reopened', r.s === 200 && row(s1.id).supplier === 'Corrected Supplier Co', JSON.stringify(r.j).slice(0, 200));
+    r = await call('PUT', `/coa/requests/${s1.id}`, { ...whole, certificate_number: 'TYPED-1' }, A);
+    t('D-345: a typed certificate number is still refused', r.s === 400 && /set by signing/.test(r.j.error || ''));
+    r = await call('POST', '/coa/requests/bulk-delete', { ids: [s1.id] }, A);
+    t('D-345: deleting a reopened certificate needs a reason, even for an admin', r.s === 400 && r.j.reason_required === true, JSON.stringify(r.j));
+    t('… and the request is still there', !!row(s1.id)); }
 
   console.log('\n── C1: re-signing');
   r = await call('POST', `/coa/requests/${s1.id}/sign`, { signature: SIG, signature_password: 'Wren-Win-2026' }, W);
@@ -175,6 +185,27 @@ try {
   t('the corrected certificate PDF downloads', r.s === 200 && r.j.slice(0, 4).toString() === '%PDF');
   t('a certificate number is never issued twice', all('SELECT certificate_number c FROM coa_requests WHERE certificate_number IS NOT NULL').length
     === new Set(all('SELECT certificate_number c FROM coa_requests WHERE certificate_number IS NOT NULL').map(x => x.c)).size);
+
+  console.log('\n── D-345: deleting a reopened duplicate');
+  { const s5 = await makeSigned('101958');
+    const cert5 = row(s5.id).certificate_number;
+    r = await call('DELETE', `/coa/requests/${s5.id}/sign`, { reason: 'This is a duplicate of another request', field_plan: 'delete duplicate', signature_password: 'Wren-Win-2026' }, W);
+    t('D-345: Wren un-signs the duplicate inside the window', r.s === 200 && row(s5.id).reopened_for_correction === 1);
+    r = await call('GET', `/coa/requests/${s5.id}`, null, W);
+    t('D-345: the window covers Wren, so her screen offers Delete', r.j.correction?.delete === true, JSON.stringify(r.j.correction));
+    r = await call('GET', `/coa/requests/${s5.id}`, null, Q);
+    t('D-345: Quinn, not covered, is offered no Delete', r.j.correction?.delete !== true);
+    r = await call('POST', '/coa/requests/bulk-delete', { ids: [s5.id], reason: 'Duplicate of the kept request', signature_password: 'Quinn-Win-2026' }, Q);
+    t('D-345: Quinn cannot delete it', r.s === 403 && !!row(s5.id), JSON.stringify(r.j));
+    r = await call('POST', '/coa/requests/bulk-delete', { ids: [s5.id], signature_password: 'Wren-Win-2026' }, W);
+    t('D-345: Wren must give a reason', r.s === 400 && !!row(s5.id));
+    r = await call('POST', '/coa/requests/bulk-delete', { ids: [s5.id], reason: 'Duplicate of the kept request for lot 101958' }, W);
+    t('D-345: Wren must give her password', r.s === 403 && r.j.signature_required === true && !!row(s5.id), JSON.stringify(r.j));
+    r = await call('POST', '/coa/requests/bulk-delete', { ids: [s5.id], reason: 'Duplicate of the kept request for lot 101958', signature_password: 'Wren-Win-2026' }, W);
+    t('D-345: with a reason and her password the reopened duplicate is deleted', r.s === 200 && r.j.deleted === 1 && !row(s5.id), JSON.stringify(r.j));
+    t('D-345: its signed original is still in the signature history', !!one('SELECT 1 x FROM coa_signature_history WHERE request_id = ? AND certificate_number = ?', s5.id, cert5));
+    t('D-345: the audit row says a reopened certificate was deleted under the window',
+      !!one("SELECT 1 x FROM audit_log WHERE entity_id = ? AND action = 'delete' AND details LIKE '%reopened_certificate%' AND details LIKE ?", s5.id, `%${win.id}%`)); }
 
   console.log('\n── C1: published certificates, the readiness line, expiry, closing');
   const s2 = await makeSigned('101955');

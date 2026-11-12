@@ -10931,3 +10931,20 @@ the notice so she can tell the supervisor to file.
 - **The supervisor comes from `teamSupervisors`** (D-127). A team with none says "no supervisor set up", never a guess.
 - `verify:qaeodnotice` (21, live + browser at 1280 and 390). The control (main's `qa-review.js`) does not get past
   the first assertion.
+## D-345 — A COA edit sends the whole request; only a change to the issued fields is refused (12 Nov 2026)
+Reported by Lowry: inside a correction window Maria un-signed certificates, edited them, pressed **Update** — the button
+flashed and nothing saved — and she could not delete a duplicate; Lowry, as admin, got the same.
+- **Update.** The edit form sends the whole request back, `certificate_number` and `date_of_issuance` included (blank
+  once un-signed). `PUT /coa/requests/:id` refused any body that *named* either field, so **every edit from the
+  screen had been refused since D-226** — the verifies sent partial bodies and never saw it. Now only a *change* to
+  either is refused. The screen then hid the refusal: `handleUpdate` put it in a message box that is not drawn while
+  the form is open. It throws back to the form now, which says it.
+- **Delete.** A certificate reopened for correction leaves that state only by being signed again (D-307), so
+  `bulk-delete` skipped it — and answered 200 `deleted: 0`, which the request screen read as success and closed. The
+  rule is unchanged; the answer now carries `not_deleted` in words and both screens show it.
+- **Then, on Lowry's word the same day: a reopened (un-signed) duplicate may be deleted** by an admin, or by a Quality
+  reviewer an open correction window covers (`reopenedDeleteAllowed` in `server/coa-correction-window.js`). A reason is
+  always required; the reviewer also gives the password. This narrows D-307's "never delete" to: never delete a SIGNED
+  certificate. The signed original survives in `coa_signature_history` (no foreign key) and the audit row says
+  `reopened_certificate` with the window. Anyone else still gets `not_deleted` in words.
+- `verify:coawindow` (95; +13). The control (main's `coa.js`) fails the screen's Update and the silent delete.
