@@ -10931,6 +10931,7 @@ the notice so she can tell the supervisor to file.
 - **The supervisor comes from `teamSupervisors`** (D-127). A team with none says "no supervisor set up", never a guess.
 - `verify:qaeodnotice` (21, live + browser at 1280 and 390). The control (main's `qa-review.js`) does not get past
   the first assertion.
+
 ## D-345 — A COA edit sends the whole request; only a change to the issued fields is refused (12 Nov 2026)
 Reported by Lowry: inside a correction window Maria un-signed certificates, edited them, pressed **Update** — the button
 flashed and nothing saved — and she could not delete a duplicate; Lowry, as admin, got the same.
@@ -10949,6 +10950,22 @@ flashed and nothing saved — and she could not delete a duplicate; Lowry, as ad
   `reopened_certificate` with the window. Anyone else still gets `not_deleted` in words.
 - `verify:coawindow` (95; +13). The control (main's `coa.js`) fails the screen's Update and the silent delete.
 
+## D-347 — Supplier cleanup step 2 is one plan sheet, applied by a script that fills blanks and keeps its evidence (12 Nov 2026)
+A-20261111-004 step 2 (the vendor-type map C1, part numbers, kind/expiry/lot corrections, "count as GMP", A8 materials)
+as `scripts/supplier-step2.mjs`. Admin-run, never at boot, never by a route. Contact names stay with
+`supplier-contacts-repair.mjs` (D-339); Drive-only files are uploaded in the app.
+- **One sheet, an `action` column**: `type` · `part` · `relabel` · `expiry` · `lot`. Template
+  `scripts/data/supplier-step2-template.csv`. `--list` prints the worklist (typeless in-use suppliers, materials with no
+  part number, unknown/other files, GMP certificates and letters with no date) and writes nothing.
+- **A blank is filled; a set value is never overwritten** — a disagreeing row is reported. **A correction carries its
+  evidence**: a relabel names the kind the file has now (`from_kind`), a moved expiry the date it has now
+  (`from_expires_on`); a mismatch writes nothing (the COLOR_CORRECTIONS pair rule). A GMP certificate or letter of
+  guarantee is never set without a date. A material is created only on `create = yes`.
+- **No deletes and no gate change.** There is no delete action; the script never writes `app_settings` and rolls back if
+  either gate mode moved while it ran. Both stay at warn.
+- Dry run by default; `--apply` backs up, writes in one transaction, one audit row per change; a second `--apply` does
+  nothing. Not run against production from a session — Lowry runs it.
+- `check:supplierstep2` (30, temporary database, in `npm run check`).
 ## D-348 — FORM 418-01 V2 inspects the bottles too; an open sheet shows the product's spec and artwork beside it (12 Nov 2026)
 Asked by Lowry: QA inspects the bottle sleeves (D-332) but not the empty bottles; and QA works with Artwork and the
 Receiving inspection open at once, or does the inspection on paper and keys it in.

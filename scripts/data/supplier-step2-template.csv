@@ -1,0 +1,7 @@
+action,supplier,vendor_type,material,system,part_number,create,file_id,from_kind,kind,expires_on,from_expires_on,lot_number
+type,<supplier name>,<ingredient|packaging|supplies|equipment|service|laboratory>,,,,,,,,,,
+part,<supplier name>,,<material description>,mrpeasy,<part number>,,,,,,,
+relabel,,,,,,,<file id>,unknown,questionnaire,,,
+relabel,,,,,,,<file id>,certificate,gmp_certificate,<YYYY-MM-DD>,,
+expiry,,,,,,,<file id>,,,<new YYYY-MM-DD>,<current YYYY-MM-DD>,
+lot,,,,,,,<file id>,,,,,<lot number>

@@ -2911,6 +2911,8 @@ sheet that must open even with no R2 configured. The zone **item lists** it docu
   `can_edit` for a token = account canEdit AND the grant (`canEditHere`).
 - The import keeps contact name/role/primary only when the source lines them up (`contactsFromRow`).
   `scripts/supplier-contacts-repair.mjs` fills blanks from a mapping: dry run first, never overwrites, never deletes.
+  **Step 2 (D-347): `scripts/supplier-step2.mjs <plan.csv> [--apply]` / `--list`** — types, part numbers, kind/expiry/lot.
+  Fills blanks; a correction names the current value (`from_kind`, `from_expires_on`); never deletes, never moves a gate.
   `verify:suppliertoken` (51).
 
 ## A product reads its supplier documents through its recipe; a customer pack is a read (D-340)
