@@ -59,6 +59,58 @@ function AgeChip({ date }) {
   );
 }
 
+// D-346: scheduled runs with no end-of-day report. NOT a pile — an unfiled
+// report has no record to sign — so it sits above the piles as a notice, with
+// each team's supervisor named so QA knows whom to tell. The figures are the
+// server's (the same walk as the Production Log banner and the ReadyBot chase).
+function MissedEodNotice({ notice }) {
+  const [open, setOpen] = useState(false);
+  if (!notice?.total) return null;
+  const openLog = () => window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab: 'production-log' } }));
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-900" data-missed-eod-notice>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="flex items-start gap-2 min-w-0">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-600" />
+          <div className="min-w-0">
+            <p className="font-semibold" data-missed-eod-total>
+              {notice.total} scheduled run{notice.total === 1 ? '' : 's'} with no end-of-day report
+            </p>
+            <p className="text-xs text-amber-800">Nothing to sign here — ask the supervisor named below to file the report.{notice.oldest ? ` Oldest ${notice.oldest}.` : ''}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button type="button" onClick={() => setOpen(o => !o)} data-missed-eod-toggle
+            className="text-xs font-medium text-amber-900 hover:underline">{open ? 'Hide runs' : 'Show runs'}</button>
+          <button type="button" onClick={openLog} data-missed-eod-open
+            className="inline-flex items-center gap-1 text-xs font-medium text-amber-900 hover:underline">
+            Production Log <ExternalLink size={12} />
+          </button>
+        </div>
+      </div>
+      <ul className="mt-2 space-y-1">
+        {notice.teams.map(t => (
+          <li key={t.team} data-missed-eod-team={t.team} className="text-sm">
+            <span className="font-medium">{t.team}</span>: {t.count} run{t.count === 1 ? '' : 's'}
+            {' — '}
+            {t.supervisors.length
+              ? <span data-missed-eod-supervisors>tell {t.supervisors.join(' or ')}</span>
+              : <span className="text-red-700" data-missed-eod-unowned>no supervisor set up for this team</span>}
+            {open && (
+              <ul className="mt-1 ml-4 text-xs text-amber-800 space-y-0.5">
+                {t.runs.map((r, i) => (
+                  <li key={i}>{r.date}{r.room ? ` · ${r.room}` : ''}{r.mo_number ? ` · MO ${r.mo_number}` : ''}{r.product_name ? ` · ${r.product_name}` : ''}</li>
+                ))}
+                {t.count > t.runs.length && <li>…and {t.count - t.runs.length} more on the Production Log</li>}
+              </ul>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export default function QAReviewPanel() {
   const { user } = useAuth();
   const { data, loading, refresh } = useApiGet('/qa-review');
@@ -139,6 +191,8 @@ export default function QAReviewPanel() {
           <RefreshCw size={17} className={loading ? 'animate-spin' : ''} />
         </button>
       </div>
+
+      <MissedEodNotice notice={data?.missed_eod} />
 
       {loading && !data ? (
         <div className="text-center py-12 text-gray-400 text-sm">Loading…</div>

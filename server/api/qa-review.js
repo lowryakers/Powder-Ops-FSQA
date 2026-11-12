@@ -8,6 +8,7 @@ import { Router } from 'express';
 import { getDb, logAudit } from '../db.js';
 import { SOURCES, getSource, safeCount, safePending, isQaReviewer } from '../qa-review.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
+import { eodMissedDigest } from '../eod-chase.js';
 
 const router = Router();
 
@@ -52,8 +53,27 @@ router.get('/', (req, res) => {
     };
   });
 
-  res.json({ sources, total: sources.reduce((n, s) => n + s.count, 0) });
+  res.json({ sources, total: sources.reduce((n, s) => n + s.count, 0), missed_eod: missedEodNotice(db) });
 });
+
+// D-346: scheduled runs with no end-of-day report, for QA to READ. Nothing to
+// sign — an unfiled report has no record — so it is a notice beside the piles,
+// never a source. Same walk as the Production Log banner and the ReadyBot chase
+// (eodMissedDigest → missedReports), so the three cannot disagree. Each team
+// names the supervisor who files its report, so QA knows whom to tell.
+function missedEodNotice(db) {
+  try {
+    const d = eodMissedDigest(db);
+    const teams = d.owners.map(o => ({
+      team: o.team,
+      count: o.rows.length,
+      oldest: o.rows.map(r => r.date).sort()[0] || null,
+      supervisors: o.supervisors.map(u => u.name),
+      runs: o.rows.slice(0, 50).map(r => ({ date: r.date, room: r.room || null, mo_number: r.mo_number || null, product_name: r.product_name || null })),
+    })).sort((a, b) => b.count - a.count);
+    return { total: d.total, oldest: d.oldest, teams };
+  } catch { return null; }
+}
 
 // POST /sign — one or many records from a single source.
 //

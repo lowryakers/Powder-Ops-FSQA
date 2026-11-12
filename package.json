@@ -104,6 +104,7 @@
     "verify:qacorrection": "node scripts/verify-qa-correction-notify.mjs",
     "verify:cleanupdigest": "node scripts/verify-cleanup-digest.mjs",
     "verify:eodchase": "node scripts/verify-eod-chase.mjs",
+    "verify:qaeodnotice": "VERIFY_ONLY=verify-qa-eod-notice.mjs node scripts/verify-all.mjs",
     "verify:readybot": "node scripts/verify-readybot-audience.mjs",
     "verify:payactions": "node scripts/verify-pay-actions.mjs",
     "verify:ptoplan": "VERIFY_ONLY=verify-pto-plan.mjs node scripts/verify-all.mjs",
