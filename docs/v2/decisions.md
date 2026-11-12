@@ -10919,3 +10919,20 @@ R-0645 PR C. The exports read the row; the backfill copies GS1's codes onto it. 
 - **Pre-existing conflict, named and left alone:** `GET /products/merch/gtin/suggest` (D-302).
 - `verify:productexports` (52; pack tests 21–27, live on a fresh database with a fixture export built by the
   test). The control is `main` before this change: `/products/export` is read as a SKU.
+
+## D-347 — Supplier cleanup step 2 is one plan sheet, applied by a script that fills blanks and keeps its evidence (12 Nov 2026)
+A-20261111-004 step 2 (the vendor-type map C1, part numbers, kind/expiry/lot corrections, "count as GMP", A8 materials)
+as `scripts/supplier-step2.mjs`. Admin-run, never at boot, never by a route. Contact names stay with
+`supplier-contacts-repair.mjs` (D-339); Drive-only files are uploaded in the app.
+- **One sheet, an `action` column**: `type` · `part` · `relabel` · `expiry` · `lot`. Template
+  `scripts/data/supplier-step2-template.csv`. `--list` prints the worklist (typeless in-use suppliers, materials with no
+  part number, unknown/other files, GMP certificates and letters with no date) and writes nothing.
+- **A blank is filled; a set value is never overwritten** — a disagreeing row is reported. **A correction carries its
+  evidence**: a relabel names the kind the file has now (`from_kind`), a moved expiry the date it has now
+  (`from_expires_on`); a mismatch writes nothing (the COLOR_CORRECTIONS pair rule). A GMP certificate or letter of
+  guarantee is never set without a date. A material is created only on `create = yes`.
+- **No deletes and no gate change.** There is no delete action; the script never writes `app_settings` and rolls back if
+  either gate mode moved while it ran. Both stay at warn.
+- Dry run by default; `--apply` backs up, writes in one transaction, one audit row per change; a second `--apply` does
+  nothing. Not run against production from a session — Lowry runs it.
+- `check:supplierstep2` (30, temporary database, in `npm run check`).
