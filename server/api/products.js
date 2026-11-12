@@ -45,6 +45,8 @@ import { checkLevelGtin } from '../../shared/level-gtin.js';
 import { writeGate, fieldGate, movesToActive, sotPeople, sotPermissions } from '../product-sot-gate.js';
 import { isBotAccount } from '../trainees.js';
 import { stripPrices, approvedLabel, levelBarcodes, listViews, getView, cleanViewBody } from '../product-sot-read.js';
+import { buildExport, toCsv, PRESETS } from '../../shared/product-exports.js';
+import { matchesFilters, cleanFilters } from '../../shared/product-filters.js';
 
 const barcodeUpload = mediaUpload({ files: 1 }).array('files', 1);
 
@@ -1288,6 +1290,42 @@ router.put('/sot-settings', (req, res) => {
     }
   })();
   res.json({ changed: changes.length });
+});
+
+// ── Exports of the filtered catalogue (R-0645 PR C). Declared before `/:sku`. ──
+// GET /products/export?preset=full|shalee|retailer|gs1&format=csv|xlsx&filters=<json>
+// The filters are the catalogue's own (shared/product-filters.js), so the file
+// holds exactly the rows on screen. A reader who is not canManage gets the
+// price cells blank — an export never carries more than the screen. Writes
+// nothing. master.csv is a different thing and is unchanged.
+router.get('/export', (req, res) => {
+  const preset = String(req.query.preset || 'full');
+  if (!PRESETS[preset]) return res.status(400).json({ error: `Unknown preset "${preset}". Use ${Object.keys(PRESETS).join(', ')}.` });
+  const format = String(req.query.format || 'csv');
+  if (!['csv', 'xlsx'].includes(format)) return res.status(400).json({ error: 'The format is csv or xlsx.' });
+  const raw = (() => { try { return req.query.filters ? JSON.parse(String(req.query.filters)) : {}; } catch { return undefined; } })();
+  if (raw === undefined) return res.status(400).json({ error: 'filters must be JSON.' });
+  const filters = cleanFilters(raw);
+  const db = getDb();
+  const products = hydrate(db.prepare(`${SELECT} ORDER BY p.sku`).all(), db)
+    .filter((p) => matchesFilters(p, filters, { notLaunching: NOT_LAUNCHING }))
+    .map((p) => ({ ...p, _label: approvedLabel(db, p.sku).approved }));
+  let gs1 = null;
+  try {
+    const rows = db.prepare('SELECT gtin, level, status, description FROM gs1_export_rows').all();
+    if (rows.length) gs1 = new Map(rows.map((r) => [r.gtin, r]));
+  } catch { /* no export loaded */ }
+  const out = buildExport(preset, products, { gs1, prices: !!canManage(req.user) });
+  const stamp = new Date().toISOString().slice(0, 10);
+  const name = `${PRESETS[preset].filename}-${stamp}.${format}`;
+  res.set('Cache-Control', 'no-store');
+  res.set('Content-Disposition', `attachment; filename="${name}"`);
+  res.set('X-Row-Count', String(out.rows.length));
+  if (format === 'xlsx') {
+    res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    return res.send(writeXlsx(out.headers, out.rows, PRESETS[preset].label));
+  }
+  res.type('text/csv; charset=utf-8').send(toCsv(out));
 });
 
 // ── Saved views on the catalogue (R-0645 PR B). Declared before `/:sku`. ─────
