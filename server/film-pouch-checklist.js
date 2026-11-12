@@ -41,10 +41,17 @@
 // app serves V1 (controlled.js parks the code; `filmChecklistBaseline()`), and
 // the DCR is docs/v2/queued/dcr-form-418-01-v2.md. Do not tidy the sleeve
 // wording without telling Document Control.
+//
+// ── V2, second addition (D-348): the bottles themselves ─────────────────────
+// A sleeve is only half the bottle line's packaging; the empty bottle arrives on
+// its own pallet and is a food-contact container. V2 therefore also gets a
+// BOTTLE section (kind `bottle`): its size, its neck and closure fit, and what
+// is inside it — dust, plastic shards, insects. DRAFTED the same way the sleeve
+// lines were, in the same DCR, and served only once Document Control approves V2.
 export const FILM_FORM_CODE = 'FORM 418-01';
 export const FILM_REVISION = 'V2';
 export const FILM_PREVIOUS_REVISION = 'V1';
-export const FILM_TITLE = 'QA Film/Pouch/Bottle Sleeve Inspection Checklist';
+export const FILM_TITLE = 'QA Film/Pouch/Bottle Sleeve/Bottle Inspection Checklist';
 const FILM_PREVIOUS_TITLE = 'QA Film/Pouch Inspection Checklist';
 
 /** What a sheet inspects (V2). Each section names the kind it applies to. */
@@ -52,6 +59,7 @@ export const FILM_KINDS = [
   { key: 'film', label: 'Film (rolls)' },
   { key: 'pouch', label: 'Pouches' },
   { key: 'sleeve', label: 'Bottle sleeves' },
+  { key: 'bottle', label: 'Bottles' },
 ];
 
 /** The answers the paper offers. */
@@ -82,8 +90,14 @@ export const FILM_HEADER = [
   // CIRCLE ONE rows — "lay-flat width correct: yes" says nothing afterwards.
   { key: 'sleeve_layflat', label: 'Sleeve lay-flat width (mm)', type: 'text', kinds: ['sleeve'] },
   { key: 'sleeve_length', label: 'Sleeve cut length (mm)', type: 'text', kinds: ['sleeve'] },
+  // V2 (D-348), bottles only: the measurements the bottle's dimension lines are
+  // judged against, recorded as values for the same reason.
+  { key: 'bottle_height', label: 'Bottle height (mm)', type: 'text', kinds: ['bottle'] },
+  { key: 'bottle_diameter', label: 'Bottle outside diameter (mm)', type: 'text', kinds: ['bottle'] },
+  { key: 'bottle_capacity', label: 'Bottle capacity (mL)', type: 'text', kinds: ['bottle'] },
+  { key: 'bottle_neck', label: 'Neck finish (e.g. 38-400)', type: 'text', kinds: ['bottle'] },
 ];
-const NEW_HEADER_IN_V2 = ['sleeve_layflat', 'sleeve_length'];
+const NEW_HEADER_IN_V2 = ['sleeve_layflat', 'sleeve_length', 'bottle_height', 'bottle_diameter', 'bottle_capacity', 'bottle_neck'];
 
 /** The CIRCLE ONE options, exactly as printed. */
 export const WIND_DIRECTIONS = ['#1', '#2', '#3', '#4', '#5', '#6', '#7', '#8', '#9', '#10'];
@@ -173,8 +187,34 @@ export const FILM_SECTIONS = [
       I('sleeve_shrink_test', 'Shrink test - sleeve applied to a sample bottle shrinks evenly, no distortion of text or NFP'),
     ],
   },
+  {
+    // V2 (D-348) — DRAFTED for Document Control; see the note at the top.
+    key: 'bottle',
+    title: 'BOTTLE Inspection',
+    note: '*Pull 3 bottles from 4 random cases per pallet',
+    applies_to: ['bottle'],
+    items: [
+      I('bottle_case_damage', 'Damage to cases, liners or pallet wrap'),
+      I('bottle_case_labels', 'Case labels / lot numbers match the PO'),
+      I('bottle_height_correct', 'Dimensions - height matches specification', 'Record the height above'),
+      I('bottle_diameter_correct', 'Dimensions - outside diameter matches specification', 'Record the diameter above'),
+      I('bottle_capacity_correct', 'Dimensions - capacity matches specification', 'Record the capacity above'),
+      I('bottle_neck_correct', 'Neck finish / threads - correct size, fully formed, no flash', 'Record the neck finish above'),
+      I('bottle_closure_fit', 'Closure fit - a sample cap threads on fully and seals', 'N/A if no closures on hand'),
+      I('bottle_foreign_inside', 'Foreign material inside the bottle (dust, plastic shards, insects, debris)', '*Invert and look inside each sample'),
+      I('bottle_foreign_outside', 'Dust, oil, or foreign material on the outside'),
+      I('bottle_cracks', 'Cracks, chips, holes or stress whitening'),
+      I('bottle_base', 'Base - flat and stable (no rocker bottom)'),
+      I('bottle_seams', 'Mold seams / parting lines - no sharp flash'),
+      I('bottle_wall', 'Wall thickness even, no thin spots', '*Flashlight Test if applicable'),
+      I('bottle_color', 'Color / clarity matches standard'),
+      I('bottle_material_type', 'Material - Type matches specification', '*e.g. HDPE, PET, as on the PO / spec'),
+      I('bottle_label_panel', 'Label / sleeve area smooth, no dents or deformation'),
+      I('bottle_odor', 'Unusual odor present'),
+    ],
+  },
 ];
-const NEW_SECTIONS_IN_V2 = ['sleeve'];
+const NEW_SECTIONS_IN_V2 = ['sleeve', 'bottle'];
 
 /**
  * The instruction printed above the notes box, kept because it tells the

@@ -247,6 +247,7 @@
     "verify:artworkfilm": "node scripts/verify-artwork-film.mjs",
     "verify:artworkretire": "node scripts/verify-artwork-retire.mjs",
     "verify:filmsleeve": "node scripts/verify-film-sleeve.mjs",
+    "verify:inspectionref": "node scripts/verify-inspection-reference.mjs",
     "verify:truckchecklist": "node scripts/verify-truck-checklist.mjs",
     "verify:reach": "node scripts/verify-reachability.mjs",
     "verify:qmssig": "node scripts/verify-qms-signature.mjs",

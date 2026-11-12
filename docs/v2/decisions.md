@@ -10966,3 +10966,24 @@ as `scripts/supplier-step2.mjs`. Admin-run, never at boot, never by a route. Con
 - Dry run by default; `--apply` backs up, writes in one transaction, one audit row per change; a second `--apply` does
   nothing. Not run against production from a session — Lowry runs it.
 - `check:supplierstep2` (30, temporary database, in `npm run check`).
+## D-348 — FORM 418-01 V2 inspects the bottles too; an open sheet shows the product's spec and artwork beside it (12 Nov 2026)
+Asked by Lowry: QA inspects the bottle sleeves (D-332) but not the empty bottles; and QA works with Artwork and the
+Receiving inspection open at once, or does the inspection on paper and keys it in.
+- **Bottles are a fourth kind on V2** (`bottle`, "Bottles"): a BOTTLE section — cases, size, neck finish, closure fit,
+  **foreign material inside the bottle**, cracks, base, seams, wall, color, material, label area, odor — and four
+  header values (height, outside diameter, capacity, neck finish). **Drafted, not transcribed**, in the same DCR as the
+  sleeves (`docs/v2/queued/dcr-form-418-01-v2.md`); served only once Document Control approves V2, like the sleeves.
+  V2 has not been issued, so it stays V2. **If V2 was already approved in Controlled Changes before this deploys, the
+  bottle lines park as a change to an approved V2 under the same label — tell me and it becomes V3.**
+- **A sheet names its product** (`film_pouch_inspections.sku`, a pointer; refused by name if not in the catalog). The
+  drawer then shows, beside the checklist, the product, its packaging spec, colors, the artwork **released to print**
+  (else the newest approved, else a draft — labelled NOT released), its preview, print file and dieline, and the
+  approved Nutrition Facts panel. **Read on every open, copied onto nothing** (`server/inspection-reference.js`).
+- **QA's door, not Artwork's**: `GET /film-inspection/products` and `GET /film-inspection/:id/reference` are behind
+  `canInspect`; a warehouse account gets 403. It widens nothing — QA already releases artwork — and is narrower than
+  either module: one product, read-only, files as short-lived links.
+- **Wide screens show both columns; a phone has Checklist / Specs & artwork tabs**, the checklist kept mounted so
+  nothing typed is lost. Files open in the in-app viewer over the sheet; closing it lands back on the question.
+- The photo control is now `PhotoPicker` (take or choose), the D-052 rule this drawer had missed.
+- `verify:inspectionref` (34, live + S3 stand-in + browser at 1280 and 390). The control (main) fails from the first
+  bottle assertion. `verify:filmsleeve`'s "unknown kind" example moved from `bottle` to `carton`.
