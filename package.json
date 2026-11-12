@@ -279,6 +279,7 @@
     "verify:skuretire": "VERIFY_ONLY=verify-sku-retire.mjs node scripts/verify-all.mjs",
     "verify:productsot": "VERIFY_ONLY=verify-product-sot.mjs node scripts/verify-all.mjs",
     "verify:productsotpage": "VERIFY_ONLY=verify-product-sot-page.mjs node scripts/verify-all.mjs",
+    "verify:productexports": "VERIFY_ONLY=verify-product-exports.mjs node scripts/verify-all.mjs",
     "verify:nameusage": "VERIFY_ONLY=verify-name-usage.mjs node scripts/verify-all.mjs",
     "verify:dilutioncontrol": "VERIFY_ONLY=verify-dilution-control.mjs node scripts/verify-all.mjs",
     "verify:singlespine": "VERIFY_ONLY=verify-single-spine.mjs node scripts/verify-all.mjs"

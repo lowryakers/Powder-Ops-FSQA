@@ -10891,6 +10891,34 @@ is spread across the pack's eight sections, and nothing that already worked move
   (24) and `verify:productgrid` (100; test 20) stay green, updated for the new section order. The control is `main`
   before this change: `/products/views` is read as a SKU and the first assertion fails.
 
+## D-344 — The product record is the source of truth, part C: preset exports and the one-time GS1 inner/case backfill (12 Nov 2026)
+R-0645 PR C. The exports read the row; the backfill copies GS1's codes onto it. Neither makes a code.
+- **Four presets of the FILTERED catalogue** (`GET /products/export?preset=&format=csv|xlsx&filters=`, the
+  catalogue's own `matchesFilters`): Full (the field table + fill weight + spec), Shalee's Distributor sheet,
+  Retailer item setup, GS1 check. `shared/product-exports.js` is pure and is the one definition. The Export
+  button sits beside Saved views. **master.csv is untouched**; the verify asserts its first sixteen names.
+- **Shalee's 14 headers are a constant, byte for byte** (`SHALEE_DISTRIBUTOR_HEADERS` — the double space in
+  `INTERPACK  CASE UPC`, four trailing spaces). A CSV quotes a cell with edge spaces so they survive. Her
+  typography is rendered from stored numbers: `72/1.18 OZ packets 6/12pks`, `$120.24 COST / $1.67 UNIT`,
+  `16" x 10" x 7"`, `7.2LBS / 115.2 OZ`, `8/4`, `24 Months`; UPCs grouped 3-5-5-1. The flat export uses
+  "Flavor" for column 1 and does not insert her section-title rows.
+- **Prices are blank in an export for a reader who is not canManage** — the file never carries more than the screen.
+- **XLSX is the existing `writeXlsx`** (no new dependency) and `parseXlsx` reads it back with the same header row.
+- **The backfill is `scripts/gs1-backfill.mjs <export.xlsx>`**, dry run by default, `--apply` backs up first,
+  writes in one transaction, stamps readiness, audits `gs1_backfill` per product with the reason for each pick,
+  and is idempotent. The rules: match the Each row equal to the padded UPC-12; inner = the In Use indicator-3
+  inner with the same middle twelve; case = In Use only, the stick shipper at indicator 1 and others at 2 when
+  several are In Use, `CASE_CHOICE` for CPK-PSM-PS (10850046726122) and DNT-BOX-CPB (10850030869828); the two
+  typo codes are never written; a differing inner/case is a conflict left alone; a unit GTIN is never written;
+  In Use Each codes with no product are reported and nothing is created. Historical indicators are copied as
+  they are, never rewritten to the new policy. `--apply` also records the export in `gs1_export_rows`, which the
+  GS1-check preset reads.
+- **The GS1 export's column names were not on this machine**: the reader finds GTIN, Packaging Level and
+  Status (Label) by name and refuses, naming the headers it read, when one is missing. Run the dry run first.
+- **Lowry runs it after merge; nothing here ran `--apply` against production.**
+- **Pre-existing conflict, named and left alone:** `GET /products/merch/gtin/suggest` (D-302).
+- `verify:productexports` (52; pack tests 21–27, live on a fresh database with a fixture export built by the
+  test). The control is `main` before this change: `/products/export` is read as a SKU.
 ## D-346 — QA Review names the runs with no end-of-day report, and whom to tell (12 Nov 2026)
 Asked by Lowry: the Production Log banner and the ReadyBot chase showed 8 Filling runs with no end-of-day report, and
 QA Review showed nothing — it lists records waiting on a signature, and an unfiled report has no record. Maria wants

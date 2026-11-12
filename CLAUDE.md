@@ -918,6 +918,14 @@ indicator policy), `shared/level-gtin.js` (checks only), `server/product-sot-gat
 - **A channel is read off the record** (confirmed step, `amazon_channel`, an item number), never typed.
 - **Saved views are session-only** (not on `WRITE_AREAS`); only the owner deletes one. `verify:productsotpage` (50).
 
+## Products: preset exports and the one-time GS1 backfill (D-344, R-0645 PR C)
+`shared/product-exports.js` (PURE: `SHALEE_DISTRIBUTOR_HEADERS`, `buildExport`, `toCsv`), `GET /products/export`,
+`ProductExport.jsx`, `scripts/gs1-backfill.mjs`, `gs1_export_rows`.
+- **Shalee's 14 headers are byte for byte — never tidy the spaces.** Exports apply the screen's filters and blank prices
+  for non-canManage readers. **master.csv is a different thing; never change it from here.**
+- **The backfill copies, never computes**: dry run first, `--apply` backs up; never a unit GTIN, never over a differing
+  inner/case, never a typo code, never a product for an orphan. Lowry runs it. `verify:productexports` (52).
+
 ## A SKU that won't go live: hidden with a reason, deleted only if it was never anywhere (D-324)
 `shared/product-status.js` (`NOT_LAUNCHING`, `OFF_CATALOG`), `POST /products/:sku/not-launching` (reason; `undo`),
 `deleteRefusals` + `DELETE /products/:sku` (admin, reason) + `GET /:sku/delete-check`, `LaunchControls` in the drawer.

@@ -28,6 +28,7 @@ import { PACK_FIELDS, PRICE_FIELDS, ITEM_NO_FIELDS, FIELD_LABEL as SOT_LABEL } f
 import { checkLevelGtin, unitGtin14, groupGtin14, sameItem } from '../../../shared/level-gtin.js';
 import { CHANNELS, matchesFilters } from '../../../shared/product-filters.js';
 import SavedViews from './ProductSavedViews.jsx';
+import ProductExport from './ProductExport.jsx';
 import {
   Package, Search, X, AlertTriangle, CheckCircle2, Circle, Pencil, Stethoscope, Tag,
   Barcode, Upload, ExternalLink, RefreshCw, FolderOpen,
@@ -1617,7 +1618,10 @@ export default function ProductsPanel() {
         )}
       </div>
 
-      <SavedViews current={{ filters, columns: openColumns }} activeId={viewId} onApply={applyView} />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <SavedViews current={{ filters, columns: openColumns }} activeId={viewId} onApply={applyView} />
+        <ProductExport filters={filters} />
+      </div>
 
       {(<>
       <p className="text-xs text-gray-500 md:hidden">
