@@ -17,6 +17,7 @@ import {
   CalendarClock, FileWarning, Link2, Loader2, Trash2, Pencil, Plus,
 } from 'lucide-react';
 import FrozenScroll from '../common/FrozenScroll';
+import SupplierGuide from './SupplierGuide.jsx';
 import { GUARANTEE_KIND, GUARANTEE_LABEL, GUARANTEE_STATUS_TEXT, DUE_SOON_DAYS } from '../../../shared/supplier-guarantee.js';
 import { VENDOR_TYPES, CONTACT_ROLES } from '../../../shared/supplier-fields.js';
 import { GMP_CERT_KIND, GMP_CERT_LABEL, GMP_CERT_STATUS_TEXT } from '../../../shared/supplier-gmp-cert.js';
@@ -179,6 +180,8 @@ export default function SuppliersPanel({ user }) {
         {user?.role === 'admin' && <BannedGateControl />}
         {user?.role === 'admin' && <GmpGateControl />}
       </header>
+
+      <SupplierGuide />
 
       <ModuleTabs tabs={tabs} value={tab} onChange={setTab} />
 
