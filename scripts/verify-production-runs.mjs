@@ -69,7 +69,7 @@ console.log('\n── the cleaner answers it from her Operator View ──');
 const ops = await J(await c('GET', '/pm/operator-tasks', null, cln.token));
 const card = (ops || []).find((x) => x.id === run4.prompt_work_order_id);
 t('the Pre-Op task is on the cleaner\'s Operator View, asking for the ATP swab', !!card && card.swab_plan?.atp === 'required', JSON.stringify(card?.swab_plan));
-res = await c('POST', `/pm/work-orders/${run4.prompt_work_order_id}/complete-and-recur`, { readings: { atp_reading: '12' }, result: 'pass' }, cln.token);
+res = await c('POST', `/pm/work-orders/${run4.prompt_work_order_id}/complete-and-recur`, { readings: { atp_reading: '12' }, result: 'pass', cleaning_chemicals: { none: true } }, cln.token);
 t('completing it works', res.status === 200, `${res.status} ${JSON.stringify(await J(res)).slice(0, 160)}`);
 const filed = q("SELECT * FROM sanitation_records WHERE area = '4' AND type = 'pre_op' ORDER BY rowid DESC LIMIT 1")[0];
 t('…and files Room 4\'s Pre-Op record under the room token, graded against 30', filed?.result === 'pass' && filed?.atp_reading == 12 && filed?.atp_limit === 30);

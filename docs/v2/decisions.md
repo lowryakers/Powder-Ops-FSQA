@@ -10987,3 +10987,23 @@ Receiving inspection open at once, or does the inspection on paper and keys it i
 - The photo control is now `PhotoPicker` (take or choose), the D-052 rule this drawer had missed.
 - `verify:inspectionref` (34, live + S3 stand-in + browser at 1280 and 390). The control (main) fails from the first
   bottle assertion. `verify:filmsleeve`'s "unknown kind" example moved from `bottle` to `carton`.
+## D-349 — A clean completed from a task names its chemical (13 Nov 2026)
+Asked by Maria (via Lowry): Zuleika should record which chemical she uses in each area, and the task card gave her
+no way to. Completing a cleaning task files a Sanitation record (`recordAreaForTask` → `fileQaInspectionRecord`), and
+the hand-filled Sanitation form has always asked for chemicals — the task's completion form never did, so every clean
+finished from a card (warehouse, restrooms, breakroom, Pre-Op, re-cleans) filed `chemicals_used` empty.
+- **The server says which tasks owe it** (`chemical_plan`, `server/cleaning-chemicals.js`): a task whose record lands
+  on the SANITATION list. QA inspections (BP&G, light, temp & humidity) and dilution checks are not asked. No list of
+  titles — the same derivation as `swab_plan` (D-112).
+- **An answer is required**: one or more approved cleaning chemicals (sanitizer / cleaner / degreaser, each showing
+  where it is approved for use), a name typed for one not on the list, or **"No chemical used"**, which is written on
+  the record in words. A blank is refused (`400 chemical_required`) before anything is written. Batch-complete skips
+  cleans by name, as it skips food-contact work.
+- Stored on the record as `chemicals_used` (names, joined) and `chemical_id` (the first approved pick) — the columns the
+  hand form already writes. Both completion screens use one field (`common/CleaningChemicalsField.jsx`, EN/ES).
+  `GET /pm/cleaning-chemicals` lets the floor read the list on the Operator View grant alone.
+- **Not checked: whether a chemical is approved for that area.** `location_for_use` is free text ("Bathrooms and
+  warehouse (NO Food Contact Surfaces)"); it is shown beside each pick, never matched — a guess would refuse a right
+  answer. Nothing already filed is changed.
+- This adds a required answer to a record, so it waits for Lowry's review (D-274). `verify:cleanchem` (live + browser at
+  390px); the verifies that complete cleans now send an answer.

@@ -26,6 +26,7 @@ import { checkFormFor, attachCheckForms, fileCheckRecord, missingForCheck } from
 import { gateSignature } from '../signature.js';
 import { canFileCultureCheck } from '../culture.js';
 import { attachSwabPlans } from '../clean-swabs.js';
+import { attachChemicalPlans, chemicalPlanForTask, readChemicalAnswer, cleaningChemicalOptions } from '../cleaning-chemicals.js';
 import { scaleChecksDue } from '../scale-checks.js';
 import { outOfServiceScales } from '../instrument-incidents.js';
 import { canonicalArea } from '../sanitation-areas.js';
@@ -142,7 +143,7 @@ export function resolveBackdate(performedOn, reason) {
 // way the form door does, deliberately line for line: the grade can FAIL a
 // record and never PASS one, a blank reading is a gap and changes nothing,
 // and the limit travels with the record.
-function fileQaInspectionRecord(db, { area: rawArea, wo, readings, stepResults, result, notes, by, workOrderId, backdate }) {
+function fileQaInspectionRecord(db, { area: rawArea, wo, readings, stepResults, result, notes, by, workOrderId, backdate, chemicals }) {
   // ONE DEFINITION OF WHAT AN AREA IS, and this path used to skip it. Filing a
   // record by hand goes through canonicalArea(); completing a TASK wrote
   // recordAreaForTask()'s output straight into the column — so a completed
@@ -170,6 +171,9 @@ function fileQaInspectionRecord(db, { area: rawArea, wo, readings, stepResults, 
     ]),
     r.atp_reading != null && String(r.atp_reading).trim() !== '' ? `ATP ${r.atp_reading} RLU.` : null,
     Array.isArray(stepResults) && stepResults.length ? `${ticks} of ${stepResults.length} items checked.` : null,
+    // "No chemical used" is an answer and goes on the record in words, so a
+    // blank chemicals column still says which of the two it was (D-349).
+    chemicals?.none ? 'No chemical used.' : null,
     String(notes || '').trim() || null,
     `Filed from task ${workOrderId}.`,
   ].filter(Boolean).join(' ');
@@ -193,8 +197,9 @@ function fileQaInspectionRecord(db, { area: rawArea, wo, readings, stepResults, 
 
   db.prepare(`
     INSERT INTO sanitation_records (id, area, type, equipment_id, performed_by, performed_at, entered_at,
-      entered_late, late_entry_reason, result, record_group, notes, atp_reading, atp_limit)
-    VALUES (?, ?, 'pre_op', ?, ?, COALESCE(?, datetime('now')), datetime('now'), ?, ?, ?, ?, ?, ?, ?)
+      entered_late, late_entry_reason, result, record_group, notes, atp_reading, atp_limit,
+      chemicals_used, chemical_id)
+    VALUES (?, ?, 'pre_op', ?, ?, COALESCE(?, datetime('now')), datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(id, area, wo?.equipment_id || null, by,
     // The day the CHECK happened, which is only "now" when it wasn't back-dated.
     bd.when || null, bd.late ? 1 : 0, bd.reason || null,
@@ -211,7 +216,8 @@ function fileQaInspectionRecord(db, { area: rawArea, wo, readings, stepResults, 
     //   The result stored is the DECIDED one — `decided.result`, not the
     //   operator's — or the limit is sidestepped by the task door.
     decided.result,
-    recordGroupFor(area), detail, atpReading, grade?.limit ?? null);
+    recordGroupFor(area), detail, atpReading, grade?.limit ?? null,
+    chemicals?.text || null, chemicals?.firstId || null);
   // Callers used to get a bare id. They now get the decision as well, because
   // the re-clean task is raised OUTSIDE the completion transaction (a failure
   // to raise it must not roll back a completion that physically happened —
@@ -1221,6 +1227,23 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
     }
   }
 
+  // A CLEAN NAMES ITS CHEMICAL (D-349). Completing a cleaning task files a
+  // Sanitation record, and that record asks which chemical was used — the
+  // answer, or "No chemical used", or the completion is refused. Checked
+  // before anything is written.
+  const chemicalPlan = chemicalPlanForTask(existing.title);
+  let chemicalAnswer = null;
+  if (chemicalPlan) {
+    chemicalAnswer = readChemicalAnswer(db, req.body.cleaning_chemicals);
+    if (chemicalAnswer.error) return res.status(400).json({ error: chemicalAnswer.error, chemical_required: true });
+    if (chemicalAnswer.missing) {
+      return res.status(400).json({
+        error: `Pick the chemical you used on ${chemicalPlan.area} — or "No chemical used".`,
+        chemical_required: true,
+      });
+    }
+  }
+
   // A chemical dilution check is graded by its RANGE, not by the operator's
   // tap — the same rule the scale forms follow. It was previously possible to
   // enter 300 ppm, press Pass, and have the record say pass.
@@ -1341,7 +1364,7 @@ router.post('/work-orders/:id/complete-and-recur', (req, res) => {
         const filed = fileQaInspectionRecord(db, {
           area: qaArea, wo: existing, readings, stepResults: step_results,
           result: finalResult, notes, by: completedBy, workOrderId: req.params.id,
-          backdate,
+          backdate, chemicals: chemicalAnswer,
         });
         filedRecordId = filed.id;
         atpOutcome = filed;
@@ -1465,6 +1488,12 @@ router.post('/work-orders/batch-complete', (req, res) => {
       const needsClearance = eq && eq.is_food_contact === 1 ? 1 : 0;
       if (needsClearance && missingStepTicks(wo.procedure_steps, []).total > 0) {
         skipped.push({ id, title: wo.title, reason: 'Food-contact equipment — open it and tick the steps.' });
+        continue;
+      }
+      // A clean files a Sanitation record that names its chemical (D-349), and
+      // only the person who cleaned can say which one.
+      if (chemicalPlanForTask(wo.title)) {
+        skipped.push({ id, title: wo.title, reason: 'A clean — open it and pick the chemical you used.' });
         continue;
       }
       // A check that files a record cannot be completed in bulk: the record
@@ -1964,7 +1993,7 @@ router.get('/search', (req, res) => {
     LIMIT 100
   `).all(like, like, like, like, like, like);
 
-  res.json(attachDilutionForms(db, attachSwabPlans(attachCheckForms(db, rows))).map(r => ({ ...r, procedure_steps: safeParse(r.pm_steps || r.procedure_steps) })));
+  res.json(attachChemicalPlans(attachDilutionForms(db, attachSwabPlans(attachCheckForms(db, rows)))).map(r => ({ ...r, procedure_steps: safeParse(r.pm_steps || r.procedure_steps) })));
 });
 
 router.get('/by-frequency', (req, res) => {
@@ -2011,7 +2040,7 @@ router.get('/by-frequency', (req, res) => {
   // a fortnight puts fourteen identical rows behind the live card. One card
   // carrying `missed_count` / `missed_since` says "you are behind" without
   // handing somebody the same job fourteen times.
-  const rows = attachDilutionForms(db, attachSwabPlans(attachCheckForms(db, collapseMissed(db.prepare(sql).all(...params)))));
+  const rows = attachChemicalPlans(attachDilutionForms(db, attachSwabPlans(attachCheckForms(db, collapseMissed(db.prepare(sql).all(...params))))));
 
   const grouped = {};
   for (const r of rows) {
@@ -2186,6 +2215,12 @@ router.get('/operator-checks', (req, res) => {
   });
 });
 
+// The chemicals a cleaner may pick when completing a clean (D-349). Under /pm so
+// the Operator View can read it on the floor grant alone.
+router.get('/cleaning-chemicals', (req, res) => {
+  res.json(cleaningChemicalOptions(getDb()));
+});
+
 router.get('/operator-tasks', (req, res) => {
   const db = getDb();
   runPmHousekeeping(db);
@@ -2263,7 +2298,7 @@ router.get('/operator-tasks', (req, res) => {
   //
   // This screen is now only work orders: something to go and do, one at a
   // time. Signing is a review, and reviews happen in QA Review.
-  res.json(attachDilutionForms(db, attachSwabPlans(attachCheckForms(db, collapseMissed(rows)))).map(r => ({ ...r, procedure_steps: safeParse(r.procedure_steps) })));
+  res.json(attachChemicalPlans(attachDilutionForms(db, attachSwabPlans(attachCheckForms(db, collapseMissed(rows))))).map(r => ({ ...r, procedure_steps: safeParse(r.procedure_steps) })));
 });
 
 router.put('/schedules/:id/items', (req, res) => {

@@ -18,6 +18,8 @@ import FormChip from '../common/FormChip';
 import RuleTip from '../common/RuleTip.jsx';
 import CheckFields from '../common/CheckFields.jsx';
 import AtpSwabField from '../common/AtpSwabField.jsx';
+import CleaningChemicalsField from '../common/CleaningChemicalsField.jsx';
+import { chemicalAnswered, chemicalPayload } from '../../lib/cleaningChemicals.js';
 import TrainingTest from '../common/TrainingTest.jsx';
 import { TaskMaterials } from './TrainingHowFields.jsx';
 import { missingForCheck } from '../../../shared/check-forms.js';
@@ -73,6 +75,9 @@ function TaskCard({ task, onComplete, onTestPassed, onFlagIssue, onSkipNA, onAss
   // What a record-filing check needs (EMP sites, walk-through answers, list
   // editions) — validated with the server's own rule before Submit lights up.
   const [check, setCheck] = useState({});
+  // Which chemical the clean used (D-349) — asked when the server says the
+  // task files a cleaning record.
+  const [chem, setChem] = useState({ ids: [], other: '', none: false });
   const [stepChecks, setStepChecks] = useState([]);
   const [issueNotes, setIssueNotes] = useState('');
   const [issueAttachments, setIssueAttachments] = useState([]);
@@ -188,6 +193,7 @@ function TaskCard({ task, onComplete, onTestPassed, onFlagIssue, onSkipNA, onAss
           ? steps.map((_, i) => !!stepChecks[i]) : undefined,
         reading_result: getReadingResult(),
         ...(task.check_form ? { check } : {}),
+        ...(task.chemical_plan ? { cleaning_chemicals: chemicalPayload(chem) } : {}),
         // Only sent when the work was done on an earlier day. Left off, the
         // record is dated now, exactly as before.
         ...(doneOn && doneOn !== today ? { performed_on: doneOn, late_entry_reason: lateReason || null } : {}),
@@ -196,6 +202,7 @@ function TaskCard({ task, onComplete, onTestPassed, onFlagIssue, onSkipNA, onAss
       setNotes('');
       setReadings({});
       setCheck({});
+      setChem({ ids: [], other: '', none: false });
       setStepChecks([]);
       setDoneOn(localDateStr());
       setLateReason('');
@@ -856,6 +863,10 @@ function TaskCard({ task, onComplete, onTestPassed, onFlagIssue, onSkipNA, onAss
               </div>
             )}
 
+            {task.chemical_plan && (
+              <CleaningChemicalsField plan={task.chemical_plan} value={chem} onChange={setChem} lang={lang} />
+            )}
+
             {/* Step-by-step checkoff for cleaning and equipment PM — and ALWAYS
                 when the steps are required, whatever the task type. A
                 food-contact task typed as a temp check or a pre-op clean would
@@ -938,7 +949,7 @@ function TaskCard({ task, onComplete, onTestPassed, onFlagIssue, onSkipNA, onAss
                 the one button that finishes the job off screen. Static on
                 desktop, where the whole form fits. */}
             <div className="flex gap-2 sticky bottom-14 md:static z-10 bg-green-50 py-2 -my-2 rounded-lg">
-              <button onClick={handleSubmit} disabled={saving || !canSubmit() || stepsOutstanding > 0 || (task.check_form && missingForCheck(task.check_form, check).length > 0)}
+              <button onClick={handleSubmit} disabled={saving || !canSubmit() || stepsOutstanding > 0 || (task.chemical_plan && !chemicalAnswered(chem)) || (task.check_form && missingForCheck(task.check_form, check).length > 0)}
                 className="flex-1 py-3 md:py-2.5 bg-green-600 text-white rounded-lg text-sm font-bold hover:bg-green-700 disabled:opacity-50 active:scale-[0.98] transition-transform">
                 {saving ? t('saving') : t('mark_complete')}
               </button>

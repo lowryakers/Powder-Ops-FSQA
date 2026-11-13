@@ -45,7 +45,8 @@ const record = (woId) => {
   const r = d.prepare("SELECT * FROM sanitation_records WHERE notes LIKE ? ORDER BY rowid DESC LIMIT 1").get(`%Filed from task ${woId}%`);
   d.close(); return r;
 };
-const complete = (id, body) => post(`/pm/work-orders/${id}/complete-and-recur`, body);
+// A clean names its chemical (D-349); these assertions are about the swab, so say none was used.
+const complete = (id, body) => post(`/pm/work-orders/${id}/complete-and-recur`, { cleaning_chemicals: { none: true }, ...body });
 
 console.log(`\nAn over-limit swab (${LIMIT + 165} RLU) filed as a visual PASS`);
 {
@@ -392,6 +393,7 @@ console.log('\nIn a real browser: the box is on the card');
   // screen sends it — which is the half that was missing.
   if (tcThere) {
     await tcCard.locator('[data-atp-field]').fill('21').catch(() => {});
+    await tcCard.locator('[data-chemical-none]').check().catch(() => {});   // D-349
     await tcCard.locator('button[type="submit"]').first().click().catch(() => {});
     await wide.waitForTimeout(2500);
   }
