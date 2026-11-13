@@ -6,7 +6,7 @@
 // warn (default) / on. Warn approves and STAMPS the gap on the qualification;
 // on refuses "approved" while the certificate is missing, undated or expired.
 // An admin turns it on; a deploy never does.
-import { gmpCertStatus, gmpCertRequired, gmpCertCandidate, GMP_CERT_KIND, GMP_CERT_STATUS_TEXT } from '../shared/supplier-gmp-cert.js';
+import { gmpCertStatus, gmpCertRequired, gmpCertCandidate, AUDIT_CERT_KINDS, GMP_CERT_STATUS_TEXT } from '../shared/supplier-gmp-cert.js';
 import { plantDateOf } from './plant-clock.js';
 
 export const GMP_GATE_MODES = ['off', 'warn', 'on'];
@@ -23,7 +23,7 @@ const FILE_COLS = `id, supplier_id, kind, expires_on, filename, created_at,
 
 function certsBySupplier(db) {
   const map = new Map();
-  for (const f of db.prepare(`SELECT ${FILE_COLS} FROM supplier_files WHERE kind = ?`).all(GMP_CERT_KIND)) {
+  for (const f of db.prepare(`SELECT ${FILE_COLS} FROM supplier_files WHERE kind IN (?, ?)`).all(...AUDIT_CERT_KINDS)) {
     if (!map.has(f.supplier_id)) map.set(f.supplier_id, []);
     map.get(f.supplier_id).push(f);
   }
@@ -38,8 +38,8 @@ export function withGmpCert(db, suppliers, today = plantDateOf()) {
 
 /** One supplier's state, plus the general certificates on file that may be the GMP one. */
 export function gmpCertFor(db, supplier, today = plantDateOf()) {
-  const files = db.prepare(`SELECT ${FILE_COLS} FROM supplier_files WHERE supplier_id = ? AND kind IN (?, 'certificate')`)
-    .all(supplier.id, GMP_CERT_KIND);
+  const files = db.prepare(`SELECT ${FILE_COLS} FROM supplier_files WHERE supplier_id = ? AND kind IN (?, ?, 'certificate')`)
+    .all(supplier.id, ...AUDIT_CERT_KINDS);
   const state = gmpCertStatus(supplier, files, today);
   return { ...state, candidates: state.status === 'current' || state.status === 'due_soon' ? [] : files.filter(gmpCertCandidate) };
 }
@@ -50,9 +50,9 @@ export function gmpGaps(db, supplier, today = plantDateOf()) {
   const g = gmpCertFor(db, supplier, today);
   if (!g.gap) return [];
   const reason = g.status === 'expired'
-    ? `Third-party GMP certificate expired ${g.renews_on}`
+    ? `Third-party GMP / GFSI certificate expired ${g.renews_on}`
     : g.status === 'no_renewal_date'
-      ? 'Third-party GMP certificate on file with no expiry date recorded'
+      ? 'Third-party GMP / GFSI certificate on file with no expiry date recorded'
       : GMP_CERT_STATUS_TEXT.missing;
   return [{ state: g.status, file_id: g.file?.id || null, reason }];
 }

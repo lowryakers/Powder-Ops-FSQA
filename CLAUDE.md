@@ -2895,7 +2895,8 @@ sheet that must open even with no R2 configured. The zone **item lists** it docu
 `shared/supplier-gmp-cert.js` (PURE: `gmpCertRequired`, `gmpCertStatus`, `gmpCertCandidate`), `server/supplier-gmp-cert.js`
 (`withGmpCert`, `gmpCertFor`, `gmpGaps`, `gmpGateMode`, `openGmpCertGaps`), file kind `gmp_certificate`, `GET|PUT
 /suppliers/gmp-gate`, `PUT /suppliers/files/:id/gmp-certificate`, `GmpCertSection` + `GmpGateControl`, bell `gmp-cert-missing`.
-- **Owed by `ingredient` / `packaging` while actively used; a GMP certificate only** (GFSI alone does not count).
+- **Owed by `ingredient` / `packaging` while actively used; a GMP OR a GFSI certificate (`audit_certificate`) counts (D-350,
+  superseding D-337's GMP-only).** Purchasing adds a supplier with `POST /suppliers` (never a token; a name on file is 409).
 - Filed with its expiry (`EXPIRY_REQUIRED`). **Never read from a filename** — a GMP-named general certificate is offered
   to a person to count. `renewableDocStatus` is the one rule for this and the letter of guarantee.
 - **Gate on "approved"** off / warn (default) / on, admin only; warn stamps `gmp_cert_gaps`. `verify:gmpcert` (47).

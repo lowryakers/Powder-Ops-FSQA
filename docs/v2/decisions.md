@@ -11007,3 +11007,19 @@ finished from a card (warehouse, restrooms, breakroom, Pre-Op, re-cleans) filed 
   answer. Nothing already filed is changed.
 - This adds a required answer to a record, so it waits for Lowry's review (D-274). `verify:cleanchem` (live + browser at
   390px); the verifies that complete cleans now send an answer.
+
+## D-350 — A GFSI certificate counts as the third-party audit; Purchasing adds a supplier in the app (13 Nov 2026)
+Supersedes D-337's "a GMP certificate only (GFSI alone does not count)".
+
+- **Why:** the NSF reviewer's ask on DS 2.3–2.3.4.6 is proof that raw-material and packaging suppliers are covered by a
+  third-party audit. An SQF, BRCGS, FSSC 22000 or IFS certificate is that proof, and several suppliers hold one of
+  those rather than a GMP certificate. Refusing approval over a GFSI certificate would block suppliers the standard accepts.
+- **What counts:** a current `gmp_certificate` OR `audit_certificate` (the existing "Audit certificate (SQF / BRC / FSSC)"
+  kind). `renewableDocStatus` takes a list of kinds; the later-dated one counts. Both kinds need an expiry date on upload.
+  A general certificate named GMP, SQF, BRC(GS), FSSC or IFS is OFFERED to a person, who says which it is; nothing is
+  re-kinded from a filename.
+- **Adding a supplier:** `POST /api/suppliers` for anyone who edits the register (Purchasing, Quality, admin) — never a
+  token. It starts `unqualified`, `source = 'in_app'`, audited `supplier_created`. A name already on the register
+  (including a legacy name, case aside) is 409 `SUPPLIER_EXISTS` with the existing id. A type is required while we buy
+  from it. Approval still waits for the certificate and the banned-list check.
+- Carol's test record and the Supplier "How this works" guide name both certificate types. `verify:gmpcert` (65).

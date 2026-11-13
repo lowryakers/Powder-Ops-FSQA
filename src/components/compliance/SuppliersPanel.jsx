@@ -20,7 +20,8 @@ import FrozenScroll from '../common/FrozenScroll';
 import SupplierGuide from './SupplierGuide.jsx';
 import { GUARANTEE_KIND, GUARANTEE_LABEL, GUARANTEE_STATUS_TEXT, DUE_SOON_DAYS } from '../../../shared/supplier-guarantee.js';
 import { VENDOR_TYPES, CONTACT_ROLES } from '../../../shared/supplier-fields.js';
-import { GMP_CERT_KIND, GMP_CERT_LABEL, GMP_CERT_STATUS_TEXT } from '../../../shared/supplier-gmp-cert.js';
+import { GMP_CERT_KIND, GFSI_CERT_KIND, GMP_CERT_LABEL, GMP_CERT_STATUS_TEXT, CERT_KIND_LABEL } from '../../../shared/supplier-gmp-cert.js';
+import AddSupplier from './AddSupplier.jsx';
 
 // The letter of guarantee chip (D-289). The server decides the state; this only draws it.
 const GUARANTEE_TONE = {
@@ -177,6 +178,7 @@ export default function SuppliersPanel({ user }) {
           <h2 className="text-lg font-semibold">Supplier Qualification</h2>
           <p className="text-xs text-slate-500 dark:text-slate-400">SOP 404 V4 · FORM 404-1, 404-2</p>
         </div>
+        {data?.can_create && <AddSupplier onCreated={(name) => { setQ(name); setTab('register'); refresh(); }} />}
         {user?.role === 'admin' && <BannedGateControl />}
         {user?.role === 'admin' && <GmpGateControl />}
       </header>
@@ -228,7 +230,7 @@ export default function SuppliersPanel({ user }) {
             {/* Raw-material and packaging suppliers with no current third-party GMP certificate (D-337). */}
             <Stat
               value={summary.gmp_cert_gaps ?? 0}
-              label="No current GMP certificate"
+              label="No current GMP or GFSI certificate"
               tone={summary.gmp_cert_gaps ? 'text-rose-600 dark:text-rose-400' : ''}
               onClick={summary.gmp_cert_gaps ? () => setOnly(only === 'gmp' ? null : 'gmp') : undefined}
               active={only === 'gmp'}
@@ -395,6 +397,8 @@ function AttachSupplierFiles({ supplierId, onDone, letter = false, gmp = false }
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
   const [renewal, setRenewal] = useState('');
+  // A GMP or a GFSI certificate both count (D-350); the person says which.
+  const [certKind, setCertKind] = useState(GMP_CERT_KIND);
   const inputRef = useRef(null);
 
   const send = async (fileList) => {
@@ -405,7 +409,7 @@ function AttachSupplierFiles({ supplierId, onDone, letter = false, gmp = false }
       const fd = new FormData();
       for (const f of picked) fd.append('files', f);
       if (letter) { fd.append('kind', GUARANTEE_KIND); fd.append('expires_on', renewal); }
-      if (gmp) { fd.append('kind', GMP_CERT_KIND); fd.append('expires_on', renewal); }
+      if (gmp) { fd.append('kind', certKind); fd.append('expires_on', renewal); }
       const r = await apiUpload(`/suppliers/${supplierId}/files`, fd, 'POST');
       const n = r?.saved?.length || 0;
       setMsg({ ok: true, text: `${n} document${n === 1 ? '' : 's'} attached.` });
@@ -433,6 +437,13 @@ function AttachSupplierFiles({ supplierId, onDone, letter = false, gmp = false }
         </label>
       )}
       {gmp && (
+        <select id={`gmp-cert-kind-${supplierId}`} value={certKind} onChange={e => setCertKind(e.target.value)} onClick={stopRowClick}
+          data-gmp-kind className="rounded border border-slate-300 px-1.5 py-0.5 text-xs dark:border-slate-600 dark:bg-slate-900">
+          <option value={GMP_CERT_KIND}>{CERT_KIND_LABEL[GMP_CERT_KIND]}</option>
+          <option value={GFSI_CERT_KIND}>{CERT_KIND_LABEL[GFSI_CERT_KIND]}</option>
+        </select>
+      )}
+      {gmp && (
         <label className="flex items-center gap-1 text-xs text-slate-600 dark:text-slate-300">
           Expires on
           <input type="date" value={renewal} onChange={e => setRenewal(e.target.value)} onClick={stopRowClick}
@@ -448,7 +459,7 @@ function AttachSupplierFiles({ supplierId, onDone, letter = false, gmp = false }
         onClick={e => { stopRowClick(e); inputRef.current?.click(); }}
         className="inline-flex items-center gap-1 rounded border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800">
         <Upload size={12} /> {busy ? 'Attaching…' : letter ? `Attach ${GUARANTEE_LABEL.toLowerCase()}`
-          : gmp ? 'Attach GMP certificate' : 'Attach documents'}
+          : gmp ? 'Attach certificate' : 'Attach documents'}
       </button>
     </div>
   );
@@ -936,8 +947,8 @@ function GuaranteeSection({ supplier, guarantee, canEdit, onChanged }) {
 }
 
 // ── The third-party GMP certificate (D-337) ─────────────────────────────────
-// Owed by a raw-material or packaging supplier while we buy from it. Only a GMP
-// certificate counts. Filed with its expiry date; a general certificate already
+// Owed by a raw-material or packaging supplier while we buy from it. A GMP or a
+// GFSI certificate counts (D-350). Filed with its expiry date; a general certificate already
 // on file with GMP in its name is OFFERED, never counted by itself.
 function GmpCertSection({ supplier, gmp, canEdit, onChanged }) {
   const [busy, setBusy] = useState(false);
@@ -950,7 +961,7 @@ function GmpCertSection({ supplier, gmp, canEdit, onChanged }) {
     try { await fn(); setDate(''); onChanged?.(); } catch (e) { setError(e.message); } finally { setBusy(false); }
   };
   const setExpiry = () => act(() => apiPut(`/suppliers/files/${g.file.id}/renewal`, { expires_on: date }));
-  const count = (f) => act(() => apiPut(`/suppliers/files/${f.id}/gmp-certificate`, f.expires_on ? {} : { expires_on: date }));
+  const count = (f, kind) => act(() => apiPut(`/suppliers/files/${f.id}/gmp-certificate`, { kind, ...(f.expires_on ? {} : { expires_on: date }) }));
   return (
     <section data-gmp-section={g.status || 'not_required'} className="md:col-span-2 rounded border border-slate-200 p-2 dark:border-slate-700">
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
@@ -980,7 +991,7 @@ function GmpCertSection({ supplier, gmp, canEdit, onChanged }) {
       )}
       {canEdit && !!(g.candidates || []).length && (
         <div data-gmp-candidates className="mt-2 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
-          <p className="font-medium">Already on file as a certificate — is one of these the third-party GMP certificate?</p>
+          <p className="font-medium">Already on file as a certificate — is one of these a third-party GMP or GFSI certificate?</p>
           <ul className="mt-1 space-y-1">
             {g.candidates.map(f => (
               <li key={f.id} className="flex flex-wrap items-center gap-2">
@@ -991,8 +1002,11 @@ function GmpCertSection({ supplier, gmp, canEdit, onChanged }) {
                     className="rounded border border-amber-300 px-1.5 py-0.5 dark:bg-slate-900" />
                 )}
                 <button type="button" data-gmp-count={f.id} disabled={busy || (!f.expires_on && !date)}
-                  onClick={e => { stopRowClick(e); count(f); }}
-                  className="rounded border border-amber-400 px-2 py-0.5 font-medium disabled:opacity-50">Count it as the GMP certificate</button>
+                  onClick={e => { stopRowClick(e); count(f, GMP_CERT_KIND); }}
+                  className="rounded border border-amber-400 px-2 py-0.5 font-medium disabled:opacity-50">It is the GMP certificate</button>
+                <button type="button" data-gfsi-count={f.id} disabled={busy || (!f.expires_on && !date)}
+                  onClick={e => { stopRowClick(e); count(f, GFSI_CERT_KIND); }}
+                  className="rounded border border-amber-400 px-2 py-0.5 font-medium disabled:opacity-50">It is a GFSI certificate</button>
               </li>
             ))}
           </ul>
@@ -1255,7 +1269,7 @@ function GmpGateControl() {
   if (!data) return null;
   return (
     <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300" data-gmp-gate-control>
-      GMP certificate on approval
+      GMP or GFSI certificate on approval
       <select id="supplier-gmp-gate" value={data.mode}
         onChange={async (e) => { await apiPut('/suppliers/gmp-gate', { mode: e.target.value }); refresh(); }}
         className="rounded border border-slate-300 px-1.5 py-1 text-xs dark:border-slate-600 dark:bg-slate-800">
