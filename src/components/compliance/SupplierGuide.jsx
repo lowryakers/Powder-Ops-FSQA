@@ -12,7 +12,7 @@ const STEPS = [
   {
     who: 'Purchasing',
     title: 'Set the supplier up',
-    body: 'Open the supplier and press Edit details. Pick its Type (raw material, packaging, and so on) and tick “We still buy from this supplier” if we do. The type decides which documents they owe. A new supplier is added by an admin for now.',
+    body: 'Open the supplier and press Edit details. Pick its Type (raw material, packaging, and so on) and tick “We still buy from this supplier” if we do. The type decides which documents they owe. A supplier not on the list yet is added with Add a supplier at the top of the page.',
   },
   {
     who: 'Purchasing',
@@ -22,7 +22,7 @@ const STEPS = [
   {
     who: 'Purchasing',
     title: 'Collect their documents',
-    body: 'Raw material and packaging suppliers must have a current third-party GMP certificate. Use Attach GMP certificate and enter its expiry date. Packaging and food-contact suppliers also need a letter of guarantee with its renewal date. Attach anything else (spec, COA, allergen statement) with Attach documents and pick what it is.',
+    body: 'Raw material and packaging suppliers must have a current third-party audit certificate: a GMP certificate or a GFSI certificate (SQF, BRCGS, FSSC 22000 or IFS). Use Attach certificate, pick which one it is, and enter its expiry date. Packaging and food-contact suppliers also need a letter of guarantee with its renewal date. Attach anything else (spec, COA, allergen statement) with Attach documents and pick what it is.',
   },
   {
     who: 'Purchasing',
@@ -32,7 +32,7 @@ const STEPS = [
   {
     who: 'Quality',
     title: 'Check and decide',
-    body: 'Quality checks each ingredient against the banned-substance lists, then records the decision: approved, conditional or not approved. Approval waits for the GMP certificate and the banned-list check.',
+    body: 'Quality checks each ingredient against the banned-substance lists, then records the decision: approved, conditional or not approved. Approval waits for the GMP or GFSI certificate and the banned-list check.',
   },
   {
     who: 'Purchasing',

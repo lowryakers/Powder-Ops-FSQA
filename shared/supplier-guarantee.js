@@ -33,7 +33,9 @@ const addDays = (iso, n) => {
  * `gap` is true for missing / no_renewal_date / expired. due_soon is a warning, not a gap.
  */
 export function renewableDocStatus(required, files = [], kind, today) {
-  const docs = files.filter(f => f && f.kind === kind);
+  // `kind` may be a list: either counts (a GMP or a GFSI certificate, D-350).
+  const kinds = Array.isArray(kind) ? kind : [kind];
+  const docs = files.filter(f => f && kinds.includes(f.kind));
   const dated = docs.filter(f => f.expires_on).sort((a, b) => String(b.expires_on).localeCompare(String(a.expires_on)));
   const file = dated[0] || docs[0] || null;
   let status;

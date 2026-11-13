@@ -65,7 +65,7 @@ import { embedUnicodeFaces } from '../pdf-unicode.js';
 import { withGuarantee, guaranteeFor } from '../supplier-guarantee.js';
 import { GUARANTEE_KIND, GUARANTEE_LABEL } from '../../shared/supplier-guarantee.js';
 import { withGmpCert, gmpCertFor, gmpGaps, gmpGateMode, GMP_GATE_MODES } from '../supplier-gmp-cert.js';
-import { GMP_CERT_KIND, GMP_CERT_LABEL } from '../../shared/supplier-gmp-cert.js';
+import { GMP_CERT_KIND, GMP_CERT_LABEL, AUDIT_CERT_KINDS } from '../../shared/supplier-gmp-cert.js';
 import { plantDateOf } from '../plant-clock.js';
 import { FILE_KIND_VALUES, FILE_KIND_LABEL, DATED_KINDS, SOURCE_SYSTEMS, SOURCE_SYSTEM_LABEL, cleanFileMeta } from '../../shared/supplier-documents.js';
 import { materialsFor, materialLabels, createMaterial, updateMaterial, MaterialError, defaultPartSystem } from '../supplier-materials.js';
@@ -128,6 +128,8 @@ router.get('/', (req, res) => {
   const suppliers = listSuppliers(db, { limit: Number(req.query.limit) || 500 });
   res.json({
     suppliers,
+    // A person (never a token) who edits the register may add a supplier (D-350).
+    can_create: canEdit(req.user) && req.auth?.kind !== 'token',
     dispositions: DISPOSITIONS,
     risk_criteria: RISK_CRITERIA,
     summary: {
@@ -728,6 +730,41 @@ function linkName(req, res) {
 }
 
 router.post('/:id/link-name', linkName);
+
+// A new supplier, added by the person who buys from it (D-350). Before this a
+// supplier could only arrive through the admin's spreadsheet import. It starts
+// unqualified, like every supplier: approval is Quality's decision.
+router.post('/', (req, res) => {
+  if (!canEdit(req.user) || req.auth?.kind === 'token') return res.status(403).json({ error: 'Not permitted' });
+  const db = getDb();
+  const b = req.body || {};
+  const name = clean(b.name, 200);
+  if (!name) return res.status(400).json({ error: 'The supplier needs a name.' });
+  const key = name.toLowerCase().replace(/\s+/g, ' ');
+  for (const r of db.prepare('SELECT id, name, legacy_names FROM suppliers').all()) {
+    const names = [r.name, ...(() => { try { return JSON.parse(r.legacy_names || '[]'); } catch { return []; } })()];
+    if (names.some(n => String(n || '').toLowerCase().replace(/\s+/g, ' ') === key)) {
+      return res.status(409).json({ code: 'SUPPLIER_EXISTS', existing_id: r.id,
+        error: `"${r.name}" is already on the register. Open it instead of adding a second one.` });
+    }
+  }
+  const type = clean(b.vendor_type, 40);
+  if (type && !VENDOR_TYPES.some(t => t.value === type)) {
+    return res.status(400).json({ error: `Unknown type "${type}". Choose one of: ${VENDOR_TYPES.map(t => t.label).join(', ')}.` });
+  }
+  const using = b.actively_using === false ? 0 : 1;
+  if (using && !type) {
+    return res.status(400).json({ code: 'VENDOR_TYPE_REQUIRED',
+      error: `A supplier we buy from needs a type. Choose one of: ${VENDOR_TYPES.map(t => t.label).join(', ')}.` });
+  }
+  const id = uuid();
+  db.prepare(`INSERT INTO suppliers (id, name, vendor_type, actively_using, website, notes, source, created_by)
+    VALUES (?,?,?,?,?,?, 'in_app', ?)`)
+    .run(id, name, type, using, clean(b.website), clean(b.notes, 2000), req.user?.name || null);
+  logAudit(req.user, 'supplier_created', 'supplier', id, { vendor_type: type, actively_using: using }, null,
+    { name, vendor_type: type, actively_using: using }, name);
+  res.status(201).json({ ok: true, id });
+});
 
 router.put('/:id', (req, res) => {
   if (!canEdit(req.user)) return res.status(403).json({ error: 'Not permitted' });
@@ -1346,7 +1383,7 @@ router.post('/:id/files', fileUpload.array('files', 20), async (req, res) => {
     // A third-party GMP certificate is filed WITH its expiry date (D-337), for
     // the same reason. Only when it is filed as one: the kind is never read
     // from a filename, because "GMP" in a name is a guess (see gmpCertCandidate).
-    if (req.body?.kind === GMP_CERT_KIND && !renewal) {
+    if (AUDIT_CERT_KINDS.includes(req.body?.kind) && !renewal) {
       return res.status(400).json({ code: 'EXPIRY_REQUIRED', error: `A ${GMP_CERT_LABEL.toLowerCase()} needs its expiry date.` });
     }
 
@@ -1463,13 +1500,13 @@ router.put('/files/:fileId/renewal', (req, res) => {
   const db = getDb();
   const f = db.prepare('SELECT id, supplier_id, kind, filename, expires_on FROM supplier_files WHERE id = ?').get(req.params.fileId);
   if (!f) return res.status(404).json({ error: 'No such file' });
-  if (f.kind !== GUARANTEE_KIND && f.kind !== GMP_CERT_KIND) {
+  if (f.kind !== GUARANTEE_KIND && !AUDIT_CERT_KINDS.includes(f.kind)) {
     return res.status(400).json({ error: `Only a ${GUARANTEE_LABEL.toLowerCase()}'s renewal date or a ${GMP_CERT_LABEL.toLowerCase()}'s expiry date is set here.` });
   }
   const date = String(req.body?.expires_on || '').slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'The date must be a date (YYYY-MM-DD).' });
   db.prepare('UPDATE supplier_files SET expires_on = ? WHERE id = ?').run(date, f.id);
-  logAudit(req.user, f.kind === GMP_CERT_KIND ? 'supplier_gmp_cert_expiry_set' : 'supplier_guarantee_renewal_set', 'supplier_file', f.id,
+  logAudit(req.user, AUDIT_CERT_KINDS.includes(f.kind) ? 'supplier_gmp_cert_expiry_set' : 'supplier_guarantee_renewal_set', 'supplier_file', f.id,
     { supplier_id: f.supplier_id, from: f.expires_on, to: date }, { expires_on: f.expires_on }, { expires_on: date }, f.filename);
   res.json({ ok: true, expires_on: date, today: plantDateOf() });
 });
@@ -1489,10 +1526,13 @@ router.put('/files/:fileId/gmp-certificate', (req, res) => {
   if (given && !/^\d{4}-\d{2}-\d{2}$/.test(given)) return res.status(400).json({ error: 'The expiry date must be a date (YYYY-MM-DD).' });
   const expires = given || f.expires_on;
   if (!expires) return res.status(400).json({ code: 'EXPIRY_REQUIRED', error: `A ${GMP_CERT_LABEL.toLowerCase()} needs its expiry date.` });
-  db.prepare('UPDATE supplier_files SET kind = ?, expires_on = ? WHERE id = ?').run(GMP_CERT_KIND, expires, f.id);
+  // A GMP or a GFSI certificate (D-350); the person says which.
+  const kind = req.body?.kind || GMP_CERT_KIND;
+  if (!AUDIT_CERT_KINDS.includes(kind)) return res.status(400).json({ error: 'Choose GMP or GFSI.' });
+  db.prepare('UPDATE supplier_files SET kind = ?, expires_on = ? WHERE id = ?').run(kind, expires, f.id);
   logAudit(req.user, 'supplier_file_counted_gmp_cert', 'supplier_file', f.id,
-    { supplier_id: f.supplier_id, expires_on: expires }, { kind: f.kind, expires_on: f.expires_on }, { kind: GMP_CERT_KIND, expires_on: expires }, f.filename);
-  res.json({ ok: true, kind: GMP_CERT_KIND, expires_on: expires });
+    { supplier_id: f.supplier_id, expires_on: expires }, { kind: f.kind, expires_on: f.expires_on }, { kind, expires_on: expires }, f.filename);
+  res.json({ ok: true, kind, expires_on: expires });
 });
 
 // Removing the BYTES is not removing the record. The catalogue row survives
