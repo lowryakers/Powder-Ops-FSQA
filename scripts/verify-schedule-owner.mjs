@@ -73,7 +73,7 @@ const openWo = await (async () => { const db = new Database(dbPath, { readonly: 
   const r = db.prepare("SELECT id FROM work_orders WHERE pm_schedule_id = ? AND status IN ('open','in_progress') ORDER BY due_date LIMIT 1").get(owned.id);
   db.close(); return r; })();
 t('there is an open task to complete', !!openWo?.id);
-const done = await J(await call('POST', `/pm/work-orders/${openWo.id}/complete-and-recur`, { completed_by: 'Owner Admin', notes: 'ok' }, tok));
+const done = await J(await call('POST', `/pm/work-orders/${openWo.id}/complete-and-recur`, { completed_by: 'Owner Admin', notes: 'ok', cleaning_chemicals: { none: true } }, tok));
 t('completing it raised the next one', !!done?.next_work_order?.id || !!done?.next?.id, JSON.stringify(done).slice(0, 160));
 { const db = new Database(dbPath, { readonly: true });
   const next = db.prepare(`SELECT assigned_to, assigned_to_id, task_group FROM work_orders

@@ -2718,6 +2718,13 @@ own. **File groups by room visit (`planVisits`) and calls `createSanitationRecor
 also uses.** A filed line is closed (409). **Form 117.21 V5 is archived** (`PREOP_FORM.archived`, `preopOffered`):
 new records are not offered it; old ones still read it. `verify:swablog` (40).
 
+## A clean completed from a task names its chemical (D-349, `server/cleaning-chemicals.js`)
+`chemical_plan` on every task list payload when completing it files a SANITATION-list record; both completion screens
+render `common/CleaningChemicalsField.jsx`. `complete-and-recur` refuses a blank (`400 chemical_required`); the answer is
+`cleaning_chemicals: { ids, other, none }` → `sanitation_records.chemicals_used` / `chemical_id`. "No chemical used" is
+an answer, written in the notes. Batch-complete skips cleans. **A verify that completes a clean must send
+`cleaning_chemicals`.** Area approval is shown, never checked. `verify:cleanchem`.
+
 ## The end-of-day ATP swab carries its reading (D-179)
 `cleaning_events[].atp_reading` + `atp_limit` + `atp_pass`, stamped by `atpOnEvent()` inside `normalizeCleaningEvents`
 (api/production.js) with the same `gradeAtp()` as Sanitation — entry, amend and My Day all pass through it. Blank is a

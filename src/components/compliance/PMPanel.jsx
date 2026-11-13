@@ -15,6 +15,8 @@ import FormChip from '../common/FormChip';
 import { TASK_GROUPS } from '../../../shared/task-groups.js';
 import CheckFields from '../common/CheckFields.jsx';
 import AtpSwabField from '../common/AtpSwabField.jsx';
+import CleaningChemicalsField from '../common/CleaningChemicalsField.jsx';
+import { chemicalAnswered, chemicalPayload } from '../../lib/cleaningChemicals.js';
 import TrainingTest from '../common/TrainingTest.jsx';
 import { TaskMaterials } from './TrainingHowFields.jsx';
 import { missingForCheck } from '../../../shared/check-forms.js';
@@ -71,6 +73,9 @@ function CompleteForm({ wo, chemicals, onComplete, onTestPassed, onCancel }) {
   const [atp, setAtp] = useState('');
   const swab = wo.swab_plan;
   const checkBlocked = !!wo.check_form && missingForCheck(wo.check_form, check).length > 0;
+  // Which chemical the clean used (D-349); the server refuses without it.
+  const [chem, setChem] = useState({ ids: [], other: '', none: false });
+  const chemBlocked = !!wo.chemical_plan && !chemicalAnswered(chem);
   // This form used to record no steps at all, so every task completed from the
   // Task Center reached QA's hygiene clearance with an empty step list — which
   // then read as "0 of 3 ticked". The Operator View has always asked; the
@@ -118,6 +123,7 @@ function CompleteForm({ wo, chemicals, onComplete, onTestPassed, onCancel }) {
         // reading of nothing and grade against the limit.
         ...(swab && String(atp).trim() !== '' ? { readings: { atp_reading: atp } } : {}),
         ...(wo.check_form ? { check } : {}),
+        ...(wo.chemical_plan ? { cleaning_chemicals: chemicalPayload(chem) } : {}),
         ...(stepsRequired || tickedCount > 0
           ? { step_results: steps.map((_, i) => !!stepChecks[i]) }
           : {}),
@@ -139,6 +145,9 @@ function CompleteForm({ wo, chemicals, onComplete, onTestPassed, onCancel }) {
       {/* A clean that owes a swab. The server says which and why; the re-clean
           raised BY two failed readings exists to obtain a second one, and says
           so rather than looking like an ordinary box. */}
+      {wo.chemical_plan && (
+        <CleaningChemicalsField plan={wo.chemical_plan} value={chem} onChange={setChem} />
+      )}
       {swab && (
         <div className="bg-white rounded-lg border border-green-200 p-2" data-swab-block data-swab-reason={swab.reason}>
           <p className="text-xs font-semibold text-gray-700 mb-1 flex items-center gap-1">
@@ -211,7 +220,7 @@ function CompleteForm({ wo, chemicals, onComplete, onTestPassed, onCancel }) {
           className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm" rows={2} />
       </div>
       <div className="flex gap-2">
-        <button type="submit" disabled={saving || blockedForSteps || checkBlocked}
+        <button type="submit" disabled={saving || blockedForSteps || checkBlocked || chemBlocked}
           className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-medium hover:bg-green-700 disabled:opacity-50">
           {saving ? 'Saving...' : 'Complete & Generate Next'}
         </button>
