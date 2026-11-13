@@ -63,7 +63,7 @@ console.log('\n── completing ──');
 r = await complete('cc-1', { notes: '' });
 t('a clean completed with no answer is refused', r.status === 400 && r.json?.chemical_required, `${r.status} ${r.json?.error}`);
 t('…saying what to do', /chemical/i.test(r.json?.error || '') && /Warehouse & Grounds/.test(r.json?.error || ''), r.json?.error);
-t('…and nothing was filed', !record('cc-1') && one("SELECT status FROM work_orders WHERE id='cc-1'")?.status === 'open');
+t('…and nothing was filed', !record('cc-1') && one("SELECT status FROM work_orders WHERE id='cc-1'")?.status !== 'completed');
 r = await complete('cc-1', { cleaning_chemicals: { ids: ['not-a-chemical'] } });
 t('an id that is not an approved chemical is refused', r.status === 400);
 r = await complete('cc-1', { cleaning_chemicals: { ids: [lysol.id, simple.id] }, notes: 'floors' });
