@@ -2054,7 +2054,9 @@ function MoveModal({ m, onClose }) {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const list = (channels || []).filter(c => c.id !== m.channel_id && c.kind !== 'dm' && !String(c.name || '').startsWith('client--'));
+  const list = (channels || []).filter(c => c.id !== m.channel_id && c.kind !== 'dm' && !c.hr_door && !String(c.name || '').startsWith('client--'));
+  // The HR team can file a DM into the sender's own HR conversation (D-356).
+  const { data: hrStatus } = useApiGet('/comms/hr-door/status');
   const move = async () => {
     if (!target) { setError('Pick a channel first.'); return; }
     setBusy(true); setError('');
@@ -2075,6 +2077,7 @@ function MoveModal({ m, onClose }) {
         <select value={target} onChange={e => setTarget(e.target.value)} data-move-target
           className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
           <option value="">Move to…</option>
+          {hrStatus?.is_reader && <option value="hr">HR — {m.user_name}&apos;s private HR conversation</option>}
           {list.map(c => <option key={c.id} value={c.id}>#{c.name}</option>)}
         </select>
         <label className="flex items-start gap-2 text-sm text-gray-700">
@@ -2357,7 +2360,7 @@ const Message = memo(function Message({ m, me, onReact, onUnreact, onEdit, onDel
             <div>
               {m.moved_to && (
                 <p className="text-[11px] text-sky-800 bg-sky-50 border border-sky-200 rounded px-1.5 py-0.5 mb-0.5 inline-block" data-moved-to>
-                  Moved to #{m.moved_to.channel_name || 'another channel'}{m.moved_to.by ? ` by ${m.moved_to.by}` : ''}
+                  Moved to {m.moved_to.hr ? 'HR' : `#${m.moved_to.channel_name || 'another channel'}`}{m.moved_to.by ? ` by ${m.moved_to.by}` : ''}
                 </p>
               )}
               {m.moved_from && (
@@ -2702,7 +2705,17 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   // Section grouping for the sidebar: pinned default channels first, then each
   // admin section (in order), then everything ungrouped.
   const pinned = list.filter(c => c.is_default);
-  const nonDefaultCh = list.filter(c => !c.is_default && c.kind !== 'dm');
+  // The HR front door (D-356): everyone's own "HR" sits at the top; the HR
+  // team's copies of everyone else's are their own "HR inbox" section.
+  const myHrDoor = list.find(c => c.hr_door?.mine) || null;
+  const hrInbox = list.filter(c => c.hr_door && !c.hr_door.mine)
+    .sort((a, b) => (b.unread > 0) - (a.unread > 0) || (b.last_activity || '').localeCompare(a.last_activity || ''));
+  const openHrDoor = async () => {
+    if (myHrDoor) { openChannel(myHrDoor.id); return; }
+    try { const r = await apiFetch('/comms/hr-door'); await refreshChannels(); openChannel(r.channel_id); }
+    catch (e) { alert(e.message); }
+  };
+  const nonDefaultCh = list.filter(c => !c.is_default && c.kind !== 'dm' && !c.hr_door);
   const byOrder = (a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name);
   const sectionList = sections || [];
   const sectionGroups = sectionList
@@ -4004,6 +4017,20 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
               </div>
             </div>
           )}
+          {!isExternal && (
+            <button type="button" onClick={openHrDoor} data-hr-door-open
+              className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm text-left ${myHrDoor && activeId === myHrDoor.id ? 'bg-powder-100 text-powder-800' : 'text-gray-700 hover:bg-gray-100'}`}>
+              <Lock size={14} className="text-rose-500 shrink-0" />
+              <span className="flex-1 truncate"><span className="font-medium">HR</span> <span className="text-[11px] text-gray-400">— private to the HR team</span></span>
+              {myHrDoor?.unread > 0 && <span className="text-[10px] font-bold bg-rose-500 text-white rounded-full px-1.5">{myHrDoor.unread}</span>}
+            </button>
+          )}
+          {hrInbox.length > 0 && (
+            <div data-hr-inbox>
+              <div className="px-2 mb-1 text-[10px] font-bold uppercase text-rose-600">HR inbox</div>
+              <div className="space-y-0.5">{hrInbox.map(c => <ChannelBtn key={'hr' + c.id} c={c} icon={Lock} />)}</div>
+            </div>
+          )}
           {/* Pinned default channels (#general / #announcements) */}
           {pinned.length > 0 && (
             <div className="space-y-0.5">
@@ -4255,6 +4282,13 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
                   </div>
                 )}
               </div>
+              {active.hr_door && (
+                <div className="border-b border-rose-200 bg-rose-50 px-3 py-1.5 text-xs text-rose-900 shrink-0" data-hr-door-banner>
+                  {active.hr_door.mine
+                    ? 'Only the HR team can read this — not your supervisor or coworkers. Write what happened; someone will follow up. / Solo el equipo de RR. HH. puede leer esto.'
+                    : `Private HR conversation with ${active.hr_door.owner_name}. Only the HR team and ${active.hr_door.owner_name} can see it.`}
+                </div>
+              )}
               <PinnedStrip pinned={pinnedMsgs} users={users} me={user} onUnpin={(p) => pinMsg(p, false)} />
               <TrackedStrip channelId={activeId} onJump={queueMessage} />
               <div ref={scrollRef} onScroll={onMessagesScroll} data-msg-scroll="" className="relative flex-1 overflow-y-auto py-2"

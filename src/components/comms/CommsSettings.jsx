@@ -800,6 +800,41 @@ function StepDots({ step }) {
   );
 }
 
+/* ─────────────────────────── HR team (D-356) ─────────────────────────── */
+// Who reads the employees' private HR conversations. Saving updates every one
+// of them at once; an employee's own conversation always keeps them in it.
+function HrTeamTab({ users }) {
+  const { data, refresh } = useApiGet('/comms/hr-door/readers');
+  const [picked, setPicked] = useState(null);
+  const [msg, setMsg] = useState('');
+  const current = picked ?? (data?.readers || []).map(r => r.id);
+  const people = (users || []).filter(u => u.is_active !== 0 && !u.is_external && u.name !== 'ReadyBot').sort((a, b) => a.name.localeCompare(b.name));
+  const toggle = (id) => setPicked(current.includes(id) ? current.filter(x => x !== id) : [...current, id]);
+  const save = async () => {
+    try { await apiPut('/comms/hr-door/readers', { user_ids: current }); setPicked(null); setMsg('Saved — every HR conversation now has this team.'); refresh(); }
+    catch (e) { setMsg(e.message); }
+  };
+  return (
+    <div className="space-y-3" data-hr-team>
+      <p className="text-sm text-gray-600">Every employee has an <b>HR</b> conversation in Messages. What they send there is read by these people and nobody else.</p>
+      {data && !data.configured && <p className="text-xs text-amber-700">Not set yet — admins and office/HR supervisors are reading it until you save a list.</p>}
+      <div className="max-h-72 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100">
+        {people.map(u => (
+          <label key={u.id} className="flex items-center gap-2 px-3 py-1.5 text-sm">
+            <input type="checkbox" checked={current.includes(u.id)} onChange={() => toggle(u.id)} data-hr-reader={u.id} />
+            <span className="text-gray-800">{u.name}</span>
+            <span className="text-xs text-gray-400">{u.department || ''}</span>
+          </label>
+        ))}
+      </div>
+      <div className="flex items-center gap-2">
+        <button onClick={save} disabled={!current.length} data-hr-team-save className="px-3 py-1.5 bg-powder-600 text-white text-sm rounded-lg disabled:opacity-50">Save HR team</button>
+        {msg && <span className="text-xs text-gray-600">{msg}</span>}
+      </div>
+    </div>
+  );
+}
+
 /* ─────────────────────────── Shell ─────────────────────────── */
 export default function CommsSettings({ users, onClose, onChanged }) {
   const [tab, setTab] = useState('channels');
@@ -810,16 +845,18 @@ export default function CommsSettings({ users, onClose, onChanged }) {
           <h3 className="text-base font-semibold text-gray-900">Communication Settings</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
         </div>
-        <div className="flex items-center gap-1.5 px-4 py-3 border-b border-gray-100">
+        <div className="flex items-center gap-1.5 px-4 py-3 border-b border-gray-100 overflow-x-auto">
           <TabButton active={tab === 'channels'} onClick={() => setTab('channels')} icon={Hash}>Channels</TabButton>
           <TabButton active={tab === 'people'} onClick={() => setTab('people')} icon={Users}>People</TabButton>
           <TabButton active={tab === 'notifications'} onClick={() => setTab('notifications')} icon={Bell}>Notifications</TabButton>
+          <TabButton active={tab === 'hr'} onClick={() => setTab('hr')} icon={Users}>HR team</TabButton>
           <TabButton active={tab === 'import'} onClick={() => setTab('import')} icon={Upload}>Import</TabButton>
         </div>
         <div className="p-5 overflow-y-auto">
           {tab === 'channels' && <ChannelsTab users={users} />}
           {tab === 'people' && <PeopleTab />}
           {tab === 'notifications' && <NotificationsTab />}
+          {tab === 'hr' && <HrTeamTab users={users} />}
           {tab === 'import' && <ImportTab onImported={onChanged} />}
         </div>
       </div>

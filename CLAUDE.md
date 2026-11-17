@@ -7083,6 +7083,13 @@ swipe sideways at fit to page, swipe down at fit to close, tap to hide the contr
   not offered where neither exists. Copy is on the thumbnail too.
 - `npm run verify:viewer` uploads a real PNG and PDF through the S3 stand-in and drives both layouts.
 
+## The HR front door (D-356)
+`hr--<user id>` private channels (`shared/hr-door.js`, `server/hr-door.js`): the employee + the HR team
+(`hr_door_readers`, Messages → Settings → HR team; `syncHrDoors` on save and at boot). **`canAccess` does NOT wave an
+admin into an `hr--` channel** — never add a read path that skips it. Reserved family: no manual create/rename/members/
+archive/delete. Owner's top-level post → tracked + ReadyBot ack. Move with `channel_id: 'hr'` → the sender's door (HR team
+only). `verify:hrdoor` (36).
+
 ## Moving a message to the channel it belongs in; open items (D-355)
 `POST /comms/messages/:id/move` (`canMoveMessage`: admin or office/HR; member of source and target; no DM or `client--`
 target; no token; once), `/track` `/resolve` `/reopen`, `GET /channels/:id/tracked`. **The original is never deleted** —

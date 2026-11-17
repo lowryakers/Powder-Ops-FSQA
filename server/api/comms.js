@@ -14,6 +14,8 @@ import { aiEnabled, summarizeChat, translateText } from '../ai.js';
 import { pushEnabled, vapidPublicKey, pushToUser } from '../push.js';
 import { canMoveMessage, canDeleteMessage } from '../../shared/comms-permissions.js';
 import { isClientChannel, CLIENT_PREFIX } from '../../shared/client-channels.js';
+import { isHrDoor, hrDoorOwner, HR_PREFIX, HR_DOOR_ACK } from '../../shared/hr-door.js';
+import { doorFor, hrReaders, isHrReader, setHrReaders, hrDoorLabel } from '../hr-door.js';
 import { importSlackExport, previewSlackExport } from '../slack-import.js';
 import { requireRole } from '../middleware/auth.js';
 import { getType } from '../qms-config.js';
@@ -269,7 +271,9 @@ function channelRole(db, channelId, userId) {
 // the auto-joined default channels). Membership is the single gate.
 function canAccess(db, channel, userId, isAdmin = false) {
   if (!channel) return false;
-  if (isAdmin) return true;
+  // An HR conversation (D-356) is read by its employee and the HR team only —
+  // being an admin is not being on the HR team.
+  if (isAdmin && !isHrDoor(channel.name)) return true;
   return isMember(db, channel.id, userId);
 }
 // Resolve a channel and enforce access in one step; sends 404 if not allowed
@@ -356,7 +360,7 @@ function recordMentions(db, channel, messageId, body, author) {
   }
   if (!recipients.length) return [];
   const ins = db.prepare('INSERT INTO chat_mentions (id, message_id, channel_id, user_id) VALUES (?, ?, ?, ?)');
-  const label = channel.kind === 'public' ? `#${channel.name}` : (channel.name || 'a channel');
+  const label = isHrDoor(channel.name) ? 'HR' : channel.kind === 'public' ? `#${channel.name}` : (channel.name || 'a channel');
   const broadcast = hasBroadcast(body);
   for (const u of recipients) {
     ins.run(uuid(), messageId, channel.id, u.id);
@@ -551,7 +555,7 @@ function emitThreadChanged(db, channel, parentId, authorId) {
 }
 function notifyThreadReply(db, channel, parentId, body, author, excludeUserIds = [], messageId = null) {
   if (!pushEnabled() || !body || channel.kind === 'dm') return [];
-  const label = channel.kind === 'public' ? `#${channel.name}` : (channel.name || 'a channel');
+  const label = isHrDoor(channel.name) ? 'HR' : channel.kind === 'public' ? `#${channel.name}` : (channel.name || 'a channel');
   const url = messageId ? `/?c=${channel.id}&m=${messageId}` : `/?c=${channel.id}`;
   const sent = [];
   const sendFor = (uid) => {
@@ -590,7 +594,7 @@ function notifyChannelMessage(db, channel, body, author, excludeUserIds = [], me
   const members = db.prepare(
     'SELECT u.id FROM chat_channel_members m JOIN users u ON u.id = m.user_id WHERE m.channel_id = ? AND u.is_active = 1'
   ).all(channel.id);
-  const label = channel.kind === 'public' ? `#${channel.name}` : (channel.name || 'Channel');
+  const label = isHrDoor(channel.name) ? 'HR' : channel.kind === 'public' ? `#${channel.name}` : (channel.name || 'Channel');
   const now = Date.now();
   // Deep-link to the triggering message so a tap lands on it, not just the channel.
   const url = messageId ? `/?c=${channel.id}&m=${messageId}` : `/?c=${channel.id}`;
@@ -755,6 +759,8 @@ router.get('/channels', (req, res) => {
     ).get(c.id).t || null;
 
     let display = c.name, other = null;
+    const hrDoor = isHrDoor(c.name) ? hrDoorLabel(db, c, me) : null;
+    if (hrDoor) display = hrDoor.display;
     if (c.kind === 'dm') {
       const others = db.prepare('SELECT user_id FROM chat_channel_members WHERE channel_id = ? AND user_id != ?').all(c.id, me);
       other = others[0]?.user_id || me;
@@ -762,7 +768,7 @@ router.get('/channels', (req, res) => {
       display = others.length ? others.map(o => userName(db, o.user_id)).join(', ') : userName(db, me);
     }
     return {
-      id: c.id, kind: c.kind, name: display, topic: c.topic,
+      id: c.id, kind: c.kind, name: display, topic: c.topic, hr_door: hrDoor,
       is_member: !!c.membership_id, unread, mentions, other_user_id: other,
       post_policy: c.post_policy || 'all', is_default: !!c.is_default,
       section_id: c.section_id || null, sort_order: c.sort_order || 0,
@@ -785,6 +791,7 @@ router.post('/channels', (req, res) => {
   // PRIVATE by construction rather than by whoever ticked the box — a client
   // channel that is public is the plant's production conversation published to
   // everyone with an account.
+  if (isHrDoor(clean)) return res.status(400).json({ error: `${HR_PREFIX} channels are made by ReadyDoc, one per employee.` });
   const client = isClientChannel(clean);
   if (client && req.user.role !== 'admin') {
     return res.status(403).json({ error: `Only an admin can open a ${CLIENT_PREFIX}channel — it holds people from outside the plant.` });
@@ -821,6 +828,7 @@ router.post('/channels/:id/members', (req, res) => {
     : requireChannel(req, res);
   if (!channel) { if (req.user.role === 'admin') res.status(404).json({ error: 'Channel not found' }); return; }
   const ids = Array.isArray(req.body?.user_ids) ? req.body.user_ids : [];
+  if (isHrDoor(channel.name)) return res.status(409).json({ error: 'Who is in an HR conversation is set by the HR team list (Messages → Settings).' });
   // AN EXTERNAL ACCOUNT BELONGS IN A `client--` CHANNEL AND NOWHERE ELSE.
   // D-080 closed the boot auto-join that kept putting a client back into
   // #general; this closes the other door, which is somebody adding them by hand
@@ -862,7 +870,7 @@ router.get('/admin/channels', requireRole('admin'), (req, res) => {
       (SELECT MAX(created_at) FROM chat_messages msg WHERE msg.channel_id = c.id AND msg.deleted_at IS NULL) AS last_activity,
       (SELECT COUNT(*) FROM chat_messages msg WHERE msg.channel_id = c.id AND msg.deleted_at IS NULL AND msg.created_at >= datetime('now','-30 days')) AS recent_count
     FROM chat_channels c
-    WHERE c.kind != 'dm'
+    WHERE c.kind != 'dm' AND c.name NOT LIKE 'hr--%'
     ORDER BY c.is_default DESC, c.archived, c.sort_order, c.kind, c.name`).all();
   res.json(rows);
 });
@@ -1067,6 +1075,11 @@ router.put('/channels/:id', (req, res) => {
   if (name !== undefined && name !== null && String(name).trim()) {
     cleanName = String(name).trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || channel.name;
   }
+  if (isHrDoor(channel.name) || isHrDoor(cleanName)) {
+    if (isHrDoor(channel.name) && (cleanName !== channel.name || newKind !== 'private')) return res.status(400).json({ error: 'An HR conversation keeps its name and stays private.' });
+    if (!isHrDoor(channel.name)) return res.status(400).json({ error: `${HR_PREFIX} names are kept for the HR conversations.` });
+    if (req.body?.archived) return res.status(400).json({ error: 'An HR conversation is not archived.' });
+  }
   if (isClientChannel(channel.name) !== isClientChannel(cleanName)) {
     return res.status(400).json({ error: `A channel cannot be renamed into or out of the ${CLIENT_PREFIX} family. Open a new channel instead.` });
   }
@@ -1093,6 +1106,7 @@ router.delete('/channels/:id', requireRole('admin'), (req, res) => {
   const db = getDb();
   const channel = getChannelAny(db, req.params.id);
   if (!channel) return res.status(404).json({ error: 'Channel not found' });
+  if (isHrDoor(channel.name)) return res.status(409).json({ error: 'An HR conversation is a record of what an employee raised and is not deleted.' });
   const purge = req.query.purge === 'true' || req.query.purge === '1';
   if (!purge) {
     db.prepare("UPDATE chat_channels SET archived = 1, updated_at = datetime('now') WHERE id = ?").run(channel.id);
@@ -1131,6 +1145,7 @@ router.delete('/channels/:id/members/:userId', (req, res) => {
   const isAdmin = req.user.role === 'admin';
   const isOwner = channelRole(db, channel.id, req.user.id) === 'owner';
   const isSelf = req.params.userId === req.user.id;
+  if (isHrDoor(channel.name)) return res.status(409).json({ error: 'Who is in an HR conversation is set by the HR team list (Messages → Settings).' });
   if (!isAdmin && !isOwner && !isSelf) return res.status(403).json({ error: 'Not allowed' });
   const info = db.prepare('DELETE FROM chat_channel_members WHERE channel_id = ? AND user_id = ?').run(channel.id, req.params.userId);
   if (info.changes) emitChannelsRefresh();
@@ -1343,7 +1358,8 @@ function flattenMessage(db, m) {
 }
 function movedLabel(db, channelId, by, at, messageId) {
   const c = getChannel(db, channelId);
-  return { channel_id: channelId, channel_name: c?.name || null, message_id: messageId, by: by ? userName(db, by) : null, at };
+  return { channel_id: channelId, channel_name: c && isHrDoor(c.name) ? 'HR' : (c?.name || null), hr: !!(c && isHrDoor(c.name)),
+    message_id: messageId, by: by ? userName(db, by) : null, at };
 }
 function parentPreview(db, parentId) {
   const p = db.prepare('SELECT id, user_id, body, deleted_at FROM chat_messages WHERE id = ?').get(parentId);
@@ -1920,6 +1936,17 @@ router.post('/channels/:id/messages', async (req, res) => {
   }
   embedMessage(db, id, channel.id, body); // fire-and-forget
   try { channelHygiene(db, channel, message, req.user); } catch { /* best-effort */ }
+  // The HR front door (D-356): the employee's message is an open item for HR,
+  // and ReadyBot tells them where it went (once per half hour, not per line).
+  if (isHrDoor(channel.name) && hrDoorOwner(channel.name) === req.user.id && !req.body?.parent_id) {
+    try {
+      db.prepare('UPDATE chat_messages SET tracked = 1 WHERE id = ?').run(id);
+      message.tracked = { state: 'open', resolved_at: null, resolved_by: null, note: null };
+      const bot = getBotUser(db);
+      const recent = db.prepare("SELECT 1 FROM chat_messages WHERE channel_id = ? AND user_id = ? AND created_at > strftime('%Y-%m-%d %H:%M:%f','now','-30 minutes') LIMIT 1").get(channel.id, bot.id);
+      if (!recent) postMessageAs(db, channel, bot, HR_DOOR_ACK).catch(() => {});
+    } catch { /* best-effort */ }
+  }
   res.status(201).json(message);
   // #ops-requests wake (D-251): after the response, never awaited, never throws.
   enqueueOpsWebhook({ channel, message: { id, body, parent_id: req.body?.parent_id || null, created_at: now }, author: req.user,
@@ -2123,6 +2150,30 @@ router.post('/messages/:id/forward', async (req, res) => {
   res.status(201).json(message);
 });
 
+// ── The HR front door (D-356) ────────────────────────────────────────────────
+router.get('/hr-door', (req, res) => {
+  if (req.user.is_external || req.auth?.kind === 'token') return res.status(404).json({ error: 'Not found' });
+  const db = getDb();
+  const reader = isHrReader(db, req.user.id);
+  const door = doorFor(db, req.user.id);
+  if (!door) return res.status(404).json({ error: 'Not found' });
+  emitChannelsChanged(db, door);
+  res.json({ channel_id: door.id, is_reader: reader, readers: hrReaders(db).readers.map(r => r.name) });
+});
+router.get('/hr-door/status', (req, res) => res.json({ is_reader: !req.user.is_external && isHrReader(getDb(), req.user.id) }));
+router.get('/hr-door/readers', (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins set the HR team.' });
+  const out = hrReaders(getDb());
+  res.json({ readers: out.readers, configured: out.configured });
+});
+router.put('/hr-door/readers', (req, res) => {
+  if (req.user.role !== 'admin' || req.auth?.kind === 'token') return res.status(403).json({ error: 'Admins set the HR team.' });
+  const db = getDb();
+  const out = setHrReaders(db, req.body?.user_ids, req.user);
+  if (out.error) return res.status(400).json({ error: out.error });
+  res.json(hrReaders(db));
+});
+
 // ── Move a message to another channel (D-355) ────────────────────────────────
 // "I left early with Adam's approval" belongs in #time-tracking; "I have this
 // issue, help" in #hr. Moving keeps the author and the words, says where it
@@ -2139,7 +2190,19 @@ router.post('/messages/:id/move', async (req, res) => {
   if (ctx.m.deleted_at) return res.status(400).json({ error: 'That message was deleted.' });
   if (ctx.m.moved_to_channel_id) return res.status(409).json({ error: 'That message was already moved.' });
   if (isClientChannel(ctx.channel.name)) return res.status(400).json({ error: 'Messages in a client channel stay there.' });
-  const target = getChannel(db, req.body?.channel_id);
+  // "HR" moves it into the SENDER's own HR conversation (D-356) — the door they
+  // should have used. Only the HR team may file something there.
+  let target;
+  if (req.body?.channel_id === 'hr') {
+    if (!isHrReader(db, req.user.id)) return res.status(403).json({ error: 'Only the HR team can move a message to HR.' });
+    target = doorFor(db, ctx.m.user_id);
+    if (!target) return res.status(400).json({ error: 'That message was not sent by an employee with an account.' });
+  } else {
+    target = getChannel(db, req.body?.channel_id);
+    if (target && isHrDoor(target.name) && hrDoorOwner(target.name) !== ctx.m.user_id) {
+      return res.status(400).json({ error: "An HR conversation holds only that employee's own messages." });
+    }
+  }
   if (!target || !isMember(db, target.id, req.user.id)) return res.status(404).json({ error: 'Channel not found — you can move a message only into a channel you are in.' });
   if (target.kind === 'dm') return res.status(400).json({ error: 'Move it into a channel, not a direct message.' });
   if (isClientChannel(target.name)) return res.status(400).json({ error: 'A plant conversation is never moved into a client channel.' });
