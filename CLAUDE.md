@@ -2112,6 +2112,11 @@ Onboarding is the packet a NEW hire signs on a link; this is a W-4, a W-9 or a p
 - Verified: `check:edocs` (12, pure), `verify:edocs` (62 live), `verify:edocsui` (25 in a browser at 390 and
   1280, signing with a real pointer on the canvas).
 
+## Employees is one hub (D-357)
+`HUB_TABS.employees`: People (`candidates`) → Onboarding → Time Tracking (admin) → Pay Tracking → Policies. Each tab keeps
+its own grant; old `?tab=` ids resolve through `HUB_OF`. Settings → Users lists them under an "Employees" heading.
+`verify:employees` (8).
+
 ## AP Drop is the Accounting hub's first tab (D-078)
 It had its own nav entry only while the AP/AR ledgers it could be confused with were still there; those are
 hidden (D-075), so the intake sits with the other money screens and **Accounting opens on it**. The hub tab

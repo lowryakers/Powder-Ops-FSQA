@@ -32,8 +32,12 @@ export function useModuleTabs({ id, tabs, user, initial = null }) {
   const [tab, setTab] = useState(() => {
     // Pure read — see deepLink.js on why this must not consume under StrictMode.
     const linked = getParam('view');
-    if (linked) return linked;
+    // A `?view=` that names one of THIS strip's tabs wins. One that does not is
+    // meant for the module inside (a hub's tab, D-357: ?tab=onboarding&view=
+    // documents) — then the module the link named (`initial`) decides here.
+    if (linked && (!initial || shown.some(t => t.id === linked))) return linked;
     if (initial) return initial;
+    if (linked) return linked;
     if (storageKey) {
       try {
         const saved = localStorage.getItem(storageKey);

@@ -11116,3 +11116,17 @@ went to HR — and only the HR team (Lowry and Marnee today) reads it, to follow
   team may, and a message never lands in another person's.
 - The existing private #HR channel with old messages is untouched — it can stay as the HR team's own room.
 - `verify:hrdoor` (36).
+
+## D-357 — Employees: People, Onboarding, Time Tracking, Pay Tracking and Policies are one entry with tabs (17 Nov 2026)
+Five sidebar entries in Office were one job for Marnee. They are now **Employees**, a hub (`HUB_TABS.employees`) with tabs
+in the order a person moves through: **People → Onboarding → Time Tracking → Pay Tracking → Policies**.
+- **Nothing about access changed.** Each tab keeps its own grant (Time Tracking stays admin-only; People keeps its
+  office/HR second door); the entry shows when any of them is visible. Settings → Users groups the five boxes under an
+  "Employees" heading, as Accounting does.
+- **Old links still work**: `?tab=onboarding`, `?tab=pay-tracking` and the rest resolve to their tab (`HUB_OF`), and a
+  quick-tab pick of an old id lands on the hub.
+- People is NOT folded into Onboarding: People are people we have not hired, and only office/HR may see that list.
+- `verify:employees` (8).
+- **A hub's `?view=` that is not one of its own tabs belongs to the module inside** (`useModuleTabs`): with an `initial`
+  tab, a foreign `view` no longer sends the hub to its first tab. Found by `verify:edocsui`
+  (`?tab=onboarding&view=documents` landed on People).

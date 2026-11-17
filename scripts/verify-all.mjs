@@ -249,6 +249,7 @@ const RUNS = [
   ['verify-doc-qa-review.mjs', 5202, { DOCQA_PORT: '5203' }, false],
   ['verify-pto-plan.mjs', 5204],
   ['verify-training-roster.mjs', 5221],
+  ['verify-employees-hub.mjs', 5227],
   ['verify-training-oneway.mjs', 5222],
   ['verify-calibration-export.mjs', 5223],
   ['verify-move-message.mjs', 5225],

@@ -18,7 +18,6 @@ const t = (n, ok, d = '') => { if (ok) { pass++; console.log(`  ✓ ${n}`); } el
 // Server modules that are deliberately not a box in Settings, and why.
 const NOT_A_BOX = {
   'supply-orders': 'admin-only screen; non-admins use the Supply Order request form (supply-requests)',
-  'time-tracking': 'admin-only screen; non-admins use the Time Tracking request form (time-requests)',
   banking: 'Banking tab hidden since D-075',
 };
 
