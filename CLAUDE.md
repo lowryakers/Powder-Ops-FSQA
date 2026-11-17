@@ -3125,6 +3125,12 @@ team on today's schedule (`scripts/lib/schedule-today.mjs`). `verify:scaleschedu
   product). Closed once recorded; an admin corrects (`disposition_corrected`). **On hold is not closed (D-194).**
 - `verify:outofcal` (55; control fails 6). The same verify covers the crisis-test impact below.
 
+## The calibration company's file, and calibration findings in QA Review (D-353)
+`server/calibration-export.js` (`calibrationExport`, `CERT_REQUIREMENTS`, CSV + PDF), `GET /calibration/export[.csv|.pdf]`
+(read only), `calibrationFindings` in `server/qa-review.js` (source `calibration-findings`, `kind: 'action'`: dispositions
+owed or held, scales out after an incident, overdue instruments). A new kind of calibration finding goes in that one
+function. `verify:calexport` (18).
+
 ## A dropped scale goes out of service; only QA returns it; "on hold" stays open (D-194)
 `shared/scale-incident.js` (`SCALE_CAUTION`, `INCIDENT_KINDS`, `checkIncident`, `returnBlockers`),
 `server/instrument-incidents.js` (`fileIncident`, `authorizeReturn`, `linkIncident`, `outOfServiceScales`,

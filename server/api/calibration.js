@@ -14,6 +14,7 @@ import {
   cautionWithDocument,
 } from '../instrument-incidents.js';
 import { INCIDENT_KINDS } from '../../shared/scale-incident.js';
+import { calibrationExport, calibrationCsv, renderCalibrationRequestPdf } from '../calibration-export.js';
 
 // Beside the DB (the persistent volume in production) — NOT the app dir,
 // which is wiped on every deploy.
@@ -340,6 +341,17 @@ router.post('/incidents/:id/return', (req, res) => {
   if (error) return res.status(status).json({ error, blockers });
   res.json(incident);
 });
+
+// --- What the calibration company needs (D-353) — read only ---
+const exportOpts = (q) => ({ scope: q.scope === 'all' ? 'all' : 'due', within: q.within, includeOutOfService: q.oos === '1' || q.oos === 'true' });
+router.get('/export', (req, res) => res.json(calibrationExport(getDb(), exportOpts(req.query))));
+router.get('/export.csv', (req, res) => {
+  const exp = calibrationExport(getDb(), exportOpts(req.query));
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="calibration-instruments-${exp.as_of}.csv"`);
+  res.send('\ufeff' + calibrationCsv(exp));
+});
+router.get('/export.pdf', (req, res) => renderCalibrationRequestPdf(res, calibrationExport(getDb(), exportOpts(req.query))));
 
 // --- Summary / Dashboard ---
 

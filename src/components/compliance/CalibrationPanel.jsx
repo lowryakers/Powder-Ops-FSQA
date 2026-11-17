@@ -2,7 +2,8 @@ import { useState, useRef, useEffect, useMemo, Fragment } from 'react';
 import { useApiGet, apiPost, apiPut, apiUpload, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
-import { Plus, AlertTriangle, CheckCircle, Scale, Edit2, Search, FileText, Upload, Trash2 } from 'lucide-react';
+import { Plus, AlertTriangle, CheckCircle, Scale, Edit2, Search, FileText, Upload, Trash2, Download, X } from 'lucide-react';
+import { downloadFile } from '../../lib/downloadFile';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import ScaleVerificationTab from './ScaleVerificationTab.jsx';
@@ -304,7 +305,48 @@ function CalibrateForm({ instrument, caution, onSave, onCancel }) {
   );
 }
 
+// What the calibration company needs (D-353): the instruments, their details and
+// the requirements every certificate must meet, as a CSV or a one-file PDF.
+function CalExportModal({ onClose }) {
+  const [scope, setScope] = useState('due');
+  const [within, setWithin] = useState(60);
+  const [oos, setOos] = useState(false);
+  const qs = `?scope=${scope}&within=${within}${oos ? '&oos=1' : ''}`;
+  const { data } = useApiGet(`/calibration/export${qs}`, [qs]);
+  const get = (ext) => downloadFile(`/calibration/export.${ext}${qs}`, `calibration-${scope === 'all' ? 'instruments' : 'request'}.${ext}`).catch(e => alert(e.message));
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-lg p-5 space-y-3 max-h-[92vh] overflow-y-auto" data-cal-export>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h3 className="font-semibold text-gray-900">Send to the calibration company</h3>
+            <p className="text-xs text-gray-500">Each instrument's make, model, serial, location, range, tolerance and last calibration — with what we need on every certificate.</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
+        </div>
+        <div className="space-y-2 text-sm">
+          <label className="flex items-center gap-2"><input type="radio" checked={scope === 'due'} onChange={() => setScope('due')} data-cal-scope="due" />
+            Due within <input type="number" min="0" max="730" value={within} onChange={e => setWithin(e.target.value)} disabled={scope !== 'due'} className="w-16 px-2 py-0.5 border border-gray-300 rounded" /> days (overdue included)</label>
+          <label className="flex items-center gap-2"><input type="radio" checked={scope === 'all'} onChange={() => setScope('all')} data-cal-scope="all" /> Every instrument in service</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={oos} onChange={e => setOos(e.target.checked)} /> Include out-of-service instruments</label>
+        </div>
+        <p className="text-sm text-gray-700" data-cal-export-count>{data ? `${data.rows.length} instrument${data.rows.length === 1 ? '' : 's'}` : 'Counting…'}</p>
+        {data?.requirements && (
+          <details className="text-xs text-gray-600"><summary className="cursor-pointer">What the PDF asks for on every certificate</summary>
+            <ol className="list-decimal ml-5 mt-1 space-y-0.5">{data.requirements.map((r, i) => <li key={i}>{r}</li>)}</ol>
+          </details>
+        )}
+        <div className="flex gap-2 flex-wrap">
+          <button type="button" onClick={() => get('pdf')} data-cal-export-pdf className="inline-flex items-center gap-1.5 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium"><Download size={14} /> PDF request</button>
+          <button type="button" onClick={() => get('csv')} data-cal-export-csv className="inline-flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium"><Download size={14} /> Spreadsheet (CSV)</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CalibrationPanel() {
+  const [exporting, setExporting] = useState(false);
   const { user } = useAuth() || {};
   const canEdit = canEditModule(user, 'calibration');
   const { data: instruments, loading, refresh } = useApiGet('/calibration/instruments');
@@ -444,12 +486,19 @@ export default function CalibrationPanel() {
             </p>
           )}
         </div>
-        {canEdit && (
-          <button onClick={() => { setShowForm(true); setEditing(null); }}
-            className="flex items-center gap-1 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">
-            <Plus size={16} /> Add Instrument
+        <div className="flex items-center gap-2 flex-wrap">
+          <button onClick={() => setExporting(true)} data-cal-export-open
+            className="flex items-center gap-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200">
+            <Download size={16} /> For the calibration company
           </button>
-        )}
+          {canEdit && (
+            <button onClick={() => { setShowForm(true); setEditing(null); }}
+              className="flex items-center gap-1 px-3 py-2 bg-powder-600 text-white rounded-lg text-sm font-medium hover:bg-powder-700">
+              <Plus size={16} /> Add Instrument
+            </button>
+          )}
+        </div>
+        {exporting && <CalExportModal onClose={() => setExporting(false)} />}
       </div>
 
       {/* Summary cards */}

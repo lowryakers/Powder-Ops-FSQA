@@ -250,6 +250,7 @@ const RUNS = [
   ['verify-pto-plan.mjs', 5204],
   ['verify-training-roster.mjs', 5221],
   ['verify-training-oneway.mjs', 5222],
+  ['verify-calibration-export.mjs', 5223],
 ];
 
 // VERIFY_ONLY=verify-auth.mjs,verify-swab-stock.mjs runs just the entries that
