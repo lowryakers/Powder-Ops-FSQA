@@ -12,7 +12,7 @@ import { mediaUpload, rejectOversize, cleanupTemp, uploadErrorMessage, isVideo }
 import { voyageEnabled, embed, embeddingModel, vectorToBlob, blobToVector, cosineSim } from '../embeddings.js';
 import { aiEnabled, summarizeChat, translateText } from '../ai.js';
 import { pushEnabled, vapidPublicKey, pushToUser } from '../push.js';
-import { canDeleteMessage } from '../../shared/comms-permissions.js';
+import { canMoveMessage, canDeleteMessage } from '../../shared/comms-permissions.js';
 import { isClientChannel, CLIENT_PREFIX } from '../../shared/client-channels.js';
 import { importSlackExport, previewSlackExport } from '../slack-import.js';
 import { requireRole } from '../middleware/auth.js';
@@ -1329,8 +1329,21 @@ function flattenMessage(db, m) {
     parent_preview: m.parent_id && m.also_in_channel ? parentPreview(db, m.parent_id) : null,
     // A bot's approval ask in #ops-requests carries its state (D-336).
     approval_ask: askOnMessage(db, m.id),
+    // D-355: moved here from somewhere else, or moved away from here, and the
+    // open / resolved state of an item someone has to close.
+    moved_to: m.moved_to_channel_id ? movedLabel(db, m.moved_to_channel_id, m.moved_by, m.moved_at, m.moved_to_message_id) : null,
+    moved_from: m.moved_from_kind ? {
+      kind: m.moved_from_kind, channel_name: m.moved_from_kind === 'channel' ? (getChannel(db, m.moved_from_channel_id)?.name || null) : null,
+      by: m.moved_by ? userName(db, m.moved_by) : null, at: m.moved_at, original_created_at: m.original_created_at, note: m.moved_note || null,
+    } : null,
+    tracked: m.tracked ? { state: m.resolved_at ? 'resolved' : 'open', resolved_at: m.resolved_at || null,
+      resolved_by: m.resolved_by ? userName(db, m.resolved_by) : null, note: m.resolved_note || null } : null,
     attachments: [],
   };
+}
+function movedLabel(db, channelId, by, at, messageId) {
+  const c = getChannel(db, channelId);
+  return { channel_id: channelId, channel_name: c?.name || null, message_id: messageId, by: by ? userName(db, by) : null, at };
 }
 function parentPreview(db, parentId) {
   const p = db.prepare('SELECT id, user_id, body, deleted_at FROM chat_messages WHERE id = ?').get(parentId);
@@ -2108,6 +2121,96 @@ router.post('/messages/:id/forward', async (req, res) => {
   }
   embedMessage(db, id, target.id, body); // fire-and-forget
   res.status(201).json(message);
+});
+
+// ── Move a message to another channel (D-355) ────────────────────────────────
+// "I left early with Adam's approval" belongs in #time-tracking; "I have this
+// issue, help" in #hr. Moving keeps the author and the words, says where it
+// came from, and can make it an item somebody closes. The original stays in
+// the DM as "moved to #…" — nothing is deleted, and the person who sent it can
+// see what happened to it.
+router.post('/messages/:id/move', async (req, res) => {
+  if (req.auth?.kind === 'token') return res.status(403).json({ error: 'A bot cannot move messages.' });
+  if (!canMoveMessage(req.user)) return res.status(403).json({ error: 'Moving messages is for admins and the office.' });
+  const ctx = ownedMessage(req, res); if (!ctx) return;
+  const db = getDb();
+  const isAdmin = req.user.role === 'admin';
+  if (!isAdmin && !isMember(db, ctx.channel.id, req.user.id)) return res.status(404).json({ error: 'Message not found' });
+  if (ctx.m.deleted_at) return res.status(400).json({ error: 'That message was deleted.' });
+  if (ctx.m.moved_to_channel_id) return res.status(409).json({ error: 'That message was already moved.' });
+  if (isClientChannel(ctx.channel.name)) return res.status(400).json({ error: 'Messages in a client channel stay there.' });
+  const target = getChannel(db, req.body?.channel_id);
+  if (!target || !isMember(db, target.id, req.user.id)) return res.status(404).json({ error: 'Channel not found — you can move a message only into a channel you are in.' });
+  if (target.kind === 'dm') return res.status(400).json({ error: 'Move it into a channel, not a direct message.' });
+  if (isClientChannel(target.name)) return res.status(400).json({ error: 'A plant conversation is never moved into a client channel.' });
+  if (target.id === ctx.channel.id) return res.status(400).json({ error: 'That message is already in this channel.' });
+
+  const id = uuid();
+  const now = db.prepare("SELECT strftime('%Y-%m-%d %H:%M:%f','now') AS t").get().t;
+  const track = req.body?.track !== false;
+  const note = String(req.body?.note || '').trim().slice(0, 500) || null;
+  const tx = db.transaction(() => {
+    db.prepare(`INSERT INTO chat_messages (id, channel_id, user_id, body, created_at, posted_via, moved_from_message_id, moved_from_channel_id,
+        moved_from_kind, original_created_at, moved_by, moved_at, moved_note, tracked) VALUES (?, ?, ?, ?, ?, 'session', ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(id, target.id, ctx.m.user_id, ctx.m.body, now, ctx.m.id, ctx.channel.id, ctx.channel.kind === 'dm' ? 'dm' : 'channel',
+        ctx.m.created_at, req.user.id, now, note, track ? 1 : 0);
+    const atts = db.prepare('SELECT * FROM chat_attachments WHERE message_id = ?').all(ctx.m.id);
+    const insertAtt = db.prepare('INSERT INTO chat_attachments (id, message_id, channel_id, user_id, filename, content_type, size, storage_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    for (const a of atts) insertAtt.run(uuid(), id, target.id, ctx.m.user_id, a.filename, a.content_type, a.size, a.storage_key);
+    db.prepare('UPDATE chat_messages SET moved_to_message_id = ?, moved_to_channel_id = ?, moved_by = ?, moved_at = ? WHERE id = ?')
+      .run(id, target.id, req.user.id, now, ctx.m.id);
+    db.prepare("UPDATE chat_channels SET updated_at = datetime('now') WHERE id = ?").run(target.id);
+    db.prepare('UPDATE chat_channel_members SET last_read_at = ? WHERE channel_id = ? AND user_id = ? AND deliberate_unread = 0').run(now, target.id, req.user.id);
+  });
+  tx();
+  logAudit(req.user, 'move', 'chat_message', ctx.m.id, { to_channel: target.name, from_kind: ctx.channel.kind, tracked: track, new_message_id: id });
+  const moved = await serialize(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(id));
+  const source = await serialize(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(ctx.m.id));
+  emitToChannel(target.id, 'message:new', moved);
+  emitToChannel(ctx.channel.id, 'message:update', source);
+  emitChannelsChanged(db, target);
+  embedMessage(db, id, target.id, ctx.m.body || ''); // fire-and-forget
+  res.status(201).json({ message: moved, source });
+});
+
+// Make a message an item to close, mark it resolved, or open it again (D-355).
+// Any member of the channel may resolve — the channel is the team that owns it.
+async function setTracked(req, res, change) {
+  if (req.auth?.kind === 'token') return res.status(403).json({ error: 'A bot cannot change this.' });
+  const ctx = ownedMessage(req, res); if (!ctx) return;
+  const db = getDb();
+  if (!isMember(db, ctx.channel.id, req.user.id)) return res.status(404).json({ error: 'Message not found' });
+  if (ctx.m.deleted_at) return res.status(400).json({ error: 'That message was deleted.' });
+  if (change === 'track') {
+    if (!canMoveMessage(req.user)) return res.status(403).json({ error: 'Tracking messages is for admins and the office.' });
+    db.prepare('UPDATE chat_messages SET tracked = 1, resolved_at = NULL, resolved_by = NULL, resolved_note = NULL WHERE id = ?').run(ctx.m.id);
+  } else if (change === 'resolve') {
+    if (!ctx.m.tracked) return res.status(400).json({ error: 'That message is not an open item.' });
+    if (ctx.m.resolved_at) return res.status(409).json({ error: 'Already resolved.' });
+    const note = String(req.body?.note || '').trim().slice(0, 500) || null;
+    db.prepare("UPDATE chat_messages SET resolved_at = strftime('%Y-%m-%d %H:%M:%f','now'), resolved_by = ?, resolved_note = ? WHERE id = ?").run(req.user.id, note, ctx.m.id);
+  } else if (change === 'reopen') {
+    if (!ctx.m.tracked || !ctx.m.resolved_at) return res.status(400).json({ error: 'That item is not resolved.' });
+    db.prepare('UPDATE chat_messages SET resolved_at = NULL, resolved_by = NULL, resolved_note = NULL WHERE id = ?').run(ctx.m.id);
+  }
+  logAudit(req.user, change, 'chat_message', ctx.m.id, { channel: ctx.channel.name, note: req.body?.note || undefined });
+  const out = await serialize(db, db.prepare('SELECT * FROM chat_messages WHERE id = ?').get(ctx.m.id));
+  emitToChannel(ctx.channel.id, 'message:update', out);
+  res.json(out);
+}
+router.post('/messages/:id/track', (req, res) => setTracked(req, res, 'track'));
+router.post('/messages/:id/resolve', (req, res) => setTracked(req, res, 'resolve'));
+router.post('/messages/:id/reopen', (req, res) => setTracked(req, res, 'reopen'));
+
+// The open (or resolved) items in a channel, newest first (D-355).
+router.get('/channels/:id/tracked', async (req, res) => {
+  const channel = requireChannel(req, res); if (!channel) return;
+  const db = getDb();
+  const state = ['open', 'resolved', 'all'].includes(req.query.state) ? req.query.state : 'open';
+  const where = state === 'open' ? 'AND resolved_at IS NULL' : state === 'resolved' ? 'AND resolved_at IS NOT NULL' : '';
+  const rows = db.prepare(`SELECT * FROM chat_messages WHERE channel_id = ? AND tracked = 1 AND deleted_at IS NULL ${where}
+    ORDER BY created_at DESC LIMIT 300`).all(channel.id);
+  res.json(await Promise.all(rows.map(m => serialize(db, m))));
 });
 
 // ── Message → compliance record ──────────────────────────────────────────────

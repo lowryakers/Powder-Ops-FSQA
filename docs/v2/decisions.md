@@ -11082,3 +11082,18 @@ Marnee keeps the people worth hiring on People and started their onboarding by r
   "Draft — link not sent" and its **Send link** is the existing reissue route, which mints the first link. Nothing reaches
   the person from People. One open onboarding per People entry (409).
 - Removing from People is the existing delete (files go too); keeping marks the entry `hired`. `verify:peopleonboard` (18).
+## D-355 — A message can be moved to the channel it belongs in, and closed when it is resolved (17 Nov 2026)
+Asked: "the HR channel we discussed — what was the status?" **Nothing about an HR channel was ever written down here** —
+not in this file, the code or the session record — so whatever was discussed was lost with that session (the reason this
+file exists). What was asked now is built; the channels themselves are an admin's to create in Messages.
+- **Move to channel…** on any message (`POST /comms/messages/:id/move`, `canMoveMessage` in `shared/comms-permissions.js`):
+  an **admin or the office/HR** (Marnee is office, not admin — an admin-only rule would miss the person the DMs reach). The
+  mover must be IN the source conversation (an admin may administer any) and a member of the channel it goes to; never a
+  DM, never a `client--` channel either way, never a bot token, once per message.
+- **The moved copy keeps its author and words**, carries its attachments by reference (the forward rule), and says where
+  it came from, when it was first sent and who moved it, with an optional note. **The original is not deleted**: it stays
+  in the DM reading "Moved to #… by …", so the person who sent it can see what happened to it.
+- **Open → Resolved** (`tracked`, `resolved_*` on `chat_messages`): a moved message is an open item by default; any
+  message can be tracked by the same people; any member of the channel resolves it (with an optional "how") or reopens
+  it. A channel with open items shows "N open items to resolve" under its header (`GET /channels/:id/tracked`). Every move,
+  track, resolve and reopen is audited. `verify:movemessage` (22).
