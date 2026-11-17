@@ -165,6 +165,7 @@
     "verify:part11": "VERIFY_ONLY=verify-part11.mjs node scripts/verify-all.mjs",
     "verify:guarantee": "VERIFY_ONLY=verify-guarantee.mjs node scripts/verify-all.mjs",
     "verify:trainingroster": "VERIFY_ONLY=verify-training-roster.mjs node scripts/verify-all.mjs",
+    "verify:employees": "VERIFY_ONLY=verify-employees-hub.mjs node scripts/verify-all.mjs",
     "verify:trainingoneway": "VERIFY_ONLY=verify-training-oneway.mjs node scripts/verify-all.mjs",
     "verify:calexport": "VERIFY_ONLY=verify-calibration-export.mjs node scripts/verify-all.mjs",
     "verify:movemessage": "VERIFY_ONLY=verify-move-message.mjs node scripts/verify-all.mjs",

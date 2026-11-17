@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { setParam } from './lib/deepLink.js';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, AlarmClock, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, BadgeDollarSign, UserPlus, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Building2, BookText, LifeBuoy, PenLine, UserPlus2, HeartHandshake, Activity} from 'lucide-react';
+import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Building2, LifeBuoy, PenLine, UserPlus2, HeartHandshake, Activity} from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -247,7 +247,6 @@ const NAV_GROUPS = [
       // full modules (logs, invoices, stats) are admin workspaces.
       { id: 'office-requests', label: 'Requests', icon: ShoppingCart },
       { id: 'supply-orders', label: 'Supply Orders', icon: ShoppingCart, adminOnly: true },
-      { id: 'time-tracking', label: 'Time Tracking', icon: AlarmClock, adminOnly: true },
       // AP, AR and the trading-partner reconciliation are one place to go —
       // they are the same job (money in, money out, what's owed) split only by
       // which direction it points.
@@ -270,12 +269,15 @@ const NAV_GROUPS = [
         keywords: 'invoice bill drop upload vendor credit memo remittance ap@powder-ops.com finance queue outstanding M4 owed reconcile settlement net partner expense reimbursement receipt personal card' },
       { id: 'procurement', label: 'Procurement & Demand', icon: PackageSearch, keywords: 'purchase orders PO BOM parts demand planning samples pricing' },
       { id: 'newsletter', label: 'Newsletter', icon: Newspaper, keywords: 'announcements events shoutouts news monthly' },
-      { id: 'pay-tracking', label: 'Pay Tracking', icon: BadgeDollarSign, keywords: 'raise increase evaluation rubric wage rate salary review compensation' },
-      { id: 'policies', label: 'Policies', icon: BookText, keywords: 'handbook PTO vacation grievance conduct attendance dress code company rules HR' },
-      { id: 'onboarding', label: 'Onboarding', icon: UserPlus2, keywords: 'new hire W4 I9 W9 direct deposit ADP welcome employee documents sign e-sign signature policy acknowledgement' },
-      // Good people to remember for when the timing is right. A small tracker,
-      // not a CRM — "who first, then where".
-      { id: 'candidates', label: 'People', icon: UserPlus, keywords: 'candidates hiring recruiting applicants contacts referral prospect interview resume bench talent' },
+      // EMPLOYEES (D-357): the people side of the office in one place, in the
+      // order a person moves through it — somebody worth hiring (People), their
+      // onboarding, their hours, their pay, the handbook. Each tab keeps its own
+      // grant, so Pay Tracking stays hidden from anyone without it.
+      { id: 'employees', label: 'Employees', icon: UserPlus2,
+        anyOf: ['candidates', 'onboarding', 'time-tracking', 'pay-tracking', 'policies'],
+        visible: (u) => !!u && (u.role === 'admin'
+          || ['candidates', 'onboarding', 'pay-tracking', 'policies'].some(id => canViewModule(u, id))),
+        keywords: 'people candidates hiring onboarding new hire W4 I9 W9 ADP employee documents sign hours time tracking payroll pay tracking raise evaluation wage policies handbook PTO HR' },
       // Who has been in the building. The lobby tablet itself is a public kiosk
       // at /kiosk/visitor; this is the record behind it.
       { id: 'visitors', label: 'Visitors', icon: Users, keywords: 'visitor sign in sign out lobby front desk NDA guest contractor kiosk lobbytrack' },
@@ -1064,6 +1066,14 @@ const HUB_TABS = {
       visible: canSeeApDrop },
     { id: 'partner-reconciliation', label: 'Partner Reconciliation', render: (u) => <PartnerReconPanel user={u} /> },
     { id: 'reimbursements', label: 'Reimbursements', render: (u) => <ReimbursementsPanel user={u} /> },
+  ],
+  // People → Onboarding → Time Tracking → Pay Tracking → Policies (D-357).
+  employees: [
+    { id: 'candidates', label: 'People', render: () => <CandidatesPanel /> },
+    { id: 'onboarding', label: 'Onboarding', render: () => <OnboardingPanel /> },
+    { id: 'time-tracking', label: 'Time Tracking', visible: (u) => u?.role === 'admin', render: () => <TimeTrackingPanel /> },
+    { id: 'pay-tracking', label: 'Pay Tracking', render: () => <PayTrackingPanel /> },
+    { id: 'policies', label: 'Policies', render: () => <PoliciesPanel /> },
   ],
   'quality-events': [
     { id: 'deviations', label: 'Deviations', render: () => <QMSRecordsPanel recordType="deviation" moduleId="deviations" /> },
@@ -2191,16 +2201,13 @@ function App() {
             <ModuleHub key={`acct-${resolvedTab}`} hubId="accounting" user={user} initialTab={resolvedTab} badges={notifications?.badges} />}
           {resolvedTab === 'procurement' && <ProcurementPanel />}
           {resolvedTab === 'newsletter' && <NewsletterPanel />}
-          {resolvedTab === 'policies' && <PoliciesPanel />}
-          {resolvedTab === 'onboarding' && <OnboardingPanel />}
-          {resolvedTab === 'candidates' && <CandidatesPanel />}
+          {(resolvedTab === 'employees' || HUB_OF[resolvedTab] === 'employees') &&
+            <ModuleHub key={`emp-${resolvedTab}`} hubId="employees" user={user} initialTab={resolvedTab} badges={notifications?.badges} />}
           {resolvedTab === 'visitors' && <VisitorLogPanel />}
-          {resolvedTab === 'pay-tracking' && <PayTrackingPanel />}
           {resolvedTab === 'supply-orders' && <SupplyOrdersPanel />}
           {resolvedTab === 'controlled-changes' && <ControlledChangesPanel />}
           {resolvedTab === 'change-register' && <ChangeRegisterPanel user={user} />}
           {resolvedTab === 'food-safety-culture' && <FoodSafetyCulturePanel user={user} />}
-          {resolvedTab === 'time-tracking' && <TimeTrackingPanel />}
           {resolvedTab === 'production-log' && <ProductionLog user={user} />}
           {resolvedTab === 'production-schedule' && <ProductionSchedule user={user} />}
           {resolvedTab === 'production-dashboard' && <ProductionDashboard />}
