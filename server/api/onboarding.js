@@ -171,6 +171,8 @@ function shape(db, r) {
     ...rest,
     progress: parseJson(r.progress, {}) || {},
     has_ssn: !!ssn_enc, has_ein: !!ein_enc, has_bank: !!dd_account_enc,
+    // Never sent a link (D-354): "Send link" (reissue) is what invites them.
+    is_draft: r.status === 'invited' && !r.invited_at && !r.token_hash,
     is_contractor: r.worker_type === 'contractor',
     w4_multiple_jobs: !!r.w4_multiple_jobs,
     w4_exempt: !!r.w4_exempt,
@@ -430,17 +432,29 @@ router.post('/', (req, res) => {
   }
   const db = getDb();
   const id = uuid();
-  const token = randomBytes(24).toString('base64url');
-  db.prepare(`INSERT INTO onboarding_records (id, token_hash, status, created_by, invited_at)
-    VALUES (?, ?, 'invited', ?, datetime('now'))`).run(id, sha(token), req.user.name);
+  // A DRAFT (D-354) is an onboarding nobody has been sent yet — started from
+  // People, filled in by the office, and invited with "Send link" (the reissue
+  // route) when the office is ready. No token exists until then.
+  const draft = !!b.draft;
+  let candidate = null;
+  if (b.candidate_id) {
+    candidate = db.prepare('SELECT id, name FROM candidates WHERE id = ?').get(String(b.candidate_id));
+    if (!candidate) return res.status(404).json({ error: 'That person is no longer on People.' });
+    const open = db.prepare(`SELECT id FROM onboarding_records WHERE candidate_id = ? AND status NOT IN ('cancelled','completed')`).get(candidate.id);
+    if (open) return res.status(409).json({ error: `${candidate.name} already has an onboarding open.`, onboarding_id: open.id });
+  }
+  const token = draft ? null : randomBytes(24).toString('base64url');
+  db.prepare(`INSERT INTO onboarding_records (id, token_hash, status, created_by, invited_at, candidate_id)
+    VALUES (?, ?, 'invited', ?, ${draft ? 'NULL' : "datetime('now')"}, ?)`).run(id, token ? sha(token) : null, req.user.name, candidate?.id || null);
   const rec = db.prepare('SELECT * FROM onboarding_records WHERE id = ?').get(id);
   const out = applyFields(db, rec, b, ADMIN_FIELDS);
   if (out.error) { db.prepare('DELETE FROM onboarding_records WHERE id = ?').run(id); return res.status(400).json({ error: out.error }); }
   const fresh = db.prepare('SELECT * FROM onboarding_records WHERE id = ?').get(id);
-  logAudit(req.user, 'create', 'onboarding', id, { name: nameOf(fresh) }, null, null, nameOf(fresh));
+  logAudit(req.user, 'create', 'onboarding', id, { name: nameOf(fresh), ...(draft ? { draft: true } : {}),
+    ...(candidate ? { from_people: candidate.id } : {}) }, null, null, nameOf(fresh));
   // The clear token exists in this response and nowhere else — same rule as
   // the partner portal. Lost link ⇒ reissue, which invalidates this one.
-  res.status(201).json({ ...shape(db, fresh), link: `${readyDocOrigin()}/welcome/${token}` });
+  res.status(201).json({ ...shape(db, fresh), ...(token ? { link: `${readyDocOrigin()}/welcome/${token}` } : {}) });
 });
 
 // Files: declared before `/:id`.
@@ -556,7 +570,7 @@ router.post('/:id/reissue', (req, res) => {
   const token = randomBytes(24).toString('base64url');
   db.prepare("UPDATE onboarding_records SET token_hash = ?, invited_at = datetime('now'), updated_at = datetime('now') WHERE id = ?")
     .run(sha(token), rec.id);
-  logAudit(req.user, 'update', 'onboarding', rec.id, { reissued: true }, null, null, nameOf(rec));
+  logAudit(req.user, 'update', 'onboarding', rec.id, rec.invited_at ? { reissued: true } : { link_sent: true }, null, null, nameOf(rec));
   res.json({ link: `${readyDocOrigin()}/welcome/${token}` });
 });
 

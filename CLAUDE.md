@@ -2236,6 +2236,11 @@ the form's copy is blank — **give every wizard field a `name` and an `autoComp
 NUMBERS need `ONBOARDING_ENC_KEY`. ZIP was already asked; the office row now prints it and the bank.
 `verify:onboardingbank` (13, no key; control fails 6).
 
+## People → a draft onboarding (D-354)
+`StartOnboardingModal` on each People card (admin or `onboarding` grant) → `POST /onboarding {draft: true, candidate_id}`.
+**A draft mints no link** (`is_draft`: invited with no `invited_at`, no `token_hash`); "Send link" is `/:id/reissue`.
+`onboarding_records.candidate_id` is a pointer. `verify:peopleonboard` (18).
+
 ## People: a tag is a category you can call from; a file is a résumé that dies with the person
 `candidates.tags` (JSON array) + `candidate_files` (R2 via the shared media path), both in
 `server/api/candidates.js` behind the same office/HR-only mount gate — a résumé is more personal than a
