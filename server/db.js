@@ -3183,6 +3183,9 @@ function runMigrations() {
     // {at, by, reason, fields:[{field, label, from, to}]}. Printed on the
     // packet, so a value the office filled in never reads as the hire's entry.
     ['office_edits', 'TEXT'],
+    // The People entry this onboarding was started from (D-354). A pointer, not
+    // a copy: the People row may be removed once the person is hired.
+    ['candidate_id', 'TEXT'],
   ]) addColumnIfMissing('onboarding_records', col, def);
 
   db.exec(`
