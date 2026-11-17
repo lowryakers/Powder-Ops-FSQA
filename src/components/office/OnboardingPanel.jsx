@@ -47,7 +47,7 @@ const WORKER_TYPES = [
   ['employee', 'W-2 employee', 'Signs a W-4 and an I-9. Gets a ReadyDoc account on completion.'],
   ['contractor', '1099 contractor / temp', 'Signs a W-9. No I-9. No ReadyDoc account unless you tick it on completion.'],
 ];
-function WorkerTypePicker({ value, onChange, disabled, compact = false }) {
+export function WorkerTypePicker({ value, onChange, disabled, compact = false }) {
   return (
     <div className={`flex ${compact ? 'gap-1' : 'gap-2 flex-wrap'}`} data-worker-type>
       {WORKER_TYPES.map(([k, label, hint]) => (
@@ -598,7 +598,7 @@ function Row({ r, attestations, storageEnabled, onAction }) {
   // of the time, and for a contractor the safe default is no account at all.
   const [makeAccount, setMakeAccount] = useState(!r.is_contractor);
   const [editing, setEditing] = useState(false);
-  const [s, cls] = STATUS[r.status] || [r.status, 'bg-gray-100 text-gray-600'];
+  const [s, cls] = r.is_draft ? ['Draft — link not sent', 'bg-amber-50 text-amber-800'] : (STATUS[r.status] || [r.status, 'bg-gray-100 text-gray-600']);
   const act = async (name, fn) => {
     setBusy(name); setError('');
     try { await fn(); } catch (e) { setError(e.message); }
@@ -623,7 +623,9 @@ function Row({ r, attestations, storageEnabled, onAction }) {
             <span className={`ml-2 align-middle px-1.5 py-0.5 rounded text-[11px] font-semibold ${r.is_contractor ? 'bg-amber-100 text-amber-900' : 'bg-gray-100 text-gray-700'}`} data-engaged-as>
               {r.is_contractor ? '1099 contractor' : 'W-2 employee'}
             </span></p>
-          <p className="text-xs text-gray-500">{steps}/{stepKeys.length} steps · invited {formatDateTime(r.invited_at || r.created_at)}
+          <p className="text-xs text-gray-500">{r.is_draft
+            ? <span data-onboarding-draft>Draft{r.candidate_id ? ' from People' : ''} · started {formatDateTime(r.created_at)} — check the details, then Send link</span>
+            : <>{steps}/{stepKeys.length} steps · invited {formatDateTime(r.invited_at || r.created_at)}</>}
             {r.missing?.length > 0 && !['completed', 'cancelled'].includes(r.status) && <span className="text-amber-700"> · {r.missing.length} still missing</span>}</p>
         </div>
         <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold shrink-0 ${cls}`}>{s}</span>
@@ -742,8 +744,9 @@ function Row({ r, attestations, storageEnabled, onAction }) {
             {!['completed', 'cancelled'].includes(r.status) && (
               <>
                 <button disabled={!!busy} onClick={() => act('reissue', async () => onAction('link', (await apiPost(`/onboarding/${r.id}/reissue`)).link))}
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs font-medium hover:bg-gray-50">
-                  <RefreshCw size={12} /> Reissue link</button>
+                  data-send-link={r.is_draft ? 'draft' : 'reissue'}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium ${r.is_draft ? 'bg-powder-600 text-white hover:bg-powder-700' : 'border border-gray-300 hover:bg-gray-50'}`}>
+                  {r.is_draft ? <><Send size={12} /> Send link</> : <><RefreshCw size={12} /> Reissue link</>}</button>
                 <button disabled={!!busy} title={r.adp_ready ? 'Push the packet into RUN onboarding' : 'ADP is not connected yet — the packet above is ready to key into RUN'}
                   onClick={() => act('adp', async () => onAction('refresh', await apiPost(`/onboarding/${r.id}/submit-adp`)))}
                   className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold ${r.adp_ready ? 'bg-purple-600 text-white hover:bg-purple-700' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}>

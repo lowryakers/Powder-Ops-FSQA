@@ -1,7 +1,11 @@
 import { useState } from 'react';
 import { useApiGet, apiPost, apiPut, apiFetch, apiUpload } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
-import { Search, Plus, X, Phone, Mail, UserPlus, Trash2, Pencil, StickyNote, Upload, Paperclip, FileText, Tag } from 'lucide-react';
+import { Search, Plus, X, Phone, Mail, UserPlus, Trash2, Pencil, StickyNote, Upload, Paperclip, FileText, Tag, ClipboardList } from 'lucide-react';
+import { hasExplicitGrant } from '../../utils/permissions';
+import { ASSIGNABLE_DEPARTMENTS } from '../../constants/departments';
+import { WorkerTypePicker } from './OnboardingPanel.jsx';
+import { apiDelete } from '../../hooks/useApi';
 import { formatDate } from '../../lib/datetime.js';
 import { CustomFields, CustomFieldValues } from '../common/CustomFields.jsx';
 import ImportPanel from '../common/ImportPanel.jsx';
@@ -243,7 +247,68 @@ function Form({ initial, statuses, areaSuggestions, tagSuggestions, onSaved, onC
   );
 }
 
-function Card({ c, statuses, storageEnabled, onEdit, onDelete, onChanged }) {
+// People → Onboarding (D-354): a few questions, then a DRAFT onboarding the
+// office checks and sends from Onboarding. Nothing is sent to the person here.
+function StartOnboardingModal({ c, onClose, onDone }) {
+  const parts = String(c.name || '').trim().split(/\s+/);
+  const [f, setF] = useState({ first_name: parts[0] || '', last_name: parts.slice(1).join(' '), worker_type: 'employee',
+    position: c.title && c.status === 'hired' ? c.title : '', department: '', start_date: '', keep: 'keep' });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const set = (k) => (e) => setF(v => ({ ...v, [k]: e.target.value }));
+  const go = async () => {
+    setBusy(true); setError('');
+    try {
+      await apiPost('/onboarding', { draft: true, candidate_id: c.id, first_name: f.first_name, last_name: f.last_name,
+        worker_type: f.worker_type, position: f.position || null, department: f.department || null, start_date: f.start_date || null,
+        phone: c.phone || null, email: c.email || null });
+      let kept = '';
+      try {
+        if (f.keep === 'remove') { await apiDelete(`/candidates/${c.id}`); kept = ' and removed from People'; }
+        else { await apiPut(`/candidates/${c.id}`, { ...c, status: 'hired' }); kept = ' and marked Hired on People'; }
+      } catch (e2) { kept = ` (People was not updated: ${e2.message})`; }
+      onDone(`Draft onboarding started for ${f.first_name} ${f.last_name}${kept}. Check it and send the link from Onboarding.`);
+    } catch (e) { setError(e.message); setBusy(false); }
+  };
+  const input = 'w-full px-2.5 py-2 border border-gray-300 rounded-lg text-sm';
+  return (
+    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-3 max-h-[92vh] overflow-y-auto" data-start-onboarding>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h3 className="font-semibold text-gray-900">Start onboarding</h3>
+            <p className="text-xs text-gray-500">Makes a draft in Onboarding. Nothing is sent to {parts[0] || 'them'} until you press Send link there.</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} className="text-gray-500" /></button>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div><label className="block text-xs text-gray-600 mb-0.5">First name *</label><input className={input} value={f.first_name} onChange={set('first_name')} /></div>
+          <div><label className="block text-xs text-gray-600 mb-0.5">Last name *</label><input className={input} value={f.last_name} onChange={set('last_name')} /></div>
+        </div>
+        <div><p className="text-xs text-gray-600 mb-1">W-2 or 1099?</p>
+          <WorkerTypePicker value={f.worker_type} onChange={(k) => setF(v => ({ ...v, worker_type: k }))} /></div>
+        <div className="grid grid-cols-2 gap-2">
+          <div><label className="block text-xs text-gray-600 mb-0.5">Position</label><input className={input} value={f.position} onChange={set('position')} /></div>
+          <div><label className="block text-xs text-gray-600 mb-0.5">Department</label>
+            <select className={input} value={f.department} onChange={set('department')}>
+              <option value="">—</option>{ASSIGNABLE_DEPARTMENTS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+            </select></div>
+          <div><label className="block text-xs text-gray-600 mb-0.5">Start date</label><input type="date" className={input} value={f.start_date} onChange={set('start_date')} /></div>
+        </div>
+        <div className="text-sm space-y-1">
+          <p className="text-xs text-gray-600">Keep {parts[0] || 'them'} on People?</p>
+          <label className="flex items-center gap-2"><input type="radio" checked={f.keep === 'keep'} onChange={() => setF(v => ({ ...v, keep: 'keep' }))} data-keep="keep" /> Keep, marked Hired</label>
+          <label className="flex items-center gap-2"><input type="radio" checked={f.keep === 'remove'} onChange={() => setF(v => ({ ...v, keep: 'remove' }))} data-keep="remove" /> Remove from People (their files go too)</label>
+        </div>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <button type="button" disabled={busy || !f.first_name.trim() || !f.last_name.trim()} onClick={go} data-start-onboarding-go
+          className="w-full px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg disabled:opacity-50">{busy ? 'Starting…' : 'Start draft onboarding'}</button>
+      </div>
+    </div>
+  );
+}
+
+function Card({ c, statuses, storageEnabled, onEdit, onDelete, onChanged, onOnboard }) {
   const [showNotes, setShowNotes] = useState(false);
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-3.5">
@@ -270,6 +335,10 @@ function Card({ c, statuses, storageEnabled, onEdit, onDelete, onChanged }) {
           )}
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          {onOnboard && (
+            <button type="button" onClick={() => onOnboard(c)} title="Start onboarding" data-candidate-onboard={c.id}
+              className="p-1.5 text-gray-400 hover:text-powder-700"><ClipboardList size={15} /></button>
+          )}
           <button type="button" onClick={() => onEdit(c)} title="Edit"
             className="p-1.5 text-gray-400 hover:text-gray-700"><Pencil size={15} /></button>
           <button type="button" onClick={() => onDelete(c)} title="Remove from the list"
@@ -326,6 +395,10 @@ export default function CandidatesPanel() {
 
   const done = () => { setAdding(false); setEditing(null); refresh(); refreshMeta(); };
 
+  // Only someone who can work Onboarding is offered the button (its own gate, D-354).
+  const canOnboard = user?.role === 'admin' || hasExplicitGrant(user, 'onboarding');
+  const [onboarding, setOnboarding] = useState(null);
+  const [notice, setNotice] = useState('');
   const remove = async (c) => {
     if (!window.confirm(`Remove ${c.name} from the list? This deletes the entry — it is a contact, not a record we have to keep.`)) return;
     await apiFetch(`/candidates/${c.id}`, { method: 'DELETE' });
@@ -440,10 +513,20 @@ export default function CandidatesPanel() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {rows.map(c => (
           <Card key={c.id} c={c} statuses={statuses} storageEnabled={!!meta?.storage_enabled}
-            onEdit={setEditing} onDelete={remove} onChanged={() => { refresh(); refreshMeta(); }} />
+            onEdit={setEditing} onDelete={remove} onChanged={() => { refresh(); refreshMeta(); }}
+            onOnboard={canOnboard ? setOnboarding : null} />
         ))}
       </div>
 
+      {onboarding && <StartOnboardingModal c={onboarding} onClose={() => setOnboarding(null)}
+        onDone={(msg) => { setOnboarding(null); setNotice(msg); refresh(); refreshMeta(); }} />}
+      {notice && (
+        <div className="fixed bottom-4 left-4 right-4 sm:left-auto z-50 bg-green-600 text-white text-sm px-4 py-2 rounded-lg shadow-lg flex items-center gap-3" data-onboard-notice>
+          <span>{notice}</span>
+          <button type="button" className="font-semibold underline" onClick={() => { setNotice(''); window.dispatchEvent(new CustomEvent('app-navigate', { detail: { tab: 'onboarding' } })); }}>Open Onboarding</button>
+          <button type="button" aria-label="Close" onClick={() => setNotice('')}><X size={14} /></button>
+        </div>
+      )}
       <p className="text-[11px] text-gray-400">
         Kept by the office. These are people&rsquo;s personal contact details — they are not a compliance
         record, and an entry can be removed outright when somebody asks.

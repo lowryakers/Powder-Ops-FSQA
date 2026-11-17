@@ -11071,3 +11071,14 @@ D-351 refused several names on Log Completion and pointed to Group Training — 
   instruments past their due date (the D-114 rule). They were on QA's bell and the Calibration screen only. Each opens
   Calibration; nothing is signed from the list (the disposition is password-signed on the record, D-195).
 - `verify:calexport` (18).
+
+## D-354 — People starts a DRAFT onboarding; nothing is sent until the office presses Send link (17 Nov 2026)
+Marnee keeps the people worth hiring on People and started their onboarding by re-typing them into Onboarding.
+- **A button by edit/delete on each People card** (only for someone who can work Onboarding: admin or the `onboarding`
+  grant) asks four things — the name split first/last (editable), **W-2 or 1099**, position / department / start date,
+  and **keep them on People (marked Hired) or remove them** — then files a **draft** onboarding carrying their phone and
+  email, linked by `onboarding_records.candidate_id` (a pointer; the People row may go).
+- **A draft has no link** (`token_hash` and `invited_at` NULL; `is_draft` on every read). Onboarding shows it as
+  "Draft — link not sent" and its **Send link** is the existing reissue route, which mints the first link. Nothing reaches
+  the person from People. One open onboarding per People entry (409).
+- Removing from People is the existing delete (files go too); keeping marks the entry `hired`. `verify:peopleonboard` (18).
