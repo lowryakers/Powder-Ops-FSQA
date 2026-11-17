@@ -45,6 +45,9 @@ import { getType } from './qms-config.js';
 import { hasExplicitEdit } from './module-access.js';
 import { pendingItems, reviewRow } from './coa-review-items.js';
 import { readinessActions } from './coa-lot-gate.js';
+import { openDispositions } from './product-disposition.js';
+import { outOfServiceScales } from './instrument-incidents.js';
+import { plantDateOf } from './plant-clock.js';
 import { qaReviewState } from './document-revisions.js';
 // The signing predicates live in qa-signing.js so the modules' OWN Verify
 // routes can apply the same rule without importing this file back — see the
@@ -344,6 +347,24 @@ export const SOURCES = [
     canSign: () => false,
     sign: () => ({ error: 'COA readiness is worked on the COA screen, not signed from this list.', status: 400 }),
   },
+  // Calibration findings (D-353): what a failed or adjusted calibration, a
+  // failed daily scale check, a dropped scale or an overdue instrument owes QA.
+  // They were on QA's bell and the Calibration screen only. Decided on the record
+  // in Calibration (the disposition is password-signed there, D-195) — never
+  // from a checkbox here.
+  {
+    key: 'calibration-findings',
+    label: 'Calibration findings',
+    form: null,
+    module: 'calibration',
+    kind: 'action',
+    noun: 'finding',
+    plural: 'findings',
+    count: (db) => calibrationFindings(db).length,
+    pending: (db, limit = LIMIT) => calibrationFindings(db).slice(0, limit),
+    canSign: () => false,
+    sign: () => ({ error: 'Calibration findings are decided on the record in Calibration, not signed from this list.', status: 400 }),
+  },
   // Draft revisions of controlled documents waiting for QA's review (D-319).
   // Reviewed on the document itself with the reviewer's password; Document
   // Control cannot approve until it is there. Not signed from this list.
@@ -416,4 +437,44 @@ export function safeCount(source, db) {
 }
 export function safePending(source, db, limit) {
   try { return source.pending(db, limit); } catch { return []; }
+}
+
+// The one list behind the "Calibration findings" source (D-353), oldest first.
+// Each reader is the module's own: openDispositions (D-154), outOfServiceScales
+// (D-194) and the summary's overdue rule (D-114).
+export function calibrationFindings(db) {
+  const rows = [];
+  const base = { request_id: null, by: null, result: null, extra: null, note: null, evidence: [], steps: [], blocked_by: null };
+  try {
+    const d = openDispositions(db);
+    for (const r of [...d.pending, ...d.held]) {
+      rows.push({ ...base, id: `disp:${r.source}:${r.id}`, title: r.title, subtitle: r.subtitle,
+        action_kind: r.state === 'held' ? 'CAL_HELD' : 'CAL_DISPOSITION', date: String(r.date || '').slice(0, 10),
+        recommended_action: r.state === 'held'
+          ? 'Product is on hold — release or reject it with the evaluation (Calibration).'
+          : 'Decide what happens to product made since the last good check (Calibration).',
+        reason: r.affected_since ? `Product made since ${String(r.affected_since).slice(0, 10)} may be affected.` : 'The instrument read out of tolerance.',
+        decision_ref: 'D-154', link: { tab: 'calibration', view: r.source === 'scale' ? 'scale-verification' : 'records' } });
+    }
+  } catch { /* table optional */ }
+  try {
+    for (const sc of outOfServiceScales(db).filter(x => x.incident_at)) {
+      rows.push({ ...base, id: `scale:${sc.id}`, title: sc.name, subtitle: [sc.asset_number && `#${sc.asset_number}`, sc.room, sc.incident_label].filter(Boolean).join(' · '),
+        action_kind: 'CAL_SCALE_OUT', date: String(sc.incident_at || '').slice(0, 10),
+        recommended_action: 'Inspect it, run a passing check, then return it to service (Calibration → Scale Verification).',
+        reason: 'Out of service after an incident; only QA returns it.', decision_ref: 'D-194',
+        link: { tab: 'calibration', view: 'scale-verification' } });
+    }
+  } catch { /* table optional */ }
+  try {
+    const today = plantDateOf();
+    for (const i of db.prepare(`SELECT id, name, asset_number, department, next_due FROM calibration_instruments
+        WHERE status NOT IN ('retired','out_of_service') AND next_due IS NOT NULL AND next_due != '' AND next_due < ? ORDER BY next_due`).all(today)) {
+      rows.push({ ...base, id: `due:${i.id}`, title: i.name, subtitle: [i.asset_number && `#${i.asset_number}`, i.department].filter(Boolean).join(' · '),
+        action_kind: 'CAL_OVERDUE', date: i.next_due,
+        recommended_action: 'Book the calibration — "For the calibration company" on Calibration prints what to send them.',
+        reason: `Calibration was due ${i.next_due}.`, decision_ref: 'D-114', link: { tab: 'calibration', view: 'instruments' } });
+    }
+  } catch { /* table optional */ }
+  return rows.sort((a, b) => String(a.date).localeCompare(String(b.date)));
 }

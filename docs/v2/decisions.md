@@ -11057,3 +11057,17 @@ D-351 refused several names on Log Completion and pointed to Group Training — 
 - **On a phone, Training opens on Log training · Records · Who's trained** (`data-training-short-menu`); the tabs and
   the header tools are behind "All tabs and tools".
 - `bulk-complete` now stores `document_url` on each record. `verify:trainingoneway` (20).
+## D-353 — What the calibration company needs is one file; calibration findings are a QA Review pile (17 Nov 2026)
+- **"For the calibration company"** on Calibration (`server/calibration-export.js`, `GET /calibration/export[.csv|.pdf]`):
+  the instruments due within N days (overdue included) or every one in service, optionally out-of-service too — asset #,
+  make, model, serial, location, range, unit, required tolerance, the daily check points (from the instrument's latest
+  FORM 417 scale check), frequency, last calibrated, due, last certificate # and who did it. The PDF is a one-page
+  "calibration service request" with the plant's contact and **what every certificate must carry** (`CERT_REQUIREMENTS`):
+  NIST traceability with standards named, as-found AND as-left per point with the tolerance, our asset # and serial,
+  date / due / method / technician signature, 17025 scope if accredited, a sticker — and **an out-of-tolerance finding
+  is reported before adjusting and before they leave**, because it owes a product disposition (D-154). **Read only.**
+- **QA Review → Calibration findings** (`calibrationFindings` in `server/qa-review.js`, `kind: 'action'`): product
+  dispositions owed and on hold (`openDispositions`), scales out of service after an incident (`outOfServiceScales`), and
+  instruments past their due date (the D-114 rule). They were on QA's bell and the Calibration screen only. Each opens
+  Calibration; nothing is signed from the list (the disposition is password-signed on the record, D-195).
+- `verify:calexport` (18).
