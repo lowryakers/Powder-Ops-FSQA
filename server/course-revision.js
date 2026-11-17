@@ -15,6 +15,7 @@
 // not caught up.
 import { logAudit } from './db.js';
 import { assignTraining } from './training-assign.js';
+import { createSessionDraft } from './training-session-drafts.js';
 import { TRAINEE_RECORD_SQL } from './trainees.js';
 import { sameRevision, isApprovedStatus } from '../shared/document-revision.js';
 import { courseNeedsUpdate } from './document-revisions.js';
@@ -106,6 +107,11 @@ export function markCourseRevision(db, course, { kind, note, actor, due_date = n
         reason: `Retraining: ${doc?.doc_number || doc?.title || 'document'} revision ${revision}`,
       });
       created = out.created || []; skipped = out.skipped || [];
+      // The session the trainer will record for them, filled in ahead (D-352).
+      try {
+        createSessionDraft(db, { course, revision, people, actor,
+          reason: `Retraining on ${doc?.doc_number || doc?.title || 'the document'} revision ${revision}` });
+      } catch (e) { console.warn('[session-draft]', e.message); }
     }
   }
   logAudit(actor, 'update', 'training_course', course.id,

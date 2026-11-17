@@ -26,6 +26,7 @@ import { gateSignature, signatureEvidence } from '../signature.js';
 import { renderTrainingRecordPdf } from '../training-record-pdf.js';
 import { courseRoster, renderCourseRosterPdf } from '../training-course-roster.js';
 import { plantDateOf } from '../plant-clock.js';
+import { openSessionDrafts, markSessionDraftUsed, dismissSessionDraft } from '../training-session-drafts.js';
 import { markCourseRevision, stampLinkedRevision, CourseRevisionError, MARK_KINDS } from '../course-revision.js';
 import { isApprovedStatus, sameRevision } from '../../shared/document-revision.js';
 import { trainingFieldErrors, competenceStatement, competenceMissing, COMPETENCE_REQUIRED_MSG, externalProblem, EXTERNAL_MEANING,
@@ -488,12 +489,13 @@ router.post('/bulk-complete', (req, res) => {
         training_date: training_date || completion, completion_date: completion,
         score, passed: score == null ? true : score >= pass,
         sop_revision: sopRevision, language: language || null, competence_signed: signed,
-        dcr_id: dcr.id, session_id: sessionId, ...who,
+        dcr_id: dcr.id, session_id: sessionId, document_url: req.body.document_url || null, ...who,
       });
       ids.push(rec.id);
       created++;
     }
     db.prepare('UPDATE training_sessions SET attendee_count = ? WHERE id = ?').run(created, sessionId);
+    if (req.body.draft_id) markSessionDraftUsed(db, req.body.draft_id, sessionId, req.user);
   });
   tx();
   logAudit(req.user, 'training_group_completed', 'training', sessionId, { course_id, count: created, session_id: sessionId, ...(skipped.length ? { skipped } : {}),
@@ -501,6 +503,14 @@ router.post('/bulk-complete', (req, res) => {
   // ids are returned so the client can attach the signed sign-in sheet to
   // every record it just created in one upload.
   res.json({ created, ids, skipped, session_id: sessionId });
+});
+
+// Group sessions waiting to be recorded, filled in with who owes them (D-352).
+router.get('/session-drafts', (req, res) => res.json(openSessionDrafts(getDb())));
+router.post('/session-drafts/:id/dismiss', (req, res) => {
+  const out = dismissSessionDraft(getDb(), req.params.id, req.body?.reason, req.user);
+  if (out.error) return res.status(out.status).json({ error: out.error });
+  res.json(out);
 });
 
 // Training sessions, newest first, each with who attended (D-264). "Show me the

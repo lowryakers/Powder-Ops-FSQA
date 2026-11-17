@@ -5178,6 +5178,24 @@ function runMigrations() {
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`);
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_training_session ON training_records(session_id)'); } catch { /* ignore */ }
+  // A group session waiting to be recorded (D-352): raised when a course is marked
+  // updated for a document's new revision, filled in with the people who owe it.
+  // It is never a record — training_records only gain rows when it is recorded.
+  db.exec(`CREATE TABLE IF NOT EXISTS training_session_drafts (
+    id TEXT PRIMARY KEY,
+    course_id TEXT NOT NULL,
+    sop_id TEXT,
+    sop_revision TEXT,
+    people TEXT NOT NULL DEFAULT '[]',
+    reason TEXT,
+    status TEXT NOT NULL DEFAULT 'open',
+    session_id TEXT,
+    closed_by TEXT,
+    closed_at TEXT,
+    close_reason TEXT,
+    created_by TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
   addColumnIfMissing('training_tests', 'sop_revision', 'TEXT');
   addColumnIfMissing('sop_documents', 'training_revision', 'TEXT');
   addColumnIfMissing('sop_versions', 'minor', 'INTEGER NOT NULL DEFAULT 0');

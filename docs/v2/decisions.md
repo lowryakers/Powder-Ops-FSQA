@@ -11042,3 +11042,18 @@ Supersedes D-337's "a GMP certificate only (GFSI alone does not count)".
   says where it went with an "Open Records" button.
 - Adds a rule on saving a record, so it waits for Lowry's review (D-274). `verify:trainingroster` (30; on main the
   several-names POST is a 201 and the roster routes 404).
+
+## D-352 — Training has one way in: several names are a group session, a new revision fills one in, a phone opens on three buttons (17 Nov 2026)
+D-351 refused several names on Log Completion and pointed to Group Training — two doors for one act. Now:
+- **Several names typed into Log Completion record ONE group session**, a record each, through `POST /training/bulk-complete`
+  (the Group Training door, one password). Each name must match an account (`splitPeople`); a name with no account is
+  shown in amber and Save waits. No score (a score is one person's) and no outside training (per person, with a
+  certificate). `POST /training` itself still refuses several names (D-351) — the FORM converts, the server rule stands.
+- **A group session filled in ahead** (`training_session_drafts`, `server/training-session-drafts.js`): written when a
+  course is marked updated for its document's new revision — the moment people come to owe it (D-277), not at approval,
+  because until the course is marked nobody owes it. Filled with `retrainingAudience`; one open draft per course and
+  revision. "Sessions waiting to be recorded" on Training → **Record it** opens Group Training ticked; recording sends
+  `draft_id` and closes it. **A draft is never a record.** "Not needed" needs a reason.
+- **On a phone, Training opens on Log training · Records · Who's trained** (`data-training-short-menu`); the tabs and
+  the header tools are behind "All tabs and tools".
+- `bulk-complete` now stores `document_url` on each record. `verify:trainingoneway` (20).

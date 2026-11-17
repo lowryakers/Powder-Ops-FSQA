@@ -108,9 +108,10 @@ for (const width of [1280, 390]) {
     await page.getByRole('button', { name: /Log Completion/ }).click();
     await page.waitForTimeout(500);
     await page.getByPlaceholder('Start typing a name…').fill('Quentin Assure, Penny Buyer');
-    t('the form says several people is a Group Training job', await page.locator('[data-name-several]').count() === 1);
-    t('…offers to open it', await page.locator('[data-use-group]').count() === 1);
-    t('…and Save waits', await page.locator('[data-save-completion]').isDisabled());
+    // D-352: several real names now read as one group session, a record each.
+    t('the form reads several people as a group session', await page.locator('[data-name-group="ok"]').count() === 1);
+    t('…naming each person', await page.locator('[data-group-person="ok"]').count() === 2);
+    t('…and Save waits for the competence tick', await page.locator('[data-save-completion]').isDisabled());
     await page.getByPlaceholder('Start typing a name…').fill('Quentin Ghost');
     t('a name nobody holds says to pick from the list', await page.locator('[data-name-unknown]').count() === 1);
     await page.goto(`${URL}/?tab=training&view=courses`);
