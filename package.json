@@ -164,6 +164,7 @@
     "verify:botnoapprove": "VERIFY_ONLY=verify-bot-no-approve.mjs node scripts/verify-all.mjs",
     "verify:part11": "VERIFY_ONLY=verify-part11.mjs node scripts/verify-all.mjs",
     "verify:guarantee": "VERIFY_ONLY=verify-guarantee.mjs node scripts/verify-all.mjs",
+    "verify:trainingroster": "VERIFY_ONLY=verify-training-roster.mjs node scripts/verify-all.mjs",
     "verify:gmpcert": "VERIFY_ONLY=verify-gmp-cert.mjs node scripts/verify-all.mjs",
     "verify:suppliermaterials": "VERIFY_ONLY=verify-supplier-materials.mjs node scripts/verify-all.mjs",
     "verify:suppliertoken": "VERIFY_ONLY=verify-supplier-token.mjs node scripts/verify-all.mjs",

@@ -24,7 +24,8 @@ import { withSignature } from '../../lib/signature';
 const SIGN_COMPETENCE = { title: 'Sign off this training', detail: 'Your password is your signature: trained and competent' };
 import CourseRevision from './CourseRevision.jsx';
 import CourseDrafts from './CourseDrafts.jsx';
-import { passedQuiz, COMPETENCE_REQUIRED_MSG, externalProblem } from '../../../shared/training-record-fields.js';
+import CourseRosterModal from './CourseRoster';
+import { passedQuiz, COMPETENCE_REQUIRED_MSG, externalProblem, looksLikeSeveralPeople, SEVERAL_PEOPLE_MSG } from '../../../shared/training-record-fields.js';
 
 // Columns as data for the Records tab. Evidence and the actions cell have no
 // key — a link is not a value to order by.
@@ -527,7 +528,7 @@ function TrainingLogImportModal({ onClose, onDone }) {
 }
 
 // ── Completion modal ──────────────────────────────────────────────────────────
-function CompletionModal({ initial, courses, users, onClose, onSaved }) {
+function CompletionModal({ initial, courses, users, onClose, onSaved, onUseGroup }) {
   const today = localDateStr();
   const [form, setForm] = useState(() => initial
     ? { ...initial, competence_confirmed: !!initial.competence_statement, external_training: !!initial.external_training,
@@ -553,11 +554,18 @@ function CompletionModal({ initial, courses, users, onClose, onSaved }) {
   const needsTick = ext ? (!form.competence_confirmed || !!extProblem)
     : (!isFail && !passedQuiz(form, passMark) && !form.competence_confirmed);
 
+  // One record is one person with an account (D-351). The server refuses the
+  // rest; the form says so before Save, and points a group to Group Training.
+  const typedName = String(form.employee_name || '').trim();
+  const nameMatch = (users || []).find(u => u.is_active !== 0 && u.name.toLowerCase() === typedName.toLowerCase());
+  const nameUnchanged = !!initial?.id && typedName === String(initial.employee_name || '').trim();
+  const nameState = !typedName ? 'empty' : nameMatch || nameUnchanged ? 'ok' : looksLikeSeveralPeople(typedName) ? 'several' : 'unknown';
+
   const submit = async (e) => {
     e.preventDefault();
     setSaving(true); setError('');
     try {
-      const match = (users || []).find(u => u.name.toLowerCase() === form.employee_name.trim().toLowerCase());
+      const match = nameMatch;
       // The date recorded and who recorded it are the server's (D-264): never sent.
       const { recorded_by: _rb, recorded_by_id: _rbi, created_at: _c, updated_at: _u, session_id: _s, ...rest } = form;
       const payload = { ...rest, employee_user_id: match?.id || rest.employee_user_id || null, status: 'completed' };
@@ -587,6 +595,15 @@ function CompletionModal({ initial, courses, users, onClose, onSaved }) {
             <input required list="tr-users" value={form.employee_name} onChange={e => set('employee_name', e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Start typing a name…" />
             <datalist id="tr-users">{(users || []).map(u => <option key={u.id} value={u.name} />)}</datalist>
+            {nameState === 'several' && (
+              <div className="mt-1 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5" data-name-several>
+                {SEVERAL_PEOPLE_MSG}
+                {onUseGroup && <button type="button" onClick={onUseGroup} data-use-group className="ml-1 font-medium text-powder-700 underline">Open Group Training</button>}
+              </div>
+            )}
+            {nameState === 'unknown' && (
+              <p className="mt-1 text-xs text-amber-800" data-name-unknown>Pick the person from the list — "{typedName}" is not anyone with a ReadyDoc account.</p>
+            )}
           </div>
           <div className="col-span-2">
             <label className="block text-xs font-medium text-gray-700 mb-1">Course *</label>
@@ -653,7 +670,7 @@ function CompletionModal({ initial, courses, users, onClose, onSaved }) {
         {ext && !extLocked && extProblem && <p className="text-xs text-amber-700" data-external-missing>{extProblem}</p>}
         {error && <p className="text-sm text-red-600">{error}</p>}
         <div className="flex gap-2">
-          <button type="submit" disabled={saving || needsTick} data-save-completion
+          <button type="submit" disabled={saving || needsTick || nameState !== 'ok'} data-save-completion
             title={needsTick ? (ext ? (extProblem || 'Tick the statement to sign it.') : COMPETENCE_REQUIRED_MSG) : undefined}
             className="flex-1 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">{saving ? 'Saving…' : 'Save completion'}</button>
           <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Cancel</button>
@@ -1692,6 +1709,9 @@ export default function TrainingPanel() {
     () => (courses || []).filter(c => c.has_practical && c.active !== 0), [courses]);
   const TABS = useMemo(() => [
     { id: 'matrix', label: 'Compliance Matrix' },
+    // Second, not seventh (D-351): on a phone the strip scrolls and Records sat
+    // off the edge, so a logged record looked like it had gone nowhere.
+    { id: 'records', label: 'Records' },
     // Turned ninety degrees from the matrix: the grid answers "where does the
     // plant stand", this answers "what does Diana owe", which is the question
     // Document Control is actually asked.
@@ -1701,7 +1721,6 @@ export default function TrainingPanel() {
     { id: 'courses', label: 'Courses' },
     // New versions staged by the Quality bot, published by two people (D-278).
     { id: 'drafts', label: 'Course drafts' },
-    { id: 'records', label: 'Records' },
     // One row per training session, with who attended (D-264).
     { id: 'sessions', label: 'Sessions' },
     // Each attempt question by question (D-144): the reviewer could see a
@@ -1752,8 +1771,12 @@ export default function TrainingPanel() {
   const [assigning, setAssigning] = useState(false);
   const [course, setCourse] = useState(null);
   const [testCourse, setTestCourse] = useState(null);
+  const [rosterCourse, setRosterCourse] = useState(null);
   const [search, setSearch] = useState('');
   const [flash, setFlash] = useState('');
+  // A saved record says where it went (D-351): the Records tab is off the edge of a phone's tab strip.
+  const [flashToRecords, setFlashToRecords] = useState(false);
+  const savedNotice = (text) => { setFlash(text); setFlashToRecords(true); setTimeout(() => { setFlash(''); setFlashToRecords(false); }, 8000); };
 
   // Debounced — a keystroke should not be a query, but the settled term must
   // reach the server (see the note on the records fetch above).
@@ -1935,6 +1958,10 @@ export default function TrainingPanel() {
               <p className="text-[11px] text-gray-400 mt-2">
                 Required: {c.required_roles.length === 0 && c.required_departments.length === 0 ? 'all staff' : [...c.required_roles, ...c.required_departments].join(', ')}
               </p>
+              <button type="button" onClick={() => setRosterCourse(c)} data-roster-open={c.id}
+                className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-powder-700 hover:underline">
+                <Users size={13} /> Who's trained — list and PDF
+              </button>
             </div>
           ))}
         </div>
@@ -2029,16 +2056,28 @@ export default function TrainingPanel() {
       {importing && <ImportModal onClose={() => setImporting(false)} onDone={refreshAll} />}
       {importingLog && <TrainingLogImportModal onClose={() => setImportingLog(false)} onDone={refreshAll} />}
       {importingScans && <ScannedTestsImportModal onClose={() => setImportingScans(false)} onDone={refreshAll} />}
-      {completion && <CompletionModal initial={completion.id ? completion : null} courses={courses} users={users} onClose={() => setCompletion(null)} onSaved={() => { setCompletion(null); refreshAll(); }} />}
+      {completion && <CompletionModal initial={completion.id ? completion : null} courses={courses} users={users} onClose={() => setCompletion(null)}
+        onUseGroup={() => { setCompletion(null); setGroupTraining(true); }}
+        onSaved={() => { const isNew = !completion.id; setCompletion(null); refreshAll();
+          if (isNew) savedNotice('Training record saved. It is listed under Records, and under the person in By person.'); }} />}
       {course && <CourseModal initial={course.id ? course : null} onClose={() => setCourse(null)} onSaved={() => { setCourse(null); refreshCourses(); refreshMatrix(); }} />}
+      {rosterCourse && <CourseRosterModal course={rosterCourse} onClose={() => setRosterCourse(null)} />}
       {testCourse && <TestEditor course={testCourse} aiEnabled={aiOn} onClose={() => setTestCourse(null)} onSaved={() => { setTestCourse(null); refreshCourses(); }} />}
       {assigning && <AssignModal courses={courses} users={users} onClose={() => setAssigning(false)}
         onAssigned={(res) => { refreshAll(); setFlash(`Assigned to ${res.created.length} ${res.created.length === 1 ? 'person' : 'people'}.`); setTimeout(() => setFlash(''), 5000); }} />}
-      {groupTraining && <GroupTrainingModal courses={courses} users={users} onClose={() => setGroupTraining(false)} onSaved={(n, sheet) => { setGroupTraining(false); refreshAll(); setFlash(`Recorded ${n} completion${n === 1 ? '' : 's'}${sheet ? ' with the sign-in sheet attached' : ''}.`); setTimeout(() => setFlash(''), 5000); }} />}
+      {groupTraining && <GroupTrainingModal courses={courses} users={users} onClose={() => setGroupTraining(false)} onSaved={(n, sheet) => { setGroupTraining(false); refreshAll(); savedNotice(`Recorded ${n} completion${n === 1 ? '' : 's'}${sheet ? ' with the sign-in sheet attached' : ''}.`); }} />}
       {preview && <FilePreview items={[preview]} index={0} onClose={() => setPreview(null)} />}
       {bulkSheets && <GroupSheetBulkModal courses={courses} users={users} onClose={() => setBulkSheets(false)}
         onDone={(n) => { setBulkSheets(false); refreshAll(); setFlash(`Filed ${n} training record${n === 1 ? '' : 's'} from the sign-in sheets.`); setTimeout(() => setFlash(''), 6000); }} />}
-      {flash && <div className="fixed bottom-4 right-4 z-50 bg-green-600 text-white text-sm px-4 py-2 rounded-lg shadow-lg">{flash}</div>}
+      {flash && (
+        <div className="fixed bottom-4 left-4 right-4 sm:left-auto z-50 bg-green-600 text-white text-sm px-4 py-2 rounded-lg shadow-lg flex items-center gap-3 flex-wrap" data-training-flash>
+          <span>{flash}</span>
+          {flashToRecords && view !== 'records' && (
+            <button type="button" data-flash-records onClick={() => { setView('records'); setFlash(''); setFlashToRecords(false); }}
+              className="font-semibold underline">Open Records</button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

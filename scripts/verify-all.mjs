@@ -248,6 +248,7 @@ const RUNS = [
   ['verify-document-pdf.mjs', 5198, { DOCPDF_PORT: '5199' }, false],
   ['verify-doc-qa-review.mjs', 5202, { DOCQA_PORT: '5203' }, false],
   ['verify-pto-plan.mjs', 5204],
+  ['verify-training-roster.mjs', 5221],
 ];
 
 // VERIFY_ONLY=verify-auth.mjs,verify-swab-stock.mjs runs just the entries that
