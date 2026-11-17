@@ -126,3 +126,18 @@ export function externalProblem(r) {
   if (!String(r.document_url || r.certificate_url || '').trim()) return 'Attach the certificate — external training is recorded from its certificate.';
   return null;
 }
+
+/**
+ * Does a typed employee name look like SEVERAL people (D-351)? The one-person
+ * record form saved "Maria Servin, Diana Quishpe, Adam Bliss" as one employee
+ * that no account matches, so the record counted for nobody. A comma, semicolon,
+ * slash, "&" or " and " between words reads as a list. Only used to word the
+ * refusal: the server decides by whether the name is an account.
+ */
+export function looksLikeSeveralPeople(name) {
+  const s = String(name || '').trim();
+  if (!s) return false;
+  return /[;,/&+]|\s(and|y)\s/i.test(s) && s.split(/[;,/&+]|\s(?:and|y)\s/i).filter(p => p && p.trim().split(/\s+/).length >= 2).length >= 2;
+}
+
+export const SEVERAL_PEOPLE_MSG = 'That is several people. One record is one person — use Group Training to record a session for several people at once.';

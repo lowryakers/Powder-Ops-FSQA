@@ -11023,3 +11023,22 @@ Supersedes D-337's "a GMP certificate only (GFSI alone does not count)".
   (including a legacy name, case aside) is 409 `SUPPLIER_EXISTS` with the existing id. A type is required while we buy
   from it. Approval still waits for the certificate and the banned-list check.
 - Carol's test record and the Supplier "How this works" guide name both certificate types. `verify:gmpcert` (65).
+
+## D-351 — One training record is one person; who was trained on a course is one list and one PDF (17 Nov 2026)
+- **Why:** Daniela logged SOP 404 training for QA and Purchasing by typing "Maria Servin, Diana Quishpe, Adam Bliss" into the
+  one-person Log Completion form. It saved as ONE employee nobody is, so it counted for none of them. And Carol's last piece of
+  evidence for the supplier-audit CAR ("QA and Purchasing were trained on SOP 404") had no page to show it.
+- **The name check (`resolveTrainee` in `api/training.js`, `looksLikeSeveralPeople` in `shared/training-record-fields.js`):**
+  `POST /training` files a record only for an active, non-guest account, found by id or by exact name / sign-in name (case
+  aside), stored under the account's own spelling. A list of names is `400 SEVERAL_PEOPLE` (pointing to Group Training), an
+  unknown name `NOT_AN_EMPLOYEE`, two accounts with one name `NAME_AMBIGUOUS`, a bot `NOT_A_TRAINEE`. `PUT` asks only when the
+  name or account changes, so an imported record under a former employee's name still takes an edit. The form says the same
+  thing before Save and offers "Open Group Training".
+- **Who's trained (`server/training-course-roster.js`, `GET /training/courses/:id/roster[.pdf]?departments=`):** read only.
+  State per person is `cellFor` — the matrix's own walk. With departments picked, EVERYONE in them is listed, trained or not;
+  a person outside the course's audience who was trained shows as trained. Each line: date, how, revision, who signed and when.
+  Button "Who's trained — list and PDF" on every course card.
+- **Findability:** Records is the second Training tab (it was seventh, off the edge of a phone), and a saved record or group
+  says where it went with an "Open Records" button.
+- Adds a rule on saving a record, so it waits for Lowry's review (D-274). `verify:trainingroster` (30; on main the
+  several-names POST is a 201 and the roster routes 404).

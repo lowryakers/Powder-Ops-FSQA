@@ -24,10 +24,12 @@ import { certificationFor, certificationRoster } from '../training-certification
 import { questionMisses } from '../training-misses.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
 import { renderTrainingRecordPdf } from '../training-record-pdf.js';
+import { courseRoster, renderCourseRosterPdf } from '../training-course-roster.js';
 import { plantDateOf } from '../plant-clock.js';
 import { markCourseRevision, stampLinkedRevision, CourseRevisionError, MARK_KINDS } from '../course-revision.js';
 import { isApprovedStatus, sameRevision } from '../../shared/document-revision.js';
-import { trainingFieldErrors, competenceStatement, competenceMissing, COMPETENCE_REQUIRED_MSG, externalProblem, EXTERNAL_MEANING } from '../../shared/training-record-fields.js';
+import { trainingFieldErrors, competenceStatement, competenceMissing, COMPETENCE_REQUIRED_MSG, externalProblem, EXTERNAL_MEANING,
+  looksLikeSeveralPeople, SEVERAL_PEOPLE_MSG } from '../../shared/training-record-fields.js';
 import { renderCertificate } from '../certificate-pdf.js';
 import {
   CourseDraftError, SIGN_ROLES, createDraft, updateDraft, addDraftMaterials, getDraft, draftView, listDrafts,
@@ -353,6 +355,30 @@ function lacksCompetence(r, passMark) {
   return competenceMissing(r, passMark);
 }
 
+/**
+ * The person a one-person training record is for (D-351): an active employee
+ * account, found by id, else by exact name or sign-in name (case aside), and
+ * only when one account matches. A list of names, or a name nobody holds, is
+ * refused — a record for "Maria, Diana, Adam" counts for none of them.
+ * Returns { user } or { error, code }.
+ */
+function resolveTrainee(db, { employee_user_id, employee_name }) {
+  const active = `is_active = 1 AND COALESCE(is_external, 0) = 0`;
+  if (employee_user_id) {
+    const u = db.prepare(`SELECT id, name, COALESCE(not_trainee, 0) AS not_trainee FROM users WHERE id = ? AND ${active}`).get(employee_user_id);
+    if (u) return u.not_trainee ? { error: `${u.name} is not counted as a trainee (a bot or system account).`, code: 'NOT_A_TRAINEE' } : { user: u };
+  }
+  const name = String(employee_name || '').trim();
+  const hits = name ? db.prepare(`SELECT id, name, COALESCE(not_trainee, 0) AS not_trainee FROM users
+    WHERE ${active} AND (LOWER(name) = LOWER(?) OR LOWER(username) = LOWER(?))`).all(name, name) : [];
+  if (hits.length === 1) {
+    return hits[0].not_trainee ? { error: `${hits[0].name} is not counted as a trainee (a bot or system account).`, code: 'NOT_A_TRAINEE' } : { user: hits[0] };
+  }
+  if (hits.length > 1) return { error: `More than one account is called "${name}". Pick the person from the list.`, code: 'NAME_AMBIGUOUS' };
+  if (looksLikeSeveralPeople(name)) return { error: SEVERAL_PEOPLE_MSG, code: 'SEVERAL_PEOPLE' };
+  return { error: `"${name}" is not anyone with a ReadyDoc account. Pick the person from the list.`, code: 'NOT_AN_EMPLOYEE' };
+}
+
 router.post('/', (req, res) => {
   const db = getDb();
   if (!req.body.employee_name || (!req.body.training_topic && !req.body.course_id)) {
@@ -360,9 +386,13 @@ router.post('/', (req, res) => {
   }
   const errors = trainingFieldErrors(req.body, plantDateOf());
   if (errors.length) return res.status(400).json({ error: errors.join(' ') });
+  // One record is one person who works here (D-351).
+  const who = resolveTrainee(db, req.body);
+  if (who.error) return res.status(400).json({ error: who.error, code: who.code });
   const dcr = dcrOrError(db, req.body.dcr_id);
   if (dcr.error) return res.status(400).json({ error: dcr.error });
-  const { recorded_by: _rb, recorded_by_id: _rbi, session_id: _s, ...body } = req.body;
+  const { recorded_by: _rb, recorded_by_id: _rbi, session_id: _s, ...rest } = req.body;
+  const body = { ...rest, employee_user_id: who.user.id, employee_name: who.user.name };
   // A quiz attempt named as proof must be this person's pass at this course (D-276).
   const attemptErr = (body.status || 'completed') === 'completed' ? attemptProblem(db, body.test_attempt_id, body) : null;
   if (attemptErr) return res.status(400).json({ error: attemptErr, code: 'ATTEMPT_MISMATCH' });
@@ -623,6 +653,15 @@ router.put('/:id', (req, res) => {
   // silently dropped, so a client that sends them learns they did not save.
   for (const k of ['recorded_by', 'recorded_by_id', 'created_at', 'session_id']) {
     if (b[k] !== undefined && b[k] !== existing[k]) return res.status(400).json({ error: `${k.replace(/_/g, ' ')} is set by ReadyDoc and cannot be edited.`, code: 'SYSTEM_SET' });
+  }
+  // Moving a record to another person goes through the same name check (D-351);
+  // a record imported under a name with no account keeps it until somebody changes it.
+  const nameMoved = (b.employee_name !== undefined && String(b.employee_name).trim() !== String(existing.employee_name || '').trim())
+    || (b.employee_user_id !== undefined && b.employee_user_id && b.employee_user_id !== existing.employee_user_id);
+  if (nameMoved) {
+    const who = resolveTrainee(db, { employee_user_id: b.employee_user_id !== existing.employee_user_id ? b.employee_user_id : null, employee_name: b.employee_name ?? existing.employee_name });
+    if (who.error) return res.status(400).json({ error: who.error, code: who.code });
+    req.body.employee_user_id = who.user.id; req.body.employee_name = who.user.name;
   }
   const dcr = b.dcr_id !== undefined ? dcrOrError(db, b.dcr_id) : { id: existing.dcr_id };
   if (dcr.error) return res.status(400).json({ error: dcr.error });
@@ -1989,6 +2028,20 @@ router.get('/courses/:id/certification', (req, res) => {
   });
   if (!cert) return res.status(404).json({ error: 'No certification for this course and person.' });
   res.json(cert);
+});
+
+// Who was trained on one course, on one page (D-351). `?departments=qa,purchasing`
+// lists everyone in those departments, trained or not. Read only.
+const rosterDepartments = (req) => String(req.query.departments || '').split(',').map(s => s.trim()).filter(Boolean);
+router.get('/courses/:id/roster', (req, res) => {
+  const roster = courseRoster(getDb(), req.params.id, { departments: rosterDepartments(req) });
+  if (!roster) return res.status(404).json({ error: 'Course not found' });
+  res.json(roster);
+});
+router.get('/courses/:id/roster.pdf', (req, res) => {
+  const roster = courseRoster(getDb(), req.params.id, { departments: rosterDepartments(req) });
+  if (!roster) return res.status(404).json({ error: 'Course not found' });
+  renderCourseRosterPdf(res, roster);
 });
 
 /**

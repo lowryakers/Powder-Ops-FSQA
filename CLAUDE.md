@@ -6715,6 +6715,14 @@ are never open. The audit row stays `bot_sop_write` and adds `doc_type` + `grant
 - A live course file's object is purged only when no live or draft row still points at it.
 - `verify:coursedrafts` (56; control fails from the first upload).
 
+## One training record is one person; "Who's trained" lists a course by department (D-351)
+- **`POST /training` files only for an active employee account** (`resolveTrainee`: id, else exact name/sign-in name, one
+  match) and stores the account's spelling. A list of names is `400 SEVERAL_PEOPLE` → Group Training. `PUT` asks only when the
+  name changes. **A verify that files a record must name a real fixture account.**
+- `GET /training/courses/:id/roster[.pdf]?departments=` (`server/training-course-roster.js`) reads `cellFor`, never a second
+  rule; with departments, everyone in them is listed, trained or not. Records is the second Training tab.
+  `verify:trainingroster` (30).
+
 ## A training record says how somebody was trained; one session records many (D-264)
 `shared/training-record-fields.js` (`METHODS`, `LEGACY_METHODS`, `LANGUAGES`, `competenceStatement`, `wantsCompetence`,
 `trainingFieldErrors`), `training_records.recorded_by` / `recorded_by_id` / `language` / `competence_statement` / `dcr_id`
