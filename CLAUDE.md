@@ -6723,6 +6723,13 @@ are never open. The audit row stays `bot_sop_write` and adds `doc_type` + `grant
   rule; with departments, everyone in them is listed, trained or not. Records is the second Training tab.
   `verify:trainingroster` (30).
 
+## Training has one way in (D-352)
+- **Several names on Log Completion = one group session** through `bulk-complete`, each name matched to an account.
+  `POST /training` still refuses several names (D-351); the form converts.
+- **`training_session_drafts`** (`server/training-session-drafts.js`): written by `markCourseRevision` when a course is
+  marked updated, filled with `retrainingAudience`. Never a record; `bulk-complete` with `draft_id` closes it.
+- **A phone opens Training on three buttons**; everything else is behind "All tabs and tools". `verify:trainingoneway` (20).
+
 ## A training record says how somebody was trained; one session records many (D-264)
 `shared/training-record-fields.js` (`METHODS`, `LEGACY_METHODS`, `LANGUAGES`, `competenceStatement`, `wantsCompetence`,
 `trainingFieldErrors`), `training_records.recorded_by` / `recorded_by_id` / `language` / `competence_statement` / `dcr_id`

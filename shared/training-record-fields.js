@@ -140,4 +140,9 @@ export function looksLikeSeveralPeople(name) {
   return /[;,/&+]|\s(and|y)\s/i.test(s) && s.split(/[;,/&+]|\s(?:and|y)\s/i).filter(p => p && p.trim().split(/\s+/).length >= 2).length >= 2;
 }
 
+/** The names in a box someone typed several people into, trimmed, blanks dropped (D-352). */
+export function splitPeople(text) {
+  return String(text || '').split(/[;,/&+\n]|\s(?:and|y)\s/i).map(p => p.trim()).filter(Boolean);
+}
+
 export const SEVERAL_PEOPLE_MSG = 'That is several people. One record is one person — use Group Training to record a session for several people at once.';
