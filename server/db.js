@@ -5509,6 +5509,16 @@ function runMigrations() {
   // D-336: how a message was posted — 'session' (a person) or 'token' (a bot).
   // NULL on everything older; nothing reads a NULL as a person (no back-compute).
   addColumnIfMissing('chat_messages', 'posted_via', 'TEXT');
+  // D-355: a message MOVED to another channel. The original stays where it was
+  // and points at its new home (shown as "moved to #hr"); the moved copy keeps
+  // its author and says where it came from. `tracked` is an item someone has to
+  // close: open until resolved, with who closed it and how.
+  for (const [col, def] of [
+    ['moved_to_message_id', 'TEXT'], ['moved_to_channel_id', 'TEXT'], ['moved_by', 'TEXT'], ['moved_at', 'TEXT'],
+    ['moved_from_message_id', 'TEXT'], ['moved_from_channel_id', 'TEXT'], ['moved_from_kind', 'TEXT'],
+    ['original_created_at', 'TEXT'], ['moved_note', 'TEXT'],
+    ['tracked', 'INTEGER NOT NULL DEFAULT 0'], ['resolved_at', 'TEXT'], ['resolved_by', 'TEXT'], ['resolved_note', 'TEXT'],
+  ]) addColumnIfMissing('chat_messages', col, def);
   // D-336: a bot's structured approval ask in #ops-requests, and the approver's
   // recognised reply. The ask id is the server's; `excluded` is set from the
   // category by the server. A recognition is voided, never deleted, when its

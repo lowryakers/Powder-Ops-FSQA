@@ -6,10 +6,11 @@ import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/use
 import { getSocket } from '../../lib/socket';
 import { setAppBadge } from '../../lib/appBadge';
 import { notifyDataChanged } from '../../lib/dataChanged';
-import { canDeleteMessage, canEditMessage } from '../../../shared/comms-permissions.js';
+import { formatDateTime } from '../../lib/datetime.js';
+import { canDeleteMessage, canEditMessage, canMoveMessage } from '../../../shared/comms-permissions.js';
 import ChangePasswordModal from '../common/ChangePasswordModal.jsx';
 import InstallHelp from '../InstallHelp.jsx';
-import { Share2, Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink, Columns2, Clock, Film, Forward, Mic, Camera, CornerUpLeft, CornerDownRight, Pin, PinOff, KeyRound, Smartphone } from 'lucide-react';
+import { Share2, Hash, Lock, Send, Plus, X, MessageSquare, ArrowLeft, Smile, Edit2, Trash2, Paperclip, FileText, Download, Search, Loader2, Sparkles, Languages, Bell, BellOff, CalendarDays, Home, Settings, CheckCheck, Megaphone, UserPlus, UserMinus, Users, ChevronDown, ChevronRight, Check, LogOut, Copy, MoreVertical, ClipboardCheck, ExternalLink, Columns2, Clock, Film, Forward, Mic, Camera, CornerUpLeft, CornerDownRight, Pin, PinOff, KeyRound, Smartphone, FolderInput, CircleDot, CheckCircle2 } from 'lucide-react';
 import CommsSettings from './CommsSettings.jsx';
 import { shareFile as shareAttachment, canNativeShare } from '../../lib/shareFile.js';
 import NotificationStatus from './NotificationStatus.jsx';
@@ -1873,7 +1874,7 @@ function SheetRow({ icon: Icon, label, danger, act, onAction }) {
   );
 }
 
-function MessageActionSheet({ preview, mayEdit, mayDelete, canReply, canTranslate, translateLabel, canMarkUnread, onClose, onReact, onAction }) {
+function MessageActionSheet({ preview, mayEdit, mayDelete, canReply, canTranslate, translateLabel, canMarkUnread, canMove, canTrack, onClose, onReact, onAction }) {
   const [showAll, setShowAll] = useState(false);
   return (
     <div className="fixed inset-0 z-[80] flex flex-col justify-end md:hidden" onClick={e => { e.stopPropagation(); onClose(); }}>
@@ -1905,6 +1906,8 @@ function MessageActionSheet({ preview, mayEdit, mayDelete, canReply, canTranslat
           {canReply && <SheetRow icon={MessageSquare} label="Reply in thread" act="reply" onAction={onAction} />}
           <SheetRow icon={Copy} label="Copy text" act="copy" onAction={onAction} />
           <SheetRow icon={Forward} label="Forward to channel…" act="forward" onAction={onAction} />
+          {canMove && <SheetRow icon={FolderInput} label="Move to channel…" act="move" onAction={onAction} />}
+          {canTrack && <SheetRow icon={CircleDot} label="Track until resolved" act="track" onAction={onAction} />}
           <SheetRow icon={Clock} label="Remind me about this…" act="remind" onAction={onAction} />
           {canTranslate && <SheetRow icon={Languages} label={translateLabel || 'Translate'} act="translate" onAction={onAction} />}
           {canMarkUnread && <SheetRow icon={null} label="Mark unread from here" act="unread" onAction={onAction} />}
@@ -2041,6 +2044,92 @@ function ForwardModal({ m, onClose }) {
   );
 }
 
+// Move a message into another channel (D-355): it keeps its author and words,
+// says where it came from, and (by default) becomes an item somebody closes.
+// The original stays where it was, reading "moved to #…".
+function MoveModal({ m, onClose }) {
+  const { data: channels } = useApiGet('/comms/channels');
+  const [target, setTarget] = useState('');
+  const [track, setTrack] = useState(true);
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const list = (channels || []).filter(c => c.id !== m.channel_id && c.kind !== 'dm' && !String(c.name || '').startsWith('client--'));
+  const move = async () => {
+    if (!target) { setError('Pick a channel first.'); return; }
+    setBusy(true); setError('');
+    try {
+      await apiPost(`/comms/messages/${m.id}/move`, { channel_id: target, track, note: note.trim() });
+      window.dispatchEvent(new CustomEvent('comms-tracked-changed'));
+      onClose();
+    } catch (e) { setError(e.message); setBusy(false); }
+  };
+  return (
+    <div className="fixed inset-0 bg-black/40 z-[70] flex items-center justify-center p-4" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-4 space-y-3 max-h-[92vh] overflow-y-auto" data-move-modal>
+        <h3 className="font-semibold text-gray-900 text-sm flex items-center gap-2"><FolderInput size={16} className="text-powder-600" /> Move message</h3>
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-2.5">
+          <p className="text-[11px] text-gray-400 mb-0.5">{m.user_name}</p>
+          <p className="text-xs text-gray-700 line-clamp-3 whitespace-pre-wrap">{m.body || `(${m.attachments?.length || 0} attachment${m.attachments?.length === 1 ? '' : 's'})`}</p>
+        </div>
+        <select value={target} onChange={e => setTarget(e.target.value)} data-move-target
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+          <option value="">Move to…</option>
+          {list.map(c => <option key={c.id} value={c.id}>#{c.name}</option>)}
+        </select>
+        <label className="flex items-start gap-2 text-sm text-gray-700">
+          <input type="checkbox" className="mt-0.5 h-4 w-4 shrink-0" checked={track} onChange={e => setTrack(e.target.checked)} data-move-track />
+          <span>Keep it open until someone marks it resolved</span>
+        </label>
+        <input value={note} onChange={e => setNote(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Note (optional) — e.g. approved by Adam" />
+        <p className="text-[11px] text-gray-500">The person who sent it still sees it in the conversation, marked as moved. It is not deleted.</p>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <div className="flex gap-2">
+          <button onClick={move} disabled={busy || !target} data-move-go
+            className="flex-1 px-4 py-2 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 disabled:opacity-50">{busy ? 'Moving…' : 'Move'}</button>
+          <button onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// The open items in a channel (D-355): messages someone has to close.
+function TrackedStrip({ channelId, onJump }) {
+  const [rows, setRows] = useState([]);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    let live = true;
+    const load = async () => {
+      let r = [];
+      try { if (channelId) r = await apiFetch(`/comms/channels/${channelId}/tracked?state=open`); } catch { r = []; }
+      if (live) setRows(Array.isArray(r) ? r : []);
+    };
+    load();
+    window.addEventListener('comms-tracked-changed', load);
+    return () => { live = false; window.removeEventListener('comms-tracked-changed', load); };
+  }, [channelId]);
+  if (!rows.length) return null;
+  return (
+    <div className="border-b border-sky-200 bg-sky-50/70 shrink-0 px-3 py-1.5" data-tracked-strip>
+      <button type="button" onClick={() => setOpen(o => !o)} className="text-xs font-medium text-sky-900 flex items-center gap-1.5" data-tracked-toggle>
+        <CircleDot size={13} /> {rows.length} open item{rows.length === 1 ? '' : 's'} to resolve {open ? '▴' : '▾'}
+      </button>
+      {open && (
+        <ul className="mt-1 space-y-0.5 max-h-48 overflow-y-auto">
+          {rows.map(r => (
+            <li key={r.id}>
+              <button type="button" onClick={() => onJump(r.id)} className="text-left text-xs text-gray-700 hover:text-sky-800 w-full truncate" data-tracked-item={r.id}>
+                <span className="font-medium">{r.user_name}</span>: {String(r.body || '').slice(0, 90)}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 // A CACHED TRANSLATION BELONGS TO A VERSION OF THE TEXT, NOT TO A MESSAGE.
 // Keyed on the id alone, an edited message kept its pre-edit translation for
 // ever: the server drops its own cached row on edit, but the client had an
@@ -2123,6 +2212,18 @@ const Message = memo(function Message({ m, me, onReact, onUnreact, onEdit, onDel
   const [convert, setConvert] = useState(false); // message → compliance record
   const [remind, setRemind] = useState(false);   // Slack-style "remind me"
   const [fwd, setFwd] = useState(false);         // forward to another channel
+  const [moving, setMoving] = useState(false);   // move to another channel (D-355)
+  const mayMove = canMoveMessage(me) && !m.moved_to && !m.deleted;
+  const trackAct = async (kind) => {
+    let body = {};
+    if (kind === 'resolve') {
+      const note = window.prompt('How was it resolved? (optional)');
+      if (note === null) return;
+      body = { note };
+    }
+    try { await apiPost(`/comms/messages/${m.id}/${kind}`, body); window.dispatchEvent(new CustomEvent('comms-tracked-changed')); }
+    catch (e) { alert(e.message); }
+  };
   // Both from the ONE definition in shared/comms-permissions.js, which the
   // server's DELETE handler also imports — so what the menu offers and what the
   // server allows come from the same function and cannot drift.
@@ -2209,6 +2310,8 @@ const Message = memo(function Message({ m, me, onReact, onUnreact, onEdit, onDel
     else if (act === 'record') setConvert(true);
     else if (act === 'remind') setRemind(true);
     else if (act === 'forward') setFwd(true);
+    else if (act === 'move') setMoving(true);
+    else if (act === 'track') trackAct('track');
     else if (act === 'pin' && onPin) onPin(m, !m.pinned_at);
     else if (act === 'edit') { setDraft(m.body || ''); setEditing(true); }
     else if (act === 'delete') onDelete(m);
@@ -2252,6 +2355,18 @@ const Message = memo(function Message({ m, me, onReact, onUnreact, onEdit, onDel
         ) : (
           m.body && (
             <div>
+              {m.moved_to && (
+                <p className="text-[11px] text-sky-800 bg-sky-50 border border-sky-200 rounded px-1.5 py-0.5 mb-0.5 inline-block" data-moved-to>
+                  Moved to #{m.moved_to.channel_name || 'another channel'}{m.moved_to.by ? ` by ${m.moved_to.by}` : ''}
+                </p>
+              )}
+              {m.moved_from && (
+                <p className="text-[11px] text-gray-500 mb-0.5" data-moved-from>
+                  From {m.moved_from.kind === 'dm' ? 'a direct message' : `#${m.moved_from.channel_name || 'another channel'}`}
+                  {m.moved_from.original_created_at ? ` · sent ${formatDateTime(m.moved_from.original_created_at)}` : ''}
+                  {m.moved_from.by ? ` · moved by ${m.moved_from.by}` : ''}{m.moved_from.note ? ` — ${m.moved_from.note}` : ''}
+                </p>
+              )}
               {m.parent_id && m.also_in_channel && (onReply ? (
                 <button onClick={() => onReply({ id: m.parent_id, channel_id: m.channel_id })} data-also-label=""
                   className="block text-left text-[11px] text-gray-500 hover:text-powder-700 mb-0.5 max-w-full truncate">
@@ -2273,6 +2388,22 @@ const Message = memo(function Message({ m, me, onReact, onUnreact, onEdit, onDel
               {isAutoTranslated && <span className="text-[11px] text-gray-400 italic">translated</span>}
             </div>
           )
+        )}
+        {m.tracked && !m.deleted && (
+          <div className="mt-1 flex items-center gap-2 flex-wrap text-[11px]" data-tracked={m.tracked.state}>
+            {m.tracked.state === 'open' ? (
+              <>
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-900 font-medium"><CircleDot size={11} /> Open</span>
+                <button type="button" onClick={() => trackAct('resolve')} className="text-powder-700 font-medium hover:underline" data-resolve>Mark resolved</button>
+              </>
+            ) : (
+              <>
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-green-100 text-green-800 font-medium"><CheckCircle2 size={11} /> Resolved</span>
+                <span className="text-gray-500">{m.tracked.resolved_by}{m.tracked.resolved_at ? ` · ${formatDateTime(m.tracked.resolved_at)}` : ''}{m.tracked.note ? ` — ${m.tracked.note}` : ''}</span>
+                <button type="button" onClick={() => trackAct('reopen')} className="text-gray-500 hover:underline">Reopen</button>
+              </>
+            )}
+          </div>
         )}
         {!m.deleted && m.attachments?.length > 0 && (
           <div className="flex flex-wrap gap-2">
@@ -2333,6 +2464,8 @@ const Message = memo(function Message({ m, me, onReact, onUnreact, onEdit, onDel
               <MenuPortal style={menuStyle} onClose={closeMenu}>
                 <MenuRow icon={Copy} label="Copy text" act="copy" onAction={handleSheetAction} />
                 <MenuRow icon={Forward} label="Forward to channel…" act="forward" onAction={handleSheetAction} />
+                {mayMove && <MenuRow icon={FolderInput} label="Move to channel…" act="move" onAction={handleSheetAction} />}
+                {mayMove && !m.tracked && <MenuRow icon={CircleDot} label="Track until resolved" act="track" onAction={handleSheetAction} />}
                 <MenuRow icon={Clock} label="Remind me about this…" act="remind" onAction={handleSheetAction} />
                 {canTranslate && m.body && !translated && (
                   <MenuRow icon={Languages} label={`Translate to ${viewerLang === 'en' ? 'English' : 'Spanish'}`} act="translate" onAction={handleSheetAction} />
@@ -2353,11 +2486,13 @@ const Message = memo(function Message({ m, me, onReact, onUnreact, onEdit, onDel
       {convert && <ConvertRecordModal m={m} onClose={() => setConvert(false)} />}
       {remind && <RemindPicker m={m} onClose={() => setRemind(false)} />}
       {fwd && <ForwardModal m={m} onClose={() => setFwd(false)} />}
+      {moving && <MoveModal m={m} onClose={() => setMoving(false)} />}
       {sheet && !m.deleted && (
         <MessageActionSheet
           preview={`${m.user_name}: ${(displayBody || '').slice(0, 80)}`}
           mayEdit={mayEdit} mayDelete={mayDelete} canReply={!!onReply} canTranslate={canTranslate && !!m.body && !translated}
           translateLabel={`Translate to ${viewerLang === 'en' ? 'English' : 'Spanish'}`} canMarkUnread={!!onMarkUnread}
+          canMove={mayMove} canTrack={mayMove && !m.tracked}
           onClose={() => setSheet(false)}
           onReact={(e) => { setSheet(false); onReact(m, e); }}
           onAction={handleSheetAction}
@@ -4121,6 +4256,7 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
                 )}
               </div>
               <PinnedStrip pinned={pinnedMsgs} users={users} me={user} onUnpin={(p) => pinMsg(p, false)} />
+              <TrackedStrip channelId={activeId} onJump={queueMessage} />
               <div ref={scrollRef} onScroll={onMessagesScroll} data-msg-scroll="" className="relative flex-1 overflow-y-auto py-2"
                 onDragEnter={onDragEnterMsgs} onDragOver={onDragOverMsgs} onDragLeave={onDragLeaveMsgs} onDrop={onDropMsgs}>
                 {dropHover && (

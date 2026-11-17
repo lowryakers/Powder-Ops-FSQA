@@ -7078,6 +7078,11 @@ swipe sideways at fit to page, swipe down at fit to close, tap to hide the contr
   not offered where neither exists. Copy is on the thumbnail too.
 - `npm run verify:viewer` uploads a real PNG and PDF through the S3 stand-in and drives both layouts.
 
+## Moving a message to the channel it belongs in; open items (D-355)
+`POST /comms/messages/:id/move` (`canMoveMessage`: admin or office/HR; member of source and target; no DM or `client--`
+target; no token; once), `/track` `/resolve` `/reopen`, `GET /channels/:id/tracked`. **The original is never deleted** —
+it reads "Moved to #…". The copy keeps its author, `moved_from_*`, `original_created_at`. `verify:movemessage` (22).
+
 ## Comms: forward, voice notes, camera
 - **`POST /comms/messages/:id/forward`** `{channel_id, note?}` — access-checked on BOTH ends; refuses the
   same channel, a deleted message, and admin-post channels for non-admins. Posts an attribution line

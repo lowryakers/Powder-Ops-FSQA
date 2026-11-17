@@ -43,3 +43,17 @@ export function canDeleteMessage(user /* , message */) {
 export function canEditMessage(user, message) {
   return !!user && !!message && message.user_id === user.id;
 }
+
+/**
+ * Moving a message to another channel (D-355) — an admin, or the office / HR,
+ * who are the people DMs about time off, leaving early and "I have this issue"
+ * actually land on. Moving is filing: it takes the message out of a private
+ * conversation and puts it where it can be logged and closed. The server also
+ * requires the mover to be IN the source conversation (an admin may administer
+ * any) and a member of the channel it goes to, and refuses a bot token.
+ */
+export function canMoveMessage(user) {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  return ['office', 'hr'].includes(String(user.department || '').toLowerCase());
+}
