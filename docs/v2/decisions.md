@@ -11098,6 +11098,25 @@ file exists). What was asked now is built; the channels themselves are an admin'
   it. A channel with open items shows "N open items to resolve" under its header (`GET /channels/:id/tracked`). Every move,
   track, resolve and reopen is audited. `verify:movemessage` (22).
 
+## D-356 — The HR front door: every employee has "HR" in Messages, read by the HR team and nobody else (17 Nov 2026)
+Lowry's description (17 Nov): one place in Messages every employee can reach, type an HR issue, press send, be told it
+went to HR — and only the HR team (Lowry and Marnee today) reads it, to follow up, bring the employee in, or investigate.
+- **Not a shared channel with a filter. One private channel per employee**, `hr--<user id>` (`shared/hr-door.js`,
+  `server/hr-door.js`), members = that employee + the HR team. Built on private-channel machinery that already keeps
+  reads, search, Ask, sockets and pushes membership-scoped, so a shared channel's every path is not a new place to leak.
+- **Every employee sees "HR — private to the HR team" at the top of Messages** (made on first open, `GET /comms/hr-door`).
+  Their message is an open item (D-355) and ReadyBot answers "Sent to HR…" in EN/ES, once per half hour. A banner says
+  only the HR team reads it. The HR team gets an **HR inbox** section, one line per employee ("HR · Ema Worker"), and
+  answers in the same conversation.
+- **The HR team is a list an admin sets** (Messages → Settings → HR team, `hr_door_readers`); until set, admins + office/HR
+  supervisors. Saving re-syncs every conversation; boot does too. **An admin OFF the list cannot read one** (`canAccess`
+  no longer waves admins through an `hr--` channel) and the admin channel list leaves them out.
+- **Reserved family** like `client--`: never made, renamed, made public, archived, deleted or given members by hand; no
+  client (`is_external`) has one. **Move to → "HR"** (D-355) files a DM into the SENDER's own HR conversation; only the HR
+  team may, and a message never lands in another person's.
+- The existing private #HR channel with old messages is untouched — it can stay as the HR team's own room.
+- `verify:hrdoor` (36).
+
 ## D-357 — Employees: People, Onboarding, Time Tracking, Pay Tracking and Policies are one entry with tabs (17 Nov 2026)
 Five sidebar entries in Office were one job for Marnee. They are now **Employees**, a hub (`HUB_TABS.employees`) with tabs
 in the order a person moves through: **People → Onboarding → Time Tracking → Pay Tracking → Policies**.

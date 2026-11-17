@@ -187,6 +187,7 @@ import { recordBackfillNudge } from './server/qa-record-backfill.js';
 import { supplierReviewNudge } from './server/supplier-review.js';
 import { seedControlledForms } from './server/form-registry-seed.js';
 import { seedClientChannels, repairClientAccountNames } from './server/client-channel-seed.js';
+import { syncHrDoors } from './server/hr-door.js';
 import { cleanupDuplicateTasks } from './server/duplicate-task-cleanup.js';
 import { seedKnifeMasterlist } from './server/knife-seed.js';
 import { applyTruckChecklists } from './server/truck-checklists.js';
@@ -1399,6 +1400,9 @@ try {
   // Guarded by a marker in app_settings and never re-run, so removing somebody
   // from the channel — or archiving it — sticks.
   seedClientChannels(db);
+  // Every HR conversation holds its employee + the current HR team (D-356): an
+  // admin added or removed since the last boot is reflected here.
+  try { syncHrDoors(db); } catch (e) { console.warn('[hr-door] sync', e.message); }
   // The company out of the name and into its own column, for the accounts
   // created before it had one. The seed above is guarded and never re-runs, so
   // without this "Matt (M4 Dynamic)" keeps signing in as `Matt Dynamic)`.

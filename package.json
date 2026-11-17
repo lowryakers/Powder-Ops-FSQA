@@ -169,6 +169,7 @@
     "verify:trainingoneway": "VERIFY_ONLY=verify-training-oneway.mjs node scripts/verify-all.mjs",
     "verify:calexport": "VERIFY_ONLY=verify-calibration-export.mjs node scripts/verify-all.mjs",
     "verify:movemessage": "VERIFY_ONLY=verify-move-message.mjs node scripts/verify-all.mjs",
+    "verify:hrdoor": "VERIFY_ONLY=verify-hr-door.mjs node scripts/verify-all.mjs",
     "verify:peopleonboard": "VERIFY_ONLY=verify-people-onboarding.mjs node scripts/verify-all.mjs",
     "verify:gmpcert": "VERIFY_ONLY=verify-gmp-cert.mjs node scripts/verify-all.mjs",
     "verify:suppliermaterials": "VERIFY_ONLY=verify-supplier-materials.mjs node scripts/verify-all.mjs",

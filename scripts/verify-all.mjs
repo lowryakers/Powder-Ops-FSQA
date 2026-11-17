@@ -253,6 +253,7 @@ const RUNS = [
   ['verify-training-oneway.mjs', 5222],
   ['verify-calibration-export.mjs', 5223],
   ['verify-move-message.mjs', 5225],
+  ['verify-hr-door.mjs', 5226],
   ['verify-people-onboarding.mjs', 5224],
 ];
 
