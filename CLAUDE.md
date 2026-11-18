@@ -434,13 +434,18 @@ limit), `authenticateToken` in `middleware/auth.js`, `server/middleware/no-token
 
 ## The weekly payment run, part A (D-360, `server/payment-run.js`)
 `/api/payment-run` (AP Drop's `canWorkQueue`), Accounting → **Payment run** (`PaymentRunPanel.jsx`), `payment_must_pays`,
-`ap_drops.bill_class` / `_by` / `_at`, `payment_check_failed` events. Parts B–E (Danny's link, line + bank checks, after
-approval, production invoices) are still to come; **do not touch the Flavor Approvals module — copy its experience**.
+`ap_drops.bill_class` / `_by` / `_at`, `payment_check_failed` events. Parts C–E (line + bank checks, after approval,
+production invoices) are still to come; **do not touch the Flavor Approvals module — copy its experience**.
 - **The run is derived on read** from `in_qbo` bills with a QBO bill id; `evaluateBill` is the ONE check list. Fail =
   off the run; flag = ranked, highlighted before noted. **A new check goes in `evaluateBill`, nowhere else.**
 - **Class is suggested, stored only on a person's confirm** (never a token). Must-pays: admin list, retired not deleted.
 - Payroll weeks: every two weeks from `PAYROLL_ANCHOR` 2026-11-23 → run Friday 12:00; else Thursday.
 - `verify:paymentrun` (36).
+- **Part B (D-361, `server/payment-approval.js`)**: a run is FROZEN into `payment_runs` / `payment_run_lines` (no DELETE;
+  `payment_run_events` no UPDATE either). Danny's page is public `/pay/<token>` → `/api/payment-approval/:token` (hashed,
+  5 days, replaced on re-send/reminder, spent by the transfer). **ProDough owes = materials + production (part E) +
+  shortfall (expenses − the bank balance Lowry typed, shown only above 0)**; `owes()` is the one sum. Must-pays cannot be
+  unticked. Approving moves ticked bills to `in_payment_run`. Reminder Friday 10 AM, once. `verify:paymentapproval` (58).
 
 ## The Org Chart exports to a PDF (D-362)
 `GET /api/org/pdf` (`server/org-chart-pdf.js`, before `/:id`): page 1 the chart (leaf positions stacked under their

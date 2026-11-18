@@ -41,10 +41,10 @@ export const THRESHOLDS = Object.freeze({
 export const RECIPIENT_EMAIL = 'lowry@powder-ops.com';
 const DAY = 86400000;
 
-const addDays = (d, n) => new Date(Date.parse(`${d}T00:00:00Z`) + n * DAY).toISOString().slice(0, 10);
+export const addDays = (d, n) => new Date(Date.parse(`${d}T00:00:00Z`) + n * DAY).toISOString().slice(0, 10);
 const weekday = (d) => new Date(`${d}T00:00:00Z`).getUTCDay();
 export const mondayOf = (d) => addDays(d, -((weekday(d) + 6) % 7));
-const money = (n) => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+export const money = (n) => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /** A payroll week is every second week from Monday 23 Nov 2026. */
 export function isPayrollWeek(dateStr) {
@@ -248,17 +248,23 @@ export function evaluateBill(ctx, drop) {
 }
 
 /** Lines that are payable now: a bill entered in QuickBooks, not yet in a run or paid. */
+// A bill ticked on a frozen run that is still waiting (draft or sent) is that
+// run's, not the next one's (D-361). Unticked, or the run cancelled, it is back.
 export function eligibleBills(db) {
-  return db.prepare(`SELECT * FROM ap_drops WHERE status = 'in_qbo' AND qbo_bill_id IS NOT NULL AND TRIM(qbo_bill_id) <> ''
-    ORDER BY COALESCE(due_date, '9999') , created_at`).all();
+  return db.prepare(`SELECT * FROM ap_drops d WHERE d.status = 'in_qbo' AND d.qbo_bill_id IS NOT NULL AND TRIM(d.qbo_bill_id) <> ''
+    AND NOT EXISTS (SELECT 1 FROM payment_run_lines l JOIN payment_runs r ON r.id = l.run_id
+      WHERE l.drop_id = d.id AND l.included = 1 AND r.status IN ('draft','sent'))
+    ORDER BY COALESCE(d.due_date, '9999') , d.created_at`).all();
 }
 
 function lineOf(ctx, d) {
   const ev = evaluateBill(ctx, d);
   const refs = poRefs(d.po_or_co_ref);
   const what = refs.flatMap(k => ctx.pos.get(k) || []).map(r => r.description || r.part_no).filter(Boolean);
+  const priced = refs.flatMap(k => ctx.pos.get(k) || []).filter(r => r.status !== 'cancelled' && Number(r.qty) && sameVendor(r.vendor, d.vendor_name));
+  const qty = priced.slice(0, 2).map(r => `${Number(r.qty)}${Number(r.unit_price) ? ` × ${money(r.unit_price)}` : ''}`).join(' + ') || null;
   return {
-    id: d.id, vendor: d.vendor_name, invoice_number: d.invoice_number, invoice_date: d.invoice_date, due_date: d.due_date,
+    id: d.id, vendor: d.vendor_name, invoice_number: d.invoice_number, invoice_date: d.invoice_date, due_date: d.due_date, qty,
     amount: d.amount, bill_to: d.bill_to, po: d.po_or_co_ref, qbo_bill_id: d.qbo_bill_id, filename: d.filename,
     what: [...new Set(what)].slice(0, 3).join('; ') || null,
     bill_class: d.bill_class, bill_class_by: d.bill_class_by, suggested_class: suggestClass(ctx, d),
@@ -323,9 +329,17 @@ export function weeklyScore(db, { weeks = 8, today = plantDateOf() } = {}) {
 }
 
 const SETTINGS_KEY = 'payment_run_settings';
+// D-361: the approver's number is its own setting (blank = FLAVOR_APPROVER_PHONE),
+// Lowry reviews before the text goes while `review_before_send` is on, and the
+// materials invoice is weekly at cost until the accountant says otherwise.
+export const MATERIALS_MODES = Object.freeze({ weekly_at_cost: 'One weekly materials invoice, at cost' });
+const SETTING_DEFAULTS = Object.freeze({
+  bill_owner_id: null, controller_id: null, notify_ids: [],
+  approver_phone: null, review_before_send: true, materials_mode: 'weekly_at_cost', bank_balance: null,
+});
 export function getSettings(db) {
-  try { return { bill_owner_id: null, controller_id: null, notify_ids: [], ...JSON.parse(db.prepare('SELECT value FROM app_settings WHERE key = ?').get(SETTINGS_KEY)?.value || '{}') }; }
-  catch { return { bill_owner_id: null, controller_id: null, notify_ids: [] }; }
+  try { return { ...SETTING_DEFAULTS, ...JSON.parse(db.prepare('SELECT value FROM app_settings WHERE key = ?').get(SETTINGS_KEY)?.value || '{}') }; }
+  catch { return { ...SETTING_DEFAULTS }; }
 }
 export function saveSettings(db, patch) {
   const next = { ...getSettings(db) };
@@ -333,6 +347,22 @@ export function saveSettings(db, patch) {
   if ('bill_owner_id' in patch) next.bill_owner_id = user(patch.bill_owner_id);
   if ('controller_id' in patch) next.controller_id = user(patch.controller_id);
   if ('notify_ids' in patch) next.notify_ids = [...new Set((patch.notify_ids || []).map(user).filter(Boolean))];
+  if ('approver_phone' in patch) {
+    const digits = String(patch.approver_phone || '').replace(/\D/g, '').slice(-10);
+    if (patch.approver_phone && digits.length !== 10) throw Object.assign(new Error('That does not look like a 10-digit phone number.'), { status: 400 });
+    next.approver_phone = digits || null;
+  }
+  if ('bank_balance' in patch) {
+    const b = patch.bank_balance;
+    const n = Number(b?.amount);
+    if (b !== null && (!Number.isFinite(n) || b?.amount === '' || b?.amount === null)) throw Object.assign(new Error('Enter the bank balance as a number.'), { status: 400 });
+    next.bank_balance = b === null ? null : { amount: Math.round(n * 100) / 100, by: b.by || null, at: new Date().toISOString() };
+  }
+  if ('review_before_send' in patch) next.review_before_send = patch.review_before_send !== false;
+  if ('materials_mode' in patch) {
+    if (!MATERIALS_MODES[patch.materials_mode]) throw Object.assign(new Error(`Materials invoice must be one of: ${Object.keys(MATERIALS_MODES).join(', ')}`), { status: 400 });
+    next.materials_mode = patch.materials_mode;
+  }
   db.prepare('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)').run(SETTINGS_KEY, JSON.stringify(next));
   return next;
 }
@@ -394,24 +424,4 @@ export async function sendFailureNotices(db, { botDm, postMessageAs, pushToUser 
     await say(owner, `*${fresh.length} bill${fresh.length === 1 ? '' : 's'} can't be paid until fixed*\n${list}\nFix the bill in AP Drop (or confirm its class on the Payment run page): /?tab=payment-run`, 'Bills to fix before the payment run');
   }
   return { sent, bills: fresh.length };
-}
-
-/** On the run day, once: the run is ready for Lowry's review. */
-export async function sendRunReadyNotice(db, { botDm, postMessageAs, pushToUser }, today = plantDateOf()) {
-  const page = paymentRun(db, today);
-  const t = page.totals;
-  const body = `*This week's payment run is ready for your review*\n${t.count} bill${t.count === 1 ? '' : 's'}, ${money(t.total)}`
-    + ` (ProDough materials ${money(t.materials)} · Powder Ops expenses ${money(t.expenses)})`
-    + `${t.highlighted ? `\n${t.highlighted} highlighted to look at first` : ''}${t.failed ? `\n${t.failed} kept off the run` : ''}${t.held ? `\n${t.held} not due yet` : ''}`
-    + '\nOpen: /?tab=payment-run';
-  let sent = 0;
-  for (const u of notifyRecipients(db)) {
-    try {
-      const { bot, dm } = botDm(db, u.id);
-      await postMessageAs(db, dm, bot, body);
-      pushToUser?.(u.id, { title: 'Payment run ready', body: `${t.count} bills · ${money(t.total)}`, tag: 'payment-run-ready', url: '/?tab=payment-run' })?.catch?.(() => {});
-      sent++;
-    } catch (e) { console.warn('[payment-run] ready notice failed:', e.message); }
-  }
-  return { sent, count: t.count };
 }

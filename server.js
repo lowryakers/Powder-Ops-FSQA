@@ -89,7 +89,9 @@ import reimbursementRoutes from './server/api/reimbursements.js';
 import bankingRoutes from './server/api/banking.js';
 import apDropRoutes, { repairHeaderVendors, grantApDropToDroppers } from './server/api/ap-drop.js';
 import paymentRunRoutes from './server/api/payment-run.js';
-import { sendFailureNotices, sendRunReadyNotice } from './server/payment-run.js';
+import paymentApprovalRoutes from './server/api/payment-approval.js';
+import { sendFailureNotices } from './server/payment-run.js';
+import { prepareWeeklyRun, sendReminders as sendPaymentReminders } from './server/payment-approval.js';
 import employeeDocumentRoutes, { employeeDocumentNudges } from './server/api/employee-documents.js';
 import { trainingNudges } from './server/training-notify.js';
 import activityRoutes from './server/api/activity.js';
@@ -2204,6 +2206,8 @@ app.use('/api/banking', requireModuleWrite('banking'), bankingRoutes);
 app.use('/api/ap-drop', apDropRoutes);
 // The weekly payment run (D-360): AP Drop's work-the-queue door, checked in the router.
 app.use('/api/payment-run', paymentRunRoutes);
+// Danny's payment-run page (D-361): public, token-gated in the router.
+app.use('/api/payment-approval', paymentApprovalRoutes);
 // Documents sent to an existing employee to sign (W-4, W-9, a policy). Mounted
 // WITHOUT the module guard: the person signing is usually an operator with no
 // modules at all, and the router decides per route who is the employee and who
@@ -2382,7 +2386,7 @@ server.listen(PORT, '0.0.0.0', () => {
   backfillInvoiceText().catch(e => console.warn('[invoices] backfill error:', e.message));
   backfillFinanceFileText().catch(e => console.warn('[finance] backfill error:', e.message));
   // Recurring jobs: Friday auto-backup to R2, Monday expiry digest to #quality.
-  startScheduledJobs(db, { runDbBackup, BACKUP_HOUR, storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges, qaActionNudges, employeeDocumentNudges, policyAckNudges: (d) => policyAckNudges(d, { botDm, postMessageAs, pushToUser }), trainingNudges, supplyCycleNudge, partnerReminderNudges, recordBackfillNudge, supplierReviewNudge, sendFlashReport, sendCleanupDigest, cleanupDigest, CLEANUP_BUSY_THRESHOLD, sendEodMissedDigest, eodMissedDigest, EOD_BUSY_THRESHOLD, sendHolidayNotices, sendLateResults, sendFailureNotices, sendRunReadyNotice });
+  startScheduledJobs(db, { runDbBackup, BACKUP_HOUR, storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges, qaActionNudges, employeeDocumentNudges, policyAckNudges: (d) => policyAckNudges(d, { botDm, postMessageAs, pushToUser }), trainingNudges, supplyCycleNudge, partnerReminderNudges, recordBackfillNudge, supplierReviewNudge, sendFlashReport, sendCleanupDigest, cleanupDigest, CLEANUP_BUSY_THRESHOLD, sendEodMissedDigest, eodMissedDigest, EOD_BUSY_THRESHOLD, sendHolidayNotices, sendLateResults, sendFailureNotices, prepareWeeklyRun, sendPaymentReminders });
   startReminderLoop(db);
   try { initOpsWebhook(db); } catch (e) { console.warn('[ops-webhook] not started:', e.message); }
   try { startOpsMonitor(db); } catch (e) { console.warn('[ops-monitor] not started:', e.message); }

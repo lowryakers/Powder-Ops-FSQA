@@ -6502,6 +6502,82 @@ function runMigrations() {
       );
       CREATE TRIGGER IF NOT EXISTS payment_must_pays_no_delete BEFORE DELETE ON payment_must_pays
         BEGIN SELECT RAISE(ABORT, 'A must-pay is retired, never deleted'); END;`);
+    // D-361 (payment run part B): a run is FROZEN when it is prepared for
+    // approval. The run, its lines and every act on it are kept for good: a
+    // trigger refuses DELETE on all three and UPDATE on the event log.
+    db.exec(`CREATE TABLE IF NOT EXISTS payment_runs (
+        id                 TEXT PRIMARY KEY,
+        run_no             TEXT NOT NULL UNIQUE,
+        kind               TEXT NOT NULL DEFAULT 'weekly' CHECK (kind IN ('weekly','urgent')),
+        week_start         TEXT NOT NULL,
+        run_date           TEXT NOT NULL,
+        status             TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','sent','approved','transferred','cancelled')),
+        reason             TEXT,
+        created_by         TEXT,
+        created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+        bank_balance       REAL,
+        bank_balance_by    TEXT,
+        bank_balance_at    TEXT,
+        production_json    TEXT,
+        reviewed_by        TEXT,
+        reviewed_at        TEXT,
+        sent_to            TEXT,
+        sent_by            TEXT,
+        sent_at            TEXT,
+        token_hash         TEXT,
+        token_expires_at   TEXT,
+        reminder_sent_at   TEXT,
+        approved_name      TEXT,
+        approved_at        TEXT,
+        approved_totals    TEXT,
+        transferred_name   TEXT,
+        transferred_at     TEXT,
+        transferred_amount REAL,
+        cancelled_by       TEXT,
+        cancelled_at       TEXT,
+        cancel_reason      TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_payment_runs_token ON payment_runs(token_hash);
+      CREATE INDEX IF NOT EXISTS idx_payment_runs_week ON payment_runs(week_start, status);
+      CREATE TABLE IF NOT EXISTS payment_run_lines (
+        id             TEXT PRIMARY KEY,
+        run_id         TEXT NOT NULL REFERENCES payment_runs(id),
+        drop_id        TEXT NOT NULL,
+        position       INTEGER NOT NULL,
+        vendor         TEXT,
+        invoice_number TEXT,
+        what           TEXT,
+        qty_text       TEXT,
+        amount         REAL NOT NULL,
+        due_date       TEXT,
+        bill_class     TEXT,
+        must_pay       INTEGER NOT NULL DEFAULT 0,
+        flags_json     TEXT,
+        included       INTEGER NOT NULL DEFAULT 1,
+        changed_by     TEXT,
+        changed_at     TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_payment_run_lines_run ON payment_run_lines(run_id);
+      CREATE INDEX IF NOT EXISTS idx_payment_run_lines_drop ON payment_run_lines(drop_id);
+      CREATE TABLE IF NOT EXISTS payment_run_events (
+        id      TEXT PRIMARY KEY,
+        run_id  TEXT NOT NULL REFERENCES payment_runs(id),
+        at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
+        kind    TEXT NOT NULL,
+        by_name TEXT,
+        ip      TEXT,
+        device  TEXT,
+        detail  TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_payment_run_events_run ON payment_run_events(run_id, at);
+      CREATE TRIGGER IF NOT EXISTS payment_runs_no_delete BEFORE DELETE ON payment_runs
+        BEGIN SELECT RAISE(ABORT, 'A payment run is cancelled, never deleted'); END;
+      CREATE TRIGGER IF NOT EXISTS payment_run_lines_no_delete BEFORE DELETE ON payment_run_lines
+        BEGIN SELECT RAISE(ABORT, 'A payment run line is unticked, never deleted'); END;
+      CREATE TRIGGER IF NOT EXISTS payment_run_events_no_delete BEFORE DELETE ON payment_run_events
+        BEGIN SELECT RAISE(ABORT, 'The payment run log is kept for good'); END;
+      CREATE TRIGGER IF NOT EXISTS payment_run_events_no_update BEFORE UPDATE ON payment_run_events
+        BEGIN SELECT RAISE(ABORT, 'The payment run log is kept for good'); END;`);
     // D-160: two terminal statuses for a drop that is money owed TO us — a
     // receivable handed to the partner ledger (`to_partner_ar`) and one for a
     // customer who is not a partner (`receivable_other`). The CHECK is widened

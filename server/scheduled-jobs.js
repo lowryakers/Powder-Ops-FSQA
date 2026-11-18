@@ -338,16 +338,28 @@ export async function runDue(db, deps, now = new Date()) {
       if (r.bills) console.log(`[jobs] payment run: ${r.bills} bill(s) newly kept off, ${r.sent} message(s)`);
     } catch (e) { console.warn('[jobs] payment run failure notice failed:', e.message); }
   }
-  if (deps.sendRunReadyNotice && openWeekday && getFlag(db, 'last_payment_run_ready_day') !== ymdLocal(wall)) {
+  // D-361: on the run day the weekly run is FROZEN and Lowry is asked to review
+  // it (or, with review off and a balance entered, it goes straight to Danny).
+  if (deps.prepareWeeklyRun && openWeekday && getFlag(db, 'last_payment_run_ready_day') !== ymdLocal(wall)) {
     try {
       const { runDayOfWeek } = await import('./payment-run.js');
       const run = runDayOfWeek(db, ymdLocal(wall));
       if (run.date === ymdLocal(wall) && wall.getHours() >= (run.payroll_week ? 12 : 8)) {
         setFlag(db, 'last_payment_run_ready_day', ymdLocal(wall));
-        const r = await deps.sendRunReadyNotice(db, { botDm: deps.botDm, postMessageAs: deps.postMessageAs, pushToUser: deps.pushToUser }, ymdLocal(wall));
-        console.log(`[jobs] payment run ready: ${r.count} bill(s) to ${r.sent} recipient(s)`);
+        const r = await deps.prepareWeeklyRun(db, { botDm: deps.botDm, postMessageAs: deps.postMessageAs, pushToUser: deps.pushToUser }, ymdLocal(wall));
+        console.log(`[jobs] payment run: ${r.frozen ? 'prepared' : `not prepared (${r.reason})`}, ${r.sent} message(s)`);
       }
-    } catch (e) { console.warn('[jobs] payment run ready notice failed:', e.message); }
+    } catch (e) { console.warn('[jobs] payment run prepare failed:', e.message); }
+  }
+  // No approval by Friday 10 AM (or four hours after a later send): one reminder
+  // text to the approver and one note to Lowry, per run.
+  if (deps.sendPaymentReminders && openWeekday) {
+    try {
+      const hh = String(wall.getHours()).padStart(2, '0'), mm = String(wall.getMinutes()).padStart(2, '0');
+      const r = await deps.sendPaymentReminders(db, { botDm: deps.botDm, postMessageAs: deps.postMessageAs, pushToUser: deps.pushToUser },
+        { now, wallDate: ymdLocal(wall), wallTime: `${hh}:${mm}` });
+      if (r.reminded) console.log(`[jobs] payment run: ${r.reminded} reminder(s)`);
+    } catch (e) { console.warn('[jobs] payment run reminder failed:', e.message); }
   }
 
   if (deps.sendLateResults && wall.getHours() >= 9 && openWeekday && getFlag(db, 'last_coa_late_results_day') !== ymdLocal(wall)) {

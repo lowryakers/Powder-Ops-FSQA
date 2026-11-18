@@ -11178,6 +11178,34 @@ D after approval · E production invoices), each for review. This is A.
 - Door: AP Drop's `canWorkQueue`, checked in the router (mounted without the module guard, the AP Drop way).
 `verify:paymentrun` (36, live + browser at 1280 and 390; control: `/api/payment-run` is 404).
 
+## D-361 — The weekly payment run, part B: the run is frozen, Lowry checks it, Danny approves on a link (18 Nov 2026)
+Part B of the plan Lowry approved (D-360). Danny's experience is the flavor approval's — a text, a page with the
+details, one button, the decision logged — built as its own code; the Flavor Approvals module is untouched.
+- **Preparing a run FREEZES it** (`payment_runs` + `payment_run_lines`, `server/payment-approval.js`). The lines are
+  copied from the derived page; correcting a bill afterwards does not move what Danny sees (cancel and prepare
+  again). A bill on a waiting run (draft or sent) leaves the live list; unticked or cancelled, it comes back. One
+  weekly run per week. Runs, lines and the event log refuse DELETE by trigger; the log refuses UPDATE.
+- **What Danny reads first is what ProDough owes**: the materials invoice (ProDough material bills ticked, at cost)
+  + open production invoices (part E; none until then) + the shortfall (Powder Ops expense bills ticked, less the
+  bank balance used — shown only above zero). The bank balance is typed by Lowry until a bank feed reads it (part
+  C); it is entered on the run or, during the week, ahead of it. A run cannot be sent without one.
+- **Lowry checks before the text goes** while `review_before_send` is on (the default): run day freezes the run
+  (8 AM, or noon in a payroll week) and asks him to check it; "Checked: send to Danny" is the review and the send.
+  Off, the run goes to Danny on its own if a balance was entered that week.
+- **The link**: 24 random bytes, stored as SHA-256, returned once, expires in five days; a re-send or the reminder
+  issues a new one and kills the old; the transfer spends it; cancelling kills it. No Twilio → the link comes back
+  to send by hand. The number is its own setting (blank = `FLAVOR_APPROVER_PHONE`).
+- **On the page**: bills flags first, must-pays locked (refused on the server), untick per bill, one Approve with a
+  typed name, then "I've sent $X". Every act logs the name, address and device. Approving moves the ticked bills
+  to `in_payment_run` with `payment_run_id`; the totals approved are frozen on the run. Lowry and the Controller are
+  told of the approval and of the transfer (and when the amount sent is not the amount approved).
+- **No approval by Friday 10 AM** (or four hours after a later send — a payroll-week run goes out Friday noon): one
+  reminder text with a new link and one note to Lowry, per run.
+- An urgent run is the same page: the admin picks bills (on the run or not due yet) with a reason.
+- Sending is on `APPROVE_ROUTES`; preparing, sending and cancelling refuse a bot token. Recording the transfer as
+  ProDough paying the invoices, and paying the bills, are part D.
+`verify:paymentapproval` (58, live + browser at 390 and 1280; control: main fails from the first settings check).
+
 ## D-362 — The Org Chart exports to a PDF (18 Nov 2026)
 Lowry asked for an Export to PDF button on the Org Chart. `GET /api/org/pdf` (`server/org-chart-pdf.js`, declared before
 `/:id`) — the same door and the same rows as `GET /api/org`, so the PDF and the screen name the same people (a linked
