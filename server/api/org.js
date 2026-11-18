@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
+import { renderOrgChartPdf } from '../org-chart-pdf.js';
 
 // A position can carry SEVERAL job descriptions — a small plant's people wear
 // several hats, and the chart should say so rather than picking one. The full
@@ -74,6 +75,18 @@ router.get('/', (_req, res) => {
   ).all().filter(u => !linked.has(u.id) && u.role !== 'auditor' && !/^readybot$/i.test(u.name || ''));
 
   res.json({ positions, meta, unplaced });
+});
+
+// The chart as a PDF (one page of boxes, then the list). Read-only; declared
+// before `/:id` like /meta. Same rows as GET / reads, so the two agree.
+router.get('/pdf', (req, res) => {
+  const db = getDb();
+  const rows = db.prepare('SELECT * FROM org_positions ORDER BY sort_order, title').all();
+  const meta = db.prepare('SELECT * FROM org_chart_meta WHERE id = 1').get() || null;
+  const stamp = new Date().toISOString().slice(0, 10);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="Org-Chart${meta?.version ? `-V${String(meta.version).replace(/[^\w.-]/g, '')}` : ''}-${stamp}.pdf"`);
+  renderOrgChartPdf(res, { positions: withPeople(db, rows), meta, printedBy: req.user?.name || null });
 });
 
 // The roster the position picker chooses from.
