@@ -9,7 +9,9 @@ import { Router } from 'express';
 import { randomUUID } from 'crypto';
 import { getDb, logAudit } from '../db.js';
 import { canWorkQueue } from './ap-drop.js';
-import { paymentRun, weeklyScore, getSettings, saveSettings, notifyRecipients, BILL_CLASSES, suggestClass, loadContext, MATERIALS_MODES } from '../payment-run.js';
+import { paymentRun, weeklyScore, getSettings, saveSettings, notifyRecipients, BILL_CLASSES, suggestClass, loadContext, MATERIALS_MODES,
+  recordBankDetails, listBankDetails, feedBalance } from '../payment-run.js';
+import { gateSignature } from '../signature.js';
 import { freezeRun, runView, listRuns, setBankBalance, sendForApproval, cancelRun, approverNumber } from '../payment-approval.js';
 
 const router = Router();
@@ -48,6 +50,8 @@ router.get('/', (req, res) => {
       approver_phone: s.approver_phone, approver_number: approverNumber(db), review_before_send: s.review_before_send !== false,
       materials_mode: s.materials_mode, materials_modes: MATERIALS_MODES, bank_balance: s.bank_balance,
     },
+    feed_balance: feedBalance(db),
+    bank_details: listBankDetails(db).filter(r => !r.retired_at),
     runs: listRuns(db, 12),
     can_admin: req.user?.role === 'admin' && !isToken(req),
     can_classify: !isToken(req),
@@ -128,9 +132,38 @@ router.put('/bank-balance', (req, res) => {
   const db = getDb();
   const before = getSettings(db).bank_balance;
   let after;
-  try { after = saveSettings(db, { bank_balance: req.body?.amount === null ? null : { amount: req.body?.amount, by: req.user.name } }); } catch (e) { return fail(res, e); }
+  const feed = req.body?.from_feed ? feedBalance(db) : null;
+  if (req.body?.from_feed && !feed) return res.status(409).json({ error: 'No bank feed balance to use: no bank account is linked and synced.' });
+  const value = feed ? { amount: feed.amount, by: `${req.user.name} (bank feed${feed.as_of ? `, as of ${feed.as_of}` : ''})` }
+    : req.body?.amount === null ? null : { amount: req.body?.amount, by: req.user.name };
+  try { after = saveSettings(db, { bank_balance: value }); } catch (e) { return fail(res, e); }
   logAudit(req.user, 'update', 'app_setting', 'payment_run_settings', { field: 'bank_balance' }, before, after.bank_balance, 'Payment run bank balance');
   res.json(after.bank_balance);
+});
+
+// ── vendor bank details (D-363) ───────────────────────────────────────────────
+// What a vendor is paid to, as confirmed by phone. Recording them is a decision
+// about where money goes: an admin, signed in, with the password. A bot reads.
+router.get('/bank-details', (req, res) => {
+  if (!gate(req, res)) return;
+  res.json(listBankDetails(getDb()));
+});
+
+router.post('/bank-details', (req, res) => {
+  if (!adminOnly(req, res)) return;
+  const db = getDb();
+  // Validate before asking for the password (it is asked last).
+  try {
+    if (String(req.body?.confirmed_note || '').trim().length < 5) throw Object.assign(new Error('Say how the details were confirmed: who you spoke to, and the number you called.'), { status: 400 });
+  } catch (e) { return fail(res, e); }
+  if (!gateSignature(req, res, { action: 'vendor_bank_details' })) return;
+  try {
+    const { row, replaced } = recordBankDetails(db, req.body, req.user);
+    logAudit(req.user, replaced.length ? 'update' : 'create', 'vendor_bank_details', row.id,
+      { vendor: row.vendor_name, routing: row.routing, account_last4: row.account_last4, from_drop_id: row.from_drop_id, signature_verified: true },
+      replaced[0] || null, row, row.vendor_name);
+    res.status(201).json(row);
+  } catch (e) { fail(res, e); }
 });
 
 router.get('/runs', (req, res) => {
@@ -161,7 +194,11 @@ router.post('/runs', (req, res) => {
 router.post('/runs/:id/bank-balance', (req, res) => {
   if (!adminOnly(req, res)) return;
   try {
-    const v = setBankBalance(getDb(), req.params.id, req.body?.amount, req.user.name);
+    const db = getDb();
+    const feed = req.body?.from_feed ? feedBalance(db) : null;
+    if (req.body?.from_feed && !feed) return res.status(409).json({ error: 'No bank feed balance to use: no bank account is linked and synced.' });
+    const v = setBankBalance(db, req.params.id, feed ? feed.amount : req.body?.amount,
+      feed ? `${req.user.name} (bank feed${feed.as_of ? `, as of ${feed.as_of}` : ''})` : req.user.name);
     logAudit(req.user, 'update', 'payment_run', v.id, { field: 'bank_balance', to: v.summary.bank_balance }, null, null, v.run_no);
     res.json(v);
   } catch (e) { fail(res, e); }

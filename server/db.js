@@ -6502,6 +6502,25 @@ function runMigrations() {
       );
       CREATE TRIGGER IF NOT EXISTS payment_must_pays_no_delete BEFORE DELETE ON payment_must_pays
         BEGIN SELECT RAISE(ABORT, 'A must-pay is retired, never deleted'); END;`);
+    // D-363 (payment run part C): the bank details a vendor is paid to, as a
+    // person confirmed them by phone. Routing number and the LAST FOUR digits of
+    // the account only. A change is a new row; the old one is retired, never
+    // deleted, so "when did their bank change and who confirmed it" stays answerable.
+    db.exec(`CREATE TABLE IF NOT EXISTS vendor_bank_details (
+        id             TEXT PRIMARY KEY,
+        vendor_name    TEXT NOT NULL,
+        routing        TEXT NOT NULL,
+        account_last4  TEXT,
+        confirmed_note TEXT NOT NULL,
+        from_drop_id   TEXT,
+        recorded_by    TEXT,
+        recorded_by_id TEXT,
+        recorded_at    TEXT NOT NULL DEFAULT (datetime('now')),
+        retired_at     TEXT,
+        retired_by     TEXT
+      );
+      CREATE TRIGGER IF NOT EXISTS vendor_bank_details_no_delete BEFORE DELETE ON vendor_bank_details
+        BEGIN SELECT RAISE(ABORT, 'Bank details are retired, never deleted'); END;`);
     // D-361 (payment run part B): a run is FROZEN when it is prepared for
     // approval. The run, its lines and every act on it are kept for good: a
     // trigger refuses DELETE on all three and UPDATE on the event log.

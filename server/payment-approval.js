@@ -9,7 +9,7 @@
 //     page at the moment it is prepared. Correcting a bill afterwards does not
 //     move what Danny is looking at; cancel and freeze again. Runs, lines and
 //     the event log refuse DELETE (triggers); the log refuses UPDATE too.
-//   - WHAT DANNY SEES IS WHAT PRODOUGH OWES: the materials invoice (ProDough
+//   - WHAT DANNY SEES IS WHAT PRODOUGH OWES: the deposit (materials, D-363) (ProDough
 //     material bills ticked, at cost) + open production invoices (part E; none
 //     until then) + the shortfall (Powder Ops expense bills ticked, less the
 //     bank balance Lowry entered — shown only above zero). One number.
@@ -57,7 +57,7 @@ export function owes(lines, { bankBalance = null, production = [] } = {}) {
 
 /** The one sentence Danny reads first. */
 export function owesSentence(o) {
-  const parts = [`materials ${money(o.materials)}`];
+  const parts = [`deposit (materials) ${money(o.materials)}`];
   if (o.production_count) parts.push(`${o.production_count} production run${o.production_count === 1 ? '' : 's'} ${money(o.production)}`);
   if (o.shortfall > 0) parts.push(`shortfall ${money(o.shortfall)}`);
   return `ProDough owes Powder Ops ${money(o.owes)}: ${parts.join(' + ')}.`;
