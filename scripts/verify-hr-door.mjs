@@ -112,13 +112,16 @@ await page.locator('[data-hr-door-open]').click();
 await page.waitForTimeout(2000);
 t('…which says only the HR team can read it', await page.locator('[data-hr-door-banner]').count() === 1);
 t('nothing pans sideways', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+await call('GET', '/comms/hr-door', null, T['hd-sup']); // Sam's door exists, and stays empty
 const p2 = await browser.newPage({ viewport: { width: 1280, height: 860 } });
 const me2 = (await call('GET', '/users/me', null, T['hd-marn'])).json;
 await p2.goto(`${URL}/manifest.webmanifest`);
 await p2.evaluate(([k, u]) => { localStorage.setItem('auth_token', k); localStorage.setItem('auth_user', JSON.stringify(u)); }, [T['hd-marn'], me2]);
 await p2.goto(`${URL}/chat`);
 await p2.waitForTimeout(3500);
-t('the HR team has an HR inbox with each employee', await p2.locator('[data-hr-inbox]').count() === 1 && (await p2.locator('[data-hr-inbox]').innerText()).includes('Ema Worker'));
+const inboxText = await p2.locator('[data-hr-inbox]').innerText().catch(() => '');
+t('the HR team has an HR inbox with the employees who wrote', await p2.locator('[data-hr-inbox]').count() === 1 && inboxText.includes('Ema Worker') && inboxText.includes('Eli Worker'));
+t('…and an employee who never wrote is NOT listed (D-358)', !inboxText.includes('Sam Floorsup'), inboxText);
 await browser.close();
 
 console.log(`\n${pass} passed, ${fail} failed`);

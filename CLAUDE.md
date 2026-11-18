@@ -451,6 +451,9 @@ approval, production invoices) are still to come; **do not touch the Flavor Appr
   target's URL and key. **Never log or store a URL or key** (`scrub`, `redactUrl`).
 - Called after the 201; never awaited. Outbox: never resent once sent, resumed after a restart, 3 in flight, 60/min.
 - `check:opswebhook` (42), `verify:opswebhook` (14).
+- **The owner channels (D-359)**: a PERSON's post in `#bots-jake` / `#bots-marnee` / `#bots-adam` (`OWNER_CHANNELS`, a constant)
+  wakes ONE Jarvis routine (target `owner`, its own `OWNER_WEBHOOK_ENABLED` + URL + key). No bot ever fires it; no routing in
+  ReadyDoc. `check:opswebhook` (72), `verify:opswebhook` (17).
 - **The `Test Runner` account (D-252, `server/test-runner.js`)** may only read and post in `#ops-requests-test`
   (`testRunnerGuard`, one allow list, 403 `test_runner_scope` otherwise, whatever its role); its post there wakes
   Procurement like a person's. Known by `app_settings.test_runner_user_id`, never its name. Its token is minted by an
@@ -7102,7 +7105,7 @@ swipe sideways at fit to page, swipe down at fit to close, tap to hide the contr
 `hr--<user id>` private channels (`shared/hr-door.js`, `server/hr-door.js`): the employee + the HR team
 (`hr_door_readers`, Messages → Settings → HR team; `syncHrDoors` on save and at boot). **`canAccess` does NOT wave an
 admin into an `hr--` channel** — never add a read path that skips it. Reserved family: no manual create/rename/members/
-archive/delete. Owner's top-level post → tracked + ReadyBot ack. Move with `channel_id: 'hr'` → the sender's door (HR team
+archive/delete. Owner's top-level post → tracked + ReadyBot ack. **The HR inbox lists only doors with a message (D-358).** Move with `channel_id: 'hr'` → the sender's door (HR team
 only). `verify:hrdoor` (36).
 
 ## Moving a message to the channel it belongs in; open items (D-355)

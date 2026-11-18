@@ -9,6 +9,9 @@
 // key are set:
 //   procurement — every new top-level message and thread reply written by a PERSON
 //   controller  — only a thread reply from `*Procurement Bot` starting `→ Controller`
+// and a third family with its OWN switch (D-359):
+//   owner       — a PERSON's new post or thread reply in #bots-jake / #bots-marnee /
+//                 #bots-adam wakes one Jarvis routine (OWNER_WEBHOOK_ENABLED + its URL + key)
 //
 // RULES, each load-bearing:
 //   - The channel list is a CONSTANT. No env var widens it (OPS_WEBHOOK_CHANNELS is
@@ -26,6 +29,10 @@ import { readyDocOrigin } from './links.js';
 import { isTestRunnerPost } from './test-runner.js';
 
 export const OPS_CHANNELS = Object.freeze(['ops-requests', 'ops-requests-test']);
+// The owner channels (D-359): a PERSON's post in one wakes the single Jarvis
+// routine, which routes from its own main session. A constant, like OPS_CHANNELS —
+// OWNER_WEBHOOK_CHANNELS is deliberately not read. #bots-quality is not in it.
+export const OWNER_CHANNELS = Object.freeze(['bots-jake', 'bots-marnee', 'bots-adam']);
 export const PROCUREMENT_BOT_NAME = '*Procurement Bot';
 export const HANDOFF_PREFIX = '→ Controller';
 export const TEXT_CAP = 4000;
@@ -37,7 +44,9 @@ export const RATE_PER_MINUTE = 60;
 // `quality` is not a channel wake: it carries a document-control event (D-277,
 // a revision approved) to the Quality bot. Same outbox, same retries, same
 // signing; its own switch, URL and key.
-const TARGETS = ['procurement', 'controller', 'quality'];
+// `owner` is a channel wake with its own switch (OWNER_WEBHOOK_ENABLED, D-359):
+// the #ops-requests flag never turns it on and its flag never turns those on.
+const TARGETS = ['procurement', 'controller', 'quality', 'owner'];
 
 const on = (v) => /^(1|true|yes|on)$/i.test(String(v || '').trim());
 
@@ -51,6 +60,9 @@ export function targetConfig(env = process.env) {
     controller: pair(env.OPS_WEBHOOK_CONTROLLER_URL, env.OPS_WEBHOOK_CONTROLLER_KEY),
     quality: { ...pair(env.QUALITY_WEBHOOK_URL, env.QUALITY_WEBHOOK_KEY),
       enabled: on(env.QUALITY_WEBHOOK_ENABLED) && !!(env.QUALITY_WEBHOOK_URL && env.QUALITY_WEBHOOK_KEY) },
+    owner: { ...pair(env.OWNER_WEBHOOK_URL, env.OWNER_WEBHOOK_KEY),
+      enabled: on(env.OWNER_WEBHOOK_ENABLED) && !!(env.OWNER_WEBHOOK_URL && env.OWNER_WEBHOOK_KEY) },
+    ownerFlag: on(env.OWNER_WEBHOOK_ENABLED),
     signingSecret: env.OPS_WEBHOOK_SIGNING_SECRET || null,
   };
 }
@@ -67,7 +79,7 @@ export function redactUrl(url) {
 /** Remove any configured URL or key from a piece of text before it is stored or logged. */
 export function scrub(text, env = process.env) {
   let s = String(text ?? '');
-  for (const v of [env.OPS_WEBHOOK_URL, env.OPS_WEBHOOK_KEY, env.OPS_WEBHOOK_CONTROLLER_URL, env.OPS_WEBHOOK_CONTROLLER_KEY, env.OPS_WEBHOOK_SIGNING_SECRET, env.QUALITY_WEBHOOK_URL, env.QUALITY_WEBHOOK_KEY]) {
+  for (const v of [env.OPS_WEBHOOK_URL, env.OPS_WEBHOOK_KEY, env.OPS_WEBHOOK_CONTROLLER_URL, env.OPS_WEBHOOK_CONTROLLER_KEY, env.OPS_WEBHOOK_SIGNING_SECRET, env.QUALITY_WEBHOOK_URL, env.QUALITY_WEBHOOK_KEY, env.OWNER_WEBHOOK_URL, env.OWNER_WEBHOOK_KEY]) {
     if (v && v.length >= 4) s = s.split(v).join('[redacted]');
   }
   return s.replace(/crsr_[A-Za-z0-9_-]+/g, '[redacted]').slice(0, 500);
@@ -120,9 +132,14 @@ const isoUtc = (t) => {
 /** Which target, if any, a just-created message fires. Pure apart from the bot lookups. */
 export function targetFor(db, { channel, message, author, viaToken, attachmentCount = 0 }) {
   if (!channel || channel.kind === 'dm' || channel.archived) return null;
-  if (!OPS_CHANNELS.includes(String(channel.name || ''))) return null;
+  const name = String(channel.name || '');
   const body = String(message?.body || '');
   if (!body.trim() && !attachmentCount) return null;
+  // An owner channel wakes Jarvis for a PERSON's post only — no bot exceptions,
+  // and never the Test Runner's: a bot answering in the thread must not wake
+  // Jarvis again (the loop stop, D-359).
+  if (OWNER_CHANNELS.includes(name)) return isBotAuthor(db, author, viaToken) ? null : 'owner';
+  if (!OPS_CHANNELS.includes(name)) return null;
   // The Test Runner's questions in #ops-requests-test count as a person's (D-252).
   if (isTestRunnerPost(db, channel, author)) return 'procurement';
   const bot = isBotAuthor(db, author, viaToken);
@@ -136,7 +153,7 @@ export function buildPayload({ target, channel, message, author, attachmentCount
   const text = String(message.body || '');
   const truncated = text.length > TEXT_CAP;
   return {
-    event: 'ops_request.message',
+    event: target === 'owner' ? 'owner_channel.message' : 'ops_request.message',
     version: 1,
     target,
     dedupe_id: `${channel.id}:${message.id}:${target}`,
@@ -185,7 +202,7 @@ export function enqueueOpsWebhook({ channel, message, author, viaToken = false, 
     const db = state.db;
     if (!db) return null;
     const cfg = targetConfig(state.env);
-    if (!cfg.flag) return null;
+    if (!cfg.flag && !cfg.owner.enabled) return null;
     const target = targetFor(db, { channel, message, author, viaToken, attachmentCount });
     if (!target || !cfg[target].enabled) return null;
     const payload = buildPayload({ target, channel, message, author, attachmentCount });
@@ -302,5 +319,5 @@ export function opsWebhookStatus(db, env = process.env) {
   const recent = db.prepare(`SELECT id, dedupe_id, target, channel_name, message_id, status, attempts, last_http_status, last_error,
     first_attempt_at, last_attempt_at FROM ops_webhook_log ORDER BY id DESC LIMIT 20`).all()
     .map(r => ({ ...r, last_error: r.last_error ? scrub(r.last_error, env) : null }));
-  return { flag: cfg.flag, channels: [...OPS_CHANNELS], targets, recent };
+  return { flag: cfg.flag, channels: [...OPS_CHANNELS], owner_flag: cfg.ownerFlag, owner_channels: [...OWNER_CHANNELS], targets, recent };
 }

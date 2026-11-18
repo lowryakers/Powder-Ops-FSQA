@@ -2708,7 +2708,11 @@ export default function CommsView({ user, onExit, onGoToSchedule, onSplitScreen,
   // The HR front door (D-356): everyone's own "HR" sits at the top; the HR
   // team's copies of everyone else's are their own "HR inbox" section.
   const myHrDoor = list.find(c => c.hr_door?.mine) || null;
-  const hrInbox = list.filter(c => c.hr_door && !c.hr_door.mine)
+  // Only conversations somebody has written in (D-358): every employee has a door
+  // from the first boot, and listing forty empty ones buried the one that needs
+  // an answer. An empty door appears the moment its owner posts; the one open on
+  // screen stays listed so it does not vanish under the reader.
+  const hrInbox = list.filter(c => c.hr_door && !c.hr_door.mine && (c.last_activity || c.id === activeId))
     .sort((a, b) => (b.unread > 0) - (a.unread > 0) || (b.last_activity || '').localeCompare(a.last_activity || ''));
   const openHrDoor = async () => {
     if (myHrDoor) { openChannel(myHrDoor.id); return; }

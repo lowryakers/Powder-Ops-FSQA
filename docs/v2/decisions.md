@@ -11130,6 +11130,28 @@ in the order a person moves through: **People → Onboarding → Time Tracking �
 - **A hub's `?view=` that is not one of its own tabs belongs to the module inside** (`useModuleTabs`): with an `initial`
   tab, a foreign `view` no longer sends the hub to its first tab. Found by `verify:edocsui`
   (`?tab=onboarding&view=documents` landed on People).
+## D-358 — The HR inbox lists only conversations somebody has written in (18 Nov 2026)
+Every employee has an HR door from the first boot (D-356), so the HR team's sidebar listed one empty "HR · <name>" per
+person — a list of the roster, not of what needs an answer. The inbox now shows a door once it has a message (its owner
+wrote, or HR moved something into it), plus the door currently open so it does not vanish under the reader. The doors
+themselves are unchanged: still created for everyone, still private, still opened by the employee's own "HR" entry.
+Screen only. `verify:hrdoor` (37; control fails 1 — an employee who never wrote is listed).
+
+## D-359 — A person's post in an owner channel wakes Jarvis (18 Nov 2026)
+Tasks posted in `#bots-jake`, `#bots-marnee` and `#bots-adam` waited for Jarvis's next scheduled check (weekday, three
+times a day). Lowry approved an instant wake (A-20261118-005). It extends D-251's sender rather than adding one: a fourth
+target, `owner`, with its own switch (`OWNER_WEBHOOK_ENABLED` + `OWNER_WEBHOOK_URL` + `OWNER_WEBHOOK_KEY`), default off.
+- **One target, not one per bot.** Jarvis routes from its own main session with `SendToAgent`; ReadyDoc sends no
+  routing fields and parses no @mentions.
+- **The three names are a constant** (`OWNER_CHANNELS`), matched on the channel's current name; no variable can widen it.
+  `#bots-quality` is deliberately not in it.
+- **People only, no bot exceptions** — not the Test Runner, not a bot's thread reply. That is the loop stop.
+- **Independent of #ops-requests**: the ops flag never turns `owner` on and the owner flag never turns procurement or
+  controller on. A message fires at most one channel wake. `#ops-requests`, the Test Runner exception (D-252) and the
+  Quality signal (D-277) are unchanged. The POST is only a wake; Jarvis still reads with its own cursor, and its
+  scheduled check stays as the backup.
+`check:opswebhook` (72; control fails 10), `verify:opswebhook` (17).
+
 ## D-360 — The weekly payment run, part A: the run page, its checks, and who is told (18 Nov 2026)
 Lowry approved the payment-run plan on 18 Nov 2026 with answers: payroll every two weeks from Mon 23 Nov 2026 (run
 Friday 12:00 in a payroll week, otherwise Thursday); only bills entered in QBO; the Controller marks bills paid in QBO;

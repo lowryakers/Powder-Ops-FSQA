@@ -45,6 +45,8 @@ const chan = (id, name) => {
 };
 chan('ow-ops', 'ops-requests');
 chan('ow-gen', 'not-ops');
+chan('ow-jake', 'bots-jake');
+chan('ow-qual', 'bots-quality');
 
 const json = async (method, path, body, auth) => {
   const r = await fetch(`${BASE}/api${path}`, { method, headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: `Bearer ${auth}` } : {}) }, body: body ? JSON.stringify(body) : undefined });
@@ -91,11 +93,30 @@ await wait(3);
 t('*Procurement Bot\'s "→ Controller" reply goes to the controller hook only, with its key', received.length === 3
   && received[2].path.endsWith('/ctrlROUTINE1') && received[2].auth === 'Bearer crsr_fakeCtrl' && received[2].body.target === 'controller', JSON.stringify(received[2]));
 
+console.log('\n── an owner channel (D-359) ──');
+r = await json('POST', '/comms/channels/ow-jake/messages', { body: 'Please order more film' }, person);
+const ownTop = r.body?.id;
+await wait(4);
+t('a person\'s post in #bots-jake: 201 and ONE POST to the owner hook with the owner key', r.status === 201 && received.length === 4
+  && received[3].path.endsWith('/ownrROUTINE1') && received[3].auth === 'Bearer crsr_fakeOwner' && received[3].body.event === 'owner_channel.message'
+  && received[3].body.target === 'owner' && received[3].body.thread_id === ownTop, JSON.stringify(received[3]));
+r = await json('POST', '/comms/channels/ow-jake/messages', { body: 'On it.', parent_id: ownTop }, tok);
+await json('PUT', `/comms/messages/${ownTop}`, { body: 'Please order more film (edited)' }, person);
+await json('POST', `/comms/messages/${ownTop}/reactions`, { emoji: '👍' }, person);
+await json('POST', '/comms/channels/ow-qual/messages', { body: 'x' }, person);
+await quiet();
+t('a bot reply, an edit, a reaction and #bots-quality send nothing', received.length === 4, String(received.length));
+r = await json('POST', '/comms/channels/ow-jake/messages', { body: 'thanks', parent_id: ownTop }, person);
+await wait(5);
+t('a person\'s thread reply sends one more owner POST, thread = parent', received.length === 5 && received[4].body.target === 'owner'
+  && received[4].body.is_top_level === false && received[4].body.thread_id === ownTop);
+
 console.log('\n── the status endpoint ──');
 r = await json('GET', '/admin/ops-webhook/status', null, admin);
 t('an admin session reads it', r.status === 200 && r.body?.targets?.procurement?.enabled === true && r.body?.targets?.controller?.enabled === true, r.text.slice(0, 200));
-t('…three sent, none failed', r.body?.recent?.filter(x => x.status === 'sent').length === 3 && r.body?.targets?.procurement?.failed_24h === 0);
-t('…no URL, routine id or key in it', !/crsr_|procROUTINE1|ctrlROUTINE1|127\.0\.0\.1/.test(r.text));
+t('…five sent, none failed; owner listed with its channels', r.body?.recent?.filter(x => x.status === 'sent').length === 5 && r.body?.targets?.procurement?.failed_24h === 0
+  && r.body?.targets?.owner?.enabled === true && r.body?.owner_channels?.length === 3);
+t('…no URL, routine id or key in it', !/crsr_|procROUTINE1|ctrlROUTINE1|ownrROUTINE1|127\.0\.0\.1/.test(r.text));
 t('a bot token is refused', (await json('GET', '/admin/ops-webhook/status', null, tok)).status === 403);
 t('no session is 401', (await json('GET', '/admin/ops-webhook/status')).status === 401);
 t('a person who is not an admin is refused', (await json('GET', '/admin/ops-webhook/status', null, person)).status === 403);
