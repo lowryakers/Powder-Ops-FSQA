@@ -88,6 +88,8 @@ import { seedCandidates } from './server/candidates-seed.js';
 import reimbursementRoutes from './server/api/reimbursements.js';
 import bankingRoutes from './server/api/banking.js';
 import apDropRoutes, { repairHeaderVendors, grantApDropToDroppers } from './server/api/ap-drop.js';
+import paymentRunRoutes from './server/api/payment-run.js';
+import { sendFailureNotices, sendRunReadyNotice } from './server/payment-run.js';
 import employeeDocumentRoutes, { employeeDocumentNudges } from './server/api/employee-documents.js';
 import { trainingNudges } from './server/training-notify.js';
 import activityRoutes from './server/api/activity.js';
@@ -2200,6 +2202,8 @@ app.use('/api/banking', requireModuleWrite('banking'), bankingRoutes);
 // queue is checked inside the router (admin, the ap-drop edit grant, or an
 // office/admin supervisor); everyone else reads only their own drops.
 app.use('/api/ap-drop', apDropRoutes);
+// The weekly payment run (D-360): AP Drop's work-the-queue door, checked in the router.
+app.use('/api/payment-run', paymentRunRoutes);
 // Documents sent to an existing employee to sign (W-4, W-9, a policy). Mounted
 // WITHOUT the module guard: the person signing is usually an operator with no
 // modules at all, and the router decides per route who is the employee and who
@@ -2378,7 +2382,7 @@ server.listen(PORT, '0.0.0.0', () => {
   backfillInvoiceText().catch(e => console.warn('[invoices] backfill error:', e.message));
   backfillFinanceFileText().catch(e => console.warn('[finance] backfill error:', e.message));
   // Recurring jobs: Friday auto-backup to R2, Monday expiry digest to #quality.
-  startScheduledJobs(db, { runDbBackup, BACKUP_HOUR, storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges, qaActionNudges, employeeDocumentNudges, policyAckNudges: (d) => policyAckNudges(d, { botDm, postMessageAs, pushToUser }), trainingNudges, supplyCycleNudge, partnerReminderNudges, recordBackfillNudge, supplierReviewNudge, sendFlashReport, sendCleanupDigest, cleanupDigest, CLEANUP_BUSY_THRESHOLD, sendEodMissedDigest, eodMissedDigest, EOD_BUSY_THRESHOLD, sendHolidayNotices, sendLateResults });
+  startScheduledJobs(db, { runDbBackup, BACKUP_HOUR, storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges, qaActionNudges, employeeDocumentNudges, policyAckNudges: (d) => policyAckNudges(d, { botDm, postMessageAs, pushToUser }), trainingNudges, supplyCycleNudge, partnerReminderNudges, recordBackfillNudge, supplierReviewNudge, sendFlashReport, sendCleanupDigest, cleanupDigest, CLEANUP_BUSY_THRESHOLD, sendEodMissedDigest, eodMissedDigest, EOD_BUSY_THRESHOLD, sendHolidayNotices, sendLateResults, sendFailureNotices, sendRunReadyNotice });
   startReminderLoop(db);
   try { initOpsWebhook(db); } catch (e) { console.warn('[ops-webhook] not started:', e.message); }
   try { startOpsMonitor(db); } catch (e) { console.warn('[ops-monitor] not started:', e.message); }
