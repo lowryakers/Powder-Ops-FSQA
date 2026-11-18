@@ -3,9 +3,10 @@ import { useCompactLayout } from '../../lib/useCompactLayout';
 import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
-import { Plus, Edit2, Trash2, X, Network, Settings2, FileText, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Network, Settings2, FileText, ZoomIn, ZoomOut, Maximize2, FileDown } from 'lucide-react';
 import './OrgChart.css';
 import SearchSelect from '../common/SearchSelect.jsx';
+import { downloadFile } from '../../lib/downloadFile.js';
 
 const DEPARTMENTS = ['executive', 'quality', 'production', 'sanitation', 'maintenance', 'warehouse', 'admin', 'other'];
 const DEPT_CLASS = {
@@ -346,6 +347,13 @@ export default function OrgChart() {
     await apiFetch(`/org/${node.id}`, { method: 'DELETE' });
     refresh();
   };
+  const [exporting, setExporting] = useState(false);
+  const exportPdf = async () => {
+    setExporting(true);
+    try { await downloadFile('/org/pdf', `Org-Chart${meta?.version ? `-V${meta.version}` : ''}.pdf`); }
+    catch (e) { alert(e.message || 'Could not make the PDF.'); }
+    finally { setExporting(false); }
+  };
   const handleSaveMeta = async (form) => { await apiPut('/org/meta', form); setEditMeta(false); refresh(); };
 
   // Viewing controls: zoom in/out plus one-click fit-to-width, so a wide chart
@@ -406,6 +414,10 @@ export default function OrgChart() {
             <button onClick={() => setZoom(z => Math.min(1.5, +(z + 0.1).toFixed(2)))} className="p-1.5 text-gray-500 hover:bg-white rounded-md" data-tip="Zoom in"><ZoomIn size={15} /></button>
             <button onClick={fitToWidth} className="p-1.5 text-gray-500 hover:bg-white rounded-md" data-tip="Fit whole chart to screen width"><Maximize2 size={15} /></button>
           </div>
+          <button type="button" onClick={exportPdf} disabled={exporting || !positions.length} data-org-pdf
+            className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 disabled:opacity-40">
+            <FileDown size={15} /> {exporting ? 'Making PDF…' : 'Export to PDF'}
+          </button>
           {canEdit && (
             <>
               <button onClick={() => setEditMeta(true)} className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">
