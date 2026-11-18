@@ -9,9 +9,13 @@ import { Router } from 'express';
 import { randomUUID } from 'crypto';
 import { getDb, logAudit } from '../db.js';
 import { canWorkQueue } from './ap-drop.js';
-import { paymentRun, weeklyScore, getSettings, saveSettings, notifyRecipients, BILL_CLASSES, suggestClass, loadContext, MATERIALS_MODES,
+import { paymentRun, weeklyScore, getSettings, saveSettings, notifyRecipients, BILL_CLASSES, suggestClass, loadContext, MATERIALS_MODES, DEPOSIT_PAYMENT_MODES,
   recordBankDetails, listBankDetails, feedBalance } from '../payment-run.js';
 import { gateSignature } from '../signature.js';
+import multer from 'multer';
+import { storageEnabled, putObject, presignGet } from '../storage.js';
+import { closeout, canCloseOut, confirmReceived, recordPayment, addProof, markInQbo, sendBack, recordDepositInvoice,
+  markDepositPaid, recordShortfall, closeRun } from '../payment-closeout.js';
 import { freezeRun, runView, listRuns, setBankBalance, sendForApproval, cancelRun, approverNumber } from '../payment-approval.js';
 
 const router = Router();
@@ -31,7 +35,7 @@ const personOnly = (req, res) => {
   res.status(403).json({ error: 'A person prepares, sends and cancels a payment run; a bot may only read it.', code: 'person_only' });
   return false;
 };
-const fail = (res, e) => res.status(e.status || 500).json({ error: e.message });
+const fail = (res, e) => res.status(e.status || 500).json({ error: e.message, ...(e.code && { code: e.code }), ...(e.open && { open: e.open }) });
 const people = (db, ids) => (ids || []).map(id => db.prepare('SELECT id, name FROM users WHERE id = ?').get(id)).filter(Boolean);
 
 router.get('/', (req, res) => {
@@ -49,12 +53,14 @@ router.get('/', (req, res) => {
       notify_set: (s.notify_ids || []).length > 0,
       approver_phone: s.approver_phone, approver_number: approverNumber(db), review_before_send: s.review_before_send !== false,
       materials_mode: s.materials_mode, materials_modes: MATERIALS_MODES, bank_balance: s.bank_balance,
+      deposit_payment: s.deposit_payment || 'transfer', deposit_payment_modes: DEPOSIT_PAYMENT_MODES,
     },
     feed_balance: feedBalance(db),
     bank_details: listBankDetails(db).filter(r => !r.retired_at),
     runs: listRuns(db, 12),
     can_admin: req.user?.role === 'admin' && !isToken(req),
     can_classify: !isToken(req),
+    can_close_out: !isToken(req) && canCloseOut(db, req.user),
   });
 });
 
@@ -117,7 +123,7 @@ router.put('/settings', (req, res) => {
   const db = getDb();
   const before = getSettings(db);
   const body = {};
-  for (const k of ['bill_owner_id', 'controller_id', 'notify_ids', 'approver_phone', 'review_before_send', 'materials_mode']) if (k in (req.body || {})) body[k] = req.body[k];
+  for (const k of ['bill_owner_id', 'controller_id', 'notify_ids', 'approver_phone', 'review_before_send', 'materials_mode', 'deposit_payment']) if (k in (req.body || {})) body[k] = req.body[k];
   let after;
   try { after = saveSettings(db, body); } catch (e) { return fail(res, e); }
   logAudit(req.user, 'update', 'app_setting', 'payment_run_settings', {}, before, after, 'Payment run settings');
@@ -223,6 +229,62 @@ router.post('/runs/:id/cancel', (req, res) => {
     logAudit(req.user, 'cancel', 'payment_run', v.id, { reason: v.cancel_reason }, null, null, v.run_no);
     res.json(v);
   } catch (e) { fail(res, e); }
+});
+
+// ── close-out (D-364, part D) ────────────────────────────────────────────────
+// After Danny's transfer: the money landing, each bill paid with proof and
+// marked in QBO (or sent back), the deposit invoice, the shortfall, the close.
+// An admin or the Controller, signed in. A token reads the close-out at most.
+const proofUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024, files: 1 } });
+const closer = (req, res) => {
+  if (!personOnly(req, res)) return false;
+  if (canCloseOut(getDb(), req.user)) return true;
+  res.status(403).json({ error: 'Closing out a run is for an admin or the Controller named in the payment run settings.' });
+  return false;
+};
+const act = (fn, audit) => (req, res) => {
+  if (!closer(req, res)) return;
+  const db = getDb();
+  try {
+    const c = fn(db, req);
+    logAudit(req.user, audit, 'payment_run', req.params.id, { line_id: req.params.lineId || null, ...(req.body || {}) }, null, null, c?.run_no);
+    res.json(c);
+  } catch (e) { fail(res, e); }
+};
+
+router.get('/runs/:id/closeout', (req, res) => {
+  if (!gate(req, res)) return;
+  try {
+    const c = closeout(getDb(), req.params.id);
+    if (!c) return res.status(409).json({ error: 'This run has not been approved yet.' });
+    res.json({ ...c, can_close_out: !isToken(req) && canCloseOut(getDb(), req.user) });
+  } catch (e) { fail(res, e); }
+});
+router.post('/runs/:id/received', act((db, req) => confirmReceived(db, req.params.id, req.body || {}, req.user), 'payment_run_received'));
+router.post('/runs/:id/lines/:lineId/paid', act((db, req) => recordPayment(db, req.params.id, req.params.lineId, req.body || {}, req.user), 'payment_run_paid'));
+router.post('/runs/:id/lines/:lineId/qbo', act((db, req) => markInQbo(db, req.params.id, req.params.lineId, req.body || {}, req.user), 'payment_run_qbo_marked'));
+router.post('/runs/:id/lines/:lineId/send-back', act((db, req) => sendBack(db, req.params.id, req.params.lineId, req.body || {}, req.user), 'payment_run_sent_back'));
+router.post('/runs/:id/deposit-invoice', act((db, req) => recordDepositInvoice(db, req.params.id, req.body || {}, req.user), 'payment_run_deposit_invoice'));
+router.post('/runs/:id/deposit-paid', act((db, req) => markDepositPaid(db, req.params.id, req.user), 'payment_run_deposit_paid'));
+router.post('/runs/:id/shortfall', act((db, req) => recordShortfall(db, req.params.id, req.body || {}, req.user), 'payment_run_shortfall'));
+router.post('/runs/:id/close', act((db, req) => closeRun(db, req.params.id, req.user), 'payment_run_closed'));
+
+router.post('/runs/:id/lines/:lineId/proof', proofUpload.single('file'), async (req, res) => {
+  if (!closer(req, res)) return;
+  if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured, so proof cannot be attached yet.' });
+  const db = getDb();
+  try {
+    const c = await addProof(db, req.params.id, req.params.lineId, req.file, req.user, { putObject });
+    logAudit(req.user, 'payment_run_proof', 'payment_run', req.params.id, { line_id: req.params.lineId, file: req.file?.originalname }, null, null, c.run_no);
+    res.json(c);
+  } catch (e) { fail(res, e); }
+});
+
+router.get('/runs/:id/lines/:lineId/proof', async (req, res) => {
+  if (!gate(req, res)) return;
+  const p = getDb().prepare('SELECT proof_key, proof_name FROM payment_run_payments WHERE run_id = ? AND line_id = ?').get(req.params.id, req.params.lineId);
+  if (!p?.proof_key) return res.status(404).json({ error: 'No proof attached.' });
+  try { res.json({ url: await presignGet(p.proof_key, p.proof_name), name: p.proof_name }); } catch (e) { fail(res, e); }
 });
 
 export default router;

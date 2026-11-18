@@ -413,9 +413,16 @@ const SETTINGS_KEY = 'payment_run_settings';
 // Lowry reviews before the text goes while `review_before_send` is on, and the
 // materials invoice is weekly at cost until the accountant says otherwise.
 export const MATERIALS_MODES = Object.freeze({ weekly_at_cost: 'One weekly deposit invoice: material bills at cost' });
+// D-364: how ProDough's transfer is recorded against the deposit invoice, until the
+// accountant confirms. 'transfer' marks the deposit paid when the transfer is
+// confirmed in the bank; 'manual' leaves it for a person to mark.
+export const DEPOSIT_PAYMENT_MODES = Object.freeze({
+  transfer: 'The confirmed transfer pays the deposit invoice',
+  manual: 'A person marks the deposit invoice paid',
+});
 const SETTING_DEFAULTS = Object.freeze({
   bill_owner_id: null, controller_id: null, notify_ids: [],
-  approver_phone: null, review_before_send: true, materials_mode: 'weekly_at_cost', bank_balance: null,
+  approver_phone: null, review_before_send: true, materials_mode: 'weekly_at_cost', bank_balance: null, deposit_payment: 'transfer',
 });
 export function getSettings(db) {
   try { return { ...SETTING_DEFAULTS, ...JSON.parse(db.prepare('SELECT value FROM app_settings WHERE key = ?').get(SETTINGS_KEY)?.value || '{}') }; }
@@ -442,6 +449,10 @@ export function saveSettings(db, patch) {
   if ('materials_mode' in patch) {
     if (!MATERIALS_MODES[patch.materials_mode]) throw Object.assign(new Error(`Deposit invoice must be one of: ${Object.keys(MATERIALS_MODES).join(', ')}`), { status: 400 });
     next.materials_mode = patch.materials_mode;
+  }
+  if ('deposit_payment' in patch) {
+    if (!DEPOSIT_PAYMENT_MODES[patch.deposit_payment]) throw Object.assign(new Error(`Deposit payment must be one of: ${Object.keys(DEPOSIT_PAYMENT_MODES).join(', ')}`), { status: 400 });
+    next.deposit_payment = patch.deposit_payment;
   }
   db.prepare('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)').run(SETTINGS_KEY, JSON.stringify(next));
   return next;

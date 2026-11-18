@@ -6597,6 +6597,59 @@ function runMigrations() {
         BEGIN SELECT RAISE(ABORT, 'The payment run log is kept for good'); END;
       CREATE TRIGGER IF NOT EXISTS payment_run_events_no_update BEFORE UPDATE ON payment_run_events
         BEGIN SELECT RAISE(ABORT, 'The payment run log is kept for good'); END;`);
+    // D-364 (payment run part D): after Danny's transfer, the run is CLOSED OUT.
+    // The money landing, each bill paid (how, proof, marked in QBO) or sent back,
+    // the weekly ProDough deposit invoice, the shortfall booked. A run is closed
+    // only when nothing is left. Nothing here is deleted.
+    for (const [c, d] of [['received_amount', 'REAL'], ['received_on', 'TEXT'], ['received_by', 'TEXT'], ['received_at', 'TEXT'],
+      ['received_bank_txn', 'TEXT'], ['shortfall_note', 'TEXT'], ['shortfall_by', 'TEXT'], ['shortfall_at', 'TEXT'],
+      ['closed_by', 'TEXT'], ['closed_at', 'TEXT']]) addColumnIfMissing('payment_runs', c, d);
+    db.exec(`CREATE TABLE IF NOT EXISTS payment_run_payments (
+        id             TEXT PRIMARY KEY,
+        run_id         TEXT NOT NULL REFERENCES payment_runs(id),
+        line_id        TEXT NOT NULL UNIQUE REFERENCES payment_run_lines(id),
+        drop_id        TEXT NOT NULL,
+        outcome        TEXT NOT NULL CHECK (outcome IN ('paid','not_paid')),
+        method         TEXT CHECK (method IS NULL OR method IN ('qbo_ach','debit_card','check','other')),
+        paid_on        TEXT,
+        amount         REAL,
+        reference      TEXT,
+        reason         TEXT,
+        proof_key      TEXT,
+        proof_name     TEXT,
+        proof_type     TEXT,
+        proof_size     INTEGER,
+        proof_sha256   TEXT,
+        proof_by       TEXT,
+        proof_at       TEXT,
+        qbo_payment_id TEXT,
+        qbo_marked_by  TEXT,
+        qbo_marked_at  TEXT,
+        recorded_by    TEXT,
+        recorded_by_id TEXT,
+        recorded_at    TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_payment_run_payments_run ON payment_run_payments(run_id);
+      CREATE TRIGGER IF NOT EXISTS payment_run_payments_no_delete BEFORE DELETE ON payment_run_payments
+        BEGIN SELECT RAISE(ABORT, 'A payment record is kept for good'); END;
+      CREATE TABLE IF NOT EXISTS prodough_deposits (
+        id                  TEXT PRIMARY KEY,
+        run_id              TEXT NOT NULL UNIQUE REFERENCES payment_runs(id),
+        amount              REAL NOT NULL,
+        mode                TEXT,
+        qbo_invoice_no      TEXT,
+        invoice_recorded_by TEXT,
+        invoice_recorded_at TEXT,
+        paid_amount         REAL,
+        paid_from           TEXT,
+        paid_by             TEXT,
+        paid_at             TEXT,
+        applied_to          TEXT,
+        applied_at          TEXT,
+        created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TRIGGER IF NOT EXISTS prodough_deposits_no_delete BEFORE DELETE ON prodough_deposits
+        BEGIN SELECT RAISE(ABORT, 'A deposit is kept for good'); END;`);
     // D-160: two terminal statuses for a drop that is money owed TO us — a
     // receivable handed to the partner ledger (`to_partner_ar`) and one for a
     // customer who is not a partner (`receivable_other`). The CHECK is widened
