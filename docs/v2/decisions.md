@@ -11205,3 +11205,15 @@ details, one button, the decision logged — built as its own code; the Flavor A
 - Sending is on `APPROVE_ROUTES`; preparing, sending and cancelling refuse a bot token. Recording the transfer as
   ProDough paying the invoices, and paying the bills, are part D.
 `verify:paymentapproval` (58, live + browser at 390 and 1280; control: main fails from the first settings check).
+
+## D-362 — The Org Chart exports to a PDF (18 Nov 2026)
+Lowry asked for an Export to PDF button on the Org Chart. `GET /api/org/pdf` (`server/org-chart-pdf.js`, declared before
+`/:id`) — the same door and the same rows as `GET /api/org`, so the PDF and the screen name the same people (a linked
+position prints the account's current name; a position nobody holds prints Vacant; a holder who has left is marked).
+- **Page 1 is the chart** as boxes and lines, header carrying the version, approver and effective date. Positions with no
+  reports of their own are stacked in one column under their manager: laid side by side, the plant's 23 positions were
+  15 columns and unreadable on one page. The page is letter landscape unless that would shrink the chart below
+  three-quarters size; then it is tabloid, which prints scaled to letter.
+- **The next pages are the same positions as a list** (position indented under its manager, person, backup, department).
+- Every page: "Printed <time> by <name> · uncontrolled when printed · Page x of y". The PDF writes nothing.
+`verify:orgchartpdf` (15, live + browser at 1280 and 390; reads the text back out of the PDF; control: main is 404).

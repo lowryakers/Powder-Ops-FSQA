@@ -168,6 +168,7 @@
     "verify:employees": "VERIFY_ONLY=verify-employees-hub.mjs node scripts/verify-all.mjs",
     "verify:paymentrun": "VERIFY_ONLY=verify-payment-run.mjs node scripts/verify-all.mjs",
     "verify:paymentapproval": "VERIFY_ONLY=verify-payment-approval.mjs node scripts/verify-all.mjs",
+    "verify:orgchartpdf": "VERIFY_ONLY=verify-org-chart-pdf.mjs node scripts/verify-all.mjs",
     "verify:trainingoneway": "VERIFY_ONLY=verify-training-oneway.mjs node scripts/verify-all.mjs",
     "verify:calexport": "VERIFY_ONLY=verify-calibration-export.mjs node scripts/verify-all.mjs",
     "verify:movemessage": "VERIFY_ONLY=verify-move-message.mjs node scripts/verify-all.mjs",

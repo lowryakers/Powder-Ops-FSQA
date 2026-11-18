@@ -447,6 +447,12 @@ production invoices) are still to come; **do not touch the Flavor Approvals modu
   shortfall (expenses − the bank balance Lowry typed, shown only above 0)**; `owes()` is the one sum. Must-pays cannot be
   unticked. Approving moves ticked bills to `in_payment_run`. Reminder Friday 10 AM, once. `verify:paymentapproval` (58).
 
+## The Org Chart exports to a PDF (D-362)
+`GET /api/org/pdf` (`server/org-chart-pdf.js`, before `/:id`): page 1 the chart (leaf positions stacked under their
+manager; tabloid when letter would shrink it below 75%), then the list. Reads `withPeople` like `GET /api/org`; writes
+nothing. **A footer drawn in the bottom margin must lift `doc.page.margins.bottom` or pdfkit adds a blank page.**
+`verify:orgchartpdf` (15).
+
 ## A post in #ops-requests wakes the right bot (D-251)
 `server/ops-webhook.js` (`OPS_CHANNELS`, `targetFor`, `buildPayload`, `enqueueOpsWebhook`, `pumpOpsWebhook`), the
 `ops_webhook_log` outbox, `GET /api/admin/ops-webhook/status` (admin session only), runbook `docs/ops-requests-webhook.md`.
