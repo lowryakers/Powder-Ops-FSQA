@@ -432,6 +432,16 @@ limit), `authenticateToken` in `middleware/auth.js`, `server/middleware/no-token
 - `GET /users/access-review` lists non-admins holding nearly every module with the last hand-set map to restore.
   `verify:accesssources` (25; control fails 7).
 
+## The weekly payment run, part A (D-360, `server/payment-run.js`)
+`/api/payment-run` (AP Drop's `canWorkQueue`), Accounting → **Payment run** (`PaymentRunPanel.jsx`), `payment_must_pays`,
+`ap_drops.bill_class` / `_by` / `_at`, `payment_check_failed` events. Parts B–E (Danny's link, line + bank checks, after
+approval, production invoices) are still to come; **do not touch the Flavor Approvals module — copy its experience**.
+- **The run is derived on read** from `in_qbo` bills with a QBO bill id; `evaluateBill` is the ONE check list. Fail =
+  off the run; flag = ranked, highlighted before noted. **A new check goes in `evaluateBill`, nowhere else.**
+- **Class is suggested, stored only on a person's confirm** (never a token). Must-pays: admin list, retired not deleted.
+- Payroll weeks: every two weeks from `PAYROLL_ANCHOR` 2026-11-23 → run Friday 12:00; else Thursday.
+- `verify:paymentrun` (36).
+
 ## A post in #ops-requests wakes the right bot (D-251)
 `server/ops-webhook.js` (`OPS_CHANNELS`, `targetFor`, `buildPayload`, `enqueueOpsWebhook`, `pumpOpsWebhook`), the
 `ops_webhook_log` outbox, `GET /api/admin/ops-webhook/status` (admin session only), runbook `docs/ops-requests-webhook.md`.

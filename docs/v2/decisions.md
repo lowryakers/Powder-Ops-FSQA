@@ -11130,3 +11130,28 @@ in the order a person moves through: **People → Onboarding → Time Tracking �
 - **A hub's `?view=` that is not one of its own tabs belongs to the module inside** (`useModuleTabs`): with an `initial`
   tab, a foreign `view` no longer sends the hub to its first tab. Found by `verify:edocsui`
   (`?tab=onboarding&view=documents` landed on People).
+## D-360 — The weekly payment run, part A: the run page, its checks, and who is told (18 Nov 2026)
+Lowry approved the payment-run plan on 18 Nov 2026 with answers: payroll every two weeks from Mon 23 Nov 2026 (run
+Friday 12:00 in a payroll week, otherwise Thursday); only bills entered in QBO; the Controller marks bills paid in QBO;
+ProDough reimburses materials at cost through one weekly invoice (a setting until the accountant confirms); the
+approver's number is its own setting. It ships in five parts (A run page · B Danny's link · C line and bank checks ·
+D after approval · E production invoices), each for review. This is A.
+- **The run is DERIVED on every read** (`server/payment-run.js`): AP Drop bills with status `in_qbo` and a QBO bill id.
+  It is frozen only when it is sent for approval (part B). Anything earlier is counted ("not in QuickBooks yet"),
+  never listed as payable.
+- **One function decides each bill** (`evaluateBill`): class confirmed · amount · addressed to Powder Ops · duplicate
+  · PO · goods received · total vs PO · due · new vendor · size jump. A failed check keeps the bill off the run; a
+  flag never does. Flags are ranked: highlighted (new vendor, >10% over the PO, 3× the usual, addressed to ProDough,
+  bill-to unread, overdue, duplicate with a missing number) before noted (>2% over, no due date, same amount with
+  its own number — a repeat delivery is common).
+- **Each bill is a ProDough material or a Powder Ops expense.** The app suggests (the vendor's last confirmed class,
+  the supplier type, a PO) and **only a person's confirmation is stored** (`ap_drops.bill_class`), with an event and
+  an audit entry. An unconfirmed bill fails. A token cannot confirm.
+- **Must-pays are Lowry's list** (`payment_must_pays`, admin only), locked first, exempt from the PO and receiving
+  checks, retired with a reason, and a trigger refuses DELETE.
+- **A failure is reported once**: `payment_check_failed` on the bill's events per distinct set of failing checks, a
+  DM to the notify list (stored; else the account with Lowry's email; else admins) and to the bill owner. On the run
+  day the page is announced once (8 AM, or noon in a payroll week). Those events are also the weekly score — a fixed
+  record by week logged, not lowered by a later fix.
+- Door: AP Drop's `canWorkQueue`, checked in the router (mounted without the module guard, the AP Drop way).
+`verify:paymentrun` (36, live + browser at 1280 and 390; control: `/api/payment-run` is 404).

@@ -6481,6 +6481,27 @@ function runMigrations() {
     // decided. Here, after the CREATE, not in runMigrations — the ordering trap.
     addColumnIfMissing('ap_drops', 'partner_document_id', 'TEXT');
     addColumnIfMissing('ap_drops', 'partner_route', 'TEXT');
+    // The weekly payment run (D-360). A bill is either a ProDough material (raw
+    // materials, packaging — ProDough reimburses at cost) or a Powder Ops expense
+    // (CTLA, supplies, services). The app SUGGESTS; a person confirms, and only
+    // the confirmed answer is stored. Its own columns, never derived on write.
+    addColumnIfMissing('ap_drops', 'bill_class', 'TEXT');
+    addColumnIfMissing('ap_drops', 'bill_class_by', 'TEXT');
+    addColumnIfMissing('ap_drops', 'bill_class_at', 'TEXT');
+    db.exec(`CREATE TABLE IF NOT EXISTS payment_must_pays (
+        id            TEXT PRIMARY KEY,
+        vendor_name   TEXT NOT NULL,
+        label         TEXT,
+        note          TEXT,
+        is_active     INTEGER NOT NULL DEFAULT 1,
+        created_by    TEXT,
+        created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+        retired_by    TEXT,
+        retired_at    TEXT,
+        retire_reason TEXT
+      );
+      CREATE TRIGGER IF NOT EXISTS payment_must_pays_no_delete BEFORE DELETE ON payment_must_pays
+        BEGIN SELECT RAISE(ABORT, 'A must-pay is retired, never deleted'); END;`);
     // D-160: two terminal statuses for a drop that is money owed TO us — a
     // receivable handed to the partner ledger (`to_partner_ar`) and one for a
     // customer who is not a partner (`receivable_other`). The CHECK is widened

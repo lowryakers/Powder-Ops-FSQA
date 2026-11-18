@@ -10,7 +10,7 @@ import { setAppBadge } from './lib/appBadge';
 import { onDataChanged } from './lib/dataChanged';
 import { useEdgeSwipe } from './lib/useEdgeSwipe';
 import { useInstallPrompt, installEnvironment } from './lib/useInstallPrompt.js';
-import { visibleModuleIds, canViewModule, hasExplicitGrant, canSeeQaReview, canSeeApDrop } from './utils/permissions';
+import { visibleModuleIds, canViewModule, hasExplicitGrant, canSeeQaReview, canSeeApDrop, moduleLevel } from './utils/permissions';
 import { registerNavAccess } from './lib/navAccess';
 import { OPT_IN_SET } from '../shared/opt-in-modules.js';
 import { defaultModuleIds } from '../shared/default-modules.js';
@@ -103,6 +103,7 @@ const PayTrackingPanel = lazy(() => import('./components/office/PayTrackingPanel
 const PartnerReconPanel = lazy(() => import('./components/office/PartnerReconPanel.jsx'));
 const ReimbursementsPanel = lazy(() => import('./components/office/ReimbursementsPanel.jsx'));
 const ApDropPanel = lazy(() => import('./components/office/ApDropPanel.jsx'));
+const PaymentRunPanel = lazy(() => import('./components/office/PaymentRunPanel.jsx'));
 const PartnerPortalPage = lazy(() => import('./components/office/PartnerPortalPage.jsx'));
 const SupplierQuestionnairePage = lazy(() => import('./components/SupplierQuestionnairePage.jsx'));
 const JoinPage = lazy(() => import('./components/JoinPage.jsx'));
@@ -1064,6 +1065,11 @@ const HUB_TABS = {
     // every floor account and hid where it came from.
     { id: 'ap-drop', label: 'AP Drop', render: (u) => <ApDropPanel user={u} />,
       visible: canSeeApDrop },
+    // The weekly payment run (D-360): AP Drop's work-the-queue rule, the same one
+    // the server checks — never shown to someone the API would refuse.
+    { id: 'payment-run', label: 'Payment run', render: () => <PaymentRunPanel />,
+      visible: (u) => u?.role === 'admin' || moduleLevel(u, 'ap-drop') === 'edit'
+        || (u?.role === 'supervisor' && ['office', 'admin'].includes((u?.department || '').toLowerCase())) },
     { id: 'partner-reconciliation', label: 'Partner Reconciliation', render: (u) => <PartnerReconPanel user={u} /> },
     { id: 'reimbursements', label: 'Reimbursements', render: (u) => <ReimbursementsPanel user={u} /> },
   ],

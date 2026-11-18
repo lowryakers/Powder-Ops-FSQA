@@ -328,6 +328,28 @@ export async function runDue(db, deps, now = new Date()) {
   // Lab results past their due date (D-258): once a weekday morning, only when
   // something is late. The day is stamped whether or not anything was sent,
   // so a quiet morning is not re-checked every hour.
+  // The weekly payment run (D-360). A bill newly kept off the run is reported
+  // once (to Lowry and the bill owner) on the first open-weekday tick during the
+  // day; on the run day the page is announced once, from 8 AM — or from noon in
+  // a payroll week (the run itself is Friday 12:00 then).
+  if (deps.sendFailureNotices && openWeekday && wall.getHours() >= 7 && wall.getHours() < 18) {
+    try {
+      const r = await deps.sendFailureNotices(db, { botDm: deps.botDm, postMessageAs: deps.postMessageAs, pushToUser: deps.pushToUser }, ymdLocal(wall));
+      if (r.bills) console.log(`[jobs] payment run: ${r.bills} bill(s) newly kept off, ${r.sent} message(s)`);
+    } catch (e) { console.warn('[jobs] payment run failure notice failed:', e.message); }
+  }
+  if (deps.sendRunReadyNotice && openWeekday && getFlag(db, 'last_payment_run_ready_day') !== ymdLocal(wall)) {
+    try {
+      const { runDayOfWeek } = await import('./payment-run.js');
+      const run = runDayOfWeek(db, ymdLocal(wall));
+      if (run.date === ymdLocal(wall) && wall.getHours() >= (run.payroll_week ? 12 : 8)) {
+        setFlag(db, 'last_payment_run_ready_day', ymdLocal(wall));
+        const r = await deps.sendRunReadyNotice(db, { botDm: deps.botDm, postMessageAs: deps.postMessageAs, pushToUser: deps.pushToUser }, ymdLocal(wall));
+        console.log(`[jobs] payment run ready: ${r.count} bill(s) to ${r.sent} recipient(s)`);
+      }
+    } catch (e) { console.warn('[jobs] payment run ready notice failed:', e.message); }
+  }
+
   if (deps.sendLateResults && wall.getHours() >= 9 && openWeekday && getFlag(db, 'last_coa_late_results_day') !== ymdLocal(wall)) {
     try {
       const r = await deps.sendLateResults(db, { botDm: deps.botDm, postMessageAs: deps.postMessageAs, pushToUser: deps.pushToUser }, now);
