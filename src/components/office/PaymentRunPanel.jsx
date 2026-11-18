@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
-import { AlertTriangle, Lock, XCircle, Clock, Info, Plus, Settings2, Send, Snowflake, Ban, Copy } from 'lucide-react';
+import { withSignature } from '../../lib/signature';
+import { AlertTriangle, Lock, XCircle, Clock, Info, Plus, Settings2, Send, Snowflake, Ban, Copy, Landmark } from 'lucide-react';
 
 // The weekly payment run (D-360, PR A): the bills in QuickBooks, checked, and
 // placed — must-pays locked at the top, flagged bills first, the rest after;
@@ -12,6 +13,12 @@ import { AlertTriangle, Lock, XCircle, Clock, Info, Plus, Settings2, Send, Snowf
 // D-361 (part B): a run is PREPARED (frozen into its own record), Lowry checks
 // it and enters the bank balance, and "Send to Danny" texts him the link. What
 // he does on his page — untick, approve, "I've sent $X" — shows here in the log.
+//
+// D-363 (part C): each bill's lines are checked against its PO lines, and the
+// bank details printed on the bill against those on file. A change in bank
+// details keeps the bill off the run until Lowry confirms it with the vendor by
+// phone and records the new details (with his password). The weekly ProDough
+// invoice for materials is called a Deposit.
 
 const money = (n) => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const day = (d) => (d ? new Date(`${d}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '—');
@@ -75,7 +82,60 @@ function BillRow({ line, data, onDone }) {
         ))}
         {bad.filter(f => f.key !== 'class').map(f => <Chip key={f.key} tone="red"><XCircle className="h-3 w-3" />{f.reason}</Chip>)}
       </div>
+      {data.can_admin && line.remit && line.checks?.some(c => c.key === 'bank' && c.state !== 'pass' && c.state !== 'na') && (
+        <RecordBank line={line} onDone={onDone} />
+      )}
     </li>
+  );
+}
+
+function RecordBank({ line, onDone }) {
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const r = line.remit;
+  const save = async () => {
+    setBusy(true);
+    try {
+      await withSignature((extra) => apiPost('/payment-run/bank-details', { drop_id: line.id, confirmed_note: note, ...extra }),
+        { title: 'Record bank details', detail: `${line.vendor}: routing ${r.routing}${r.account_last4 ? `, account ending ${r.account_last4}` : ''}` });
+      setOpen(false); setNote(''); onDone();
+    } catch (e) { if (!e.cancelled) alert(e.message); }
+    finally { setBusy(false); }
+  };
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} data-bank-record={line.id}
+        className="mt-2 inline-flex items-center gap-1 rounded border border-slate-300 px-2 py-1 text-xs text-slate-700">
+        <Landmark className="h-3.5 w-3.5" />I confirmed these by phone: record them
+      </button>
+    );
+  }
+  return (
+    <div className="mt-2 space-y-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900" data-bank-form={line.id}>
+      <p>Call the vendor on a number you already have (not one printed on this bill) and check routing {r.routing}{r.account_last4 ? ` and the account ending ${r.account_last4}` : ''}. Changed bank details are how invoice fraud works.</p>
+      <input id={`bank-note-${line.id}`} value={note} onChange={e => setNote(e.target.value)} placeholder="Who you spoke to, and the number you called"
+        className="w-full rounded border border-amber-300 bg-white px-2 py-1 text-sm text-slate-800" data-bank-note />
+      <div className="flex gap-2">
+        <button type="button" disabled={busy || note.trim().length < 5} onClick={save} className="rounded bg-slate-800 px-3 py-1 text-sm text-white disabled:opacity-40" data-bank-save>Record them</button>
+        <button type="button" onClick={() => setOpen(false)} className="rounded border border-slate-300 px-3 py-1 text-sm">Close</button>
+      </div>
+    </div>
+  );
+}
+
+function BankDetails({ data }) {
+  const live = (data.bank_details || []).filter(r => !r.retired_at);
+  return (
+    <section className="space-y-2 rounded-lg border border-slate-200 p-3" data-bank-details>
+      <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800"><Landmark className="h-4 w-4" />Vendor bank details on file</h3>
+      <p className="text-xs text-slate-500">A bill asking to be paid somewhere else is kept off the run. {data.can_admin ? 'Record details from the bill once you have confirmed them by phone.' : 'Lowry records them.'} Only the routing number and the last four digits are kept.</p>
+      {live.length ? (
+        <ul className="space-y-1 text-xs">
+          {live.map(r => <li key={r.id} className="text-slate-700"><span className="font-medium">{r.vendor_name}</span> · routing {r.routing}{r.account_last4 ? ` · ending ${r.account_last4}` : ''} · {r.recorded_by}, {when(r.recorded_at)}</li>)}
+        </ul>
+      ) : <p className="text-xs text-slate-500">None recorded yet.</p>}
+    </section>
   );
 }
 
@@ -155,6 +215,7 @@ function SettingsBox({ data, onDone }) {
   const [review, setReview] = useState(s.review_before_send !== false);
   const [bal, setBal] = useState('');
   const saveBal = async () => { try { await apiPut('/payment-run/bank-balance', { amount: bal }); setBal(''); onDone(); } catch (e) { alert(e.message); } };
+  const saveFeed = async () => { try { await apiPut('/payment-run/bank-balance', { from_feed: true }); onDone(); } catch (e) { alert(e.message); } };
   const save = async () => {
     try {
       await apiPut('/payment-run/settings', { bill_owner_id: owner || null, controller_id: ctrl || null, approver_phone: phone || null, materials_mode: mode, review_before_send: review });
@@ -184,11 +245,11 @@ function SettingsBox({ data, onDone }) {
             <input id="pr-phone" value={phone} onChange={e => setPhone(e.target.value)} inputMode="tel" placeholder={s.approver_number || '10-digit number'}
               className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm" data-approver-phone />
           </label>
-          <label className="text-xs text-slate-600">Materials invoice
+          <label className="text-xs text-slate-600">Deposit invoice to ProDough
             <select id="pr-mode" value={mode} onChange={e => setMode(e.target.value)} className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm">
               {Object.entries(s.materials_modes || {}).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
-            <span className="mt-0.5 block text-[11px] text-slate-500">Until the accountant confirms how ProDough is invoiced.</span>
+            <span className="mt-0.5 block text-[11px] text-slate-500">A deposit each week; the final bill after the production run takes the deposits off. Whether materials stay at cost is still to be decided.</span>
           </label>
           <label className="flex items-start gap-2 text-xs text-slate-600 sm:col-span-2">
             <input id="pr-review" type="checkbox" checked={review} onChange={e => setReview(e.target.checked)} className="mt-0.5 h-4 w-4 shrink-0" data-review-before-send />
@@ -201,6 +262,7 @@ function SettingsBox({ data, onDone }) {
                 className="mt-1 block w-40 rounded border border-slate-300 px-2 py-1 text-sm" />
             </label>
             <button type="button" disabled={bal === ''} onClick={saveBal} className="rounded border border-slate-300 px-3 py-1 text-sm disabled:opacity-40" data-balance-save>Save balance</button>
+            {data.feed_balance && <button type="button" onClick={saveFeed} className="rounded border border-slate-300 px-3 py-1 text-sm" data-balance-feed>Use the bank feed: {money(data.feed_balance.amount)}{data.feed_balance.as_of ? ` (as of ${data.feed_balance.as_of})` : ''}</button>}
             {s.bank_balance && <span className="text-[11px] text-slate-500">{money(s.bank_balance.amount)} entered by {s.bank_balance.by}, {new Date(s.bank_balance.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>}
           </div>
         </div>
@@ -224,7 +286,7 @@ const when = (v) => (v ? new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(v) ? v : `${v.repl
 function OwesLines({ o }) {
   return (
     <dl className="grid gap-x-4 gap-y-1 text-sm sm:grid-cols-2" data-owes>
-      <div className="flex justify-between"><dt className="text-slate-500">Materials invoice (at cost)</dt><dd className="tabular-nums">{money(o.materials)}</dd></div>
+      <div className="flex justify-between"><dt className="text-slate-500">Deposit (materials at cost)</dt><dd className="tabular-nums">{money(o.materials)}</dd></div>
       <div className="flex justify-between"><dt className="text-slate-500">Production invoices</dt><dd className="tabular-nums">{o.production_count ? money(o.production) : 'none yet'}</dd></div>
       <div className="flex justify-between"><dt className="text-slate-500">Powder Ops expenses</dt><dd className="tabular-nums">{money(o.expenses)}</dd></div>
       <div className="flex justify-between"><dt className="text-slate-500">Bank balance used</dt><dd className="tabular-nums">{o.bank_balance === null ? 'not entered' : money(o.bank_balance)}</dd></div>
@@ -234,7 +296,7 @@ function OwesLines({ o }) {
   );
 }
 
-function RunCard({ run, canAdmin, onDone }) {
+function RunCard({ run, canAdmin, feed, onDone }) {
   const [open, setOpen] = useState(run.status === 'draft' || run.status === 'sent');
   const [bal, setBal] = useState(run.summary.bank_balance ?? '');
   const [link, setLink] = useState(null);
@@ -277,6 +339,8 @@ function RunCard({ run, canAdmin, onDone }) {
               </label>
               <button type="button" disabled={busy || bal === ''} onClick={() => act(() => apiPost(`/payment-run/runs/${run.id}/bank-balance`, { amount: bal }))}
                 className="rounded border border-slate-300 px-3 py-1 text-sm disabled:opacity-40" data-run-balance-save>Use this balance</button>
+              {feed && <button type="button" disabled={busy} onClick={() => act(() => apiPost(`/payment-run/runs/${run.id}/bank-balance`, { from_feed: true }))}
+                className="rounded border border-slate-300 px-3 py-1 text-sm disabled:opacity-40" data-run-balance-feed>Use the bank feed: {money(feed.amount)}</button>}
             </div>
           )}
           <ul className="divide-y divide-slate-100 rounded border border-slate-200 text-sm" data-run-lines>
@@ -374,7 +438,7 @@ function PreparedRuns({ data, onDone }) {
       <p className="text-xs text-slate-500">
         The run is prepared on its own on run day and you are asked to check it. Preparing it freezes the bills: what Danny sees does not change if a bill is corrected afterwards (cancel and prepare again).
       </p>
-      {(data.runs || []).length ? <ul className="space-y-2">{data.runs.map(r => <RunCard key={r.id} run={r} canAdmin={data.can_admin} onDone={onDone} />)}</ul>
+      {(data.runs || []).length ? <ul className="space-y-2">{data.runs.map(r => <RunCard key={r.id} run={r} canAdmin={data.can_admin} feed={data.feed_balance} onDone={onDone} />)}</ul>
         : <p className="text-xs text-slate-500">No run prepared yet.</p>}
     </section>
   );
@@ -400,7 +464,7 @@ export default function PaymentRunPanel() {
 
       <div className="grid gap-2 sm:grid-cols-4" data-run-totals>
         <div className="rounded-lg border border-slate-200 p-3"><div className="text-xs text-slate-500">On this run</div><div className="text-lg font-semibold tabular-nums">{money(t.total)}</div><div className="text-xs text-slate-500">{t.count} bill{t.count === 1 ? '' : 's'}</div></div>
-        <div className="rounded-lg border border-slate-200 p-3"><div className="text-xs text-slate-500">ProDough materials</div><div className="text-lg font-semibold tabular-nums">{money(t.materials)}</div><div className="text-xs text-slate-500">ProDough reimburses at cost</div></div>
+        <div className="rounded-lg border border-slate-200 p-3"><div className="text-xs text-slate-500">ProDough deposit</div><div className="text-lg font-semibold tabular-nums">{money(t.materials)}</div><div className="text-xs text-slate-500">material bills, at cost</div></div>
         <div className="rounded-lg border border-slate-200 p-3"><div className="text-xs text-slate-500">Powder Ops expenses</div><div className="text-lg font-semibold tabular-nums">{money(t.expenses)}</div><div className="text-xs text-slate-500">incl. must-pays {money(t.must_pay)}</div></div>
         <div className="rounded-lg border border-slate-200 p-3"><div className="text-xs text-slate-500">To look at</div><div className="text-lg font-semibold tabular-nums">{t.highlighted} <span className="text-sm font-normal text-slate-500">highlighted</span></div><div className="text-xs text-slate-500">{t.failed} off the run · {t.held} not due yet</div></div>
       </div>
@@ -417,10 +481,11 @@ export default function PaymentRunPanel() {
       <div className="grid gap-4 lg:grid-cols-2">
         <MustPays data={data} onDone={refresh} />
         <Score score={data.score} />
+        <BankDetails data={data} />
       </div>
       <SettingsBox data={data} onDone={refresh} />
       <p className="flex items-start gap-1.5 text-xs text-slate-500"><Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-        Coming next: the bill-line and bank-detail checks, paying and invoicing after approval, and production invoices to ProDough.
+        Coming next: paying and invoicing after approval, and the production invoice to ProDough, less the deposits already paid.
       </p>
     </div>
   );

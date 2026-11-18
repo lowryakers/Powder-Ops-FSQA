@@ -50,6 +50,7 @@ export const APPROVE_ROUTES = Object.freeze([
   { method: 'POST', re: /^\/nfp\/?$/, label: 'POST /api/nfp with source "paper" — files an APPROVED panel',
     when: (req) => req.body?.source === 'paper' || !!req.body?.approved_by || !!req.body?.approved_at },
   { method: 'POST', re: /^\/payment-run\/runs\/[^/]+\/send$/, label: 'POST /api/payment-run/runs/:id/send — send a payment run for approval' },
+  { method: 'POST', re: /^\/payment-run\/bank-details$/, label: 'POST /api/payment-run/bank-details — record the bank details a vendor is paid to' },
   { method: 'POST', re: /^\/payment-approval\/[^/]+\/(lines\/[^/]+|transferred)$/, label: 'POST /api/payment-approval/:token/… — the approver\'s page' },
   { method: 'POST', re: /^\/qms\/flavor_approval\/[^/]+\/send$/, label: 'POST /api/qms/flavor_approval/:id/send — text a batch for approval' },
   { method: 'POST', re: /^\/artwork\/versions\/[^/]+\/status$/, label: 'POST /api/artwork/versions/:id/status to approved / print_ready',

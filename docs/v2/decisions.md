@@ -11217,3 +11217,29 @@ position prints the account's current name; a position nobody holds prints Vacan
 - **The next pages are the same positions as a list** (position indented under its manager, person, backup, department).
 - Every page: "Printed <time> by <name> · uncontrolled when printed · Page x of y". The PDF writes nothing.
 `verify:orgchartpdf` (15, live + browser at 1280 and 390; reads the text back out of the PDF; control: main is 404).
+
+## D-363 — Payment run part C: bill lines and bank details are checked; the weekly invoice is a Deposit (18 Nov 2026)
+Part C of the payment run plan (D-360). Chris answered the open question on how ProDough is invoiced: *"call the weekly
+invoices 'Deposits', and once the production run is done adjust the final bill to the difference between what is owed
+and what was paid for the deposit."* Whether ProDough should be charged material costs at all is still open ("figure out
+later"); the setting stays "materials at cost" until then.
+- **The weekly ProDough invoice is a Deposit** on Danny's page, the sentence he reads, the office panel and the settings.
+  **Parts D and E must take the deposits already paid off the final production bill** — that is the rule the final
+  invoice is built on, not a nicety.
+- **Bill lines vs PO lines** (`server/bill-lines.js`, PURE). Lines are read off the bill's own extracted text on every
+  look and NEVER stored, so a better reader changes the answer without rewriting a record. A line is only a line when
+  its arithmetic holds (quantity × unit price = the amount). Each is paired with a PO line (part number, then
+  description, then one-to-one). Quantity more than 20% over: highlighted; more than 20% under: noted (a part delivery).
+  Unit price above the PO by more than 2%: noted; 10%: highlighted. A line not on the PO: noted. None of these keep a
+  bill off the run. No readable lines: "Lines were not read from the bill", never a guess.
+- **Bank details** (`vendor_bank_details`, routing + last four only, retired never deleted). Read off a bill only
+  beside a valid ABA routing number — "Account #" on an invoice is usually our customer number with the vendor.
+  No details printed: not applicable. Printed, none on file: highlighted. **Printed and different from those on file:
+  the bill FAILS and is kept off the run** (changed bank details are how invoice fraud works); `recordNewFailures`
+  already tells Lowry. An admin records the details from the bill after calling the vendor on a number already on
+  file, with a note of the call and the password (`POST /payment-run/bank-details`, on `APPROVE_ROUTES`; the details
+  are re-read off the bill on the server, never taken from the request). The previous details are retired in the same act.
+- **Bank balance from the feed.** When a bank account is linked and synced (`bank_accounts`, provider not manual),
+  the page offers "Use the bank feed: $X"; using it records the feed as the source. Typing a balance still works and
+  stays the normal case until a feed is connected.
+`verify:paymentchecks` (41: pure reader + live; control: main has no line or bank check and `/bank-details` is 404).

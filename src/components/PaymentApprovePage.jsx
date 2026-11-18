@@ -92,7 +92,7 @@ export default function PaymentApprovePage({ token }) {
           <p className="text-[13px] text-gray-500">ProDough owes Powder Ops</p>
           <p className="text-3xl font-bold tabular-nums text-gray-900" data-pay-owes>{money(o.owes)}</p>
           <div className="mt-3 divide-y divide-gray-100 border-t border-gray-100">
-            <Part label="Materials" sub="ProDough material bills on this run, at cost" value={money(o.materials)} />
+            <Part label="Deposit" sub="ProDough material bills on this run, at cost. Taken off the final bill after the production run." value={money(o.materials)} />
             {o.production_count > 0 && <Part label={`${o.production_count} production run${o.production_count === 1 ? '' : 's'}`} value={money(o.production)} />}
             {o.shortfall > 0 && <Part label="Shortfall" sub={`Powder Ops expenses ${money(o.expenses)} less the bank balance used, ${money(o.bank_balance)}`} value={money(o.shortfall)} />}
           </div>

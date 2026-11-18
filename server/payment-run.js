@@ -21,6 +21,7 @@
 //     failing checks, so the same failure is reported once.
 import { randomUUID } from 'crypto';
 import { normDocNumber } from './partner-recon.js';
+import { readBillLines, readRemit, matchLinesToPo, lineFlags, abaValid } from './bill-lines.js';
 import { plantDateOf } from './plant-clock.js';
 import { isClosedDay, nextWorkday } from './plant-calendar.js';
 
@@ -37,6 +38,7 @@ export const THRESHOLDS = Object.freeze({
   jump_multiple: 3,         // a bill this many times the vendor's usual: highlighted
   new_vendor_months: 12,    // no bill from them in this long, and no PO or supplier record: new
   duplicate_days: 30,       // same vendor and amount within this many days: possible duplicate
+  qty_odd_pct: 20,          // a bill line's quantity this far off its PO line: odd (D-363)
 });
 export const RECIPIENT_EMAIL = 'lowry@powder-ops.com';
 const DAY = 86400000;
@@ -119,11 +121,17 @@ export function loadContext(db, today = plantDateOf()) {
     FROM ap_drops WHERE status <> 'not_finance'`).all();
   const suppliers = (() => { try { return db.prepare('SELECT name, legacy_names, vendor_type FROM suppliers').all(); } catch { return []; } })();
   const poVendors = (() => { const s = new Set(); for (const rows of pos.values()) for (const r of rows) s.add(foldVendor(r.vendor)); return s; })();
-  return { today, mustPays, pos, received, drops, suppliers, poVendors, run: nextRun(db, today) };
+  const bankDetails = (() => { try { return db.prepare('SELECT * FROM vendor_bank_details WHERE retired_at IS NULL ORDER BY recorded_at DESC').all(); } catch { return []; } })();
+  return { today, mustPays, pos, received, drops, suppliers, poVendors, bankDetails, run: nextRun(db, today) };
 }
 
 export function mustPayFor(ctx, vendor) {
   return ctx.mustPays.find(m => sameVendor(m.vendor_name, vendor)) || null;
+}
+
+/** The bank details on file for a vendor (the latest a person confirmed), or null. */
+export function bankDetailsFor(ctx, vendor) {
+  return (ctx.bankDetails || []).find(b => sameVendor(b.vendor_name, vendor)) || null;
 }
 
 function supplierFor(ctx, vendor) {
@@ -214,7 +222,31 @@ export function evaluateBill(ctx, drop) {
     else if (p > THRESHOLDS.price_highlight_pct) add('price', 'Total vs PO', 'flag', `${p.toFixed(1)}% above the PO (${money(poTotal)})`, 'highlight');
     else if (p > THRESHOLDS.price_note_pct) add('price', 'Total vs PO', 'flag', `${p.toFixed(1)}% above the PO (${money(poTotal)})`, 'note');
     else add('price', 'Total vs PO', 'pass', p < -0.5 ? `${Math.abs(p).toFixed(0)}% of the PO not billed yet` : 'Matches the PO');
+    // Line by line (D-363): read off the bill's own text on every look, never stored.
+    const billLines = readBillLines(drop.extracted_text);
+    const priced = poRows.filter(r => r.status !== 'cancelled' && (Number(r.qty) || Number(r.unit_price)));
+    if (!billLines.length) add('lines', 'Lines vs PO', 'na', 'Lines were not read from the bill');
+    else if (!priced.length) add('lines', 'Lines vs PO', 'na', 'The PO carries no quantities or prices');
+    else {
+      const lf = lineFlags(matchLinesToPo(billLines, priced), {
+        qtyPct: THRESHOLDS.qty_odd_pct, noteBy: THRESHOLDS.price_note_pct, highlightBy: THRESHOLDS.price_highlight_pct, money,
+      });
+      if (!lf.length) add('lines', 'Lines vs PO', 'pass', `${billLines.length} line${billLines.length === 1 ? '' : 's'} match the PO`);
+      for (const f of lf) add(f.key, f.label, 'flag', f.reason, f.severity);
+    }
   }
+
+  // Where the money goes (D-363). A bill that asks to be paid to bank details
+  // other than those confirmed on file is the classic invoice fraud: it stays
+  // off the run until a person confirms the change with the vendor by phone.
+  const remit = readRemit(drop.extracted_text);
+  const onFile = bankDetailsFor(ctx, drop.vendor_name);
+  const shown = (r, l) => `routing ${r}${l ? `, account ending ${l}` : ''}`;
+  if (!remit) add('bank', 'Bank details', 'na', onFile ? `None printed on the bill; on file: ${shown(onFile.routing, onFile.account_last4)}` : 'None printed on the bill');
+  else if (!onFile) add('bank', 'Bank details', 'flag', `Bill asks to be paid to ${shown(remit.routing, remit.account_last4)}; none on file. Confirm by phone, then record them.`, 'highlight');
+  else if (onFile.routing !== remit.routing || (remit.account_last4 && onFile.account_last4 && onFile.account_last4 !== remit.account_last4)) {
+    add('bank', 'Bank details', 'fail', `Bank details CHANGED: the bill says ${shown(remit.routing, remit.account_last4)}, on file is ${shown(onFile.routing, onFile.account_last4)}. Confirm with the vendor by phone before recording the new ones.`);
+  } else add('bank', 'Bank details', 'pass', `Match the details on file (${shown(onFile.routing, onFile.account_last4)})`);
 
   // Due date.
   let held = false;
@@ -267,6 +299,7 @@ function lineOf(ctx, d) {
     id: d.id, vendor: d.vendor_name, invoice_number: d.invoice_number, invoice_date: d.invoice_date, due_date: d.due_date, qty,
     amount: d.amount, bill_to: d.bill_to, po: d.po_or_co_ref, qbo_bill_id: d.qbo_bill_id, filename: d.filename,
     what: [...new Set(what)].slice(0, 3).join('; ') || null,
+    remit: (() => { const r = readRemit(d.extracted_text); return r ? { routing: r.routing, account_last4: r.account_last4, evidence: r.evidence } : null; })(),
     bill_class: d.bill_class, bill_class_by: d.bill_class_by, suggested_class: suggestClass(ctx, d),
     ...ev,
   };
@@ -306,6 +339,53 @@ export function paymentRun(db, today = plantDateOf()) {
   };
 }
 
+// ── vendor bank details (D-363) ────────────────────────────────────────────────
+/**
+ * Record the bank details a vendor is paid to, as confirmed by phone. From a
+ * bill (`drop_id`): the details are re-read off that bill here, never taken
+ * from the request. By hand: routing + last four. The previous details for the
+ * vendor are retired in the same transaction. Returns the new row.
+ */
+export function recordBankDetails(db, body, user) {
+  const note = String(body?.confirmed_note || '').trim();
+  if (note.length < 5) throw Object.assign(new Error('Say how the details were confirmed: who you spoke to, and the number you called.'), { status: 400 });
+  let vendor = String(body?.vendor_name || '').trim(), routing = String(body?.routing || '').replace(/\D/g, ''), last4 = String(body?.account_last4 || '').replace(/\D/g, '') || null;
+  let dropId = null;
+  if (body?.drop_id) {
+    const d = db.prepare('SELECT id, vendor_name, extracted_text FROM ap_drops WHERE id = ?').get(body.drop_id);
+    if (!d) throw Object.assign(new Error('Bill not found'), { status: 404 });
+    const r = readRemit(d.extracted_text);
+    if (!r) throw Object.assign(new Error('No bank details were read on that bill.'), { status: 400 });
+    if (!d.vendor_name) throw Object.assign(new Error('The bill has no vendor name: set it in AP Drop first.'), { status: 400 });
+    vendor = d.vendor_name; routing = r.routing; last4 = r.account_last4; dropId = d.id;
+  }
+  if (!vendor) throw Object.assign(new Error('Name the vendor.'), { status: 400 });
+  if (!abaValid(routing)) throw Object.assign(new Error('That is not a valid 9-digit routing number.'), { status: 400 });
+  if (last4 !== null && !/^\d{4}$/.test(last4)) throw Object.assign(new Error('Give the last four digits of the account, or leave it blank.'), { status: 400 });
+  const id = randomUUID();
+  const prior = db.prepare('SELECT * FROM vendor_bank_details WHERE retired_at IS NULL').all().filter(b => sameVendor(b.vendor_name, vendor));
+  db.transaction(() => {
+    for (const b of prior) db.prepare("UPDATE vendor_bank_details SET retired_at = datetime('now'), retired_by = ? WHERE id = ?").run(user?.name || null, b.id);
+    db.prepare(`INSERT INTO vendor_bank_details (id, vendor_name, routing, account_last4, confirmed_note, from_drop_id, recorded_by, recorded_by_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(id, vendor, routing, last4, note, dropId, user?.name || null, user?.id || null);
+  })();
+  return { row: db.prepare('SELECT * FROM vendor_bank_details WHERE id = ?').get(id), replaced: prior };
+}
+
+export function listBankDetails(db) {
+  return db.prepare('SELECT * FROM vendor_bank_details ORDER BY vendor_name, recorded_at DESC').all();
+}
+
+/** The bank feed's balance, when an account is linked and synced: { amount, as_of, accounts } or null. Read only. */
+export function feedBalance(db) {
+  try {
+    const rows = db.prepare("SELECT name, current_balance, balance_as_of FROM bank_accounts WHERE is_active = 1 AND provider <> 'manual' AND current_balance IS NOT NULL").all();
+    if (!rows.length) return null;
+    const asOf = rows.map(r => r.balance_as_of).filter(Boolean).sort()[0] || null;
+    return { amount: Math.round(rows.reduce((s, r) => s + Number(r.current_balance), 0) * 100) / 100, as_of: asOf, accounts: rows.map(r => r.name) };
+  } catch { return null; }
+}
+
 // ── the score, the settings, the notices ──────────────────────────────────────
 /** Bills that failed a check, by the week they were logged, for the last `weeks` weeks. A fixed record: fixing a bill later does not lower it. */
 export function weeklyScore(db, { weeks = 8, today = plantDateOf() } = {}) {
@@ -332,7 +412,7 @@ const SETTINGS_KEY = 'payment_run_settings';
 // D-361: the approver's number is its own setting (blank = FLAVOR_APPROVER_PHONE),
 // Lowry reviews before the text goes while `review_before_send` is on, and the
 // materials invoice is weekly at cost until the accountant says otherwise.
-export const MATERIALS_MODES = Object.freeze({ weekly_at_cost: 'One weekly materials invoice, at cost' });
+export const MATERIALS_MODES = Object.freeze({ weekly_at_cost: 'One weekly deposit invoice: material bills at cost' });
 const SETTING_DEFAULTS = Object.freeze({
   bill_owner_id: null, controller_id: null, notify_ids: [],
   approver_phone: null, review_before_send: true, materials_mode: 'weekly_at_cost', bank_balance: null,
@@ -360,7 +440,7 @@ export function saveSettings(db, patch) {
   }
   if ('review_before_send' in patch) next.review_before_send = patch.review_before_send !== false;
   if ('materials_mode' in patch) {
-    if (!MATERIALS_MODES[patch.materials_mode]) throw Object.assign(new Error(`Materials invoice must be one of: ${Object.keys(MATERIALS_MODES).join(', ')}`), { status: 400 });
+    if (!MATERIALS_MODES[patch.materials_mode]) throw Object.assign(new Error(`Deposit invoice must be one of: ${Object.keys(MATERIALS_MODES).join(', ')}`), { status: 400 });
     next.materials_mode = patch.materials_mode;
   }
   db.prepare('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)').run(SETTINGS_KEY, JSON.stringify(next));

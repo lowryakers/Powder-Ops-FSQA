@@ -86,7 +86,7 @@ t('only an admin enters the balance', (await call('POST', `/payment-run/runs/${r
 r = await call('POST', `/payment-run/runs/${run.id}/bank-balance`, { amount: 500 }, T['pb-boss']);
 const s1 = r.json?.summary || {};
 t('ProDough owes = materials + shortfall (expenses less the balance)', s1.materials === 1500 && s1.expenses === 940 && s1.shortfall === 440 && s1.owes === 1940, JSON.stringify(s1));
-t('…said in one sentence', /ProDough owes Powder Ops \$1,940\.00: materials \$1,500\.00 \+ shortfall \$440\.00\./.test(r.json?.sentence || ''), r.json?.sentence);
+t('…said in one sentence', /ProDough owes Powder Ops \$1,940\.00: deposit \(materials\) \$1,500\.00 \+ shortfall \$440\.00\./.test(r.json?.sentence || ''), r.json?.sentence);
 t('only an admin sends it', (await call('POST', `/payment-run/runs/${run.id}/send`, {}, T['pb-jake'])).status === 403);
 r = await call('POST', `/payment-run/runs/${run.id}/send`, {}, T['pb-boss']);
 const link1 = r.json?.link || '';

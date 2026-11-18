@@ -446,6 +446,11 @@ production invoices) are still to come; **do not touch the Flavor Approvals modu
   5 days, replaced on re-send/reminder, spent by the transfer). **ProDough owes = materials + production (part E) +
   shortfall (expenses − the bank balance Lowry typed, shown only above 0)**; `owes()` is the one sum. Must-pays cannot be
   unticked. Approving moves ticked bills to `in_payment_run`. Reminder Friday 10 AM, once. `verify:paymentapproval` (58).
+- **Part C (D-363, `server/bill-lines.js`)**: bill lines are READ off the bill's text on every look, never stored, and checked
+  against PO lines (qty >20% over highlighted, unit price >2% noted / >10% highlighted). Bank details printed on a bill that differ
+  from `vendor_bank_details` (routing + last four, retired never deleted) FAIL the bill; an admin records new ones with a phone
+  note and the password. **The weekly ProDough invoice is a Deposit; parts D–E take deposits off the final production bill.**
+  The bank feed's balance can stand in for the typed one. `verify:paymentchecks` (41).
 
 ## The Org Chart exports to a PDF (D-362)
 `GET /api/org/pdf` (`server/org-chart-pdf.js`, before `/:id`): page 1 the chart (leaf positions stacked under their
