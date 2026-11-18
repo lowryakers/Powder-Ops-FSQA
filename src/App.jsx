@@ -59,6 +59,7 @@ const FlavorPanel = lazy(() => import('./components/compliance/FlavorPanel.jsx')
 const CertificationsPanel = lazy(() => import('./components/compliance/CertificationsPanel.jsx'));
 const CriticalPanel = lazy(() => import('./components/compliance/CriticalPanel.jsx'));
 import ApprovePage from './components/ApprovePage.jsx';
+import PaymentApprovePage from './components/PaymentApprovePage.jsx';
 import NfpApprovePage from './components/NfpApprovePage.jsx';
 import NfpBatchApprovePage from './components/NfpBatchApprovePage.jsx';
 const TrainingPanel = lazy(() => import('./components/compliance/TrainingPanel.jsx'));
@@ -1569,6 +1570,10 @@ function App() {
   }
 
   // Flavor-approval magic link (texted to the approver) — public, token-gated.
+  // Danny's payment-run link (D-361) — public, token-gated, same shape as the flavor link.
+  if (path.startsWith('/pay/')) {
+    return <PaymentApprovePage token={path.split('/')[2] || ''} />;
+  }
   if (path.startsWith('/approve/')) {
     return <ApprovePage token={path.split('/')[2] || ''} />;
   }

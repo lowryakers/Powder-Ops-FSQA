@@ -139,6 +139,10 @@ const PUBLIC_ROUTES = [
   // definition; the token is compared as a SHA-256 hash in the handler, is
   // single-use, and can set a password only on an account that has none.
   { prefix: '/join/' },
+  // Danny's payment-run page (D-361). The approver has no account; the token in
+  // the URL is hashed, expires and is spent, and the router can only untick,
+  // approve and record the transfer on the one run it opens.
+  { prefix: '/payment-approval/' },
   // The Artwork-Proofing service's master-list feed. Read-only, guarded by a
   // hashed token compared in the handler, and off entirely unless
   // PRODUCT_MASTER_TOKEN is set. It exposes only what a printer already holds.

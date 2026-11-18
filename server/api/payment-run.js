@@ -9,7 +9,8 @@ import { Router } from 'express';
 import { randomUUID } from 'crypto';
 import { getDb, logAudit } from '../db.js';
 import { canWorkQueue } from './ap-drop.js';
-import { paymentRun, weeklyScore, getSettings, saveSettings, notifyRecipients, BILL_CLASSES, suggestClass, loadContext } from '../payment-run.js';
+import { paymentRun, weeklyScore, getSettings, saveSettings, notifyRecipients, BILL_CLASSES, suggestClass, loadContext, MATERIALS_MODES } from '../payment-run.js';
+import { freezeRun, runView, listRuns, setBankBalance, sendForApproval, cancelRun, approverNumber } from '../payment-approval.js';
 
 const router = Router();
 const isToken = (req) => req.auth?.kind === 'token';
@@ -23,6 +24,12 @@ const adminOnly = (req, res) => {
   res.status(403).json({ error: 'Only an admin, signed in, can change this.' });
   return false;
 };
+const personOnly = (req, res) => {
+  if (!isToken(req)) return true;
+  res.status(403).json({ error: 'A person prepares, sends and cancels a payment run; a bot may only read it.', code: 'person_only' });
+  return false;
+};
+const fail = (res, e) => res.status(e.status || 500).json({ error: e.message });
 const people = (db, ids) => (ids || []).map(id => db.prepare('SELECT id, name FROM users WHERE id = ?').get(id)).filter(Boolean);
 
 router.get('/', (req, res) => {
@@ -38,7 +45,10 @@ router.get('/', (req, res) => {
       controller: people(db, [s.controller_id])[0] || null,
       notify: notifyRecipients(db),
       notify_set: (s.notify_ids || []).length > 0,
+      approver_phone: s.approver_phone, approver_number: approverNumber(db), review_before_send: s.review_before_send !== false,
+      materials_mode: s.materials_mode, materials_modes: MATERIALS_MODES, bank_balance: s.bank_balance,
     },
+    runs: listRuns(db, 12),
     can_admin: req.user?.role === 'admin' && !isToken(req),
     can_classify: !isToken(req),
   });
@@ -103,10 +113,79 @@ router.put('/settings', (req, res) => {
   const db = getDb();
   const before = getSettings(db);
   const body = {};
-  for (const k of ['bill_owner_id', 'controller_id', 'notify_ids']) if (k in (req.body || {})) body[k] = req.body[k];
-  const after = saveSettings(db, body);
+  for (const k of ['bill_owner_id', 'controller_id', 'notify_ids', 'approver_phone', 'review_before_send', 'materials_mode']) if (k in (req.body || {})) body[k] = req.body[k];
+  let after;
+  try { after = saveSettings(db, body); } catch (e) { return fail(res, e); }
   logAudit(req.user, 'update', 'app_setting', 'payment_run_settings', {}, before, after, 'Payment run settings');
   res.json(after);
+});
+
+// ── frozen runs (D-361): prepare, review, send to Danny, cancel ──────────────
+// The balance Powder Ops can pay its own expenses from, entered by hand until a
+// bank feed reads it (part C). Entered this week, it rides onto the next run.
+router.put('/bank-balance', (req, res) => {
+  if (!adminOnly(req, res)) return;
+  const db = getDb();
+  const before = getSettings(db).bank_balance;
+  let after;
+  try { after = saveSettings(db, { bank_balance: req.body?.amount === null ? null : { amount: req.body?.amount, by: req.user.name } }); } catch (e) { return fail(res, e); }
+  logAudit(req.user, 'update', 'app_setting', 'payment_run_settings', { field: 'bank_balance' }, before, after.bank_balance, 'Payment run bank balance');
+  res.json(after.bank_balance);
+});
+
+router.get('/runs', (req, res) => {
+  if (!gate(req, res)) return;
+  res.json(listRuns(getDb(), Math.min(Number(req.query.limit) || 20, 100)));
+});
+
+router.get('/runs/:id', (req, res) => {
+  if (!gate(req, res)) return;
+  const v = runView(getDb(), req.params.id);
+  if (!v) return res.status(404).json({ error: 'Run not found' });
+  res.json(v);
+});
+
+// Prepare (freeze) the run. Weekly: whoever works the queue. Urgent: an admin, with a reason.
+router.post('/runs', (req, res) => {
+  if (!gate(req, res) || !personOnly(req, res)) return;
+  const kind = req.body?.kind === 'urgent' ? 'urgent' : 'weekly';
+  if (kind === 'urgent' && !adminOnly(req, res)) return;
+  const db = getDb();
+  try {
+    const v = freezeRun(db, { kind, ids: req.body?.ids, reason: req.body?.reason, by: req.user.name });
+    logAudit(req.user, 'create', 'payment_run', v.id, { run_no: v.run_no, kind, bills: v.lines.length, owes: v.summary.owes }, null, null, v.run_no);
+    res.status(201).json(v);
+  } catch (e) { fail(res, e); }
+});
+
+router.post('/runs/:id/bank-balance', (req, res) => {
+  if (!adminOnly(req, res)) return;
+  try {
+    const v = setBankBalance(getDb(), req.params.id, req.body?.amount, req.user.name);
+    logAudit(req.user, 'update', 'payment_run', v.id, { field: 'bank_balance', to: v.summary.bank_balance }, null, null, v.run_no);
+    res.json(v);
+  } catch (e) { fail(res, e); }
+});
+
+// Lowry's review is this button: the run goes to Danny with a fresh link.
+router.post('/runs/:id/send', async (req, res) => {
+  if (!adminOnly(req, res)) return;
+  const db = getDb();
+  try {
+    const out = await sendForApproval(db, req.params.id, { by: req.user.name, to: req.body?.to || null });
+    const v = runView(db, req.params.id);
+    logAudit(req.user, 'update', 'payment_run', v.id, { action: 'sent_for_approval', to: out.sent_to, texted: out.texted, owes: v.summary.owes }, null, null, v.run_no);
+    res.json({ ...out, run: v });
+  } catch (e) { fail(res, e); }
+});
+
+router.post('/runs/:id/cancel', (req, res) => {
+  if (!adminOnly(req, res)) return;
+  try {
+    const v = cancelRun(getDb(), req.params.id, { by: req.user.name, reason: req.body?.reason });
+    logAudit(req.user, 'cancel', 'payment_run', v.id, { reason: v.cancel_reason }, null, null, v.run_no);
+    res.json(v);
+  } catch (e) { fail(res, e); }
 });
 
 export default router;
