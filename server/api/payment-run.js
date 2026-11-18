@@ -15,7 +15,10 @@ import { gateSignature } from '../signature.js';
 import multer from 'multer';
 import { storageEnabled, putObject, presignGet } from '../storage.js';
 import { closeout, canCloseOut, confirmReceived, recordPayment, addProof, markInQbo, sendBack, recordDepositInvoice,
-  markDepositPaid, recordShortfall, closeRun } from '../payment-closeout.js';
+  markDepositPaid, recordShortfall, closeRun, markProductionPaid } from '../payment-closeout.js';
+import { PRICE_FIELDS, listInvoices, recordOrder, recheckOrder, markInvoiced, voidInvoice, invoiceView, announceOrder } from '../production-invoices.js';
+import { botDm, postMessageAs } from './comms.js';
+import { pushToUser } from '../push.js';
 import { freezeRun, runView, listRuns, setBankBalance, sendForApproval, cancelRun, approverNumber } from '../payment-approval.js';
 
 const router = Router();
@@ -35,7 +38,7 @@ const personOnly = (req, res) => {
   res.status(403).json({ error: 'A person prepares, sends and cancels a payment run; a bot may only read it.', code: 'person_only' });
   return false;
 };
-const fail = (res, e) => res.status(e.status || 500).json({ error: e.message, ...(e.code && { code: e.code }), ...(e.open && { open: e.open }) });
+const fail = (res, e) => res.status(e.status || 500).json({ error: e.message, ...(e.code && { code: e.code }), ...(e.open && { open: e.open }), ...(e.existing && { existing: e.existing }) });
 const people = (db, ids) => (ids || []).map(id => db.prepare('SELECT id, name FROM users WHERE id = ?').get(id)).filter(Boolean);
 
 router.get('/', (req, res) => {
@@ -54,6 +57,7 @@ router.get('/', (req, res) => {
       approver_phone: s.approver_phone, approver_number: approverNumber(db), review_before_send: s.review_before_send !== false,
       materials_mode: s.materials_mode, materials_modes: MATERIALS_MODES, bank_balance: s.bank_balance,
       deposit_payment: s.deposit_payment || 'transfer', deposit_payment_modes: DEPOSIT_PAYMENT_MODES,
+      production_price_field: s.production_price_field || null, production_price_fields: PRICE_FIELDS,
     },
     feed_balance: feedBalance(db),
     bank_details: listBankDetails(db).filter(r => !r.retired_at),
@@ -123,7 +127,7 @@ router.put('/settings', (req, res) => {
   const db = getDb();
   const before = getSettings(db);
   const body = {};
-  for (const k of ['bill_owner_id', 'controller_id', 'notify_ids', 'approver_phone', 'review_before_send', 'materials_mode', 'deposit_payment']) if (k in (req.body || {})) body[k] = req.body[k];
+  for (const k of ['bill_owner_id', 'controller_id', 'notify_ids', 'approver_phone', 'review_before_send', 'materials_mode', 'deposit_payment', 'production_price_field']) if (k in (req.body || {})) body[k] = req.body[k];
   let after;
   try { after = saveSettings(db, body); } catch (e) { return fail(res, e); }
   logAudit(req.user, 'update', 'app_setting', 'payment_run_settings', {}, before, after, 'Payment run settings');
@@ -268,6 +272,51 @@ router.post('/runs/:id/deposit-invoice', act((db, req) => recordDepositInvoice(d
 router.post('/runs/:id/deposit-paid', act((db, req) => markDepositPaid(db, req.params.id, req.user), 'payment_run_deposit_paid'));
 router.post('/runs/:id/shortfall', act((db, req) => recordShortfall(db, req.params.id, req.body || {}, req.user), 'payment_run_shortfall'));
 router.post('/runs/:id/close', act((db, req) => closeRun(db, req.params.id, req.user), 'payment_run_closed'));
+router.post('/runs/:id/production/:invoiceId/paid', act((db, req) => markProductionPaid(db, req.params.id, req.params.invoiceId, req.user), 'payment_run_production_paid'));
+
+// ── production invoices to ProDough (D-365, part E) ──────────────────────────
+// A closed MO or a shipped order is recorded by a person (ReadyDoc does not read
+// MRPEasy); it is held with its reasons or ready for the Controller to create in
+// QBO with the paid Deposits taken off. Recording: whoever works the AP queue.
+// The QBO invoice and a void: an admin or the Controller. Never a token.
+const announceDeps = { botDm, postMessageAs, pushToUser };
+router.get('/production-invoices', (req, res) => {
+  if (!gate(req, res)) return;
+  const db = getDb();
+  res.json({ ...listInvoices(db), can_invoice: !isToken(req) && canCloseOut(db, req.user) });
+});
+router.post('/production-invoices', (req, res) => {
+  if (!personOnly(req, res) || !gate(req, res)) return;
+  const db = getDb();
+  try {
+    const v = recordOrder(db, req.body || {}, req.user);
+    logAudit(req.user, 'create', 'production_invoice', v.id, { source: v.source, mo_number: v.mo_number, prodough_po: v.prodough_po, status: v.status }, null, null, v.ref_no);
+    res.status(201).json(v);
+    announceOrder(db, announceDeps, v).catch(() => {});
+  } catch (e) { fail(res, e); }
+});
+router.post('/production-invoices/:id/recheck', (req, res) => {
+  if (!personOnly(req, res) || !gate(req, res)) return;
+  const db = getDb();
+  try {
+    const v = recheckOrder(db, req.params.id, req.body || {}, req.user);
+    logAudit(req.user, 'update', 'production_invoice', v.id, { recheck: true, status: v.status, prodough_po: v.prodough_po }, null, null, v.ref_no);
+    res.json(v);
+    if (v.status === 'to_invoice') announceOrder(db, announceDeps, v).catch(() => {});
+  } catch (e) { fail(res, e); }
+});
+const invoiceAct = (fn, action) => (req, res) => {
+  if (!closer(req, res)) return;
+  const db = getDb();
+  try {
+    const before = invoiceView(db, db.prepare('SELECT * FROM production_invoices WHERE id = ?').get(req.params.id));
+    const v = fn(db, req);
+    logAudit(req.user, action, 'production_invoice', v.id, { ...(req.body || {}) }, before && { status: before.status }, { status: v.status, amount_due: v.amount_due }, v.ref_no);
+    res.json(v);
+  } catch (e) { fail(res, e); }
+};
+router.post('/production-invoices/:id/invoiced', invoiceAct((db, req) => markInvoiced(db, req.params.id, req.body || {}, req.user), 'update'));
+router.post('/production-invoices/:id/void', invoiceAct((db, req) => voidInvoice(db, req.params.id, req.body || {}, req.user), 'void'));
 
 router.post('/runs/:id/lines/:lineId/proof', proofUpload.single('file'), async (req, res) => {
   if (!closer(req, res)) return;

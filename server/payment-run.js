@@ -417,12 +417,13 @@ export const MATERIALS_MODES = Object.freeze({ weekly_at_cost: 'One weekly depos
 // accountant confirms. 'transfer' marks the deposit paid when the transfer is
 // confirmed in the bank; 'manual' leaves it for a person to mark.
 export const DEPOSIT_PAYMENT_MODES = Object.freeze({
-  transfer: 'The confirmed transfer pays the deposit invoice',
-  manual: 'A person marks the deposit invoice paid',
+  transfer: 'The confirmed transfer pays the deposit and production invoices',
+  manual: 'A person marks the deposit and production invoices paid',
 });
 const SETTING_DEFAULTS = Object.freeze({
   bill_owner_id: null, controller_id: null, notify_ids: [],
   approver_phone: null, review_before_send: true, materials_mode: 'weekly_at_cost', bank_balance: null, deposit_payment: 'transfer',
+  production_price_field: null,
 });
 export function getSettings(db) {
   try { return { ...SETTING_DEFAULTS, ...JSON.parse(db.prepare('SELECT value FROM app_settings WHERE key = ?').get(SETTINGS_KEY)?.value || '{}') }; }
@@ -453,6 +454,12 @@ export function saveSettings(db, patch) {
   if ('deposit_payment' in patch) {
     if (!DEPOSIT_PAYMENT_MODES[patch.deposit_payment]) throw Object.assign(new Error(`Deposit payment must be one of: ${Object.keys(DEPOSIT_PAYMENT_MODES).join(', ')}`), { status: 400 });
     next.deposit_payment = patch.deposit_payment;
+  }
+  if ('production_price_field' in patch) {
+    // D-365: which price-list column prices a ProDough production invoice. Chosen, never guessed.
+    const f = patch.production_price_field || null;
+    if (f && !['price_fob_unit', 'price_wholesale_unit'].includes(f)) throw Object.assign(new Error('The ProDough price list must be the FOB unit price or the wholesale unit price.'), { status: 400 });
+    next.production_price_field = f;
   }
   db.prepare('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)').run(SETTINGS_KEY, JSON.stringify(next));
   return next;

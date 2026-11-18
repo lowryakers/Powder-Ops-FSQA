@@ -6649,7 +6649,47 @@ function runMigrations() {
         created_at          TEXT NOT NULL DEFAULT (datetime('now'))
       );
       CREATE TRIGGER IF NOT EXISTS prodough_deposits_no_delete BEFORE DELETE ON prodough_deposits
-        BEGIN SELECT RAISE(ABORT, 'A deposit is kept for good'); END;`);
+        BEGIN SELECT RAISE(ABORT, 'A deposit is kept for good'); END;
+      -- D-365 (part E): one invoice to ProDough per closed MO or shipped order,
+      -- priced from the price list, matched to ProDough's PO, less the deposits
+      -- already paid. One per PO (the partial unique index); kept for good.
+      CREATE TABLE IF NOT EXISTS production_invoices (
+        id                TEXT PRIMARY KEY,
+        ref_no            TEXT NOT NULL UNIQUE,
+        source            TEXT NOT NULL CHECK (source IN ('mo_closed','order_shipped')),
+        mo_number         TEXT,
+        order_ref         TEXT,
+        prodough_po       TEXT,
+        -- The PO folded (normPo) — what "never invoice the same PO twice" compares.
+        prodough_po_key   TEXT,
+        event_date        TEXT NOT NULL,
+        lines_json        TEXT NOT NULL,
+        price_field       TEXT,
+        total             REAL,
+        deposit_ids       TEXT,
+        deposits_applied  REAL NOT NULL DEFAULT 0,
+        amount_due        REAL,
+        status            TEXT NOT NULL CHECK (status IN ('held','to_invoice','invoiced','paid','void')),
+        hold_reasons      TEXT,
+        qbo_invoice_no    TEXT,
+        invoiced_by       TEXT,
+        invoiced_at       TEXT,
+        paid_run_id       TEXT,
+        paid_from         TEXT,
+        paid_by           TEXT,
+        paid_at           TEXT,
+        void_reason       TEXT,
+        void_by           TEXT,
+        void_at           TEXT,
+        recorded_by       TEXT,
+        recorded_by_id    TEXT,
+        notes             TEXT,
+        created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_production_invoices_po ON production_invoices(prodough_po_key)
+        WHERE status <> 'void' AND prodough_po_key IS NOT NULL;
+      CREATE TRIGGER IF NOT EXISTS production_invoices_no_delete BEFORE DELETE ON production_invoices
+        BEGIN SELECT RAISE(ABORT, 'A production invoice is kept for good'); END;`);
     // D-160: two terminal statuses for a drop that is money owed TO us — a
     // receivable handed to the partner ledger (`to_partner_ar`) and one for a
     // customer who is not a partner (`receivable_other`). The CHECK is widened

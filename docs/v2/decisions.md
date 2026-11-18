@@ -11271,3 +11271,32 @@ stays open." `server/payment-closeout.js`, the close-out section on each approve
   left, to the notify list and the Controller. Quiet when nothing is open.
 `verify:paymentcloseout` (59, live through the S3 stand-in + browser at 1280 and 390; control: main has no close-out and
 `/runs/:id/closeout` is 404).
+
+## D-365 — Payment run part E: one production invoice to ProDough per closed MO or shipped order, less the Deposits (18 Nov 2026)
+The last part of the payment run plan (D-360). Lowry's addition: "When an MO is closed or a customer order ships in
+MRPEasy, create one invoice to ProDough for that order: the per-unit price and total from our existing price list,
+matching ProDough's PO. One invoice per order: never invoice the same PO twice. The Controller creates it in QBO and
+sends it to ProDough. A closed MO with no matching ProDough PO or price: don't invoice; note to me." Chris (D-363):
+the final bill is what is owed less the Deposits already paid. `server/production-invoices.js`, `production_invoices`,
+the Production invoices section of the payment run page.
+- **ReadyDoc does not read MRPEasy**, so a person records the closed MO or the shipped order: MO number (or order
+  number), ProDough's PO, and each SKU with its quantity and the unit price printed on ProDough's PO. Nothing is
+  inferred from the production log. A bot recording these is a later step if wanted (a write area and a grant).
+- **Priced from one price-list column an admin chooses** (`production_price_field`: FOB unit or wholesale unit). Until
+  it is chosen every order is held and says why. **Never guessed.** The question for Lowry: which column is
+  ProDough's price.
+- **Held, never invoiced, when**: no PO; no price list chosen; a SKU not in the catalog; no list price; no quantity; no
+  PO price; or the PO price differs from the list price by half a cent or more. Each reason is named, Lowry is told
+  (the notify list), and "Check again" re-reads the price list or takes a corrected PO and lines.
+- **One invoice per ProDough PO, folded** (`normPo`, a partial unique index). The refusal names the invoice holding
+  it. A void (Controller or admin, reason required, never paid, never on a live run) is the only way to free it.
+- **The Controller records the QBO invoice number and ticks which paid Deposits it takes off.** A deposit comes off
+  whole and once (`prodough_deposits.applied_to`); more deposits than the invoice total is refused. Final bill =
+  total − deposits. A void releases its deposits. Deposits covering the whole total leave nothing owed (paid by the
+  deposits).
+- **What is still owed rides Danny's next run** (`openProductionInvoices()` → `production_json`, "N production runs"
+  in his sentence). In `transfer` mode the confirmed transfer pays them; in `manual` mode a person marks each paid on
+  the close-out. A run will not close while one is unpaid. Cancelling a run puts them back on the next one.
+- Person-only (a token is refused). Recording: whoever works the AP queue. The QBO invoice and a void: an admin or
+  the Controller. Rows cannot be deleted. The Monday close-out digest lists held orders and invoices not yet created.
+`verify:productioninvoices` (43, live + browser at 1280 and 390; control: main has no `/production-invoices`, 404).
