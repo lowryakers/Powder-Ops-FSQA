@@ -76,3 +76,33 @@ The body: `event`, `version`, `dedupe_id`, `document` (id, doc_number, title, do
 (`draft` | `transcribed` | `first_approval`), `change_summary`, `linked_courses` (id, code, title,
 `built_on_revision`, `needs_update`) and `link` (opens the document in ReadyDoc). `OPS_WEBHOOK_SIGNING_SECRET`, when set,
 signs it like the others. The bot answers `200 {"success": true}`; anything else is retried on the same schedule.
+
+## The owner channels: one Jarvis wake (D-359)
+
+A **person's** new message or thread reply in `#bots-jake`, `#bots-marnee` or `#bots-adam` wakes **one** Jarvis Grok Bot
+routine within seconds. Jarvis decides which bot acts; ReadyDoc does not route. The three names are a constant in code
+(`OWNER_CHANNELS`); `#bots-quality` is not one of them, and no variable can add a channel. A bot's post or reply in those
+channels never fires anything (that is what stops a loop). Edits, reactions and deletes never fire. `#ops-requests` is
+unchanged, and the two families have separate switches: turning one on never turns the other on.
+
+| Variable | What it is |
+|---|---|
+| `OWNER_WEBHOOK_ENABLED` | `1` turns the owner wake on. Unset = off. |
+| `OWNER_WEBHOOK_URL` | The Jarvis routine's webhook URL. |
+| `OWNER_WEBHOOK_KEY` | The Jarvis routine's sender key. |
+
+The payload is the same shape as the #ops-requests one with `event: "owner_channel.message"` and `target: "owner"`. Same
+outbox, retries, rate limit, signing secret and status page (`targets.owner`, `owner_channels`).
+
+### Lowry's steps after the merge
+
+1. Jarvis creates one Grok Bot routine on the Jarvis bot: name `Owner channel webhook wake`, trigger webhook, Active.
+2. Open that routine's panel in Grok Bot and copy the webhook URL and the sender key. Never paste them into chat, a PR or a file.
+3. Railway → the ReadyDoc service → **Variables**: add `OWNER_WEBHOOK_URL`, then `OWNER_WEBHOOK_KEY`, and last
+   `OWNER_WEBHOOK_ENABLED` = `1`. Railway redeploys.
+4. The deploy log has an `[ops-webhook]` line saying `owner ON (host/…last6)`, never the full URL or key.
+5. Signed in as an admin, open `https://app.powder-ops.com/api/admin/ops-webhook/status`: `targets.owner` is enabled and
+   configured, and there is no URL or key in the body.
+6. Post as a person in one of the three channels; the Jarvis routine's run history shows a start within a minute or two.
+   A bot's reply under it starts no new run.
+7. To turn only this off: set `OWNER_WEBHOOK_ENABLED` to `0`, or delete its URL or key. Leave `OPS_WEBHOOK_ENABLED` alone.
