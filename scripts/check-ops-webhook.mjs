@@ -243,6 +243,77 @@ t('its allow list: post and read in its channel, nothing else', TR.testRunnerAll
   && TR.testRunnerAllows(db, 'GET', '/comms/channels/ch-seed-test/messages') && !TR.testRunnerAllows(db, 'POST', '/comms/channels/ch-ops/messages')
   && !TR.testRunnerAllows(db, 'POST', '/comms/messages/m-1/reactions') && !TR.testRunnerAllows(db, 'POST', '/qms/deviation/x/approve'));
 
+console.log('── owner channels (D-359): one Jarvis target, its own switch');
+const O_URL = 'https://example.test/hook/owner/ownrROUTINE777777', O_KEY = 'crsr_fakeOwnerKey000';
+const jake = { id: 'ch-jake', name: 'bots-jake', kind: 'private' };
+const marnee = { id: 'ch-marnee', name: 'bots-marnee', kind: 'private' };
+const adam = { id: 'ch-adam', name: 'bots-adam', kind: 'private' };
+const quality = { id: 'ch-q', name: 'bots-quality', kind: 'private' };
+setEnv({ OPS_WEBHOOK_ENABLED: '1', OPS_WEBHOOK_URL: P_URL, OPS_WEBHOOK_KEY: P_KEY }); init(); reset();
+let oj = await post(jake, person, 'Order more film');
+t('owner flag off: a person in #bots-jake fires nothing (and not procurement)', calls.length === 0 && oj.r === null);
+setEnv({ OWNER_WEBHOOK_ENABLED: '1', OWNER_WEBHOOK_URL: O_URL }); init(); reset();
+await post(jake, person, 'x');
+t('owner flag on but no key: nothing', calls.length === 0);
+setEnv({ OWNER_WEBHOOK_ENABLED: '1', OWNER_WEBHOOK_KEY: O_KEY }); init(); reset();
+await post(jake, person, 'x');
+t('owner flag on but no URL: nothing', calls.length === 0);
+t('the startup line names owner and never its URL or key', logs.some(l => /owner off \(not configured\)/.test(l)) && !logs.join('\n').includes(O_KEY));
+setEnv({ OWNER_WEBHOOK_ENABLED: '1', OWNER_WEBHOOK_URL: O_URL, OWNER_WEBHOOK_KEY: O_KEY }); init(); reset();
+t('…and when on, the line says so with host + last 6 only', logs.some(l => /owner ON \(example\.test\/…777777\)/.test(l)) && !logs.join('\n').includes(O_URL));
+oj = await post(jake, person, 'Order more film');
+const ob = calls[0]?.body || {};
+t('a person top-level in #bots-jake: one POST to the owner URL with the owner key', calls.length === 1 && calls[0].url === O_URL && calls[0].opts.headers.Authorization === `Bearer ${O_KEY}`);
+t('payload: owner_channel.message, target owner, thread = own id, top-level, Z, link', ob.event === 'owner_channel.message' && ob.target === 'owner'
+  && ob.dedupe_id === `ch-jake:${oj.m.id}:owner` && ob.thread_id === oj.m.id && ob.is_top_level === true && /Z$/.test(ob.timestamp)
+  && ob.link === `https://app.powder-ops.com/?c=ch-jake&m=${oj.m.id}` && ob.channel?.name === 'bots-jake', JSON.stringify(ob));
+t('…and no routing fields', !('target_bot' in ob) && Object.keys(ob).length === 14, Object.keys(ob).join());
+reset(); const om = await post(marnee, person, 'top'); calls = [];
+await post(marnee, person, 'a reply', { parent: om.m.id });
+t('a person thread reply in #bots-marnee: thread = parent, not top-level, one POST', calls.length === 1 && calls[0].body.thread_id === om.m.id && calls[0].body.is_top_level === false);
+reset(); await post(adam, person, 'hi');
+t('#bots-adam fires too', calls.length === 1 && calls[0].body.target === 'owner');
+reset();
+for (const ch of [ops, opsTest, general, quality, { id: 'ch-dm2', name: 'bots-jake', kind: 'dm' }, { ...jake, archived: 1 }, { id: 'ch-x2', name: 'bots-jake-2', kind: 'private' }]) await post(ch, person, 'x');
+t('ops-requests (flag off), -test, general, bots-quality, a DM, archived, look-alike: no owner POST', calls.length === 0, JSON.stringify(calls.map(c => c.body.channel)));
+reset();
+await post(jake, procBot, 'done', { parent: oj.m.id });
+await post(jake, { id: 'u-jarvis', name: '*Jarvis' }, 'ack', { parent: oj.m.id });
+await post(jake, tokenHolder, 'hello');
+await post(jake, person, 'via token', { viaToken: true });
+await post(jake, { id: 'rb', name: 'ReadyBot' }, 'nudge');
+await post(jake, runner, 'x', { viaToken: true });
+t('bots in an owner channel never fire (loop stop), the Test Runner included', calls.length === 0, String(calls.length));
+setEnv({ OPS_WEBHOOK_ENABLED: '1', OPS_WEBHOOK_URL: P_URL, OPS_WEBHOOK_KEY: P_KEY, OPS_WEBHOOK_CONTROLLER_URL: C_URL, OPS_WEBHOOK_CONTROLLER_KEY: C_KEY,
+  OWNER_WEBHOOK_ENABLED: '1', OWNER_WEBHOOK_URL: O_URL, OWNER_WEBHOOK_KEY: O_KEY }); init(); reset();
+await post(ops, person, 'ops post'); await post(jake, person, 'owner post');
+t('both on: each post fires only its own target, each with its own key', calls.length === 2
+  && calls.find(c => c.url === P_URL)?.opts.headers.Authorization === `Bearer ${P_KEY}` && calls.find(c => c.url === P_URL)?.body.target === 'procurement'
+  && calls.find(c => c.url === O_URL)?.opts.headers.Authorization === `Bearer ${O_KEY}` && calls.find(c => c.url === O_URL)?.body.target === 'owner');
+setEnv({ OWNER_WEBHOOK_ENABLED: '1', OWNER_WEBHOOK_URL: O_URL, OWNER_WEBHOOK_KEY: O_KEY, OPS_WEBHOOK_URL: P_URL, OPS_WEBHOOK_KEY: P_KEY }); init(); reset();
+await post(ops, person, 'ops post'); await post(jake, person, 'owner post');
+t('owner on, ops off: ops-requests sends nothing, the owner channel sends one', calls.length === 1 && calls[0].url === O_URL);
+reset(); responder = () => ({ status: 200, body: JSON.stringify({ success: true }) });
+const os1 = await post(jake, person, 'once');
+W.enqueueOpsWebhook({ channel: jake, message: os1.m, author: person }); await settle();
+t('owner: a sent row is never sent again', calls.length === 1);
+reset(); responder = () => ({ status: 401, body: JSON.stringify({ success: false, error: 'Unauthorized' }) });
+await post(jake, person, 'bad key');
+const orow = db.prepare('SELECT * FROM ops_webhook_log').get();
+t('owner: a 401 is a failure on the normal retry schedule', orow.status === 'pending' && orow.attempts === 1 && orow.last_http_status === 401);
+reset(); await post(jake, person, 'y'.repeat(4500));
+t('owner: text over 4000 is cut, and says so', calls[0]?.body.text.length === 4000 && calls[0]?.body.text_truncated === true);
+reset(); setEnv({ ...env, OWNER_WEBHOOK_CHANNELS: 'general,bots-quality', OPS_WEBHOOK_CHANNELS: 'general' }); init();
+await post(general, person, 'x'); await post(quality, person, 'x');
+t('OWNER_WEBHOOK_CHANNELS / OPS_WEBHOOK_CHANNELS are ignored; the list is the three names', calls.length === 0
+  && JSON.stringify(W.OWNER_CHANNELS) === JSON.stringify(['bots-jake', 'bots-marnee', 'bots-adam']) && Object.isFrozen(W.OWNER_CHANNELS));
+const ost = W.opsWebhookStatus(db, env);
+t('status: owner listed, enabled, configured; owner_channels; channels unchanged', ost.targets.owner?.enabled === true && ost.targets.owner?.configured === true
+  && ost.owner_channels.length === 3 && JSON.stringify(ost.channels) === JSON.stringify(['ops-requests', 'ops-requests-test']) && 'flag' in ost);
+const ostr = JSON.stringify(ost) + logs.join('\n') + JSON.stringify(db.prepare('SELECT last_error FROM ops_webhook_log').all());
+t('the owner URL, key and routine id never appear in status, logs or stored errors', ![O_KEY, O_URL, 'ownrROUTINE777777'].some(x => ostr.includes(x)));
+t('scrub removes the owner URL and key', !W.scrub(`x ${O_URL} ${O_KEY}`, env).includes(O_KEY) && !W.scrub(`x ${O_URL}`, env).includes(O_URL));
+
 W.stopOpsWebhook();
 console.log(`\n${pass}/${pass + fail} checks passed`);
 process.exit(fail ? 1 : 0);

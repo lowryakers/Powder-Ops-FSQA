@@ -64,7 +64,8 @@ const RUNS = [
   ['verify-hours-week-target.mjs', 5094, {}, false],
   ['verify-ops-webhook.mjs', 5142, { OPS_WEBHOOK_ENABLED: '1', OPS_HOOK_PORT: '5143',
     OPS_WEBHOOK_URL: 'http://127.0.0.1:5143/automations/webhook/procROUTINE1', OPS_WEBHOOK_KEY: 'crsr_fakeProc',
-    OPS_WEBHOOK_CONTROLLER_URL: 'http://127.0.0.1:5143/automations/webhook/ctrlROUTINE1', OPS_WEBHOOK_CONTROLLER_KEY: 'crsr_fakeCtrl' }, false],
+    OPS_WEBHOOK_CONTROLLER_URL: 'http://127.0.0.1:5143/automations/webhook/ctrlROUTINE1', OPS_WEBHOOK_CONTROLLER_KEY: 'crsr_fakeCtrl',
+    OWNER_WEBHOOK_ENABLED: '1', OWNER_WEBHOOK_URL: 'http://127.0.0.1:5143/automations/webhook/ownrROUTINE1', OWNER_WEBHOOK_KEY: 'crsr_fakeOwner' }, false],
   ['verify-test-runner.mjs', 5144, { OPS_WEBHOOK_ENABLED: '1', OPS_HOOK_PORT: '5145',
     OPS_WEBHOOK_URL: 'http://127.0.0.1:5145/automations/webhook/procROUTINE2', OPS_WEBHOOK_KEY: 'crsr_fakeProc2' }, false],
   // Boots its own server (it needs fake VAPID keys generated at boot).

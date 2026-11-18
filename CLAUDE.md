@@ -441,6 +441,9 @@ limit), `authenticateToken` in `middleware/auth.js`, `server/middleware/no-token
   target's URL and key. **Never log or store a URL or key** (`scrub`, `redactUrl`).
 - Called after the 201; never awaited. Outbox: never resent once sent, resumed after a restart, 3 in flight, 60/min.
 - `check:opswebhook` (42), `verify:opswebhook` (14).
+- **The owner channels (D-359)**: a PERSON's post in `#bots-jake` / `#bots-marnee` / `#bots-adam` (`OWNER_CHANNELS`, a constant)
+  wakes ONE Jarvis routine (target `owner`, its own `OWNER_WEBHOOK_ENABLED` + URL + key). No bot ever fires it; no routing in
+  ReadyDoc. `check:opswebhook` (72), `verify:opswebhook` (17).
 - **The `Test Runner` account (D-252, `server/test-runner.js`)** may only read and post in `#ops-requests-test`
   (`testRunnerGuard`, one allow list, 403 `test_runner_scope` otherwise, whatever its role); its post there wakes
   Procurement like a person's. Known by `app_settings.test_runner_user_id`, never its name. Its token is minted by an
