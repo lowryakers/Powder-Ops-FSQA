@@ -30,6 +30,7 @@ import { randomUUID, createHash } from 'crypto';
 import { plantDateOf } from './plant-clock.js';
 import { getSettings, notifyRecipients, money, addDays, DEPOSIT_PAYMENT_MODES } from './payment-run.js';
 import { runView, logEvent } from './payment-approval.js';
+import { runProduction, payRunProduction, pendingLines, openDeposits as openDepositsE } from './production-invoices.js';
 
 export const PAY_METHODS = Object.freeze({
   qbo_ach: 'QBO Bill Pay (ACH)',
@@ -121,6 +122,9 @@ export function closeout(db, runId) {
   }
   if (deposit && !deposit.qbo_invoice_no) open.push({ key: 'deposit_invoice', label: `Record the deposit invoice to ProDough (${money(deposit.amount)}) from QBO` });
   if (deposit && !deposit.paid_at) open.push({ key: 'deposit_paid', label: `Mark the deposit invoice paid (${money(deposit.amount)})` });
+  // D-365: the production invoices this run collected are paid by it too.
+  const production = run.status === 'transferred' ? runProduction(db, run) : [];
+  for (const p of production) if (!p.paid) open.push({ key: `production:${p.id}`, label: `Mark production invoice ${p.ref_no} paid (${money(p.amount)})` });
   if (shortfall > 0 && !run.shortfall_note) open.push({ key: 'shortfall', label: `Say how the ${money(shortfall)} shortfall was booked` });
   const expected = s.owes ?? null;
   return {
@@ -138,6 +142,7 @@ export function closeout(db, runId) {
       invoice_recorded_at: deposit.invoice_recorded_at, paid_amount: deposit.paid_amount, paid_from: deposit.paid_from,
       paid_by: deposit.paid_by, paid_at: deposit.paid_at, applied_to: deposit.applied_to,
     } : null,
+    production,
     deposit_payment: getSettings(db).deposit_payment || 'transfer', deposit_payment_modes: DEPOSIT_PAYMENT_MODES,
     shortfall: shortfall > 0 ? { amount: shortfall, note: run.shortfall_note, by: run.shortfall_by, at: run.shortfall_at } : null,
     open, can_close: !run.closed_at && run.status === 'transferred' && open.length === 0,
@@ -173,6 +178,7 @@ export function confirmReceived(db, runId, { amount, received_on, bank_txn_id },
       db.prepare("UPDATE prodough_deposits SET paid_amount = ?, paid_from = 'transfer', paid_by = ?, paid_at = datetime('now') WHERE id = ?")
         .run(round(Math.min(dep.amount, n)), user.name, dep.id);
     }
+    if (mode === 'transfer') payRunProduction(db, run, { from: 'transfer', by: user.name });
     const expected = approvedSummary(run)?.owes ?? null;
     logEvent(db, run.id, 'received', { by: user.name, detail: { amount: round(n), on, expected, bank_txn: txn?.id || null, differs: expected != null && Math.abs(round(n) - expected) >= 0.01 } });
   })();
@@ -329,9 +335,20 @@ export function closeRun(db, runId, user) {
   return closeout(db, runId);
 }
 
-/** Deposits not yet taken off a final production bill (part E reads this). */
-export function openDeposits(db) {
-  return db.prepare('SELECT d.*, r.run_no FROM prodough_deposits d JOIN payment_runs r ON r.id = d.run_id WHERE d.paid_at IS NOT NULL AND d.applied_to IS NULL ORDER BY d.paid_at').all();
+/** Deposits not yet taken off a final production bill — the one reader is part E's (D-365). */
+export const openDeposits = openDepositsE;
+
+/** In 'manual' mode: a person marks one of the run's production invoices paid (D-365). */
+export function markProductionPaid(db, runId, invoiceId, user) {
+  const run = loadRun(db, runId);
+  needTransferred(run);
+  if (!run.received_at) throw fail(409, 'Confirm the transfer landed first.', { code: 'TRANSFER_NOT_CONFIRMED' });
+  const item = runProduction(db, run).find(p => p.id === invoiceId);
+  if (!item) throw fail(404, 'That production invoice is not on this run.');
+  if (item.paid) throw fail(409, 'Already marked paid.');
+  if (!payRunProduction(db, run, { from: 'manual', by: user.name, only: invoiceId })) throw fail(409, `${item.ref_no} is ${item.status}; it cannot be marked paid.`);
+  logEvent(db, run.id, 'production_paid', { by: user.name, detail: { ref_no: item.ref_no, amount: item.amount } });
+  return closeout(db, run.id);
 }
 
 /**
@@ -347,6 +364,8 @@ export async function closeoutDigest(db, deps) {
     if (!c.open.length) { parts.push(`*${c.run_no}*: everything is done; close it.`); continue; }
     parts.push(`*${c.run_no}* (${c.open.length} left):\n${c.open.slice(0, 8).map(o => `• ${o.label}`).join('\n')}${c.open.length > 8 ? `\n• and ${c.open.length - 8} more` : ''}`);
   }
+  const pending = pendingLines(db);
+  if (pending.length) parts.push(`*ProDough production orders* (${pending.length}):\n${pending.slice(0, 8).map(l => `• ${l}`).join('\n')}${pending.length > 8 ? `\n• and ${pending.length - 8} more` : ''}`);
   if (!parts.length) return { runs: 0, sent: 0 };
   const recipients = (() => {
     const list = notifyRecipients(db);

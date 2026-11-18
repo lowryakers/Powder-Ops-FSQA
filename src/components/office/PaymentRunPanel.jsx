@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useApiGet, apiPost, apiPut, apiUpload, apiFetch } from '../../hooks/useApi';
 import { withSignature } from '../../lib/signature';
 import { openFile } from '../../lib/openFile';
-import { AlertTriangle, Lock, XCircle, Clock, Info, Plus, Settings2, Send, Snowflake, Ban, Copy, Landmark } from 'lucide-react';
+import { AlertTriangle, Lock, XCircle, Info, Plus, Settings2, Send, Snowflake, Ban, Copy, Landmark } from 'lucide-react';
 
 // The weekly payment run (D-360, PR A): the bills in QuickBooks, checked, and
 // placed — must-pays locked at the top, flagged bills first, the rest after;
@@ -214,13 +214,14 @@ function SettingsBox({ data, onDone }) {
   const [phone, setPhone] = useState(s.approver_phone || '');
   const [mode, setMode] = useState(s.materials_mode || 'weekly_at_cost');
   const [depMode, setDepMode] = useState(s.deposit_payment || 'transfer');
+  const [priceField, setPriceField] = useState(s.production_price_field || '');
   const [review, setReview] = useState(s.review_before_send !== false);
   const [bal, setBal] = useState('');
   const saveBal = async () => { try { await apiPut('/payment-run/bank-balance', { amount: bal }); setBal(''); onDone(); } catch (e) { alert(e.message); } };
   const saveFeed = async () => { try { await apiPut('/payment-run/bank-balance', { from_feed: true }); onDone(); } catch (e) { alert(e.message); } };
   const save = async () => {
     try {
-      await apiPut('/payment-run/settings', { bill_owner_id: owner || null, controller_id: ctrl || null, approver_phone: phone || null, materials_mode: mode, deposit_payment: depMode, review_before_send: review });
+      await apiPut('/payment-run/settings', { bill_owner_id: owner || null, controller_id: ctrl || null, approver_phone: phone || null, materials_mode: mode, deposit_payment: depMode, production_price_field: priceField || null, review_before_send: review });
       onDone();
     }
     catch (e) { alert(e.message); }
@@ -259,6 +260,13 @@ function SettingsBox({ data, onDone }) {
             </select>
             <span className="mt-0.5 block text-[11px] text-slate-500">Until the accountant confirms.</span>
           </label>
+          <label className="text-xs text-slate-600">Price list for ProDough production invoices
+            <select id="pr-pricefield" value={priceField} onChange={e => setPriceField(e.target.value)} className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm" data-price-field>
+              <option value="">— not chosen (every order is held) —</option>
+              {Object.entries(s.production_price_fields || {}).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+            <span className="mt-0.5 block text-[11px] text-slate-500">The column on Products that prices each unit. ProDough's PO must show the same price.</span>
+          </label>
           <label className="flex items-start gap-2 text-xs text-slate-600 sm:col-span-2">
             <input id="pr-review" type="checkbox" checked={review} onChange={e => setReview(e.target.checked)} className="mt-0.5 h-4 w-4 shrink-0" data-review-before-send />
             <span>I review the run before the text goes to Danny. Off: the run goes to Danny on its own on run day, if a bank balance was entered that week.</span>
@@ -289,7 +297,7 @@ const EVENT = {
   frozen: 'Prepared', bank_balance: 'Bank balance entered', sent: 'Sent to Danny', resent: 'Sent again (new link)', opened: 'Page opened',
   unticked: 'Unticked', ticked: 'Ticked again', approved: 'Approved', transferred: 'Transfer recorded', reminder: 'Reminder sent', cancelled: 'Cancelled',
   received: 'Transfer confirmed in the bank', paid: 'Bill paid', proof: 'Proof attached', qbo_marked: 'Marked paid in QBO', sent_back: 'Sent back to the queue',
-  deposit_invoice: 'Deposit invoice recorded', deposit_paid: 'Deposit marked paid', shortfall_booked: 'Shortfall booked', closed: 'Run closed',
+  deposit_invoice: 'Deposit invoice recorded', deposit_paid: 'Deposit marked paid', production_paid: 'Production invoice marked paid', shortfall_booked: 'Shortfall booked', closed: 'Run closed',
 };
 
 // D-364 (part D): after Danny's transfer the run is closed out here — the money
@@ -363,6 +371,23 @@ function CloseOut({ run, onDone }) {
               )}
             </div>
           )}
+        </div>
+      )}
+      {c.production?.length > 0 && (
+        <div className="space-y-1 text-sm" data-closeout-production>
+          <div className="font-medium text-slate-800">Production invoices on this run</div>
+          <ul className="divide-y divide-slate-100 rounded border border-slate-200 bg-white">
+            {c.production.map(p => (
+              <li key={p.id} className="flex flex-wrap items-baseline justify-between gap-2 px-3 py-1.5" data-closeout-prod={p.paid ? 'paid' : 'open'}>
+                <span>{p.ref_no}{p.mo_number ? ` · MO ${p.mo_number}` : ''}{p.qbo_invoice_no ? ` · QBO ${p.qbo_invoice_no}` : ''}
+                  <span className="ml-1 text-xs text-slate-500">{p.paid ? `paid ${p.paid_from === 'transfer' ? 'by the transfer' : `(marked by ${p.paid_by})`}` : 'not paid yet'}</span></span>
+                <span className="flex items-center gap-2"><span className="tabular-nums">{money(p.amount)}</span>
+                  {can && !p.paid && c.deposit_payment === 'manual' && t.received_at && (
+                    <button type="button" disabled={busy} onClick={() => go(() => apiPost(`/payment-run/runs/${run.id}/production/${p.id}/paid`, {}))} className="rounded border border-slate-300 px-2 py-0.5 text-xs" data-closeout-prod-paid>Mark paid</button>
+                  )}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
       {c.shortfall && (
@@ -598,6 +623,138 @@ function PreparedRuns({ data, onDone }) {
   );
 }
 
+// D-365 (part E): one invoice to ProDough per closed MO or shipped order, from the
+// price list, matched to ProDough's PO, less the paid Deposits. Recorded here by a
+// person (ReadyDoc does not read MRPEasy); the Controller creates it in QBO.
+const PI_STATE = { held: ['red', 'Held · not invoiced'], to_invoice: ['amber', 'To create in QBO'], invoiced: ['blue', 'Invoiced · owed'], paid: ['green', 'Paid'], void: ['slate', 'Void'] };
+const blankLine = () => ({ sku: '', qty: '', po_unit_price: '' });
+function LinesEditor({ lines, setLines, idp }) {
+  const set = (i, k, v) => setLines(ls => ls.map((l, j) => (j === i ? { ...l, [k]: v } : l)));
+  return (
+    <div className="space-y-1">
+      {lines.map((l, i) => (
+        <div key={i} className="grid grid-cols-3 gap-2" data-pi-line>
+          <input id={`${idp}-sku-${i}`} value={l.sku} onChange={e => set(i, 'sku', e.target.value)} placeholder="SKU" className="rounded border border-slate-300 px-2 py-1 text-sm" data-pi-sku />
+          <input id={`${idp}-qty-${i}`} value={l.qty} onChange={e => set(i, 'qty', e.target.value)} inputMode="decimal" placeholder="Units" className="rounded border border-slate-300 px-2 py-1 text-sm" data-pi-qty />
+          <input id={`${idp}-price-${i}`} value={l.po_unit_price} onChange={e => set(i, 'po_unit_price', e.target.value)} inputMode="decimal" placeholder="Unit price on PO" className="rounded border border-slate-300 px-2 py-1 text-sm" data-pi-price />
+        </div>
+      ))}
+      <button type="button" onClick={() => setLines(ls => [...ls, blankLine()])} className="text-xs text-slate-600 underline">Add a line</button>
+    </div>
+  );
+}
+function RecordOrder({ sources, onDone }) {
+  const [f, setF] = useState({ source: 'mo_closed', mo_number: '', order_ref: '', prodough_po: '', event_date: today() });
+  const [lines, setLines] = useState([blankLine()]);
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setBusy(true);
+    try { await apiPost('/payment-run/production-invoices', { ...f, lines }); setF(x => ({ ...x, mo_number: '', order_ref: '', prodough_po: '' })); setLines([blankLine()]); onDone(); }
+    catch (e) { alert(e.message); } finally { setBusy(false); }
+  };
+  return (
+    <div className="space-y-2 rounded border border-slate-200 bg-slate-50 p-2" data-pi-record>
+      <div className="grid gap-2 sm:grid-cols-5">
+        <select id="pi-source" value={f.source} onChange={e => setF(x => ({ ...x, source: e.target.value }))} className="rounded border border-slate-300 px-2 py-1 text-sm">
+          {Object.entries(sources).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+        <input id="pi-mo" value={f.mo_number} onChange={e => setF(x => ({ ...x, mo_number: e.target.value }))} placeholder="MO number" className="rounded border border-slate-300 px-2 py-1 text-sm" data-pi-mo />
+        <input id="pi-ref" value={f.order_ref} onChange={e => setF(x => ({ ...x, order_ref: e.target.value }))} placeholder="Customer order no." className="rounded border border-slate-300 px-2 py-1 text-sm" />
+        <input id="pi-po" value={f.prodough_po} onChange={e => setF(x => ({ ...x, prodough_po: e.target.value }))} placeholder="ProDough PO" className="rounded border border-slate-300 px-2 py-1 text-sm" data-pi-po />
+        <input id="pi-date" type="date" value={f.event_date} onChange={e => setF(x => ({ ...x, event_date: e.target.value }))} className="rounded border border-slate-300 px-2 py-1 text-sm" />
+      </div>
+      <LinesEditor lines={lines} setLines={setLines} idp="pi-new" />
+      <button type="button" disabled={busy} onClick={save} className="rounded bg-slate-800 px-3 py-1 text-sm text-white disabled:opacity-40" data-pi-save>Record it</button>
+    </div>
+  );
+}
+function ProductionInvoiceRow({ inv, deposits, canInvoice, onDone }) {
+  const [chip, label] = PI_STATE[inv.status] || ['slate', inv.status];
+  const [qbo, setQbo] = useState('');
+  const [picked, setPicked] = useState([]);
+  const [fix, setFix] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const go = async (fn) => { setBusy(true); try { await fn(); onDone(); } catch (e) { alert(e.message); } finally { setBusy(false); } };
+  const applied = picked.reduce((s, id) => s + (deposits.find(d => d.id === id)?.amount || 0), 0);
+  const base = `/payment-run/production-invoices/${inv.id}`;
+  return (
+    <li className="space-y-1 px-3 py-2 text-sm" data-pi-row={inv.status}>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <span className="min-w-0"><span className="font-medium">{inv.ref_no}</span> · {inv.source_label} · {inv.mo_number ? `MO ${inv.mo_number}` : inv.order_ref}{inv.prodough_po ? ` · ProDough PO ${inv.prodough_po}` : ''} <Chip tone={chip}>{label}</Chip></span>
+        <span className="tabular-nums">{inv.total !== null ? money(inv.total) : '—'}</span>
+      </div>
+      <ul className="text-xs text-slate-600">
+        {inv.lines.map((l, i) => <li key={i}>{l.sku}{l.name ? ` (${l.name})` : ''} · {l.qty ?? '?'} × {l.unit_price !== null ? money(l.unit_price) : '?'}{l.amount !== null ? ` = ${money(l.amount)}` : ''}</li>)}
+      </ul>
+      {inv.status === 'held' && <ul className="list-disc pl-5 text-xs text-red-700" data-pi-reasons>{inv.hold_reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>}
+      {['invoiced', 'paid'].includes(inv.status) && (
+        <p className="text-xs text-slate-600">QBO {inv.qbo_invoice_no} by {inv.invoiced_by}{inv.deposits_applied ? ` · deposits taken off ${money(inv.deposits_applied)} (${inv.deposits.map(d => d.run_no).join(', ')})` : ''} · <span className="font-medium text-slate-800" data-pi-due>owed {money(inv.amount_due)}</span>
+          {inv.status === 'paid' ? ` · paid ${inv.paid_from === 'deposits' ? 'by the deposits' : inv.paid_from === 'transfer' ? 'by the transfer' : `(marked by ${inv.paid_by})`}` : inv.on_run ? ` · on run ${inv.on_run.run_no}` : ' · on the next run'}</p>
+      )}
+      {inv.status === 'void' && <p className="text-xs text-slate-600">Void: {inv.void_reason} ({inv.void_by})</p>}
+      {inv.status === 'held' && (fix ? (
+        <div className="space-y-1">
+          <input id={`pi-fixpo-${inv.id}`} value={fix.po} onChange={e => setFix(x => ({ ...x, po: e.target.value }))} placeholder="ProDough PO" className="rounded border border-slate-300 px-2 py-1 text-sm" />
+          <LinesEditor lines={fix.lines} setLines={(fn) => setFix(x => ({ ...x, lines: typeof fn === 'function' ? fn(x.lines) : fn }))} idp={`pi-fix-${inv.id}`} />
+          <button type="button" disabled={busy} onClick={() => go(() => apiPost(`${base}/recheck`, { prodough_po: fix.po, lines: fix.lines }))} className="rounded bg-slate-800 px-3 py-1 text-sm text-white" data-pi-recheck-save>Check again</button>
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          <button type="button" disabled={busy} onClick={() => go(() => apiPost(`${base}/recheck`, {}))} className="rounded border border-slate-300 px-3 py-1 text-xs" data-pi-recheck>Check the price list again</button>
+          <button type="button" onClick={() => setFix({ po: inv.prodough_po || '', lines: inv.lines.map(l => ({ sku: l.sku || '', qty: l.qty ?? '', po_unit_price: l.po_unit_price ?? '' })) })} className="rounded border border-slate-300 px-3 py-1 text-xs">Correct the PO or lines</button>
+        </div>
+      ))}
+      {canInvoice && inv.status === 'to_invoice' && (
+        <div className="space-y-1 rounded border border-amber-200 bg-amber-50/40 p-2" data-pi-invoice>
+          {deposits.length > 0 ? (
+            <div className="space-y-0.5 text-xs text-slate-700">
+              <div>Paid Deposits to take off:</div>
+              {deposits.map(d => (
+                <label key={d.id} className="flex items-center gap-2">
+                  <input type="checkbox" className="h-4 w-4 shrink-0" checked={picked.includes(d.id)} onChange={e => setPicked(p => (e.target.checked ? [...p, d.id] : p.filter(x => x !== d.id)))} data-pi-deposit />
+                  {d.run_no} · {money(d.amount)}{d.qbo_invoice_no ? ` · QBO ${d.qbo_invoice_no}` : ''}
+                </label>
+              ))}
+            </div>
+          ) : <p className="text-xs text-slate-600">No paid Deposits waiting to be taken off.</p>}
+          <p className="text-xs text-slate-800">Final bill: {money(inv.total)} − {money(applied)} = <span className="font-semibold">{money(inv.total - applied)}</span></p>
+          <div className="flex flex-wrap gap-2">
+            <input id={`pi-qbo-${inv.id}`} value={qbo} onChange={e => setQbo(e.target.value)} placeholder="QBO invoice number" className="w-44 rounded border border-slate-300 px-2 py-1 text-sm" data-pi-qbo />
+            <button type="button" disabled={busy || !qbo.trim()} onClick={() => go(() => apiPost(`${base}/invoiced`, { qbo_invoice_no: qbo, deposit_ids: picked }))} className="rounded bg-emerald-700 px-3 py-1 text-sm text-white disabled:opacity-40" data-pi-invoiced>Created in QBO and sent</button>
+          </div>
+        </div>
+      )}
+      {canInvoice && inv.can_void && (
+        <button type="button" onClick={() => { const r = window.prompt(`Why is ${inv.ref_no} void? It stays on file; its PO and deposits are freed.`); if (r) go(() => apiPost(`${base}/void`, { reason: r })); }} className="text-xs text-slate-500 underline" data-pi-void>Void</button>
+      )}
+    </li>
+  );
+}
+function ProductionInvoices({ onDone }) {
+  const { data, error, refresh } = useApiGet('/payment-run/production-invoices');
+  const [adding, setAdding] = useState(false);
+  if (error) return <p className="text-xs text-red-700">{error}</p>;
+  if (!data) return null;
+  const done = () => { refresh(); onDone(); };
+  const c = data.counts;
+  return (
+    <section className="space-y-2 rounded-lg border border-slate-200 p-3" data-production-invoices>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-sm font-semibold text-slate-800">Production invoices to ProDough</h3>
+        <span className="text-xs text-slate-600">{c.held} held · {c.to_invoice} to create · {c.invoiced} owed · {c.paid} paid</span>
+      </div>
+      <p className="text-xs text-slate-600">One invoice per closed MO or shipped order, at the {data.price_field ? data.price_fields[data.price_field].toLowerCase() : 'price list (not chosen yet)'}, matched to ProDough's PO, less the Deposits already paid. What is owed rides Danny's next run. ReadyDoc does not read MRPEasy: record the order here when it closes or ships.</p>
+      {adding ? <RecordOrder sources={data.sources} onDone={() => { setAdding(false); done(); }} />
+        : <button type="button" onClick={() => setAdding(true)} className="inline-flex items-center gap-1 rounded border border-slate-300 px-3 py-1 text-sm" data-pi-add><Plus className="h-4 w-4" />Record a closed MO or shipped order</button>}
+      {data.invoices.length > 0 && (
+        <ul className="divide-y divide-slate-100 rounded border border-slate-200 bg-white">
+          {data.invoices.map(inv => <ProductionInvoiceRow key={inv.id} inv={inv} deposits={data.open_deposits} canInvoice={data.can_invoice} onDone={done} />)}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 export default function PaymentRunPanel() {
   const { data, loading, error, refresh } = useApiGet('/payment-run');
   if (loading) return <div className="p-6 text-sm text-slate-500">Loading…</div>;
@@ -624,6 +781,7 @@ export default function PaymentRunPanel() {
       </div>
 
       <PreparedRuns data={data} onDone={refresh} />
+      <ProductionInvoices onDone={refresh} />
 
       <Section title="Ready to pay" note="Not on a prepared run yet · must-pays first, then highlighted" lines={data.on_run} data={data} onDone={refresh}
         empty="No bills ready for this run." attr={{ 'data-run-on': '' }} />
@@ -638,9 +796,6 @@ export default function PaymentRunPanel() {
         <BankDetails data={data} />
       </div>
       <SettingsBox data={data} onDone={refresh} />
-      <p className="flex items-start gap-1.5 text-xs text-slate-500"><Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-        Coming next: the production invoice to ProDough, less the deposits already paid.
-      </p>
     </div>
   );
 }

@@ -456,6 +456,11 @@ production invoices) are still to come; **do not touch the Flavor Approvals modu
   (drop → `in_qbo`), the Deposit invoice is recorded, the shortfall booked, then Close (409 `RUN_NOT_FINISHED` names what is open).
   Admin or the settings' Controller, never a token. ReadyDoc never pays or writes QBO. **`prodough_deposits.applied_to` is part E's**
   (`openDeposits()`). `deposit_payment` transfer/manual. `verify:paymentcloseout` (59, S3 stand-in).
+- **Part E (D-365, `server/production-invoices.js`)**: a person records a closed MO / shipped order (ReadyDoc does not read
+  MRPEasy) → HELD with named reasons (no PO, no price list chosen, unknown SKU, PO price ≠ list price) or ready. **One invoice per
+  ProDough PO** (folded, partial unique index; void frees it). Price column = admin's `production_price_field`, never guessed. The
+  Controller records the QBO number and ticks paid Deposits to take off (whole, once, never above the total). What is owed rides
+  Danny's next run and is paid by the transfer (or marked). `verify:productioninvoices` (43).
 
 ## The Org Chart exports to a PDF (D-362)
 `GET /api/org/pdf` (`server/org-chart-pdf.js`, before `/:id`): page 1 the chart (leaf positions stacked under their

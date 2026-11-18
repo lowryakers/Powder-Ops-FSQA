@@ -10,8 +10,8 @@
 //     move what Danny is looking at; cancel and freeze again. Runs, lines and
 //     the event log refuse DELETE (triggers); the log refuses UPDATE too.
 //   - WHAT DANNY SEES IS WHAT PRODOUGH OWES: the deposit (materials, D-363) (ProDough
-//     material bills ticked, at cost) + open production invoices (part E; none
-//     until then) + the shortfall (Powder Ops expense bills ticked, less the
+//     material bills ticked, at cost) + open production invoices (part E, D-365:
+//     the final bill less the deposits already paid) + the shortfall (Powder Ops expense bills ticked, less the
 //     bank balance Lowry entered — shown only above zero). One number.
 //   - THE LINK IS A SECRET THAT EXPIRES. 24 random bytes, stored as SHA-256,
 //     clear text returned once. Issuing another (a re-send, the reminder)
@@ -28,16 +28,15 @@ import { plantDateOf } from './plant-clock.js';
 import { readyDocOrigin } from './links.js';
 import { smsEnabled, sendSms, approverPhone, OPT_OUT_LINE } from './sms.js';
 import { paymentRun, getSettings, notifyRecipients, money, addDays, MATERIALS_MODES } from './payment-run.js';
+import { openProductionInvoices } from './production-invoices.js';
 
 export const LINK_DAYS = 5;
 const OPEN = ['draft', 'sent'];
 const hash = (t) => crypto.createHash('sha256').update(String(t)).digest('hex');
 const round = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
-/** Open production invoices to ProDough. Part E creates them; until then there are none. */
-export function openProductionInvoices() {
-  return [];
-}
+// Open production invoices to ProDough (part E, D-365): invoiced, something still owed, on no live run.
+export { openProductionInvoices };
 
 /** What ProDough owes Powder Ops this week, from the ticked lines. */
 export function owes(lines, { bankBalance = null, production = [] } = {}) {
