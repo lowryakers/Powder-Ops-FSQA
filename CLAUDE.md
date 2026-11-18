@@ -7092,7 +7092,7 @@ swipe sideways at fit to page, swipe down at fit to close, tap to hide the contr
 `hr--<user id>` private channels (`shared/hr-door.js`, `server/hr-door.js`): the employee + the HR team
 (`hr_door_readers`, Messages → Settings → HR team; `syncHrDoors` on save and at boot). **`canAccess` does NOT wave an
 admin into an `hr--` channel** — never add a read path that skips it. Reserved family: no manual create/rename/members/
-archive/delete. Owner's top-level post → tracked + ReadyBot ack. Move with `channel_id: 'hr'` → the sender's door (HR team
+archive/delete. Owner's top-level post → tracked + ReadyBot ack. **The HR inbox lists only doors with a message (D-358).** Move with `channel_id: 'hr'` → the sender's door (HR team
 only). `verify:hrdoor` (36).
 
 ## Moving a message to the channel it belongs in; open items (D-355)
