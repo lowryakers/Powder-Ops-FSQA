@@ -11243,3 +11243,31 @@ later"); the setting stays "materials at cost" until then.
   the page offers "Use the bank feed: $X"; using it records the feed as the source. Typing a balance still works and
   stays the normal case until a feed is connected.
 `verify:paymentchecks` (41: pure reader + live; control: main has no line or bank check and `/bank-details` is 404).
+
+## D-364 — Payment run part D: closing out a run after Danny approves it (18 Nov 2026)
+Part D of the payment run plan (D-360): "confirm the transfer landed, pay the bills the way we pay today, attach proof,
+mark paid in AP Drop and QBO, create the weekly ProDough invoice (a Deposit, D-363), tell me what is left, nothing paid
+stays open." `server/payment-closeout.js`, the close-out section on each approved run (`CloseOut` in `PaymentRunPanel.jsx`),
+`payment_run_payments`, `prodough_deposits`.
+- **The close-out is derived on read** (`closeout()`): transfer landed → each ticked bill paid (method, date, reference,
+  proof, QBO mark) or sent back → deposit invoice recorded and paid → shortfall booked → closed. The "still open" list is
+  the same list the weekly task and the Close refusal read (`409 RUN_NOT_FINISHED`, naming each item).
+- **A person confirms the transfer landed.** The bank feed only OFFERS matching deposits (money in, within a cent, since
+  the day before Danny's "I've sent it"); nothing is matched by itself. No bill can be marked paid before this
+  (`409 TRANSFER_NOT_CONFIRMED`).
+- **How a bill was paid is one of four**: QBO Bill Pay ACH, Powder Ops debit card (Billtrust / QBO link), check, other —
+  with the date and a reference. Recording it moves the AP Drop to `paid`. Proof (PDF or photo) is stored and hashed,
+  once; the QBO mark records the QBO payment number. ReadyDoc never pays and never writes to QBO: a person does both
+  there and records it here.
+- **A bill that cannot be paid this week is sent back with a reason**: the drop returns to `in_qbo`, off this run, and
+  is on next week's list. A bill on the partner ledger is refused here (`409 SETTLE_ON_PARTNER_REC`, D-329).
+- **The Deposit invoice** is one row per run (`prodough_deposits`, the materials total). Its QBO number is recorded here.
+  `app_settings` `deposit_payment` = `transfer` (default: the confirmed transfer pays it) or `manual` (a person marks it
+  paid) — switchable while the accountants decide. **`applied_to` stays empty until part E takes the deposit off the
+  final production bill**; `openDeposits()` is what part E reads.
+- **Who**: an admin, or the Controller named in the payment run settings (`controller_id`). Person-only: a token reads
+  the close-out at most. Payment and deposit rows cannot be deleted (triggers).
+- **The weekly task** (`closeoutDigest`, first open weekday from 8 AM): every approved run not yet closed, with what is
+  left, to the notify list and the Controller. Quiet when nothing is open.
+`verify:paymentcloseout` (59, live through the S3 stand-in + browser at 1280 and 390; control: main has no close-out and
+`/runs/:id/closeout` is 404).

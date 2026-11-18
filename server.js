@@ -92,6 +92,7 @@ import paymentRunRoutes from './server/api/payment-run.js';
 import paymentApprovalRoutes from './server/api/payment-approval.js';
 import { sendFailureNotices } from './server/payment-run.js';
 import { prepareWeeklyRun, sendReminders as sendPaymentReminders } from './server/payment-approval.js';
+import { closeoutDigest } from './server/payment-closeout.js';
 import employeeDocumentRoutes, { employeeDocumentNudges } from './server/api/employee-documents.js';
 import { trainingNudges } from './server/training-notify.js';
 import activityRoutes from './server/api/activity.js';
@@ -2386,7 +2387,7 @@ server.listen(PORT, '0.0.0.0', () => {
   backfillInvoiceText().catch(e => console.warn('[invoices] backfill error:', e.message));
   backfillFinanceFileText().catch(e => console.warn('[finance] backfill error:', e.message));
   // Recurring jobs: Friday auto-backup to R2, Monday expiry digest to #quality.
-  startScheduledJobs(db, { runDbBackup, BACKUP_HOUR, storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges, qaActionNudges, employeeDocumentNudges, policyAckNudges: (d) => policyAckNudges(d, { botDm, postMessageAs, pushToUser }), trainingNudges, supplyCycleNudge, partnerReminderNudges, recordBackfillNudge, supplierReviewNudge, sendFlashReport, sendCleanupDigest, cleanupDigest, CLEANUP_BUSY_THRESHOLD, sendEodMissedDigest, eodMissedDigest, EOD_BUSY_THRESHOLD, sendHolidayNotices, sendLateResults, sendFailureNotices, prepareWeeklyRun, sendPaymentReminders });
+  startScheduledJobs(db, { runDbBackup, BACKUP_HOUR, storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges, qaActionNudges, employeeDocumentNudges, policyAckNudges: (d) => policyAckNudges(d, { botDm, postMessageAs, pushToUser }), trainingNudges, supplyCycleNudge, partnerReminderNudges, recordBackfillNudge, supplierReviewNudge, sendFlashReport, sendCleanupDigest, cleanupDigest, CLEANUP_BUSY_THRESHOLD, sendEodMissedDigest, eodMissedDigest, EOD_BUSY_THRESHOLD, sendHolidayNotices, sendLateResults, sendFailureNotices, prepareWeeklyRun, sendPaymentReminders, closeoutDigest });
   startReminderLoop(db);
   try { initOpsWebhook(db); } catch (e) { console.warn('[ops-webhook] not started:', e.message); }
   try { startOpsMonitor(db); } catch (e) { console.warn('[ops-monitor] not started:', e.message); }

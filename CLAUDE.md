@@ -451,6 +451,11 @@ production invoices) are still to come; **do not touch the Flavor Approvals modu
   from `vendor_bank_details` (routing + last four, retired never deleted) FAIL the bill; an admin records new ones with a phone
   note and the password. **The weekly ProDough invoice is a Deposit; parts D–E take deposits off the final production bill.**
   The bank feed's balance can stand in for the typed one. `verify:paymentchecks` (41).
+- **Part D (D-364, `server/payment-closeout.js`)**: the close-out is DERIVED (`closeout()`): a person confirms the transfer landed
+  (the feed only offers matches), each bill is paid (method, date, reference, proof hashed once, QBO number) or sent back with a reason
+  (drop → `in_qbo`), the Deposit invoice is recorded, the shortfall booked, then Close (409 `RUN_NOT_FINISHED` names what is open).
+  Admin or the settings' Controller, never a token. ReadyDoc never pays or writes QBO. **`prodough_deposits.applied_to` is part E's**
+  (`openDeposits()`). `deposit_payment` transfer/manual. `verify:paymentcloseout` (59, S3 stand-in).
 
 ## The Org Chart exports to a PDF (D-362)
 `GET /api/org/pdf` (`server/org-chart-pdf.js`, before `/:id`): page 1 the chart (leaf positions stacked under their

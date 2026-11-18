@@ -310,7 +310,7 @@ export async function announce(db, deps, runId, kind) {
     const expected = v.approved_summary?.owes;
     const differs = expected !== undefined && Math.abs((v.transferred_amount || 0) - expected) >= 0.01;
     return tell(db, deps, withController(db), `*${v.transferred_name} says ${money(v.transferred_amount)} was sent* for payment run ${v.run_no}`
-      + `${differs ? `\n*This is not the ${money(expected)} approved.* Check before paying.` : ''}\nNext: pay the approved bills in QuickBooks.\nOpen: /?tab=payment-run`, 'ProDough transfer sent');
+      + `${differs ? `\n*This is not the ${money(expected)} approved.* Check before paying.` : ''}\nNext: confirm it landed, then pay the bills and close the run out on the payment run page.\nOpen: /?tab=payment-run`, 'ProDough transfer sent');
   }
   return 0;
 }

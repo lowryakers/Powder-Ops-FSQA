@@ -255,6 +255,7 @@ const RUNS = [
   ['verify-payment-approval.mjs', 5229],
   ['verify-org-chart-pdf.mjs', 5231],
   ['verify-payment-checks.mjs', 5232],
+  ['verify-payment-closeout.mjs', 5233, {}, true],
   ['verify-training-oneway.mjs', 5222],
   ['verify-calibration-export.mjs', 5223],
   ['verify-move-message.mjs', 5225],

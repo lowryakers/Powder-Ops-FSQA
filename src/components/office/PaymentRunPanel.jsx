@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { useApiGet, apiPost, apiPut } from '../../hooks/useApi';
+import { useApiGet, apiPost, apiPut, apiUpload, apiFetch } from '../../hooks/useApi';
 import { withSignature } from '../../lib/signature';
+import { openFile } from '../../lib/openFile';
 import { AlertTriangle, Lock, XCircle, Clock, Info, Plus, Settings2, Send, Snowflake, Ban, Copy, Landmark } from 'lucide-react';
 
 // The weekly payment run (D-360, PR A): the bills in QuickBooks, checked, and
@@ -212,13 +213,14 @@ function SettingsBox({ data, onDone }) {
   const [ctrl, setCtrl] = useState(s.controller?.id || '');
   const [phone, setPhone] = useState(s.approver_phone || '');
   const [mode, setMode] = useState(s.materials_mode || 'weekly_at_cost');
+  const [depMode, setDepMode] = useState(s.deposit_payment || 'transfer');
   const [review, setReview] = useState(s.review_before_send !== false);
   const [bal, setBal] = useState('');
   const saveBal = async () => { try { await apiPut('/payment-run/bank-balance', { amount: bal }); setBal(''); onDone(); } catch (e) { alert(e.message); } };
   const saveFeed = async () => { try { await apiPut('/payment-run/bank-balance', { from_feed: true }); onDone(); } catch (e) { alert(e.message); } };
   const save = async () => {
     try {
-      await apiPut('/payment-run/settings', { bill_owner_id: owner || null, controller_id: ctrl || null, approver_phone: phone || null, materials_mode: mode, review_before_send: review });
+      await apiPut('/payment-run/settings', { bill_owner_id: owner || null, controller_id: ctrl || null, approver_phone: phone || null, materials_mode: mode, deposit_payment: depMode, review_before_send: review });
       onDone();
     }
     catch (e) { alert(e.message); }
@@ -251,6 +253,12 @@ function SettingsBox({ data, onDone }) {
             </select>
             <span className="mt-0.5 block text-[11px] text-slate-500">A deposit each week; the final bill after the production run takes the deposits off. Whether materials stay at cost is still to be decided.</span>
           </label>
+          <label className="text-xs text-slate-600">How the transfer is recorded against the deposit
+            <select id="pr-depmode" value={depMode} onChange={e => setDepMode(e.target.value)} className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm" data-deposit-mode>
+              {Object.entries(s.deposit_payment_modes || {}).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+            <span className="mt-0.5 block text-[11px] text-slate-500">Until the accountant confirms.</span>
+          </label>
           <label className="flex items-start gap-2 text-xs text-slate-600 sm:col-span-2">
             <input id="pr-review" type="checkbox" checked={review} onChange={e => setReview(e.target.checked)} className="mt-0.5 h-4 w-4 shrink-0" data-review-before-send />
             <span>I review the run before the text goes to Danny. Off: the run goes to Danny on its own on run day, if a bank balance was entered that week.</span>
@@ -280,7 +288,152 @@ const STATUS = {
 const EVENT = {
   frozen: 'Prepared', bank_balance: 'Bank balance entered', sent: 'Sent to Danny', resent: 'Sent again (new link)', opened: 'Page opened',
   unticked: 'Unticked', ticked: 'Ticked again', approved: 'Approved', transferred: 'Transfer recorded', reminder: 'Reminder sent', cancelled: 'Cancelled',
+  received: 'Transfer confirmed in the bank', paid: 'Bill paid', proof: 'Proof attached', qbo_marked: 'Marked paid in QBO', sent_back: 'Sent back to the queue',
+  deposit_invoice: 'Deposit invoice recorded', deposit_paid: 'Deposit marked paid', shortfall_booked: 'Shortfall booked', closed: 'Run closed',
 };
+
+// D-364 (part D): after Danny's transfer the run is closed out here — the money
+// landing, each bill paid with proof and marked in QBO (or sent back), the
+// deposit invoice, the shortfall. The server derives what is left.
+const today = () => new Date().toLocaleDateString('en-CA');
+function CloseOut({ run, onDone }) {
+  const { data: c, error, refresh } = useApiGet(`/payment-run/runs/${run.id}/closeout`, [run.id, run.status]);
+  const [busy, setBusy] = useState(false);
+  const [recv, setRecv] = useState({ amount: run.transferred_amount ?? '', on: today(), txn: '' });
+  const [dep, setDep] = useState('');
+  const [short, setShort] = useState('');
+  if (error) return <p className="text-xs text-red-700">{error}</p>;
+  if (!c) return <p className="text-xs text-slate-500">Loading the close-out…</p>;
+  const can = c.can_close_out && !c.closed;
+  const go = async (fn) => { setBusy(true); try { await fn(); refresh(); onDone(); } catch (e) { alert(e.message); } finally { setBusy(false); } };
+  const t = c.transfer;
+  return (
+    <section className="space-y-3 rounded-lg border border-emerald-200 bg-emerald-50/30 p-3" data-closeout={run.run_no}>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h4 className="text-sm font-semibold text-slate-800">After approval</h4>
+        <span className="text-xs text-slate-600" data-closeout-left>{c.closed ? `Closed by ${c.closed_by}` : c.open.length ? `${c.open.length} left` : 'Everything is done'}</span>
+      </div>
+      <div className="space-y-1 text-sm" data-closeout-transfer>
+        <div className="font-medium text-slate-800">1. The transfer</div>
+        {run.status !== 'transferred' ? <p className="text-xs text-slate-600">Waiting for Danny to say the money was sent.</p>
+          : t.received_at ? <p className="text-xs text-slate-700">{money(t.received_amount)} landed on {t.received_on}, confirmed by {t.received_by}.{t.differs ? <span className="font-semibold text-red-700"> Not the {money(t.expected)} approved.</span> : ''}</p>
+          : (
+            <div className="space-y-1">
+              <p className="text-xs text-slate-600">{t.sent_by} says {money(t.sent_amount)} was sent. Check the Powder Ops account, then confirm what arrived.</p>
+              {t.feed_matches?.length > 0 && (
+                <select id={`txn-${run.id}`} value={recv.txn} onChange={e => { const m = t.feed_matches.find(x => x.id === e.target.value); setRecv(r => ({ ...r, txn: e.target.value, ...(m ? { amount: m.amount, on: m.posted_date } : {}) })); }}
+                  className="rounded border border-slate-300 px-2 py-1 text-xs" data-closeout-feed>
+                  <option value="">Bank feed: pick the matching deposit…</option>
+                  {t.feed_matches.map(m => <option key={m.id} value={m.id}>{m.posted_date} · {money(m.amount)} · {m.description || m.account}</option>)}
+                </select>
+              )}
+              {can && (
+                <div className="flex flex-wrap items-end gap-2">
+                  <input id={`recv-amt-${run.id}`} value={recv.amount} onChange={e => setRecv(r => ({ ...r, amount: e.target.value }))} inputMode="decimal" className="w-32 rounded border border-slate-300 px-2 py-1 text-sm" data-closeout-amount />
+                  <input id={`recv-on-${run.id}`} type="date" value={recv.on} onChange={e => setRecv(r => ({ ...r, on: e.target.value }))} className="rounded border border-slate-300 px-2 py-1 text-sm" />
+                  <button type="button" disabled={busy || recv.amount === ''} className="rounded bg-emerald-700 px-3 py-1 text-sm text-white disabled:opacity-40" data-closeout-received
+                    onClick={() => go(() => apiPost(`/payment-run/runs/${run.id}/received`, { amount: recv.amount, received_on: recv.on, bank_txn_id: recv.txn || undefined }))}>It landed</button>
+                </div>
+              )}
+            </div>
+          )}
+      </div>
+      <div className="space-y-1" data-closeout-bills>
+        <div className="text-sm font-medium text-slate-800">2. Pay the bills</div>
+        <ul className="divide-y divide-slate-100 rounded border border-slate-200 bg-white text-sm">
+          {c.lines.map(l => <PayLine key={l.line_id} run={run} line={l} methods={c.pay_methods} can={can && !!t.received_at} go={go} />)}
+        </ul>
+      </div>
+      {c.deposit && (
+        <div className="space-y-1 text-sm" data-closeout-deposit>
+          <div className="font-medium text-slate-800">3. Deposit invoice to ProDough · {money(c.deposit.amount)}</div>
+          <p className="text-xs text-slate-600">
+            {c.deposit.qbo_invoice_no ? `QBO invoice ${c.deposit.qbo_invoice_no}, recorded by ${c.deposit.invoice_recorded_by}. ` : 'Create it in QBO, then record its number. '}
+            {c.deposit.paid_at ? `Paid ${money(c.deposit.paid_amount)} (${c.deposit.paid_from === 'transfer' ? 'by the transfer' : `marked by ${c.deposit.paid_by}`}).` : c.deposit_payment === 'transfer' ? 'The confirmed transfer pays it.' : 'Mark it paid once the transfer is confirmed.'}
+            {' '}The final production bill takes it off.
+          </p>
+          {can && (
+            <div className="flex flex-wrap gap-2">
+              {!c.deposit.qbo_invoice_no && <>
+                <input id={`dep-${run.id}`} value={dep} onChange={e => setDep(e.target.value)} placeholder="QBO invoice number" className="w-44 rounded border border-slate-300 px-2 py-1 text-sm" data-closeout-dep-no />
+                <button type="button" disabled={busy || !dep.trim()} onClick={() => go(() => apiPost(`/payment-run/runs/${run.id}/deposit-invoice`, { qbo_invoice_no: dep }))} className="rounded border border-slate-300 px-3 py-1 text-sm disabled:opacity-40" data-closeout-dep-save>Record</button>
+              </>}
+              {!c.deposit.paid_at && c.deposit_payment === 'manual' && t.received_at && (
+                <button type="button" disabled={busy} onClick={() => go(() => apiPost(`/payment-run/runs/${run.id}/deposit-paid`, {}))} className="rounded border border-slate-300 px-3 py-1 text-sm">Mark paid</button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+      {c.shortfall && (
+        <div className="space-y-1 text-sm" data-closeout-shortfall>
+          <div className="font-medium text-slate-800">4. Shortfall · {money(c.shortfall.amount)}</div>
+          {c.shortfall.note ? <p className="text-xs text-slate-700">{c.shortfall.note} ({c.shortfall.by})</p> : can ? (
+            <div className="flex flex-wrap gap-2">
+              <input id={`short-${run.id}`} value={short} onChange={e => setShort(e.target.value)} placeholder="How it was booked (invoice or entry, and its number)" className="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1 text-sm" />
+              <button type="button" disabled={busy || short.trim().length < 5} onClick={() => go(() => apiPost(`/payment-run/runs/${run.id}/shortfall`, { note: short }))} className="rounded border border-slate-300 px-3 py-1 text-sm disabled:opacity-40">Save</button>
+            </div>
+          ) : <p className="text-xs text-slate-600">Not booked yet.</p>}
+        </div>
+      )}
+      {!c.closed && c.open.length > 0 && (
+        <ul className="list-disc space-y-0.5 pl-5 text-xs text-amber-800" data-closeout-open>{c.open.map(o => <li key={o.key}>{o.label}</li>)}</ul>
+      )}
+      {can && <button type="button" disabled={busy || !c.can_close} onClick={() => go(() => apiPost(`/payment-run/runs/${run.id}/close`, {}))} className="rounded bg-slate-800 px-3 py-1.5 text-sm text-white disabled:opacity-40" data-closeout-close>Close the run</button>}
+      {!c.can_close_out && !c.closed && <p className="text-xs text-slate-500">An admin or the Controller records these.</p>}
+    </section>
+  );
+}
+
+const STATE = { to_pay: ['amber', 'To pay'], paid_incomplete: ['blue', 'Paid · not finished'], done: ['green', 'Done'], sent_back: ['slate', 'Sent back'] };
+function PayLine({ run, line, methods, can, go }) {
+  const [open, setOpen] = useState(false);
+  const [f, setF] = useState({ method: 'qbo_ach', paid_on: today(), reference: '', qbo: '' });
+  const [qbo, setQbo] = useState('');
+  const [chip, label] = STATE[line.state] || ['slate', line.state];
+  const p = line.payment;
+  const base = `/payment-run/runs/${run.id}/lines/${line.line_id}`;
+  const upload = (file) => { const fd = new FormData(); fd.append('file', file); return go(() => apiUpload(`${base}/proof`, fd)); };
+  const openProof = async () => { try { const r = await apiFetch(`${base}/proof`); openFile({ url: r.url, name: r.name }); } catch (e) { alert(e.message); } };
+  return (
+    <li className="space-y-1 px-3 py-2" data-pay-line={line.state}>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <span className="min-w-0">{line.must_pay && <Lock className="mr-1 inline h-3 w-3" />}{line.vendor}{line.invoice_number ? ` #${line.invoice_number}` : ''} <Chip tone={chip}>{label}</Chip></span>
+        <span className="tabular-nums">{money(line.amount)}</span>
+      </div>
+      {p?.outcome === 'paid' && (
+        <p className="text-xs text-slate-600">{p.method_label} on {p.paid_on} · ref {p.reference} · {p.recorded_by}
+          {p.proof_name ? <> · <button type="button" onClick={openProof} className="underline">proof</button></> : ''}{p.qbo_marked_at ? ` · QBO ${p.qbo_payment_id}` : ''}</p>
+      )}
+      {p?.outcome === 'not_paid' && <p className="text-xs text-slate-600">Not paid: {p.reason} ({p.recorded_by}). Back on the next run.</p>}
+      {can && line.state === 'to_pay' && (open ? (
+        <div className="grid gap-2 sm:grid-cols-4" data-pay-form>
+          <select id={`pm-${line.line_id}`} value={f.method} onChange={e => setF(x => ({ ...x, method: e.target.value }))} className="rounded border border-slate-300 px-2 py-1 text-sm">
+            {Object.entries(methods).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+          <input id={`pd-${line.line_id}`} type="date" value={f.paid_on} onChange={e => setF(x => ({ ...x, paid_on: e.target.value }))} className="rounded border border-slate-300 px-2 py-1 text-sm" />
+          <input id={`pr-${line.line_id}`} value={f.reference} onChange={e => setF(x => ({ ...x, reference: e.target.value }))} placeholder="Payment reference" className="rounded border border-slate-300 px-2 py-1 text-sm" data-pay-ref />
+          <input id={`pq-${line.line_id}`} value={f.qbo} onChange={e => setF(x => ({ ...x, qbo: e.target.value }))} placeholder="QBO payment no. (if marked)" className="rounded border border-slate-300 px-2 py-1 text-sm" />
+          <div className="flex flex-wrap gap-2 sm:col-span-4">
+            <button type="button" disabled={f.reference.trim().length < 2} onClick={() => go(() => apiPost(`${base}/paid`, { method: f.method, paid_on: f.paid_on, reference: f.reference, qbo_payment_id: f.qbo || undefined }))} className="rounded bg-emerald-700 px-3 py-1 text-sm text-white disabled:opacity-40" data-pay-save>Record payment</button>
+            <button type="button" onClick={() => { const r = window.prompt('Why can this bill not be paid this week? It goes back to the queue for the next run.'); if (r) go(() => apiPost(`${base}/send-back`, { reason: r })); }} className="rounded border border-slate-300 px-3 py-1 text-sm" data-pay-sendback>Can't pay it</button>
+            <button type="button" onClick={() => setOpen(false)} className="rounded border border-slate-300 px-3 py-1 text-sm">Close</button>
+          </div>
+        </div>
+      ) : <button type="button" onClick={() => setOpen(true)} className="rounded border border-slate-300 px-2 py-0.5 text-xs" data-pay-open>Record payment…</button>)}
+      {can && line.state === 'paid_incomplete' && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          {!p.proof_name && <label className="cursor-pointer rounded border border-slate-300 px-2 py-0.5">Attach proof
+            <input type="file" accept="application/pdf,image/*" className="hidden" onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) upload(file); }} data-pay-proof /></label>}
+          {!p.qbo_marked_at && <>
+            <input id={`q-${line.line_id}`} value={qbo} onChange={e => setQbo(e.target.value)} placeholder="QBO payment no." className="w-36 rounded border border-slate-300 px-2 py-0.5" data-pay-qbo />
+            <button type="button" disabled={!qbo.trim()} onClick={() => go(() => apiPost(`${base}/qbo`, { qbo_payment_id: qbo }))} className="rounded border border-slate-300 px-2 py-0.5 disabled:opacity-40" data-pay-qbo-save>Marked paid in QBO</button>
+          </>}
+        </div>
+      )}
+    </li>
+  );
+}
 const when = (v) => (v ? new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(v) ? v : `${v.replace(' ', 'T')}Z`).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '');
 
 function OwesLines({ o }) {
@@ -297,7 +450,7 @@ function OwesLines({ o }) {
 }
 
 function RunCard({ run, canAdmin, feed, onDone }) {
-  const [open, setOpen] = useState(run.status === 'draft' || run.status === 'sent');
+  const [open, setOpen] = useState(['draft', 'sent'].includes(run.status) || (['approved', 'transferred'].includes(run.status) && !run.closed_at));
   const [bal, setBal] = useState(run.summary.bank_balance ?? '');
   const [link, setLink] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -371,6 +524,7 @@ function RunCard({ run, canAdmin, feed, onDone }) {
                 <button type="button" onClick={() => navigator.clipboard?.writeText(link)} className="shrink-0 rounded border border-amber-400 px-2 py-0.5"><Copy className="h-3 w-3" /></button></div>
             </div>
           )}
+          {(run.status === 'approved' || run.status === 'transferred') && <CloseOut run={run} onDone={onDone} />}
           <details className="text-xs text-slate-600">
             <summary className="cursor-pointer">What happened ({run.events.length})</summary>
             <ul className="mt-1 space-y-0.5" data-run-events>
@@ -485,7 +639,7 @@ export default function PaymentRunPanel() {
       </div>
       <SettingsBox data={data} onDone={refresh} />
       <p className="flex items-start gap-1.5 text-xs text-slate-500"><Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-        Coming next: paying and invoicing after approval, and the production invoice to ProDough, less the deposits already paid.
+        Coming next: the production invoice to ProDough, less the deposits already paid.
       </p>
     </div>
   );

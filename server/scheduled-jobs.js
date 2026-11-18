@@ -362,6 +362,17 @@ export async function runDue(db, deps, now = new Date()) {
     } catch (e) { console.warn('[jobs] payment run reminder failed:', e.message); }
   }
 
+  // D-364: once a week, from 8 AM on the first open weekday, the runs Danny
+  // approved that are not closed yet, with what is left, to Lowry and the
+  // Controller. Quiet when every run is closed.
+  if (deps.closeoutDigest && openWeekday && wall.getHours() >= 8 && getFlag(db, 'last_payment_closeout_week') !== week) {
+    try {
+      setFlag(db, 'last_payment_closeout_week', week);
+      const r = await deps.closeoutDigest(db, { botDm: deps.botDm, postMessageAs: deps.postMessageAs, pushToUser: deps.pushToUser });
+      if (r.runs) console.log(`[jobs] payment run close-out: ${r.runs} run(s) open, ${r.sent} message(s)`);
+    } catch (e) { console.warn('[jobs] payment run close-out digest failed:', e.message); }
+  }
+
   if (deps.sendLateResults && wall.getHours() >= 9 && openWeekday && getFlag(db, 'last_coa_late_results_day') !== ymdLocal(wall)) {
     try {
       const r = await deps.sendLateResults(db, { botDm: deps.botDm, postMessageAs: deps.postMessageAs, pushToUser: deps.pushToUser }, now);
