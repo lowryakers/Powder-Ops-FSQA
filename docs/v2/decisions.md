@@ -11131,6 +11131,13 @@ in the order a person moves through: **People → Onboarding → Time Tracking �
   tab, a foreign `view` no longer sends the hub to its first tab. Found by `verify:edocsui`
   (`?tab=onboarding&view=documents` landed on People).
 
+## D-358 — The HR inbox lists only conversations somebody has written in (18 Nov 2026)
+Every employee has an HR door from the first boot (D-356), so the HR team's sidebar listed one empty "HR · <name>" per
+person — a list of the roster, not of what needs an answer. The inbox now shows a door once it has a message (its owner
+wrote, or HR moved something into it), plus the door currently open so it does not vanish under the reader. The doors
+themselves are unchanged: still created for everyone, still private, still opened by the employee's own "HR" entry.
+Screen only. `verify:hrdoor` (37; control fails 1 — an employee who never wrote is listed).
+
 ## D-359 — A person's post in an owner channel wakes Jarvis (18 Nov 2026)
 Tasks posted in `#bots-jake`, `#bots-marnee` and `#bots-adam` waited for Jarvis's next scheduled check (weekday, three
 times a day). Lowry approved an instant wake (A-20261118-005). It extends D-251's sender rather than adding one: a fourth
