@@ -118,9 +118,10 @@ const run = r.json || {};
 t('the admin prepares a run with a material bill and an expense', r.status === 201 && run.lines?.length === 2, JSON.stringify(r.json)?.slice(0, 200));
 const line = (drop) => run.lines.find(l => l.drop_id === drop);
 await call('POST', `/payment-run/runs/${run.id}/bank-balance`, { amount: 500 }, G);
+t('the bot cannot send the run to Danny, so it never holds his link', (await call('POST', `/payment-run/runs/${run.id}/send`, {}, G)).status === 403);
 const link = (await call('POST', `/payment-run/runs/${run.id}/send`, {}, T['pf-boss'])).json?.link?.split('/pay/')[1];
-t('the bot cannot approve or say "I\'ve sent" on Danny\'s page', (await call('POST', `/payment-approval/${link}/approve`, { name: 'Grok Bot' }, G)).status === 403
-  && (await call('POST', `/payment-approval/${link}/transferred`, { name: 'Grok Bot', amount: 1000 }, G)).status === 403);
+t('…and nothing the bot can read carries the link', !JSON.stringify((await call('GET', '/payment-run', null, G)).json || {}).includes(link || 'no-link')
+  && !JSON.stringify((await call('GET', `/payment-run/runs/${run.id}`, null, G)).json || {}).includes(link || 'no-link'));
 await call('POST', `/payment-approval/${link}/approve`, { name: 'Danny A' });
 await call('POST', `/payment-approval/${link}/transferred`, { name: 'Danny A', amount: 1000 });
 
