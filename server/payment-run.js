@@ -466,7 +466,7 @@ export function saveSettings(db, patch) {
   if ('production_price_field' in patch) {
     // D-365: which price-list column prices a ProDough production invoice. Chosen, never guessed.
     const f = patch.production_price_field || null;
-    if (f && !['price_fob_unit', 'price_wholesale_unit'].includes(f)) throw Object.assign(new Error('The ProDough price list must be the FOB unit price or the wholesale unit price.'), { status: 400 });
+    if (f && !['price_prodough_allin', 'price_fob_unit', 'price_wholesale_unit'].includes(f)) throw Object.assign(new Error('The ProDough price list must be the all-in price, the FOB unit price or the wholesale unit price.'), { status: 400 });
     next.production_price_field = f;
   }
   db.prepare('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)').run(SETTINGS_KEY, JSON.stringify(next));
