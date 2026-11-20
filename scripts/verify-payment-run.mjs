@@ -96,7 +96,10 @@ t('totals split materials and expenses', P.totals?.materials === 2250 && P.total
 t('the run is Thursday, or Friday noon in a payroll week', (P.run.payroll_week ? new Date(`${P.run.planned}T12:00:00Z`).getUTCDay() === 5 && P.run.time === '12:00'
   : new Date(`${P.run.planned}T12:00:00Z`).getUTCDay() === 4), JSON.stringify(P.run));
 
-console.log('\n── a person confirms the class');
+console.log('\n── Jake confirms the class (D-366: the bill owner, admins as backup)');
+r = await call('POST', `/payment-run/bills/${unclassed}/class`, { bill_class: 'prodough_material' }, T['pr-jake']);
+t('before he is named bill owner, Jake is refused', r.status === 403 && r.json?.code === 'not_bill_owner', JSON.stringify(r.json));
+await call('PUT', '/payment-run/settings', { bill_owner_id: 'pr-jake' }, T['pr-boss']);
 r = await call('POST', `/payment-run/bills/${unclassed}/class`, { bill_class: 'nonsense' }, T['pr-jake']);
 t('an unknown class is refused', r.status === 400);
 r = await call('POST', `/payment-run/bills/${unclassed}/class`, { bill_class: 'prodough_material' }, T['pr-jake']);

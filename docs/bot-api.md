@@ -824,3 +824,115 @@ Attach PDFs to an SOP (multipart `files`, up to 10), draft or approved. Fields: 
 **`revision_id` (D-304)** names an open draft revision of this SOP. The file then waits with the draft: it is listed in the draft box, not as the document's current signed copy, becomes current when a person approves the draft, and stays off the document if the draft is discarded. `revision` defaults to the draft's label. A `revision_id` that is not an open draft of this document is `400 NOT_A_DRAFT`. Attach the signed scan of a new revision this way, always.
 
 - **Scope:** `write` + the grant for the document's type (`sops-edit` / `wi-edit` / `jd-edit`). **Module:** SOPs, Work Instructions or Job Descriptions (edit). `503` when file storage is off.
+
+## Payment run: the Controller bot (payment-run-controller grant, D-366)
+
+Grok Bot is the **Controller**: the bookkeeping half of the weekly payment run. It reads the run, records the bank balance, confirms the transfer landed with evidence, schedules and records each bill's payment, records closed MOs and shipped orders read from MRPEasy, records the Deposit and production invoice numbers from QuickBooks, suggests a bill's class, and closes a finished run.
+
+Every write needs a `write` token holding the **`payment-run-controller` grant** (Settings → Bot API tokens), **and** the token's account must be the one named **Controller bot** in the payment run settings. Any other token is refused with `403` / `not_controller`. Reads need the grant too (or an account that works the AP queue).
+
+**What the bot never does**, whatever it holds:
+- approve a run, or press Danny's "I've sent";
+- record changed vendor bank details;
+- change the must-pay list;
+- void a production invoice;
+- confirm a bill's class (Jake confirms; the bot only suggests);
+- send a bill back, mark a Deposit or production invoice paid by hand, or book a shortfall.
+
+Those stay with a person, and Lowry's Monday message lists them. Closing a run is the one "close" a token may make (`TOKEN_DECISION_EXEMPT`), and only with this grant. The route still refuses while anything is open (`409 RUN_NOT_FINISHED`, naming each item).
+
+### `GET /api/payment-run`
+
+The live run: bills, checks, totals, settings, the **deposit balance** (`deposit_balance`: `balance`, the paid `deposits` with what is left on each, oldest first, and `unpaid` Deposits invoiced but not paid, which are never counted) and the prepared runs.
+
+- **Scope:** `read` + grant.
+
+### `GET /api/payment-run/runs/:id/closeout`
+
+What is done and what is left on an approved run. Each `open` item carries `who`: `bot` (yours, or an admin's), `person` (Lowry or an admin only) or `danny`. Lines carry `state` (`to_pay`, `scheduled`, `paid_incomplete`, `done`, `sent_back`) and the current `schedule`.
+
+- **Scope:** `read` + grant.
+
+### `GET /api/payment-run/production-invoices`
+
+Production invoices to ProDough, with `deposit_balance`. Each `to_invoice` row carries `deposit_preview`: `{ take: [{ run_no, amount }], applied, amount_due }`. **Create the QBO invoice for `amount_due`.**
+
+- **Scope:** `read` + grant.
+
+### `PUT /api/payment-run/bank-balance`
+
+This week's Powder Ops bank balance, before the run is prepared. Body: `amount`, or `from_feed: true` to use the linked bank feed.
+
+- **Scope:** `write` + grant.
+
+### `POST /api/payment-run/runs/:id/bank-balance`
+
+The bank balance on a prepared run, before it is sent. Body: `amount` or `from_feed: true`.
+
+- **Scope:** `write` + grant.
+
+### `POST /api/payment-run/bills/:id/suggest-class`
+
+Suggest a bill's class. It shows beside the bill as "Grok Bot suggests …" and is **never stored as the confirmed class**. Body: `bill_class` (`prodough_material` | `powderops_expense`), `why`.
+
+- **Scope:** `write` + grant.
+
+### `POST /api/payment-run/runs/:id/received`
+
+The transfer landed. Body: `amount`, `received_on` (YYYY-MM-DD), and **evidence**: `bank_txn_id` (one of the close-out's `feed_matches`), or a file in the multipart field `evidence` (PDF, photo or CSV, 25 MB at most, stored and hashed). Without either the answer is `400 EVIDENCE_REQUIRED`. In transfer mode this also pays the Deposit and the run's production invoices.
+
+- **Scope:** `write` + grant.
+
+### `POST /api/payment-run/runs/:id/lines/:lineId/schedule`
+
+A bill's payment scheduled in QBO Bill Pay (or by card or check). Body: `method` (`qbo_ach` | `debit_card` | `check` | `other`), `scheduled_on` (YYYY-MM-DD), `reference`. Sending it again replaces the schedule (the old one is kept, marked replaced). The bill stays open until its payment is recorded. Refused before the transfer is confirmed.
+
+- **Scope:** `write` + grant.
+
+### `POST /api/payment-run/runs/:id/lines/:lineId/paid`
+
+The bill was paid. Body: `method`, `paid_on`, `reference` (required), `qbo_payment_id`. Moves the AP Drop to `paid`. Refused before the transfer is confirmed, and for a bill on the partner ledger (`409 SETTLE_ON_PARTNER_REC`).
+
+- **Scope:** `write` + grant.
+
+### `POST /api/payment-run/runs/:id/lines/:lineId/qbo`
+
+The QBO payment number, when it was not sent with the payment. Body: `qbo_payment_id`.
+
+- **Scope:** `write` + grant.
+
+### `POST /api/payment-run/runs/:id/lines/:lineId/proof`
+
+Proof of payment: one file in the multipart field `file` (PDF or photo). It is stored and hashed once; a second file is refused.
+
+- **Scope:** `write` + grant.
+
+### `POST /api/payment-run/runs/:id/deposit-invoice`
+
+The week's Deposit invoice number from QBO. Body: `qbo_invoice_no`.
+
+- **Scope:** `write` + grant.
+
+### `POST /api/payment-run/runs/:id/close`
+
+Close a finished run. Refused (`409 RUN_NOT_FINISHED`, with `open`) while anything is left, including the person-only steps.
+
+- **Scope:** `write` + grant.
+
+### `POST /api/payment-run/production-invoices`
+
+A closed MO or shipped order, read from MRPEasy. Body: `source` (`mo_closed` | `order_shipped`), `mo_number`, `order_ref`, `prodough_po`, `event_date`, `lines: [{ sku, qty, po_unit_price }]` (`po_unit_price` is the unit price on ProDough's PO), `notes`. Priced at the **all-in price** column chosen in the settings. The order is **held** with reasons when anything does not match, including when no column is chosen yet. One invoice per ProDough PO (`409 PO_ALREADY_INVOICED`).
+
+- **Scope:** `write` + grant.
+
+### `POST /api/payment-run/production-invoices/:id/recheck`
+
+A held order checked again: the price list is re-read, and a corrected `prodough_po` or `lines` can be sent.
+
+- **Scope:** `write` + grant.
+
+### `POST /api/payment-run/production-invoices/:id/invoiced`
+
+The QBO invoice was created and sent to ProDough. Body: `qbo_invoice_no`, and `expected_amount_due`: the `deposit_preview.amount_due` you invoiced for. The deposit balance is taken off **automatically, oldest first**. If the balance moved since the preview, the answer is `409 AMOUNT_DUE_CHANGED` with the new `amount_due`: correct the QBO invoice and send again. `deposit_ids` is refused (`DEPOSITS_AUTOMATIC`).
+
+- **Scope:** `write` + grant.

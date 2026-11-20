@@ -461,6 +461,13 @@ production invoices) are still to come; **do not touch the Flavor Approvals modu
   ProDough PO** (folded, partial unique index; void frees it). Price column = admin's `production_price_field`, never guessed. The
   Controller records the QBO number and ticks paid Deposits to take off (whole, once, never above the total). What is owed rides
   Danny's next run and is paid by the transfer (or marked). `verify:productioninvoices` (43).
+- **The Controller is a BOT (D-366)**: token grant `payment-run-controller` on the account named Controller (an account
+  with no token is refused). It does balance, transfer landed (EVIDENCE required), schedule/pay/proof/QBO numbers, MOs
+  from MRPEasy, invoice numbers, close (`TOKEN_DECISION_EXEMPT`, one route). **Never**: approve, "I've sent", bank
+  details, must-pays, void (admin non-bot only), confirm a class (Jake = bill owner, admins backup; the bot only
+  suggests). Close-out items carry `who`. **Deposits are one balance of PAID Deposits, taken off oldest first, in part,
+  automatically** (`prodough_deposit_applications`, released on void, never deleted); invoice = ALL-IN price
+  (`price_prodough_allin`) − deposits, `expected_amount_due` guards. `verify:paymentcontroller`.
 
 ## The Org Chart exports to a PDF (D-362)
 `GET /api/org/pdf` (`server/org-chart-pdf.js`, before `/:id`): page 1 the chart (leaf positions stacked under their

@@ -103,6 +103,12 @@ const botSession = await signIn('Catalog Bot', 'ba-bot');
 const readTok = (await call('POST', '/api/api-tokens', { user_id: 'ba-bot', label: 'Catalog reader', scopes: ['read'] }, admin)).body?.plaintext;
 const draftTok = (await call('POST', '/api/api-tokens', { user_id: 'ba-bot', label: 'Catalog writer', scopes: ['read', 'write'] }, admin)).body?.plaintext;
 t('sessions and two tokens', !!admin && !!botSession && !!readTok && !!draftTok);
+// D-366: the payment run reads need the Controller bot's grant, on the account named Controller.
+const ctrlMade = (await call('POST', '/api/api-tokens', { user_id: 'ba-bot', label: 'Controller', scopes: ['read', 'write'] }, admin)).body;
+const ctrlTok = ctrlMade?.plaintext;
+await call('POST', `/api/api-tokens/${ctrlMade?.token?.id}/grants`, { grants: ['payment-run-controller'] }, admin);
+await call('PUT', '/api/payment-run/settings', { controller_id: 'ba-bot' }, admin);
+db.prepare("INSERT OR IGNORE INTO payment_runs (id, run_no, week_start, run_date, status, approved_totals) VALUES ('ba-run', 'PR-BA', '2026-11-16', '2026-11-19', 'approved', '{}')").run();
 
 // Fixtures, through the doors a person would use where one exists.
 const sku = db.prepare('SELECT sku FROM products ORDER BY sku LIMIT 1').get()?.sku;
@@ -152,7 +158,7 @@ const fill = (p) => p.replace(':sku', encodeURIComponent(sku)).replace('/artwork
   .replace('/partners/:id', `/partners/${partner.id}`).replace('/channels/:id', `/channels/${channel.id}`)
   .replace('/messages/:id', `/messages/${msg?.id}`).replace('/nfp/:id', `/nfp/${nfpFixture?.id}`)
   .replace('/training/drafts/:id', `/training/drafts/${courseDraft?.id}`)
-  .replace('/suppliers/:id', `/suppliers/${supplierFixture}`);
+  .replace('/suppliers/:id', `/suppliers/${supplierFixture}`).replace('/payment-run/runs/:id', '/payment-run/runs/ba-run');
 const leaks = (v, path = '$', out = []) => {
   if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) { if (isForbiddenKey(k)) out.push(`${path}.${k}`); leaks(x, `${path}.${k}`, out); }
   return out;
@@ -160,7 +166,7 @@ const leaks = (v, path = '$', out = []) => {
 const capture = {};
 for (const route of BOT_ROUTES.filter(x => x.method === 'GET')) {
   const path = fill(route.path);
-  const res = await call('GET', path, null, readTok);
+  const res = await call('GET', path, null, route.path.startsWith('/api/payment-run') ? ctrlTok : readTok);
   const bad = leaks(res.body);
   t(`${route.method} ${route.path} → 200, no forbidden keys`, res.status === 200 && bad.length === 0, `${res.status} ${bad.slice(0, 5).join(', ')} ${JSON.stringify(res.body).slice(0, 100)}`);
   if (route.paged) {

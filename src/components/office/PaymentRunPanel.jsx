@@ -42,9 +42,12 @@ function ClassControl({ line, classes, canClassify, onDone }) {
     return <Chip tone={line.bill_class === 'prodough_material' ? 'violet' : 'blue'}>{classes[line.bill_class]}</Chip>;
   }
   const s = line.suggested_class;
+  const b = line.bot_suggestion;
   return (
     <span className="inline-flex flex-wrap items-center gap-1" data-class-confirm={line.id}>
       <Chip tone="red">Class not confirmed</Chip>
+      {b && <span className="text-[11px] text-slate-600" data-class-bot>{b.by} suggests {classes[b.value] || b.value}{b.why ? `: ${b.why}` : ''}.</span>}
+      {!canClassify && <span className="text-[11px] text-slate-500">Jake (or an admin) confirms.</span>}
       {canClassify && Object.entries(classes).map(([k, label]) => (
         <button key={k} type="button" disabled={busy} onClick={() => set(k)} data-class-set={k}
           className={`rounded border px-2 py-0.5 text-[11px] ${s?.value === k ? 'border-emerald-500 bg-emerald-50 font-semibold text-emerald-800' : 'border-slate-300 text-slate-600'}`}>
@@ -232,16 +235,17 @@ function SettingsBox({ data, onDone }) {
       <p className="text-xs text-slate-600">Problems go to: {s.notify.map(u => u.name).join(', ') || 'nobody'}{s.notify_set ? '' : ' (default)'}.</p>
       {data.can_admin ? (
         <div className="grid gap-2 sm:grid-cols-2">
-          <label className="text-xs text-slate-600">Bill owner (fixes bill problems)
+          <label className="text-xs text-slate-600">Bill owner (confirms each bill's class; fixes bill problems)
             <select id="pr-owner" value={owner} onChange={e => setOwner(e.target.value)} className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm">
               <option value="">— nobody set —</option>
               {(people || []).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </label>
-          <label className="text-xs text-slate-600">Controller (fixes payment problems)
-            <select id="pr-ctrl" value={ctrl} onChange={e => setCtrl(e.target.value)} className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm">
-              <option value="">— nobody set —</option>
-              {(people || []).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          <label className="text-xs text-slate-600">Controller bot (its token needs the "Payment run: Controller bot" grant)
+            <select id="pr-ctrl" value={ctrl} onChange={e => setCtrl(e.target.value)} className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm" data-controller-bot>
+              <option value="">— no bot set —</option>
+              {(s.controller_candidates || []).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              {s.controller && !(s.controller_candidates || []).some(p => p.id === s.controller.id) && <option value={s.controller.id}>{s.controller.name} (not a bot)</option>}
             </select>
           </label>
           <label className="text-xs text-slate-600">Approver's mobile (blank = the flavor approver's number)
@@ -283,7 +287,7 @@ function SettingsBox({ data, onDone }) {
           </div>
         </div>
       ) : (
-        <p className="text-xs text-slate-600">Bill owner: {s.bill_owner?.name || 'nobody set'} · Controller: {s.controller?.name || 'nobody set'} · Danny's text goes to {s.approver_number || 'no number set'}</p>
+        <p className="text-xs text-slate-600">Bill owner: {s.bill_owner?.name || 'nobody set'} · Controller bot: {s.controller?.name || 'none set'}{s.controller && !s.controller_is_bot ? ' (not a bot: pick the bot account)' : ''} · Danny's text goes to {s.approver_number || 'no number set'}</p>
       )}
     </section>
   );
@@ -324,7 +328,7 @@ function CloseOut({ run, onDone }) {
       <div className="space-y-1 text-sm" data-closeout-transfer>
         <div className="font-medium text-slate-800">1. The transfer</div>
         {run.status !== 'transferred' ? <p className="text-xs text-slate-600">Waiting for Danny to say the money was sent.</p>
-          : t.received_at ? <p className="text-xs text-slate-700">{money(t.received_amount)} landed on {t.received_on}, confirmed by {t.received_by}.{t.differs ? <span className="font-semibold text-red-700"> Not the {money(t.expected)} approved.</span> : ''}</p>
+          : t.received_at ? <p className="text-xs text-slate-700">{money(t.received_amount)} landed on {t.received_on}, confirmed by {t.received_by}{t.received_bank_txn ? ' (bank-feed line)' : ''}{t.evidence ? ` (evidence: ${t.evidence.name})` : ''}.{t.differs ? <span className="font-semibold text-red-700"> Not the {money(t.expected)} approved.</span> : ''}</p>
           : (
             <div className="space-y-1">
               <p className="text-xs text-slate-600">{t.sent_by} says {money(t.sent_amount)} was sent. Check the Powder Ops account, then confirm what arrived.</p>
@@ -405,12 +409,12 @@ function CloseOut({ run, onDone }) {
         <ul className="list-disc space-y-0.5 pl-5 text-xs text-amber-800" data-closeout-open>{c.open.map(o => <li key={o.key}>{o.label}</li>)}</ul>
       )}
       {can && <button type="button" disabled={busy || !c.can_close} onClick={() => go(() => apiPost(`/payment-run/runs/${run.id}/close`, {}))} className="rounded bg-slate-800 px-3 py-1.5 text-sm text-white disabled:opacity-40" data-closeout-close>Close the run</button>}
-      {!c.can_close_out && !c.closed && <p className="text-xs text-slate-500">An admin or the Controller records these.</p>}
+      {!c.can_close_out && !c.closed && <p className="text-xs text-slate-500">The Controller bot records these; an admin can too.</p>}
     </section>
   );
 }
 
-const STATE = { to_pay: ['amber', 'To pay'], paid_incomplete: ['blue', 'Paid · not finished'], done: ['green', 'Done'], sent_back: ['slate', 'Sent back'] };
+const STATE = { to_pay: ['amber', 'To pay'], scheduled: ['blue', 'Scheduled'], paid_incomplete: ['blue', 'Paid · not finished'], done: ['green', 'Done'], sent_back: ['slate', 'Sent back'] };
 function PayLine({ run, line, methods, can, go }) {
   const [open, setOpen] = useState(false);
   const [f, setF] = useState({ method: 'qbo_ach', paid_on: today(), reference: '', qbo: '' });
@@ -431,7 +435,8 @@ function PayLine({ run, line, methods, can, go }) {
           {p.proof_name ? <> · <button type="button" onClick={openProof} className="underline">proof</button></> : ''}{p.qbo_marked_at ? ` · QBO ${p.qbo_payment_id}` : ''}</p>
       )}
       {p?.outcome === 'not_paid' && <p className="text-xs text-slate-600">Not paid: {p.reason} ({p.recorded_by}). Back on the next run.</p>}
-      {can && line.state === 'to_pay' && (open ? (
+      {line.schedule && <p className="text-xs text-slate-600" data-pay-scheduled>Scheduled {line.schedule.scheduled_on} · {line.schedule.method_label}{line.schedule.reference ? ` · ref ${line.schedule.reference}` : ''} · {line.schedule.scheduled_by}</p>}
+      {can && ['to_pay', 'scheduled'].includes(line.state) && (open ? (
         <div className="grid gap-2 sm:grid-cols-4" data-pay-form>
           <select id={`pm-${line.line_id}`} value={f.method} onChange={e => setF(x => ({ ...x, method: e.target.value }))} className="rounded border border-slate-300 px-2 py-1 text-sm">
             {Object.entries(methods).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -607,7 +612,7 @@ function PreparedRuns({ data, onDone }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800"><Snowflake className="h-4 w-4" />Runs for Danny's approval</h3>
         <div className="flex flex-wrap gap-2">
-          {!thisWeek && data.can_classify && (
+          {!thisWeek && data.can_prepare && (
             <button type="button" disabled={busy || !data.on_run.length} onClick={prepare} data-run-prepare
               className="rounded bg-slate-800 px-3 py-1.5 text-sm text-white disabled:opacity-40">Prepare this week's run now</button>
           )}
@@ -668,14 +673,12 @@ function RecordOrder({ sources, onDone }) {
     </div>
   );
 }
-function ProductionInvoiceRow({ inv, deposits, canInvoice, onDone }) {
+function ProductionInvoiceRow({ inv, canInvoice, canVoid, onDone }) {
   const [chip, label] = PI_STATE[inv.status] || ['slate', inv.status];
   const [qbo, setQbo] = useState('');
-  const [picked, setPicked] = useState([]);
   const [fix, setFix] = useState(null);
   const [busy, setBusy] = useState(false);
   const go = async (fn) => { setBusy(true); try { await fn(); onDone(); } catch (e) { alert(e.message); } finally { setBusy(false); } };
-  const applied = picked.reduce((s, id) => s + (deposits.find(d => d.id === id)?.amount || 0), 0);
   const base = `/payment-run/production-invoices/${inv.id}`;
   return (
     <li className="space-y-1 px-3 py-2 text-sm" data-pi-row={inv.status}>
@@ -688,7 +691,7 @@ function ProductionInvoiceRow({ inv, deposits, canInvoice, onDone }) {
       </ul>
       {inv.status === 'held' && <ul className="list-disc pl-5 text-xs text-red-700" data-pi-reasons>{inv.hold_reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>}
       {['invoiced', 'paid'].includes(inv.status) && (
-        <p className="text-xs text-slate-600">QBO {inv.qbo_invoice_no} by {inv.invoiced_by}{inv.deposits_applied ? ` · deposits taken off ${money(inv.deposits_applied)} (${inv.deposits.map(d => d.run_no).join(', ')})` : ''} · <span className="font-medium text-slate-800" data-pi-due>owed {money(inv.amount_due)}</span>
+        <p className="text-xs text-slate-600">QBO {inv.qbo_invoice_no} by {inv.invoiced_by}{inv.deposits_applied ? ` · deposits taken off ${money(inv.deposits_applied)} (${inv.deposits.map(d => `${d.run_no} ${money(d.applied)}${d.released_at ? ' released' : ''}`).join(', ')})` : ''} · <span className="font-medium text-slate-800" data-pi-due>owed {money(inv.amount_due)}</span>
           {inv.status === 'paid' ? ` · paid ${inv.paid_from === 'deposits' ? 'by the deposits' : inv.paid_from === 'transfer' ? 'by the transfer' : `(marked by ${inv.paid_by})`}` : inv.on_run ? ` · on run ${inv.on_run.run_no}` : ' · on the next run'}</p>
       )}
       {inv.status === 'void' && <p className="text-xs text-slate-600">Void: {inv.void_reason} ({inv.void_by})</p>}
@@ -706,25 +709,17 @@ function ProductionInvoiceRow({ inv, deposits, canInvoice, onDone }) {
       ))}
       {canInvoice && inv.status === 'to_invoice' && (
         <div className="space-y-1 rounded border border-amber-200 bg-amber-50/40 p-2" data-pi-invoice>
-          {deposits.length > 0 ? (
-            <div className="space-y-0.5 text-xs text-slate-700">
-              <div>Paid Deposits to take off:</div>
-              {deposits.map(d => (
-                <label key={d.id} className="flex items-center gap-2">
-                  <input type="checkbox" className="h-4 w-4 shrink-0" checked={picked.includes(d.id)} onChange={e => setPicked(p => (e.target.checked ? [...p, d.id] : p.filter(x => x !== d.id)))} data-pi-deposit />
-                  {d.run_no} · {money(d.amount)}{d.qbo_invoice_no ? ` · QBO ${d.qbo_invoice_no}` : ''}
-                </label>
-              ))}
-            </div>
-          ) : <p className="text-xs text-slate-600">No paid Deposits waiting to be taken off.</p>}
-          <p className="text-xs text-slate-800">Final bill: {money(inv.total)} − {money(applied)} = <span className="font-semibold">{money(inv.total - applied)}</span></p>
+          {inv.deposit_preview?.take?.length > 0
+            ? <p className="text-xs text-slate-700">Taken off the deposit balance, oldest first: {inv.deposit_preview.take.map(t => `${t.run_no} ${money(t.amount)}`).join(', ')}.</p>
+            : <p className="text-xs text-slate-600">The deposit balance is empty; nothing comes off.</p>}
+          <p className="text-xs text-slate-800">Final bill: {money(inv.total)} all in − {money(inv.deposit_preview?.applied || 0)} deposits = <span className="font-semibold" data-pi-final>{money(inv.deposit_preview?.amount_due ?? inv.total)}</span>. Create the QBO invoice for that amount.</p>
           <div className="flex flex-wrap gap-2">
             <input id={`pi-qbo-${inv.id}`} value={qbo} onChange={e => setQbo(e.target.value)} placeholder="QBO invoice number" className="w-44 rounded border border-slate-300 px-2 py-1 text-sm" data-pi-qbo />
-            <button type="button" disabled={busy || !qbo.trim()} onClick={() => go(() => apiPost(`${base}/invoiced`, { qbo_invoice_no: qbo, deposit_ids: picked }))} className="rounded bg-emerald-700 px-3 py-1 text-sm text-white disabled:opacity-40" data-pi-invoiced>Created in QBO and sent</button>
+            <button type="button" disabled={busy || !qbo.trim()} onClick={() => go(() => apiPost(`${base}/invoiced`, { qbo_invoice_no: qbo, expected_amount_due: inv.deposit_preview?.amount_due ?? inv.total }))} className="rounded bg-emerald-700 px-3 py-1 text-sm text-white disabled:opacity-40" data-pi-invoiced>Created in QBO and sent</button>
           </div>
         </div>
       )}
-      {canInvoice && inv.can_void && (
+      {canVoid && inv.can_void && (
         <button type="button" onClick={() => { const r = window.prompt(`Why is ${inv.ref_no} void? It stays on file; its PO and deposits are freed.`); if (r) go(() => apiPost(`${base}/void`, { reason: r })); }} className="text-xs text-slate-500 underline" data-pi-void>Void</button>
       )}
     </li>
@@ -743,12 +738,12 @@ function ProductionInvoices({ onDone }) {
         <h3 className="text-sm font-semibold text-slate-800">Production invoices to ProDough</h3>
         <span className="text-xs text-slate-600">{c.held} held · {c.to_invoice} to create · {c.invoiced} owed · {c.paid} paid</span>
       </div>
-      <p className="text-xs text-slate-600">One invoice per closed MO or shipped order, at the {data.price_field ? data.price_fields[data.price_field].toLowerCase() : 'price list (not chosen yet)'}, matched to ProDough's PO, less the Deposits already paid. What is owed rides Danny's next run. ReadyDoc does not read MRPEasy: record the order here when it closes or ships.</p>
+      <p className="text-xs text-slate-600">One invoice per closed MO or shipped order, at the full all-in price of the finished product ({data.price_field ? data.price_fields[data.price_field].toLowerCase() : 'price list column not chosen yet: every order is held'}), matched to ProDough's PO, less the deposit balance (oldest first). What is owed rides Danny's next run. The Controller bot records each order from MRPEasy; a person can too.</p>
       {adding ? <RecordOrder sources={data.sources} onDone={() => { setAdding(false); done(); }} />
         : <button type="button" onClick={() => setAdding(true)} className="inline-flex items-center gap-1 rounded border border-slate-300 px-3 py-1 text-sm" data-pi-add><Plus className="h-4 w-4" />Record a closed MO or shipped order</button>}
       {data.invoices.length > 0 && (
         <ul className="divide-y divide-slate-100 rounded border border-slate-200 bg-white">
-          {data.invoices.map(inv => <ProductionInvoiceRow key={inv.id} inv={inv} deposits={data.open_deposits} canInvoice={data.can_invoice} onDone={done} />)}
+          {data.invoices.map(inv => <ProductionInvoiceRow key={inv.id} inv={inv} canInvoice={data.can_invoice} canVoid={data.can_void} onDone={done} />)}
         </ul>
       )}
     </section>
@@ -773,10 +768,11 @@ export default function PaymentRunPanel() {
         </p>
       </header>
 
-      <div className="grid gap-2 sm:grid-cols-4" data-run-totals>
+      <div className="grid gap-2 sm:grid-cols-5" data-run-totals>
         <div className="rounded-lg border border-slate-200 p-3"><div className="text-xs text-slate-500">On this run</div><div className="text-lg font-semibold tabular-nums">{money(t.total)}</div><div className="text-xs text-slate-500">{t.count} bill{t.count === 1 ? '' : 's'}</div></div>
         <div className="rounded-lg border border-slate-200 p-3"><div className="text-xs text-slate-500">ProDough deposit</div><div className="text-lg font-semibold tabular-nums">{money(t.materials)}</div><div className="text-xs text-slate-500">material bills, at cost</div></div>
         <div className="rounded-lg border border-slate-200 p-3"><div className="text-xs text-slate-500">Powder Ops expenses</div><div className="text-lg font-semibold tabular-nums">{money(t.expenses)}</div><div className="text-xs text-slate-500">incl. must-pays {money(t.must_pay)}</div></div>
+        <div className="rounded-lg border border-slate-200 p-3" data-deposit-balance><div className="text-xs text-slate-500">ProDough deposit balance</div><div className="text-lg font-semibold tabular-nums">{money(data.deposit_balance?.balance || 0)}</div><div className="text-xs text-slate-500">{data.deposit_balance?.deposits?.length || 0} paid deposit{data.deposit_balance?.deposits?.length === 1 ? '' : 's'}{data.deposit_balance?.oldest ? `, oldest ${day(data.deposit_balance.oldest.slice(0, 10))}` : ''}{data.deposit_balance?.unpaid?.length ? ` · ${money(data.deposit_balance.unpaid_total)} invoiced, not paid` : ''}</div></div>
         <div className="rounded-lg border border-slate-200 p-3"><div className="text-xs text-slate-500">To look at</div><div className="text-lg font-semibold tabular-nums">{t.highlighted} <span className="text-sm font-normal text-slate-500">highlighted</span></div><div className="text-xs text-slate-500">{t.failed} off the run · {t.held} not due yet</div></div>
       </div>
 

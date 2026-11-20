@@ -298,7 +298,8 @@
     "verify:productexports": "VERIFY_ONLY=verify-product-exports.mjs node scripts/verify-all.mjs",
     "verify:nameusage": "VERIFY_ONLY=verify-name-usage.mjs node scripts/verify-all.mjs",
     "verify:dilutioncontrol": "VERIFY_ONLY=verify-dilution-control.mjs node scripts/verify-all.mjs",
-    "verify:singlespine": "VERIFY_ONLY=verify-single-spine.mjs node scripts/verify-all.mjs"
+    "verify:singlespine": "VERIFY_ONLY=verify-single-spine.mjs node scripts/verify-all.mjs",
+    "verify:paymentcontroller": "VERIFY_ONLY=verify-payment-controller.mjs node scripts/verify-all.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",

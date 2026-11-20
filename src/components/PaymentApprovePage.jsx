@@ -94,6 +94,7 @@ export default function PaymentApprovePage({ token }) {
           <div className="mt-3 divide-y divide-gray-100 border-t border-gray-100">
             <Part label="Deposit" sub="ProDough material bills on this run, at cost. Taken off the final bill after the production run." value={money(o.materials)} />
             {o.production_count > 0 && <Part label={`${o.production_count} production run${o.production_count === 1 ? '' : 's'}`} value={money(o.production)} />}
+            {run.deposit_balance && run.deposit_balance.balance > 0 && <p className="text-xs text-slate-600" data-approve-deposit-balance>ProDough deposit balance: {money(run.deposit_balance.balance)} already paid, taken off the next production invoices (oldest first).</p>}
             {o.shortfall > 0 && <Part label="Shortfall" sub={`Powder Ops expenses ${money(o.expenses)} less the bank balance used, ${money(o.bank_balance)}`} value={money(o.shortfall)} />}
           </div>
           {run.reason && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-[12px] text-red-800">Urgent: {run.reason}</p>}

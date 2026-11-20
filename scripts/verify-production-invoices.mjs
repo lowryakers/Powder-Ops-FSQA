@@ -54,6 +54,7 @@ const login = async (id, name) => {
 const T = {};
 for (const [id, nm] of [['pe-boss', 'Petra Boss'], ['pe-ctl', 'Carl Controller'], ['pe-jake', 'Jim Buyer']]) T[id] = await login(id, nm);
 t('everyone signs in, and two catalog SKUs are on hand', Object.values(T).every(Boolean) && skus.length === 2);
+await call('POST', '/api-tokens', { user_id: 'pe-ctl', label: 'Controller fixture', scopes: ['read', 'write'] }, T['pe-boss']);
 await call('PUT', '/payment-run/settings', { controller_id: 'pe-ctl' }, T['pe-boss']);
 const PI = '/payment-run/production-invoices';
 const rec = (body, who = 'pe-jake') => call('POST', PI, body, T[who]);
@@ -93,54 +94,60 @@ await call('POST', `/payment-approval/${link}/transferred`, { name: 'Danny A', a
 r = await call('POST', `/payment-run/runs/${run1.id}/received`, { amount: 1000 }, T['pe-ctl']);
 t('run 1 has no production on it and its $1,000 deposit is paid by the transfer', r.json?.production?.length === 0 && r.json.deposit?.paid_from === 'transfer', JSON.stringify(r.json?.deposit));
 const list = (await call('GET', PI, null, T['pe-ctl'])).json || {};
-const dep = list.open_deposits?.[0];
-t('the deposit is offered to take off a production invoice', list.open_deposits?.length === 1 && dep.amount === 1000 && list.can_invoice === true);
+const dep = list.deposit_balance?.deposits?.[0];
+t('the deposit balance is $1,000: one paid deposit', list.deposit_balance?.balance === 1000 && list.deposit_balance.deposits.length === 1 && list.can_invoice === true, JSON.stringify(list.deposit_balance));
+t('…and the $500 order previews $500 off it, nothing due', list.invoices.find(i => i.id === b.id)?.deposit_preview?.amount_due === 0);
 
-console.log('\n── the Controller creates them in QBO');
+console.log('\n── the Controller creates them in QBO; the balance comes off by itself, oldest first');
 t('Jake cannot record the QBO invoice', (await call('POST', `${PI}/${a.id}/invoiced`, { qbo_invoice_no: 'INV-9001' }, T['pe-jake'])).status === 403);
-r = await call('POST', `${PI}/${b.id}/invoiced`, { qbo_invoice_no: 'INV-9002', deposit_ids: [dep.id] }, T['pe-ctl']);
-t('more deposits than the invoice total is refused', r.status === 400 && r.json?.code === 'DEPOSITS_EXCEED_TOTAL', JSON.stringify(r.json));
-t('a held order cannot be invoiced', (await call('POST', `${PI}/${noPo.id}/invoiced`, { qbo_invoice_no: 'X' }, T['pe-ctl'])).status === 409);
 r = await call('POST', `${PI}/${a.id}/invoiced`, { qbo_invoice_no: 'INV-9001', deposit_ids: [dep.id] }, T['pe-ctl']);
-t('PI A: $2,500 less the $1,000 deposit = $1,500 owed', r.json?.status === 'invoiced' && r.json.deposits_applied === 1000 && r.json.amount_due === 1500, JSON.stringify(r.json)?.slice(0, 300));
-t('…the deposit is stamped as taken off it', q('SELECT applied_to FROM prodough_deposits WHERE id = ?', dep.id)[0]?.applied_to === a.id);
-r = await call('POST', `${PI}/${b.id}/invoiced`, { qbo_invoice_no: 'INV-9002', deposit_ids: [dep.id] }, T['pe-ctl']);
-t('the same deposit cannot come off twice', r.status === 409 && r.json?.code === 'DEPOSIT_NOT_OPEN');
+t('picking deposits is refused: they come off automatically', r.status === 400 && r.json?.code === 'DEPOSITS_AUTOMATIC', JSON.stringify(r.json));
+t('a held order cannot be invoiced', (await call('POST', `${PI}/${noPo.id}/invoiced`, { qbo_invoice_no: 'X' }, T['pe-ctl'])).status === 409);
+r = await call('POST', `${PI}/${a.id}/invoiced`, { qbo_invoice_no: 'INV-9001', expected_amount_due: 2500 }, T['pe-ctl']);
+t('an invoice made for the wrong amount is refused, naming the right one', r.status === 409 && r.json?.code === 'AMOUNT_DUE_CHANGED' && r.json.amount_due === 1500, JSON.stringify(r.json));
+r = await call('POST', `${PI}/${a.id}/invoiced`, { qbo_invoice_no: 'INV-9001', expected_amount_due: 1500 }, T['pe-ctl']);
+t('PI A: $2,500 all in less the $1,000 balance = $1,500 owed', r.json?.status === 'invoiced' && r.json.deposits_applied === 1000 && r.json.amount_due === 1500, JSON.stringify(r.json)?.slice(0, 300));
+t('…one application row of $1,000 against it', q('SELECT SUM(amount) s FROM prodough_deposit_applications WHERE invoice_id = ? AND released_at IS NULL', a.id)[0]?.s === 1000);
+t('…the balance is now empty', (await call('GET', PI, null, T['pe-ctl'])).json?.deposit_balance?.balance === 0);
 
-console.log('\n── a void frees the PO and the deposit');
-t('a void needs a reason', (await call('POST', `${PI}/${a.id}/void`, { reason: 'x' }, T['pe-ctl'])).status === 400);
-r = await call('POST', `${PI}/${a.id}/void`, { reason: 'Wrong quantity on the MO' }, T['pe-ctl']);
+console.log('\n── a void (an admin, never the bot) frees the PO and puts the deposit back');
+t('the Controller bot account cannot void', (await call('POST', `${PI}/${a.id}/void`, { reason: 'Wrong quantity on the MO' }, T['pe-ctl'])).status === 403);
+t('a void needs a reason', (await call('POST', `${PI}/${a.id}/void`, { reason: 'x' }, T['pe-boss'])).status === 400);
+r = await call('POST', `${PI}/${a.id}/void`, { reason: 'Wrong quantity on the MO' }, T['pe-boss']);
 t('PI A is void, kept with its reason', r.json?.status === 'void' && r.json.void_reason === 'Wrong quantity on the MO');
-t('…its deposit is free again', q('SELECT applied_to FROM prodough_deposits WHERE id = ?', dep.id)[0]?.applied_to === null);
+t('…its application is released, not deleted', q('SELECT COUNT(*) n FROM prodough_deposit_applications WHERE invoice_id = ? AND released_at IS NOT NULL', a.id)[0].n === 1);
+t('…and the $1,000 is back on the balance', (await call('GET', PI, null, T['pe-ctl'])).json?.deposit_balance?.balance === 1000);
+r = await call('POST', `${PI}/${b.id}/invoiced`, { qbo_invoice_no: 'INV-9002', expected_amount_due: 0 }, T['pe-ctl']);
+t('PI B ($500) is covered by the balance: paid by the deposits', r.json?.status === 'paid' && r.json.paid_from === 'deposits' && r.json.deposits_applied === 500, JSON.stringify(r.json)?.slice(0, 200));
+t('…and $500 of that deposit is left (used in part)', (await call('GET', PI, null, T['pe-ctl'])).json?.deposit_balance?.balance === 500);
 r = await rec({ source: 'mo_closed', mo_number: 'MO80001', prodough_po: 'PD-501', lines: [{ sku: SKU_A, qty: 800, po_unit_price: 2.5 }] }, 'pe-ctl');
 const a2 = r.json || {};
 t('the PO can be invoiced again: ready, $2,000', a2.status === 'to_invoice' && a2.total === 2000, JSON.stringify(r.json)?.slice(0, 200));
-r = await call('POST', `${PI}/${a2.id}/invoiced`, { qbo_invoice_no: 'INV-9003', deposit_ids: [dep.id] }, T['pe-ctl']);
-t('PI A2: $2,000 less $1,000 = $1,000 owed', r.json?.amount_due === 1000);
-r = await call('POST', `${PI}/${b.id}/invoiced`, { qbo_invoice_no: 'INV-9002', deposit_ids: [] }, T['pe-ctl']);
-t('PI B with no deposit: $500 owed', r.json?.amount_due === 500);
+r = await call('POST', `${PI}/${a2.id}/invoiced`, { qbo_invoice_no: 'INV-9003', expected_amount_due: 1500 }, T['pe-ctl']);
+t('PI A2: $2,000 less the last $500 of the deposit = $1,500 owed', r.json?.amount_due === 1500 && r.json.deposits_applied === 500, JSON.stringify(r.json)?.slice(0, 200));
+t('…the balance is empty again', (await call('GET', PI, null, T['pe-ctl'])).json?.deposit_balance?.balance === 0);
 
 console.log('\n── what is owed rides Danny\'s next run, and his transfer pays it');
 r = await call('POST', '/payment-run/runs', { kind: 'urgent', ids: [exp1], reason: 'Production' }, T['pe-boss']);
 const run2 = r.json || {};
-t('run 2 carries both production invoices: $1,500', run2.production?.length === 2 && run2.summary?.production === 1500 && run2.summary.production_count === 2, JSON.stringify(run2.summary));
-t('…in the sentence Danny reads', /2 production runs \$1,500\.00/.test(run2.sentence || ''), run2.sentence);
-t('an invoice on a live run cannot be voided', (await call('POST', `${PI}/${b.id}/void`, { reason: 'Testing the guard' }, T['pe-ctl'])).status === 409);
+t('run 2 carries the one invoice still owed: $1,500', run2.production?.length === 1 && run2.summary?.production === 1500 && run2.summary.production_count === 1, JSON.stringify(run2.summary));
+t('…in the sentence Danny reads', /1 production run \$1,500\.00/.test(run2.sentence || ''), run2.sentence);
+t('an invoice on a live run cannot be voided', (await call('POST', `${PI}/${a2.id}/void`, { reason: 'Testing the guard' }, T['pe-boss'])).status === 409);
 await call('POST', `/payment-run/runs/${run2.id}/bank-balance`, { amount: 100 }, T['pe-boss']);
 link = (await call('POST', `/payment-run/runs/${run2.id}/send`, {}, T['pe-boss'])).json?.link?.split('/pay/')[1];
 await call('POST', `/payment-approval/${link}/approve`, { name: 'Danny A' });
 await call('POST', `/payment-approval/${link}/transferred`, { name: 'Danny A', amount: 1500 });
 r = await call('GET', `/payment-run/runs/${run2.id}/closeout`, null, T['pe-ctl']);
-t('before the money lands, both are open on the close-out', r.json?.open?.filter(o => o.key.startsWith('production:')).length === 2, JSON.stringify(r.json?.open));
+t('before the money lands, it is open on the close-out', r.json?.open?.filter(o => o.key.startsWith('production:')).length === 1, JSON.stringify(r.json?.open));
 r = await call('POST', `/payment-run/runs/${run2.id}/received`, { amount: 1500 }, T['pe-ctl']);
-t('the confirmed transfer pays both (transfer mode)', r.json?.production?.every(p => p.paid && p.paid_from === 'transfer') && !r.json.open.some(o => o.key.startsWith('production:')), JSON.stringify(r.json?.production));
-t('…and the invoices read paid', q("SELECT COUNT(*) n FROM production_invoices WHERE status = 'paid' AND paid_run_id = ?", run2.id)[0].n === 2);
-t('marking one paid again is refused', (await call('POST', `/payment-run/runs/${run2.id}/production/${b.id}/paid`, {}, T['pe-ctl'])).status === 409);
-t('a paid invoice is not on the next run', (await call('GET', PI, null, T['pe-ctl'])).json?.invoices?.find(i => i.id === b.id)?.status === 'paid');
+t('the confirmed transfer pays it (transfer mode)', r.json?.production?.every(p => p.paid && p.paid_from === 'transfer') && !r.json.open.some(o => o.key.startsWith('production:')), JSON.stringify(r.json?.production));
+t('…and the invoice reads paid', q("SELECT COUNT(*) n FROM production_invoices WHERE status = 'paid' AND paid_run_id = ?", run2.id)[0].n === 1);
+t('marking it paid again is refused', (await call('POST', `/payment-run/runs/${run2.id}/production/${a2.id}/paid`, {}, T['pe-boss'])).status === 409);
+t('a paid invoice is not on the next run', (await call('GET', PI, null, T['pe-ctl'])).json?.invoices?.find(i => i.id === a2.id)?.status === 'paid');
 
 console.log('\n── people, not bots; kept for good');
 const minted = (await call('POST', '/api-tokens', { user_id: 'pe-jake', label: 'Verify bot E', scopes: ['read', 'write'] }, T['pe-boss'])).json?.plaintext;
-t('a bot token cannot record an order', !!minted && [401, 403].includes((await call('POST', PI, { source: 'mo_closed', mo_number: 'MO9', prodough_po: 'PD-9', lines: [] }, minted)).status));
+t('a bot token without the Controller grant cannot record an order', !!minted && [401, 403].includes((await call('POST', PI, { source: 'mo_closed', mo_number: 'MO9', prodough_po: 'PD-9', lines: [] }, minted)).status));
 const w = new Database(DBP);
 let refused; try { w.prepare('DELETE FROM production_invoices').run(); refused = false; } catch { refused = true; }
 w.close();
@@ -168,6 +175,8 @@ for (const [wd, h] of [[1280, 900], [390, 844]]) {
     await page.click('[data-pi-save]');
     await page.waitForSelector('[data-pi-row="to_invoice"]', { timeout: 10000 }).catch(() => {});
     t('1280px: recording by typing gives an order ready to create in QBO', await page.locator('[data-pi-row="to_invoice"] [data-pi-invoice]').count() === 1);
+    t('1280px: it shows the final bill to invoice: $10 all in, nothing on the balance', (await page.locator('[data-pi-final]').first().textContent().catch(() => '')).includes('$10.00'));
+    t('1280px: the run page shows the ProDough deposit balance', (await page.locator('[data-deposit-balance]').textContent().catch(() => '')).includes('ProDough deposit balance'));
   }
   await page.close();
 }

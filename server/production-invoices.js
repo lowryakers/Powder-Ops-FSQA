@@ -21,18 +21,25 @@
 //     named. "Check again" re-reads the price list after it is corrected.
 //   - THE PRICE LIST FIELD IS CHOSEN BY AN ADMIN (`production_price_field`),
 //     never guessed. Until it is chosen every order is held and says so.
-//   - DEPOSITS COME OFF WHOLE, AND ONCE. The Controller ticks which paid Deposits
-//     this invoice absorbs; each is stamped `applied_to` this invoice and can
-//     never be applied again. More deposits than the invoice total is refused
-//     (pick fewer); a void releases them.
-//   - PEOPLE RECORD THESE, NOT TOKENS. Prices are never written here; the price
-//     list is Products' (gated by D-342).
+//   - THE INVOICE IS THE FULL ALL-IN PRICE of the finished product (materials
+//     included), never labour or machine time only (the accountant, D-366).
+//   - DEPOSITS ARE ONE RUNNING BALANCE (D-366, superseding part E's pick-which):
+//     the paid Deposits less everything already taken off. When the QBO invoice
+//     number is recorded the balance is taken off automatically, OLDEST DEPOSIT
+//     FIRST, in part if need be, up to the invoice total. Only PAID Deposits
+//     count; an invoiced-unpaid one is shown beside the balance. A void releases
+//     what its invoice took (the rows stay, stamped released).
+//   - A PERSON OR THE CONTROLLER BOT RECORDS THESE (D-366: the bot reads MRPEasy
+//     and holds the payment-run-controller grant). A void is Lowry's or an
+//     admin's, never a bot's. Prices are never written here; the price list is
+//     Products' (gated by D-342).
 import { randomUUID } from 'crypto';
 import { plantDateOf } from './plant-clock.js';
 import { getSettings, notifyRecipients, normPo, money } from './payment-run.js';
 
 export const SOURCES = Object.freeze({ mo_closed: 'MO closed', order_shipped: 'Customer order shipped' });
 export const PRICE_FIELDS = Object.freeze({
+  price_prodough_allin: 'All-in price to ProDough (per unit)',
   price_fob_unit: 'FOB unit price',
   price_wholesale_unit: 'Wholesale unit price',
 });
@@ -96,11 +103,16 @@ export function invoiceView(db, row) {
   if (!row) return null;
   const onRun = db.prepare(`SELECT r.id, r.run_no, r.status FROM payment_runs r, json_each(r.production_json) j
     WHERE r.status <> 'cancelled' AND json_extract(j.value, '$.id') = ? LIMIT 1`).get(row.id);
-  const deposits = parse(row.deposit_ids, []).map(id => db.prepare('SELECT d.id, d.amount, d.qbo_invoice_no, r.run_no FROM prodough_deposits d JOIN payment_runs r ON r.id = d.run_id WHERE d.id = ?').get(id)).filter(Boolean);
+  const deposits = db.prepare(`SELECT a.deposit_id AS id, a.amount AS applied, a.released_at, d.amount, d.qbo_invoice_no, r.run_no
+    FROM prodough_deposit_applications a JOIN prodough_deposits d ON d.id = a.deposit_id JOIN payment_runs r ON r.id = d.run_id
+    WHERE a.invoice_id = ? ORDER BY d.paid_at, a.applied_at`).all(row.id);
+  const preview = row.status === 'to_invoice' && row.total != null ? previewDeposits(db, row.total) : null;
   return {
     ...row, lines: parse(row.lines_json, []), hold_reasons: parse(row.hold_reasons, []), deposits, lines_json: undefined, deposit_ids: undefined,
     source_label: SOURCES[row.source], price_label: PRICE_FIELDS[row.price_field] || null,
     on_run: onRun || null,
+    // What recording the QBO number would take off right now: create the QBO invoice for amount_due.
+    deposit_preview: preview,
     can_void: !['paid', 'void'].includes(row.status) && !onRun,
   };
 }
@@ -153,37 +165,78 @@ export function recheckOrder(db, id, body, _user) {
   return invoiceView(db, byId(db, row.id));
 }
 
-/** Paid Deposits not yet taken off a production invoice. */
-export function openDeposits(db) {
-  return db.prepare(`SELECT d.id, d.amount, d.qbo_invoice_no, d.paid_at, r.run_no FROM prodough_deposits d JOIN payment_runs r ON r.id = d.run_id
-    WHERE d.paid_at IS NOT NULL AND d.applied_to IS NULL ORDER BY d.paid_at`).all();
+/**
+ * The ProDough deposit balance: every PAID Deposit, oldest first, with what is
+ * left on it after the applications not released. Unpaid Deposits (invoiced in
+ * QBO, not paid yet) are listed apart and never counted.
+ */
+export function depositBalance(db) {
+  const paid = db.prepare(`SELECT d.id, d.amount, COALESCE(d.paid_amount, d.amount) AS paid, d.qbo_invoice_no, d.paid_at, r.run_no,
+      COALESCE((SELECT SUM(a.amount) FROM prodough_deposit_applications a WHERE a.deposit_id = d.id AND a.released_at IS NULL), 0) AS used
+    FROM prodough_deposits d JOIN payment_runs r ON r.id = d.run_id
+    WHERE d.paid_at IS NOT NULL ORDER BY d.paid_at, d.created_at`).all()
+    .map(d => ({ ...d, remaining: round(d.paid - d.used) }));
+  const open = paid.filter(d => d.remaining > 0.004);
+  const unpaid = db.prepare(`SELECT d.id, d.amount, d.qbo_invoice_no, r.run_no FROM prodough_deposits d JOIN payment_runs r ON r.id = d.run_id
+    WHERE d.paid_at IS NULL AND d.qbo_invoice_no IS NOT NULL ORDER BY d.created_at`).all();
+  return {
+    balance: round(open.reduce((s, d) => s + d.remaining, 0)),
+    deposits: open, oldest: open[0]?.paid_at || null,
+    unpaid, unpaid_total: round(unpaid.reduce((s, d) => s + d.amount, 0)),
+  };
 }
 
-/** The Controller created it in QBO (with the deposits taken off) and sent it to ProDough. */
+/** Paid Deposits with something left on them, oldest first (the close-out and part D read this). */
+export function openDeposits(db) { return depositBalance(db).deposits; }
+
+/** What the balance would take off an invoice of `total` now: oldest first, in part if need be. Writes nothing. */
+export function previewDeposits(db, total) {
+  let left = round(total);
+  const take = [];
+  for (const d of depositBalance(db).deposits) {
+    if (left <= 0.004) break;
+    const amt = round(Math.min(d.remaining, left));
+    take.push({ deposit_id: d.id, run_no: d.run_no, qbo_invoice_no: d.qbo_invoice_no, amount: amt });
+    left = round(left - amt);
+  }
+  const applied = round(take.reduce((s, t) => s + t.amount, 0));
+  return { take, applied, amount_due: round(total - applied) };
+}
+
+/**
+ * The QBO invoice was created (for the preview's amount due) and sent to
+ * ProDough. The deposit balance is taken off here, oldest first. `expected_amount_due`,
+ * when sent, must match what is taken off now, or the QBO invoice and this
+ * record would disagree (the balance moved since the invoice was made).
+ */
 export function markInvoiced(db, id, body, user) {
   const row = byId(db, id);
   if (row.status !== 'to_invoice') throw fail(409, row.status === 'held' ? 'This order is held; fix what it names first.' : 'This invoice is already recorded.');
+  if (Array.isArray(body?.deposit_ids) && body.deposit_ids.length) throw fail(400, 'Deposits are taken off automatically now, oldest first. Leave deposit_ids out.', { code: 'DEPOSITS_AUTOMATIC' });
   const no = String(body?.qbo_invoice_no || '').trim();
   if (!no) throw fail(400, 'Give the QBO invoice number.');
-  const ids = [...new Set((Array.isArray(body?.deposit_ids) ? body.deposit_ids : []).map(String))];
-  const open = new Map(openDeposits(db).map(d => [d.id, d]));
-  const missing = ids.filter(d => !open.has(d));
-  if (missing.length) throw fail(409, 'A deposit picked is not paid yet or is already taken off another invoice.', { code: 'DEPOSIT_NOT_OPEN' });
-  const applied = round(ids.reduce((s, d) => s + open.get(d).amount, 0));
-  if (applied - row.total > 0.005) throw fail(400, `The deposits picked (${money(applied)}) are more than this invoice (${money(row.total)}). Pick fewer.`, { code: 'DEPOSITS_EXCEED_TOTAL' });
-  const due = round(row.total - applied);
+  let result;
   db.transaction(() => {
-    const stamp = db.prepare("UPDATE prodough_deposits SET applied_to = ?, applied_at = datetime('now') WHERE id = ? AND applied_to IS NULL");
-    for (const d of ids) if (stamp.run(row.id, d).changes !== 1) throw fail(409, 'A deposit was taken off another invoice a moment ago. Look again.', { code: 'DEPOSIT_NOT_OPEN' });
+    const p = previewDeposits(db, row.total);
+    if (body?.expected_amount_due !== undefined && body.expected_amount_due !== null && body.expected_amount_due !== '') {
+      const exp = Number(body.expected_amount_due);
+      if (!Number.isFinite(exp) || Math.abs(exp - p.amount_due) >= 0.005) {
+        throw fail(409, `The deposit balance moved: this invoice now comes to ${money(p.amount_due)} after deposits, not ${money(exp)}. Correct the QBO invoice, then record it again.`, { code: 'AMOUNT_DUE_CHANGED', amount_due: p.amount_due });
+      }
+    }
+    const ins = db.prepare('INSERT INTO prodough_deposit_applications (id, deposit_id, invoice_id, amount, applied_by) VALUES (?, ?, ?, ?, ?)');
+    for (const t of p.take) ins.run(randomUUID(), t.deposit_id, row.id, t.amount, user.name);
+    const due = p.amount_due;
     db.prepare(`UPDATE production_invoices SET qbo_invoice_no = ?, invoiced_by = ?, invoiced_at = datetime('now'), deposit_ids = ?, deposits_applied = ?, amount_due = ?,
         status = ?, paid_from = ?, paid_by = ?, paid_at = CASE WHEN ? = 'paid' THEN datetime('now') END WHERE id = ?`)
-      .run(no.slice(0, 80), user.name, JSON.stringify(ids), applied, due, due > 0 ? 'invoiced' : 'paid', due > 0 ? null : 'deposits',
+      .run(no.slice(0, 80), user.name, JSON.stringify(p.take.map(t => t.deposit_id)), p.applied, due, due > 0 ? 'invoiced' : 'paid', due > 0 ? null : 'deposits',
         due > 0 ? null : user.name, due > 0 ? 'invoiced' : 'paid', row.id);
+    result = p;
   })();
-  return invoiceView(db, byId(db, row.id));
+  return { ...invoiceView(db, byId(db, row.id)), applied_now: result };
 }
 
-/** Void: a wrong invoice frees its PO and its deposits. Never one that is paid or on a live run. */
+/** Void: a wrong invoice frees its PO and puts its deposits back on the balance. Never one that is paid or on a live run. */
 export function voidInvoice(db, id, body, user) {
   const row = byId(db, id);
   const v = invoiceView(db, row);
@@ -193,6 +246,8 @@ export function voidInvoice(db, id, body, user) {
   const why = String(body?.reason || '').trim();
   if (why.length < 5) throw fail(400, 'Say why it is void; it stays on file with the reason.');
   db.transaction(() => {
+    db.prepare("UPDATE prodough_deposit_applications SET released_at = datetime('now'), released_by = ?, release_reason = ? WHERE invoice_id = ? AND released_at IS NULL")
+      .run(user.name, `Invoice ${row.ref_no} void: ${why}`.slice(0, 500), row.id);
     db.prepare("UPDATE prodough_deposits SET applied_to = NULL, applied_at = NULL WHERE applied_to = ?").run(row.id);
     db.prepare("UPDATE production_invoices SET status = 'void', void_reason = ?, void_by = ?, void_at = datetime('now') WHERE id = ?").run(why.slice(0, 500), user.name, row.id);
   })();
@@ -229,7 +284,7 @@ export function listInvoices(db) {
   const count = (s) => invoices.filter(i => i.status === s).length;
   return {
     invoices, counts: { held: count('held'), to_invoice: count('to_invoice'), invoiced: count('invoiced'), paid: count('paid'), void: count('void') },
-    open_deposits: openDeposits(db), price_field: getSettings(db).production_price_field || null, price_fields: PRICE_FIELDS, sources: SOURCES,
+    open_deposits: openDeposits(db), deposit_balance: depositBalance(db), price_field: getSettings(db).production_price_field || null, price_fields: PRICE_FIELDS, sources: SOURCES,
   };
 }
 
@@ -245,7 +300,7 @@ export async function announceOrder(db, deps, view) {
     const c = getSettings(db).controller_id;
     users = c ? db.prepare('SELECT id, name FROM users WHERE id = ? AND is_active = 1').all(c) : [];
     if (!users.length) users = notifyRecipients(db);
-    body = `*Production invoice ${view.ref_no} to create in QBO*\n${what}\nTotal ${money(view.total)}. Take off any paid Deposits, create it in QBO, send it to ProDough, then record the QBO number.\nOpen: /?tab=payment-run&view=production`;
+    body = `*Production invoice ${view.ref_no} to create in QBO*\n${what}\nTotal ${money(view.total)} (all in)${view.deposit_preview ? `, less ${money(view.deposit_preview.applied)} from the deposit balance = ${money(view.deposit_preview.amount_due)} due` : ''}. Create it in QBO for that amount, send it to ProDough, then record the QBO number.\nOpen: /?tab=payment-run&view=production`;
   } else return 0;
   let sent = 0;
   for (const u of users) {

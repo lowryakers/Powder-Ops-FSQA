@@ -3,8 +3,12 @@
 // Mounted WITHOUT requireModuleWrite (the AP Drop arrangement): the door is
 // AP Drop's work-the-queue rule, checked here per route. Reading the run and
 // confirming a bill's class: admin, the ap-drop edit grant, or an office/admin
-// supervisor. The must-pay list and the settings: admin. A bot token reads at
-// most; it never confirms a class (a person confirms) and never edits the list.
+// supervisor. The must-pay list and the settings: admin. A bill's class is
+// confirmed by Jake (the bill owner in the settings) with admins as backup
+// (D-366). The Controller BOT (a token with the payment-run-controller grant on
+// the account named Controller) does the close-out and production-invoice
+// bookkeeping; it never approves, never confirms a class, never touches the
+// must-pay list or bank details, never voids. Any other token reads at most.
 import { Router } from 'express';
 import { randomUUID } from 'crypto';
 import { getDb, logAudit } from '../db.js';
@@ -14,17 +18,20 @@ import { paymentRun, weeklyScore, getSettings, saveSettings, notifyRecipients, B
 import { gateSignature } from '../signature.js';
 import multer from 'multer';
 import { storageEnabled, putObject, presignGet } from '../storage.js';
-import { closeout, canCloseOut, confirmReceived, recordPayment, addProof, markInQbo, sendBack, recordDepositInvoice,
+import { closeout, canCloseOut, isControllerBot, scheduleLine, confirmReceived, recordPayment, addProof, markInQbo, sendBack, recordDepositInvoice,
   markDepositPaid, recordShortfall, closeRun, markProductionPaid } from '../payment-closeout.js';
-import { PRICE_FIELDS, listInvoices, recordOrder, recheckOrder, markInvoiced, voidInvoice, invoiceView, announceOrder } from '../production-invoices.js';
+import { PRICE_FIELDS, depositBalance, listInvoices, recordOrder, recheckOrder, markInvoiced, voidInvoice, invoiceView, announceOrder } from '../production-invoices.js';
 import { botDm, postMessageAs } from './comms.js';
 import { pushToUser } from '../push.js';
+import { createHash } from 'crypto';
+import { isBotAccount } from '../trainees.js';
 import { freezeRun, runView, listRuns, setBankBalance, sendForApproval, cancelRun, approverNumber } from '../payment-approval.js';
 
 const router = Router();
 const isToken = (req) => req.auth?.kind === 'token';
 const gate = (req, res) => {
   if (canWorkQueue(req.user)) return true;
+  if (isToken(req) && isControllerBot(getDb(), req)) return true;
   res.status(403).json({ error: 'The payment run is for whoever works the AP queue (the AP Drop edit grant, an office supervisor, or an admin).' });
   return false;
 };
@@ -38,7 +45,19 @@ const personOnly = (req, res) => {
   res.status(403).json({ error: 'A person prepares, sends and cancels a payment run; a bot may only read it.', code: 'person_only' });
   return false;
 };
-const fail = (res, e) => res.status(e.status || 500).json({ error: e.message, ...(e.code && { code: e.code }), ...(e.open && { open: e.open }), ...(e.existing && { existing: e.existing }) });
+// The Controller bot passes where it may; a person must work the AP queue.
+const queueOrBot = (req, res) => (isToken(req) ? (isControllerBot(getDb(), req) || (res.status(403).json({ error: 'Only the Controller bot (the payment-run-controller grant, on the account named Controller in the settings) writes here; any other bot reads.', code: 'not_controller' }), false)) : gate(req, res));
+// Admin signed in, or the Controller bot (D-366): the bank balance.
+const adminOrBot = (req, res) => (isToken(req) ? queueOrBot(req, res) : adminOnly(req, res));
+// A bill's class: Jake (the bill owner) or an admin, signed in. Never a bot.
+const canConfirmClass = (db, req) => {
+  if (isToken(req) || !req.user) return false;
+  if (isBotAccount(db, req.user)) return false;
+  if (req.user.role === 'admin') return true;
+  const owner = getSettings(db).bill_owner_id;
+  return !!owner && owner === req.user.id;
+};
+const fail = (res, e) => res.status(e.status || 500).json({ error: e.message, ...(e.code && { code: e.code }), ...(e.open && { open: e.open }), ...(e.existing && { existing: e.existing }), ...(e.amount_due !== undefined && { amount_due: e.amount_due }) });
 const people = (db, ids) => (ids || []).map(id => db.prepare('SELECT id, name FROM users WHERE id = ?').get(id)).filter(Boolean);
 
 router.get('/', (req, res) => {
@@ -52,6 +71,8 @@ router.get('/', (req, res) => {
     settings: {
       bill_owner: people(db, [s.bill_owner_id])[0] || null,
       controller: people(db, [s.controller_id])[0] || null,
+      controller_is_bot: !!s.controller_id && isBotAccount(db, { id: s.controller_id }),
+      controller_candidates: db.prepare(`SELECT DISTINCT u.id, u.name FROM users u JOIN api_tokens t ON t.user_id = u.id WHERE u.is_active = 1 ORDER BY u.name`).all(),
       notify: notifyRecipients(db),
       notify_set: (s.notify_ids || []).length > 0,
       approver_phone: s.approver_phone, approver_number: approverNumber(db), review_before_send: s.review_before_send !== false,
@@ -60,11 +81,14 @@ router.get('/', (req, res) => {
       production_price_field: s.production_price_field || null, production_price_fields: PRICE_FIELDS,
     },
     feed_balance: feedBalance(db),
+    deposit_balance: depositBalance(db),
     bank_details: listBankDetails(db).filter(r => !r.retired_at),
     runs: listRuns(db, 12),
     can_admin: req.user?.role === 'admin' && !isToken(req),
-    can_classify: !isToken(req),
-    can_close_out: !isToken(req) && canCloseOut(db, req.user),
+    can_classify: canConfirmClass(db, req),
+    can_prepare: !isToken(req) && canWorkQueue(req.user),
+    can_close_out: canCloseOut(db, req),
+    is_controller_bot: isControllerBot(db, req),
   });
 });
 
@@ -73,6 +97,7 @@ router.post('/bills/:id/class', (req, res) => {
   if (!gate(req, res)) return;
   if (isToken(req)) return res.status(403).json({ error: 'A person confirms a bill\'s class; a bot may only suggest it.', code: 'person_only' });
   const db = getDb();
+  if (!canConfirmClass(db, req)) return res.status(403).json({ error: 'Jake (the bill owner in the payment run settings) confirms a bill\'s class, with an admin as backup.', code: 'not_bill_owner' });
   const cls = String(req.body?.bill_class || '');
   if (!BILL_CLASSES[cls]) return res.status(400).json({ error: `Class must be one of: ${Object.keys(BILL_CLASSES).join(', ')}` });
   const row = db.prepare('SELECT * FROM ap_drops WHERE id = ?').get(req.params.id);
@@ -85,6 +110,24 @@ router.post('/bills/:id/class', (req, res) => {
   logAudit(req.user, 'update', 'ap_drop', row.id, { field: 'bill_class', from: row.bill_class, to: cls, suggested: suggested.value }, row,
     db.prepare('SELECT * FROM ap_drops WHERE id = ?').get(row.id), row.filename);
   res.json({ ok: true, bill_class: cls });
+});
+
+// The Controller bot may SUGGEST a class (D-366). It is shown beside the bill
+// and never stored as the confirmed class; Jake confirms.
+router.post('/bills/:id/suggest-class', (req, res) => {
+  if (!queueOrBot(req, res)) return;
+  const db = getDb();
+  const cls = String(req.body?.bill_class || '');
+  if (!BILL_CLASSES[cls]) return res.status(400).json({ error: `Class must be one of: ${Object.keys(BILL_CLASSES).join(', ')}` });
+  const row = db.prepare('SELECT * FROM ap_drops WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Bill not found' });
+  if (['paid', 'closed', 'not_finance'].includes(row.status)) return res.status(409).json({ error: `This bill is ${row.status.replace(/_/g, ' ')}.` });
+  const why = String(req.body?.why || '').trim().slice(0, 500) || null;
+  db.prepare("UPDATE ap_drops SET bill_class_bot = ?, bill_class_bot_why = ?, bill_class_bot_by = ?, bill_class_bot_at = datetime('now') WHERE id = ?").run(cls, why, req.user.name, row.id);
+  db.prepare("INSERT INTO ap_drop_events (id, drop_id, by_user_id, by_name, kind, detail) VALUES (?, ?, ?, ?, 'class_suggested', ?)")
+    .run(randomUUID(), row.id, req.user.id, req.user.name, JSON.stringify({ suggested: cls, why }));
+  logAudit(req.user, 'update', 'ap_drop', row.id, { field: 'bill_class_bot', to: cls, why }, null, null, row.filename);
+  res.json({ ok: true, suggested: cls, confirmed: row.bill_class || null });
 });
 
 // ── the must-pay list: Lowry's, retired never deleted ─────────────────────────
@@ -138,7 +181,7 @@ router.put('/settings', (req, res) => {
 // The balance Powder Ops can pay its own expenses from, entered by hand until a
 // bank feed reads it (part C). Entered this week, it rides onto the next run.
 router.put('/bank-balance', (req, res) => {
-  if (!adminOnly(req, res)) return;
+  if (!adminOrBot(req, res)) return;
   const db = getDb();
   const before = getSettings(db).bank_balance;
   let after;
@@ -202,7 +245,7 @@ router.post('/runs', (req, res) => {
 });
 
 router.post('/runs/:id/bank-balance', (req, res) => {
-  if (!adminOnly(req, res)) return;
+  if (!adminOrBot(req, res)) return;
   try {
     const db = getDb();
     const feed = req.body?.from_feed ? feedBalance(db) : null;
@@ -241,13 +284,16 @@ router.post('/runs/:id/cancel', (req, res) => {
 // An admin or the Controller, signed in. A token reads the close-out at most.
 const proofUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024, files: 1 } });
 const closer = (req, res) => {
-  if (!personOnly(req, res)) return false;
-  if (canCloseOut(getDb(), req.user)) return true;
-  res.status(403).json({ error: 'Closing out a run is for an admin or the Controller named in the payment run settings.' });
+  if (canCloseOut(getDb(), req)) return true;
+  res.status(403).json({ error: isToken(req)
+    ? 'Only the Controller bot (the payment-run-controller grant, on the account named Controller in the settings) records the close-out.'
+    : 'Closing out a run is for an admin or the Controller named in the payment run settings.', code: 'not_controller' });
   return false;
 };
-const act = (fn, audit) => (req, res) => {
-  if (!closer(req, res)) return;
+// The steps only a person does (D-366): sending a bill back, marking paid by hand, booking the shortfall.
+const personCloser = (req, res) => personOnly(req, res) && closer(req, res);
+const act = (fn, audit, who = closer) => (req, res) => {
+  if (!who(req, res)) return;
   const db = getDb();
   try {
     const c = fn(db, req);
@@ -261,32 +307,57 @@ router.get('/runs/:id/closeout', (req, res) => {
   try {
     const c = closeout(getDb(), req.params.id);
     if (!c) return res.status(409).json({ error: 'This run has not been approved yet.' });
-    res.json({ ...c, can_close_out: !isToken(req) && canCloseOut(getDb(), req.user) });
+    res.json({ ...c, can_close_out: canCloseOut(getDb(), req), is_controller_bot: isControllerBot(getDb(), req) });
   } catch (e) { fail(res, e); }
 });
-router.post('/runs/:id/received', act((db, req) => confirmReceived(db, req.params.id, req.body || {}, req.user), 'payment_run_received'));
+// The transfer landed. The bot must attach evidence: the matching bank-feed line
+// (bank_txn_id) or a file (multipart field "evidence"); a person may too.
+const evidenceUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024, files: 1 } });
+router.post('/runs/:id/received', evidenceUpload.single('evidence'), async (req, res) => {
+  if (!closer(req, res)) return;
+  const db = getDb();
+  try {
+    let evidence = null;
+    if (req.file?.buffer?.length) {
+      if (!/^(application\/pdf|image\/(png|jpe?g|heic|webp)|text\/csv)$/i.test(req.file.mimetype || '')) return res.status(415).json({ error: 'Evidence must be a PDF, a photo or a CSV.' });
+      if (!storageEnabled()) return res.status(503).json({ error: 'File storage is not configured, so evidence cannot be attached; send the bank-feed line instead.' });
+      const run = db.prepare('SELECT run_no FROM payment_runs WHERE id = ?').get(req.params.id);
+      if (!run) return res.status(404).json({ error: 'Run not found' });
+      const sha = createHash('sha256').update(req.file.buffer).digest('hex');
+      const key = `payment-evidence/${run.run_no}/${sha.slice(0, 16)}`;
+      await putObject(key, req.file.buffer, req.file.mimetype);
+      evidence = { key, name: String(req.file.originalname || 'evidence').slice(0, 200), sha256: sha };
+    }
+    const c = confirmReceived(db, req.params.id, req.body || {}, req.user, { evidence, requireEvidence: isToken(req) });
+    logAudit(req.user, 'payment_run_received', 'payment_run', req.params.id, { amount: req.body?.amount, bank_txn_id: req.body?.bank_txn_id || null, evidence: evidence ? { name: evidence.name, sha256: evidence.sha256 } : null }, null, null, c?.run_no);
+    res.json(c);
+  } catch (e) { fail(res, e); }
+});
+router.post('/runs/:id/lines/:lineId/schedule', act((db, req) => scheduleLine(db, req.params.id, req.params.lineId, req.body || {}, req.user), 'payment_run_scheduled'));
 router.post('/runs/:id/lines/:lineId/paid', act((db, req) => recordPayment(db, req.params.id, req.params.lineId, req.body || {}, req.user), 'payment_run_paid'));
 router.post('/runs/:id/lines/:lineId/qbo', act((db, req) => markInQbo(db, req.params.id, req.params.lineId, req.body || {}, req.user), 'payment_run_qbo_marked'));
-router.post('/runs/:id/lines/:lineId/send-back', act((db, req) => sendBack(db, req.params.id, req.params.lineId, req.body || {}, req.user), 'payment_run_sent_back'));
+router.post('/runs/:id/lines/:lineId/send-back', act((db, req) => sendBack(db, req.params.id, req.params.lineId, req.body || {}, req.user), 'payment_run_sent_back', personCloser));
 router.post('/runs/:id/deposit-invoice', act((db, req) => recordDepositInvoice(db, req.params.id, req.body || {}, req.user), 'payment_run_deposit_invoice'));
-router.post('/runs/:id/deposit-paid', act((db, req) => markDepositPaid(db, req.params.id, req.user), 'payment_run_deposit_paid'));
-router.post('/runs/:id/shortfall', act((db, req) => recordShortfall(db, req.params.id, req.body || {}, req.user), 'payment_run_shortfall'));
+router.post('/runs/:id/deposit-paid', act((db, req) => markDepositPaid(db, req.params.id, req.user), 'payment_run_deposit_paid', personCloser));
+router.post('/runs/:id/shortfall', act((db, req) => recordShortfall(db, req.params.id, req.body || {}, req.user), 'payment_run_shortfall', personCloser));
 router.post('/runs/:id/close', act((db, req) => closeRun(db, req.params.id, req.user), 'payment_run_closed'));
-router.post('/runs/:id/production/:invoiceId/paid', act((db, req) => markProductionPaid(db, req.params.id, req.params.invoiceId, req.user), 'payment_run_production_paid'));
+router.post('/runs/:id/production/:invoiceId/paid', act((db, req) => markProductionPaid(db, req.params.id, req.params.invoiceId, req.user), 'payment_run_production_paid', personCloser));
 
 // ── production invoices to ProDough (D-365, part E) ──────────────────────────
 // A closed MO or a shipped order is recorded by a person (ReadyDoc does not read
-// MRPEasy); it is held with its reasons or ready for the Controller to create in
-// QBO with the paid Deposits taken off. Recording: whoever works the AP queue.
-// The QBO invoice and a void: an admin or the Controller. Never a token.
+// MRPEasy, so the Controller bot or a person records it); it is held with its
+// reasons or ready to create in QBO, the deposit balance taken off oldest
+// first. Recording: whoever works the AP queue, or the Controller bot. The QBO
+// invoice number: an admin or the Controller bot. A void: an admin, signed in —
+// never a bot (D-366).
 const announceDeps = { botDm, postMessageAs, pushToUser };
 router.get('/production-invoices', (req, res) => {
   if (!gate(req, res)) return;
   const db = getDb();
-  res.json({ ...listInvoices(db), can_invoice: !isToken(req) && canCloseOut(db, req.user) });
+  res.json({ ...listInvoices(db), can_invoice: canCloseOut(db, req), can_void: !isToken(req) && req.user?.role === 'admin' && !isBotAccount(db, req.user) });
 });
 router.post('/production-invoices', (req, res) => {
-  if (!personOnly(req, res) || !gate(req, res)) return;
+  if (!queueOrBot(req, res)) return;
   const db = getDb();
   try {
     const v = recordOrder(db, req.body || {}, req.user);
@@ -296,7 +367,7 @@ router.post('/production-invoices', (req, res) => {
   } catch (e) { fail(res, e); }
 });
 router.post('/production-invoices/:id/recheck', (req, res) => {
-  if (!personOnly(req, res) || !gate(req, res)) return;
+  if (!queueOrBot(req, res)) return;
   const db = getDb();
   try {
     const v = recheckOrder(db, req.params.id, req.body || {}, req.user);
@@ -305,8 +376,13 @@ router.post('/production-invoices/:id/recheck', (req, res) => {
     if (v.status === 'to_invoice') announceOrder(db, announceDeps, v).catch(() => {});
   } catch (e) { fail(res, e); }
 });
-const invoiceAct = (fn, action) => (req, res) => {
-  if (!closer(req, res)) return;
+const voider = (req, res) => {
+  if (!adminOnly(req, res)) return false;
+  if (isBotAccount(getDb(), req.user)) { res.status(403).json({ error: 'A bot account never voids an invoice.', code: 'person_only' }); return false; }
+  return true;
+};
+const invoiceAct = (fn, action, who = closer) => (req, res) => {
+  if (!who(req, res)) return;
   const db = getDb();
   try {
     const before = invoiceView(db, db.prepare('SELECT * FROM production_invoices WHERE id = ?').get(req.params.id));
@@ -316,7 +392,7 @@ const invoiceAct = (fn, action) => (req, res) => {
   } catch (e) { fail(res, e); }
 };
 router.post('/production-invoices/:id/invoiced', invoiceAct((db, req) => markInvoiced(db, req.params.id, req.body || {}, req.user), 'update'));
-router.post('/production-invoices/:id/void', invoiceAct((db, req) => voidInvoice(db, req.params.id, req.body || {}, req.user), 'void'));
+router.post('/production-invoices/:id/void', invoiceAct((db, req) => voidInvoice(db, req.params.id, req.body || {}, req.user), 'void', voider));
 
 router.post('/runs/:id/lines/:lineId/proof', proofUpload.single('file'), async (req, res) => {
   if (!closer(req, res)) return;
@@ -327,6 +403,13 @@ router.post('/runs/:id/lines/:lineId/proof', proofUpload.single('file'), async (
     logAudit(req.user, 'payment_run_proof', 'payment_run', req.params.id, { line_id: req.params.lineId, file: req.file?.originalname }, null, null, c.run_no);
     res.json(c);
   } catch (e) { fail(res, e); }
+});
+
+router.get('/runs/:id/evidence', async (req, res) => {
+  if (!gate(req, res)) return;
+  const r = getDb().prepare('SELECT received_evidence_key, received_evidence_name FROM payment_runs WHERE id = ?').get(req.params.id);
+  if (!r?.received_evidence_key) return res.status(404).json({ error: 'No evidence attached.' });
+  try { res.json({ url: await presignGet(r.received_evidence_key, r.received_evidence_name), name: r.received_evidence_name }); } catch (e) { fail(res, e); }
 });
 
 router.get('/runs/:id/lines/:lineId/proof', async (req, res) => {

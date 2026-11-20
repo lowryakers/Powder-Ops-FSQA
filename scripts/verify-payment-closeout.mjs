@@ -91,6 +91,9 @@ w.close();
 console.log('\n── who may close it out');
 t('Jake (AP queue, not the Controller) is refused', (await call('POST', `/payment-run/runs/${run.id}/received`, { amount: 1500 }, T['pd-jake'])).status === 403);
 t('the Controller is refused until named in the settings', (await call('POST', `/payment-run/runs/${run.id}/received`, { amount: 1500 }, T['pd-ctl'])).status === 403);
+t('a person with no token cannot be named Controller (it is a bot, D-366)', (await call('PUT', '/payment-run/settings', { controller_id: 'pd-ctl' }, T['pd-boss'])).json?.code === 'CONTROLLER_NOT_BOT');
+// The fixture's Controller account holds a token (that is what makes it the bot); its own session drives the screen here.
+await call('POST', '/api-tokens', { user_id: 'pd-ctl', label: 'Controller fixture', scopes: ['read', 'write'] }, T['pd-boss']);
 t('the admin names the Controller', (await call('PUT', '/payment-run/settings', { controller_id: 'pd-ctl' }, T['pd-boss'])).status === 200);
 const minted = (await call('POST', '/api-tokens', { user_id: 'pd-jake', label: 'Verify bot', scopes: ['read', 'write'] }, T['pd-boss'])).json?.plaintext;
 t('a bot token cannot record the close-out', !!minted && [401, 403].includes((await call('POST', `/payment-run/runs/${run.id}/received`, { amount: 1500 }, minted)).status));
@@ -188,7 +191,8 @@ await call('POST', `/payment-approval/${tok2}/approve`, { name: 'Danny A' });
 await call('POST', `/payment-approval/${tok2}/transferred`, { name: 'Danny A', amount: 300 });
 sent.length = 0;
 await closeoutDigest(getDb(), deps);
-t('an open run is in the weekly task, to Lowry and the Controller', sent.some(s => s.to === 'dm-pd-ctl') && sent.some(s => /Confirm/.test(s.body)), JSON.stringify(sent).slice(0, 300));
+t('an open run is in Lowry\'s weekly task, split into his steps and the bot\'s (D-366)', sent.length > 0 && !sent.some(s => s.to === 'dm-pd-ctl')
+  && sent.some(s => /Only a person can do these/.test(s.body) && /Waiting on the Controller bot/.test(s.body) && /Confirm/.test(s.body)), JSON.stringify(sent).slice(0, 300));
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
 for (const [wd, h] of [[1280, 900], [390, 844]]) {
   const page = await browser.newPage({ viewport: { width: wd, height: h } });

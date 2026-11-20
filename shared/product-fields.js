@@ -147,7 +147,7 @@ export const NA_FIELDS = [
   'gtin_inner', 'gtin_case', 'unit_size', 'units_per_inner', 'units_per_case', 'inners_per_case',
   'case_l', 'case_w', 'case_h', 'case_cube', 'case_weight', 'ti', 'hi', 'pallet_qty',
   'shelf_life_months_commercial',
-  'price_fob_case', 'price_fob_unit', 'price_wholesale_case', 'price_wholesale_unit', 'price_srp',
+  'price_fob_case', 'price_fob_unit', 'price_wholesale_case', 'price_wholesale_unit', 'price_srp', 'price_prodough_allin',
   'distributor_item_no', 'wholesale_item_no',
 ];
 
