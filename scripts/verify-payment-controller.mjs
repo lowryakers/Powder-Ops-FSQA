@@ -194,7 +194,23 @@ for (const [wd, h] of [[1280, 900], [390, 844]]) {
   await page.goto(`${URL}/?tab=payment-run`);
   await page.waitForSelector('[data-deposit-balance]', { timeout: 15000 }).catch(() => {});
   t(`${wd}px: the deposit balance card reads $1,000 and the $700 not paid`, /\$1,000\.00/.test(await page.locator('[data-deposit-balance]').textContent().catch(() => '')) && /\$700\.00 invoiced, not paid/.test(await page.locator('[data-deposit-balance]').textContent().catch(() => '')));
+  t(`${wd}px: the settings are not on the page until the drawer is opened`, (await page.locator('[data-controller-bot]').count()) === 0 && /Bill owner:/.test(await page.locator('[data-settings-summary]').textContent().catch(() => '')));
+  await page.click('[data-settings-open]');
+  await page.waitForSelector('[data-settings-drawer]', { timeout: 5000 }).catch(() => {});
   t(`${wd}px: the Controller bot picker offers Grok Bot`, (await page.locator('[data-controller-bot] option').allTextContents().catch(() => [])).includes('Grok Bot'));
+  t(`${wd}px: Save reads "No changes" and is off until something changes`, /No changes/.test(await page.locator('[data-settings-save]').textContent()) && await page.locator('[data-settings-save]').isDisabled());
+  const wasReview = await page.locator('[data-review-before-send]').isChecked();
+  await page.locator('[data-review-before-send]').click();
+  t(`${wd}px: one change is named before saving`, /Save 1 change/.test(await page.locator('[data-settings-save]').textContent()) && /Review before the text/.test(await page.locator('[data-settings-pending]').textContent().catch(() => '')));
+  await page.click('[data-settings-save]');
+  await page.waitForSelector('[data-settings-saved]', { timeout: 5000 }).catch(() => {});
+  const saved = await page.locator('[data-settings-saved]').textContent().catch(() => '');
+  t(`${wd}px: after Save the drawer lists what changed, was → now`, /Saved at/.test(saved) && new RegExp(`Review before the text goes to Danny:\\s*${wasReview ? 'on' : 'off'}\\s*→\\s*${wasReview ? 'off' : 'on'}`).test(saved));
+  const stored = (await call('GET', '/payment-run/settings', null, T['pf-boss'])).json;
+  t(`${wd}px: and the server holds the new value`, (stored.review_before_send !== false) === !wasReview);
+  t(`${wd}px: Save is back to "No changes"`, /No changes/.test(await page.locator('[data-settings-save]').textContent()));
+  await page.click('[data-settings-close]');
+  t(`${wd}px: the drawer closes`, (await page.locator('[data-settings-drawer]').count()) === 0);
   t(`${wd}px: nothing pans sideways`, await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
   await page.close();
 }
