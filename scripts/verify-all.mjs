@@ -257,6 +257,7 @@ const RUNS = [
   ['verify-payment-checks.mjs', 5232],
   ['verify-payment-closeout.mjs', 5233, {}, true],
   ['verify-production-invoices.mjs', 5234],
+  ['verify-payment-controller.mjs', 5235, { API_TOKEN_WRITE_RPM: '200' }, true],
   ['verify-training-oneway.mjs', 5222],
   ['verify-calibration-export.mjs', 5223],
   ['verify-move-message.mjs', 5225],

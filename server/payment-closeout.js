@@ -19,8 +19,14 @@
 //      booked. The accountant has not decided, so a person writes it down.
 //
 // RULES:
-//   - PEOPLE RECORD THESE, NOT TOKENS (routes refuse a token). Bots prepare and
-//     record elsewhere; confirming money and closing a run are a person's.
+//   - THE CONTROLLER IS A BOT (D-366): Grok Bot, its own token holding the
+//     payment-run-controller grant, on the account named Controller in the
+//     settings. It records the money landing (with EVIDENCE: a bank-feed line or
+//     a file), schedules and records payments, the Deposit invoice number, and
+//     closes a finished run. An admin (Lowry) can do every step by hand. Sending
+//     a bill back, marking a Deposit or production invoice paid by hand (manual
+//     mode) and booking the shortfall stay a person's; the weekly task tells
+//     Lowry what is waiting on him and what the bot has not done.
 //   - Nothing is deleted. A payment row, once written, is filled in, never
 //     rewritten: proof and the QBO mark can be added; method, amount and date
 //     cannot change. A mistake is told to Lowry and corrected in QBO.
@@ -42,9 +48,25 @@ const round = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const fail = (status, message, extra = {}) => Object.assign(new Error(message), { status, ...extra });
 const isoDate = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : null);
 
-/** Who may record the close-out: an admin, or the Controller named in the settings. */
-export function canCloseOut(db, user) {
+export const CONTROLLER_GRANT = 'payment-run-controller';
+
+/** The request is the Controller bot: a token holding the grant, on the account named Controller. */
+export function isControllerBot(db, req) {
+  if (req?.auth?.kind !== 'token') return false;
+  if (!(req.auth.grants || []).includes(CONTROLLER_GRANT)) return false;
+  const c = getSettings(db).controller_id;
+  return !!c && c === req.user?.id;
+}
+
+/**
+ * Who may record the close-out: an admin signed in, or the Controller bot
+ * (its token with the grant). Pass the request; a bare user is read as a session.
+ */
+export function canCloseOut(db, userOrReq) {
+  const req = userOrReq?.user !== undefined || userOrReq?.auth ? userOrReq : { user: userOrReq };
+  const user = req.user;
   if (!user) return false;
+  if (req.auth?.kind === 'token') return isControllerBot(db, req);
   if (user.role === 'admin') return true;
   const c = getSettings(db).controller_id;
   return !!c && c === user.id;
@@ -90,9 +112,11 @@ export function closeout(db, runId) {
   const s = approvedSummary(run) || {};
   const view = runView(db, run.id);
   const pays = new Map(db.prepare('SELECT * FROM payment_run_payments WHERE run_id = ?').all(run.id).map(p => [p.line_id, p]));
+  const scheds = new Map(db.prepare('SELECT * FROM payment_run_schedules WHERE run_id = ? AND replaced_at IS NULL').all(run.id).map(x => [x.line_id, x]));
   const lines = view.lines.filter(l => l.included).map(l => {
     const p = pays.get(l.id);
-    let state = 'to_pay';
+    const sch = scheds.get(l.id);
+    let state = sch ? 'scheduled' : 'to_pay';
     const missing = [];
     if (p?.outcome === 'not_paid') state = 'sent_back';
     else if (p) {
@@ -103,6 +127,8 @@ export function closeout(db, runId) {
     return {
       line_id: l.id, drop_id: l.drop_id, vendor: l.vendor, invoice_number: l.invoice_number, amount: l.amount, due_date: l.due_date,
       bill_class: l.bill_class, must_pay: l.must_pay, state, missing,
+      schedule: sch && !p ? { method: sch.method, method_label: PAY_METHODS[sch.method], scheduled_on: sch.scheduled_on, reference: sch.reference,
+        scheduled_by: sch.scheduled_by, scheduled_at: sch.scheduled_at } : null,
       payment: p ? {
         outcome: p.outcome, method: p.method, method_label: PAY_METHODS[p.method] || null, paid_on: p.paid_on, amount: p.amount,
         reference: p.reference, reason: p.reason, proof_name: p.proof_name, proof_at: p.proof_at, proof_by: p.proof_by,
@@ -114,18 +140,22 @@ export function closeout(db, runId) {
   const deposit = run.status === 'transferred' ? depositFor(db, run) : null;
   const shortfall = round(s.shortfall || 0);
   const open = [];
-  if (run.status === 'approved') open.push({ key: 'transfer_sent', label: 'Danny has not said the money was sent yet' });
-  if (run.status === 'transferred' && !run.received_at) open.push({ key: 'transfer_landed', label: `Confirm ${money(run.transferred_amount)} landed in the Powder Ops account` });
+  // `who` says whose step it is (D-366): danny, bot (the Controller bot; an admin
+  // can do it too) or person (Lowry or an admin — never a bot).
+  if (run.status === 'approved') open.push({ key: 'transfer_sent', who: 'danny', label: 'Danny has not said the money was sent yet' });
+  if (run.status === 'transferred' && !run.received_at) open.push({ key: 'transfer_landed', who: 'bot', label: `Confirm ${money(run.transferred_amount)} landed in the Powder Ops account` });
   for (const l of lines) {
-    if (l.state === 'to_pay') open.push({ key: `pay:${l.line_id}`, label: `Pay ${l.vendor || 'bill'} ${money(l.amount)}` });
-    if (l.state === 'paid_incomplete') open.push({ key: `finish:${l.line_id}`, label: `${l.vendor || 'Bill'} ${money(l.amount)}: ${l.missing.join(' and ')}` });
+    if (l.state === 'to_pay') open.push({ key: `pay:${l.line_id}`, who: 'bot', label: `Pay ${l.vendor || 'bill'} ${money(l.amount)}` });
+    if (l.state === 'scheduled') open.push({ key: `pay:${l.line_id}`, who: 'bot', label: `Pay ${l.vendor || 'bill'} ${money(l.amount)} (scheduled ${l.schedule.scheduled_on}, ${l.schedule.method_label})` });
+    if (l.state === 'paid_incomplete') open.push({ key: `finish:${l.line_id}`, who: 'bot', label: `${l.vendor || 'Bill'} ${money(l.amount)}: ${l.missing.join(' and ')}` });
   }
-  if (deposit && !deposit.qbo_invoice_no) open.push({ key: 'deposit_invoice', label: `Record the deposit invoice to ProDough (${money(deposit.amount)}) from QBO` });
-  if (deposit && !deposit.paid_at) open.push({ key: 'deposit_paid', label: `Mark the deposit invoice paid (${money(deposit.amount)})` });
+  const manual = (getSettings(db).deposit_payment || 'transfer') === 'manual';
+  if (deposit && !deposit.qbo_invoice_no) open.push({ key: 'deposit_invoice', who: 'bot', label: `Record the deposit invoice to ProDough (${money(deposit.amount)}) from QBO` });
+  if (deposit && !deposit.paid_at) open.push({ key: 'deposit_paid', who: manual ? 'person' : 'bot', label: `Mark the deposit invoice paid (${money(deposit.amount)})` });
   // D-365: the production invoices this run collected are paid by it too.
   const production = run.status === 'transferred' ? runProduction(db, run) : [];
-  for (const p of production) if (!p.paid) open.push({ key: `production:${p.id}`, label: `Mark production invoice ${p.ref_no} paid (${money(p.amount)})` });
-  if (shortfall > 0 && !run.shortfall_note) open.push({ key: 'shortfall', label: `Say how the ${money(shortfall)} shortfall was booked` });
+  for (const p of production) if (!p.paid) open.push({ key: `production:${p.id}`, who: manual ? 'person' : 'bot', label: `Mark production invoice ${p.ref_no} paid (${money(p.amount)})` });
+  if (shortfall > 0 && !run.shortfall_note) open.push({ key: 'shortfall', who: 'person', label: `Say how the ${money(shortfall)} shortfall was booked` });
   const expected = s.owes ?? null;
   return {
     run_id: run.id, run_no: run.run_no, status: run.status, closed: !!run.closed_at, closed_at: run.closed_at, closed_by: run.closed_by,
@@ -133,6 +163,7 @@ export function closeout(db, runId) {
       expected, sent_amount: run.transferred_amount, sent_by: run.transferred_name, sent_at: run.transferred_at,
       received_amount: run.received_amount, received_on: run.received_on, received_by: run.received_by, received_at: run.received_at,
       received_bank_txn: run.received_bank_txn,
+      evidence: run.received_evidence_key ? { name: run.received_evidence_name, sha256: run.received_evidence_sha256 } : null,
       differs: run.received_amount != null && expected != null && Math.abs(run.received_amount - expected) >= 0.01,
       feed_matches: run.status === 'transferred' && !run.received_at ? feedMatches(db, run) : [],
     },
@@ -156,7 +187,7 @@ function needTransferred(run) {
 }
 
 /** The transfer landed. In 'transfer' mode this also pays the deposit invoice. */
-export function confirmReceived(db, runId, { amount, received_on, bank_txn_id }, user) {
+export function confirmReceived(db, runId, { amount, received_on, bank_txn_id }, user, { evidence = null, requireEvidence = false } = {}) {
   const run = loadRun(db, runId);
   needTransferred(run);
   if (run.received_at) throw fail(409, 'The transfer is already confirmed.');
@@ -169,10 +200,12 @@ export function confirmReceived(db, runId, { amount, received_on, bank_txn_id },
     txn = feedMatches(db, run).find(t => t.id === bank_txn_id);
     if (!txn) throw fail(400, 'That bank-feed line is not one of the matches for this transfer.');
   }
+  if (requireEvidence && !txn && !evidence) throw fail(400, 'Attach the evidence the money landed: the matching bank-feed line (bank_txn_id) or a file (statement or screenshot).', { code: 'EVIDENCE_REQUIRED' });
   const mode = getSettings(db).deposit_payment || 'transfer';
   db.transaction(() => {
-    db.prepare("UPDATE payment_runs SET received_amount = ?, received_on = ?, received_by = ?, received_at = datetime('now'), received_bank_txn = ? WHERE id = ?")
-      .run(round(n), on, user.name, txn?.id || null, run.id);
+    db.prepare(`UPDATE payment_runs SET received_amount = ?, received_on = ?, received_by = ?, received_at = datetime('now'), received_bank_txn = ?,
+        received_evidence_key = ?, received_evidence_name = ?, received_evidence_sha256 = ? WHERE id = ?`)
+      .run(round(n), on, user.name, txn?.id || null, evidence?.key || null, evidence?.name || null, evidence?.sha256 || null, run.id);
     const dep = depositFor(db, { ...run, received_at: 'now' });
     if (dep && mode === 'transfer' && !dep.paid_at) {
       db.prepare("UPDATE prodough_deposits SET paid_amount = ?, paid_from = 'transfer', paid_by = ?, paid_at = datetime('now') WHERE id = ?")
@@ -180,7 +213,7 @@ export function confirmReceived(db, runId, { amount, received_on, bank_txn_id },
     }
     if (mode === 'transfer') payRunProduction(db, run, { from: 'transfer', by: user.name });
     const expected = approvedSummary(run)?.owes ?? null;
-    logEvent(db, run.id, 'received', { by: user.name, detail: { amount: round(n), on, expected, bank_txn: txn?.id || null, differs: expected != null && Math.abs(round(n) - expected) >= 0.01 } });
+    logEvent(db, run.id, 'received', { by: user.name, detail: { amount: round(n), on, expected, bank_txn: txn?.id || null, evidence: evidence ? { name: evidence.name, sha256: evidence.sha256 } : null, differs: expected != null && Math.abs(round(n) - expected) >= 0.01 } });
   })();
   return closeout(db, run.id);
 }
@@ -190,6 +223,33 @@ function lineOf(db, run, lineId) {
   if (!l) throw fail(404, 'That bill is not on this run.');
   if (!l.included) throw fail(409, 'That bill was unticked; it is not paid on this run.');
   return l;
+}
+
+/**
+ * A payment SCHEDULED (D-366): QBO Bill Pay set up for a date, before it is
+ * paid. Replacing a schedule keeps the old row (stamped replaced). A scheduled
+ * bill is still open until its payment is recorded.
+ */
+export function scheduleLine(db, runId, lineId, body, user) {
+  const run = loadRun(db, runId);
+  needTransferred(run);
+  if (!run.received_at) throw fail(409, 'Confirm the transfer landed before scheduling payments.', { code: 'TRANSFER_NOT_CONFIRMED' });
+  const l = lineOf(db, run, lineId);
+  if (db.prepare('SELECT 1 FROM payment_run_payments WHERE line_id = ?').get(l.id)) throw fail(409, 'This bill already has a payment recorded (or was sent back).');
+  const method = String(body?.method || '');
+  if (!PAY_METHODS[method]) throw fail(400, `How will it be paid? One of: ${Object.values(PAY_METHODS).join(', ')}.`);
+  const on = isoDate(body?.scheduled_on);
+  if (!on) throw fail(400, 'Give the date the payment is scheduled for (YYYY-MM-DD).');
+  const block = partnerBlock(db, l.drop_id);
+  if (block) throw fail(409, `This bill is invoice #${block.doc_number || '-'} on the partner ledger; it is paid by its settlement on Partner Reconciliation.`, { code: 'SETTLE_ON_PARTNER_REC' });
+  const reference = String(body?.reference || '').trim().slice(0, 200) || null;
+  db.transaction(() => {
+    db.prepare("UPDATE payment_run_schedules SET replaced_at = datetime('now') WHERE line_id = ? AND replaced_at IS NULL").run(l.id);
+    db.prepare('INSERT INTO payment_run_schedules (id, run_id, line_id, method, scheduled_on, reference, scheduled_by, scheduled_by_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(randomUUID(), run.id, l.id, method, on, reference, user.name, user.id || null);
+    logEvent(db, run.id, 'scheduled', { by: user.name, detail: { vendor: l.vendor, invoice: l.invoice_number, amount: l.amount, method, scheduled_on: on, reference } });
+  })();
+  return closeout(db, run.id);
 }
 
 /** The D-329 rule: a bill on the partner ledger is paid by its settlement. */
@@ -352,34 +412,39 @@ export function markProductionPaid(db, runId, invoiceId, user) {
 }
 
 /**
- * The weekly task (Mondays): every run Danny has approved and that is not
- * closed, with what is left, to Lowry and the Controller. Quiet when none.
+ * The weekly task (Mondays), to Lowry (the notify list): every run Danny has
+ * approved and that is not closed, split into what only a person can do (his)
+ * and what is waiting on the Controller bot, plus production orders held or
+ * not yet invoiced. Quiet when none. The bot reads the close-out itself.
  */
 export async function closeoutDigest(db, deps) {
   const runs = db.prepare("SELECT id FROM payment_runs WHERE status IN ('approved','transferred') AND closed_at IS NULL ORDER BY created_at").all();
   const parts = [];
+  const list = (items) => `${items.slice(0, 8).map(o => `• ${o.label}`).join('\n')}${items.length > 8 ? `\n• and ${items.length - 8} more` : ''}`;
   for (const r of runs) {
     const c = closeout(db, r.id);
     if (!c) continue;
-    if (!c.open.length) { parts.push(`*${c.run_no}*: everything is done; close it.`); continue; }
-    parts.push(`*${c.run_no}* (${c.open.length} left):\n${c.open.slice(0, 8).map(o => `• ${o.label}`).join('\n')}${c.open.length > 8 ? `\n• and ${c.open.length - 8} more` : ''}`);
+    if (!c.open.length) { parts.push(`*${c.run_no}*: everything is done; the bot has not closed it yet.`); continue; }
+    const mine = c.open.filter(o => o.who === 'person');
+    const bot = c.open.filter(o => o.who === 'bot');
+    const danny = c.open.filter(o => o.who === 'danny');
+    const bits = [`*${c.run_no}* (${c.open.length} left)`];
+    if (mine.length) bits.push(`_Only a person can do these:_\n${list(mine)}`);
+    if (bot.length) bits.push(`_Waiting on the Controller bot (you can do them too):_\n${list(bot)}`);
+    if (danny.length) bits.push(`_Waiting on Danny:_\n${list(danny)}`);
+    parts.push(bits.join('\n'));
   }
   const pending = pendingLines(db);
   if (pending.length) parts.push(`*ProDough production orders* (${pending.length}):\n${pending.slice(0, 8).map(l => `• ${l}`).join('\n')}${pending.length > 8 ? `\n• and ${pending.length - 8} more` : ''}`);
   if (!parts.length) return { runs: 0, sent: 0 };
-  const recipients = (() => {
-    const list = notifyRecipients(db);
-    const id = getSettings(db).controller_id;
-    const row = id ? db.prepare('SELECT id, name FROM users WHERE id = ? AND is_active = 1').get(id) : null;
-    return row && !list.some(u => u.id === row.id) ? [...list, row] : list;
-  })();
+  const recipients = notifyRecipients(db);
   const body = `*Payment runs not closed yet*\n${parts.join('\n\n')}\nOpen: /?tab=payment-run`;
   let sent = 0;
   for (const u of recipients) {
     try {
       const { bot, dm } = deps.botDm(db, u.id);
       await deps.postMessageAs(db, dm, bot, body);
-      deps.pushToUser?.(u.id, { title: 'Payment runs to close', body: `${parts.length} run${parts.length === 1 ? '' : 's'} not closed`, tag: 'payment-closeout', url: '/?tab=payment-run' })?.catch?.(() => {});
+      deps.pushToUser?.(u.id, { title: 'Payment runs to close', body: `${parts.length} item${parts.length === 1 ? '' : 's'} open`, tag: 'payment-closeout', url: '/?tab=payment-run' })?.catch?.(() => {});
       sent++;
     } catch (e) { console.warn('[payment-run] close-out digest failed:', e.message); }
   }

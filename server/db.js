@@ -3912,6 +3912,8 @@ function runMigrations() {
   addColumnIfMissing('products', 'price_wholesale_case', 'REAL');
   addColumnIfMissing('products', 'price_wholesale_unit', 'REAL');
   addColumnIfMissing('products', 'price_srp', 'REAL');
+  // D-366: what Powder Ops charges ProDough per unit for the finished product, all in (materials included).
+  addColumnIfMissing('products', 'price_prodough_allin', 'REAL');
   addColumnIfMissing('products', 'distributor_item_no', 'TEXT');
   addColumnIfMissing('products', 'wholesale_item_no', 'TEXT');
   db.exec(`CREATE INDEX IF NOT EXISTS idx_products_gtin_inner ON products(gtin_inner);
@@ -6690,6 +6692,50 @@ function runMigrations() {
         WHERE status <> 'void' AND prodough_po_key IS NOT NULL;
       CREATE TRIGGER IF NOT EXISTS production_invoices_no_delete BEFORE DELETE ON production_invoices
         BEGIN SELECT RAISE(ABORT, 'A production invoice is kept for good'); END;`);
+    // D-366: the Controller bot. A payment can be SCHEDULED (QBO Bill Pay) before
+    // it is paid; the transfer can carry EVIDENCE (a file) as well as a feed line;
+    // a bot may SUGGEST a bill's class (Jake confirms). Deposits form one running
+    // balance applied oldest first, in part if need be: one row per application,
+    // released (never deleted) when its invoice is voided.
+    for (const [c, d] of [['received_evidence_key', 'TEXT'], ['received_evidence_name', 'TEXT'], ['received_evidence_sha256', 'TEXT']]) addColumnIfMissing('payment_runs', c, d);
+    for (const [c, d] of [['bill_class_bot', 'TEXT'], ['bill_class_bot_why', 'TEXT'], ['bill_class_bot_by', 'TEXT'], ['bill_class_bot_at', 'TEXT']]) addColumnIfMissing('ap_drops', c, d);
+    db.exec(`CREATE TABLE IF NOT EXISTS payment_run_schedules (
+        id            TEXT PRIMARY KEY,
+        run_id        TEXT NOT NULL REFERENCES payment_runs(id),
+        line_id       TEXT NOT NULL REFERENCES payment_run_lines(id),
+        method        TEXT NOT NULL CHECK (method IN ('qbo_ach','debit_card','check','other')),
+        scheduled_on  TEXT NOT NULL,
+        reference     TEXT,
+        scheduled_by  TEXT,
+        scheduled_by_id TEXT,
+        scheduled_at  TEXT NOT NULL DEFAULT (datetime('now')),
+        replaced_at   TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_payment_run_schedules_line ON payment_run_schedules(line_id);
+      CREATE TRIGGER IF NOT EXISTS payment_run_schedules_no_delete BEFORE DELETE ON payment_run_schedules
+        BEGIN SELECT RAISE(ABORT, 'A scheduled payment is kept for good'); END;
+      CREATE TABLE IF NOT EXISTS prodough_deposit_applications (
+        id            TEXT PRIMARY KEY,
+        deposit_id    TEXT NOT NULL REFERENCES prodough_deposits(id),
+        invoice_id    TEXT NOT NULL REFERENCES production_invoices(id),
+        amount        REAL NOT NULL CHECK (amount > 0),
+        applied_by    TEXT,
+        applied_at    TEXT NOT NULL DEFAULT (datetime('now')),
+        released_at   TEXT,
+        released_by   TEXT,
+        release_reason TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_deposit_applications_deposit ON prodough_deposit_applications(deposit_id);
+      CREATE INDEX IF NOT EXISTS idx_deposit_applications_invoice ON prodough_deposit_applications(invoice_id);
+      CREATE TRIGGER IF NOT EXISTS prodough_deposit_applications_no_delete BEFORE DELETE ON prodough_deposit_applications
+        BEGIN SELECT RAISE(ABORT, 'A deposit application is kept for good'); END;`);
+    // Part E stamped a whole deposit with applied_to; carry those into the
+    // balance as applications, once (idempotent: only deposits with none yet).
+    db.prepare(`INSERT INTO prodough_deposit_applications (id, deposit_id, invoice_id, amount, applied_by, applied_at)
+      SELECT lower(hex(randomblob(16))), d.id, d.applied_to, COALESCE(d.paid_amount, d.amount), 'part E (whole deposit)', COALESCE(d.applied_at, datetime('now'))
+      FROM prodough_deposits d JOIN production_invoices i ON i.id = d.applied_to
+      WHERE d.applied_to IS NOT NULL AND i.status <> 'void'
+        AND NOT EXISTS (SELECT 1 FROM prodough_deposit_applications a WHERE a.deposit_id = d.id)`).run();
     // D-160: two terminal statuses for a drop that is money owed TO us — a
     // receivable handed to the partner ledger (`to_partner_ar`) and one for a
     // customer who is not a partner (`receivable_other`). The CHECK is widened

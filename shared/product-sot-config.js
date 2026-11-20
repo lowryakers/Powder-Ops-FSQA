@@ -37,7 +37,7 @@ export const INDICATOR_POLICY_MODE = 'reject';
 export const BRAND_DEFAULT = 'ProDough';
 
 /** Pricing — written only by the configured price editor, never by a token or bot. */
-export const PRICE_FIELDS = ['price_fob_case', 'price_fob_unit', 'price_wholesale_case', 'price_wholesale_unit', 'price_srp'];
+export const PRICE_FIELDS = ['price_fob_case', 'price_fob_unit', 'price_wholesale_case', 'price_wholesale_unit', 'price_srp', 'price_prodough_allin'];
 /** External item numbers — written only by the configured item-number editor. */
 export const ITEM_NO_FIELDS = ['distributor_item_no', 'wholesale_item_no'];
 /** Inner and case GS1 codes — pasted by a person or loaded from the GS1 export, never by a token. */
@@ -67,7 +67,7 @@ export const FIELD_LABEL = {
   case_cube: 'Case cube (ft³)', case_weight: 'Case weight (lb)', ti: 'Ti', hi: 'Hi', pallet_qty: 'Cases per pallet',
   shelf_life_months_commercial: 'Shelf life (months, sell sheet)',
   price_fob_case: 'FOB case ($)', price_fob_unit: 'FOB unit ($)', price_wholesale_case: 'Wholesale case ($)',
-  price_wholesale_unit: 'Wholesale unit ($)', price_srp: 'SRP ($)',
+  price_wholesale_unit: 'Wholesale unit ($)', price_srp: 'SRP ($)', price_prodough_allin: 'All-in price to ProDough, per unit ($)',
   distributor_item_no: 'Distributor item no', wholesale_item_no: 'Wholesale item no',
 };
 

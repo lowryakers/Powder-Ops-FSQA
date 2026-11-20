@@ -227,12 +227,23 @@ export const TOKEN_DELETE_EXEMPT = Object.freeze([
 ]);
 const deleteExempt = (req) => req.method === 'DELETE' && TOKEN_DELETE_EXEMPT.some(e => e.re.test(req.path));
 
+// The ONE decision a token may make (D-366): the Controller bot closing a
+// payment run. Closing records that nothing is left — the route refuses while
+// anything is open — and only a token holding the payment-run-controller grant
+// is let past here (the route then checks it is the Controller named in the
+// settings). Every other "close" stays a person's. check:apitokens pins this
+// list to exactly this one route.
+export const TOKEN_DECISION_EXEMPT = Object.freeze([
+  { method: 'POST', re: /^\/payment-run\/runs\/[^/]+\/close$/, grant: 'payment-run-controller', label: 'POST /api/payment-run/runs/:id/close — the Controller bot closes a finished run' },
+]);
+const decisionExempt = (req) => TOKEN_DECISION_EXEMPT.some(e => e.method === req.method && e.re.test(req.path) && (req.auth?.grants || []).includes(e.grant));
+
 export const TOKEN_DENY = Object.freeze([
   { category: 'delete', test: (req) => req.method === 'DELETE' && !deleteExempt(req), label: 'every DELETE but TOKEN_DELETE_EXEMPT (removing its own reaction)' },
   { category: 'delete', test: (req) => nonGet(req) && segmentsOf(req.path).some(s => DELETE_SET.has(s)),
     label: 'any non-GET route with a segment in DELETE_SEGMENTS' },
-  { category: 'decision', test: (req) => nonGet(req) && segmentsOf(req.path).some(s => DECISION_SET.has(s)),
-    label: 'any non-GET route with a segment in DECISION_SEGMENTS' },
+  { category: 'decision', test: (req) => nonGet(req) && !decisionExempt(req) && segmentsOf(req.path).some(s => DECISION_SET.has(s)),
+    label: 'any non-GET route with a segment in DECISION_SEGMENTS (but TOKEN_DECISION_EXEMPT, for a token holding its grant)' },
   // Every method, GET included: a bot has no business listing keys either.
   { category: 'token_admin', test: (req) => /^\/(api-tokens|kiosk-tokens)(\/|$)/.test(req.path),
     label: '/api/api-tokens and /api/kiosk-tokens — every method' },

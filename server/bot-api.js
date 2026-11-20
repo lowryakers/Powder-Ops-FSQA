@@ -66,6 +66,23 @@ export const BOT_ROUTES = Object.freeze([
   { method: 'POST', path: '/api/training/drafts', module: 'training (edit)', scope: 'write' },
   { method: 'PUT', path: '/api/training/drafts/:id', module: 'training (edit)', scope: 'write' },
   { method: 'POST', path: '/api/training/drafts/:id/materials', module: 'training (edit)', scope: 'write' },
+  // D-366: the Controller bot's payment run (writes need the payment-run-controller grant).
+  { method: 'GET', path: '/api/payment-run', module: 'payment-run', scope: 'read' },
+  { method: 'GET', path: '/api/payment-run/runs/:id/closeout', module: 'payment-run', scope: 'read' },
+  { method: 'GET', path: '/api/payment-run/production-invoices', module: 'payment-run', scope: 'read' },
+  { method: 'PUT', path: '/api/payment-run/bank-balance', module: 'payment-run (controller)', scope: 'write' },
+  { method: 'POST', path: '/api/payment-run/runs/:id/bank-balance', module: 'payment-run (controller)', scope: 'write' },
+  { method: 'POST', path: '/api/payment-run/bills/:id/suggest-class', module: 'payment-run (controller)', scope: 'write' },
+  { method: 'POST', path: '/api/payment-run/runs/:id/received', module: 'payment-run (controller)', scope: 'write' },
+  { method: 'POST', path: '/api/payment-run/runs/:id/lines/:lineId/schedule', module: 'payment-run (controller)', scope: 'write' },
+  { method: 'POST', path: '/api/payment-run/runs/:id/lines/:lineId/paid', module: 'payment-run (controller)', scope: 'write' },
+  { method: 'POST', path: '/api/payment-run/runs/:id/lines/:lineId/qbo', module: 'payment-run (controller)', scope: 'write' },
+  { method: 'POST', path: '/api/payment-run/runs/:id/lines/:lineId/proof', module: 'payment-run (controller)', scope: 'write' },
+  { method: 'POST', path: '/api/payment-run/runs/:id/deposit-invoice', module: 'payment-run (controller)', scope: 'write' },
+  { method: 'POST', path: '/api/payment-run/runs/:id/close', module: 'payment-run (controller)', scope: 'write' },
+  { method: 'POST', path: '/api/payment-run/production-invoices', module: 'payment-run (controller)', scope: 'write' },
+  { method: 'POST', path: '/api/payment-run/production-invoices/:id/recheck', module: 'payment-run (controller)', scope: 'write' },
+  { method: 'POST', path: '/api/payment-run/production-invoices/:id/invoiced', module: 'payment-run (controller)', scope: 'write' },
   // D-303: SOP staging, with the sops-edit grant. Owners approve with their password.
   { method: 'POST', path: '/api/documents', module: 'sops (edit)', scope: 'write' },
   { method: 'PUT', path: '/api/documents/:id', module: 'sops (edit)', scope: 'write' },
@@ -339,7 +356,22 @@ export const WRITE_AREAS = Object.freeze([
   // Reactions (D-170): the token's own reaction, on a message in a channel it is
   // a member of. The handler only ever touches the caller's own row.
   { area: 'messages', method: 'POST', re: /^\/comms\/messages\/[^/]+\/reactions$/, label: 'POST /api/comms/messages/:id/reactions' },
-  { area: 'messages', method: 'DELETE', re: /^\/comms\/messages\/[^/]+\/reactions\/[^/]+$/, label: 'DELETE /api/comms/messages/:id/reactions/:emoji' },
+  { area: 'messages', method: 'DELETE', re: /^\/comms\/messages\/[^/]+\/reactions\/[^/]+$/, label: 'DELETE /api/comms/messages/:id/reactions/:emoji' },  // D-366: the Controller bot (payment-run-controller grant). The routes also check
+  // the token's account is the Controller named in the payment run settings.
+  // Never: approve, "I've sent", bank details, must-pays, void, confirming a class.
+  { area: 'payment-run', grant: 'payment-run-controller', method: 'PUT', re: /^\/payment-run\/bank-balance$/, label: 'PUT /api/payment-run/bank-balance — this week\'s bank balance (payment-run-controller grant)' },
+  { area: 'payment-run', grant: 'payment-run-controller', method: 'POST', re: /^\/payment-run\/runs\/[^/]+\/bank-balance$/, label: 'POST /api/payment-run/runs/:id/bank-balance — the balance on a prepared run (payment-run-controller grant)' },
+  { area: 'payment-run', grant: 'payment-run-controller', method: 'POST', re: /^\/payment-run\/bills\/[^/]+\/suggest-class$/, label: 'POST /api/payment-run/bills/:id/suggest-class — a suggestion only; Jake confirms (payment-run-controller grant)' },
+  { area: 'payment-run', grant: 'payment-run-controller', method: 'POST', re: /^\/payment-run\/runs\/[^/]+\/received$/, label: 'POST /api/payment-run/runs/:id/received — the transfer landed (evidence required) (payment-run-controller grant)' },
+  { area: 'payment-run', grant: 'payment-run-controller', method: 'POST', re: /^\/payment-run\/runs\/[^/]+\/lines\/[^/]+\/schedule$/, label: 'POST /api/payment-run/runs/:id/lines/:lineId/schedule — a payment scheduled in QBO Bill Pay (payment-run-controller grant)' },
+  { area: 'payment-run', grant: 'payment-run-controller', method: 'POST', re: /^\/payment-run\/runs\/[^/]+\/lines\/[^/]+\/paid$/, label: 'POST /api/payment-run/runs/:id/lines/:lineId/paid — a bill paid (payment-run-controller grant)' },
+  { area: 'payment-run', grant: 'payment-run-controller', method: 'POST', re: /^\/payment-run\/runs\/[^/]+\/lines\/[^/]+\/qbo$/, label: 'POST /api/payment-run/runs/:id/lines/:lineId/qbo — the QBO payment number (payment-run-controller grant)' },
+  { area: 'payment-run', grant: 'payment-run-controller', method: 'POST', re: /^\/payment-run\/runs\/[^/]+\/lines\/[^/]+\/proof$/, label: 'POST /api/payment-run/runs/:id/lines/:lineId/proof — proof of payment (payment-run-controller grant)' },
+  { area: 'payment-run', grant: 'payment-run-controller', method: 'POST', re: /^\/payment-run\/runs\/[^/]+\/deposit-invoice$/, label: 'POST /api/payment-run/runs/:id/deposit-invoice — the Deposit invoice number from QBO (payment-run-controller grant)' },
+  { area: 'payment-run', grant: 'payment-run-controller', method: 'POST', re: /^\/payment-run\/runs\/[^/]+\/close$/, label: 'POST /api/payment-run/runs/:id/close — close a finished run (TOKEN_DECISION_EXEMPT) (payment-run-controller grant)' },
+  { area: 'payment-run', grant: 'payment-run-controller', method: 'POST', re: /^\/payment-run\/production-invoices\/?$/, label: 'POST /api/payment-run/production-invoices — a closed MO or shipped order read from MRPEasy (payment-run-controller grant)' },
+  { area: 'payment-run', grant: 'payment-run-controller', method: 'POST', re: /^\/payment-run\/production-invoices\/[^/]+\/recheck$/, label: 'POST /api/payment-run/production-invoices/:id/recheck — a held order, corrected (payment-run-controller grant)' },
+  { area: 'payment-run', grant: 'payment-run-controller', method: 'POST', re: /^\/payment-run\/production-invoices\/[^/]+\/invoiced$/, label: 'POST /api/payment-run/production-invoices/:id/invoiced — the QBO invoice number (payment-run-controller grant)' },
 ]);
 
 /** The grants an entry needs, any-of: [] for an ungranted entry. */

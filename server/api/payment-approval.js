@@ -2,6 +2,7 @@
 // no account. The link carries a hashed, expiring, single-use token (see
 // server/payment-approval.js), and every act here logs the typed name, the
 // address and the device. Nothing here can freeze, send or cancel a run.
+import { depositBalance } from '../production-invoices.js';
 import { Router } from 'express';
 import { getDb, logAudit } from '../db.js';
 import { runByToken, runView, untick, approve, recordTransfer, logEvent, announce } from '../payment-approval.js';
@@ -23,7 +24,9 @@ router.get('/:token', (req, res) => {
   const run = open(req, res); if (!run) return;
   const db = getDb();
   logEvent(db, run.id, 'opened', meta(req));
-  res.json(runView(db, run.id, { forApprover: true }));
+  // D-366: the deposit balance (paid Deposits not yet taken off a production invoice), shown to Danny too.
+  const bal = depositBalance(db);
+  res.json({ ...runView(db, run.id, { forApprover: true }), deposit_balance: { balance: bal.balance, count: bal.deposits.length, oldest: bal.oldest } });
 });
 
 router.post('/:token/lines/:lineId', (req, res) => {

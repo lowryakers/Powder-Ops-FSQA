@@ -301,6 +301,7 @@ function lineOf(ctx, d) {
     what: [...new Set(what)].slice(0, 3).join('; ') || null,
     remit: (() => { const r = readRemit(d.extracted_text); return r ? { routing: r.routing, account_last4: r.account_last4, evidence: r.evidence } : null; })(),
     bill_class: d.bill_class, bill_class_by: d.bill_class_by, suggested_class: suggestClass(ctx, d),
+    bot_suggestion: d.bill_class_bot ? { value: d.bill_class_bot, why: d.bill_class_bot_why, by: d.bill_class_bot_by, at: d.bill_class_bot_at } : null,
     ...ev,
   };
 }
@@ -433,7 +434,14 @@ export function saveSettings(db, patch) {
   const next = { ...getSettings(db) };
   const user = (id) => (id ? db.prepare('SELECT id FROM users WHERE id = ? AND is_active = 1').get(String(id))?.id || null : null);
   if ('bill_owner_id' in patch) next.bill_owner_id = user(patch.bill_owner_id);
-  if ('controller_id' in patch) next.controller_id = user(patch.controller_id);
+  if ('controller_id' in patch) {
+    // D-366: the Controller is a BOT (its own token with the payment-run-controller grant).
+    const id = user(patch.controller_id);
+    if (id && !db.prepare('SELECT 1 FROM api_tokens WHERE user_id = ? LIMIT 1').get(id)) {
+      throw Object.assign(new Error('The Controller is a bot: pick the bot account that holds a token (mint its token in Settings → Bot API tokens first).'), { status: 400, code: 'CONTROLLER_NOT_BOT' });
+    }
+    next.controller_id = id;
+  }
   if ('notify_ids' in patch) next.notify_ids = [...new Set((patch.notify_ids || []).map(user).filter(Boolean))];
   if ('approver_phone' in patch) {
     const digits = String(patch.approver_phone || '').replace(/\D/g, '').slice(-10);
@@ -458,7 +466,7 @@ export function saveSettings(db, patch) {
   if ('production_price_field' in patch) {
     // D-365: which price-list column prices a ProDough production invoice. Chosen, never guessed.
     const f = patch.production_price_field || null;
-    if (f && !['price_fob_unit', 'price_wholesale_unit'].includes(f)) throw Object.assign(new Error('The ProDough price list must be the FOB unit price or the wholesale unit price.'), { status: 400 });
+    if (f && !['price_prodough_allin', 'price_fob_unit', 'price_wholesale_unit'].includes(f)) throw Object.assign(new Error('The ProDough price list must be the all-in price, the FOB unit price or the wholesale unit price.'), { status: 400 });
     next.production_price_field = f;
   }
   db.prepare('INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)').run(SETTINGS_KEY, JSON.stringify(next));

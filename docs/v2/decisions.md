@@ -11300,3 +11300,60 @@ the Production invoices section of the payment run page.
 - Person-only (a token is refused). Recording: whoever works the AP queue. The QBO invoice and a void: an admin or
   the Controller. Rows cannot be deleted. The Monday close-out digest lists held orders and invoices not yet created.
 `verify:productioninvoices` (43, live + browser at 1280 and 390; control: main has no `/production-invoices`, 404).
+
+## D-366 — The Controller is a bot; deposits are one running balance; the production invoice is all in (20 Nov 2026)
+Two corrections to the payment run (D-360 … D-365), from Lowry.
+
+**1. "Controller" means the Controller BOT** — Grok Bot, with its own ReadyDoc token and its own QBO user — not a person.
+- **A new token grant, `payment-run-controller`** ("Payment run: Controller bot"), ticked by an admin in Settings.
+- **Only on the account named Controller.** The setting is now "Controller bot" and refuses an account that holds no
+  token (`CONTROLLER_NOT_BOT`). A token with the grant on any other account is refused (`not_controller`).
+- **What the bot may do:**
+  - the bank balance;
+  - the transfer landing — **evidence required**: a bank-feed line or a file, stored and hashed on the run;
+  - **scheduling** a payment (new: method, date, Bill Pay reference; a reschedule keeps the old row, marked replaced);
+  - recording a payment paid, with proof and the QBO payment number;
+  - the Deposit invoice number;
+  - recording closed MOs / shipped orders read from MRPEasy, and checking a held one again;
+  - the production invoice number;
+  - suggesting a bill's class;
+  - closing a finished run.
+- **Closing is the one "close" a token may make:** `TOKEN_DECISION_EXEMPT` in `no-token-approve.js`, one route, only for
+  a token holding the grant. `check:apitokens` pins it to exactly that route.
+- **Bots never** approve, press "I've sent", record changed bank details, change the must-pay list, void an invoice or
+  confirm a bill's class. Void is now an admin signed in who is not a bot account (it was the Controller).
+- **Still a person's:** sending a bill back, marking a Deposit or production invoice paid by hand (manual mode), and
+  booking the shortfall.
+- **People:**
+  - **Jake** (the bill owner in the settings) confirms a bill's class, with admins as backup. Anyone else on the AP
+    queue is refused (`not_bill_owner`). The bot's suggestion is stored apart (`ap_drops.bill_class_bot`) and shown
+    beside the bill, never as the class.
+  - **Lowry** keeps the must-pay list, checks the run before sending, verifies bank details and voids.
+  - **Danny** approves and transfers.
+- **Lowry's Monday task:** each open close-out item carries `who` (bot · person · danny). The Monday message goes to the
+  notify list (Lowry) and splits what only a person can do from what is waiting on the bot. An admin can do every bot
+  step by hand.
+
+**2. Deposits (the accountant confirmed).**
+- The weekly materials invoice is a Deposit.
+- When an MO closes, the production invoice is the **full all-in price** of the finished product, materials included,
+  **minus deposits**. It is never labour or machine time only.
+- **One running ProDough deposit balance**: the PAID Deposits less what has been taken off. Lowry chose paid only; an
+  invoiced-unpaid Deposit is shown beside the balance and never counted.
+- **Recording the QBO invoice number takes the balance off automatically, oldest first, in part if need be**
+  (`prodough_deposit_applications`, one row per application). This **supersedes part E's "the Controller picks which
+  deposits"**; `deposit_ids` is refused (`DEPOSITS_AUTOMATIC`).
+- **Every `to_invoice` order shows `deposit_preview`**, and the QBO invoice is made for its `amount_due`.
+  `expected_amount_due` guards a balance that moved in between (`409 AMOUNT_DUE_CHANGED`).
+- **A void releases its applications** (stamped, never deleted); the money is back on the balance.
+- Part E's whole-deposit `applied_to` stamps are carried into applications once at boot.
+- **The balance is on the run page and on Danny's page.**
+- **The all-in column:** `products.price_prodough_allin` ("All-in price to ProDough, per unit"), gated like every price
+  (D-342), is offered first in the price-list setting. FOB unit and wholesale unit stay as options, because they are
+  ProDough's selling prices to its own customers. Jarvis is confirming which column holds the all-in price; **every
+  order stays held until an admin sets it**.
+
+Bot surface: 16 routes in `BOT_ROUTES`, documented in `docs/bot-api.md` (Controller bot section), with MCP tools.
+Verified by `verify:paymentcontroller` (new; S3 stand-in, browser at 1280 and 390), `verify:productioninvoices` and
+`verify:paymentcloseout` (updated for the bot Controller and automatic deposits), `check:apitokens`, `check:botapi` and
+`check:botmcp`. Control: on main the grant does not exist, and every bot write is 403.

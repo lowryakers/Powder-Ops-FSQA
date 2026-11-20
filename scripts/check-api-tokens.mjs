@@ -23,8 +23,8 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import Database from 'better-sqlite3';
 import { SCOPES, FORBIDDEN_SCOPES, normalizeScopes, rateKindOf } from '../server/api-tokens.js';
-import { approveRouteFor, APPROVE_SEGMENTS, tokenDenyFor, DELETE_SEGMENTS, TOKEN_DELETE_EXEMPT, ARTWORK_TOKEN_STATUSES, AP_DROP_TOKEN_STATUSES } from '../server/middleware/no-token-approve.js';
-import { WRITE_AREAS, writeAreaFor } from '../server/bot-api.js';
+import { approveRouteFor, APPROVE_SEGMENTS, tokenDenyFor, DELETE_SEGMENTS, TOKEN_DELETE_EXEMPT, TOKEN_DECISION_EXEMPT, ARTWORK_TOKEN_STATUSES, AP_DROP_TOKEN_STATUSES } from '../server/middleware/no-token-approve.js';
+import { WRITE_AREAS, writeAreaFor, areaGrants } from '../server/bot-api.js';
 import { isPublicPath } from '../server/middleware/auth.js';
 import { scanRoutes, concretePath, namesApproval } from './lib/route-scan.mjs';
 
@@ -94,6 +94,16 @@ t('TOKEN_DELETE_EXEMPT holds exactly one entry, and it matches exactly one mount
 t('…and that route is on WRITE_AREAS (messages), so it is reachable and nothing else is',
   writeAreaFor(fakeReq('DELETE', '/api/comms/messages/m1/reactions/%E2%9C%85'))?.area === 'messages'
   && !tokenDenyFor(fakeReq('DELETE', '/api/comms/messages/m1/reactions/%E2%9C%85')));
+// D-366: the only decision a token may make is the Controller bot closing a finished payment run.
+const decExempt = reachable.filter(r => r.method !== 'GET' && TOKEN_DECISION_EXEMPT.some(e => e.method === r.method && e.re.test(concretePath(r.path).replace(/^\/api/, ''))));
+t('TOKEN_DECISION_EXEMPT holds exactly one entry, matching exactly one mounted route: closing a payment run',
+  TOKEN_DECISION_EXEMPT.length === 1 && decExempt.length === 1 && decExempt[0].path === '/api/payment-run/runs/:id/close' && TOKEN_DECISION_EXEMPT[0].grant === 'payment-run-controller',
+  decExempt.map(r => r.path).join('; '));
+t('…a token WITHOUT the grant is still refused that close (decision)', tokenDenyFor(fakeReq('POST', '/api/payment-run/runs/r1/close'))?.category === 'decision');
+t('…a token WITH the grant is let past the deny list there, and nowhere else',
+  !tokenDenyFor({ ...fakeReq('POST', '/api/payment-run/runs/r1/close'), auth: { grants: ['payment-run-controller'] } })
+  && tokenDenyFor({ ...fakeReq('POST', '/api/cleanup/close'), auth: { grants: ['payment-run-controller'] } })?.category === 'decision'
+  && tokenDenyFor({ ...fakeReq('POST', '/api/payment-run/production-invoices/x/void'), auth: { grants: ['payment-run-controller'] } })?.category === 'delete');
 t('deleting the MESSAGE itself stays denied (delete)', tokenDenyFor(fakeReq('DELETE', '/api/comms/messages/m1'))?.category === 'delete');
 t('editing a message is not open to a token (not on WRITE_AREAS)', !writeAreaFor(fakeReq('PUT', '/api/comms/messages/m1')));
 t('adding a reaction is on WRITE_AREAS (messages)', writeAreaFor(fakeReq('POST', '/api/comms/messages/m1/reactions'))?.area === 'messages');
@@ -143,6 +153,9 @@ const buckets = { denied: 0, write_areas: 0, public: 0, default_denied: 0 };
 const overlap = [];
 for (const r of routes) {
   const req = fakeReq(r.method, concretePath(r.path), okBody(r));
+  // A granted area is judged as the token that holds its grant would be (D-366).
+  const area0 = writeAreaFor(req);
+  if (area0) req.auth = { grants: areaGrants(area0) };
   const isPub = isPublicPath(fakeReq(r.method, r.path));
   const isDenied = !!(approveRouteFor(req) || tokenDenyFor(req));
   const inAreas = !!writeAreaFor(req);
