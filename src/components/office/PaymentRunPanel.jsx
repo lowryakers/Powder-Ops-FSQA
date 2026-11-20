@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useApiGet, apiPost, apiPut, apiUpload, apiFetch } from '../../hooks/useApi';
 import { withSignature } from '../../lib/signature';
 import { openFile } from '../../lib/openFile';
-import { AlertTriangle, Lock, XCircle, Info, Plus, Settings2, Send, Snowflake, Ban, Copy, Landmark } from 'lucide-react';
+import { AlertTriangle, Lock, XCircle, Info, Plus, Settings2, Send, Snowflake, Ban, Copy, Landmark, X, CheckCircle2 } from 'lucide-react';
 
 // The weekly payment run (D-360, PR A): the bills in QuickBooks, checked, and
 // placed — must-pays locked at the top, flagged bills first, the rest after;
@@ -209,87 +209,189 @@ function Score({ score }) {
   );
 }
 
-function SettingsBox({ data, onDone }) {
+// The run's settings live in a drawer (opened from the header), not at the
+// foot of the page. Save is offered only when something differs from what is
+// stored, names how many things will change, and afterwards lists each change
+// as "was → now" so a click is never a silent one.
+const SETTING_FIELDS = [
+  ['owner', 'Bill owner'], ['ctrl', 'Controller bot'], ['phone', "Approver's mobile"],
+  ['mode', 'Deposit invoice to ProDough'], ['depMode', 'How the transfer is recorded'],
+  ['priceField', 'Price list for production invoices'], ['review', 'Review before the text goes to Danny'],
+];
+const fromSettings = (s) => ({
+  owner: s.bill_owner?.id || '', ctrl: s.controller?.id || '', phone: s.approver_phone || '',
+  mode: s.materials_mode || 'weekly_at_cost', depMode: s.deposit_payment || 'transfer',
+  priceField: s.production_price_field || '', review: s.review_before_send !== false,
+});
+
+function settingsSummary(s) {
+  return [
+    `Bill owner: ${s.bill_owner?.name || 'nobody set'}`,
+    `Controller bot: ${s.controller?.name || 'none set'}${s.controller && !s.controller_is_bot ? ' (not a bot)' : ''}`,
+    `Price list: ${s.production_price_field ? (s.production_price_fields?.[s.production_price_field] || s.production_price_field) : 'not chosen, every order held'}`,
+  ];
+}
+
+function SettingsDrawer({ data, onDone, onClose }) {
   const { data: people } = useApiGet('/users/technicians');
   const s = data.settings;
-  const [owner, setOwner] = useState(s.bill_owner?.id || '');
-  const [ctrl, setCtrl] = useState(s.controller?.id || '');
-  const [phone, setPhone] = useState(s.approver_phone || '');
-  const [mode, setMode] = useState(s.materials_mode || 'weekly_at_cost');
-  const [depMode, setDepMode] = useState(s.deposit_payment || 'transfer');
-  const [priceField, setPriceField] = useState(s.production_price_field || '');
-  const [review, setReview] = useState(s.review_before_send !== false);
+  const [base, setBase] = useState(() => fromSettings(s));
+  const [form, setForm] = useState(base);
+  const [saving, setSaving] = useState(false);
+  const [result, setResult] = useState(null); // { at, changes: [{label, from, to}] } | { error }
   const [bal, setBal] = useState('');
-  const saveBal = async () => { try { await apiPut('/payment-run/bank-balance', { amount: bal }); setBal(''); onDone(); } catch (e) { alert(e.message); } };
-  const saveFeed = async () => { try { await apiPut('/payment-run/bank-balance', { from_feed: true }); onDone(); } catch (e) { alert(e.message); } };
-  const save = async () => {
-    try {
-      await apiPut('/payment-run/settings', { bill_owner_id: owner || null, controller_id: ctrl || null, approver_phone: phone || null, materials_mode: mode, deposit_payment: depMode, production_price_field: priceField || null, review_before_send: review });
-      onDone();
-    }
-    catch (e) { alert(e.message); }
+  const [balDone, setBalDone] = useState(null);
+  const set = (k) => (e) => { setForm(f => ({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value })); setResult(null); };
+
+  const ownerOpts = people || [];
+  const ctrlOpts = [...(s.controller_candidates || []), ...(s.controller && !(s.controller_candidates || []).some(p => p.id === s.controller.id) ? [{ id: s.controller.id, name: `${s.controller.name} (not a bot)` }] : [])];
+  const show = {
+    owner: v => ownerOpts.find(p => p.id === v)?.name || (v ? (s.bill_owner?.id === v ? s.bill_owner.name : 'someone') : 'nobody'),
+    ctrl: v => ctrlOpts.find(p => p.id === v)?.name || (v ? 'an account' : 'no bot'),
+    phone: v => v || `blank (the flavor approver's number${s.approver_number ? `, ${s.approver_number}` : ''})`,
+    mode: v => s.materials_modes?.[v] || v,
+    depMode: v => s.deposit_payment_modes?.[v] || v,
+    priceField: v => (v ? s.production_price_fields?.[v] || v : 'not chosen (every order held)'),
+    review: v => (v ? 'on' : 'off'),
   };
+  const changes = SETTING_FIELDS.filter(([k]) => form[k] !== base[k]).map(([k, label]) => ({ key: k, label, from: show[k](base[k]), to: show[k](form[k]) }));
+  const dirty = changes.length > 0;
+
+  const close = () => { if (!dirty || window.confirm('Close without saving? Your changes to the settings will be lost.')) onClose(); };
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
+  });
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await apiPut('/payment-run/settings', { bill_owner_id: form.owner || null, controller_id: form.ctrl || null, approver_phone: form.phone || null, materials_mode: form.mode, deposit_payment: form.depMode, production_price_field: form.priceField || null, review_before_send: form.review });
+      setResult({ at: new Date(), changes });
+      setBase(form);
+      onDone();
+    } catch (e) { setResult({ error: e.message }); }
+    finally { setSaving(false); }
+  };
+  const saveBal = async (body) => {
+    try { const r = await apiPut('/payment-run/bank-balance', body); setBal(''); setBalDone({ amount: r?.amount }); onDone(); }
+    catch (e) { setBalDone({ error: e.message }); }
+  };
+
+  const field = 'mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm';
+  const changed = (k) => (form[k] !== base[k] ? ' border-amber-400 bg-amber-50' : '');
+  const label = 'block text-xs font-medium text-slate-700';
+  const hint = 'mt-0.5 block text-[11px] text-slate-500';
   return (
-    <section className="space-y-2 rounded-lg border border-slate-200 p-3" data-payment-settings>
-      <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800"><Settings2 className="h-4 w-4" />Who is told</h3>
-      <p className="text-xs text-slate-600">Problems go to: {s.notify.map(u => u.name).join(', ') || 'nobody'}{s.notify_set ? '' : ' (default)'}.</p>
-      {data.can_admin ? (
-        <div className="grid gap-2 sm:grid-cols-2">
-          <label className="text-xs text-slate-600">Bill owner (confirms each bill's class; fixes bill problems)
-            <select id="pr-owner" value={owner} onChange={e => setOwner(e.target.value)} className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm">
-              <option value="">— nobody set —</option>
-              {(people || []).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </label>
-          <label className="text-xs text-slate-600">Controller bot (its token needs the "Payment run: Controller bot" grant)
-            <select id="pr-ctrl" value={ctrl} onChange={e => setCtrl(e.target.value)} className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm" data-controller-bot>
-              <option value="">— no bot set —</option>
-              {(s.controller_candidates || []).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-              {s.controller && !(s.controller_candidates || []).some(p => p.id === s.controller.id) && <option value={s.controller.id}>{s.controller.name} (not a bot)</option>}
-            </select>
-          </label>
-          <label className="text-xs text-slate-600">Approver's mobile (blank = the flavor approver's number)
-            <input id="pr-phone" value={phone} onChange={e => setPhone(e.target.value)} inputMode="tel" placeholder={s.approver_number || '10-digit number'}
-              className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm" data-approver-phone />
-          </label>
-          <label className="text-xs text-slate-600">Deposit invoice to ProDough
-            <select id="pr-mode" value={mode} onChange={e => setMode(e.target.value)} className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm">
-              {Object.entries(s.materials_modes || {}).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-            <span className="mt-0.5 block text-[11px] text-slate-500">A deposit each week; the final bill after the production run takes the deposits off. Whether materials stay at cost is still to be decided.</span>
-          </label>
-          <label className="text-xs text-slate-600">How the transfer is recorded against the deposit
-            <select id="pr-depmode" value={depMode} onChange={e => setDepMode(e.target.value)} className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm" data-deposit-mode>
-              {Object.entries(s.deposit_payment_modes || {}).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-            <span className="mt-0.5 block text-[11px] text-slate-500">Until the accountant confirms.</span>
-          </label>
-          <label className="text-xs text-slate-600">Price list for ProDough production invoices
-            <select id="pr-pricefield" value={priceField} onChange={e => setPriceField(e.target.value)} className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm" data-price-field>
-              <option value="">— not chosen (every order is held) —</option>
-              {Object.entries(s.production_price_fields || {}).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-            <span className="mt-0.5 block text-[11px] text-slate-500">The column on Products that prices each unit. ProDough's PO must show the same price.</span>
-          </label>
-          <label className="flex items-start gap-2 text-xs text-slate-600 sm:col-span-2">
-            <input id="pr-review" type="checkbox" checked={review} onChange={e => setReview(e.target.checked)} className="mt-0.5 h-4 w-4 shrink-0" data-review-before-send />
-            <span>I review the run before the text goes to Danny. Off: the run goes to Danny on its own on run day, if a bank balance was entered that week.</span>
-          </label>
-          <div><button type="button" onClick={save} className="rounded bg-slate-800 px-3 py-1 text-sm text-white" data-settings-save>Save</button></div>
-          <div className="flex flex-wrap items-end gap-2 sm:col-span-2 border-t border-slate-100 pt-2">
-            <label className="text-xs text-slate-600">This week's bank balance (rides onto the run when it is prepared)
-              <input id="pr-balance" value={bal} onChange={e => setBal(e.target.value)} inputMode="decimal" placeholder="e.g. 12500"
-                className="mt-1 block w-40 rounded border border-slate-300 px-2 py-1 text-sm" />
-            </label>
-            <button type="button" disabled={bal === ''} onClick={saveBal} className="rounded border border-slate-300 px-3 py-1 text-sm disabled:opacity-40" data-balance-save>Save balance</button>
-            {data.feed_balance && <button type="button" onClick={saveFeed} className="rounded border border-slate-300 px-3 py-1 text-sm" data-balance-feed>Use the bank feed: {money(data.feed_balance.amount)}{data.feed_balance.as_of ? ` (as of ${data.feed_balance.as_of})` : ''}</button>}
-            {s.bank_balance && <span className="text-[11px] text-slate-500">{money(s.bank_balance.amount)} entered by {s.bank_balance.by}, {new Date(s.bank_balance.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>}
-          </div>
+    <div className="fixed inset-0 z-[60] flex" data-settings-drawer>
+      <div className="flex-1 bg-black/30" onClick={close} />
+      <div className="flex h-full w-full flex-col bg-white shadow-2xl sm:w-[min(480px,92vw)]">
+        <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3">
+          <Settings2 className="h-4 w-4 shrink-0 text-slate-600" />
+          <h3 className="flex-1 font-semibold text-slate-900">Payment run settings</h3>
+          <button type="button" onClick={close} className="p-1.5 text-slate-400 hover:text-slate-900" aria-label="Close" data-settings-close><X className="h-5 w-5" /></button>
         </div>
-      ) : (
-        <p className="text-xs text-slate-600">Bill owner: {s.bill_owner?.name || 'nobody set'} · Controller bot: {s.controller?.name || 'none set'}{s.controller && !s.controller_is_bot ? ' (not a bot: pick the bot account)' : ''} · Danny's text goes to {s.approver_number || 'no number set'}</p>
-      )}
-    </section>
+        <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4">
+          <p className="text-xs text-slate-600">Problems go to: {s.notify.map(u => u.name).join(', ') || 'nobody'}{s.notify_set ? '' : ' (default)'}.</p>
+          {!data.can_admin ? (
+            <ul className="space-y-1 text-sm text-slate-700">
+              {settingsSummary(s).map(l => <li key={l}>{l}</li>)}
+              <li>Danny's text goes to {s.approver_number || 'no number set'}</li>
+              <li className="text-xs text-slate-500">Only an admin changes these.</li>
+            </ul>
+          ) : (<>
+            <fieldset className="space-y-3">
+              <legend className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">People</legend>
+              <label className={label}>Bill owner
+                <select id="pr-owner" value={form.owner} onChange={set('owner')} className={field + changed('owner')}>
+                  <option value="">— nobody set —</option>
+                  {ownerOpts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+                <span className={hint}>Confirms each bill's class and fixes bill problems. Admins are the backup.</span>
+              </label>
+              <label className={label}>Controller bot
+                <select id="pr-ctrl" value={form.ctrl} onChange={set('ctrl')} className={field + changed('ctrl')} data-controller-bot>
+                  <option value="">— no bot set —</option>
+                  {ctrlOpts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+                <span className={hint}>Its token needs the "Payment run: Controller bot" grant.</span>
+              </label>
+              <label className={label}>Approver's mobile
+                <input id="pr-phone" value={form.phone} onChange={set('phone')} inputMode="tel" placeholder={s.approver_number || '10-digit number'}
+                  className={field + changed('phone')} data-approver-phone />
+                <span className={hint}>Blank uses the flavor approver's number.</span>
+              </label>
+            </fieldset>
+            <fieldset className="space-y-3">
+              <legend className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">ProDough</legend>
+              <label className={label}>Deposit invoice to ProDough
+                <select id="pr-mode" value={form.mode} onChange={set('mode')} className={field + changed('mode')}>
+                  {Object.entries(s.materials_modes || {}).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+                <span className={hint}>A deposit each week; the final bill after the production run takes the deposits off. Whether materials stay at cost is still to be decided.</span>
+              </label>
+              <label className={label}>How the transfer is recorded against the deposit
+                <select id="pr-depmode" value={form.depMode} onChange={set('depMode')} className={field + changed('depMode')} data-deposit-mode>
+                  {Object.entries(s.deposit_payment_modes || {}).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+                <span className={hint}>Until the accountant confirms.</span>
+              </label>
+              <label className={label}>Price list for production invoices
+                <select id="pr-pricefield" value={form.priceField} onChange={set('priceField')} className={field + changed('priceField')} data-price-field>
+                  <option value="">— not chosen (every order is held) —</option>
+                  {Object.entries(s.production_price_fields || {}).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+                <span className={hint}>The column on Products that prices each unit. ProDough's PO must show the same price.</span>
+              </label>
+            </fieldset>
+            <fieldset>
+              <legend className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Sending to Danny</legend>
+              <label className={`flex items-start gap-2 rounded p-1 text-xs text-slate-700${changed('review')}`}>
+                <input id="pr-review" type="checkbox" checked={form.review} onChange={set('review')} className="mt-0.5 h-4 w-4 shrink-0" data-review-before-send />
+                <span>I review the run before the text goes to Danny. Off: the run goes to Danny on its own on run day, if a bank balance was entered that week.</span>
+              </label>
+            </fieldset>
+            <fieldset className="space-y-2 border-t border-slate-100 pt-4">
+              <legend className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">This week's bank balance</legend>
+              <p className="text-[11px] text-slate-500">Rides onto the run when it is prepared. Saved on its own.</p>
+              {s.bank_balance && <p className="text-xs text-slate-700" data-balance-current>Now: <span className="font-medium tabular-nums">{money(s.bank_balance.amount)}</span>, entered by {s.bank_balance.by}, {new Date(s.bank_balance.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>}
+              <div className="flex flex-wrap items-center gap-2">
+                <input id="pr-balance" value={bal} onChange={e => { setBal(e.target.value); setBalDone(null); }} inputMode="decimal" placeholder="e.g. 12500"
+                  className="w-36 rounded border border-slate-300 px-2 py-1.5 text-sm" />
+                <button type="button" disabled={bal === ''} onClick={() => saveBal({ amount: bal })} className="rounded border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40" data-balance-save>Save balance</button>
+                {data.feed_balance && <button type="button" onClick={() => saveBal({ from_feed: true })} className="rounded border border-slate-300 px-3 py-1.5 text-sm" data-balance-feed>Use the bank feed: {money(data.feed_balance.amount)}</button>}
+              </div>
+              {balDone && (balDone.error
+                ? <p className="text-xs text-red-700">{balDone.error}</p>
+                : <p className="flex items-center gap-1 text-xs text-green-700" data-balance-saved><CheckCircle2 className="h-3.5 w-3.5" />Balance saved{balDone.amount != null ? `: ${money(balDone.amount)}` : ''}.</p>)}
+            </fieldset>
+          </>)}
+        </div>
+        {data.can_admin && (
+          <div className="space-y-2 border-t border-slate-200 bg-slate-50 px-4 py-3">
+            {result?.error && <p className="text-xs text-red-700" data-settings-error>{result.error}</p>}
+            {result?.changes && (
+              <div className="rounded border border-green-200 bg-green-50 p-2 text-xs text-green-900" data-settings-saved>
+                <p className="flex items-center gap-1 font-medium"><CheckCircle2 className="h-3.5 w-3.5" />Saved at {result.at.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</p>
+                <ul className="mt-1 space-y-0.5">
+                  {result.changes.map(c => <li key={c.key}><span className="font-medium">{c.label}:</span> <span className="text-green-800/70 line-through">{c.from}</span> → {c.to}</li>)}
+                </ul>
+              </div>
+            )}
+            {dirty && !result && (
+              <p className="text-xs text-amber-800" data-settings-pending>{changes.length} unsaved change{changes.length === 1 ? '' : 's'}: {changes.map(c => c.label).join(', ')}.</p>
+            )}
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={save} disabled={!dirty || saving} className="rounded bg-slate-800 px-4 py-1.5 text-sm text-white disabled:opacity-40" data-settings-save>
+                {saving ? 'Saving…' : dirty ? `Save ${changes.length} change${changes.length === 1 ? '' : 's'}` : 'No changes'}
+              </button>
+              {dirty && <button type="button" onClick={() => { setForm(base); setResult(null); }} className="text-sm text-slate-600 hover:text-slate-900">Undo</button>}
+              <button type="button" onClick={close} className="ml-auto text-sm text-slate-600 hover:text-slate-900">Close</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -752,6 +854,7 @@ function ProductionInvoices({ onDone }) {
 
 export default function PaymentRunPanel() {
   const { data, loading, error, refresh } = useApiGet('/payment-run');
+  const [showSettings, setShowSettings] = useState(false);
   if (loading) return <div className="p-6 text-sm text-slate-500">Loading…</div>;
   if (error) return <div className="p-6 text-sm text-red-700">{error}</div>;
   if (!data) return null;
@@ -760,12 +863,16 @@ export default function PaymentRunPanel() {
   return (
     <div className="mx-auto max-w-5xl space-y-5 p-4" data-payment-run>
       <header className="space-y-1">
+        <div className="flex flex-wrap items-start justify-between gap-2">
         <h2 className="text-lg font-semibold text-slate-900">Payment run · {day(run.date)}{run.time ? ` at ${run.time}` : ''}</h2>
+        <button type="button" onClick={() => setShowSettings(true)} className="flex items-center gap-1.5 rounded border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50" data-settings-open><Settings2 className="h-4 w-4" />Settings</button>
+        </div>
         <p className="text-sm text-slate-600">
           {run.payroll_week ? 'Payroll week: the run is Friday at noon.' : 'The run is Thursday.'}
           {run.moved ? ' Moved past a plant holiday.' : ''} Only bills entered in QuickBooks are listed.
           {data.not_in_qbo ? <> <span className="font-medium text-slate-800">{data.not_in_qbo} bill{data.not_in_qbo === 1 ? '' : 's'} in AP Drop not in QuickBooks yet.</span></> : null}
         </p>
+        <p className="text-xs text-slate-500" data-settings-summary>{settingsSummary(data.settings).join(' · ')}</p>
       </header>
 
       <div className="grid gap-2 sm:grid-cols-5" data-run-totals>
@@ -791,7 +898,7 @@ export default function PaymentRunPanel() {
         <Score score={data.score} />
         <BankDetails data={data} />
       </div>
-      <SettingsBox data={data} onDone={refresh} />
+      {showSettings && <SettingsDrawer data={data} onDone={refresh} onClose={() => setShowSettings(false)} />}
     </div>
   );
 }
