@@ -24,6 +24,23 @@ router.get('/types', (req, res) => {
   })));
 });
 
+// The machines a lookup can name (D-375): every piece of equipment, and every
+// calibration instrument no machine owns (a scale check names its instrument,
+// and most scales are not on the equipment list). Only for somebody who can
+// read a record type that is found by machine — otherwise there is nothing to
+// look up and no reason to hand out the list.
+router.get('/machines', (req, res) => {
+  const canUse = RECORD_TYPES.some(t => (t.filters || []).includes('equipment') && canReadType(req.user, t));
+  if (!canUse) return res.json([]);
+  const db = getDb();
+  const equipment = db.prepare(`SELECT id, name, asset_id AS asset_number, type, status, asset_kind FROM equipment
+    ORDER BY lower(name), asset_id`).all().map(e => ({ ...e, kind: e.asset_kind === 'zone' ? 'area' : 'equipment' }));
+  const instruments = db.prepare(`SELECT id, name, asset_number, type, status FROM calibration_instruments
+    WHERE equipment_id IS NULL OR equipment_id NOT IN (SELECT id FROM equipment) ORDER BY lower(name), asset_number`).all()
+    .map(i => ({ ...i, kind: 'instrument' }));
+  res.json([...equipment, ...instruments]);
+});
+
 router.get('/', (req, res) => {
   if (req.query.type && !String(req.query.type).split(',').every(recordType)) {
     return res.status(400).json({ error: `Unknown record type. Known: ${RECORD_TYPES.map(t => t.type).join(', ')}.` });

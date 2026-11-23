@@ -4486,6 +4486,10 @@ since go-live and in the last 90 days, and gives a verdict: never used / machine
 - **A lookup is never capped (D-373, `server/record-cap.js`)**: with `lot`, `equipment` or `person` set, `GET /api/records`
   returns every row. An unfiltered read is capped at 500 per type and names each cut type in `truncated_types`. **A new
   type's LIMIT reads `rowLimit(q)`**, never its own number. `verify:recordscap` (12).
+- **Quality → Look up records (D-375, `RecordLookupPanel.jsx`)** is the one lookup by lot, machine or person over
+  `GET /api/records`. **A machine is a declared filter** (`filters: ['equipment']`; scale and calibration match instruments
+  linked to the machine). Every response names `not_searched` types. **A new record type adds its modules to
+  `shared/record-modules.js`** or `verify:recordlookup` fails. `verify:recordlookup` (44).
 - **Receiving sign-off and disposal approvals ask for the password (D-374)** — sign and revoke, with meaning + fingerprint
   (`review_meaning`/`review_hash`; `approvals[role].meaning/hash`). The record interface cannot do either. A verify that
   signs one must send `signature_password`. `verify:signgates` (30).

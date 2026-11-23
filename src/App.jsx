@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { setParam } from './lib/deepLink.js';
-import { Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Building2, LifeBuoy, PenLine, UserPlus2, HeartHandshake, Activity} from 'lucide-react';
+import { FileSearch, Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Building2, LifeBuoy, PenLine, UserPlus2, HeartHandshake, Activity} from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -14,6 +14,7 @@ import { visibleModuleIds, canViewModule, hasExplicitGrant, canSeeQaReview, canS
 import { registerNavAccess } from './lib/navAccess';
 import { OPT_IN_SET } from '../shared/opt-in-modules.js';
 import { defaultModuleIds } from '../shared/default-modules.js';
+import { RECORD_MODULES } from '../shared/record-modules.js';
 import { deptLabel } from './constants/departments';
 import LoginScreen from './components/LoginScreen.jsx';
 import AuditorLogin from './components/AuditorLogin.jsx';
@@ -37,6 +38,7 @@ const CalibrationPanel = lazy(() => import('./components/compliance/CalibrationP
 const SanitationPanel = lazy(() => import('./components/compliance/SanitationPanel.jsx'));
 const QAInspectionsPanel = lazy(() => import('./components/compliance/QAInspectionsPanel.jsx'));
 const QAReviewPanel = lazy(() => import('./components/compliance/QAReviewPanel.jsx'));
+const RecordLookupPanel = lazy(() => import('./components/compliance/RecordLookupPanel.jsx'));
 const LOTOPanel = lazy(() => import('./components/compliance/LOTOPanel.jsx'));
 const AuditLogPanel = lazy(() => import('./components/compliance/AuditLogPanel.jsx'));
 const OperatorView = lazy(() => import('./components/compliance/OperatorView.jsx'));
@@ -170,6 +172,11 @@ const NAV_GROUPS = [
       // Sits at the top of Quality on purpose: it's the "what do I owe today"
       // screen, and it spans the logs below it.
       { id: 'qa-review', label: 'QA Review', icon: ClipboardCheck, keywords: 'sign off signature verify pending queue backlog' },
+      // One lookup across every record type the person can open (D-375, move 04):
+      // a lot, a machine or a person. It shows for anyone who can open at least
+      // one module behind a record type; the server decides what each search returns.
+      { id: 'records', label: 'Look up records', icon: FileSearch, keywords: 'lookup search lot batch machine equipment person recall mock recall trace traceability everything about',
+        visible: (u) => !u?.is_external && RECORD_MODULES.some(m => canViewModule(u, m)) },
       { id: 'coa', label: 'COA / Lab Testing', icon: TestTubes },
       { id: 'quality-schedules', label: 'Quality Schedules', icon: CalendarClock },
       // Food safety culture (D-211, SQF 2.1.1.2): the month the review reads,
@@ -842,6 +849,7 @@ const RULE_WHY = {
   'sign-out': 'Comes with Sign In/Out, Knives or Out now',
   'office-requests': 'Every supervisor',
   'qa-review': 'QA / Quality department',
+  records: 'Anyone who can open a module that holds records',
   'doc-review': 'Document Control, or a QA / Document Control supervisor',
   'controlled-changes': 'Document Control department, or a QA supervisor (to review a value changed in the app)',
   'change-register': 'Document Control / QA department, or any supervisor',
@@ -2208,6 +2216,7 @@ function App() {
           {resolvedTab === 'office-requests' && <OfficeRequestsPanel />}
           {resolvedTab === 'qa-inspections' && <QAInspectionsPanel />}
           {resolvedTab === 'qa-review' && <QAReviewPanel />}
+          {resolvedTab === 'records' && <RecordLookupPanel />}
           {(resolvedTab === 'accounting' || HUB_OF[resolvedTab] === 'accounting') &&
             <ModuleHub key={`acct-${resolvedTab}`} hubId="accounting" user={user} initialTab={resolvedTab} badges={notifications?.badges} />}
           {resolvedTab === 'procurement' && <ProcurementPanel />}

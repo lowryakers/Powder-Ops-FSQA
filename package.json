@@ -197,6 +197,7 @@
     "verify:recordinterface": "node scripts/verify-record-interface.mjs",
     "verify:recordscap": "node scripts/verify-records-cap.mjs",
     "verify:signgates": "node scripts/verify-sign-gates.mjs",
+    "verify:recordlookup": "node scripts/verify-record-lookup.mjs",
     "verify:culture": "node scripts/verify-food-safety-culture.mjs",
     "verify:moduleusage": "node scripts/verify-module-usage.mjs",
     "verify:taskrouting": "node scripts/verify-task-routing.mjs",
