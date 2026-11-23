@@ -20,11 +20,20 @@ const t = (n, c, d = '') => { if (c) { pass++; console.log('  ✓ ' + n); } else
 
 console.log('── the interface ──');
 const { RECORD_TYPES, INTERFACE } = await import('../server/record-interface.js');
+// A type implements all five, or documents the subset (D-369): `signs: false`
+// when no signature exists for it (no sign / revoke), `filedBy: ['task']` when
+// completing its task is the only door (no file). Anything else missing fails.
 for (const rt of RECORD_TYPES) {
-  const missing = [...INTERFACE, 'get', 'canRead'].filter(k => typeof rt[k] !== 'function');
-  t(`${rt.type} implements file, sign, revoke, retrieve, describe`, !missing.length && Array.isArray(rt.modules) && rt.modules.length > 0, missing.join(', '));
+  const allowed = new Set([...(rt.signs === false ? ['sign', 'revoke'] : []),
+    ...(Array.isArray(rt.filedBy) && !rt.filedBy.some(d => d !== 'task') ? ['file'] : [])]);
+  const missing = [...INTERFACE, 'get', 'canRead'].filter(k => typeof rt[k] !== 'function' && !allowed.has(k));
+  const extra = [...allowed].filter(k => typeof rt[k] === 'function');
+  t(`${rt.type} implements ${rt.signs === false || allowed.size ? 'its documented subset' : 'file, sign, revoke, retrieve, describe'}`,
+    !missing.length && !extra.length && Array.isArray(rt.modules) && rt.modules.length > 0, missing.concat(extra).join(', '));
 }
-t('sanitation, scale and qms are the adopted types', RECORD_TYPES.map(r => r.type).sort().join() === 'qms,sanitation,scale');
+const ADOPTED = 'banned_list_review,culture_check,emp,food_defense_challenge,gmp_walk,management_review,qms,sanitation,scale';
+t('the adopted types: sanitation, scale, qms and the six check records', RECORD_TYPES.map(r => r.type).sort().join() === ADOPTED, RECORD_TYPES.map(r => r.type).sort().join());
+t('no check record claims a signature', RECORD_TYPES.filter(r => ['emp', 'gmp_walk', 'banned_list_review', 'culture_check', 'management_review', 'food_defense_challenge'].includes(r.type)).every(r => r.signs === false && !r.sign && !r.revoke));
 
 const { default: Database } = await import('better-sqlite3');
 const db = new Database(process.env.DBPATH);
@@ -68,7 +77,7 @@ r = await call('GET', `/records?from=${today}`, undefined, A);
 const list = r.body;
 const rs = list?.records?.find(x => x.type === 'sanitation' && x.id === san?.id);
 const rk = list?.records?.find(x => x.type === 'scale' && x.id === sc?.id);
-t('GET /api/records lists the types', r.status === 200 && !!rs && !!rk && list.types.join() === 'sanitation,scale,qms', `${r.status} ${JSON.stringify(list?.types)}`);
+t('GET /api/records lists the types', r.status === 200 && !!rs && !!rk && list.types.join() === 'sanitation,scale,qms,emp,gmp_walk,banned_list_review,culture_check,management_review,food_defense_challenge', `${r.status} ${JSON.stringify(list?.types)}`);
 t('the clean is described: form, place, who, result, unsigned', rs?.form && /^FORM 108/.test(rs.form) && rs.place === 'Restrooms'
   && rs.performed_by === 'Zuleika Test' && rs.result === 'pass' && rs.signed_by === null, JSON.stringify(rs));
 t('the scale check is described with its form and revision', rk?.form === 'FORM 417-01 V4' && rk.place === 'Batching 1' && rk.performed_by === 'Bernardo Test', JSON.stringify(rk));
@@ -76,7 +85,8 @@ const sanToday = db.prepare('SELECT COUNT(*) n FROM sanitation_records WHERE sub
 const scaleToday = db.prepare('SELECT COUNT(*) n FROM scale_verifications WHERE substr(performed_at,1,10) >= ?').get(today).n;
 const qmsToday = db.prepare('SELECT COUNT(*) n FROM qms_records WHERE substr(COALESCE(record_date, created_at),1,10) >= ?').get(today).n;
 t('the counts agree with the modules\' own tables', list.records.filter(x => x.type === 'sanitation').length === sanToday
-  && list.records.filter(x => x.type === 'scale').length === scaleToday && list.total === sanToday + scaleToday + qmsToday, `${list.total} vs ${sanToday}+${scaleToday}+${qmsToday}`);
+  && list.records.filter(x => x.type === 'scale').length === scaleToday
+  && list.records.filter(x => ['sanitation', 'scale', 'qms'].includes(x.type)).length === sanToday + scaleToday + qmsToday, `${list.total} vs ${sanToday}+${scaleToday}+${qmsToday}`);
 r = await call('GET', `/records?from=${today}&person=bernardo test`, undefined, A);
 t('the person filter finds what they did (case-insensitive)', r.body?.records?.length === 1 && r.body.records[0].id === sc.id, JSON.stringify(r.body?.records?.map(x => x.id)));
 r = await call('GET', `/records?from=${today}&form=FORM 417`, undefined, A);
@@ -160,12 +170,109 @@ r = await call('POST', '/qa-review/sign', { source: 'sign-out-equipment', ids: [
 const devAfter = db.prepare('SELECT approvals FROM qms_records WHERE id = ?').get(dev.id).approvals;
 t('the sign-out queue cannot sign a deviation id handed to it', !/quality/.test(devAfter || ''), devAfter);
 
+console.log('\n── the check records (D-369), each through its own door ──');
+const { MANAGEMENT_REVIEW_ITEMS, FOOD_DEFENSE_ITEMS, GMP_WALK_ITEMS, CULTURE_SAFETY_ITEMS } = await import('../shared/check-forms.js');
+// EMP by hand (the route), with a result.
+r = await call('POST', '/check-records/emp/samples', { zone: 'zone1', test: (await call('GET', '/check-records/emp/zones', undefined, A)).body.zones.zone1.tests[0],
+  site: 'Blender 1', sampled_on: today, lab: 'CTLA', sampled_by: 'Emma Sampler' }, A);
+const emp = r.body?.sample;
+t('an EMP sample is filed on its own route', r.status === 201 && !!emp?.id, `${r.status} ${JSON.stringify(r.body).slice(0, 140)}`);
+// Management review and Food Defense by hand (the routes).
+r = await call('POST', '/check-records/management-reviews', { reviewed_on: today, reviewed_by: 'Mona Review', attendees: 'Adam, Maria',
+  items: Object.fromEntries(MANAGEMENT_REVIEW_ITEMS.map(i => [i.key, { result: 'done' }])) }, A);
+const mr = r.body;
+t('a management review is filed by hand', r.status === 201 && !!mr?.id, `${r.status} ${JSON.stringify(r.body).slice(0, 140)}`);
+r = await call('POST', '/check-records/food-defense/challenges', { performed_on: today, performed_by: 'Fran Defense', team: 'QA', methods: ['mock_scenario'],
+  outcome: 'Plan held', findings: 'None', corrective_actions: 'None',
+  items: Object.fromEntries(FOOD_DEFENSE_ITEMS.map(i => [i.key, { result: 'done' }])) }, A);
+const fd = r.body;
+t('a Food Defense challenge is filed by hand', r.status === 201 && !!fd?.id, `${r.status} ${JSON.stringify(r.body).slice(0, 140)}`);
+// Culture check from its page.
+const allC = Object.fromEntries([...GMP_WALK_ITEMS, ...CULTURE_SAFETY_ITEMS].map(i => [i.key, { result: 'c' }]));
+r = await call('POST', '/culture/checks', { department: 'batching', items: allC, observation_note: 'Good', talk_date: today, talk_attendees: 5 }, A);
+const cc = r.body;
+t('a culture check is filed on its page', r.status === 201 && !!cc?.id, `${r.status} ${JSON.stringify(r.body).slice(0, 140)}`);
+// GMP walk and list review: completing their task is the only door.
+const sched = (title) => db.prepare('SELECT id FROM quality_schedules WHERE title = ?').get(title)?.id;
+db.prepare(`INSERT INTO work_orders (id, title, description, priority, due_date, procedure_steps, task_group, quality_schedule_id, status)
+  VALUES ('ri-walk', 'Weekly GMP Walk-through', 'x', 'normal', date('now'), '[]', 'qa', ?, 'open')`).run(sched('Weekly GMP Walk-through'));
+db.prepare(`INSERT INTO work_orders (id, title, description, priority, due_date, procedure_steps, task_group, quality_schedule_id, status)
+  VALUES ('ri-list', 'Banned/Prohibited Substance List Review', 'x', 'normal', date('now'), '[]', 'qa', ?, 'open')`).run(sched('Banned/Prohibited Substance List Review'));
+r = await call('POST', '/pm/work-orders/ri-walk/complete-and-recur', { completed_by: 'Rec Admin', check: { area: 'Production 1',
+  items: Object.fromEntries(GMP_WALK_ITEMS.map(i => [i.key, { result: 'c' }])) } }, A);
+t('a GMP walk is filed by completing its task', r.status === 200, `${r.status} ${JSON.stringify(r.body).slice(0, 160)}`);
+r = await call('POST', '/pm/work-orders/ri-list/complete-and-recur', { completed_by: 'Rec Admin', check: { editions: { nsf306_annex_c: 'Annex C 2025',
+  nfl_nflpa: 'NFL 2026', mlb: 'MLB 2026', wada: 'WADA 2026' }, changes_found: 'none', actions_taken: 'none', materials_rechecked: true } }, A);
+t('a list review is filed by completing its task', r.status === 200, `${r.status} ${JSON.stringify(r.body).slice(0, 160)}`);
+
+r = await call('GET', `/records?from=${today}&type=emp,gmp_walk,banned_list_review,culture_check,management_review,food_defense_challenge`, undefined, A);
+const cr = r.body?.records || [];
+const one = (type, id) => cr.find(x => x.type === type && (!id || x.id === id));
+const ce = one('emp', emp?.id);
+t('the EMP sample is on GET /api/records: form, site, zone, who, when, result, unsigned',
+  ce?.form === 'FORM 604-01 V1' && ce.site === 'Blender 1' && ce.place && ce.performed_by === 'Emma Sampler' && ce.performed_at === today && ce.result === 'pending' && ce.signed_by === null, JSON.stringify(ce));
+t('the management review is there with its clause and revision', /SQF Code 2\.1\.2\.1 · DRAFT-1/.test(one('management_review', mr?.id)?.form || '') && one('management_review', mr?.id)?.performed_by === 'Mona Review', JSON.stringify(one('management_review', mr?.id)));
+t('the Food Defense challenge is there with its SOP revision', one('food_defense_challenge', fd?.id)?.form === 'SOP 434 V3' && one('food_defense_challenge', fd?.id)?.result === 'Plan held');
+t('the culture check is there with its department as the place', one('culture_check', cc?.id)?.place === 'batching' && one('culture_check', cc?.id)?.result === 'compliant', JSON.stringify(one('culture_check', cc?.id)));
+t('the GMP walk is there with its area and revision', one('gmp_walk')?.place === 'Production 1' && one('gmp_walk')?.form === 'GMP walk-through DRAFT-1' && one('gmp_walk')?.performed_by === 'Rec Admin', JSON.stringify(one('gmp_walk')));
+t('the list review is there', one('banned_list_review')?.result === 'no changes', JSON.stringify(one('banned_list_review')));
+const countOf = (table, col) => db.prepare(`SELECT COUNT(*) n FROM ${table} WHERE substr(${col},1,10) >= ?`).get(today).n;
+const counts = { emp: countOf('emp_samples', 'sampled_on'), gmp_walk: countOf('gmp_walkthroughs', 'walked_on'), banned_list_review: countOf('banned_list_reviews', 'reviewed_on'),
+  culture_check: countOf('culture_checks', 'checked_on'), management_review: countOf('management_reviews', 'reviewed_on'), food_defense_challenge: countOf('food_defense_challenges', 'performed_on') };
+t('each check type\'s count agrees with its own table', Object.entries(counts).every(([k, n]) => cr.filter(x => x.type === k).length === n), JSON.stringify(counts));
+r = await call('GET', `/records?from=${today}&type=emp&site=Blender 1`, undefined, A);
+t('an EMP sample is found by its site', r.body?.records?.length >= 1 && r.body.records.every(x => x.site === 'Blender 1'));
+r = await call('GET', `/records?from=${today}&type=emp,gmp_walk,culture_check&signed=yes`, undefined, A);
+t('asking for signed check records finds none — none is signed', r.body?.records?.length === 0);
+r = await call('GET', `/records/emp/${emp?.id}`, undefined, A);
+t('one EMP sample, described', r.status === 200 && r.body?.id === emp?.id && r.body.type === 'emp');
+r = await call('GET', `/records/emp/${emp?.id}/pdf`, undefined, A);
+t('…and it prints', r.status === 200 || r.status === null, `${r.status}`);
+r = await call('GET', '/records/types', undefined, A);
+const ty = Object.fromEntries((r.body || []).map(x => [x.type, x]));
+t('/records/types says the check records do not sign, and where the walk is filed', ty.emp?.signs === false && JSON.stringify(ty.gmp_walk?.filed_by) === '["task"]'
+  && !ty.emp.implements.includes('sign') && ty.emp.implements.includes('file') && !ty.gmp_walk.implements.includes('file'), JSON.stringify([ty.emp, ty.gmp_walk]));
+
+console.log('\n── through the interface: the same writer, no second one ──');
+const { recordType } = await import('../server/record-interface.js');
+// The writer audits through the app's own connection; a second handle holding a
+// transaction would lock it out, so the interface is driven on getDb().
+const { getDb } = await import('../server/db.js');
+const appDb = getDb();
+const rows0 = countOf('management_reviews', 'reviewed_on');
+const viaIf = recordType('management_review').file(appDb, { id: 'ri-a', name: 'Rec Admin', role: 'admin', department: 'quality' },
+  { reviewed_on: today, attendees: 'A', items: Object.fromEntries(MANAGEMENT_REVIEW_ITEMS.map(i => [i.key, { result: 'done' }])) });
+t('filing through the interface lands in the same table, settled the same way', viaIf.status === 201 && countOf('management_reviews', 'reviewed_on') === rows0 + 1
+  && db.prepare('SELECT source FROM management_reviews WHERE id = ?').get(viaIf.id)?.source === 'paper', JSON.stringify(viaIf).slice(0, 160));
+const opFile = recordType('emp').file(appDb, { id: 'ri-o', name: 'Rec Operator', role: 'operator', department: 'warehouse' }, { zone: 'zone1', test: 'x', site: 'y', sampled_on: today });
+t('the interface keeps the module\'s rule: an operator cannot file an EMP sample', opFile.status === 403);
+
+// No second writer (D-369): each check table is inserted into only where it was
+// before this change. The interface added none.
+{
+  const fs = await import('fs'); const path = await import('path');
+  const files = [];
+  const walk = (d) => { for (const f of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, f.name); if (f.isDirectory()) walk(p); else if (/\.js$/.test(f.name)) files.push(p); } };
+  walk('server'); files.push('server.js');
+  const WRITERS = { emp_samples: ['server/api/check-records.js', 'server/check-records.js'], gmp_walkthroughs: ['server/check-records.js'],
+    banned_list_reviews: ['server/check-records.js'], culture_checks: ['server/culture.js'], management_reviews: ['server/check-records.js'],
+    food_defense_challenges: ['server/check-records.js'] };
+  const found = Object.fromEntries(Object.keys(WRITERS).map(tb => [tb, files.filter(f => fs.readFileSync(f, 'utf8').includes(`INSERT INTO ${tb}`)).sort()]));
+  t('no second writer: each check table is inserted into only by its existing writer', Object.entries(WRITERS).every(([tb, w]) => JSON.stringify(found[tb]) === JSON.stringify([...w].sort())), JSON.stringify(found));
+  t('…and the record interface writes no record row itself', !/INSERT INTO|UPDATE \w+ SET/.test(fs.readFileSync('server/record-interface.js', 'utf8') + fs.readFileSync('server/check-record-types.js', 'utf8')));
+}
+
 console.log('\n── who reads what ──');
 r = await call('GET', '/records/types', undefined, C);
-t('a calibration-only account sees only the scale type', JSON.stringify(r.body?.map(x => x.type)) === '["scale"]'
-  && r.body?.[0]?.implements?.length === 5, JSON.stringify(r.body));
+// The check-records route admits calibration holders (server.js mount), and the
+// interface reads by the same rule rather than a narrower copy of it.
+t('a calibration-only account sees scale and the check records it can open on their own route — never sanitation, qms or culture',
+  JSON.stringify(r.body?.map(x => x.type)) === '["scale","emp","gmp_walk","banned_list_review","management_review","food_defense_challenge"]'
+  && r.body?.[0]?.implements?.length === 5, JSON.stringify(r.body?.map(x => x.type)));
 r = await call('GET', `/records?from=${today}`, undefined, C);
-t('…and only scale records in the list', r.body?.records?.length > 0 && r.body.records.every(x => x.type === 'scale'));
+t('…and no sanitation, qms or culture records in the list', r.body?.records?.length > 0 && r.body.records.every(x => !['sanitation', 'qms', 'culture_check'].includes(x.type)));
+r = await call('GET', `/records/culture_check/${cc?.id}`, undefined, C);
+t('…a culture check is a 404 to them (only the concern log\'s readers read it)', r.status === 404);
 r = await call('GET', `/records/sanitation/${san.id}`, undefined, C);
 t('…and a sanitation record is a 404, not a 403', r.status === 404);
 r = await call('GET', `/records?from=${today}`, undefined, O);

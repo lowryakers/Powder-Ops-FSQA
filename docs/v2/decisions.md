@@ -11394,3 +11394,24 @@ morning's dailies coming was somebody happening to open a list.
   overdue sweep still runs in its GET (`api/calibration.js`, `periodically`).
 - `verify:spinep1b` (23; the control — `main` — fails 12). `verify-coa-phase1`'s "no `kind` on a signing source" fails
   on `main` too and is not this change.
+
+## D-369 — The check records join the record interface; none of them signs (23 Nov 2026)
+Single-spine pack P2, step A (move 02). The record interface held sanitation, scale and every QMS form; the check
+records — EMP samples, GMP walks, banned-list reviews, culture checks, management reviews, Food Defense challenges —
+were outside it, so `GET /api/records` could not list them and a mock-recall lookup would miss them.
+- **Six types in `server/check-record-types.js`, one factory**, spread into `RECORD_TYPES`. Each calls the writer it
+  already had: `fileEmpSampleByHand` and `fileReviewByHand` (the bodies of the two by-hand routes in
+  `api/check-records.js`, moved into functions the routes now call), `fileCultureCheck` (the page). **No new writer**:
+  a source scan in `verify:recordinterface` asserts each table is inserted into only where it was before.
+- **No check record carries a signature**, so none implements `sign` / `revoke`; each declares `signs: false`. EMP's
+  "resulted by" is a laboratory result entered, described as such, not a signature. **No approval was invented.**
+- **The GMP walk and the list review have no `file`** (`filedBy: ['task']`): completing the task is the only door, and
+  a second one would let the record exist with no task behind it. `/records/types` reports `signs` and `filed_by`.
+- **Read by the rule of each record's own door**: the check-records route admits pm / coa / sanitation / calibration /
+  quality-schedules holders, so the interface does too (`canReadAny`); culture checks are read by the concern log's
+  readers (`canReviewCulture`). `canReadType` honours a type's `canReadAny`.
+- **Described for a later lookup**: form and revision, place (zone / area / department), site for EMP, who, when,
+  result; `lot` is null — no check record carries one. A banned-list review whose "changes found" reads "none" is
+  "no changes".
+- `verify:recordinterface` (76; the control — `main` — fails). `verify-check-records`' GMP-walks tab assertion counted
+  rows before they loaded and now waits for them.

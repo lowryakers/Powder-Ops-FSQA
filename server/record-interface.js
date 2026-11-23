@@ -16,10 +16,13 @@
 // THE PASSWORD IS THE CALLER'S. `sign` assumes the route in front of it has
 // already run gateSignature; the interface is a service, not a door.
 //
-// Adopted so far: sanitation records, scale verifications, and every QMS form
+// Adopted so far: sanitation records, scale verifications, every QMS form
 // (deviations, non-conformances, on-hold, the sign-out logs, DCRs, flavour
-// approvals, organoleptic tests — one `qms` type, narrowed by `qms_type`). A new type is one entry in RECORD_TYPES that implements all five; the
-// shape check in verify:recordinterface refuses an entry that does not.
+// approvals, organoleptic tests — one `qms` type, narrowed by `qms_type`), and
+// the six check records (D-369, server/check-record-types.js). A new type is
+// one entry in RECORD_TYPES that implements all five, or declares `signs: false`
+// (no signature exists) and/or `filedBy: ['task']` (filed only by completing its
+// task); the shape check in verify:recordinterface refuses anything else.
 import { createSanitationRecord, verifySanitationRecord, revokeSanitationVerification } from './api/sanitation.js';
 import { recordScaleVerification, verifyScaleCheck, revokeScaleVerification } from './api/scale-verification.js';
 import { getScaleForm } from './scale-forms.js';
@@ -27,6 +30,7 @@ import { createQmsRecord, signQmsApproval, revokeQmsApproval } from './api/qms.j
 import { QMS_TYPES, getType } from './qms-config.js';
 import { formLabel } from '../shared/form-registry.js';
 import { moduleLevel } from './module-access.js';
+import { CHECK_RECORD_TYPES } from './check-record-types.js';
 
 export const INTERFACE = ['file', 'sign', 'revoke', 'retrieve', 'describe'];
 export const MAX_ROWS = 500;
@@ -244,12 +248,19 @@ export const RECORD_TYPES = [
     },
     describe: describeQms,
   },
+  // The check records (D-369): six kinds, each through the writer it already
+  // had. They carry no signature, so they declare `signs: false` and leave
+  // `sign` / `revoke` out — the documented subset, not a gap.
+  ...CHECK_RECORD_TYPES,
 ];
 
 export const recordType = (type) => RECORD_TYPES.find(t => t.type === type) || null;
 
 /** May this person read records of this type at all? */
-export const canReadType = (user, t) => t.modules.some(m => moduleLevel(user, m));
+export const canReadType = (user, t) => (t.canReadAny ? !!t.canReadAny(user) : t.modules.some(m => moduleLevel(user, m)));
+
+/** The verbs a type implements. A type with `signs: false` documents why it has no sign/revoke. */
+export const verbsOf = (t) => INTERFACE.filter(k => typeof t[k] === 'function');
 
 /**
  * One list across every adopted type, newest first, each row described the same

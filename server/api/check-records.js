@@ -28,7 +28,7 @@ const router = Router();
 
 // Same ladder as the quality schedules themselves: Quality leadership,
 // supervisors and admins act; anyone who reached the module reads.
-function canAct(user) {
+export function canAct(user) {
   if (!user) return false;
   if (user.role === 'admin' || user.role === 'supervisor') return true;
   return ['qa', 'quality'].includes((user.department || '').toLowerCase());
@@ -145,34 +145,44 @@ router.post('/emp/samples/:id/result', requireAct, async (req, res) => {
   res.json({ sample: sampleShape(row), outcome: out.grade.outcome, capa: out.capa ? { id: out.capa.id, capa_number: out.capa.capa_number } : null });
 });
 
-// A historical or off-schedule result, filed by hand: the 2026 water and air
-// results the plant already holds. Graded on the way in like any other.
-router.post('/emp/samples', requireAct, (req, res) => {
-  const db = getDb();
-  const b = req.body || {};
+/**
+ * File one EMP sample by hand (D-207 move 02: the route and the record
+ * interface both call this — one writer). Returns { status, error } or
+ * { status: 201, sample, capa }.
+ */
+export function fileEmpSampleByHand(db, user, b = {}) {
+  if (!canAct(user)) return { status: 403, error: 'Quality access required' };
   const zone = EMP_ZONES[b.zone] ? b.zone : null;
-  if (!zone) return res.status(400).json({ error: 'Pick a zone.' });
+  if (!zone) return { status: 400, error: 'Pick a zone.' };
   const test = clean(b.test, 120);
-  if (!test || !EMP_ZONES[zone].tests.includes(test)) return res.status(400).json({ error: `Pick one of the tests the form lists for that zone: ${EMP_ZONES[zone].tests.join(', ')}.` });
+  if (!test || !EMP_ZONES[zone].tests.includes(test)) return { status: 400, error: `Pick one of the tests the form lists for that zone: ${EMP_ZONES[zone].tests.join(', ')}.` };
   const site = clean(b.site, 160);
-  if (!site) return res.status(400).json({ error: 'Name the site.' });
-  if (!isDay(b.sampled_on)) return res.status(400).json({ error: 'When was it sampled? (YYYY-MM-DD)' });
-  if (b.sampled_on > db.prepare("SELECT date('now') d").get().d) return res.status(400).json({ error: 'A sample cannot be dated in the future.' });
+  if (!site) return { status: 400, error: 'Name the site.' };
+  if (!isDay(b.sampled_on)) return { status: 400, error: 'When was it sampled? (YYYY-MM-DD)' };
+  if (b.sampled_on > db.prepare("SELECT date('now') d").get().d) return { status: 400, error: 'A sample cannot be dated in the future.' };
   const id = uuid();
   let out = null;
   const tx = db.transaction(() => {
     db.prepare(`INSERT INTO emp_samples (id, work_order_id, quality_schedule_id, zone, site, test, sampled_on, sampled_by, lab, outcome, form_revision, notes, source)
       VALUES (?, NULL, NULL, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, 'manual')`)
-      .run(id, zone, site, test, b.sampled_on, clean(b.sampled_by, 120) || req.user.name, clean(b.lab, 120), `${EMP_FORM_CODE} ${EMP_REVISION}`, clean(b.notes, 2000));
-    logAudit(req.user, 'emp_sample_filed', 'emp_sample', id, { zone, site, test, sampled_on: b.sampled_on, source: 'manual' });
+      .run(id, zone, site, test, b.sampled_on, clean(b.sampled_by, 120) || user.name, clean(b.lab, 120), `${EMP_FORM_CODE} ${EMP_REVISION}`, clean(b.notes, 2000));
+    logAudit(user, 'emp_sample_filed', 'emp_sample', id, { zone, site, test, sampled_on: b.sampled_on, source: 'manual' });
     if (clean(b.result_value, 80)) {
       const s = db.prepare('SELECT * FROM emp_samples WHERE id = ?').get(id);
-      out = applyResult(db, req.user, s, { result_value: b.result_value, resulted_on: b.resulted_on || b.sampled_on, lab: b.lab, notes: null });
+      out = applyResult(db, user, s, { result_value: b.result_value, resulted_on: b.resulted_on || b.sampled_on, lab: b.lab, notes: null });
       if (out.error) throw Object.assign(new Error(out.error), { status: 400 });
     }
   });
-  try { tx(); } catch (e) { return res.status(e.status || 500).json({ error: e.message }); }
-  res.status(201).json({ sample: sampleShape(db.prepare(`${SAMPLE_SQL} WHERE s.id = ?`).get(id)), capa: out?.capa ? { id: out.capa.id, capa_number: out.capa.capa_number } : null });
+  try { tx(); } catch (e) { return { status: e.status || 500, error: e.message }; }
+  return { status: 201, id, sample: sampleShape(db.prepare(`${SAMPLE_SQL} WHERE s.id = ?`).get(id)), capa: out?.capa ? { id: out.capa.id, capa_number: out.capa.capa_number } : null };
+}
+
+// A historical or off-schedule result, filed by hand: the 2026 water and air
+// results the plant already holds. Graded on the way in like any other.
+router.post('/emp/samples', requireAct, (req, res) => {
+  const out = fileEmpSampleByHand(getDb(), req.user, req.body || {});
+  if (out.error) return res.status(out.status).json({ error: out.error });
+  res.status(201).json({ sample: out.sample, capa: out.capa });
 });
 
 // What was done about it. Required on an action-level result before the
@@ -243,32 +253,46 @@ router.get('/food-defense/challenges', (req, res) => {
  * The date is refused in the future, and the SAME `missingForCheck` decides
  * what is complete — a back-filed review may not be thinner than a live one.
  */
-function handEntry(kind, form, table, dateCol) {
+export const HAND_REVIEWS = {
+  management_review: { form: MR_FORM, table: 'management_reviews', dateCol: 'reviewed_on' },
+  food_defense_challenge: { form: FD_FORM, table: 'food_defense_challenges', dateCol: 'performed_on' },
+};
+
+/** The by-hand door for the two annual reviews — the route and the record interface both call it. */
+export function fileReviewByHand(db, user, kind, b = {}) {
+  const cfg = HAND_REVIEWS[kind];
+  if (!cfg) return { status: 400, error: 'Unknown review.' };
+  if (!canAct(user)) return { status: 403, error: 'Quality access required' };
+  const { form, table, dateCol } = cfg;
+  const day = String(b[dateCol] || b.performed_on || b.reviewed_on || '').trim();
+  if (!isDay(day)) return { status: 400, error: 'When was it done? (YYYY-MM-DD)' };
+  if (day > db.prepare("SELECT date('now') d").get().d) return { status: 400, error: 'It cannot be dated in the future.' };
+  const missing = missingForCheck(form, b);
+  if (missing.length) return { status: 400, error: 'Still needed: ' + missing.map(m => m.label).join('; '), missing };
+  const by = clean(b.performed_by || b.reviewed_by, 120) || user.name;
+  let out, settled;
+  db.transaction(() => {
+    out = fileAnnualReview(db, {
+      form, check: normalizeCheck(form, b), wo: null, by, day,
+      notes: clean(b.notes, 8000), source: 'paper',
+    });
+    logAudit(user, `${kind}_filed`, kind, out.ids[0], { [dateCol]: day, by, source: 'paper' });
+    // The schedule asking for this review is settled by it — the open task
+    // closes as of the record's date and the next one is timed from it.
+    settled = settleAnnualSchedule(db, { kind, table, recordId: out.ids[0], day, by, user });
+  })();
+  return { status: 201, id: out.ids[0], row: { ...parseRow(db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(out.ids[0])), settled } };
+}
+
+function handEntry(kind) {
   return (req, res) => {
-    const db = getDb();
-    const b = req.body || {};
-    const day = String(b[dateCol] || b.performed_on || b.reviewed_on || '').trim();
-    if (!isDay(day)) return res.status(400).json({ error: 'When was it done? (YYYY-MM-DD)' });
-    if (day > db.prepare("SELECT date('now') d").get().d) return res.status(400).json({ error: 'It cannot be dated in the future.' });
-    const missing = missingForCheck(form, b);
-    if (missing.length) return res.status(400).json({ error: 'Still needed: ' + missing.map(m => m.label).join('; '), missing });
-    const by = clean(b.performed_by || b.reviewed_by, 120) || req.user.name;
-    let out, settled;
-    db.transaction(() => {
-      out = fileAnnualReview(db, {
-        form, check: normalizeCheck(form, b), wo: null, by, day,
-        notes: clean(b.notes, 8000), source: 'paper',
-      });
-      logAudit(req.user, `${kind}_filed`, kind, out.ids[0], { [dateCol]: day, by, source: 'paper' });
-      // The schedule asking for this review is settled by it — the open task
-      // closes as of the record's date and the next one is timed from it.
-      settled = settleAnnualSchedule(db, { kind, table, recordId: out.ids[0], day, by, user: req.user });
-    })();
-    res.status(201).json({ ...parseRow(db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(out.ids[0])), settled });
+    const out = fileReviewByHand(getDb(), req.user, kind, req.body || {});
+    if (out.error) return res.status(out.status).json({ error: out.error, ...(out.missing ? { missing: out.missing } : {}) });
+    res.status(201).json(out.row);
   };
 }
 
-router.post('/management-reviews', requireAct, handEntry('management_review', MR_FORM, 'management_reviews', 'reviewed_on'));
-router.post('/food-defense/challenges', requireAct, handEntry('food_defense_challenge', FD_FORM, 'food_defense_challenges', 'performed_on'));
+router.post('/management-reviews', requireAct, handEntry('management_review'));
+router.post('/food-defense/challenges', requireAct, handEntry('food_defense_challenge'));
 
 export default router;
