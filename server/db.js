@@ -2889,6 +2889,10 @@ function runMigrations() {
   // asked to pull a sample off that pallet" is a question about the receipt,
   // and it must be answerable from the receipt. It also makes the alert
   // idempotent — a correction to the line cannot fire a second request.
+  // A receiving sign-off is a signature (D-374): its meaning in words and a
+  // fingerprint of what was signed. NULL on every sign-off before D-374.
+  addColumnIfMissing('receiving_checklists', 'review_meaning', 'TEXT');
+  addColumnIfMissing('receiving_checklists', 'review_hash', 'TEXT');
   addColumnIfMissing('receiving_log', 'lab_test_required', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('receiving_log', 'lab_test_notified_at', 'TEXT');
   addColumnIfMissing('receiving_log', 'lab_test_notified_to', 'TEXT');

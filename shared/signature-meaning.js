@@ -9,6 +9,8 @@ export const SIGNATURE_MEANINGS = {
   scale_verification: 'Reviewed the daily scale check and accepted the readings',
   coa_certify: 'Certified the results are true and accurate for this lot',
   qms_approval: (label) => `Approved as ${label}`,
+  receiving_review: 'Reviewed the receiving inspection and signed it off',
+  disposal_approval: (label) => `Approved the disposal as ${label}`,
 };
 
 /** The meaning for an act; a QMS approval names its role. */

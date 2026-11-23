@@ -275,6 +275,8 @@ const wBotTok = (await call('POST', '/api-tokens', { user_id: 'ri-wbot', label: 
 r = await call('POST', `/receiving/checklist/${rc?.inspection_no}/review`, {}, { ...H, Authorization: `Bearer ${wBotTok}` });
 t('a token cannot sign a receiving inspection off', !!wBotTok && r.status === 403, `${r.status} ${JSON.stringify(r.body)}`);
 r = await call('POST', `/receiving/checklist/${rc?.inspection_no}/review`, {}, W);
+t('the route asks for the password before it signs (D-374)', r.status === 403 && r.body?.signature_required === true, `${r.status} ${JSON.stringify(r.body)}`);
+r = await call('POST', `/receiving/checklist/${rc?.inspection_no}/review`, { signature_password: 'RecWarehouse2026!' }, W);
 t('the warehouse signs it off on its route', r.status === 200 && r.body?.reviewed_by === 'Rec Warehouse', `${r.status} ${JSON.stringify(r.body).slice(0, 160)}`);
 r = await call('GET', `/records/receiving/${rcRow?.id}`, undefined, A);
 t('…and the described record shows who signed', r.body?.signed_by === 'Rec Warehouse' && r.body.signatures?.length === 1);
@@ -285,7 +287,10 @@ t('somebody else cannot revoke it', r.status === 403 || r.status === 404, `${r.s
   const { getDb } = await import('../server/db.js');
   const appDb = getDb();
   const out = recordType('receiving').revoke(appDb, { id: 'ri-w', name: 'Rec Warehouse', role: 'operator', department: 'warehouse' }, rcRow?.id);
-  t('the signer revokes through the interface — the module\'s own function', out.status === 200 && db.prepare('SELECT reviewed_by FROM receiving_checklists WHERE id = ?').get(rcRow?.id).reviewed_by === null, JSON.stringify(out));
+  t('the interface cannot revoke a sign-off: it has no password to ask (D-374)', out.status === 403 && out.signature_required === true
+    && db.prepare('SELECT reviewed_by FROM receiving_checklists WHERE id = ?').get(rcRow?.id).reviewed_by === 'Rec Warehouse', JSON.stringify(out));
+  r = await call('DELETE', `/receiving/checklist/${rc?.inspection_no}/review`, { signature_password: 'RecWarehouse2026!' }, W);
+  t('the signer revokes on the route, with the password', r.status === 200 && db.prepare('SELECT reviewed_by FROM receiving_checklists WHERE id = ?').get(rcRow?.id).reviewed_by === null, `${r.status}`);
   const n0 = db.prepare('SELECT COUNT(*) n FROM receiving_checklists').get().n;
   const fresh = recordType('receiving').file(appDb, { id: 'ri-w', name: 'Rec Warehouse', role: 'operator', department: 'warehouse' }, { vendor: 'Second truck' });
   t('starting one through the interface issues the next number on the same table', fresh.status === 201 && db.prepare('SELECT COUNT(*) n FROM receiving_checklists').get().n === n0 + 1, JSON.stringify(fresh).slice(0, 140));
@@ -367,7 +372,7 @@ console.log('\n── training records (D-372) ──');
   const dd = r.body?.records?.find(x => x.id === disp?.id);
   t('the second item\'s lot finds it: both lots, two items, awaiting both approvals', dd?.type === 'disposal' && JSON.stringify(dd.lots) === '["RID-LOT-1","RID-LOT-2"]'
     && dd.items === 2 && dd.result === 'awaiting approval' && JSON.stringify(dd.approvals_pending) === '["ops_manager","quality_control"]', JSON.stringify(dd));
-  r = await call('POST', `/disposals/${disp?.id}/approve`, { role: 'quality_control' }, D);
+  r = await call('POST', `/disposals/${disp?.id}/approve`, { role: 'quality_control', signature_password: 'RecDisposer2026!' }, D);
   t('QA approves on the route', r.status === 200 && !!r.body?.approvals?.quality_control);
   r = await call('GET', `/records/disposal/${disp?.id}`, undefined, A);
   t('…and the record names the signature and what is still owed', r.body?.signatures?.[0]?.label === 'Quality Control' && r.body.signed_by === 'Rec Disposer'
@@ -379,7 +384,9 @@ console.log('\n── training records (D-372) ──');
   const rvd = recordType('disposal').revoke(appDb, { id: 'ri-o', name: 'Rec Operator', role: 'operator' }, disp?.id, { role: 'quality_control' });
   t('someone who did not sign cannot revoke it through the interface', rvd.status === 403);
   const okd = recordType('disposal').revoke(appDb, { id: 'ri-d', name: 'Rec Disposer', role: 'supervisor', department: 'qa' }, disp?.id, { role: 'quality_control' });
-  t('the signer can', okd.status === 200 && !okd.record?.approvals?.quality_control);
+  t('…and not even the signer can through the interface: it has no password to ask (D-374)', okd.status === 403 && okd.signature_required === true);
+  r = await call('DELETE', `/disposals/${disp?.id}/approve/quality_control`, { signature_password: 'RecDisposer2026!' }, D);
+  t('the signer revokes on the route, with the password', r.status === 200 && !r.body?.approvals?.quality_control, `${r.status}`);
   const n0 = db.prepare('SELECT COUNT(*) n FROM disposals').get().n;
   const fd2 = recordType('disposal').file(appDb, { id: 'ri-d', name: 'Rec Disposer', role: 'supervisor' }, { reason: 'Damaged', items: [{ item_name: 'RI Film', lot_number: 'RID-LOT-3' }] });
   t('filing through the interface uses the route\'s writer', fd2.status === 201 && db.prepare('SELECT COUNT(*) n FROM disposals').get().n === n0 + 1);

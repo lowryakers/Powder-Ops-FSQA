@@ -226,6 +226,7 @@ const RUNS = [
   ['verify-dm-thread-badge.mjs', 5172, {}, false],
   ['verify-signature-sweep.mjs', 5125, {}, false],
   ['verify-record-interface.mjs', 5126, {}, false],
+  ['verify-sign-gates.mjs', 5239, {}, false],
   ['verify-food-safety-culture.mjs', 5127, { HOUSEKEEPING_MS: '0' }, false],
   ['verify-module-usage.mjs', 5128, {}, false],
   ['verify-task-routing.mjs', 5129, {}, false],

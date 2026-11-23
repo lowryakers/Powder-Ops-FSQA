@@ -4483,6 +4483,9 @@ since go-live and in the last 90 days, and gives a verdict: never used / machine
   file a ticked record without the route's password; **COA is read only on the interface** — never wrap its file/sign/
   unsign here. A verb left out names its reason in `absent`.
 - `verify:recordinterface` (147).
+- **Receiving sign-off and disposal approvals ask for the password (D-374)** — sign and revoke, with meaning + fingerprint
+  (`review_meaning`/`review_hash`; `approvals[role].meaning/hash`). The record interface cannot do either. A verify that
+  signs one must send `signature_password`. `verify:signgates` (30).
 
 ## Five more acts sign with the password (D-206, move 01)
 - Gated now: the internal audit sign-off, approving meeting minutes, authorizing a mock recall, signing a COA,

@@ -132,7 +132,7 @@ r = await call('POST', `/receiving/checklist/${noV2}/review`, {}, W); j = await 
 t('sign-off is refused while the banned-substance line is blank', r.status === 400 && j.unanswered?.length === 1 && j.unanswered[0].key === 'banned_substance_check');
 r = await call('POST', '/receiving/checklist', { inspection_no: noV2, answers: { banned_substance_check: 'no' } }, W); j = await r.json();
 t('a NO escalates to Quality on the spot and the record says who was told', (j.notifications || []).some(n => n.item === 'banned_substance_check') && (j.escalations || j.triggered || []).length >= 0, JSON.stringify(j).slice(0, 300));
-r = await call('POST', `/receiving/checklist/${noV2}/review`, {}, W);
+r = await call('POST', `/receiving/checklist/${noV2}/review`, { signature_password: 'Dock2026!!!' }, W);
 t('with every line answered and the escalation sent, the inspection signs off', r.status === 200);
 { const db = sqlite();
   const dm = db.prepare("SELECT COUNT(*) c FROM chat_messages WHERE body LIKE '%banned%' OR body LIKE '%Banned%'").get().c;
