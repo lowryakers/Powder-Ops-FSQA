@@ -5915,6 +5915,10 @@ function runMigrations() {
   // D-196: the annual task an exercise's sign-off closes, linked both ways.
   addColumnIfMissing('mock_recalls', 'quality_schedule_id', 'TEXT');
   addColumnIfMissing('mock_recalls', 'work_order_id', 'TEXT');
+  // The effectiveness criteria in force when the exercise was started (D-376):
+  // the record is judged on these for good. NULL = filed before D-376, judged on
+  // the only numbers ever in force before it (99.5–100.5%, four hours).
+  addColumnIfMissing('mock_recalls', 'criteria', 'TEXT');
 
   /**
    * Equipment documents — the manual, the spec sheet, the parts list.

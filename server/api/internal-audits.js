@@ -24,7 +24,7 @@ import { raiseCapa } from '../capa-raise.js';
 import { hasExplicitEdit, hasExplicitGrant } from '../module-access.js';
 import { coerceCustomData, mergeCustomData, parseJson } from '../custom-fields.js';
 import {
-  CHECKLIST_CODE, CHECKLIST_REVISION, SECTIONS, SECTION_IDS, sectionById, itemsForSections,
+  CHECKLIST_CODE, AUDIT_CHECKLIST, SECTIONS, SECTION_IDS, sectionById, itemsForSections,
 } from '../audit-checklist.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
 import { embedUnicodeFaces } from '../pdf-unicode.js';
@@ -78,9 +78,10 @@ function nextAuditNo(db) {
 }
 
 // The checklist definition, so the client renders the same questions the
-// server will create rows for. Static — safe to cache.
+// server will create rows for — the APPROVED revision (D-376), which can change
+// on an approval with no restart, so it is read every time.
 router.get('/checklist', (_req, res) => {
-  res.json({ code: CHECKLIST_CODE, revision: CHECKLIST_REVISION, sections: SECTIONS });
+  res.json({ code: CHECKLIST_CODE, revision: AUDIT_CHECKLIST.revision, sections: SECTIONS });
 });
 
 router.get('/', (req, res) => {
@@ -124,7 +125,7 @@ router.post('/', (req, res) => {
     db.prepare(`INSERT INTO internal_audits
       (id, audit_no, checklist_code, checklist_revision, focus_areas, audit_date, lead_auditor, sections, status, custom_data, created_by)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'in_progress', ?, ?)`)
-      .run(id, nextAuditNo(db), CHECKLIST_CODE, CHECKLIST_REVISION,
+      .run(id, nextAuditNo(db), CHECKLIST_CODE, AUDIT_CHECKLIST.revision,
         String(req.body?.focus_areas || '').trim() || null, auditDate,
         String(req.body?.lead_auditor || '').trim() || req.user.name,
         JSON.stringify(picked), data ? JSON.stringify(data) : null, req.user.name);
@@ -135,7 +136,7 @@ router.post('/', (req, res) => {
 
   const created = db.prepare('SELECT * FROM internal_audits WHERE id = ?').get(id);
   logAudit(req.user, 'create', 'internal_audit', id,
-    { audit_no: created.audit_no, sections: picked, items: rows.length, revision: CHECKLIST_REVISION },
+    { audit_no: created.audit_no, sections: picked, items: rows.length, revision: AUDIT_CHECKLIST.revision },
     null, created, created.audit_no);
   res.status(201).json({ ...shape(created, req.user), items: itemsFor(db, id) });
 });

@@ -5172,6 +5172,9 @@ tested items** (from `coa_requests`, most requests first) as drafts for QA.
   the form is a Document Change Request. Same reason the checklist is **not user-editable** — changing what
   an internal audit asks is a document change, like `scale-forms.js` tolerances.
   `checklist_revision` is stamped on every audit, so a record always says which revision it was run against.
+  **Under document control since D-376** (`auditChecklistEntry`, key `audit:Form 403-01`): new audits read the
+  APPROVED snapshot (`AUDIT_CHECKLIST.revision`, `SECTIONS` replaced in place); a reworded question goes propose →
+  QA review → approve on Controlled Changes. Each audit item keeps the question text it was asked with.
 - **Picking sections IS the record of scope.** A real audit covers two or three areas — on paper the auditor
   drew a diagonal line through the sections they skipped. Only the picked sections get `internal_audit_items`
   rows; the rest are simply absent, and the PDF says "sections not listed were not in scope". Auditing
@@ -6152,10 +6155,12 @@ message *is* the schedule — they never open the grid. It printed the room as t
 The table was a reasonable guess at a mock recall; the SOP names **seventeen things the exercise "will
 document"** and **three effectiveness criteria**, and most had nowhere to go. A record that can't hold what
 the controlled procedure requires is not evidence the procedure was followed — which is the point of the drill.
-- **The acceptance criteria are NOT user-editable**, same reasoning as `scale-forms.js` tolerances: the
-  99.5–100.5% mass balance and the four-hour limit come from a controlled document, so changing one is a
-  Document Change Request. `SOP_REVISION` is stamped on every record (`checklist_revision`), so a filed
-  exercise always says which revision it was run against.
+- **The acceptance criteria are controlled, not a setting** (D-376, `recallControlledEntry`, key `recall:SOP 414`):
+  the 99.5–100.5% mass balance and the four-hour limit come from a controlled document; a code change parks, an
+  in-app change goes propose → QA review → approve. **Grade with `effectivenessCheck(recall)`, which reads the
+  record's own `mock_recalls.criteria` stamp** (set at creation from `RECALL_CRITERIA`, the approved snapshot);
+  no stamp = filed before D-376 = `LEGACY_CRITERIA`. Never grade a record against today's numbers.
+  `SOP_REVISION` is stamped on every record (`checklist_revision`). `verify:controlledrecall` (31).
 - **The effectiveness verdict is DERIVED on every read, never stored as an opinion.** Correct the mass
   balance afterwards and the verdict moves with it; a stored "pass" would go stale. `met` is **null** when
   something hasn't been measured — deliberately distinct from false, since "not measured" and "92%" are

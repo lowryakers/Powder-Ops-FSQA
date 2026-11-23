@@ -224,7 +224,8 @@ function RecallDetail({ id, form, onBack, onChanged }) {
       <div className="bg-white rounded-xl border border-gray-200 p-4">
         <h4 className="text-sm font-semibold text-gray-900 mb-3">Effectiveness criteria</h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          <Field label={`Mass balance recovery % (${form.criteria.mass_balance_min}–${form.criteria.mass_balance_max})`}>
+          {/* The record's own criteria — what it was started under (D-376) — not today's. */}
+          <Field label={`Mass balance recovery % (${(recall.criteria || form.criteria).mass_balance_min}–${(recall.criteria || form.criteria).mass_balance_max})`}>
             <input type="number" step="any" disabled={locked} value={val('mass_balance_pct') ?? ''}
               onChange={e => set('mass_balance_pct', e.target.value === '' ? null : Number(e.target.value))} className={input} />
           </Field>

@@ -5,8 +5,15 @@ import { settleAnnualSchedule } from '../check-records.js';
 import {
   SOP_CODE, SOP_REVISION, FORM_CODE, DOCUMENTED_ITEMS, RECALL_CONTACTS,
   TRACKING_PROCEDURES, effectivenessCheck, missingItems, durationMinutes,
-  MASS_BALANCE_MIN, MASS_BALANCE_MAX, MAX_DURATION_MINUTES,
+  RECALL_CRITERIA, criteriaOf,
 } from '../mock-recall-form.js';
+
+// The criteria in force, with the controlled definition's version, stamped on a
+// new exercise so it is judged on them for good (D-376).
+function criteriaStamp(db) {
+  const row = db.prepare("SELECT version FROM controlled_definitions WHERE scope = 'acceptance' AND key = ?").get(`recall:${SOP_CODE}`);
+  return JSON.stringify({ ...RECALL_CRITERIA, document: `${SOP_CODE} ${SOP_REVISION}`, definition_version: row?.version ?? null });
+}
 import { gateSignature, signatureEvidence } from '../signature.js';
 
 const router = Router();
@@ -44,6 +51,7 @@ function decorate(recall) {
   const missing = missingItems(recall);
   return {
     ...recall,
+    criteria: criteriaOf(recall),
     duration_minutes: durationMinutes(recall),
     effectiveness: check,
     missing_items: missing,
@@ -67,11 +75,8 @@ router.get('/form', (_req, res) => {
     documented_items: DOCUMENTED_ITEMS,
     contacts: RECALL_CONTACTS,
     tracking_procedures: TRACKING_PROCEDURES,
-    criteria: {
-      mass_balance_min: MASS_BALANCE_MIN,
-      mass_balance_max: MASS_BALANCE_MAX,
-      max_duration_minutes: MAX_DURATION_MINUTES,
-    },
+    // The criteria a NEW exercise is judged on: the approved snapshot (D-376).
+    criteria: { ...RECALL_CRITERIA },
   });
 });
 
@@ -137,8 +142,8 @@ router.post('/', (req, res) => {
   }
 
   const id = uuid();
-  const cols = ['id', 'recall_number', 'checklist_revision'];
-  const vals = [id, nextNum, `${SOP_CODE} ${SOP_REVISION}`];
+  const cols = ['id', 'recall_number', 'checklist_revision', 'criteria'];
+  const vals = [id, nextNum, `${SOP_CODE} ${SOP_REVISION}`, criteriaStamp(db)];
   for (const f of WRITABLE) {
     if (req.body[f] === undefined) continue;
     cols.push(f);
