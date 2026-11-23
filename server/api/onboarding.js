@@ -47,6 +47,7 @@ import { I9_EDITION, i9KnownTitle } from '../../shared/i9-documents.js';
 import { assignNewHireTraining } from '../training-assign.js';
 import { tellAssignee } from '../training-notify.js';
 import { revokeSessions } from './sessions.js';
+import { closeTrainingTasksFor } from '../trainees.js';
 import { botDm, postMessageAs } from './comms.js';
 import { pushToUser } from '../push.js';
 import { embedUnicodeFaces } from '../pdf-unicode.js';
@@ -894,7 +895,11 @@ router.post('/:id/end-access', (req, res) => {
       // that was already signed in — deactivating an account that stays usable
       // until its token expires is not ending access, it is scheduling it.
       revokeSessions(db, u.id, { devices: true });
-      logAudit(req.user, 'update', 'user', u.id, { deactivated: true, reason, from_onboarding: rec.id }, u, null, u.name);
+      // The same close the Settings deactivation makes (D-367): training left
+      // open on somebody whose access ended is cancelled with the reason, never
+      // deleted, never a completion. This door was missed in #175 (review, D-382).
+      out.training_tasks_closed = closeTrainingTasksFor(db, u.id, { by: req.user?.name || 'ReadyDoc', reason: 'deactivated' });
+      logAudit(req.user, 'update', 'user', u.id, { deactivated: true, reason, from_onboarding: rec.id, training_tasks_closed: out.training_tasks_closed }, u, null, u.name);
       out.account = true;
     }
   }

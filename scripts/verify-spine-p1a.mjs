@@ -24,6 +24,7 @@ mk('p1-here', 'Hal Present', 'operator');
 mk('p1-gone', 'Gus Departed', 'operator', 0);    // already deactivated, card left behind
 mk('p1-leave', 'Lea Leaving', 'operator');        // deactivated through the API below
 mk('p1-bot', 'Bo Botlike', 'operator');           // marked not a trainee below
+mk('p1-ended', 'Eda Ended', 'operator');          // access ended from the onboarding packet below
 
 const H = { 'Content-Type': 'application/json' };
 const post = (p, b, tok) => fetch(`${URL}/api${p}`, { method: 'POST', headers: { ...H, ...(tok ? { Authorization: `Bearer ${tok}` } : {}) }, body: JSON.stringify(b) });
@@ -100,6 +101,20 @@ t('her non-training card and her completed training are untouched', by[pm]?.stat
 t('no row was deleted', db.prepare('SELECT COUNT(*) c FROM work_orders').get().c === before);
 const audit = db.prepare(`SELECT details FROM audit_log WHERE entity_type = 'user' AND entity_id = 'p1-leave' ORDER BY rowid DESC LIMIT 1`).get();
 t('the audit entry records how many were closed', /"training_tasks_closed":3/.test(audit?.details || ''), audit?.details);
+
+console.log('\n── ending access from the onboarding packet (D-382)');
+{ const e1 = card({ status: 'open', due: today, to: 'Eda Ended', toId: 'p1-ended', training: true });
+  const e2 = card({ status: 'missed', to: 'Eda Ended', toId: 'p1-ended' });           // not training: left alone
+  db.prepare(`INSERT INTO onboarding_records (id, status, first_name, last_name, user_id) VALUES ('p1-ob', 'completed', 'Eda', 'Ended', 'p1-ended')`).run();
+  const before2 = db.prepare('SELECT COUNT(*) c FROM work_orders').get().c;
+  const re = await call('POST', '/onboarding/p1-ob/end-access', { reason: 'Assignment ended' });
+  t('end access answers 200 and deactivates the account', re.status === 200 && re.body?.account === true
+    && db.prepare('SELECT is_active FROM users WHERE id = ?').get('p1-ended').is_active === 0, JSON.stringify(re.body).slice(0, 200));
+  const s1 = db.prepare('SELECT status, notes FROM work_orders WHERE id = ?').get(e1);
+  t('…and her open training is cancelled with the employment-ended note', s1.status === 'cancelled' && /account deactivated \/ employment ended/.test(s1.notes || ''), JSON.stringify(s1));
+  t('…her non-training card is untouched, and no row was deleted',
+    db.prepare('SELECT status FROM work_orders WHERE id = ?').get(e2).status === 'missed' && db.prepare('SELECT COUNT(*) c FROM work_orders').get().c === before2);
+  t('…and the response says how many were closed', re.body?.training_tasks_closed === 1, String(re.body?.training_tasks_closed)); }
 
 console.log('\n── not a trainee keeps its own wording');
 const tb = card({ status: 'open', due: today, to: 'Bo Botlike', toId: 'p1-bot', training: true });

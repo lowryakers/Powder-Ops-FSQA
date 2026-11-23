@@ -11654,3 +11654,14 @@ holding rows; do not touch AP Drop, partner reconciliation or the payment run.
   And a failing run used to `process.exit(1)` inside the `try`, skipping the `finally` that stops its server — the
   next run found the port "already serving" and tested nothing. It sets `exitCode` now; a planted bad path exits 1 and
   leaves no server behind.
+
+## D-382 — Ending access from the onboarding packet closes leftover training too (23 Nov 2026, single-spine final review)
+**Found in the review of today's merges:** D-367 (#175) said deactivating an account cancels its open training, and
+wired it into the Settings deactivation (`server/api/users.js`, the `existing.is_active && !updated.is_active` block).
+The other door that deactivates an account, **End access** on an onboarding packet (`POST /onboarding/:id/end-access`),
+set `users.is_active = 0` and revoked the sessions but left the person's training cards open. The overdue counts were
+already honest (an inactive assignee counts nowhere, `inactiveAssigneeSql`); the cards themselves stayed open.
+**Decided:** end-access calls the same `closeTrainingTasksFor(db, id, { reason: 'deactivated' })` — cancelled with the
+employment-ended note, never deleted, never a completion; non-training cards untouched. The count rides the response
+(`training_tasks_closed`) and the audit entry. Not retroactive: cards on accounts already inactive stay as they are.
+`verify:spinep1a` 20 → 24; the control (main's onboarding.js) fails the two new assertions.
