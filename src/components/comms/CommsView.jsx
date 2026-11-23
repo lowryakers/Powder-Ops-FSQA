@@ -1554,9 +1554,13 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
   };
 
   const replies = thread?.replies || [];
-  return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-end" onClick={onClose}>
-      <div className="bg-white h-full w-full max-w-md shadow-xl flex flex-col" onClick={e => e.stopPropagation()}>
+  // Drawn on <body>, not inside Messages: the Messages screen is position:fixed,
+  // which makes it its own stacking layer, so a z-50 drawer inside it still sat
+  // UNDER the app's bottom tab bar (z-40, outside it) on a phone — the toolbar
+  // showed and the reply box itself was covered. pb is the iPhone home bar.
+  return createPortal(
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-end" onClick={onClose} data-thread-drawer>
+      <div className="bg-white h-full w-full max-w-md shadow-xl flex flex-col pb-[env(safe-area-inset-bottom)]" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 h-12 border-b border-gray-100 shrink-0">
           <div className="min-w-0">
             <div className="text-sm font-semibold text-gray-900">Thread</div>
@@ -1668,7 +1672,8 @@ function ThreadPanel({ parent, me, channelName, mentionUsers, members, canTransl
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
