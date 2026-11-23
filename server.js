@@ -28,7 +28,7 @@ import { seedPayTracking } from './server/pay-seed.js';
 import { mergeFillingTeam } from './server/filling-merge.js';
 import equipmentRoutes from './server/api/equipment.js';
 import haccpRoutes from './server/api/haccp.js';
-import pmRoutes, { collapseDuplicateWorkOrders } from './server/api/pm.js';
+import pmRoutes, { collapseDuplicateWorkOrders, startPmHousekeeping } from './server/api/pm.js';
 import checklistRoutes from './server/api/checklists.js';
 import calibrationRoutes from './server/api/calibration.js';
 import scaleVerificationRoutes from './server/api/scale-verification.js';
@@ -2418,6 +2418,9 @@ server.listen(PORT, '0.0.0.0', () => {
     const q = generateQualityScheduleTasks(db);
     if (q > 0) console.log(`[quality] Generated ${q} quality-control task(s)`);
   } catch (e) { console.warn('[quality] quality task generation skipped:', e.message); }
+  // The task sweep's own tick (D-368): marks past-due cards missed and runs the
+  // generators now, then every few minutes. No GET runs it any more.
+  try { startPmHousekeeping(db); } catch (e) { console.warn('[housekeeping] not started:', e.message); }
 });
 
 function shutdown(signal) {
