@@ -9,10 +9,14 @@
 //      find the same questions. Correcting the text here would make the app
 //      disagree with the approved form, and fixing the form is a Document
 //      Change Request, not an edit in a source file.
-//   2. THE CHECKLIST IS NOT USER-EDITABLE, for the same reason the scale
-//      tolerances aren't (`scale-forms.js`). Changing what an internal audit
-//      asks is a document change. `checklist_revision` is recorded on every
-//      audit so a record always says which revision it was run against.
+//   2. THE CHECKLIST IS UNDER DOCUMENT CONTROL (D-376), the receiving
+//      checklist's arrangement. `auditChecklistEntry` registers it with
+//      controlled.js: a change in code is PARKED until Document Control
+//      approves it and new audits go on using the approved questions; a
+//      question's wording changed in the app goes propose → QA review →
+//      approve (D-328). `checklist_revision` is recorded on every audit, and
+//      each audit item keeps the question text it was asked with, so an audit
+//      already filed reads exactly as it was run.
 //
 // Sections are selectable per audit. On paper, whole sections get a diagonal
 // line through them when they weren't in scope that month — that is exactly
@@ -20,7 +24,10 @@
 // leaving a reader to interpret a pen stroke.
 
 export const CHECKLIST_CODE = 'Form 403-01';
+// The CODE's revision. The revision in force is AUDIT_CHECKLIST.revision.
 export const CHECKLIST_REVISION = 'V1';
+/** The revision new audits are stamped with — the approved snapshot's. */
+export const AUDIT_CHECKLIST = { code: CHECKLIST_CODE, revision: CHECKLIST_REVISION };
 
 // The closing line of most sections. Written out per section rather than
 // appended in code, so the item keys stay stable and readable.
@@ -248,6 +255,49 @@ export const SECTIONS = [
 export const SECTION_IDS = SECTIONS.map(s => s.id);
 const BY_ID = new Map(SECTIONS.map(s => [s.id, s]));
 export const sectionById = (id) => BY_ID.get(id) || null;
+
+// ── Under document control (D-376) ──────────────────────────────────────────
+// The snapshot: the revision and every section with its questions, keyed by
+// section id so the in-app editor can name one (`sections[id].items[2]`).
+const snapshotOf = (revision, sections) => ({
+  revision,
+  sections: sections.map(s => ({ key: s.id, title: s.title, items: [...s.items] })),
+});
+// Taken at load, before anything is applied: what the CODE says.
+const CODE_SNAPSHOT = snapshotOf(CHECKLIST_REVISION, SECTIONS);
+
+/** Put an approved snapshot in force, in place, so every importer sees it. */
+export function applyAuditChecklistSnapshot(snap) {
+  if (!snap || !Array.isArray(snap.sections) || !snap.sections.length) return;
+  if (!snap.sections.every(s => s && s.key && Array.isArray(s.items) && s.items.length)) return;
+  SECTIONS.splice(0, SECTIONS.length, ...snap.sections.map(s => ({ id: s.key, title: s.title, items: [...s.items] })));
+  SECTION_IDS.splice(0, SECTION_IDS.length, ...SECTIONS.map(s => s.id));
+  BY_ID.clear();
+  for (const s of SECTIONS) BY_ID.set(s.id, s);
+  if (snap.revision) AUDIT_CHECKLIST.revision = String(snap.revision);
+}
+
+export function auditChecklistEntry() {
+  return {
+    scope: 'checklist',
+    key: `audit:${CHECKLIST_CODE}`,
+    label: `${CHECKLIST_CODE} Internal Audit Checklist — questions`,
+    current: () => JSON.parse(JSON.stringify(CODE_SNAPSHOT)),
+    apply: applyAuditChecklistSnapshot,
+    // D-328: a question's wording and the revision are changed on the
+    // Controlled Changes screen. Adding or removing a question is a code change,
+    // which parks like any other.
+    editable: (snap) => [
+      { path: 'revision', label: 'Revision (change it when the questions change)', type: 'text' },
+      ...(snap.sections || []).flatMap(s => [
+        { path: `sections[${s.key}].title`, label: 'Section title', group: s.title, type: 'text' },
+        ...s.items.map((_, i) => ({ path: `sections[${s.key}].items[${i}]`, label: `Question ${i + 1}`, group: s.title, type: 'text' })),
+      ]),
+    ],
+    validate: (snap) => (snap.sections || []).flatMap(s => s.items.some(t => !String(t || '').trim())
+      ? [`${s.title}: a question cannot be blank.`] : []),
+  };
+}
 
 // An item's stable key: section id + its index in that section. Stable because
 // the checklist is code, not data — a revision that reorders items is a new

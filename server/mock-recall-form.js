@@ -2,11 +2,15 @@
  * SOP 414 (Recall and Mock Recall Procedures) V3 — the parts of the plant's own document
  * that the app has to enforce or reproduce.
  *
- * NOT USER-EDITABLE, for the same reason `scale-forms.js` tolerances aren't:
+ * NOT A SETTINGS TOGGLE, for the same reason `scale-forms.js` tolerances aren't:
  * the 99.5–100.5% mass balance and the four-hour limit are ACCEPTANCE CRITERIA
- * from a controlled document. Changing one is a Document Change Request, not a
- * settings toggle. `SOP_REVISION` is stamped onto every record so a filed mock
- * recall always says which revision it was run against.
+ * from a controlled document. Since D-376 they are on the document-control path
+ * (`recallControlledEntry`): a change in code is PARKED until Document Control
+ * approves it, and a change made in the app goes propose → QA review → approve
+ * (D-328). `SOP_REVISION` is stamped onto every record so a filed mock recall
+ * always says which revision it was run against, and the criteria in force are
+ * stamped beside it (`mock_recalls.criteria`), so a record keeps the numbers it
+ * was judged on.
  *
  * The wording of each documented item is the SOP's own, in the SOP's order, so
  * an auditor comparing the screen to Form 415-1 finds the same list.
@@ -49,10 +53,68 @@ export const DOCUMENTED_ITEMS = [
   { key: 'closeout_minutes', label: 'Minutes from the mock recall close-out meeting', kind: 'textarea' },
 ];
 
-// The mass balance window and the time limit, exactly as written.
+// The mass balance window and the time limit, exactly as written in SOP 414 V3.
+// These are the CODE's numbers. What the app grades against is RECALL_CRITERIA,
+// the APPROVED snapshot, which controlled.js applies at boot and on approval.
 export const MASS_BALANCE_MIN = 99.5;
 export const MASS_BALANCE_MAX = 100.5;
 export const MAX_DURATION_MINUTES = 4 * 60;
+
+/** The criteria in force: replaced in place by the approved snapshot. */
+export const RECALL_CRITERIA = {
+  mass_balance_min: MASS_BALANCE_MIN,
+  mass_balance_max: MASS_BALANCE_MAX,
+  max_duration_minutes: MAX_DURATION_MINUTES,
+};
+const CODE_CRITERIA = Object.freeze({ ...RECALL_CRITERIA });
+
+// What every mock recall filed before D-376 was judged on — the only numbers
+// that had ever been in force. Literal on purpose: a later change to the code's
+// constants must not re-judge a record that carries no stamp.
+export const LEGACY_CRITERIA = Object.freeze({ mass_balance_min: 99.5, mass_balance_max: 100.5, max_duration_minutes: 240 });
+
+/** The criteria a record is judged on: its own stamp, else the pre-D-376 numbers. */
+export function criteriaOf(recall) {
+  let c = null;
+  try { c = recall?.criteria ? JSON.parse(recall.criteria) : null; } catch { c = null; }
+  const ok = c && ['mass_balance_min', 'mass_balance_max', 'max_duration_minutes'].every(k => typeof c[k] === 'number');
+  return ok ? c : { ...LEGACY_CRITERIA, legacy: true };
+}
+
+const hoursText = (mins) => {
+  const h = mins / 60;
+  const n = Number.isInteger(h) ? String(h) : h.toFixed(1).replace(/\.0$/, '');
+  return `${n} hour${h === 1 ? '' : 's'}`;
+};
+
+/**
+ * SOP 414's two numbers under Document Control (D-376, the D-201 arrangement).
+ * First sight records the code's numbers as the approved baseline; a code change
+ * after that is parked; an in-app change goes propose → QA review → approve.
+ */
+export function recallControlledEntry() {
+  return {
+    scope: 'acceptance',
+    key: `recall:${SOP_CODE}`,
+    label: `Mock recall effectiveness criteria (${SOP_CODE}, ${FORM_CODE})`,
+    current: () => ({ ...CODE_CRITERIA }),
+    editable: () => [
+      { path: 'mass_balance_min', label: 'Mass balance — lowest recovery', type: 'number', unit: '%' },
+      { path: 'mass_balance_max', label: 'Mass balance — highest recovery', type: 'number', unit: '%' },
+      { path: 'max_duration_minutes', label: 'Longest the exercise may take, with its summary report', type: 'number', unit: 'minutes' },
+    ],
+    validate: (s) => [
+      ...(s.mass_balance_min > 0 ? [] : ['The lowest recovery must be more than 0%.']),
+      ...(s.mass_balance_max >= s.mass_balance_min ? [] : ['The highest recovery must be at or above the lowest.']),
+      ...(s.max_duration_minutes > 0 ? [] : ['The time limit must be more than 0 minutes.']),
+    ],
+    apply: (snap) => {
+      for (const k of ['mass_balance_min', 'mass_balance_max', 'max_duration_minutes']) {
+        if (typeof snap?.[k] === 'number' && Number.isFinite(snap[k])) RECALL_CRITERIA[k] = snap[k];
+      }
+    },
+  };
+}
 
 /** Minutes between start and end, or null when either is missing. */
 export function durationMinutes(recall) {
@@ -72,7 +134,8 @@ export function durationMinutes(recall) {
  * "the mass balance was 92%" are different states, and collapsing them into a
  * red cross is how a half-run drill reads as a failed one.
  */
-export function effectivenessCheck(recall) {
+export function effectivenessCheck(recall, judgedOn = criteriaOf(recall)) {
+  const { mass_balance_min: lo, mass_balance_max: hi, max_duration_minutes: maxMins } = judgedOn;
   const pct = recall?.mass_balance_pct;
   const hasPct = pct !== null && pct !== undefined && pct !== '';
   const mins = durationMinutes(recall);
@@ -80,18 +143,18 @@ export function effectivenessCheck(recall) {
   const criteria = [
     {
       id: 'mass_balance',
-      label: `Reconciliation demonstrates ${MASS_BALANCE_MIN}–${MASS_BALANCE_MAX}% recovery`,
+      label: `Reconciliation demonstrates ${lo}–${hi}% recovery`,
       detail: hasPct ? `${Number(pct)}% recovery` : 'Mass balance not recorded',
-      met: hasPct ? (Number(pct) >= MASS_BALANCE_MIN && Number(pct) <= MASS_BALANCE_MAX) : null,
+      met: hasPct ? (Number(pct) >= lo && Number(pct) <= hi) : null,
     },
     {
       id: 'within_4_hours',
-      label: 'Completed, including summary report, in no more than 4 hours',
+      label: `Completed, including summary report, in no more than ${hoursText(maxMins)}`,
       detail: mins === null
         ? 'Start and end time not both recorded'
         : `${Math.floor(mins / 60)}h ${mins % 60}m${recall.summary_report_complete ? ', summary report complete' : ', summary report not marked complete'}`,
       // Both halves are the SOP's sentence: the exercise AND its summary report.
-      met: mins === null ? null : (mins <= MAX_DURATION_MINUTES && !!recall.summary_report_complete),
+      met: mins === null ? null : (mins <= maxMins && !!recall.summary_report_complete),
     },
     {
       id: 'form_415_1',
@@ -105,6 +168,8 @@ export function effectivenessCheck(recall) {
   const failed = criteria.filter(c => c.met === false);
   return {
     criteria,
+    // The numbers this record was judged on, and whether they are its own stamp.
+    judged_on: { mass_balance_min: lo, mass_balance_max: hi, max_duration_minutes: maxMins, legacy: !!judgedOn.legacy },
     // Only a fully-measured exercise gets a verdict. Anything else is still
     // running as far as this is concerned.
     complete: decided.length === criteria.length,

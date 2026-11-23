@@ -11527,3 +11527,24 @@ and machine as real filters and any type that cannot take one named rather than 
   have no record deep link). The CSV is built from the rows on screen. `?tab=records&rec_lot=` / `rec_person` /
   `rec_machine` deep-link a lookup (`lot` is COA's parameter already).
 - `verify:recordlookup` (44, live + browser at 1280 and 390).
+
+## D-376 — The mock recall criteria and the Form 403-01 checklist are on the document-control path (23 Nov 2026, single-spine move 03 finished)
+**Asked:** P4 step B — register the SOP 414 mass balance window and four-hour limit, and the Form 403-01 internal audit
+checklist, as controlled definitions; the live modules read the approved snapshot; nothing historical is rewritten.
+**Decided:**
+- **`recall:SOP 414`** (`recallControlledEntry` in `server/mock-recall-form.js`): the three numbers, editable on
+  Controlled Changes (propose → QA review → approve, D-328), validated (highest ≥ lowest, both above 0). First sight
+  records the code's 99.5 / 100.5 / 240 minutes as the approved baseline.
+- **A mock recall is judged on the criteria it was STARTED under.** `mock_recalls.criteria` is stamped at creation
+  with the approved numbers, the document and the definition's version; `effectivenessCheck` reads that stamp. A record
+  with no stamp (filed before D-376) is judged on `LEGACY_CRITERIA` — 99.5–100.5% and four hours, the only numbers ever
+  in force — written as a literal so a later code change cannot re-judge it. `GET /mock-recalls/form` offers the
+  approved numbers for a new exercise; the record screen shows the record's own.
+- **`audit:Form 403-01`** (`auditChecklistEntry` in `server/audit-checklist.js`, scope `checklist`): the revision, each
+  section's title and each question, editable as text (`sections[<id>].items[<n>]`). Adding or removing a question is a
+  code change and parks like any other. Approving replaces `SECTIONS` in place and sets `AUDIT_CHECKLIST.revision`;
+  `POST /internal-audits` stamps that revision. **Each audit item already keeps its own question text**, so an audit
+  filed under V1 reads as it was run.
+- **Not changed:** adding a section to an audit already in progress uses the questions in force at that moment (the
+  audit keeps its original revision stamp); the paper-audit importer stamps the code's V1, as before.
+- `verify:controlledrecall` (31). The control, `main` before this, fails from the first check.

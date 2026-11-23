@@ -28,6 +28,8 @@ import { envControlledEntry } from './env-limits.js';
 import { filmChecklistSnapshot, filmChecklistBaseline, applyFilmChecklistSnapshot, FILM_FORM_CODE } from './film-pouch-checklist.js';
 import { dilutionControlledEntry } from './dilution-control.js';
 import { empControlledEntry } from './emp-results.js';
+import { recallControlledEntry } from './mock-recall-form.js';
+import { auditChecklistEntry } from './audit-checklist.js';
 import { SCALE_CAUTION } from '../shared/scale-incident.js';
 import { checklistSnapshot, checklistBaseline, applyChecklistSnapshot, CHECKLIST_FORM_CODE, CHECKLIST_TITLE } from './receiving-checklist.js';
 
@@ -161,7 +163,7 @@ function cautionEntries() {
 }
 
 export function registry() {
-  return [...qmsEntries(), ...scaleEntries(), atpControlledEntry(), envControlledEntry(), empControlledEntry(), dilutionControlledEntry(), ...checklistEntries(), ...cautionEntries()];
+  return [...qmsEntries(), ...scaleEntries(), atpControlledEntry(), envControlledEntry(), empControlledEntry(), dilutionControlledEntry(), recallControlledEntry(), ...checklistEntries(), auditChecklistEntry(), ...cautionEntries()];
 }
 
 // ── Boot: baseline, detect, gate ────────────────────────────────────────────
