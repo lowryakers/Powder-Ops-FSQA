@@ -7090,6 +7090,11 @@ route, same reason the Download button does.
   else `DEFAULT_TEAM[kind]`) and copies the owner via `scheduleAssignee` when the source names one; it never invents
   one. **A new generator calls it; never write a work-order INSERT in a generator** (`verify:schedowner` scans the
   seven). Each generator keeps its own "already owed" guard. Training does not use it (one person, no team).
+- **The event triggers use it too (D-378)**: the run-start Pre-Op prompt (`preop`), the ATP second-failure re-clean and
+  the manual re-clean Assign (`reclean`) — cleaning team, no owner. Swab reorders are supply orders and stay off it.
+- **Doc Control Review → "Tasks with no SOP linked"** (`UnlinkedSchedules.jsx`, `GET /doc-review/schedules/unlinked`)
+  lists active schedules with no `document_id`. **Never write `document_id` from a seeder, a boot pass or a guess** —
+  only a person's link (`POST /doc-review/document-tasks/:docId`).
 Maria: "Zuleika performs the Lysol dilution daily — can that show on her Operator View?" Three findings.
 - **"Lysol dilution" is NOT FORM 106-01.** The form is four chemicals — Sani-512, Chlorine (Cloro), Dawn
   Professional Heavy Duty, Simple Green — and **Lysol is not one of them** (it is on the approved chemical

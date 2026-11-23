@@ -354,16 +354,16 @@ router.post('/reclean-assign', (req, res) => {
   const { room } = req.body || {};
   const entry = recleanRooms(db).find(r => r.room === room);
   if (!entry) return res.status(404).json({ error: 'Room not found' });
-  const woId = uuid();
   const today = new Date().toISOString().split('T')[0];
   // The same words the automatic generator uses. This had its own copy, which
   // titled the task with the raw room token and printed "idle nullh" for a room
   // with no clean at all — two screens describing one job differently.
   const { title, description } = recleanText(entry, areaLabel(entry.room));
   const eq = db.prepare('SELECT id FROM equipment WHERE room = ? OR location = ? LIMIT 1').get(room, room);
-  db.prepare(`INSERT INTO work_orders (id, equipment_id, title, description, priority, due_date, procedure_steps, task_group, status)
-              VALUES (?, ?, ?, ?, 'high', ?, '[]', 'cleaning', 'open')`)
-    .run(woId, eq?.id || null, title, description, today);
+  // The one raise path (D-378): the cleaning team, as the automatic one.
+  const { id: woId } = raiseWorkOrder(db, 'reclean', {
+    equipment_id: eq?.id || null, title, description, priority: 'high', due_date: today, procedure_steps: '[]',
+  });
   const id = uuid();
   db.prepare(`INSERT INTO reclean_actions (id, room, flag_key, action, work_order_id, created_by, created_by_id)
               VALUES (?, ?, ?, 'assigned', ?, ?, ?)`)
@@ -787,19 +787,19 @@ export function raiseAtpRecleanTask(db, { area, record, grade, who }) {
   const flagKey = `atp_fail:${record.id}`;
   if (already.get(area, flagKey)) return null;
   const eq = db.prepare('SELECT id FROM equipment WHERE room = ? OR location = ? LIMIT 1').get(area, area);
-  const woId = uuid();
   const label = areaLabel(area);
   // One definition of this wording, beside the other three re-clean titles —
   // `clean-swabs.js` matches on it to know the task is asking for a SECOND swab.
   const title = ATP_RECLEAN.title(label);
-  db.prepare(`INSERT INTO work_orders (id, equipment_id, title, description, priority, due_date, procedure_steps, task_group, status)
-    VALUES (?, ?, ?, ?, 'high', ?, '[]', 'cleaning', 'open')`)
-    .run(woId, eq?.id || null, title,
-      `${label} failed two consecutive ATP swabs. Latest reading ${grade.value} ${grade.unit} against a `
+  // The one raise path (D-378): an event, not a calendar, but the same card.
+  const { id: woId } = raiseWorkOrder(db, 'reclean', {
+    equipment_id: eq?.id || null, title,
+    description: `${label} failed two consecutive ATP swabs. Latest reading ${grade.value} ${grade.unit} against a `
       + `limit of ${grade.limit} ${grade.unit} (${grade.source}). Re-cleaning has not brought it within `
       + 'limit — check the procedure, the chemical dilution and the equipment before the next run. '
       + 'Log the clean in Sanitation when done.',
-      new Date().toISOString().split('T')[0]);
+    priority: 'high', due_date: new Date().toISOString().split('T')[0], procedure_steps: '[]',
+  });
   db.prepare(`INSERT INTO reclean_actions (id, room, flag_key, action, work_order_id, created_by, created_by_id)
     VALUES (?, ?, ?, 'assigned', ?, ?, NULL)`).run(uuid(), area, flagKey, woId, who || 'system');
   logAudit(who || 'system', 'auto_generate', 'work_order', woId,

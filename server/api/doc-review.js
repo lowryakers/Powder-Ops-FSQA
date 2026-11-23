@@ -12,7 +12,7 @@ import { SOURCES, getSource, safeCount, safePending, isDocController } from '../
 import { docConsistencyReview } from '../doc-consistency.js';
 import { nameUsage } from '../name-usage.js';
 import { planRename, applyRename } from '../name-rename.js';
-import { schedulesForDocument, linkSchedule, unlinkSchedule, findSchedules } from '../schedule-documents.js';
+import { schedulesForDocument, linkSchedule, unlinkSchedule, findSchedules, unlinkedSchedules, findDocuments } from '../schedule-documents.js';
 
 const router = Router();
 
@@ -39,6 +39,16 @@ router.get('/document-tasks/:docId', (req, res) => {
 router.get('/schedules', (req, res) => {
   if (!isDocController(req.user)) return res.status(403).json({ error: 'Document Control review is for Document Control, QA supervisors and admins.' });
   res.json(findSchedules(getDb(), req.query.q));
+});
+// D-378: the active recurring tasks with no document linked, and the documents
+// to link one to. Read-only; linking is the POST below, one task at a time.
+router.get('/schedules/unlinked', (req, res) => {
+  if (!isDocController(req.user)) return res.status(403).json({ error: 'Document Control review is for Document Control, QA supervisors and admins.' });
+  res.json(unlinkedSchedules(getDb(), { q: req.query.q, team: req.query.team, limit: req.query.limit }));
+});
+router.get('/documents', (req, res) => {
+  if (!isDocController(req.user)) return res.status(403).json({ error: 'Document Control review is for Document Control, QA supervisors and admins.' });
+  res.json(findDocuments(getDb(), req.query.q));
 });
 router.post('/document-tasks/:docId', (req, res) => {
   if (!isDocController(req.user)) return res.status(403).json({ error: 'Document Control review is for Document Control, QA supervisors and admins.' });

@@ -21,6 +21,7 @@
 // and an app enforcing a rule the plant has not decided is itself a finding.
 import { randomUUID as uuid } from 'crypto';
 import { isRoomToken, areaLabel } from '../shared/rooms.js';
+import { raiseWorkOrder } from './raise-work.js';
 
 export const PROMPT_PREFIX = 'Pre-Op clean';
 const OUTSTANDING = "('open','in_progress','overdue','missed')";
@@ -105,15 +106,20 @@ export function startRun(db, { room, team, mo_number, product_name, notes, by, b
       // One prompt per room: a second run started before the clean shares it.
       const existing = db.prepare(`SELECT id FROM work_orders WHERE title LIKE ? AND status IN ${OUTSTANDING} ORDER BY created_at DESC LIMIT 1`)
         .get(`${PROMPT_PREFIX} — ${areaLabel(r)} (%`);
-      promptId = existing?.id || uuid();
+      promptId = existing?.id || null;
       if (!existing) {
         const title = promptTitle(r, runNo);
-        db.prepare(`INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, description, priority, due_date, procedure_steps, task_group, status)
-          VALUES (?, NULL, NULL, ?, ?, 'high', date('now'), ?, 'cleaning', 'open')`).run(promptId, title,
-          `Run ${runNo} started in ${areaLabel(r)}${mo_number ? ` for MO ${mo_number}` : ''} with no Pre-Op clean on record since the room's last run. `
-          + 'Protocol 003 V4 PC #1: a pre-operational clean at the beginning of every run. Completing this task files the Pre-Op record; '
-          + 'filing the Pre-Op on the Sanitation form closes it.',
-          JSON.stringify(['Pre-operational clean of the room and line', 'ATP swab (record the RLU reading)']));
+        // The one raise path (D-377/D-378): the cleaning team, and no owner —
+        // nothing names a person for a room, and none is invented. The run is
+        // already started; this prompt reports, it never holds the run.
+        promptId = raiseWorkOrder(db, 'preop', {
+          pm_schedule_id: null, equipment_id: null, title,
+          description: `Run ${runNo} started in ${areaLabel(r)}${mo_number ? ` for MO ${mo_number}` : ''} with no Pre-Op clean on record since the room's last run. `
+            + 'Protocol 003 V4 PC #1: a pre-operational clean at the beginning of every run. Completing this task files the Pre-Op record; '
+            + 'filing the Pre-Op on the Sanitation form closes it.',
+          priority: 'high', due_date: new Date().toISOString().slice(0, 10),
+          procedure_steps: JSON.stringify(['Pre-operational clean of the room and line', 'ATP swab (record the RLU reading)']),
+        }).id;
         logAudit?.(by || 'system', 'auto_generate', 'work_order', promptId, { source: 'production_run_start', run: runNo, room: r }, null, null, title);
       }
       db.prepare('UPDATE production_runs SET prompt_work_order_id = ? WHERE id = ?').run(promptId, id);
