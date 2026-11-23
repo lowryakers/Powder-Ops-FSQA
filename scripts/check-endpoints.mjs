@@ -43,7 +43,7 @@ const PATHS = [
   '/qa-review', '/sanitation', '/sanitation/reclean-status', '/disposals', '/complaints',
   '/haccp', '/hygienic-design', '/internal-audits', '/mock-recalls', '/meetings',
   '/retention', '/retention/boxes', '/facility/map-status', '/quality-schedules',
-  '/chemicals', '/checklists/templates',
+  '/chemicals',
   '/safety/forms', '/safety/evacuations', '/safety/first-aid', '/quality-schedules/emp-site-list',
   // calibration — the one that started this
   '/calibration/instruments', '/calibration/records', '/calibration/stats',
@@ -64,7 +64,7 @@ const PATHS = [
   '/training/courses', '/training', '/training/matrix', '/training/due',
   '/certifications', '/certifications?q=pcqi', '/policies', '/org', '/org/people',
   // office
-  '/office/time', '/office/supply/orders', '/finance/ap', '/finance/ar',
+  '/office/time', '/office/supply/orders',
   '/partners/documents', '/banking/accounts', '/banking/transactions',
   '/reimbursements', '/employee-documents', '/employee-documents/mine', '/ap-drop', '/ap-drop/meta', '/ap-drop/recent', '/pay/employees', '/pay/reviewers', '/newsletter/issues',
   '/products', '/products/flavor-codes', '/artwork', '/nfp/versions', '/procurement',

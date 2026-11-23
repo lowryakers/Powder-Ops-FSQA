@@ -11,7 +11,6 @@ import { v4 as uuid } from 'uuid';
 import multer from 'multer';
 import { getDb, dataDir, logAudit, linkOrgPositionsToUsers } from './server/db.js';
 import { readyDocOrigin, reportOrigins } from './server/links.js';
-import financeRoutes, { backfillFinanceFileText } from './server/api/finance.js';
 import procurementRoutes from './server/api/procurement.js';
 import payRoutes, { payReviewNudges, supersedeRepeatReviews, repairUndecidedReviewStamps } from './server/api/pay.js';
 import { tieKnownDraftAttachments } from './server/document-revisions.js';
@@ -23,13 +22,11 @@ import policyAckRoutes from './server/api/policy-acks.js';
 import { policyAckNudges } from './server/policy-acks.js';
 import newsletterRoutes from './server/api/newsletter.js';
 import { seedProcurement } from './server/procurement-seed.js';
-import { seedFinanceFromMonday } from './server/finance-seed.js';
 import { seedPayTracking } from './server/pay-seed.js';
 import { mergeFillingTeam } from './server/filling-merge.js';
 import equipmentRoutes from './server/api/equipment.js';
 import haccpRoutes from './server/api/haccp.js';
 import pmRoutes, { collapseDuplicateWorkOrders, startPmHousekeeping } from './server/api/pm.js';
-import checklistRoutes from './server/api/checklists.js';
 import calibrationRoutes from './server/api/calibration.js';
 import scaleVerificationRoutes from './server/api/scale-verification.js';
 import recordRoutes from './server/api/records.js';
@@ -173,7 +170,7 @@ import { pauseEmptyChecklists, routingCleanupOnce } from './server/routing-clean
 import { retireInventedHistory, deactivateDemoAuditor } from './server/demo-cleanup.js';
 import { retireDailyScalePMs, retireSummary } from './server/pm-pause.js';
 import { generationSweep } from './server/pm-generation.js';
-import { seedCleaningRecords, seedCleaningChecklists, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
+import { seedCleaningRecords, seedCleaningPMSchedules, seedTempHumidityRecords, seedTempHumidityPMSchedules, seedGlassPlasticRecords, seedGlassPlasticPMSchedules, seedLightInspectionRecords, seedLightInspectionPMSchedules, seedApprovedChemicals } from './server/cleaning-seed.js';
 import { seedProductionEntries, seedEodTemplates } from './server/production-seed.js';
 import { seedTrainingCourses, seedWorkInstructionCourses } from './server/training-seed.js';
 import { flagBotAccountsOnce, flagUnusedAuditorDuplicatesOnce } from './server/trainees.js';
@@ -356,11 +353,11 @@ try {
   process.exit(1);
 }
 
-// Office seeds: procurement reference data from Jake's workbooks, and the AP/AR
-// ledgers from the Monday exports. Both are idempotent.
+// Office seed: procurement reference data from Jake's workbooks (idempotent).
+// The AP/AR ledger seed went with the retired finance code (D-380); the tables
+// and any rows already in them stay.
 try {
   seedProcurement(db);
-  seedFinanceFromMonday(db);
 } catch (e) {
   console.warn('[seed] office seeding skipped:', e.message);
 }
@@ -1060,7 +1057,6 @@ for (const [key, run] of [
 // Seed cleaning/sanitation records and checklist templates
 try {
   seedCleaningRecords(db);
-  seedCleaningChecklists(db);
   seedCleaningPMSchedules(db);
   seedTempHumidityRecords(db);
   seedTempHumidityPMSchedules(db);
@@ -2086,7 +2082,6 @@ app.use('/api', activityMiddleware);
 app.use('/api/equipment', requireModuleWrite('equipment'), equipmentRoutes);
 app.use('/api/haccp', haccpRoutes);
 app.use('/api/pm', requireModuleWrite('pm', 'operator', { taskWrites: TASK_WRITES }), pmRoutes);
-app.use('/api/checklists', requireModuleWrite('pm', 'operator', 'sanitation'), checklistRoutes);
 app.use('/api/calibration', requireModuleWrite('calibration'), calibrationRoutes);
 app.use('/api/scale-verification', requireModuleWrite('calibration'), scaleVerificationRoutes);
 // The record interface's read side (D-207): each type is read only by someone
@@ -2287,7 +2282,6 @@ app.use('/api/nfp', requireModuleWrite('products'), nfpRoutes);
 // the grant that owns the catalogue; the target decides which table it writes.
 app.use('/api/product-files', requireModuleWrite('products'), productFileImportRoutes);
 app.use('/api/office', officeRoutes);
-app.use('/api/finance', financeRoutes);
 app.use('/api/procurement', procurementRoutes);
 app.use('/api/pay', payRoutes);
 app.use('/api/flash', flashRoutes);
@@ -2336,6 +2330,12 @@ app.use('/assets', express.static(path.join(__dirname, 'dist', 'assets'), {
 // service worker stores any 200 under /assets — so one chunk requested across a
 // deploy cut-over was cached as HTML under a .js name and served from then on:
 // "ReadyDoc was updated", Reload, the same screen, forever.
+// An /api path nothing mounts is a 404 in JSON, never the app shell with a 200
+// (D-380). A retired API (/api/finance, /api/checklists) used to answer a GET
+// with index.html, which a bot or a script reads as success.
+app.use('/api', (_req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
 app.use('/assets', (_req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.status(404).type('text/plain').send('Not found');
@@ -2385,7 +2385,6 @@ server.listen(PORT, '0.0.0.0', () => {
   backfillEmbeddings().catch(e => console.warn('[comms] embedding backfill error:', e.message));
   // Index the contents of previously-uploaded invoices (no-op unless storage is on).
   backfillInvoiceText().catch(e => console.warn('[invoices] backfill error:', e.message));
-  backfillFinanceFileText().catch(e => console.warn('[finance] backfill error:', e.message));
   // Recurring jobs: Friday auto-backup to R2, Monday expiry digest to #quality.
   startScheduledJobs(db, { runDbBackup, BACKUP_HOUR, storageEnabled, putObject, deleteObject, buildBackupZip, getChannelByName, postMessageAs, getBotUser, computeCritical, botDm, pushToUser, payReviewNudges, qaActionNudges, employeeDocumentNudges, policyAckNudges: (d) => policyAckNudges(d, { botDm, postMessageAs, pushToUser }), trainingNudges, supplyCycleNudge, partnerReminderNudges, recordBackfillNudge, supplierReviewNudge, sendFlashReport, sendCleanupDigest, cleanupDigest, CLEANUP_BUSY_THRESHOLD, sendEodMissedDigest, eodMissedDigest, EOD_BUSY_THRESHOLD, sendHolidayNotices, sendLateResults, sendFailureNotices, prepareWeeklyRun, sendPaymentReminders, closeoutDigest });
   startReminderLoop(db);

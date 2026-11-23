@@ -11617,3 +11617,33 @@ write it. A new file writing one fails the check, and so does a supply-order INS
 pattern that finds no writer fails too, so the scan cannot go silently stale (it caught a wrong column name while
 being written). `check:mirrors` 25 → 39; `check:swabs` +1; `verify:supplylists` 76 → 79. Controls: a rogue
 `UPDATE products SET nfp_version` fails the registry; the old swab-stock and office.js code fail their new assertions.
+
+## D-380 — Dead finance and the old checklist API are retired; Banking stays because the payment run reads it (23 Nov 2026, single-spine pack 6, step B)
+**Asked:** P6 step B — remove the dead finance code and, if truly unused, the old checklist API; leave every table
+holding rows; do not touch AP Drop, partner reconciliation or the payment run.
+**Found:**
+- **AP/AR ledgers + QuickBooks were dead**: no screen imports `LedgerPanel`, `QuickBooksPanel` or `QuickBooksSetupCard`
+  (hidden since D-075); `/api/finance` was still MOUNTED, and with no module guard; `server/quickbooks.js` was read only
+  by finance.js; `finance-seed.js` re-seeded the ledgers from `seed-data/ap-ar.json` on a fresh database; five QBO
+  import targets in `api/imports.js` were reachable only from the QuickBooks panel.
+- **Banking is NOT dead**, and the 26 Oct cleanup note was wrong to list it. The weekly payment run (D-363/D-364)
+  reads `bank_accounts` (the "use the bank feed" balance, `server/payment-run.js`) and `bank_transactions` (the
+  transfer matches, `server/payment-closeout.js`); `api/banking.js` + `bank-feed.js` / `bank-match.js` /
+  `bank-formats.js` are the only things that fill them. `BankingPanel` is the only screen that links a feed. Kept.
+- **`/api/checklists` was dead**: no screen, generator or bot calls it; only three verifies did. Its seeder
+  (`seedCleaningChecklists`) wrote templates nothing reads.
+- **Unused files**: `src/components/MOLegend.jsx`, `src/utils/moColors.js`, `src/utils/parseSheet.js` (the server's
+  `training-log.js` has its own `parseSheet`). `server/backfill-history.js` was already gone (D-215).
+**Decided:**
+- Deleted those files and unmounted both routes; removed the ledger seed, the checklist-template seed and the QBO
+  import targets. **No table dropped, no row deleted** — `ap_invoices`, `ar_invoices`, `finance_files`, `qbo_*`,
+  `checklist_*` stay; Module usage labels them "code retired D-380; tables kept". The compliance summary and
+  `/api/health` still count `checklist_*` rows.
+- **An `/api` path nothing mounts answers a JSON 404** (server.js, before the app shell). It answered `index.html`
+  with a 200, so a retired API looked alive to a script — found when the new 404 assertion failed.
+- Kept the static `/quickbooks/disconnect` legal page (Intuit's app profile names it; it is a page, not code).
+- `check:retired` (31, in `npm run check`): the files are gone, neither route is mounted, nothing imports them, and
+  AP Drop, Partner Rec, the partner portal, the payment run, payment approval and Banking are still mounted and on
+  disk. Control on `main` fails 17. `verify:writedoors` and `verify-review-cadence` now assert the 404s;
+  `verify:writedoors` also had five failures already on `main` (a product fixture created as Active, refused since
+  D-342) — the fixture now starts as Draft.
