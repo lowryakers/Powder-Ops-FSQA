@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useApiGet, apiPost } from '../../hooks/useApi';
 import DocRevisionWorklist from './DocRevisionWorklist.jsx';
 import NameUsageSearch from './NameUsageSearch.jsx';
+import UnlinkedSchedules from './UnlinkedSchedules.jsx';
 import {
   FileCheck2, AlertTriangle, CheckCircle2, ExternalLink, Loader2, Info,
 } from 'lucide-react';
@@ -130,7 +131,8 @@ function ConsistencyReview() {
 
 export default function DocReviewPanel() {
   const [tab, setTab] = useState(null);
-  const [showConsistency, setShowConsistency] = useState(false);
+  // A side view instead of a pile: '' (the piles), 'consistency' or 'unlinked'.
+  const [side, setSide] = useState('');
   const [picked, setPicked] = useState(() => new Set());
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -183,8 +185,8 @@ export default function DocReviewPanel() {
 
       <div className="flex gap-1 bg-gray-100 rounded-lg p-1 flex-wrap w-fit">
         {sources.map(s => (
-          <button key={s.key} data-doc-review-source={s.key} onClick={() => { setTab(s.key); setShowConsistency(false); setPicked(new Set()); setMsg(null); }}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${!showConsistency && active?.key === s.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+          <button key={s.key} data-doc-review-source={s.key} onClick={() => { setTab(s.key); setSide(''); setPicked(new Set()); setMsg(null); }}
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${!side && active?.key === s.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
             {s.label}
             {s.count > 0 && (
               <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold">
@@ -193,15 +195,21 @@ export default function DocReviewPanel() {
             )}
           </button>
         ))}
-        <button onClick={() => { setShowConsistency(true); setMsg(null); }}
-          className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${showConsistency ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+        <button onClick={() => { setSide('consistency'); setMsg(null); }}
+          className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${side === 'consistency' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
           Consistency Review
+        </button>
+        {/* Not a pile with a red count: linking every task is a project, not a queue (D-378). */}
+        <button onClick={() => { setSide('unlinked'); setMsg(null); }} data-doc-review-unlinked
+          className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${side === 'unlinked' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+          Tasks with no SOP linked
         </button>
       </div>
 
-      {showConsistency && <ConsistencyReview />}
+      {side === 'consistency' && <ConsistencyReview />}
+      {side === 'unlinked' && <UnlinkedSchedules />}
 
-      {!showConsistency && active && (
+      {!side && active && (
         <div className="border border-gray-200 rounded-xl overflow-hidden bg-white">
           <div className="px-3 py-2.5 border-b border-gray-100 bg-gray-50/60 flex items-start gap-2 flex-wrap">
             <div className="min-w-0 flex-1">

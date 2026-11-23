@@ -11571,3 +11571,26 @@ wrote the owner's name without going through `scheduleAssignee`.
   the manual re-clean Assign), which are step B.
 - `verify:schedowner` 35 → 50. The control, `main` before this, fails 9: the backfilled owned card has no owner, and
   each of the seven generator functions still writes its own INSERT.
+
+## D-378 — The event triggers raise through the same path; recurring tasks with no SOP are listed, never linked for you (23 Nov 2026, single-spine move 05, step B)
+**Asked:** P5 step B — the run-start Pre-Op prompt and the ATP / 72-hour re-cleans on the one raise path; the D-328
+SOP link visible from the schedule side; no SOP link invented.
+**Decided:**
+- **Event triggers on `raiseWorkOrder`**: `startRun`'s Pre-Op prompt (`server/production-runs.js`, kind `preop`),
+  `raiseAtpRecleanTask` and the manual re-clean Assign (`server/api/sanitation.js`, kind `reclean`). All three go to the
+  cleaning team with no owner: nothing in the app names a person for a room, so none is invented. A run still starts
+  whatever the Pre-Op state — the prompt reports, it never holds the run (D-146). `sanitation.js` has no work-order
+  INSERT left.
+- **Swab reorders stay `supply_orders`.** `generateSwabReorders` raises a supply order, not a work order; it is not a
+  calendar and is not moved onto the raise path.
+- **"Tasks with no SOP linked"** on Doc Control Review (`UnlinkedSchedules.jsx`, `GET /doc-review/schedules/unlinked`,
+  `unlinkedSchedules` in `server/schedule-documents.js`): every active schedule with no `document_id`, filtered by name
+  or team, counted by team, with the linked total; `GET /doc-review/documents` finds the document. Linking is the
+  existing `POST /doc-review/document-tasks/:docId` (audited, starts checked against the revision in force), one task at
+  a time. **Not a pile with a red count** — linking 365 schedules is a project, not a queue.
+- **No link is invented**: no seeder, boot pass or route writes `document_id` except that person's POST. A linked
+  schedule still flags on the "Recurring tasks to check" pile when its document's revision moves (D-328, unchanged).
+- `verify:schedowner` 50 → 57 (the three triggers raise through the path; a run start's prompt is the cleaning team's,
+  owner blank, on its Operator View). `verify:singlespine` → 63 (the unlinked list, its counts and filters, the 403, the
+  document search, a link leaving the list, the audit, and the screen at 1280 and 390). Controls: step A's code fails 4
+  and 7.

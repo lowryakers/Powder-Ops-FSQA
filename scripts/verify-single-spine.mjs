@@ -141,10 +141,27 @@ t('the ATP limit changes in the app too', r.status === 200 && (await call('GET',
 // ── 3: tasks follow a document ──────────────────────────────────────────────
 console.log('\n── Recurring tasks follow a document ──');
 w(`INSERT INTO sop_documents (id, doc_number, title, revision, status, doc_type, category) VALUES ('ss-doc', 'SOP 999', 'Sanitation test', 'V1', 'active', 'sop', 'sanitation')`);
+// D-378: the list of active recurring tasks with NO document, to work through.
+const activeUnlinked = () => one('SELECT COUNT(*) c FROM pm_schedules WHERE is_active = 1 AND document_id IS NULL').c;
+t('no recurring task follows a document on a fresh database — none is invented', one('SELECT COUNT(*) c FROM pm_schedules WHERE document_id IS NOT NULL').c === 0);
+let un = await call('GET', '/doc-review/schedules/unlinked', null, D);
+t('Doc Control Review lists every active task with no SOP linked', un.status === 200 && un.json?.total === activeUnlinked() && un.json?.total > 0 && un.json?.linked === 0, JSON.stringify(un.json && { total: un.json.total, linked: un.json.linked }));
+t('…counted by team, the counts adding up', (un.json?.by_team || []).reduce((n, x) => n + x.c, 0) === un.json?.total);
+un = await call('GET', '/doc-review/schedules/unlinked?q=filler', null, D);
+t('…and filters by name to the task', un.json?.rows?.some((s) => s.id === 'ss-sched'));
+un = await call('GET', '/doc-review/schedules/unlinked?team=cleaning', null, D);
+t('…and by team', (un.json?.rows || []).length > 0 && un.json.rows.every((s) => s.task_group === 'cleaning'));
+t('a warehouse operator cannot read it', (await call('GET', '/doc-review/schedules/unlinked', null, O)).status === 403);
+r = await call('GET', '/doc-review/documents?q=SOP 999', null, D);
+t('the document to link is found by number', r.json?.some((d) => d.id === 'ss-doc'));
+const before = activeUnlinked();
 r = await call('GET', '/doc-review/schedules?q=filler', null, D);
 t('Document Control finds the recurring task to link', r.json?.some((s) => s.id === 'ss-sched'));
 r = await call('POST', '/doc-review/document-tasks/ss-doc', { schedule_id: 'ss-sched' }, D);
 t('the task is linked to SOP 999, checked against V1', r.status === 200 && r.json?.[0]?.id === 'ss-sched' && r.json[0].needs_check === false);
+un = await call('GET', '/doc-review/schedules/unlinked?q=filler', null, D);
+t('it leaves the unlinked list, and only it', !un.json?.rows?.some((s) => s.id === 'ss-sched') && un.json?.total === before - 1 && un.json?.linked === 1);
+t('the link is audited', !!one("SELECT 1 x FROM audit_log WHERE entity_type = 'pm_schedule' AND entity_id = 'ss-sched' AND details LIKE '%follows_document%'"));
 const pile = async () => (await call('GET', '/doc-review?source=tasks-to-check', null, D)).json?.sources?.find((s) => s.key === 'tasks-to-check');
 t('nothing to check while the revision has not moved', (await pile())?.count === 0);
 w("UPDATE sop_documents SET revision = 'V2' WHERE id = 'ss-doc'");
@@ -197,6 +214,32 @@ try {
   t('the search result offers the rename box', (await page.$('[data-rename-box]')) !== null || Number(await page.getAttribute('[data-name-usage-result]', 'data-total')) === 0);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
   t('no sideways scroll', !overflow);
+  // D-378: the unlinked list, and linking a task from it.
+  await page.click('[data-doc-review-unlinked]');
+  await page.waitForSelector('[data-unlinked-total]', { timeout: 10000 });
+  t('"Tasks with no SOP linked" opens with its count', /not linked/.test(await page.textContent('[data-unlinked-total]')));
+  w(`INSERT INTO pm_schedules (id, equipment_id, title, description, frequency_type, frequency_value, procedure_steps, is_active, task_group)
+     VALUES ('ss-sched2', ?, 'Wipe the sifter screen (link test)', '', 'daily', 1, '[]', 1, 'cleaning')`, zone.id);
+  await page.fill('[data-unlinked-search]', 'link test');
+  await page.click('[data-unlinked-search] ~ button');
+  await page.waitForSelector('[data-unlinked-row="ss-sched2"]', { timeout: 10000 });
+  await page.click('[data-unlinked-link="ss-sched2"]');
+  await page.fill('[data-unlinked-doc-search]', 'SOP 999');
+  await page.press('[data-unlinked-doc-search]', 'Enter');
+  await page.waitForSelector('[data-unlinked-pick="ss-doc"]', { timeout: 10000 });
+  await page.click('[data-unlinked-pick="ss-doc"]');
+  await page.waitForSelector('[data-unlinked-msg]', { timeout: 10000 });
+  await page.waitForTimeout(400);
+  t('linking from the list saves the link and the row leaves', one("SELECT document_id d FROM pm_schedules WHERE id = 'ss-sched2'")?.d === 'ss-doc' && (await page.$('[data-unlinked-row="ss-sched2"]')) === null);
+  t('…checked against the revision in force, so nothing is flagged until it moves', one("SELECT document_revision_checked v FROM pm_schedules WHERE id = 'ss-sched2'")?.v === 'V2');
+  const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  await phone.goto(`${URL}/manifest.webmanifest`);
+  await phone.evaluate(([tok, u]) => { localStorage.setItem('auth_token', tok); localStorage.setItem('auth_user', JSON.stringify(u)); }, [D, dcLogin.user]);
+  await phone.goto(`${URL}/?tab=doc-review`);
+  await phone.waitForSelector('[data-doc-review-unlinked]', { timeout: 20000 });
+  await phone.click('[data-doc-review-unlinked]');
+  await phone.waitForSelector('[data-unlinked-total]', { timeout: 10000 });
+  t('at 390px the list does not pan sideways', !(await phone.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)));
 } finally { await browser.close(); }
 
 console.log(`\n${pass} PASS / ${fail} FAIL`);

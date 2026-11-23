@@ -241,7 +241,26 @@ console.log('\nNo calendar writes its own work order any more');
   const pm = fs.readFileSync('server/api/pm.js', 'utf8');
   const raise = pm.slice(pm.indexOf("router.post('/schedules/:id/raise'"), pm.indexOf("router.put('/schedules/:id'"));
   t('the manual Raise button uses it too', raise.includes('raiseWorkOrder(') && !/INSERT INTO work_orders/.test(raise));
-  t('training does NOT — an assignment names one person and no team', !fs.readFileSync('server/training-assign.js', 'utf8').includes('raiseWorkOrder')); }
+  t('training does NOT — an assignment names one person and no team', !fs.readFileSync('server/training-assign.js', 'utf8').includes('raiseWorkOrder'));
+  // D-378: the event triggers raise through the same path.
+  const runs = fs.readFileSync('server/production-runs.js', 'utf8');
+  const start = runs.slice(runs.indexOf('export function startRun('), runs.indexOf('export function closeRun('));
+  t('a run start\u2019s Pre-Op prompt uses it, and writes no card of its own', start.includes("raiseWorkOrder(db, 'preop'") && !/INSERT INTO work_orders/.test(start));
+  const san = fs.readFileSync('server/api/sanitation.js', 'utf8');
+  t('the ATP second-failure re-clean uses it', body('server/api/sanitation.js', 'raiseAtpRecleanTask').includes("raiseWorkOrder(db, 'reclean'") && !/INSERT INTO work_orders/.test(body('server/api/sanitation.js', 'raiseAtpRecleanTask')));
+  const assign = san.slice(san.indexOf("router.post('/reclean-assign'"), san.indexOf("router.put('/reclean-rooms'"));
+  t('the manual re-clean Assign uses it', assign.includes("raiseWorkOrder(db, 'reclean'") && !/INSERT INTO work_orders/.test(assign));
+  t('no work-order INSERT is left in sanitation.js', !/INSERT INTO work_orders/.test(san)); }
+
+console.log('\nA run start raises its Pre-Op prompt through the same path, for the cleaning team, owner blank');
+const run = await J(await call('POST', '/production/runs', { room: '7', team: 'Filling', mo_number: 'MO-SO-1', started_by: 'Owner Admin' }, tok));
+t('the run starts — software never holds it', !!run?.run?.id || !!run?.id, JSON.stringify(run).slice(0, 160));
+{ const db = new Database(dbPath, { readonly: true });
+  const prompt = db.prepare("SELECT task_group, assigned_to, assigned_to_id, priority FROM work_orders WHERE title LIKE 'Pre-Op clean — Room 7 (%' ORDER BY created_at DESC LIMIT 1").get();
+  db.close();
+  t('the Pre-Op prompt is the cleaning team\u2019s, with nobody named', prompt?.task_group === 'cleaning' && !prompt.assigned_to && !prompt.assigned_to_id && prompt.priority === 'high', JSON.stringify(prompt)); }
+const cl = await J(await call('GET', '/pm/operator-tasks', null, cleanerTok));
+t('…and is on the cleaning department\u2019s Operator View', (Array.isArray(cl) ? cl : []).some(w => /^Pre-Op clean — Room 7 \(/.test(w.title)));
 
 console.log(`\n${pass}/${pass + fail} assertions passed`);
 process.exit(fail ? 1 : 0);

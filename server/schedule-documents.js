@@ -63,3 +63,36 @@ export function findSchedules(db, q, limit = 50) {
     FROM pm_schedules s LEFT JOIN sop_documents d ON d.id = s.document_id
     WHERE s.title LIKE ? ORDER BY s.is_active DESC, s.title LIMIT ?`).all(like, limit);
 }
+
+/**
+ * Active recurring tasks that follow NO document (D-378) — the list Document
+ * Control works through to attach an SOP or WI. Nothing is linked here and
+ * nothing is guessed from a title: a link is a person's statement that the
+ * task's steps are written from that document. Filtered by title or team;
+ * `total` is every unlinked active schedule, `linked` every linked one.
+ */
+export function unlinkedSchedules(db, { q = '', team = '', limit = 200 } = {}) {
+  const where = ['s.is_active = 1', 's.document_id IS NULL'];
+  const params = [];
+  const text = String(q || '').trim();
+  if (text) { where.push('(s.title LIKE ? OR COALESCE(e.name, \'\') LIKE ?)'); params.push(`%${text}%`, `%${text}%`); }
+  if (team) { where.push("COALESCE(s.task_group, '') = ?"); params.push(String(team)); }
+  const cap = Math.min(Math.max(Number(limit) || 200, 1), 500);
+  const rows = db.prepare(`SELECT s.id, s.title, s.task_group, s.frequency_type, s.frequency_value,
+      e.name AS equipment_name, e.asset_id AS equipment_asset, e.status AS equipment_status
+    FROM pm_schedules s LEFT JOIN equipment e ON e.id = s.equipment_id
+    WHERE ${where.join(' AND ')} ORDER BY COALESCE(s.task_group, ''), s.title LIMIT ?`).all(...params, cap);
+  const total = db.prepare('SELECT COUNT(*) c FROM pm_schedules WHERE is_active = 1 AND document_id IS NULL').get().c;
+  const linked = db.prepare('SELECT COUNT(*) c FROM pm_schedules WHERE is_active = 1 AND document_id IS NOT NULL').get().c;
+  const byTeam = db.prepare(`SELECT COALESCE(task_group, '') AS team, COUNT(*) c FROM pm_schedules
+    WHERE is_active = 1 AND document_id IS NULL GROUP BY COALESCE(task_group, '') ORDER BY c DESC`).all();
+  return { total, linked, by_team: byTeam, shown: rows.length, rows };
+}
+
+/** Controlled documents to link a task to (number or title), never an archived one. */
+export function findDocuments(db, q, limit = 30) {
+  const like = `%${String(q || '').trim()}%`;
+  return db.prepare(`SELECT id, doc_number, title, revision, doc_type FROM sop_documents
+    WHERE status != 'archived' AND (doc_number LIKE ? OR title LIKE ?)
+    ORDER BY doc_number LIMIT ?`).all(like, like, limit);
+}
