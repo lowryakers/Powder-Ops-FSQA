@@ -111,10 +111,9 @@ t('and the clock restarts, so nothing before it is subtracted twice', atp.used_s
 }
 
 console.log('\n── the reorder order raises itself, once ──');
-// 40 is below the 50 point, so housekeeping now has something to do. It runs on
-// ordinary page loads, so a GET on the task list is what triggers it — the same
-// path the floor takes, rather than a test-only hook.
-await get('/pm/work-orders?limit=1');
+// 40 is below the 50 point, so housekeeping now has something to do. Since
+// D-368 no list read runs it; the explicit pass (or the tick) does.
+await post('/pm/housekeeping', {});
 await new Promise(res => setTimeout(res, 400));
 const orders = await J(await get('/office/supply/orders'));
 const list = orders?.orders || orders || [];

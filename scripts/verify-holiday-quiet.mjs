@@ -63,7 +63,7 @@ t('THE SCALE-CHECK STRIP IS EMPTY ON A PAID HOLIDAY', Array.isArray(during?.scal
 const status = await J(await get('/scale-verification/status'));
 t('…and the scale status says why (the holiday it is)', status?.holiday?.name === 'Labor Day', JSON.stringify(status).slice(0, 160));
 
-await get('/pm/operator-tasks?group=all'); // runs the housekeeping sweep
+await post('/pm/housekeeping', {}); // the sweep (no list read runs it since D-368)
 const woToday = db.prepare("SELECT due_date, status FROM work_orders WHERE id = 'hq-wo-today'").get();
 t('A CARD DUE ON THE HOLIDAY MOVES TO THE NEXT OPEN DAY — not "missed"', woToday.due_date > today && woToday.status === 'open', JSON.stringify(woToday));
 const woThanks = db.prepare("SELECT due_date, status FROM work_orders WHERE id = 'hq-wo-thanks'").get();
@@ -74,7 +74,7 @@ t('…each move is audited, naming the holiday', audits.length === 2 && audits.s
 // A daily schedule with nothing open: the generator dates its card.
 db.prepare(`INSERT INTO pm_schedules (id, equipment_id, title, frequency_type, frequency_value, is_active, task_group)
   VALUES ('hq-sched', ?, 'Holiday test — new daily schedule', 'daily', 1, 1, 'warehouse')`).run(eq.id);
-await get('/pm/operator-tasks?group=all');
+await post('/pm/housekeeping', {});
 const gen = db.prepare("SELECT due_date FROM work_orders WHERE pm_schedule_id = 'hq-sched'").get();
 t('THE GENERATOR NEVER DATES A NEW CARD ON THE HOLIDAY', !!gen && gen.due_date !== today && gen.due_date > today, JSON.stringify(gen));
 

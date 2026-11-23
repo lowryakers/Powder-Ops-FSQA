@@ -290,7 +290,7 @@ router.get('/', (req, res) => {
 
 router.post('/', requireManage, (req, res) => {
   const db = getDb();
-  const { title, description, module_id, frequency_type, frequency_value, procedure_steps, first_due } = req.body;
+  const { title, description, module_id, frequency_type, frequency_value, procedure_steps, first_due, assigned_to } = req.body;
   if (!title || !title.trim()) return res.status(400).json({ error: 'Title is required' });
   const freq = QUALITY_FREQUENCIES.includes(frequency_type) ? frequency_type : 'monthly';
   const id = uuid();
@@ -299,11 +299,12 @@ router.post('/', requireManage, (req, res) => {
     ? first_due
     : db.prepare("SELECT date('now') d").get().d;
   db.prepare(`INSERT INTO quality_schedules
-    (id, title, description, module_id, frequency_type, frequency_value, procedure_steps, next_due, is_active)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`).run(
+    (id, title, description, module_id, frequency_type, frequency_value, procedure_steps, next_due, is_active, assigned_to)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`).run(
     id, title.trim(), description || null, module_id || null, freq,
     Math.max(1, parseInt(frequency_value, 10) || 1),
-    JSON.stringify(Array.isArray(procedure_steps) ? procedure_steps : []), nextDue
+    JSON.stringify(Array.isArray(procedure_steps) ? procedure_steps : []), nextDue,
+    String(assigned_to ?? '').trim() || null
   );
   logAudit(req.user, 'quality_schedule_created', 'quality_schedule', id, { title, frequency_type: freq });
   // Generate the first task immediately if it's already due.
@@ -315,8 +316,14 @@ router.put('/:id', requireManage, (req, res) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM quality_schedules WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Not found' });
-  const { title, description, module_id, frequency_type, frequency_value, procedure_steps, next_due, is_active } = req.body;
+  const { title, description, module_id, frequency_type, frequency_value, procedure_steps, next_due, is_active, assigned_to } = req.body;
   const freq = QUALITY_FREQUENCIES.includes(frequency_type) ? frequency_type : existing.frequency_type;
+  // WHO OWNS THE RECURRING CHECK (D-368), the PM-schedule rule (D-094): absent
+  // leaves it alone, blank clears it, a name is stored as written. Optional and
+  // ADDED to the team — the team still sees every card. The generator copies it
+  // onto each new card (generateQualityScheduleTasks); there is no second path.
+  const ownerGiven = assigned_to !== undefined;
+  const owner = ownerGiven ? (String(assigned_to ?? '').trim() || null) : existing.assigned_to;
   const nextActive = is_active !== undefined ? (is_active ? 1 : 0) : existing.is_active;
   // PAUSING CLOSES WHAT IT RAISED (D-148, the D-139 rule for this generator):
   // the open, overdue and missed cards are cancelled in the same transaction
@@ -325,13 +332,14 @@ router.put('/:id', requireManage, (req, res) => {
   let closed = { cancelled: 0, in_progress: 0 };
   db.transaction(() => {
     db.prepare(`UPDATE quality_schedules SET
-      title=?, description=?, module_id=?, frequency_type=?, frequency_value=?, procedure_steps=?, next_due=?, is_active=?, updated_at=datetime('now')
+      title=?, description=?, module_id=?, frequency_type=?, frequency_value=?, procedure_steps=?, next_due=?, is_active=?, assigned_to=?, updated_at=datetime('now')
       WHERE id=?`).run(
       title ?? existing.title, description ?? existing.description, module_id ?? existing.module_id,
       freq, frequency_value != null ? Math.max(1, parseInt(frequency_value, 10) || 1) : existing.frequency_value,
       procedure_steps !== undefined ? JSON.stringify(Array.isArray(procedure_steps) ? procedure_steps : []) : existing.procedure_steps,
       (next_due && /^\d{4}-\d{2}-\d{2}$/.test(next_due)) ? next_due : existing.next_due,
       nextActive,
+      owner,
       req.params.id
     );
     if (pausing) {
@@ -340,7 +348,8 @@ router.put('/:id', requireManage, (req, res) => {
     }
   })();
   logAudit(req.user, 'quality_schedule_updated', 'quality_schedule', req.params.id,
-    { title: title ?? existing.title, ...(pausing ? { paused: true, closed_work: closed.cancelled, open_work_left: closed.in_progress } : {}) });
+    { title: title ?? existing.title, ...(owner !== (existing.assigned_to || null) ? { owner: { from: existing.assigned_to || null, to: owner } } : {}),
+      ...(pausing ? { paused: true, closed_work: closed.cancelled, open_work_left: closed.in_progress } : {}) });
   res.json({ ...db.prepare('SELECT * FROM quality_schedules WHERE id = ?').get(req.params.id), closed_work: closed.cancelled, open_work: closed.in_progress });
 });
 
