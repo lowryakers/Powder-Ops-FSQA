@@ -4486,6 +4486,9 @@ since go-live and in the last 90 days, and gives a verdict: never used / machine
 - **A lookup is never capped (D-373, `server/record-cap.js`)**: with `lot`, `equipment` or `person` set, `GET /api/records`
   returns every row. An unfiltered read is capped at 500 per type and names each cut type in `truncated_types`. **A new
   type's LIMIT reads `rowLimit(q)`**, never its own number. `verify:recordscap` (12).
+- **Receiving sign-off and disposal approvals ask for the password (D-374)** — sign and revoke, with meaning + fingerprint
+  (`review_meaning`/`review_hash`; `approvals[role].meaning/hash`). The record interface cannot do either. A verify that
+  signs one must send `signature_password`. `verify:signgates` (30).
 
 ## Five more acts sign with the password (D-206, move 01)
 - Gated now: the internal audit sign-off, approving meeting minutes, authorizing a mock recall, signing a COA,

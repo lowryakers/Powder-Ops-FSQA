@@ -3,6 +3,9 @@ import { v4 as uuid } from 'uuid';
 import PDFDocument from 'pdfkit';
 import { getDb, logAudit } from '../db.js';
 import { embedUnicodeFaces } from '../pdf-unicode.js';
+import { createHash } from 'crypto';
+import { gateSignature } from '../signature.js';
+import { signatureMeaning } from '../../shared/signature-meaning.js';
 
 const router = Router();
 
@@ -41,7 +44,10 @@ router.get('/:id', (req, res) => {
   const db = getDb();
   const d = db.prepare('SELECT * FROM disposals WHERE id = ?').get(req.params.id);
   if (!d) return res.status(404).json({ error: 'Not found' });
-  res.json({ ...d, approvals: parseApprovals(d.approvals), items: loadItems(db, d.id) });
+  const items = loadItems(db, d.id);
+  // Each approval's state (D-374): signed · changed since signed · not recorded (before D-374).
+  const approval_state = Object.fromEntries(Object.keys(parseApprovals(d.approvals)).map(role => [role, disposalApprovalState(d, items, role)]));
+  res.json({ ...d, approvals: parseApprovals(d.approvals), items, approval_state });
 });
 
 function writeItems(db, disposalId, items) {
@@ -121,8 +127,28 @@ export function canSign(user, role) {
   return false;
 }
 
+// AN APPROVAL IS A SIGNATURE (D-374, 21 CFR 111.140(b)(2) / 11.50 / 11.70):
+// the signed-in person's password at the moment of signing, the meaning in
+// words, and a fingerprint of the disposal as it stood — the number, date,
+// reason and every item's lot and quantity — so an item changed after approval
+// reads "changed since signed".
+const ROLE_LABEL = { ops_manager: 'Operations Manager', quality_control: 'Quality Control' };
+export function disposalApprovalHash(d, items, role, sig) {
+  const facts = [d?.disposal_number ?? null, d?.disposal_date ?? null, d?.reason ?? null,
+    (items || []).map(i => [i.item_number ?? null, i.item_name ?? null, i.lot_number ?? null, i.quantity ?? null]),
+    role, sig?.name ?? null, sig?.user_id ?? null, sig?.signed_at ?? null];
+  return createHash('sha256').update(JSON.stringify(facts)).digest('hex');
+}
+/** 'signed' · 'changed' · 'not_recorded' (approved before D-374), per role. */
+export function disposalApprovalState(d, items, role) {
+  const sig = parseApprovals(d?.approvals)[role];
+  if (!sig) return null;
+  if (!sig.hash) return 'not_recorded';
+  return sig.hash === disposalApprovalHash(d, items, role, sig) ? 'signed' : 'changed';
+}
+
 /** One approval on a disposal — the signer or an admin may revoke it (D-372: routes and record interface). */
-export function signDisposal(db, user, id, role) {
+export function signDisposal(db, user, id, role, { gate = null } = {}) {
   const d = db.prepare('SELECT * FROM disposals WHERE id = ?').get(id);
   if (!d) return { status: 404, error: 'Not found' };
   if (!['ops_manager', 'quality_control'].includes(role)) return { status: 400, error: 'Invalid approval role' };
@@ -130,14 +156,21 @@ export function signDisposal(db, user, id, role) {
     return { status: 403, error: role === 'quality_control' ? 'Quality Control sign-off requires a QA (or admin) account' : 'Operations Manager sign-off requires a supervisor or admin account' };
   }
   const approvals = parseApprovals(d.approvals);
-  approvals[role] = { name: user.name, user_id: user.id, signed_at: new Date().toISOString() };
+  if (approvals[role]) return { status: 409, error: `${ROLE_LABEL[role]} has already approved this disposal.` };
+  // The password is asked LAST; a caller with no gate (the record interface) cannot sign.
+  if (!gate) return { status: 403, error: 'A disposal approval is signed with the password, on the disposals screen.', signature_required: true };
+  if (!gate()) return { handled: true };
+  const sig = { name: user.name, user_id: user.id, signed_at: new Date().toISOString(),
+    meaning: signatureMeaning('disposal_approval', ROLE_LABEL[role]), verified_via: 'password' };
+  sig.hash = disposalApprovalHash(d, loadItems(db, id), role, sig);
+  approvals[role] = sig;
   db.prepare("UPDATE disposals SET approvals = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(approvals), id);
-  logAudit(user, `disposal_signed_${role}`, 'disposal', id, { disposal_number: d.disposal_number });
+  logAudit(user, `disposal_signed_${role}`, 'disposal', id, { disposal_number: d.disposal_number, meaning: sig.meaning, signature_verified: true });
   const updated = db.prepare('SELECT * FROM disposals WHERE id = ?').get(id);
   return { status: 200, record: { ...updated, approvals: parseApprovals(updated.approvals), items: loadItems(db, id) } };
 }
 
-export function revokeDisposalApproval(db, user, id, role) {
+export function revokeDisposalApproval(db, user, id, role, { gate = null } = {}) {
   const d = db.prepare('SELECT * FROM disposals WHERE id = ?').get(id);
   if (!d) return { status: 404, error: 'Not found' };
   const approvals = parseApprovals(d.approvals);
@@ -147,22 +180,28 @@ export function revokeDisposalApproval(db, user, id, role) {
   if (user.role !== 'admin' && sig.user_id !== user.id) {
     return { status: 403, error: 'Only an admin or the signer can revoke this approval' };
   }
+  if (!gate) return { status: 403, error: 'Revoking an approval is signed with the password, on the disposals screen.', signature_required: true };
+  if (!gate()) return { handled: true };
   delete approvals[role];
   db.prepare("UPDATE disposals SET approvals = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(approvals), id);
-  logAudit(user, `disposal_unsigned_${role}`, 'disposal', id, { disposal_number: d.disposal_number });
+  logAudit(user, `disposal_unsigned_${role}`, 'disposal', id, { disposal_number: d.disposal_number, was_signed_by: sig.name, was_meaning: sig.meaning || null, signature_verified: true });
   const updated = db.prepare('SELECT * FROM disposals WHERE id = ?').get(id);
   return { status: 200, record: { ...updated, approvals: parseApprovals(updated.approvals), items: loadItems(db, id) } };
 }
 
 router.post('/:id/approve', (req, res) => {
-  const out = signDisposal(getDb(), req.user, req.params.id, req.body?.role);
-  if (out.error) return res.status(out.status).json({ error: out.error });
+  const out = signDisposal(getDb(), req.user, req.params.id, req.body?.role,
+    { gate: () => gateSignature(req, res, { action: 'disposal_approval' }) });
+  if (out.handled) return;
+  if (out.error) return res.status(out.status).json({ error: out.error, ...(out.signature_required ? { signature_required: true } : {}) });
   res.json(out.record);
 });
 
 router.delete('/:id/approve/:role', (req, res) => {
-  const out = revokeDisposalApproval(getDb(), req.user, req.params.id, req.params.role);
-  if (out.error) return res.status(out.status).json({ error: out.error });
+  const out = revokeDisposalApproval(getDb(), req.user, req.params.id, req.params.role,
+    { gate: () => gateSignature(req, res, { action: 'disposal_approval_revoke' }) });
+  if (out.handled) return;
+  if (out.error) return res.status(out.status).json({ error: out.error, ...(out.signature_required ? { signature_required: true } : {}) });
   res.json(out.record);
 });
 

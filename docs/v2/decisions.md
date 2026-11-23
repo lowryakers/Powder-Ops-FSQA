@@ -11484,3 +11484,24 @@ nothing.
   adapter's LIMIT reads it through `rowLimit()`. No adapter decides its own cap.
 - `verify:recordscap` (12). The control, `main` before this, fails 8: the lot lookup returns 500 of 650, and
   `truncated` is false on a read that was cut.
+## D-374 — Signing off a receiving inspection and approving a disposal ask for the password (23 Nov 2026)
+**Asked:** route both through `gateSignature` (the person's password at the moment of signing, meaning + fingerprint,
+bots never approve) — a pre-move-01 miss, raised in D-371 and D-372.
+**Why it is required, not a preference:** both are signatures on records the predicate rules require. 21 CFR
+111.140(b)(2) asks quality control's review, approval or rejection to be documented with the date and the signature of
+the person who did it, and the receiving record is a required record (21 CFR 111.180). An electronic signature standing
+in for those is a Part 11 signature (11.50, 11.70, 11.200) — which move 01 gave every other signed act.
+**Decided:**
+- **Sign-off and revoke, on both, go through `gateSignature`**, asked LAST, once the act is complete and allowed
+  (`signReceivingChecklist` / `revokeReceivingSignoff` in `api/receiving.js`, `signDisposal` / `revokeDisposalApproval` in
+  `api/disposals.js`, each taking `gate`). A caller with no gate — the record interface — is refused, as calibration's
+  product decision already was (D-371).
+- **The signature carries its meaning and a fingerprint.** Receiving: `receiving_checklists.review_meaning` /
+  `review_hash` (inspection, date, answers, system status, signer, time); `review_signature` on every read reads
+  signed · changed · not_recorded. Disposal: `approvals[role].meaning` / `.hash` / `.verified_via` (number, date, reason,
+  every item's number, name, lot and quantity, role, signer, time); `GET /disposals/:id` carries `approval_state`.
+- **A disposal approval is no longer overwritten by a second one** (409); the way back is revoke.
+- **Bots:** the disposal path already said `approve`; the receiving path says `review`, so both its methods are on
+  `APPROVE_ROUTES` — a token and a bot account (even with its password) are refused.
+- Nothing already signed is touched: older sign-offs read `not_recorded`.
+- `verify:signgates` (30). The control, `main` before this, signs a receiving inspection with no password.

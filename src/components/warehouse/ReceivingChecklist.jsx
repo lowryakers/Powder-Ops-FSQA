@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useApiGet, apiPost, apiFetch } from '../../hooks/useApi';
+import { useApiGet, apiPost, apiDelete } from '../../hooks/useApi';
+import { withSignature } from '../../lib/signature.js';
 import {
   ClipboardCheck, X, AlertTriangle, BellRing, Check, CheckCircle2, RotateCcw, Plus, Trash2,
 } from 'lucide-react';
@@ -161,10 +162,14 @@ export default function ReceivingChecklist({ inspectionNo, onClose, onAddLine })
   const signOff = async () => {
     setBusy(true); setError(''); setBlocked(null);
     try {
-      await apiPost(`/receiving/checklist/${encodeURIComponent(inspectionNo)}/review`,
-        { system_status: header.system_status });
+      // A sign-off is a signature (D-374): the server asks for the password
+      // once the checklist is complete, never before.
+      await withSignature((extra) => apiPost(`/receiving/checklist/${encodeURIComponent(inspectionNo)}/review`,
+        { system_status: header.system_status, ...extra }),
+      { title: 'Sign off this receiving inspection', detail: `Inspection ${inspectionNo}. Enter the password you sign in with.` });
       refresh();
     } catch (e) {
+      if (e?.cancelled) return;   // a choice, not a failure
       // The server names exactly what is missing; show that rather than a
       // generic refusal the receiver has to go hunting behind.
       setError(e.message);
@@ -175,9 +180,10 @@ export default function ReceivingChecklist({ inspectionNo, onClose, onAddLine })
   const revoke = async () => {
     setBusy(true); setError('');
     try {
-      await apiFetch(`/receiving/checklist/${encodeURIComponent(inspectionNo)}/review`, { method: 'DELETE' });
+      await withSignature((extra) => apiDelete(`/receiving/checklist/${encodeURIComponent(inspectionNo)}/review`, extra),
+        { title: 'Revoke this sign-off', detail: `Inspection ${inspectionNo}. Enter the password you sign in with.` });
       refresh();
-    } catch (e) { setError(e.message); }
+    } catch (e) { if (!e?.cancelled) setError(e.message); }
     finally { setBusy(false); }
   };
 

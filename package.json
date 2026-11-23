@@ -196,6 +196,7 @@
     "verify:partnerrecon": "node scripts/verify-partner-recon.mjs",
     "verify:recordinterface": "node scripts/verify-record-interface.mjs",
     "verify:recordscap": "node scripts/verify-records-cap.mjs",
+    "verify:signgates": "node scripts/verify-sign-gates.mjs",
     "verify:culture": "node scripts/verify-food-safety-culture.mjs",
     "verify:moduleusage": "node scripts/verify-module-usage.mjs",
     "verify:taskrouting": "node scripts/verify-task-routing.mjs",

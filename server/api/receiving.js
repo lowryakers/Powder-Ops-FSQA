@@ -24,6 +24,22 @@ import { storageEnabled, putObject, presignGet } from '../storage.js';
 import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { cocSignRefusals, isCocCategory, onFileCurrent, COC_CATEGORIES } from '../coc-items.js';
 import { cocState } from '../coc-state.js';
+import { gateSignature } from '../signature.js';
+import { signatureMeaning } from '../../shared/signature-meaning.js';
+
+// THE SIGN-OFF IS A SIGNATURE (D-374, 21 CFR 111.140(b)(2) / 11.50 / 11.70):
+// the signed-in person's password at the moment of signing, the meaning in
+// words, and a fingerprint of what was signed — so an answer changed after the
+// sign-off reads "changed since signed" rather than passing silently.
+const REVIEW_HASHED = ['inspection_no', 'inspection_date', 'answers', 'system_status', 'reviewed_by', 'reviewed_at'];
+export const receivingReviewHash = (r) => createHash('sha256').update(JSON.stringify(REVIEW_HASHED.map(k => r?.[k] ?? null))).digest('hex');
+/** 'signed' (intact) · 'changed' · 'not_recorded' (signed before D-374) · null (not signed). */
+export function receivingReviewState(r) {
+  if (!r?.reviewed_at) return null;
+  if (!r.review_hash) return 'not_recorded';
+  return r.review_hash === receivingReviewHash(r) ? 'signed' : 'changed';
+}
+const sqlNow = () => new Date().toISOString().replace('T', ' ').slice(0, 19);
 
 const router = Router();
 // Every /checklist/:inspectionNo route reads the number in its one spelling
@@ -181,6 +197,7 @@ const shapeChecklist = (r) => {
     // fixes a mis-click.
     escalations: triggeredEscalations(answers),
     unanswered: unanswered(answers),
+    review_signature: receivingReviewState(r),
   };
 };
 
@@ -426,7 +443,7 @@ router.post('/checklist/:inspectionNo/notify', async (req, res) => {
  * whole reason those lines are on the form is that somebody has to be told.
  */
 /** The sign-off itself (D-371: the route and the record interface both call this). */
-export function signReceivingChecklist(db, user, inspectionNo, { system_status = null } = {}) {
+export function signReceivingChecklist(db, user, inspectionNo, { system_status = null, gate = null } = {}) {
   if (!canLog(user)) return { status: 403, error: 'Filing a receiving inspection needs the Receiving Log.' };
   const row = db.prepare('SELECT * FROM receiving_checklists WHERE inspection_no = ?').get(inspectionNo);
   if (!row) return { status: 404, error: 'No checklist for this inspection yet.' };
@@ -453,40 +470,54 @@ export function signReceivingChecklist(db, user, inspectionNo, { system_status =
     return { status: 400, error: cocRefusals.join(' '), extra: { code: 'COC_REQUIRED', coc_missing: coc.required.filter(r => r.status === 'missing') } };
   }
 
-  db.prepare(`UPDATE receiving_checklists SET reviewed_by = ?, reviewed_at = datetime('now'),
+  // The password is asked LAST, once the sign-off is complete and allowed; a
+  // caller with no gate (the record interface) cannot sign at all.
+  if (!gate) return { status: 403, error: 'A receiving sign-off is signed with the password, on the receiving screen.', extra: { signature_required: true } };
+  if (!gate()) return { handled: true };
+
+  const at = sqlNow();
+  const meaning = signatureMeaning('receiving_review');
+  const signed = { ...row, system_status: system_status || row.system_status, reviewed_by: user.name, reviewed_at: at };
+  db.prepare(`UPDATE receiving_checklists SET reviewed_by = ?, reviewed_at = ?, review_meaning = ?, review_hash = ?,
     system_status = COALESCE(?, system_status), updated_at = datetime('now') WHERE id = ?`)
-    .run(user.name, system_status || null, row.id);
+    .run(user.name, at, meaning, receivingReviewHash(signed), system_status || null, row.id);
   const updated = db.prepare('SELECT * FROM receiving_checklists WHERE id = ?').get(row.id);
   logAudit(user, 'receiving_checklist_reviewed', 'receiving_checklist', row.id,
-    { inspection_no: row.inspection_no, system_status: updated.system_status,
+    { inspection_no: row.inspection_no, system_status: updated.system_status, meaning, signature_verified: true,
       ...(coc.required.length ? { coc: coc.required.map(r => ({ part_number: r.part_number, proofs: r.proofs.map(p => p.id) })) } : {}) },
     row, updated, row.inspection_no);
   return { status: 200, row: updated };
 }
 
 router.post('/checklist/:inspectionNo/review', (req, res) => {
-  const out = signReceivingChecklist(getDb(), req.user, req.params.inspectionNo, { system_status: req.body?.system_status || null });
+  const out = signReceivingChecklist(getDb(), req.user, req.params.inspectionNo, { system_status: req.body?.system_status || null,
+    gate: () => gateSignature(req, res, { action: 'receiving_review' }) });
+  if (out.handled) return;
   if (out.error) return res.status(out.status).json({ error: out.error, ...(out.extra || {}) });
   res.json(shapeChecklist(out.row));
 });
 
 /** The way back from a signature is revoke, correct, sign again — all audited. */
-export function revokeReceivingSignoff(db, user, inspectionNo) {
+export function revokeReceivingSignoff(db, user, inspectionNo, { gate = null } = {}) {
   const row = db.prepare('SELECT * FROM receiving_checklists WHERE inspection_no = ?').get(inspectionNo);
   if (!row) return { status: 404, error: 'Not found' };
   if (!row.reviewed_at) return { status: 409, error: 'This checklist is not signed off.' };
   if (user.role !== 'admin' && row.reviewed_by !== user.name) {
     return { status: 403, error: 'Only the person who signed it, or an admin, can revoke a sign-off.' };
   }
-  db.prepare("UPDATE receiving_checklists SET reviewed_by = NULL, reviewed_at = NULL, updated_at = datetime('now') WHERE id = ?").run(row.id);
+  if (!gate) return { status: 403, error: 'Revoking a sign-off is signed with the password, on the receiving screen.', signature_required: true };
+  if (!gate()) return { handled: true };
+  db.prepare("UPDATE receiving_checklists SET reviewed_by = NULL, reviewed_at = NULL, review_meaning = NULL, review_hash = NULL, updated_at = datetime('now') WHERE id = ?").run(row.id);
   logAudit(user, 'receiving_checklist_review_revoked', 'receiving_checklist', row.id,
-    { inspection_no: row.inspection_no, was_signed_by: row.reviewed_by }, row, null, row.inspection_no);
+    { inspection_no: row.inspection_no, was_signed_by: row.reviewed_by, was_meaning: row.review_meaning, signature_verified: true }, row, null, row.inspection_no);
   return { status: 200, ok: true };
 }
 
 router.delete('/checklist/:inspectionNo/review', (req, res) => {
-  const out = revokeReceivingSignoff(getDb(), req.user, req.params.inspectionNo);
-  if (out.error) return res.status(out.status).json({ error: out.error });
+  const out = revokeReceivingSignoff(getDb(), req.user, req.params.inspectionNo,
+    { gate: () => gateSignature(req, res, { action: 'receiving_review_revoke' }) });
+  if (out.handled) return;
+  if (out.error) return res.status(out.status).json({ error: out.error, ...(out.signature_required ? { signature_required: true } : {}) });
   res.json({ ok: true });
 });
 

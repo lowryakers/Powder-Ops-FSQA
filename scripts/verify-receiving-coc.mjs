@@ -173,7 +173,7 @@ t('on a phone the section renders and nothing sticks out sideways', await phone.
 await browser.close();
 
 console.log('\n── sign-off and the lock ──');
-const r3 = await J(await req(`/receiving/checklist/${NO}/review`, { method: 'POST', body: '{}' }));
+const r3 = await J(await req(`/receiving/checklist/${NO}/review`, { method: 'POST', body: JSON.stringify({ signature_password: 'DockSecret2026' }) }));
 t('signed off once every listed part has its CoC', !!r3?.reviewed_at, JSON.stringify(r3).slice(0, 200));
 const late = await req(`/receiving/checklist/${NO}/coc/on-file`, { method: 'POST', body: JSON.stringify({ part_number: 'PK-POUCH-LG', supplier_file_id: 'sf-current' }) });
 t('no certificate can be added to a signed-off inspection', late.status === 409);

@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
-import { useApiGet, apiPost, apiPut, apiFetch } from '../../hooks/useApi';
+import { useApiGet, apiPost, apiPut, apiFetch, apiDelete } from '../../hooks/useApi';
+import { withSignature } from '../../lib/signature.js';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import FileUpload from '../FileUpload';
@@ -552,8 +553,14 @@ export default function DisposalsPanel() {
   const handleCreate = async (form) => { await apiPost('/disposals', form); setCreating(false); refresh(); };
   const handleUpdate = async (form) => { const res = await apiPut(`/disposals/${editing.id}`, form); setEditing(null); setViewing(res); refresh(); };
   const handleDelete = async (d) => { if (!window.confirm(`Delete disposal ${d.disposal_number || ''} and its ${d.items?.length || 0} item(s)?`)) return; await apiFetch(`/disposals/${d.id}`, { method: 'DELETE' }); setViewing(null); refresh(); };
-  const handleSign = async (id, role) => { const res = await apiPost(`/disposals/${id}/approve`, { role }); setViewing(res); refresh(); };
-  const handleRevoke = async (id, role) => { const res = await apiFetch(`/disposals/${id}/approve/${role}`, { method: 'DELETE' }); setViewing(res); refresh(); };
+  // An approval is a signature (D-374): the password, asked at the moment of signing.
+  const ROLE_NAME = { ops_manager: 'Operations Manager', quality_control: 'Quality Control' };
+  const signed = async (send, title) => {
+    try { const res = await withSignature(send, { title, detail: 'Enter the password you sign in with.' }); setViewing(res); refresh(); }
+    catch (e) { if (!e?.cancelled) window.alert(e.message); }
+  };
+  const handleSign = (id, role) => signed((extra) => apiPost(`/disposals/${id}/approve`, { role, ...extra }), `Approve this disposal as ${ROLE_NAME[role] || role}`);
+  const handleRevoke = (id, role) => signed((extra) => apiDelete(`/disposals/${id}/approve/${role}`, extra), `Revoke the ${ROLE_NAME[role] || role} approval`);
   const handleBulkPaper = async (paper) => {
     const ids = [...selected];
     const res = await apiPost('/disposals/bulk-update', { ids, patch: { paper_record: paper } });
