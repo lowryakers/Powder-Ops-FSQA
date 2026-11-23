@@ -20,6 +20,7 @@ router.get('/types', (req, res) => {
   res.json(RECORD_TYPES.filter(t => canReadType(req.user, t)).map(t => ({
     type: t.type, label: t.label, implements: verbsOf(t),
     ...(t.signs === false ? { signs: false } : {}), ...(t.filedBy ? { filed_by: t.filedBy } : {}),
+    ...(t.absent ? { absent: t.absent } : {}),
   })));
 });
 

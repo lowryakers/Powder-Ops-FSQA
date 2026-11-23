@@ -11450,3 +11450,22 @@ Single-spine pack P3, step A (move 02).
   raised for Lowry.
 - `verify:recordinterface` (123): each filed through its route, on `GET /api/records`, counts agree, a token cannot sign
   a receiving inspection off, revoke by the signer through the interface, one writer each.
+
+## D-372 — Training records, disposals and COA join the record interface; COA read-only, and why (23 Nov 2026)
+Single-spine pack P3, step B (move 02). With D-369 … D-371 this finishes the move-02 types named in the spine status.
+- **`training`**: `fileTrainingRecord` (the `POST /training` body; `insertCompletion` stays the writer underneath) and
+  `withdrawCompetence` (the withdraw route's body) as `revoke`. The competence tick is the signature and is signed when
+  the record is filed or edited, so the type has **no `sign`** — documented in `absent.sign`. The record's password
+  check is a callback the route passes in; the interface has none, so it **cannot file a ticked record (403)** and only a
+  record proved by a passed quiz files through it. Described with the course's own title (joined, not copied), trainee,
+  trainer, method, score and the competence signer with its meaning; a person matches trainee, trainer or signer.
+- **`disposal`**: `fileDisposal`, `signDisposal`, `revokeDisposalApproval` (the three route bodies). Both approvals
+  (Operations Manager, Quality Control) are described with what is still owed, and every item's lot; filter `lot`.
+- **`coa` is READ ONLY here** (`absent.file` / `sign` / `revoke`, each with its reason). What the plant means by "a COA
+  record" is the lab request and, once signed, the certificate on it (`certificate_number`, `qa_signed_by`). Filing,
+  signing and un-signing stay on the COA screen: the release gate, the re-read of every lab report, certificate
+  numbering and the correction window are part of those acts (D-221 … D-312), and lifting them out is module work this
+  pack excludes. A second door to a COA signature is the one thing the interface must not add.
+- **The shape check accepts a verb left out only with a reason** (`absent[verb]`, > 20 characters); `/records/types`
+  reports it.
+- `verify:recordinterface` (147). The disposal approvals still ask for no password (raised in D-371).

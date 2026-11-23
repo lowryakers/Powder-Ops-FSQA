@@ -384,45 +384,62 @@ function resolveTrainee(db, { employee_user_id, employee_name }) {
   return { error: `"${name}" is not anyone with a ReadyDoc account. Pick the person from the list.`, code: 'NOT_AN_EMPLOYEE' };
 }
 
-router.post('/', (req, res) => {
-  const db = getDb();
-  if (!req.body.employee_name || (!req.body.training_topic && !req.body.course_id)) {
-    return res.status(400).json({ error: 'employee_name and a course (or topic) are required' });
+/**
+ * File one training record (D-372: the route and the record interface both call
+ * this — one writer, `insertCompletion` underneath). A competence tick is a
+ * signature: `signCompetence(trainees, opts)` is the caller's password check and
+ * returns the stamp, or null when it has already answered. A caller with no way
+ * to ask for a password cannot file a ticked record. Returns { status, error[, code] },
+ * { handled: true }, or { status: 201, record }.
+ */
+export function fileTrainingRecord(db, user, input = {}, { signCompetence = null } = {}) {
+  if (!input.employee_name || (!input.training_topic && !input.course_id)) {
+    return { status: 400, error: 'employee_name and a course (or topic) are required' };
   }
-  const errors = trainingFieldErrors(req.body, plantDateOf());
-  if (errors.length) return res.status(400).json({ error: errors.join(' ') });
+  const errors = trainingFieldErrors(input, plantDateOf());
+  if (errors.length) return { status: 400, error: errors.join(' ') };
   // One record is one person who works here (D-351).
-  const who = resolveTrainee(db, req.body);
-  if (who.error) return res.status(400).json({ error: who.error, code: who.code });
-  const dcr = dcrOrError(db, req.body.dcr_id);
-  if (dcr.error) return res.status(400).json({ error: dcr.error });
-  const { recorded_by: _rb, recorded_by_id: _rbi, session_id: _s, ...rest } = req.body;
+  const who = resolveTrainee(db, input);
+  if (who.error) return { status: 400, error: who.error, code: who.code };
+  const dcr = dcrOrError(db, input.dcr_id);
+  if (dcr.error) return { status: 400, error: dcr.error };
+  const { recorded_by: _rb, recorded_by_id: _rbi, session_id: _s, ...rest } = input;
   const body = { ...rest, employee_user_id: who.user.id, employee_name: who.user.name };
   // A quiz attempt named as proof must be this person's pass at this course (D-276).
   const attemptErr = (body.status || 'completed') === 'completed' ? attemptProblem(db, body.test_attempt_id, body) : null;
-  if (attemptErr) return res.status(400).json({ error: attemptErr, code: 'ATTEMPT_MISMATCH' });
+  if (attemptErr) return { status: 400, error: attemptErr, code: 'ATTEMPT_MISMATCH' };
   if (lacksCompetence({ status: 'completed', ...body }, passMarkOf(db, body.course_id))) {
-    return res.status(400).json({ error: COMPETENCE_REQUIRED_MSG, code: 'COMPETENCE_REQUIRED' });
+    return { status: 400, error: COMPETENCE_REQUIRED_MSG, code: 'COMPETENCE_REQUIRED' };
   }
   // External training (D-286): an outside trainer named and its certificate
   // attached, signed by the person entering it with its own meaning.
   const extErr = externalProblem(body);
-  if (extErr) return res.status(400).json({ error: extErr, code: 'EXTERNAL_INCOMPLETE' });
+  if (extErr) return { status: 400, error: extErr, code: 'EXTERNAL_INCOMPLETE' };
   if (body.external_training && !body.competence_confirmed) {
-    return res.status(400).json({ error: 'External training is signed by the person recording it — tick the statement.', code: 'COMPETENCE_REQUIRED' });
+    return { status: 400, error: 'External training is signed by the person recording it — tick the statement.', code: 'COMPETENCE_REQUIRED' };
   }
   let signed = null;
   if (body.competence_confirmed) {
-    signed = signCompetenceOr(req, res, [{ employee_user_id: body.employee_user_id, employee_name: body.employee_name }],
+    if (!signCompetence) return { status: 403, error: 'A competence sign-off is signed with the password, on the training screen.', signature_required: true };
+    signed = signCompetence([{ employee_user_id: body.employee_user_id, employee_name: body.employee_name }],
       { externalTrainer: body.external_training ? body.external_trainer : null });
-    if (!signed) return;
+    if (!signed) return { handled: true };
   }
-  const rec = insertCompletion(db, { ...body, dcr_id: dcr.id, competence_signed: signed, ...recorder(req) });
-  logAudit(req.user, 'training_created', 'training', rec.id, { employee_name: rec.employee_name, course_id: rec.course_id,
+  const rec = insertCompletion(db, { ...body, dcr_id: dcr.id, competence_signed: signed,
+    recorded_by: user?.name || 'ReadyDoc', recorded_by_id: user?.id || null });
+  logAudit(user, 'training_created', 'training', rec.id, { employee_name: rec.employee_name, course_id: rec.course_id,
     ...(signed ? { competence_signed: true, meaning: signed.meaning || 'Trained and competent',
       ...(signed.external_trainer ? { external_trainer: signed.external_trainer, certificate: rec.document_url || rec.certificate_url } : {}),
       ...signatureEvidence() } : {}) }, null, null, rec.employee_name);
-  res.status(201).json(withSignatureState(rec));
+  return { status: 201, record: rec };
+}
+
+router.post('/', (req, res) => {
+  const out = fileTrainingRecord(getDb(), req.user, req.body || {},
+    { signCompetence: (trainees, opts) => signCompetenceOr(req, res, trainees, opts) });
+  if (out.handled) return;
+  if (out.error) return res.status(out.status).json({ error: out.error, ...(out.code ? { code: out.code } : {}), ...(out.signature_required ? { signature_required: true } : {}) });
+  res.status(201).json(withSignatureState(out.record));
 });
 
 // Record a small-group training + test in one shot: one completion per attendee.
@@ -775,19 +792,23 @@ router.get('/:id/pdf', (req, res) => {
 // a reason and their password. The signature is never deleted — who signed,
 // when, and who withdrew it and why are kept on the record. A completion that
 // has no other evidence of competence goes back to In progress.
-router.post('/:id/competence/withdraw', (req, res) => {
-  const db = getDb();
-  const rec = db.prepare('SELECT * FROM training_records WHERE id = ?').get(req.params.id);
-  if (!rec) return res.status(404).json({ error: 'Not found' });
-  if (!rec.competence_signed_at) return res.status(409).json({ error: 'This record has no signed competence sign-off to withdraw.' });
-  if (req.user?.role !== 'admin' && rec.competence_signed_by_id !== req.user?.id) {
-    return res.status(403).json({ error: 'Only the person who signed it, or an admin, can withdraw this signature.' });
+/**
+ * Withdraw a signed competence sign-off (D-372: the route and the record
+ * interface's `revoke`). `gate()` is the caller's password check, run after the
+ * request is known to be valid; the interface's revoke assumes its caller ran it.
+ */
+export function withdrawCompetence(db, user, id, reasonIn, { gate = null } = {}) {
+  const rec = db.prepare('SELECT * FROM training_records WHERE id = ?').get(id);
+  if (!rec) return { status: 404, error: 'Not found' };
+  if (!rec.competence_signed_at) return { status: 409, error: 'This record has no signed competence sign-off to withdraw.' };
+  if (user?.role !== 'admin' && rec.competence_signed_by_id !== user?.id) {
+    return { status: 403, error: 'Only the person who signed it, or an admin, can withdraw this signature.' };
   }
-  const reason = String(req.body?.reason || '').trim();
-  if (reason.length < 3) return res.status(400).json({ error: 'Say why the signature is being withdrawn.' });
-  if (!gateSignature(req, res, { action: 'training_competence_withdraw' })) return;
+  const reason = String(reasonIn || '').trim();
+  if (reason.length < 3) return { status: 400, error: 'Say why the signature is being withdrawn.' };
+  if (gate && !gate()) return { handled: true };
   const withdrawn = { statement: rec.competence_statement, meaning: meaningOf(rec), signed_by: rec.competence_signed_by, signed_by_id: rec.competence_signed_by_id,
-    signed_at: rec.competence_signed_at, withdrawn_by: req.user.name, withdrawn_by_id: req.user.id, withdrawn_at: new Date().toISOString(), reason };
+    signed_at: rec.competence_signed_at, withdrawn_by: user.name, withdrawn_by_id: user.id, withdrawn_at: new Date().toISOString(), reason };
   const stillCompetent = !lacksCompetence({ status: rec.status, passed: rec.passed, score: rec.score, test_attempt_id: rec.test_attempt_id, competence_statement: null },
     passMarkOf(db, rec.course_id));
   const status = rec.status === 'completed' && !stillCompetent ? 'in_progress' : rec.status;
@@ -796,9 +817,17 @@ router.post('/:id/competence/withdraw', (req, res) => {
     next_due_date = CASE WHEN ? = 'in_progress' THEN NULL ELSE next_due_date END, updated_at = datetime('now') WHERE id = ?`)
     .run(JSON.stringify(withdrawn), status, status, rec.id);
   const after = db.prepare('SELECT * FROM training_records WHERE id = ?').get(rec.id);
-  logAudit(req.user, 'training_competence_withdrawn', 'training', rec.id, { reason, signed_by: rec.competence_signed_by, status_from: rec.status, status_to: status, ...signatureEvidence() },
+  logAudit(user, 'training_competence_withdrawn', 'training', rec.id, { reason, signed_by: rec.competence_signed_by, status_from: rec.status, status_to: status, ...signatureEvidence() },
     rec, after, rec.employee_name);
-  res.json(withSignatureState(after));
+  return { status: 200, record: after };
+}
+
+router.post('/:id/competence/withdraw', (req, res) => {
+  const out = withdrawCompetence(getDb(), req.user, req.params.id, req.body?.reason,
+    { gate: () => gateSignature(req, res, { action: 'training_competence_withdraw' }) });
+  if (out.handled) return;
+  if (out.error) return res.status(out.status).json({ error: out.error });
+  res.json(withSignatureState(out.record));
 });
 
 // ── REQUIREMENT MATRIX ───────────────────────────────────────────────────────
