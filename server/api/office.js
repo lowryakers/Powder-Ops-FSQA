@@ -8,7 +8,7 @@ import { extractInvoiceText } from '../invoice-text.js';
 import { readInvoiceFigures } from '../invoice-figures.js';
 import { USED_UP_REASON } from '../qms-config.js';
 import { listOptions } from '../custom-fields.js';
-import { CADENCES, periodOf, dueDateOf, cyclesDue, cycleAge, normalizeTags } from '../supply-lists.js';
+import { CADENCES, periodOf, dueDateOf, cyclesDue, cycleAge, normalizeTags, tagColumns } from '../supply-lists.js';
 import { botDm, postMessageAs } from './comms.js';
 import { pushToUser } from '../push.js';
 import { readyDocOrigin } from '../links.js';
@@ -141,8 +141,7 @@ function knownTags(db) {
 function tagFields(db, body) {
   if (body?.tags === undefined && body?.label === undefined) return null;
   const raw = body?.tags !== undefined ? body.tags : (body.label ? [body.label] : []);
-  const tags = normalizeTags(raw, knownTags(db));
-  return { tags: tags.length ? JSON.stringify(tags) : null, label: tags[0] || null };
+  return tagColumns(raw, knownTags(db));
 }
 function listShape(db, row) {
   const items = db.prepare('SELECT * FROM supply_list_items WHERE list_id = ? AND active = 1 ORDER BY sort, item_name').all(row.id);
@@ -1123,9 +1122,11 @@ router.post('/supply/suggestions/order', (req, res) => {
   const reported = Array.isArray(req.body?.reported_by) ? req.body.reported_by.filter(Boolean) : [];
   const notes = ['Reported used up on the Sign In/Out log', reported.length ? `by ${reported.join(', ')}` : '']
     .filter(Boolean).join(' ');
-  db.prepare(`INSERT INTO supply_orders (id, item_name, qty, uom, urgent, label, notes, requested_by, requested_by_id)
-              VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)`)
-    .run(id, item, req.body?.qty ?? null, req.body?.uom || null, req.body?.label || null, notes, req.user.name, req.user.id);
+  // The group goes in as tags AND its mirror, like every other door (D-379).
+  const tf = tagFields(db, req.body) || { tags: null, label: null };
+  db.prepare(`INSERT INTO supply_orders (id, item_name, qty, uom, urgent, label, tags, notes, requested_by, requested_by_id)
+              VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`)
+    .run(id, item, req.body?.qty ?? null, req.body?.uom || null, tf.label, tf.tags, notes, req.user.name, req.user.id);
   if (ids.length) markSuggestion(db, ids, 'ordered');
   const created = db.prepare('SELECT * FROM supply_orders WHERE id = ?').get(id);
   logAudit(req.user, 'create', 'supply_order', id, { item_name: item, from_suggestion: true, records: ids.length }, null, created, item);

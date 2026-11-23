@@ -6737,6 +6737,11 @@ it. **SELECT-only; it renames nothing.** A new place a name lives gets a section
 - **A recurring task follows its SOP/WI** (`pm_schedules.document_id`, `server/schedule-documents.js`); a newer revision
   lists it on Doc Control Review until marked checked. `verify:singlespine` (50).
 
+## Every copied fact names its writers (D-379, move 06)
+`MIRRORS` in `scripts/check-mirrors.mjs` lists each column that copies a fact owned elsewhere, its owner, and the files
+allowed to write it. **A new writer of one fails `check:mirrors`** — add it to the list on purpose or write the owner.
+A supply order's group goes through `tagColumns()` (`server/supply-lists.js`): `tags` is the fact, `label` its mirror.
+
 ## Every page of a document PDF carries its identity; the draft is its own export (D-318)
 `server/document-pdf.js` is the ONE renderer for controlled-document PDFs (single, batch, Auditor View Print). Header and
 footer are drawn on buffered pages, never written into the body: number · Rev · short title · Page x of y, and

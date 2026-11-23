@@ -21,7 +21,7 @@ db.exec(`
   CREATE TABLE sanitation_records (id TEXT PRIMARY KEY, atp_reading TEXT, performed_at TEXT);
   CREATE TABLE production_entries (id TEXT PRIMARY KEY, date TEXT, cleaning_events TEXT);
   CREATE TABLE supply_orders (
-    id TEXT PRIMARY KEY, item_name TEXT, qty REAL, uom TEXT, label TEXT,
+    id TEXT PRIMARY KEY, item_name TEXT, qty REAL, uom TEXT, label TEXT, tags TEXT,
     status TEXT DEFAULT 'new', notes TEXT, requested_by TEXT,
     submitted_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')));
 `);
@@ -83,6 +83,8 @@ t('an order is raised', generateSwabReorders(db) === 1);
 const o = db.prepare("SELECT * FROM supply_orders WHERE requested_by = 'system'").get();
 t('for one box', o.qty === 1 && o.uom === 'box', JSON.stringify([o.qty, o.uom]));
 t('naming the shelf and the point', /109 left/.test(o.notes) && /reorder point of 200/.test(o.notes), o.notes);
+// D-379: the group is filed as tags with label its mirror, not label alone.
+t('the reorder files its group as tags, with label the first entry', o.tags === '["Cleaning"]' && o.label === 'Cleaning', `${o.tags} / ${o.label}`);
 t('filed under Cleaning, where the swabs are used', o.label === 'Cleaning', o.label);
 t('A SECOND SWEEP RAISES NOTHING while it is open', generateSwabReorders(db) === 0);
 db.prepare("UPDATE supply_orders SET status = 'received' WHERE id = ?").run(o.id);

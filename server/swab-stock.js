@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { tagColumns } from './supply-lists.js';
 
 // How many usable ATP and allergen swabs are on the shelf, and when to order.
 //
@@ -246,9 +247,12 @@ export function generateSwabReorders(db, { now = new Date() } = {}) {
     if (open) continue;
     try {
       const id = crypto.randomUUID();
-      db.prepare(`INSERT INTO supply_orders (id, item_name, qty, uom, label, notes, requested_by)
-        VALUES (?, ?, 1, 'box', 'Cleaning', ?, 'system')`)
-        .run(id, item,
+      // The group is written as tags and its mirror together (D-379); it used
+      // to be `label` alone.
+      const tc = tagColumns(['Cleaning']);
+      db.prepare(`INSERT INTO supply_orders (id, item_name, qty, uom, label, tags, notes, requested_by)
+        VALUES (?, ?, 1, 'box', ?, ?, ?, 'system')`)
+        .run(id, item, tc.label, tc.tags,
           `${s.on_hand} left, at or below the reorder point of ${s.reorder_point}. `
           + `One box is ${SWABS_PER_BOX} swabs`
           + (s.per_week ? `; recent use is about ${s.per_week} a week.` : '.'));
