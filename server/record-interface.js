@@ -37,9 +37,13 @@ import { RECEIVING_TYPE, CALIBRATION_TYPE, TRAINING_TYPE, DISPOSAL_TYPE, COA_TYP
 
 export const INTERFACE = ['file', 'sign', 'revoke', 'retrieve', 'describe'];
 export { MAX_ROWS } from './record-cap.js';
-// Filters beyond from / to / person / signed / place / equipment / form, which a
-// type declares in `filters` when it understands them (D-370).
-export const EXTRA_FILTERS = ['lot', 'mo', 'team', 'site'];
+// Filters beyond from / to / person / signed / place / form, which a type
+// declares in `filters` when it understands them (D-370). A machine
+// (`equipment`, an equipment id) joined them in D-375: only a record that names
+// a machine can be found by one, and the lookup screen names every type that
+// cannot take a filter rather than reading its silence as "nothing here".
+export const EXTRA_FILTERS = ['lot', 'equipment', 'mo', 'team', 'site'];
+export const FILTER_WORDS = { lot: 'a lot', equipment: 'a machine', mo: 'an MO', team: 'a team', site: 'an EMP site' };
 
 const sqlDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d || '')) ? String(d) : null;
 
@@ -119,6 +123,7 @@ const describeQms = (r) => {
     id: r.id,
     form: cfg?.formCode || r.record_type,
     title: `${cfg?.singular || r.record_type} ${r.record_number || ''}`.trim() + (what ? ` — ${what}` : ''),
+    lots: [...new Set([data.lot_number, data.lot].map(v => String(v || '').trim()).filter(Boolean))],
     place: null,
     equipment_id: null,
     performed_by: r.created_by,
@@ -187,6 +192,7 @@ export const RECORD_TYPES = [
     // A record on QA's list is read under QA Inspections, a cleaning record under
     // Sanitation — the same split `recordGroupFor()` makes on write.
     modules: ['sanitation', 'qa-inspections'],
+    filters: ['equipment'],
     file: (db, user, input) => createSanitationRecord(db, user, input),
     sign: (db, user, id) => verifySanitationRecord(db, user, id),
     revoke: (db, user, id) => revokeSanitationVerification(db, user, id),
@@ -214,6 +220,8 @@ export const RECORD_TYPES = [
     type: 'scale',
     label: 'Scale verifications (Forms 417-01 … 417-05)',
     modules: ['calibration'],
+    // A scale check names its instrument; a machine finds the instruments linked to it.
+    filters: ['equipment'],
     // The kiosk files with no session; the interface files as the signed-in person.
     file: (db, user, input) => recordScaleVerification(db, input, { actor: user, source: 'app' }),
     sign: (db, user, id) => verifyScaleCheck(db, user, id),
@@ -223,7 +231,7 @@ export const RECORD_TYPES = [
     retrieve(db, q = {}, user = null) {
       if (user && !moduleLevel(user, 'calibration')) return [];
       const { where, params } = commonWhere({ at: 'performed_at', by: 'performed_by', signedBy: 'verified_by' }, q);
-      if (q.equipment) { where.push('instrument_id = ?'); params.push(q.equipment); }
+      if (q.equipment) { where.push('(instrument_id = ? OR instrument_id IN (SELECT id FROM calibration_instruments WHERE equipment_id = ?))'); params.push(q.equipment, q.equipment); }
       if (q.place) { where.push('lower(room) = lower(?)'); params.push(String(q.place).trim()); }
       const sql = `SELECT * FROM scale_verifications ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
         ORDER BY performed_at DESC LIMIT ?`;
@@ -234,6 +242,9 @@ export const RECORD_TYPES = [
   {
     type: 'qms',
     label: 'QMS records (deviations, non-conformances, on hold, sign-outs, DCRs, flavour and organoleptic)',
+    // Six forms carry a lot (`lot_number` or `lot` in the record's data); a form
+    // with neither simply matches no lot.
+    filters: ['lot'],
     modules: qmsModuleIds,
     // `input.record_type` names the form. Filing needs the module, the rule the
     // route applies (anyone who can see a deviation may report one).
@@ -286,6 +297,10 @@ export const RECORD_TYPES = [
       }
       if (q.signed === 'yes') where.push(signedAny);
       if (q.signed === 'no') where.push(`NOT ${signedAny}`);
+      if (q.lot) {
+        where.push("(lower(trim(COALESCE(json_extract(data, '$.lot_number'), ''))) = lower(?) OR lower(trim(COALESCE(json_extract(data, '$.lot'), ''))) = lower(?))");
+        params.push(String(q.lot).trim(), String(q.lot).trim());
+      }
       const sql = `SELECT * FROM qms_records WHERE ${where.join(' AND ')} ORDER BY ${at} DESC LIMIT ?`;
       return db.prepare(sql).all(...params, rowLimit(q));
     },
@@ -366,6 +381,13 @@ export function retrieveRecords(db, user, q = {}) {
   // leaves out every type that does not — they would otherwise ignore it and
   // answer with everything they hold.
   const asked = EXTRA_FILTERS.filter(f => q[f] != null && String(q[f]).trim() !== '');
+  // Every type the person may read that CANNOT take one of the filters asked
+  // is named, with the filter, so "nothing found" never stands in for "never
+  // looked" (D-375). Types the person may not read are not mentioned at all.
+  const notSearched = types
+    .map(t => ({ type: t.type, label: t.label, filters: asked.filter(f => !(t.filters || []).includes(f)) }))
+    .filter(x => x.filters.length)
+    .map(x => ({ ...x, why: `These do not carry ${x.filters.map(f => FILTER_WORDS[f] || f).join(' or ')}:` }));
   const lookup = isLookup(q);
   const cap = requestedCap(q);
   const query = { ...q, _rows: lookup ? -1 : cap + 1 };
@@ -389,6 +411,7 @@ export function retrieveRecords(db, user, q = {}) {
     capped: !lookup,
     truncated: cut || truncatedTypes.length > 0,
     truncated_types: truncatedTypes,
+    not_searched: notSearched,
     records: lookup ? rows : rows.slice(0, cap),
   };
 }

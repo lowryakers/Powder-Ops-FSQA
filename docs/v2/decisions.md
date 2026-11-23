@@ -11505,3 +11505,25 @@ in for those is a Part 11 signature (11.50, 11.70, 11.200) — which move 01 gav
   `APPROVE_ROUTES` — a token and a bot account (even with its password) are refused.
 - Nothing already signed is touched: older sign-offs read `not_recorded`.
 - `verify:signgates` (30). The control, `main` before this, signs a receiving inspection with no password.
+
+## D-375 — "Look up records": one screen for a lot, a machine or a person (23 Nov 2026, single-spine move 04)
+**Asked:** P4 step A — a retrieval screen that turns a mock recall into a lookup, backed by `GET /api/records`, with lot
+and machine as real filters and any type that cannot take one named rather than searched on the wrong column.
+**Decided:**
+- **One screen, one route, no second database**: Quality → **Look up records** (`records`, `RecordLookupPanel.jsx`).
+  It shows for anyone who can open a module behind a record type (`shared/record-modules.js`, asserted equal to the
+  record types' modules) and searches only the types they can read (`canReadType`); a record they cannot read is still
+  a 404. Not a Settings tick: a rule line in Settings → Users and `RULE_WHY`.
+- **A machine is a declared filter now** (`equipment` joined `EXTRA_FILTERS`): sanitation (`equipment_id`), scale checks
+  and calibrations (the instrument, or any instrument linked to the machine through `calibration_instruments.equipment_id`),
+  and training (a course ABOUT the machine, `training_courses.equipment_id`). Nothing else names a machine.
+- **A lot reaches the QMS forms**: six carry one in their data (`lot_number` or `lot`: on hold, deviation,
+  non-conformance, organoleptic, component sign-out, flavor approval); the described record lists `lots`.
+- **`not_searched`** on every response names each readable type that cannot take a filter asked, with why. Silence
+  would read as "nothing on file". Types the person cannot read are not mentioned.
+- `GET /api/records/machines` lists equipment plus calibration instruments no machine owns, for somebody who can read a
+  type found by machine; otherwise `[]`.
+- A row opens to its whole description and Print; "Open its module" goes to the module, not the record (most modules
+  have no record deep link). The CSV is built from the rows on screen. `?tab=records&rec_lot=` / `rec_person` /
+  `rec_machine` deep-link a lookup (`lot` is COA's parameter already).
+- `verify:recordlookup` (44, live + browser at 1280 and 390).

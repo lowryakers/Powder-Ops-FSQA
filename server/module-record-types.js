@@ -106,6 +106,8 @@ export const RECEIVING_TYPE = {
 export const CALIBRATION_TYPE = {
   type: 'calibration',
   label: 'Calibration records',
+  // A record names its instrument; a machine finds the instruments linked to it.
+  filters: ['equipment'],
   modules: ['calibration'],
   signs: false,
   file: (db, user, input) => {
@@ -118,7 +120,7 @@ export const CALIBRATION_TYPE = {
     if (user && !moduleLevel(user, 'calibration')) return [];
     if (q.signed === 'yes' || q.place) return [];
     const { where, params } = common(q, { at: 'cr.calibrated_at', by: 'cr.calibrated_by', signedBy: null });
-    if (q.equipment) { where.push('cr.instrument_id = ?'); params.push(q.equipment); }
+    if (q.equipment) { where.push('(cr.instrument_id = ? OR cr.instrument_id IN (SELECT id FROM calibration_instruments WHERE equipment_id = ?))'); params.push(q.equipment, q.equipment); }
     return db.prepare(`SELECT cr.*, ci.name AS instrument_name, ci.asset_number AS instrument_tag FROM calibration_records cr
       LEFT JOIN calibration_instruments ci ON ci.id = cr.instrument_id
       ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY cr.calibrated_at DESC LIMIT ?`).all(...params, cap(q));
@@ -144,12 +146,15 @@ export const CALIBRATION_TYPE = {
 // type has no `sign`. Withdrawing it (reason + password) is `revoke`.
 // The course's own title, not a copy on the record: a record filed against a
 // course carries its id and often no topic text.
-const TRAINING_SQL = 'SELECT tr.*, c.title AS course_title, c.code AS course_code FROM training_records tr LEFT JOIN training_courses c ON c.id = tr.course_id';
+const TRAINING_SQL = 'SELECT tr.*, c.title AS course_title, c.code AS course_code, c.equipment_id AS course_equipment_id FROM training_records tr LEFT JOIN training_courses c ON c.id = tr.course_id';
 
 export const TRAINING_TYPE = {
   type: 'training',
   label: 'Training records',
   modules: ['training'],
+  // A course can be ABOUT a machine (training_courses.equipment_id): who is
+  // trained to run or clean it is part of "everything about machine E".
+  filters: ['equipment'],
   absent: { sign: 'The competence sign-off is signed when the record is filed or edited, with the trainer\'s password — there is no separate sign door.' },
   // No password can be asked here, so a ticked competence statement is refused
   // (403) and only a record proved by a passed quiz files through the interface.
@@ -163,13 +168,14 @@ export const TRAINING_TYPE = {
   canRead: (user) => !!moduleLevel(user, 'training'),
   retrieve(db, q = {}, user = null) {
     if (user && !moduleLevel(user, 'training')) return [];
-    if (q.equipment || q.place) return [];
+    if (q.place) return [];
     // A person is the trainee, the trainer, or whoever signed the competence.
     const { where, params } = common({ ...q, person: null }, { at: 'COALESCE(tr.completion_date, tr.training_date)', by: 'tr.employee_name', signedBy: 'tr.competence_signed_by' });
     if (q.person) {
       where.push("(lower(tr.employee_name) = lower(?) OR lower(COALESCE(tr.trainer, '')) = lower(?) OR lower(COALESCE(tr.competence_signed_by, '')) = lower(?))");
       params.push(...Array(3).fill(String(q.person).trim()));
     }
+    if (q.equipment) { where.push('c.equipment_id = ?'); params.push(q.equipment); }
     return db.prepare(`${TRAINING_SQL} ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
       ORDER BY COALESCE(tr.completion_date, tr.training_date) DESC, tr.created_at DESC LIMIT ?`).all(...params, cap(q));
   },
@@ -179,7 +185,7 @@ export const TRAINING_TYPE = {
     title: `${r.course_title || r.training_topic || 'Training'} — ${r.employee_name}`,
     course: r.course_code ? `${r.course_code} ${r.course_title}` : (r.course_title || r.training_topic || null),
     course_id: r.course_id || null, trainee: r.employee_name, trainer: r.trainer || null,
-    place: null, equipment_id: null,
+    place: null, equipment_id: r.course_equipment_id || null,
     performed_by: r.employee_name, performed_at: r.completion_date || r.training_date,
     result: r.passed === 0 ? 'failed' : r.status,
     score: r.score ?? null, method: r.method || null,
