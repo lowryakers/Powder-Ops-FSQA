@@ -4477,7 +4477,9 @@ since go-live and in the last 90 days, and gives a verdict: never used / machine
 - **Production entries are on it (D-370)**: `fileProductionEntry` / `signOffProductionEntry` / `revokeProductionSignoff`
   (`DELETE /production/entries/:id/qa-signoff`, password, signer or admin). Described with every lot and MO on the shift.
   **A filter only some types know (`lot`, `mo`, `team`, `site`) drops the types that do not** — declare it in `filters`.
-- `verify:recordinterface` (99).
+- **Receiving inspections and calibration records are on it (D-371, `server/module-record-types.js`)**. A calibration
+  record has no signature; a product decision filed with one needs the route's password gate, which the interface lacks.
+- `verify:recordinterface` (123).
 
 ## Five more acts sign with the password (D-206, move 01)
 - Gated now: the internal audit sign-off, approving meeting minutes, authorizing a mock recall, signing a COA,
