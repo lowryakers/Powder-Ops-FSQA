@@ -32,10 +32,11 @@ import { QMS_TYPES, getType } from './qms-config.js';
 import { formLabel } from '../shared/form-registry.js';
 import { moduleLevel } from './module-access.js';
 import { CHECK_RECORD_TYPES } from './check-record-types.js';
+import { isLookup, requestedCap, rowLimit } from './record-cap.js';
 import { RECEIVING_TYPE, CALIBRATION_TYPE, TRAINING_TYPE, DISPOSAL_TYPE, COA_TYPE } from './module-record-types.js';
 
 export const INTERFACE = ['file', 'sign', 'revoke', 'retrieve', 'describe'];
-export const MAX_ROWS = 500;
+export { MAX_ROWS } from './record-cap.js';
 // Filters beyond from / to / person / signed / place / equipment / form, which a
 // type declares in `filters` when it understands them (D-370).
 export const EXTRA_FILTERS = ['lot', 'mo', 'team', 'site'];
@@ -205,7 +206,7 @@ export const RECORD_TYPES = [
       }
       const sql = `SELECT * FROM sanitation_records ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
         ORDER BY performed_at DESC LIMIT ?`;
-      return db.prepare(sql).all(...params, Math.min(Number(q.limit) || MAX_ROWS, MAX_ROWS));
+      return db.prepare(sql).all(...params, rowLimit(q));
     },
     describe: describeSanitation,
   },
@@ -226,7 +227,7 @@ export const RECORD_TYPES = [
       if (q.place) { where.push('lower(room) = lower(?)'); params.push(String(q.place).trim()); }
       const sql = `SELECT * FROM scale_verifications ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
         ORDER BY performed_at DESC LIMIT ?`;
-      return db.prepare(sql).all(...params, Math.min(Number(q.limit) || MAX_ROWS, MAX_ROWS));
+      return db.prepare(sql).all(...params, rowLimit(q));
     },
     describe: describeScale,
   },
@@ -286,7 +287,7 @@ export const RECORD_TYPES = [
       if (q.signed === 'yes') where.push(signedAny);
       if (q.signed === 'no') where.push(`NOT ${signedAny}`);
       const sql = `SELECT * FROM qms_records WHERE ${where.join(' AND ')} ORDER BY ${at} DESC LIMIT ?`;
-      return db.prepare(sql).all(...params, Math.min(Number(q.limit) || MAX_ROWS, MAX_ROWS));
+      return db.prepare(sql).all(...params, rowLimit(q));
     },
     describe: describeQms,
   },
@@ -324,7 +325,7 @@ export const RECORD_TYPES = [
       if (q.mo) { where.push(`(lower(mo_number) = lower(?) OR ${jsonHas('mo_lines', 'mo_number')})`); params.push(...Array(2).fill(String(q.mo).trim())); }
       const sql = `SELECT * FROM production_entries ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
         ORDER BY date DESC, created_at DESC LIMIT ?`;
-      return db.prepare(sql).all(...params, Math.min(Number(q.limit) || MAX_ROWS, MAX_ROWS));
+      return db.prepare(sql).all(...params, rowLimit(q));
     },
     describe: describeProduction,
   },
@@ -352,8 +353,11 @@ export const verbsOf = (t) => INTERFACE.filter(k => typeof t[k] === 'function');
 /**
  * One list across every adopted type, newest first, each row described the same
  * way. `form` narrows to records whose form label starts with it ("FORM 417").
- * Bounded: each type returns at most MAX_ROWS, and the merged list is cut to the
- * same, so `truncated` says when there was more.
+ *
+ * A lookup (lot, machine or person asked) returns EVERY matching row. An
+ * unfiltered read is bounded at MAX_ROWS per type: each type is asked for one
+ * row more than the cap, so a type that hits it is named in `truncated_types`
+ * and `truncated` is true (D-373).
  */
 export function retrieveRecords(db, user, q = {}) {
   const types = (q.type ? String(q.type).split(',') : RECORD_TYPES.map(t => t.type))
@@ -362,16 +366,29 @@ export function retrieveRecords(db, user, q = {}) {
   // leaves out every type that does not — they would otherwise ignore it and
   // answer with everything they hold.
   const asked = EXTRA_FILTERS.filter(f => q[f] != null && String(q[f]).trim() !== '');
+  const lookup = isLookup(q);
+  const cap = requestedCap(q);
+  const query = { ...q, _rows: lookup ? -1 : cap + 1 };
+  const truncatedTypes = [];
   let rows = [];
   for (const t of types) {
     if (asked.some(f => !(t.filters || []).includes(f))) continue;
-    rows.push(...t.retrieve(db, q, user).map(t.describe));
+    let got = t.retrieve(db, query, user);
+    if (!lookup && got.length > cap) { truncatedTypes.push(t.type); got = got.slice(0, cap); }
+    rows.push(...got.map(t.describe));
   }
   if (q.form) {
     const f = String(q.form).trim().toLowerCase();
     rows = rows.filter(r => String(r.form || '').toLowerCase().startsWith(f));
   }
   rows.sort((a, b) => String(b.performed_at).localeCompare(String(a.performed_at)));
-  const limit = Math.min(Number(q.limit) || MAX_ROWS, MAX_ROWS);
-  return { types: types.map(t => t.type), total: rows.length, truncated: rows.length > limit, records: rows.slice(0, limit) };
+  const cut = !lookup && rows.length > cap;
+  return {
+    types: types.map(t => t.type),
+    total: rows.length,
+    capped: !lookup,
+    truncated: cut || truncatedTypes.length > 0,
+    truncated_types: truncatedTypes,
+    records: lookup ? rows : rows.slice(0, cap),
+  };
 }

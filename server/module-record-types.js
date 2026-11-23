@@ -8,15 +8,15 @@
 // D-372: training records, disposals, and COA requests (read side only — see COA_TYPE).
 //   training     training_records       fileTrainingRecord (insertCompletion) · withdrawCompetence
 //   disposal     disposals              fileDisposal · signDisposal · revokeDisposalApproval
+import { rowLimit } from './record-cap.js';
 import { moduleLevel } from './module-access.js';
 import { saveReceivingChecklist, signReceivingChecklist, revokeReceivingSignoff, canLog as canLogReceiving } from './api/receiving.js';
 import { fileCalibrationRecord } from './api/calibration.js';
 import { fileTrainingRecord, withdrawCompetence } from './api/training.js';
 import { fileDisposal, signDisposal, revokeDisposalApproval } from './api/disposals.js';
 
-const MAX_ROWS = 500;
 const sqlDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d || '')) ? String(d) : null;
-const cap = (q) => Math.min(Number(q.limit) || MAX_ROWS, MAX_ROWS);
+const cap = rowLimit;
 const jsonOf = (s, fb) => { try { return s ? JSON.parse(s) : fb; } catch { return fb; } };
 
 /** from / to / person / signed against one date, one doer and one signer column. */

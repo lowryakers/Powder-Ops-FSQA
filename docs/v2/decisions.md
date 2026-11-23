@@ -11470,6 +11470,20 @@ Single-spine pack P3, step B (move 02). With D-369 … D-371 this finishes the m
   reports it.
 - `verify:recordinterface` (147). The disposal approvals still ask for no password (raised in D-371).
 
+## D-373 — A lookup on GET /api/records returns every matching row; a capped read says which type it cut (23 Nov 2026)
+**Asked:** before the retrieval screen (single-spine P4), fix the cap on `GET /api/records`.
+**Found:** every type stopped at its newest 500 rows (`LIMIT ?` with `MAX_ROWS`), and `truncated` only fired when the
+MERGED list passed 500. On live, production has 863 entries, training 2,774 and COA 1,463, so a read of one type came
+back as 500 with `truncated: false`. A lot lookup over a lot with more than 500 rows would have been short, and said
+nothing.
+**Decided:**
+- **A lookup is never capped.** With `lot`, `equipment` or `person` set, every matching row comes back (`capped: false`).
+- **An unfiltered read stays capped** at 500 per type (or a smaller `limit`). Each type is asked for one row more than
+  the cap, so a type that hits it is named in `truncated_types` and `truncated` is true.
+- **One rule, one file** (`server/record-cap.js`): `retrieveRecords` stamps the row count on the query and every
+  adapter's LIMIT reads it through `rowLimit()`. No adapter decides its own cap.
+- `verify:recordscap` (12). The control, `main` before this, fails 8: the lot lookup returns 500 of 650, and
+  `truncated` is false on a read that was cut.
 ## D-374 — Signing off a receiving inspection and approving a disposal ask for the password (23 Nov 2026)
 **Asked:** route both through `gateSignature` (the person's password at the moment of signing, meaning + fingerprint,
 bots never approve) — a pre-move-01 miss, raised in D-371 and D-372.
