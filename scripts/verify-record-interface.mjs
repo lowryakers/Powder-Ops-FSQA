@@ -31,8 +31,8 @@ for (const rt of RECORD_TYPES) {
   t(`${rt.type} implements ${rt.signs === false || allowed.size ? 'its documented subset' : 'file, sign, revoke, retrieve, describe'}`,
     !missing.length && !extra.length && Array.isArray(rt.modules) && rt.modules.length > 0, missing.concat(extra).join(', '));
 }
-const ADOPTED = 'banned_list_review,culture_check,emp,food_defense_challenge,gmp_walk,management_review,production,qms,sanitation,scale';
-t('the adopted types: sanitation, scale, qms, production and the six check records', RECORD_TYPES.map(r => r.type).sort().join() === ADOPTED, RECORD_TYPES.map(r => r.type).sort().join());
+const ADOPTED = 'banned_list_review,calibration,culture_check,emp,food_defense_challenge,gmp_walk,management_review,production,qms,receiving,sanitation,scale';
+t('the adopted types: sanitation, scale, qms, production, the six check records, receiving and calibration', RECORD_TYPES.map(r => r.type).sort().join() === ADOPTED, RECORD_TYPES.map(r => r.type).sort().join());
 t('no check record claims a signature', RECORD_TYPES.filter(r => ['emp', 'gmp_walk', 'banned_list_review', 'culture_check', 'management_review', 'food_defense_challenge'].includes(r.type)).every(r => r.signs === false && !r.sign && !r.revoke));
 
 const { default: Database } = await import('better-sqlite3');
@@ -77,7 +77,7 @@ r = await call('GET', `/records?from=${today}`, undefined, A);
 const list = r.body;
 const rs = list?.records?.find(x => x.type === 'sanitation' && x.id === san?.id);
 const rk = list?.records?.find(x => x.type === 'scale' && x.id === sc?.id);
-t('GET /api/records lists the types', r.status === 200 && !!rs && !!rk && list.types.join() === 'sanitation,scale,qms,production,emp,gmp_walk,banned_list_review,culture_check,management_review,food_defense_challenge', `${r.status} ${JSON.stringify(list?.types)}`);
+t('GET /api/records lists the types', r.status === 200 && !!rs && !!rk && list.types.join() === 'sanitation,scale,qms,production,emp,gmp_walk,banned_list_review,culture_check,management_review,food_defense_challenge,receiving,calibration', `${r.status} ${JSON.stringify(list?.types)}`);
 t('the clean is described: form, place, who, result, unsigned', rs?.form && /^FORM 108/.test(rs.form) && rs.place === 'Restrooms'
   && rs.performed_by === 'Zuleika Test' && rs.result === 'pass' && rs.signed_by === null, JSON.stringify(rs));
 t('the scale check is described with its form and revision', rk?.form === 'FORM 417-01 V4' && rk.place === 'Batching 1' && rk.performed_by === 'Bernardo Test', JSON.stringify(rk));
@@ -246,6 +246,80 @@ t('…and the record reads unsigned again', r.body?.signed_by === null && r.body
     JSON.stringify(src.sort()) === '["server/api/production.js","server/production-seed.js"]', JSON.stringify(src));
 }
 
+console.log('\n── receiving inspections (D-371) ──');
+mkUser('ri-w', 'Rec Warehouse', 'operator', 'warehouse', JSON.stringify({ 'receiving-log': 'edit' }));
+const W = await login('ri-w', 'Rec Warehouse', 'RecWarehouse2026!');
+r = await call('POST', '/receiving/checklist', { vendor: 'RI Vendor', vendor_lot: 'RIV-LOT-1', po_number: 'PO-RI-9', inspection_date: today, answers: {} }, W);
+const rc = r.body;
+t('a receiving inspection is started on its own route', r.status === 200 && !!rc?.inspection_no, `${r.status} ${JSON.stringify(r.body).slice(0, 140)}`);
+const rcRow = db.prepare('SELECT * FROM receiving_checklists WHERE inspection_no = ?').get(rc?.inspection_no);
+db.prepare(`INSERT INTO receiving_log (id, inspection_no, date_received, po_number, part_number, part_description, vendor_lot, quantity_received, uom, received_by)
+  VALUES ('ri-rl-1', ?, ?, 'PO-RI-9', 'RM-RI-1', 'RI whey', 'RIV-LOT-2', 10, 'kg', 'Rec Warehouse')`).run(rc?.inspection_no, today);
+r = await call('GET', `/records?from=${today}&type=receiving`, undefined, A);
+const dr = r.body?.records?.find(x => x.id === rcRow?.id);
+t('…on GET /api/records: FORM 204-01, number, vendor, PO, both lots, open',
+  /^FORM 204-01 V\d/.test(dr?.form || '') && dr.inspection_no === rc?.inspection_no && dr.vendor === 'RI Vendor' && dr.po_number === 'PO-RI-9'
+  && JSON.stringify(dr.lots) === '["RIV-LOT-1","RIV-LOT-2"]' && /^open/.test(dr.result) && dr.signed_by === null, JSON.stringify(dr));
+t('receiving count agrees with the table', r.body.records.length === db.prepare('SELECT COUNT(*) n FROM receiving_checklists WHERE inspection_date >= ?').get(today).n);
+r = await call('GET', `/records?lot=riv-lot-2`, undefined, A);
+t('a lot on a receiving LINE finds the inspection it arrived on', r.body?.records?.some(x => x.type === 'receiving' && x.id === rcRow?.id), JSON.stringify(r.body?.records?.map(x => x.type)));
+r = await call('POST', `/receiving/checklist/${rc?.inspection_no}/review`, {}, W);
+t('sign-off is refused while questions are blank (the module\'s rule)', r.status === 400 && Array.isArray(r.body?.unanswered));
+const { allItems: rcItems } = await import('../server/receiving-checklist.js');
+r = await call('POST', '/receiving/checklist', { inspection_no: rc?.inspection_no, answers: Object.fromEntries(rcItems().map(i => [i.key, 'na'])) }, W);
+t('every question answered (not applicable, so nothing escalates)', r.status === 200);
+mkUser('ri-wbot', 'Rec Warebot', 'operator', 'warehouse', JSON.stringify({ 'receiving-log': 'edit' }));
+const wBotTok = (await call('POST', '/api-tokens', { user_id: 'ri-wbot', label: 'record-interface receiving', scopes: ['read', 'write'] }, A)).body?.plaintext;
+r = await call('POST', `/receiving/checklist/${rc?.inspection_no}/review`, {}, { ...H, Authorization: `Bearer ${wBotTok}` });
+t('a token cannot sign a receiving inspection off', !!wBotTok && r.status === 403, `${r.status} ${JSON.stringify(r.body)}`);
+r = await call('POST', `/receiving/checklist/${rc?.inspection_no}/review`, {}, W);
+t('the warehouse signs it off on its route', r.status === 200 && r.body?.reviewed_by === 'Rec Warehouse', `${r.status} ${JSON.stringify(r.body).slice(0, 160)}`);
+r = await call('GET', `/records/receiving/${rcRow?.id}`, undefined, A);
+t('…and the described record shows who signed', r.body?.signed_by === 'Rec Warehouse' && r.body.signatures?.length === 1);
+r = await call('DELETE', `/receiving/checklist/${rc?.inspection_no}/review`, undefined, Q);
+t('somebody else cannot revoke it', r.status === 403 || r.status === 404, `${r.status}`);
+{
+  const { recordType } = await import('../server/record-interface.js');
+  const { getDb } = await import('../server/db.js');
+  const appDb = getDb();
+  const out = recordType('receiving').revoke(appDb, { id: 'ri-w', name: 'Rec Warehouse', role: 'operator', department: 'warehouse' }, rcRow?.id);
+  t('the signer revokes through the interface — the module\'s own function', out.status === 200 && db.prepare('SELECT reviewed_by FROM receiving_checklists WHERE id = ?').get(rcRow?.id).reviewed_by === null, JSON.stringify(out));
+  const n0 = db.prepare('SELECT COUNT(*) n FROM receiving_checklists').get().n;
+  const fresh = recordType('receiving').file(appDb, { id: 'ri-w', name: 'Rec Warehouse', role: 'operator', department: 'warehouse' }, { vendor: 'Second truck' });
+  t('starting one through the interface issues the next number on the same table', fresh.status === 201 && db.prepare('SELECT COUNT(*) n FROM receiving_checklists').get().n === n0 + 1, JSON.stringify(fresh).slice(0, 140));
+  const refused = recordType('receiving').file(appDb, { id: 'ri-o', name: 'Rec Operator', role: 'operator', department: 'production' }, {});
+  t('…and refuses whom the route refuses', refused.status === 403);
+
+  console.log('\n── calibration records (D-371) ──');
+  r = await call('POST', '/calibration/instruments', { name: 'RI Bench Scale', type: 'scale', asset_number: 'RI-77' }, A);
+  const inst = r.body;
+  r = await call('POST', '/calibration/records', { instrument_id: inst?.id, calibrated_by: 'Cal Tech', result: 'pass', certificate_number: 'CERT-RI-1' }, A);
+  const cal = r.body;
+  t('a calibration is filed on its route', r.status === 201 && !!cal?.id, `${r.status} ${JSON.stringify(r.body).slice(0, 140)}`);
+  r = await call('GET', `/records?type=calibration&equipment=${inst?.id}`, undefined, A);
+  const dc = r.body?.records?.find(x => x.id === cal?.id);
+  t('…on GET /api/records: the instrument, who, result, certificate, no signature', dc?.title === 'Calibration — RI Bench Scale' && dc.equipment_id === inst?.id
+    && dc.performed_by === 'Cal Tech' && dc.result === 'pass' && dc.certificate_number === 'CERT-RI-1' && dc.signed_by === null, JSON.stringify(dc));
+  t('calibration count agrees with the table', r.body.records.length === db.prepare('SELECT COUNT(*) n FROM calibration_records WHERE instrument_id = ?').get(inst?.id).n);
+  r = await call('POST', '/calibration/records', { instrument_id: inst?.id, calibrated_by: 'Cal Tech', result: 'fail',
+    product_disposition: { disposition: 'not_used', notes: 'Not used since last good check — scale was boxed.' } }, A);
+  t('a product decision filed with a record still asks for the password', r.status === 403 && r.body?.signature_required === true, `${r.status} ${JSON.stringify(r.body)}`);
+  const viaIf = recordType('calibration').file(appDb, { id: 'ri-a', name: 'Rec Admin', role: 'admin' }, { instrument_id: inst?.id, calibrated_by: 'Cal Tech', result: 'fail',
+    product_disposition: { disposition: 'not_used', notes: 'Not used since last good check — scale was boxed.' } });
+  t('…and the interface cannot file a decision at all (it has no password to ask)', viaIf.status === 403 && viaIf.signature_required === true);
+  const plain = recordType('calibration').file(appDb, { id: 'ri-a', name: 'Rec Admin', role: 'admin' }, { instrument_id: inst?.id, calibrated_by: 'Cal Tech', result: 'pass' });
+  t('a plain calibration files through the interface on the same writer', plain.status === 201 && !!db.prepare('SELECT 1 FROM calibration_records WHERE id = ?').get(plain.id));
+  const fs = await import('fs');
+  const writers = (tb) => fs.readdirSync('server', { recursive: true }).filter(f => String(f).endsWith('.js')).map(f => `server/${f}`)
+    .filter(f => fs.readFileSync(f, 'utf8').includes(`INSERT INTO ${tb}`)).sort();
+  t('one writer each: receiving checklists and calibration records', JSON.stringify(writers('receiving_checklists')) === '["server/api/receiving.js"]'
+    && JSON.stringify(writers('calibration_records').filter(f => !/seed/.test(f))) === '["server/api/calibration.js"]', JSON.stringify([writers('receiving_checklists'), writers('calibration_records')]));
+  r = await call('GET', `/records?type=calibration,receiving&from=${today}`, undefined, C);
+  t('a calibration-only account reads calibration records, not receiving inspections', r.body?.records?.some(x => x.type === 'calibration') && !r.body.records.some(x => x.type === 'receiving'));
+  r = await call('GET', `/records/receiving/${rcRow?.id}`, undefined, C);
+  t('…a receiving inspection is a 404 to them', r.status === 404);
+}
+
 console.log('\n── the check records (D-369), each through its own door ──');
 const { MANAGEMENT_REVIEW_ITEMS, FOOD_DEFENSE_ITEMS, GMP_WALK_ITEMS, CULTURE_SAFETY_ITEMS } = await import('../shared/check-forms.js');
 // EMP by hand (the route), with a result.
@@ -343,7 +417,7 @@ r = await call('GET', '/records/types', undefined, C);
 // The check-records route admits calibration holders (server.js mount), and the
 // interface reads by the same rule rather than a narrower copy of it.
 t('a calibration-only account sees scale and the check records it can open on their own route — never sanitation, qms or culture',
-  JSON.stringify(r.body?.map(x => x.type)) === '["scale","emp","gmp_walk","banned_list_review","management_review","food_defense_challenge"]'
+  JSON.stringify(r.body?.map(x => x.type)) === '["scale","emp","gmp_walk","banned_list_review","management_review","food_defense_challenge","calibration"]'
   && r.body?.[0]?.implements?.length === 5, JSON.stringify(r.body?.map(x => x.type)));
 r = await call('GET', `/records?from=${today}`, undefined, C);
 t('…and no sanitation, qms or culture records in the list', r.body?.records?.length > 0 && r.body.records.every(x => !['sanitation', 'qms', 'culture_check'].includes(x.type)));

@@ -11433,3 +11433,20 @@ about first — was outside the interface.
 - **A filter only some types understand leaves the others out** (`EXTRA_FILTERS`, a type's `filters`): asking for a lot
   no longer returns every sanitation record. EMP declares `site`.
 - `verify:recordinterface` (99). `verify-mmr-gate` fails two product-row assertions on `main` too — not this change.
+
+## D-371 — Receiving inspections and calibration records join the record interface (23 Nov 2026)
+Single-spine pack P3, step A (move 02).
+- **`receiving`** (`server/module-record-types.js`): `saveReceivingChecklist`, `signReceivingChecklist`,
+  `revokeReceivingSignoff` — the bodies of `POST /receiving/checklist` (its save half; the route still sends the
+  escalations an answer triggers), `POST /checklist/:no/review` and `DELETE …/review`, moved into functions the routes
+  call. Described with FORM 204-01 and the revision it was asked under, number, vendor, PO, and every lot — the
+  checklist's vendor lot and every receiving line's — so a lot finds the truck it came on. Filters `lot`.
+- **`calibration`**: `fileCalibrationRecord` (the `POST /calibration/records` body). **The record carries no
+  signature** (`signs: false`); the product decision an out-of-calibration finding owes (D-154) is signed with the
+  password on its own route and is described as `disposition`. A decision filed WITH a record still asks for the
+  password — the route passes `gate`; the interface has none, so it cannot file a decision at all (403).
+- **Found, not changed: the receiving sign-off and the disposal approvals ask for no password.** Both predate move 01 and
+  were missed by its sweep (D-206). Changing what the warehouse is asked at the dock is a decision, not an adapter;
+  raised for Lowry.
+- `verify:recordinterface` (123): each filed through its route, on `GET /api/records`, counts agree, a token cannot sign
+  a receiving inspection off, revoke by the signer through the interface, one writer each.

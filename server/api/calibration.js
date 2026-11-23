@@ -238,22 +238,29 @@ router.get('/records/:id/certificate', (req, res) => {
   createReadStream(filePath).pipe(res);
 });
 
-router.post('/records', (req, res) => {
-  const db = getDb();
+/**
+ * File one calibration record (D-371: the route and the record interface both
+ * call this — one writer). A product decision given WITH the record is signed
+ * like one given later (D-195): `gate()` is the caller's password check, run
+ * after validation; a caller with no gate cannot file a decision at all.
+ * Returns { status, error[, errors] }, { handled: true } when the gate already
+ * answered, or { status: 201, record }.
+ */
+export function fileCalibrationRecord(db, user, body = {}, { gate = null } = {}) {
   const id = uuid();
-  const { instrument_id, calibrated_by, result, reading_before, reading_after, standard_used, standard_cert_number, certificate_number, next_due, notes } = req.body;
+  const { instrument_id, calibrated_by, result, reading_before, reading_after, standard_used, standard_cert_number, certificate_number, next_due, notes } = body;
 
   if (!instrument_id || !calibrated_by || !result) {
-    return res.status(400).json({ error: 'instrument_id, calibrated_by, and result are required' });
+    return { status: 400, error: 'instrument_id, calibrated_by, and result are required' };
   }
   // A disposition offered with the record is checked before anything is
   // written; one left out files the record as 'pending' (never refused).
-  const dispErrors = filingErrors(req.body?.product_disposition);
-  if (dispErrors.length) return res.status(400).json({ error: dispErrors.join(' '), errors: dispErrors });
-  // A product decision given WITH the record is signed like one given later
-  // (D-195). A record filed without one is not asked for anything.
-  if (req.body?.product_disposition?.disposition
-    && !gateSignature(req, res, { action: 'product_disposition' })) return;
+  const dispErrors = filingErrors(body.product_disposition);
+  if (dispErrors.length) return { status: 400, error: dispErrors.join(' '), errors: dispErrors };
+  if (body.product_disposition?.disposition) {
+    if (!gate) return { status: 403, error: 'A product decision is signed with the password, on the calibration screen.', signature_required: true };
+    if (!gate()) return { handled: true };
+  }
 
   db.prepare(`
     INSERT INTO calibration_records (id, instrument_id, calibrated_by, result, reading_before, reading_after, standard_used, standard_cert_number, certificate_number, next_due, notes)
@@ -279,11 +286,19 @@ router.post('/records', (req, res) => {
       .run(nextStatus, instrument_id);
   }
 
-  const created = stampOnFile(db, 'calibration', id, req.body?.product_disposition, req.user);
-  logAudit(req.user || calibrated_by, 'calibrate', 'calibration_record', id,
+  const created = stampOnFile(db, 'calibration', id, body.product_disposition, user);
+  logAudit(user || calibrated_by, 'calibrate', 'calibration_record', id,
     { instrument_id, result, disposition: created.disposition || null,
-      ...(req.body?.product_disposition?.disposition ? { signature_verified: true } : {}) }, null, created);
-  res.status(201).json(withDisposition('calibration', created));
+      ...(body.product_disposition?.disposition ? { signature_verified: true } : {}) }, null, created);
+  return { status: 201, record: created };
+}
+
+router.post('/records', (req, res) => {
+  const out = fileCalibrationRecord(getDb(), req.user, req.body || {},
+    { gate: () => gateSignature(req, res, { action: 'product_disposition' }) });
+  if (out.handled) return;
+  if (out.error) return res.status(out.status).json({ error: out.error, ...(out.errors ? { errors: out.errors } : {}) });
+  res.status(201).json(withDisposition('calibration', out.record));
 });
 
 // --- Product disposition after an out-of-calibration finding (SQF 11.2.3.4) ---

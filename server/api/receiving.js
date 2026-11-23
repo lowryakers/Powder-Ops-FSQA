@@ -32,7 +32,7 @@ router.param('inspectionNo', (req, _res, next, v) => { req.params.inspectionNo =
 const MODULE = 'receiving-log';
 
 // Warehouse files receipts; admins and explicit edit grants can correct them.
-const canLog = (u) => u?.role === 'admin' || u?.role === 'supervisor'
+export const canLog = (u) => u?.role === 'admin' || u?.role === 'supervisor'
   || u?.department === 'warehouse' || hasExplicitGrant(u, MODULE);
 const canEdit = (u) => u?.role === 'admin' || hasExplicitEdit(u, MODULE);
 
@@ -305,43 +305,58 @@ async function fireEscalation(db, row, item, user, { detail = '', auto = false }
   return { sent, log };
 }
 
-router.post('/checklist', async (req, res) => {
-  if (!canLog(req.user)) return res.status(403).json({ error: 'Filing a receiving inspection needs the Receiving Log.' });
-  const db = getDb();
+/**
+ * Start a receiving inspection, or save to the one already open (D-371: the
+ * route and the record interface both call this — one writer). Returns
+ * { status, error } or { status: 200, row, created }. The route sends the
+ * escalations an answer triggers on top of this; the save never waits on them.
+ */
+export function saveReceivingChecklist(db, user, body = {}) {
+  if (!canLog(user)) return { status: 403, error: 'Filing a receiving inspection needs the Receiving Log.' };
   // Blank number = STARTING a new inspection, which is the first thing that
   // happens when a truck arrives. The checklist issues the number and the
   // receiving lines join it later — the order the warehouse actually works in.
   // A number supplied explicitly is someone resuming a checklist, or keying in
   // one already written on a paper form.
-  const no = cleanInspectionNo(req.body?.inspection_no) || nextInspectionNo(db);
+  const no = cleanInspectionNo(body.inspection_no) || nextInspectionNo(db);
 
   let row = db.prepare('SELECT * FROM receiving_checklists WHERE inspection_no = ?').get(no);
+  const created = !row;
   if (!row) {
     db.prepare(`INSERT INTO receiving_checklists
       (id, inspection_no, checklist_revision, inspection_date, inspector, created_by)
       VALUES (?, ?, ?, COALESCE(?, date('now')), ?, ?)`).run(
       // The revision IN FORCE (controlled.js may be serving V1 over V2 code),
       // never the constant — a record must say which questions it was asked.
-      uuid(), no, CHECKLIST.revision, req.body?.inspection_date || null,
-      req.body?.inspector || req.user.name, req.user.name);
+      uuid(), no, CHECKLIST.revision, body.inspection_date || null,
+      body.inspector || user.name, user.name);
     row = db.prepare('SELECT * FROM receiving_checklists WHERE inspection_no = ?').get(no);
   }
   // An approved checklist is the record of the delivery that was accepted.
-  if (row.reviewed_at) return res.status(409).json({ error: 'This checklist has been signed off. Revoke the sign-off to correct it.' });
+  if (row.reviewed_at) return { status: 409, error: 'This checklist has been signed off. Revoke the sign-off to correct it.' };
 
   const patch = {};
-  for (const c of HEADER_COLS) if (req.body?.[c] !== undefined) patch[c] = req.body[c] === '' ? null : req.body[c];
-  if (req.body?.answers !== undefined) {
-    patch.answers = JSON.stringify({ ...parseJson(row.answers, {}), ...normalizeAnswers(req.body.answers) });
+  for (const c of HEADER_COLS) if (body[c] !== undefined) patch[c] = body[c] === '' ? null : body[c];
+  if (body.answers !== undefined) {
+    patch.answers = JSON.stringify({ ...parseJson(row.answers, {}), ...normalizeAnswers(body.answers) });
   }
-  if (req.body?.item_notes !== undefined) patch.item_notes = JSON.stringify(req.body.item_notes || []);
+  if (body.item_notes !== undefined) patch.item_notes = JSON.stringify(body.item_notes || []);
   if (Object.keys(patch).length) {
     db.prepare(`UPDATE receiving_checklists SET ${Object.keys(patch).map(c => `${c} = ?`).join(', ')},
       updated_at = datetime('now') WHERE id = ?`).run(...Object.values(patch), row.id);
   }
-  let updated = db.prepare('SELECT * FROM receiving_checklists WHERE id = ?').get(row.id);
-  logAudit(req.user, 'receiving_checklist_updated', 'receiving_checklist', row.id,
+  const updated = db.prepare('SELECT * FROM receiving_checklists WHERE id = ?').get(row.id);
+  logAudit(user, 'receiving_checklist_updated', 'receiving_checklist', row.id,
     { inspection_no: no, fields: Object.keys(patch) }, row, updated, no);
+  return { status: 200, row: updated, created };
+}
+
+router.post('/checklist', async (req, res) => {
+  const db = getDb();
+  const saved = saveReceivingChecklist(db, req.user, req.body || {});
+  if (saved.error) return res.status(saved.status).json({ error: saved.error });
+  let updated = saved.row;
+  const row = { id: updated.id };
 
   // THE ANSWER IS THE TRIGGER (user decision 2026-08-14): the moment a tapped
   // answer fires a rule, the app sends the escalation itself — the paper's
@@ -410,28 +425,24 @@ router.post('/checklist/:inspectionNo/notify', async (req, res) => {
  * Also refused while an escalation the form demanded has not been sent — the
  * whole reason those lines are on the form is that somebody has to be told.
  */
-router.post('/checklist/:inspectionNo/review', (req, res) => {
-  if (!canLog(req.user)) return res.status(403).json({ error: 'Filing a receiving inspection needs the Receiving Log.' });
-  const db = getDb();
-  const row = db.prepare('SELECT * FROM receiving_checklists WHERE inspection_no = ?').get(req.params.inspectionNo);
-  if (!row) return res.status(404).json({ error: 'No checklist for this inspection yet.' });
-  if (row.reviewed_at) return res.status(409).json({ error: 'Already signed off.' });
+/** The sign-off itself (D-371: the route and the record interface both call this). */
+export function signReceivingChecklist(db, user, inspectionNo, { system_status = null } = {}) {
+  if (!canLog(user)) return { status: 403, error: 'Filing a receiving inspection needs the Receiving Log.' };
+  const row = db.prepare('SELECT * FROM receiving_checklists WHERE inspection_no = ?').get(inspectionNo);
+  if (!row) return { status: 404, error: 'No checklist for this inspection yet.' };
+  if (row.reviewed_at) return { status: 409, error: 'Already signed off.' };
 
   const answers = parseJson(row.answers, {}) || {};
   const blanks = unanswered(answers);
   if (blanks.length) {
-    return res.status(400).json({
-      error: `${blanks.length} question${blanks.length === 1 ? '' : 's'} still blank. A checklist filed with blanks reads later as if those checks passed.`,
-      unanswered: blanks,
-    });
+    return { status: 400, error: `${blanks.length} question${blanks.length === 1 ? '' : 's'} still blank. A checklist filed with blanks reads later as if those checks passed.`,
+      extra: { unanswered: blanks } };
   }
   const notified = new Set((parseJson(row.notifications, []) || []).map(n => n.item));
   const outstanding = triggeredEscalations(answers).filter(e => !notified.has(e.key));
   if (outstanding.length) {
-    return res.status(400).json({
-      error: `${outstanding.length} escalation${outstanding.length === 1 ? '' : 's'} the form requires ${outstanding.length === 1 ? 'has' : 'have'} not been sent.`,
-      outstanding,
-    });
+    return { status: 400, error: `${outstanding.length} escalation${outstanding.length === 1 ? '' : 's'} the form requires ${outstanding.length === 1 ? 'has' : 'have'} not been sent.`,
+      extra: { outstanding } };
   }
 
   // THE CERTIFICATE OF COMPLIANCE IS PROOF, NOT A TICK (D-275). A listed part
@@ -439,32 +450,43 @@ router.post('/checklist/:inspectionNo/review', (req, res) => {
   const coc = cocState(db, row.inspection_no, row.inspection_date);
   const cocRefusals = cocSignRefusals(coc.required, answers);
   if (cocRefusals.length) {
-    return res.status(400).json({ error: cocRefusals.join(' '), code: 'COC_REQUIRED', coc_missing: coc.required.filter(r => r.status === 'missing') });
+    return { status: 400, error: cocRefusals.join(' '), extra: { code: 'COC_REQUIRED', coc_missing: coc.required.filter(r => r.status === 'missing') } };
   }
 
   db.prepare(`UPDATE receiving_checklists SET reviewed_by = ?, reviewed_at = datetime('now'),
     system_status = COALESCE(?, system_status), updated_at = datetime('now') WHERE id = ?`)
-    .run(req.user.name, req.body?.system_status || null, row.id);
+    .run(user.name, system_status || null, row.id);
   const updated = db.prepare('SELECT * FROM receiving_checklists WHERE id = ?').get(row.id);
-  logAudit(req.user, 'receiving_checklist_reviewed', 'receiving_checklist', row.id,
+  logAudit(user, 'receiving_checklist_reviewed', 'receiving_checklist', row.id,
     { inspection_no: row.inspection_no, system_status: updated.system_status,
       ...(coc.required.length ? { coc: coc.required.map(r => ({ part_number: r.part_number, proofs: r.proofs.map(p => p.id) })) } : {}) },
     row, updated, row.inspection_no);
-  res.json(shapeChecklist(updated));
+  return { status: 200, row: updated };
+}
+
+router.post('/checklist/:inspectionNo/review', (req, res) => {
+  const out = signReceivingChecklist(getDb(), req.user, req.params.inspectionNo, { system_status: req.body?.system_status || null });
+  if (out.error) return res.status(out.status).json({ error: out.error, ...(out.extra || {}) });
+  res.json(shapeChecklist(out.row));
 });
 
 /** The way back from a signature is revoke, correct, sign again — all audited. */
-router.delete('/checklist/:inspectionNo/review', (req, res) => {
-  const db = getDb();
-  const row = db.prepare('SELECT * FROM receiving_checklists WHERE inspection_no = ?').get(req.params.inspectionNo);
-  if (!row) return res.status(404).json({ error: 'Not found' });
-  if (!row.reviewed_at) return res.status(409).json({ error: 'This checklist is not signed off.' });
-  if (req.user.role !== 'admin' && row.reviewed_by !== req.user.name) {
-    return res.status(403).json({ error: 'Only the person who signed it, or an admin, can revoke a sign-off.' });
+export function revokeReceivingSignoff(db, user, inspectionNo) {
+  const row = db.prepare('SELECT * FROM receiving_checklists WHERE inspection_no = ?').get(inspectionNo);
+  if (!row) return { status: 404, error: 'Not found' };
+  if (!row.reviewed_at) return { status: 409, error: 'This checklist is not signed off.' };
+  if (user.role !== 'admin' && row.reviewed_by !== user.name) {
+    return { status: 403, error: 'Only the person who signed it, or an admin, can revoke a sign-off.' };
   }
   db.prepare("UPDATE receiving_checklists SET reviewed_by = NULL, reviewed_at = NULL, updated_at = datetime('now') WHERE id = ?").run(row.id);
-  logAudit(req.user, 'receiving_checklist_review_revoked', 'receiving_checklist', row.id,
+  logAudit(user, 'receiving_checklist_review_revoked', 'receiving_checklist', row.id,
     { inspection_no: row.inspection_no, was_signed_by: row.reviewed_by }, row, null, row.inspection_no);
+  return { status: 200, ok: true };
+}
+
+router.delete('/checklist/:inspectionNo/review', (req, res) => {
+  const out = revokeReceivingSignoff(getDb(), req.user, req.params.inspectionNo);
+  if (out.error) return res.status(out.status).json({ error: out.error });
   res.json({ ok: true });
 });
 

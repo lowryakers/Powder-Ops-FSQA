@@ -32,6 +32,7 @@ import { QMS_TYPES, getType } from './qms-config.js';
 import { formLabel } from '../shared/form-registry.js';
 import { moduleLevel } from './module-access.js';
 import { CHECK_RECORD_TYPES } from './check-record-types.js';
+import { RECEIVING_TYPE, CALIBRATION_TYPE } from './module-record-types.js';
 
 export const INTERFACE = ['file', 'sign', 'revoke', 'retrieve', 'describe'];
 export const MAX_ROWS = 500;
@@ -331,6 +332,9 @@ export const RECORD_TYPES = [
   // had. They carry no signature, so they declare `signs: false` and leave
   // `sign` / `revoke` out — the documented subset, not a gap.
   ...CHECK_RECORD_TYPES,
+  // Receiving inspections and calibration records (D-371, server/module-record-types.js).
+  RECEIVING_TYPE,
+  CALIBRATION_TYPE,
 ];
 
 export const recordType = (type) => RECORD_TYPES.find(t => t.type === type) || null;
