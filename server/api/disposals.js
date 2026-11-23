@@ -67,22 +67,27 @@ export function nextDisposalNumber(db) {
   return String(max + 1).padStart(3, '0');
 }
 
-router.post('/', (req, res) => {
-  const db = getDb();
-  const { disposal_number, document_rev, disposal_date, reason, witness, scanned, paper_record, document_url, notes, items } = req.body;
+/** File one disposal (D-372: the route and the record interface both call this). */
+export function fileDisposal(db, user, input = {}) {
+  const { disposal_number, document_rev, disposal_date, reason, witness, scanned, paper_record, document_url, notes, items } = input;
   const id = uuid();
   const number = (disposal_number && String(disposal_number).trim()) || nextDisposalNumber(db);
   const tx = db.transaction(() => {
     db.prepare(`INSERT INTO disposals (id, disposal_number, document_rev, disposal_date, reason, witness, paper_record, scanned, document_url, notes, created_by)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       id, number, document_rev || null, disposal_date || null, reason || null,
-      witness || null, paper_record ? 1 : 0, scanned ? 1 : 0, document_url || null, notes || null, req.user.name);
+      witness || null, paper_record ? 1 : 0, scanned ? 1 : 0, document_url || null, notes || null, user.name);
     writeItems(db, id, items);
   });
   tx();
   const created = db.prepare('SELECT * FROM disposals WHERE id = ?').get(id);
-  logAudit(req.user, 'disposal_created', 'disposal', id, { disposal_number: number, items: (items || []).length });
-  res.status(201).json({ ...created, approvals: parseApprovals(created.approvals), items: loadItems(db, id) });
+  logAudit(user, 'disposal_created', 'disposal', id, { disposal_number: number, items: (items || []).length });
+  return { status: 201, id, record: { ...created, approvals: parseApprovals(created.approvals), items: loadItems(db, id) } };
+}
+
+router.post('/', (req, res) => {
+  const out = fileDisposal(getDb(), req.user, req.body || {});
+  res.status(201).json(out.record);
 });
 
 router.put('/:id', (req, res) => {
@@ -110,46 +115,55 @@ router.put('/:id', (req, res) => {
 
 // --- Role-authenticated approval sign-offs ---
 // Ops Manager: admin or supervisor. Quality Control: QA department or admin.
-function canSign(user, role) {
+export function canSign(user, role) {
   if (role === 'ops_manager') return user.role === 'admin' || user.role === 'supervisor';
   if (role === 'quality_control') return user.department === 'qa' || user.role === 'admin';
   return false;
 }
 
-router.post('/:id/approve', (req, res) => {
-  const db = getDb();
-  const d = db.prepare('SELECT * FROM disposals WHERE id = ?').get(req.params.id);
-  if (!d) return res.status(404).json({ error: 'Not found' });
-  const role = req.body.role;
-  if (!['ops_manager', 'quality_control'].includes(role)) return res.status(400).json({ error: 'Invalid approval role' });
-  if (!canSign(req.user, role)) {
-    return res.status(403).json({ error: role === 'quality_control' ? 'Quality Control sign-off requires a QA (or admin) account' : 'Operations Manager sign-off requires a supervisor or admin account' });
+/** One approval on a disposal — the signer or an admin may revoke it (D-372: routes and record interface). */
+export function signDisposal(db, user, id, role) {
+  const d = db.prepare('SELECT * FROM disposals WHERE id = ?').get(id);
+  if (!d) return { status: 404, error: 'Not found' };
+  if (!['ops_manager', 'quality_control'].includes(role)) return { status: 400, error: 'Invalid approval role' };
+  if (!canSign(user, role)) {
+    return { status: 403, error: role === 'quality_control' ? 'Quality Control sign-off requires a QA (or admin) account' : 'Operations Manager sign-off requires a supervisor or admin account' };
   }
   const approvals = parseApprovals(d.approvals);
-  approvals[role] = { name: req.user.name, user_id: req.user.id, signed_at: new Date().toISOString() };
-  db.prepare("UPDATE disposals SET approvals = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(approvals), req.params.id);
-  logAudit(req.user, `disposal_signed_${role}`, 'disposal', req.params.id, { disposal_number: d.disposal_number });
-  const updated = db.prepare('SELECT * FROM disposals WHERE id = ?').get(req.params.id);
-  res.json({ ...updated, approvals: parseApprovals(updated.approvals), items: loadItems(db, req.params.id) });
+  approvals[role] = { name: user.name, user_id: user.id, signed_at: new Date().toISOString() };
+  db.prepare("UPDATE disposals SET approvals = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(approvals), id);
+  logAudit(user, `disposal_signed_${role}`, 'disposal', id, { disposal_number: d.disposal_number });
+  const updated = db.prepare('SELECT * FROM disposals WHERE id = ?').get(id);
+  return { status: 200, record: { ...updated, approvals: parseApprovals(updated.approvals), items: loadItems(db, id) } };
+}
+
+export function revokeDisposalApproval(db, user, id, role) {
+  const d = db.prepare('SELECT * FROM disposals WHERE id = ?').get(id);
+  if (!d) return { status: 404, error: 'Not found' };
+  const approvals = parseApprovals(d.approvals);
+  const sig = approvals[role];
+  if (!sig) return { status: 200, record: { ...d, approvals, items: loadItems(db, id) } };
+  // Only an admin or the original signer may revoke
+  if (user.role !== 'admin' && sig.user_id !== user.id) {
+    return { status: 403, error: 'Only an admin or the signer can revoke this approval' };
+  }
+  delete approvals[role];
+  db.prepare("UPDATE disposals SET approvals = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(approvals), id);
+  logAudit(user, `disposal_unsigned_${role}`, 'disposal', id, { disposal_number: d.disposal_number });
+  const updated = db.prepare('SELECT * FROM disposals WHERE id = ?').get(id);
+  return { status: 200, record: { ...updated, approvals: parseApprovals(updated.approvals), items: loadItems(db, id) } };
+}
+
+router.post('/:id/approve', (req, res) => {
+  const out = signDisposal(getDb(), req.user, req.params.id, req.body?.role);
+  if (out.error) return res.status(out.status).json({ error: out.error });
+  res.json(out.record);
 });
 
 router.delete('/:id/approve/:role', (req, res) => {
-  const db = getDb();
-  const d = db.prepare('SELECT * FROM disposals WHERE id = ?').get(req.params.id);
-  if (!d) return res.status(404).json({ error: 'Not found' });
-  const role = req.params.role;
-  const approvals = parseApprovals(d.approvals);
-  const sig = approvals[role];
-  if (!sig) return res.json({ ...d, approvals, items: loadItems(db, req.params.id) });
-  // Only an admin or the original signer may revoke
-  if (req.user.role !== 'admin' && sig.user_id !== req.user.id) {
-    return res.status(403).json({ error: 'Only an admin or the signer can revoke this approval' });
-  }
-  delete approvals[role];
-  db.prepare("UPDATE disposals SET approvals = ?, updated_at = datetime('now') WHERE id = ?").run(JSON.stringify(approvals), req.params.id);
-  logAudit(req.user, `disposal_unsigned_${role}`, 'disposal', req.params.id, { disposal_number: d.disposal_number });
-  const updated = db.prepare('SELECT * FROM disposals WHERE id = ?').get(req.params.id);
-  res.json({ ...updated, approvals: parseApprovals(updated.approvals), items: loadItems(db, req.params.id) });
+  const out = revokeDisposalApproval(getDb(), req.user, req.params.id, req.params.role);
+  if (out.error) return res.status(out.status).json({ error: out.error });
+  res.json(out.record);
 });
 
 router.delete('/:id', (req, res) => {

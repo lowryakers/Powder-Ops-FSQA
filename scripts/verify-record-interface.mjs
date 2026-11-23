@@ -25,14 +25,16 @@ const { RECORD_TYPES, INTERFACE } = await import('../server/record-interface.js'
 // completing its task is the only door (no file). Anything else missing fails.
 for (const rt of RECORD_TYPES) {
   const allowed = new Set([...(rt.signs === false ? ['sign', 'revoke'] : []),
-    ...(Array.isArray(rt.filedBy) && !rt.filedBy.some(d => d !== 'task') ? ['file'] : [])]);
+    ...(Array.isArray(rt.filedBy) && !rt.filedBy.some(d => d !== 'task') ? ['file'] : []),
+    // D-372: a verb left out on purpose names its reason in `absent`.
+    ...Object.entries(rt.absent || {}).filter(([, why]) => typeof why === 'string' && why.length > 20).map(([k]) => k)]);
   const missing = [...INTERFACE, 'get', 'canRead'].filter(k => typeof rt[k] !== 'function' && !allowed.has(k));
   const extra = [...allowed].filter(k => typeof rt[k] === 'function');
   t(`${rt.type} implements ${rt.signs === false || allowed.size ? 'its documented subset' : 'file, sign, revoke, retrieve, describe'}`,
     !missing.length && !extra.length && Array.isArray(rt.modules) && rt.modules.length > 0, missing.concat(extra).join(', '));
 }
-const ADOPTED = 'banned_list_review,calibration,culture_check,emp,food_defense_challenge,gmp_walk,management_review,production,qms,receiving,sanitation,scale';
-t('the adopted types: sanitation, scale, qms, production, the six check records, receiving and calibration', RECORD_TYPES.map(r => r.type).sort().join() === ADOPTED, RECORD_TYPES.map(r => r.type).sort().join());
+const ADOPTED = 'banned_list_review,calibration,coa,culture_check,disposal,emp,food_defense_challenge,gmp_walk,management_review,production,qms,receiving,sanitation,scale,training';
+t('the adopted types: sanitation, scale, qms, production, the six check records, receiving, calibration, training, disposals and COA', RECORD_TYPES.map(r => r.type).sort().join() === ADOPTED, RECORD_TYPES.map(r => r.type).sort().join());
 t('no check record claims a signature', RECORD_TYPES.filter(r => ['emp', 'gmp_walk', 'banned_list_review', 'culture_check', 'management_review', 'food_defense_challenge'].includes(r.type)).every(r => r.signs === false && !r.sign && !r.revoke));
 
 const { default: Database } = await import('better-sqlite3');
@@ -77,7 +79,7 @@ r = await call('GET', `/records?from=${today}`, undefined, A);
 const list = r.body;
 const rs = list?.records?.find(x => x.type === 'sanitation' && x.id === san?.id);
 const rk = list?.records?.find(x => x.type === 'scale' && x.id === sc?.id);
-t('GET /api/records lists the types', r.status === 200 && !!rs && !!rk && list.types.join() === 'sanitation,scale,qms,production,emp,gmp_walk,banned_list_review,culture_check,management_review,food_defense_challenge,receiving,calibration', `${r.status} ${JSON.stringify(list?.types)}`);
+t('GET /api/records lists the types', r.status === 200 && !!rs && !!rk && list.types.join() === 'sanitation,scale,qms,production,emp,gmp_walk,banned_list_review,culture_check,management_review,food_defense_challenge,receiving,calibration,training,disposal,coa', `${r.status} ${JSON.stringify(list?.types)}`);
 t('the clean is described: form, place, who, result, unsigned', rs?.form && /^FORM 108/.test(rs.form) && rs.place === 'Restrooms'
   && rs.performed_by === 'Zuleika Test' && rs.result === 'pass' && rs.signed_by === null, JSON.stringify(rs));
 t('the scale check is described with its form and revision', rk?.form === 'FORM 417-01 V4' && rk.place === 'Batching 1' && rk.performed_by === 'Bernardo Test', JSON.stringify(rk));
@@ -318,6 +320,88 @@ t('somebody else cannot revoke it', r.status === 403 || r.status === 404, `${r.s
   t('a calibration-only account reads calibration records, not receiving inspections', r.body?.records?.some(x => x.type === 'calibration') && !r.body.records.some(x => x.type === 'receiving'));
   r = await call('GET', `/records/receiving/${rcRow?.id}`, undefined, C);
   t('…a receiving inspection is a 404 to them', r.status === 404);
+}
+
+console.log('\n── training records (D-372) ──');
+{
+  const { recordType } = await import('../server/record-interface.js');
+  const { getDb } = await import('../server/db.js');
+  const appDb = getDb();
+  mkUser('ri-tr', 'Rec Trainer', 'supervisor', 'qa', JSON.stringify({ training: 'edit' }));
+  const TR = await login('ri-tr', 'Rec Trainer', 'RecTrainer2026!');
+  const course = db.prepare('SELECT id, title FROM training_courses WHERE COALESCE(active, 1) = 1 ORDER BY code LIMIT 1').get();
+  const body = { employee_name: 'Rec Warehouse', employee_user_id: 'ri-w', course_id: course.id, status: 'completed',
+    training_date: today, completion_date: today, method: 'verbal', competence_confirmed: true };
+  r = await call('POST', '/training', body, TR);
+  t('a ticked record without the password is refused (gateSignature)', r.status === 403 && r.body?.signature_required === true, `${r.status} ${JSON.stringify(r.body)}`);
+  r = await call('POST', '/training', { ...body, signature_password: 'RecTrainer2026!' }, TR);
+  const tr = r.body;
+  t('with it, the record is filed on the training route', r.status === 201 && !!tr?.id, `${r.status} ${JSON.stringify(r.body).slice(0, 160)}`);
+  r = await call('GET', `/records?type=training&person=rec warehouse&from=${today}`, undefined, A);
+  const dt = r.body?.records?.find(x => x.id === tr?.id);
+  t('…on GET /api/records: trainee, course, competence signer and meaning', dt?.trainee === 'Rec Warehouse' && dt.title.startsWith(course.title)
+    && dt.signed_by === 'Rec Trainer' && dt.signatures?.[0]?.label === 'Trained and competent' && dt.result === 'completed', JSON.stringify(dt));
+  r = await call('GET', `/records?type=training&person=rec trainer&from=${today}`, undefined, A);
+  t('the trainer finds it too', r.body?.records?.some(x => x.id === tr?.id));
+  t('training count agrees with the table', (await call('GET', `/records?type=training&from=${today}`, undefined, A)).body.records.length
+    === db.prepare('SELECT COUNT(*) n FROM training_records WHERE substr(COALESCE(completion_date, training_date), 1, 10) >= ?').get(today).n);
+  const viaIf = recordType('training').file(appDb, { id: 'ri-tr', name: 'Rec Trainer', role: 'supervisor', department: 'qa' }, body);
+  t('the interface cannot file a ticked record — it has no password to ask', viaIf.status === 403 && viaIf.signature_required === true);
+  mkUser('ri-tbot', 'Rec Trainbot', 'supervisor', 'qa', JSON.stringify({ training: 'edit' }));
+  const tTok = (await call('POST', '/api-tokens', { user_id: 'ri-tbot', label: 'record-interface training', scopes: ['read', 'write'] }, A)).body?.plaintext;
+  r = await call('POST', `/training/${tr?.id}/competence/withdraw`, { reason: 'bot try', signature_password: 'x' }, { ...H, Authorization: `Bearer ${tTok}` });
+  t('a token cannot withdraw a competence signature', r.status === 403, `${r.status}`);
+  const rv = recordType('training').revoke(appDb, { id: 'ri-tr', name: 'Rec Trainer', role: 'supervisor', department: 'qa' }, tr?.id, { reason: 'Signed against the wrong course revision' });
+  t('the signer withdraws it through the interface (the route\'s own function), and the record says so',
+    rv.status === 200 && rv.record?.competence_signed_by === null && /wrong course revision/.test(rv.record?.competence_withdrawn || ''), JSON.stringify(rv).slice(0, 160));
+
+  console.log('\n── disposals (D-372) ──');
+  mkUser('ri-d', 'Rec Disposer', 'supervisor', 'qa', JSON.stringify({ disposals: 'edit' }));
+  const D = await login('ri-d', 'Rec Disposer', 'RecDisposer2026!');
+  r = await call('POST', '/disposals', { disposal_date: today, reason: 'Expired', witness: 'Wes Witness',
+    items: [{ item_name: 'RI Whey', item_number: 'RM-RI-1', lot_number: 'RID-LOT-1', quantity: '25 kg', reason_disposed: 'expired' },
+      { item_name: 'RI Cocoa', item_number: 'RM-RI-2', lot_number: 'RID-LOT-2', quantity: '5 kg' }] }, D);
+  const disp = r.body;
+  t('a disposal is filed on its route', r.status === 201 && !!disp?.id, `${r.status} ${JSON.stringify(r.body).slice(0, 140)}`);
+  r = await call('GET', `/records?lot=RID-LOT-2`, undefined, A);
+  const dd = r.body?.records?.find(x => x.id === disp?.id);
+  t('the second item\'s lot finds it: both lots, two items, awaiting both approvals', dd?.type === 'disposal' && JSON.stringify(dd.lots) === '["RID-LOT-1","RID-LOT-2"]'
+    && dd.items === 2 && dd.result === 'awaiting approval' && JSON.stringify(dd.approvals_pending) === '["ops_manager","quality_control"]', JSON.stringify(dd));
+  r = await call('POST', `/disposals/${disp?.id}/approve`, { role: 'quality_control' }, D);
+  t('QA approves on the route', r.status === 200 && !!r.body?.approvals?.quality_control);
+  r = await call('GET', `/records/disposal/${disp?.id}`, undefined, A);
+  t('…and the record names the signature and what is still owed', r.body?.signatures?.[0]?.label === 'Quality Control' && r.body.signed_by === 'Rec Disposer'
+    && r.body.result === 'partly approved' && JSON.stringify(r.body.approvals_pending) === '["ops_manager"]', JSON.stringify(r.body));
+  mkUser('ri-dbot', 'Rec Dispbot', 'supervisor', 'qa', JSON.stringify({ disposals: 'edit' }));
+  const dTok = (await call('POST', '/api-tokens', { user_id: 'ri-dbot', label: 'record-interface disposals', scopes: ['read', 'write'] }, A)).body?.plaintext;
+  r = await call('POST', `/disposals/${disp?.id}/approve`, { role: 'ops_manager' }, { ...H, Authorization: `Bearer ${dTok}` });
+  t('a token cannot approve a disposal', r.status === 403, `${r.status}`);
+  const rvd = recordType('disposal').revoke(appDb, { id: 'ri-o', name: 'Rec Operator', role: 'operator' }, disp?.id, { role: 'quality_control' });
+  t('someone who did not sign cannot revoke it through the interface', rvd.status === 403);
+  const okd = recordType('disposal').revoke(appDb, { id: 'ri-d', name: 'Rec Disposer', role: 'supervisor', department: 'qa' }, disp?.id, { role: 'quality_control' });
+  t('the signer can', okd.status === 200 && !okd.record?.approvals?.quality_control);
+  const n0 = db.prepare('SELECT COUNT(*) n FROM disposals').get().n;
+  const fd2 = recordType('disposal').file(appDb, { id: 'ri-d', name: 'Rec Disposer', role: 'supervisor' }, { reason: 'Damaged', items: [{ item_name: 'RI Film', lot_number: 'RID-LOT-3' }] });
+  t('filing through the interface uses the route\'s writer', fd2.status === 201 && db.prepare('SELECT COUNT(*) n FROM disposals').get().n === n0 + 1);
+
+  console.log('\n── COA requests and certificates (D-372, read side) ──');
+  db.prepare(`INSERT INTO coa_requests (id, item_number, item_description, lot_number, tests_requested, status, requested_by, date_sent, created_by)
+    VALUES ('ri-coa-1', 'FG-RI-1', 'RI Pancake Mix', 'RIC-LOT-1', 'HM & Micro', 'sent', 'Rec Admin', ?, 'Rec Admin')`).run(today);
+  r = await call('GET', `/records?lot=RIC-LOT-1`, undefined, A);
+  const dco = r.body?.records?.find(x => x.id === 'ri-coa-1');
+  t('a COA request is on GET /api/records by its lot', dco?.type === 'coa' && dco.form === 'COA request' && dco.item_number === 'FG-RI-1' && dco.result === 'sent' && dco.signed_by === null, JSON.stringify(dco));
+  r = await call('GET', '/records/types', undefined, A);
+  const coaT = (r.body || []).find(x => x.type === 'coa');
+  t('…and /records/types says why COA is read only here', coaT && JSON.stringify(coaT.implements) === '["retrieve","describe"]' && /COA screen/.test(coaT.absent?.sign || ''), JSON.stringify(coaT));
+  t('the interface adds no COA writer', !recordType('coa').file && !recordType('coa').sign && !recordType('coa').revoke);
+  r = await call('GET', `/records/coa/ri-coa-1`, undefined, C);
+  t('a COA record is a 404 to an account without the COA module', r.status === 404);
+  const fs = await import('fs');
+  const writers = (tb) => fs.readdirSync('server', { recursive: true }).filter(f => String(f).endsWith('.js')).map(f => `server/${f}`)
+    .filter(f => fs.readFileSync(f, 'utf8').includes(`INSERT INTO ${tb} `) || fs.readFileSync(f, 'utf8').includes(`INSERT INTO ${tb}\n`)).sort();
+  // api/qms.js is the draft disposal a failed tasting raises (syncOrganolepticDisposal) — there before this.
+  t('no writer was added for disposals or training records', JSON.stringify(writers('disposals')) === '["server/api/disposals.js","server/api/qms.js"]'
+    && !writers('training_records').includes('server/module-record-types.js') && !fs.readFileSync('server/module-record-types.js', 'utf8').match(/INSERT INTO|UPDATE \w+ SET/), JSON.stringify([writers('disposals'), writers('training_records')]));
 }
 
 console.log('\n── the check records (D-369), each through its own door ──');

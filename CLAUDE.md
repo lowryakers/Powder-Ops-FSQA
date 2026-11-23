@@ -4479,7 +4479,10 @@ since go-live and in the last 90 days, and gives a verdict: never used / machine
   **A filter only some types know (`lot`, `mo`, `team`, `site`) drops the types that do not** — declare it in `filters`.
 - **Receiving inspections and calibration records are on it (D-371, `server/module-record-types.js`)**. A calibration
   record has no signature; a product decision filed with one needs the route's password gate, which the interface lacks.
-- `verify:recordinterface` (123).
+- **Training, disposals and COA too (D-372)**. Training has no `sign` (competence is signed at filing/edit) and cannot
+  file a ticked record without the route's password; **COA is read only on the interface** — never wrap its file/sign/
+  unsign here. A verb left out names its reason in `absent`.
+- `verify:recordinterface` (147).
 
 ## Five more acts sign with the password (D-206, move 01)
 - Gated now: the internal audit sign-off, approving meeting minutes, authorizing a mock recall, signing a COA,
