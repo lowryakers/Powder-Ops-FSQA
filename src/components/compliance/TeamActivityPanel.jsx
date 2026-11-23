@@ -6,6 +6,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import ActivityDrillDown from './ActivityDrillDown.jsx';
+import FrozenScroll from '../common/FrozenScroll';
 
 /**
  * Every number on this page opens the tasks behind it.
@@ -95,7 +96,8 @@ function StatTable({ title, rows, nameKey, nameLabel, scopeKey, onDrill }) {
           );
         })}
       </RecordCards>
-      <div className="hidden md:block overflow-x-auto">
+      <div className="hidden md:block">
+        <FrozenScroll>
         <table className="min-w-full text-sm">
           <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
             <tr>
@@ -146,6 +148,7 @@ function StatTable({ title, rows, nameKey, nameLabel, scopeKey, onDrill }) {
             })}
           </tbody>
         </table>
+        </FrozenScroll>
       </div>
     </div>
   );
