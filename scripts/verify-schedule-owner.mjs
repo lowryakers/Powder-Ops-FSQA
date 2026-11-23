@@ -178,5 +178,70 @@ const legacyAfter = await J(await call('GET', '/pm/operator-tasks', null, legacy
 t('…and naming her the owner is still the way work reaches her',
   (Array.isArray(legacyAfter) ? legacyAfter : []).some(w => w.title === 'Chemical Dilution — Team Only (owner test)'));
 
+console.log('\nONE RAISE PATH (D-377): the housekeeping backfill carries the owner too');
+// The backfill raises a card for any active schedule with nothing outstanding.
+// It inserted the TEAM only, so an owned daily raised there arrived blank.
+{ const db = new Database(dbPath);
+  db.prepare(`UPDATE work_orders SET status = 'cancelled', notes = 'verify: clear the way for the backfill'
+    WHERE pm_schedule_id = ? AND status IN ('open','in_progress','overdue','missed')`).run(owned.id);
+  db.close(); }
+const backTeam = await J(await call('POST', '/pm/schedules', {
+  equipment_id: eq.id, title: 'Chemical Dilution — Backfill Team (owner test)', frequency_type: 'daily',
+  frequency_value: 1, task_group: 'cleaning', procedure_steps: ['Test strip'] }, tok));
+{ const db = new Database(dbPath);
+  db.prepare(`UPDATE work_orders SET status = 'cancelled', notes = 'verify: clear the way for the backfill'
+    WHERE pm_schedule_id = ? AND status IN ('open','in_progress','overdue','missed')`).run(backTeam.id);
+  db.close(); }
+await call('POST', '/pm/housekeeping', {}, tok);
+{ const db = new Database(dbPath, { readonly: true });
+  const ownedCard = db.prepare(`SELECT assigned_to, assigned_to_id, task_group FROM work_orders
+    WHERE pm_schedule_id = ? AND status = 'open' ORDER BY created_at DESC LIMIT 1`).get(owned.id);
+  const teamCard = db.prepare(`SELECT assigned_to, assigned_to_id, task_group, title FROM work_orders
+    WHERE pm_schedule_id = ? AND status = 'open' ORDER BY created_at DESC LIMIT 1`).get(backTeam.id);
+  db.close();
+  t('the BACKFILL raises the owned schedule’s card with her name and account on it',
+    ownedCard?.assigned_to === 'Zuleika Nava' && ownedCard?.assigned_to_id === 'so-owner' && ownedCard?.task_group === 'cleaning', JSON.stringify(ownedCard));
+  t('a TEAM-ONLY schedule’s backfilled card names nobody and stays the team’s',
+    !!teamCard && !teamCard.assigned_to && !teamCard.assigned_to_id && teamCard.task_group === 'cleaning', JSON.stringify(teamCard)); }
+const cleanerNow = await J(await call('GET', '/pm/operator-tasks', null, cleanerTok));
+t('…and it is on the cleaning department’s Operator View',
+  (Array.isArray(cleanerNow) ? cleanerNow : []).some(w => w.title === 'Chemical Dilution — Backfill Team (owner test)'));
+
+console.log('\nThe other calendars raise through the same path and land on their team');
+const today = new Date().toISOString().slice(0, 10);
+{ const db = new Database(dbPath);
+  db.prepare(`INSERT INTO quality_schedules (id, title, frequency_type, frequency_value, next_due, is_active, assigned_to)
+    VALUES ('so-qs', 'Tap Water Testing (owner test)', 'monthly', 1, ?, 1, 'Zuleika Nava')`).run(today);
+  db.prepare(`INSERT INTO quality_schedules (id, title, frequency_type, frequency_value, next_due, is_active)
+    VALUES ('so-qs2', 'Air Testing (owner test)', 'monthly', 1, ?, 1)`).run(today);
+  db.prepare(`INSERT INTO sop_documents (id, doc_number, title, category, status, review_due) VALUES ('so-doc', 'SOP 999', 'Owner Test SOP', 'quality', 'active', ?)`).run(today);
+  db.close(); }
+await call('POST', '/pm/housekeeping', {}, tok);
+{ const db = new Database(dbPath, { readonly: true });
+  const q1 = db.prepare('SELECT assigned_to, assigned_to_id, task_group FROM work_orders WHERE quality_schedule_id = ?').get('so-qs');
+  const q2 = db.prepare('SELECT assigned_to, assigned_to_id, task_group FROM work_orders WHERE quality_schedule_id = ?').get('so-qs2');
+  const dr = db.prepare('SELECT assigned_to, task_group FROM work_orders WHERE document_id = ?').get('so-doc');
+  db.close();
+  t('a quality schedule naming an owner raises a QA card with the owner AND her account id',
+    q1?.task_group === 'qa' && q1?.assigned_to === 'Zuleika Nava' && q1?.assigned_to_id === 'so-owner', JSON.stringify(q1));
+  t('a quality schedule naming nobody raises a QA card for the whole team', q2?.task_group === 'qa' && !q2?.assigned_to, JSON.stringify(q2));
+  t('a document review lands on Document Control, owner blank', dr?.task_group === 'document_control' && !dr?.assigned_to, JSON.stringify(dr)); }
+
+console.log('\nNo calendar writes its own work order any more');
+{ const fs = await import('fs');
+  const body = (file, fn) => { const src = fs.readFileSync(file, 'utf8'); const i = src.indexOf(`function ${fn}(`); const j = src.indexOf('\n}\n', i); return i < 0 ? '' : src.slice(i, j); };
+  const GENS = [['server/api/pm.js', 'createNextWorkOrder'], ['server/api/pm.js', 'markMissedWorkOrders'],
+    ['server/api/quality-schedules.js', 'generateQualityScheduleTasks'], ['server/api/documents.js', 'generateDocumentReviewTasks'],
+    ['server/api/sanitation.js', 'generateRecleanTasks'], ['server/supplier-review.js', 'generateSupplierReviewTasks'],
+    ['server/stability.js', 'generateStabilityPullTasks']];
+  for (const [file, fn] of GENS) {
+    const b = body(file, fn);
+    t(`${fn} raises through raiseWorkOrder and has no INSERT of its own`, b.includes('raiseWorkOrder(') && !/INSERT INTO work_orders/.test(b), file);
+  }
+  const pm = fs.readFileSync('server/api/pm.js', 'utf8');
+  const raise = pm.slice(pm.indexOf("router.post('/schedules/:id/raise'"), pm.indexOf("router.put('/schedules/:id'"));
+  t('the manual Raise button uses it too', raise.includes('raiseWorkOrder(') && !/INSERT INTO work_orders/.test(raise));
+  t('training does NOT — an assignment names one person and no team', !fs.readFileSync('server/training-assign.js', 'utf8').includes('raiseWorkOrder')); }
+
 console.log(`\n${pass}/${pass + fail} assertions passed`);
 process.exit(fail ? 1 : 0);

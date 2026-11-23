@@ -32,6 +32,7 @@ import { outOfServiceScales } from '../instrument-incidents.js';
 import { canonicalArea } from '../sanitation-areas.js';
 import { planStepSplit } from '../../shared/pm-step-split.js';
 import { personMatch, resolveUserId, withCurrentNames } from '../person-links.js';
+import { raiseWorkOrder } from '../raise-work.js';
 import { gradeTestAttempt, attemptProblem, competenceStamp, isTraineeSelf } from '../training-records.js';
 import { closeScheduleWork, pauseReason } from '../pm-pause.js';
 import { generationSweep } from '../pm-generation.js';
@@ -302,28 +303,8 @@ const FREQ_DAYS = { daily: 1, weekly: 7, biweekly: 14, monthly: 30, quarterly: 9
 // A resulting due date in the past is correct and deliberate — those days
 // genuinely had no check, and a task that arrives already missed says so,
 // where one quietly scheduled for tomorrow would not.
-/**
- * WHO THE SCHEDULE SAYS OWNS THIS JOB, resolved to a name that is current today.
- *
- * ONE DEFINITION, and both raise paths call it — the manual button and the
- * recurrence. A second copy is how pressing Raise puts a person on the card and
- * tomorrow's automatic one arrives blank, which is the exact bug this closes.
- *
- * The id is the identity, the stored name is a label (D-074): a schedule owned
- * by somebody who has since been renamed resolves to their CURRENT name, so the
- * work order matches them on both columns and their Operator View keeps
- * finding it. An owner with no account id falls back to the stored name.
- */
-function scheduleAssignee(db, sched) {
-  const id = sched?.assigned_to_id || null;
-  if (id) {
-    const u = db.prepare('SELECT id, name FROM users WHERE id = ?').get(id);
-    if (u) return { id: u.id, name: u.name };
-  }
-  const name = sched?.assigned_to || null;
-  return { id: name ? resolveUserId(db, name) : null, name };
-}
-
+// WHO THE SCHEDULE SAYS OWNS THIS JOB is `scheduleAssignee` in raise-work.js
+// now (D-377): every raise path reads the same one.
 function createNextWorkOrder(db, sched, triggeredBy = null, { from = null } = {}) {
   const interval = (FREQ_DAYS[sched.frequency_type] || 30) * (sched.frequency_value || 1);
   const parsed = from ? new Date(`${String(from).slice(0, 10)}T12:00:00`) : null;
@@ -340,17 +321,14 @@ function createNextWorkOrder(db, sched, triggeredBy = null, { from = null } = {}
      LIMIT 1`).get(sched.id, dueStr);
   if (dup) return { id: dup.id, title: dup.title, due_date: dup.due_date, existing: true };
 
-  const woId = uuid();
   // THE SCHEDULE'S OWNER TRAVELS ONTO EVERY INSTANCE IT RAISES, and nothing
   // travels back. Assigning today's card is about today — a cover for an
   // absence must not silently become somebody's standing job — so the
   // recurrence reads the SCHEDULE, never the work order it is replacing.
-  const owner = scheduleAssignee(db, sched);
-  db.prepare(`
-    INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status, assigned_to, assigned_to_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
-  `).run(woId, sched.id, sched.equipment_id, sched.title, dueStr, sched.procedure_steps, sched.task_group || 'warehouse',
-    owner.name, owner.id);
+  const { id: woId } = raiseWorkOrder(db, 'pm', {
+    pm_schedule_id: sched.id, equipment_id: sched.equipment_id, title: sched.title, due_date: dueStr,
+    procedure_steps: sched.procedure_steps, task_group: sched.task_group,
+  }, { owner: sched });
   logAudit('system', 'auto_generate', 'work_order', woId, { pm_schedule_id: sched.id, ...(triggeredBy ? { triggered_by: triggeredBy } : {}) }, null, null);
   return { id: woId, title: sched.title, due_date: dueStr };
 }
@@ -512,7 +490,9 @@ function markMissedWorkOrders(db) {
   `).all();
 
   if (orphaned.length > 0) {
-    const insertWO = db.prepare(`INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'open')`);
+    // THE BACKFILL CARRIES THE OWNER TOO (D-377). It inserted with the team
+    // only, so a schedule owned by Zuleika raised her daily with nobody on it
+    // whenever this path — not the completion's recurrence — produced it.
     // OVERDUE AND MISSED COUNT AS OUTSTANDING. They did not, so the moment a
     // task slipped past its due date the schedule looked unserviced and
     // generated another — then that one went overdue too. That is the engine
@@ -543,7 +523,10 @@ function markMissedWorkOrders(db) {
         if (checkSameJob.get(sched.title, sched.equipment_id, sched.equipment_id)) continue;
         const interval = (FREQ_DAYS[sched.frequency_type] || 30) * (sched.frequency_value ?? 1);
         const dueDate = nextWeekday(interval <= 1 ? new Date() : new Date(Date.now() + interval * 86400000));
-        insertWO.run(uuid(), sched.id, sched.equipment_id, sched.title, dueDate.toISOString().split('T')[0], sched.procedure_steps, sched.task_group || 'warehouse');
+        raiseWorkOrder(db, 'pm', {
+          pm_schedule_id: sched.id, equipment_id: sched.equipment_id, title: sched.title,
+          due_date: dueDate.toISOString().split('T')[0], procedure_steps: sched.procedure_steps, task_group: sched.task_group,
+        }, { owner: sched });
       }
     });
     tx();
@@ -815,13 +798,10 @@ router.post('/schedules/:id/raise', (req, res) => {
      LIMIT 1`).get(sched.id, raw);
   if (dup) return res.json({ work_order: dup, existing: true });
 
-  const woId = uuid();
-  const owner = scheduleAssignee(db, sched);
-  db.prepare(`INSERT INTO work_orders
-      (id, pm_schedule_id, equipment_id, title, due_date, procedure_steps, task_group, status, assigned_to, assigned_to_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)`)
-    .run(woId, sched.id, sched.equipment_id, sched.title, raw, sched.procedure_steps,
-      sched.task_group || 'warehouse', owner.name, owner.id);
+  const { id: woId } = raiseWorkOrder(db, 'pm', {
+    pm_schedule_id: sched.id, equipment_id: sched.equipment_id, title: sched.title, due_date: raw,
+    procedure_steps: sched.procedure_steps, task_group: sched.task_group,
+  }, { owner: sched });
   logAudit(req.user, 'raise_task', 'work_order', woId,
     { pm_schedule_id: sched.id, due_date: raw, reason: String(req.body?.reason || '').trim() || null },
     null, null, sched.title);
@@ -2154,12 +2134,11 @@ router.post('/generate', (_req, res) => {
     horizon.setDate(horizon.getDate() + 30);
 
     if (nextDue <= horizon) {
-      const woId = uuid();
-      db.prepare(`
-        INSERT INTO work_orders (id, pm_schedule_id, equipment_id, title, description, due_date, procedure_steps, task_group)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(woId, sched.id, sched.equipment_id, sched.title,
-        sched.description, nextDue.toISOString().split('T')[0], sched.procedure_steps, sched.task_group || 'warehouse');
+      // The manual generate pass carried no owner either (D-377).
+      const { id: woId } = raiseWorkOrder(db, 'pm', {
+        pm_schedule_id: sched.id, equipment_id: sched.equipment_id, title: sched.title, description: sched.description,
+        due_date: nextDue.toISOString().split('T')[0], procedure_steps: sched.procedure_steps, task_group: sched.task_group,
+      }, { owner: sched });
 
       generated.push({ id: woId, title: sched.title, due_date: nextDue.toISOString().split('T')[0] });
       logAudit('system', 'auto_generate', 'work_order', woId, { pm_schedule_id: sched.id }, null, null);

@@ -15,6 +15,7 @@ import { gateSignature, signatureEvidence } from '../signature.js';
 import { SWAB_TYPES, SWABS_PER_BOX, swabState, reorderPoint, setReorderPoint } from '../swab-stock.js';
 import { PREOP_FORM, preopApplies, normalizePreopForm, parsePreopForm, allergenFailures } from '../../shared/preop-form.js';
 import { normalizeSwabs, gradeSwabs, mirrorGrade, allergenFails, writeSwabs, withSwabs } from '../sanitation-swabs.js';
+import { raiseWorkOrder } from '../raise-work.js';
 
 const router = Router();
 
@@ -263,8 +264,6 @@ export function generateRecleanTasks(db) {
   if (!rooms.length) return 0;
   const already = db.prepare("SELECT 1 FROM reclean_actions WHERE room = ? AND flag_key = ? LIMIT 1");
   const findEq = db.prepare('SELECT id FROM equipment WHERE room = ? OR location = ? LIMIT 1');
-  const insWo = db.prepare(`INSERT INTO work_orders (id, equipment_id, title, description, priority, due_date, procedure_steps, task_group, status)
-              VALUES (?, ?, ?, ?, 'high', ?, '[]', 'cleaning', 'open')`);
   const insAction = db.prepare(`INSERT INTO reclean_actions (id, room, flag_key, action, work_order_id, created_by, created_by_id)
               VALUES (?, ?, ?, 'assigned', ?, 'system', NULL)`);
   const today = new Date().toISOString().split('T')[0];
@@ -272,14 +271,16 @@ export function generateRecleanTasks(db) {
   const tx = db.transaction(() => {
     for (const entry of rooms) {
       if (already.get(entry.room, entry.flag_key)) continue;
-      const woId = uuid();
       const eq = findEq.get(entry.room, entry.room);
       // The stored area is the Production Log's token ("7"), which is right for
       // the join and wrong on a task card — `Re-clean — 7` is not an
       // instruction. recleanTaskText() labels it, and closeRecleanTasksFor()
       // finds the task through reclean_actions, so the clean still closes it.
       const { title, description } = recleanText(entry, areaLabel(entry.room));
-      insWo.run(woId, eq?.id || null, title, description, today);
+      // The one raise path (D-377): the cleaning team, no invented owner.
+      const { id: woId } = raiseWorkOrder(db, 'reclean', {
+        equipment_id: eq?.id || null, title, description, priority: 'high', due_date: today, procedure_steps: '[]',
+      });
       insAction.run(uuid(), entry.room, entry.flag_key, woId);
       // `source` used to read 'reclean_72h' on all three, which is the same
       // misnaming as the title. Rows written before this say the old value.

@@ -7084,6 +7084,12 @@ R2 URLs can't be fetched cross-origin (no CORS on the bucket) — always go thro
 route, same reason the Download button does.
 
 ## A recurring job can name its owner (`pm_schedules.assigned_to`, D-094)
+- **ONE RAISE PATH (D-377, `server/raise-work.js`)**: `raiseWorkOrder(db, kind, fields, { owner })` writes every card a
+  calendar raises — the PM recurrence, the manual Raise, POST /generate, **the housekeeping backfill**, quality
+  schedules, document reviews, 72-hour re-cleans, vendor reviews and stability pulls. It sets the team (the source's,
+  else `DEFAULT_TEAM[kind]`) and copies the owner via `scheduleAssignee` when the source names one; it never invents
+  one. **A new generator calls it; never write a work-order INSERT in a generator** (`verify:schedowner` scans the
+  seven). Each generator keeps its own "already owed" guard. Training does not use it (one person, no team).
 Maria: "Zuleika performs the Lysol dilution daily — can that show on her Operator View?" Three findings.
 - **"Lysol dilution" is NOT FORM 106-01.** The form is four chemicals — Sani-512, Chlorine (Cloro), Dawn
   Professional Heavy Duty, Simple Green — and **Lysol is not one of them** (it is on the approved chemical

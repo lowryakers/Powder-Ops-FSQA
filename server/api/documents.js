@@ -24,6 +24,7 @@ import {
   canQaReview, qaReviewState, qaReviewRefusal, qaReviewDraft, withdrawQaReview, approvalNeedsQa,
   docAsDraft, qaReviewDocument, withdrawDocQaReview, clearDocQaIfChanged, docQaFields,
 } from '../document-revisions.js';
+import { raiseWorkOrder } from '../raise-work.js';
 
 const clean = (v, max = 300) => { const t = String(v ?? '').trim(); return t ? t.slice(0, max) : null; };
 
@@ -121,14 +122,15 @@ export function generateDocumentReviewTasks(db) {
   } catch { return 0; }
   if (!due.length) return 0;
   const hasOpen = db.prepare("SELECT 1 FROM work_orders WHERE document_id = ? AND status IN ('open','in_progress','overdue') LIMIT 1");
-  const ins = db.prepare(`INSERT INTO work_orders (id, title, description, priority, due_date, task_group, document_id, status)
-    VALUES (?, ?, ?, 'normal', ?, 'document_control', ?, 'open')`);
   let created = 0;
   const tx = db.transaction(() => {
     for (const d of due) {
       if (hasOpen.get(d.id)) continue;
       const reviewDue = db.prepare('SELECT review_due FROM sop_documents WHERE id = ?').get(d.id).review_due;
-      ins.run(uuid(), `Review ${d.doc_number || ''}: ${d.title || 'document'}`.trim(), 'Scheduled document review (SQF).', reviewDue, d.id);
+      raiseWorkOrder(db, 'document_review', {
+        title: `Review ${d.doc_number || ''}: ${d.title || 'document'}`.trim(), description: 'Scheduled document review (SQF).',
+        priority: 'normal', due_date: reviewDue, document_id: d.id,
+      });
       created++;
     }
   });

@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import { EMP_SCHEDULES, EMP_SITE_LIST } from '../emp-site-list.js';
+import { raiseWorkOrder } from '../raise-work.js';
 
 const router = Router();
 
@@ -57,20 +58,21 @@ export function generateQualityScheduleTasks(db) {
   // 'missed' belongs here too — housekeeping flips a past-due task to missed,
   // and without it the schedule reads as unserviced and files another copy.
   const hasOpen = db.prepare("SELECT 1 FROM work_orders WHERE quality_schedule_id = ? AND status IN ('open','in_progress','overdue','missed') LIMIT 1");
-  // The schedule's own team and owner (D-213); a schedule that names none is QA's.
-  const ins = db.prepare(`INSERT INTO work_orders
-    (id, title, description, priority, due_date, procedure_steps, task_group, assigned_to, quality_schedule_id, status)
-    VALUES (?, ?, ?, 'normal', ?, ?, ?, ?, ?, 'open')`);
+  // The schedule's own team and owner (D-213); a schedule that names none is
+  // QA's. Raised through the one raise path (D-377), which carries the owner's
+  // account id as well as the name.
   const advance = db.prepare('UPDATE quality_schedules SET next_due = ?, updated_at = datetime(\'now\') WHERE id = ?');
   let created = 0;
   const tx = db.transaction(() => {
     for (const s of due) {
       if (!hasOpen.get(s.id)) {
-        const woId = uuid();
         // Due when the schedule said, not the day housekeeping happened to run —
         // a check due on the 1st and raised on the 4th must not read as on time.
-        ins.run(woId, s.title, s.description || 'Scheduled quality check.', s.next_due || new Date().toISOString().slice(0, 10), s.procedure_steps || '[]',
-          s.task_group || 'qa', s.assigned_to || null, s.id);
+        const { id: woId } = raiseWorkOrder(db, 'quality', {
+          title: s.title, description: s.description || 'Scheduled quality check.', priority: 'normal',
+          due_date: s.next_due || new Date().toISOString().slice(0, 10), procedure_steps: s.procedure_steps || '[]',
+          task_group: s.task_group, quality_schedule_id: s.id,
+        }, { owner: s });
         logAudit('system', 'auto_generate', 'work_order', woId, { quality_schedule_id: s.id }, null, null);
         created++;
       }
