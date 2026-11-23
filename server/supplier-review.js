@@ -28,8 +28,8 @@ import { resolve, byNames } from './readybot-recipients.js';
 // not an oversight — it has no annual review to be due, because it has never
 // had a first one.
 
-import { randomUUID as uuid } from 'crypto';
 import { readyDocOrigin } from './links.js';
+import { raiseWorkOrder } from './raise-work.js';
 
 /** How far ahead of the due date the work should appear. */
 export const LEAD_DAYS = 30;
@@ -98,9 +98,6 @@ export function generateSupplierReviewTasks(db, { today = dayStr(new Date()) } =
 
   const exists = db.prepare(
     'SELECT 1 FROM work_orders WHERE supplier_qualification_id = ? AND due_date = ? LIMIT 1');
-  const ins = db.prepare(`INSERT INTO work_orders
-    (id, equipment_id, title, description, priority, due_date, procedure_steps, task_group, status, supplier_qualification_id)
-    VALUES (?, NULL, ?, ?, ?, ?, ?, 'qa', 'open', ?)`);
 
   // The SOP's own words for what a review is, so the task carries the
   // requirement rather than a paraphrase of it.
@@ -116,12 +113,14 @@ export function generateSupplierReviewTasks(db, { today = dayStr(new Date()) } =
     for (const r of rows) {
       if (exists.get(r.qualification_id, r.next_review_due)) continue;
       const overdue = r.next_review_due < today;
-      ins.run(uuid(),
-        `Annual vendor review — ${r.supplier_name}`,
-        `SOP 404 § IV.B requires an annual review of each vendor. Due ${r.next_review_due}`
+      raiseWorkOrder(db, 'supplier_review', {
+        equipment_id: null,
+        title: `Annual vendor review — ${r.supplier_name}`,
+        description: `SOP 404 § IV.B requires an annual review of each vendor. Due ${r.next_review_due}`
           + `${overdue ? ' (overdue)' : ''}. Last qualified period: ${r.period_label || 'undated'}.`,
-        overdue ? 'high' : 'medium',
-        r.next_review_due, steps, r.qualification_id);
+        priority: overdue ? 'high' : 'medium',
+        due_date: r.next_review_due, procedure_steps: steps, supplier_qualification_id: r.qualification_id,
+      });
       created += 1;
     }
   });

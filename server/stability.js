@@ -9,7 +9,7 @@
 // pull is raised LEAD_DAYS ahead (the supplier-review shape), idempotent on
 // the pull's own work_order_id.
 
-import { randomUUID as uuid } from 'crypto';
+import { raiseWorkOrder } from './raise-work.js';
 
 export const LEAD_DAYS = 14;
 const dayStr = (d) => d.toISOString().slice(0, 10);
@@ -52,23 +52,21 @@ export function generateStabilityPullTasks(db, { today = dayStr(new Date()) } = 
       ORDER BY p.due_date`).all(horizon);
   } catch { return { created: 0 }; }
   if (!rows.length) return { created: 0 };
-  const ins = db.prepare(`INSERT INTO work_orders
-    (id, equipment_id, title, description, priority, due_date, procedure_steps, task_group, status, stability_pull_id)
-    VALUES (?, NULL, ?, ?, ?, ?, ?, 'qa', 'open', ?)`);
   const stamp = db.prepare("UPDATE stability_pulls SET work_order_id = ?, updated_at = datetime('now') WHERE id = ?");
   let created = 0;
   db.transaction(() => {
     for (const p of rows) {
-      const woId = uuid();
       const overdue = p.due_date < today;
-      ins.run(woId,
-        `Stability pull — ${p.study_title} — ${p.pull_month} month${p.pull_month === 1 ? '' : 's'}`,
-        `Pull the ${p.pull_month}-month sample for the ${p.condition === 'accelerated' ? 'accelerated' : 'real-time'} stability study "${p.study_title}"`
+      const { id: woId } = raiseWorkOrder(db, 'stability', {
+        equipment_id: null,
+        title: `Stability pull — ${p.study_title} — ${p.pull_month} month${p.pull_month === 1 ? '' : 's'}`,
+        description: `Pull the ${p.pull_month}-month sample for the ${p.condition === 'accelerated' ? 'accelerated' : 'real-time'} stability study "${p.study_title}"`
           + `${p.lot_number ? ` (lot ${p.lot_number})` : ''}. Due ${p.due_date}${overdue ? ' (overdue)' : ''}.`
           + `${p.tests ? ` Tests: ${p.tests}.` : ''} Record what was pulled and where it went; the result is entered on the study when the laboratory reports.`,
-        overdue ? 'high' : 'normal', p.due_date,
-        JSON.stringify(['Pull the sample from the retention box named on the study', 'Record the quantity pulled and the laboratory it goes to', 'Enter the result on the study when it comes back']),
-        p.id);
+        priority: overdue ? 'high' : 'normal', due_date: p.due_date,
+        procedure_steps: JSON.stringify(['Pull the sample from the retention box named on the study', 'Record the quantity pulled and the laboratory it goes to', 'Enter the result on the study when it comes back']),
+        stability_pull_id: p.id,
+      });
       stamp.run(woId, p.id);
       created++;
     }

@@ -11548,3 +11548,26 @@ checklist, as controlled definitions; the live modules read the approved snapsho
 - **Not changed:** adding a section to an audit already in progress uses the questions in force at that moment (the
   audit keeps its original revision stamp); the paper-audit importer stamps the code's V1, as before.
 - `verify:controlledrecall` (31). The control, `main` before this, fails from the first check.
+
+## D-377 — One raise path for scheduled work; the owner survives the housekeeping backfill (23 Nov 2026, single-spine move 05, step A)
+**Asked:** P5 step A — one raise helper for every calendar generator and the orphan backfill, applying two-level
+ownership on every raise.
+**Found:** seven inserts across six calendars. Only `createNextWorkOrder` and the manual Raise carried the schedule's
+owner; **the housekeeping backfill in `markMissedWorkOrders`** — the path that keeps the task list full — inserted the
+team only, so an owned daily raised there arrived with nobody on it. POST /generate did the same, and quality schedules
+wrote the owner's name without going through `scheduleAssignee`.
+**Decided:**
+- `server/raise-work.js`: `raiseWorkOrder(db, kind, fields, { owner })` and `scheduleAssignee` (moved from pm.js).
+  `DEFAULT_TEAM`: pm → warehouse, quality → qa, document review → document_control, re-clean / Pre-Op → cleaning,
+  vendor review and stability → qa — today's defaults, unchanged.
+- **Two-level ownership, both levels kept:** the team is always set; the owner is copied only when the source names one
+  (PM and quality schedules), and the owner columns are written only then, so an unowned card is the insert it always was.
+- **Callers:** `createNextWorkOrder`, the backfill, the manual Raise, POST /generate (all pm.js),
+  `generateQualityScheduleTasks`, `generateDocumentReviewTasks`, `generateRecleanTasks`, `generateSupplierReviewTasks`,
+  `generateStabilityPullTasks`. Every "already owed" guard stays where it was, missed cards included — a missed card
+  still blocks the next one.
+- **Not here:** training (`assignTraining`, person-only, no team); one-off cards a person makes (New Task, a chat
+  message, a kiosk report, a meeting action); the seeders; and the event triggers (run-start Pre-Op, the ATP re-clean,
+  the manual re-clean Assign), which are step B.
+- `verify:schedowner` 35 → 50. The control, `main` before this, fails 9: the backfilled owned card has no owner, and
+  each of the seven generator functions still writes its own INSERT.
