@@ -11647,3 +11647,10 @@ holding rows; do not touch AP Drop, partner reconciliation or the payment run.
   disk. Control on `main` fails 17. `verify:writedoors` and `verify-review-cadence` now assert the 404s;
   `verify:writedoors` also had five failures already on `main` (a product fixture created as Active, refused since
   D-342) — the fixture now starts as Draft.
+- **The JSON 404 exposed a hole in `check:endpoints`.** Seven of its "first request a screen makes" paths named no
+  route at all (`/loto`, `/office/time`, `/calibration/stats`, `/partners/documents`, `/banking/transactions`,
+  `/nfp/versions`, `/procurement`) and passed only because the app shell answered 200. Each now names the request its
+  screen really makes (`/calibration/summary`, `/loto/procedures`, `/office/time/adjustments`, …); 99 endpoints answer.
+  And a failing run used to `process.exit(1)` inside the `try`, skipping the `finally` that stops its server — the
+  next run found the port "already serving" and tested nothing. It sets `exitCode` now; a planted bad path exits 1 and
+  leaves no server behind.
