@@ -20,11 +20,22 @@ const t = (n, c, d = '') => { if (c) { pass++; console.log('  ✓ ' + n); } else
 
 console.log('── the interface ──');
 const { RECORD_TYPES, INTERFACE } = await import('../server/record-interface.js');
+// A type implements all five, or documents the subset (D-369): `signs: false`
+// when no signature exists for it (no sign / revoke), `filedBy: ['task']` when
+// completing its task is the only door (no file). Anything else missing fails.
 for (const rt of RECORD_TYPES) {
-  const missing = [...INTERFACE, 'get', 'canRead'].filter(k => typeof rt[k] !== 'function');
-  t(`${rt.type} implements file, sign, revoke, retrieve, describe`, !missing.length && Array.isArray(rt.modules) && rt.modules.length > 0, missing.join(', '));
+  const allowed = new Set([...(rt.signs === false ? ['sign', 'revoke'] : []),
+    ...(Array.isArray(rt.filedBy) && !rt.filedBy.some(d => d !== 'task') ? ['file'] : []),
+    // D-372: a verb left out on purpose names its reason in `absent`.
+    ...Object.entries(rt.absent || {}).filter(([, why]) => typeof why === 'string' && why.length > 20).map(([k]) => k)]);
+  const missing = [...INTERFACE, 'get', 'canRead'].filter(k => typeof rt[k] !== 'function' && !allowed.has(k));
+  const extra = [...allowed].filter(k => typeof rt[k] === 'function');
+  t(`${rt.type} implements ${rt.signs === false || allowed.size ? 'its documented subset' : 'file, sign, revoke, retrieve, describe'}`,
+    !missing.length && !extra.length && Array.isArray(rt.modules) && rt.modules.length > 0, missing.concat(extra).join(', '));
 }
-t('sanitation, scale and qms are the adopted types', RECORD_TYPES.map(r => r.type).sort().join() === 'qms,sanitation,scale');
+const ADOPTED = 'banned_list_review,calibration,coa,culture_check,disposal,emp,food_defense_challenge,gmp_walk,management_review,production,qms,receiving,sanitation,scale,training';
+t('the adopted types: sanitation, scale, qms, production, the six check records, receiving, calibration, training, disposals and COA', RECORD_TYPES.map(r => r.type).sort().join() === ADOPTED, RECORD_TYPES.map(r => r.type).sort().join());
+t('no check record claims a signature', RECORD_TYPES.filter(r => ['emp', 'gmp_walk', 'banned_list_review', 'culture_check', 'management_review', 'food_defense_challenge'].includes(r.type)).every(r => r.signs === false && !r.sign && !r.revoke));
 
 const { default: Database } = await import('better-sqlite3');
 const db = new Database(process.env.DBPATH);
@@ -68,7 +79,7 @@ r = await call('GET', `/records?from=${today}`, undefined, A);
 const list = r.body;
 const rs = list?.records?.find(x => x.type === 'sanitation' && x.id === san?.id);
 const rk = list?.records?.find(x => x.type === 'scale' && x.id === sc?.id);
-t('GET /api/records lists the types', r.status === 200 && !!rs && !!rk && list.types.join() === 'sanitation,scale,qms', `${r.status} ${JSON.stringify(list?.types)}`);
+t('GET /api/records lists the types', r.status === 200 && !!rs && !!rk && list.types.join() === 'sanitation,scale,qms,production,emp,gmp_walk,banned_list_review,culture_check,management_review,food_defense_challenge,receiving,calibration,training,disposal,coa', `${r.status} ${JSON.stringify(list?.types)}`);
 t('the clean is described: form, place, who, result, unsigned', rs?.form && /^FORM 108/.test(rs.form) && rs.place === 'Restrooms'
   && rs.performed_by === 'Zuleika Test' && rs.result === 'pass' && rs.signed_by === null, JSON.stringify(rs));
 t('the scale check is described with its form and revision', rk?.form === 'FORM 417-01 V4' && rk.place === 'Batching 1' && rk.performed_by === 'Bernardo Test', JSON.stringify(rk));
@@ -76,7 +87,8 @@ const sanToday = db.prepare('SELECT COUNT(*) n FROM sanitation_records WHERE sub
 const scaleToday = db.prepare('SELECT COUNT(*) n FROM scale_verifications WHERE substr(performed_at,1,10) >= ?').get(today).n;
 const qmsToday = db.prepare('SELECT COUNT(*) n FROM qms_records WHERE substr(COALESCE(record_date, created_at),1,10) >= ?').get(today).n;
 t('the counts agree with the modules\' own tables', list.records.filter(x => x.type === 'sanitation').length === sanToday
-  && list.records.filter(x => x.type === 'scale').length === scaleToday && list.total === sanToday + scaleToday + qmsToday, `${list.total} vs ${sanToday}+${scaleToday}+${qmsToday}`);
+  && list.records.filter(x => x.type === 'scale').length === scaleToday
+  && list.records.filter(x => ['sanitation', 'scale', 'qms'].includes(x.type)).length === sanToday + scaleToday + qmsToday, `${list.total} vs ${sanToday}+${scaleToday}+${qmsToday}`);
 r = await call('GET', `/records?from=${today}&person=bernardo test`, undefined, A);
 t('the person filter finds what they did (case-insensitive)', r.body?.records?.length === 1 && r.body.records[0].id === sc.id, JSON.stringify(r.body?.records?.map(x => x.id)));
 r = await call('GET', `/records?from=${today}&form=FORM 417`, undefined, A);
@@ -160,12 +172,341 @@ r = await call('POST', '/qa-review/sign', { source: 'sign-out-equipment', ids: [
 const devAfter = db.prepare('SELECT approvals FROM qms_records WHERE id = ?').get(dev.id).approvals;
 t('the sign-out queue cannot sign a deviation id handed to it', !/quality/.test(devAfter || ''), devAfter);
 
+console.log('\n── production entries (D-370) ──');
+mkUser('ri-p', 'Rec Prodqa', 'supervisor', 'qa', JSON.stringify({ 'production-log': 'edit' }));
+mkUser('ri-p2', 'Rec Otherqa', 'supervisor', 'qa', JSON.stringify({ 'production-log': 'edit' }));
+const P = await login('ri-p', 'Rec Prodqa', 'RecProdqa2026!');
+const P2 = await login('ri-p2', 'Rec Otherqa', 'RecOtherqa2026!');
+r = await call('POST', '/production/entries', { date: today, team: 'Batching', submitted_by: 'Bernardo Test', people_count: 2,
+  mo_lines: [
+    { product_name: 'RI Vanilla', mo_number: 'MO-RI-1', lot_number: 'RILOT-A', quantity: 300, start_time: '07:00', end_time: '09:00', room: 'Batching 1' },
+    { product_name: 'RI Chocolate', mo_number: 'MO-RI-2', lot_number: 'RILOT-B', quantity: 200, start_time: '09:30', end_time: '11:00', room: 'Batching 2' },
+  ] }, A);
+const pe = r.body;
+t('an end-of-day entry is filed on the Production Log route', r.status === 201 && !!pe?.id, `${r.status} ${JSON.stringify(r.body).slice(0, 160)}`);
+r = await call('GET', `/records?from=${today}&type=production`, undefined, A);
+const dp = r.body?.records?.find(x => x.id === pe?.id);
+t('…and is on GET /api/records: team, room, who, when, both lots and MOs, pending QA',
+  dp?.form === 'Production Log · Batching EOD' && dp.place === 'Batching 1' && dp.team === 'Batching' && dp.performed_by === 'Bernardo Test' && dp.performed_at === today
+  && JSON.stringify(dp.lots) === '["RILOT-A","RILOT-B"]' && JSON.stringify(dp.mos) === '["MO-RI-1","MO-RI-2"]' && dp.result === 'pending QA' && dp.signed_by === null, JSON.stringify(dp));
+const prodToday = db.prepare('SELECT COUNT(*) n FROM production_entries WHERE date >= ?').get(today).n;
+t('the production count agrees with the table', r.body.records.length === prodToday, `${r.body.records.length} vs ${prodToday}`);
+r = await call('GET', `/records?from=${today}&lot=rilot-b`, undefined, A);
+t('the SECOND MO\'s lot finds the entry — and only types that know a lot answer', r.body?.records?.length === 1 && r.body.records[0].id === pe?.id, JSON.stringify(r.body?.records?.map(x => x.type)));
+r = await call('GET', `/records?mo=MO-RI-2`, undefined, A);
+t('an MO finds it', r.body?.records?.some(x => x.id === pe?.id) && r.body.records.every(x => x.type === 'production'));
+r = await call('GET', `/records?from=${today}&team=Batching&person=bernardo test`, undefined, A);
+t('team and person narrow it', r.body?.records?.some(x => x.id === pe?.id) && r.body.records.every(x => x.type === 'production' || x.performed_by?.toLowerCase() === 'bernardo test'));
+r = await call('GET', `/records?from=${today}&place=Batching 2&type=production`, undefined, A);
+t('a room on the second run finds it too', r.body?.records?.some(x => x.id === pe?.id));
+r = await call('GET', `/records?lot=RILOT-A&type=sanitation`, undefined, A);
+t('a lot asked of sanitation records matches none (not all)', r.body?.records?.length === 0);
+
+r = await call('PUT', `/production/entries/${pe?.id}/qa-signoff`, { qa_signoff_by: 'Rec Prodqa' }, P);
+t('QA sign-off without the password is refused (gateSignature)', r.status === 403 && r.body?.signature_required === true, `${r.status} ${JSON.stringify(r.body)}`);
+r = await call('PUT', `/production/entries/${pe?.id}/qa-signoff`, { qa_signoff_by: 'Rec Prodqa', signature_password: 'RecProdqa2026!' }, P);
+t('with it, the entry is signed', r.status === 200 && r.body?.qa_signoff_by === 'Rec Prodqa', `${r.status} ${JSON.stringify(r.body).slice(0, 120)}`);
+r = await call('GET', `/records/production/${pe?.id}`, undefined, A);
+t('…and the described record shows who signed', r.body?.signed_by === 'Rec Prodqa' && r.body.result === 'signed' && r.body.signatures?.length === 1);
+r = await call('GET', `/records?from=${today}&type=production&signed=yes`, undefined, A);
+t('signed=yes finds it', r.body?.records?.some(x => x.id === pe?.id));
+const botAcct = 'ri-bot';
+mkUser(botAcct, 'Rec Bot', 'supervisor', 'qa', JSON.stringify({ 'production-log': 'edit' }));
+const minted = (await call('POST', '/api-tokens', { user_id: botAcct, label: 'record-interface verify', scopes: ['read', 'write'] }, A)).body?.plaintext;
+const BOT = { ...H, Authorization: `Bearer ${minted}` };
+r = await call('DELETE', `/production/entries/${pe?.id}/qa-signoff`, { signature_password: 'x' }, BOT);
+t('a token cannot revoke a sign-off', !!minted && r.status === 403, `${r.status} ${JSON.stringify(r.body)}`);
+r = await call('PUT', `/production/entries/${pe?.id}/qa-signoff`, { qa_signoff_by: 'Rec Bot', signature_password: 'x' }, BOT);
+t('…nor sign one', r.status === 403, `${r.status} ${JSON.stringify(r.body)}`);
+r = await call('DELETE', `/production/entries/${pe?.id}/qa-signoff`, {}, P);
+t('revoking asks for the password too', r.status === 403 && r.body?.signature_required === true, `${r.status}`);
+r = await call('DELETE', `/production/entries/${pe?.id}/qa-signoff`, { signature_password: 'RecOtherqa2026!' }, P2);
+t('another QA supervisor cannot revoke it (the signer or an admin)', r.status === 403 && /Rec Prodqa or an admin/.test(r.body?.error || ''), `${r.status} ${JSON.stringify(r.body)}`);
+r = await call('DELETE', `/production/entries/${pe?.id}/qa-signoff`, { signature_password: 'RecProdqa2026!' }, P);
+t('the signer can', r.status === 200 && r.body?.qa_signoff_by == null, `${r.status} ${JSON.stringify(r.body).slice(0, 120)}`);
+const revAudit = db.prepare(`SELECT details FROM audit_log WHERE entity_type = 'production_entry' AND entity_id = ? AND details LIKE '%qa_signoff_revoked%'`).get(pe?.id);
+t('…audited with who had signed', /"was_signed_by":"Rec Prodqa"/.test(revAudit?.details || ''));
+r = await call('GET', `/records/production/${pe?.id}`, undefined, A);
+t('…and the record reads unsigned again', r.body?.signed_by === null && r.body.result === 'pending QA');
+{
+  const { recordType } = await import('../server/record-interface.js');
+  const { getDb } = await import('../server/db.js');
+  const appDb = getDb();
+  const n0 = db.prepare('SELECT COUNT(*) n FROM production_entries').get().n;
+  const out = recordType('production').file(appDb, { id: 'ri-a', name: 'Rec Admin', role: 'admin' }, { date: today, team: 'Filling', room: 'Room 3',
+    product_name: 'RI Stick', mo_number: 'MO-RI-3', lot_number: 'RILOT-C', start_time: '07:00', end_time: '08:00', quantity_completed: 50, people_count: 1 });
+  t('filing through the interface uses the route\'s writer (same table, signer = the person)', out.status === 201 && db.prepare('SELECT COUNT(*) n FROM production_entries').get().n === n0 + 1
+    && out.entry?.submitted_by === 'Rec Admin', JSON.stringify(out).slice(0, 160));
+  const bad = recordType('production').file(appDb, { id: 'ri-a', name: 'Rec Admin', role: 'admin' }, { date: today, team: 'Filling' });
+  t('…and refuses what the route refuses', bad.status === 400 && /Missing required fields/.test(bad.error || ''));
+  const fs = await import('fs');
+  const src = fs.readdirSync('server', { recursive: true }).filter(f => String(f).endsWith('.js')).map(f => `server/${f}`)
+    .filter(f => fs.readFileSync(f, 'utf8').includes('INSERT INTO production_entries'));
+  // production-seed.js is the one-time import of the plant's own history, run
+  // only on an empty table — not a door. Nothing else may insert an entry.
+  t('one writer: only the Production Log (and the first-boot history import) inserts an entry',
+    JSON.stringify(src.sort()) === '["server/api/production.js","server/production-seed.js"]', JSON.stringify(src));
+}
+
+console.log('\n── receiving inspections (D-371) ──');
+mkUser('ri-w', 'Rec Warehouse', 'operator', 'warehouse', JSON.stringify({ 'receiving-log': 'edit' }));
+const W = await login('ri-w', 'Rec Warehouse', 'RecWarehouse2026!');
+r = await call('POST', '/receiving/checklist', { vendor: 'RI Vendor', vendor_lot: 'RIV-LOT-1', po_number: 'PO-RI-9', inspection_date: today, answers: {} }, W);
+const rc = r.body;
+t('a receiving inspection is started on its own route', r.status === 200 && !!rc?.inspection_no, `${r.status} ${JSON.stringify(r.body).slice(0, 140)}`);
+const rcRow = db.prepare('SELECT * FROM receiving_checklists WHERE inspection_no = ?').get(rc?.inspection_no);
+db.prepare(`INSERT INTO receiving_log (id, inspection_no, date_received, po_number, part_number, part_description, vendor_lot, quantity_received, uom, received_by)
+  VALUES ('ri-rl-1', ?, ?, 'PO-RI-9', 'RM-RI-1', 'RI whey', 'RIV-LOT-2', 10, 'kg', 'Rec Warehouse')`).run(rc?.inspection_no, today);
+r = await call('GET', `/records?from=${today}&type=receiving`, undefined, A);
+const dr = r.body?.records?.find(x => x.id === rcRow?.id);
+t('…on GET /api/records: FORM 204-01, number, vendor, PO, both lots, open',
+  /^FORM 204-01 V\d/.test(dr?.form || '') && dr.inspection_no === rc?.inspection_no && dr.vendor === 'RI Vendor' && dr.po_number === 'PO-RI-9'
+  && JSON.stringify(dr.lots) === '["RIV-LOT-1","RIV-LOT-2"]' && /^open/.test(dr.result) && dr.signed_by === null, JSON.stringify(dr));
+t('receiving count agrees with the table', r.body.records.length === db.prepare('SELECT COUNT(*) n FROM receiving_checklists WHERE inspection_date >= ?').get(today).n);
+r = await call('GET', `/records?lot=riv-lot-2`, undefined, A);
+t('a lot on a receiving LINE finds the inspection it arrived on', r.body?.records?.some(x => x.type === 'receiving' && x.id === rcRow?.id), JSON.stringify(r.body?.records?.map(x => x.type)));
+r = await call('POST', `/receiving/checklist/${rc?.inspection_no}/review`, {}, W);
+t('sign-off is refused while questions are blank (the module\'s rule)', r.status === 400 && Array.isArray(r.body?.unanswered));
+const { allItems: rcItems } = await import('../server/receiving-checklist.js');
+r = await call('POST', '/receiving/checklist', { inspection_no: rc?.inspection_no, answers: Object.fromEntries(rcItems().map(i => [i.key, 'na'])) }, W);
+t('every question answered (not applicable, so nothing escalates)', r.status === 200);
+mkUser('ri-wbot', 'Rec Warebot', 'operator', 'warehouse', JSON.stringify({ 'receiving-log': 'edit' }));
+const wBotTok = (await call('POST', '/api-tokens', { user_id: 'ri-wbot', label: 'record-interface receiving', scopes: ['read', 'write'] }, A)).body?.plaintext;
+r = await call('POST', `/receiving/checklist/${rc?.inspection_no}/review`, {}, { ...H, Authorization: `Bearer ${wBotTok}` });
+t('a token cannot sign a receiving inspection off', !!wBotTok && r.status === 403, `${r.status} ${JSON.stringify(r.body)}`);
+r = await call('POST', `/receiving/checklist/${rc?.inspection_no}/review`, {}, W);
+t('the warehouse signs it off on its route', r.status === 200 && r.body?.reviewed_by === 'Rec Warehouse', `${r.status} ${JSON.stringify(r.body).slice(0, 160)}`);
+r = await call('GET', `/records/receiving/${rcRow?.id}`, undefined, A);
+t('…and the described record shows who signed', r.body?.signed_by === 'Rec Warehouse' && r.body.signatures?.length === 1);
+r = await call('DELETE', `/receiving/checklist/${rc?.inspection_no}/review`, undefined, Q);
+t('somebody else cannot revoke it', r.status === 403 || r.status === 404, `${r.status}`);
+{
+  const { recordType } = await import('../server/record-interface.js');
+  const { getDb } = await import('../server/db.js');
+  const appDb = getDb();
+  const out = recordType('receiving').revoke(appDb, { id: 'ri-w', name: 'Rec Warehouse', role: 'operator', department: 'warehouse' }, rcRow?.id);
+  t('the signer revokes through the interface — the module\'s own function', out.status === 200 && db.prepare('SELECT reviewed_by FROM receiving_checklists WHERE id = ?').get(rcRow?.id).reviewed_by === null, JSON.stringify(out));
+  const n0 = db.prepare('SELECT COUNT(*) n FROM receiving_checklists').get().n;
+  const fresh = recordType('receiving').file(appDb, { id: 'ri-w', name: 'Rec Warehouse', role: 'operator', department: 'warehouse' }, { vendor: 'Second truck' });
+  t('starting one through the interface issues the next number on the same table', fresh.status === 201 && db.prepare('SELECT COUNT(*) n FROM receiving_checklists').get().n === n0 + 1, JSON.stringify(fresh).slice(0, 140));
+  const refused = recordType('receiving').file(appDb, { id: 'ri-o', name: 'Rec Operator', role: 'operator', department: 'production' }, {});
+  t('…and refuses whom the route refuses', refused.status === 403);
+
+  console.log('\n── calibration records (D-371) ──');
+  r = await call('POST', '/calibration/instruments', { name: 'RI Bench Scale', type: 'scale', asset_number: 'RI-77' }, A);
+  const inst = r.body;
+  r = await call('POST', '/calibration/records', { instrument_id: inst?.id, calibrated_by: 'Cal Tech', result: 'pass', certificate_number: 'CERT-RI-1' }, A);
+  const cal = r.body;
+  t('a calibration is filed on its route', r.status === 201 && !!cal?.id, `${r.status} ${JSON.stringify(r.body).slice(0, 140)}`);
+  r = await call('GET', `/records?type=calibration&equipment=${inst?.id}`, undefined, A);
+  const dc = r.body?.records?.find(x => x.id === cal?.id);
+  t('…on GET /api/records: the instrument, who, result, certificate, no signature', dc?.title === 'Calibration — RI Bench Scale' && dc.equipment_id === inst?.id
+    && dc.performed_by === 'Cal Tech' && dc.result === 'pass' && dc.certificate_number === 'CERT-RI-1' && dc.signed_by === null, JSON.stringify(dc));
+  t('calibration count agrees with the table', r.body.records.length === db.prepare('SELECT COUNT(*) n FROM calibration_records WHERE instrument_id = ?').get(inst?.id).n);
+  r = await call('POST', '/calibration/records', { instrument_id: inst?.id, calibrated_by: 'Cal Tech', result: 'fail',
+    product_disposition: { disposition: 'not_used', notes: 'Not used since last good check — scale was boxed.' } }, A);
+  t('a product decision filed with a record still asks for the password', r.status === 403 && r.body?.signature_required === true, `${r.status} ${JSON.stringify(r.body)}`);
+  const viaIf = recordType('calibration').file(appDb, { id: 'ri-a', name: 'Rec Admin', role: 'admin' }, { instrument_id: inst?.id, calibrated_by: 'Cal Tech', result: 'fail',
+    product_disposition: { disposition: 'not_used', notes: 'Not used since last good check — scale was boxed.' } });
+  t('…and the interface cannot file a decision at all (it has no password to ask)', viaIf.status === 403 && viaIf.signature_required === true);
+  const plain = recordType('calibration').file(appDb, { id: 'ri-a', name: 'Rec Admin', role: 'admin' }, { instrument_id: inst?.id, calibrated_by: 'Cal Tech', result: 'pass' });
+  t('a plain calibration files through the interface on the same writer', plain.status === 201 && !!db.prepare('SELECT 1 FROM calibration_records WHERE id = ?').get(plain.id));
+  const fs = await import('fs');
+  const writers = (tb) => fs.readdirSync('server', { recursive: true }).filter(f => String(f).endsWith('.js')).map(f => `server/${f}`)
+    .filter(f => fs.readFileSync(f, 'utf8').includes(`INSERT INTO ${tb}`)).sort();
+  t('one writer each: receiving checklists and calibration records', JSON.stringify(writers('receiving_checklists')) === '["server/api/receiving.js"]'
+    && JSON.stringify(writers('calibration_records').filter(f => !/seed/.test(f))) === '["server/api/calibration.js"]', JSON.stringify([writers('receiving_checklists'), writers('calibration_records')]));
+  r = await call('GET', `/records?type=calibration,receiving&from=${today}`, undefined, C);
+  t('a calibration-only account reads calibration records, not receiving inspections', r.body?.records?.some(x => x.type === 'calibration') && !r.body.records.some(x => x.type === 'receiving'));
+  r = await call('GET', `/records/receiving/${rcRow?.id}`, undefined, C);
+  t('…a receiving inspection is a 404 to them', r.status === 404);
+}
+
+console.log('\n── training records (D-372) ──');
+{
+  const { recordType } = await import('../server/record-interface.js');
+  const { getDb } = await import('../server/db.js');
+  const appDb = getDb();
+  mkUser('ri-tr', 'Rec Trainer', 'supervisor', 'qa', JSON.stringify({ training: 'edit' }));
+  const TR = await login('ri-tr', 'Rec Trainer', 'RecTrainer2026!');
+  const course = db.prepare('SELECT id, title FROM training_courses WHERE COALESCE(active, 1) = 1 ORDER BY code LIMIT 1').get();
+  const body = { employee_name: 'Rec Warehouse', employee_user_id: 'ri-w', course_id: course.id, status: 'completed',
+    training_date: today, completion_date: today, method: 'verbal', competence_confirmed: true };
+  r = await call('POST', '/training', body, TR);
+  t('a ticked record without the password is refused (gateSignature)', r.status === 403 && r.body?.signature_required === true, `${r.status} ${JSON.stringify(r.body)}`);
+  r = await call('POST', '/training', { ...body, signature_password: 'RecTrainer2026!' }, TR);
+  const tr = r.body;
+  t('with it, the record is filed on the training route', r.status === 201 && !!tr?.id, `${r.status} ${JSON.stringify(r.body).slice(0, 160)}`);
+  r = await call('GET', `/records?type=training&person=rec warehouse&from=${today}`, undefined, A);
+  const dt = r.body?.records?.find(x => x.id === tr?.id);
+  t('…on GET /api/records: trainee, course, competence signer and meaning', dt?.trainee === 'Rec Warehouse' && dt.title.startsWith(course.title)
+    && dt.signed_by === 'Rec Trainer' && dt.signatures?.[0]?.label === 'Trained and competent' && dt.result === 'completed', JSON.stringify(dt));
+  r = await call('GET', `/records?type=training&person=rec trainer&from=${today}`, undefined, A);
+  t('the trainer finds it too', r.body?.records?.some(x => x.id === tr?.id));
+  t('training count agrees with the table', (await call('GET', `/records?type=training&from=${today}`, undefined, A)).body.records.length
+    === db.prepare('SELECT COUNT(*) n FROM training_records WHERE substr(COALESCE(completion_date, training_date), 1, 10) >= ?').get(today).n);
+  const viaIf = recordType('training').file(appDb, { id: 'ri-tr', name: 'Rec Trainer', role: 'supervisor', department: 'qa' }, body);
+  t('the interface cannot file a ticked record — it has no password to ask', viaIf.status === 403 && viaIf.signature_required === true);
+  mkUser('ri-tbot', 'Rec Trainbot', 'supervisor', 'qa', JSON.stringify({ training: 'edit' }));
+  const tTok = (await call('POST', '/api-tokens', { user_id: 'ri-tbot', label: 'record-interface training', scopes: ['read', 'write'] }, A)).body?.plaintext;
+  r = await call('POST', `/training/${tr?.id}/competence/withdraw`, { reason: 'bot try', signature_password: 'x' }, { ...H, Authorization: `Bearer ${tTok}` });
+  t('a token cannot withdraw a competence signature', r.status === 403, `${r.status}`);
+  const rv = recordType('training').revoke(appDb, { id: 'ri-tr', name: 'Rec Trainer', role: 'supervisor', department: 'qa' }, tr?.id, { reason: 'Signed against the wrong course revision' });
+  t('the signer withdraws it through the interface (the route\'s own function), and the record says so',
+    rv.status === 200 && rv.record?.competence_signed_by === null && /wrong course revision/.test(rv.record?.competence_withdrawn || ''), JSON.stringify(rv).slice(0, 160));
+
+  console.log('\n── disposals (D-372) ──');
+  mkUser('ri-d', 'Rec Disposer', 'supervisor', 'qa', JSON.stringify({ disposals: 'edit' }));
+  const D = await login('ri-d', 'Rec Disposer', 'RecDisposer2026!');
+  r = await call('POST', '/disposals', { disposal_date: today, reason: 'Expired', witness: 'Wes Witness',
+    items: [{ item_name: 'RI Whey', item_number: 'RM-RI-1', lot_number: 'RID-LOT-1', quantity: '25 kg', reason_disposed: 'expired' },
+      { item_name: 'RI Cocoa', item_number: 'RM-RI-2', lot_number: 'RID-LOT-2', quantity: '5 kg' }] }, D);
+  const disp = r.body;
+  t('a disposal is filed on its route', r.status === 201 && !!disp?.id, `${r.status} ${JSON.stringify(r.body).slice(0, 140)}`);
+  r = await call('GET', `/records?lot=RID-LOT-2`, undefined, A);
+  const dd = r.body?.records?.find(x => x.id === disp?.id);
+  t('the second item\'s lot finds it: both lots, two items, awaiting both approvals', dd?.type === 'disposal' && JSON.stringify(dd.lots) === '["RID-LOT-1","RID-LOT-2"]'
+    && dd.items === 2 && dd.result === 'awaiting approval' && JSON.stringify(dd.approvals_pending) === '["ops_manager","quality_control"]', JSON.stringify(dd));
+  r = await call('POST', `/disposals/${disp?.id}/approve`, { role: 'quality_control' }, D);
+  t('QA approves on the route', r.status === 200 && !!r.body?.approvals?.quality_control);
+  r = await call('GET', `/records/disposal/${disp?.id}`, undefined, A);
+  t('…and the record names the signature and what is still owed', r.body?.signatures?.[0]?.label === 'Quality Control' && r.body.signed_by === 'Rec Disposer'
+    && r.body.result === 'partly approved' && JSON.stringify(r.body.approvals_pending) === '["ops_manager"]', JSON.stringify(r.body));
+  mkUser('ri-dbot', 'Rec Dispbot', 'supervisor', 'qa', JSON.stringify({ disposals: 'edit' }));
+  const dTok = (await call('POST', '/api-tokens', { user_id: 'ri-dbot', label: 'record-interface disposals', scopes: ['read', 'write'] }, A)).body?.plaintext;
+  r = await call('POST', `/disposals/${disp?.id}/approve`, { role: 'ops_manager' }, { ...H, Authorization: `Bearer ${dTok}` });
+  t('a token cannot approve a disposal', r.status === 403, `${r.status}`);
+  const rvd = recordType('disposal').revoke(appDb, { id: 'ri-o', name: 'Rec Operator', role: 'operator' }, disp?.id, { role: 'quality_control' });
+  t('someone who did not sign cannot revoke it through the interface', rvd.status === 403);
+  const okd = recordType('disposal').revoke(appDb, { id: 'ri-d', name: 'Rec Disposer', role: 'supervisor', department: 'qa' }, disp?.id, { role: 'quality_control' });
+  t('the signer can', okd.status === 200 && !okd.record?.approvals?.quality_control);
+  const n0 = db.prepare('SELECT COUNT(*) n FROM disposals').get().n;
+  const fd2 = recordType('disposal').file(appDb, { id: 'ri-d', name: 'Rec Disposer', role: 'supervisor' }, { reason: 'Damaged', items: [{ item_name: 'RI Film', lot_number: 'RID-LOT-3' }] });
+  t('filing through the interface uses the route\'s writer', fd2.status === 201 && db.prepare('SELECT COUNT(*) n FROM disposals').get().n === n0 + 1);
+
+  console.log('\n── COA requests and certificates (D-372, read side) ──');
+  db.prepare(`INSERT INTO coa_requests (id, item_number, item_description, lot_number, tests_requested, status, requested_by, date_sent, created_by)
+    VALUES ('ri-coa-1', 'FG-RI-1', 'RI Pancake Mix', 'RIC-LOT-1', 'HM & Micro', 'sent', 'Rec Admin', ?, 'Rec Admin')`).run(today);
+  r = await call('GET', `/records?lot=RIC-LOT-1`, undefined, A);
+  const dco = r.body?.records?.find(x => x.id === 'ri-coa-1');
+  t('a COA request is on GET /api/records by its lot', dco?.type === 'coa' && dco.form === 'COA request' && dco.item_number === 'FG-RI-1' && dco.result === 'sent' && dco.signed_by === null, JSON.stringify(dco));
+  r = await call('GET', '/records/types', undefined, A);
+  const coaT = (r.body || []).find(x => x.type === 'coa');
+  t('…and /records/types says why COA is read only here', coaT && JSON.stringify(coaT.implements) === '["retrieve","describe"]' && /COA screen/.test(coaT.absent?.sign || ''), JSON.stringify(coaT));
+  t('the interface adds no COA writer', !recordType('coa').file && !recordType('coa').sign && !recordType('coa').revoke);
+  r = await call('GET', `/records/coa/ri-coa-1`, undefined, C);
+  t('a COA record is a 404 to an account without the COA module', r.status === 404);
+  const fs = await import('fs');
+  const writers = (tb) => fs.readdirSync('server', { recursive: true }).filter(f => String(f).endsWith('.js')).map(f => `server/${f}`)
+    .filter(f => fs.readFileSync(f, 'utf8').includes(`INSERT INTO ${tb} `) || fs.readFileSync(f, 'utf8').includes(`INSERT INTO ${tb}\n`)).sort();
+  // api/qms.js is the draft disposal a failed tasting raises (syncOrganolepticDisposal) — there before this.
+  t('no writer was added for disposals or training records', JSON.stringify(writers('disposals')) === '["server/api/disposals.js","server/api/qms.js"]'
+    && !writers('training_records').includes('server/module-record-types.js') && !fs.readFileSync('server/module-record-types.js', 'utf8').match(/INSERT INTO|UPDATE \w+ SET/), JSON.stringify([writers('disposals'), writers('training_records')]));
+}
+
+console.log('\n── the check records (D-369), each through its own door ──');
+const { MANAGEMENT_REVIEW_ITEMS, FOOD_DEFENSE_ITEMS, GMP_WALK_ITEMS, CULTURE_SAFETY_ITEMS } = await import('../shared/check-forms.js');
+// EMP by hand (the route), with a result.
+r = await call('POST', '/check-records/emp/samples', { zone: 'zone1', test: (await call('GET', '/check-records/emp/zones', undefined, A)).body.zones.zone1.tests[0],
+  site: 'Blender 1', sampled_on: today, lab: 'CTLA', sampled_by: 'Emma Sampler' }, A);
+const emp = r.body?.sample;
+t('an EMP sample is filed on its own route', r.status === 201 && !!emp?.id, `${r.status} ${JSON.stringify(r.body).slice(0, 140)}`);
+// Management review and Food Defense by hand (the routes).
+r = await call('POST', '/check-records/management-reviews', { reviewed_on: today, reviewed_by: 'Mona Review', attendees: 'Adam, Maria',
+  items: Object.fromEntries(MANAGEMENT_REVIEW_ITEMS.map(i => [i.key, { result: 'done' }])) }, A);
+const mr = r.body;
+t('a management review is filed by hand', r.status === 201 && !!mr?.id, `${r.status} ${JSON.stringify(r.body).slice(0, 140)}`);
+r = await call('POST', '/check-records/food-defense/challenges', { performed_on: today, performed_by: 'Fran Defense', team: 'QA', methods: ['mock_scenario'],
+  outcome: 'Plan held', findings: 'None', corrective_actions: 'None',
+  items: Object.fromEntries(FOOD_DEFENSE_ITEMS.map(i => [i.key, { result: 'done' }])) }, A);
+const fd = r.body;
+t('a Food Defense challenge is filed by hand', r.status === 201 && !!fd?.id, `${r.status} ${JSON.stringify(r.body).slice(0, 140)}`);
+// Culture check from its page.
+const allC = Object.fromEntries([...GMP_WALK_ITEMS, ...CULTURE_SAFETY_ITEMS].map(i => [i.key, { result: 'c' }]));
+r = await call('POST', '/culture/checks', { department: 'batching', items: allC, observation_note: 'Good', talk_date: today, talk_attendees: 5 }, A);
+const cc = r.body;
+t('a culture check is filed on its page', r.status === 201 && !!cc?.id, `${r.status} ${JSON.stringify(r.body).slice(0, 140)}`);
+// GMP walk and list review: completing their task is the only door.
+const sched = (title) => db.prepare('SELECT id FROM quality_schedules WHERE title = ?').get(title)?.id;
+db.prepare(`INSERT INTO work_orders (id, title, description, priority, due_date, procedure_steps, task_group, quality_schedule_id, status)
+  VALUES ('ri-walk', 'Weekly GMP Walk-through', 'x', 'normal', date('now'), '[]', 'qa', ?, 'open')`).run(sched('Weekly GMP Walk-through'));
+db.prepare(`INSERT INTO work_orders (id, title, description, priority, due_date, procedure_steps, task_group, quality_schedule_id, status)
+  VALUES ('ri-list', 'Banned/Prohibited Substance List Review', 'x', 'normal', date('now'), '[]', 'qa', ?, 'open')`).run(sched('Banned/Prohibited Substance List Review'));
+r = await call('POST', '/pm/work-orders/ri-walk/complete-and-recur', { completed_by: 'Rec Admin', check: { area: 'Production 1',
+  items: Object.fromEntries(GMP_WALK_ITEMS.map(i => [i.key, { result: 'c' }])) } }, A);
+t('a GMP walk is filed by completing its task', r.status === 200, `${r.status} ${JSON.stringify(r.body).slice(0, 160)}`);
+r = await call('POST', '/pm/work-orders/ri-list/complete-and-recur', { completed_by: 'Rec Admin', check: { editions: { nsf306_annex_c: 'Annex C 2025',
+  nfl_nflpa: 'NFL 2026', mlb: 'MLB 2026', wada: 'WADA 2026' }, changes_found: 'none', actions_taken: 'none', materials_rechecked: true } }, A);
+t('a list review is filed by completing its task', r.status === 200, `${r.status} ${JSON.stringify(r.body).slice(0, 160)}`);
+
+r = await call('GET', `/records?from=${today}&type=emp,gmp_walk,banned_list_review,culture_check,management_review,food_defense_challenge`, undefined, A);
+const cr = r.body?.records || [];
+const one = (type, id) => cr.find(x => x.type === type && (!id || x.id === id));
+const ce = one('emp', emp?.id);
+t('the EMP sample is on GET /api/records: form, site, zone, who, when, result, unsigned',
+  ce?.form === 'FORM 604-01 V1' && ce.site === 'Blender 1' && ce.place && ce.performed_by === 'Emma Sampler' && ce.performed_at === today && ce.result === 'pending' && ce.signed_by === null, JSON.stringify(ce));
+t('the management review is there with its clause and revision', /SQF Code 2\.1\.2\.1 · DRAFT-1/.test(one('management_review', mr?.id)?.form || '') && one('management_review', mr?.id)?.performed_by === 'Mona Review', JSON.stringify(one('management_review', mr?.id)));
+t('the Food Defense challenge is there with its SOP revision', one('food_defense_challenge', fd?.id)?.form === 'SOP 434 V3' && one('food_defense_challenge', fd?.id)?.result === 'Plan held');
+t('the culture check is there with its department as the place', one('culture_check', cc?.id)?.place === 'batching' && one('culture_check', cc?.id)?.result === 'compliant', JSON.stringify(one('culture_check', cc?.id)));
+t('the GMP walk is there with its area and revision', one('gmp_walk')?.place === 'Production 1' && one('gmp_walk')?.form === 'GMP walk-through DRAFT-1' && one('gmp_walk')?.performed_by === 'Rec Admin', JSON.stringify(one('gmp_walk')));
+t('the list review is there', one('banned_list_review')?.result === 'no changes', JSON.stringify(one('banned_list_review')));
+const countOf = (table, col) => db.prepare(`SELECT COUNT(*) n FROM ${table} WHERE substr(${col},1,10) >= ?`).get(today).n;
+const counts = { emp: countOf('emp_samples', 'sampled_on'), gmp_walk: countOf('gmp_walkthroughs', 'walked_on'), banned_list_review: countOf('banned_list_reviews', 'reviewed_on'),
+  culture_check: countOf('culture_checks', 'checked_on'), management_review: countOf('management_reviews', 'reviewed_on'), food_defense_challenge: countOf('food_defense_challenges', 'performed_on') };
+t('each check type\'s count agrees with its own table', Object.entries(counts).every(([k, n]) => cr.filter(x => x.type === k).length === n), JSON.stringify(counts));
+r = await call('GET', `/records?from=${today}&type=emp&site=Blender 1`, undefined, A);
+t('an EMP sample is found by its site', r.body?.records?.length >= 1 && r.body.records.every(x => x.site === 'Blender 1'));
+r = await call('GET', `/records?from=${today}&type=emp,gmp_walk,culture_check&signed=yes`, undefined, A);
+t('asking for signed check records finds none — none is signed', r.body?.records?.length === 0);
+r = await call('GET', `/records/emp/${emp?.id}`, undefined, A);
+t('one EMP sample, described', r.status === 200 && r.body?.id === emp?.id && r.body.type === 'emp');
+r = await call('GET', `/records/emp/${emp?.id}/pdf`, undefined, A);
+t('…and it prints', r.status === 200 || r.status === null, `${r.status}`);
+r = await call('GET', '/records/types', undefined, A);
+const ty = Object.fromEntries((r.body || []).map(x => [x.type, x]));
+t('/records/types says the check records do not sign, and where the walk is filed', ty.emp?.signs === false && JSON.stringify(ty.gmp_walk?.filed_by) === '["task"]'
+  && !ty.emp.implements.includes('sign') && ty.emp.implements.includes('file') && !ty.gmp_walk.implements.includes('file'), JSON.stringify([ty.emp, ty.gmp_walk]));
+
+console.log('\n── through the interface: the same writer, no second one ──');
+const { recordType } = await import('../server/record-interface.js');
+// The writer audits through the app's own connection; a second handle holding a
+// transaction would lock it out, so the interface is driven on getDb().
+const { getDb } = await import('../server/db.js');
+const appDb = getDb();
+const rows0 = countOf('management_reviews', 'reviewed_on');
+const viaIf = recordType('management_review').file(appDb, { id: 'ri-a', name: 'Rec Admin', role: 'admin', department: 'quality' },
+  { reviewed_on: today, attendees: 'A', items: Object.fromEntries(MANAGEMENT_REVIEW_ITEMS.map(i => [i.key, { result: 'done' }])) });
+t('filing through the interface lands in the same table, settled the same way', viaIf.status === 201 && countOf('management_reviews', 'reviewed_on') === rows0 + 1
+  && db.prepare('SELECT source FROM management_reviews WHERE id = ?').get(viaIf.id)?.source === 'paper', JSON.stringify(viaIf).slice(0, 160));
+const opFile = recordType('emp').file(appDb, { id: 'ri-o', name: 'Rec Operator', role: 'operator', department: 'warehouse' }, { zone: 'zone1', test: 'x', site: 'y', sampled_on: today });
+t('the interface keeps the module\'s rule: an operator cannot file an EMP sample', opFile.status === 403);
+
+// No second writer (D-369): each check table is inserted into only where it was
+// before this change. The interface added none.
+{
+  const fs = await import('fs'); const path = await import('path');
+  const files = [];
+  const walk = (d) => { for (const f of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, f.name); if (f.isDirectory()) walk(p); else if (/\.js$/.test(f.name)) files.push(p); } };
+  walk('server'); files.push('server.js');
+  const WRITERS = { emp_samples: ['server/api/check-records.js', 'server/check-records.js'], gmp_walkthroughs: ['server/check-records.js'],
+    banned_list_reviews: ['server/check-records.js'], culture_checks: ['server/culture.js'], management_reviews: ['server/check-records.js'],
+    food_defense_challenges: ['server/check-records.js'] };
+  const found = Object.fromEntries(Object.keys(WRITERS).map(tb => [tb, files.filter(f => fs.readFileSync(f, 'utf8').includes(`INSERT INTO ${tb}`)).sort()]));
+  t('no second writer: each check table is inserted into only by its existing writer', Object.entries(WRITERS).every(([tb, w]) => JSON.stringify(found[tb]) === JSON.stringify([...w].sort())), JSON.stringify(found));
+  t('…and the record interface writes no record row itself', !/INSERT INTO|UPDATE \w+ SET/.test(fs.readFileSync('server/record-interface.js', 'utf8') + fs.readFileSync('server/check-record-types.js', 'utf8')));
+}
+
 console.log('\n── who reads what ──');
 r = await call('GET', '/records/types', undefined, C);
-t('a calibration-only account sees only the scale type', JSON.stringify(r.body?.map(x => x.type)) === '["scale"]'
-  && r.body?.[0]?.implements?.length === 5, JSON.stringify(r.body));
+// The check-records route admits calibration holders (server.js mount), and the
+// interface reads by the same rule rather than a narrower copy of it.
+t('a calibration-only account sees scale and the check records it can open on their own route — never sanitation, qms or culture',
+  JSON.stringify(r.body?.map(x => x.type)) === '["scale","emp","gmp_walk","banned_list_review","management_review","food_defense_challenge","calibration"]'
+  && r.body?.[0]?.implements?.length === 5, JSON.stringify(r.body?.map(x => x.type)));
 r = await call('GET', `/records?from=${today}`, undefined, C);
-t('…and only scale records in the list', r.body?.records?.length > 0 && r.body.records.every(x => x.type === 'scale'));
+t('…and no sanitation, qms or culture records in the list', r.body?.records?.length > 0 && r.body.records.every(x => !['sanitation', 'qms', 'culture_check'].includes(x.type)));
+r = await call('GET', `/records/culture_check/${cc?.id}`, undefined, C);
+t('…a culture check is a 404 to them (only the concern log\'s readers read it)', r.status === 404);
 r = await call('GET', `/records/sanitation/${san.id}`, undefined, C);
 t('…and a sanitation record is a 404, not a 403', r.status === 404);
 r = await call('GET', `/records?from=${today}`, undefined, O);

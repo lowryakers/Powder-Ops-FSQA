@@ -10,7 +10,7 @@
 // stay on each module's own routes, which already hold the password gate.
 import { Router } from 'express';
 import { getDb } from '../db.js';
-import { RECORD_TYPES, INTERFACE, canReadType, recordType, retrieveRecords } from '../record-interface.js';
+import { RECORD_TYPES, canReadType, recordType, retrieveRecords, verbsOf } from '../record-interface.js';
 import { renderSignedRecord } from '../signed-record-pdf.js';
 
 const router = Router();
@@ -18,7 +18,9 @@ const router = Router();
 // The adopted types this person may read, and what each implements.
 router.get('/types', (req, res) => {
   res.json(RECORD_TYPES.filter(t => canReadType(req.user, t)).map(t => ({
-    type: t.type, label: t.label, implements: INTERFACE.filter(k => typeof t[k] === 'function'),
+    type: t.type, label: t.label, implements: verbsOf(t),
+    ...(t.signs === false ? { signs: false } : {}), ...(t.filedBy ? { filed_by: t.filedBy } : {}),
+    ...(t.absent ? { absent: t.absent } : {}),
   })));
 });
 

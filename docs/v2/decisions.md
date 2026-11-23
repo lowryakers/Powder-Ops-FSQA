@@ -11395,7 +11395,82 @@ morning's dailies coming was somebody happening to open a list.
 - `verify:spinep1b` (23; the control — `main` — fails 12). `verify-coa-phase1`'s "no `kind` on a signing source" fails
   on `main` too and is not this change.
 
-## D-369 — The Completeness screen drew groups a row does not have; the shelf-life column check names D-342's column (23 Nov 2026)
+## D-369 — The check records join the record interface; none of them signs (23 Nov 2026)
+Single-spine pack P2, step A (move 02). The record interface held sanitation, scale and every QMS form; the check
+records — EMP samples, GMP walks, banned-list reviews, culture checks, management reviews, Food Defense challenges —
+were outside it, so `GET /api/records` could not list them and a mock-recall lookup would miss them.
+- **Six types in `server/check-record-types.js`, one factory**, spread into `RECORD_TYPES`. Each calls the writer it
+  already had: `fileEmpSampleByHand` and `fileReviewByHand` (the bodies of the two by-hand routes in
+  `api/check-records.js`, moved into functions the routes now call), `fileCultureCheck` (the page). **No new writer**:
+  a source scan in `verify:recordinterface` asserts each table is inserted into only where it was before.
+- **No check record carries a signature**, so none implements `sign` / `revoke`; each declares `signs: false`. EMP's
+  "resulted by" is a laboratory result entered, described as such, not a signature. **No approval was invented.**
+- **The GMP walk and the list review have no `file`** (`filedBy: ['task']`): completing the task is the only door, and
+  a second one would let the record exist with no task behind it. `/records/types` reports `signs` and `filed_by`.
+- **Read by the rule of each record's own door**: the check-records route admits pm / coa / sanitation / calibration /
+  quality-schedules holders, so the interface does too (`canReadAny`); culture checks are read by the concern log's
+  readers (`canReviewCulture`). `canReadType` honours a type's `canReadAny`.
+- **Described for a later lookup**: form and revision, place (zone / area / department), site for EMP, who, when,
+  result; `lot` is null — no check record carries one. A banned-list review whose "changes found" reads "none" is
+  "no changes".
+- `verify:recordinterface` (76; the control — `main` — fails). `verify-check-records`' GMP-walks tab assertion counted
+  rows before they loaded and now waits for them.
+
+## D-370 — Production entries join the record interface; a QA sign-off can be revoked (23 Nov 2026)
+Single-spine pack P2, step B (move 02). The production entry — the biggest record type, and the one a mock recall asks
+about first — was outside the interface.
+- **`production` on `RECORD_TYPES`**, through the Production Log's own functions: `fileProductionEntry` (the body of
+  `POST /production/entries`, moved into a function the route now calls), `signOffProductionEntry` (unchanged), and
+  **`revokeProductionSignoff`** (new). No second writer; the only other insert is the first-boot history import
+  (`production-seed.js`), asserted.
+- **A sign-off had no way back except amending the entry.** `DELETE /production/entries/:id/qa-signoff` revokes it: the
+  password first (`gateSignature`, `production_qa_signoff_revoke`), then the signer or an admin (`mayRevokeSignature`,
+  the scale rule), QA's note and correction flag go with it, audited with who had signed. A token cannot sign or revoke
+  (the `qa-signoff` path segment is on the approve guard).
+- **Described for a lookup**: team, room, who, when, shift window, result (pending QA / signed / correction asked /
+  waived), quantity, and EVERY lot, MO and product on the shift (`lots`, `mos`, `products`), not only line 0's.
+- **Filters `lot`, `mo`, `team`** (JSON-aware across `mo_lines`), and `place` matches any run's or clean's room.
+- **A filter only some types understand leaves the others out** (`EXTRA_FILTERS`, a type's `filters`): asking for a lot
+  no longer returns every sanitation record. EMP declares `site`.
+- `verify:recordinterface` (99). `verify-mmr-gate` fails two product-row assertions on `main` too — not this change.
+
+## D-371 — Receiving inspections and calibration records join the record interface (23 Nov 2026)
+Single-spine pack P3, step A (move 02).
+- **`receiving`** (`server/module-record-types.js`): `saveReceivingChecklist`, `signReceivingChecklist`,
+  `revokeReceivingSignoff` — the bodies of `POST /receiving/checklist` (its save half; the route still sends the
+  escalations an answer triggers), `POST /checklist/:no/review` and `DELETE …/review`, moved into functions the routes
+  call. Described with FORM 204-01 and the revision it was asked under, number, vendor, PO, and every lot — the
+  checklist's vendor lot and every receiving line's — so a lot finds the truck it came on. Filters `lot`.
+- **`calibration`**: `fileCalibrationRecord` (the `POST /calibration/records` body). **The record carries no
+  signature** (`signs: false`); the product decision an out-of-calibration finding owes (D-154) is signed with the
+  password on its own route and is described as `disposition`. A decision filed WITH a record still asks for the
+  password — the route passes `gate`; the interface has none, so it cannot file a decision at all (403).
+- **Found, not changed: the receiving sign-off and the disposal approvals ask for no password.** Both predate move 01 and
+  were missed by its sweep (D-206). Changing what the warehouse is asked at the dock is a decision, not an adapter;
+  raised for Lowry.
+- `verify:recordinterface` (123): each filed through its route, on `GET /api/records`, counts agree, a token cannot sign
+  a receiving inspection off, revoke by the signer through the interface, one writer each.
+
+## D-372 — Training records, disposals and COA join the record interface; COA read-only, and why (23 Nov 2026)
+Single-spine pack P3, step B (move 02). With D-369 … D-371 this finishes the move-02 types named in the spine status.
+- **`training`**: `fileTrainingRecord` (the `POST /training` body; `insertCompletion` stays the writer underneath) and
+  `withdrawCompetence` (the withdraw route's body) as `revoke`. The competence tick is the signature and is signed when
+  the record is filed or edited, so the type has **no `sign`** — documented in `absent.sign`. The record's password
+  check is a callback the route passes in; the interface has none, so it **cannot file a ticked record (403)** and only a
+  record proved by a passed quiz files through it. Described with the course's own title (joined, not copied), trainee,
+  trainer, method, score and the competence signer with its meaning; a person matches trainee, trainer or signer.
+- **`disposal`**: `fileDisposal`, `signDisposal`, `revokeDisposalApproval` (the three route bodies). Both approvals
+  (Operations Manager, Quality Control) are described with what is still owed, and every item's lot; filter `lot`.
+- **`coa` is READ ONLY here** (`absent.file` / `sign` / `revoke`, each with its reason). What the plant means by "a COA
+  record" is the lab request and, once signed, the certificate on it (`certificate_number`, `qa_signed_by`). Filing,
+  signing and un-signing stay on the COA screen: the release gate, the re-read of every lab report, certificate
+  numbering and the correction window are part of those acts (D-221 … D-312), and lifting them out is module work this
+  pack excludes. A second door to a COA signature is the one thing the interface must not add.
+- **The shape check accepts a verb left out only with a reason** (`absent[verb]`, > 20 characters); `/records/types`
+  reports it.
+- `verify:recordinterface` (147). The disposal approvals still ask for no password (raised in D-371).
+
+## D-373 — The Completeness screen drew groups a row does not have; the shelf-life column check names D-342's column (23 Nov 2026)
 `verify:mmrgate` and `verify:panel-provenance` were red on `main` (7b3f9dc). Two causes, one per side.
 - **The code was wrong: Products → Completeness crashed on open** ("Cannot read properties of undefined (reading
   'state')"). `completenessOf()` leaves out a group that does not apply to a SKU (D-302: the food groups on merch, the

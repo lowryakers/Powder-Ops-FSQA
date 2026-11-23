@@ -4471,7 +4471,18 @@ since go-live and in the last 90 days, and gives a verdict: never used / machine
   - The described row carries `signatures` (role, label, name, time) and `approvals_pending`; `signed_by` is the
     latest signature.
   - A `place` or `equipment` filter matches no QMS record (there is no such column), never all of them.
-- `verify:recordinterface` (46).
+- **The six check records are on it too (D-369, `server/check-record-types.js`)**: EMP, GMP walk, list review, culture
+  check, management review, Food Defense challenge. None signs (`signs: false`, no sign/revoke); the GMP walk and list
+  review are filed only by their task (`filedBy: ['task']`, no `file`). Never add a writer for them here.
+- **Production entries are on it (D-370)**: `fileProductionEntry` / `signOffProductionEntry` / `revokeProductionSignoff`
+  (`DELETE /production/entries/:id/qa-signoff`, password, signer or admin). Described with every lot and MO on the shift.
+  **A filter only some types know (`lot`, `mo`, `team`, `site`) drops the types that do not** — declare it in `filters`.
+- **Receiving inspections and calibration records are on it (D-371, `server/module-record-types.js`)**. A calibration
+  record has no signature; a product decision filed with one needs the route's password gate, which the interface lacks.
+- **Training, disposals and COA too (D-372)**. Training has no `sign` (competence is signed at filing/edit) and cannot
+  file a ticked record without the route's password; **COA is read only on the interface** — never wrap its file/sign/
+  unsign here. A verb left out names its reason in `absent`.
+- `verify:recordinterface` (147).
 
 ## Five more acts sign with the password (D-206, move 01)
 - Gated now: the internal audit sign-off, approving meeting minutes, authorizing a mock recall, signing a COA,
