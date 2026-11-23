@@ -11654,3 +11654,11 @@ holding rows; do not touch AP Drop, partner reconciliation or the payment run.
   And a failing run used to `process.exit(1)` inside the `try`, skipping the `finally` that stops its server — the
   next run found the port "already serving" and tested nothing. It sets `exitCode` now; a planted bad path exits 1 and
   leaves no server behind.
+
+## D-381 — Retention Samples stays in the nav as it is (23 Nov 2026, single-spine pack 6, step C)
+**Asked:** P6 step C — keep and fill the retain library, or hide it from the nav until the plant is ready (code and
+data left in place).
+**Decided (Lowry):** **no change.** Retention Samples stays in the Quality nav exactly as it is, with Stability as a
+tab inside it. Nothing is hidden, moved, seeded or deleted. A hide-and-move-Stability version was started and thrown
+away before any commit. This answers section 3 of `cleanup-and-spine-2026-10-26.md` ("load one box or hide it"): do
+not raise it again. Filling the library (importing the box sheets) is still the plant's job, unscheduled.
