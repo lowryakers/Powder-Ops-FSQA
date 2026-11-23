@@ -84,6 +84,8 @@ t('completing it raised the next one', !!done?.next_work_order?.id || !!done?.ne
   t('…and is still cleaning work, not moved to her department', next?.task_group === 'cleaning', JSON.stringify(next?.task_group)); }
 
 console.log('\nHer Operator View shows it although her department is Batching');
+// D-368: reading a list no longer runs the sweep that raises cards — run it.
+await call('POST', '/pm/housekeeping', {}, tok);
 let mine = await J(await call('GET', '/pm/operator-tasks', null, ownerTok));
 const mineList = Array.isArray(mine) ? mine : (mine?.tasks || mine?.work_orders || []);
 t('the owned dilution card is on HER screen',
