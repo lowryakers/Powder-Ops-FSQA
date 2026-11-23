@@ -94,20 +94,11 @@ t('reviewed 20 days early: next due is the anniversary + 1 year, not today + 1 y
 r = await J(await post(`/suppliers/${sid}/disposition`, { disposition: 'approved', period_label: '2028', risk_criteria: criteria }));
 t('reviewed 100 days late: next due is a year from today', qualDue('2028') === addInterval(today, { months: 12 }), qualDue('2028'));
 
-console.log('\nA daily checklist completed five days late');
-const tmpl = await J(await post('/checklists/templates', { name: 'Cadence daily', type: 'gmp', frequency: 'daily', items: [] }));
-t('template created', !!tmpl?.id, JSON.stringify(tmpl).slice(0, 120));
-const late = uuid();
-{ const db = DB(); db.prepare("INSERT INTO checklist_instances (id, checklist_id, due_date) VALUES (?, ?, ?)").run(late, tmpl.id, day(-5)); db.close(); }
-r = await J(await post(`/checklists/instances/${late}/complete`, { submitted_by: 'Cadence Admin', responses: {} }));
-t('completed', r?.completed === late, JSON.stringify(r));
-t('THE NEXT INSTANCE IS DUE THE DAY AFTER THE ONE THAT WAS DUE (4 days ago), not tomorrow', r?.next_due === day(-4), r?.next_due);
-const skipR = await J(await post(`/checklists/instances/${r.next_instance}/skip`, {}));
-t('skipped', skipR?.skipped === r.next_instance, JSON.stringify(skipR));
-{ const db = DB();
-  const nxt = db.prepare("SELECT due_date FROM checklist_instances WHERE checklist_id = ? AND status = 'pending' ORDER BY due_date ASC LIMIT 1").get(tmpl.id);
-  db.close();
-  t('the skip path advances the same way (3 days ago)', nxt?.due_date === day(-3), nxt?.due_date); }
+// The old checklist module and its cadence were retired with its API (D-380);
+// PM schedules and the check records carry the plant's recurring work.
+console.log('\nThe old checklist API is retired (D-380)');
+{ const rr = await post('/checklists/templates', { name: 'Cadence daily', type: 'gmp', frequency: 'daily', items: [] });
+  t('POST /checklists/templates answers 404', rr.status === 404, String(rr.status)); }
 
 console.log(`\n${pass}/${pass + fail} assertions passed`);
 process.exit(fail ? 1 : 0);

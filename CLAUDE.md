@@ -4347,8 +4347,12 @@ the table started near the top and ran ~200px off the window — and its verify 
 **The AP ledger, AR ledger, Banking and QuickBooks tabs are no longer in the Accounting hub, their three
 Settings grants are gone from the module list, and the QuickBooks / Plaid rows are off Settings → Integrations.**
 They duplicated QuickBooks, which stays the book of record; nothing in ReadyDoc pulls from QuickBooks any more.
-Bills come in through AP Drop and stop there. The panels, routers, tables and verifies below still exist and
-still pass — this is a hide, reversed by one `HUB_TABS` entry — so the notes are kept as they were.
+Bills come in through AP Drop and stop there.
+**THE AP/AR LEDGER AND QUICKBOOKS CODE IS GONE (D-380)** — `api/finance.js`, `quickbooks.js`, `finance-seed.js`, the
+QBO import targets, `LedgerPanel`, `QuickBooksPanel`, `QuickBooksSetupCard`. **Their tables stay** (`ap_invoices`,
+`ar_invoices`, `finance_files`, `qbo_*`); git has the code. **Banking stays**: the payment run reads `bank_accounts` /
+`bank_transactions` (D-363/D-364) and only `api/banking.js` fills them. `check:retired` pins both halves. The notes
+below are history.
 
 `ap_invoices` / `ar_invoices` / `finance_files` (`server/api/finance.js`, one router driven by a per-ledger
 config; UI is one `LedgerPanel.jsx` with `ledger="ap"|"ar"`). KPI cards are plain SQL sums. Bulk file upload
@@ -6741,6 +6745,11 @@ it. **SELECT-only; it renames nothing.** A new place a name lives gets a section
 `MIRRORS` in `scripts/check-mirrors.mjs` lists each column that copies a fact owned elsewhere, its owner, and the files
 allowed to write it. **A new writer of one fails `check:mirrors`** — add it to the list on purpose or write the owner.
 A supply order's group goes through `tagColumns()` (`server/supply-lists.js`): `tags` is the fact, `label` its mirror.
+
+## Retired code answers 404; its tables stay (D-380)
+`/api/finance`, the QuickBooks reader and the old `/api/checklists` module are gone; `check:retired` asserts it and that
+AP Drop, Partner Rec, the payment run and Banking are still mounted. **An `/api` path nothing mounts is a JSON 404**
+(server.js, before the app shell) — it used to be `index.html` with a 200. Never DROP or DELETE a retired module's table.
 
 ## Every page of a document PDF carries its identity; the draft is its own export (D-318)
 `server/document-pdf.js` is the ONE renderer for controlled-document PDFs (single, batch, Auditor View Print). Header and

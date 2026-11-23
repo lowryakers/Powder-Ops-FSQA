@@ -40,25 +40,12 @@ const opToken = await signIn('Doors Operator', 'wd-op', 'SC-WO', PW.op);
 token = await signIn('Doors Admin', 'wd-admin', 'SC-WA', PW.admin);
 t('signed in', !!token && !!opToken);
 
-console.log('\nVerifying a checklist is a signature by the caller');
-const tmpl = await J(await post('/checklists/templates', { name: 'Doors daily', type: 'gmp', frequency: 'daily', items: [] }));
-const sub = await J(await post('/checklists/submissions', { checklist_id: tmpl.id, submitted_by: 'Doors Operator', responses: {} }));
-t('submission filed', !!sub?.id, JSON.stringify(sub).slice(0, 120));
-let r = await put(`/checklists/submissions/${sub.id}/verify`, { verified_by: 'Somebody Typed' });
-let body = await J(r);
-t('no password → 403 signature_required', r.status === 403 && body?.signature_required === true, `${r.status} ${JSON.stringify(body).slice(0, 100)}`);
-r = await put(`/checklists/submissions/${sub.id}/verify`, { verified_by: 'Somebody Typed', signature_password: 'wrong-pw' });
-t('wrong password → refused', r.status === 403, String(r.status));
-{ const saved = token; token = opToken;
-  r = await put(`/checklists/submissions/${sub.id}/verify`, { signature_password: PW.op });
-  t('a warehouse operator cannot verify a checklist', r.status === 403, String(r.status));
-  token = saved; }
-r = await put(`/checklists/submissions/${sub.id}/verify`, { verified_by: 'Somebody Typed', signature_password: PW.admin });
-body = await J(r);
-t('with the password it verifies', r.status === 200, `${r.status} ${JSON.stringify(body).slice(0, 100)}`);
-t('THE VERIFIER IS THE CALLER, not the name in the body', body?.verified_by === 'Doors Admin', body?.verified_by);
-{ const db = DB(); const a = db.prepare("SELECT details FROM audit_log WHERE entity_id = ? AND action LIKE '%verif%' ORDER BY rowid DESC LIMIT 1").get(sub.id); db.close();
-  t('the audit entry carries the signature evidence', /signature_verified/.test(a?.details || ''), (a?.details || '').slice(0, 80)); }
+let r, body;
+console.log('\nThe old checklist API is retired (D-380)');
+{ const r = await post('/checklists/templates', { name: 'Doors daily', type: 'gmp', frequency: 'daily', items: [] });
+  t('POST /checklists/templates is not mounted any more (404)', r.status === 404, String(r.status)); }
+{ const r = await req('/finance/ap');
+  t('GET /finance/ap is not mounted any more (404)', r.status === 404, String(r.status)); }
 
 console.log('\nVerifying a lockout is a signature by a second person');
 const eqId = uuid(), procId = uuid(), exId = uuid();
@@ -128,7 +115,7 @@ t('V1 is still recoverable from history', after.some(v => v.revision === 'V1' &&
   t('every seeded reference document has a baseline version row', refs > 0 && n === 0, `${refs} reference docs, ${n} without a version`); }
 
 console.log('\nEvery product write stamps readiness');
-const p = await J(await post('/products', { sku: 'TST-PLG-DOR', flavor: 'Doors', category: 'Whey', pack: 'PLG', status: 'Active', spec_id: 'SPEC-POUCH-LG' }));
+const p = await J(await post('/products', { sku: 'TST-PLG-DOR', flavor: 'Doors', category: 'Whey', pack: 'PLG', spec_id: 'SPEC-POUCH-LG' }));  // D-342: a new product starts as Draft
 t('product created', p?.sku === 'TST-PLG-DOR', JSON.stringify(p).slice(0, 120));
 const basis = (sku) => { const db = DB(); const b = db.prepare('SELECT readiness_basis FROM products WHERE sku = ?').get(sku)?.readiness_basis; db.close(); return b ? JSON.parse(b) : null; };
 t('CREATION RECORDS A BASIS for the steps it satisfied', !!basis('TST-PLG-DOR') && !!basis('TST-PLG-DOR').sku, JSON.stringify(basis('TST-PLG-DOR')));

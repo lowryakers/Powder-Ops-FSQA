@@ -32,6 +32,10 @@ const BASE = `http://127.0.0.1:${PORT}/api`;
 const dir = mkdtempSync(join(tmpdir(), 'readydoc-endpoints-'));
 const dbPath = join(dir, 'check.db');
 
+// These seven used to name paths no router has ('/loto', '/office/time',
+// '/calibration/stats', …) and passed only because an unmounted /api GET fell
+// through to the app shell with a 200. Since D-380 it is a JSON 404, which is
+// what found them; each now names the request its screen actually makes.
 // Every screen's first request. Grouped the way the nav is, so a gap is
 // obvious when a module is added.
 const PATHS = [
@@ -43,15 +47,15 @@ const PATHS = [
   '/qa-review', '/sanitation', '/sanitation/reclean-status', '/disposals', '/complaints',
   '/haccp', '/hygienic-design', '/internal-audits', '/mock-recalls', '/meetings',
   '/retention', '/retention/boxes', '/facility/map-status', '/quality-schedules',
-  '/chemicals', '/checklists/templates',
+  '/chemicals',
   '/safety/forms', '/safety/evacuations', '/safety/first-aid', '/quality-schedules/emp-site-list',
   // calibration — the one that started this
-  '/calibration/instruments', '/calibration/records', '/calibration/stats',
+  '/calibration/instruments', '/calibration/records', '/calibration/summary',
   '/scale-verification/forms', '/scale-verification',
   // maintenance + equipment
   '/pm/schedules', '/pm/work-orders', '/pm/metrics', '/pm/operator-tasks',
   '/pm/by-frequency', '/pm/clearance-pending', '/pm/completed-history',
-  '/equipment', '/equipment/readiness', '/loto', '/loto/uncovered-equipment',
+  '/equipment', '/equipment/readiness', '/loto/procedures', '/loto/executions', '/loto/uncovered-equipment',
   // production
   '/production/entries', '/production/eod-templates', '/production/entries/qa-actions',
   '/coa/requests', '/coa/specifications',
@@ -64,10 +68,10 @@ const PATHS = [
   '/training/courses', '/training', '/training/matrix', '/training/due',
   '/certifications', '/certifications?q=pcqi', '/policies', '/org', '/org/people',
   // office
-  '/office/time', '/office/supply/orders', '/finance/ap', '/finance/ar',
-  '/partners/documents', '/banking/accounts', '/banking/transactions',
+  '/office/time/adjustments', '/office/supply/orders',
+  '/partners', '/banking/accounts', '/banking/feed/status',
   '/reimbursements', '/employee-documents', '/employee-documents/mine', '/ap-drop', '/ap-drop/meta', '/ap-drop/recent', '/pay/employees', '/pay/reviewers', '/newsletter/issues',
-  '/products', '/products/flavor-codes', '/artwork', '/nfp/versions', '/procurement',
+  '/products', '/products/flavor-codes', '/artwork', '/nfp', '/procurement/pos',
   // comms + structure
   '/comms/channels', '/comms/threads/unread', '/comms/activity/unread',
   '/structure/lists', '/imports/targets', '/integrations',
@@ -139,9 +143,13 @@ try {
   if (bad.length) {
     console.error(`\n${bad.length} endpoint(s) a screen opens on are failing:`);
     for (const b of bad) console.error('  ✗ ' + b);
-    process.exit(1);
+    // exitCode, not exit(): exit() here skipped the `finally` below and left the
+    // server running on the port, so the NEXT run reported "already serving"
+    // and tested nothing.
+    process.exitCode = 1;
+  } else {
+    console.log(`All ${PATHS.length} list endpoints answered.`);
   }
-  console.log(`All ${PATHS.length} list endpoints answered.`);
 } finally {
   try { child?.kill('SIGTERM'); } catch { /* already gone */ }
   await sleep(800);
