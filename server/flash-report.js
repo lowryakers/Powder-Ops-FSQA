@@ -28,6 +28,7 @@
 //    `partner-recon.js` and `coa-submission.js`.
 
 import { holidayOn } from './plant-calendar.js';
+import { overdueCounts } from './work-order-owners.js';
 const DAY = 86400000;
 const iso = (d) => d.toISOString().slice(0, 10);
 const daysAgo = (n, from = new Date()) => iso(new Date(from.getTime() - n * DAY));
@@ -76,18 +77,20 @@ const EXCEPTION_CHECKS = [
   },
   {
     id: 'overdue_spike',
-    // The COUNT is on every dashboard. What is not is whether it moved.
+    // The COUNT is on every dashboard. What is not is whether it moved — and
+    // whose it is: a card nobody is named on is the team's, a named one is a
+    // person's, and a card on a deactivated account is nobody's and is not
+    // counted (work-order-owners.js).
     run(db, { today }) {
-      const now = db.prepare("SELECT COUNT(*) c FROM work_orders WHERE status IN ('open','in_progress','overdue','missed') AND due_date < ?").get(today).c;
-      const week = db.prepare(`SELECT COUNT(*) c FROM work_orders
-        WHERE status IN ('open','in_progress','overdue','missed') AND due_date < ? AND created_at < datetime('now','-7 day')`).get(today).c;
-      if (now < 10 || week === 0) return null;
-      const growth = pct(now - week, week);
+      const now = overdueCounts(db, today);
+      const week = overdueCounts(db, today, { createdBefore: "datetime('now','-7 day')" });
+      if (now.total < 10 || week.total === 0) return null;
+      const growth = pct(now.total - week.total, week.total);
       if (growth == null || growth < 25) return null;
       return [{
         id: 'overdue_spike', severity: 'high',
-        text: `Overdue tasks are up ${growth}% in a week — ${week} → ${now}.`,
-        tab: 'pm',
+        text: `Overdue tasks are up ${growth}% in a week — ${week.total} → ${now.total} (${now.team} team-owned, ${now.person} named to a person).`,
+        tab: 'pm', counts: now,
       }];
     },
   },

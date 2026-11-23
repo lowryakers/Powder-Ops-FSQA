@@ -32,6 +32,7 @@ import { isApprovedStatus, sameRevision } from '../../shared/document-revision.j
 import { trainingFieldErrors, competenceStatement, competenceMissing, COMPETENCE_REQUIRED_MSG, externalProblem, EXTERNAL_MEANING,
   looksLikeSeveralPeople, SEVERAL_PEOPLE_MSG } from '../../shared/training-record-fields.js';
 import { renderCertificate } from '../certificate-pdf.js';
+import { inactiveAssigneeSql } from '../work-order-owners.js';
 import {
   CourseDraftError, SIGN_ROLES, createDraft, updateDraft, addDraftMaterials, getDraft, draftView, listDrafts,
   signDraft, revokeSignature, discardDraft, isBotAccount, purgeIfUnreferenced, draftMaterialShape, tokenDraftFileRefusal,
@@ -320,6 +321,9 @@ router.get('/assignments', (req, res) => {
     FROM work_orders wo JOIN training_courses c ON c.id = wo.training_course_id
     LEFT JOIN users au ON au.id = wo.assigned_to_id
     WHERE wo.training_course_id IS NOT NULL AND COALESCE(au.not_trainee, 0) = 0
+      -- A deactivated person's leftover training is not outstanding (D-367);
+      -- what they completed stays listed as history.
+      AND NOT (wo.status IN ('open','in_progress','overdue','missed') AND ${inactiveAssigneeSql('wo')})
     ORDER BY CASE WHEN wo.status IN ('open','in_progress','overdue','missed') THEN 0 ELSE 1 END, wo.due_date`).all();
   res.json(rows.map(r => ({
     ...r,

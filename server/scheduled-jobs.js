@@ -16,6 +16,7 @@ import { plantWallClock } from './plant-clock.js';
 import { holidayOn } from './plant-calendar.js';
 import { expireWindows } from './coa-correction-window.js';
 import { logAudit } from './db.js';
+import { inactiveAssigneeSql } from './work-order-owners.js';
 
 export function startScheduledJobs(db, deps) {
   const tick = () => {
@@ -460,6 +461,7 @@ export async function postPmWeekDigest(db, deps, now) {
     FROM work_orders wo
     LEFT JOIN equipment e ON wo.equipment_id = e.id
     WHERE wo.status IN ('open', 'in_progress') AND wo.due_date <= ?
+      AND NOT ${inactiveAssigneeSql('wo')}
     ORDER BY wo.due_date ASC, wo.title
   `).all(weekEndStr);
   if (!rows.length) return;
@@ -488,7 +490,8 @@ export async function postPmWeekDigest(db, deps, now) {
     const thisWeek = tasks.filter(t => t.due_date >= todayStr);
     const lines = [`🔧 *This week's tasks — ${team.replace(/_/g, ' ')}* (${tasks.length} open)`];
     if (overdue.length) {
-      lines.push(`*Overdue (${overdue.length}):*`);
+      const named = overdue.filter(t => (t.assigned_to || '').trim()).length;
+      lines.push(`*Overdue (${overdue.length}: ${overdue.length - named} team-owned, ${named} named to a person):*`);
       lines.push(...overdue.slice(0, 5).map(itemLine));
       if (overdue.length > 5) lines.push(`  …and ${overdue.length - 5} more`);
     }
