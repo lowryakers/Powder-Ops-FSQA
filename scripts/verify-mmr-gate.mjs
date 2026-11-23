@@ -154,6 +154,9 @@ console.log('\n── the shelf-life basis, and the date type derived from it �
 const SKUS = db.prepare("SELECT sku FROM products WHERE status = 'active' AND spec_id = 'SPEC-STICK-LG' ORDER BY sku LIMIT 4").all().map(x => x.sku);
 const [SA, SB, SC, SD] = SKUS;
 t('four active stick SKUs to work on', SKUS.length === 4, JSON.stringify(SKUS));
+// Snapshot the product rows before any justification is filed: the basis is
+// derived on read and filing one must change nothing on the product (D-133).
+const productRowsBefore = JSON.stringify(db.prepare(`SELECT * FROM products WHERE sku IN (${SKUS.map(() => '?').join(',')}) ORDER BY sku`).all(...SKUS));
 const just = (body) => call('POST', '/stability/justifications', { product_family: 'Whey sticks', shelf_life_months: 18, basis: 'Ingredient stability data on file for the whey base; packaging protection per the film spec.', ...body }, Q);
 r = await just({ product_skus: SA });
 b = await J(r);
@@ -172,7 +175,15 @@ const pc = await J(await call('GET', `/products/${SC}`, null, Q));
 t('GET /products/:sku carries shelf_life — Best by with its basis on A', pa?.shelf_life?.recorded === true && pa.shelf_life.date_type === 'best_by' && pa.shelf_life.basis_kind === 'none_best_by' && pa.shelf_life.basis_label === 'No data — Best by', JSON.stringify(pa?.shelf_life));
 t('…an expiration date on B', pb?.shelf_life?.date_type === 'expiration' && pb.shelf_life.basis_kind === 'client_data' && pb.shelf_life.shelf_life_months === 18);
 t('…and NOT RECORDED, best by, on C, which no justification names', pc?.shelf_life?.recorded === false && pc.shelf_life.date_type === 'best_by' && pc.shelf_life.basis_kind === null, JSON.stringify(pc?.shelf_life));
-t('nothing was written to the product row', db.prepare('PRAGMA table_info(products)').all().every(c => !/shelf_life|date_type|basis_kind/.test(c.name)));
+// D-133: the date type and its basis are never stored on the product. D-342 (R-0645) deliberately added
+// `shelf_life_months_commercial` — the months the sell sheet prints, a different fact from the basis — so it
+// is the one shelf-life column allowed, named here rather than hidden by a looser pattern.
+const SELL_SHEET_SHELF_LIFE = 'shelf_life_months_commercial';
+const productCols = db.prepare('PRAGMA table_info(products)').all().map(c => c.name);
+t('no date-type or basis column on the product (the sell-sheet months of D-342 are the only shelf-life column)',
+  productCols.every(n => n === SELL_SHEET_SHELF_LIFE || !/shelf_life|date_type|basis_kind/.test(n)), productCols.filter(n => /shelf_life|date_type|basis_kind/.test(n)).join());
+t('nothing was written to the product row: filing justifications left all four SKUs byte-identical',
+  JSON.stringify(db.prepare(`SELECT * FROM products WHERE sku IN (${SKUS.map(() => '?').join(',')}) ORDER BY sku`).all(...SKUS)) === productRowsBefore);
 let comp = await J(await call('GET', '/products/completeness', null, Q));
 const compOf = (s) => comp?.rows?.find(x => x.sku === s);
 t('Completeness names "Shelf-life basis" as a Formula gap on C and not on A or B', compOf(SC)?.groups?.formula?.missing?.includes('Shelf-life basis') && !compOf(SA)?.missing?.some(m => /Shelf-life/.test(m)) && !compOf(SB)?.missing?.some(m => /Shelf-life/.test(m)), JSON.stringify(compOf(SC)?.groups?.formula));

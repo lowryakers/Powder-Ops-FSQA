@@ -11394,3 +11394,22 @@ morning's dailies coming was somebody happening to open a list.
   overdue sweep still runs in its GET (`api/calibration.js`, `periodically`).
 - `verify:spinep1b` (23; the control — `main` — fails 12). `verify-coa-phase1`'s "no `kind` on a signing source" fails
   on `main` too and is not this change.
+
+## D-369 — The Completeness screen drew groups a row does not have; the shelf-life column check names D-342's column (23 Nov 2026)
+`verify:mmrgate` and `verify:panel-provenance` were red on `main` (7b3f9dc). Two causes, one per side.
+- **The code was wrong: Products → Completeness crashed on open** ("Cannot read properties of undefined (reading
+  'state')"). `completenessOf()` leaves out a group that does not apply to a SKU (D-302: the food groups on merch, the
+  `merch` group on food), but `ProductCompleteness.jsx` drew every group in `data.groups` for every row — so every food
+  row read `r.groups.merch.state`. The row now draws only the groups the server put on it; which groups apply stays
+  the server's decision. Not an R-0645 regression: it broke when the merch group joined `GROUPS`.
+- **The assertion was too broad.** D-133's rule is that the date type and its basis are derived, never stored on the
+  product. D-342 deliberately added `products.shelf_life_months_commercial` — the months the sell sheet prints — and
+  the old `/shelf_life|date_type|basis_kind/` column test read it as a breach. The check now names that one column as
+  allowed and still refuses any other, and a second, stronger check snapshots the four SKUs' product rows before any
+  justification is filed and asserts them byte-identical after.
+- **Left open, for a person:** there are now two shelf-life month figures — the sell sheet's on the product and
+  `stability_justifications.shelf_life_months` — and nothing compares them. A sell sheet promising 24 months on a
+  SKU whose basis says 18 is the "one fact, two places" defect; whether the sell-sheet figure should be read from the
+  basis or checked against it is Quality's call.
+- `verify:mmrgate` 82/0 (was 80/2), `verify:panel-provenance` 53/53 (the control, `main`, fails 2 at "the
+  Completeness view renders").
