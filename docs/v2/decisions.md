@@ -11661,4 +11661,6 @@ data left in place).
 **Decided (Lowry):** **no change.** Retention Samples stays in the Quality nav exactly as it is, with Stability as a
 tab inside it. Nothing is hidden, moved, seeded or deleted. A hide-and-move-Stability version was started and thrown
 away before any commit. This answers section 3 of `cleanup-and-spine-2026-10-26.md` ("load one box or hide it"): do
-not raise it again. Filling the library (importing the box sheets) is still the plant's job, unscheduled.
+not raise it again. **Correction to the premise:** the code ships no rows, but the live database already holds
+retain samples (536 at the final review's read on 23 Nov 2026), so the "empty library" note in CLAUDE.md describes a
+fresh database, not production.
