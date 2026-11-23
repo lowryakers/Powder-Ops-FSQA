@@ -11358,6 +11358,26 @@ Verified by `verify:paymentcontroller` (new; S3 stand-in, browser at 1280 and 39
 `verify:paymentcloseout` (updated for the bot Controller and automatic deposits), `check:apitokens`, `check:botapi` and
 `check:botmcp`. Control: on main the grant does not exist, and every bot write is 403.
 
+## D-367 — Overdue counts say whose a card is; deactivating closes leftover training (23 Nov 2026)
+Single-spine pack P1, step A. The flash's overdue figure was one COUNT of every past-due card (`flash-report.js`
+`overdue_spike`), so a team's missed daily, a named person's task and training left on somebody who had left all read
+as one number — and nothing ever closed the last kind.
+- **`server/work-order-owners.js` is the one definition.** Team-owned = nobody named (`assigned_to` and
+  `assigned_to_id` empty); person-owned = a name on it. A card whose person is a DEACTIVATED account (id first, then the
+  name when no active account shares it) is left out of every overdue count. `overdueCounts(db, today)` returns
+  `{ total, team, person, deactivated_left_out }`.
+- **The flash spike reads "… 10 → 20 (12 team-owned, 8 named to a person)"** and carries the counts; the weekly PM
+  digest's Overdue line splits the same way and leaves out a deactivated person's cards.
+- **Deactivating an account cancels its open training** (`closeTrainingTasksFor(db, id, { reason: 'deactivated' })`):
+  "Cancelled: account deactivated / employment ended. This is not a completion of the course." Never deleted, never a
+  completion; the count rides on the deactivation's audit entry (`training_tasks_closed`). The not-a-trainee path keeps
+  its bot/system wording. **`not_trainee` is not used for a person who left.**
+- **`GET /training/assignments` leaves out a deactivated person's outstanding training**; their completed training stays.
+- Not done here: training left open on accounts deactivated BEFORE this ships is not cancelled by a one-time pass (it is
+  hidden from the counts and the list); the scorecard's PM completion rate still counts every card in its window.
+- Cancels work orders on deactivation, so it waits for Lowry's review (D-274). `verify:spinep1a` (20; the control —
+  `main` — fails 6).
+
 ## D-368 — A task list is a read; the sweep runs on its own tick; a quality schedule names an owner (23 Nov 2026)
 Single-spine pack P1, step B. `GET /pm/work-orders` and six other list reads called `runPmHousekeeping`, so opening a
 task list marked cards missed and raised new ones — a read mutating the database, and the only thing that kept the

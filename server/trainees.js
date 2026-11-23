@@ -43,15 +43,30 @@ export function nonTraineeNames(db) {
 
 const OPEN = "('open','in_progress','overdue','missed')";
 
+/** Why an account's open training was closed. Each reads as what happened, never as a completion. */
+export const TRAINING_CLOSE_REASONS = {
+  not_trainee: 'Cancelled: this account is not a trainee (a bot or system account).',
+  deactivated: 'Cancelled: account deactivated / employment ended. This is not a completion of the course.',
+};
+
 /**
- * Close the open training tasks an account holds, once it is marked not a
- * trainee. Cancelled with the reason, never deleted — the D-139 rule.
+ * Close the open training tasks an account holds — once it is marked not a
+ * trainee, or once it is deactivated (D-367). Cancelled with the reason, never
+ * deleted — the D-139 rule. `reason` picks the note; the not-a-trainee wording
+ * stays the default. Matched on the account id, and on the name for a card
+ * filed with no id when no other active account carries that name.
  */
-export function closeTrainingTasksFor(db, userId, { by = 'ReadyDoc' } = {}) {
+export function closeTrainingTasksFor(db, userId, { by = 'ReadyDoc', reason = 'not_trainee' } = {}) {
+  const note = TRAINING_CLOSE_REASONS[reason] || TRAINING_CLOSE_REASONS.not_trainee;
+  const u = db.prepare('SELECT name FROM users WHERE id = ?').get(userId);
   const r = db.prepare(`UPDATE work_orders
       SET status = 'cancelled', completed_at = datetime('now'), completed_by = ?,
-          notes = TRIM(COALESCE(notes, '') || char(10) || 'Cancelled: this account is not a trainee (a bot or system account).')
-    WHERE training_course_id IS NOT NULL AND status IN ${OPEN} AND assigned_to_id = ?`).run(by, userId);
+          notes = TRIM(COALESCE(notes, '') || char(10) || ?)
+    WHERE training_course_id IS NOT NULL AND status IN ${OPEN}
+      AND (assigned_to_id = ?
+        OR (assigned_to_id IS NULL AND ? IS NOT NULL AND LOWER(TRIM(COALESCE(assigned_to, ''))) = LOWER(?)
+          AND NOT EXISTS (SELECT 1 FROM users o WHERE o.id <> ? AND LOWER(o.name) = LOWER(?) AND COALESCE(o.is_active, 1) = 1)))`)
+    .run(by, note, userId, u?.name ?? null, u?.name ?? '', userId, u?.name ?? '');
   return r.changes;
 }
 

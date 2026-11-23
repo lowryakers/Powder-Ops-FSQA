@@ -11,7 +11,7 @@ import { OPT_IN_SET } from '../../shared/opt-in-modules.js';
 import { accessReview, dismissReview } from '../access-review.js';
 import { uniqueUsername, validateUsername, deriveUsername } from '../usernames.js';
 import { smsEnabled, sendOptIn, sendSms } from '../sms.js';
-import { setNotTrainee } from '../trainees.js';
+import { setNotTrainee, closeTrainingTasksFor } from '../trainees.js';
 import { issueInvite, revokeInvites, inviteState, inviteBlockedReason, inviteMessage, tenDigits, INVITE_DAYS }
   from '../user-invites.js';
 
@@ -510,6 +510,9 @@ router.put('/:id', requireRole('admin'), async (req, res) => {
   // account was reactivated, with every phone it had ever been signed in on.
   if (existing.is_active && !updated.is_active) {
     changes.sessions_revoked = revokeSessions(db, updated.id, { devices: true });
+    // Training left open on somebody who has left is not overdue work: it is
+    // closed with the reason (never deleted, never a completion) — D-367.
+    changes.training_tasks_closed = closeTrainingTasksFor(db, updated.id, { by: req.user?.name || 'ReadyDoc', reason: 'deactivated' });
   }
   if (updated.username !== existing.username) changes.username = { from: existing.username, to: updated.username };
   const permsChanged = (existing.module_access || null) !== (updated.module_access || null);

@@ -2,7 +2,7 @@
 // task list no longer marks cards missed or raises new ones; the sweep runs on
 // its own tick (started at boot) and on an explicit POST /pm/housekeeping. A
 // quality schedule can name an owner, and the next card it raises carries it.
-// Caller sets PORT + DBPATH; this entry runs with PM_HOUSEKEEPING_TICK_MS=6000.
+// Caller sets PORT + DBPATH; this entry runs with PM_HOUSEKEEPING_TICK_MS=20000, so the reads straight after a tick finish well before the next one.
 // Control: `main` — the GET flips the card and raises the quality task.
 import Database from 'better-sqlite3';
 
@@ -46,7 +46,7 @@ const woCount = () => db.prepare('SELECT COUNT(*) c FROM work_orders').get().c;
 console.log('\n── the tick runs on its own');
 const sentinel = card();
 let flipped = false;
-for (let i = 0; i < 40 && !flipped; i++) { await sleep(500); flipped = statusOf(sentinel) === 'missed'; }
+for (let i = 0; i < 100 && !flipped; i++) { await sleep(500); flipped = statusOf(sentinel) === 'missed'; }
 t('a past-due card is marked missed by the tick, with nobody reading a list', flipped, statusOf(sentinel));
 
 console.log('\n── reading a list writes nothing');

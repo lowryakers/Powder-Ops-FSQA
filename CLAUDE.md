@@ -1725,6 +1725,12 @@ twice, no form number, files no record.
   at boot, never unfolded** — reviving per-point schedules is the plant's decision (D-125 paused Pre-Op).
 - `verify:checklistoverlap` (19, live + reboots + browser; control fails 12).
 
+## Whose overdue card is it; a departed person's training is closed (D-367)
+`server/work-order-owners.js` (`overdueCounts`, `teamOwnedSql`, `inactiveAssigneeSql`) is the ONE answer: team-owned =
+nobody named, person-owned = a name, a deactivated assignee counts nowhere. **A new overdue count reads it.** Deactivating
+an account cancels its open training ("account deactivated / employment ended", never a completion, never deleted);
+never set `not_trainee` for a person who left. `verify:spinep1a` (20).
+
 ## Who sees which tasks, and three routing fixes (D-217, `server/task-routing.js`)
 - **A machine's team change moves its schedules except QA's INSPECTIONS** (`TASK_TITLE_SQL` from `qa-records.js`),
   never "anything already on QA" — that pinned machine PMs to QA's list. Cards follow their own schedule, missed
