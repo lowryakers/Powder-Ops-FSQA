@@ -27,6 +27,7 @@ import { GARMENTS, SIZE_BY_CODE } from '../../shared/merch.js';
 import { registerMerchRoutes } from '../merch-routes.js';
 import { validateField, FIELD_RULES, NA_FIELDS, naOf, looksLikeTypedNa, MASTER_CSV_SOURCES, PACKAGING_DERIVED } from '../../shared/product-fields.js';
 import { shelfLifeBasis, shelfLifeFor, NO_BASIS, BASIS_KIND_LABEL, DATE_TYPE_LABEL } from '../stability.js';
+import { sellSheetShelfLife, overrideRefusal, SELL_SHEET_FIELD } from '../../shared/sell-sheet-shelf-life.js';
 import { stageInputs, stageFor } from '../product-stages.js';
 import { buildSpecPatch, SPEC_ID_RE } from '../../shared/packaging-spec.js';
 import { parseDelimited, writeXlsx } from '../tabular.js';
@@ -149,6 +150,9 @@ function hydrate(rows, db) {
   const colors = db.prepare('SELECT * FROM product_colors ORDER BY sku, slot').all();
   // The new-product stage's facts, read once for the whole list (D-134).
   const stageFacts = stageInputs(db);
+  // The stability basis per SKU, one walk (D-133), for the derived sell-sheet
+  // shelf life (D-374).
+  const basisBySku = (() => { try { return shelfLifeBasis(db); } catch { return new Map(); } })();
   const bySku = new Map();
   for (const c of colors) {
     if (!bySku.has(c.sku)) bySku.set(c.sku, []);
@@ -165,7 +169,10 @@ function hydrate(rows, db) {
   }
   return rows.map((r) => {
     const merch = r.product_type === 'merch';
-    const base = { ...r, colors: bySku.get(r.sku) || [] };
+    // THE SELL-SHEET SHELF LIFE IS DERIVED (D-374): the basis's months, or a
+    // lower override; never the stored column. Merch carries none.
+    const sellSheet = merch ? null : sellSheetShelfLife(basisBySku.get(String(r.sku || '').toUpperCase()) || null, r);
+    const base = { ...r, colors: bySku.get(r.sku) || [], [SELL_SHEET_FIELD]: sellSheet ? sellSheet.months : null, sell_sheet_shelf_life: sellSheet };
     const withColors = merch ? { ...base, ...merchFacts(r, styleByCode.get(r.style_code), colorByCode.get(r.color_code)) } : base;
     // What this SKU would be under the new standard. Derived every read, never
     // stored: it depends on the flavour register, which moves as collisions
@@ -1739,6 +1746,13 @@ const ARTWORK_OWNED = ['artwork_status', 'artwork_version'];
  *
  * Returns `{ patch }` or `{ status, error }`. Nothing is written here.
  */
+function shelfLifeOwned(derived) {
+  return { status: 400, code: 'SHELF_LIFE_DERIVED', field: SELL_SHEET_FIELD,
+    error: derived === null
+      ? 'No stability basis — the sell-sheet shelf life cannot be typed. Record the basis on Retention Samples → Stability.'
+      : `The sell-sheet shelf life is read from the stability basis (${derived} months). To promise less, record an override with a reason on the product.` };
+}
+
 function buildPatch(db, existing, b, ctx = {}) {
   if (NFP_OWNED.some((c) => b[c] !== undefined)) {
     return { status: 400, code: 'NFP_OWNED', error: 'The NFP version and its approval date are set by approving a panel, not by typing them. Open the product\'s NFP panels.' };
@@ -1766,6 +1780,16 @@ function buildPatch(db, existing, b, ctx = {}) {
       error: existing?.status === NOT_LAUNCHING
         ? "This SKU is marked Won't launch. Open it and press \"Bring it back\"."
         : "Use \"Won't launch…\" on the product — it asks for the reason." };
+  }
+  // THE SELL-SHEET SHELF LIFE IS DERIVED (D-374). A form sending the record back
+  // whole carries the derived figure: that is dropped. A DIFFERENT figure is
+  // refused, from every door (PUT, fill-down, CSV import) — the way to change it
+  // is the stability basis, or an override lower than it.
+  if (b[SELL_SHEET_FIELD] !== undefined) {
+    const derived = sellSheetShelfLife(shelfLifeFor(db, existing?.sku), existing || {}).months;
+    const sent = b[SELL_SHEET_FIELD] === '' || b[SELL_SHEET_FIELD] === null ? null : Number(b[SELL_SHEET_FIELD]);
+    if (existing?.product_type !== 'merch' && sent !== derived) return shelfLifeOwned(derived);
+    b = { ...b }; delete b[SELL_SHEET_FIELD];
   }
   const patch = {};
   for (const c of WRITABLE) if (b[c] !== undefined) patch[c] = b[c] === '' ? null : b[c];
@@ -2043,9 +2067,13 @@ router.post('/', (req, res) => {
     b.status = DRAFT;
   }
   if (b.brand === undefined || b.brand === null || String(b.brand).trim() === '') b.brand = BRAND_DEFAULT;
+  // A new SKU has no stability basis yet; its sell-sheet shelf life is derived (D-374).
+  if (b[SELL_SHEET_FIELD] !== undefined && b[SELL_SHEET_FIELD] !== '' && b[SELL_SHEET_FIELD] !== null) {
+    return res.status(400).json(shelfLifeOwned(null));
+  }
   {
     const sotPatch = {};
-    for (const c of SOT_COLUMNS) if (b[c] !== undefined && b[c] !== '' && c !== 'gtin_case_source') sotPatch[c] = b[c];
+    for (const c of SOT_COLUMNS) if (b[c] !== undefined && b[c] !== '' && c !== 'gtin_case_source' && c !== SELL_SHEET_FIELD) sotPatch[c] = b[c];
     const bad = sotFieldChecks(db, sku, sotPatch, gtin);
     if (bad) return res.status(bad.status).json(bad);
     const gate = writeGate(db, req, {}, { ...sotPatch, ...(gtin ? { gtin } : {}) });
@@ -2186,6 +2214,43 @@ router.delete('/:sku', (req, res) => {
  * identity fields, the formula and the fill weight are owed by every product,
  * and an NA on one of those would be a gap wearing a tick.
  */
+/**
+ * THE ONE WAY A PERSON CHANGES THE SELL-SHEET SHELF LIFE (D-374): an override
+ * LOWER than the stability basis, with a reason, stamped with who and when and
+ * audited with before and after. `{ clear: true, reason }` removes it, so the
+ * basis applies again. A person, in their own session — never a token.
+ */
+router.post('/:sku/shelf-life-override', (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalog.' });
+  if (req.user?.via_token) return res.status(403).json({ code: 'token_denied', error: 'A shelf-life override is a person\'s decision, made in their own session.' });
+  const db = getDb();
+  const existing = db.prepare('SELECT * FROM products WHERE sku = ?').get(req.params.sku);
+  if (!existing) return res.status(404).json({ error: 'No such SKU' });
+  if (existing.product_type === 'merch') return res.status(400).json({ error: 'Merch carries no shelf life.' });
+  const reason = String(req.body?.reason || '').trim();
+  const before = sellSheetShelfLife(shelfLifeFor(db, existing.sku), existing);
+  let patch;
+  if (req.body?.clear === true) {
+    if (!before.override) return res.status(400).json({ error: 'There is no override to remove.' });
+    if (reason.length < 10) return res.status(400).json({ code: 'REASON_REQUIRED', error: 'Say why the override is being removed (at least 10 characters).' });
+    patch = { shelf_life_override_months: null, shelf_life_override_reason: null, shelf_life_override_by: null, shelf_life_override_by_id: null, shelf_life_override_at: null };
+  } else {
+    const bad = overrideRefusal(before.basis_months, req.body?.months, reason);
+    if (bad) return res.status(bad.status).json(bad);
+    patch = { shelf_life_override_months: Number(req.body.months), shelf_life_override_reason: reason,
+      shelf_life_override_by: req.user?.name || null, shelf_life_override_by_id: req.user?.id || null, shelf_life_override_at: new Date().toISOString() };
+  }
+  const cols = Object.keys(patch);
+  db.prepare(`UPDATE products SET ${cols.map((c) => `${c} = ?`).join(', ')}, updated_at = datetime('now') WHERE sku = ?`).run(...cols.map((c) => patch[c]), existing.sku);
+  const after = sellSheetShelfLife(shelfLifeFor(db, existing.sku), { ...existing, ...patch });
+  logAudit(req.user, req.body?.clear === true ? 'shelf_life_override_cleared' : 'shelf_life_override_set', 'product', existing.sku, {
+    reason, basis_months: before.basis_months, justification_id: before.justification_id,
+    from: { months: before.months, source: before.source, override: before.override?.months ?? null },
+    to: { months: after.months, source: after.source, override: after.override?.months ?? null },
+  }, { shelf_life_override_months: existing.shelf_life_override_months ?? null }, { shelf_life_override_months: patch.shelf_life_override_months ?? null }, `${existing.sku} — sell-sheet shelf life`);
+  res.json(hydrate([db.prepare(`${SELECT} WHERE p.sku = ?`).get(existing.sku)], db)[0]);
+});
+
 router.post('/:sku/na', (req, res) => {
   if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalog.' });
   const db = getDb();

@@ -25,6 +25,10 @@ import NfpReviewQueue from './NfpReviewQueue.jsx';
 import { hexDigits, pmsValid, hexValid, colorIssues, isBlankSlot } from '../../../shared/product-colors.js';
 import { FIELD_RULES, NA_FIELDS, fieldState, PACKAGING_DERIVED, isRollFed } from '../../../shared/product-fields.js';
 import { PACK_FIELDS, PRICE_FIELDS, ITEM_NO_FIELDS, FIELD_LABEL as SOT_LABEL } from '../../../shared/product-sot-config.js';
+import { SELL_SHEET_FIELD } from '../../../shared/sell-sheet-shelf-life.js';
+import SellSheetShelfLife from './SellSheetShelfLife.jsx';
+// The pack facts a person types. The sell-sheet shelf life is derived (D-374).
+const TYPED_PACK_FIELDS = PACK_FIELDS.filter((f) => f !== SELL_SHEET_FIELD);
 import { checkLevelGtin, unitGtin14, groupGtin14, sameItem } from '../../../shared/level-gtin.js';
 import { CHANNELS, matchesFilters } from '../../../shared/product-filters.js';
 import SavedViews from './ProductSavedViews.jsx';
@@ -889,7 +893,7 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
       // the pack and shipping facts. Prices and item numbers are on the form
       // only for the person allowed to write them — nobody else sends them.
       brand: p.brand || '', gtin_inner: p.gtin_inner || '', gtin_case: p.gtin_case || '',
-      ...Object.fromEntries(PACK_FIELDS.map((f) => [f, p[f] ?? ''])),
+      ...Object.fromEntries(TYPED_PACK_FIELDS.map((f) => [f, p[f] ?? ''])),
       ...(p.sot_permissions?.can_edit_prices ? Object.fromEntries(PRICE_FIELDS.map((f) => [f, p[f] ?? ''])) : {}),
       ...(p.sot_permissions?.can_edit_item_nos ? Object.fromEntries(ITEM_NO_FIELDS.map((f) => [f, p[f] ?? ''])) : {}),
     });
@@ -907,7 +911,7 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
       // A blank number box means "not known" — sent as null, never as "" (the
       // server refuses "" as a number). Only boxes that changed are sent for
       // the pack facts, so an untouched blank is never a write.
-      for (const f of [...PACK_FIELDS, ...PRICE_FIELDS, ...ITEM_NO_FIELDS]) {
+      for (const f of [...TYPED_PACK_FIELDS, ...PRICE_FIELDS, ...ITEM_NO_FIELDS]) {
         if (!(f in body)) continue;
         if (String(body[f] ?? '') === String(p[f] ?? '')) delete body[f];
         else if (String(body[f]).trim() === '') body[f] = null;
@@ -1043,7 +1047,7 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
                 </Block>
                 <Block title="Pack and shipping" note="What the distributor sheet carries. A blank box is not known yet.">
                   <div className="grid grid-cols-2 gap-3">
-                    {PACK_FIELDS.map((f) => (
+                    {TYPED_PACK_FIELDS.map((f) => (
                       <label key={f} className="block" data-field={f}>
                         <span className="text-xs font-medium text-gray-600">{SOT_LABEL[f]}</span>
                         <input value={form[f] ?? ''} onChange={set(f)} inputMode={f === 'unit_size' ? 'text' : 'decimal'}
@@ -1051,6 +1055,9 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
                       </label>
                     ))}
                   </div>
+                  <p className="mt-2 text-xs text-gray-600" data-field={SELL_SHEET_FIELD} data-readonly="1">
+                    {SOT_LABEL[SELL_SHEET_FIELD]}: <span className="font-medium">{p.sell_sheet_shelf_life?.label || '—'}</span> — read from the stability basis, not typed. Lower it with an override on the product.
+                  </p>
                 </Block>
                 {p.can_see_prices && (
                   <Block title="Pricing" note={p.sot_permissions?.can_edit_prices ? 'You are the price editor.' : p.sot_permissions?.price_editor_set ? 'Read only — prices are edited by the person set as the price editor.' : 'Read only — no price editor is set yet (Settings → Products).'}>
@@ -1207,13 +1214,14 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
                 {(!p.merch || hasAny(p, PACK_FIELDS)) && (
                 <Section {...sec('shipping')} title="Pack and shipping" icon={Package}
                   summary={[p.unit_size, p.units_per_case && `${p.units_per_case} per case`, p.ti && p.hi && `Ti/Hi ${p.ti}/${p.hi}`].filter(Boolean).join(' · ') || 'nothing recorded yet'}>
-                  {hasAny(p, PACK_FIELDS) ? (
+                  {hasAny(p, TYPED_PACK_FIELDS) ? (
                     <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm" data-pack-facts>
-                      {PACK_FIELDS.filter((f) => p[f] !== null && p[f] !== undefined && p[f] !== '').map((f) => (
+                      {TYPED_PACK_FIELDS.filter((f) => p[f] !== null && p[f] !== undefined && p[f] !== '').map((f) => (
                         <div key={f} data-pack-fact={f}><dt className="text-xs text-gray-500">{SOT_LABEL[f]}</dt><dd className="text-gray-900">{String(p[f])}</dd></div>
                       ))}
                     </dl>
                   ) : <p className="text-xs text-gray-500">No pack or shipping facts recorded yet — Edit to add the case, pallet and shelf-life figures.</p>}
+                  {!p.merch && <SellSheetShelfLife sku={sku} s={p.sell_sheet_shelf_life} canEdit={canEdit} onChanged={changed} />}
                   {!p.merch && (
                   <dl className="text-sm">
                     {/* DERIVED from the shelf-life basis in force (Retention Samples → Stability), never typed here (D-133). */}

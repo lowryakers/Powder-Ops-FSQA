@@ -146,7 +146,8 @@ export const NA_FIELDS = [
   // gated like writing one (the configured editor only).
   'gtin_inner', 'gtin_case', 'unit_size', 'units_per_inner', 'units_per_case', 'inners_per_case',
   'case_l', 'case_w', 'case_h', 'case_cube', 'case_weight', 'ti', 'hi', 'pallet_qty',
-  'shelf_life_months_commercial',
+  // NOT the sell-sheet shelf life: it is derived from the stability basis (D-374),
+  // and "no basis" is a gap to close, never a field to wave through as N/A.
   'price_fob_case', 'price_fob_unit', 'price_wholesale_case', 'price_wholesale_unit', 'price_srp', 'price_prodough_allin',
   'distributor_item_no', 'wholesale_item_no',
 ];

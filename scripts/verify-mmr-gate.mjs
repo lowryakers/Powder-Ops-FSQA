@@ -178,10 +178,13 @@ t('…and NOT RECORDED, best by, on C, which no justification names', pc?.shelf_
 // D-133: the date type and its basis are never stored on the product. D-342 (R-0645) deliberately added
 // `shelf_life_months_commercial` — the months the sell sheet prints, a different fact from the basis — so it
 // is the one shelf-life column allowed, named here rather than hidden by a looser pattern.
-const SELL_SHEET_SHELF_LIFE = 'shelf_life_months_commercial';
+// D-374: the sell-sheet figure is now DERIVED from the basis; the product stores only a person's override
+// LOWER than it, with who and why. Those five columns are that record — not a date type, not a basis.
+const ALLOWED_SHELF_COLS = new Set(['shelf_life_months_commercial', 'shelf_life_override_months', 'shelf_life_override_reason',
+  'shelf_life_override_by', 'shelf_life_override_by_id', 'shelf_life_override_at']);
 const productCols = db.prepare('PRAGMA table_info(products)').all().map(c => c.name);
-t('no date-type or basis column on the product (the sell-sheet months of D-342 are the only shelf-life column)',
-  productCols.every(n => n === SELL_SHEET_SHELF_LIFE || !/shelf_life|date_type|basis_kind/.test(n)), productCols.filter(n => /shelf_life|date_type|basis_kind/.test(n)).join());
+t('no date-type or basis column on the product (only D-342\'s sell-sheet column and D-374\'s override record)',
+  productCols.every(n => ALLOWED_SHELF_COLS.has(n) || !/shelf_life|date_type|basis_kind/.test(n)), productCols.filter(n => /shelf_life|date_type|basis_kind/.test(n) && !ALLOWED_SHELF_COLS.has(n)).join());
 t('nothing was written to the product row: filing justifications left all four SKUs byte-identical',
   JSON.stringify(db.prepare(`SELECT * FROM products WHERE sku IN (${SKUS.map(() => '?').join(',')}) ORDER BY sku`).all(...SKUS)) === productRowsBefore);
 let comp = await J(await call('GET', '/products/completeness', null, Q));

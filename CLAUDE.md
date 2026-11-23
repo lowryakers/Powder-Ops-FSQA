@@ -955,6 +955,13 @@ indicator policy), `shared/level-gtin.js` (checks only), `server/product-sot-gat
   surface. `checkLevelGtin` validates a pasted code; tokens/bots write no GTIN at all.
 - `verify:productsot` (60).
 
+## The sell sheet's shelf life is DERIVED from the stability basis (D-374)
+`shared/sell-sheet-shelf-life.js` (PURE), `POST /products/:sku/shelf-life-override`, `SellSheetShelfLife.jsx`.
+`shelf_life_months_commercial` on a product read is the basis's months (or a lower override), set in `hydrate()` —
+**never read the stored column for the value and never write it** (`400 SHELF_LIFE_DERIVED` from every door). No basis
+⇒ "No stability basis", nothing typed, not N/A-able. An override must be LOWER than the basis, with a reason; who and
+why are on the row and the audit. A verify that needs a sell-sheet shelf life files a stability justification.
+
 ## Products: eight sections, the label read off the approved panel, filters and saved views (D-343, R-0645 PR B)
 `server/product-sot-read.js` (`approvedLabel`, `levelBarcodes`, `stripPrices`, saved views), `shared/product-filters.js`
 (`matchesFilters`, `channelsOf`, `cleanFilters`), `src/lib/productGridGroups.js`, `ProductSavedViews.jsx`, the

@@ -3907,6 +3907,14 @@ function runMigrations() {
   addColumnIfMissing('products', 'hi', 'INTEGER');
   addColumnIfMissing('products', 'pallet_qty', 'INTEGER');
   addColumnIfMissing('products', 'shelf_life_months_commercial', 'INTEGER');
+  // D-374: the sell-sheet shelf life is DERIVED from the stability basis; the
+  // column above is no longer read for the value. A person may record only an
+  // override LOWER than the basis, with who and why.
+  addColumnIfMissing('products', 'shelf_life_override_months', 'INTEGER');
+  addColumnIfMissing('products', 'shelf_life_override_reason', 'TEXT');
+  addColumnIfMissing('products', 'shelf_life_override_by', 'TEXT');
+  addColumnIfMissing('products', 'shelf_life_override_by_id', 'TEXT');
+  addColumnIfMissing('products', 'shelf_life_override_at', 'TEXT');
   addColumnIfMissing('products', 'price_fob_case', 'REAL');
   addColumnIfMissing('products', 'price_fob_unit', 'REAL');
   addColumnIfMissing('products', 'price_wholesale_case', 'REAL');

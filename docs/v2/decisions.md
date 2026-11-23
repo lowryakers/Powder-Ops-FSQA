@@ -11488,3 +11488,30 @@ Single-spine pack P3, step B (move 02). With D-369 … D-371 this finishes the m
   basis or checked against it is Quality's call.
 - `verify:mmrgate` 82/0 (was 80/2), `verify:panel-provenance` 53/53 (the control, `main`, fails 2 at "the
   Completeness view renders").
+
+## D-374 — The sell sheet's shelf life is read off the stability basis; a person may only promise less (23 Nov 2026)
+Answers the question D-373 left open. `products.shelf_life_months_commercial` (D-342) was typed, and the stability
+justification in force (D-133) carries its own months — a sell sheet could promise 24 months on a SKU whose basis
+supports 18, and nothing compared them. Lowry decided: derive it.
+- **`shared/sell-sheet-shelf-life.js` (PURE) is the one rule.** `hydrate()` puts the derived figure on every product
+  read under the same key, so the drawer, the grid, the exports (Shalee's sheet, the full export) and the distributor
+  readiness step all read it unchanged, plus `sell_sheet_shelf_life` (months, source, basis months, override, label).
+- **No basis (or a basis with no months) ⇒ null, "No stability basis", and nothing may be typed.** The distributor
+  sheet's gap reads "Shelf life (no stability basis)" and it can no longer be marked N/A — an N/A made before this does
+  not excuse it.
+- **The only person-made change is an OVERRIDE LOWER than the basis**: `POST /products/:sku/shelf-life-override`
+  `{months, reason}` (canManage, own session, never a token; reason ≥ 10 characters; `{clear: true, reason}` removes
+  it). Equal or higher is `400 OVERRIDE_NOT_LOWER`; no basis is `409 NO_STABILITY_BASIS`. Stamped on the row
+  (`shelf_life_override_months/_reason/_by/_by_id/_at`) and audited (`shelf_life_override_set` / `_cleared`) with the
+  basis, the justification and before/after.
+- **If the basis later drops to or below the override, the basis wins** and the override reads `superseded`.
+- **Every write path refuses a typed figure** (`400 SHELF_LIFE_DERIVED` in `buildPatch` — PUT, fill-down, CSV — and on
+  create). A form sending the derived figure back unchanged still saves (the D-345 rule: refuse a changed value, never
+  a field's presence).
+- **The stored column is no longer read for the value and nothing was rewritten.** A figure typed there before is shown
+  on the drawer as "typed before this was derived (no longer used)" when it differs, so a disagreement is visible.
+  Every live SKU with no basis now reads "No stability basis" and its distributor sheet is outstanding — that is the
+  punch list, not a fault.
+- `verify:productsot` (77; 23 new D-374 assertions incl. the export), `verify:productsotpage` (55; the drawer at 1280:
+  no basis, 24 from the basis, a higher override refused on screen, a lower one saved with who and why).
+  `verify:mmrgate`'s column check names the five override columns beside D-342's.

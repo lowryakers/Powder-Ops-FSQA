@@ -32,6 +32,7 @@ import { ChevronDown, ChevronRight, Download, Upload, X, AlertTriangle, Copy, Ch
 import { copyText } from '../../lib/clipboard.js';
 import { statusLabel, EDITABLE_STATUSES } from '../../../shared/product-status.js';
 import { PACK_FIELDS, FIELD_LABEL as SOT_LABEL } from '../../../shared/product-sot-config.js';
+import { SELL_SHEET_FIELD } from '../../../shared/sell-sheet-shelf-life.js';
 import FrozenScroll from '../common/FrozenScroll';
 import { DEFAULT_COLLAPSED } from '../../lib/productGridGroups.js';
 
@@ -74,9 +75,10 @@ const GROUPS = [
     { key: 'hex', label: 'Hex spot colors', edit: 'colors', get: (p) => joinSlots(p.colors, 'hex') },
   ] },
   // R-0645: the distributor sheet's pack and shipping facts. Starts folded.
-  { key: 'shipping', label: 'Pack and shipping', columns: PACK_FIELDS.map((f) => ({
-    key: f, label: SOT_LABEL[f], edit: 'text', type: f === 'unit_size' ? undefined : 'number',
-  })) },
+  { key: 'shipping', label: 'Pack and shipping', columns: PACK_FIELDS.map((f) => (f === SELL_SHEET_FIELD
+    // DERIVED from the stability basis (D-374): read only, never a cell to type in.
+    ? { key: f, label: SOT_LABEL[f], get: (p) => p.sell_sheet_shelf_life?.label || '', source: 'Read from the stability basis (Retention Samples → Stability); lowered only by an override on the product' }
+    : { key: f, label: SOT_LABEL[f], edit: 'text', type: f === 'unit_size' ? undefined : 'number' })) },
   { key: 'channels', label: 'Channels', columns: [
     { key: 'status', label: 'Status', edit: 'select', options: STATUSES, render: statusLabel },
     { key: 'shopify_sku', label: 'Shopify SKU', edit: 'text' },

@@ -201,6 +201,35 @@ const ms = await D.locator('[data-section]').evaluateAll((els) => els.map((e) =>
 t('15. a merch product hides Label and the MRPEasy BOM reference', !ms.includes('panel') && !ms.includes('formula'), ms.join(','));
 t('…and an empty Pack and shipping', !ms.includes('shipping'), ms.join(','));
 
+// D-374 on screen: the sell-sheet shelf life is read off the stability basis.
+const openShipping = async () => {
+  const sh = D.locator('[data-section="shipping"]');
+  if (await sh.getAttribute('data-open') === '0') await sh.locator('[data-section-toggle]').click();
+  return sh;
+};
+await openDrawer('WHY-STK-PGC');
+let sh = await openShipping();
+t('D-374: with no basis the drawer says "No stability basis" and offers no override', await sh.locator('[data-sell-sheet-shelf-life][data-source="no_basis"] [data-no-stability-basis]').count() === 1
+  && await sh.locator('[data-override-open]').count() === 0);
+write((db) => db.prepare(`INSERT INTO stability_justifications (id, product_family, product_skus, shelf_life_months, basis_type, basis_kind, basis, decided_by, decided_on)
+  VALUES ('page-basis', 'Page fixture', '["WHY-STK-PGC"]', 24, 'interim', 'client_data', 'Client stability data for the page fixture.', 'Maria', '2026-10-20')`).run());
+await openDrawer('WHY-STK-PGC');
+sh = await openShipping();
+t('D-374: with a 24-month basis the drawer reads 24 months from the basis', await sh.locator('[data-sell-sheet-shelf-life][data-source="basis"][data-months="24"]').count() === 1);
+await sh.locator('[data-override-open]').click();
+await sh.locator('[data-override-months]').fill('30');
+await sh.locator('[data-override-reason]').fill('Trying to promise more than the data.');
+await sh.locator('[data-override-save]').click();
+await sh.locator('[data-override-error]').waitFor({ timeout: 8000 }).catch(() => {});
+t('D-374: a higher override is refused on screen, naming the basis', /lower than the stability basis \(24 months\)/.test(await sh.locator('[data-override-error]').textContent().catch(() => '')));
+await sh.locator('[data-override-months]').fill('18');
+await sh.locator('[data-override-reason]').fill('Retailer requires 18 months on the sell sheet.');
+await sh.locator('[data-override-save]').click();
+await D.locator('[data-sell-sheet-shelf-life][data-source="override"]').waitFor({ timeout: 8000 }).catch(() => {});
+t('D-374: a lower override saves and the drawer names who and why', await D.locator('[data-sell-sheet-shelf-life][data-source="override"][data-months="18"]').count() === 1
+  && /Retailer requires 18 months/.test(await D.locator('[data-override-line]').textContent().catch(() => '')));
+t('D-374: …and the row stores who', !!one("SELECT shelf_life_override_by AS b FROM products WHERE sku = 'WHY-STK-PGC'")?.b);
+
 // 18 on screen: filters and a saved view round trip.
 await page.goto(`${URL}/?tab=products`);
 await page.locator('[data-filter="brand"]').waitFor({ timeout: 15000 });

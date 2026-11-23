@@ -42,6 +42,7 @@ import { FILM_FIELDS, filmValueOf, filmCell, specFieldLabel } from './packaging-
 import { naOf } from './product-fields.js';
 import { sameItem } from './level-gtin.js';
 import { DISTRIBUTOR_REQUIRED, FIELD_LABEL } from './product-sot-config.js';
+import { SELL_SHEET_FIELD } from './sell-sheet-shelf-life.js';
 
 // FOOD-ONLY STEPS DO NOT APPLY TO MERCH (D-302). A hoodie has no packaging
 // spec, formula, nutrition panel, film artwork or spot-colour slots, so those
@@ -63,7 +64,9 @@ const levelWhy = (p, f, name) => (!hasValue(p[f]) ? `No ${name} GTIN on file —
   : !gtinValid(String(p[f])) ? `${p[f]} fails its GS1 check digit`
     : sameItem(p[f], p.gtin) === false ? `${p[f]} does not share the unit GTIN's twelve middle digits` : `${name[0].toUpperCase()}${name.slice(1)} GTIN ${p[f]}`);
 /** The distributor-sheet fields still empty and not marked N/A. */
-export const distributorGaps = (p) => DISTRIBUTOR_REQUIRED.filter((f) => !hasValue(p?.[f]) && !isNa(p, f));
+// The sell-sheet shelf life is derived (D-374): an N/A mark made on it before
+// that change does not excuse a missing stability basis.
+export const distributorGaps = (p) => DISTRIBUTOR_REQUIRED.filter((f) => !hasValue(p?.[f]) && (f === SELL_SHEET_FIELD || !isNa(p, f)));
 
 export const FACTS = {
   sku: (p) => p.sku || '',
@@ -165,7 +168,7 @@ export const READINESS = [
     owns: [],
     why: (p) => {
       const gaps = distributorGaps(p);
-      return gaps.length ? `Still empty: ${gaps.map((f) => FIELD_LABEL[f] || f).join(', ')}` : 'Every distributor-sheet field is filled or N/A';
+      return gaps.length ? `Still empty: ${gaps.map((f) => (f === SELL_SHEET_FIELD ? 'Shelf life (no stability basis)' : FIELD_LABEL[f] || f)).join(', ')}` : 'Every distributor-sheet field is filled or N/A';
     },
   },
   {

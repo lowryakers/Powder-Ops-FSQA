@@ -86,8 +86,58 @@ t('… stored as user ids in app_settings, audited',
   && all("SELECT 1 FROM audit_log WHERE action = 'product_sot_setting_changed'").length === 2);
 
 // ── Pack facts, prices, item numbers ─────────────────────────────────────────
-r = await call('PUT', `/products/${SKU}`, { unit_size: '1.18 OZ', units_per_case: 72, inners_per_case: 6, units_per_inner: 12, case_l: 16, case_w: 10, case_h: 7, case_weight: 7.2, ti: 8, hi: 4, pallet_qty: 32, shelf_life_months_commercial: 24 }, Q);
+r = await call('PUT', `/products/${SKU}`, { unit_size: '1.18 OZ', units_per_case: 72, inners_per_case: 6, units_per_inner: 12, case_l: 16, case_w: 10, case_h: 7, case_weight: 7.2, ti: 8, hi: 4, pallet_qty: 32 }, Q);
 t('a catalog manager writes the pack and shipping facts', r.status === 200 && r.json?.units_per_case === 72 && r.json?.ti === 8, JSON.stringify(r.json)?.slice(0, 200));
+// ── D-374: the sell-sheet shelf life is derived from the stability basis ─────
+let basisSeq = 0;
+const basisRow = (months) => write((db) => db.prepare(`INSERT INTO stability_justifications (id, product_family, product_skus, shelf_life_months, basis_type, basis_kind, basis, decided_by, decided_on)
+  VALUES (?, 'SOT fixture', ?, ?, 'interim', 'client_data', 'Client stability data for the fixture SKU.', 'Maria', ?)`)
+  .run(`sot-basis-${months}`, JSON.stringify([SKU]), months, `2026-10-${String(++basisSeq + 10)}`));
+const shelf = async () => (await call('GET', `/products/${SKU}`, null, Q)).json;
+let sp = await shelf();
+t('D-374: no basis ⇒ no sell-sheet shelf life, said as "No stability basis"', sp?.shelf_life_months_commercial === null && sp?.sell_sheet_shelf_life?.source === 'no_basis' && sp.sell_sheet_shelf_life.label === 'No stability basis', JSON.stringify(sp?.sell_sheet_shelf_life));
+r = await call('PUT', `/products/${SKU}`, { shelf_life_months_commercial: 24 }, Q);
+t('D-374: typing a shelf life with no basis is refused (SHELF_LIFE_DERIVED), nothing stored', r.status === 400 && r.json?.code === 'SHELF_LIFE_DERIVED' && /No stability basis/.test(r.json?.error) && one('SELECT shelf_life_months_commercial AS v FROM products WHERE sku = ?', SKU).v === null, JSON.stringify(r.json));
+r = await call('POST', `/products/${SKU}/shelf-life-override`, { months: 12, reason: 'Retailer wants a shorter date.' }, Q);
+t('D-374: an override with no basis is refused (409 NO_STABILITY_BASIS)', r.status === 409 && r.json?.code === 'NO_STABILITY_BASIS');
+r = await call('POST', `/products/${SKU}/na`, { field: 'shelf_life_months_commercial' }, Q);
+t('D-374: the derived shelf life cannot be marked N/A', r.status === 400);
+basisRow(24);
+sp = await shelf();
+t('D-374: with a 24-month basis, the sell sheet reads 24 from the basis', sp?.shelf_life_months_commercial === 24 && sp.sell_sheet_shelf_life.source === 'basis' && sp.sell_sheet_shelf_life.basis_months === 24, JSON.stringify(sp?.sell_sheet_shelf_life));
+r = await call('PUT', `/products/${SKU}`, { shelf_life_months_commercial: 30 }, Q);
+t('D-374: typing a different figure is refused, naming the basis', r.status === 400 && r.json?.code === 'SHELF_LIFE_DERIVED' && /24 months/.test(r.json?.error));
+r = await call('PUT', `/products/${SKU}`, { shelf_life_months_commercial: 24, ti: 8 }, Q);
+t('D-374: a form sending the derived figure back unchanged still saves', r.status === 200 && r.json?.shelf_life_months_commercial === 24);
+r = await call('POST', '/products/bulk-edit', { skus: [SKU], field: 'shelf_life_months_commercial', value: 36 }, Q);
+t('D-374: the fill-down cannot set it either (nothing stored, still 24 from the basis)', one('SELECT shelf_life_months_commercial AS v FROM products WHERE sku = ?', SKU).v === null && (await shelf())?.shelf_life_months_commercial === 24, `${r.status} ${JSON.stringify(r.json)?.slice(0, 200)}`);
+r = await call('POST', `/products/${SKU}/shelf-life-override`, { months: 24, reason: 'Same as the basis, testing.' }, Q);
+t('D-374: an override equal to the basis is refused (OVERRIDE_NOT_LOWER)', r.status === 400 && r.json?.code === 'OVERRIDE_NOT_LOWER');
+r = await call('POST', `/products/${SKU}/shelf-life-override`, { months: 30, reason: 'Longer than the data supports.' }, Q);
+t('D-374: an override higher than the basis is refused', r.status === 400 && r.json?.code === 'OVERRIDE_NOT_LOWER');
+r = await call('POST', `/products/${SKU}/shelf-life-override`, { months: 18, reason: 'short' }, Q);
+t('D-374: an override needs a reason of at least 10 characters', r.status === 400 && r.json?.code === 'REASON_REQUIRED');
+r = await call('POST', `/products/${SKU}/shelf-life-override`, { months: 18, reason: 'Retailer requires 18 months on the sell sheet.' }, BT);
+t('D-374: a token cannot record an override', r.status === 403);
+r = await call('POST', `/products/${SKU}/shelf-life-override`, { months: 18, reason: 'Retailer requires 18 months on the sell sheet.' }, Q);
+t('D-374: a lower override with a reason applies, stamped with who and why', r.status === 200 && r.json?.shelf_life_months_commercial === 18 && r.json.sell_sheet_shelf_life.source === 'override'
+  && r.json.sell_sheet_shelf_life.override.reason === 'Retailer requires 18 months on the sell sheet.' && !!r.json.sell_sheet_shelf_life.override.by, JSON.stringify(r.json?.sell_sheet_shelf_life));
+const ovAudit = one("SELECT details FROM audit_log WHERE action = 'shelf_life_override_set' AND entity_id = ? ORDER BY rowid DESC LIMIT 1", SKU);
+t('D-374: the override is audited with the reason, the basis and before/after', !!ovAudit && /Retailer requires 18/.test(ovAudit.details) && /"basis_months":24/.test(ovAudit.details) && /"from":\{"months":24/.test(ovAudit.details), ovAudit?.details);
+basisRow(12);
+sp = await shelf();
+t('D-374: a later basis below the override wins; the override reads superseded', sp?.shelf_life_months_commercial === 12 && sp.sell_sheet_shelf_life.source === 'basis' && sp.sell_sheet_shelf_life.override?.superseded === true, JSON.stringify(sp?.sell_sheet_shelf_life));
+write((db) => db.prepare("DELETE FROM stability_justifications WHERE id = 'sot-basis-12'").run());
+r = await call('POST', `/products/${SKU}/shelf-life-override`, { clear: true, reason: 'Retailer dropped the shorter-date request.' }, Q);
+t('D-374: removing the override needs a reason and the basis applies again', r.status === 200 && r.json?.shelf_life_months_commercial === 24 && r.json.sell_sheet_shelf_life.override === null
+  && !!one("SELECT 1 FROM audit_log WHERE action = 'shelf_life_override_cleared' AND entity_id = ?", SKU));
+const csv = await fetch(`${URL}/api/products/export?preset=full&format=csv`, { headers: { Authorization: `Bearer ${Q}` } }).then((x) => x.text()).catch(() => '');
+const csvRow = (line) => { const out = []; let cur = '', q = false; for (const ch of line) { if (q) { if (ch === '"') q = false; else cur += ch; } else if (ch === '"') q = true; else if (ch === ',') { out.push(cur); cur = ''; } else cur += ch; } out.push(cur); return out; };
+const csvLines = csv.split('\n');
+const shelfCol = csvRow(csvLines[0] || '').findIndex((h) => /^shelf life/i.test(h));
+const skuLine = csvLines.find((l) => l.startsWith(`${SKU},`) || l.includes(`,${SKU},`));
+t('D-374: the export carries the derived figure (24)', shelfCol >= 0 && !!skuLine && csvRow(skuLine)[shelfCol] === '24', `${shelfCol} ${skuLine && csvRow(skuLine)[shelfCol]}`);
+
 r = await call('PUT', `/products/${SKU}`, { ti: -1 }, Q);
 t('a negative Ti is refused by name', r.status === 400 && r.json?.field === 'ti');
 r = await call('PUT', `/products/${SKU}`, { price_fob_case: 120.24 }, Q);
@@ -151,13 +201,14 @@ const open = (await call('GET', `/products/${SKU}`, null, L)).json?.readiness?.s
 t('fixture: the only open checklist step is the distributor sheet (price_wholesale N/A, SRP etc. set)', open.length === 0 || (open.length === 1 && open[0] === 'distributor'), open.join(','));
 
 // 5. With an item still open.
-write((db) => db.prepare('UPDATE products SET shelf_life_months_commercial = NULL WHERE sku = ?').run(SKU));
+// D-374: the open item is now a missing stability basis — withdraw the fixture's.
+write((db) => db.prepare("DELETE FROM stability_justifications WHERE id = 'sot-basis-24'").run());
 r = await call('PUT', `/products/${SKU}`, { status: 'active' }, L);
 t('5. approver, an item still open ⇒ 400 READINESS_OPEN naming it, row unchanged',
   r.status === 400 && r.json?.code === 'READINESS_OPEN' && (r.json?.open || []).some((o) => o.key === 'distributor') && one('SELECT status FROM products WHERE sku = ?', SKU).status === 'draft', JSON.stringify(r.json));
 t('5. … the refusal is audited', !!one("SELECT 1 FROM audit_log WHERE action = 'product_status_activation_refused' AND entity_id = ?", SKU));
-r = await call('POST', `/products/${SKU}/na`, { field: 'shelf_life_months_commercial' }, Q);
-t('the open item is marked N/A', r.status === 200);
+basisRow(24);
+t('the open item is closed by recording the stability basis (it cannot be marked N/A, D-374)', (await shelf())?.shelf_life_months_commercial === 24);
 
 // 6. Another person.
 r = await call('PUT', `/products/${SKU}`, { status: 'active' }, Q);
