@@ -376,6 +376,17 @@ console.log('\n── in a real browser ──');
   await browser.close();
 }
 
+console.log('\n── a used-up suggestion turned into an order files its group as tags (D-379) ──');
+{
+  const r = await post('/office/supply/suggestions/order', { item_name: 'Sani-512 (D-379 check)', label: 'cleaning', ids: [] }, 'admin');
+  const o = await J(r);
+  const row = db.prepare('SELECT label, tags FROM supply_orders WHERE id = ?').get(o?.id);
+  t('the order is filed', r.status === 201 && !!row, `${r.status}`);
+  t('its group is stored as tags, with label the first entry', row?.tags === '["Cleaning"]' && row?.label === 'Cleaning', JSON.stringify(row));
+  const byTag = await J(await get('/office/supply/orders?tag=Cleaning', 'admin'));
+  t('and it is found under that group', (byTag || []).some(x => x.id === o?.id));
+}
+
 db.close();
 console.log(`\n${pass}/${pass + fail} assertions passed`);
 process.exit(fail ? 1 : 0);

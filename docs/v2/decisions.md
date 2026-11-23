@@ -11594,3 +11594,26 @@ SOP link visible from the schedule side; no SOP link invented.
   owner blank, on its Operator View). `verify:singlespine` → 63 (the unlinked list, its counts and filters, the 403, the
   document search, a link leaving the list, the audit, and the screen at 1280 and 390). Controls: step A's code fails 4
   and 7.
+
+## D-379 — Every copied fact names its owner and its writers; two supply-order doors wrote the copy without the fact (23 Nov 2026, single-spine move 06, step A)
+**Asked:** P6 step A — finish the mirror sweep: each column that copies a fact owned elsewhere is derived on read,
+deleted if unused, or left with its owner named. Never drop a column historical records need.
+**Found** (the copies in `server/` that an UPDATE or INSERT writes; dynamic column lists are not seen by the scan):
+- **One owner, one writer, already** — `products.nfp_version`/`nfp_approved_at` (api/nfp.js), `products.artwork_*`
+  (api/artwork.js), `suppliers.status` (the disposition; the importer only inserts `unqualified`), `sanitation_records.
+  atp_reading`/`atp_limit` (the swab rows; a rowless record is the supported one-reading shape, read by `legacySwabs`),
+  `sop_documents.equipment_id` and `org_positions.job_description_id` (first entry of the set), `training_practical_
+  evaluations.result` (`gradeEvaluation`), the production-entry scalars (mo_lines line 0), `sop_documents.revision`/
+  `doc_number` (the approved revision), `haccp_ccps` owned fields (`guardCcpEdit`), `calibration_instruments.
+  last_calibrated` (the newest calibration record — the comment naming the owner is new).
+- **Two doors wrote the copy without the fact** — `generateSwabReorders` (`server/swab-stock.js`) and "Add to orders"
+  on a used-up suggestion (`POST /office/supply/suggestions/order`) filed `supply_orders.label` with `tags` NULL. Reads
+  already fall back to `label`, so nothing was lost; but the suggestion door also stored the group AS TYPED ("cleaning"
+  beside the "Cleaning" group). Both now go through `tagColumns()` (`server/supply-lists.js`), which `tagFields` in
+  office.js also uses: one function writes the fact and its mirror together. **Nothing backfilled.**
+- **Nothing deleted.** No copy was found that nothing reads.
+**Decided:** `check:mirrors` carries a registry (`MIRRORS`): each copied column, its owner, and the files allowed to
+write it. A new file writing one fails the check, and so does a supply-order INSERT naming `label` without `tags`. A
+pattern that finds no writer fails too, so the scan cannot go silently stale (it caught a wrong column name while
+being written). `check:mirrors` 25 → 39; `check:swabs` +1; `verify:supplylists` 76 → 79. Controls: a rogue
+`UPDATE products SET nfp_version` fails the registry; the old swab-stock and office.js code fail their new assertions.

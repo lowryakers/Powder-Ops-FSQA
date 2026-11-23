@@ -135,3 +135,17 @@ export function normalizeTags(raw, known = []) {
   }
   return out;
 }
+
+/**
+ * THE TWO COLUMNS A SUPPLY ORDER'S GROUP IS STORED IN, written together.
+ * `tags` is the fact; `label` is its first entry mirrored (the mo_lines line-0
+ * rule). Every door that files an order writes both from this one function —
+ * two doors (the swab reorder and "Add to orders" on a used-up suggestion)
+ * wrote `label` alone, so their orders carried a group with no tag list behind
+ * it (single-spine move 06, D-379). Reads still fall back to `label` for rows
+ * filed before tags existed; nothing is backfilled.
+ */
+export function tagColumns(raw, known = []) {
+  const tags = normalizeTags(raw, known);
+  return { tags: tags.length ? JSON.stringify(tags) : null, label: tags[0] || null };
+}

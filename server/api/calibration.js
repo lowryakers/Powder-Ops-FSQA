@@ -278,6 +278,10 @@ export function fileCalibrationRecord(db, user, body = {}, { gate = null } = {})
   let nextStatus = inst?.status || 'active';
   if (result === 'fail') nextStatus = nextStatus === 'retired' ? 'retired' : 'out_of_service';
   else if (!openIncidentFor(db, instrument_id) && nextStatus !== 'retired') nextStatus = 'active';
+  // `last_calibrated` / `next_due` on the instrument are a MIRROR of its newest
+  // calibration record, written here and nowhere else (move 06, D-379). The
+  // record's `calibrated_at` is also datetime('now'), so the two agree. An
+  // instrument imported with a last date and no records keeps that date.
   if (next_due) {
     db.prepare("UPDATE calibration_instruments SET last_calibrated = datetime('now'), next_due = ?, status = ?, updated_at = datetime('now') WHERE id = ?")
       .run(next_due, nextStatus, instrument_id);
