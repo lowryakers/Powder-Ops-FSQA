@@ -31,8 +31,8 @@ for (const rt of RECORD_TYPES) {
   t(`${rt.type} implements ${rt.signs === false || allowed.size ? 'its documented subset' : 'file, sign, revoke, retrieve, describe'}`,
     !missing.length && !extra.length && Array.isArray(rt.modules) && rt.modules.length > 0, missing.concat(extra).join(', '));
 }
-const ADOPTED = 'banned_list_review,culture_check,emp,food_defense_challenge,gmp_walk,management_review,qms,sanitation,scale';
-t('the adopted types: sanitation, scale, qms and the six check records', RECORD_TYPES.map(r => r.type).sort().join() === ADOPTED, RECORD_TYPES.map(r => r.type).sort().join());
+const ADOPTED = 'banned_list_review,culture_check,emp,food_defense_challenge,gmp_walk,management_review,production,qms,sanitation,scale';
+t('the adopted types: sanitation, scale, qms, production and the six check records', RECORD_TYPES.map(r => r.type).sort().join() === ADOPTED, RECORD_TYPES.map(r => r.type).sort().join());
 t('no check record claims a signature', RECORD_TYPES.filter(r => ['emp', 'gmp_walk', 'banned_list_review', 'culture_check', 'management_review', 'food_defense_challenge'].includes(r.type)).every(r => r.signs === false && !r.sign && !r.revoke));
 
 const { default: Database } = await import('better-sqlite3');
@@ -77,7 +77,7 @@ r = await call('GET', `/records?from=${today}`, undefined, A);
 const list = r.body;
 const rs = list?.records?.find(x => x.type === 'sanitation' && x.id === san?.id);
 const rk = list?.records?.find(x => x.type === 'scale' && x.id === sc?.id);
-t('GET /api/records lists the types', r.status === 200 && !!rs && !!rk && list.types.join() === 'sanitation,scale,qms,emp,gmp_walk,banned_list_review,culture_check,management_review,food_defense_challenge', `${r.status} ${JSON.stringify(list?.types)}`);
+t('GET /api/records lists the types', r.status === 200 && !!rs && !!rk && list.types.join() === 'sanitation,scale,qms,production,emp,gmp_walk,banned_list_review,culture_check,management_review,food_defense_challenge', `${r.status} ${JSON.stringify(list?.types)}`);
 t('the clean is described: form, place, who, result, unsigned', rs?.form && /^FORM 108/.test(rs.form) && rs.place === 'Restrooms'
   && rs.performed_by === 'Zuleika Test' && rs.result === 'pass' && rs.signed_by === null, JSON.stringify(rs));
 t('the scale check is described with its form and revision', rk?.form === 'FORM 417-01 V4' && rk.place === 'Batching 1' && rk.performed_by === 'Bernardo Test', JSON.stringify(rk));
@@ -169,6 +169,82 @@ t('…and the described record says who signed, as a batch review', r.body?.sign
 r = await call('POST', '/qa-review/sign', { source: 'sign-out-equipment', ids: [dev.id], signature_password: 'RecQuality2026!' }, Q);
 const devAfter = db.prepare('SELECT approvals FROM qms_records WHERE id = ?').get(dev.id).approvals;
 t('the sign-out queue cannot sign a deviation id handed to it', !/quality/.test(devAfter || ''), devAfter);
+
+console.log('\n── production entries (D-370) ──');
+mkUser('ri-p', 'Rec Prodqa', 'supervisor', 'qa', JSON.stringify({ 'production-log': 'edit' }));
+mkUser('ri-p2', 'Rec Otherqa', 'supervisor', 'qa', JSON.stringify({ 'production-log': 'edit' }));
+const P = await login('ri-p', 'Rec Prodqa', 'RecProdqa2026!');
+const P2 = await login('ri-p2', 'Rec Otherqa', 'RecOtherqa2026!');
+r = await call('POST', '/production/entries', { date: today, team: 'Batching', submitted_by: 'Bernardo Test', people_count: 2,
+  mo_lines: [
+    { product_name: 'RI Vanilla', mo_number: 'MO-RI-1', lot_number: 'RILOT-A', quantity: 300, start_time: '07:00', end_time: '09:00', room: 'Batching 1' },
+    { product_name: 'RI Chocolate', mo_number: 'MO-RI-2', lot_number: 'RILOT-B', quantity: 200, start_time: '09:30', end_time: '11:00', room: 'Batching 2' },
+  ] }, A);
+const pe = r.body;
+t('an end-of-day entry is filed on the Production Log route', r.status === 201 && !!pe?.id, `${r.status} ${JSON.stringify(r.body).slice(0, 160)}`);
+r = await call('GET', `/records?from=${today}&type=production`, undefined, A);
+const dp = r.body?.records?.find(x => x.id === pe?.id);
+t('…and is on GET /api/records: team, room, who, when, both lots and MOs, pending QA',
+  dp?.form === 'Production Log · Batching EOD' && dp.place === 'Batching 1' && dp.team === 'Batching' && dp.performed_by === 'Bernardo Test' && dp.performed_at === today
+  && JSON.stringify(dp.lots) === '["RILOT-A","RILOT-B"]' && JSON.stringify(dp.mos) === '["MO-RI-1","MO-RI-2"]' && dp.result === 'pending QA' && dp.signed_by === null, JSON.stringify(dp));
+const prodToday = db.prepare('SELECT COUNT(*) n FROM production_entries WHERE date >= ?').get(today).n;
+t('the production count agrees with the table', r.body.records.length === prodToday, `${r.body.records.length} vs ${prodToday}`);
+r = await call('GET', `/records?from=${today}&lot=rilot-b`, undefined, A);
+t('the SECOND MO\'s lot finds the entry — and only types that know a lot answer', r.body?.records?.length === 1 && r.body.records[0].id === pe?.id, JSON.stringify(r.body?.records?.map(x => x.type)));
+r = await call('GET', `/records?mo=MO-RI-2`, undefined, A);
+t('an MO finds it', r.body?.records?.some(x => x.id === pe?.id) && r.body.records.every(x => x.type === 'production'));
+r = await call('GET', `/records?from=${today}&team=Batching&person=bernardo test`, undefined, A);
+t('team and person narrow it', r.body?.records?.some(x => x.id === pe?.id) && r.body.records.every(x => x.type === 'production' || x.performed_by?.toLowerCase() === 'bernardo test'));
+r = await call('GET', `/records?from=${today}&place=Batching 2&type=production`, undefined, A);
+t('a room on the second run finds it too', r.body?.records?.some(x => x.id === pe?.id));
+r = await call('GET', `/records?lot=RILOT-A&type=sanitation`, undefined, A);
+t('a lot asked of sanitation records matches none (not all)', r.body?.records?.length === 0);
+
+r = await call('PUT', `/production/entries/${pe?.id}/qa-signoff`, { qa_signoff_by: 'Rec Prodqa' }, P);
+t('QA sign-off without the password is refused (gateSignature)', r.status === 403 && r.body?.signature_required === true, `${r.status} ${JSON.stringify(r.body)}`);
+r = await call('PUT', `/production/entries/${pe?.id}/qa-signoff`, { qa_signoff_by: 'Rec Prodqa', signature_password: 'RecProdqa2026!' }, P);
+t('with it, the entry is signed', r.status === 200 && r.body?.qa_signoff_by === 'Rec Prodqa', `${r.status} ${JSON.stringify(r.body).slice(0, 120)}`);
+r = await call('GET', `/records/production/${pe?.id}`, undefined, A);
+t('…and the described record shows who signed', r.body?.signed_by === 'Rec Prodqa' && r.body.result === 'signed' && r.body.signatures?.length === 1);
+r = await call('GET', `/records?from=${today}&type=production&signed=yes`, undefined, A);
+t('signed=yes finds it', r.body?.records?.some(x => x.id === pe?.id));
+const botAcct = 'ri-bot';
+mkUser(botAcct, 'Rec Bot', 'supervisor', 'qa', JSON.stringify({ 'production-log': 'edit' }));
+const minted = (await call('POST', '/api-tokens', { user_id: botAcct, label: 'record-interface verify', scopes: ['read', 'write'] }, A)).body?.plaintext;
+const BOT = { ...H, Authorization: `Bearer ${minted}` };
+r = await call('DELETE', `/production/entries/${pe?.id}/qa-signoff`, { signature_password: 'x' }, BOT);
+t('a token cannot revoke a sign-off', !!minted && r.status === 403, `${r.status} ${JSON.stringify(r.body)}`);
+r = await call('PUT', `/production/entries/${pe?.id}/qa-signoff`, { qa_signoff_by: 'Rec Bot', signature_password: 'x' }, BOT);
+t('…nor sign one', r.status === 403, `${r.status} ${JSON.stringify(r.body)}`);
+r = await call('DELETE', `/production/entries/${pe?.id}/qa-signoff`, {}, P);
+t('revoking asks for the password too', r.status === 403 && r.body?.signature_required === true, `${r.status}`);
+r = await call('DELETE', `/production/entries/${pe?.id}/qa-signoff`, { signature_password: 'RecOtherqa2026!' }, P2);
+t('another QA supervisor cannot revoke it (the signer or an admin)', r.status === 403 && /Rec Prodqa or an admin/.test(r.body?.error || ''), `${r.status} ${JSON.stringify(r.body)}`);
+r = await call('DELETE', `/production/entries/${pe?.id}/qa-signoff`, { signature_password: 'RecProdqa2026!' }, P);
+t('the signer can', r.status === 200 && r.body?.qa_signoff_by == null, `${r.status} ${JSON.stringify(r.body).slice(0, 120)}`);
+const revAudit = db.prepare(`SELECT details FROM audit_log WHERE entity_type = 'production_entry' AND entity_id = ? AND details LIKE '%qa_signoff_revoked%'`).get(pe?.id);
+t('…audited with who had signed', /"was_signed_by":"Rec Prodqa"/.test(revAudit?.details || ''));
+r = await call('GET', `/records/production/${pe?.id}`, undefined, A);
+t('…and the record reads unsigned again', r.body?.signed_by === null && r.body.result === 'pending QA');
+{
+  const { recordType } = await import('../server/record-interface.js');
+  const { getDb } = await import('../server/db.js');
+  const appDb = getDb();
+  const n0 = db.prepare('SELECT COUNT(*) n FROM production_entries').get().n;
+  const out = recordType('production').file(appDb, { id: 'ri-a', name: 'Rec Admin', role: 'admin' }, { date: today, team: 'Filling', room: 'Room 3',
+    product_name: 'RI Stick', mo_number: 'MO-RI-3', lot_number: 'RILOT-C', start_time: '07:00', end_time: '08:00', quantity_completed: 50, people_count: 1 });
+  t('filing through the interface uses the route\'s writer (same table, signer = the person)', out.status === 201 && db.prepare('SELECT COUNT(*) n FROM production_entries').get().n === n0 + 1
+    && out.entry?.submitted_by === 'Rec Admin', JSON.stringify(out).slice(0, 160));
+  const bad = recordType('production').file(appDb, { id: 'ri-a', name: 'Rec Admin', role: 'admin' }, { date: today, team: 'Filling' });
+  t('…and refuses what the route refuses', bad.status === 400 && /Missing required fields/.test(bad.error || ''));
+  const fs = await import('fs');
+  const src = fs.readdirSync('server', { recursive: true }).filter(f => String(f).endsWith('.js')).map(f => `server/${f}`)
+    .filter(f => fs.readFileSync(f, 'utf8').includes('INSERT INTO production_entries'));
+  // production-seed.js is the one-time import of the plant's own history, run
+  // only on an empty table — not a door. Nothing else may insert an entry.
+  t('one writer: only the Production Log (and the first-boot history import) inserts an entry',
+    JSON.stringify(src.sort()) === '["server/api/production.js","server/production-seed.js"]', JSON.stringify(src));
+}
 
 console.log('\n── the check records (D-369), each through its own door ──');
 const { MANAGEMENT_REVIEW_ITEMS, FOOD_DEFENSE_ITEMS, GMP_WALK_ITEMS, CULTURE_SAFETY_ITEMS } = await import('../shared/check-forms.js');

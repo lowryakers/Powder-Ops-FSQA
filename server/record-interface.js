@@ -27,6 +27,7 @@ import { createSanitationRecord, verifySanitationRecord, revokeSanitationVerific
 import { recordScaleVerification, verifyScaleCheck, revokeScaleVerification } from './api/scale-verification.js';
 import { getScaleForm } from './scale-forms.js';
 import { createQmsRecord, signQmsApproval, revokeQmsApproval } from './api/qms.js';
+import { fileProductionEntry, signOffProductionEntry, revokeProductionSignoff } from './api/production.js';
 import { QMS_TYPES, getType } from './qms-config.js';
 import { formLabel } from '../shared/form-registry.js';
 import { moduleLevel } from './module-access.js';
@@ -34,6 +35,9 @@ import { CHECK_RECORD_TYPES } from './check-record-types.js';
 
 export const INTERFACE = ['file', 'sign', 'revoke', 'retrieve', 'describe'];
 export const MAX_ROWS = 500;
+// Filters beyond from / to / person / signed / place / equipment / form, which a
+// type declares in `filters` when it understands them (D-370).
+export const EXTRA_FILTERS = ['lot', 'mo', 'team', 'site'];
 
 const sqlDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d || '')) ? String(d) : null;
 
@@ -136,6 +140,43 @@ function qmsRole(cfg, row, role, { signing }) {
   const signed = Object.keys(parseJson(row.approvals, {}));
   return signed.length === 1 ? signed[0] : null;
 }
+
+// ── Production entries (D-370) ──────────────────────────────────────────────
+// One end-of-day entry is one shift; a Batching shift carries several MOs in
+// `mo_lines` (line 0 mirrored into the scalar columns). The described row names
+// EVERY lot and MO on it, so "everything about lot L" finds the second MO of a
+// shift as readily as the first.
+const prodLines = (r) => parseJson(r.mo_lines, []);
+const describeProduction = (r) => {
+  const lines = prodLines(r);
+  const lots = [...new Set([r.lot_number, ...lines.map(l => l.lot_number)].filter(Boolean))];
+  const mos = [...new Set([r.mo_number, ...lines.map(l => l.mo_number)].filter(Boolean))];
+  const products = [...new Set([r.product_name, ...lines.map(l => l.product_name)].filter(Boolean))];
+  const what = products.length ? products.join(', ') : 'Cleaning only';
+  return {
+    type: 'production',
+    id: r.id,
+    form: `Production Log · ${r.team} EOD`,
+    title: `${r.team} — ${what}${mos.length ? ` (${mos.join(', ')})` : ''}`,
+    place: r.room || null,
+    team: r.team,
+    equipment_id: null,
+    performed_by: r.submitted_by,
+    performed_at: r.date,
+    shift: r.start_time || r.end_time ? `${r.start_time || '?'}–${r.end_time || '?'}` : null,
+    result: r.qa_waived_at ? 'waived' : r.qa_signoff_by ? (r.qa_action_required ? 'signed, correction asked' : 'signed') : 'pending QA',
+    quantity: r.quantity_completed,
+    lot: lots[0] || null, lots,
+    mo: mos[0] || null, mos,
+    products,
+    signed_by: r.qa_signoff_by || null,
+    signed_at: r.qa_signoff_at || null,
+    signatures: r.qa_signoff_by ? [{ role: 'qa', label: 'QA sign-off', name: r.qa_signoff_by, at: r.qa_signoff_at }] : [],
+    group: r.team,
+    link: { tab: 'production-log', id: r.id },
+  };
+};
+const jsonHas = (col, key) => `EXISTS (SELECT 1 FROM json_each(COALESCE(${col}, '[]')) WHERE lower(json_extract(value, '$.${key}')) = lower(?))`;
 
 export const RECORD_TYPES = [
   {
@@ -248,6 +289,44 @@ export const RECORD_TYPES = [
     },
     describe: describeQms,
   },
+  {
+    type: 'production',
+    label: 'Production entries (end-of-day reports)',
+    modules: ['production-log'],
+    // filters beyond the common ones that this type understands (retrieveRecords
+    // leaves out every type that does not — a lot asked of a cleaning record is
+    // not a match).
+    filters: ['lot', 'mo', 'team'],
+    file: (db, user, input) => fileProductionEntry(db, { submitted_by: user?.name, ...input }),
+    // The signer is the person; `notes` / `actionRequired` are QA's note and
+    // correction flag. The route in front has run gateSignature.
+    sign: (db, user, id, opts = {}) => signOffProductionEntry(db, id, { by: user?.name, notes: opts.notes, actionRequired: opts.actionRequired }),
+    revoke: (db, user, id) => revokeProductionSignoff(db, user, id),
+    get: (db, id) => db.prepare('SELECT * FROM production_entries WHERE id = ?').get(id) || null,
+    canRead: (user) => !!moduleLevel(user, 'production-log'),
+    retrieve(db, q = {}, user = null) {
+      if (user && !moduleLevel(user, 'production-log')) return [];
+      if (q.equipment) return [];
+      const where = []; const params = [];
+      const from = sqlDate(q.from); const to = sqlDate(q.to);
+      if (from) { where.push('date >= ?'); params.push(from); }
+      if (to) { where.push('date <= ?'); params.push(to); }
+      if (q.person) {
+        where.push('(lower(submitted_by) = lower(?) OR lower(COALESCE(qa_signoff_by, \'\')) = lower(?))');
+        params.push(String(q.person).trim(), String(q.person).trim());
+      }
+      if (q.signed === 'yes') where.push('qa_signoff_by IS NOT NULL');
+      if (q.signed === 'no') where.push('qa_signoff_by IS NULL');
+      if (q.place) { where.push(`(lower(room) = lower(?) OR ${jsonHas('mo_lines', 'room')} OR ${jsonHas('cleaning_events', 'room')})`); params.push(...Array(3).fill(String(q.place).trim())); }
+      if (q.team) { where.push('lower(team) = lower(?)'); params.push(String(q.team).trim()); }
+      if (q.lot) { where.push(`(lower(lot_number) = lower(?) OR ${jsonHas('mo_lines', 'lot_number')})`); params.push(...Array(2).fill(String(q.lot).trim())); }
+      if (q.mo) { where.push(`(lower(mo_number) = lower(?) OR ${jsonHas('mo_lines', 'mo_number')})`); params.push(...Array(2).fill(String(q.mo).trim())); }
+      const sql = `SELECT * FROM production_entries ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+        ORDER BY date DESC, created_at DESC LIMIT ?`;
+      return db.prepare(sql).all(...params, Math.min(Number(q.limit) || MAX_ROWS, MAX_ROWS));
+    },
+    describe: describeProduction,
+  },
   // The check records (D-369): six kinds, each through the writer it already
   // had. They carry no signature, so they declare `signs: false` and leave
   // `sign` / `revoke` out — the documented subset, not a gap.
@@ -271,8 +350,15 @@ export const verbsOf = (t) => INTERFACE.filter(k => typeof t[k] === 'function');
 export function retrieveRecords(db, user, q = {}) {
   const types = (q.type ? String(q.type).split(',') : RECORD_TYPES.map(t => t.type))
     .map(recordType).filter(Boolean).filter(t => canReadType(user, t));
+  // A filter only some types understand (a lot, an MO, a team, an EMP site)
+  // leaves out every type that does not — they would otherwise ignore it and
+  // answer with everything they hold.
+  const asked = EXTRA_FILTERS.filter(f => q[f] != null && String(q[f]).trim() !== '');
   let rows = [];
-  for (const t of types) rows.push(...t.retrieve(db, q, user).map(t.describe));
+  for (const t of types) {
+    if (asked.some(f => !(t.filters || []).includes(f))) continue;
+    rows.push(...t.retrieve(db, q, user).map(t.describe));
+  }
   if (q.form) {
     const f = String(q.form).trim().toLowerCase();
     rows = rows.filter(r => String(r.form || '').toLowerCase().startsWith(f));

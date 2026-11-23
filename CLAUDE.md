@@ -4474,7 +4474,10 @@ since go-live and in the last 90 days, and gives a verdict: never used / machine
 - **The six check records are on it too (D-369, `server/check-record-types.js`)**: EMP, GMP walk, list review, culture
   check, management review, Food Defense challenge. None signs (`signs: false`, no sign/revoke); the GMP walk and list
   review are filed only by their task (`filedBy: ['task']`, no `file`). Never add a writer for them here.
-- `verify:recordinterface` (76).
+- **Production entries are on it (D-370)**: `fileProductionEntry` / `signOffProductionEntry` / `revokeProductionSignoff`
+  (`DELETE /production/entries/:id/qa-signoff`, password, signer or admin). Described with every lot and MO on the shift.
+  **A filter only some types know (`lot`, `mo`, `team`, `site`) drops the types that do not** — declare it in `filters`.
+- `verify:recordinterface` (99).
 
 ## Five more acts sign with the password (D-206, move 01)
 - Gated now: the internal audit sign-off, approving meeting minutes, authorizing a mock recall, signing a COA,
