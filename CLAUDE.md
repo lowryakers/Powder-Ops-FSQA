@@ -4471,7 +4471,10 @@ since go-live and in the last 90 days, and gives a verdict: never used / machine
   - The described row carries `signatures` (role, label, name, time) and `approvals_pending`; `signed_by` is the
     latest signature.
   - A `place` or `equipment` filter matches no QMS record (there is no such column), never all of them.
-- `verify:recordinterface` (46).
+- **The six check records are on it too (D-369, `server/check-record-types.js`)**: EMP, GMP walk, list review, culture
+  check, management review, Food Defense challenge. None signs (`signs: false`, no sign/revoke); the GMP walk and list
+  review are filed only by their task (`filedBy: ['task']`, no `file`). Never add a writer for them here.
+- `verify:recordinterface` (76).
 
 ## Five more acts sign with the password (D-206, move 01)
 - Gated now: the internal audit sign-off, approving meeting minutes, authorizing a mock recall, signing a COA,

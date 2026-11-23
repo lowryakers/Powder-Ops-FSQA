@@ -152,6 +152,8 @@ t('entering the last result from the screen clears the awaited list', (await pag
 t('the log shows the action-level row in red with its CAR number', await page.locator('[data-outcome="action"]').count() >= 1 && /CAPA-\d+/.test(await page.locator('[data-emp-results]').innerText()));
 await page.getByRole('tab', { name: 'GMP walks' }).click();
 await page.waitForSelector('[data-gmp-walks]');
+// The tab draws before its rows arrive; count once they have, not before.
+await page.waitForFunction(() => document.querySelectorAll('[data-gmp-walk]').length >= 2, null, { timeout: 10000 }).catch(() => {});
 t('the GMP walks tab lists both walks with the not-compliant note', (await page.locator('[data-gmp-walk]').count()) === 2 && /Still no covers/.test(await page.locator('[data-gmp-walks]').innerText()));
 await page.getByRole('tab', { name: 'List reviews' }).click();
 await page.waitForSelector('[data-list-current="1"]', { timeout: 15000 }).catch(() => {});
