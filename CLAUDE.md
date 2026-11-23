@@ -4483,6 +4483,9 @@ since go-live and in the last 90 days, and gives a verdict: never used / machine
   file a ticked record without the route's password; **COA is read only on the interface** — never wrap its file/sign/
   unsign here. A verb left out names its reason in `absent`.
 - `verify:recordinterface` (147).
+- **A lookup is never capped (D-373, `server/record-cap.js`)**: with `lot`, `equipment` or `person` set, `GET /api/records`
+  returns every row. An unfiltered read is capped at 500 per type and names each cut type in `truncated_types`. **A new
+  type's LIMIT reads `rowLimit(q)`**, never its own number. `verify:recordscap` (12).
 
 ## Five more acts sign with the password (D-206, move 01)
 - Gated now: the internal audit sign-off, approving meeting minutes, authorizing a mock recall, signing a COA,

@@ -16,12 +16,12 @@
 // A kind filed only by completing its task (the GMP walk, the list review) has
 // no `file` either: the task is the door, and a second door would let the
 // record exist with no task behind it. `filedBy` says where each comes from.
+import { rowLimit } from './record-cap.js';
 import { moduleLevel } from './module-access.js';
 import { fileEmpSampleByHand, fileReviewByHand, canAct } from './api/check-records.js';
 import { fileCultureCheck, canReviewCulture, canFileCultureCheck } from './culture.js';
 import { EMP_ZONES } from '../shared/check-forms.js';
 
-const MAX_ROWS = 500;
 const sqlDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d || '')) ? String(d) : null;
 const parse = (s, fb) => { try { return s ? JSON.parse(s) : fb; } catch { return fb; } };
 const CHECK_MODULES = ['quality-schedules', 'pm', 'coa', 'sanitation', 'calibration'];
@@ -50,7 +50,7 @@ function checkType({ type, label, table, at, by, place = null, filedBy, file = n
       if (q.place) { where.push(`lower(${place}) = lower(?)`); params.push(String(q.place).trim()); }
       if (q.site && type === 'emp') { where.push('lower(site) = lower(?)'); params.push(String(q.site).trim()); }
       const sql = `SELECT * FROM ${table} ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY ${at} DESC, created_at DESC LIMIT ?`;
-      return db.prepare(sql).all(...params, Math.min(Number(q.limit) || MAX_ROWS, MAX_ROWS));
+      return db.prepare(sql).all(...params, rowLimit(q));
     },
     describe: (r) => ({
       type, id: r.id, equipment_id: null, signed_by: null, signed_at: null, signatures: [],
