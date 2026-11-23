@@ -11415,3 +11415,21 @@ were outside it, so `GET /api/records` could not list them and a mock-recall loo
   "no changes".
 - `verify:recordinterface` (76; the control — `main` — fails). `verify-check-records`' GMP-walks tab assertion counted
   rows before they loaded and now waits for them.
+
+## D-370 — Production entries join the record interface; a QA sign-off can be revoked (23 Nov 2026)
+Single-spine pack P2, step B (move 02). The production entry — the biggest record type, and the one a mock recall asks
+about first — was outside the interface.
+- **`production` on `RECORD_TYPES`**, through the Production Log's own functions: `fileProductionEntry` (the body of
+  `POST /production/entries`, moved into a function the route now calls), `signOffProductionEntry` (unchanged), and
+  **`revokeProductionSignoff`** (new). No second writer; the only other insert is the first-boot history import
+  (`production-seed.js`), asserted.
+- **A sign-off had no way back except amending the entry.** `DELETE /production/entries/:id/qa-signoff` revokes it: the
+  password first (`gateSignature`, `production_qa_signoff_revoke`), then the signer or an admin (`mayRevokeSignature`,
+  the scale rule), QA's note and correction flag go with it, audited with who had signed. A token cannot sign or revoke
+  (the `qa-signoff` path segment is on the approve guard).
+- **Described for a lookup**: team, room, who, when, shift window, result (pending QA / signed / correction asked /
+  waived), quantity, and EVERY lot, MO and product on the shift (`lots`, `mos`, `products`), not only line 0's.
+- **Filters `lot`, `mo`, `team`** (JSON-aware across `mo_lines`), and `place` matches any run's or clean's room.
+- **A filter only some types understand leaves the others out** (`EXTRA_FILTERS`, a type's `filters`): asking for a lot
+  no longer returns every sanitation record. EMP declares `site`.
+- `verify:recordinterface` (99). `verify-mmr-gate` fails two product-row assertions on `main` too — not this change.

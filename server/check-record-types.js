@@ -31,9 +31,9 @@ const readsChecks = (u) => CHECK_MODULES.some(m => moduleLevel(u, m));
  * One factory, the kinds differ only in table and columns. `at` is the day the
  * check was DONE, `by` who did it, `place` the column a "where" filter reads.
  */
-function checkType({ type, label, table, at, by, place = null, filedBy, file = null, describe, modules = CHECK_MODULES, canReadAny = readsChecks }) {
+function checkType({ type, label, table, at, by, place = null, filedBy, file = null, describe, modules = CHECK_MODULES, canReadAny = readsChecks, filters = [] }) {
   return {
-    type, label, modules, filedBy, signs: false, canReadAny,
+    type, label, modules, filedBy, signs: false, canReadAny, filters,
     ...(file ? { file } : {}),
     get: (db, id) => db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id) || null,
     canRead: (user) => !!canReadAny(user),
@@ -70,7 +70,7 @@ export const CHECK_RECORD_TYPES = [
   checkType({
     type: 'emp', label: 'Environmental monitoring samples (FORM 604-01)',
     table: 'emp_samples', at: 'sampled_on', by: 'sampled_by', place: 'zone',
-    filedBy: ['task', 'by hand'],
+    filedBy: ['task', 'by hand'], filters: ['site'],
     file: byHand((db, user, input) => fileEmpSampleByHand(db, user, input)),
     describe: (r) => ({
       form: r.form_revision || 'FORM 604-01',

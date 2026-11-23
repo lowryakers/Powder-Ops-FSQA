@@ -12,6 +12,7 @@ import { moKey as moNumKey, cleanMoAllergens, stepLine, hasFlags } from '../../s
 import { CLEAN_LEVEL_VALUES } from '../../shared/clean-levels.js';
 import { gradeAtp } from '../atp-limits.js';
 import { gateSignature, signatureEvidence } from '../signature.js';
+import { mayRevokeSignature } from '../record-permissions.js';
 import { weekFor, holidayOn } from '../plant-calendar.js';
 import { plantDateOf } from '../plant-clock.js';
 import { weekSummaryLines } from '../../shared/plant-holidays.js';
@@ -771,10 +772,14 @@ router.post('/missed-reports/restore', requireRole('admin', 'supervisor'), (req,
 });
 
 // POST /entries — create a new production entry
-router.post('/entries', (req, res) => {
-  const db = getDb();
-  let { date, team, room, line, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, submitted_by, notes, structured_data, mo_lines, cleaning_events } = req.body;
-  let mmr_ref = mmrRef(req.body.mmr_ref);
+/**
+ * File one end-of-day production entry (D-370: the route and the record
+ * interface both call this — one writer). Returns { status, error[, refusal] }
+ * or { status: 201, entry }.
+ */
+export function fileProductionEntry(db, input = {}) {
+  let { date, team, room, line, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, submitted_by, notes, structured_data, mo_lines, cleaning_events } = input;
+  let mmr_ref = mmrRef(input.mmr_ref);
 
   // A shift can carry several MOs (Batching). When mo_lines is present, line 0
   // is mirrored into the scalar product/MO/lot/quantity columns so everything
@@ -846,7 +851,7 @@ router.post('/entries', (req, res) => {
     // Name what is ACTUALLY missing. The old message listed all eleven fields
     // whatever was wrong, so somebody staring at a filled-in form was told to
     // supply things they had already supplied.
-    return res.status(400).json({ error: `Missing required fields: ${missing.join(', ')}` });
+    return { status: 400, error: `Missing required fields: ${missing.join(', ')}` };
   }
 
   // THE MMR GATE (D-133). Every run on the entry — each MO line, or the
@@ -855,7 +860,7 @@ router.post('/entries', (req, res) => {
   // the runs filed without one are a query. A cleaning-only shift names no
   // run and is not asked.
   const gate = mmrGateCheck(db, lines.length ? lines : [{ mo_number, product_name, mmr_ref }]);
-  if (!gate.ok) return res.status(400).json(gate.refusal);
+  if (!gate.ok) return { status: 400, error: gate.refusal?.error || 'MMR reference required', refusal: gate.refusal };
   const gateStamp = (lines.length || !cleanOnly) ? gate.mode : null;
 
   // Team EOD template answers, stored as JSON. Only an object is accepted.
@@ -871,8 +876,14 @@ router.post('/entries', (req, res) => {
   `).run(id, date, team, room, line || null, product_name, mo_number, lot_number, start_time, end_time, quantity_completed, people_count, notes || null, submitted_by, structured, moLinesJson, cleansJson, mmr_ref || null, gateStamp);
 
   const created = db.prepare('SELECT * FROM production_entries WHERE id = ?').get(id);
-  logAudit(submitted_by, 'create', 'production_entry', id, req.body, null, created);
-  res.status(201).json(computeMetrics(created));
+  logAudit(submitted_by, 'create', 'production_entry', id, input, null, created);
+  return { status: 201, entry: created };
+}
+
+router.post('/entries', (req, res) => {
+  const out = fileProductionEntry(getDb(), req.body || {});
+  if (out.error) return res.status(out.status).json(out.refusal || { error: out.error });
+  res.status(201).json(computeMetrics(out.entry));
 });
 
 /**
@@ -1192,6 +1203,35 @@ export async function qaActionNudges(db) {
 }
 
 // PUT /entries/:id/qa-signoff — QA signs off on a production entry
+/**
+ * Take QA's sign-off off an entry (D-370). There was no way back from a
+ * sign-off except amending the entry; the record interface's `revoke` needs one,
+ * and it is the scale rule (D-207): the signer or an admin, nobody else. The
+ * route asks for the password first, like the signature it undoes. The note
+ * and the correction flag were QA's and go with it; the audit row keeps them.
+ */
+export function revokeProductionSignoff(db, user, id) {
+  const existing = db.prepare('SELECT * FROM production_entries WHERE id = ?').get(id);
+  if (!existing) return { error: 'Production entry not found', status: 404 };
+  if (!existing.qa_signoff_by) return { error: 'This entry is not signed off.', status: 400 };
+  if (!mayRevokeSignature(user, existing.qa_signoff_by)) {
+    return { error: `Only ${existing.qa_signoff_by} or an admin can revoke this sign-off.`, status: 403 };
+  }
+  db.prepare(`UPDATE production_entries SET qa_signoff_by = NULL, qa_signoff_at = NULL, qa_notes = NULL,
+      qa_action_required = 0, updated_at = datetime('now') WHERE id = ?`).run(id);
+  const updated = db.prepare('SELECT * FROM production_entries WHERE id = ?').get(id);
+  logAudit(user, 'update', 'production_entry', id,
+    { qa_signoff_revoked: true, was_signed_by: existing.qa_signoff_by, was_signed_at: existing.qa_signoff_at, qa_notes: existing.qa_notes || null }, existing, updated);
+  return { entry: updated };
+}
+
+router.delete('/entries/:id/qa-signoff', (req, res) => {
+  if (!gateSignature(req, res, { action: 'production_qa_signoff_revoke' })) return;
+  const { error, status, entry } = revokeProductionSignoff(getDb(), req.user, req.params.id);
+  if (error) return res.status(status).json({ error });
+  res.json(computeMetrics(entry));
+});
+
 router.put('/entries/:id/qa-signoff', (req, res) => {
   // Before anything is written: a signature refused after the fact is a record
   // that says QA accepted a shift they did not.
