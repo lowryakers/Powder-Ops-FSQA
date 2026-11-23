@@ -111,6 +111,42 @@ for (const [label, vp, mobile] of [['1280', { width: 1280, height: 800 }, false]
   t(`${label}: …and the card loses its badge`, await pg.getAttribute(`[data-inbox-card="${unreadP[0].id}"]`, 'data-inbox-unread') === '0');
   await pg.close();
 }
+
+// Inside the app on a phone, with the bottom tab bar kept under Messages (a
+// person who put Messages on their tab bar). The thread drawer must cover the
+// tab bar: it used to sit under it, so the toolbar showed and the reply box
+// itself did not. /chat above has no tab bar, which is how this was missed.
+console.log('\n── the drawer inside the app, phone, tab bar on ──');
+db.prepare(`UPDATE users SET quick_tabs = '["messages"]', home_workspace = 'messages' WHERE id = 'ti-a'`).run();
+const me = (await call('GET', '/users/me', null, A)).body;
+{
+  const pg = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  pg.on('pageerror', (e) => { console.log('  [pageerror]', e.message); fail++; });
+  await pg.goto(`${URL}/manifest.webmanifest`);
+  await pg.evaluate(([tok, u]) => { localStorage.setItem('auth_token', tok); localStorage.setItem('auth_user', JSON.stringify(u)); localStorage.removeItem('comms_last_view'); localStorage.removeItem('comms_last_channel'); }, [A.token, me]);
+  await pg.goto(`${URL}/`);
+  await pg.click('[data-nav-threads]', { timeout: 15000 });
+  await pg.waitForSelector('[data-inbox-card]', { timeout: 10000 }).catch(() => {});
+  t('app at 390px: the bottom tab bar is showing under Messages', await pg.evaluate(() => [...document.querySelectorAll('nav')].some((n) => getComputedStyle(n).position === 'fixed' && n.getBoundingClientRect().bottom >= window.innerHeight - 1 && n.offsetHeight > 0)));
+  await pg.locator(`[data-inbox-card="${unreadP[2].id}"] [data-inbox-open]`).click();
+  await pg.waitForSelector('textarea[placeholder="Reply…"]', { timeout: 10000 }).catch(() => {});
+  await pg.waitForTimeout(800);
+  const hit = await pg.evaluate(() => {
+    const ta = document.querySelector('textarea[placeholder="Reply…"]');
+    if (!ta) return { none: true };
+    const r = ta.getBoundingClientRect();
+    const x = r.left + Math.min(20, r.width / 2), y = r.top + r.height / 2;
+    const top = document.elementFromPoint(x, y);
+    return { onScreen: r.bottom <= window.innerHeight && r.top >= 0, topIsBox: top === ta, topTag: top?.tagName, topNav: !!top?.closest('nav') };
+  });
+  t('app at 390px: the reply box is on screen', !!hit.onScreen, JSON.stringify(hit));
+  t('app at 390px: …and on top, not under the tab bar', !!hit.topIsBox, JSON.stringify(hit));
+  await pg.locator('textarea[placeholder="Reply…"]').fill('typed on the phone').catch(() => {});
+  await pg.locator('[data-thread-drawer] button:has(svg.lucide-send)').click().catch(() => {});
+  await pg.waitForTimeout(1200);
+  t('app at 390px: a reply sent from the drawer files', !!db.prepare("SELECT 1 FROM chat_messages WHERE parent_id = ? AND body = 'typed on the phone'").get(unreadP[2].id));
+  await pg.close();
+}
 await browser.close();
 db.close();
 console.log(`\n${pass} passed, ${fail} failed`);
