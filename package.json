@@ -208,6 +208,7 @@
     "verify:threads": "node scripts/verify-threads.mjs",
     "verify:threadsinbox": "node scripts/verify-threads-inbox.mjs",
     "verify:spinep1a": "VERIFY_ONLY=verify-spine-p1a.mjs node scripts/verify-all.mjs",
+    "verify:spinep1b": "VERIFY_ONLY=verify-spine-p1b.mjs node scripts/verify-all.mjs",
     "verify:dmthreadbadge": "VERIFY_ONLY=verify-dm-thread-badge.mjs node scripts/verify-all.mjs",
     "verify:trainingassign": "node scripts/verify-training-assign.mjs",
     "verify:supplylists": "node scripts/verify-supply-lists.mjs",

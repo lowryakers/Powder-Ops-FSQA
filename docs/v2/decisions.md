@@ -11377,3 +11377,20 @@ as one number — and nothing ever closed the last kind.
   hidden from the counts and the list); the scorecard's PM completion rate still counts every card in its window.
 - Cancels work orders on deactivation, so it waits for Lowry's review (D-274). `verify:spinep1a` (20; the control —
   `main` — fails 6).
+
+## D-368 — A task list is a read; the sweep runs on its own tick; a quality schedule names an owner (23 Nov 2026)
+Single-spine pack P1, step B. `GET /pm/work-orders` and six other list reads called `runPmHousekeeping`, so opening a
+task list marked cards missed and raised new ones — a read mutating the database, and the only thing that kept the
+morning's dailies coming was somebody happening to open a list.
+- **No GET calls `runPmHousekeeping` any more** (work-orders, operator-tasks, metrics, search, by-frequency,
+  completed-history, schedules/generation). `startPmHousekeeping(db)` runs it at boot and then every
+  `PM_HOUSEKEEPING_TICK_MS` (default 5 minutes, forced each tick so a tick a few ms early is not skipped).
+- **`POST /pm/housekeeping`** is the explicit manual pass — supervisor, QA or admin, audited. A verify that needs the
+  sweep calls it (schedule-owner, swab-stock, holiday-quiet and food-safety-culture were changed to).
+- **A quality schedule may name an owner** (`PUT|POST /quality-schedules` `assigned_to`; absent leaves it, blank clears
+  it, a name is stored as written; audited from → to). Additive to the team; `generateQualityScheduleTasks` already
+  copied it onto each card and the D-074 trigger fills the account id. The Quality Schedules form and list show it.
+- Not done: naming an owner does not move the card already open (the PM schedule does, D-094); calibration's own
+  overdue sweep still runs in its GET (`api/calibration.js`, `periodically`).
+- `verify:spinep1b` (23; the control — `main` — fails 12). `verify-coa-phase1`'s "no `kind` on a signing source" fails
+  on `main` too and is not this change.

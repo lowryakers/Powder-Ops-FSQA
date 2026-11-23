@@ -3952,8 +3952,10 @@ Measured on a production-scale DB, not guessed — server SQL was never the bott
 2. **`recleanRooms()` ran two `MAX(...)` queries per room** against unindexed columns — 53 rooms, 106 table
    scans, 83 ms, and `/notifications`, `/compliance/critical` and `/sanitation/reclean-status` each paid it
    on every page load. Now two GROUP BY passes (~4 ms) plus indexes on the columns actually filtered.
-**Reads must not write.** `markMissedWorkOrders()` and the task generators ran inside every GET; they're
-behind `runPmHousekeeping()` now (once per 5 min, whoever asks first). Don't call them from a handler.
+**Reads must not write.** `markMissedWorkOrders()` and the task generators ran inside every GET; since D-368 no GET
+calls `runPmHousekeeping()` — `startPmHousekeeping()` (boot, then every `PM_HOUSEKEEPING_TICK_MS`, default 5 min) runs it,
+and `POST /pm/housekeeping` (supervisor / QA / admin) is the manual pass. **A verify that needs the sweep now calls that
+POST**; never put the sweep back in a GET. A quality schedule may name an owner (`assigned_to`, additive to the team).
 3. **The client rendered every row it was given.** Even with bounded APIs, the Production Log came out as
    18,000 DOM nodes and a 60,000px page on a phone. `src/lib/useCappedList.js` + `<ShowMore>` render the
    first 100 with a button for the rest (Production Log 18,084 → 4,874 nodes, Sanitation 14,259 → 3,074,

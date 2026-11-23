@@ -367,6 +367,12 @@ function createNextWorkOrder(db, sched, triggeredBy = null, { from = null } = {}
 // The throttle itself lives in server/housekeeping.js so calibration's
 // overdue sweep uses the same one — a second copy is how two sweeps start
 // disagreeing about how often "periodically" means.
+//
+// D-368: NO GET CALLS THIS ANY MORE. A read is a read — a task list that marked
+// cards missed and raised new ones every time somebody opened it was a GET
+// mutating the database. It runs on its own tick instead (startPmHousekeeping,
+// started at boot from server.js: once at once, then every few minutes), and
+// POST /pm/housekeeping is the explicit manual pass.
 export function runPmHousekeeping(db, { force = false } = {}) {
   if (force) resetHousekeeping();
   periodically('mark-missed', markMissedWorkOrders, db);
@@ -384,6 +390,19 @@ export function runPmHousekeeping(db, { force = false } = {}) {
   // Running out of swabs does not slow a clean down, it means the clean cannot
   // be VERIFIED. Nothing was counting them, so the reorder raises itself.
   periodically('swab-reorders', generateSwabReorders, db);
+}
+
+// The dedicated tick (D-368). Once at boot, then every PM_HOUSEKEEPING_TICK_MS
+// (default five minutes, never under one second). Forced each time, so a tick
+// that lands a few milliseconds early against the five-minute throttle is not
+// skipped. A sweep that fails is logged by `periodically` and the next tick
+// tries again; a stopped tick would stop the morning's dailies, so it is
+// unref'd but never cleared.
+export function startPmHousekeeping(db) {
+  const ms = Math.max(1000, Number(process.env.PM_HOUSEKEEPING_TICK_MS) || 5 * 60 * 1000);
+  const tick = () => { try { runPmHousekeeping(db, { force: true }); } catch (e) { console.warn('[housekeeping] tick failed:', e.message); } };
+  tick();
+  return setInterval(tick, ms).unref();
 }
 
 /**
@@ -575,7 +594,6 @@ router.get('/schedules', (req, res) => {
  */
 router.get('/schedules/generation', (_req, res) => {
   const db = getDb();
-  runPmHousekeeping(db);
   res.json(generationSweep(db));
 });
 
@@ -897,7 +915,6 @@ router.put('/schedules/:id', (req, res) => {
 
 router.get('/work-orders', (req, res) => {
   const db = getDb();
-  runPmHousekeeping(db);
   const { status, equipment_id, from, to, assigned_to } = req.query;
   let sql = `SELECT wo.*, e.name as equipment_name, e.asset_id, e.room, e.is_food_contact,
     ps.title as pm_title, ps.frequency_type
@@ -1026,7 +1043,6 @@ router.put('/work-orders/:id', (req, res) => {
 
 router.get('/metrics', (req, res) => {
   const db = getDb();
-  runPmHousekeeping(db);
   const { from, to, group } = req.query;
   const now = new Date();
   const defaultFrom = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
@@ -1972,7 +1988,6 @@ router.get('/clearance-pending', (req, res) => {
 // order's own title, equipment, asset id, location and assignee.
 router.get('/search', (req, res) => {
   const db = getDb();
-  runPmHousekeeping(db);
   const q = String(req.query.q || '').trim();
   if (q.length < 2) return res.json([]);
   const like = `%${q}%`;
@@ -1998,7 +2013,6 @@ router.get('/search', (req, res) => {
 
 router.get('/by-frequency', (req, res) => {
   const db = getDb();
-  runPmHousekeeping(db);
   const { frequency, equipment_id, group } = req.query;
 
   let sql = `SELECT wo.*, e.name as equipment_name, e.type as equipment_type, e.location,
@@ -2056,7 +2070,6 @@ router.get('/by-frequency', (req, res) => {
 
 router.get('/completed-history', (req, res) => {
   const db = getDb();
-  runPmHousekeeping(db);
   const { limit = 50, offset = 0, frequency, from, to, include_missed, group } = req.query;
   const showMissed = include_missed !== 'false';
 
@@ -2096,6 +2109,18 @@ router.get('/completed-history', (req, res) => {
 });
 
 // --- Generate Work Orders from PM Schedules ---
+
+// The explicit manual pass (D-368): mark past-due cards missed and run every
+// task generator now, instead of waiting for the tick. A supervisor's, QA's or
+// an admin's act — never a side effect of reading a list.
+router.post('/housekeeping', (req, res) => {
+  const u = req.user || {};
+  const ok = u.role === 'admin' || u.role === 'supervisor' || ['qa', 'quality'].includes(u.department);
+  if (!ok) return res.status(403).json({ error: 'Running the task sweep by hand is for a supervisor, QA or an admin. It runs on its own every few minutes.' });
+  runPmHousekeeping(getDb(), { force: true });
+  logAudit(req.user, 'run', 'pm_housekeeping', 'manual', null, null, null, 'Task sweep run by hand');
+  res.json({ ok: true, ran_at: new Date().toISOString() });
+});
 
 router.post('/generate', (_req, res) => {
   const db = getDb();
@@ -2223,7 +2248,6 @@ router.get('/cleaning-chemicals', (req, res) => {
 
 router.get('/operator-tasks', (req, res) => {
   const db = getDb();
-  runPmHousekeeping(db);
   const { assigned_to } = req.query;
   // Only admins may view other departments (or all) via the group filter.
   // Everyone else — including supervisors — is locked to their own department.

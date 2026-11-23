@@ -179,7 +179,7 @@ t('a second boot changes nothing — a paused check stays paused', again.length 
 db.prepare("UPDATE quality_schedules SET is_active = 1 WHERE title = 'Monthly Culture Check — Kitting'").run();
 db.prepare(`INSERT INTO quality_schedules (id, title, module_id, frequency_type, frequency_value, next_due, is_active, task_group, assigned_to)
   VALUES ('fc-qs2', 'Monthly Culture Check — Kitting (test)', 'x', 'monthly', 1, date('now'), 1, 'kitting', 'Culture Super')`).run();
-await call('GET', '/pm/operator-tasks?limit=500', undefined, A);   // housekeeping raises it (HOUSEKEEPING_MS=0)
+await call('POST', '/pm/housekeeping', {}, A);   // the sweep raises it (no list read runs it since D-368)
 const gen = db.prepare("SELECT task_group, assigned_to FROM work_orders WHERE quality_schedule_id = 'fc-qs2'").get();
 t('a raised check goes to its team, named for its supervisor (not QA)', gen?.task_group === 'kitting' && gen.assigned_to === 'Culture Super', JSON.stringify(gen));
 const older = db.prepare("SELECT task_group FROM work_orders WHERE quality_schedule_id = (SELECT id FROM quality_schedules WHERE title = 'Tap Water Testing')").get();
