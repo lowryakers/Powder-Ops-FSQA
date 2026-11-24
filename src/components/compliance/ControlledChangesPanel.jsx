@@ -105,7 +105,7 @@ function ChangeRow({ c }) {
   return (
     <li className="flex items-start gap-2 text-xs">
       <span className={`px-1.5 py-0.5 rounded-full font-bold shrink-0 ${KIND_TONE[c.kind] || 'bg-gray-100 text-gray-600'}`}>{c.kind}</span>
-      <span className="min-w-0">
+      <span className="min-w-0 [overflow-wrap:anywhere]">
         <span className="font-medium text-gray-800">{c.what}</span>
         {c.kind === 'changed' && (
           <span className="text-gray-500"> · {valueText(c.from)} → {valueText(c.to)}</span>
