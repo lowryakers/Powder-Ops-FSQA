@@ -74,9 +74,11 @@ const GROUPS = [
     { key: 'hex', label: 'Hex spot colors', edit: 'colors', get: (p) => joinSlots(p.colors, 'hex') },
   ] },
   // R-0645: the distributor sheet's pack and shipping facts. Starts folded.
-  { key: 'shipping', label: 'Pack and shipping', columns: PACK_FIELDS.map((f) => ({
-    key: f, label: SOT_LABEL[f], edit: 'text', type: f === 'unit_size' ? undefined : 'number',
-  })) },
+  // The sell-sheet shelf life is read from the stability justification (D-384):
+  // shown, never edited here. A SKU with no justification reads "No stability basis".
+  { key: 'shipping', label: 'Pack and shipping', columns: PACK_FIELDS.map((f) => (f === 'shelf_life_months_commercial'
+    ? { key: f, label: SOT_LABEL[f], get: (p) => (p.sell_sheet_shelf_life?.no_basis ? 'No stability basis' : p[f] ?? '') }
+    : { key: f, label: SOT_LABEL[f], edit: 'text', type: f === 'unit_size' ? undefined : 'number' })) },
   { key: 'channels', label: 'Channels', columns: [
     { key: 'status', label: 'Status', edit: 'select', options: STATUSES, render: statusLabel },
     { key: 'shopify_sku', label: 'Shopify SKU', edit: 'text' },

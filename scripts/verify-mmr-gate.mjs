@@ -172,7 +172,10 @@ const pc = await J(await call('GET', `/products/${SC}`, null, Q));
 t('GET /products/:sku carries shelf_life — Best by with its basis on A', pa?.shelf_life?.recorded === true && pa.shelf_life.date_type === 'best_by' && pa.shelf_life.basis_kind === 'none_best_by' && pa.shelf_life.basis_label === 'No data — Best by', JSON.stringify(pa?.shelf_life));
 t('…an expiration date on B', pb?.shelf_life?.date_type === 'expiration' && pb.shelf_life.basis_kind === 'client_data' && pb.shelf_life.shelf_life_months === 18);
 t('…and NOT RECORDED, best by, on C, which no justification names', pc?.shelf_life?.recorded === false && pc.shelf_life.date_type === 'best_by' && pc.shelf_life.basis_kind === null, JSON.stringify(pc?.shelf_life));
-t('nothing was written to the product row', db.prepare('PRAGMA table_info(products)').all().every(c => !/shelf_life|date_type|basis_kind/.test(c.name)));
+// The DATE TYPE and its BASIS are never stored on the product (D-133). The
+// sell-sheet shelf life (D-384) has a legacy typed column and a shorter-override
+// trio on the product, read beside the justification, never instead of it.
+t('the date type and its basis are never stored on the product row', db.prepare('PRAGMA table_info(products)').all().every(c => !/date_type|basis_kind/.test(c.name)));
 let comp = await J(await call('GET', '/products/completeness', null, Q));
 const compOf = (s) => comp?.rows?.find(x => x.sku === s);
 t('Completeness names "Shelf-life basis" as a Formula gap on C and not on A or B', compOf(SC)?.groups?.formula?.missing?.includes('Shelf-life basis') && !compOf(SA)?.missing?.some(m => /Shelf-life/.test(m)) && !compOf(SB)?.missing?.some(m => /Shelf-life/.test(m)), JSON.stringify(compOf(SC)?.groups?.formula));

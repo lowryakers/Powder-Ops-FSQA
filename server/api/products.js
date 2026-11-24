@@ -27,6 +27,23 @@ import { GARMENTS, SIZE_BY_CODE } from '../../shared/merch.js';
 import { registerMerchRoutes } from '../merch-routes.js';
 import { validateField, FIELD_RULES, NA_FIELDS, naOf, looksLikeTypedNa, MASTER_CSV_SOURCES, PACKAGING_DERIVED } from '../../shared/product-fields.js';
 import { shelfLifeBasis, shelfLifeFor, NO_BASIS, BASIS_KIND_LABEL, DATE_TYPE_LABEL } from '../stability.js';
+import { sellSheetShelfLife, overrideRefusal } from '../../shared/sell-sheet-shelf-life.js';
+
+// THE SELL-SHEET SHELF LIFE IS READ, NEVER TYPED (D-384). `shelf_life_months_commercial`
+// on every product payload is the DERIVED figure — the stability justification's
+// months, or a person's shorter override — so the export, the distributor
+// readiness step and the drawer all read one answer. The typed column is kept
+// as filed (`sell_sheet_shelf_life.typed_months`) and only compared.
+const SHELF_FIELD = 'shelf_life_months_commercial';
+const OVERRIDE_COLUMNS = ['shelf_life_override_months', 'shelf_life_override_reason', 'shelf_life_override_by', 'shelf_life_override_at'];
+function sellSheetOf(row, basis) {
+  if (row?.product_type === 'merch') return null;
+  return sellSheetShelfLife({
+    basis_months: basis?.recorded ? basis.shelf_life_months : null,
+    override_months: row?.shelf_life_override_months,
+    typed_months: row?.[SHELF_FIELD],
+  });
+}
 import { stageInputs, stageFor } from '../product-stages.js';
 import { buildSpecPatch, SPEC_ID_RE } from '../../shared/packaging-spec.js';
 import { parseDelimited, writeXlsx } from '../tabular.js';
@@ -149,6 +166,7 @@ function hydrate(rows, db) {
   const colors = db.prepare('SELECT * FROM product_colors ORDER BY sku, slot').all();
   // The new-product stage's facts, read once for the whole list (D-134).
   const stageFacts = stageInputs(db);
+  const shelfBasis = shelfLifeBasis(db);
   const bySku = new Map();
   for (const c of colors) {
     if (!bySku.has(c.sku)) bySku.set(c.sku, []);
@@ -165,7 +183,11 @@ function hydrate(rows, db) {
   }
   return rows.map((r) => {
     const merch = r.product_type === 'merch';
-    const base = { ...r, colors: bySku.get(r.sku) || [] };
+    const sellSheet = sellSheetOf(r, shelfBasis.get(r.sku));
+    const base = { ...r, colors: bySku.get(r.sku) || [],
+      // Food only: merch has no shelf life and keeps its row as stored.
+      ...(sellSheet ? { [SHELF_FIELD]: sellSheet.months, sell_sheet_shelf_life: { ...sellSheet,
+        override_reason: r.shelf_life_override_reason || null, override_by: r.shelf_life_override_by || null, override_at: r.shelf_life_override_at || null } } : {}) };
     const withColors = merch ? { ...base, ...merchFacts(r, styleByCode.get(r.style_code), colorByCode.get(r.color_code)) } : base;
     // What this SKU would be under the new standard. Derived every read, never
     // stored: it depends on the flavour register, which moves as collisions
@@ -1715,7 +1737,7 @@ const WRITABLE = [
   // are in server/product-sot-gate.js and run inside buildPatch, so the PUT,
   // the fill-down and the CSV import are all behind them. `gtin_case_source`
   // is NOT here: the backfill and a person's paste set it.
-  ...SOT_COLUMNS.filter((c) => c !== 'gtin_case_source'),
+  ...SOT_COLUMNS.filter((c) => c !== 'gtin_case_source' && c !== SHELF_FIELD),
 ];
 // One list with a supplier material's part-number systems (D-338).
 const FORMULA_SOURCE_SYSTEMS = SOURCE_SYSTEMS;
@@ -1745,6 +1767,23 @@ function buildPatch(db, existing, b, ctx = {}) {
   }
   if (ARTWORK_OWNED.some((c) => b[c] !== undefined)) {
     return { status: 400, code: 'ARTWORK_OWNED', error: 'Artwork status and version are set by releasing a version on the Artwork board, not by typing them.' };
+  }
+  // D-384: the sell-sheet shelf life is read from the stability justification.
+  // A form that sends back the figure it was shown is let by (nothing is
+  // written); a different figure is refused by name, and the override has its
+  // own route with a reason.
+  if (b[SHELF_FIELD] !== undefined && existing?.product_type !== 'merch') {
+    const shown = existing ? sellSheetOf(existing, shelfLifeFor(db, existing.sku))?.months ?? null : null;
+    const sent = b[SHELF_FIELD] === '' || b[SHELF_FIELD] === null ? null : Number(String(b[SHELF_FIELD]).trim());
+    if (sent !== shown) {
+      return { status: 400, code: 'SHELF_LIFE_FROM_STABILITY', field: SHELF_FIELD, basis_months: shown,
+        error: shown === null
+          ? 'No stability basis: this SKU has no stability justification, so it has no sell-sheet shelf life to enter. Record the basis under Retention Samples → Stability.'
+          : `The sell-sheet shelf life is read from the stability justification (${shown} months). To claim less, use "Set a shorter shelf life" on the product, with a reason.` };
+    }
+  }
+  if (OVERRIDE_COLUMNS.some((c) => b[c] !== undefined && String(b[c] ?? '') !== String(existing?.[c] ?? ''))) {
+    return { status: 400, code: 'SHELF_LIFE_OVERRIDE_ROUTE', error: 'A shorter shelf life is set through POST /products/:sku/shelf-life-override, with a reason.' };
   }
   // A MERCH VARIANT'S IDENTITY IS BUILT, NOT TYPED (D-302). Its GTIN goes
   // through the assignment route (a person, the colour confirmed, re-checked in
@@ -2045,7 +2084,13 @@ router.post('/', (req, res) => {
   if (b.brand === undefined || b.brand === null || String(b.brand).trim() === '') b.brand = BRAND_DEFAULT;
   {
     const sotPatch = {};
-    for (const c of SOT_COLUMNS) if (b[c] !== undefined && b[c] !== '' && c !== 'gtin_case_source') sotPatch[c] = b[c];
+    // D-384: a new SKU has no stability justification yet, so it has no sell-sheet
+    // shelf life to type. Refused by name rather than dropped.
+    if (b[SHELF_FIELD] !== undefined && b[SHELF_FIELD] !== '' && b[SHELF_FIELD] !== null) {
+      return res.status(400).json({ status: 400, code: 'SHELF_LIFE_FROM_STABILITY', field: SHELF_FIELD,
+        error: 'No stability basis: the sell-sheet shelf life is read from the stability justification, which a new SKU does not have yet.' });
+    }
+    for (const c of SOT_COLUMNS) if (b[c] !== undefined && b[c] !== '' && c !== 'gtin_case_source' && c !== SHELF_FIELD) sotPatch[c] = b[c];
     const bad = sotFieldChecks(db, sku, sotPatch, gtin);
     if (bad) return res.status(bad.status).json(bad);
     const gate = writeGate(db, req, {}, { ...sotPatch, ...(gtin ? { gtin } : {}) });
@@ -2204,12 +2249,54 @@ router.post('/:sku/na', (req, res) => {
   const patch = {};
   if (on) {
     na[field] = { by: req.user?.name || null, at: new Date().toISOString() };
-    if (existing[field] !== null && existing[field] !== undefined) patch[field] = null;
+    // The sell-sheet shelf life is derived (D-384); its old typed value is kept
+    // as filed so Completeness can still compare it, so marking N/A clears nothing.
+    if (field !== SHELF_FIELD && existing[field] !== null && existing[field] !== undefined) patch[field] = null;
   } else {
     delete na[field];
   }
   patch.na_fields = Object.keys(na).length ? JSON.stringify(na) : null;
   applyPatch(db, existing, patch, req.user, { na: { field, on } });
+  res.json(hydrate([db.prepare(`${SELECT} WHERE p.sku = ?`).get(existing.sku)], db)[0]);
+});
+
+/**
+ * A SHORTER sell-sheet shelf life than the stability basis, with who and why (D-384).
+ *
+ * `POST /:sku/shelf-life-override { months, reason }`. Refused with no basis
+ * (409 NO_STABILITY_BASIS), and refused unless it is SHORTER than the basis
+ * (400 OVERRIDE_NOT_SHORTER): a sell sheet may promise less than the data
+ * supports, never more. `{ months: null, reason }` removes it, and the figure
+ * goes back to the basis. A reason is required either way; the audit entry
+ * carries the before and after.
+ */
+router.post('/:sku/shelf-life-override', (req, res) => {
+  if (!canManage(req.user)) return res.status(403).json({ error: 'Supervisors and QA manage the catalog.' });
+  const db = getDb();
+  const existing = db.prepare('SELECT * FROM products WHERE sku = ?').get(req.params.sku);
+  if (!existing) return res.status(404).json({ error: 'No such SKU' });
+  if (existing.product_type === 'merch') return res.status(400).json({ code: 'MERCH_NO_SHELF_LIFE', error: 'Merch has no shelf life.' });
+  const reason = String(req.body?.reason || '').trim();
+  if (reason.length < 5) return res.status(400).json({ code: 'REASON_REQUIRED', error: 'Say why, in a few words.' });
+  const clearing = req.body?.months === null || req.body?.months === '';
+  const basis = shelfLifeFor(db, existing.sku);
+  const basisMonths = basis.recorded ? basis.shelf_life_months : null;
+  if (!clearing) {
+    const bad = overrideRefusal(req.body?.months, basisMonths);
+    if (bad) return res.status(bad.status).json(bad);
+  } else if (existing.shelf_life_override_months === null) {
+    return res.status(400).json({ code: 'NO_OVERRIDE', error: 'There is no shorter shelf life on this SKU to remove.' });
+  }
+  const before = Object.fromEntries(OVERRIDE_COLUMNS.map((c) => [c, existing[c] ?? null]));
+  const after = clearing
+    ? { shelf_life_override_months: null, shelf_life_override_reason: null, shelf_life_override_by: null, shelf_life_override_at: null }
+    : { shelf_life_override_months: Number(req.body.months), shelf_life_override_reason: reason,
+      shelf_life_override_by: req.user?.name || null, shelf_life_override_at: new Date().toISOString() };
+  db.prepare(`UPDATE products SET ${OVERRIDE_COLUMNS.map((c) => `${c} = ?`).join(', ')}, updated_at = datetime('now') WHERE sku = ?`)
+    .run(...OVERRIDE_COLUMNS.map((c) => after[c]), existing.sku);
+  logAudit(req.user, clearing ? 'shelf_life_override_removed' : 'shelf_life_override_set', 'product', existing.sku,
+    { reason, basis_months: basisMonths, justification_id: basis.justification_id || null, months: clearing ? null : Number(req.body.months) },
+    before, after, existing.sku);
   res.json(hydrate([db.prepare(`${SELECT} WHERE p.sku = ?`).get(existing.sku)], db)[0]);
 });
 

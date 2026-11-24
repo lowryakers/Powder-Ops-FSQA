@@ -86,8 +86,12 @@ t('… stored as user ids in app_settings, audited',
   && all("SELECT 1 FROM audit_log WHERE action = 'product_sot_setting_changed'").length === 2);
 
 // ── Pack facts, prices, item numbers ─────────────────────────────────────────
-r = await call('PUT', `/products/${SKU}`, { unit_size: '1.18 OZ', units_per_case: 72, inners_per_case: 6, units_per_inner: 12, case_l: 16, case_w: 10, case_h: 7, case_weight: 7.2, ti: 8, hi: 4, pallet_qty: 32, shelf_life_months_commercial: 24 }, Q);
-t('a catalog manager writes the pack and shipping facts', r.status === 200 && r.json?.units_per_case === 72 && r.json?.ti === 8, JSON.stringify(r.json)?.slice(0, 200));
+// D-384: the sell-sheet shelf life is read from the stability justification, so
+// the fixture files one (24 months) rather than typing the figure on the product.
+write((db) => db.prepare(`INSERT INTO stability_justifications (id, product_family, product_skus, shelf_life_months, basis, basis_kind, decided_by, decided_on)
+  VALUES ('sot-just', 'Whey sticks', ?, 24, 'Client stability data on file.', 'client_data', 'Fixture', date('now'))`).run(JSON.stringify([SKU])));
+r = await call('PUT', `/products/${SKU}`, { unit_size: '1.18 OZ', units_per_case: 72, inners_per_case: 6, units_per_inner: 12, case_l: 16, case_w: 10, case_h: 7, case_weight: 7.2, ti: 8, hi: 4, pallet_qty: 32 }, Q);
+t('a catalog manager writes the pack and shipping facts', r.status === 200 && r.json?.units_per_case === 72 && r.json?.ti === 8 && r.json?.shelf_life_months_commercial === 24, JSON.stringify(r.json)?.slice(0, 200));
 r = await call('PUT', `/products/${SKU}`, { ti: -1 }, Q);
 t('a negative Ti is refused by name', r.status === 400 && r.json?.field === 'ti');
 r = await call('PUT', `/products/${SKU}`, { price_fob_case: 120.24 }, Q);
@@ -151,12 +155,12 @@ const open = (await call('GET', `/products/${SKU}`, null, L)).json?.readiness?.s
 t('fixture: the only open checklist step is the distributor sheet (price_wholesale N/A, SRP etc. set)', open.length === 0 || (open.length === 1 && open[0] === 'distributor'), open.join(','));
 
 // 5. With an item still open.
-write((db) => db.prepare('UPDATE products SET shelf_life_months_commercial = NULL WHERE sku = ?').run(SKU));
+write((db) => db.prepare('UPDATE products SET pallet_qty = NULL WHERE sku = ?').run(SKU));
 r = await call('PUT', `/products/${SKU}`, { status: 'active' }, L);
 t('5. approver, an item still open ⇒ 400 READINESS_OPEN naming it, row unchanged',
   r.status === 400 && r.json?.code === 'READINESS_OPEN' && (r.json?.open || []).some((o) => o.key === 'distributor') && one('SELECT status FROM products WHERE sku = ?', SKU).status === 'draft', JSON.stringify(r.json));
 t('5. … the refusal is audited', !!one("SELECT 1 FROM audit_log WHERE action = 'product_status_activation_refused' AND entity_id = ?", SKU));
-r = await call('POST', `/products/${SKU}/na`, { field: 'shelf_life_months_commercial' }, Q);
+r = await call('POST', `/products/${SKU}/na`, { field: 'pallet_qty' }, Q);
 t('the open item is marked N/A', r.status === 200);
 
 // 6. Another person.

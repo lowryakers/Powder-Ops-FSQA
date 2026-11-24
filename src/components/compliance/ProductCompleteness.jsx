@@ -107,6 +107,12 @@ function Row({ r, groups, canEdit, onChanged, onOpenSku }) {
                   <AlertTriangle size={11} /> Stale
                 </span>
               )}
+              {r.shelf_life_longer && (
+                <span data-shelf-longer className="text-[11px] px-1.5 py-0.5 rounded border bg-red-50 text-red-800 border-red-200"
+                  title="Typed before the sell-sheet shelf life was read from the stability justification. Left as it was; the sell sheet now reads the justification.">
+                  Sell-sheet shelf life {r.shelf_life_longer.typed_months} mo typed · basis {r.shelf_life_longer.basis_months} mo
+                </span>
+              )}
               {r.shelf_life && (
                 <span data-date-type={r.shelf_life.date_type} data-basis-recorded={r.shelf_life.recorded ? '1' : '0'}
                   className={`text-[11px] px-1.5 py-0.5 rounded border ${r.shelf_life.recorded ? 'bg-gray-50 text-gray-700 border-gray-200' : 'bg-amber-50 text-amber-800 border-amber-200'}`}
@@ -178,7 +184,7 @@ export default function ProductCompleteness({ canEdit, onOpenSku }) {
   const rows = useMemo(() => {
     const all = data?.rows || [];
     const needle = q.trim().toLowerCase();
-    return all.filter((r) => (state === 'all' || (state === 'stale' ? r.stale.length > 0 : state === 'no_basis' ? !r.shelf_life?.recorded : r.state === state))
+    return all.filter((r) => (state === 'all' || (state === 'stale' ? r.stale.length > 0 : state === 'no_basis' ? !r.shelf_life?.recorded : state === 'shelf_longer' ? !!r.shelf_life_longer : r.state === state))
       && (!line || r.line === line)
       && (!needle || r.sku.toLowerCase().includes(needle) || (r.product || '').toLowerCase().includes(needle)
         || r.missing.some((m) => m.toLowerCase().includes(needle))));
@@ -198,7 +204,9 @@ export default function ProductCompleteness({ canEdit, onOpenSku }) {
           {[['incomplete', `${c.incomplete} incomplete · ${c.gaps} named gaps`], ['blocked', `${c.blocked} blocked`],
             ['stale', `${c.stale} stale`], ['complete', `${c.complete} complete`], ['all', `${c.skus} SKUs`],
             // The 14 October punch list (D-133): SKUs whose date rests on nothing recorded.
-            ...(c.no_shelf_life_basis > 0 ? [['no_basis', `${c.no_shelf_life_basis} with no shelf-life basis`]] : [])].map(([k, label]) => (
+            ...(c.no_shelf_life_basis > 0 ? [['no_basis', `${c.no_shelf_life_basis} with no shelf-life basis`]] : []),
+            // D-384: a typed sell-sheet shelf life longer than its justification. Flagged, never changed.
+            ...(c.sell_sheet_longer > 0 ? [['shelf_longer', `${c.sell_sheet_longer} sell-sheet shelf life longer than its basis`]] : [])].map(([k, label]) => (
             <button key={k} type="button" onClick={() => setState(k)} data-filter={k}
               className={`px-2.5 py-1 rounded-full border ${state === k ? 'bg-powder-600 text-white border-powder-600' : 'bg-white text-gray-700 border-gray-300'}`}>
               {label}

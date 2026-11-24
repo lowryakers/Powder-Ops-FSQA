@@ -11688,3 +11688,28 @@ disposal is corrected by editing it, or by revoking an approval with the passwor
 existing row is changed.** Editing a disposal still rewrites its item list (`writeItems`), which is an edit, not
 a delete of the disposal. `verify:disposalnodelete` (16; the control — main before this — fails 14, an admin's
 delete of a signed disposal answering 200).
+
+## D-384 — The sell-sheet shelf life is read from the stability justification (24 Nov 2026)
+**Found in the final review:** #146 (D-342) added `products.shelf_life_months_commercial`, a shelf life typed on
+the product for the sell sheet, beside `stability_justifications.shelf_life_months` — the figure the shelf life
+actually rests on. Nothing compared them, so a sell sheet could promise 24 months over an 18-month justification.
+`verify-mmr-gate`'s "nothing written to the product row" check had been red over that column since 12 Nov.
+**Decided (Lowry, option c):**
+- **The sell-sheet figure is the justification's months**, derived on every read (`shared/sell-sheet-shelf-life.js`,
+  `sellSheetShelfLife`), and it is what the product payload's `shelf_life_months_commercial`, the distributor export
+  and the distributor readiness step now read. It is **read only on the product page** and in the grid.
+- **No justification ⇒ "No stability basis"**, no figure, and nothing can be entered (400 `SHELF_LIFE_FROM_STABILITY`
+  on the product save, fill-down, CSV import and create; 409 `NO_STABILITY_BASIS` on the override).
+- **The one manual entry is an override SHORTER than the basis** — `POST /products/:sku/shelf-life-override
+  { months, reason }`, canManage, reason required, stored as `shelf_life_override_months / _reason / _by / _at`,
+  audited (`shelf_life_override_set` / `_removed`) with the basis it was shorter than. Equal or longer is 400
+  `OVERRIDE_NOT_SHORTER`. If the basis later drops to or below the override, the basis wins and the override is
+  shown as no longer applying.
+- **Nothing on file is changed.** The typed column is left as filed and no longer read as the figure; a typed value
+  LONGER than its justification is flagged on Products → Completeness (`shelf_life_longer`, count `sell_sheet_longer`)
+  for a person to look at. A product save that sends back the figure it was shown writes nothing; marking the field
+  N/A no longer clears the typed value. No backfill.
+- `verify:sellsheetshelflife` (33, live + browser at 1280; the control — main before this — fails from the first
+  read). `verify-mmr-gate`'s column check is narrowed to what D-133 forbids on the product (`date_type`,
+  `basis_kind`); its Completeness-screen assertion is still red, the pre-existing failure shared with
+  `verify-panel-provenance`, and is not addressed here.

@@ -942,6 +942,12 @@ required `reason` (`rejected_reason` / `_by` / `_at`). Releasing supersedes draf
   artwork and approved panel beside the checklist** (`server/inspection-reference.js`, `GET /film-inspection/:id/reference`,
   QA's door only). Never copy those facts onto the inspection. `verify:inspectionref` (34).
 
+## The sell-sheet shelf life is read from the stability justification (D-384)
+`shared/sell-sheet-shelf-life.js` (`sellSheetShelfLife`, `overrideRefusal`), `POST /products/:sku/shelf-life-override`.
+**Never let a person type `shelf_life_months_commercial` again**: the payload value is derived (justification months, or
+a shorter override with who and why); no justification = "No stability basis" and no entry. The typed column is kept as
+filed and only compared — longer than the basis is flagged on Completeness. `verify:sellsheetshelflife` (33).
+
 ## Products: five statuses, the Active gate, prices and GTINs gated (D-342, R-0645 PR A)
 `shared/product-status.js` (slugs + `LEGACY_STATUS`), `shared/product-sot-config.js` (the settings keys, field lists,
 indicator policy), `shared/level-gtin.js` (checks only), `server/product-sot-gate.js` (`writeGate`, `fieldGate`,
