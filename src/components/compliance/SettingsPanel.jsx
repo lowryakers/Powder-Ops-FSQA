@@ -140,8 +140,9 @@ const SECTIONS = [
       {
         id: 'integrations',
         label: 'Integrations',
-        description: 'File storage, AI, notifications, QuickBooks — what is switched on',
-        keywords: 'quickbooks qbo accounting sync bills invoices r2 storage upload cloudflare '
+        // QuickBooks was retired in D-380; Banking (Plaid) stays for the payment run.
+        description: 'File storage, AI, notifications, banking — what is switched on',
+        keywords: 'r2 storage upload cloudflare '
           + 'anthropic ai translation voyage push vapid twilio sms plaid bank env variables not working',
         icon: Plug,
         Component: IntegrationsSection,
