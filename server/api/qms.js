@@ -14,6 +14,7 @@ import { readyDocOrigin } from '../links.js';
 import { requireRole } from '../middleware/auth.js';
 import { nextDisposalNumber } from './disposals.js';
 import { QMS_TYPES, getType, canSignApproval, RETURN_REASONS, USED_UP_REASON } from '../qms-config.js';
+import { failedCheckHold, checkMachines, CHECK_KINDS } from '../failed-check-hold.js';
 import { syncKnifeStatus, syncAllKnifeStatuses } from '../knife-state.js';
 import { activeChemicalNames } from '../chemicals.js';
 import { createReadStream } from 'fs';
@@ -630,6 +631,24 @@ router.post('/flavor_approval/:id/send', async (req, res) => {
 });
 
 // ── list + summary ──────────────────────────────────────────────────────────
+// A failed X-ray or metal-detector check puts the lot on hold (D-389,
+// A-20261124-002). The operation log stays in Keychain; a person logs the
+// failure here and it files an ordinary On Hold record. Declared before
+// `/:type/:id` or Express reads "failed-check" as a record id.
+router.get('/on_hold/failed-check', (req, res) => {
+  res.json({ kinds: CHECK_KINDS, machines: checkMachines(getDb()) });
+});
+router.post('/on_hold/failed-check', (req, res) => {
+  const db = getDb();
+  const built = failedCheckHold(db, req.user, req.auth, req.body || {});
+  if (built.error) return res.status(built.status).json({ error: built.error, ...(built.code ? { code: built.code } : {}) });
+  const out = createQmsRecord(db, getType('on_hold'), req.user, built.body);
+  if (out.error) return res.status(out.status || 400).json({ error: out.error });
+  logAudit(req.user, 'failed_check_logged', 'on_hold', out.record.id,
+    { check: built.kind, machine: built.machine, lot: built.body.lot, record_number: out.record.record_number });
+  res.status(201).json(out.record);
+});
+
 router.get('/:type/summary', (req, res) => {
   const cfg = requireType(req, res); if (!cfg) return;
   const db = getDb();
