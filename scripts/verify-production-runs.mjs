@@ -25,6 +25,9 @@ const mk = (id, name, role, dept, modules) => db.prepare(`INSERT OR REPLACE INTO
 mk('pr-sup', 'Bernardo Runs', 'supervisor', 'Batching', { 'production-log': 'edit', sanitation: 'edit' });
 mk('pr-cln', 'Zuleika Runs', 'operator', 'cleaning', null);
 mk('pr-op', 'Floor Runs', 'operator', 'warehouse', null);
+// D-387: an admin to mint a token, and a bot account holding one (fixture database only).
+mk('pr-adm', 'Admin Runs', 'admin', 'admin', null);
+mk('pr-bot', 'Runs Bot', 'supervisor', 'Batching', { 'production-log': 'edit', sanitation: 'edit' });
 // A passing Pre-Op in Batching 2 an hour ago: the room is ready.
 db.prepare(`INSERT INTO sanitation_records (id, area, type, performed_by, performed_at, entered_at, result, record_group, atp_reading, atp_limit, notes)
   VALUES ('pr-b2', 'Batching 2', 'pre_op', 'Zuleika Runs', datetime('now','-1 hour'), datetime('now','-1 hour'), 'pass', 'sanitation', 14, 35, 'planted')`).run();
@@ -100,6 +103,27 @@ t('an over-limit swab is graded a fail, so the run still owes its Pre-Op and the
   && q('SELECT status FROM work_orders WHERE id = ?', r.run.prompt_work_order_id)[0]?.status === 'open');
 t('nothing about the clean is stored on the run — it is read off the Sanitation log', !q('PRAGMA table_info(production_runs)').some((x) => /preop|atp|clean/i.test(x.name)));
 
+console.log('\n── a second start in the same room reuses the card (D-387) ──');
+await S('POST', `/production/runs/${run6.id}/close`, {});
+const again6 = await J(await S('POST', '/production/runs', { room: '6', mo_number: 'MO77006' }));
+t('Room 6 restarted with its Pre-Op still owed points at the SAME open card, not a second one',
+  again6?.run?.prompt_work_order_id === r.run.prompt_work_order_id
+  && q("SELECT COUNT(*) n FROM work_orders WHERE title LIKE 'Pre-Op clean — Room 6%' AND status IN ('open','in_progress','overdue','missed')")[0].n === 1,
+  JSON.stringify(again6?.run)?.slice(0, 160));
+await S('POST', `/production/runs/${again6.run.id}/close`, {});
+
+console.log('\n── a token starts nothing and signs nothing ──');
+const adm = await login('pr-adm', 'Admin Runs');
+const bot = await login('pr-bot', 'Runs Bot');
+const BT = (await J(await c('POST', '/api-tokens', { user_id: 'pr-bot', label: 'fixture runs bot', scopes: ['read', 'write'] }, adm.token)))?.plaintext;
+t('a write token on a bot account (fixture database only)', !!BT);
+res = await c('POST', '/production/runs', { room: '7' }, BT);
+t('a token cannot start a run (403), and no run is filed', res.status === 403 && !q("SELECT 1 FROM production_runs WHERE room = '7'").length, String(res.status));
+res = await c('PUT', '/sanitation/pr-b2/verify', { signature_password: 'Passw0rd!!' }, BT);
+t('a token cannot sign the sanitation record (403), and it stays unsigned', res.status === 403 && !q("SELECT verified_by FROM sanitation_records WHERE id = 'pr-b2'")[0]?.verified_by, String(res.status));
+res = await c('PUT', '/sanitation/pr-b2/verify', { signature_password: 'Passw0rd!!' }, bot.token);
+t('…nor can the bot account signing in with its own password', res.status === 403 && !q("SELECT verified_by FROM sanitation_records WHERE id = 'pr-b2'")[0]?.verified_by, String(res.status));
+
 console.log('\n── in the browser at 390px ──');
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
 try {
@@ -114,13 +138,46 @@ try {
   await page.locator('[data-run-start]').click();
   await page.locator('[data-run-msg]').waitFor();
   t('starting a run on the phone says Cleaning was asked for the Pre-Op', /Pre-Op task went to Cleaning/.test(await page.locator('[data-run-msg]').innerText()));
-  const row = page.locator('[data-run="RUN-0005"]');
+  // Read the number back rather than assume it: how many runs came before is the
+  // test's own business and moves when a check is added above.
+  const phoneRun = q("SELECT run_no FROM production_runs WHERE mo_number = 'MO77005'")[0]?.run_no;
+  const row = page.locator(`[data-run="${phoneRun}"]`);
   t('the run reads "No Pre-Op on record" in red', await row.locator('[data-run-preop="owed"]').count() === 1);
   t('Batching 2 reads "Pre-Op on record"', await page.locator('[data-run="RUN-0002"] [data-run-preop="before"]').count() === 1);
-  await page.locator('[data-run-close="RUN-0005"]').click();
+  await page.locator(`[data-run-close="${phoneRun}"]`).click();
   await page.waitForTimeout(600);
-  t('Close run closes it', q("SELECT status FROM production_runs WHERE run_no = 'RUN-0005'")[0]?.status === 'closed');
+  t('Close run closes it', q('SELECT status FROM production_runs WHERE run_no = ?', phoneRun)[0]?.status === 'closed');
   t('no sideways scroll at 390px', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+
+  // D-387: the door on the Operator View — the screen the floor already has open.
+  const p3 = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  await p3.goto(`${URL}/manifest.webmanifest`);
+  await p3.evaluate(([tk, u]) => { localStorage.setItem('auth_token', tk); localStorage.setItem('auth_user', JSON.stringify(u)); }, [sup.token, sup.user]);
+  await p3.goto(`${URL}/?tab=operator`);
+  const card = p3.locator('[data-start-run-card]');
+  await card.waitFor({ timeout: 15000 });
+  t('Operator View offers "Starting an MO in MRPEasy?" with the how-to', /Starting an MO in MRPEasy\?/.test(await card.innerText()) && /When the MO starts in MRPEasy, start the run here/.test(await card.innerText()));
+  await card.locator('[data-start-run-open]').click();
+  await card.locator('[data-run-room]').selectOption('7');
+  await card.locator('[data-run-mo]').fill('MO77008');
+  await card.locator('[data-run-start]').click();
+  await card.locator('[data-run-msg]').waitFor();
+  t('a run started from the Operator View is filed and asks Cleaning for the Pre-Op',
+    /Pre-Op task went to Cleaning/.test(await card.locator('[data-run-msg]').innerText())
+    && q("SELECT COUNT(*) n FROM production_runs WHERE mo_number = 'MO77008' AND status = 'open'")[0].n === 1);
+  const runs8 = q("SELECT id FROM production_runs WHERE mo_number = 'MO77008'")[0];
+  if (runs8) await S('POST', `/production/runs/${runs8.id}/close`, {});
+  const pOp = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  await pOp.goto(`${URL}/manifest.webmanifest`);
+  await pOp.evaluate(([tk, u]) => { localStorage.setItem('auth_token', tk); localStorage.setItem('auth_user', JSON.stringify(u)); }, [cln.token, cln.user]);
+  await pOp.goto(`${URL}/?tab=operator`);
+  await pOp.waitForTimeout(3000);
+  t('a cleaner, who may not start a run, is not offered the door', await pOp.locator('[data-start-run-card]').count() === 0);
+  await p3.goto(`${URL}/?tab=production-log`);
+  await p3.locator('[data-runs-callout]').waitFor({ timeout: 15000 });
+  await p3.locator('[data-runs-callout-open]').click();
+  await p3.locator('[data-production-runs]').waitFor({ timeout: 10000 });
+  t('Production Log\'s first tab points at Runs, and the button opens it', true);
 
   // A5 (code side): the Sanitation log's ATP column reads the record's own
   // graded reading against the limit stored with it. Nothing is created here —
@@ -132,7 +189,7 @@ try {
   await p2.locator('[data-atp-cell]:visible').first().waitFor({ timeout: 15000 });
   const cells = await p2.locator('[data-atp-cell]:visible').evaluateAll((els) => els.map((e) => `${e.getAttribute('data-atp-cell')}:${e.textContent}`));
   t('Sanitation: the over-limit swab reads "80 / 30" in red, the clean ones within', cells.includes('over:80 / 30') && cells.some((x) => x.startsWith('within:12 / 30')), JSON.stringify(cells));
-} catch (e) { t('the Runs tab rendered', false, e.message); }
+} catch (e) { t('the Runs tab rendered', false, e.message.replace(/\n/g, ' ✗ ')); }
 finally { await browser.close(); }
 
 console.log(`\n${pass} PASS / ${fail} FAIL`);

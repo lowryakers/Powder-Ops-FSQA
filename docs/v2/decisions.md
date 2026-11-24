@@ -11736,3 +11736,21 @@ writing anything — a plain refusal, never a 404. No screen called it, so nothi
 is edited; a wrong sign-off is revoked with the password and signed again. **No existing row is changed.** The lab-test
 and CoC item list routes are different routes and are untouched. `verify:receivingnodelete` (14; the control — main
 before this — fails 10, an admin's delete answering 200).
+
+## D-387 — Starting a run is a door on the Operator View, for when the MO starts in MRPEasy (24 Nov 2026, spine gap 06)
+**Decided (Lowry, A-20261124-004 / R-0832):** manual start-a-run now, automate later. No webhook, no poll, no MRPEasy
+read or write; the MO in MRPEasy is never held.
+The Pre-Op path was already built (D-146: `startRun` raises one Cleaning card through `raiseWorkOrder('preop')`, reuses
+an outstanding one, never blocks) and had **0 runs** on file on 24 Nov: the form lived only on Production Log's Runs tab,
+behind the log, and nobody starting an MO in MRPEasy opened it.
+- **The form is one component, `StartRunForm`** (`ProductionRuns.jsx`), rendered by the Runs tab and by a new
+  **"Starting an MO in MRPEasy?"** card on the Operator View (`StartRunCard`, EN/ES, folded to one line until opened,
+  with a link to the open runs). Same route, same raise path; nothing new is inserted anywhere.
+- **The card shows only to people who may start a run** — the server's `can_run` (`mayRunLine`); a cleaner or a floor
+  operator without the right sees nothing.
+- Production Log's first tab carries a one-line pointer to Runs for whoever files the day. `?view=runs` still deep-links.
+- The how-to is one sentence (`START_RUN_HOWTO`) printed in both places: start it when the MO starts in MRPEasy, close it
+  when the run ends; Cleaning is asked for a Pre-Op when the room has none since its last run; nothing is blocked.
+- A token starts nothing (default-deny) and signs no sanitation record (approve guard). Nobody is named as the owner.
+- `verify:productionruns` 24 → 34 (reuse of the outstanding card; token and bot refused; the Operator View door and the
+  Production Log pointer in a browser). The control — main's screens — fails at the Operator View door.
