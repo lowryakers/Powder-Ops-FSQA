@@ -2,12 +2,15 @@
 
 Reviewed: the fourteen PRs merged on 23 Nov 2026 (#175–#191, excluding the still-open #180, #184, #187),
 starting from `cc7d207` (#191). Review only: no new features. Line numbers are from `main` at the time of
-writing, after #192 (`e70b7f9`), #193 (`db3f2dc`) and #194 (`02751ec`) merged on 24 Nov.
+writing, after #192 (`e70b7f9`), #193 (`db3f2dc`), #194 (`02751ec`), #196 (`c165bb2`) and #197 (`1586cd3`) merged on 24 Nov.
 
 ## Summary
 
 - **Tests:** `npm run check` passes. `verify:all`: 226 of 234 pass. Seven of the 8 failures were already red
   before the 23 Nov merges; the eighth (`verify-bpg-items`) is a test that #176 made flaky, not a product fault (§1).
+  #196 fixed three of the eight tests; four pre-existing reds remain (§1).
+- **The sell-sheet shelf life had two owners** (found chasing a red test): #197 (D-384) makes it read from the
+  stability justification, with only a shorter override allowed and longer typed values flagged on Completeness.
 - **One clear bug found and fixed:** ending access from an onboarding packet did not cancel the person's
   open training (#193, D-382, merged 24 Nov).
 - **Moves 01–06:** all six are done for what they set out to cover. The remainders below are known and
@@ -48,17 +51,24 @@ first of today's merges (#176) — with a fresh build.
 
 | Script | What fails | Before today (`da10930`) | Verdict |
 |---|---|---|---|
-| `verify-bpg-items` | "putting the area back brings the inspection back" — 64/65 | **passes** | Broken by **#176** (`d7434fd`, D-368), bisected. Test fault, not a product fault: the script opens its own database connection with no `busy_timeout` (`scripts/verify-bpg-items.mjs:40`), and since #176 the server runs its housekeeping sweep at boot (`startPmHousekeeping`, `server/api/pm.js:381`). The script's own sweep hits `database is locked`, which `periodically` logs and swallows (`server/housekeeping.js`), so no card is raised. Production has one connection with `busy_timeout = 5000` (`server/db.js:52`) and does not see this. **Medium**: a red test hides real regressions. Fix is one line in the script (`db.pragma('busy_timeout = 10000')`), not made here. |
+| `verify-bpg-items` | "putting the area back brings the inspection back" — 64/65 | **passes** | Broken by **#176** (`d7434fd`, D-368), bisected. Test fault, not a product fault: the script opens its own database connection with no `busy_timeout` (`scripts/verify-bpg-items.mjs:40`), and since #176 the server runs its housekeeping sweep at boot (`startPmHousekeeping`, `server/api/pm.js:381`). The script's own sweep hits `database is locked`, which `periodically` logs and swallows (`server/housekeeping.js`), so no card is raised. Production has one connection with `busy_timeout = 5000` (`server/db.js:52`) and does not see this. **Medium**: a red test hides real regressions. A `busy_timeout` alone did not fix it: the lock is the script's second handle against the connection the server modules open in the same process. **Fixed in #196** — the script uses the app's own connection (`getDb()`), as CLAUDE.md requires. |
 | `verify-scroll` | Team Activity's sideways scrollbar sits below the screen with Messages docked at 1280px; Controlled Changes pans sideways at 390px (long change details do not wrap) | fails the same | Pre-existing. **Low** (layout). |
 | `verify-supplier-materials` | 390px: the supplier screen pans sideways — 42/43 | fails the same | Pre-existing. **Low** (layout). |
 | `verify-panel-provenance` | Products → Completeness view does not render at 1280px | fails the same | Pre-existing; cause not investigated. **Medium**. |
-| `verify-mmr-gate` | "nothing was written to the product row"; the Completeness chip | fails the same | Pre-existing; not investigated. **Medium** — the first message may be a real write, worth a look. |
+| `verify-mmr-gate` | "nothing was written to the product row"; the Completeness chip | fails the same Pre-existing. Investigated: **not a write**. The check asserted no `products` column named like `shelf_life`, and #146 (D-342) had added `shelf_life_months_commercial`, a typed sell-sheet shelf life beside the stability justification's. Lowry chose to read it from the justification (**#197, D-384**), and the check now asserts only what D-133 forbids (`date_type`, `basis_kind`). Its Completeness-screen assertion is still red (row below). |
 | `verify-po-grid` | the Purchase Orders grid never renders (30 s timeout) — 17/18 | fails the same | Pre-existing; not investigated. **Medium**. |
-| `verify-coa-phase1` | "every signing source keeps its old shape (no `kind`)" — 99/100 | fails the same | **Stale test.** The calibration-findings pile (D-353, #158, 17 Nov) is an action pile carrying `kind`; the test's list of action piles (`scripts/verify-coa-phase1.mjs:191`) was never updated. **Low**. |
-| `verify-merch-design` | expects merch status `Draft` — 24/25 | fails the same | **Stale test.** Statuses became slugs (`draft`) in #146 (12 Nov, D-342); `scripts/verify-merch-design.mjs:67` still expects `Draft`. **Low**. |
+| `verify-coa-phase1` | "every signing source keeps its old shape (no `kind`)" — 99/100 | fails the same | **Stale test.** The calibration-findings pile (D-353, #158, 17 Nov) is an action pile carrying `kind`; the test's list of action piles (`scripts/verify-coa-phase1.mjs:191`) was never updated. **Fixed in #196.** |
+| `verify-merch-design` | expects merch status `Draft` — 24/25 | fails the same | **Stale test.** Statuses became slugs (`draft`) in #146 (12 Nov, D-342); `scripts/verify-merch-design.mjs:67` still expected `Draft`. **Fixed in #196.** |
 
-None of the 8 is a product regression from the 23 Nov merges. `verify:all` has had seven red entries since before
-today, which is worth fixing on its own: a suite that is always partly red is one nobody reads.
+None of the 8 is a product regression from the 23 Nov merges.
+
+**After #196 and #197 (24 Nov), four remain red, all pre-existing:**
+- `verify-scroll` and `verify-supplier-materials` — layout (low).
+- `verify-panel-provenance` and `verify-mmr-gate`'s last assertion — Products → Completeness does not render when
+  opened by its link (`?tab=products&view=completeness`). One cause, two tests; not investigated (medium).
+- `verify-po-grid` — the Purchase Orders grid never renders (medium, not investigated).
+
+A suite that is always partly red is one nobody reads; these are worth a pass of their own.
 
 ## 2. Bug sweep of #175–#191
 
@@ -127,4 +137,6 @@ Honest remainders, still true: one-off work-order inserts stay off `raiseWorkOrd
 | #192 | D-381: Retention Samples stays in the nav as it is | merged 24 Nov (`e70b7f9`) |
 | #193 | D-382: end access closes leftover training | merged 24 Nov (`db3f2dc`) |
 | #194 | D-383: a disposal is never hard-deleted | merged 24 Nov (`02751ec`) |
+| #196 | three verifies match the current app (BP&G connection, COA action piles, merch status) | merged 24 Nov (`c165bb2`) |
+| #197 | D-384: the sell-sheet shelf life is read from the stability justification | merged 24 Nov (`1586cd3`) |
 | this PR | this report | open |
