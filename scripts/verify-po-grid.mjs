@@ -32,9 +32,14 @@ t('Jake signs in with the Procurement edit grant', !!me?.token);
 
 console.log('\n── every field is editable, through one coercion ──');
 const mk = async (o) => J(await A('POST', '/procurement/pos', { status: 'open', qty: 10, unit_price: 2, ...o }));
-const p1 = await mk({ vendor: 'Acme Films', part_no: 'WIDGET-1', description: 'Stick film', expected_date: '2026-11-03', po_number: 'PO-GRID-1' });
-const p2 = await mk({ vendor: 'Acme Films', part_no: 'WIDGET-2', description: 'Pouch film', expected_date: '2026-11-04', po_number: 'PO-GRID-2' });
-const p3 = await mk({ vendor: 'Beta Boxes', part_no: 'BOX-9', description: 'Shipper', expected_date: '2026-11-05', po_number: 'PO-GRID-3' });
+// Expected dates are RELATIVE TO TODAY and in the future. The first version
+// hard-coded 3–5 Nov 2026; once those dates passed the POs read "open · late"
+// (correctly — server/api/procurement.js `delayed`) and the status-cell lookup
+// for "open" timed out. A fixture must not rot on the calendar.
+const ahead = (days) => new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
+const p1 = await mk({ vendor: 'Acme Films', part_no: 'WIDGET-1', description: 'Stick film', expected_date: ahead(30), po_number: 'PO-GRID-1' });
+const p2 = await mk({ vendor: 'Acme Films', part_no: 'WIDGET-2', description: 'Pouch film', expected_date: ahead(31), po_number: 'PO-GRID-2' });
+const p3 = await mk({ vendor: 'Beta Boxes', part_no: 'BOX-9', description: 'Shipper', expected_date: ahead(32), po_number: 'PO-GRID-3' });
 for (let i = 0; i < 70; i++) await mk({ vendor: `Filler Vendor ${i}`, part_no: `FILL-${i}`, description: 'Padding row so the grid scrolls', notes: 'x'.repeat(40) });
 t('three POs and seventy more are filed', !!p1?.id && !!p2?.id && !!p3?.id);
 let r = await J(await A('PUT', `/procurement/pos/${p1.id}`, { source_status: 'Working on it' }));
