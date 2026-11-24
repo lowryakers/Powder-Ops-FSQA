@@ -11754,3 +11754,18 @@ behind the log, and nobody starting an MO in MRPEasy opened it.
 - A token starts nothing (default-deny) and signs no sanitation record (approve guard). Nobody is named as the owner.
 - `verify:productionruns` 24 → 34 (reuse of the outstanding card; token and bot refused; the Operator View door and the
   Production Log pointer in a browser). The control — main's screens — fails at the Operator View door.
+
+## D-388 — Where a lot was released: a Keychain reference on the lot, read only (24 Nov 2026, spine gap 07)
+**Decided (Lowry, A-20261124-001 / R-0829):** product release — FORM 405-1, and the 405-02 waiver — stays in Keychain
+(`shared/form-registry.js` keeps both `where: 'keychain'`). ReadyDoc does not release a lot, has no release form, no
+release status and no release signature.
+- **What ReadyDoc keeps is the reference**: `lot_release_refs` (lot, Keychain ID and/or link, note, who, when). A person
+  types it after the release is signed in Keychain — **QA (any role) or an admin**; never a token or a bot account
+  (`server/lot-release.js`, `PERSON_ONLY`). Its path names "release", so it is also on `APPROVE_ROUTES`: a token or a bot
+  account gets the guard's 403 before the route runs.
+- **Shown read only on the lot** in Look up records ("Release (signed in Keychain)"), for anyone who can read a record
+  type; "No Keychain release reference recorded" otherwise. `GET|POST /api/records/lot-release`.
+- **A correction is a new row** that supersedes the old one with a reason (`superseded_at / _by / supersede_reason`);
+  nothing is deleted, and both acts are audited. No `gateSignature`: recording where a release lives is not a signature.
+- Lots are matched trimmed and case-insensitive, as typed — a batch suffix is part of the lot.
+- `verify:lotrelease` (22, live + browser). The control — main before this — fails from the first read.
