@@ -31,6 +31,11 @@ const server = src('server.js');
 console.log('\n── retired ──');
 for (const f of RETIRED_FILES) t(`${f} is gone`, !existsSync(join(ROOT, f)));
 t('/api/finance is not mounted', !/app\.use\('\/api\/finance'/.test(server));
+// Wording left behind by the retirement (spine gap 05): Settings must not name
+// QuickBooks as switched on, and the AI hint must not point at checklist_submissions
+// as where task completion lives.
+t('Settings → Integrations no longer names QuickBooks', !/QuickBooks|quickbooks|qbo/.test((src('src/components/compliance/SettingsPanel.jsx').match(/id: 'integrations'[\s\S]*?Component: IntegrationsSection/) || [''])[0].replace(/\/\/.*$/gm, '')));
+t('the AI schema hint does not list checklist_submissions as a live task table', !/pm_schedules, checklist_submissions/.test(src('server/ai.js')));
 t('/api/checklists is not mounted', !/app\.use\('\/api\/checklists'/.test(server));
 t('the ledger seed does not run at boot', !/seedFinanceFromMonday/.test(server));
 t('the old checklist templates are not seeded', !/seedCleaningChecklists/.test(server + src('server/cleaning-seed.js')));

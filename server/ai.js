@@ -334,7 +334,7 @@ How to work:
 
 Key tables (confirm columns via list_schema):
 - production_schedule, production_entries — planned vs. actual production
-- work_orders, pm_schedules, checklist_submissions — tasks / preventive-maintenance completion
+- work_orders, pm_schedules — tasks / preventive-maintenance completion (checklist_submissions is old history only; nothing has written it since D-380)
 - training_courses, training_records — training compliance (status='completed', superseded=0, next_due_date)
 - capas, complaints, qms_records, disposals — open compliance items
 - sanitation_records, calibration_instruments, equipment — operations
