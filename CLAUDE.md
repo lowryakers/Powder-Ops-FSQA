@@ -2361,6 +2361,8 @@ tab is now labelled **Receiving**). Deep link `?tab=receiving-log&view=shipping&
   same shape and the same gap; fix it there the same way when it is next touched.
 - **The module's tab strip now scrolls** (`overflow-x-auto`, `whitespace-nowrap shrink-0`): seven tabs
   panned the whole page sideways at 360px, which the browser check's overflow probe caught.
+- **Sign-off and revoke are password signatures (D-385)** — `gateSignature`, asked last; meaning + `review_hash`; on
+  `APPROVE_ROUTES`. A verify that signs one off must send `signature_password`.
 - Verified: `verify:shipping` (35 live: numbering, the auto-escalation DM naming the shipping form and
   deep-linking to it, the three sign-off refusals, the signed-off lock, revoke) and `verify:warehouseui`
   (20 in a real browser at 1280 and 360, incl. a real photo through the S3 stand-in).

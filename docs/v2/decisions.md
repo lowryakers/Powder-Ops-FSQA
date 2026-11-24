@@ -11713,3 +11713,16 @@ actually rests on. Nothing compared them, so a sell sheet could promise 24 month
   read). `verify-mmr-gate`'s column check is narrowed to what D-133 forbids on the product (`date_type`,
   `basis_kind`); its Completeness-screen assertion is still red, the pre-existing failure shared with
   `verify-panel-provenance`, and is not addressed here.
+
+## D-385 — Signing off a shipping inspection asks for the password (24 Nov 2026, spine gap 01)
+The Shipping Truck Inspection (D-052) is the outbound twin of FORM 204-01, and receiving's sign-off has been a
+password signature since D-374. Shipping's was not: `POST /api/shipping/inspection/:no/review` wrote `reviewed_by`
+/ `reviewed_at` on a session alone, and the revoke likewise.
+**Decided:** both go through `gateSignature` (`shipping_review`, `shipping_review_revoke`), asked LAST — after the
+blank, escalation and photo-claim refusals, the receiving order. A signature stores its meaning
+(`shipping_review`: "Reviewed the shipping truck inspection and signed it off") and a fingerprint
+(`shipping_inspections.review_meaning` / `review_hash`, `shippingReviewHash` over the shipment's identity, answers and
+signer); the inspection reads `review_state` signed · changed · not_recorded. Both paths are on `APPROVE_ROUTES`
+(their path says "review"), so a token and a bot account's own session get 403. The screen asks through
+`withSignature`. **Sign-offs made before read `not_recorded`; nothing is backfilled or rewritten.**
+`verify:shipping` 35 → 48 (the control — main before this — signs with no password).

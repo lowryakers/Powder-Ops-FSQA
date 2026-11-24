@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useApiGet, apiPost, apiFetch, apiUpload } from '../../hooks/useApi';
+import { useApiGet, apiPost, apiFetch, apiUpload, apiDelete } from '../../hooks/useApi';
+import { withSignature } from '../../lib/signature.js';
 import {
   Truck, X, CheckCircle2, RotateCcw, Trash2, AlertTriangle, ImageIcon, ExternalLink,
 } from 'lucide-react';
@@ -135,16 +136,24 @@ export default function ShippingChecklist({ shipmentNo, onClose }) {
     finally { setNotifying(null); }
   };
 
+  // A sign-off is a signature (D-385, the receiving rule D-374): the server asks
+  // for the password once the inspection is complete, never before.
   const signOff = async () => {
     setBusy(true); setError('');
-    try { await apiPost(`/shipping/inspection/${encodeURIComponent(shipmentNo)}/review`, {}); refresh(); }
-    catch (e) { setError(e.message); }
+    try {
+      await withSignature((extra) => apiPost(`/shipping/inspection/${encodeURIComponent(shipmentNo)}/review`, { ...extra }),
+        { title: 'Sign off this shipping inspection', detail: `Shipment ${shipmentNo}. Enter the password you sign in with.` });
+      refresh();
+    } catch (e) { if (!e?.cancelled) setError(e.message); }
     finally { setBusy(false); }
   };
   const revoke = async () => {
     setBusy(true); setError('');
-    try { await apiFetch(`/shipping/inspection/${encodeURIComponent(shipmentNo)}/review`, { method: 'DELETE' }); refresh(); }
-    catch (e) { setError(e.message); }
+    try {
+      await withSignature((extra) => apiDelete(`/shipping/inspection/${encodeURIComponent(shipmentNo)}/review`, extra),
+        { title: 'Revoke this sign-off', detail: `Shipment ${shipmentNo}. Enter the password you sign in with.` });
+      refresh();
+    } catch (e) { if (!e?.cancelled) setError(e.message); }
     finally { setBusy(false); }
   };
 

@@ -2563,6 +2563,11 @@ function initSchema() {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+  // A shipping sign-off is a signature (D-385): its meaning in words and a
+  // fingerprint of what was signed, like receiving's (D-374). NULL on sign-offs
+  // made before; nothing is backfilled.
+  addColumnIfMissing('shipping_inspections', 'review_meaning', 'TEXT');
+  addColumnIfMissing('shipping_inspections', 'review_hash', 'TEXT');
   // FORM 418-01 V2 (D-332): what the sheet inspects (film / pouch / sleeve) and
   // the two sleeve measurements. NULL on every sheet filed before; no backfill.
   addColumnIfMissing('film_pouch_inspections', 'material_kind', 'TEXT');

@@ -10,6 +10,7 @@ export const SIGNATURE_MEANINGS = {
   coa_certify: 'Certified the results are true and accurate for this lot',
   qms_approval: (label) => `Approved as ${label}`,
   receiving_review: 'Reviewed the receiving inspection and signed it off',
+  shipping_review: 'Reviewed the shipping truck inspection and signed it off',
   disposal_approval: (label) => `Approved the disposal as ${label}`,
 };
 
