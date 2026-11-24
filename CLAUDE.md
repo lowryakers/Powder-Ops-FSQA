@@ -4506,6 +4506,10 @@ since go-live and in the last 90 days, and gives a verdict: never used / machine
   (`review_meaning`/`review_hash`; `approvals[role].meaning/hash`). The record interface cannot do either. A verify that
   signs one must send `signature_password`. `verify:signgates` (30).
 
+## A receiving record is never hard-deleted (D-386)
+`DELETE /receiving/:id` answers `403 RECEIVING_DELETE_DISABLED` for every role and writes nothing. **Never put a delete
+back**; a wrong line is edited, a wrong sign-off revoked with the password. `verify:receivingnodelete` (14).
+
 ## A disposal is never hard-deleted (D-383)
 `DELETE /disposals/:id` and `POST /disposals/bulk-delete` answer `403 DISPOSAL_DELETE_DISABLED` for every role and
 write nothing. **Never put a delete back**; a wrong disposal is edited, or its approval revoked and signed again.
