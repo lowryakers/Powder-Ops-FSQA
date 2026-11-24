@@ -35,6 +35,7 @@
 import { provenanceOf, provenanceMissing, provenanceStale } from '../shared/panel-provenance.js';
 import { naOf } from '../shared/product-fields.js';
 import { shelfLifeBasis, NO_BASIS, BASIS_KIND_LABEL } from './stability.js';
+import { sellSheetShelfLife } from '../shared/sell-sheet-shelf-life.js';
 
 export const PACK_LABEL = { PLG: 'Pouch — large', PSM: 'Pouch — small', STK: 'Stick pack', BOX: 'Carton', CUP: 'Cup', BTL: 'Bottle' };
 
@@ -221,6 +222,14 @@ export function completenessOf({ p, spec, colors = [], panel = null, artwork = n
     // screen can say "best by — no basis recorded" beside the gap.
     shelf_life: p.product_type === 'merch' ? null : { recorded: sl.recorded, basis_kind: sl.basis_kind, basis_label: sl.basis_kind ? BASIS_KIND_LABEL[sl.basis_kind] : null, date_type: sl.date_type, kind_missing: sl.kind_missing },
     na: naLabels, na_count: naLabels.length, na_fields: naOf(p),
+    // D-384: a sell-sheet shelf life TYPED before the rule that is LONGER than
+    // the stability justification. Flagged, never changed: the typed value
+    // stays as filed and the sell sheet already reads the justification.
+    shelf_life_longer: (() => {
+      if (p.product_type === 'merch') return null;
+      const ss = sellSheetShelfLife({ basis_months: sl.recorded ? sl.shelf_life_months : null, typed_months: p.shelf_life_months_commercial });
+      return ss.typed_longer ? { typed_months: ss.typed_months, basis_months: ss.basis_months, justification_id: sl.justification_id } : null;
+    })(),
     block: block ? { reason: block.reason, owner: block.owner, by: block.blocked_by, at: block.blocked_at } : null,
     panel_version: panel?.version || null, panel_status: panel?.status || null,
     // Only on merch rows, so a food row's shape is exactly what it was.
@@ -309,6 +318,8 @@ export function catalogueCompleteness(db) {
       // SKUs whose date rests on nothing recorded (D-133) — the 14 October punch list.
       // Merch has no shelf life (D-302); it is never on this list.
       no_shelf_life_basis: rows.filter((r) => r.shelf_life && !r.shelf_life.recorded).length,
+      // D-384: typed sell-sheet shelf lives longer than their justification.
+      sell_sheet_longer: rows.filter((r) => r.shelf_life_longer).length,
     },
     groups: GROUPS.map((g) => ({ key: g.key, label: g.label })),
   };

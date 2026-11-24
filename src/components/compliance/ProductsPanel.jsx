@@ -25,6 +25,77 @@ import NfpReviewQueue from './NfpReviewQueue.jsx';
 import { hexDigits, pmsValid, hexValid, colorIssues, isBlankSlot } from '../../../shared/product-colors.js';
 import { FIELD_RULES, NA_FIELDS, fieldState, PACKAGING_DERIVED, isRollFed } from '../../../shared/product-fields.js';
 import { PACK_FIELDS, PRICE_FIELDS, ITEM_NO_FIELDS, FIELD_LABEL as SOT_LABEL } from '../../../shared/product-sot-config.js';
+import { NO_BASIS_LABEL } from '../../../shared/sell-sheet-shelf-life.js';
+
+// D-384: read from the stability justification, never typed on the product.
+const SHELF_FIELD = 'shelf_life_months_commercial';
+const TYPED_PACK_FIELDS = PACK_FIELDS.filter((f) => f !== SHELF_FIELD);
+
+/**
+ * The sell-sheet shelf life: the justification's months, or a person's SHORTER
+ * override with who and why. Read only; the one control is "Set a shorter
+ * shelf life", which the server refuses unless it is shorter than the basis.
+ */
+function SellSheetShelfLife({ p, canEdit, onChanged }) {
+  const ss = p.sell_sheet_shelf_life;
+  const [open, setOpen] = useState(false);
+  const [months, setMonths] = useState('');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  if (!ss) return null;
+  const send = async (body) => {
+    setBusy(true); setErr('');
+    try {
+      await apiFetch(`/products/${encodeURIComponent(p.sku)}/shelf-life-override`, { method: 'POST', body });
+      setOpen(false); setMonths(''); setReason(''); onChanged?.();
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+  const remove = () => {
+    const why = window.prompt('Why is the shorter shelf life being removed?');
+    if (why && why.trim()) send({ months: null, reason: why.trim() });
+  };
+  return (
+    <div className="mt-3 text-sm" data-sell-sheet-shelf-life data-source={ss.source || 'none'}>
+      <dt className="text-xs text-gray-500">Shelf life (sell sheet)</dt>
+      <dd>
+        {ss.no_basis ? (
+          <span className="text-amber-800" data-no-stability-basis>{NO_BASIS_LABEL}<span className="block text-xs text-amber-700">Nothing can be entered until a stability justification names this SKU (Retention Samples → Stability).</span></span>
+        ) : ss.override_active ? (
+          <span data-override>{ss.months} months <span className="text-xs text-gray-600">— shorter than the basis ({ss.basis_months} months): {ss.override_reason || 'no reason recorded'}{ss.override_by ? ` · ${ss.override_by}` : ''}{ss.override_at ? `, ${String(ss.override_at).slice(0, 10)}` : ''}</span></span>
+        ) : (
+          <span>{ss.months} months <span className="text-xs text-gray-500">— from the stability justification</span></span>
+        )}
+        {ss.override_stale && <span className="block text-xs text-amber-700" data-override-stale>A shorter shelf life of {ss.override_months} months is on file but no longer applies{ss.no_basis ? ' (there is no basis)' : ` (the basis is ${ss.basis_months} months)`}.</span>}
+        {ss.typed_longer && <span className="block text-xs text-red-700" data-typed-longer>{ss.typed_months} months was typed here before; that is longer than the basis and is no longer used.</span>}
+      </dd>
+      {canEdit && !ss.no_basis && (
+        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+          {!open && <button type="button" className="text-powder-700 hover:underline" onClick={() => setOpen(true)} data-override-open>Set a shorter shelf life…</button>}
+          {!open && ss.override_months !== null && <button type="button" className="text-gray-600 hover:underline" onClick={remove} disabled={busy} data-override-remove>Remove the shorter shelf life</button>}
+        </div>
+      )}
+      {open && (
+        <div className="mt-2 space-y-2 border border-gray-200 rounded-lg p-3" data-override-form>
+          <label className="block text-xs text-gray-600">Months (shorter than {ss.basis_months})
+            <input id={`ss-months-${p.sku}`} value={months} onChange={(e) => setMonths(e.target.value)} inputMode="numeric"
+              className="mt-1 w-24 border border-gray-300 rounded-lg px-2 py-1 text-sm block" />
+          </label>
+          <label className="block text-xs text-gray-600">Why
+            <input id={`ss-reason-${p.sku}`} value={reason} onChange={(e) => setReason(e.target.value)}
+              className="mt-1 w-full border border-gray-300 rounded-lg px-2 py-1 text-sm block" />
+          </label>
+          {err && <p className="text-xs text-red-700" data-override-error>{err}</p>}
+          <div className="flex gap-2">
+            <button type="button" disabled={busy} onClick={() => send({ months: Number(months), reason })} data-override-save
+              className="px-3 py-1.5 bg-powder-600 text-white text-xs font-medium rounded-lg disabled:opacity-50">Save</button>
+            <button type="button" onClick={() => { setOpen(false); setErr(''); }} className="px-3 py-1.5 bg-gray-100 text-xs rounded-lg">Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 import { checkLevelGtin, unitGtin14, groupGtin14, sameItem } from '../../../shared/level-gtin.js';
 import { CHANNELS, matchesFilters } from '../../../shared/product-filters.js';
 import SavedViews from './ProductSavedViews.jsx';
@@ -889,7 +960,7 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
       // the pack and shipping facts. Prices and item numbers are on the form
       // only for the person allowed to write them — nobody else sends them.
       brand: p.brand || '', gtin_inner: p.gtin_inner || '', gtin_case: p.gtin_case || '',
-      ...Object.fromEntries(PACK_FIELDS.map((f) => [f, p[f] ?? ''])),
+      ...Object.fromEntries(TYPED_PACK_FIELDS.map((f) => [f, p[f] ?? ''])),
       ...(p.sot_permissions?.can_edit_prices ? Object.fromEntries(PRICE_FIELDS.map((f) => [f, p[f] ?? ''])) : {}),
       ...(p.sot_permissions?.can_edit_item_nos ? Object.fromEntries(ITEM_NO_FIELDS.map((f) => [f, p[f] ?? ''])) : {}),
     });
@@ -1041,9 +1112,9 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
                   <LevelGtinField k="gtin_inner" level="inner" form={form} set={set} unit={form.gtin || p.gtin} />
                   <LevelGtinField k="gtin_case" level="case" form={form} set={set} unit={form.gtin || p.gtin} />
                 </Block>
-                <Block title="Pack and shipping" note="What the distributor sheet carries. A blank box is not known yet.">
+                <Block title="Pack and shipping" note="What the distributor sheet carries. A blank box is not known yet. The shelf life is read from the stability justification.">
                   <div className="grid grid-cols-2 gap-3">
-                    {PACK_FIELDS.map((f) => (
+                    {TYPED_PACK_FIELDS.map((f) => (
                       <label key={f} className="block" data-field={f}>
                         <span className="text-xs font-medium text-gray-600">{SOT_LABEL[f]}</span>
                         <input value={form[f] ?? ''} onChange={set(f)} inputMode={f === 'unit_size' ? 'text' : 'decimal'}
@@ -1209,7 +1280,7 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
                   summary={[p.unit_size, p.units_per_case && `${p.units_per_case} per case`, p.ti && p.hi && `Ti/Hi ${p.ti}/${p.hi}`].filter(Boolean).join(' · ') || 'nothing recorded yet'}>
                   {hasAny(p, PACK_FIELDS) ? (
                     <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm" data-pack-facts>
-                      {PACK_FIELDS.filter((f) => p[f] !== null && p[f] !== undefined && p[f] !== '').map((f) => (
+                      {TYPED_PACK_FIELDS.filter((f) => p[f] !== null && p[f] !== undefined && p[f] !== '').map((f) => (
                         <div key={f} data-pack-fact={f}><dt className="text-xs text-gray-500">{SOT_LABEL[f]}</dt><dd className="text-gray-900">{String(p[f])}</dd></div>
                       ))}
                     </dl>
@@ -1227,6 +1298,7 @@ function Detail({ sku, canEdit, onClose, onSaved, onOpenSpec, focus = null }) {
                     </div>
                   </dl>
                   )}
+                  {!p.merch && <SellSheetShelfLife p={p} canEdit={canEdit} onChanged={changed} />}
                 </Section>
                 )}
 

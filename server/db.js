@@ -3911,6 +3911,13 @@ function runMigrations() {
   addColumnIfMissing('products', 'hi', 'INTEGER');
   addColumnIfMissing('products', 'pallet_qty', 'INTEGER');
   addColumnIfMissing('products', 'shelf_life_months_commercial', 'INTEGER');
+  // D-384: the sell-sheet shelf life READS FROM THE STABILITY JUSTIFICATION. The
+  // typed column above is kept as filed and only compared; a person may set a
+  // SHORTER override, with who and why, through POST /products/:sku/shelf-life-override.
+  addColumnIfMissing('products', 'shelf_life_override_months', 'INTEGER');
+  addColumnIfMissing('products', 'shelf_life_override_reason', 'TEXT');
+  addColumnIfMissing('products', 'shelf_life_override_by', 'TEXT');
+  addColumnIfMissing('products', 'shelf_life_override_at', 'TEXT');
   addColumnIfMissing('products', 'price_fob_case', 'REAL');
   addColumnIfMissing('products', 'price_fob_unit', 'REAL');
   addColumnIfMissing('products', 'price_wholesale_case', 'REAL');
