@@ -64,7 +64,7 @@ console.log('\n── its variants ──');
 r = await call('POST', `/products/merch/styles/MCH-H${CODE}/variants`, { colors: ['BLK'], sizes: ['S', 'M'] }, A);
 t('variants are built with no flavor check', r.status === 201 && r.json?.created?.length === 2 && r.json.created.includes(`MCH-H${CODE}-BLK-S`), JSON.stringify(r.json));
 const v = q('SELECT flavor, base_flavor, product_type, family, status, gtin FROM products WHERE sku = ?', `MCH-H${CODE}-BLK-S`)[0];
-t('a variant reads "Protein Hoodie - Black / S", a Draft merch row with no GTIN', v?.flavor === 'Protein Hoodie - Black / S' && v.base_flavor === 'Protein' && v.product_type === 'merch' && v.status === 'Draft' && !v.gtin, JSON.stringify(v));
+t('a variant reads "Protein Hoodie - Black / S", a Draft merch row with no GTIN', v?.flavor === 'Protein Hoodie - Black / S' && v.base_flavor === 'Protein' && v.product_type === 'merch' && v.status === 'draft' && !v.gtin, JSON.stringify(v));
 r = await call('PUT', `/products/merch/styles/MCH-H${CODE}`, { design_name: 'Strength' }, A);
 t('the design name is the style\'s identity — not edited', r.status === 400);
 r = await call('PUT', `/products/merch/styles/MCH-H${CODE}`, { supplier: 'Blank Co', decorator: 'Embroidery Co' }, A);
