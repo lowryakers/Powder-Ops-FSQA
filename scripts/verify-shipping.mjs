@@ -20,12 +20,20 @@ const { default: Database } = await import('better-sqlite3');
   mk('shp-wh', 'Ship Loader', 'operator', 'warehouse', '{"receiving-log":"edit"}');
   mk('shp-qa-adam', 'Adam Shipping', 'supervisor', 'qa', '{"receiving-log":"view"}');
   mk('shp-op', 'Ship Bystander', 'operator', 'batching', '{"production-log":"view"}');
+  // D-385: an admin to mint a token, and a bot account that holds one.
+  mk('shp-adm', 'Ship Admin', 'admin', 'admin', null);
+  mk('shp-bot', 'Ship Bot', 'operator', 'warehouse', '{"receiving-log":"edit"}');
   db.close();
 }
 const login = async (id, name, password) => {
   await req('/users/set-password', { method: 'POST', body: JSON.stringify({ user_id: id, password, setup_code: 'SEED-CODE' }) });
   return (await J(await req('/users/login', { method: 'POST', body: JSON.stringify({ name, password }) })))?.token;
 };
+const ADMIN = await login('shp-adm', 'Ship Admin', 'AdminSecret2026');
+const BOT_SESSION = await login('shp-bot', 'Ship Bot', 'BotSecret20266');
+token = ADMIN;
+const BOT_TOKEN = (await J(await req('/api-tokens', { method: 'POST', body: JSON.stringify({ user_id: 'shp-bot', label: 'fixture shipping bot', scopes: ['read', 'write'] }) })))?.plaintext;
+t('a write token on the bot account (fixture database only)', !!BOT_TOKEN);
 token = await login('shp-wh', 'Ship Loader', 'LoaderSecret2026');
 t('warehouse loader signed in', !!token);
 
@@ -98,16 +106,44 @@ t('a photo resolves to a URL and the bytes come back', typeof url?.url === 'stri
 const list = await J(await req('/shipping/inspections'));
 t('the list carries the photo count', list.find(r => r.shipment_no === 'S-100-0001')?.photo_count === 2);
 
-const r3 = await J(await req('/shipping/inspection/S-100-0001/review', { method: 'POST', body: '{}' }));
-t('signed off once everything is answered and evidenced', !!r3.reviewed_at && r3.reviewed_by === 'Ship Loader', JSON.stringify(r3).slice(0, 120));
+console.log('\n── the sign-off is a signature (D-385) ──');
+const { default: Db2 } = await import('better-sqlite3');
+const peek = () => { const d = new Db2(process.env.DBPATH, { readonly: true }); try { return d.prepare('SELECT reviewed_by, reviewed_at, review_meaning, review_hash FROM shipping_inspections WHERE shipment_no = ?').get('S-100-0001'); } finally { d.close(); } };
+const audits = (like) => { const d = new Db2(process.env.DBPATH, { readonly: true }); try { return d.prepare('SELECT COUNT(*) n FROM audit_log WHERE action LIKE ? OR details LIKE ?').get(like, like).n; } finally { d.close(); } };
+const asWho = async (tok, p, o) => { const saved = token; token = tok; try { const r = await req(p, o); return { status: r.status, body: await J(r) }; } finally { token = saved; } };
+let sgn = await req('/shipping/inspection/S-100-0001/review', { method: 'POST', body: '{}' });
+let sgb = await J(sgn);
+t('complete, but no password: refused with signature_required', sgn.status === 403 && sgb?.signature_required === true, `${sgn.status} ${JSON.stringify(sgb)}`);
+t('…and nothing is written', peek().reviewed_at === null);
+const f0 = audits('%signature_failed%');
+sgn = await req('/shipping/inspection/S-100-0001/review', { method: 'POST', body: JSON.stringify({ signature_password: 'not-it' }) });
+t('a wrong password is refused, nothing written', sgn.status === 403 && peek().reviewed_at === null);
+t('…and audited as signature_failed', audits('%signature_failed%') > f0);
+let tk = await asWho(BOT_TOKEN, '/shipping/inspection/S-100-0001/review', { method: 'POST', body: JSON.stringify({ signature_password: 'BotSecret20266' }) });
+t('a bot TOKEN is refused (403), the row unchanged', tk.status === 403 && peek().reviewed_at === null, `${tk.status} ${JSON.stringify(tk.body)}`);
+tk = await asWho(BOT_SESSION, '/shipping/inspection/S-100-0001/review', { method: 'POST', body: JSON.stringify({ signature_password: 'BotSecret20266' }) });
+t('a bot ACCOUNT signing in with its own password is refused too (403)', tk.status === 403 && /bot_account_cannot_approve/.test(JSON.stringify(tk.body)) && peek().reviewed_at === null, `${tk.status} ${JSON.stringify(tk.body)}`);
+const r3 = await J(await req('/shipping/inspection/S-100-0001/review', { method: 'POST', body: JSON.stringify({ signature_password: 'LoaderSecret2026' }) }));
+t('signed off with the password once everything is answered and evidenced', !!r3.reviewed_at && r3.reviewed_by === 'Ship Loader', JSON.stringify(r3).slice(0, 120));
+const sig = peek();
+t('the signature carries its meaning in words and a fingerprint', sig.review_meaning === 'Reviewed the shipping truck inspection and signed it off' && /^[0-9a-f]{64}$/.test(sig.review_hash || ''), JSON.stringify(sig));
+t('…and reads intact', r3.review_state === 'signed', r3.review_state);
+{ const d = new Db2(process.env.DBPATH); d.prepare("UPDATE shipping_inspections SET seal_number = 'TAMPERED' WHERE shipment_no = 'S-100-0001'").run(); d.close(); }
+t('a fact changed after the sign-off reads "changed"', (await J(await req('/shipping/inspection/S-100-0001'))).inspection.review_state === 'changed');
+{ const d = new Db2(process.env.DBPATH); d.prepare("UPDATE shipping_inspections SET seal_number = ? WHERE shipment_no = 'S-100-0001'").run(r3.seal_number ?? null); d.close(); }
+t('…and intact again once put back', (await J(await req('/shipping/inspection/S-100-0001'))).inspection.review_state === 'signed');
 const late = await up('/shipping/inspection/S-100-0001/photos', (() => { const f = new FormData(); f.append('photos', new Blob(['x'], { type: 'image/png' }), 'late.png'); return f; })());
 t('a photo cannot be added to a signed-off inspection', late.status === 409, `${late.status}`);
 const delPhoto = await req(`/shipping/photos/${withPhotos.photos[0].id}`, { method: 'DELETE' });
 t('nor removed from one', delPhoto.status === 409, `${delPhoto.status}`);
 const edit = await req('/shipping/inspection', { method: 'POST', body: JSON.stringify({ shipment_no: 'S-100-0001', customer: 'Someone else' }) });
 t('nor can the record be edited', edit.status === 409, `${edit.status}`);
-const rev = await J(await req('/shipping/inspection/S-100-0001/review', { method: 'DELETE' }));
-t('the signer can revoke', rev?.ok === true);
+let rv = await req('/shipping/inspection/S-100-0001/review', { method: 'DELETE', body: '{}' });
+t('revoking without the password is refused, the sign-off stands', rv.status === 403 && (await J(rv))?.signature_required === true && !!peek().reviewed_at);
+tk = await asWho(BOT_TOKEN, '/shipping/inspection/S-100-0001/review', { method: 'DELETE', body: JSON.stringify({ signature_password: 'LoaderSecret2026' }) });
+t('revoking with a token is refused (403)', tk.status === 403 && !!peek().reviewed_at, `${tk.status}`);
+const rev = await J(await req('/shipping/inspection/S-100-0001/review', { method: 'DELETE', body: JSON.stringify({ signature_password: 'LoaderSecret2026' }) }));
+t('the signer revokes with the password; meaning and fingerprint go with it', rev?.ok === true && peek().reviewed_at === null && peek().review_hash === null && peek().review_meaning === null);
 const after = await J(await req('/shipping/inspection/S-100-0001'));
 t('…and the record is open again with its photos intact', !after.inspection.reviewed_at && after.inspection.photos.length === 2);
 

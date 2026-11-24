@@ -59,6 +59,9 @@ export const APPROVE_ROUTES = Object.freeze([
   // A receiving inspection's sign-off (and taking it back) is a signature (D-374); its path says "review".
   { method: 'POST', re: /^\/receiving\/checklist\/[^/]+\/review$/, label: 'POST /api/receiving/checklist/:no/review — sign a receiving inspection off' },
   { method: 'DELETE', re: /^\/receiving\/checklist\/[^/]+\/review$/, label: 'DELETE /api/receiving/checklist/:no/review — revoke a receiving sign-off' },
+  // Its outbound twin, the shipping truck inspection (D-385).
+  { method: 'POST', re: /^\/shipping\/inspection\/[^/]+\/review$/, label: 'POST /api/shipping/inspection/:no/review — sign a shipping inspection off' },
+  { method: 'DELETE', re: /^\/shipping\/inspection\/[^/]+\/review$/, label: 'DELETE /api/shipping/inspection/:no/review — revoke a shipping sign-off' },
   // A product decision and a scale's return to use are password-signed by a person (D-194, D-195).
   // A supplier's disposition (SOP 404 § V.C.III) and a material's banned-list
   // check are Quality's decisions (D-339). Neither path names an approve word,

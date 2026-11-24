@@ -13,9 +13,11 @@
 // sign-off gate checks the photo claim against the photos on file.
 
 import { Router } from 'express';
-import { randomUUID as uuid } from 'crypto';
+import { randomUUID as uuid, createHash } from 'crypto';
 import { readFileSync } from 'fs';
 import { getDb, logAudit } from '../db.js';
+import { gateSignature } from '../signature.js';
+import { signatureMeaning } from '../../shared/signature-meaning.js';
 import { hasExplicitEdit, hasExplicitGrant } from '../module-access.js';
 import { parseJson } from '../custom-fields.js';
 import {
@@ -59,6 +61,20 @@ function photosFor(db, inspectionId) {
     .map(({ storage_key, ...p }) => ({ ...p, has_file: !!storage_key }));
 }
 
+// THE SIGN-OFF IS A SIGNATURE (D-385), the outbound twin of receiving's (D-374):
+// the signed-in person's password at the moment of signing, the meaning in
+// words, and a fingerprint of what was signed — so an answer changed after the
+// sign-off reads "changed since signed" rather than passing silently.
+const REVIEW_HASHED = ['shipment_no', 'ship_date', 'order_number', 'bol_number', 'seal_number', 'answers', 'reviewed_by', 'reviewed_at'];
+export const shippingReviewHash = (r) => createHash('sha256').update(JSON.stringify(REVIEW_HASHED.map(k => r?.[k] ?? null))).digest('hex');
+/** 'signed' (intact) · 'changed' · 'not_recorded' (signed before D-385) · null (not signed). */
+export function shippingReviewState(r) {
+  if (!r?.reviewed_at) return null;
+  if (!r.review_hash) return 'not_recorded';
+  return r.review_hash === shippingReviewHash(r) ? 'signed' : 'changed';
+}
+const sqlNow = () => new Date().toISOString().replace('T', ' ').slice(0, 19);
+
 const shapeInspection = (db, r) => {
   if (!r) return null;
   const answers = parseJson(r.answers, {}) || {};
@@ -72,6 +88,7 @@ const shapeInspection = (db, r) => {
     unanswered: unanswered(answers),
     photos,
     photo_claim_unsupported: photoClaimUnsupported(answers, photos.length),
+    review_state: shippingReviewState(r),
   };
 };
 
@@ -285,11 +302,17 @@ router.post('/inspection/:shipmentNo/review', (req, res) => {
     });
   }
 
-  db.prepare(`UPDATE shipping_inspections SET reviewed_by = ?, reviewed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`)
-    .run(req.user.name, row.id);
+  // The password is asked LAST, once the sign-off is complete and allowed
+  // (the receiving order, D-374). gateSignature answers 403 itself.
+  if (!gateSignature(req, res, { action: 'shipping_review' })) return;
+  const at = sqlNow();
+  const meaning = signatureMeaning('shipping_review');
+  const signed = { ...row, reviewed_by: req.user.name, reviewed_at: at };
+  db.prepare(`UPDATE shipping_inspections SET reviewed_by = ?, reviewed_at = ?, review_meaning = ?, review_hash = ?, updated_at = datetime('now') WHERE id = ?`)
+    .run(req.user.name, at, meaning, shippingReviewHash(signed), row.id);
   const updated = db.prepare('SELECT * FROM shipping_inspections WHERE id = ?').get(row.id);
   logAudit(req.user, 'shipping_inspection_reviewed', 'shipping_inspection', row.id,
-    { shipment_no: row.shipment_no, photos: photoCount }, row, updated, row.shipment_no);
+    { shipment_no: row.shipment_no, photos: photoCount, meaning, signature_verified: true }, row, updated, row.shipment_no);
   res.json(shapeInspection(db, updated));
 });
 
@@ -301,9 +324,11 @@ router.delete('/inspection/:shipmentNo/review', (req, res) => {
   if (req.user.role !== 'admin' && row.reviewed_by !== req.user.name) {
     return res.status(403).json({ error: 'Only the person who signed it, or an admin, can revoke a sign-off.' });
   }
-  db.prepare("UPDATE shipping_inspections SET reviewed_by = NULL, reviewed_at = NULL, updated_at = datetime('now') WHERE id = ?").run(row.id);
+  // Taking a signature back is signed too (D-385).
+  if (!gateSignature(req, res, { action: 'shipping_review_revoke' })) return;
+  db.prepare("UPDATE shipping_inspections SET reviewed_by = NULL, reviewed_at = NULL, review_meaning = NULL, review_hash = NULL, updated_at = datetime('now') WHERE id = ?").run(row.id);
   logAudit(req.user, 'shipping_inspection_review_revoked', 'shipping_inspection', row.id,
-    { shipment_no: row.shipment_no, was_signed_by: row.reviewed_by }, row, null, row.shipment_no);
+    { shipment_no: row.shipment_no, was_signed_by: row.reviewed_by, was_meaning: row.review_meaning, signature_verified: true }, row, null, row.shipment_no);
   res.json({ ok: true });
 });
 
