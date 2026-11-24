@@ -11726,3 +11726,13 @@ signer); the inspection reads `review_state` signed · changed · not_recorded. 
 (their path says "review"), so a token and a bot account's own session get 403. The screen asks through
 `withSignature`. **Sign-offs made before read `not_recorded`; nothing is backfilled or rewritten.**
 `verify:shipping` 35 → 48 (the control — main before this — signs with no password).
+
+## D-386 — A receiving record is never hard-deleted, by anyone (24 Nov 2026, spine gap 02)
+**Found in the final review:** `DELETE /api/receiving/:id` was admin-only but removed the line without looking at
+whether its inspection was password-signed (D-374). A receiving line is the record of what arrived; it sits under the
+SEC hold (A-20261102-019 / R-0564), the same as disposals (D-383).
+**Decided:** the route stays mounted and answers `403 RECEIVING_DELETE_DISABLED` for every role, without reading or
+writing anything — a plain refusal, never a 404. No screen called it, so nothing was removed from the UI. A wrong line
+is edited; a wrong sign-off is revoked with the password and signed again. **No existing row is changed.** The lab-test
+and CoC item list routes are different routes and are untouched. `verify:receivingnodelete` (14; the control — main
+before this — fails 10, an admin's delete answering 200).

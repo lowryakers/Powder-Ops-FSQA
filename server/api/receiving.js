@@ -841,15 +841,15 @@ router.put('/:id', (req, res) => {
   res.json(shape(updated));
 });
 
-router.delete('/:id', (req, res) => {
-  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Only an admin can delete a receiving record.' });
-  const db = getDb();
-  const existing = db.prepare('SELECT * FROM receiving_log WHERE id = ?').get(req.params.id);
-  if (!existing) return res.status(404).json({ error: 'Receiving record not found' });
-  db.prepare('DELETE FROM receiving_log WHERE id = ?').run(req.params.id);
-  logAudit(req.user, 'delete', 'receiving_record', req.params.id, null, existing, null,
-    `${existing.part_number || ''} · PO ${existing.po_number || '—'}`);
-  res.json({ ok: true });
-});
+// A receiving record is never hard-deleted, by anyone (D-386, SEC hold
+// A-20261102-019; the disposal rule D-383). A line is evidence of what arrived,
+// and its inspection may be password-signed (D-374). A wrong one is corrected by
+// editing it, or by revoking the sign-off with the password and signing again.
+// The route stays mounted so an old screen or a script gets a plain refusal, not
+// a 404 that reads as "already gone".
+router.delete('/:id', (_req, res) => res.status(403).json({
+  error: 'Receiving records cannot be deleted. Correct the record, or revoke the sign-off and sign again.',
+  code: 'RECEIVING_DELETE_DISABLED',
+}));
 
 export default router;
