@@ -423,7 +423,9 @@ function AttachSupplierFiles({ supplierId, onDone, letter = false, gmp = false }
   };
 
   return (
-    <div className="flex items-center gap-2">
+    // Wraps: the certificate kind, its expiry and the button do not fit on one
+    // line at phone width, and an unwrapped row panned the page sideways.
+    <div className="flex flex-wrap items-center gap-2">
       {msg && (
         <span className={`text-xs ${msg.ok ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
           {msg.text}
