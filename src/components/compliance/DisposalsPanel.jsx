@@ -1,10 +1,10 @@
 import { useState, useMemo } from 'react';
-import { useApiGet, apiPost, apiPut, apiFetch, apiDelete } from '../../hooks/useApi';
+import { useApiGet, apiPost, apiPut, apiDelete } from '../../hooks/useApi';
 import { withSignature } from '../../lib/signature.js';
 import { useAuth } from '../../hooks/useAuth';
 import { canEditModule } from '../../utils/permissions';
 import FileUpload from '../FileUpload';
-import { Plus, Search, Edit2, Trash2, Download, Upload, X, Trash, Check, Paperclip, FileText, ChevronUp, ChevronDown, AlertTriangle, CheckSquare, Square } from 'lucide-react';
+import { Plus, Search, Edit2, Download, Upload, X, Trash, Check, Paperclip, FileText, ChevronUp, ChevronDown, AlertTriangle, CheckSquare, Square } from 'lucide-react';
 import { formatDate } from '../../lib/datetime.js';
 import TextCell from '../common/TextCell.jsx';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
@@ -248,7 +248,7 @@ function CsvImportModal({ onImported, onClose }) {
 }
 
 /* ───────── Detail / sign-offs ───────── */
-function DisposalView({ d, user, canEdit, onSign, onRevoke, onEdit, onDelete, onClose }) {
+function DisposalView({ d, user, canEdit, onSign, onRevoke, onEdit, onClose }) {
   const [signing, setSigning] = useState(null);
   const doSign = async (role) => { setSigning(role); try { await onSign(d.id, role); } finally { setSigning(null); } };
 
@@ -350,7 +350,6 @@ function DisposalView({ d, user, canEdit, onSign, onRevoke, onEdit, onDelete, on
         <div className="flex items-center gap-2 px-5 py-3 border-t border-gray-200">
           <button onClick={() => downloadDisposalPdf(d.id, d.disposal_number)} className="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 flex items-center gap-1.5"><Download size={14} /> PDF</button>
           <div className="flex-1" />
-          {canEdit && <button onClick={() => onDelete(d)} className="px-3 py-1.5 text-red-600 text-sm font-medium rounded-lg hover:bg-red-50 flex items-center gap-1.5"><Trash2 size={14} /> Delete</button>}
           {canEdit && <button onClick={() => onEdit(d)} className="px-3 py-1.5 bg-powder-600 text-white text-sm font-medium rounded-lg hover:bg-powder-700 flex items-center gap-1.5"><Edit2 size={14} /> Edit</button>}
         </div>
       </div>
@@ -359,32 +358,6 @@ function DisposalView({ d, user, canEdit, onSign, onRevoke, onEdit, onDelete, on
 }
 
 /* ───────── Bulk permanent-delete confirmation ───────── */
-function ConfirmDeleteModal({ count, onConfirm, onClose }) {
-  const [text, setText] = useState('');
-  const [busy, setBusy] = useState(false);
-  const ok = text.trim().toUpperCase() === 'DELETE';
-  const go = async () => { setBusy(true); try { await onConfirm(); } catch (saveErr) {
-      // A refused save must SAY so. This was try/finally with NO catch, so a
-      // 403 or a validation 400 cleared the spinner and left the modal sitting
-      // there — indistinguishable from a dead button, which is how a
-      // deliberate rule reads as a broken screen.
-      window.alert(saveErr.message);
-    } finally { setBusy(false); } };
-  return (
-    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl w-full max-w-md p-5 space-y-4 max-h-[92vh] overflow-y-auto">
-        <div className="flex items-center gap-2 text-red-600"><Trash2 size={18} /><h3 className="font-semibold">Permanently delete {count} disposal{count === 1 ? '' : 's'}</h3></div>
-        <p className="text-sm text-gray-600">This removes the selected disposal{count === 1 ? '' : 's'} and all their items for good. This cannot be undone. Type <span className="font-mono font-semibold">DELETE</span> to confirm.</p>
-        <input value={text} onChange={e => setText(e.target.value)} placeholder="DELETE" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" autoFocus />
-        <div className="flex items-center gap-2">
-          <button disabled={!ok || busy} onClick={go} className="flex-1 px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 disabled:opacity-40">{busy ? 'Deleting…' : `Delete ${count} permanently`}</button>
-          <button onClick={onClose} className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200">Cancel</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* ───────── Panel ───────── */
 // Match on the last numeric group so "007", "DISP-7", "disposal_07" all line up.
 function lastNum(s) { const m = String(s || '').match(/\d+/g); return m ? String(parseInt(m[m.length - 1], 10)) : ''; }
@@ -494,8 +467,6 @@ export default function DisposalsPanel() {
   const [attaching, setAttaching] = useState(false);
   const [msg, setMsg] = useState(null);
   const [selected, setSelected] = useState(() => new Set()); // parent disposal ids
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const isAdmin = user?.role === 'admin';
 
   // Flatten to one row per disposed item (Item Name is the primary column)
   const rows = useMemo(() => {
@@ -552,7 +523,6 @@ export default function DisposalsPanel() {
 
   const handleCreate = async (form) => { await apiPost('/disposals', form); setCreating(false); refresh(); };
   const handleUpdate = async (form) => { const res = await apiPut(`/disposals/${editing.id}`, form); setEditing(null); setViewing(res); refresh(); };
-  const handleDelete = async (d) => { if (!window.confirm(`Delete disposal ${d.disposal_number || ''} and its ${d.items?.length || 0} item(s)?`)) return; await apiFetch(`/disposals/${d.id}`, { method: 'DELETE' }); setViewing(null); refresh(); };
   // An approval is a signature (D-374): the password, asked at the moment of signing.
   const ROLE_NAME = { ops_manager: 'Operations Manager', quality_control: 'Quality Control' };
   const signed = async (send, title) => {
@@ -566,15 +536,6 @@ export default function DisposalsPanel() {
     const res = await apiPost('/disposals/bulk-update', { ids, patch: { paper_record: paper } });
     clearSelection();
     setMsg(`Marked ${res.updated} disposal${res.updated === 1 ? '' : 's'} as ${paper ? 'logged on paper' : 'requiring in-system approval'}.`);
-    setTimeout(() => setMsg(null), 6000);
-    refresh();
-  };
-  const handleBulkDelete = async () => {
-    const ids = [...selected];
-    const res = await apiPost('/disposals/bulk-delete', { ids });
-    setConfirmDelete(false);
-    clearSelection();
-    setMsg(`Permanently deleted ${res.deleted} disposal${res.deleted === 1 ? '' : 's'}.`);
     setTimeout(() => setMsg(null), 6000);
     refresh();
   };
@@ -603,9 +564,6 @@ export default function DisposalsPanel() {
           <div className="flex-1" />
           <button onClick={() => handleBulkPaper(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50"><FileText size={14} /> Mark on paper</button>
           <button onClick={() => handleBulkPaper(false)} className="px-3 py-1.5 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50">Unmark paper</button>
-          {isAdmin && (
-            <button onClick={() => setConfirmDelete(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700"><Trash2 size={14} /> Delete permanently</button>
-          )}
           <button onClick={clearSelection} className="px-3 py-1.5 text-gray-500 text-sm font-medium rounded-lg hover:bg-gray-100">Clear</button>
         </div>
       )}
@@ -739,10 +697,9 @@ export default function DisposalsPanel() {
 
       {creating && <DisposalForm onSave={handleCreate} onCancel={() => setCreating(false)} />}
       {editing && <DisposalForm initial={editing} onSave={handleUpdate} onCancel={() => setEditing(null)} />}
-      {viewing && !editing && <DisposalView d={viewing} user={user} canEdit={canEdit} onSign={handleSign} onRevoke={handleRevoke} onEdit={(d) => { setEditing(d); }} onDelete={handleDelete} onClose={() => setViewing(null)} />}
+      {viewing && !editing && <DisposalView d={viewing} user={user} canEdit={canEdit} onSign={handleSign} onRevoke={handleRevoke} onEdit={(d) => { setEditing(d); }} onClose={() => setViewing(null)} />}
       {importing && <CsvImportModal onClose={() => setImporting(false)} onImported={(res) => { setImporting(false); setMsg(`Imported ${res.disposals} disposals (${res.items} items).`); setTimeout(() => setMsg(null), 6000); refresh(); }} />}
       {attaching && <DisposalAttachModal disposals={disposals || []} onDone={refresh} onClose={() => setAttaching(false)} />}
-      {confirmDelete && <ConfirmDeleteModal count={selected.size} onConfirm={handleBulkDelete} onClose={() => setConfirmDelete(false)} />}
     </div>
   );
 }

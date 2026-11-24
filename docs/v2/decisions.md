@@ -11675,3 +11675,16 @@ already honest (an inactive assignee counts nowhere, `inactiveAssigneeSql`); the
 employment-ended note, never deleted, never a completion; non-training cards untouched. The count rides the response
 (`training_tasks_closed`) and the audit entry. Not retroactive: cards on accounts already inactive stay as they are.
 `verify:spinep1a` 20 → 24; the control (main's onboarding.js) fails the two new assertions.
+
+## D-383 — A disposal is never hard-deleted, by anyone (24 Nov 2026)
+**Found in the final review:** `DELETE /disposals/:id` had no role check and no signature check, so any account
+with the Disposals edit grant could remove a disposal and its items — including one approved with a password
+(D-374). The bulk delete was admin-only but just as final. A disposal is a product decision; removing it leaves
+no record that the product was written off, and it sits under the SEC hold (A-20261102-019 / R-0564).
+**Decided (Lowry):** block hard-delete for every role. Both routes stay mounted and answer
+`403 DISPOSAL_DELETE_DISABLED` without touching anything — a plain refusal, not a 404 that reads as "already
+gone". The Delete button in the disposal view and the admin "Delete permanently" bulk action are gone. A wrong
+disposal is corrected by editing it, or by revoking an approval with the password and signing again. **No
+existing row is changed.** Editing a disposal still rewrites its item list (`writeItems`), which is an edit, not
+a delete of the disposal. `verify:disposalnodelete` (16; the control — main before this — fails 14, an admin's
+delete of a signed disposal answering 200).
