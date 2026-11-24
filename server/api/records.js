@@ -9,7 +9,8 @@
 // would be a second, coarser copy of the same rule. Filing, signing and revoking
 // stay on each module's own routes, which already hold the password gate.
 import { Router } from 'express';
-import { getDb } from '../db.js';
+import { getDb, logAudit } from '../db.js';
+import { releaseRefFor, recordReleaseRef, canRecordRelease } from '../lot-release.js';
 import { RECORD_TYPES, canReadType, recordType, retrieveRecords, verbsOf } from '../record-interface.js';
 import { renderSignedRecord } from '../signed-record-pdf.js';
 
@@ -39,6 +40,21 @@ router.get('/machines', (req, res) => {
     WHERE equipment_id IS NULL OR equipment_id NOT IN (SELECT id FROM equipment) ORDER BY lower(name), asset_number`).all()
     .map(i => ({ ...i, kind: 'instrument' }));
   res.json([...equipment, ...instruments]);
+});
+
+// WHERE A LOT WAS RELEASED (D-388, A-20261124-001). Release is signed in
+// Keychain; this is the reference a person records afterwards, read-only on the
+// lot. Read by anyone who can read a record type; written by QA or an admin,
+// never a token (server/lot-release.js).
+router.get('/lot-release', (req, res) => {
+  if (!RECORD_TYPES.some(t => canReadType(req.user, t))) return res.status(404).json({ error: 'Not found' });
+  const lot = String(req.query.lot || '').trim();
+  if (!lot) return res.status(400).json({ error: 'Name the lot.' });
+  res.json({ lot, ...releaseRefFor(getDb(), lot), can_record: canRecordRelease(req.user) && req.auth?.kind !== 'token' });
+});
+router.post('/lot-release', (req, res) => {
+  const out = recordReleaseRef(getDb(), req.user, req.auth, req.body, { logAudit });
+  res.status(out.status).json(out.body);
 });
 
 router.get('/', (req, res) => {

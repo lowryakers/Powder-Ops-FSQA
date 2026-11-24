@@ -4506,6 +4506,11 @@ since go-live and in the last 90 days, and gives a verdict: never used / machine
   (`review_meaning`/`review_hash`; `approvals[role].meaning/hash`). The record interface cannot do either. A verify that
   signs one must send `signature_password`. `verify:signgates` (30).
 
+## Where a lot was released: a Keychain reference, read only (D-388)
+Release (FORM 405-1 / 405-02) is signed in **Keychain**. `lot_release_refs` + `server/lot-release.js` hold only the reference
+a person (QA or admin, never a token) types afterwards, shown on the lot in Look up records. **Never add a ReadyDoc
+release form, status or signature.** A correction supersedes with a reason. `verify:lotrelease` (22).
+
 ## A receiving record is never hard-deleted (D-386)
 `DELETE /receiving/:id` answers `403 RECEIVING_DELETE_DISABLED` for every role and writes nothing. **Never put a delete
 back**; a wrong line is edited, a wrong sign-off revoked with the password. `verify:receivingnodelete` (14).

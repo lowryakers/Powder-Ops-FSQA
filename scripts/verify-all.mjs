@@ -232,6 +232,7 @@ const RUNS = [
   ['verify-disposal-no-delete.mjs', 5243, {}, false],
   ['verify-receiving-no-delete.mjs', 5245, {}, false],
   ['verify-record-lookup.mjs', 5240, {}, false],
+  ['verify-lot-release.mjs', 5246, {}, false],
   ['verify-controlled-recall-audit.mjs', 5242, {}, false],
   ['verify-food-safety-culture.mjs', 5127, { HOUSEKEEPING_MS: '0' }, false],
   ['verify-module-usage.mjs', 5128, {}, false],

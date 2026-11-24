@@ -2641,6 +2641,28 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_production_runs_room ON production_runs(room, started_at DESC);
     CREATE INDEX IF NOT EXISTS idx_production_runs_status ON production_runs(status);
   `);
+  // WHERE A LOT WAS RELEASED (D-388, A-20261124-001). Product release (FORM 405-1,
+  // waiver 405-02) is signed in KEYCHAIN; ReadyDoc only records where — the
+  // reference a person types after the release is signed there. Not a release,
+  // not a signature. A correction is a new row that supersedes the old one, with
+  // a reason; nothing is deleted.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS lot_release_refs (
+      id TEXT PRIMARY KEY,
+      lot TEXT NOT NULL,
+      lot_key TEXT NOT NULL,
+      keychain_ref TEXT,
+      url TEXT,
+      note TEXT,
+      recorded_by TEXT NOT NULL,
+      recorded_by_id TEXT,
+      recorded_at TEXT NOT NULL DEFAULT (datetime('now')),
+      superseded_at TEXT,
+      superseded_by TEXT,
+      supersede_reason TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_lot_release_refs_lot ON lot_release_refs(lot_key);
+  `);
 
   // ── Stability (CAR 4990683-9) ─────────────────────────────────────────────
   // A study is the plan: which product family, which storage condition, when

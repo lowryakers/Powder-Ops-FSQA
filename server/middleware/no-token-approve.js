@@ -59,6 +59,9 @@ export const APPROVE_ROUTES = Object.freeze([
   // A receiving inspection's sign-off (and taking it back) is a signature (D-374); its path says "review".
   { method: 'POST', re: /^\/receiving\/checklist\/[^/]+\/review$/, label: 'POST /api/receiving/checklist/:no/review — sign a receiving inspection off' },
   { method: 'DELETE', re: /^\/receiving\/checklist\/[^/]+\/review$/, label: 'DELETE /api/receiving/checklist/:no/review — revoke a receiving sign-off' },
+  // Recording where a lot was released in Keychain is a person's act (D-388): not a
+  // release and not a signature, but its path names one, so it is listed here.
+  { method: 'POST', re: /^\/records\/lot-release$/, label: 'POST /api/records/lot-release — record a lot\'s Keychain release reference (person only)' },
   // Its outbound twin, the shipping truck inspection (D-385).
   { method: 'POST', re: /^\/shipping\/inspection\/[^/]+\/review$/, label: 'POST /api/shipping/inspection/:no/review — sign a shipping inspection off' },
   { method: 'DELETE', re: /^\/shipping\/inspection\/[^/]+\/review$/, label: 'DELETE /api/shipping/inspection/:no/review — revoke a shipping sign-off' },

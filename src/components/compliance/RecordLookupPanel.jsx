@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Search, X, ChevronRight, ChevronDown, Download, ExternalLink, Info } from 'lucide-react';
-import { useApiGet } from '../../hooks/useApi';
+import { useApiGet, apiPost } from '../../hooks/useApi';
 import SearchSelect from '../common/SearchSelect.jsx';
 import PrintRecordButton from '../common/PrintRecordButton.jsx';
 import FrozenScroll from '../common/FrozenScroll.jsx';
@@ -57,6 +57,63 @@ const prettyVal = (v) => {
   if (typeof v === 'object') return JSON.stringify(v);
   return String(v);
 };
+
+/**
+ * Where this lot was released (D-388, A-20261124-001). Release is signed in
+ * KEYCHAIN (FORM 405-1 / 405-02); ReadyDoc shows the reference a person
+ * recorded afterwards, read-only. Nothing here releases a lot.
+ */
+function KeychainRelease({ lot }) {
+  const { data, refresh } = useApiGet(`/records/lot-release?lot=${encodeURIComponent(lot)}`, [lot]);
+  const [editing, setEditing] = useState(false);
+  const [f, setF] = useState({ keychain_ref: '', url: '', reason: '' });
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  if (!data) return null;
+  const cur = data.current;
+  const save = async (e) => {
+    e.preventDefault(); setBusy(true); setErr('');
+    try { await apiPost('/records/lot-release', { lot, ...f }); setEditing(false); setF({ keychain_ref: '', url: '', reason: '' }); refresh(); }
+    catch (x) { setErr(x.message); } finally { setBusy(false); }
+  };
+  return (
+    <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-2 text-sm" data-keychain-release data-has-ref={cur ? '1' : '0'}>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-semibold text-gray-900">Release (signed in Keychain)</span>
+        <span className="text-xs text-gray-500">FORM 405-1 is signed in Keychain. ReadyDoc only records where.</span>
+        {data.can_record && !editing && (
+          <button type="button" onClick={() => setEditing(true)} className="ml-auto text-xs text-blue-700 hover:underline" data-keychain-release-edit>
+            {cur ? 'Correct the reference' : 'Record the Keychain reference'}
+          </button>
+        )}
+      </div>
+      {cur ? (
+        <p className="text-gray-800" data-keychain-release-current>
+          {cur.keychain_ref && <span className="font-medium">{cur.keychain_ref}</span>}
+          {cur.url && <> {cur.keychain_ref ? '· ' : ''}<a href={cur.url} target="_blank" rel="noreferrer" data-new-tab className="text-blue-700 hover:underline inline-flex items-center gap-1">Open in Keychain <ExternalLink size={12} /></a></>}
+          <span className="block text-xs text-gray-500">Recorded by {cur.recorded_by}, {formatDateTime(cur.recorded_at)}{data.history?.length ? ` · corrected ${data.history.length}×` : ''}</span>
+        </p>
+      ) : (
+        <p className="text-gray-500" data-keychain-release-none>No Keychain release reference recorded for this lot.</p>
+      )}
+      {editing && (
+        <form onSubmit={save} className="grid grid-cols-1 sm:grid-cols-3 gap-2" data-keychain-release-form>
+          <input id="kc-release-ref" placeholder="Keychain release ID" value={f.keychain_ref} onChange={e => setF(x => ({ ...x, keychain_ref: e.target.value }))}
+            className="px-2 py-1.5 border border-gray-300 rounded-lg" data-keychain-release-ref />
+          <input id="kc-release-url" placeholder="https:// link to the release" value={f.url} onChange={e => setF(x => ({ ...x, url: e.target.value }))}
+            className="px-2 py-1.5 border border-gray-300 rounded-lg" data-keychain-release-url />
+          {cur && <input id="kc-release-reason" placeholder="Why it is being corrected" value={f.reason} onChange={e => setF(x => ({ ...x, reason: e.target.value }))}
+            className="px-2 py-1.5 border border-gray-300 rounded-lg" data-keychain-release-reason />}
+          <div className="sm:col-span-3 flex gap-2">
+            <button type="submit" disabled={busy} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium disabled:opacity-50" data-keychain-release-save>Save the reference</button>
+            <button type="button" onClick={() => { setEditing(false); setErr(''); }} className="px-3 py-1.5 bg-gray-100 rounded-lg text-xs">Cancel</button>
+          </div>
+          {err && <p className="sm:col-span-3 text-xs text-red-700" data-keychain-release-error>{err}</p>}
+        </form>
+      )}
+    </section>
+  );
+}
 
 export default function RecordLookupPanel() {
   // A deep link (?tab=records&rec_lot=…) opens on that search. Its own names,
@@ -214,6 +271,8 @@ export default function RecordLookupPanel() {
 
       {query && result.loading && <div className="text-sm text-gray-500 py-6 text-center">Looking up…</div>}
       {query && result.error && <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">{result.error}</div>}
+
+      {query && new URLSearchParams(query).get('lot') && <KeychainRelease lot={new URLSearchParams(query).get('lot')} />}
 
       {query && data && (
         <div className="space-y-3" data-lookup-results>
