@@ -6886,6 +6886,7 @@ are never open. The audit row stays `bot_sop_write` and adds `doc_type` + `grant
 - `verify:reimbalert` (20).
 
 ## Retention Samples: still empty, and why
+**Decided 23 Nov 2026 (D-381): it stays in the nav as it is.** Do not propose hiding it or moving Stability out.
 The module is built and working but the log has **no rows** — nothing was ever seeded. The plant's own
 Retention Sample log (the 16-page PDF, boxes 15–19) was read to design the module, but the PDF is not in the
 repo and only pages 1–4 survive in readable form; pages 5–16 exist as ~300-character fragments. **Seeding the
