@@ -36,8 +36,12 @@ const req = async (p, o = {}) => {
 const post = (p, b) => req(p, { method: 'POST', body: JSON.stringify(b) });
 const put = (p, b) => req(p, { method: 'PUT', body: JSON.stringify(b) });
 
-const { default: Database } = await import('better-sqlite3');
-const db = new Database(process.env.DBPATH);
+// The APP'S OWN connection, not a second better-sqlite3 handle: this script calls
+// runPmHousekeeping in-process, and a second handle beside the one the server
+// modules open locks against it ("database is locked", swallowed by
+// `periodically`, so no card was raised). DB_PATH is set by verify-all.
+const { getDb } = await import('../server/db.js');
+const db = getDb();
 
 db.prepare(`INSERT OR REPLACE INTO users (id,name,username,role,department,is_active,setup_code,setup_code_expires_at,module_access)
   VALUES ('bp-qa','Dina Quality','Dina Quality','supervisor','qa',1,'SC-BP',datetime('now','+7 day'),'{"pm":"edit"}')`).run();
