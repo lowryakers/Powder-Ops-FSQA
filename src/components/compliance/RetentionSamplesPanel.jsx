@@ -1,5 +1,5 @@
 import { useState, useMemo, Fragment } from 'react';
-import { useApiGet, apiFetch, apiPost, apiPut, apiDelete, apiUpload } from '../../hooks/useApi';
+import { useApiGet, apiFetch, apiPost, apiPut, apiUpload } from '../../hooks/useApi';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
 import { ExpandCell, DetailRow, DetailFields } from '../common/RowDetail';
 import { useCappedList } from '../../lib/useCappedList';
@@ -654,11 +654,6 @@ export default function RetentionSamplesPanel({ user }) {
 
   const reloadAll = () => { refresh(); refreshBoxes(); refreshStats(); setEditing(null); };
 
-  const remove = async (s) => {
-    if (!window.confirm(`Delete the retention record for ${s.item_name}?`)) return;
-    try { await apiDelete(`/retention/${s.id}`); reloadAll(); } catch (e) { window.alert(e.message); }
-  };
-
   const due = stats?.due_for_destruction || 0;
 
   return (
@@ -822,11 +817,6 @@ export default function RetentionSamplesPanel({ user }) {
                           {canEdit && (
                             <button onClick={() => setEditing(s)} className="p-1 text-gray-400 hover:text-powder-600" data-tip="Correct">
                               <Pencil size={13} />
-                            </button>
-                          )}
-                          {user?.role === 'admin' && (
-                            <button onClick={() => remove(s)} className="p-1 text-gray-300 hover:text-red-600" data-tip="Delete">
-                              <Trash2 size={13} />
                             </button>
                           )}
                         </td>

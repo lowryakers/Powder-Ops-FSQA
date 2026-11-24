@@ -230,6 +230,7 @@ const RUNS = [
   ['verify-records-cap.mjs', 5238, {}, false],
   ['verify-sign-gates.mjs', 5239, {}, false],
   ['verify-failed-check-hold.mjs', 5247, {}, false],
+  ['verify-retention-ready.mjs', 5248, {}, false],
   ['verify-disposal-no-delete.mjs', 5243, {}, false],
   ['verify-receiving-no-delete.mjs', 5245, {}, false],
   ['verify-record-lookup.mjs', 5240, {}, false],

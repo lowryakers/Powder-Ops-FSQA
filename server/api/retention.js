@@ -304,15 +304,14 @@ router.put('/:id', (req, res) => {
   res.json(after);
 });
 
-router.delete('/:id', (req, res) => {
-  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Only an admin can delete a retention record.' });
-  const db = getDb();
-  const before = db.prepare('SELECT * FROM retention_samples WHERE id = ?').get(req.params.id);
-  if (!before) return res.status(404).json({ error: 'Record not found' });
-  db.prepare('DELETE FROM retention_samples WHERE id = ?').run(before.id);
-  logAudit(req.user, 'delete', 'retention_sample', before.id, null, before, null, before.item_name);
-  res.json({ ok: true });
-});
+// A retention record is never hard-deleted, by anyone (D-390, A-20261124-005; the
+// disposal rule D-383 under SEC hold A-20261102-019). A record says a jar was
+// pulled and kept; a wrong one is corrected in place, audited. The door stays
+// mounted so an old screen or a script gets a plain refusal, not a 404.
+router.delete('/:id', (_req, res) => res.status(403).json({
+  error: 'Retention records cannot be deleted. Correct the record instead.',
+  code: 'RETENTION_DELETE_DISABLED',
+}));
 
 /* ── Importing a box from the paper log ───────────────────────────────────── */
 
