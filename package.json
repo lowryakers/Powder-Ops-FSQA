@@ -199,6 +199,7 @@
     "verify:recordscap": "node scripts/verify-records-cap.mjs",
     "verify:signgates": "node scripts/verify-sign-gates.mjs",
     "verify:lotrelease": "node scripts/verify-lot-release.mjs",
+    "verify:failedcheck": "node scripts/verify-failed-check-hold.mjs",
     "verify:disposalnodelete": "node scripts/verify-disposal-no-delete.mjs",
     "verify:receivingnodelete": "node scripts/verify-receiving-no-delete.mjs",
     "verify:recordlookup": "node scripts/verify-record-lookup.mjs",

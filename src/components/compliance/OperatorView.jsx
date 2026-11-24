@@ -8,6 +8,7 @@ import FileUpload from '../FileUpload';
 import PlantHolidaysStrip from '../common/PlantHolidaysStrip';
 import RaiseConcern from '../common/RaiseConcern';
 import TodaySchedule from '../common/TodaySchedule';
+import FailedCheckCard from '../common/FailedCheckCard.jsx';
 import { StartRunCard } from './ProductionRuns.jsx';
 import { createTranslator, formatDueLabelI18n } from '../../i18n/operatorStrings';
 import { canSeeQaReview } from '../../utils/permissions';
@@ -1307,6 +1308,10 @@ export default function OperatorView() {
       {/* When the MO starts in MRPEasy, start the run here; its Pre-Op is asked of
           Cleaning (D-387, A-20261124-004). Only for people who may start a run. */}
       <StartRunCard lang={lang} />
+
+      {/* A failed X-ray or metal-detector check puts the lot on hold (D-389,
+          A-20261124-002); the check itself stays in Keychain. */}
+      <FailedCheckCard lang={lang} />
 
       <PlantHolidaysStrip days={60} lang={lang} />
 

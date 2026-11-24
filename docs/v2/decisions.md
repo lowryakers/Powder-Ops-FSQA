@@ -11769,3 +11769,18 @@ release status and no release signature.
   nothing is deleted, and both acts are audited. No `gateSignature`: recording where a release lives is not a signature.
 - Lots are matched trimmed and case-insensitive, as typed — a batch suffix is part of the lot.
 - `verify:lotrelease` (22, live + browser). The control — main before this — fails from the first read.
+
+## D-389 — A failed X-ray or metal-detector check puts the lot on hold (24 Nov 2026, spine gap 08)
+**Decided (Lowry, A-20261124-002 / R-0830):** the X-ray / metal-detector operation log (FORM 413-1 X-Ray) stays in
+Keychain with the batch record. A failed check raises a ReadyDoc hold; a person logs it.
+- **No Keychain ingest exists** (checked at tip: Keychain appears only as references people type — formula, MMR, part
+  numbers). None was built: no client, webhook or poller.
+- **"Log a failed check"** — a folded card on the Operator View (EN/ES, `common/FailedCheckCard.jsx`), the screen a
+  person at the machine has open. It files an ordinary **Form 424-01 On Hold** record (`on_hold`) through
+  `createQmsRecord`: the lot, the machine (picked from equipment named or typed X-ray / metal detector, or typed),
+  location, optional product and quantity, and a reason starting **"Failed X-ray check — <machine>:"** or **"Failed Metal
+  detector check — …"** so these holds are findable on the On Hold log. `POST /api/qms/on_hold/failed-check`
+  (`server/failed-check-hold.js`).
+- **Each log is its own hold** — two failures are two events. Nothing auto-releases; releasing stays on the On Hold
+  path, by a person. A token or a bot account cannot log one (`PERSON_ONLY`) or release one.
+- `verify:failedcheck` (19, live + browser at 390px). The control — main before this — fails from the first read.
