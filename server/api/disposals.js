@@ -205,35 +205,17 @@ router.delete('/:id/approve/:role', (req, res) => {
   res.json(out.record);
 });
 
-router.delete('/:id', (req, res) => {
-  const db = getDb();
-  const existing = db.prepare('SELECT * FROM disposals WHERE id = ?').get(req.params.id);
-  if (!existing) return res.status(404).json({ error: 'Not found' });
-  const tx = db.transaction(() => {
-    db.prepare('DELETE FROM disposal_items WHERE disposal_id = ?').run(req.params.id);
-    db.prepare('DELETE FROM disposals WHERE id = ?').run(req.params.id);
-  });
-  tx();
-  logAudit(req.user, 'disposal_deleted', 'disposal', req.params.id, { disposal_number: existing.disposal_number }, existing, null);
-  res.json({ success: true });
-});
-
-// Bulk permanent delete of disposals (and their items). Admin only.
-router.post('/bulk-delete', (req, res) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only an admin can permanently delete disposals.' });
-  const db = getDb();
-  const { ids } = req.body;
-  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array is required' });
-  const placeholders = ids.map(() => '?').join(',');
-  const found = db.prepare(`SELECT id, disposal_number FROM disposals WHERE id IN (${placeholders})`).all(...ids);
-  const tx = db.transaction(() => {
-    db.prepare(`DELETE FROM disposal_items WHERE disposal_id IN (${placeholders})`).run(...ids);
-    db.prepare(`DELETE FROM disposals WHERE id IN (${placeholders})`).run(...ids);
-  });
-  tx();
-  for (const d of found) logAudit(req.user, 'disposal_deleted', 'disposal', d.id, { disposal_number: d.disposal_number }, d, null);
-  res.json({ deleted: found.length });
-});
+// A disposal is never hard-deleted, by anyone (D-383, SEC hold A-20261102-019).
+// It is a product decision, often signed with a password; a wrong one is
+// corrected by editing it or revoking the approval, never by removing it.
+// Both doors stay mounted so an old screen or a script gets a plain refusal
+// rather than a 404 that reads as "already gone".
+const DELETE_REFUSAL = {
+  error: 'Disposals cannot be deleted. Correct the record, or revoke an approval and sign again.',
+  code: 'DISPOSAL_DELETE_DISABLED',
+};
+router.delete('/:id', (req, res) => res.status(403).json(DELETE_REFUSAL));
+router.post('/bulk-delete', (req, res) => res.status(403).json(DELETE_REFUSAL));
 
 // Bulk field update — currently the "logged on paper" flag. Applies to many
 // disposals at once (e.g. marking a batch of historical records).

@@ -4498,6 +4498,11 @@ since go-live and in the last 90 days, and gives a verdict: never used / machine
   (`review_meaning`/`review_hash`; `approvals[role].meaning/hash`). The record interface cannot do either. A verify that
   signs one must send `signature_password`. `verify:signgates` (30).
 
+## A disposal is never hard-deleted (D-383)
+`DELETE /disposals/:id` and `POST /disposals/bulk-delete` answer `403 DISPOSAL_DELETE_DISABLED` for every role and
+write nothing. **Never put a delete back**; a wrong disposal is edited, or its approval revoked and signed again.
+`verify:disposalnodelete` (16).
+
 ## Five more acts sign with the password (D-206, move 01)
 - Gated now: the internal audit sign-off, approving meeting minutes, authorizing a mock recall, signing a COA,
   and deciding an NFP in the app (single and bulk). The password is asked last, after every other check.
