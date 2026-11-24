@@ -2820,7 +2820,7 @@ re-clean task. `verify:eodatp` (24; control fails 8+).
 ## A production run opens and closes, and its start asks for the Pre-Op (D-146, OBL-42)
 `production_runs` + `server/production-runs.js` (`startRun`, `closeRun`, `preopFor`, `closeRunPromptsFor`),
 `GET|POST /production/runs`, `POST /production/runs/:id/close`, **Production Log → Runs** (`ProductionRuns.jsx`,
-`?view=runs`). `RUN-####` issued on start. **The Pre-Op is DERIVED** — a passing `pre_op` sanitation record in the
+`?view=runs`). **Also a "Starting an MO in MRPEasy?" card on the Operator View (`StartRunCard`, D-387) for anyone with `can_run` — one `StartRunForm`, no MRPEasy integration.** `RUN-####` issued on start. **The Pre-Op is DERIVED** — a passing `pre_op` sanitation record in the
 room since its previous run — never stored on the run. A start with none raises ONE Cleaning task per room
 ("Pre-Op clean — Room N (run RUN-… starting)"; `recordAreaForTask` maps it to the room token, so completing it
 files the record); a Pre-Op filed on the Sanitation form closes it. **Reported, never gated.** OBL-22 stays open

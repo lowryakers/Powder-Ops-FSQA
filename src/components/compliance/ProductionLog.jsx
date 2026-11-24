@@ -2078,6 +2078,15 @@ export default function ProductionLog({ user, directEntry }) {
           onBackToDay={fromDay ? () => setTab('day') : undefined}
           onSuccess={() => { setFromDay(null); setRefreshKey(k => k + 1); setTab('log'); }} />
       )}
+      {tab === 'log' && canEod && (
+        // The Runs tab is behind the log; this is where the person filing the
+        // day looks first (D-387, A-20261124-004).
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-powder-200 bg-powder-50 px-3 py-2 text-sm" data-runs-callout>
+          <PlayCircle size={15} className="text-powder-700" />
+          <span className="text-gray-800">Starting an MO in MRPEasy? Start the run here so the room's Pre-Op is asked for.</span>
+          <button type="button" onClick={() => setTab('runs')} className="ml-auto text-powder-700 font-semibold hover:underline" data-runs-callout-open>Start a run</button>
+        </div>
+      )}
       {tab === 'log' && (
         <LogTable key={refreshKey} user={user} />
       )}
