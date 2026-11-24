@@ -84,6 +84,11 @@ function BlockForm({ sku, onDone }) {
 }
 
 function Row({ r, groups, canEdit, onChanged, onOpenSku }) {
+  // A group that does not apply to this SKU is LEFT OUT of its row by the
+  // server (product-completeness.js: merch has no food groups, food has no
+  // "Merch style", D-302). Draw only the groups the row carries — reading every
+  // group crashed the whole view on the first row.
+  const rowGroups = groups.filter((g) => r.groups?.[g.key]);
   const [open, setOpen] = useState(false);
   const [blocking, setBlocking] = useState(false);
   const unblock = async () => {
@@ -122,7 +127,7 @@ function Row({ r, groups, canEdit, onChanged, onOpenSku }) {
               )}
             </div>
             <div className="flex flex-wrap gap-1">
-              {groups.map((g) => <GroupChip key={g.key} g={g} res={r.groups[g.key]} />)}
+              {rowGroups.map((g) => <GroupChip key={g.key} g={g} res={r.groups[g.key]} />)}
             </div>
             {r.block && (
               <p className="text-[11px] text-gray-600" data-block-line>
@@ -141,7 +146,7 @@ function Row({ r, groups, canEdit, onChanged, onOpenSku }) {
             </ul>
           )}
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
-            {groups.map((g) => {
+            {rowGroups.map((g) => {
               const res = r.groups[g.key];
               return (
                 <div key={g.key} data-group-detail={g.key}>
