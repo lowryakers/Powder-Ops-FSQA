@@ -4506,6 +4506,10 @@ since go-live and in the last 90 days, and gives a verdict: never used / machine
   (`review_meaning`/`review_hash`; `approvals[role].meaning/hash`). The record interface cannot do either. A verify that
   signs one must send `signature_password`. `verify:signgates` (30).
 
+## New retains are logged in ReadyDoc; a retention record is never deleted (D-390)
+A-20261124-005: history stays in the old system, nothing is backfilled. `DELETE /api/retention/:id` is 403
+`RETENTION_DELETE_DISABLED` for everyone; a wrong retain is corrected (audited). `verify:retentionready` (17).
+
 ## A failed X-ray or metal-detector check puts the lot on hold (D-389)
 The check log stays in **Keychain**. "Log a failed check" on the Operator View files an ordinary `on_hold` record through
 `createQmsRecord` (reason prefix "Failed X-ray check — …"); a person, never a token. No Keychain ingest — do not build one

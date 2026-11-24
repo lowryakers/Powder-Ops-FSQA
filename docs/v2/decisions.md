@@ -11784,3 +11784,14 @@ Keychain with the batch record. A failed check raises a ReadyDoc hold; a person 
 - **Each log is its own hold** — two failures are two events. Nothing auto-releases; releasing stays on the On Hold
   path, by a person. A token or a bot account cannot log one (`PERSON_ONLY`) or release one.
 - `verify:failedcheck` (19, live + browser at 390px). The control — main before this — fails from the first read.
+
+## D-390 — New retains are logged in ReadyDoc; a retention record is never deleted (24 Nov 2026)
+A-20261124-005. From now on QA logs NEW retention samples in ReadyDoc; the history stays in the old system and
+nothing is backfilled or invented. The path was walked as a QA tech would use it and works: anyone signed in logs a
+pull (`POST /api/retention`), a destroyed box is refused, a retain is found by its lot and in the log, a correction is
+in place and audited. The panel's edit rule is narrower than the server's, so no "Import a box" 403.
+- **The one gap: an admin could still hard-delete a retention record** (`DELETE /api/retention/:id`). It now answers
+  `403 RETENTION_DELETE_DISABLED` for everyone (the D-383 shape, SEC hold A-20261102-019), and the row's Delete button
+  is gone. A wrong record is corrected, never removed. Destroying a box was always a status, not a delete.
+- `verify:retentionready` (17, live + browser). The control — main before this — fails 4: the admin's DELETE returns
+  200 and the row is gone.
