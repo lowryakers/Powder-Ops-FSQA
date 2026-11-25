@@ -38,6 +38,7 @@ to go and look.
 | Cleanup Review pile (D-084) | Close pre-launch work | Admin | Settings → Cleanup Review | Biweekly digest | reached |
 | Equipment setup gaps | Schedule, LOTO, design, course, WI | Maintenance / QA / DC by step | Equipment row badges | Bell lines routed by department | reached |
 | Controlled change parked | Approve the deployed definition | Document Control | Controlled Changes; Doc Control Review | DCR raised + DM to DC | reached |
+| **Leftover formatting in a document (D-403)** | Clean up the text in the editor and save it | Document Control | Doc Control Review → Documents with leftover formatting; the editor's Clean up formatting button | Pull, not push — the readers already print it tidily, so nothing is wrong on the page while it waits | reached (pull) |
 | Document past review / drafts / open DCRs | Review, issue, decide | Document Control | Doc Control Review Center | The center is DC's own screen | reached |
 | Specification release gate (D-063) | Clear a held lot | QA | Lab Requests strip | Bell lines `coa-held`, `coa-gaps` | reached |
 | EMP results | Enter, act on | QA | Quality Schedules → EMP results | Bell lines `emp-action`, `emp-pending` | reached |

@@ -27,6 +27,7 @@ import { numberingWork } from './api/forms.js';
 import { zoneDrift, bpgDiagram } from './bpg-zones.js';
 import { GO_LIVE_DATE } from './db.js';
 import { typeFromNumber, TYPE_LABELS } from '../shared/document-type.js';
+import { cleanDocumentText, CLEANUP_LABELS } from '../shared/markdown-text.js';
 
 // The registry tab each document type lives on — where "Open to approve" lands.
 const TAB_FOR_TYPE = { sop: 'sops', work_instruction: 'work-instructions', job_description: 'job-descriptions' };
@@ -69,6 +70,37 @@ export function documentTypeProblems(db) {
     } else if (type === 'form' && !forms.has(String(d.doc_number || '').trim().toUpperCase())) {
       out.push({ ...d, type, suggested: null, why: 'Filed as Form, and the Forms tab has no register entry for this number.' });
     }
+  }
+  return out;
+}
+
+// Documents whose text still carries formatting left by Word or Google Docs —
+// stray backslashes, doubled spaces, empty table rows (D-403). Derived on every
+// read from the copy a person would edit: the open draft revision when there is
+// one, otherwise the document. Nothing here rewrites a document; it is fixed in
+// the editor with "Clean up formatting" and saved like any other edit, so an
+// approved document changes only through its next revision.
+export function formattingLeftovers(db) {
+  const docs = db.prepare(`SELECT d.id, d.doc_number, d.title, d.doc_type, d.status, d.description,
+      r.id AS draft_id, r.revision AS draft_revision, r.description AS draft_description
+    FROM sop_documents d
+    LEFT JOIN document_revisions r ON r.document_id = d.id AND r.status = 'draft'
+    WHERE d.status != 'archived' AND COALESCE(d.doc_type, 'sop') != 'reference'
+    ORDER BY d.doc_number`).all();
+  const out = [];
+  for (const d of docs) {
+    const text = d.draft_id ? (d.draft_description ?? '') : (d.description ?? '');
+    if (!text) continue;
+    const r = cleanDocumentText(text);
+    const found = Object.entries(r.changes).filter(([, n]) => n > 0);
+    const checks = Object.entries(r.checks).filter(([, n]) => n > 0);
+    if (!found.length && !checks.length) continue;
+    const where = d.draft_id
+      ? `Open the draft revision ${d.draft_revision || ''} and use Clean up formatting.`.replace('  ', ' ')
+      : d.status === 'draft'
+        ? 'Edit the draft and use Clean up formatting.'
+        : 'Start a new revision and use Clean up formatting; the document in force changes when that revision is approved.';
+    out.push({ ...d, found, checks, where });
   }
   return out;
 }
@@ -252,6 +284,28 @@ export const SOURCES = [
       overdue: false,
       extra: d.why,
       ...(TAB_FOR_TYPE[d.type] ? { link: `/?tab=${TAB_FOR_TYPE[d.type]}&doc=${d.id}`, link_label: 'Open', document_id: d.id, tab: TAB_FOR_TYPE[d.type] } : {}),
+    })),
+    canAct: isDocController,
+  },
+  // ── Leftover formatting from Word / Google Docs (D-403). Not batchable on
+  // purpose: an approved document changes only through a revision, so each row
+  // opens the document and the clean-up is applied, reviewed and approved there.
+  {
+    key: 'formatting-leftovers',
+    label: 'Documents with leftover formatting',
+    module: 'document-control',
+    noun: 'document',
+    plural: 'documents',
+    help: 'Stray backslashes ("\\-organoleptic"), doubled spaces, invisible characters and empty table rows left behind by Word or Google Docs. The screen and the PDF already print them tidily; this list is what is left to clean in the text itself. Open each one, use Clean up formatting in the editor, and save it like any other edit.',
+    count: (db) => formattingLeftovers(db).length,
+    pending: (db, limit = LIMIT) => formattingLeftovers(db).slice(0, limit).map(d => ({
+      id: d.id,
+      title: `${d.doc_number ? `${d.doc_number} — ` : ''}${d.title}`,
+      subtitle: [...d.found, ...d.checks].map(([k, n]) => `${n} ${CLEANUP_LABELS[k]}`).join(' · '),
+      date: null,
+      overdue: false,
+      extra: d.where,
+      ...(TAB_FOR_TYPE[d.doc_type || 'sop'] ? { link: `/?tab=${TAB_FOR_TYPE[d.doc_type || 'sop']}&doc=${d.id}`, link_label: 'Open', document_id: d.id, tab: TAB_FOR_TYPE[d.doc_type || 'sop'] } : {}),
     })),
     canAct: isDocController,
   },

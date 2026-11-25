@@ -12044,3 +12044,27 @@ That is a separate clean-up, not part of this change.
 
 `check:tablemerge` (21, pure: spans, round trip, PDF boxes), `verify:tablemerge` (12, browser; the control — the
 editor before this — fails at the first merge).
+
+## D-403 — Leftover formatting from Word / Google Docs is cleaned in the editor, never by a bulk rewrite (25 Nov 2026)
+Following D-402: Daniela's SOP tables carried "\-organoleptic", "\-Micro Panel\*", doubled spaces and empty rows —
+marks a Google Docs Markdown export and Word copy-and-paste leave behind. Lowry: "follow up with a clean-up for the stray
+back slashes… and any other similar clean up that you can do".
+
+**Decided:**
+- **The readers print it tidily now, whatever is stored.** The screen (`MarkdownView`) shows "\-" as "-", the PDF body
+  and table cells drop the backslashes and the `**` markers (a whole-bold cell prints in bold), and a pipe written
+  `\|` stays inside its cell in the editor, the screen and the PDF (`splitTableRow` — it used to split the cell).
+- **The stored text is cleaned by a person, in the editor:** "Clean up formatting" (`cleanDocumentText`,
+  `shared/markdown-text.js`, PURE) lists what it will change by kind before changing anything, applies it to the text
+  being edited, and the document is saved, reviewed and approved as usual. **No bulk rewrite**: an approved document
+  changes only through its next revision (D-277), and a script rewriting approved text would be an unapproved revision.
+- **Formatting only, never words.** Removed: backslashes before punctuation (kept where they are structure — "\- " or
+  "1\." at a line start, `\|`, and a `\*` / `\_` that could pair up), runs of spaces, non-breaking and invisible
+  characters, trailing spaces, extra blank lines, all-empty table rows and columns. An unpaired `**` is reported, not
+  changed. Asserted: the same words before and after, and a second run changes nothing.
+- **Doc Control Review → "Documents with leftover formatting"** lists what is left, read from the copy a person would
+  edit (the open draft revision when there is one) and saying where to fix it. Read-only, no badge — the page already
+  reads correctly while it waits.
+
+`check:textcleanup` (26, pure), `verify:textcleanup` (18, live + browser). Controls — the code before this — fail 5 and
+fail at the first reader assertion.

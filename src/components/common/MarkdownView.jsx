@@ -9,22 +9,26 @@
 // edit, and they must not be able to inject markup.
 
 import { spanLayout } from '../../../shared/table-spans.js';
+import { splitTableRow } from '../../../shared/markdown-text.js';
 
 /* ───────── Minimal, safe Markdown renderer (React nodes, no innerHTML) ───────── */
 function renderInline(text, kp) {
   const nodes = [];
   let rest = text;
   let k = 0;
-  const pattern = /(\*\*(.+?)\*\*|`(.+?)`|\*(.+?)\*|\[(.+?)\]\((https?:\/\/[^\s)]+)\))/;
+  // A backslash before punctuation ("\-organoleptic", left by a Word or Google Docs
+  // export) is the character itself, never a marker (D-403).
+  const pattern = /(\\([\\`*_{}[\]()#+\-.!|<>~=:;'"&%$@,/?])|\*\*(.+?)\*\*|`(.+?)`|\*(.+?)\*|\[(.+?)\]\((https?:\/\/[^\s)]+)\))/;
   while (rest) {
     const m = rest.match(pattern);
     if (!m) { nodes.push(rest); break; }
     if (m.index > 0) nodes.push(rest.slice(0, m.index));
     const tok = m[0];
-    if (tok.startsWith('**')) nodes.push(<strong key={`${kp}-${k++}`}>{m[2]}</strong>);
-    else if (tok.startsWith('`')) nodes.push(<code key={`${kp}-${k++}`} className="bg-gray-100 px-1 rounded text-[0.9em]">{m[3]}</code>);
-    else if (tok.startsWith('*')) nodes.push(<em key={`${kp}-${k++}`}>{m[4]}</em>);
-    else nodes.push(<a key={`${kp}-${k++}`} href={m[6]} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">{m[5]}</a>);
+    if (tok.startsWith('\\')) nodes.push(m[2]);
+    else if (tok.startsWith('**')) nodes.push(<strong key={`${kp}-${k++}`}>{renderInline(m[3], `${kp}-${k}`)}</strong>);
+    else if (tok.startsWith('`')) nodes.push(<code key={`${kp}-${k++}`} className="bg-gray-100 px-1 rounded text-[0.9em]">{m[4]}</code>);
+    else if (tok.startsWith('*')) nodes.push(<em key={`${kp}-${k++}`}>{renderInline(m[5], `${kp}-${k}`)}</em>);
+    else nodes.push(<a key={`${kp}-${k++}`} href={m[7]} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">{m[6]}</a>);
     rest = rest.slice(m.index + tok.length);
   }
   return nodes;
@@ -41,7 +45,7 @@ export default function MarkdownView({ text }) {
     if (!t) { i++; continue; }
     // GFM table: a "| a | b |" header row followed by a "| --- | --- |" separator
     if (t.startsWith('|') && i + 1 < lines.length && /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(lines[i + 1]) && lines[i + 1].includes('-')) {
-      const splitRow = (row) => row.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+      const splitRow = splitTableRow;
       const header = splitRow(lines[i]); i += 2;
       const rows = [];
       while (i < lines.length && lines[i].trim().startsWith('|')) { rows.push(splitRow(lines[i])); i++; }
