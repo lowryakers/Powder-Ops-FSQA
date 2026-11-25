@@ -603,6 +603,55 @@ export const QMS_TYPES = {
       { key: 'quality', label: 'Reviewed by QA', required: true, departments: ['qa'] },
     ],
   },
+
+  // FORM 100-01 V1 — Material Verification Checklist (D-395, A-20261124-003).
+  // "1 SHEET PER PICK": the QA lead checks a Manufacturing Order's PICK against
+  // its Pick List before production — a step on the MO, not on the receiving
+  // dock. The five questions are TRANSCRIBED from the plant's sheet, verbatim; a
+  // wording change is a Document Change Request. Signed by the QA lead with the
+  // password (the QMS approve path); `signRefusals` below is checked first.
+  material_verification: {
+    key: 'material_verification',
+    label: 'Pick Verification',
+    singular: 'Material Verification Checklist',
+    short: 'MV',
+    moduleId: 'production-log',
+    formCode: 'FORM 100-01 V1',
+    numberPrefix: 'MV-',
+    numberPad: 4,
+    primaryField: 'mo_number',
+    dateLabel: 'Date',
+    fields: [
+      { key: 'mo_number', label: 'Manufacturing Order #', type: 'text' },
+      { key: 'q_part_numbers', label: "Do the part #'s on the physical pick match the part #'s on the Pick List?", type: 'select', options: ['Yes', 'No', 'N/A'] },
+      { key: 'q_part_numbers_note', label: 'Notes', type: 'text' },
+      { key: 'q_quantities', label: 'Do the part quantities match or exceed the quantities listed on the Pick List?', type: 'select', options: ['Yes', 'No', 'N/A'] },
+      { key: 'q_quantities_note', label: 'Notes', type: 'text' },
+      { key: 'q_labels', label: 'Do all the boxes, bags, and containers have correct labels?', type: 'select', options: ['Yes', 'No', 'N/A'] },
+      { key: 'q_labels_note', label: 'Notes', type: 'text' },
+      { key: 'q_mo_reconciliation', label: 'Does the Manufacturing Order # on the Reconciliation sheet match the Pick List?', type: 'select', options: ['Yes', 'No', 'N/A'] },
+      { key: 'q_mo_reconciliation_note', label: 'Notes', type: 'text' },
+      { key: 'q_lots', label: 'Does the Lot # on the physical pick match the Lot # on the Pick List?', type: 'select', options: ['Yes', 'No', 'N/A'] },
+      { key: 'q_lots_note', label: 'Notes', type: 'text' },
+      { key: 'issues', label: 'NOTES — Record all issues below and report to Warehouse Team (item · issue)', type: 'textarea' },
+      { key: 'issues_resolved_by', label: 'Initial if Resolved', type: 'text' },
+    ],
+    logColumns: ['record_number', 'mo_number', 'record_date', 'approvals'],
+    approvals: [
+      { key: 'qa_lead', label: 'QA Lead', required: true, departments: ['qa'] },
+    ],
+    csv: { number: ['mv #'], map: { 'manufacturing order #': 'mo_number' } },
+    signRefusals: (d = {}) => {
+      const out = [];
+      if (!String(d.mo_number || '').trim()) out.push('Name the Manufacturing Order.');
+      const qs = ['q_part_numbers', 'q_quantities', 'q_labels', 'q_mo_reconciliation', 'q_lots'];
+      const blank = qs.filter(k => !['Yes', 'No', 'N/A'].includes(d[k]));
+      if (blank.length) out.push(`${blank.length} question${blank.length === 1 ? '' : 's'} still blank.`);
+      if (qs.some(k => d[k] === 'No' && !String(d[`${k}_note`] || '').trim())) out.push('Each "No" needs a note saying what is wrong.');
+      if (qs.some(k => d[k] === 'No') && !String(d.issues || '').trim()) out.push('Record the issue for the Warehouse Team.');
+      return out;
+    },
+  },
 };
 
 export function getType(typeKey) {
