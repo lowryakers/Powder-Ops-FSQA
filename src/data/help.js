@@ -533,6 +533,9 @@ export const GUIDES = [
 
 // Newest first. Written in the PR that ships the change.
 export const WHATS_NEW = [
+  { date: '2026-11-25', d: 'D-401', module: 'training', open: { tab: 'training' },
+    title: 'The Quality bot closes training left behind by people who have left',
+    body: 'An open training card assigned to a deactivated account can be marked N/A by the bot, with the reason. It is never counted as completed.' },
   { date: '2026-11-25', d: 'D-400', module: 'settings', open: { tab: 'settings', section: 'users' },
     title: 'A bot works Suppliers, COC Drop and COA intake when its account has Edit',
     body: 'Set the bot account to Edit on Suppliers, COC Drop or COA in Settings → Users and its write token works there at once; View or off closes it. Approving, signing and deleting stay a person\'s.' },

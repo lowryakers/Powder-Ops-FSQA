@@ -107,7 +107,7 @@ X-Offset: 100
 
 A `write` token may write **only** to the routes below (`WRITE_AREAS` in `server/bot-api.js`). Every other write is refused with `token_denied` / `not_open_to_tokens`. Being on this list only opens the door: the token acts as its account, so the account's module grant and the route's own role rule still decide. A token never does more than its account can.
 
-**Commodity areas (D-400).** Suppliers, COC Drop and COA intake open to a `write` token either through the token grant named below **or** through explicit **Edit** on the matching module for the bot's account in Settings → Users: Suppliers → `suppliers`; COC Drop → `coc-drop` or `suppliers` (filing into the library: `suppliers`); COA intake → `coa`. Only an explicit Edit counts — never a role or department default — so setting the module to View or off closes it at once. Everything person-only below still wins.
+**Commodity areas (D-400).** Suppliers, COC Drop and COA intake open to a `write` token either through the token grant named below **or** through explicit **Edit** on the matching module for the bot's account in Settings → Users: Suppliers → `suppliers`; COC Drop → `coc-drop` or `suppliers` (filing into the library: `suppliers`); COA intake → `coa`; training clean-up → `training` (D-401). Only an explicit Edit counts — never a role or department default — so setting the module to View or off closes it at once. Everything person-only below still wins.
 
 | Area | Routes |
 |---|---|
@@ -122,6 +122,7 @@ A `write` token may write **only** to the routes below (`WRITE_AREAS` in `server
 | Document staging — **`sops-edit` (SOPs), `wi-edit` (Work Instructions), `jd-edit` (Job Descriptions) grants only** | `POST /api/documents` (a draft SOP), `PUT /api/documents/:id` (a draft SOP's fields and text), `POST /api/documents/:id/revisions` (a new revision of an approved SOP), `PUT /api/documents/:id/revisions/:rid` (that draft revision), `POST /api/documents/:id/attachments` (a PDF only). The grant is decided by the document's type (D-306). See [Document staging](#document-staging-sops-edit-wi-edit-jd-edit-grants). |
 | COA intake — **`coa-prep` grant or COA Edit** (D-400) | `POST /api/coa/requests` (a lab request's own facts — never `status`, never the certificate), `PUT /api/coa/requests/:id` (an **unsigned**, not-reopened request's facts, never `status`), `POST /api/coa/requests/:id/files` and `POST /api/coa/requests/:id/scan` (an unsigned request's lab PDF), `POST /api/coa/parse-coa` (read only). Signing, un-signing, applying, publishing, release-gate and settings changes, review decisions and deletes stay person-only. |
 | COA preparation — **`coa-prep` grant only** (D-313) | `PUT /api/coa/plans/:id` on a **draft** plan: its tests (limits, units, how each is judged, method, wording) and `items`, the products it is meant for, plus `notes`. `PUT /api/coa/products/:item`: register an item code, its `aliases`, `display_name` and `brand_owner`. Anything else in the body is refused by name. Every value saved reads "Bot-prepared, needs review" until a person approves the plan or marks the product reviewed; each write is a `bot_coa_write` audit row with the token's name and the old and new values. |
+| Training clean-up — **`training-na` grant or Training Edit** (D-401) | `POST /api/pm/work-orders/:id/not-applicable` on an open **training** card whose assignee's account is **deactivated**, with a `reason`. Never a completion, a sign-off or a delete; any other card, or an active person's, is refused. |
 | Messages | `POST /api/comms/channels/:id/messages`, `POST /api/comms/channels/:id/attachments` (pdf, png, jpg, csv, xlsx, docx only), `POST /api/comms/messages/:id/reactions`, `DELETE /api/comms/messages/:id/reactions/:emoji` (the bot's own reaction only) |
 
 ## Never via token
@@ -331,6 +332,18 @@ A `write` token holding the **`coa-prep`** grant, or whose account has **Edit on
 ### `POST /api/coa/parse-coa`
 
 - **Scope:** `write` + `coa-prep` or COA Edit. Multipart `file`. Reads a COA PDF and returns the fields; no request is filed.
+
+## Training clean-up (D-401)
+
+When a person leaves, their open training cards stay on the list until somebody closes them. A `write` token holding the **`training-na`** grant, or whose account has **Edit on Training** in Settings → Users, may close them as N/A. Nothing else about training is open to tokens: completing a card, recording a test, signing competence and deleting a card stay a person's.
+
+### `POST /api/pm/work-orders/:id/not-applicable`
+
+- **Scope:** `write` + `training-na` or Training Edit.
+- **Body:** `{ reason }` — required, e.g. "Account deactivated / employment ended. This is not a completion." A blank reason is **400**.
+- **Only** an open training card (`training_course_id` set) whose assignee's account is deactivated. A card that is not training is **403 `token_training_only`**; an active person's card is **403 `token_assignee_active`** ("Bots may mark N/A only for deactivated users."); an assignee that matches no single account is **403 `token_assignee_unknown`**. A card already closed is **409**.
+- **Writes:** `status = not_applicable`, the reason in `notes`; the completion time and completer stay empty. Audited as `not_applicable` with `via_token`, the previous and new status, the reason and the assignee id.
+- **Returns:** `{ skipped, status: "not_applicable", next_work_order: null }`.
 
 ## Nutrition panels (NFP)
 

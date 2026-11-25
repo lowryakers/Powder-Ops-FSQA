@@ -11999,3 +11999,22 @@ COC / COA and moving a queue's status are bot-only commodity work; toggling Edit
 - APPROVE_ROUTES and TOKEN_DENY still run first; nothing here approves, signs, qualifies, settles or deletes.
 
 `verify:botcommodity` (47; the control — `main` before this — fails with the 1:29 PM error), `check:apitokens` (+14).
+
+## D-401 — A bot closes a deactivated person's open training cards as N/A (25 Nov 2026)
+A-20261125-013. At 2:40 PM the Quality bot was refused (`not_open_to_tokens`) on 17 missed training cards assigned to
+two deactivated accounts. Lowry: "This doesn't need to be a human, right? This is data clean up." Standing rule the same
+day: when a token route blocks commodity bot work, fix the access in code rather than routing it to a person.
+
+**Decided:**
+- `POST /api/pm/work-orders/:id/not-applicable` is open to a `write` token in a new area `training-na`: the
+  `training-na` grant, or explicit Edit on Training for the bot's account (the D-400 commodity rule).
+- **For a token the route does one thing only** (`server/api/pm.js`): an open **training** card
+  (`training_course_id`) whose assignee's account is **deactivated**, with a reason. Any other card is 403
+  `token_training_only`; an active person's is 403 `token_assignee_active` ("Bots may mark N/A only for deactivated
+  users."); an assignee matching no single account is 403. Status becomes `not_applicable`; `completed_at` and
+  `completed_by` stay empty — it is not a completion. Never deleted.
+- Audited as `not_applicable` with `via_token`, previous and new status, reason and assignee id, beside the
+  `api_token_call` row. A person's own N/A is unchanged (its audit row now carries the signed-in user, not a name).
+- Completing a card, recording a test, signing competence and deleting stay person-only.
+
+`verify:bottrainingna` (14; the control — the code before this — fails with the 2:40 PM refusal), `check:apitokens` (+4).

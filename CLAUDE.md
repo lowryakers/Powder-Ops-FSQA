@@ -4540,6 +4540,11 @@ A manual supplier upload's `source_path` is `uploaded/<file id>/<name>`. `verify
 - The Suppliers "How this works" card reads the `qualify-a-supplier` guide. Never copy steps into a screen.
 - `verify:help` (24).
 
+## A bot closes a deactivated person's training cards as N/A (D-401)
+Area `training-na` (grant `training-na` or Training Edit) opens `POST /api/pm/work-orders/:id/not-applicable` to a token
+for an open **training** card whose assignee is **deactivated**, with a reason; nothing else. Completion fields stay
+empty. Never widen it to other cards or to completing. `verify:bottrainingna` (14).
+
 ## Commodity bot work opens with Edit on the bot's account (D-400)
 `COMMODITY_AREA_MODULES` / `tokenMayWorkArea` / `areaAccessReason` in `server/bot-api.js`. Suppliers, COC Drop and COA
 intake open to a `write` token on the grant OR **explicit** Edit on the account's module (never a role or department
