@@ -11913,7 +11913,7 @@ fix a scale check filed under the wrong room.
 On Maria's first question: a recurring task belongs to a TEAM, so everybody in QA already sees the Temp & Humidity
 checks. Angie is in Document Control, so she does not: naming her the owner on the Temp & Humidity schedules (D-094)
 makes them show for her too, and she does them on Fridays. "Only on Fridays for her" is not something a schedule says,
-and was not added — she simply is not in the app the other days, and whoever completes a card closes it for everyone. The scale-room guide describes D-396 and holds once that PR merges.
+and was not added — she simply is not in the app the other days, and whoever completes a card closes it for everyone. The scale-room guide describes D-396, merged first.
 
 `check:help` (354), `verify:help` (24, browser at 1280 and 390; the control — `main` before this — fails at the first
 Help page assertion).
