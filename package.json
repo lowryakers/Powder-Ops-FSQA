@@ -207,6 +207,7 @@
     "verify:sampling": "node scripts/verify-incoming-sampling.mjs",
     "verify:help": "node scripts/verify-help.mjs",
     "verify:botaddsupplier": "node scripts/verify-bot-add-supplier.mjs",
+    "verify:scaleroom": "node scripts/verify-scale-room.mjs",
     "verify:disposalnodelete": "node scripts/verify-disposal-no-delete.mjs",
     "verify:receivingnodelete": "node scripts/verify-receiving-no-delete.mjs",
     "verify:recordlookup": "node scripts/verify-record-lookup.mjs",

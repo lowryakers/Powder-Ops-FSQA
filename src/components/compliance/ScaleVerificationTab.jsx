@@ -1,6 +1,6 @@
 import { useState, Fragment } from 'react';
 import PrintRecordButton from '../common/PrintRecordButton';
-import { useApiGet, apiPut } from '../../hooks/useApi';
+import { useApiGet, apiPut, apiDelete } from '../../hooks/useApi';
 import { DispositionChip, DispositionForm, DispositionReadback } from '../common/ProductDisposition.jsx';
 import { useTableSort } from '../../lib/useTableSort';
 import SortHeader from '../common/SortHeader.jsx';
@@ -119,6 +119,22 @@ export default function ScaleVerificationTab({ canDecide = false, onDispositionC
     } catch (e) {
       if (!e?.cancelled) window.alert(e.message || 'Could not counter-sign this check.');
     } finally { setVerifying(null); }
+  };
+
+  // Correcting the room on an unverified check, and revoking a verification
+  // so a verified one can be corrected (D-396). The server decides who may.
+  const correctRoom = async (r) => {
+    const room = window.prompt(`Correct room for this ${r.form_code} check (now ${r.room || 'blank'}):`, r.room || '');
+    if (room == null || room.trim() === (r.room || '')) return;
+    const reason = window.prompt('Why is the room being corrected?');
+    if (!reason) return;
+    try { await apiPut(`/scale-verification/${r.id}/room`, { room: room.trim(), reason }); refresh(); }
+    catch (e) { window.alert(e.message); }
+  };
+  const revokeVerify = async (r) => {
+    if (!window.confirm(`Revoke ${r.verified_by}'s verification of this check? It can be verified again after it is corrected.`)) return;
+    try { await apiDelete(`/scale-verification/${r.id}/verify`); refresh(); refreshStatus(); }
+    catch (e) { window.alert(e.message); }
   };
 
   // SQF 11.2.3.4: a failed check owes a decision about the product weighed on
@@ -308,6 +324,18 @@ export default function ScaleVerificationTab({ canDecide = false, onDispositionC
                           { label: 'Filed from', value: r.source === 'kiosk' ? 'Kiosk / QR' : 'In app' },
                           { label: 'Comments', value: r.notes, wide: true },
                         ]}>
+                          {canVerify && (
+                            <div className="flex flex-wrap gap-2 mt-2" onClick={stopRowClick}>
+                              {!r.verified_by && (
+                                <button type="button" onClick={() => correctRoom(r)} data-scale-correct-room={r.id}
+                                  className="px-2.5 py-1 border border-gray-300 rounded-md text-xs font-medium hover:bg-gray-50">Correct room</button>
+                              )}
+                              {r.verified_by && (r.verified_by === user?.name || user?.role === 'admin') && (
+                                <button type="button" onClick={() => revokeVerify(r)} data-scale-revoke={r.id}
+                                  className="px-2.5 py-1 border border-gray-300 rounded-md text-xs font-medium hover:bg-gray-50">Revoke verification</button>
+                              )}
+                            </div>
+                          )}
                           <div>
                             <div className="text-[10px] uppercase tracking-wider font-semibold text-gray-500 mb-1">Three-point check</div>
                             <table className="text-xs">

@@ -11872,6 +11872,18 @@ D-052 arrangement), with the SOP's step wording verbatim (`shared/incoming-sampl
   register with a note; paper records before 25 Nov stay paper. `verify:sampling` (34). The control — main before
   this — fails.
 
+## D-396 — A scale check filed under the wrong room can be corrected (25 Nov 2026)
+Maria, 25 Nov: two scale checks from 2 Nov were filed under the wrong room and she asked for access to fix them. It
+was not an access problem: a filed scale verification had **no edit path at all** — only verify and revoke — and the
+screen offered no revoke either, although the server has had one since D-207.
+- **`PUT /api/scale-verification/:id/room`** (`correctScaleRoom`): QA, a supervisor or an admin (the verify rule),
+  with a reason, never on a verified check (409 `VERIFIED`, naming the signer) — revoke, correct, verify again. Only
+  the room moves: readings, form, result and who did it stay as filed. The instrument link follows the corrected room.
+  Audited with from, to and the reason. A token is refused.
+- **The expanded row now offers "Revoke verification"** (to the signer or an admin) and **"Correct room"** on an
+  unverified check.
+- `verify:scaleroom` (13, live + browser). The control — main before this — fails 6.
+
 ## D-397 — One Help page: what's new, how-tos, and why the app does that (25 Nov 2026)
 Lowry asked for release notes and how-to instructions in ReadyDoc that stay ultra simple, searchable, organized and
 actually used — and that take him out of the loop as the person everybody asks. Two of Maria's questions the same
