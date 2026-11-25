@@ -338,6 +338,20 @@ export const GUIDES = [
     ],
   },
 
+  {
+    id: 'pick-check',
+    q: 'How do I file a FORM 100-01 pick check?',
+    for: 'qa', owner: 'QA', checked: '2026-11-25',
+    module: 'production-log', open: { tab: 'production-log', view: 'picks' }, sop: 'FORM 100-01 V1',
+    keywords: 'pick check material verification form 100-01 mo pick list warehouse',
+    steps: [
+      'Production Log → Pick checks → new pick check.',
+      'Type the MO and answer each of the five questions against the Pick List: Yes, No or N/A.',
+      'A No needs a note, and the issue goes in the issues table for the Warehouse Team.',
+      'The QA lead signs with their password. It cannot be signed until every question is answered.',
+    ],
+  },
+
   /* ── Receiving and suppliers ──────────────────────────────────────── */
   {
     id: 'file-coc-before-truck',
@@ -531,6 +545,9 @@ export const WHATS_NEW = [
   { date: '2026-11-25', d: 'D-396', module: 'calibration', open: { tab: 'calibration', view: 'scale-verification' },
     title: 'A scale check filed under the wrong room can be corrected',
     body: 'Open the check, revoke the verification if it was verified, then Correct room with a reason. The old room and the reason stay in its history.' },
+  { date: '2026-11-25', d: 'D-395', module: 'production-log', open: { tab: 'production-log', view: 'picks' },
+    title: 'FORM 100-01 pick checks are filed in ReadyDoc',
+    body: 'Production Log → Pick checks: one sheet per pick. The QA lead answers the five questions against the Pick List and signs with a password.' },
   { date: '2026-11-25', d: 'D-394', module: 'receiving-log', open: { tab: 'receiving-log' },
     title: 'Incoming sampling is filed in ReadyDoc',
     body: 'After a receiving inspection is signed, click Sample on a line to file the sampling record SOP 402 V3 asks for. It tells you how many containers to open.' },

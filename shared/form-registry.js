@@ -53,7 +53,7 @@ export const FORM_REGISTRY = [
   /* ── Series 00X — cleaning, inspections, environment ─────────────────── */
   // Series 100, straight off the Master Index. Not wired to any task or record
   // yet, so it carries no `match` — it is listed, not claimed.
-  { code: 'FORM 100-01', revision: 'V1', title: 'Material Verification Checklist', where: 'paper' },
+  { code: 'FORM 100-01', revision: 'V1', title: 'Material Verification Checklist', where: 'readydoc', note: 'One per pick, on the Manufacturing Order: Production Log → Pick checks (D-395). Paper sheets before 25 Nov 2026 stay paper.' },
   {
     code: FORM_CODE, revision: DILUTION_REVISION, title: 'Chemical Dilution Logbook',
     where: 'readydoc',

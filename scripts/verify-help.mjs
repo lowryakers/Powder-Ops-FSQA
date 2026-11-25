@@ -12,6 +12,7 @@
 //   - an Operator-View-only account keeps the floor layout and opens Help from its header.
 // Caller sets PORT + DBPATH on a FRESH database.
 import { chromium } from 'playwright-core';
+import { WHATS_NEW } from '../src/data/help.js';
 
 const PORT = process.env.PORT || 5255;
 const URL = `http://localhost:${PORT}`;
@@ -58,7 +59,7 @@ try {
   let page = await as(A, '/?tab=help');
   await page.waitForSelector('[data-help-page]', { timeout: 15000 });
   t('Help is in the sidebar', await has(page, 'nav >> text=Help'));
-  t("What's new lists the latest change", await has(page, '[data-help-news-item="D-394"]'));
+  t("What's new lists the latest change", await has(page, `[data-help-news-item="${WHATS_NEW[0].d}"]`), WHATS_NEW[0].d);
   t('an admin sees the Settings guides', await has(page, '[data-help-guide="give-module-access"]'));
   t('…and the floor guides', await has(page, '[data-help-guide="complete-a-task"]'));
   t('"Why does the app do that?" is on the page', await has(page, '[data-help-rules]'));

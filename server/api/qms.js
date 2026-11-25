@@ -1287,8 +1287,14 @@ router.post('/:type/bulk-update', (req, res) => {
 // byte-for-byte the same record whichever door it came through.
 router.post('/:type/:id/approve', (req, res) => {
   const cfg = requireType(req, res); if (!cfg) return;
-  if (!gateSignature(req, res, { action: 'qms_approve' })) return;
   const db = getDb();
+  // What the form still lacks is said BEFORE the password is asked (D-195, D-395).
+  if (typeof cfg.signRefusals === 'function') {
+    const row = db.prepare('SELECT * FROM qms_records WHERE id = ? AND record_type = ?').get(req.params.id, cfg.key);
+    const refusals = row ? cfg.signRefusals(flatten(row)) : [];
+    if (refusals.length) return res.status(400).json({ error: refusals.join(' '), refusals });
+  }
+  if (!gateSignature(req, res, { action: 'qms_approve' })) return;
   const { error, status } = signQmsApproval(db, cfg, req.params.id, req.user, req.body?.role);
   if (error) return res.status(status || 400).json({ error });
   logAudit(req.user, 'sign', cfg.key, req.params.id, signatureEvidence());
@@ -1330,6 +1336,9 @@ export function signQmsApproval(db, cfg, id, user, roleKey, { batch = false } = 
   if (!canSignApproval(user, appr)) return { error: 'You are not authorized to sign this approval.', status: 403 };
   const flat = flatten(row);
   if (flat.approvals[roleKey]) return { error: `${flat.record_number} is already signed.`, status: 409 };
+  // A form may say what must be true before it is signed (D-395).
+  const refusals = typeof cfg.signRefusals === 'function' ? cfg.signRefusals(flat) : [];
+  if (refusals.length) return { error: refusals.join(' '), status: 400 };
   const rule = BULK_APPROVE[cfg.key];
   if (batch && rule && !rule.routine(flat)) {
     return { error: `${flat.record_number} is not routine — open it and sign it individually.`, status: 400 };

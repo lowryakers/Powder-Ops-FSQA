@@ -11872,6 +11872,24 @@ D-052 arrangement), with the SOP's step wording verbatim (`shared/incoming-sampl
   register with a note; paper records before 25 Nov stay paper. `verify:sampling` (34). The control — main before
   this — fails.
 
+## D-395 — FORM 100-01 is a pick check on the Manufacturing Order, filed in ReadyDoc (25 Nov 2026)
+A-20261124-003, pack spine-gap-09 PR 2, with Lowry's 25 Nov answer. FORM 100-01 V1 (Material Verification Checklist)
+reads "1 SHEET PER PICK": the QA lead checks an MO's pick against its Pick List before production. It is transcribed
+as a QMS form, `material_verification` (`server/qms-config.js`), on the Production Log module: **Production Log →
+Pick checks**.
+- **The five questions are the sheet's own words**, each Yes / No / N/A with its Notes; the sheet's issues table
+  ("record all issues below and report to Warehouse Team") and "Initial if Resolved" are kept. A wording change is a
+  DCR. Numbered `MV-0001`…
+- **Signed by the QA lead with the password**, through the QMS approve path (`signQmsApproval`, `gateSignature`).
+  The sheet's typed "Name (QA Lead)" is the signature, not a box.
+- **A QMS form may now declare `signRefusals(data)`** (the first is this one). The approve route checks it BEFORE the
+  password is asked (D-195), and `signQmsApproval` checks it again for every other door. Here: the MO named, every
+  question answered, a note on each "No", and the issue recorded for the Warehouse Team.
+- A token cannot sign (the approve guard); the warehouse can file and fill it, not sign. It is a QMS record, so Look
+  up records lists it. FORM 100-01 reads `readydoc` in the form register; paper sheets before 25 Nov stay paper.
+- Not built: a ReadyBot message to the warehouse on a "No". `verify:pickcheck` (16). The control — main before this —
+  fails.
+
 ## D-396 — A scale check filed under the wrong room can be corrected (25 Nov 2026)
 Maria, 25 Nov: two scale checks from 2 Nov were filed under the wrong room and she asked for access to fix them. It
 was not an access problem: a filed scale verification had **no edit path at all** — only verify and revoke — and the
