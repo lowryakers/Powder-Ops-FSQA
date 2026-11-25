@@ -247,6 +247,10 @@ Reads need the account's `suppliers` access. **Every write needs a `write` token
 
 - **Scope:** `read`. **Returns:** `{ suppliers, summary, dispositions, risk_criteria }` — each supplier with its gaps (no questionnaire, GMP certificate, letter of guarantee).
 
+### `POST /api/suppliers`
+
+- **Scope:** `write` + `suppliers-edit` (D-393). **Body:** `name`, `vendor_type` (required while `actively_using`, the default), `actively_using`, `website`, `notes`. **Returns:** `{ ok, id }`, 201. The supplier starts unqualified with `source = 'bot'`; approving it stays a person's (the disposition is an approve route). **409:** `SUPPLIER_EXISTS` (the name or a former name is on file, with `existing_id`) or, for a token, `SUPPLIER_NEAR_MATCH` with `candidates` — "Berlin Packaging LLC" when "Berlin Packaging" is on file. File against the candidate, or leave the new one to a person.
+
 ### `GET /api/suppliers/documents/expiring`
 
 - **Scope:** `read`. **Query:** `days` (default 90, at most 365). **Returns:** `{ expired, expiring }`, each document with `material_label` and `material_part_number`.

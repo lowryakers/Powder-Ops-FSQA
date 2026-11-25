@@ -4506,6 +4506,10 @@ since go-live and in the last 90 days, and gives a verdict: never used / machine
   (`review_meaning`/`review_hash`; `approvals[role].meaning/hash`). The record interface cannot do either. A verify that
   signs one must send `signature_password`. `verify:signgates` (30).
 
+## A bot with suppliers-edit may add a supplier (D-393, supersedes D-350's "never a token")
+`POST /api/suppliers`: starts `unqualified`, `source = 'bot'`; a token's near-match (`matchStrength`) is 409
+`SUPPLIER_NEAR_MATCH` with candidates. Dispositions stay person-only. `verify:botaddsupplier` (14).
+
 ## Incoming sampling after a signed receiving inspection (D-394, SOP 402 V3, DRAFT-1)
 `server/incoming-sampling.js` (file · save · sign · revoke), `shared/incoming-sampling.js` (steps, `signRefusals`,
 `containersRequired`), `/api/receiving/sampling` (mounted ahead of `/api/receiving`). **The √(N+1) rule is controlled

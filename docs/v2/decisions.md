@@ -11832,6 +11832,18 @@ supplier, PO, parts, lot, quantity, the file names, and a link that opens that s
   delivery. New uploads use `uploaded/<file id>/<name>`; rows already filed are untouched. Nothing read the old shape.
 - `verify:cocalert` (26, live + browser, S3 stand-in). The control — main before this — fails.
 
+## D-393 — The Procurement bot may add a supplier; it starts unqualified and a person still decides (25 Nov 2026)
+Lowry, 25 Nov: adding a supplier a vendor's COC names is exactly the work a bot should do. D-350 had made
+`POST /api/suppliers` person-only by default, not for a stated risk: a new supplier starts `unqualified` and the
+disposition is an approve route a token can never reach. **This supersedes D-350's "never a token".**
+- **A token with the `suppliers-edit` grant may add a supplier** (`WRITE_AREAS`, `BOT_ROUTES`, the MCP `add_supplier`
+  tool). It lands `unqualified` with `source = 'bot'`, audited `via_token`, and the register shows "Added by bot".
+- **No second company by a near spelling**: the exact / former-name check stays (`SUPPLIER_EXISTS`), and for a token a
+  suffix or containment match by `matchStrength` (the archive import's matcher) is `409 SUPPLIER_NEAR_MATCH` with the
+  candidates — "Berlin Packaging LLC" when "Berlin Packaging" is on file. A person is not stopped by it.
+- A type is still required while we buy from it. Qualification, the banned-list check and every disposition stay a
+  person's. `verify:botaddsupplier` (14). The control — main before this — fails.
+
 ## D-394 — Incoming sampling is filed in ReadyDoc after the receiving inspection, per SOP 402 V3 (25 Nov 2026)
 A-20261124-003 / R-0831, pack spine-gap-09, with Lowry's 25 Nov answer on its shape. Read against the plant's own
 documents first, and the pack's premise did not hold:
