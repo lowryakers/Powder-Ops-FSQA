@@ -11949,3 +11949,11 @@ we just add it like AP Drop in ReadyDoc?"
 
 `verify:cocdrop` (49), `verify:cocdropui` (13, browser at 390 and 1280). The control — `main` before this — fails at the
 first drop.
+
+## D-399 — A recurring task's "Owner" box is "Also show to" (25 Nov 2026)
+Lowry, 25 Nov, on Angie (Document Control) covering QA's Temp & Humidity checks on Fridays: "She's not the owner. It
+should still be owned by QA." The field D-094 added (`pm_schedules.assigned_to`, and `quality_schedules.assigned_to`
+from D-368) never changed the owning team — the task stays on the team's list and counts as the team's work — but its
+label said Owner. **Renamed on screen only** to "Also show to (optional)" on Recurring Schedules and Quality Schedules,
+and the schedule rows read "Also shows to <name>". The column, the API and the behaviour are unchanged. Angie is named
+there on the Temp & Humidity schedules by QA, in the app. The Help guide says the same.

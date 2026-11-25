@@ -7174,6 +7174,8 @@ R2 URLs can't be fetched cross-origin (no CORS on the bucket) — always go thro
 route, same reason the Download button does.
 
 ## A recurring job can name its owner (`pm_schedules.assigned_to`, D-094)
+**On screen it is "Also show to (optional)" (D-399)** — the team owns the task; the named person also sees it. Never
+label it Owner again.
 - **ONE RAISE PATH (D-377, `server/raise-work.js`)**: `raiseWorkOrder(db, kind, fields, { owner })` writes every card a
   calendar raises — the PM recurrence, the manual Raise, POST /generate, **the housekeeping backfill**, quality
   schedules, document reviews, 72-hour re-cleans, vendor reviews and stability pulls. It sets the team (the source's,
