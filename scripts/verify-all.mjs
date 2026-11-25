@@ -235,6 +235,7 @@ const RUNS = [
   ['verify-coc-receiving-alert.mjs', 5250, {}, true],
   ['verify-incoming-sampling.mjs', 5252, {}, false],
   ['verify-help.mjs', 5255, {}, false],
+  ['verify-table-merge.mjs', 5259, {}, false],
   [['verify-coc-drop.mjs', 'verify-coc-drop-ui.mjs'], 5256, {}, true],
   ['verify-bot-commodity-routes.mjs', 5257, { API_TOKEN_WRITE_RPM: '500' }, true],
   ['verify-bot-training-na.mjs', 5258, { API_TOKEN_WRITE_RPM: '200' }, false],
