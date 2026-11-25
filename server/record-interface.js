@@ -33,7 +33,7 @@ import { formLabel } from '../shared/form-registry.js';
 import { moduleLevel } from './module-access.js';
 import { CHECK_RECORD_TYPES } from './check-record-types.js';
 import { isLookup, requestedCap, rowLimit } from './record-cap.js';
-import { RECEIVING_TYPE, CALIBRATION_TYPE, TRAINING_TYPE, DISPOSAL_TYPE, COA_TYPE } from './module-record-types.js';
+import { RECEIVING_TYPE, INCOMING_SAMPLING_TYPE, CALIBRATION_TYPE, TRAINING_TYPE, DISPOSAL_TYPE, COA_TYPE } from './module-record-types.js';
 
 export const INTERFACE = ['file', 'sign', 'revoke', 'retrieve', 'describe'];
 export { MAX_ROWS } from './record-cap.js';
@@ -350,6 +350,8 @@ export const RECORD_TYPES = [
   ...CHECK_RECORD_TYPES,
   // Receiving inspections and calibration records (D-371, server/module-record-types.js).
   RECEIVING_TYPE,
+  // Incoming sampling, the step after receiving — D-394.
+  INCOMING_SAMPLING_TYPE,
   CALIBRATION_TYPE,
   // Training records, disposals, and COA (read side only) — D-372.
   TRAINING_TYPE,

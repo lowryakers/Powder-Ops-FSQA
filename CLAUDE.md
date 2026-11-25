@@ -4506,6 +4506,12 @@ since go-live and in the last 90 days, and gives a verdict: never used / machine
   (`review_meaning`/`review_hash`; `approvals[role].meaning/hash`). The record interface cannot do either. A verify that
   signs one must send `signature_password`. `verify:signgates` (30).
 
+## Incoming sampling after a signed receiving inspection (D-394, SOP 402 V3, DRAFT-1)
+`server/incoming-sampling.js` (file · save · sign · revoke), `shared/incoming-sampling.js` (steps, `signRefusals`,
+`containersRequired`), `/api/receiving/sampling` (mounted ahead of `/api/receiving`). **The √(N+1) rule is controlled
+(`sampling:SOP 402`) — never a count on a screen.** A dietary ingredient is released only with a linked lab request that
+passed. QA signs with the password. FORM 402's packaging questions are FORM 418-01. `verify:sampling` (34).
+
 ## A COC / COA filed with its PO posts one ReadyBot alert in the receiving channel (D-392)
 `server/coc-receiving-alert.js`. The channel is `app_settings.receiving_alert_channel_id` (admin, Settings → ReadyBot
 messages) — **never put a channel id in code**; unset/archived ⇒ filed, nothing posted. Never a DM, client or HR channel.

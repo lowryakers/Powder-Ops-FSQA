@@ -137,6 +137,7 @@ import { tagQaInspectionRecords, tagQaInspectionTasks } from './server/qa-record
 import { syncAllKnifeStatuses } from './server/knife-state.js';
 import controlledRoutes, { runControlledSync } from './server/api/controlled.js';
 import receivingRoutes from './server/api/receiving.js';
+import samplingRoutes from './server/incoming-sampling.js';
 import shippingRoutes from './server/api/shipping.js';
 import filmInspectionRoutes from './server/api/film-inspection.js';
 import safetyRoutes from './server/api/safety.js';
@@ -2220,6 +2221,8 @@ app.use('/api/qms', qmsRoutes);
 // Structure is readable by anyone (forms need their own field/option lists to
 // render); every write inside is gated on admin / Log Builder edit.
 app.use('/api/structure', structureRoutes);
+// Incoming sampling (D-394) — mounted AHEAD of /api/receiving, or its /:id takes "sampling".
+app.use('/api/receiving/sampling', requireModuleWrite('receiving-log'), samplingRoutes);
 app.use('/api/receiving', requireModuleWrite('receiving-log'), receivingRoutes);
 // The outbound truck inspection lives in the Receiving Log module (same dock, same people, same grant).
 app.use('/api/shipping', requireModuleWrite('receiving-log'), shippingRoutes);

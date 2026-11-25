@@ -11831,3 +11831,31 @@ supplier, PO, parts, lot, quantity, the file names, and a link that opens that s
   `uploaded/<name>` under a unique (supplier, source_path) index, and vendors reuse names ("COC.pdf") every
   delivery. New uploads use `uploaded/<file id>/<name>`; rows already filed are untouched. Nothing read the old shape.
 - `verify:cocalert` (26, live + browser, S3 stand-in). The control — main before this — fails.
+
+## D-394 — Incoming sampling is filed in ReadyDoc after the receiving inspection, per SOP 402 V3 (25 Nov 2026)
+A-20261124-003 / R-0831, pack spine-gap-09, with Lowry's 25 Nov answer on its shape. Read against the plant's own
+documents first, and the pack's premise did not hold:
+- **FORM 402 V2 asks packaging questions** (carton/film/pouch measurements, colour, tare, tear notch, zip, barcode,
+  sample amount, expiry) and its log lists films. That work is **FORM 418-01**, already filed in ReadyDoc.
+- **FORM 100-01 V1 is a pick check** — "1 sheet per pick", a Manufacturing Order, part numbers, quantities, labels and
+  lots against the pick list. It belongs to the MO, not the receiving dock (pack 09 PR 2).
+- **No form exists for sampling a powder.** SOP 402 V3 § IV.B–C describes the work: √(N+1) containers, the sanitary
+  steps, the SAMPLED label, and release / hold / reject, with an identity test before a dietary ingredient is used.
+
+So the sampling record is DRAFTED from SOP 402 V3, stamped **DRAFT-1** until Document Control issues a number (the
+D-052 arrangement), with the SOP's step wording verbatim (`shared/incoming-sampling.js`).
+- **The step after a signed receiving inspection.** A "Sample" button on each line of a signed FORM 204-01 opens it
+  pre-filled (item, lot, PO, vendor, inspection); an unsigned inspection is 409 `RECEIVING_NOT_SIGNED`. One record per
+  receiving line. Receiving → **Sampling** lists them.
+- **The container count is a controlled rule** (`sampling:SOP 402`, `samplingControlledEntry`): √(N+1), rounded up.
+  A change parks for Document Control. A signed record freezes the rule and the count it was signed under.
+- **Refused to sign** until the material, lot and kind are named, enough containers are sampled, every step is
+  answered, a "no" has a note, and hold/reject has a reason. A release is refused with any "no" step; a **dietary
+  ingredient is released only with a linked lab request whose status is pass** (the identity test, § IV.C.1.a); any
+  other material needs the visual examination recorded (§ IV.C.2.a). The lab request stays the COA module's (D-257).
+- **QA or an admin signs**, with the password (`gateSignature`, meaning "Sampled the lot and recorded its disposition",
+  fingerprint). The dock files and fills it; a token and a bot account are refused and nothing is stored. Signed =
+  closed; revoke needs a reason and the password; nothing is deleted.
+- On the record interface (`incoming_sampling`), found by lot in Look up records. FORM 402 reads `readydoc` in the form
+  register with a note; paper records before 25 Nov stay paper. `verify:sampling` (34). The control — main before
+  this — fails.

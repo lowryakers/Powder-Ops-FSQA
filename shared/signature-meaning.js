@@ -11,6 +11,7 @@ export const SIGNATURE_MEANINGS = {
   qms_approval: (label) => `Approved as ${label}`,
   receiving_review: 'Reviewed the receiving inspection and signed it off',
   shipping_review: 'Reviewed the shipping truck inspection and signed it off',
+  incoming_sampling: 'Sampled the lot and recorded its disposition',
   disposal_approval: (label) => `Approved the disposal as ${label}`,
 };
 

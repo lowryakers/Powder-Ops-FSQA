@@ -113,7 +113,7 @@ export function ItemNotes({ rows, onChange, locked }) {
   );
 }
 
-export default function ReceivingChecklist({ inspectionNo, onClose, onAddLine }) {
+export default function ReceivingChecklist({ inspectionNo, onClose, onAddLine, onSample }) {
   const { data, refresh } = useApiGet(`/receiving/checklist/${encodeURIComponent(inspectionNo)}`, [inspectionNo]);
   const [answers, setAnswers] = useState({});
   const [header, setHeader] = useState({});
@@ -262,6 +262,13 @@ export default function ReceivingChecklist({ inspectionNo, onClose, onAddLine })
                               {l.part_description ? ` — ${l.part_description}` : ''}
                               {l.quantity_received != null ? ` · ${l.quantity_received} ${l.uom || ''}`.trimEnd() : ''}
                               {l.vendor_lot ? ` · Lot ${l.vendor_lot}` : ''}
+                              {/* The next step once this inspection is signed (D-394). */}
+                              {locked && onSample && (
+                                <button type="button" onClick={() => onSample(l.id)} data-sample-line={l.id}
+                                  className="ml-2 inline-flex items-center gap-1 rounded border border-powder-300 px-1.5 py-0.5 text-[11px] font-semibold text-powder-700 hover:bg-powder-50">
+                                  Sample
+                                </button>
+                              )}
                             </li>
                           ))}
                         </ul>

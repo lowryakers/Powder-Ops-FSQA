@@ -14,6 +14,7 @@ import { saveReceivingChecklist, signReceivingChecklist, revokeReceivingSignoff,
 import { fileCalibrationRecord } from './api/calibration.js';
 import { fileTrainingRecord, withdrawCompetence } from './api/training.js';
 import { fileDisposal, signDisposal, revokeDisposalApproval } from './api/disposals.js';
+import { fileSampling, signSampling, revokeSampling, canFileSampling } from './incoming-sampling.js';
 
 const sqlDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d || '')) ? String(d) : null;
 const cap = rowLimit;
@@ -95,6 +96,53 @@ export const RECEIVING_TYPE = {
         signatures: r.reviewed_by ? [{ role: 'reviewed', label: 'Packet reviewed by', name: r.reviewed_by, at: r.reviewed_at }] : [],
         group: null,
         link: { tab: 'receiving-log', id: r.inspection_no },
+      };
+    },
+};
+
+// ── Incoming sampling (D-394) ───────────────────────────────────────────────
+// The step after a signed receiving inspection: a lot sampled per SOP 402 V3
+// and released, held or rejected, signed by QA with the password.
+export const INCOMING_SAMPLING_TYPE = {
+    type: 'incoming_sampling',
+    label: 'Incoming sampling (SOP 402, DRAFT-1)',
+    modules: ['receiving-log'],
+    filters: ['lot'],
+    file: (db, user, input) => {
+      const out = fileSampling(db, user, input);
+      return out.error ? out : { status: out.status, id: out.row.id, row: out.row };
+    },
+    sign: (db, user, id, opts = {}) => signSampling(db, user, id, opts),
+    revoke: (db, user, id, opts = {}) => revokeSampling(db, user, id, opts),
+    get: (db, id) => db.prepare('SELECT * FROM incoming_samplings WHERE id = ? OR sampling_no = ?').get(id, id) || null,
+    canRead: (user) => !!moduleLevel(user, 'receiving-log'),
+    canFile: (user) => canFileSampling(user),
+    retrieve(db, q = {}, user = null) {
+      if (user && !moduleLevel(user, 'receiving-log')) return [];
+      if (q.equipment || q.place) return [];
+      const { where, params } = common(q, { at: 'sampled_at', by: 'created_by', signedBy: 'signed_by' });
+      if (q.lot) {
+        where.push('(lower(vendor_lot) = lower(?) OR lower(COALESCE(internal_lot, \'\')) = lower(?))');
+        params.push(String(q.lot).trim(), String(q.lot).trim());
+      }
+      return db.prepare(`SELECT * FROM incoming_samplings ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+        ORDER BY sampled_at DESC, created_at DESC LIMIT ?`).all(...params, cap(q));
+    },
+    describe(r) {
+      const lots = [...new Set([r.vendor_lot, r.internal_lot].filter(Boolean))];
+      return {
+        type: 'incoming_sampling', id: r.id,
+        form: `Incoming sampling ${r.form_revision || ''}`.trim(), revision: r.form_revision || null,
+        title: `Sampling ${r.sampling_no} — ${r.item_name || r.part_number || 'material'}${r.vendor ? ` (${r.vendor})` : ''}`,
+        inspection_no: r.inspection_no || null, vendor: r.vendor || null, po_number: r.po_number || null,
+        place: null, equipment_id: null,
+        performed_by: r.created_by, performed_at: r.sampled_at,
+        result: r.signed_at ? (r.disposition || 'signed') : 'open',
+        lot: lots[0] || null, lots,
+        signed_by: r.signed_by || null, signed_at: r.signed_at || null,
+        signatures: r.signed_by ? [{ role: 'sampling', label: r.sign_meaning || 'Sampled and dispositioned by', name: r.signed_by, at: r.signed_at }] : [],
+        group: null,
+        link: { tab: 'receiving-log', view: 'sampling', id: r.sampling_no },
       };
     },
 };

@@ -137,7 +137,7 @@ export const FORM_REGISTRY = [
   // Read off the Master Index (V2, 2026-08). Marked "WHY IS THIS STILL NOT IN
   // USE" on the sheet, so it is listed as paper rather than claimed for
   // ReadyDoc — the register should say what is true, not what is intended.
-  { code: 'FORM 402', revision: 'V2', title: 'Quality Assurance Incoming Raw Materials, Labels and Component Sampling', where: 'paper', note: 'Master Index queries whether this is still in use.' },
+  { code: 'FORM 402', revision: 'V2', title: 'Quality Assurance Incoming Raw Materials, Labels and Component Sampling', where: 'readydoc', note: 'Sampling per SOP 402 V3 is filed in ReadyDoc after the receiving inspection (Receiving → Sampling), stamped DRAFT-1 until Document Control issues its number (D-394). Its packaging questions are FORM 418-01. Paper records before 25 Nov 2026 stay paper.' },
   { code: 'FORM 403-01', revision: 'V1', title: 'Internal Audit Checklist', where: 'readydoc', match: { module: 'internal-audits' }, revisionFrom: 'checklist_revision' },
   // Completed by the supplier on a signed link since 2026-09-09
   // (server/supplier-questionnaire.js); the filed PDF carries its own stamp.
