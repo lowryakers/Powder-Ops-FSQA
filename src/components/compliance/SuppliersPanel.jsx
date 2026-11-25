@@ -325,6 +325,12 @@ export default function SuppliersPanel({ user }) {
                             (also {s.legacy_names.join(', ')})
                           </span>
                         )}
+                        {s.source === 'bot' && (
+                          <span className="ml-1.5 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300"
+                            title={`Added by ${s.created_by || 'a bot'}. A person checks it before it is qualified.`} data-supplier-added-by-bot={s.id}>
+                            Added by bot
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-slate-500">{s.vendor_type || '—'}</td>
                       <td className="px-3 py-2">{s.actively_using ? <Check className="h-4 w-4 text-emerald-600" /> : ''}</td>

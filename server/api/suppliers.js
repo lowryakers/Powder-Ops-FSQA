@@ -130,8 +130,9 @@ router.get('/', (req, res) => {
   const suppliers = listSuppliers(db, { limit: Number(req.query.limit) || 500 });
   res.json({
     suppliers,
-    // A person (never a token) who edits the register may add a supplier (D-350).
-    can_create: canEdit(req.user) && req.auth?.kind !== 'token',
+    // Anyone who edits the register may add a supplier (D-350); a token only with
+    // the suppliers-edit grant (D-393).
+    can_create: canEditHere(req),
     dispositions: DISPOSITIONS,
     risk_criteria: RISK_CRITERIA,
     summary: {
@@ -766,11 +767,14 @@ function linkName(req, res) {
 
 router.post('/:id/link-name', linkName);
 
-// A new supplier, added by the person who buys from it (D-350). Before this a
-// supplier could only arrive through the admin's spreadsheet import. It starts
-// unqualified, like every supplier: approval is Quality's decision.
+// A new supplier, added by the person who buys from it (D-350) — or by the
+// Procurement bot when a vendor it has never seen sends a COC (D-393). Before
+// D-350 a supplier could only arrive through the admin's spreadsheet import. It
+// starts unqualified, like every supplier: approval is Quality's decision, and
+// a token can never make it (the disposition is an approve route).
 router.post('/', (req, res) => {
-  if (!canEdit(req.user) || req.auth?.kind === 'token') return res.status(403).json({ error: 'Not permitted' });
+  if (!canEditHere(req)) return res.status(403).json({ error: 'Not permitted' });
+  const viaToken = req.auth?.kind === 'token';
   const db = getDb();
   const b = req.body || {};
   const name = clean(b.name, 200);
@@ -783,6 +787,22 @@ router.post('/', (req, res) => {
         error: `"${r.name}" is already on the register. Open it instead of adding a second one.` });
     }
   }
+  // A bot does not guess that "Berlin Packaging LLC" is a new company when
+  // "Berlin Packaging" is on file (D-393). The same matcher the archive import
+  // uses: a suffix or containment match is refused, naming the supplier, and a
+  // person decides whether it is the same company. A person is not stopped here.
+  if (viaToken) {
+    const near = [];
+    for (const r of db.prepare('SELECT id, name, legacy_names FROM suppliers').all()) {
+      const names = [r.name, ...(() => { try { return JSON.parse(r.legacy_names || '[]'); } catch { return []; } })()];
+      const hit = names.map(n => matchStrength(name, n)).find(Boolean);
+      if (hit) near.push({ id: r.id, name: r.name, match: hit });
+    }
+    if (near.length) {
+      return res.status(409).json({ code: 'SUPPLIER_NEAR_MATCH', candidates: near,
+        error: `"${name}" looks like ${near.map(n => `"${n.name}"`).join(', ')} already on the register. File against that supplier, or ask a person to add the new one.` });
+    }
+  }
   const type = clean(b.vendor_type, 40);
   if (type && !VENDOR_TYPES.some(t => t.value === type)) {
     return res.status(400).json({ error: `Unknown type "${type}". Choose one of: ${VENDOR_TYPES.map(t => t.label).join(', ')}.` });
@@ -793,10 +813,11 @@ router.post('/', (req, res) => {
       error: `A supplier we buy from needs a type. Choose one of: ${VENDOR_TYPES.map(t => t.label).join(', ')}.` });
   }
   const id = uuid();
+  // `source = 'bot'` says a token added it, on the row and on the screen.
   db.prepare(`INSERT INTO suppliers (id, name, vendor_type, actively_using, website, notes, source, created_by)
-    VALUES (?,?,?,?,?,?, 'in_app', ?)`)
-    .run(id, name, type, using, clean(b.website), clean(b.notes, 2000), req.user?.name || null);
-  logAudit(req.user, 'supplier_created', 'supplier', id, { vendor_type: type, actively_using: using }, null,
+    VALUES (?,?,?,?,?,?,?,?)`)
+    .run(id, name, type, using, clean(b.website), clean(b.notes, 2000), viaToken ? 'bot' : 'in_app', req.user?.name || null);
+  logAudit(req.user, 'supplier_created', 'supplier', id, { vendor_type: type, actively_using: using, source: viaToken ? 'bot' : 'in_app' }, null,
     { name, vendor_type: type, actively_using: using }, name);
   res.status(201).json({ ok: true, id });
 });

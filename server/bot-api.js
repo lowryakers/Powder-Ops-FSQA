@@ -12,6 +12,7 @@ export const BOT_ROUTES = Object.freeze([
   { method: 'GET', path: '/api/bot/whoami', module: null, scope: 'read' },
   { method: 'GET', path: '/api/products', module: 'products', scope: 'read', paged: true },
   { method: 'GET', path: '/api/suppliers', module: 'suppliers', scope: 'read' },
+  { method: 'POST', path: '/api/suppliers', module: 'suppliers (edit)', scope: 'write' },
   { method: 'GET', path: '/api/suppliers/documents/expiring', module: 'suppliers', scope: 'read' },
   { method: 'GET', path: '/api/suppliers/files', module: 'suppliers', scope: 'read' },
   { method: 'GET', path: '/api/suppliers/:id', module: 'suppliers', scope: 'read' },
@@ -340,6 +341,7 @@ export const WRITE_AREAS = Object.freeze([
   // contacts, ingredients, filing a document and correcting its facts. A
   // disposition, a banned-list check, a gate mode, a questionnaire send or
   // revoke, an import and every DELETE stay off this list on purpose.
+  { area: 'suppliers', grant: 'suppliers-edit', method: 'POST', re: /^\/suppliers$/, label: 'POST /api/suppliers — add a supplier; starts unqualified, near-match refused (suppliers-edit grant)' },
   { area: 'suppliers', grant: 'suppliers-edit', method: 'PUT', re: /^\/suppliers\/(?!banned-gate$|gmp-gate$|documents$|files$|import$|questionnaires$|materials$|contacts$|link-name-by-name$)[^/]+$/, label: 'PUT /api/suppliers/:id — details (never status; suppliers-edit grant)' },
   { area: 'suppliers', grant: 'suppliers-edit', method: 'POST', re: /^\/suppliers\/(?!banned-gate$|gmp-gate$|documents$|files$|import$|questionnaires$|materials$|contacts$|link-name-by-name$)[^/]+\/contacts$/, label: 'POST /api/suppliers/:id/contacts (suppliers-edit grant)' },
   { area: 'suppliers', grant: 'suppliers-edit', method: 'PUT', re: /^\/suppliers\/contacts\/[^/]+$/, label: 'PUT /api/suppliers/contacts/:cid (suppliers-edit grant)' },
