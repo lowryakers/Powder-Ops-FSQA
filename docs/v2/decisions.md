@@ -11889,3 +11889,89 @@ Pick checks**.
   up records lists it. FORM 100-01 reads `readydoc` in the form register; paper sheets before 25 Nov stay paper.
 - Not built: a ReadyBot message to the warehouse on a "No". `verify:pickcheck` (16). The control — main before this —
   fails.
+
+## D-396 — A scale check filed under the wrong room can be corrected (25 Nov 2026)
+Maria, 25 Nov: two scale checks from 2 Nov were filed under the wrong room and she asked for access to fix them. It
+was not an access problem: a filed scale verification had **no edit path at all** — only verify and revoke — and the
+screen offered no revoke either, although the server has had one since D-207.
+- **`PUT /api/scale-verification/:id/room`** (`correctScaleRoom`): QA, a supervisor or an admin (the verify rule),
+  with a reason, never on a verified check (409 `VERIFIED`, naming the signer) — revoke, correct, verify again. Only
+  the room moves: readings, form, result and who did it stay as filed. The instrument link follows the corrected room.
+  Audited with from, to and the reason. A token is refused.
+- **The expanded row now offers "Revoke verification"** (to the signer or an admin) and **"Correct room"** on an
+  unverified check.
+- `verify:scaleroom` (13, live + browser). The control — main before this — fails 6.
+
+## D-397 — One Help page: what's new, how-tos, and why the app does that (25 Nov 2026)
+Lowry asked for release notes and how-to instructions in ReadyDoc that stay ultra simple, searchable, organized and
+actually used — and that take him out of the loop as the person everybody asks. Two of Maria's questions the same
+morning were the test cases: who sees the Temp & Humidity task and whether it can go to Angie on Fridays, and how to
+fix a scale check filed under the wrong room.
+
+**Decided:**
+- **One Help page, for every employee** (`help`, Overview group, `visible` = any non-guest account). It has three
+  parts: What's new, How do I…, and Why does the app do that? (the existing `platformRules.js`, now searchable in one
+  place instead of only behind scattered "Why?" tips).
+- **Guides are data** (`src/data/help.js`), not a wiki. Each has a question as its title, 3–7 steps, an "Open it"
+  link to the screen, the procedure where one exists, the team that keeps it, and the day it was last checked.
+- **`check:help` (in `npm run check`) fails** on an "Open it" that names a screen that no longer exists, a guide not
+  checked in 180 days, a guide with no keeping team (never a person's name), Spanish that does not match step for
+  step, and a What's new entry naming a decision that does not exist. That is what keeps it from going stale without
+  Lowry reading it.
+- **A person sees only the guides for screens they can open** — the same nav rule the sidebar uses. Floor guides carry
+  the plant's Spanish. The ⓘ beside a page title lists that screen's guides; the search box (⌘K) finds guides by
+  their question. The two floor layouts (Operator-View-only accounts and `/operator`) open Help from the header,
+  because they have no sidebar; Help does not count as a second module, so the floor layout is kept.
+- **The Suppliers "How this works" card now reads its steps from the Help data**, so the two cannot drift. The new
+  product flow's nine gates stay where they are (`shared/product-stage.js` is their one owner); Help links to them.
+- **Not a controlled document.** A guide is where the button is; the SOP is the procedure, and a guide links it.
+- **Every PR that changes something people will notice adds a What's new entry**, and a guide when it changes how a
+  job is done. Back-filled from D-349 to D-394.
+
+On Maria's first question: a recurring task belongs to a TEAM, so everybody in QA already sees the Temp & Humidity
+checks. Angie is in Document Control and covers them on Fridays, so she does not. How she should see them is
+Lowry's open question: the schedule's "Owner" field (D-094) works but the name says she owns it, and QA does. The
+guide describes the field and does not recommend it for her. The scale-room guide describes D-396, merged first.
+
+`check:help` (354), `verify:help` (24, browser at 1280 and 390; the control — `main` before this — fails at the first
+Help page assertion).
+
+## D-398 — COC Drop: the dock photographs a COC / COA in ReadyDoc; nobody scans or emails it (25 Nov 2026)
+Pack receiving-coc-drop. Lowry, 25 Nov 2026, 1:24 PM MT: "I'm not going to have Juan scan and email anything. Couldn't
+we just add it like AP Drop in ReadyDoc?"
+
+**Decided:**
+- **COC Drop is AP Drop's shape for the warehouse** (`server/api/coc-drop.js`, Warehouse nav, next to Receiving Log).
+  Mounted without `requireModuleWrite`: anyone signed in drops; the queue is checked in the router.
+- **One request is one drop, however many pages** (AP Drop files one row per file; a three-photo COC is one document).
+  Pages are stored and hashed first (`coc_drops`, `coc_drop_files`, `coc_drop_events`). The same pages dropped again
+  within 30 days are still filed, with `status_reason` naming the earlier drop.
+- **Statuses: new · matched · filed · mismatch, and nothing else.** A PO set on a new drop makes it matched; a mismatch
+  note makes it mismatch; mismatch by hand needs a reason; filed is only set by filing.
+- **The queue is Quality (qa/quality department), admins, the `coc-drop` edit grant, and a token holding `coc-drop` or
+  `suppliers-edit`.** Everyone else sees their own drops; another person's drop is 404. An auditor reads, never writes.
+  The nav entry is broader on purpose — warehouse, QA, purchasing, or anyone with Receiving Log sees it on day one.
+- **Filing reuses the library's writer.** `fileSupplierDocuments` and `createSupplier` were lifted out of
+  `api/suppliers.js` (the routes call them too, unchanged): the drop's pages become ONE PDF (a single PDF as it is,
+  photos stitched in page order with pdf-lib), filed as `coc` / `coa` with the D-391 fields, and the D-392 ReadyBot
+  alert reaches the receiving channel exactly as it does for a COC filed on the supplier. A name exactly on file is
+  that supplier; a new name is added **unqualified** (D-393, `source = 'bot'` for a token); a token's near-name match is
+  409 and nothing is added. Filing writes the library, so a token also needs `suppliers-edit` to file. Filing twice
+  is a no-op.
+- **No delete, no receive, no sign.** A DELETE on any COC Drop path is 403, and the three tables refuse DELETE by
+  trigger. Nothing here creates a receiving line, signs a checklist or qualifies a supplier.
+- **POs offered on the form are ones ReadyDoc already has** (receiving lines, the library, earlier drops, last 90
+  days). No MRPEasy or Keychain call. No OCR in this step; typed fields are stored as typed.
+- New token grant `coc-drop`; module id `coc-drop` (Settings → Warehouse: View drops and sees your own, Edit works the
+  queue).
+
+`verify:cocdrop` (49), `verify:cocdropui` (13, browser at 390 and 1280). The control — `main` before this — fails at the
+first drop.
+
+## D-399 — A recurring task's "Owner" box is "Also show to" (25 Nov 2026)
+Lowry, 25 Nov, on Angie (Document Control) covering QA's Temp & Humidity checks on Fridays: "She's not the owner. It
+should still be owned by QA." The field D-094 added (`pm_schedules.assigned_to`, and `quality_schedules.assigned_to`
+from D-368) never changed the owning team — the task stays on the team's list and counts as the team's work — but its
+label said Owner. **Renamed on screen only** to "Also show to (optional)" on Recurring Schedules and Quality Schedules,
+and the schedule rows read "Also shows to <name>". The column, the API and the behaviour are unchanged. Angie is named
+there on the Temp & Humidity schedules by QA, in the app. The Help guide says the same.

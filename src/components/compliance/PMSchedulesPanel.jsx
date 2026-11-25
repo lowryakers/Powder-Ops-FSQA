@@ -104,7 +104,7 @@ function TeamCell({ schedule }) {
         : <span className="text-amber-700 font-medium">nobody</span>}
       {schedule.assigned_to && (
         <span className="block text-[11px] text-gray-500" data-owner={schedule.id}>
-          {schedule.assigned_to}
+          Also shows to {schedule.assigned_to}
           {schedule.assigned_to_renamed_from && (
             <span className="text-gray-400"> (was {schedule.assigned_to_renamed_from})</span>
           )}
@@ -170,7 +170,7 @@ function EditRow({ schedule, onSaved, onCancel }) {
               puts it on theirs, which is what makes it reach an operator whose
               own department is something else. */}
           <label className="block">
-            <span className="block text-[11px] font-medium text-gray-500 mb-0.5">Owner (optional)</span>
+            <span className="block text-[11px] font-medium text-gray-500 mb-0.5">Also show to (optional)</span>
             <select value={form.assigned_to} data-schedule-owner
               onChange={e => setForm(f => ({ ...f, assigned_to: e.target.value }))} className={cls}>
               <option value="">Nobody in particular — the whole team</option>

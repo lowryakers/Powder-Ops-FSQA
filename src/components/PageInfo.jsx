@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { Info, X } from 'lucide-react';
+import { Info, X, LifeBuoy } from 'lucide-react';
+import { guidesForModule, openGuide } from '../data/help.js';
 
 // Per-module explainer: what the page does, what it connects to, and why it
 // matters for SQF. Opened from the ⓘ next to the page title.
@@ -215,15 +216,18 @@ export default function PageInfo({ moduleId, title }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const info = MODULE_INFO[moduleId];
+  // The how-to guides about this screen (D-397), so "how do I…" is answered
+  // from the page the question comes up on, not only from the Help page.
+  const guides = guidesForModule(moduleId);
   useEffect(() => {
     const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, []);
-  if (!info) return null;
+  if (!info && !guides.length) return null;
   return (
     <div className="relative" ref={ref}>
-      <button onClick={() => setOpen(o => !o)} className="p-1 text-gray-300 hover:text-powder-600 rounded" data-tip="About this page">
+      <button onClick={() => setOpen(o => !o)} className="p-1 text-gray-300 hover:text-powder-600 rounded" data-tip="About this page" data-page-info>
         <Info size={15} />
       </button>
       {open && (
@@ -232,6 +236,22 @@ export default function PageInfo({ moduleId, title }) {
             <h4 className="text-sm font-bold text-gray-900">{title}</h4>
             <button onClick={() => setOpen(false)} className="text-gray-300 hover:text-gray-500"><X size={15} /></button>
           </div>
+          {guides.length > 0 && (
+            <div data-page-guides>
+              <div className="text-[10px] font-bold uppercase text-gray-400 mb-1">How do I…</div>
+              <ul className="space-y-1">
+                {guides.map(g => (
+                  <li key={g.id}>
+                    <button type="button" onClick={() => { setOpen(false); openGuide(g.id); }} data-page-guide={g.id}
+                      className="flex items-start gap-1.5 text-left text-xs text-powder-700 hover:underline">
+                      <LifeBuoy size={12} className="mt-0.5 shrink-0" /> {g.q}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {info && (<>
           <div>
             <div className="text-[10px] font-bold uppercase text-gray-400 mb-0.5">What this page does</div>
             <p className="text-xs text-gray-700 leading-relaxed">{info.what}</p>
@@ -244,6 +264,7 @@ export default function PageInfo({ moduleId, title }) {
             <div className="text-[10px] font-bold uppercase text-powder-500 mb-0.5">Why it matters for SQF</div>
             <p className="text-xs text-gray-700 leading-relaxed">{info.sqf}</p>
           </div>
+          </>)}
         </div>
       )}
     </div>

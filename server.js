@@ -85,6 +85,7 @@ import { seedCandidates } from './server/candidates-seed.js';
 import reimbursementRoutes from './server/api/reimbursements.js';
 import bankingRoutes from './server/api/banking.js';
 import apDropRoutes, { repairHeaderVendors, grantApDropToDroppers } from './server/api/ap-drop.js';
+import cocDropRoutes from './server/api/coc-drop.js';
 import paymentRunRoutes from './server/api/payment-run.js';
 import paymentApprovalRoutes from './server/api/payment-approval.js';
 import { sendFailureNotices } from './server/payment-run.js';
@@ -2201,6 +2202,11 @@ app.use('/api/banking', requireModuleWrite('banking'), bankingRoutes);
 // queue is checked inside the router (admin, the ap-drop edit grant, or an
 // office/admin supervisor); everyone else reads only their own drops.
 app.use('/api/ap-drop', apDropRoutes);
+// COC Drop (D-398): the dock photographs a supplier's COC / COA. Mounted WITHOUT
+// requireModuleWrite, as AP Drop is — dropping is open to whoever is signed in
+// and holding the paper; working the queue (Quality, the coc-drop edit grant,
+// a token with coc-drop or suppliers-edit) is checked inside the router.
+app.use('/api/coc-drop', cocDropRoutes);
 // The weekly payment run (D-360): AP Drop's work-the-queue door, checked in the router.
 app.use('/api/payment-run', paymentRunRoutes);
 // Danny's payment-run page (D-361): public, token-gated in the router.

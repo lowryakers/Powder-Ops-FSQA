@@ -121,6 +121,19 @@ export const canFilmInspect = (u) => u?.role === 'admin'
 // he had it. Now it is the AP Drop grant (view or edit) or an office/admin
 // supervisor, the same people the server's canWorkQueue lets work the queue.
 // Never an auditor.
+// COC Drop (D-398). Broader than the queue on purpose: the dock (warehouse,
+// and anyone who already has the Receiving Log) sees the button on day one,
+// without a Settings pass. Quality, Purchasing and admins too. An auditor reads
+// it as they read the Receiving Log. The server's canWorkCocQueue decides who
+// works the queue; this only decides who sees the entry.
+export function canSeeCocDrop(u) {
+  if (!u || u.is_external) return false;
+  if (u.role === 'admin') return true;
+  const dept = String(u.department || '').toLowerCase();
+  if (['warehouse', 'qa', 'quality', 'purchasing'].includes(dept)) return true;
+  return canViewModule(u, 'receiving-log') || canViewModule(u, 'coc-drop');
+}
+
 export function canSeeApDrop(u) {
   if (!u || u.role === 'auditor') return false;
   if (u.role === 'admin') return true;

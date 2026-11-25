@@ -4510,6 +4510,10 @@ since go-live and in the last 90 days, and gives a verdict: never used / machine
 `POST /api/suppliers`: starts `unqualified`, `source = 'bot'`; a token's near-match (`matchStrength`) is 409
 `SUPPLIER_NEAR_MATCH` with candidates. Dispositions stay person-only. `verify:botaddsupplier` (14).
 
+## A scale check's room is corrected, not edited (D-396)
+`PUT /scale-verification/:id/room`: QA/supervisor/admin, reason, never on a verified check (revoke first); readings and
+form never change. The row offers Revoke verification and Correct room. `verify:scaleroom` (13).
+
 ## FORM 100-01 pick check: Production Log → Pick checks (D-395)
 QMS type `material_verification` (moduleId `production-log`), the sheet's five questions verbatim, signed by the QA
 lead with the password. **A QMS form may declare `signRefusals(data)`** — checked before the password on the approve
@@ -4525,6 +4529,26 @@ passed. QA signs with the password. FORM 402's packaging questions are FORM 418-
 `server/coc-receiving-alert.js`. The channel is `app_settings.receiving_alert_channel_id` (admin, Settings → ReadyBot
 messages) — **never put a channel id in code**; unset/archived ⇒ filed, nothing posted. Never a DM, client or HR channel.
 A manual supplier upload's `source_path` is `uploaded/<file id>/<name>`. `verify:cocalert` (26).
+
+## One Help page: what's new, how-tos, why the app does that (D-397)
+`src/data/help.js` (`GUIDES`, `WHATS_NEW`, `guidesFor`, `guidesForModule`, `matchesHelp`, `openGuide`), `HelpPanel.jsx`
+(nav `help`, every non-guest), the ⓘ (`PageInfo.jsx`) and the ⌘K box list guides, `FloorHelp` on both floor layouts.
+- **A change people will notice adds a What's new entry in the same PR** (newest first, its `D-nnn`); a change to how a
+  job is done adds or updates a guide and its `checked` date. `check:help` fails a dead "Open it", a guide older than
+  180 days, no keeping team, or Spanish that does not match step for step.
+- A guide shows only to people who can open its `module`. It explains; it never decides — the server still does.
+- The Suppliers "How this works" card reads the `qualify-a-supplier` guide. Never copy steps into a screen.
+- `verify:help` (24).
+
+## COC Drop: the dock photographs a COC / COA; the queue files it (D-398)
+`server/api/coc-drop.js` (`canWorkCocQueue`, `stitchPages`), `coc_drops` / `coc_drop_files` / `coc_drop_events`,
+`CocDropPanel.jsx` (Warehouse → COC Drop, `canSeeCocDrop`), token grant `coc-drop`, module id `coc-drop`.
+- **One request = one drop, however many pages.** Statuses are only `new` / `matched` / `filed` / `mismatch`.
+- **Filing goes through `fileSupplierDocuments` and `createSupplier` (exported from `api/suppliers.js`)** — the same
+  writers as `POST /api/suppliers/:id/files` and `POST /api/suppliers`. Never a second library or alert path.
+- A token works the queue with `coc-drop` or `suppliers-edit`; filing needs `suppliers-edit`. Never receive, sign,
+  qualify or delete here: DELETE is 403 and the tables refuse DELETE by trigger.
+- No ERP calls (recent POs are read from ReadyDoc's own tables). `verify:cocdrop` (49), `verify:cocdropui` (13).
 
 ## The COC / COA library: filed before the truck by PO, part and lot (D-391)
 Kind `coc`; `supplier_files.po_number` / `part_number` / `qty_note` / `mismatch_note`; `GET /api/suppliers/files` (whole-entry
@@ -7155,6 +7179,8 @@ R2 URLs can't be fetched cross-origin (no CORS on the bucket) — always go thro
 route, same reason the Download button does.
 
 ## A recurring job can name its owner (`pm_schedules.assigned_to`, D-094)
+**On screen it is "Also show to (optional)" (D-399)** — the team owns the task; the named person also sees it. Never
+label it Owner again.
 - **ONE RAISE PATH (D-377, `server/raise-work.js`)**: `raiseWorkOrder(db, kind, fields, { owner })` writes every card a
   calendar raises — the PM recurrence, the manual Raise, POST /generate, **the housekeeping backfill**, quality
   schedules, document reviews, 72-hour re-cleans, vendor reviews and stability pulls. It sets the team (the source's,
