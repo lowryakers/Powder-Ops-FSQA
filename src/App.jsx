@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { setParam } from './lib/deepLink.js';
-import { FileSearch, Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Building2, LifeBuoy, PenLine, UserPlus2, HeartHandshake, Activity} from 'lucide-react';
+import { FileSearch, Shield, Wrench, Thermometer, Droplets, ScrollText, LayoutDashboard, Lock, HardHat, Settings, LogOut, FlaskConical, ClipboardCheck, FileWarning, FileText, GraduationCap, Package, Menu, X, ChevronDown, Bell, ChevronRight, Factory, CalendarDays, BarChart3, TestTubes,  Network, Trash2,  PackageCheck, Scissors, Sparkles, MessageSquare, Home, Search, CalendarClock, Users, KeyRound, ShoppingCart, Eye, PackageSearch, PanelRight, BadgeCheck, Smartphone, Lightbulb, Landmark, Newspaper, Scale , ShieldCheck, FileCheck2, Map as MapIcon, Image as ImageIcon, Archive, Building2, LifeBuoy, Camera, PenLine, UserPlus2, HeartHandshake, Activity} from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useApiGet, apiPost } from './hooks/useApi';
 import { getSocket } from './lib/socket';
@@ -10,7 +10,7 @@ import { setAppBadge } from './lib/appBadge';
 import { onDataChanged } from './lib/dataChanged';
 import { useEdgeSwipe } from './lib/useEdgeSwipe';
 import { useInstallPrompt, installEnvironment } from './lib/useInstallPrompt.js';
-import { visibleModuleIds, canViewModule, hasExplicitGrant, canSeeQaReview, canSeeApDrop, moduleLevel } from './utils/permissions';
+import { visibleModuleIds, canViewModule, hasExplicitGrant, canSeeQaReview, canSeeApDrop, canSeeCocDrop, moduleLevel } from './utils/permissions';
 import { registerNavAccess } from './lib/navAccess';
 import { OPT_IN_SET } from '../shared/opt-in-modules.js';
 import { defaultModuleIds } from '../shared/default-modules.js';
@@ -56,6 +56,7 @@ const DisposalsPanel = lazy(() => import('./components/compliance/DisposalsPanel
 const QMSRecordsPanel = lazy(() => import('./components/compliance/QMSRecordsPanel.jsx'));
 const KnifePanel = lazy(() => import('./components/compliance/KnifePanel.jsx'));
 const ReceivingLogPanel = lazy(() => import('./components/warehouse/ReceivingLogPanel.jsx'));
+const CocDropPanel = lazy(() => import('./components/warehouse/CocDropPanel.jsx'));
 import OfflineBar from './components/common/OfflineBar.jsx';
 const FlavorPanel = lazy(() => import('./components/compliance/FlavorPanel.jsx'));
 const CertificationsPanel = lazy(() => import('./components/compliance/CertificationsPanel.jsx'));
@@ -143,6 +144,9 @@ const NAV_GROUPS = [
     label: 'Warehouse',
     items: [
       { id: 'receiving-log', label: 'Receiving Log', icon: PackageCheck, keywords: 'receiving incoming raw material po part lot form 204' },
+      // The dock photographs a COC / COA here instead of scanning and emailing it (D-398).
+      { id: 'coc-drop', label: 'COC Drop', icon: Camera, keywords: 'coc coa certificate compliance analysis photo scan drop dock delivery po',
+        visible: canSeeCocDrop },
       { id: 'component-signout', label: 'Component Sign In/Out', icon: PackageCheck },
       { id: 'sign-out', label: 'Sign In/Out', icon: Wrench, anyOf: ['maintenance-signout', 'knife-accountability'], keywords: 'checked out knife blade razor scissor equipment tool chemical form 440-02 703-01' },
     ],
@@ -855,6 +859,7 @@ const RULE_WHY = {
   'change-register': 'Document Control / QA department, or any supervisor',
   'food-safety-culture': 'QA / Document Control department, or any supervisor',
   accounting: 'Office / admin supervisor (AP Drop queue)',
+  'coc-drop': 'Warehouse / QA / Purchasing department, or Receiving Log',
 };
 function accessReasons(user) {
   const ma = user?.module_access;
@@ -2252,6 +2257,7 @@ function App() {
           {(resolvedTab === 'quality-events' || HUB_OF[resolvedTab] === 'quality-events') &&
             <ModuleHub key={`qe-${resolvedTab}`} hubId="quality-events" user={user} initialTab={resolvedTab} badges={notifications?.badges} />}
           {resolvedTab === 'receiving-log' && <ReceivingLogPanel user={user} />}
+          {resolvedTab === 'coc-drop' && <CocDropPanel user={user} />}
           {resolvedTab === 'component-signout' && <QMSRecordsPanel recordType="component_sign_out" moduleId="component-signout" />}
           {resolvedTab === 'maintenance-signout' && <QMSRecordsPanel recordType="maintenance_sign_out" moduleId="maintenance-signout" />}
           {(resolvedTab === 'sign-out' || HUB_OF[resolvedTab] === 'sign-out') &&

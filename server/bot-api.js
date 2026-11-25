@@ -56,6 +56,13 @@ export const BOT_ROUTES = Object.freeze([
   { method: 'GET', path: '/api/ap-drop', module: null, scope: 'read', paged: true },
   { method: 'POST', path: '/api/ap-drop', module: null, scope: 'write' },
   { method: 'POST', path: '/api/ap-drop/:id/notes', module: null, scope: 'write' },
+  { method: 'GET', path: '/api/coc-drop', module: null, scope: 'read', paged: true },
+  { method: 'GET', path: '/api/coc-drop/meta', module: null, scope: 'read' },
+  { method: 'POST', path: '/api/coc-drop', module: null, scope: 'write' },
+  { method: 'PUT', path: '/api/coc-drop/:id', module: null, scope: 'write' },
+  { method: 'POST', path: '/api/coc-drop/:id/status', module: null, scope: 'write' },
+  { method: 'POST', path: '/api/coc-drop/:id/notes', module: null, scope: 'write' },
+  { method: 'POST', path: '/api/coc-drop/:id/file', module: null, scope: 'write' },
   { method: 'GET', path: '/api/partners', module: 'partner-reconciliation', scope: 'read', paged: true },
   { method: 'GET', path: '/api/partners/:id/reconcile', module: 'partner-reconciliation', scope: 'read' },
   { method: 'GET', path: '/api/partners/:id/credits', module: 'partner-reconciliation', scope: 'read', paged: true },
@@ -283,6 +290,14 @@ export const WRITE_AREAS = Object.freeze([
   { area: 'ap-drop', method: 'POST', re: /^\/ap-drop\/[^/]+\/reparse$/, label: 'POST /api/ap-drop/:id/reparse' },
   { area: 'ap-drop', method: 'POST', re: /^\/ap-drop\/[^/]+\/route-partner$/, label: 'POST /api/ap-drop/:id/route-partner (files a DRAFT on the ledger)' },
   { area: 'ap-drop', method: 'POST', re: /^\/ap-drop\/[^/]+\/status$/, label: 'POST /api/ap-drop/:id/status (triage moves, and in_qbo with a QuickBooks bill id)' },
+  // COC Drop (D-398) — the Procurement bot works the queue: `coc-drop` or
+  // `suppliers-edit` (any-of). Filing also needs suppliers-edit, checked in the
+  // router. Never a DELETE (TOKEN_DENY), never a receive or a sign-off.
+  { area: 'coc-drop', grants: ['coc-drop', 'suppliers-edit'], method: 'POST', re: /^\/coc-drop\/?$/, label: 'POST /api/coc-drop (upload; coc-drop or suppliers-edit grant)' },
+  { area: 'coc-drop', grants: ['coc-drop', 'suppliers-edit'], method: 'PUT', re: /^\/coc-drop\/(?!meta$|recent$)[^/]+$/, label: 'PUT /api/coc-drop/:id — PO, part, lot, quantity, supplier (coc-drop or suppliers-edit grant)' },
+  { area: 'coc-drop', grants: ['coc-drop', 'suppliers-edit'], method: 'POST', re: /^\/coc-drop\/[^/]+\/status$/, label: 'POST /api/coc-drop/:id/status — new, matched, mismatch (coc-drop or suppliers-edit grant)' },
+  { area: 'coc-drop', grants: ['coc-drop', 'suppliers-edit'], method: 'POST', re: /^\/coc-drop\/[^/]+\/notes$/, label: 'POST /api/coc-drop/:id/notes (coc-drop or suppliers-edit grant)' },
+  { area: 'coc-drop', grants: ['coc-drop', 'suppliers-edit'], method: 'POST', re: /^\/coc-drop\/[^/]+\/file$/, label: 'POST /api/coc-drop/:id/file — into the supplier library (suppliers-edit to file)' },
   // partner reconciliation — documents stay drafts while a token touches them
   { area: 'partner-recon', method: 'POST', re: /^\/partners\/[^/]+\/documents$/, label: 'POST /api/partners/:id/documents' },
   { area: 'partner-recon', method: 'POST', re: /^\/partners\/[^/]+\/documents\/scan$/, label: 'POST /api/partners/:id/documents/scan' },

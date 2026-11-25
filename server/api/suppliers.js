@@ -93,6 +93,8 @@ const clean = (v, max = 300) => { const s = String(v ?? '').trim(); return s ? s
 const today = () => new Date().toISOString().slice(0, 10);
 const canEditHere = (req) => canEdit(req.user)
   && (req.auth?.kind !== 'token' || (req.auth.grants || []).includes('suppliers-edit'));
+// For COC Drop (D-398), which adds a supplier the same way and under the same rule.
+export const canEditSuppliersHere = canEditHere;
 
 /** The register, with the derived state that makes it worth reading. */
 function listSuppliers(db, { limit = 500 } = {}) {
@@ -774,17 +776,25 @@ router.post('/:id/link-name', linkName);
 // a token can never make it (the disposition is an approve route).
 router.post('/', (req, res) => {
   if (!canEditHere(req)) return res.status(403).json({ error: 'Not permitted' });
-  const viaToken = req.auth?.kind === 'token';
-  const db = getDb();
-  const b = req.body || {};
+  const r = createSupplier(getDb(), req.body || {}, { user: req.user, viaToken: req.auth?.kind === 'token' });
+  res.status(r.status).json(r.body);
+});
+
+/**
+ * Add a supplier: the ONE writer behind POST /api/suppliers and a COC Drop filed
+ * for a supplier not yet on the register (D-398). Returns { status, body } as the
+ * route answers it. It starts unqualified; a token is refused a near-name match.
+ * The caller checks permission (canEditHere) first.
+ */
+export function createSupplier(db, b, { user, viaToken = false }) {
   const name = clean(b.name, 200);
-  if (!name) return res.status(400).json({ error: 'The supplier needs a name.' });
+  if (!name) return { status: 400, body: { error: 'The supplier needs a name.' } };
   const key = name.toLowerCase().replace(/\s+/g, ' ');
   for (const r of db.prepare('SELECT id, name, legacy_names FROM suppliers').all()) {
     const names = [r.name, ...(() => { try { return JSON.parse(r.legacy_names || '[]'); } catch { return []; } })()];
     if (names.some(n => String(n || '').toLowerCase().replace(/\s+/g, ' ') === key)) {
-      return res.status(409).json({ code: 'SUPPLIER_EXISTS', existing_id: r.id,
-        error: `"${r.name}" is already on the register. Open it instead of adding a second one.` });
+      return { status: 409, body: { code: 'SUPPLIER_EXISTS', existing_id: r.id,
+        error: `"${r.name}" is already on the register. Open it instead of adding a second one.` } };
     }
   }
   // A bot does not guess that "Berlin Packaging LLC" is a new company when
@@ -799,28 +809,28 @@ router.post('/', (req, res) => {
       if (hit) near.push({ id: r.id, name: r.name, match: hit });
     }
     if (near.length) {
-      return res.status(409).json({ code: 'SUPPLIER_NEAR_MATCH', candidates: near,
-        error: `"${name}" looks like ${near.map(n => `"${n.name}"`).join(', ')} already on the register. File against that supplier, or ask a person to add the new one.` });
+      return { status: 409, body: { code: 'SUPPLIER_NEAR_MATCH', candidates: near,
+        error: `"${name}" looks like ${near.map(n => `"${n.name}"`).join(', ')} already on the register. File against that supplier, or ask a person to add the new one.` } };
     }
   }
   const type = clean(b.vendor_type, 40);
   if (type && !VENDOR_TYPES.some(t => t.value === type)) {
-    return res.status(400).json({ error: `Unknown type "${type}". Choose one of: ${VENDOR_TYPES.map(t => t.label).join(', ')}.` });
+    return { status: 400, body: { error: `Unknown type "${type}". Choose one of: ${VENDOR_TYPES.map(t => t.label).join(', ')}.` } };
   }
   const using = b.actively_using === false ? 0 : 1;
   if (using && !type) {
-    return res.status(400).json({ code: 'VENDOR_TYPE_REQUIRED',
-      error: `A supplier we buy from needs a type. Choose one of: ${VENDOR_TYPES.map(t => t.label).join(', ')}.` });
+    return { status: 400, body: { code: 'VENDOR_TYPE_REQUIRED',
+      error: `A supplier we buy from needs a type. Choose one of: ${VENDOR_TYPES.map(t => t.label).join(', ')}.` } };
   }
   const id = uuid();
   // `source = 'bot'` says a token added it, on the row and on the screen.
   db.prepare(`INSERT INTO suppliers (id, name, vendor_type, actively_using, website, notes, source, created_by)
     VALUES (?,?,?,?,?,?,?,?)`)
-    .run(id, name, type, using, clean(b.website), clean(b.notes, 2000), viaToken ? 'bot' : 'in_app', req.user?.name || null);
-  logAudit(req.user, 'supplier_created', 'supplier', id, { vendor_type: type, actively_using: using, source: viaToken ? 'bot' : 'in_app' }, null,
+    .run(id, name, type, using, clean(b.website), clean(b.notes, 2000), viaToken ? 'bot' : 'in_app', user?.name || null);
+  logAudit(user, 'supplier_created', 'supplier', id, { vendor_type: type, actively_using: using, source: viaToken ? 'bot' : 'in_app' }, null,
     { name, vendor_type: type, actively_using: using }, name);
-  res.status(201).json({ ok: true, id });
-});
+  return { status: 201, body: { ok: true, id } };
+}
 
 router.put('/:id', (req, res) => {
   if (!canEdit(req.user)) return res.status(403).json({ error: 'Not permitted' });
@@ -1445,53 +1455,9 @@ router.post('/:id/files', fileUpload.array('files', 20), async (req, res) => {
       return res.status(400).json({ code: 'EXPIRY_REQUIRED', error: `A ${GMP_CERT_LABEL.toLowerCase()} needs its expiry date.` });
     }
 
-    const ins = db.prepare(`INSERT INTO supplier_files
-      (id, supplier_id, kind, expires_on, filename, storage_key, content_type, size,
-       extracted_text, text_status, source_path, uploaded_by, material_id, lot_number,
-       po_number, part_number, qty_note, mismatch_note)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
-
-    const saved = [];
-    for (const f of files) {
-      const id = uuid();
-      const type = f.mimetype || guessType(f.originalname);
-      const key = storageKeyFor(supplier.id, id, f.originalname);
-      await putStream(key, createReadStream(f.path), type);
-      const buf = readFileSync(f.path);
-      const text = await extractInvoiceText(buf, type, f.originalname).catch(() => null);   // a string
-      // The kind and the expiry are read from the NAME by the same functions
-      // the archive walk uses, so a file attached by hand is classified the
-      // same way as one that arrived in the zip.
-      // classifyDocument returns { kind, expires_on, filled } — an OBJECT. The
-      // first version bound the whole object as `kind`; better-sqlite3 reads a
-      // plain object argument as a named-parameter bag, so the positional count
-      // came up one short and this route 400'd with "Too few parameter values"
-      // on its very first real call. Same shape as the documented
-      // extractInvoiceText mistake: a return type nobody checked because the
-      // path had never been exercised.
-      const classified = classifyDocument(f.originalname) || {};
-      const storedKind = req.body?.kind || classified.kind || 'other';
-      ins.run(id, supplier.id, storedKind,
-        req.body?.expires_on || classified.expires_on || expiryFromFilename(f.originalname) || null,
-        f.originalname, key, type, f.size,
-        text || null, text ? 'ok' : (text === null ? 'failed' : 'empty'),
-        // Unique per row (D-392): vendors reuse a file name on every delivery
-        // ("COC.pdf"), and `uploaded/<name>` made the second one a 400 on the
-        // (supplier, source_path) unique index.
-        `uploaded/${id}/${f.originalname}`, req.user.name, materialId, lotNumber,
-        delivery.po_number, delivery.part_number, delivery.qty_note, delivery.mismatch_note);
-      saved.push({ id, filename: f.originalname, kind: storedKind });
-    }
-    logAudit(req.user, 'supplier_files_added', 'supplier', supplier.id,
-      { count: saved.length, files: saved.map(s => s.filename), kind: req.body?.kind || null, expires_on: renewal,
-        material_id: materialId, lot_number: lotNumber, ...delivery }, null, null, supplier.name);
-    // A delivery's COC / COA with its PO tells the dock (D-392): ONE message for
-    // this upload, in the channel an admin chose. Never fails the filing.
-    const alertFiles = saved.filter(f => wantsAlert({ kind: f.kind, po_number: delivery.po_number, notify_receiving: req.body?.notify_receiving }));
-    const receiving_alert = alertFiles.length
-      ? await notifyReceivingDocument(db, { supplier, kind: alertFiles[0].kind, files: alertFiles,
-        lot_number: lotNumber, ...delivery })
-      : { posted: false, reason: delivery.po_number ? 'not_requested' : 'no_po' };
+    const { saved, receiving_alert } = await fileSupplierDocuments(db, supplier, files.map(f => ({ path: f.path, originalname: f.originalname, mimetype: f.mimetype, size: f.size })),
+      { kind: req.body?.kind || null, expires_on: req.body?.expires_on || null, renewal, material_id: materialId, lot_number: lotNumber,
+        delivery, notify_receiving: req.body?.notify_receiving }, req.user);
     res.json({ saved: saved.map(({ id, filename }) => ({ id, filename })), receiving_alert });
   } catch (e) {
     res.status(400).json({ error: uploadErrorMessage(e) || e.message });
@@ -1696,3 +1662,63 @@ router.delete('/:id', (req, res) => {
 });
 
 export default router;
+
+/**
+ * File documents into ONE supplier's library: the writer behind POST
+ * /api/suppliers/:id/files and a COC Drop being filed (D-398). Validation is the
+ * caller's. Each file is `{ path }` (a multer temp file) or `{ buffer }`. A
+ * delivery's COC / COA with its PO posts ONE ReadyBot alert in the receiving
+ * channel (D-392); the alert never fails the filing.
+ */
+export async function fileSupplierDocuments(db, supplier, files, { kind = null, expires_on = null, renewal = null, material_id = null,
+  lot_number = null, delivery = {}, notify_receiving } = {}, user) {
+  const ins = db.prepare(`INSERT INTO supplier_files
+    (id, supplier_id, kind, expires_on, filename, storage_key, content_type, size,
+     extracted_text, text_status, source_path, uploaded_by, material_id, lot_number,
+     po_number, part_number, qty_note, mismatch_note)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  const d = { po_number: null, part_number: null, qty_note: null, mismatch_note: null, ...delivery };
+  const saved = [];
+  for (const f of files) {
+    const id = uuid();
+    const type = f.mimetype || guessType(f.originalname);
+    const key = storageKeyFor(supplier.id, id, f.originalname);
+    let buf;
+    if (f.path) { await putStream(key, createReadStream(f.path), type); buf = readFileSync(f.path); }
+    else { buf = f.buffer; await putObject(key, buf, type); }
+    const text = await extractInvoiceText(buf, type, f.originalname).catch(() => null);   // a string
+    // The kind and the expiry are read from the NAME by the same functions
+    // the archive walk uses, so a file attached by hand is classified the
+    // same way as one that arrived in the zip.
+    // classifyDocument returns { kind, expires_on, filled } — an OBJECT. The
+    // first version bound the whole object as `kind`; better-sqlite3 reads a
+    // plain object argument as a named-parameter bag, so the positional count
+    // came up one short and this route 400'd with "Too few parameter values"
+    // on its very first real call. Same shape as the documented
+    // extractInvoiceText mistake: a return type nobody checked because the
+    // path had never been exercised.
+    const classified = classifyDocument(f.originalname) || {};
+    const storedKind = kind || classified.kind || 'other';
+    ins.run(id, supplier.id, storedKind,
+      expires_on || classified.expires_on || expiryFromFilename(f.originalname) || null,
+      f.originalname, key, type, f.size ?? buf?.length ?? null,
+      text || null, text ? 'ok' : (text === null ? 'failed' : 'empty'),
+      // Unique per row (D-392): vendors reuse a file name on every delivery
+      // ("COC.pdf"), and `uploaded/<name>` made the second one a 400 on the
+      // (supplier, source_path) unique index.
+      `uploaded/${id}/${f.originalname}`, user?.name || null, material_id, lot_number,
+      d.po_number, d.part_number, d.qty_note, d.mismatch_note);
+    saved.push({ id, filename: f.originalname, kind: storedKind });
+  }
+  logAudit(user, 'supplier_files_added', 'supplier', supplier.id,
+    { count: saved.length, files: saved.map(x => x.filename), kind, expires_on: renewal,
+      material_id, lot_number, ...d }, null, null, supplier.name);
+  // A delivery's COC / COA with its PO tells the dock (D-392): ONE message for
+  // this upload, in the channel an admin chose. Never fails the filing.
+  const alertFiles = saved.filter(x => wantsAlert({ kind: x.kind, po_number: d.po_number, notify_receiving }));
+  const receiving_alert = alertFiles.length
+    ? await notifyReceivingDocument(db, { supplier, kind: alertFiles[0].kind, files: alertFiles,
+      lot_number, ...d })
+    : { posted: false, reason: d.po_number ? 'not_requested' : 'no_po' };
+  return { saved, receiving_alert };
+}

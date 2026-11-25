@@ -57,6 +57,8 @@ export const ALL_MODULE_IDS = [
   'form-maintenance', 'form-knife', 'form-components',
   // Warehouse receiving record (replaces the Monday board).
   'receiving-log',
+  // COC Drop (D-398): view = drop and see your own; edit = work the queue.
+  'coc-drop',
   // Meeting minutes: management review, food safety team, production, safety.
   'meetings',
   // Internal audits (Form 403-01).

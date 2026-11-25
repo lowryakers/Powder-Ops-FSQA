@@ -6559,6 +6559,65 @@ function runMigrations() {
     addColumnIfMissing('ap_drops', 'bill_class', 'TEXT');
     addColumnIfMissing('ap_drops', 'bill_class_by', 'TEXT');
     addColumnIfMissing('ap_drops', 'bill_class_at', 'TEXT');
+    // COC Drop (D-398): the dock photographs a supplier's paper COC / COA, or
+    // uploads its PDF, instead of scanning and emailing it. One drop is one
+    // delivery's document, however many pages; the queue matches it to its PO
+    // and files it into the supplier library (supplier_files, D-391). Retained:
+    // there is no delete path, and the triggers make sure nothing adds one.
+    db.exec(`CREATE TABLE IF NOT EXISTS coc_drops (
+        id                 TEXT PRIMARY KEY,
+        created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at         TEXT NOT NULL DEFAULT (datetime('now')),
+        created_by_user_id TEXT,
+        submitter          TEXT,
+        source             TEXT NOT NULL DEFAULT 'drop' CHECK (source IN ('drop')),
+        notes              TEXT,
+        status             TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','matched','filed','mismatch')),
+        status_reason      TEXT,
+        closed_at          TEXT,
+        kind               TEXT NOT NULL DEFAULT 'coc' CHECK (kind IN ('coc','coa')),
+        po_number          TEXT,
+        part_number        TEXT,
+        lot_number         TEXT,
+        qty_note           TEXT,
+        mismatch_note      TEXT,
+        supplier_id        TEXT REFERENCES suppliers(id),
+        supplier_name      TEXT,
+        supplier_file_ids  TEXT,
+        content_sha256     TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_coc_drops_status ON coc_drops(status, created_at);
+      CREATE INDEX IF NOT EXISTS idx_coc_drops_user ON coc_drops(created_by_user_id);
+      CREATE INDEX IF NOT EXISTS idx_coc_drops_po ON coc_drops(po_number);
+      CREATE INDEX IF NOT EXISTS idx_coc_drops_sha ON coc_drops(content_sha256, created_at);
+      CREATE TABLE IF NOT EXISTS coc_drop_files (
+        id             TEXT PRIMARY KEY,
+        drop_id        TEXT NOT NULL REFERENCES coc_drops(id),
+        filename       TEXT NOT NULL,
+        storage_key    TEXT NOT NULL,
+        size           INTEGER,
+        content_type   TEXT,
+        content_sha256 TEXT,
+        page_index     INTEGER NOT NULL DEFAULT 0,
+        created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_coc_drop_files_drop ON coc_drop_files(drop_id, page_index);
+      CREATE TABLE IF NOT EXISTS coc_drop_events (
+        id         TEXT PRIMARY KEY,
+        drop_id    TEXT NOT NULL REFERENCES coc_drops(id),
+        at         TEXT NOT NULL DEFAULT (datetime('now')),
+        by_user_id TEXT,
+        by_name    TEXT,
+        kind       TEXT NOT NULL,
+        detail     TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_coc_drop_events_drop ON coc_drop_events(drop_id, at);
+      CREATE TRIGGER IF NOT EXISTS coc_drops_no_delete BEFORE DELETE ON coc_drops
+        BEGIN SELECT RAISE(ABORT, 'A COC drop is retained, never deleted'); END;
+      CREATE TRIGGER IF NOT EXISTS coc_drop_files_no_delete BEFORE DELETE ON coc_drop_files
+        BEGIN SELECT RAISE(ABORT, 'A COC drop page is retained, never deleted'); END;
+      CREATE TRIGGER IF NOT EXISTS coc_drop_events_no_delete BEFORE DELETE ON coc_drop_events
+        BEGIN SELECT RAISE(ABORT, 'COC drop activity is retained, never deleted'); END;`);
     db.exec(`CREATE TABLE IF NOT EXISTS payment_must_pays (
         id            TEXT PRIMARY KEY,
         vendor_name   TEXT NOT NULL,
