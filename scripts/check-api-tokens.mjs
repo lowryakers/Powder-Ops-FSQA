@@ -582,7 +582,11 @@ db3.close();
     && tokenMayWorkArea(mk('POST', '/x', { suppliers: 'edit' }), 'coc-drop-file') && tokenMayWorkArea(mk('POST', '/x', null, ['suppliers-edit']), 'coc-drop-file'));
   t('D-400: COA intake opens on COA Edit', writeAreaAllows(mk('POST', '/coa/requests', { coa: 'edit' }), fakeDb) === true);
   t('D-400: COA intake refuses a status in the body', writeAreaAllows({ ...mk('POST', '/coa/requests', { coa: 'edit' }), body: { status: 'pass' } }, fakeDb) === false);
-  t('D-400: only Suppliers, COC Drop and COA are commodity areas', JSON.stringify(Object.keys(COMMODITY_AREA_MODULES).sort()) === '["coa-prep","coc-drop","suppliers"]');
+  t('D-400/D-401: only Suppliers, COC Drop, COA intake and training clean-up are commodity areas', JSON.stringify(Object.keys(COMMODITY_AREA_MODULES).sort()) === '["coa-prep","coc-drop","suppliers","training-na"]');
+  t('D-401: Training Edit opens the N/A route; Training View does not', writeAreaAllows(mk('POST', '/pm/work-orders/x/not-applicable', { training: 'edit' }), fakeDb) === true
+    && writeAreaAllows(mk('POST', '/pm/work-orders/x/not-applicable', { training: 'view' }), fakeDb) === false);
+  t('D-401: completing a training card is still not open to a token', writeAreaFor(fakeReq('POST', '/api/pm/work-orders/x/complete-and-recur')) === null);
+  t('D-401: deleting a work order is still caught first', !!tokenDenyFor(fakeReq('DELETE', '/api/pm/work-orders/x')));
   const sops = mk('POST', '/documents', { sops: 'edit' });
   t('D-400: a non-commodity grant area (SOP staging) does NOT open on module Edit', writeAreaAllows(sops, fakeDb) === false && sops.tokenWriteCategory === 'missing_grant');
   for (const [m, p] of [['POST', '/api/suppliers/x/disposition'], ['POST', '/api/suppliers/x/materials/y/banned-check'], ['POST', '/api/coa/requests/x/sign'], ['DELETE', '/api/coc-drop/x']]) {

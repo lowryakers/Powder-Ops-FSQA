@@ -30,6 +30,7 @@ export const BOT_ROUTES = Object.freeze([
   { method: 'POST', path: '/api/coa/requests/:id/files', module: 'coa (edit)', scope: 'write' },
   { method: 'POST', path: '/api/coa/requests/:id/scan', module: 'coa (edit)', scope: 'write' },
   { method: 'POST', path: '/api/coa/parse-coa', module: 'coa (edit)', scope: 'write' },
+  { method: 'POST', path: '/api/pm/work-orders/:id/not-applicable', module: 'training (edit) or the training-na grant', scope: 'write' },
   { method: 'GET', path: '/api/products/:sku', module: 'products', scope: 'read' },
   { method: 'GET', path: '/api/nfp', module: 'products', scope: 'read', paged: true },
   { method: 'GET', path: '/api/nfp/sku/:sku', module: 'products', scope: 'read' },
@@ -406,6 +407,9 @@ export const WRITE_AREAS = Object.freeze([
   { area: 'coa-prep', grant: 'coa-prep', method: 'POST', re: /^\/coa\/requests\/([^/]+)\/files$/, label: 'POST /api/coa/requests/:id/files — attach a PDF to an unsigned request (coa-prep grant or COA edit)', when: coaRequestFileBotOk },
   { area: 'coa-prep', grant: 'coa-prep', method: 'POST', re: /^\/coa\/requests\/([^/]+)\/scan$/, label: 'POST /api/coa/requests/:id/scan — read a lab PDF on an unsigned request (coa-prep grant or COA edit)', when: coaRequestFileBotOk },
   { area: 'coa-prep', grant: 'coa-prep', method: 'POST', re: /^\/coa\/parse-coa$/, label: 'POST /api/coa/parse-coa — read a COA PDF, nothing filed (coa-prep grant or COA edit)' },
+  // Training clean-up (D-401). The handler refuses anything but an open TRAINING
+  // card whose assignee is DEACTIVATED, and demands a reason; it never completes.
+  { area: 'training-na', grant: 'training-na', method: 'POST', re: /^\/pm\/work-orders\/[^/]+\/not-applicable$/, label: 'POST /api/pm/work-orders/:id/not-applicable — a deactivated person\'s training card, N/A with a reason (training-na grant or Training edit)' },
   // messages
   { area: 'messages', method: 'POST', re: /^\/comms\/channels\/[^/]+\/messages$/, label: 'POST /api/comms/channels/:id/messages' },
   { area: 'messages', method: 'POST', re: /^\/comms\/channels\/[^/]+\/attachments$/, label: 'POST /api/comms/channels/:id/attachments' },
@@ -449,6 +453,8 @@ export const COMMODITY_AREA_MODULES = Object.freeze({
   suppliers: ['suppliers'],
   'coc-drop': ['coc-drop', 'suppliers'],
   'coa-prep': ['coa'],
+  // Training clean-up (D-401): a deactivated person's open training card, N/A.
+  'training-na': ['training'],
 });
 // Filing a COC drop into the supplier library writes the library, so it needs
 // what the library needs (POST /api/suppliers/:id/files).
@@ -468,7 +474,7 @@ export function tokenMayWorkArea(req, area) {
   const r = WRITE_AREAS.find(x => x.area === area);
   return tokenGrantOrEdit(req, { grants: areaGrants(r), modules: COMMODITY_AREA_MODULES[area] || [] });
 }
-const MODULE_LABEL = { suppliers: 'Suppliers', 'coc-drop': 'COC Drop', coa: 'COA / Lab Testing' };
+const MODULE_LABEL = { suppliers: 'Suppliers', 'coc-drop': 'COC Drop', coa: 'COA / Lab Testing', training: 'Training' };
 /** Why a matched area refused: the grant it needs, and the Settings Edit that also opens it. */
 export function areaAccessReason(r) {
   const grants = areaGrants(r).map(g => `"${g}"`).join(' or ');

@@ -54,6 +54,8 @@ const LEGACY_SCOPES = Object.freeze({ 'write-drafts': 'write' });
 //   suppliers-edit — edit a supplier's details, contacts, ingredients and the
 //   facts about a filed document (D-339). The Quality bot's. Never a
 //   disposition, a banned-list check, a delete, a gate mode or a questionnaire.
+//   training-na — mark an open TRAINING card N/A for a DEACTIVATED person's
+//   account, with a reason (D-401). Data clean-up; never a completion.
 //   coc-drop — work the COC Drop queue (D-398): read every drop, set the PO /
 //   part / lot match fields, move its status. Filing it into the supplier
 //   library also needs suppliers-edit. Never receives, signs or deletes.
@@ -65,6 +67,7 @@ export const TOKEN_GRANTS = Object.freeze({
   'jd-edit': 'Job Descriptions: stage draft documents, edit draft text and fields, start and edit a new revision, attach a PDF. Never approves, signs, makes effective, deletes, retires or merges.',
   'suppliers-edit': 'Suppliers: edit a supplier\'s details, contacts, ingredients and part numbers, file a document and correct its kind, expiry, ingredient or lot. Never approves or records a disposition, never records a banned-list check, never deletes, never changes a gate mode, never sends or revokes a questionnaire.',
   'payment-run-controller': 'Payment run: Controller bot. Record the bank balance, confirm the transfer landed (with evidence), schedule and record bill payments with proof and QBO payment numbers, record closed MOs and shipped orders read from MRPEasy, record the Deposit and production invoice numbers from QBO, suggest a bill\'s class, and close a finished run. Only on the account named Controller in the payment run settings. Never approves, never presses "I\'ve sent", never records changed bank details, never touches the must-pay list, never voids an invoice, never confirms a bill\'s class.',
+  'training-na': 'Training clean-up: mark an open training card N/A when the person it is assigned to has been deactivated, with a reason. Never completes, signs or deletes a card, and never touches an active person\'s training.',
   'coc-drop': 'COC Drop: read the whole queue of COC / COA photos the dock dropped, set the PO, part, lot and quantity, and move a drop to matched or mismatch. Filing it into the supplier library also needs suppliers-edit. Never receives inventory, signs a checklist, qualifies a supplier or deletes.',
   'coa-prep': 'COA: edit a DRAFT test plan (limits, units, judging rules, the products it is meant for) and register or alias a COA product and set its brand. Every value it saves reads "bot-prepared, needs review" until a person approves. Never approves, applies, signs, unsigns, deletes or edits anything approved or signed.',
 });

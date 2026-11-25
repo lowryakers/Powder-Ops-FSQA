@@ -1559,12 +1559,35 @@ router.post('/work-orders/:id/not-applicable', (req, res) => {
   const { reason } = req.body;
   const actor = req.user.name;
 
+  // A bot token (D-401) only cleans up: an open TRAINING card whose assignee's
+  // account is DEACTIVATED, with a reason. The card is N/A, never completed —
+  // no completion time, no completer — and it is never deleted.
+  if (req.auth?.kind === 'token') {
+    if (!wo.training_course_id) {
+      return res.status(403).json({ error: 'token_training_only', reason: 'A bot marks N/A only training cards for deactivated users. This is not a training card.' });
+    }
+    const assignee = wo.assigned_to_id
+      ? db.prepare('SELECT id, name, is_active FROM users WHERE id = ?').get(wo.assigned_to_id)
+      : (() => { const rows = db.prepare('SELECT id, name, is_active FROM users WHERE LOWER(name) = LOWER(?)').all(wo.assigned_to || ''); return rows.length === 1 ? rows[0] : null; })();
+    if (!assignee) return res.status(403).json({ error: 'token_assignee_unknown', reason: 'Bots may mark N/A only for deactivated users, and this card\'s assignee cannot be matched to one account.' });
+    if (assignee.is_active) return res.status(403).json({ error: 'token_assignee_active', reason: 'Bots may mark N/A only for deactivated users.' });
+    const why = String(reason || '').trim();
+    if (why.length < 3) return res.status(400).json({ error: 'A reason is required, e.g. "Account deactivated / employment ended. This is not a completion."' });
+    db.prepare(`UPDATE work_orders SET status='not_applicable', completed_at=NULL, completed_by=NULL, notes=?, updated_at=datetime('now') WHERE id=?`)
+      .run(why.slice(0, 2000), wo.id);
+    logAudit(req.user, 'not_applicable', 'work_order', wo.id,
+      { reason: why, previous_status: wo.status, new_status: 'not_applicable', assignee_id: assignee.id, assignee_name: assignee.name,
+        training_course_id: wo.training_course_id, cleanup: 'deactivated_account' },
+      { status: wo.status }, { status: 'not_applicable' }, wo.title);
+    return res.json({ skipped: wo.id, next_work_order: null, status: 'not_applicable' });
+  }
+
   db.prepare(`
     UPDATE work_orders SET status='not_applicable', completed_at=datetime('now'), completed_by=?,
     notes=?, updated_at=datetime('now') WHERE id=?
   `).run(actor, reason || 'Equipment not in use', req.params.id);
 
-  logAudit(actor, 'not_applicable', 'work_order', req.params.id, { reason: reason || 'Equipment not in use' });
+  logAudit(req.user, 'not_applicable', 'work_order', req.params.id, { reason: reason || 'Equipment not in use', previous_status: wo.status });
 
   let nextWO = null;
   if (wo.pm_schedule_id) {
