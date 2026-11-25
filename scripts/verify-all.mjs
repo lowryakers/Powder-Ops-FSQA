@@ -235,6 +235,7 @@ const RUNS = [
   ['verify-coc-receiving-alert.mjs', 5250, {}, true],
   ['verify-incoming-sampling.mjs', 5252, {}, false],
   ['verify-bot-add-supplier.mjs', 5251, {}, false],
+  ['verify-scale-room.mjs', 5254, {}, false],
   ['verify-disposal-no-delete.mjs', 5243, {}, false],
   ['verify-receiving-no-delete.mjs', 5245, {}, false],
   ['verify-record-lookup.mjs', 5240, {}, false],
