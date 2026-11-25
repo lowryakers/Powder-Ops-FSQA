@@ -179,6 +179,45 @@ export function revokeScaleVerification(db, user, id) {
   return { record: shape(updated) };
 }
 
+/**
+ * Correcting the ROOM on a filed scale check (D-396). Maria, 25 Nov: two checks
+ * calibrated on 2 Nov were filed under the wrong room and nothing could change
+ * it. The room is the one fact here a person types that the weights do not
+ * decide; the readings and the form stay as filed. Rules, the house's own:
+ * QA (or anyone who verifies) corrects it, with a reason, never on a verified
+ * check — revoke first, correct, verify again — and the instrument link
+ * follows the corrected room. Audited with the before and the after.
+ */
+export function correctScaleRoom(db, user, id, { room, reason } = {}) {
+  if (!canVerify(user)) return { error: 'QA, a supervisor or an admin corrects a scale check.', status: 403 };
+  const existing = db.prepare('SELECT * FROM scale_verifications WHERE id = ?').get(id);
+  if (!existing) return { error: 'Scale verification not found', status: 404 };
+  if (existing.verified_by) {
+    return { error: `This check is verified by ${existing.verified_by}. Revoke the verification first, correct the room, then verify it again.`, status: 409, code: 'VERIFIED' };
+  }
+  const next = String(room ?? '').trim().slice(0, 60) || null;
+  const why = String(reason ?? '').trim();
+  if (!next) return { error: 'Give the correct room.', status: 400 };
+  if (why.length < 3) return { error: 'Say why the room is being corrected.', status: 400 };
+  if (next === (existing.room || null)) return { record: shape(existing), unchanged: true };
+  let instrumentId = existing.instrument_id || null;
+  try {
+    instrumentId = db.prepare('SELECT id FROM calibration_instruments WHERE lower(room) = lower(?) LIMIT 1').get(next)?.id || null;
+  } catch { /* the link is a convenience */ }
+  db.prepare('UPDATE scale_verifications SET room = ?, instrument_id = ? WHERE id = ?').run(next, instrumentId, existing.id);
+  const updated = db.prepare('SELECT * FROM scale_verifications WHERE id = ?').get(existing.id);
+  logAudit(user, 'update', 'scale_verification', existing.id,
+    { room_corrected: true, from: existing.room || null, to: next, reason: why, form_code: existing.form_code }, existing, updated);
+  return { record: shape(updated) };
+}
+
+router.put('/:id/room', (req, res) => {
+  if (req.auth?.kind === 'token') return res.status(403).json({ error: 'A person corrects a scale check.' });
+  const { error, status, code, record } = correctScaleRoom(getDb(), req.user, req.params.id, req.body || {});
+  if (error) return res.status(status).json({ error, ...(code ? { code } : {}) });
+  res.json(record);
+});
+
 router.delete('/:id/verify', (req, res) => {
   const { error, status, record } = revokeScaleVerification(getDb(), req.user, req.params.id);
   if (error) return res.status(status).json({ error });
