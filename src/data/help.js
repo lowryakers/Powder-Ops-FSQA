@@ -223,16 +223,16 @@ export const GUIDES = [
   /* ── Supervisors and QA ───────────────────────────────────────────── */
   {
     id: 'who-sees-a-task',
-    q: 'Who sees a recurring task, and how do I give it to one person?',
+    q: 'Who sees a recurring task, and how do I show it to one more person?',
     for: 'supervisors', owner: 'QA', checked: '2026-11-25',
     module: 'pm', open: { tab: 'pm-schedules' },
-    keywords: 'recurring schedule owner assign person team temp humidity friday who sees task route',
+    keywords: 'recurring schedule also show to owner assign person team cover temp humidity friday who sees task route',
     steps: [
       'A recurring task belongs to a TEAM. Everyone in that department sees it. You usually do not need to name a person.',
       'If the person is not seeing it, check their department in Settings → Users first.',
-      'To make it also show for one person: Task Center → Recurring Schedules, open the schedule, click Edit.',
-      'Pick them under Owner (optional) and save. The team still sees it; the owner also does, every day it is due.',
-      'The team still owns the task either way; whoever completes a card first closes it for everyone.',
+      'To show it to someone outside the team (say, a person who covers it on Fridays): Task Center → Recurring Schedules, open the schedule, click Edit.',
+      'Pick them under Also show to (optional) and save. It shows on their list every day it is due. A quality schedule has the same box.',
+      'The team still owns the task; whoever completes a card first closes it for everyone.',
     ],
   },
   {
@@ -496,6 +496,9 @@ export const GUIDES = [
 
 // Newest first. Written in the PR that ships the change.
 export const WHATS_NEW = [
+  { date: '2026-11-25', d: 'D-399', module: 'pm', open: { tab: 'pm-schedules' },
+    title: '"Owner" on a recurring task is now "Also show to"',
+    body: 'Same box, clearer name: the team still owns the task, and the person picked also sees it on their list. On Recurring Schedules and Quality Schedules.' },
   { date: '2026-11-25', d: 'D-397', open: { tab: 'help' },
     title: 'Help: one page for how-tos and what’s new',
     body: 'Short guides for the screens you can open, in English and Spanish for the floor. Search it from the search box, or the ⓘ beside a page title.' },
