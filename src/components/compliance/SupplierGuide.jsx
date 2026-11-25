@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { BookOpen, ChevronDown, ChevronRight } from 'lucide-react';
+import { GUIDES } from '../../data/help.js';
 
 // How the supplier register works, written for the person who keeps it
 // (Purchasing). Plain steps in the order the work happens, and who does each
@@ -8,38 +9,9 @@ const KEY = 'supplier_guide_open';
 const read = () => { try { return localStorage.getItem(KEY); } catch { return null; } };
 const write = (v) => { try { localStorage.setItem(KEY, v); } catch { /* private window */ } };
 
-const STEPS = [
-  {
-    who: 'Purchasing',
-    title: 'Set the supplier up',
-    body: 'Open the supplier and press Edit details. Pick its Type (raw material, packaging, and so on) and tick “We still buy from this supplier” if we do. The type decides which documents they owe. A supplier not on the list yet is added with Add a supplier at the top of the page.',
-  },
-  {
-    who: 'Purchasing',
-    title: 'Send the questionnaire',
-    body: 'Press Send questionnaire link and send the link to the supplier. They fill in and sign FORM 404-1 online, and it files itself on the supplier.',
-  },
-  {
-    who: 'Purchasing',
-    title: 'Collect their documents',
-    body: 'Raw material and packaging suppliers must have a current third-party audit certificate: a GMP certificate or a GFSI certificate (SQF, BRCGS, FSSC 22000 or IFS). Use Attach certificate, pick which one it is, and enter its expiry date. Packaging and food-contact suppliers also need a letter of guarantee with its renewal date. Attach anything else (spec, COA, allergen statement) with Attach documents and pick what it is.',
-  },
-  {
-    who: 'Purchasing',
-    title: 'List what we buy from them',
-    body: 'Under Ingredients, press Add an ingredient for each material, with its part number.',
-  },
-  {
-    who: 'Quality',
-    title: 'Check and decide',
-    body: 'Quality checks each ingredient against the banned-substance lists, then records the decision: approved, conditional or not approved. Approval waits for the GMP or GFSI certificate and the banned-list check.',
-  },
-  {
-    who: 'Purchasing',
-    title: 'Keep it current',
-    body: 'The Needs attention tab lists missing and expiring documents. Ask the supplier for the new copy before the old one runs out. Each approved supplier gets a review task once a year.',
-  },
-];
+// The steps live in the Help page's data (D-397), so this card and Help → "How
+// does a supplier get qualified?" are one text that cannot drift apart.
+const STEPS = GUIDES.find(g => g.id === 'qualify-a-supplier').steps;
 
 export default function SupplierGuide() {
   const [open, setOpen] = useState(() => read() !== '0');
