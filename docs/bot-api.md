@@ -282,7 +282,7 @@ Reads need the account's `suppliers` access. **Every write needs a `write` token
 
 ### `POST /api/suppliers/:id/files`
 
-- **Scope:** `write` + `suppliers-edit`. Multipart `files`, with `kind` (`coc` for a certificate of compliance / conformance), `expires_on`, `material_id`, `lot_number`, and for a delivery document `po_number`, `part_number`, `qty_note`, `mismatch_note` (D-391). A GMP certificate needs `expires_on` (`EXPIRY_REQUIRED`), a letter of guarantee its renewal date (`RENEWAL_REQUIRED`). The ingredient must be this supplier's and in use.
+- **Scope:** `write` + `suppliers-edit`. Multipart `files`, with `kind` (`coc` for a certificate of compliance / conformance), `expires_on`, `material_id`, `lot_number`, and for a delivery document `po_number`, `part_number`, `qty_note`, `mismatch_note` (D-391). A `coc` or `coa` with a `po_number` makes ReadyBot post one alert in the receiving channel an admin chose (D-392); send `notify_receiving: false` to file without it. The response carries `receiving_alert: { posted, channel_id, reason? }`. A GMP certificate needs `expires_on` (`EXPIRY_REQUIRED`), a letter of guarantee its renewal date (`RENEWAL_REQUIRED`). The ingredient must be this supplier's and in use.
 
 ### `PUT /api/suppliers/files/:fileId`
 

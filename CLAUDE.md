@@ -4506,6 +4506,11 @@ since go-live and in the last 90 days, and gives a verdict: never used / machine
   (`review_meaning`/`review_hash`; `approvals[role].meaning/hash`). The record interface cannot do either. A verify that
   signs one must send `signature_password`. `verify:signgates` (30).
 
+## A COC / COA filed with its PO posts one ReadyBot alert in the receiving channel (D-392)
+`server/coc-receiving-alert.js`. The channel is `app_settings.receiving_alert_channel_id` (admin, Settings → ReadyBot
+messages) — **never put a channel id in code**; unset/archived ⇒ filed, nothing posted. Never a DM, client or HR channel.
+A manual supplier upload's `source_path` is `uploaded/<file id>/<name>`. `verify:cocalert` (26).
+
 ## The COC / COA library: filed before the truck by PO, part and lot (D-391)
 Kind `coc`; `supplier_files.po_number` / `part_number` / `qty_note` / `mismatch_note`; `GET /api/suppliers/files` (whole-entry
 match on comma lists, never text or storage key). Receiving's on-file picker ranks PO/part/lot matches against the

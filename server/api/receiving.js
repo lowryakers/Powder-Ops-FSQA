@@ -24,6 +24,7 @@ import { storageEnabled, putObject, presignGet } from '../storage.js';
 import { mediaUpload, cleanupTemp, uploadErrorMessage } from '../media.js';
 import { cocSignRefusals, isCocCategory, onFileCurrent, COC_CATEGORIES } from '../coc-items.js';
 import { cocState } from '../coc-state.js';
+import { ALERT_SETTING, alertChannel, alertChannelOptions, channelRefusal } from '../coc-receiving-alert.js';
 import { gateSignature } from '../signature.js';
 import { signatureMeaning } from '../../shared/signature-meaning.js';
 
@@ -586,6 +587,34 @@ router.delete('/lab-test-items/:id', (req, res) => {
  * is QA's (the lab-test rule), the proof is the receiver's.
  */
 const COC_ONLY_QA = 'Only QA can change which items need a Certificate of Compliance.';
+// Where ReadyBot posts when a delivery's COC / COA is filed with its PO (D-392).
+// An admin's setting, never a channel id in code. A token never changes it.
+router.get('/alert-channel', (req, res) => {
+  const db = getDb();
+  const a = alertChannel(db);
+  const isAdmin = req.user?.role === 'admin' && req.auth?.kind !== 'token';
+  res.json({ channel_id: a.channel_id, channel_name: a.channel?.name || null, reason: a.reason, can_edit: isAdmin,
+    options: isAdmin ? alertChannelOptions(db) : [] });
+});
+router.put('/alert-channel', (req, res) => {
+  if (req.user?.role !== 'admin' || req.auth?.kind === 'token') return res.status(403).json({ error: 'Only an admin chooses the receiving alert channel.' });
+  const db = getDb();
+  const id = String(req.body?.channel_id || '').trim();
+  const before = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(ALERT_SETTING)?.value || null;
+  if (!id) {
+    // Cleared, not deleted: an empty value reads as "no channel set".
+    db.prepare("INSERT INTO app_settings (key, value) VALUES (?, '') ON CONFLICT(key) DO UPDATE SET value = ''").run(ALERT_SETTING);
+  } else {
+    const ch = db.prepare('SELECT id, kind, name, archived FROM chat_channels WHERE id = ?').get(id);
+    const refusal = channelRefusal(ch);
+    if (refusal) return res.status(400).json({ error: refusal });
+    db.prepare('INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(ALERT_SETTING, id);
+  }
+  logAudit(req.user, 'receiving_alert_channel_changed', 'app_setting', ALERT_SETTING, { from: before, to: id || null });
+  const a = alertChannel(db);
+  res.json({ channel_id: a.channel_id, channel_name: a.channel?.name || null, reason: a.reason });
+});
+
 router.get('/coc-items', (req, res) => {
   const rows = getDb().prepare('SELECT * FROM receiving_coc_items ORDER BY is_active DESC, part_number').all();
   res.json({ items: rows.map(r => ({ ...r, is_active: !!r.is_active })), categories: COC_CATEGORIES, can_edit: canSetLabTests(req.user) });

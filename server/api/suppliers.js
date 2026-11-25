@@ -69,6 +69,7 @@ import { GMP_CERT_KIND, GMP_CERT_LABEL, AUDIT_CERT_KINDS } from '../../shared/su
 import { plantDateOf } from '../plant-clock.js';
 import { FILE_KIND_VALUES, FILE_KIND_LABEL, DATED_KINDS, SOURCE_SYSTEMS, SOURCE_SYSTEM_LABEL, cleanFileMeta, cleanDeliveryFields } from '../../shared/supplier-documents.js';
 import { pageList } from '../bot-api.js';
+import { wantsAlert, notifyReceivingDocument } from '../coc-receiving-alert.js';
 import { materialsFor, materialLabels, createMaterial, updateMaterial, MaterialError, defaultPartSystem } from '../supplier-materials.js';
 
 const router = Router();
@@ -1448,18 +1449,29 @@ router.post('/:id/files', fileUpload.array('files', 20), async (req, res) => {
       // extractInvoiceText mistake: a return type nobody checked because the
       // path had never been exercised.
       const classified = classifyDocument(f.originalname) || {};
-      ins.run(id, supplier.id, req.body?.kind || classified.kind || 'other',
+      const storedKind = req.body?.kind || classified.kind || 'other';
+      ins.run(id, supplier.id, storedKind,
         req.body?.expires_on || classified.expires_on || expiryFromFilename(f.originalname) || null,
         f.originalname, key, type, f.size,
         text || null, text ? 'ok' : (text === null ? 'failed' : 'empty'),
-        `uploaded/${f.originalname}`, req.user.name, materialId, lotNumber,
+        // Unique per row (D-392): vendors reuse a file name on every delivery
+        // ("COC.pdf"), and `uploaded/<name>` made the second one a 400 on the
+        // (supplier, source_path) unique index.
+        `uploaded/${id}/${f.originalname}`, req.user.name, materialId, lotNumber,
         delivery.po_number, delivery.part_number, delivery.qty_note, delivery.mismatch_note);
-      saved.push({ id, filename: f.originalname });
+      saved.push({ id, filename: f.originalname, kind: storedKind });
     }
     logAudit(req.user, 'supplier_files_added', 'supplier', supplier.id,
       { count: saved.length, files: saved.map(s => s.filename), kind: req.body?.kind || null, expires_on: renewal,
         material_id: materialId, lot_number: lotNumber, ...delivery }, null, null, supplier.name);
-    res.json({ saved });
+    // A delivery's COC / COA with its PO tells the dock (D-392): ONE message for
+    // this upload, in the channel an admin chose. Never fails the filing.
+    const alertFiles = saved.filter(f => wantsAlert({ kind: f.kind, po_number: delivery.po_number, notify_receiving: req.body?.notify_receiving }));
+    const receiving_alert = alertFiles.length
+      ? await notifyReceivingDocument(db, { supplier, kind: alertFiles[0].kind, files: alertFiles,
+        lot_number: lotNumber, ...delivery })
+      : { posted: false, reason: delivery.po_number ? 'not_requested' : 'no_po' };
+    res.json({ saved: saved.map(({ id, filename }) => ({ id, filename })), receiving_alert });
   } catch (e) {
     res.status(400).json({ error: uploadErrorMessage(e) || e.message });
   } finally {
