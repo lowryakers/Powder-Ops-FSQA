@@ -146,7 +146,7 @@ function CocPart({ req, base, locked, storage, onChanged }) {
 
 function OnFilePicker({ base, part, onLinked }) {
   const [q, setQ] = useState('');
-  const { data: files } = useApiGet(`${base}/coc/on-file?q=${encodeURIComponent(q)}`, [q]);
+  const { data: files } = useApiGet(`${base}/coc/on-file?q=${encodeURIComponent(q)}&part=${encodeURIComponent(part || '')}`, [q, part]);
   const [error, setError] = useState('');
   const link = async (f) => {
     setError('');
@@ -157,7 +157,7 @@ function OnFilePicker({ base, part, onLinked }) {
     <div className="rounded-md border border-gray-200 bg-white p-2 space-y-1.5" data-coc-onfile>
       <label className="flex items-center gap-1.5 px-2 py-1 border border-gray-300 rounded-md">
         <Search size={13} className="text-gray-400" />
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Supplier or file name"
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Supplier, file, PO, part or lot"
           className="flex-1 text-sm outline-none" data-coc-onfile-search />
       </label>
       {!files ? <p className="text-xs text-gray-400">Loading…</p> : files.length === 0 ? (
@@ -168,6 +168,13 @@ function OnFilePicker({ base, part, onLinked }) {
             <li key={f.id} className="py-1.5 flex items-center gap-2 text-xs">
               <div className="min-w-0 flex-1">
                 <p className="text-gray-900 truncate">{f.supplier_name} — {f.filename}</p>
+                {(f.po_number || f.part_number || f.lot_number) && (
+                  <p className="text-gray-600 truncate" data-coc-onfile-delivery={f.id}>
+                    {f.match?.length > 0 && <span className="mr-1 rounded bg-emerald-100 px-1 font-semibold text-emerald-800" data-coc-onfile-match={f.id}>Matches this delivery</span>}
+                    {[f.po_number && `PO ${f.po_number}`, f.part_number && `part ${f.part_number}`, f.lot_number && `lot ${f.lot_number}`].filter(Boolean).join(' · ')}
+                  </p>
+                )}
+                {f.mismatch_note && <p className="font-medium text-amber-700" data-coc-onfile-mismatch={f.id}>Does not match the PO: {f.mismatch_note}</p>}
                 <p className={f.current ? 'text-gray-500' : 'text-red-700'}>
                   {f.expires_on ? `${f.current ? 'Expires' : 'Expired'} ${f.expires_on}` : 'No expiry recorded'}
                 </p>

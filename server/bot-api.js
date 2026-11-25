@@ -13,6 +13,7 @@ export const BOT_ROUTES = Object.freeze([
   { method: 'GET', path: '/api/products', module: 'products', scope: 'read', paged: true },
   { method: 'GET', path: '/api/suppliers', module: 'suppliers', scope: 'read' },
   { method: 'GET', path: '/api/suppliers/documents/expiring', module: 'suppliers', scope: 'read' },
+  { method: 'GET', path: '/api/suppliers/files', module: 'suppliers', scope: 'read' },
   { method: 'GET', path: '/api/suppliers/:id', module: 'suppliers', scope: 'read' },
   { method: 'PUT', path: '/api/suppliers/:id', module: 'suppliers (edit)', scope: 'write' },
   { method: 'POST', path: '/api/suppliers/:id/contacts', module: 'suppliers (edit)', scope: 'write' },

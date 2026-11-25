@@ -680,6 +680,12 @@ function SupplierDetail({ id, user, onDecide, onRemoved }) {
                     </td>
                     <td className="px-2 py-1 text-slate-500" data-file-material={f.material_id || ''}>
                       {f.material_label || ''}{f.lot_number ? <span className="ml-1">· lot {f.lot_number}</span> : null}
+                      {(f.po_number || f.part_number || f.qty_note) && (
+                        <span className="block" data-file-delivery={f.id}>
+                          {[f.po_number && `PO ${f.po_number}`, f.part_number && `part ${f.part_number}`, f.qty_note && `qty ${f.qty_note}`].filter(Boolean).join(' · ')}
+                        </span>
+                      )}
+                      {f.mismatch_note && <span className="block font-medium text-amber-700 dark:text-amber-400" data-file-mismatch={f.id}>Does not match: {f.mismatch_note}</span>}
                     </td>
                     <td className="px-2 py-1 text-right">
                       {data.can_edit && (
@@ -1140,7 +1146,8 @@ function IngredientsSection({ supplierId, materials, systems, defaultSystem, can
 // Correcting what a filed document IS (D-338): kind, expiry, ingredient, lot.
 // The file itself is never touched.
 function FileMetaEditor({ file, kinds, materials, onSaved, onCancel }) {
-  const [f, setF] = useState({ kind: file.kind, expires_on: file.expires_on || '', material_id: file.material_id || '', lot_number: file.lot_number || '' });
+  const [f, setF] = useState({ kind: file.kind, expires_on: file.expires_on || '', material_id: file.material_id || '', lot_number: file.lot_number || '',
+    po_number: file.po_number || '', part_number: file.part_number || '', qty_note: file.qty_note || '', mismatch_note: file.mismatch_note || '' });
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
   const save = async () => {
@@ -1172,6 +1179,23 @@ function FileMetaEditor({ file, kinds, materials, onSaved, onCancel }) {
       <label className="text-xs text-slate-500">Lot number
         <input id={`fm-lot-${file.id}`} className={inputCls} value={f.lot_number} data-file-meta-lot
           onChange={e => setF({ ...f, lot_number: e.target.value })} />
+      </label>
+      {/* What a delivery document covers (D-391). */}
+      <label className="text-xs text-slate-500">PO number
+        <input id={`fm-po-${file.id}`} className={inputCls} value={f.po_number} data-file-meta-po
+          onChange={e => setF({ ...f, po_number: e.target.value })} />
+      </label>
+      <label className="text-xs text-slate-500">Part number(s)
+        <input id={`fm-part-${file.id}`} className={inputCls} value={f.part_number} data-file-meta-part
+          onChange={e => setF({ ...f, part_number: e.target.value })} />
+      </label>
+      <label className="text-xs text-slate-500">Quantity
+        <input id={`fm-qty-${file.id}`} className={inputCls} value={f.qty_note} data-file-meta-qty
+          onChange={e => setF({ ...f, qty_note: e.target.value })} />
+      </label>
+      <label className="text-xs text-slate-500">Does not match the PO
+        <input id={`fm-mis-${file.id}`} className={inputCls} value={f.mismatch_note} data-file-meta-mismatch
+          onChange={e => setF({ ...f, mismatch_note: e.target.value })} />
       </label>
       {err && <p className="text-xs text-rose-600 sm:col-span-4">{err}</p>}
       <div className="flex gap-2 sm:col-span-4">

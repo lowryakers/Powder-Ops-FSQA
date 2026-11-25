@@ -67,7 +67,8 @@ import { GUARANTEE_KIND, GUARANTEE_LABEL } from '../../shared/supplier-guarantee
 import { withGmpCert, gmpCertFor, gmpGaps, gmpGateMode, GMP_GATE_MODES } from '../supplier-gmp-cert.js';
 import { GMP_CERT_KIND, GMP_CERT_LABEL, AUDIT_CERT_KINDS } from '../../shared/supplier-gmp-cert.js';
 import { plantDateOf } from '../plant-clock.js';
-import { FILE_KIND_VALUES, FILE_KIND_LABEL, DATED_KINDS, SOURCE_SYSTEMS, SOURCE_SYSTEM_LABEL, cleanFileMeta } from '../../shared/supplier-documents.js';
+import { FILE_KIND_VALUES, FILE_KIND_LABEL, DATED_KINDS, SOURCE_SYSTEMS, SOURCE_SYSTEM_LABEL, cleanFileMeta, cleanDeliveryFields } from '../../shared/supplier-documents.js';
+import { pageList } from '../bot-api.js';
 import { materialsFor, materialLabels, createMaterial, updateMaterial, MaterialError, defaultPartSystem } from '../supplier-materials.js';
 
 const router = Router();
@@ -204,6 +205,38 @@ router.put('/gmp-gate', requireRole('admin'), (req, res) => {
   res.json({ mode });
 });
 
+// The COC / COA library, searched across every supplier (D-391): what is on
+// file for a PO, a part or a lot, before the truck arrives. READ ONLY. Declared
+// before `/:id` — "files" is a perfectly good :id. Never the extracted text or
+// the storage key: a caller asks /files/:fileId/url for the bytes.
+export function searchSupplierFiles(db, q = {}) {
+  const where = [], args = [];
+  const kind = String(q.kind || '').trim();
+  if (kind) { where.push('f.kind = ?'); args.push(kind); }
+  for (const col of ['po_number', 'part_number', 'lot_number']) {
+    const v = String(q[col] || '').trim();
+    // A file may list several parts or lots ("A,B,C"): match one whole entry,
+    // case and spacing aside, never a substring of a longer number.
+    if (v) {
+      where.push(`(',' || REPLACE(LOWER(COALESCE(f.${col}, '')), ' ', '') || ',') LIKE ?`);
+      args.push(`%,${v.toLowerCase().replace(/\s+/g, '')},%`);
+    }
+  }
+  const text = String(q.q || '').trim();
+  if (text) { where.push('(s.name LIKE ? OR f.filename LIKE ?)'); args.push(`%${text}%`, `%${text}%`); }
+  const limit = Math.min(Math.max(parseInt(q.limit, 10) || 200, 1), 500);
+  return db.prepare(`SELECT f.id, f.supplier_id, s.name AS supplier_name, f.kind, f.filename, f.po_number, f.part_number,
+      f.lot_number, f.qty_note, f.mismatch_note, f.expires_on, f.material_id, f.uploaded_by, f.created_at,
+      CASE WHEN f.storage_key IS NOT NULL THEN 1 ELSE 0 END AS stored
+    FROM supplier_files f JOIN suppliers s ON s.id = f.supplier_id
+    ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+    ORDER BY f.created_at DESC, f.rowid DESC LIMIT ${limit}`).all(...args);
+}
+router.get('/files', (req, res) => {
+  if (!canRead(req.user)) return res.status(403).json({ error: 'Not permitted' });
+  res.json(pageList(req, res, searchSupplierFiles(getDb(), req.query || {})));
+});
+
 // DECLARED BEFORE `/:id` — Express matches in declaration order and
 // "documents" is a perfectly good :id. Same trap as /products/master.csv.
 router.get('/:id', (req, res) => {
@@ -233,6 +266,7 @@ router.get('/:id', (req, res) => {
     // the row existing. extracted_text is searched, never shipped.
     files: (() => {
       const rows = db.prepare(`SELECT id, kind, period_label, expires_on, filename, source_path, lot_number, size, material_id,
+        po_number, part_number, qty_note, mismatch_note,
         CASE WHEN expires_on IS NOT NULL AND expires_on < date('now') THEN 1 ELSE 0 END AS expired,
         CASE WHEN storage_key IS NOT NULL THEN 1 ELSE 0 END AS stored, text_status
         FROM supplier_files WHERE supplier_id = ? ORDER BY period_label DESC, kind, filename`).all(s.id);
@@ -1374,6 +1408,8 @@ router.post('/:id/files', fileUpload.array('files', 20), async (req, res) => {
       if (!m.is_active) return res.status(400).json({ code: 'MATERIAL_RETIRED', error: 'That ingredient is retired; new documents are not linked to it.' });
     }
     const lotNumber = clean(req.body?.lot_number, 80);
+    // What a delivery document covers (D-391): PO, part, quantity, mismatch.
+    const delivery = cleanDeliveryFields(req.body || {});
     if (renewal && !/^\d{4}-\d{2}-\d{2}$/.test(renewal)) return res.status(400).json({ error: 'The renewal date must be a date (YYYY-MM-DD).' });
     const wantsLetter = req.body?.kind === GUARANTEE_KIND
       || (!req.body?.kind && files.some(f => (classifyDocument(f.originalname) || {}).kind === GUARANTEE_KIND));
@@ -1389,8 +1425,9 @@ router.post('/:id/files', fileUpload.array('files', 20), async (req, res) => {
 
     const ins = db.prepare(`INSERT INTO supplier_files
       (id, supplier_id, kind, expires_on, filename, storage_key, content_type, size,
-       extracted_text, text_status, source_path, uploaded_by, material_id, lot_number)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+       extracted_text, text_status, source_path, uploaded_by, material_id, lot_number,
+       po_number, part_number, qty_note, mismatch_note)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
 
     const saved = [];
     for (const f of files) {
@@ -1415,12 +1452,13 @@ router.post('/:id/files', fileUpload.array('files', 20), async (req, res) => {
         req.body?.expires_on || classified.expires_on || expiryFromFilename(f.originalname) || null,
         f.originalname, key, type, f.size,
         text || null, text ? 'ok' : (text === null ? 'failed' : 'empty'),
-        `uploaded/${f.originalname}`, req.user.name, materialId, lotNumber);
+        `uploaded/${f.originalname}`, req.user.name, materialId, lotNumber,
+        delivery.po_number, delivery.part_number, delivery.qty_note, delivery.mismatch_note);
       saved.push({ id, filename: f.originalname });
     }
     logAudit(req.user, 'supplier_files_added', 'supplier', supplier.id,
       { count: saved.length, files: saved.map(s => s.filename), kind: req.body?.kind || null, expires_on: renewal,
-        material_id: materialId, lot_number: lotNumber }, null, null, supplier.name);
+        material_id: materialId, lot_number: lotNumber, ...delivery }, null, null, supplier.name);
     res.json({ saved });
   } catch (e) {
     res.status(400).json({ error: uploadErrorMessage(e) || e.message });
@@ -1464,7 +1502,7 @@ router.get('/files/:fileId/url', async (req, res) => {
 router.put('/files/:fileId', (req, res) => {
   if (!canEdit(req.user)) return res.status(403).json({ error: 'Not permitted' });
   const db = getDb();
-  const f = db.prepare('SELECT id, supplier_id, kind, expires_on, material_id, lot_number, filename FROM supplier_files WHERE id = ?')
+  const f = db.prepare('SELECT id, supplier_id, kind, expires_on, material_id, lot_number, po_number, part_number, qty_note, mismatch_note, filename FROM supplier_files WHERE id = ?')
     .get(req.params.fileId);
   if (!f) return res.status(404).json({ error: 'No such file' });
   const c = cleanFileMeta(req.body || {});
@@ -1489,7 +1527,7 @@ router.put('/files/:fileId', (req, res) => {
   const after = Object.fromEntries(cols.map(k => [k, patch[k] ?? null]));
   logAudit(req.user, cols.includes('kind') ? 'supplier_file_relabelled' : 'supplier_file_updated', 'supplier_file', f.id,
     { supplier_id: f.supplier_id, fields: cols }, before, after, f.filename);
-  res.json({ ok: true, file: db.prepare('SELECT id, supplier_id, kind, expires_on, material_id, lot_number, filename FROM supplier_files WHERE id = ?').get(f.id) });
+  res.json({ ok: true, file: db.prepare('SELECT id, supplier_id, kind, expires_on, material_id, lot_number, po_number, part_number, qty_note, mismatch_note, filename FROM supplier_files WHERE id = ?').get(f.id) });
 });
 
 // The renewal date on a letter of guarantee already on file (D-289) — one that

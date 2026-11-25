@@ -101,6 +101,9 @@ const KINDS = [
   { kind: 'letter_of_guarantee',  re: /\bletter\s*of\s*(guarantee|guaranty|warranty)\b|\bcontinuing\s*(guarantee|guaranty)\b|\bcontinuing\b.{0,40}\b(guarantee|guaranty)\b|\b(guarantee|guaranty)\s*letter\b|\bfood\s*contact\s*(guarantee|guaranty|letter)\b/i },
   // First-class kinds a customer pack asks for by name (D-338). Before the
   // certificate and statement rules, which used to swallow them.
+  // A certificate of compliance / conformance (D-391), before every rule that
+  // would swallow it as a generic certificate.
+  { kind: 'coc',                  re: /\bcoc\b|\bc\.?\s*of\s*c\.?(?![a-z])|\bcertificate\s*of\s*(compliance|conformance|conformity)\b/i },
   { kind: 'certificate_of_insurance', re: /\bcertificate\s*of\s*(liability\s*)?insurance\b|\binsurance\s*cert(ificate)?\b|\bcoi\b/i },
   { kind: 'w9',                   re: /(?<![a-z0-9])w-?9(?![a-z0-9])/i },
   { kind: 'fsvp',                 re: /\bfsvp\b|\bforeign\s*supplier\s*verification\b/i },

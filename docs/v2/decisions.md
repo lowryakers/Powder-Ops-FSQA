@@ -11795,3 +11795,22 @@ in place and audited. The panel's edit rule is narrower than the server's, so no
   is gone. A wrong record is corrected, never removed. Destroying a box was always a status, not a delete.
 - `verify:retentionready` (17, live + browser). The control — main before this — fails 4: the admin's DELETE returns
   200 and the row is gone.
+
+## D-391 — The COC / COA library: a delivery's certificate is filed before the truck, by PO, part and lot (25 Nov 2026)
+A-20261125-001 / A-20261125-003. Vendors send COCs and COAs by email days before the delivery; the Berlin caps COC
+for PO00612 sat in an inbox while the caps waited on the dock. `supplier_files` becomes the place they are filed
+first, system-agnostic (MRPEasy PO numbers now, Keychain's after cutover — plain text either way).
+- **`coc` is a document kind** (certificate of compliance / conformance), and the filename classifier recognises
+  "COC", "C of C" and "certificate of compliance / conformance / conformity" before the generic certificate rule.
+  Rows already filed as `certificate` are not re-kinded.
+- **`supplier_files` carries `po_number`, `part_number`, `qty_note`, `mismatch_note`** (nullable, added in
+  `runMigrations`; nothing filed is touched). Upload and the file edit take them; `part_number` and `lot_number` may
+  list several, comma-separated. `mismatch_note` is what does not match the PO, written by whoever filed it.
+- **`GET /api/suppliers/files`** searches the library across suppliers by kind, PO, part, lot or name. A part or lot
+  matches one WHOLE entry of the list, never a substring. Never the extracted text or the storage key. On the bot
+  surface; the `suppliers-edit` grant still only files and edits — no disposition, no delete.
+- **Receiving's "Link the one on file" ranks by this inspection's own lines**: a file whose PO, part or lot matches a
+  `receiving_log` line is listed first and marked "Matches this delivery"; a COA is offered only when it matches that
+  way. Linking is unchanged (a person, a part on QA's CoC list, a current document).
+- Not here: the ReadyBot alert in #receiving--shipping (pack 2), any MRPEasy or Keychain call, a bot creating a
+  supplier. `verify:coclibrary` (26, live + browser, S3 stand-in). The control — main before this — fails.
