@@ -4506,6 +4506,10 @@ since go-live and in the last 90 days, and gives a verdict: never used / machine
   (`review_meaning`/`review_hash`; `approvals[role].meaning/hash`). The record interface cannot do either. A verify that
   signs one must send `signature_password`. `verify:signgates` (30).
 
+## A bot with suppliers-edit may add a supplier (D-393, supersedes D-350's "never a token")
+`POST /api/suppliers`: starts `unqualified`, `source = 'bot'`; a token's near-match (`matchStrength`) is 409
+`SUPPLIER_NEAR_MATCH` with candidates. Dispositions stay person-only. `verify:botaddsupplier` (14).
+
 ## A COC / COA filed with its PO posts one ReadyBot alert in the receiving channel (D-392)
 `server/coc-receiving-alert.js`. The channel is `app_settings.receiving_alert_channel_id` (admin, Settings → ReadyBot
 messages) — **never put a channel id in code**; unset/archived ⇒ filed, nothing posted. Never a DM, client or HR channel.
