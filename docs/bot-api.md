@@ -251,6 +251,10 @@ Reads need the account's `suppliers` access. **Every write needs a `write` token
 
 - **Scope:** `read`. **Query:** `days` (default 90, at most 365). **Returns:** `{ expired, expiring }`, each document with `material_label` and `material_part_number`.
 
+### `GET /api/suppliers/files`
+
+- **Scope:** `read`. The COC / COA library across every supplier (D-391). **Query:** `kind`, `po_number`, `part_number`, `lot_number` (each matches one whole entry of a comma-separated list, case and spaces aside), `q` (supplier or file name), `limit`. **Returns:** files with `supplier_name`, `po_number`, `part_number`, `lot_number`, `qty_note`, `mismatch_note`, `stored`. Never the text or the storage key; ask `/files/:fileId/url` for the bytes.
+
 ### `GET /api/suppliers/:id`
 
 - **Scope:** `read`. **Returns:** the supplier, contacts, `materials` (each with `parts` [{system, part_number}] and `current_part_number`), files (with `material_id`, `material_label`, `lot_number`), `gmp_cert`, `guarantee`, `can_edit`.
@@ -278,11 +282,11 @@ Reads need the account's `suppliers` access. **Every write needs a `write` token
 
 ### `POST /api/suppliers/:id/files`
 
-- **Scope:** `write` + `suppliers-edit`. Multipart `files`, with `kind`, `expires_on`, `material_id`, `lot_number`. A GMP certificate needs `expires_on` (`EXPIRY_REQUIRED`), a letter of guarantee its renewal date (`RENEWAL_REQUIRED`). The ingredient must be this supplier's and in use.
+- **Scope:** `write` + `suppliers-edit`. Multipart `files`, with `kind` (`coc` for a certificate of compliance / conformance), `expires_on`, `material_id`, `lot_number`, and for a delivery document `po_number`, `part_number`, `qty_note`, `mismatch_note` (D-391). A GMP certificate needs `expires_on` (`EXPIRY_REQUIRED`), a letter of guarantee its renewal date (`RENEWAL_REQUIRED`). The ingredient must be this supplier's and in use.
 
 ### `PUT /api/suppliers/files/:fileId`
 
-- **Scope:** `write` + `suppliers-edit`. **Body:** `kind`, `expires_on`, `material_id`, `lot_number`. Audited with the before and the after. The file's bytes and name never change.
+- **Scope:** `write` + `suppliers-edit`. **Body:** `kind`, `expires_on`, `material_id`, `lot_number`, `po_number`, `part_number`, `qty_note`, `mismatch_note`. Audited with the before and the after. The file's bytes and name never change.
 
 ### `PUT /api/suppliers/files/:fileId/renewal`
 

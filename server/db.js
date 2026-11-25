@@ -2849,6 +2849,11 @@ function runMigrations() {
   // runs just before this, so the ALTER has a table to act on (the
   // migration-ordering rule).
   addColumnIfMissing('supplier_files', 'questionnaire_id', 'TEXT');
+  // A delivery's COC / COA filed before the truck (D-391): the PO, part and
+  // quantity it covers and a note of what does not match the PO. Nullable;
+  // nothing already filed is touched.
+  for (const c of ['po_number', 'part_number', 'qty_note', 'mismatch_note']) addColumnIfMissing('supplier_files', c, 'TEXT');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_supplier_files_po ON supplier_files(po_number)');
   // Supplies food-contact material (D-289): owes a letter of guarantee whatever its
   // vendor_type says. NULL = nobody has said; 1 = yes; 0 = no.
   addColumnIfMissing('suppliers', 'food_contact', 'INTEGER');

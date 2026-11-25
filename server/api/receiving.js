@@ -669,21 +669,45 @@ router.post('/checklist/:inspectionNo/coc', (req, res, next) => cocUpload(req, r
   } finally { cleanupTemp(files); }
 });
 
-// Certificates on file in Supplier Qualification that could be linked.
+// Certificates on file in Supplier Qualification that could be linked. A COC
+// filed before the truck with its PO, part or lot (D-391) is matched against
+// this inspection's own receiving lines and listed FIRST; a COA is offered only
+// when it matches that way (a COA is not a COC, but a vendor's delivery paper
+// often is both). Everything else is the old name/filename search.
+const splitList = (v) => String(v || '').split(',').map(x => x.trim().toLowerCase().replace(/\s+/g, '')).filter(Boolean);
 router.get('/checklist/:inspectionNo/coc/on-file', (req, res) => {
   const db = getDb();
   const row = db.prepare('SELECT inspection_no, inspection_date, vendor FROM receiving_checklists WHERE inspection_no = ?').get(req.params.inspectionNo);
   if (!row) return res.status(404).json({ error: 'No checklist for this inspection yet.' });
   const q = String(req.query.q || '').trim();
   const like = `%${q}%`;
-  const rows = db.prepare(`SELECT f.id, f.filename, f.kind, f.expires_on, f.created_at, s.name AS supplier_name
+  const lines = db.prepare('SELECT po_number, part_number, vendor_lot FROM receiving_log WHERE inspection_no = ?').all(row.inspection_no);
+  const want = {
+    po: new Set(lines.flatMap(l => splitList(l.po_number))),
+    part: new Set([...lines.flatMap(l => splitList(l.part_number)), ...splitList(req.query.part)]),
+    lot: new Set(lines.flatMap(l => splitList(l.vendor_lot))),
+  };
+  const rows = db.prepare(`SELECT f.id, f.filename, f.kind, f.expires_on, f.created_at, f.po_number, f.part_number,
+      f.lot_number, f.qty_note, f.mismatch_note, s.name AS supplier_name
     FROM supplier_files f JOIN suppliers s ON s.id = f.supplier_id
-    WHERE (? = '' OR s.name LIKE ? OR f.filename LIKE ?)
-      AND (f.kind LIKE '%certificate%' OR LOWER(f.filename) LIKE '%coc%' OR LOWER(f.filename) LIKE '%conformance%'
+    WHERE (? = '' OR s.name LIKE ? OR f.filename LIKE ? OR f.po_number LIKE ? OR f.part_number LIKE ? OR f.lot_number LIKE ?)
+      AND (f.kind IN ('coc', 'coa') OR f.kind LIKE '%certificate%' OR LOWER(f.filename) LIKE '%coc%' OR LOWER(f.filename) LIKE '%conformance%'
            OR LOWER(f.filename) LIKE '%compliance%' OR LOWER(f.filename) LIKE '%conformity%')
-    ORDER BY (s.name LIKE ?) DESC, f.expires_on IS NULL, f.expires_on DESC LIMIT 50`)
-    .all(q, like, like, `%${row.vendor || '\u0000'}%`);
-  res.json(rows.map(f => ({ ...f, current: onFileCurrent(f, row.inspection_date) })));
+    ORDER BY f.created_at DESC LIMIT 500`).all(q, like, like, like, like, like);
+  const vendor = String(row.vendor || '').toLowerCase();
+  const scored = rows.map(f => {
+    const match = [];
+    if (splitList(f.po_number).some(x => want.po.has(x))) match.push('po');
+    if (splitList(f.part_number).some(x => want.part.has(x))) match.push('part');
+    if (splitList(f.lot_number).some(x => want.lot.has(x))) match.push('lot');
+    return { ...f, match };
+  }).filter(f => f.kind !== 'coa' || f.match.length);
+  const score = (f) => f.match.length * 10 + (f.kind === 'coc' ? 2 : 0)
+    + (vendor && String(f.supplier_name || '').toLowerCase().includes(vendor) ? 1 : 0);
+  scored.sort((a, b2) => score(b2) - score(a)
+    || (a.expires_on == null) - (b2.expires_on == null) || String(b2.expires_on || '').localeCompare(String(a.expires_on || ''))
+    || String(b2.created_at).localeCompare(String(a.created_at)));
+  res.json(scored.slice(0, 50).map(f => ({ ...f, current: onFileCurrent(f, row.inspection_date) })));
 });
 
 // Link the supplier's standing certificate.

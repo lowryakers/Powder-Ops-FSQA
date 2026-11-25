@@ -26,6 +26,9 @@ export const FILE_KINDS = [
   { value: 'registration', label: 'Registration' },
   { value: 'specification', label: 'Specification' },
   { value: 'coa', label: 'Certificate of analysis' },
+  // A delivery's certificate of compliance / conformance (D-391), filed BEFORE the
+  // truck with its PO, part and lot so receiving can link it.
+  { value: 'coc', label: 'Certificate of compliance / conformance' },
   { value: 'sds', label: 'Safety data sheet' },
   { value: 'allergen', label: 'Allergen statement' },
   { value: 'natural_flavor', label: 'Natural flavor statement' },
@@ -113,5 +116,17 @@ export function cleanFileMeta(b = {}) {
   }
   if ('lot_number' in b) out.lot_number = t(b.lot_number, 80);
   if ('material_id' in b) out.material_id = t(b.material_id, 80);
+  // What a delivery document is for (D-391): the PO, part and quantity it
+  // covers, and a person's or bot's note of anything that does not match the
+  // PO. Plain text in whatever system's numbering — MRPEasy now, Keychain later.
+  for (const [k, n] of Object.entries(DELIVERY_FIELDS)) if (k in b) out[k] = t(b[k], n);
   return { data: out };
+}
+
+/** The delivery-document fields and their lengths (D-391). */
+export const DELIVERY_FIELDS = { po_number: 40, part_number: 60, qty_note: 120, mismatch_note: 500 };
+
+/** The delivery fields from an upload body: trimmed, capped, blank = null. */
+export function cleanDeliveryFields(b = {}) {
+  return Object.fromEntries(Object.entries(DELIVERY_FIELDS).map(([k, n]) => [k, t(b[k], n)]));
 }

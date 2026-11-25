@@ -4506,6 +4506,11 @@ since go-live and in the last 90 days, and gives a verdict: never used / machine
   (`review_meaning`/`review_hash`; `approvals[role].meaning/hash`). The record interface cannot do either. A verify that
   signs one must send `signature_password`. `verify:signgates` (30).
 
+## The COC / COA library: filed before the truck by PO, part and lot (D-391)
+Kind `coc`; `supplier_files.po_number` / `part_number` / `qty_note` / `mismatch_note`; `GET /api/suppliers/files` (whole-entry
+match on comma lists, never text or storage key). Receiving's on-file picker ranks PO/part/lot matches against the
+inspection's own lines first. **Keep it ERP-agnostic — no MRPEasy or Keychain call here.** `verify:coclibrary` (26).
+
 ## New retains are logged in ReadyDoc; a retention record is never deleted (D-390)
 A-20261124-005: history stays in the old system, nothing is backfilled. `DELETE /api/retention/:id` is 403
 `RETENTION_DELETE_DISABLED` for everyone; a wrong retain is corrected (audited). `verify:retentionready` (17).
