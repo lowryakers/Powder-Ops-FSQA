@@ -2,6 +2,7 @@ import { useState, useMemo, Fragment, useRef} from 'react';
 import { RecordCard, RecordCards } from '../common/RecordCards.jsx';
 import { useApiGet, apiPost, apiPut, apiDelete, apiUpload } from '../../hooks/useApi';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
+import { getParam } from '../../lib/deepLink';
 import { ExpandCell, DetailRow } from '../common/RowDetail';
 import { useCappedList } from '../../lib/useCappedList';
 import { useTableSort } from '../../lib/useTableSort';
@@ -117,7 +118,8 @@ export default function SuppliersPanel({ user }) {
   const [only, setOnly] = useState(null);   // null | 'gap' | 'expired'
   const [decide, setDecide] = useState(null);
   const [queue, setQueue] = useState([]);
-  const expand = useRowExpand();
+  // ?supplier=<id> opens that supplier (the receiving alert's link, D-392).
+  const expand = useRowExpand(getParam('supplier'));
 
   const { tabs, tab, setTab } = useModuleTabs({
     id: 'suppliers', user,

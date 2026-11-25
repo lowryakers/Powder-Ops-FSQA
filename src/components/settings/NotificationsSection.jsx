@@ -46,6 +46,42 @@ function Picker({ people, chosen, onSave, onCancel, busy }) {
   );
 }
 
+// Where ReadyBot posts when a delivery's COC / COA is filed with its PO (D-392).
+// One channel, chosen here; nothing is posted until one is chosen.
+function ReceivingAlertChannel() {
+  const { data, refresh } = useApiGet('/receiving/alert-channel');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  if (!data?.can_edit) return null;
+  const save = async (channel_id) => {
+    setBusy(true); setError('');
+    try { await apiPut('/receiving/alert-channel', { channel_id }); refresh(); }
+    catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-3 space-y-1.5" data-receiving-alert-channel>
+      <p className="text-sm font-semibold text-gray-900">Receiving document alert</p>
+      <p className="text-xs text-gray-600">
+        When a certificate of compliance or a COA is filed on a supplier with the PO it covers, ReadyBot posts one
+        message in this channel — the PO, parts, lots, quantity, and a warning if it does not match the PO.
+      </p>
+      <label className="block text-xs text-gray-600">Channel
+        <select id="receiving-alert-channel" value={data.reason === 'no_channel_set' ? '' : (data.channel_id || '')} disabled={busy}
+          onChange={e => save(e.target.value)} data-receiving-alert-select
+          className="mt-0.5 w-full sm:w-80 px-2 py-1.5 border border-gray-300 rounded-lg text-sm">
+          <option value="">— nobody is told —</option>
+          {(data.options || []).map(c => <option key={c.id} value={c.id}>#{c.name}{c.kind === 'private' ? ' (private)' : ''}</option>)}
+        </select>
+      </label>
+      {data.channel_id && data.reason && data.reason !== 'no_channel_set' && (
+        <p className="text-xs text-amber-800">The chosen channel can no longer carry it ({data.reason.replace(/_/g, ' ')}). Pick another.</p>
+      )}
+      {error && <p className="text-xs text-red-700">{error}</p>}
+    </div>
+  );
+}
+
 export default function NotificationsSection() {
   const { data, refresh } = useApiGet('/flash/readybot-audience');
   const [editing, setEditing] = useState('');
@@ -72,12 +108,13 @@ export default function NotificationsSection() {
       <p className="text-sm text-gray-600 bg-powder-50 border border-powder-200 rounded-xl px-3 py-2 flex items-start gap-2">
         <Bot size={15} className="text-powder-600 shrink-0 mt-0.5" />
         <span>
-          <b>ReadyBot is not a channel.</b> Every message it sends is a private conversation between the bot and
-          one person, so nobody reads anybody else&apos;s. What follows is who each automatic message reaches
-          today. Two of them are your decision; the rest follow from what somebody did or from their department.
+          <b>ReadyBot is not a channel.</b> Almost every message it sends is a private conversation between the bot
+          and one person, so nobody reads anybody else&apos;s. What follows is who each automatic message reaches
+          today. The one exception is the receiving alert below, which posts in the channel you choose.
         </span>
       </p>
       {error && <p className="text-sm text-red-700">{error}</p>}
+      <ReceivingAlertChannel />
       {(data.audiences || []).length > 1 && (
         <div className="relative">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />

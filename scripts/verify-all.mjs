@@ -232,6 +232,7 @@ const RUNS = [
   ['verify-failed-check-hold.mjs', 5247, {}, false],
   ['verify-retention-ready.mjs', 5248, {}, false],
   ['verify-coc-library.mjs', 5249, {}, true],
+  ['verify-coc-receiving-alert.mjs', 5250, {}, true],
   ['verify-disposal-no-delete.mjs', 5243, {}, false],
   ['verify-receiving-no-delete.mjs', 5245, {}, false],
   ['verify-record-lookup.mjs', 5240, {}, false],

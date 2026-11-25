@@ -11814,3 +11814,20 @@ first, system-agnostic (MRPEasy PO numbers now, Keychain's after cutover — pla
   way. Linking is unchanged (a person, a part on QA's CoC list, a current document).
 - Not here: the ReadyBot alert in #receiving--shipping (pack 2), any MRPEasy or Keychain call, a bot creating a
   supplier. `verify:coclibrary` (26, live + browser, S3 stand-in). The control — main before this — fails.
+
+## D-392 — A delivery's COC / COA filed with its PO tells the dock in #receiving--shipping (25 Nov 2026)
+A-20261125-002 / A-20261125-003. The library (D-391) only helps if the dock knows a certificate is there. When a
+`coc` or `coa` is filed on a supplier with a `po_number`, ReadyBot posts ONE message in the receiving channel:
+supplier, PO, parts, lot, quantity, the file names, and a link that opens that supplier's documents
+(`?tab=suppliers&supplier=<id>`). A mismatch note turns the header into "CHECK MISMATCH" and quotes it.
+- **The channel is an admin setting** (`app_settings.receiving_alert_channel_id`, Settings → ReadyBot messages,
+  `PUT /api/receiving/alert-channel`), never an id in code. Lowry chose the existing #receiving--shipping; no new
+  #receiving channel. A DM, a client channel, an HR door or an archived channel is refused. Tokens cannot set it.
+- **Unset, gone or archived ⇒ nothing is posted and the filing still succeeds**; the upload's response carries
+  `receiving_alert: { posted, channel_id, reason }`. A chat failure never fails a filing.
+- One message per upload call, however many files. `notify_receiving: false` files without it. The archive import
+  never alerts (a different route).
+- **Found while testing: a second manual upload with the same file name was a 400** — `source_path` was
+  `uploaded/<name>` under a unique (supplier, source_path) index, and vendors reuse names ("COC.pdf") every
+  delivery. New uploads use `uploaded/<file id>/<name>`; rows already filed are untouched. Nothing read the old shape.
+- `verify:cocalert` (26, live + browser, S3 stand-in). The control — main before this — fails.
