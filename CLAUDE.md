@@ -4525,6 +4525,16 @@ passed. QA signs with the password. FORM 402's packaging questions are FORM 418-
 messages) — **never put a channel id in code**; unset/archived ⇒ filed, nothing posted. Never a DM, client or HR channel.
 A manual supplier upload's `source_path` is `uploaded/<file id>/<name>`. `verify:cocalert` (26).
 
+## One Help page: what's new, how-tos, why the app does that (D-397)
+`src/data/help.js` (`GUIDES`, `WHATS_NEW`, `guidesFor`, `guidesForModule`, `matchesHelp`, `openGuide`), `HelpPanel.jsx`
+(nav `help`, every non-guest), the ⓘ (`PageInfo.jsx`) and the ⌘K box list guides, `FloorHelp` on both floor layouts.
+- **A change people will notice adds a What's new entry in the same PR** (newest first, its `D-nnn`); a change to how a
+  job is done adds or updates a guide and its `checked` date. `check:help` fails a dead "Open it", a guide older than
+  180 days, no keeping team, or Spanish that does not match step for step.
+- A guide shows only to people who can open its `module`. It explains; it never decides — the server still does.
+- The Suppliers "How this works" card reads the `qualify-a-supplier` guide. Never copy steps into a screen.
+- `verify:help` (24).
+
 ## COC Drop: the dock photographs a COC / COA; the queue files it (D-398)
 `server/api/coc-drop.js` (`canWorkCocQueue`, `stitchPages`), `coc_drops` / `coc_drop_files` / `coc_drop_events`,
 `CocDropPanel.jsx` (Warehouse → COC Drop, `canSeeCocDrop`), token grant `coc-drop`, module id `coc-drop`.

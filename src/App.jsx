@@ -85,6 +85,7 @@ import CommsView from './components/comms/CommsView.jsx';
 import UpdateBanner from './components/UpdateBanner.jsx';
 import { applyKioskManifest, setKioskAppTitle } from './lib/kioskManifest.js';
 import PageInfo from './components/PageInfo.jsx';
+import { guidesFor, matchesHelp, openGuide } from './data/help.js';
 import ChangePasswordModal from './components/common/ChangePasswordModal.jsx';
 import SignaturePrompt from './components/common/SignaturePrompt.jsx';
 import DocumentsToSignCard, { SignDocumentHost } from './components/common/DocumentsToSign.jsx';
@@ -102,6 +103,7 @@ const CandidatesPanel = lazy(() => import('./components/office/CandidatesPanel.j
 const NewsletterReader = lazy(() => import('./components/office/NewsletterReader.jsx'));
 const ControlledChangesPanel = lazy(() => import('./components/compliance/ControlledChangesPanel.jsx'));
 const ChangeRegisterPanel = lazy(() => import('./components/compliance/ChangeRegisterPanel.jsx'));
+const HelpPanel = lazy(() => import('./components/HelpPanel.jsx'));
 const FoodSafetyCulturePanel = lazy(() => import('./components/compliance/FoodSafetyCulturePanel.jsx'));
 const PayTrackingPanel = lazy(() => import('./components/office/PayTrackingPanel.jsx'));
 const PartnerReconPanel = lazy(() => import('./components/office/PartnerReconPanel.jsx'));
@@ -119,6 +121,10 @@ const NAV_GROUPS = [
     items: [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { id: 'operator', label: 'Operator View', icon: HardHat },
+      // One Help page for everyone who works here (D-397): what's new, how-tos, and
+      // why the app does what it does. Guides for screens a person cannot open are hidden.
+      { id: 'help', label: 'Help', icon: LifeBuoy, keywords: "help how to how do i guide guides instructions what's new whats new release notes changes ayuda",
+        visible: (u) => !!u && !u.is_external },
     ],
   },
   {
@@ -859,6 +865,7 @@ const RULE_WHY = {
   'change-register': 'Document Control / QA department, or any supervisor',
   'food-safety-culture': 'QA / Document Control department, or any supervisor',
   accounting: 'Office / admin supervisor (AP Drop queue)',
+  help: 'Every employee',
   'coc-drop': 'Warehouse / QA / Purchasing department, or Receiving Log',
 };
 function accessReasons(user) {
@@ -907,7 +914,14 @@ function ModuleSearch({ user, onNavigate, compact = false }) {
   const results = useMemo(() => {
     const term = q.trim().toLowerCase();
     if (!term) return items;
-    return items.filter(i => i.label.toLowerCase().includes(term) || i.group.toLowerCase().includes(term) || (i.keywords || '').includes(term));
+    const mods = items.filter(i => i.label.toLowerCase().includes(term) || i.group.toLowerCase().includes(term) || (i.keywords || '').includes(term));
+    // The Help guides answer "how do I…" from the same box (D-397) — only the
+    // ones about screens this person can open, and only when Help is theirs.
+    if (!items.some(i => i.id === 'help')) return mods;
+    const canOpen = (id) => items.some(i => i.id === id || i.anyOf?.includes(id));
+    const guides = guidesFor(canOpen).filter(g => matchesHelp(g, term)).slice(0, 5)
+      .map(g => ({ id: `guide:${g.id}`, guide: g.id, label: g.q, group: 'Help', icon: LifeBuoy }));
+    return [...mods, ...guides];
   }, [q, items]);
 
   useEffect(() => {
@@ -926,7 +940,7 @@ function ModuleSearch({ user, onNavigate, compact = false }) {
   useEffect(() => { if (open) { setQ(''); setHi(0); setTimeout(() => inputRef.current?.focus(), 0); } }, [open]);
   useEffect(() => { setHi(0); }, [q]);
 
-  const choose = (item) => { if (!item) return; onNavigate(item.id); setOpen(false); };
+  const choose = (item) => { if (!item) return; if (item.guide) openGuide(item.guide); else onNavigate(item.id); setOpen(false); };
 
   return (
     <div className={compact ? '' : 'relative'} ref={ref}>
@@ -954,7 +968,7 @@ function ModuleSearch({ user, onNavigate, compact = false }) {
                 else if (e.key === 'ArrowUp') { e.preventDefault(); setHi(h => Math.max(h - 1, 0)); }
                 else if (e.key === 'Enter') { e.preventDefault(); choose(results[hi]); }
               }}
-              placeholder="Jump to a module…" className="flex-1 text-sm outline-none bg-transparent" />
+              placeholder="Jump to a module, or ask how…" className="flex-1 text-sm outline-none bg-transparent" />
           </div>
           <div className="max-h-80 overflow-y-auto py-1">
             {results.length === 0 ? (
@@ -970,6 +984,21 @@ function ModuleSearch({ user, onNavigate, compact = false }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Help over the floor layouts (D-397). Those layouts have no sidebar, so Help
+// opens over the task list instead of as a page.
+function FloorHelp({ canOpen, onClose }) {
+  return (
+    <div className="fixed inset-0 z-40 bg-black/40 flex items-start justify-center p-3 sm:p-6 overflow-y-auto" data-floor-help-panel>
+      <div className="bg-gray-50 rounded-xl shadow-xl w-full max-w-3xl p-4 sm:p-6 relative">
+        <button type="button" onClick={onClose} aria-label="Close help" className="absolute right-3 top-3 p-1 text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        <Suspense fallback={<div className="text-sm text-gray-400">Loading…</div>}>
+          <HelpPanel canOpen={canOpen} />
+        </Suspense>
+      </div>
     </div>
   );
 }
@@ -1274,6 +1303,7 @@ function App() {
   const [showChangePw, setShowChangePw] = useState(false);
   const [showSignature, setShowSignature] = useState(false);
   const [showInstall, setShowInstall] = useState(false);
+  const [showFloorHelp, setShowFloorHelp] = useState(false);
   // /auditor shows the binder's own sign-in; staff can switch to the ordinary
   // one from there rather than the visitor being shown a staff login.
   const [auditorStaffLogin, setAuditorStaffLogin] = useState(false);
@@ -1814,6 +1844,9 @@ function App() {
                   <Smartphone size={17} />
                 </button>
               )}
+              <button onClick={() => setShowFloorHelp(true)} className="text-gray-400 hover:text-gray-600" data-tip="Help" data-tip-left data-floor-help aria-label="Help">
+                <LifeBuoy size={17} />
+              </button>
               <button onClick={() => setShowChangePw(true)} className="text-gray-400 hover:text-gray-600" data-tip="Change password" data-tip-left>
                 <KeyRound size={17} />
               </button>
@@ -1837,6 +1870,7 @@ function App() {
         {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
         {showSignature && <SignatureModal onClose={() => setShowSignature(false)} />}
         {showInstall && <InstallHelp onClose={() => setShowInstall(false)} />}
+        {showFloorHelp && <FloorHelp canOpen={(id) => id === 'operator'} onClose={() => setShowFloorHelp(false)} />}
         <UpdateBanner />
       </div>
     );
@@ -1986,7 +2020,12 @@ function App() {
     if (tab?.visible && !tab.visible(user)) continue;
     effectiveModules = [...effectiveModules, tabId];
   }
-  const operatorOnly = effectiveModules.length === 1 && effectiveModules[0] === 'operator';
+  // Help (D-397) is for everybody, so it does not count as a second module: an
+  // account whose only screen is Operator View keeps the floor layout, which
+  // opens Help over it from the header.
+  const helpCanOpen = (id) => effectiveModules.includes(id);
+  const workModules = effectiveModules.filter(id => id !== 'help');
+  const operatorOnly = workModules.length === 1 && workModules[0] === 'operator';
 
   // If user only has operator view access, render the standalone operator layout
   if (operatorOnly) {
@@ -2011,6 +2050,9 @@ function App() {
                   <Smartphone size={17} />
                 </button>
               )}
+              <button onClick={() => setShowFloorHelp(true)} className="text-gray-400 hover:text-gray-600" data-tip="Help" data-tip-left data-floor-help aria-label="Help">
+                <LifeBuoy size={17} />
+              </button>
               <button onClick={() => setShowChangePw(true)} className="text-gray-400 hover:text-gray-600" data-tip="Change password" data-tip-left>
                 <KeyRound size={17} />
               </button>
@@ -2034,6 +2076,7 @@ function App() {
         {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
         {showSignature && <SignatureModal onClose={() => setShowSignature(false)} />}
         {showInstall && <InstallHelp onClose={() => setShowInstall(false)} />}
+        {showFloorHelp && <FloorHelp canOpen={helpCanOpen} onClose={() => setShowFloorHelp(false)} />}
         <ViewAsBar viewAs={viewAs} onExit={stopViewAs} />
         <UpdateBanner />
       </div>
@@ -2222,6 +2265,7 @@ function App() {
           {resolvedTab === 'qa-inspections' && <QAInspectionsPanel />}
           {resolvedTab === 'qa-review' && <QAReviewPanel />}
           {resolvedTab === 'records' && <RecordLookupPanel />}
+          {resolvedTab === 'help' && <HelpPanel canOpen={helpCanOpen} />}
           {(resolvedTab === 'accounting' || HUB_OF[resolvedTab] === 'accounting') &&
             <ModuleHub key={`acct-${resolvedTab}`} hubId="accounting" user={user} initialTab={resolvedTab} badges={notifications?.badges} />}
           {resolvedTab === 'procurement' && <ProcurementPanel />}
