@@ -11918,6 +11918,38 @@ guide describes the field and does not recommend it for her. The scale-room guid
 `check:help` (354), `verify:help` (24, browser at 1280 and 390; the control — `main` before this — fails at the first
 Help page assertion).
 
+## D-398 — COC Drop: the dock photographs a COC / COA in ReadyDoc; nobody scans or emails it (25 Nov 2026)
+Pack receiving-coc-drop. Lowry, 25 Nov 2026, 1:24 PM MT: "I'm not going to have Juan scan and email anything. Couldn't
+we just add it like AP Drop in ReadyDoc?"
+
+**Decided:**
+- **COC Drop is AP Drop's shape for the warehouse** (`server/api/coc-drop.js`, Warehouse nav, next to Receiving Log).
+  Mounted without `requireModuleWrite`: anyone signed in drops; the queue is checked in the router.
+- **One request is one drop, however many pages** (AP Drop files one row per file; a three-photo COC is one document).
+  Pages are stored and hashed first (`coc_drops`, `coc_drop_files`, `coc_drop_events`). The same pages dropped again
+  within 30 days are still filed, with `status_reason` naming the earlier drop.
+- **Statuses: new · matched · filed · mismatch, and nothing else.** A PO set on a new drop makes it matched; a mismatch
+  note makes it mismatch; mismatch by hand needs a reason; filed is only set by filing.
+- **The queue is Quality (qa/quality department), admins, the `coc-drop` edit grant, and a token holding `coc-drop` or
+  `suppliers-edit`.** Everyone else sees their own drops; another person's drop is 404. An auditor reads, never writes.
+  The nav entry is broader on purpose — warehouse, QA, purchasing, or anyone with Receiving Log sees it on day one.
+- **Filing reuses the library's writer.** `fileSupplierDocuments` and `createSupplier` were lifted out of
+  `api/suppliers.js` (the routes call them too, unchanged): the drop's pages become ONE PDF (a single PDF as it is,
+  photos stitched in page order with pdf-lib), filed as `coc` / `coa` with the D-391 fields, and the D-392 ReadyBot
+  alert reaches the receiving channel exactly as it does for a COC filed on the supplier. A name exactly on file is
+  that supplier; a new name is added **unqualified** (D-393, `source = 'bot'` for a token); a token's near-name match is
+  409 and nothing is added. Filing writes the library, so a token also needs `suppliers-edit` to file. Filing twice
+  is a no-op.
+- **No delete, no receive, no sign.** A DELETE on any COC Drop path is 403, and the three tables refuse DELETE by
+  trigger. Nothing here creates a receiving line, signs a checklist or qualifies a supplier.
+- **POs offered on the form are ones ReadyDoc already has** (receiving lines, the library, earlier drops, last 90
+  days). No MRPEasy or Keychain call. No OCR in this step; typed fields are stored as typed.
+- New token grant `coc-drop`; module id `coc-drop` (Settings → Warehouse: View drops and sees your own, Edit works the
+  queue).
+
+`verify:cocdrop` (49), `verify:cocdropui` (13, browser at 390 and 1280). The control — `main` before this — fails at the
+first drop.
+
 ## D-399 — A recurring task's "Owner" box is "Also show to" (25 Nov 2026)
 Lowry, 25 Nov, on Angie (Document Control) covering QA's Temp & Humidity checks on Fridays: "She's not the owner. It
 should still be owned by QA." The field D-094 added (`pm_schedules.assigned_to`, and `quality_schedules.assigned_to`

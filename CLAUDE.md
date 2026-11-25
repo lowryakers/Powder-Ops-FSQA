@@ -4535,6 +4535,16 @@ A manual supplier upload's `source_path` is `uploaded/<file id>/<name>`. `verify
 - The Suppliers "How this works" card reads the `qualify-a-supplier` guide. Never copy steps into a screen.
 - `verify:help` (24).
 
+## COC Drop: the dock photographs a COC / COA; the queue files it (D-398)
+`server/api/coc-drop.js` (`canWorkCocQueue`, `stitchPages`), `coc_drops` / `coc_drop_files` / `coc_drop_events`,
+`CocDropPanel.jsx` (Warehouse → COC Drop, `canSeeCocDrop`), token grant `coc-drop`, module id `coc-drop`.
+- **One request = one drop, however many pages.** Statuses are only `new` / `matched` / `filed` / `mismatch`.
+- **Filing goes through `fileSupplierDocuments` and `createSupplier` (exported from `api/suppliers.js`)** — the same
+  writers as `POST /api/suppliers/:id/files` and `POST /api/suppliers`. Never a second library or alert path.
+- A token works the queue with `coc-drop` or `suppliers-edit`; filing needs `suppliers-edit`. Never receive, sign,
+  qualify or delete here: DELETE is 403 and the tables refuse DELETE by trigger.
+- No ERP calls (recent POs are read from ReadyDoc's own tables). `verify:cocdrop` (49), `verify:cocdropui` (13).
+
 ## The COC / COA library: filed before the truck by PO, part and lot (D-391)
 Kind `coc`; `supplier_files.po_number` / `part_number` / `qty_note` / `mismatch_note`; `GET /api/suppliers/files` (whole-entry
 match on comma lists, never text or storage key). Receiving's on-file picker ranks PO/part/lot matches against the

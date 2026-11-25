@@ -206,6 +206,8 @@
     "verify:cocalert": "node scripts/verify-coc-receiving-alert.mjs",
     "verify:sampling": "node scripts/verify-incoming-sampling.mjs",
     "verify:help": "node scripts/verify-help.mjs",
+    "verify:cocdrop": "node scripts/verify-coc-drop.mjs",
+    "verify:cocdropui": "node scripts/verify-coc-drop-ui.mjs",
     "verify:botaddsupplier": "node scripts/verify-bot-add-supplier.mjs",
     "verify:scaleroom": "node scripts/verify-scale-room.mjs",
     "verify:disposalnodelete": "node scripts/verify-disposal-no-delete.mjs",

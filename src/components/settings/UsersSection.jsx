@@ -70,6 +70,7 @@ const MODULE_GROUPS = [
     label: 'Warehouse',
     modules: [
       { id: 'receiving-log', label: 'Receiving Log' },
+      { id: 'coc-drop', label: 'COC Drop', note: 'View: drop a COC / COA photo and see your own drops (anyone in the warehouse, or with Receiving Log, already sees it). Edit: work the queue — match the PO and file it into the supplier library.' },
       { id: 'component-signout', label: 'Component Sign In/Out' },
       { heading: 'Sign In/Out', nav: 'sign-out', note: 'One sidebar entry with tabs. It shows when any of the three below is set.' },
       { id: 'currently-out', label: 'Out now (summary view)', sub: true, note: 'The read-only "what is signed out right now" tab, across both forms. Grant this alone for someone who only needs the floor check.' },

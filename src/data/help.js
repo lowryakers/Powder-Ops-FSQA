@@ -220,6 +220,29 @@ export const GUIDES = [
     },
   },
 
+  {
+    id: 'drop-a-coc',
+    q: 'How do I drop a COC at the dock?',
+    for: 'floor', owner: 'Purchasing', checked: '2026-11-25',
+    module: 'coc-drop', open: { tab: 'coc-drop' },
+    keywords: 'coc coa certificate compliance analysis photo dock delivery po scan email drop',
+    steps: [
+      'Open ReadyDoc and tap COC Drop (under Warehouse).',
+      'Tap Take a photo of the COC for each page, or Choose a photo or PDF.',
+      'Type the PO number if you know it, then tap Drop it.',
+      'You are done. You do not need to scan or email it. Procurement matches it to the PO and files it.',
+    ],
+    es: {
+      q: '¿Cómo entrego un COC en el andén?',
+      steps: [
+        'Abra ReadyDoc y toque COC Drop (en Warehouse).',
+        'Toque “Take a photo of the COC” por cada página, o “Choose a photo or PDF”.',
+        'Escriba el número de PO si lo sabe y toque “Drop it”.',
+        'Listo. No tiene que escanearlo ni mandarlo por correo. Compras lo une al PO y lo archiva.',
+      ],
+    },
+  },
+
   /* ── Supervisors and QA ───────────────────────────────────────────── */
   {
     id: 'who-sees-a-task',
@@ -499,6 +522,9 @@ export const WHATS_NEW = [
   { date: '2026-11-25', d: 'D-399', module: 'pm', open: { tab: 'pm-schedules' },
     title: '"Owner" on a recurring task is now "Also show to"',
     body: 'Same box, clearer name: the team still owns the task, and the person picked also sees it on their list. On Recurring Schedules and Quality Schedules.' },
+  { date: '2026-11-25', d: 'D-398', module: 'coc-drop', open: { tab: 'coc-drop' },
+    title: 'COC Drop: photograph a COC at the dock',
+    body: 'Warehouse → COC Drop. Take a photo of each page (or choose the PDF); no scanning or email. Quality and Purchasing match it to the PO and file it into the supplier library.' },
   { date: '2026-11-25', d: 'D-397', open: { tab: 'help' },
     title: 'Help: one page for how-tos and what’s new',
     body: 'Short guides for the screens you can open, in English and Spanish for the floor. Search it from the search box, or the ⓘ beside a page title.' },

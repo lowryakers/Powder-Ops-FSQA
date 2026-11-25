@@ -36,7 +36,7 @@ Check your setup with `GET /api/bot/whoami` before you do anything else.
 | Bot | ReadyDoc account (name) | Role / department | Needs `module_access` | Scopes | Token label | Owner |
 |---|---|---|---|---|---|---|
 | Product Manager bot | | | `products` (view, or edit to edit products and file NFP drafts), `artwork` (view, or edit to attach files) | read (+ write) | | |
-| Procurement / supply bot | | | `procurement` (view, or edit to create and edit POs) | read (+ write) | | |
+| Procurement / supply bot | | | `procurement` (view, or edit to create and edit POs); `suppliers` edit for the library. Working the COC Drop queue needs the `coc-drop` or `suppliers-edit` grant, and filing into the library needs `suppliers-edit` | read (+ write) | | |
 | AP / finance bot | | | `ap-drop` (view, or edit to read the whole queue), `partner-reconciliation` (view, or edit to add documents) | read (+ write) | | |
 | Comms / notifier bot | | | none (channel membership) | read + write | | |
 | | | | | | | |
@@ -112,6 +112,7 @@ A `write` token may write **only** to the routes below (`WRITE_AREAS` in `server
 | Artwork | `POST /api/artwork`, `POST /api/artwork/versions/:id/files`, `POST /api/artwork/versions/:id/checks`, `POST /api/artwork/versions/:id/status` to `draft`, `in_review`, `superseded` (optional `superseded_by`: another version of the same SKU and component; defaults to the current one) or `rejected` (`reason` required) only — never `approved` or `print_ready` |
 | Supply orders | `POST /api/procurement/pos`, `PUT /api/procurement/pos/:id`, `PUT /api/procurement/demand/:id`, `PUT /api/procurement/parts/:id`, `POST /api/procurement/scenarios`; bulk: `PUT /api/procurement/pos/bulk`, `POST /api/procurement/scenarios/:id/apply` |
 | AP Drop | `POST /api/ap-drop` (upload), `PUT /api/ap-drop/:id`, `POST /api/ap-drop/:id/notes`, `POST /api/ap-drop/:id/reparse`, `POST /api/ap-drop/:id/route-partner` (files a draft on the ledger), `POST /api/ap-drop/:id/status` to `new`, `triaged`, `matched`, `needs_info` or `duplicate_suspect`, or to `in_qbo` when a QuickBooks bill id is present (sent as `qbo_bill_id` in the same body, or already stored; otherwise 400) |
+| COC Drop — **`coc-drop` or `suppliers-edit` grant** (D-398) | `POST /api/coc-drop` (upload), `PUT /api/coc-drop/:id` (PO, part, lot, quantity, mismatch note, supplier, kind), `POST /api/coc-drop/:id/status` to `new`, `matched` or `mismatch` (a reason for mismatch), `POST /api/coc-drop/:id/notes`, `POST /api/coc-drop/:id/file` (into the supplier library; **needs `suppliers-edit`**). Never a delete, a receive or a sign-off. |
 | Partner reconciliation | `POST /api/partners/:id/documents`, `…/documents/scan`, `POST /api/partners/:id/credits`, `PUT /api/partners/:id` (office/admin accounts only); while the document is a **draft**: `PUT /api/partners/documents/:docId`, `…/category`, `…/file`, `…/read-lines`; bulk: `POST /api/partners/:id/documents/import` |
 | Nutrition panels | `POST /api/nfp` (always lands as a draft); while the panel is a **draft**: `PUT /api/nfp/:id`, `PUT /api/nfp/:id/panel` |
 | Nutrition panel PDF and values — **`nfp-panel` grant only** | `PUT /api/nfp/:id/panel-file`, `PUT /api/nfp/:id/panel-values` (a DRAFT only, every values write with `source_ref`) |
@@ -672,6 +673,56 @@ Removing or editing an attachment or a message stays person-only: every `DELETE`
 - **Grant:** the account must be able to see the drop (its own, or the queue).
 - **Body:** `{ text }`.
 - **Returns:** **201** `{ ok: true }`.
+
+## COC Drop (D-398)
+
+The dock photographs a supplier's paper COC / COA (or uploads its PDF) instead of scanning and emailing it. One drop is one delivery's document, however many pages. The queue — Quality, Purchasing, and the Procurement bot — sets the PO / part / lot and files it into the supplier library (D-391), which posts the ReadyBot alert in the receiving channel (D-392).
+
+A token holding **`coc-drop`** or **`suppliers-edit`** reads and works the whole queue; any other token sees only drops its own account made. Filing writes the supplier library, so `POST /api/coc-drop/:id/file` also needs **`suppliers-edit`** (403 otherwise). Statuses are only `new`, `matched`, `filed` and `mismatch`. Nothing here receives inventory, signs a checklist or qualifies a supplier, and nothing is deleted: `DELETE` on any COC Drop path is **403**.
+
+### `GET /api/coc-drop`
+
+- **Scope:** `read`.
+- **Grant:** `coc-drop` or `suppliers-edit` for the whole queue; otherwise the account's own drops.
+- **Query:** `limit`, `offset`, `status` (not filed by default, `all`, or one status), `supplier` (id or name), `submitter`, `from`, `to`, `q` (PO, supplier, notes, file name).
+- **Paged:** yes; the body is the array.
+- **Returns:** each drop with `pages` (how many), `supplier` (`{ id, name, status, source }` or null), `supplier_file_ids` once filed, `can_work`, `is_mine`.
+- **Omitted for a token:** `storage_key`. `GET /api/coc-drop/:id` (not part of this surface) is where a person sees the pages.
+
+### `GET /api/coc-drop/meta`
+
+- **Scope:** `read`.
+- **Returns:** `statuses`, `kinds`, `counts` (scoped like the list), `can_work`, `storage_enabled`, `suppliers` (id + name), `recent_pos` — POs already written down in ReadyDoc (receiving lines, the supplier library, earlier drops) in the last 90 days. Never read from MRPEasy or Keychain.
+
+### `POST /api/coc-drop`
+
+- **Scope:** `write` + `coc-drop` or `suppliers-edit`.
+- **Body:** `multipart/form-data` with up to 10 `files` (photos or PDFs, 25 MB each) — **all of them one drop** — and optional `po_number`, `supplier_id`, `supplier_name`, `kind` (`coc` default, or `coa`), `notes`.
+- **Returns:** **201** `{ drop }`, status `new`. The same pages dropped again within 30 days are still filed; `status_reason` names the earlier drop.
+- **Errors:** 400 with nothing attached, a file that is not a photo or PDF, or an unknown `kind` / `supplier_id`; 503 when file storage is not configured.
+
+### `PUT /api/coc-drop/:id`
+
+- **Scope:** `write` + `coc-drop` or `suppliers-edit`.
+- **Body:** `po_number`, `part_number`, `lot_number`, `qty_note`, `mismatch_note`, `supplier_id`, `supplier_name`, `kind`, `notes`. An absent field is left alone.
+- **Status follows the edit:** a PO set on a `new` drop makes it `matched`; a non-empty `mismatch_note` makes it `mismatch` (unless it is filed). Each change is an activity line and a `coc_drop_updated` audit row.
+
+### `POST /api/coc-drop/:id/status`
+
+- **Scope:** `write` + `coc-drop` or `suppliers-edit`.
+- **Body:** `{ status, reason }`. `status` is `new`, `matched` or `mismatch`; `mismatch` needs a reason of 3+ characters (copied to `mismatch_note` when that is blank). `filed` is set only by filing (400 otherwise), and a filed drop does not move back.
+
+### `POST /api/coc-drop/:id/notes`
+
+- **Scope:** `write` + `coc-drop` or `suppliers-edit`.
+- **Body:** `{ text }`. **Returns:** **201** `{ ok: true }`.
+
+### `POST /api/coc-drop/:id/file`
+
+- **Scope:** `write` + **`suppliers-edit`**.
+- **Body:** optional `supplier_name` (when the drop has no supplier) and `vendor_type` (when that name is new).
+- **What it does:** the pages become ONE PDF (a single PDF as it is; photos and several PDFs stitched in page order) filed through the same writer as `POST /api/suppliers/:id/files`, as `kind` `coc` / `coa` with the drop's PO, part, lot, quantity and mismatch note. A name exactly on the register is that supplier; a new name is added **unqualified** (`source = 'bot'`); a near-name match is **409 `SUPPLIER_NEAR_MATCH`** with `candidates` and nothing is added.
+- **Returns:** `{ drop, saved, supplier_created, stitched, receiving_alert }`. Filing again is a no-op that returns the drop with `already_filed: true`.
 
 ## Partner Reconciliation
 
