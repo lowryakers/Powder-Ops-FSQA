@@ -25,6 +25,7 @@ import { QMS_TYPES } from './qms-config.js';
 import { SCALE_FORMS } from './scale-forms.js';
 import { atpControlledEntry } from './atp-limits.js';
 import { envControlledEntry } from './env-limits.js';
+import { samplingControlledEntry } from './incoming-sampling.js';
 import { filmChecklistSnapshot, filmChecklistBaseline, applyFilmChecklistSnapshot, FILM_FORM_CODE } from './film-pouch-checklist.js';
 import { dilutionControlledEntry } from './dilution-control.js';
 import { empControlledEntry } from './emp-results.js';
@@ -163,7 +164,7 @@ function cautionEntries() {
 }
 
 export function registry() {
-  return [...qmsEntries(), ...scaleEntries(), atpControlledEntry(), envControlledEntry(), empControlledEntry(), dilutionControlledEntry(), recallControlledEntry(), ...checklistEntries(), auditChecklistEntry(), ...cautionEntries()];
+  return [...qmsEntries(), ...scaleEntries(), atpControlledEntry(), envControlledEntry(), samplingControlledEntry(), empControlledEntry(), dilutionControlledEntry(), recallControlledEntry(), ...checklistEntries(), auditChecklistEntry(), ...cautionEntries()];
 }
 
 // ── Boot: baseline, detect, gate ────────────────────────────────────────────

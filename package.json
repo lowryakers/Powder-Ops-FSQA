@@ -203,6 +203,7 @@
     "verify:retentionready": "node scripts/verify-retention-ready.mjs",
     "verify:coclibrary": "node scripts/verify-coc-library.mjs",
     "verify:cocalert": "node scripts/verify-coc-receiving-alert.mjs",
+    "verify:sampling": "node scripts/verify-incoming-sampling.mjs",
     "verify:botaddsupplier": "node scripts/verify-bot-add-supplier.mjs",
     "verify:disposalnodelete": "node scripts/verify-disposal-no-delete.mjs",
     "verify:receivingnodelete": "node scripts/verify-receiving-no-delete.mjs",

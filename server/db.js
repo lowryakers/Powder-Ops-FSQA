@@ -4747,6 +4747,28 @@ function runMigrations() {
   // D-257: a lab request started from a receiving line's lab-test alert names
   // that line, so the line can say the request exists and a second is refused.
   addColumnIfMissing('coa_requests', 'receiving_log_id', 'TEXT');
+  // Incoming sampling (D-394): one record per sampled receiving line, signed by
+  // QA with the password. Never deleted; a correction is revoke → edit → sign.
+  db.exec(`CREATE TABLE IF NOT EXISTS incoming_samplings (
+    id TEXT PRIMARY KEY,
+    sampling_no TEXT UNIQUE,
+    inspection_no TEXT,
+    receiving_log_id TEXT,
+    part_number TEXT, item_name TEXT, vendor TEXT, vendor_lot TEXT, internal_lot TEXT, po_number TEXT,
+    material_kind TEXT,
+    containers_received INTEGER, containers_sampled INTEGER, container_numbers TEXT, composite INTEGER NOT NULL DEFAULT 0,
+    steps TEXT, step_notes TEXT, visual_ok TEXT,
+    coa_request_id TEXT,
+    disposition TEXT, disposition_reason TEXT, notes TEXT,
+    form_revision TEXT, procedure TEXT, rule TEXT, containers_required INTEGER,
+    sampled_at TEXT,
+    created_by TEXT, created_by_id TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    signed_by TEXT, signed_by_id TEXT, signed_at TEXT, sign_meaning TEXT, sign_hash TEXT
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_incoming_samplings_line ON incoming_samplings(receiving_log_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_incoming_samplings_lot ON incoming_samplings(vendor_lot)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_coa_requests_receiving ON coa_requests(receiving_log_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_coa_requests_base_lot ON coa_requests(base_lot)');
   // D-307: a temporary, admin-opened window in which named QA people may

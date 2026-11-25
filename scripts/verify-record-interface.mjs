@@ -33,8 +33,8 @@ for (const rt of RECORD_TYPES) {
   t(`${rt.type} implements ${rt.signs === false || allowed.size ? 'its documented subset' : 'file, sign, revoke, retrieve, describe'}`,
     !missing.length && !extra.length && Array.isArray(rt.modules) && rt.modules.length > 0, missing.concat(extra).join(', '));
 }
-const ADOPTED = 'banned_list_review,calibration,coa,culture_check,disposal,emp,food_defense_challenge,gmp_walk,management_review,production,qms,receiving,sanitation,scale,training';
-t('the adopted types: sanitation, scale, qms, production, the six check records, receiving, calibration, training, disposals and COA', RECORD_TYPES.map(r => r.type).sort().join() === ADOPTED, RECORD_TYPES.map(r => r.type).sort().join());
+const ADOPTED = 'banned_list_review,calibration,coa,culture_check,disposal,emp,food_defense_challenge,gmp_walk,incoming_sampling,management_review,production,qms,receiving,sanitation,scale,training';
+t('the adopted types: sanitation, scale, qms, production, the six check records, receiving, incoming sampling, calibration, training, disposals and COA', RECORD_TYPES.map(r => r.type).sort().join() === ADOPTED, RECORD_TYPES.map(r => r.type).sort().join());
 t('no check record claims a signature', RECORD_TYPES.filter(r => ['emp', 'gmp_walk', 'banned_list_review', 'culture_check', 'management_review', 'food_defense_challenge'].includes(r.type)).every(r => r.signs === false && !r.sign && !r.revoke));
 
 const { default: Database } = await import('better-sqlite3');
@@ -79,7 +79,7 @@ r = await call('GET', `/records?from=${today}`, undefined, A);
 const list = r.body;
 const rs = list?.records?.find(x => x.type === 'sanitation' && x.id === san?.id);
 const rk = list?.records?.find(x => x.type === 'scale' && x.id === sc?.id);
-t('GET /api/records lists the types', r.status === 200 && !!rs && !!rk && list.types.join() === 'sanitation,scale,qms,production,emp,gmp_walk,banned_list_review,culture_check,management_review,food_defense_challenge,receiving,calibration,training,disposal,coa', `${r.status} ${JSON.stringify(list?.types)}`);
+t('GET /api/records lists the types', r.status === 200 && !!rs && !!rk && list.types.join() === 'sanitation,scale,qms,production,emp,gmp_walk,banned_list_review,culture_check,management_review,food_defense_challenge,receiving,incoming_sampling,calibration,training,disposal,coa', `${r.status} ${JSON.stringify(list?.types)}`);
 t('the clean is described: form, place, who, result, unsigned', rs?.form && /^FORM 108/.test(rs.form) && rs.place === 'Restrooms'
   && rs.performed_by === 'Zuleika Test' && rs.result === 'pass' && rs.signed_by === null, JSON.stringify(rs));
 t('the scale check is described with its form and revision', rk?.form === 'FORM 417-01 V4' && rk.place === 'Batching 1' && rk.performed_by === 'Bernardo Test', JSON.stringify(rk));

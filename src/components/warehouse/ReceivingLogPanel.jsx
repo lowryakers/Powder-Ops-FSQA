@@ -9,6 +9,7 @@ import { localDateStr, daysAgoStr } from '../../utils/dates';
 import { CustomFields, CustomFieldValues } from '../common/CustomFields';
 import ImportPanel from '../common/ImportPanel';
 import ReceivingChecklist from './ReceivingChecklist.jsx';
+import { SamplingTab, SamplingDrawer } from './IncomingSampling.jsx';
 import ShippingChecklist, { ShipmentsTab } from './ShippingChecklist.jsx';
 import FilmPouchInspection, { FilmInspectionsTab } from './FilmPouchInspection.jsx';
 import { useRowExpand, stopRowClick } from '../../lib/useRowExpand';
@@ -997,7 +998,7 @@ export default function ReceivingLogPanel({ user }) {
   // the effect below clears them so a later remount doesn't replay the link.
   const [tab, setTab] = useState(() => {
     const v = getParam('view');
-    if (v && ['inspections', 'shipping', 'film', 'log', 'form', 'import', 'lab-tests', 'coc-items'].includes(v)) return v;
+    if (v && ['inspections', 'sampling', 'shipping', 'film', 'log', 'form', 'import', 'lab-tests', 'coc-items'].includes(v)) return v;
     return canFile(user) ? 'inspections' : 'log';
   });
   const [refreshKey, setRefreshKey] = useState(0);
@@ -1011,7 +1012,9 @@ export default function ReceivingLogPanel({ user }) {
   const [filmId, setFilmId] = useState(() => getParam('film') || null);
   // The outbound truck inspection for one shipment (?view=shipping&shipment=<no>).
   const [shipment, setShipment] = useState(() => getParam('shipment') || null);
-  useEffect(() => { consumeParam('view'); consumeParam('checklist'); consumeParam('film'); consumeParam('shipment'); }, []);
+  // Incoming sampling (D-394): `{ id }` for a record, `{ lineId }` to start one from a signed inspection.
+  const [sampling, setSampling] = useState(() => (getParam('sampling') ? { id: getParam('sampling') } : null));
+  useEffect(() => { consumeParam('view'); consumeParam('checklist'); consumeParam('film'); consumeParam('shipment'); consumeParam('sampling'); }, []);
   const canLog = canFile(user);
   const canFilm = canFilmInspect(user);
   // Importing rewrites the log in bulk — thousands of compliance records in one
@@ -1025,6 +1028,9 @@ export default function ReceivingLogPanel({ user }) {
   // the log, which is all they came for.
   const tabs = [
     ...(canLog ? [{ id: 'inspections', label: 'Receiving', icon: ClipboardCheck }] : []),
+    // The step after a signed inspection (D-394): sample the lot, then release,
+    // hold or reject. Open to the module: the dock starts it, QA signs it.
+    { id: 'sampling', label: 'Sampling', icon: FlaskConical },
     // The same dock, the other direction: the truck inspection worked when a
     // shipment leaves, with the photographs of the load before the doors close.
     ...(canLog ? [{ id: 'shipping', label: 'Shipping', icon: Truck }] : []),
@@ -1072,8 +1078,12 @@ export default function ReceivingLogPanel({ user }) {
         <ReceivingForm key={prefillInspection} user={user} inspectionNo={prefillInspection}
           onSaved={() => setRefreshKey(k => k + 1)} onOpenChecklist={setChecklist} />
       )}
+      {tab === 'sampling' && <SamplingTab key={refreshKey} onOpen={setSampling} />}
+      {sampling && <SamplingDrawer key={sampling.id || sampling.lineId} open={sampling}
+        onClose={() => { setSampling(null); setRefreshKey(k => k + 1); }} />}
       {checklist && (
         <ReceivingChecklist inspectionNo={checklist} onClose={() => setChecklist(null)}
+          onSample={(lineId) => { setChecklist(null); setTab('sampling'); setSampling({ lineId }); }}
           onAddLine={(no) => { setChecklist(null); setPrefillInspection(no); setTab('form'); }} />
       )}
       {tab === 'import' && canImport && importTarget && (
