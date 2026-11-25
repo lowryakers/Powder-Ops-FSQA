@@ -11911,9 +11911,9 @@ fix a scale check filed under the wrong room.
   job is done. Back-filled from D-349 to D-394.
 
 On Maria's first question: a recurring task belongs to a TEAM, so everybody in QA already sees the Temp & Humidity
-checks. Angie is in Document Control, so she does not: naming her the owner on the Temp & Humidity schedules (D-094)
-makes them show for her too, and she does them on Fridays. "Only on Fridays for her" is not something a schedule says,
-and was not added — she simply is not in the app the other days, and whoever completes a card closes it for everyone. The scale-room guide describes D-396, merged first.
+checks. Angie is in Document Control and covers them on Fridays, so she does not. How she should see them is
+Lowry's open question: the schedule's "Owner" field (D-094) works but the name says she owns it, and QA does. The
+guide describes the field and does not recommend it for her. The scale-room guide describes D-396, merged first.
 
 `check:help` (354), `verify:help` (24, browser at 1280 and 390; the control — `main` before this — fails at the first
 Help page assertion).

@@ -232,7 +232,7 @@ export const GUIDES = [
       'If the person is not seeing it, check their department in Settings → Users first.',
       'To make it also show for one person: Task Center → Recurring Schedules, open the schedule, click Edit.',
       'Pick them under Owner (optional) and save. The team still sees it; the owner also does, every day it is due.',
-      'Someone from another team who covers certain days (say, Fridays) is named the same way. They see it whenever it is due and do it on their days; whoever completes it first closes it for everyone.',
+      'The team still owns the task either way; whoever completes a card first closes it for everyone.',
     ],
   },
   {
