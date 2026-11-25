@@ -202,6 +202,7 @@ export default function ApiTokensSection() {
                       </label>
                     ))}
                     <div className="text-xs text-gray-600">The bot keeps the same token; only what it may do changes. A grant is for one bot — give it only to the token that needs it.</div>
+                    <div className="text-xs text-gray-600" data-api-token-commodity>Suppliers, COC Drop and COA intake also open when the bot's account has <strong>Edit</strong> on that module in Settings → Users — no grant needed. Set the module to View or off to close it again. Approving, signing and deleting stay a person's whatever is ticked.</div>
                     <div className="flex gap-2">
                       <button type="button" onClick={saveScopes} className="px-3 py-1.5 rounded-lg bg-powder-600 text-white text-xs" data-api-token-save-scopes>Save</button>
                       <button type="button" onClick={() => setEditing(null)} className="px-3 py-1.5 rounded-lg border border-gray-300 text-xs">Cancel</button>

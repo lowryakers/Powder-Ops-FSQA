@@ -11975,3 +11975,27 @@ from D-368) never changed the owning team — the task stays on the team's list 
 label said Owner. **Renamed on screen only** to "Also show to (optional)" on Recurring Schedules and Quality Schedules,
 and the schedule rows read "Also shows to <name>". The column, the API and the behaviour are unchanged. Angie is named
 there on the Temp & Humidity schedules by QA, in the app. The Help guide says the same.
+
+## D-400 — Commodity bot work opens with Edit on the bot's account; a refusal names what is missing (25 Nov 2026)
+A-20261125-009. At 1:29 PM Lowry gave the Procurement bot's account Suppliers = Edit and its `write` token was refused
+`POST /api/suppliers` with "This route is not open to bot tokens" — a route that IS open to tokens, behind a
+`suppliers-edit` token grant Settings → Users never sets. Lowry, ~2:20 PM: creating an unqualified supplier, filing a
+COC / COA and moving a queue's status are bot-only commodity work; toggling Edit in Settings should just work.
+
+**Decided:**
+- **Three commodity areas open on the token grant OR explicit Edit on the account's module**
+  (`COMMODITY_AREA_MODULES`, `tokenMayWorkArea` in `server/bot-api.js`): Suppliers (`suppliers`), COC Drop
+  (`coc-drop` or `suppliers`; filing into the library needs `suppliers`), COA intake (`coa`). Explicit `'edit'` in
+  `users.module_access` only — never a role, department or legacy-array default — so View or off closes it at once.
+  The routers read the same function (`canEditHere`, `canWorkCocQueue` and the COC file check, `botPrep` in
+  `coa-plans.js`). Grants stay; the other granted areas (SOP / WI / JD staging, course drafts, NFP panel, the
+  Controller) are unchanged and still need their grant.
+- **COA intake opens to tokens**: `POST /api/coa/requests`, `PUT /api/coa/requests/:id`, `…/files`, `…/scan`,
+  `POST /api/coa/parse-coa`. Never a `status` or certificate field, never a signed request or one reopened for
+  correction (each refused with the reason). Signing, un-signing, applying, publishing, gates, settings, review
+  decisions and deletes stay person-only.
+- **A refusal on a route that IS on `WRITE_AREAS` is `token_denied` / `missing_grant`**, and `reason` names the grant and,
+  for a commodity area, the module Edit. `not_open_to_tokens` now means only a route not open to tokens at all.
+- APPROVE_ROUTES and TOKEN_DENY still run first; nothing here approves, signs, qualifies, settles or deletes.
+
+`verify:botcommodity` (47; the control — `main` before this — fails with the 1:29 PM error), `check:apitokens` (+14).

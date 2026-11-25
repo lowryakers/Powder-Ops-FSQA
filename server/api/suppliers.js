@@ -68,7 +68,7 @@ import { withGmpCert, gmpCertFor, gmpGaps, gmpGateMode, GMP_GATE_MODES } from '.
 import { GMP_CERT_KIND, GMP_CERT_LABEL, AUDIT_CERT_KINDS } from '../../shared/supplier-gmp-cert.js';
 import { plantDateOf } from '../plant-clock.js';
 import { FILE_KIND_VALUES, FILE_KIND_LABEL, DATED_KINDS, SOURCE_SYSTEMS, SOURCE_SYSTEM_LABEL, cleanFileMeta, cleanDeliveryFields } from '../../shared/supplier-documents.js';
-import { pageList } from '../bot-api.js';
+import { pageList, tokenMayWorkArea } from '../bot-api.js';
 import { wantsAlert, notifyReceivingDocument } from '../coc-receiving-alert.js';
 import { materialsFor, materialLabels, createMaterial, updateMaterial, MaterialError, defaultPartSystem } from '../supplier-materials.js';
 
@@ -91,8 +91,10 @@ const canDecide = (u) => u?.role === 'admin'
 
 const clean = (v, max = 300) => { const s = String(v ?? '').trim(); return s ? s.slice(0, max) : null; };
 const today = () => new Date().toISOString().slice(0, 10);
+// A token also needs the suppliers-edit grant, or explicit Edit on Suppliers
+// for its account in Settings → Users (D-400) — the WRITE_AREAS rule, one copy.
 const canEditHere = (req) => canEdit(req.user)
-  && (req.auth?.kind !== 'token' || (req.auth.grants || []).includes('suppliers-edit'));
+  && (req.auth?.kind !== 'token' || tokenMayWorkArea(req, 'suppliers'));
 // For COC Drop (D-398), which adds a supplier the same way and under the same rule.
 export const canEditSuppliersHere = canEditHere;
 

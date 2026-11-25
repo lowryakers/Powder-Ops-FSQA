@@ -29,6 +29,9 @@ const one = (sql, ...a) => { const d = new Database(DBP, { readonly: true }); tr
   mk('st-admin', 'Ada Admin', 'admin', 'admin');
   mk('st-pur', 'Pat Purchasing', 'operator', 'purchasing', { suppliers: 'edit' });
   mk('st-bot', '*Quality Bot', 'operator', 'quality', { suppliers: 'edit' });
+  // Since D-400 explicit Suppliers Edit opens the area without the grant, so the
+  // no-grant token lives on an account with Suppliers View (same department).
+  mk('st-bot-view', '*Quality Bot (view)', 'operator', 'quality', { suppliers: 'view' });
   const s = db.prepare('INSERT OR REPLACE INTO suppliers (id, name, vendor_type, actively_using, food_contact) VALUES (?,?,?,?,?)');
   s.run('st-typeless', 'Typeless Raw Co', null, 1, null);
   s.run('st-idle', 'Idle Typeless Co', null, 0, null);
@@ -109,13 +112,13 @@ t('a second --apply finds nothing to fill', /Nothing to fill/.test(runRepair('--
 console.log('\n── the suppliers-edit grant ──');
 r = await call('GET', '/api-tokens', null, admin);
 t('Settings offers suppliers-edit as a tick box', (r.json?.grants || []).some(g => g.key === 'suppliers-edit'));
-const mint = async (label, grants) => {
-  const m = await call('POST', '/api-tokens', { user_id: 'st-bot', label, scopes: ['read', 'write'] }, admin);
+const mint = async (label, grants, user = 'st-bot') => {
+  const m = await call('POST', '/api-tokens', { user_id: user, label, scopes: ['read', 'write'] }, admin);
   const id = m.json?.token?.id;
   if (grants.length) await call('POST', `/api-tokens/${id}/grants`, { grants }, admin);
   return m.json?.plaintext;
 };
-const NONE = await mint('Quality bot (no grant)', []);
+const NONE = await mint('Quality bot (no grant)', [], 'st-bot-view');
 const EDIT = await mint('Quality bot (suppliers)', ['suppliers-edit']);
 t('a no-grant token and a suppliers-edit token minted', !!NONE && !!EDIT);
 r = await call('GET', '/bot/whoami', null, EDIT);
@@ -135,7 +138,7 @@ const edits = [
 ];
 for (const [m, p, b] of edits) {
   const nr = await call(m, p, b, NONE);
-  t(`without the grant: ${m} ${p} → 403 not open to tokens`, nr.status === 403 && nr.json?.error === 'token_denied' && nr.json?.category === 'not_open_to_tokens', JSON.stringify(nr.json));
+  t(`without the grant: ${m} ${p} → 403 missing_grant (D-400)`, nr.status === 403 && nr.json?.error === 'token_denied' && nr.json?.category === 'missing_grant', JSON.stringify(nr.json));
 }
 t('…and nothing changed', one("SELECT website FROM suppliers WHERE id='st-bot-s'").website === null
   && one("SELECT kind FROM supplier_files WHERE id='st-f1'").kind === 'unknown');

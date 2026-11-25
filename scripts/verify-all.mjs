@@ -236,6 +236,7 @@ const RUNS = [
   ['verify-incoming-sampling.mjs', 5252, {}, false],
   ['verify-help.mjs', 5255, {}, false],
   [['verify-coc-drop.mjs', 'verify-coc-drop-ui.mjs'], 5256, {}, true],
+  ['verify-bot-commodity-routes.mjs', 5257, { API_TOKEN_WRITE_RPM: '500' }, true],
   ['verify-bot-add-supplier.mjs', 5251, {}, false],
   ['verify-scale-room.mjs', 5254, {}, false],
   ['verify-pick-verification.mjs', 5253, {}, false],

@@ -26,6 +26,8 @@ const mkUser = (id, name, role, dept, ma) => db.prepare(`INSERT OR REPLACE INTO 
 mkUser('bs-a', 'Sup Admin', 'admin', 'admin', null);
 mkUser('bs-p', 'Sup Purchasing', 'operator', 'purchasing', JSON.stringify({ suppliers: 'edit' }));
 mkUser('bs-bot', '*Procurement Bot', 'operator', 'purchasing', JSON.stringify({ suppliers: 'edit' }));
+// The no-grant token is on an account with Suppliers View (D-400: explicit Edit alone opens it).
+mkUser('bs-bot-view', '*Procurement Bot (view)', 'operator', 'purchasing', JSON.stringify({ suppliers: 'view' }));
 
 const H = { 'Content-Type': 'application/json' };
 const call = async (method, p, body, headers = H) => {
@@ -40,12 +42,12 @@ const login = async (id, name, pw) => {
 };
 const A = await login('bs-a', 'Sup Admin', 'SupAdmin20266!');
 const P = await login('bs-p', 'Sup Purchasing', 'SupPurch2026!');
-const mint = async (label, grants) => {
-  const m = await call('POST', '/api-tokens', { user_id: 'bs-bot', label, scopes: ['read', 'write'] }, A.headers);
+const mint = async (label, grants, user = 'bs-bot') => {
+  const m = await call('POST', '/api-tokens', { user_id: user, label, scopes: ['read', 'write'] }, A.headers);
   if (grants.length) await call('POST', `/api-tokens/${m.body?.token?.id}/grants`, { grants }, A.headers);
   return { ...H, Authorization: `Bearer ${m.body?.plaintext}` };
 };
-const NONE = await mint('fixture bot (no grant)', []);
+const NONE = await mint('fixture bot (no grant)', [], 'bs-bot-view');
 const EDIT = await mint('fixture bot (suppliers-edit)', ['suppliers-edit']);
 t('signed in, and two fixture tokens (with and without the grant)', !!A.token && !!P.token);
 const count = () => db.prepare('SELECT COUNT(*) n FROM suppliers').get().n;

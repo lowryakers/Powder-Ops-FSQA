@@ -25,6 +25,11 @@ export const BOT_ROUTES = Object.freeze([
   { method: 'PUT', path: '/api/suppliers/files/:fileId', module: 'suppliers (edit)', scope: 'write' },
   { method: 'PUT', path: '/api/suppliers/files/:fileId/renewal', module: 'suppliers (edit)', scope: 'write' },
   { method: 'PUT', path: '/api/suppliers/files/:fileId/gmp-certificate', module: 'suppliers (edit)', scope: 'write' },
+  { method: 'POST', path: '/api/coa/requests', module: 'coa (edit)', scope: 'write' },
+  { method: 'PUT', path: '/api/coa/requests/:id', module: 'coa (edit)', scope: 'write' },
+  { method: 'POST', path: '/api/coa/requests/:id/files', module: 'coa (edit)', scope: 'write' },
+  { method: 'POST', path: '/api/coa/requests/:id/scan', module: 'coa (edit)', scope: 'write' },
+  { method: 'POST', path: '/api/coa/parse-coa', module: 'coa (edit)', scope: 'write' },
   { method: 'GET', path: '/api/products/:sku', module: 'products', scope: 'read' },
   { method: 'GET', path: '/api/nfp', module: 'products', scope: 'read', paged: true },
   { method: 'GET', path: '/api/nfp/sku/:sku', module: 'products', scope: 'read' },
@@ -176,6 +181,33 @@ function coaPlanBotOk(req, m, db) {
   }
   return true;
 }
+// COA intake (D-400): a bot files the lab request for a delivery and attaches
+// the lab's PDF. It never sets a status (pass / fail / hold is Quality's
+// decision), never the certificate fields, and never touches a signed request
+// or one reopened for correction. Signing, un-signing, applying, publishing and
+// deleting stay on APPROVE_ROUTES / TOKEN_DENY.
+const COA_REQUEST_BOT_KEYS = ['item_number', 'item_description', 'lot_number', 'product_expiration', 'tests_requested',
+  'lab_id', 'lab_name', 'date_sent', 'tat_days', 'expected_results_date', 'date_of_results', 'requested_by', 'notes', 'origin',
+  'supplier', 'product_code', 'manufacturer_lot', 'vendor_lot', 'received_date', 'receiving_log_id', 'brand_owner'];
+function coaRequestCreateBotOk(req) {
+  const extra = extraKeys(req.body, COA_REQUEST_BOT_KEYS);
+  if (extra.length) return sopRefuse(req, `A bot files a lab request's own facts only (${extra.join(', ')} refused). Status and the certificate are a person's.`);
+  return true;
+}
+function coaRequestOpenForBot(req, db, id) {
+  const r = db.prepare('SELECT id, lot_number, qa_signed_at, reopened_for_correction FROM coa_requests WHERE id = ?').get(id);
+  if (!r) return true; // the handler answers 404
+  if (r.qa_signed_at) return sopRefuse(req, `The COA for lot ${r.lot_number} is signed. A bot never changes a signed certificate.`);
+  if (r.reopened_for_correction) return sopRefuse(req, `The COA for lot ${r.lot_number} is reopened for correction. A person corrects it.`);
+  return true;
+}
+function coaRequestEditBotOk(req, m, db) {
+  const extra = extraKeys(req.body, COA_REQUEST_BOT_KEYS.filter(k => k !== 'receiving_log_id' && k !== 'brand_owner'));
+  if (extra.length) return sopRefuse(req, `A bot edits a lab request's own facts only (${extra.join(', ')} refused). Status and the certificate are a person's.`);
+  return coaRequestOpenForBot(req, db, m[1]);
+}
+const coaRequestFileBotOk = (req, m, db) => coaRequestOpenForBot(req, db, m[1]);
+
 function coaProductBotOk(req, m, db) {
   const b = req.body || {};
   const extra = extraKeys(b, COA_PRODUCT_BOT_KEYS);
@@ -368,6 +400,12 @@ export const WRITE_AREAS = Object.freeze([
   { area: 'suppliers', grant: 'suppliers-edit', method: 'PUT', re: /^\/suppliers\/files\/[^/]+\/gmp-certificate$/, label: 'PUT /api/suppliers/files/:fileId/gmp-certificate (suppliers-edit grant)' },
   { area: 'coa-prep', grant: 'coa-prep', method: 'PUT', re: /^\/coa\/plans\/([^/]+)$/, label: 'PUT /api/coa/plans/:id — a DRAFT plan\'s tests and proposed products (coa-prep grant)', when: coaPlanBotOk },
   { area: 'coa-prep', grant: 'coa-prep', method: 'PUT', re: /^\/coa\/products\/([^/]+)$/, label: 'PUT /api/coa/products/:item — register or alias a COA product, set its brand (coa-prep grant)', when: coaProductBotOk },
+  // COA intake (D-400): the lab request and its PDF, never a status or a signature.
+  { area: 'coa-prep', grant: 'coa-prep', method: 'POST', re: /^\/coa\/requests\/?$/, label: 'POST /api/coa/requests — file a lab request (never a status or the certificate) (coa-prep grant or COA edit)', when: coaRequestCreateBotOk },
+  { area: 'coa-prep', grant: 'coa-prep', method: 'PUT', re: /^\/coa\/requests\/(?!bulk-update$|bulk-delete$)([^/]+)$/, label: 'PUT /api/coa/requests/:id — an unsigned request\'s facts (never its status) (coa-prep grant or COA edit)', when: coaRequestEditBotOk },
+  { area: 'coa-prep', grant: 'coa-prep', method: 'POST', re: /^\/coa\/requests\/([^/]+)\/files$/, label: 'POST /api/coa/requests/:id/files — attach a PDF to an unsigned request (coa-prep grant or COA edit)', when: coaRequestFileBotOk },
+  { area: 'coa-prep', grant: 'coa-prep', method: 'POST', re: /^\/coa\/requests\/([^/]+)\/scan$/, label: 'POST /api/coa/requests/:id/scan — read a lab PDF on an unsigned request (coa-prep grant or COA edit)', when: coaRequestFileBotOk },
+  { area: 'coa-prep', grant: 'coa-prep', method: 'POST', re: /^\/coa\/parse-coa$/, label: 'POST /api/coa/parse-coa — read a COA PDF, nothing filed (coa-prep grant or COA edit)' },
   // messages
   { area: 'messages', method: 'POST', re: /^\/comms\/channels\/[^/]+\/messages$/, label: 'POST /api/comms/channels/:id/messages' },
   { area: 'messages', method: 'POST', re: /^\/comms\/channels\/[^/]+\/attachments$/, label: 'POST /api/comms/channels/:id/attachments' },
@@ -399,6 +437,47 @@ export function holdsAreaGrant(r, held) {
   return !need.length || need.some((g) => (held || []).includes(g));
 }
 
+// COMMODITY AREAS (D-400). Lowry, 25 Nov: creating an unqualified supplier,
+// filing a COC / COA and moving a queue's status are bot work a person adds
+// nothing to, and setting the bot's account to Edit in Settings → Users should
+// take effect without a second, hidden token grant. So for these areas Edit on
+// the account's module opens the area as the grant does. EXPLICIT Edit only
+// (`module_access[m] === 'edit'`) — never a role or department default — so
+// setting the module to View or off in Settings closes it again at once.
+// APPROVE_ROUTES and TOKEN_DENY still run first and still win.
+export const COMMODITY_AREA_MODULES = Object.freeze({
+  suppliers: ['suppliers'],
+  'coc-drop': ['coc-drop', 'suppliers'],
+  'coa-prep': ['coa'],
+});
+// Filing a COC drop into the supplier library writes the library, so it needs
+// what the library needs (POST /api/suppliers/:id/files).
+export const COC_FILE_ACCESS = Object.freeze({ grants: ['suppliers-edit'], modules: ['suppliers'] });
+const explicitEdit = (user, m) => {
+  const ma = user?.module_access;
+  return !!(ma && !Array.isArray(ma) && ma[m] === 'edit');
+};
+/** A token holds one of `grants`, or its account has explicit Edit on one of `modules`. */
+export function tokenGrantOrEdit(req, { grants = [], modules = [] }) {
+  const held = req?.auth?.grants || [];
+  return grants.some(g => held.includes(g)) || modules.some(m => explicitEdit(req?.user, m));
+}
+/** The grant / module-edit rule for one commodity area, by area name. */
+export function tokenMayWorkArea(req, area) {
+  if (area === 'coc-drop-file') return tokenGrantOrEdit(req, COC_FILE_ACCESS);
+  const r = WRITE_AREAS.find(x => x.area === area);
+  return tokenGrantOrEdit(req, { grants: areaGrants(r), modules: COMMODITY_AREA_MODULES[area] || [] });
+}
+const MODULE_LABEL = { suppliers: 'Suppliers', 'coc-drop': 'COC Drop', coa: 'COA / Lab Testing' };
+/** Why a matched area refused: the grant it needs, and the Settings Edit that also opens it. */
+export function areaAccessReason(r) {
+  const grants = areaGrants(r).map(g => `"${g}"`).join(' or ');
+  const mods = (COMMODITY_AREA_MODULES[r.area] || []).map(m => MODULE_LABEL[m] || m);
+  return mods.length
+    ? `This route is open to bot tokens. It needs the token grant ${grants}, or Edit on ${mods.join(' or ')} for the bot's account in Settings → Users.`
+    : `This route is open to bot tokens. It needs the token grant ${grants}, given on the token in Settings → Bot API tokens.`;
+}
+
 /** The WRITE_AREAS entry this request's method + path names, before any `when`. */
 export function writeAreaFor(req) {
   for (const r of WRITE_AREAS) {
@@ -413,7 +492,15 @@ export function writeAreaAllows(req, db) {
   if (!r) return false;
   // A GRANTED area opens only for a token holding that grant (D-171); `grants`
   // is any-of (D-306), and the entry's `when` decides which one it needed.
-  if (!holdsAreaGrant(r, req.auth?.grants)) return false;
+  const open = holdsAreaGrant(r, req.auth?.grants)
+    || (COMMODITY_AREA_MODULES[r.area] || []).some(m => explicitEdit(req.user, m));
+  if (!open) {
+    // The route IS open to tokens; say what this one is missing (D-400), never
+    // "not open to bot tokens".
+    req.tokenWriteRefusal = areaAccessReason(r);
+    req.tokenWriteCategory = 'missing_grant';
+    return false;
+  }
   if (!r.when) return true;
   try { return !!r.when(req, req.path.match(r.re), db); } catch { return false; }
 }

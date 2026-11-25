@@ -40,6 +40,8 @@ const one = (sql, ...a) => q(sql, ...a)[0];
   mk('cp-admin', 'Ada Admin', 'admin', 'admin');
   mk('cp-qa', 'Quinn Quality', 'supervisor', 'qa', { coa: 'edit' });
   mk('cp-bot', '*Quality Bot', 'operator', 'office', { coa: 'edit' });
+  // The no-grant token is on an account with COA View (D-400: explicit COA Edit alone opens coa-prep).
+  mk('cp-bot-view', '*Quality Bot (view)', 'operator', 'office', { coa: 'view' });
   const ins = db.prepare(`INSERT OR IGNORE INTO coa_requests (id, item_number, item_description, lot_number, tests_requested, status, source, created_by)
     VALUES (?, ?, ?, ?, 'HM & Micro', 'pending', 'fixture', 'fixture')`);
   ins.run('cp-req-1', 'CP-WHEY-01', 'Whey Vanilla', 'L-1');
@@ -68,14 +70,14 @@ let r = await call('GET', '/api-tokens', null, admin);
 t('Settings offers coa-prep as a tick box', (r.json?.grants || []).some((g) => g.key === 'coa-prep'), JSON.stringify((r.json?.grants || []).map(g => g.key)));
 
 // Test tokens on this throwaway database only, minted by its own test admin.
-const mint = async (label, grants) => {
-  const m = await call('POST', '/api-tokens', { user_id: 'cp-bot', label, scopes: ['read', 'write'] }, admin);
+const mint = async (label, grants, user = 'cp-bot') => {
+  const m = await call('POST', '/api-tokens', { user_id: user, label, scopes: ['read', 'write'] }, admin);
   const id = m.json?.token?.id;
   let gstatus = null;
   if (grants.length) gstatus = (await call('POST', `/api-tokens/${id}/grants`, { grants }, admin)).status;
   return { id, plain: m.json?.plaintext, gstatus };
 };
-const NONE = await mint('Quality bot (no grant)', []);
+const NONE = await mint('Quality bot (no grant)', [], 'cp-bot-view');
 const PREP = await mint('Quality bot (COA prep)', ['coa-prep']);
 t('a no-grant token and a coa-prep token minted on the fresh database', !!NONE.plain && !!PREP.plain);
 t('the coa-prep grant was accepted', PREP.gstatus === 200, String(PREP.gstatus));

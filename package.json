@@ -208,6 +208,7 @@
     "verify:help": "node scripts/verify-help.mjs",
     "verify:cocdrop": "node scripts/verify-coc-drop.mjs",
     "verify:cocdropui": "node scripts/verify-coc-drop-ui.mjs",
+    "verify:botcommodity": "node scripts/verify-bot-commodity-routes.mjs",
     "verify:botaddsupplier": "node scripts/verify-bot-add-supplier.mjs",
     "verify:scaleroom": "node scripts/verify-scale-room.mjs",
     "verify:pickcheck": "node scripts/verify-pick-verification.mjs",

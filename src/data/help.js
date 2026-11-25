@@ -521,11 +521,11 @@ export const GUIDES = [
     id: 'bot-add-suppliers',
     q: 'How do I let the Procurement bot add suppliers?',
     for: 'admin', owner: 'Admins', checked: '2026-11-25',
-    module: 'settings', open: { tab: 'settings', section: 'api-tokens' },
-    keywords: 'bot token procurement supplier add grant suppliers-edit',
+    module: 'settings', open: { tab: 'settings', section: 'users' },
+    keywords: 'bot token procurement supplier add grant suppliers-edit module edit coc drop',
     steps: [
-      'Settings → Bot API tokens → the Procurement bot’s token.',
-      'Tick suppliers-edit.',
+      'Settings → Users → the Procurement bot’s account → set Suppliers (and COC Drop) to Edit. Or tick suppliers-edit on its token in Settings → Bot API tokens.',
+      'Either one works at once; setting the module back to View closes it again.',
       'The bot can now add a supplier. It starts Not qualified; qualifying it stays a person’s job.',
     ],
   },
@@ -533,6 +533,9 @@ export const GUIDES = [
 
 // Newest first. Written in the PR that ships the change.
 export const WHATS_NEW = [
+  { date: '2026-11-25', d: 'D-400', module: 'settings', open: { tab: 'settings', section: 'users' },
+    title: 'A bot works Suppliers, COC Drop and COA intake when its account has Edit',
+    body: 'Set the bot account to Edit on Suppliers, COC Drop or COA in Settings → Users and its write token works there at once; View or off closes it. Approving, signing and deleting stay a person\'s.' },
   { date: '2026-11-25', d: 'D-399', module: 'pm', open: { tab: 'pm-schedules' },
     title: '"Owner" on a recurring task is now "Also show to"',
     body: 'Same box, clearer name: the team still owns the task, and the person picked also sees it on their list. On Recurring Schedules and Quality Schedules.' },
