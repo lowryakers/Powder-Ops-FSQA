@@ -33,7 +33,7 @@ import { v4 as uuid } from 'uuid';
 import { PDFDocument } from 'pdf-lib';
 import { getDb, logAudit } from '../db.js';
 import { storageEnabled, putObject, presignGet, getObjectBuffer, deleteObject } from '../storage.js';
-import { pageOf, pageList } from '../bot-api.js';
+import { pageOf, pageList, tokenMayWorkArea } from '../bot-api.js';
 import { moduleLevel } from '../module-access.js';
 import { createSupplier, fileSupplierDocuments, canEditSuppliersHere } from './suppliers.js';
 
@@ -49,10 +49,9 @@ const QUALITY = ['qa', 'quality'];
 
 /** Who works the queue: see every drop, edit the match fields, move status, file. */
 export const canWorkCocQueue = (u, req = null) => {
-  if (req?.auth?.kind === 'token') {
-    const g = req.auth.grants || [];
-    return g.includes('coc-drop') || g.includes('suppliers-edit');
-  }
+  // A token: the coc-drop or suppliers-edit grant, or explicit Edit on COC Drop
+  // or Suppliers for its account in Settings → Users (D-400).
+  if (req?.auth?.kind === 'token') return tokenMayWorkArea(req, 'coc-drop');
   return u?.role === 'admin'
     || QUALITY.includes((u?.department || '').toLowerCase())
     || moduleLevel(u, 'coc-drop') === 'edit';
@@ -368,8 +367,8 @@ router.post('/:id/file', async (req, res) => {
   const db = getDb();
   // Filing writes the supplier library, so a token also needs the library's own
   // grant (suppliers-edit), as it would on POST /api/suppliers/:id/files.
-  if (req.auth?.kind === 'token' && !(req.auth.grants || []).includes('suppliers-edit')) {
-    return res.status(403).json({ error: 'Filing into the supplier library needs the suppliers-edit grant on this token.' });
+  if (req.auth?.kind === 'token' && !tokenMayWorkArea(req, 'coc-drop-file')) {
+    return res.status(403).json({ error: 'Filing into the supplier library needs the suppliers-edit grant on this token, or Edit on Suppliers for its account in Settings → Users.' });
   }
   const done = (() => { try { return JSON.parse(row.supplier_file_ids || '[]'); } catch { return []; } })();
   if (row.status === 'filed' && done.length) return res.json({ drop: shape(db, row, req), already_filed: true });

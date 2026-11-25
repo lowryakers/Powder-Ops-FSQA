@@ -88,7 +88,7 @@ t('a draft SOP and a draft work instruction on file', draft?.status === 'draft' 
 
 console.log('\n── who gets through the door ──');
 r = await call('POST', `/documents/${active.id}/revisions`, { revision: 'V3' }, NOGRANT.plain);
-t('without the grant: 403 token_denied / not_open_to_tokens (the 3 Nov refusal)', r.status === 403 && r.json?.error === 'token_denied' && r.json?.category === 'not_open_to_tokens', JSON.stringify(r.json));
+t('without the grant: 403 token_denied / missing_grant, naming sops-edit (D-400 — was not_open_to_tokens, the 3 Nov refusal)', r.status === 403 && r.json?.error === 'token_denied' && r.json?.category === 'missing_grant' && /sops-edit/.test(r.json?.reason || ''), JSON.stringify(r.json));
 r = await call('POST', `/documents/${active.id}/revisions`, { revision: 'V3' }, VIEW.plain);
 t('with the grant, account on SOPs view: refused by the module check, not the token door', r.status === 403 && r.json?.error !== 'token_denied', JSON.stringify(r.json));
 r = await call('POST', `/documents/${active.id}/revisions`, { revision: 'V3' }, READ.plain);

@@ -4540,6 +4540,13 @@ A manual supplier upload's `source_path` is `uploaded/<file id>/<name>`. `verify
 - The Suppliers "How this works" card reads the `qualify-a-supplier` guide. Never copy steps into a screen.
 - `verify:help` (24).
 
+## Commodity bot work opens with Edit on the bot's account (D-400)
+`COMMODITY_AREA_MODULES` / `tokenMayWorkArea` / `areaAccessReason` in `server/bot-api.js`. Suppliers, COC Drop and COA
+intake open to a `write` token on the grant OR **explicit** Edit on the account's module (never a role or department
+default). **A router that checks a token's grant reads `tokenMayWorkArea`, never `req.auth.grants` directly.** A refusal
+on a `WRITE_AREAS` route is `missing_grant` with a `reason`; `not_open_to_tokens` is only for routes not open at all.
+COA intake never sets a status or touches a signed request. `verify:botcommodity` (47).
+
 ## COC Drop: the dock photographs a COC / COA; the queue files it (D-398)
 `server/api/coc-drop.js` (`canWorkCocQueue`, `stitchPages`), `coc_drops` / `coc_drop_files` / `coc_drop_events`,
 `CocDropPanel.jsx` (Warehouse → COC Drop, `canSeeCocDrop`), token grant `coc-drop`, module id `coc-drop`.

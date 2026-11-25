@@ -4,6 +4,7 @@
 // Approve and apply are signatures (password, 21 CFR 11.200) — and "approve"
 // in the path keeps every bot token out (no-token-approve.js).
 import { Router } from 'express';
+import { tokenMayWorkArea } from '../bot-api.js';
 import { v4 as uuid } from 'uuid';
 import { getDb, logAudit } from '../db.js';
 import { isQaReviewer } from '../qa-signing.js';
@@ -25,7 +26,8 @@ const mayEdit = (u) => !isCoaPrepOnly(u) && (u?.role === 'admin' || isQaReviewer
 const mayPrep = (u) => u?.role === 'admin' || isQaReviewer(u) || hasCoaPrep(u);
 // A bot token holding the coa-prep TOKEN grant (D-313). Which writes it may make
 // is WRITE_AREAS' job (server/bot-api.js); here it only stands in for the grant.
-const botPrep = (req) => req.auth?.kind === 'token' && (req.auth.grants || []).includes('coa-prep');
+// …or, since D-400, explicit Edit on COA for the token's account in Settings → Users.
+const botPrep = (req) => req.auth?.kind === 'token' && tokenMayWorkArea(req, 'coa-prep');
 const mayPrepReq = (req) => botPrep(req) || mayPrep(req.user);
 const botLabel = (req) => req.auth?.label || req.auth?.prefix || 'bot token';
 // One `bot_coa_write` row per successful bot write: the token's name, the old

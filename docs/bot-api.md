@@ -97,6 +97,7 @@ X-Offset: 100
 | **401** | `Authentication required` | Any of: no token, a malformed token, an unknown token, a revoked or expired token, or a token whose account was deactivated or has since become an admin. Mint a new token. Do not retry. |
 | **403** | `token_scope` | A `read` token tried to write ("This token is read-only."). Also returned for `@channel` / `@here` / `@everyone` in a token's message. The `message` field says which. |
 | **403** | `token_denied` | The act is person-only, or not open to tokens. `category` says which: `delete`, `decision`, `user_admin`, `token_admin`, or `not_open_to_tokens` (a write that is not on the list below). Audited as `api_token_write_blocked`. A person has to do it signed in. |
+| **403** | `token_denied` / `missing_grant` | The route IS open to bot tokens, but this token is not set up for it (D-400). `reason` names the grant it needs and, for Suppliers, COC Drop and COA intake, the module Edit on the bot's account that also opens it. Fix it in Settings, not in the bot. A route that is not open to tokens at all still answers `not_open_to_tokens`. |
 | **403** | `approve_requires_human_session` | The route approves, signs, decides or releases. A token can never do it, whatever its scope, and the attempt is audited as `api_token_approve_blocked`. A person has to do it signed in. Filing an NFP as `source: "paper"` also counts, because a paper panel is filed as already approved. |
 | **403** | other text | The account lacks the module grant (e.g. "No modules have been assigned…") or the route's own role rule. This is fixed in Settings → Users, not on the token. |
 | **404** | `Not found` | Three cases. The record does not exist. Or it is a channel the bot's account is not a member of: membership is never confirmed to a non-member. Or it is an **external** account (`users.is_external`) reaching outside Messages: that is answered 404, never 403, so a client cannot learn which modules the plant runs. |
@@ -106,17 +107,20 @@ X-Offset: 100
 
 A `write` token may write **only** to the routes below (`WRITE_AREAS` in `server/bot-api.js`). Every other write is refused with `token_denied` / `not_open_to_tokens`. Being on this list only opens the door: the token acts as its account, so the account's module grant and the route's own role rule still decide. A token never does more than its account can.
 
+**Commodity areas (D-400).** Suppliers, COC Drop and COA intake open to a `write` token either through the token grant named below **or** through explicit **Edit** on the matching module for the bot's account in Settings → Users: Suppliers → `suppliers`; COC Drop → `coc-drop` or `suppliers` (filing into the library: `suppliers`); COA intake → `coa`. Only an explicit Edit counts — never a role or department default — so setting the module to View or off closes it at once. Everything person-only below still wins.
+
 | Area | Routes |
 |---|---|
 | Products | `POST /api/products`, `PUT /api/products/:sku`, `PUT /api/products/:sku/colors`, `POST /api/products/:sku/na`, `POST /api/products/:sku/barcode`, `POST /api/products/:sku/packaging-po`, `POST` and `PUT /api/products/specs[/:specId]`, `POST /api/products/bottle-drafts`, `POST` and `PUT /api/products/shelf/:slot`, `POST /api/products/import/preview`; bulk: `POST /api/products/bulk-edit`, `POST /api/products/import/commit` |
 | Artwork | `POST /api/artwork`, `POST /api/artwork/versions/:id/files`, `POST /api/artwork/versions/:id/checks`, `POST /api/artwork/versions/:id/status` to `draft`, `in_review`, `superseded` (optional `superseded_by`: another version of the same SKU and component; defaults to the current one) or `rejected` (`reason` required) only — never `approved` or `print_ready` |
 | Supply orders | `POST /api/procurement/pos`, `PUT /api/procurement/pos/:id`, `PUT /api/procurement/demand/:id`, `PUT /api/procurement/parts/:id`, `POST /api/procurement/scenarios`; bulk: `PUT /api/procurement/pos/bulk`, `POST /api/procurement/scenarios/:id/apply` |
 | AP Drop | `POST /api/ap-drop` (upload), `PUT /api/ap-drop/:id`, `POST /api/ap-drop/:id/notes`, `POST /api/ap-drop/:id/reparse`, `POST /api/ap-drop/:id/route-partner` (files a draft on the ledger), `POST /api/ap-drop/:id/status` to `new`, `triaged`, `matched`, `needs_info` or `duplicate_suspect`, or to `in_qbo` when a QuickBooks bill id is present (sent as `qbo_bill_id` in the same body, or already stored; otherwise 400) |
-| COC Drop — **`coc-drop` or `suppliers-edit` grant** (D-398) | `POST /api/coc-drop` (upload), `PUT /api/coc-drop/:id` (PO, part, lot, quantity, mismatch note, supplier, kind), `POST /api/coc-drop/:id/status` to `new`, `matched` or `mismatch` (a reason for mismatch), `POST /api/coc-drop/:id/notes`, `POST /api/coc-drop/:id/file` (into the supplier library; **needs `suppliers-edit`**). Never a delete, a receive or a sign-off. |
+| COC Drop — **`coc-drop` or `suppliers-edit` grant, or COC Drop / Suppliers Edit** (D-398, D-400) | `POST /api/coc-drop` (upload), `PUT /api/coc-drop/:id` (PO, part, lot, quantity, mismatch note, supplier, kind), `POST /api/coc-drop/:id/status` to `new`, `matched` or `mismatch` (a reason for mismatch), `POST /api/coc-drop/:id/notes`, `POST /api/coc-drop/:id/file` (into the supplier library; **needs `suppliers-edit` or Suppliers Edit**). Never a delete, a receive or a sign-off. |
 | Partner reconciliation | `POST /api/partners/:id/documents`, `…/documents/scan`, `POST /api/partners/:id/credits`, `PUT /api/partners/:id` (office/admin accounts only); while the document is a **draft**: `PUT /api/partners/documents/:docId`, `…/category`, `…/file`, `…/read-lines`; bulk: `POST /api/partners/:id/documents/import` |
 | Nutrition panels | `POST /api/nfp` (always lands as a draft); while the panel is a **draft**: `PUT /api/nfp/:id`, `PUT /api/nfp/:id/panel` |
 | Nutrition panel PDF and values — **`nfp-panel` grant only** | `PUT /api/nfp/:id/panel-file`, `PUT /api/nfp/:id/panel-values` (a DRAFT only, every values write with `source_ref`) |
 | Document staging — **`sops-edit` (SOPs), `wi-edit` (Work Instructions), `jd-edit` (Job Descriptions) grants only** | `POST /api/documents` (a draft SOP), `PUT /api/documents/:id` (a draft SOP's fields and text), `POST /api/documents/:id/revisions` (a new revision of an approved SOP), `PUT /api/documents/:id/revisions/:rid` (that draft revision), `POST /api/documents/:id/attachments` (a PDF only). The grant is decided by the document's type (D-306). See [Document staging](#document-staging-sops-edit-wi-edit-jd-edit-grants). |
+| COA intake — **`coa-prep` grant or COA Edit** (D-400) | `POST /api/coa/requests` (a lab request's own facts — never `status`, never the certificate), `PUT /api/coa/requests/:id` (an **unsigned**, not-reopened request's facts, never `status`), `POST /api/coa/requests/:id/files` and `POST /api/coa/requests/:id/scan` (an unsigned request's lab PDF), `POST /api/coa/parse-coa` (read only). Signing, un-signing, applying, publishing, release-gate and settings changes, review decisions and deletes stay person-only. |
 | COA preparation — **`coa-prep` grant only** (D-313) | `PUT /api/coa/plans/:id` on a **draft** plan: its tests (limits, units, how each is judged, method, wording) and `items`, the products it is meant for, plus `notes`. `PUT /api/coa/products/:item`: register an item code, its `aliases`, `display_name` and `brand_owner`. Anything else in the body is refused by name. Every value saved reads "Bot-prepared, needs review" until a person approves the plan or marks the product reviewed; each write is a `bot_coa_write` audit row with the token's name and the old and new values. |
 | Messages | `POST /api/comms/channels/:id/messages`, `POST /api/comms/channels/:id/attachments` (pdf, png, jpg, csv, xlsx, docx only), `POST /api/comms/messages/:id/reactions`, `DELETE /api/comms/messages/:id/reactions/:emoji` (the bot's own reaction only) |
 
@@ -242,7 +246,7 @@ Run this checklist once after a release that touches the bot surface, and once a
 
 ## Suppliers (D-339)
 
-Reads need the account's `suppliers` access. **Every write needs a `write` token holding the `suppliers-edit` grant**, and the account must be able to edit suppliers. A disposition, a banned-list check, a gate mode, a questionnaire send or revoke, an import and every DELETE are a person's: a disposition or a banned-list check answers **403 `approve_requires_human_session`**, a delete **403 `token_denied`**, anything else not listed here **403** as not open to tokens. `can_edit` on `GET /api/suppliers/:id` is false for a token without the grant; `can_decide` is always false for a token.
+Reads need the account's `suppliers` access. **Every write needs a `write` token holding the `suppliers-edit` grant, or a `write` token whose account has Edit on Suppliers in Settings → Users** (D-400 — setting it to View or off closes the writes again at once), and the account must be able to edit suppliers. A disposition, a banned-list check, a gate mode, a questionnaire send or revoke, an import and every DELETE are a person's: a disposition or a banned-list check answers **403 `approve_requires_human_session`**, a delete **403 `token_denied`**, anything else not listed here **403** as not open to tokens. `can_edit` on `GET /api/suppliers/:id` is false for a token with neither the grant nor Suppliers Edit; `can_decide` is always false for a token.
 
 ### `GET /api/suppliers`
 
@@ -300,6 +304,33 @@ Reads need the account's `suppliers` access. **Every write needs a `write` token
 ### `PUT /api/suppliers/files/:fileId/gmp-certificate`
 
 - **Scope:** `write` + `suppliers-edit`. **Body:** `expires_on` (needed when the file has none). Only a file catalogued as a certificate.
+
+## COA intake (D-400)
+
+A `write` token holding the **`coa-prep`** grant, or whose account has **Edit on COA** in Settings → Users. The bot files the lab request for a delivery and attaches the lab's PDF; pass, fail and hold, the certificate and every signature stay a person's.
+
+### `POST /api/coa/requests`
+
+- **Scope:** `write` + `coa-prep` or COA Edit.
+- **Body:** `item_number`, `item_description`, `lot_number`, `tests_requested` (required), and `product_expiration`, `lab_id`, `lab_name`, `date_sent`, `tat_days`, `expected_results_date`, `date_of_results`, `requested_by`, `notes`, `origin`, `supplier`, `product_code`, `manufacturer_lot`, `vendor_lot`, `received_date`, `receiving_log_id`, `brand_owner`. Any other key (`status`, `certificate_number`, …) is **403 `token_denied`** with the reason.
+- **Returns:** **201** with the request, `pending` (or `sent` with `date_sent`), unsigned.
+
+### `PUT /api/coa/requests/:id`
+
+- **Scope:** `write` + `coa-prep` or COA Edit.
+- **Body:** the same facts (not `receiving_log_id` or `brand_owner`). `status` is refused. A **signed** request, or one reopened for correction, is refused with the reason.
+
+### `POST /api/coa/requests/:id/files`
+
+- **Scope:** `write` + `coa-prep` or COA Edit. Multipart `file` and `file_type`. An unsigned, not-reopened request only.
+
+### `POST /api/coa/requests/:id/scan`
+
+- **Scope:** `write` + `coa-prep` or COA Edit. Multipart `file`, or `file_id` of a file already attached. Reads the lab PDF and returns what it read; nothing is applied. An unsigned, not-reopened request only.
+
+### `POST /api/coa/parse-coa`
+
+- **Scope:** `write` + `coa-prep` or COA Edit. Multipart `file`. Reads a COA PDF and returns the fields; no request is filed.
 
 ## Nutrition panels (NFP)
 

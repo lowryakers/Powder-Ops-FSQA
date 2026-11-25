@@ -412,7 +412,7 @@ function authenticateToken(token, req, res, next) {
   if (isWrite && !tokenWriteAllowed(req, t.scopes)) {
     // A WRITE_AREAS `when` that refused says why (D-303); the reason is logged
     // on api_token_write_blocked and returned to the bot.
-    return refuseTokenDenied(req, res, req.tokenWriteRefusal ? { label: req.tokenWriteRefusal, reason: req.tokenWriteRefusal } : null);
+    return refuseTokenDenied(req, res, req.tokenWriteRefusal ? { label: req.tokenWriteRefusal, reason: req.tokenWriteRefusal, ...(req.tokenWriteCategory ? { category: req.tokenWriteCategory } : {}) } : null);
   }
 
   next();

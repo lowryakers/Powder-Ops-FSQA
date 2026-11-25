@@ -290,6 +290,9 @@ const DENY_MESSAGES = {
   user_admin: 'Changing users, roles, permissions or access needs a person signed in. A bot token can never do it.',
   token_admin: 'Managing tokens, keys or passes needs a person signed in. A bot token can never do it.',
   not_open_to_tokens: 'This route is not open to bot tokens. A person signed in can do it.',
+  // A route ON WRITE_AREAS that this token is not set up for (D-400): `reason`
+  // names the grant, and for a commodity area the module Edit that also opens it.
+  missing_grant: 'This route is open to bot tokens, but this token is not set up for it. See `reason`.',
 };
 
 export function refuseTokenDenied(req, res, rule) {

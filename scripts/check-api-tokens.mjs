@@ -24,7 +24,7 @@ import { join } from 'path';
 import Database from 'better-sqlite3';
 import { SCOPES, FORBIDDEN_SCOPES, normalizeScopes, rateKindOf } from '../server/api-tokens.js';
 import { approveRouteFor, APPROVE_SEGMENTS, tokenDenyFor, DELETE_SEGMENTS, TOKEN_DELETE_EXEMPT, TOKEN_DECISION_EXEMPT, ARTWORK_TOKEN_STATUSES, AP_DROP_TOKEN_STATUSES } from '../server/middleware/no-token-approve.js';
-import { WRITE_AREAS, writeAreaFor, areaGrants } from '../server/bot-api.js';
+import { WRITE_AREAS, writeAreaFor, areaGrants, writeAreaAllows, COMMODITY_AREA_MODULES, tokenMayWorkArea } from '../server/bot-api.js';
 import { isPublicPath } from '../server/middleware/auth.js';
 import { scanRoutes, concretePath, namesApproval } from './lib/route-scan.mjs';
 
@@ -563,6 +563,32 @@ t('a second boot changes nothing (idempotent: same value, still one audit row)',
   db3.prepare("SELECT scopes FROM api_tokens WHERE id = 'tk-legacy'").get()?.scopes === '["read","write"]'
   && db3.prepare("SELECT COUNT(*) n FROM audit_log WHERE action = 'api_token_scope_migrated' AND entity_id = 'tk-legacy'").get().n === 1);
 db3.close();
+
+// D-400: a commodity area opens on the grant OR explicit Edit on its module;
+// View, a role default or a department never does; the refusal says which.
+{
+  const mk = (method, path, ma, grants = []) => ({ method, path, body: {}, user: { role: 'operator', department: 'purchasing', module_access: ma }, auth: { kind: 'token', grants } });
+  const fakeDb = { prepare: () => ({ get: () => null }) };
+  const edit = mk('POST', '/suppliers', { suppliers: 'edit' });
+  t('D-400: Suppliers Edit opens POST /suppliers with no grant', writeAreaAllows(edit, fakeDb) === true);
+  const view = mk('POST', '/suppliers', { suppliers: 'view' });
+  t('D-400: Suppliers View does not (purchasing department notwithstanding)', writeAreaAllows(view, fakeDb) === false && view.tokenWriteCategory === 'missing_grant'
+    && /suppliers-edit/.test(view.tokenWriteRefusal) && /Edit on Suppliers/.test(view.tokenWriteRefusal));
+  t('D-400: the grant alone still opens it', writeAreaAllows(mk('POST', '/suppliers', null, ['suppliers-edit']), fakeDb) === true);
+  t('D-400: a legacy array map is not explicit Edit', writeAreaAllows(mk('POST', '/suppliers', ['suppliers']), fakeDb) === false);
+  t('D-400: COC Drop opens on COC Drop or Suppliers Edit', writeAreaAllows(mk('PUT', '/coc-drop/x', { 'coc-drop': 'edit' }), fakeDb)
+    && writeAreaAllows(mk('PUT', '/coc-drop/x', { suppliers: 'edit' }), fakeDb));
+  t('D-400: filing a drop needs Suppliers (Edit or grant), not COC Drop alone', !tokenMayWorkArea(mk('POST', '/x', { 'coc-drop': 'edit' }), 'coc-drop-file')
+    && tokenMayWorkArea(mk('POST', '/x', { suppliers: 'edit' }), 'coc-drop-file') && tokenMayWorkArea(mk('POST', '/x', null, ['suppliers-edit']), 'coc-drop-file'));
+  t('D-400: COA intake opens on COA Edit', writeAreaAllows(mk('POST', '/coa/requests', { coa: 'edit' }), fakeDb) === true);
+  t('D-400: COA intake refuses a status in the body', writeAreaAllows({ ...mk('POST', '/coa/requests', { coa: 'edit' }), body: { status: 'pass' } }, fakeDb) === false);
+  t('D-400: only Suppliers, COC Drop and COA are commodity areas', JSON.stringify(Object.keys(COMMODITY_AREA_MODULES).sort()) === '["coa-prep","coc-drop","suppliers"]');
+  const sops = mk('POST', '/documents', { sops: 'edit' });
+  t('D-400: a non-commodity grant area (SOP staging) does NOT open on module Edit', writeAreaAllows(sops, fakeDb) === false && sops.tokenWriteCategory === 'missing_grant');
+  for (const [m, p] of [['POST', '/api/suppliers/x/disposition'], ['POST', '/api/suppliers/x/materials/y/banned-check'], ['POST', '/api/coa/requests/x/sign'], ['DELETE', '/api/coc-drop/x']]) {
+    t(`D-400: ${m} ${p} is still caught before any write area`, !!(approveRouteFor(fakeReq(m, p)) || tokenDenyFor(fakeReq(m, p))));
+  }
+}
 
 console.log(`\n${pass} PASS / ${fail} FAIL`);
 done(fail ? 1 : 0);
