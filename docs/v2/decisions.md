@@ -11871,3 +11871,37 @@ D-052 arrangement), with the SOP's step wording verbatim (`shared/incoming-sampl
 - On the record interface (`incoming_sampling`), found by lot in Look up records. FORM 402 reads `readydoc` in the form
   register with a note; paper records before 25 Nov stay paper. `verify:sampling` (34). The control — main before
   this — fails.
+
+## D-397 — One Help page: what's new, how-tos, and why the app does that (25 Nov 2026)
+Lowry asked for release notes and how-to instructions in ReadyDoc that stay ultra simple, searchable, organized and
+actually used — and that take him out of the loop as the person everybody asks. Two of Maria's questions the same
+morning were the test cases: who sees the Temp & Humidity task and whether it can go to Angie on Fridays, and how to
+fix a scale check filed under the wrong room.
+
+**Decided:**
+- **One Help page, for every employee** (`help`, Overview group, `visible` = any non-guest account). It has three
+  parts: What's new, How do I…, and Why does the app do that? (the existing `platformRules.js`, now searchable in one
+  place instead of only behind scattered "Why?" tips).
+- **Guides are data** (`src/data/help.js`), not a wiki. Each has a question as its title, 3–7 steps, an "Open it"
+  link to the screen, the procedure where one exists, the team that keeps it, and the day it was last checked.
+- **`check:help` (in `npm run check`) fails** on an "Open it" that names a screen that no longer exists, a guide not
+  checked in 180 days, a guide with no keeping team (never a person's name), Spanish that does not match step for
+  step, and a What's new entry naming a decision that does not exist. That is what keeps it from going stale without
+  Lowry reading it.
+- **A person sees only the guides for screens they can open** — the same nav rule the sidebar uses. Floor guides carry
+  the plant's Spanish. The ⓘ beside a page title lists that screen's guides; the search box (⌘K) finds guides by
+  their question. The two floor layouts (Operator-View-only accounts and `/operator`) open Help from the header,
+  because they have no sidebar; Help does not count as a second module, so the floor layout is kept.
+- **The Suppliers "How this works" card now reads its steps from the Help data**, so the two cannot drift. The new
+  product flow's nine gates stay where they are (`shared/product-stage.js` is their one owner); Help links to them.
+- **Not a controlled document.** A guide is where the button is; the SOP is the procedure, and a guide links it.
+- **Every PR that changes something people will notice adds a What's new entry**, and a guide when it changes how a
+  job is done. Back-filled from D-349 to D-394.
+
+On Maria's first question: a recurring task belongs to a TEAM, so everybody in QA already sees the Temp & Humidity
+checks. Angie is in Document Control, so she does not: naming her the owner on the Temp & Humidity schedules (D-094)
+makes them show for her too, and she does them on Fridays. "Only on Fridays for her" is not something a schedule says,
+and was not added — she simply is not in the app the other days, and whoever completes a card closes it for everyone. The scale-room guide describes D-396 and holds once that PR merges.
+
+`check:help` (354), `verify:help` (24, browser at 1280 and 390; the control — `main` before this — fails at the first
+Help page assertion).

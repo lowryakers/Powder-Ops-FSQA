@@ -45,6 +45,7 @@ const MODULE_GROUPS = [
       { id: 'dashboard', label: 'Dashboard' },
       { id: 'critical-tracking', sub: true, label: 'Critical Tracking (auto for supervisors)' },
       { id: 'operator', label: 'Operator View' },
+      { rule: 'help', label: 'Help', why: 'Not a tick here: every employee. Each person sees only the guides for screens they can open.' },
     ],
   },
   {
