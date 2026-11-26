@@ -12,10 +12,11 @@
 // a second page with no header is a table nobody can read.
 
 import { spanLayout } from '../shared/table-spans.js';
+import { splitTableRow, plainInline, isWholeBold } from '../shared/markdown-text.js';
 
 const SEP = /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/;
 
-const splitRow = (row) => row.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim().replace(/\\\|/g, '|'));
+const splitRow = splitTableRow;
 
 /** Is a table starting at `lines[i]`? */
 export function tableAt(lines, i) {
@@ -90,24 +91,29 @@ export function drawTable(pdf, table, opts = {}) {
   // One options object now serves both, so they cannot drift again.
   const cellOpts = (cell) => ({ width: wOf(cell) - padX * 2, lineGap: 1 });
 
+  // What a cell prints: its words without Markdown markers or stray backslashes
+  // (D-403), and in bold when the whole cell is one **bold** run.
+  const shown = (cell) => plainInline(cell.text || '');
+  const boldOf = (cell, bold) => bold || isWholeBold(cell.text);
+
   const measure = (cell, bold) => {
-    pdf.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(fontSize);
+    pdf.font(boldOf(cell, bold) ? 'Helvetica-Bold' : 'Helvetica').fontSize(fontSize);
     // A point of slack. Rounding between measuring and drawing is the whole
     // reason this bug existed, and a hair of extra white space costs nothing
     // next to two rows printed on top of each other.
-    return Math.ceil(pdf.heightOfString(String(cell.text || ''), cellOpts(cell))) + padY * 2 + 1;
+    return Math.ceil(pdf.heightOfString(shown(cell), cellOpts(cell))) + padY * 2 + 1;
   };
 
   const drawCell = (cell, y, h, bold, fill) => {
     const x = xAt(cell.c), w = wOf(cell);
     if (fill) pdf.save().rect(x, y, w, h).fill(fill).restore();
     pdf.save().rect(x, y, w, h).lineWidth(0.5).strokeColor('#9ca3af').stroke().restore();
-    pdf.fillColor('#111827').font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(fontSize)
+    pdf.fillColor('#111827').font(boldOf(cell, bold) ? 'Helvetica-Bold' : 'Helvetica').fontSize(fontSize)
       // Deliberately NOT clipped to the box. If a measurement is ever wrong
       // again, a point of overlap is a blemish — a truncated preventive
       // control is a hazard analysis missing its control, which is the kind
       // of quiet loss this codebase exists to avoid.
-      .text(String(cell.text || ''), x + padX, y + padY, cellOpts(cell));
+      .text(shown(cell), x + padX, y + padY, cellOpts(cell));
   };
 
   // The boxes actually drawn, so a test can check that no two overlap rather

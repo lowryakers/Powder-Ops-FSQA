@@ -19,6 +19,7 @@
 
 import PDFDocument from 'pdfkit';
 import { tableAt, drawTable } from './pdf-table.js';
+import { plainInline } from '../shared/markdown-text.js';
 import { embedUnicodeFaces } from './pdf-unicode.js';
 import { plantDateTime, plantDateOf } from './plant-clock.js';
 import { sameRevision } from '../shared/document-revision.js';
@@ -244,7 +245,7 @@ export function renderDocumentsPdf(res, items, { now = new Date() } = {}) {
           continue;
         }
         ensureSpace(30);
-        const clean = (s) => s.replace(/\*\*(.+?)\*\*/g, '$1').replace(/(?<!\*)\*(?!\*)(.+?)\*/g, '$1');
+        const clean = plainInline; // markers and stray backslashes off (D-403)
         if (/^#{1,6}\s+/.test(trimmed)) {
           const level = trimmed.startsWith('# ') ? 1 : 2;
           const text = trimmed.replace(/^#{1,6}\s+/, '');

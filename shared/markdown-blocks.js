@@ -16,14 +16,15 @@
 // procedure. Anything this parser does not recognise becomes a `paragraph` and
 // survives untouched — there is no branch that drops input on the floor.
 
+import { splitTableRow } from './markdown-text.js';
+
 let seq = 0;
 const nextId = () => `b${++seq}`;
 
 const TABLE_SEP = /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/;
 
-function splitRow(row) {
-  return row.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
-}
+// A pipe written "\|" stays inside its cell (D-403); serializeBlocks writes it back that way.
+const splitRow = splitTableRow;
 
 /** Markdown text → an array of editable blocks. */
 export function parseBlocks(text) {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Plus, Trash2, ChevronUp, ChevronDown, Type, List, ListOrdered, Table as TableIcon,
-  AlignLeft, ArrowLeftToLine, ArrowRightToLine, X, ChevronsLeft, ChevronsUp, TableCellsMerge, TableCellsSplit,
+  AlignLeft, ArrowLeftToLine, ArrowRightToLine, X, ChevronsLeft, ChevronsUp, TableCellsMerge, TableCellsSplit, Sparkles,
 } from 'lucide-react';
 import FormatBar from '../common/FormatBar.jsx';
 import MarkdownView from '../common/MarkdownView.jsx';
@@ -12,6 +12,7 @@ import {
 import {
   MERGE_LEFT, isMergeMarker, mergeLeft, mergeUp, mergeRow, splitCell, splitRow,
 } from '../../../shared/table-spans.js';
+import { cleanDocumentText, CLEANUP_LABELS } from '../../../shared/markdown-text.js';
 
 /**
  * Write a controlled document without typing Markdown.
@@ -30,6 +31,10 @@ import {
  */
 export default function DocumentBodyEditor({ value, onChange, placeholder }) {
   const [mode, setMode] = useState('blocks'); // blocks | markdown | preview
+  // The clean-up (D-403) is shown before it is applied: what it would change,
+  // by kind. Applying it edits this text only — the document is saved, reviewed
+  // and approved like any other edit.
+  const [cleanup, setCleanup] = useState(null);
   // THE BLOCKS ARE THE EDITING STATE; the Markdown string is what we publish.
   //
   // Re-parsing our own output on every keystroke would be the obvious
@@ -79,10 +84,23 @@ export default function DocumentBodyEditor({ value, onChange, placeholder }) {
             {label}
           </button>
         ))}
-        <span className="ml-auto text-[11px] text-gray-400">
+        <button type="button" data-cleanup-open onClick={() => setCleanup(cleanDocumentText(value || ''))}
+          title="Remove stray backslashes, extra spaces and empty table rows left by Word or Google Docs"
+          className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-gray-500 hover:text-powder-700 hover:bg-white">
+          <Sparkles size={12} /> Clean up formatting
+        </button>
+        <span className="text-[11px] text-gray-400">
           {blocks.length} block{blocks.length === 1 ? '' : 's'}
         </span>
       </div>
+      {cleanup && (
+        <CleanupPanel result={cleanup} onCancel={() => setCleanup(null)}
+          onApply={() => {
+            lastSerialized.current = null;
+            onChange(cleanup.text);
+            setCleanup(null);
+          }} />
+      )}
 
       {mode === 'markdown' && (
         <textarea value={value} onChange={e => { lastSerialized.current = null; onChange(e.target.value); }}
@@ -388,6 +406,41 @@ function MergeButtons({ left, up }) {
         <button type="button" onMouseDown={e => e.preventDefault()} onClick={up} data-merge-up
           className="p-0.5 text-gray-400 hover:text-powder-600" title="Merge with the cell above"><ChevronsUp size={11} /></button>
       )}
+    </div>
+  );
+}
+
+/** What "Clean up formatting" found, before anything changes (D-403). */
+function CleanupPanel({ result, onApply, onCancel }) {
+  const found = Object.entries(result.changes).filter(([, n]) => n > 0);
+  const checks = Object.entries(result.checks).filter(([, n]) => n > 0);
+  return (
+    <div data-cleanup-panel className="px-3 py-2.5 border-b border-gray-100 bg-powder-50/60 text-xs text-gray-700 space-y-1.5">
+      {found.length ? (
+        <>
+          <p className="font-medium text-gray-800">This will tidy the formatting and change no words:</p>
+          <ul className="list-disc pl-5 space-y-0.5" data-cleanup-list>
+            {found.map(([k, n]) => <li key={k} data-cleanup-kind={k}>{n} {CLEANUP_LABELS[k]}</li>)}
+          </ul>
+        </>
+      ) : (
+        <p data-cleanup-none>Nothing to clean up — the formatting is already tidy.</p>
+      )}
+      {checks.length > 0 && (
+        <p className="text-amber-800" data-cleanup-checks>
+          Look at by hand: {checks.map(([k, n]) => `${n} ${CLEANUP_LABELS[k]}`).join(', ')}. A "**" with no partner shows on the page as two stars.
+        </p>
+      )}
+      <div className="flex items-center gap-2 pt-0.5">
+        {found.length > 0 && (
+          <button type="button" data-cleanup-apply onClick={onApply}
+            className="px-2.5 py-1 rounded-md bg-powder-600 text-white text-xs font-medium hover:bg-powder-700">Apply</button>
+        )}
+        <button type="button" onClick={onCancel} className="px-2.5 py-1 rounded-md text-xs text-gray-600 hover:bg-white">
+          {found.length ? 'Cancel' : 'Close'}
+        </button>
+        {found.length > 0 && <span className="text-gray-500">Saving still goes through the usual review and approval.</span>}
+      </div>
     </div>
   );
 }

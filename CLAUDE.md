@@ -6843,6 +6843,14 @@ A supply order's group goes through `tagColumns()` (`server/supply-lists.js`): `
 AP Drop, Partner Rec, the payment run and Banking are still mounted. **An `/api` path nothing mounts is a JSON 404**
 (server.js, before the app shell) — it used to be `index.html` with a 200. Never DROP or DELETE a retired module's table.
 
+## Leftover Word / Google Docs formatting: readers print it tidily, a person cleans it (D-403)
+`shared/markdown-text.js` (`cleanDocumentText`, `unescapeMarkdown`, `plainInline`, `splitTableRow`, `isWholeBold`; PURE),
+"Clean up formatting" in `DocumentBodyEditor`, Doc Control Review pile `formatting-leftovers` (`formattingLeftovers`).
+- **Never bulk-rewrite stored document text** — an approved document changes only through a revision. The clean-up runs
+  in the editor, shows what it will change, and is saved like any edit. Formatting only, never words.
+- **A new reader of document text (screen, PDF, export) splits rows with `splitTableRow` and prints through
+  `plainInline` / the `MarkdownView` escape rule**, or "\-" and "\|" come back. `check:textcleanup` (26), `verify:textcleanup` (18).
+
 ## A document table can merge cells (D-402, `shared/table-spans.js`)
 - **The markers are the storage:** a cell holding `<<` merges into its left neighbour, `^^` into the cell above (body rows
   only). The body stays Markdown. **`spanLayout` is the one reading** — editor, `MarkdownView` and `pdf-table.js`; a new
