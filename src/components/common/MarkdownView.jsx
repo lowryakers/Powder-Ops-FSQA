@@ -8,6 +8,8 @@
 // Deliberately React nodes, never innerHTML — document bodies are text people
 // edit, and they must not be able to inject markup.
 
+import { spanLayout } from '../../../shared/table-spans.js';
+
 /* ───────── Minimal, safe Markdown renderer (React nodes, no innerHTML) ───────── */
 function renderInline(text, kp) {
   const nodes = [];
@@ -43,11 +45,13 @@ export default function MarkdownView({ text }) {
       const header = splitRow(lines[i]); i += 2;
       const rows = [];
       while (i < lines.length && lines[i].trim().startsWith('|')) { rows.push(splitRow(lines[i])); i++; }
+      // `<<` and `^^` in a cell are merges (D-402); spanLayout is their one reading.
+      const layout = spanLayout({ header, rows });
       blocks.push(
         <div key={key++} className="my-2 overflow-x-auto">
           <table className="text-sm border-collapse border border-gray-300 w-auto">
-            <thead className="bg-gray-50"><tr>{header.map((c, j) => <th key={j} className="border border-gray-300 px-2 py-1 text-left font-semibold text-gray-800">{renderInline(c, `th${key}${j}`)}</th>)}</tr></thead>
-            <tbody>{rows.map((r, ri) => <tr key={ri}>{header.map((_, ci) => <td key={ci} className="border border-gray-300 px-2 py-1 text-gray-700 align-top">{renderInline(r[ci] || '', `td${key}${ri}${ci}`)}</td>)}</tr>)}</tbody>
+            <thead className="bg-gray-50"><tr>{layout.header.map(cell => <th key={cell.c} colSpan={cell.colspan > 1 ? cell.colspan : undefined} className="border border-gray-300 px-2 py-1 text-left font-semibold text-gray-800">{renderInline(cell.text, `th${key}${cell.c}`)}</th>)}</tr></thead>
+            <tbody>{layout.rows.map((cells, ri) => <tr key={ri}>{cells.map(cell => <td key={cell.c} colSpan={cell.colspan > 1 ? cell.colspan : undefined} rowSpan={cell.rowspan > 1 ? cell.rowspan : undefined} className="border border-gray-300 px-2 py-1 text-gray-700 align-top">{renderInline(cell.text, `td${key}${ri}${cell.c}`)}</td>)}</tr>)}</tbody>
           </table>
         </div>
       );

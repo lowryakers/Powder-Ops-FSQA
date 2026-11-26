@@ -533,6 +533,9 @@ export const GUIDES = [
 
 // Newest first. Written in the PR that ships the change.
 export const WHATS_NEW = [
+  { date: '2026-11-25', d: 'D-402', module: 'document-control', open: { tab: 'document-control' },
+    title: 'Merge cells in a document table',
+    body: 'In the document editor, point at a table cell and merge it with the cell to its left or above, or merge a whole row into one cell for a section heading. The merge shows on screen and in the PDF; one click splits it back.' },
   { date: '2026-11-25', d: 'D-401', module: 'training', open: { tab: 'training' },
     title: 'The Quality bot closes training left behind by people who have left',
     body: 'An open training card assigned to a deactivated account can be marked N/A by the bot, with the reason. It is never counted as completed.' },

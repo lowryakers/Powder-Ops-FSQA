@@ -11,6 +11,8 @@
 // break moves whole and the header is redrawn, because a table continuing onto
 // a second page with no header is a table nobody can read.
 
+import { spanLayout } from '../shared/table-spans.js';
+
 const SEP = /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/;
 
 const splitRow = (row) => row.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim().replace(/\\\|/g, '|'));
@@ -34,12 +36,15 @@ export function tableAt(lines, i) {
 /**
  * Column widths proportional to the longest cell in each column, with a floor
  * so a narrow column stays readable and a ceiling so one long cell cannot take
- * the whole page.
+ * the whole page. A merged cell (D-402) is left out: a section heading across
+ * the whole table would otherwise make its first column the widest.
  */
-function columnWidths(table, total, cols) {
+function columnWidths(layout, total, cols) {
   const longest = Array(cols).fill(1);
-  for (const row of [table.header, ...table.rows]) {
-    row.forEach((c, i) => { longest[i] = Math.max(longest[i], String(c || '').length); });
+  for (const row of [layout.header, ...layout.rows]) {
+    for (const cell of row) {
+      if (cell.colspan === 1) longest[cell.c] = Math.max(longest[cell.c], String(cell.text || '').length);
+    }
   }
   const capped = longest.map(n => Math.min(n, 40));
   const sum = capped.reduce((a, b) => a + b, 0) || 1;
@@ -59,6 +64,10 @@ function columnWidths(table, total, cols) {
  *
  * `opts.pageBottom` is where a page has to break; the caller owns the margins,
  * so it is passed in rather than guessed at here.
+ *
+ * Merged cells (D-402) come from `spanLayout`, the same reading the screen
+ * uses. Rows joined by a row span move to the next page together, so a merged
+ * cell is never cut in half by a page break.
  */
 export function drawTable(pdf, table, opts = {}) {
   const left = opts.left ?? pdf.page.margins.left;
@@ -66,8 +75,11 @@ export function drawTable(pdf, table, opts = {}) {
   const pageBottom = opts.pageBottom ?? (pdf.page.height - pdf.page.margins.bottom);
   const fontSize = opts.fontSize ?? 8.5;
   const padX = 4, padY = 3;
-  const cols = table.header.length;
-  const widths = columnWidths(table, total, cols);
+  const layout = spanLayout(table);
+  const cols = layout.cols;
+  const widths = columnWidths(layout, total, cols);
+  const xAt = (c) => left + widths.slice(0, c).reduce((a, b) => a + b, 0);
+  const wOf = (cell) => widths.slice(cell.c, cell.c + cell.colspan).reduce((a, b) => a + b, 0);
 
   // MEASURE WITH THE OPTIONS YOU DRAW WITH.
   //
@@ -76,61 +88,77 @@ export function drawTable(pdf, table, opts = {}) {
   // notices; on a twenty-line preventive-control justification the row box came
   // out twenty points too small and the text ran on into the row beneath it.
   // One options object now serves both, so they cannot drift again.
-  const cellOpts = (i) => ({ width: widths[i] - padX * 2, lineGap: 1 });
+  const cellOpts = (cell) => ({ width: wOf(cell) - padX * 2, lineGap: 1 });
 
-  const rowHeight = (cells, bold) => {
+  const measure = (cell, bold) => {
     pdf.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(fontSize);
-    let h = 0;
-    cells.forEach((c, i) => {
-      const ch = pdf.heightOfString(String(c || ''), cellOpts(i));
-      if (ch > h) h = ch;
-    });
     // A point of slack. Rounding between measuring and drawing is the whole
     // reason this bug existed, and a hair of extra white space costs nothing
     // next to two rows printed on top of each other.
-    return Math.max(14, Math.ceil(h) + padY * 2 + 1);
+    return Math.ceil(pdf.heightOfString(String(cell.text || ''), cellOpts(cell))) + padY * 2 + 1;
   };
 
-  const drawRow = (cells, y, bold, fill) => {
-    const h = rowHeight(cells, bold);
-    let x = left;
-    cells.forEach((c, i) => {
-      if (fill) pdf.save().rect(x, y, widths[i], h).fill(fill).restore();
-      pdf.save().rect(x, y, widths[i], h).lineWidth(0.5).strokeColor('#9ca3af').stroke().restore();
-      pdf.fillColor('#111827').font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(fontSize)
-        // Deliberately NOT clipped to the box. If a measurement is ever wrong
-        // again, a point of overlap is a blemish — a truncated preventive
-        // control is a hazard analysis missing its control, which is the kind
-        // of quiet loss this codebase exists to avoid.
-        .text(String(c || ''), x + padX, y + padY, cellOpts(i));
-      x += widths[i];
-    });
-    return h;
+  const drawCell = (cell, y, h, bold, fill) => {
+    const x = xAt(cell.c), w = wOf(cell);
+    if (fill) pdf.save().rect(x, y, w, h).fill(fill).restore();
+    pdf.save().rect(x, y, w, h).lineWidth(0.5).strokeColor('#9ca3af').stroke().restore();
+    pdf.fillColor('#111827').font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(fontSize)
+      // Deliberately NOT clipped to the box. If a measurement is ever wrong
+      // again, a point of overlap is a blemish — a truncated preventive
+      // control is a hazard analysis missing its control, which is the kind
+      // of quiet loss this codebase exists to avoid.
+      .text(String(cell.text || ''), x + padX, y + padY, cellOpts(cell));
   };
 
   // The boxes actually drawn, so a test can check that no two overlap rather
   // than reading the rendered page and guessing.
   const boxes = [];
-  const place = (cells, y, bold, fill) => {
-    const h = drawRow(cells, y, bold, fill);
-    boxes.push({ page: pdf.bufferedPageRange ? pdf.bufferedPageRange().count : 0, y, h, cells });
-    return h;
+  const pageNo = () => (pdf.bufferedPageRange ? pdf.bufferedPageRange().count : 0);
+
+  const headerH = Math.max(14, ...layout.header.map(cell => measure(cell, true)));
+  const drawHeader = (y) => {
+    layout.header.forEach(cell => drawCell(cell, y, headerH, true, '#f3f4f6'));
+    boxes.push({ page: pageNo(), y, h: headerH, cells: layout.header.map(cell => cell.text) });
+    return headerH;
   };
 
+  // Row heights: the tallest unmerged-down cell in the row, then a row span
+  // that needs more room than its rows give takes it from its last row.
+  const n = layout.rows.length;
+  const rowH = layout.rows.map(cells => Math.max(14, ...cells.filter(cell => cell.rowspan === 1).map(cell => measure(cell, false))));
+  layout.rows.forEach((cells, r) => cells.forEach(cell => {
+    if (cell.rowspan < 2) return;
+    const have = rowH.slice(r, r + cell.rowspan).reduce((a, b) => a + b, 0);
+    const need = measure(cell, false);
+    if (need > have) rowH[r + cell.rowspan - 1] += need - have;
+  }));
+
   let y = pdf.y;
-  const headerH = rowHeight(table.header, true);
   // A header alone at the foot of a page is worse than a page break before it.
   if (y + headerH + 20 > pageBottom) { pdf.addPage(); y = pdf.y; }
-  y += place(table.header, y, true, '#f3f4f6');
+  y += drawHeader(y);
 
-  for (const row of table.rows) {
-    const h = rowHeight(row, false);
-    if (y + h > pageBottom) {
+  for (let r = 0; r < n;) {
+    // The rows a row span ties together, drawn as one unit.
+    let end = r;
+    for (let k = r; k <= end; k++) for (const cell of layout.rows[k]) end = Math.max(end, k + cell.rowspan - 1);
+    const blockH = rowH.slice(r, end + 1).reduce((a, b) => a + b, 0);
+    if (y + blockH > pageBottom) {
       pdf.addPage();
       y = pdf.y;
-      y += place(table.header, y, true, '#f3f4f6');
+      y += drawHeader(y);
     }
-    y += place(row, y, false, null);
+    let ry = y;
+    for (let k = r; k <= end; k++) {
+      for (const cell of layout.rows[k]) {
+        const h = rowH.slice(k, k + cell.rowspan).reduce((a, b) => a + b, 0);
+        drawCell(cell, ry, h, false, null);
+      }
+      boxes.push({ page: pageNo(), y: ry, h: rowH[k], cells: layout.rows[k].map(cell => cell.text) });
+      ry += rowH[k];
+    }
+    y = ry;
+    r = end + 1;
   }
 
   pdf.x = left;

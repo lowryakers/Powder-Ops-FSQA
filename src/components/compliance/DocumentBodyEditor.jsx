@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Plus, Trash2, ChevronUp, ChevronDown, Type, List, ListOrdered, Table as TableIcon,
-  AlignLeft, ArrowLeftToLine, ArrowRightToLine, X,
+  AlignLeft, ArrowLeftToLine, ArrowRightToLine, X, ChevronsLeft, ChevronsUp, TableCellsMerge, TableCellsSplit,
 } from 'lucide-react';
 import FormatBar from '../common/FormatBar.jsx';
 import MarkdownView from '../common/MarkdownView.jsx';
@@ -9,6 +9,9 @@ import {
   parseBlocks, serializeBlocks, emptyBlock, BLOCK_LABEL,
   tableAddColumn, tableRemoveColumn, tableAddRow, tableRemoveRow, tableMoveRow, tableFromPaste,
 } from '../../../shared/markdown-blocks.js';
+import {
+  MERGE_LEFT, isMergeMarker, mergeLeft, mergeUp, mergeRow, splitCell, splitRow,
+} from '../../../shared/table-spans.js';
 
 /**
  * Write a controlled document without typing Markdown.
@@ -71,7 +74,7 @@ export default function DocumentBodyEditor({ value, onChange, placeholder }) {
     <div className="border border-gray-200 rounded-lg">
       <div className="flex items-center gap-1 px-2 py-1.5 border-b border-gray-100 bg-gray-50 rounded-t-lg">
         {[['blocks', 'Edit'], ['markdown', 'Markdown'], ['preview', 'Preview']].map(([m, label]) => (
-          <button key={m} type="button" onClick={() => setMode(m)}
+          <button key={m} type="button" onClick={() => setMode(m)} data-body-mode={m}
             className={`px-2.5 py-1 rounded-md text-xs font-medium ${mode === m ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-500 hover:text-gray-700'}`}>
             {label}
           </button>
@@ -282,10 +285,18 @@ function TableBlock({ block, onChange }) {
                     <button type="button" onClick={() => apply(tableAddColumn(block, c + 1))}
                       className="p-0.5 text-gray-300 hover:text-powder-600" title="Insert column after"><ArrowRightToLine size={10} /></button>
                   </div>
-                  <input value={h} onChange={e => setHeader(c, e.target.value)}
-                    onPaste={e => onPaste(e, -1, c)}
-                    placeholder={`Column ${c + 1}`}
-                    className="w-36 px-1.5 py-1 border border-gray-300 rounded text-xs font-semibold bg-gray-50" />
+                  {isMergeMarker(h) ? (
+                    <MergedCell value={h} onSplit={() => apply(splitCell(block, -1, c))} />
+                  ) : (
+                    <div className="group/cell relative">
+                      <input value={h} onChange={e => setHeader(c, e.target.value)}
+                        onPaste={e => onPaste(e, -1, c)}
+                        placeholder={`Column ${c + 1}`}
+                        data-table-cell={`h-${c}`}
+                        className="w-36 px-1.5 py-1 border border-gray-300 rounded text-xs font-semibold bg-gray-50" />
+                      <MergeButtons left={c > 0 ? () => apply(mergeLeft(block, -1, c)) : null} />
+                    </div>
+                  )}
                 </th>
               ))}
             </tr>
@@ -299,16 +310,33 @@ function TableBlock({ block, onChange }) {
                       className="text-gray-300 hover:text-gray-600 disabled:opacity-20" title="Move row up"><ChevronUp size={11} /></button>
                     <button type="button" onClick={() => apply(tableRemoveRow(block, r))}
                       className="text-gray-300 hover:text-red-600" title="Delete row"><X size={11} /></button>
+                    {header.length > 1 && (row.slice(1).every(v => v.trim() === MERGE_LEFT) ? (
+                      <button type="button" onClick={() => apply(splitRow(block, r))} data-split-row={r}
+                        className="text-gray-300 hover:text-powder-600" title="Split this row back into cells"><TableCellsSplit size={11} /></button>
+                    ) : (
+                      <button type="button" onClick={() => apply(mergeRow(block, r))} data-merge-row={r}
+                        className="text-gray-300 hover:text-powder-600" title="Merge the whole row into one cell (a section heading)"><TableCellsMerge size={11} /></button>
+                    ))}
                     <button type="button" onClick={() => apply(tableMoveRow(block, r, 1))} disabled={r === rows.length - 1}
                       className="text-gray-300 hover:text-gray-600 disabled:opacity-20" title="Move row down"><ChevronDown size={11} /></button>
                   </div>
                 </td>
                 {row.map((cell, c) => (
-                  <td key={c} className="p-0.5">
-                    <textarea value={cell} onChange={e => setCell(r, c, e.target.value)}
-                      onPaste={e => onPaste(e, r, c)} rows={1}
-                      onInput={e => { e.target.style.height = 'auto'; e.target.style.height = `${Math.min(120, e.target.scrollHeight)}px`; }}
-                      className="w-36 px-1.5 py-1 border border-gray-200 rounded text-xs resize-none align-top" />
+                  <td key={c} className="p-0.5 align-top">
+                    {isMergeMarker(cell) ? (
+                      <MergedCell value={cell} onSplit={() => apply(splitCell(block, r, c))} />
+                    ) : (
+                      <div className="group/cell relative">
+                        <textarea value={cell} onChange={e => setCell(r, c, e.target.value)}
+                          onPaste={e => onPaste(e, r, c)} rows={1}
+                          data-table-cell={`${r}-${c}`}
+                          onInput={e => { e.target.style.height = 'auto'; e.target.style.height = `${Math.min(120, e.target.scrollHeight)}px`; }}
+                          className="w-36 px-1.5 py-1 border border-gray-200 rounded text-xs resize-none align-top" />
+                        <MergeButtons
+                          left={c > 0 ? () => apply(mergeLeft(block, r, c)) : null}
+                          up={r > 0 ? () => apply(mergeUp(block, r, c)) : null} />
+                      </div>
+                    )}
                   </td>
                 ))}
               </tr>
@@ -322,9 +350,44 @@ function TableBlock({ block, onChange }) {
         <button type="button" onClick={() => apply(tableAddColumn(block))}
           className="inline-flex items-center gap-1 text-[11px] text-powder-600 hover:underline"><Plus size={11} /> Add column</button>
         <span className="text-[11px] text-gray-400">
-          Paste a range from Excel into any cell to fill the grid.
+          Paste a range from Excel into any cell to fill the grid. To merge, point at a cell and use
+          <ChevronsLeft size={10} className="inline" /> or <ChevronsUp size={10} className="inline" />, or
+          <TableCellsMerge size={10} className="inline" /> beside a row.
         </span>
       </div>
+    </div>
+  );
+}
+
+/**
+ * A cell merged into its neighbour (D-402). It holds no text of its own — the
+ * merge moved that into the cell it joined — so it shows where it went and
+ * offers the way back.
+ */
+function MergedCell({ value, onSplit }) {
+  const up = String(value).trim() !== MERGE_LEFT;
+  return (
+    <button type="button" onClick={onSplit} data-merged-cell={up ? 'up' : 'left'}
+      title="Merged. Click to split it back out."
+      className={`w-36 h-[26px] flex items-center justify-center gap-1 rounded border border-dashed border-gray-300 bg-gray-50 text-[11px] text-gray-400 hover:border-powder-400 hover:text-powder-600`}>
+      {up ? <ChevronsUp size={11} /> : <ChevronsLeft size={11} />} merged · <TableCellsSplit size={11} /> split
+    </button>
+  );
+}
+
+/** Small buttons that appear on a cell when pointed at or focused. */
+function MergeButtons({ left, up }) {
+  if (!left && !up) return null;
+  return (
+    <div className="absolute -top-2 right-0.5 hidden group-hover/cell:flex group-focus-within/cell:flex gap-0.5 rounded bg-white shadow-sm border border-gray-200 px-0.5">
+      {left && (
+        <button type="button" onMouseDown={e => e.preventDefault()} onClick={left} data-merge-left
+          className="p-0.5 text-gray-400 hover:text-powder-600" title="Merge with the cell on the left"><ChevronsLeft size={11} /></button>
+      )}
+      {up && (
+        <button type="button" onMouseDown={e => e.preventDefault()} onClick={up} data-merge-up
+          className="p-0.5 text-gray-400 hover:text-powder-600" title="Merge with the cell above"><ChevronsUp size={11} /></button>
+      )}
     </div>
   );
 }

@@ -12018,3 +12018,29 @@ day: when a token route blocks commodity bot work, fix the access in code rather
 - Completing a card, recording a test, signing competence and deleting stay person-only.
 
 `verify:bottrainingna` (14; the control — the code before this — fails with the 2:40 PM refusal), `check:apitokens` (+4).
+
+## D-402 — A controlled-document table can merge cells (25 Nov 2026)
+Daniela, updating SOPs in ReadyDoc: "For SOP updates, I'm coming across tables. Can we add a setting for merging a
+column or a row." Word tables imported into the editor came in with their merged cells as rows of empty boxes — a
+"Raw Materials" section row across the table, a heading over two columns — and the editor had no way to say so.
+
+**Decided:**
+- **The body stays Markdown.** A merge is written in the cell as a marker: `<<` = this cell belongs to the cell on its
+  left (column span), `^^` = to the cell above (row span, body rows only). Every other reader (translation, search,
+  the importer) still sees an ordinary table.
+- **`shared/table-spans.js` is the one reading** (`spanLayout`) — the editor, the screen view (`MarkdownView`) and the
+  PDF (`server/pdf-table.js`) all call it. A merge only swallows marker cells: a cell holding words is never hidden
+  under a span, so a stray marker costs a border, never a sentence.
+- **A merge never deletes words**: the merged cell's text joins the cell it merges into (the same words twice are kept
+  once). Splitting gives back an empty cell; the text stays where the merge put it.
+- Editor: point at a cell for **merge left** / **merge up**; beside each row, **merge the whole row** (a section
+  heading) and split it back. A merged cell reads "merged · split" and one click splits it.
+- PDF: a spanned cell takes the width/height of the cells it covers; rows tied by a row span move to the next page
+  together; merged cells are left out of column-width sizing.
+- Nothing stored changes: no document is rewritten, and an existing table with no markers prints exactly as before.
+
+**Not done:** Word imports also carry backslash escapes (`\-organoleptic`, `\*`) that show on screen and in the PDF.
+That is a separate clean-up, not part of this change.
+
+`check:tablemerge` (21, pure: spans, round trip, PDF boxes), `verify:tablemerge` (12, browser; the control — the
+editor before this — fails at the first merge).

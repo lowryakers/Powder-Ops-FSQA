@@ -6843,6 +6843,13 @@ A supply order's group goes through `tagColumns()` (`server/supply-lists.js`): `
 AP Drop, Partner Rec, the payment run and Banking are still mounted. **An `/api` path nothing mounts is a JSON 404**
 (server.js, before the app shell) — it used to be `index.html` with a 200. Never DROP or DELETE a retired module's table.
 
+## A document table can merge cells (D-402, `shared/table-spans.js`)
+- **The markers are the storage:** a cell holding `<<` merges into its left neighbour, `^^` into the cell above (body rows
+  only). The body stays Markdown. **`spanLayout` is the one reading** — editor, `MarkdownView` and `pdf-table.js`; a new
+  table renderer must call it, never read the markers itself.
+- A merge never hides a cell with words and never deletes text (`mergeLeft` / `mergeUp` / `mergeRow` join it into the
+  owner). `check:tablemerge` (21), `verify:tablemerge` (12).
+
 ## Every page of a document PDF carries its identity; the draft is its own export (D-318)
 `server/document-pdf.js` is the ONE renderer for controlled-document PDFs (single, batch, Auditor View Print). Header and
 footer are drawn on buffered pages, never written into the body: number · Rev · short title · Page x of y, and
